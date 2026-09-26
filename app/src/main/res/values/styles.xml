@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Chrona.Light" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">#006B60</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#F6F8F5</item>
+        <item name="android:statusBarColor">#F6F8F5</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="Theme.Chrona.Dark" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#80D8C9</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#101B1B</item>
+        <item name="android:statusBarColor">#101B1B</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="Theme.Chrona.Blue.Light" parent="Theme.Chrona.Light">
+        <item name="android:colorAccent">#315CA7</item>
+    </style>
+    <style name="Theme.Chrona.Blue.Dark" parent="Theme.Chrona.Dark">
+        <item name="android:colorAccent">#A9C7FF</item>
+    </style>
+    <style name="Theme.Chrona.Coral.Light" parent="Theme.Chrona.Light">
+        <item name="android:colorAccent">#9B4B32</item>
+    </style>
+    <style name="Theme.Chrona.Coral.Dark" parent="Theme.Chrona.Dark">
+        <item name="android:colorAccent">#FFB4A1</item>
+    </style>
+    <style name="Theme.Chrona.Wallpaper.Light" parent="Theme.Chrona.Light" />
+    <style name="Theme.Chrona.Wallpaper.Dark" parent="Theme.Chrona.Dark" />
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Chrona.Wallpaper.Light" parent="Theme.Chrona.Light">
+        <item name="android:colorAccent">@android:color/system_accent1_700</item>
+    </style>
+    <style name="Theme.Chrona.Wallpaper.Dark" parent="Theme.Chrona.Dark">
+        <item name="android:colorAccent">@android:color/system_accent1_200</item>
+    </style>
+</resources>

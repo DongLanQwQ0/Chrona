@@ -57,6 +57,7 @@ public final class TaskDetailActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle state) {
+        ThemeStore.apply(this);
         super.onCreate(state);
         taskId = getIntent().getLongExtra("task_id", -1);
         ScrollView scroll = new ScrollView(this);
@@ -65,6 +66,7 @@ public final class TaskDetailActivity extends Activity {
         content.setPadding(dp(20), dp(30), dp(20), dp(24));
         UiStyle.page(this, content);
         scroll.addView(content);
+        UiStyle.back(this, content);
         setContentView(scroll);
     }
 
@@ -98,6 +100,7 @@ public final class TaskDetailActivity extends Activity {
     private void render() {
         if (deleting) return;
         content.removeAllViews();
+        UiStyle.back(this, content);
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
             if (task == null) {
@@ -367,7 +370,7 @@ public final class TaskDetailActivity extends Activity {
                 }
             }
             if (new AiSettingsStore(this).load() == null) {
-                Toast.makeText(this, "请先在首页配置 AI 服务", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "请先在设置中配置 AI 服务", Toast.LENGTH_LONG).show();
                 return;
             }
             store.replaceCandidates(taskId, Collections.emptyList());

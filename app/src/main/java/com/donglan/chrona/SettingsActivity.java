@@ -25,6 +25,7 @@ public final class SettingsActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle state) {
+        ThemeStore.apply(this);
         super.onCreate(state);
         ScrollView page = new ScrollView(this);
         page.setFillViewport(true);
@@ -34,6 +35,7 @@ public final class SettingsActivity extends Activity {
         root.setFitsSystemWindows(true);
         UiStyle.page(this, root);
         page.addView(root);
+        UiStyle.back(this, root);
         TextView title = new TextView(this);
         title.setText("AI 服务设置");
         title.setTextSize(24);

@@ -20,6 +20,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.donglan.chrona.ai.AiSettings;
+import com.donglan.chrona.ThemeStore;
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.image.ImageStore;
@@ -36,6 +37,7 @@ public final class DebugActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle state) {
+        ThemeStore.apply(this);
         super.onCreate(state);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);

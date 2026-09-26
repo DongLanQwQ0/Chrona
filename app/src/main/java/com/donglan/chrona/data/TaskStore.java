@@ -399,6 +399,18 @@ public final class TaskStore extends SQLiteOpenHelper {
         return candidates;
     }
 
+    /** All extracted entries, ordered by their date for the schedule surface. */
+    public List<EventCandidate> listCandidates() {
+        List<EventCandidate> candidates = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                null, null, null, null,
+                "CASE WHEN start_at_millis IS NULL THEN 1 ELSE 0 END, "
+                        + "start_at_millis ASC, task_id DESC, position ASC")) {
+            while (cursor.moveToNext()) candidates.add(readCandidate(cursor));
+        }
+        return candidates;
+    }
+
     private static TaskRecord readTask(Cursor cursor) {
         int promptIndex = cursor.getColumnIndexOrThrow("prompt_tokens");
         int completionIndex = cursor.getColumnIndexOrThrow("completion_tokens");
