@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -20,7 +21,11 @@ import java.util.regex.Pattern;
 
 /** Synchronous network client. Call parse from a worker thread, never the UI thread. */
 public final class ChatCompletionClient {
-    private static final int TIMEOUT_MILLIS = 30_000;
+    private static final int CONNECT_TIMEOUT_MILLIS = 30_000;
+    /** A text-only reply comes back quickly, so waiting longer only delays a real failure. */
+    private static final int TEXT_READ_TIMEOUT_MILLIS = 30_000;
+    /** An image request uploads far more and the provider needs longer to look at it. */
+    private static final int IMAGE_READ_TIMEOUT_MILLIS = 180_000;
     private static final int MAX_RESPONSE_CHARS = 2_000_000;
 
     // Keep this prefix identical across requests so providers can cache it.
@@ -78,12 +83,14 @@ public final class ChatCompletionClient {
             throw new IOException("Could not encode AI request", e);
         }
 
+        int readTimeout = imageJpeg == null
+                ? TEXT_READ_TIMEOUT_MILLIS : IMAGE_READ_TIMEOUT_MILLIS;
         HttpURLConnection connection = (HttpURLConnection) new URL(
                 settings.baseUrl + "/chat/completions").openConnection();
         try {
             connection.setRequestMethod("POST");
-            connection.setConnectTimeout(TIMEOUT_MILLIS);
-            connection.setReadTimeout(TIMEOUT_MILLIS);
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
+            connection.setReadTimeout(readTimeout);
             connection.setDoOutput(true);
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("Authorization", "Bearer " + settings.apiKey);
@@ -101,6 +108,10 @@ public final class ChatCompletionClient {
                         + errorMessage(response));
             }
             return parseResponse(taskId, response);
+        } catch (SocketTimeoutException exception) {
+            throw new IOException("AI 服务在 " + (readTimeout / 1000) + " 秒内没有返回结果"
+                    + (imageJpeg == null ? "，请稍后重试"
+                            : "（图片请求较慢，可重试或先改用文字描述）"), exception);
         } finally {
             connection.disconnect();
         }
