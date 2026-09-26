@@ -104,8 +104,11 @@ public final class ModelOutputActivity extends Activity {
         next.setEnabled(index + 1 < pages);
         try {
             String part = store.page(taskId, index);
-            output.setText(part.isEmpty() ? "尚无模型输出。" : part);
+            String text = part.isEmpty() ? "尚无模型输出。" : part;
+            boolean first = output.getText().length() == 0;
+            output.setText(text);
             scroll.scrollTo(0, 0);
+            if (!first) UiStyle.pop(output);
         } catch (Exception exception) {
             output.setText("无法读取输出：" + exception.getMessage());
         }

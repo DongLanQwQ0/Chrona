@@ -228,6 +228,27 @@ public final class UiStyle {
                 .setDuration(240).start();
     }
 
+    /**
+     * Staggers a card list into view. Only for a screen that is being opened: rebuilding a screen
+     * for another reason (theme change, returning from another page) must not look like a reload.
+     */
+    public static void enterChildren(LinearLayout parent) {
+        for (int i = 0; i < parent.getChildCount(); i++) enter(parent.getChildAt(i), i);
+    }
+
+    /** Rebuilds a container's contents behind a short fade instead of swapping them mid-frame. */
+    public static void swap(View container, Runnable rebuild) {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            rebuild.run();
+            return;
+        }
+        container.animate().cancel();
+        container.animate().alpha(0.2f).setDuration(90).withEndAction(() -> {
+            rebuild.run();
+            container.animate().alpha(1f).setDuration(180).start();
+        }).start();
+    }
+
     public static void pop(View view) {
         if (!ValueAnimator.areAnimatorsEnabled()) return;
         view.setScaleX(0.94f);
@@ -235,14 +256,20 @@ public final class UiStyle {
         view.animate().scaleX(1f).scaleY(1f).setDuration(230).start();
     }
 
-    static ObjectAnimator pulse(View view) {
-        if (!ValueAnimator.areAnimatorsEnabled()) return null;
-        ObjectAnimator pulse = ObjectAnimator.ofFloat(view, View.ALPHA, 1f, 0.72f, 1f);
-        pulse.setDuration(1800);
-        pulse.setStartDelay(250);
+    /** A quiet breathing cue for something that is still running; stops itself when detached. */
+    public static void pulse(View view) {
+        if (!ValueAnimator.areAnimatorsEnabled()) return;
+        ObjectAnimator pulse = ObjectAnimator.ofFloat(view, View.ALPHA, 1f, 0.6f, 1f);
+        pulse.setDuration(1600);
         pulse.setRepeatCount(ValueAnimator.INFINITE);
         pulse.start();
-        return pulse;
+        view.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View attached) { }
+
+            @Override public void onViewDetachedFromWindow(View detached) {
+                pulse.cancel();
+            }
+        });
     }
 
     public static void addSpaced(LinearLayout parent, View view, int top, int bottom) {

@@ -54,6 +54,8 @@ public final class TaskDetailActivity extends Activity {
     private TextView previewText;
     private long previewLength = -1;
     private boolean deleting;
+    /** Cards stagger in only for a freshly opened screen, not on every rebuild. */
+    private boolean animateEntrances;
     private String observedStatus;
     private int observedCandidates = -1;
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
@@ -81,6 +83,8 @@ public final class TaskDetailActivity extends Activity {
         if (state != null) {
             int scrollY = state.getInt("scroll_y");
             page.post(() -> page.scrollTo(0, scrollY));
+        } else {
+            animateEntrances = true;
         }
     }
 
@@ -171,6 +175,10 @@ public final class TaskDetailActivity extends Activity {
             showError(exception);
         }
         page.post(() -> page.scrollTo(0, previousScroll));
+        if (animateEntrances) {
+            animateEntrances = false;
+            UiStyle.enterChildren(content);
+        }
     }
 
     private void addPreview() {

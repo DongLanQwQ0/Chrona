@@ -49,6 +49,8 @@ public final class DashboardActivity extends Activity {
     private ScrollView scroll;
     private GlassBackdropView backdrop;
     private boolean wide;
+    /** Cards stagger in only for a screen the user just opened, never for a rebuild. */
+    private boolean animateEntrances;
     private String snapshot = "";
     private int restoredScrollY;
     private final Handler refresh = new Handler(Looper.getMainLooper());
@@ -67,6 +69,7 @@ public final class DashboardActivity extends Activity {
             restoredScrollY = state.getInt("scroll_y");
         } else {
             section = getIntent().getIntExtra(EXTRA_SECTION, HOME);
+            animateEntrances = true;
         }
         buildShell();
         if (state == null) backdrop.playEntrance();
@@ -196,6 +199,10 @@ public final class DashboardActivity extends Activity {
             else schedule(store);
         } catch (Exception exception) {
             message(content, "暂时无法读取日程：" + exception.getMessage());
+        }
+        if (animateEntrances) {
+            animateEntrances = false;
+            UiStyle.enterChildren(content);
         }
         drawNavigation();
     }
@@ -407,14 +414,17 @@ public final class DashboardActivity extends Activity {
     private void updateResults() {
         if (results == null) return;
         int previous = scroll.getScrollY();
-        try (TaskStore store = new TaskStore(this)) {
-            if (section == INBOX) renderInboxResults(store);
-            else if (section == SCHEDULE) renderScheduleResults(store);
-        } catch (Exception exception) {
-            results.removeAllViews();
-            message(results, "暂时无法读取日程：" + exception.getMessage());
-        }
-        scroll.post(() -> scroll.scrollTo(0, previous));
+        // Fade through the swap: filtering must read as new content, not as a page reload.
+        UiStyle.swap(results, () -> {
+            try (TaskStore store = new TaskStore(this)) {
+                if (section == INBOX) renderInboxResults(store);
+                else if (section == SCHEDULE) renderScheduleResults(store);
+            } catch (Exception exception) {
+                results.removeAllViews();
+                message(results, "暂时无法读取日程：" + exception.getMessage());
+            }
+            scroll.scrollTo(0, previous);
+        });
     }
 
     private void updateChipSelection(int selected) {
@@ -449,6 +459,10 @@ public final class DashboardActivity extends Activity {
         TextView meta = text(statusText(task.status) + " · "
                 + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
                 .format(new Date(task.createdAtMillis)), 13, false);
+        if (TaskRecord.PROCESSING.equals(task.status) || TaskRecord.QUEUED.equals(task.status)) {
+            // A quiet pulse so "解析中" reads as alive rather than as a stuck row.
+            UiStyle.pulse(meta);
+        }
         UiStyle.addSpaced(card, meta, 7, 0);
         card.setOnClickListener(view -> openTask(task.id));
         UiStyle.pressable(card);
@@ -512,8 +526,10 @@ public final class DashboardActivity extends Activity {
     private void switchTo(int destination) {
         if (destination == section) return;
         section = destination;
-        render();
-        scroll.scrollTo(0, 0);
+        UiStyle.swap(content, () -> {
+            render();
+            scroll.scrollTo(0, 0);
+        });
     }
 
     private void stat(LinearLayout parent, int count, String label, Runnable action) {
