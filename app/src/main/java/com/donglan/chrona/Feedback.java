@@ -81,7 +81,9 @@ public final class Feedback {
         if (Build.VERSION.SDK_INT < 30) return 0;
         WindowInsets insets = activity.getWindow().getDecorView().getRootWindowInsets();
         if (insets == null) return 0;
-        return insets.getInsets(WindowInsets.Type.navigationBars()).bottom;
+        // Clear of the navigation bar, and of the keyboard when the user is typing.
+        return Math.max(insets.getInsets(WindowInsets.Type.navigationBars()).bottom,
+                insets.getInsets(WindowInsets.Type.ime()).bottom);
     }
 
     private static android.graphics.drawable.Drawable shape(Activity activity) {

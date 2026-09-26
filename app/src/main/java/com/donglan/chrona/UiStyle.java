@@ -279,15 +279,20 @@ public final class UiStyle {
     }
 
     public static void back(Activity activity, LinearLayout parent) {
+        backTo(activity, parent, "←  返回", activity::finish);
+    }
+
+    /** Same affordance with a different destination, for a screen that is also an app entry point. */
+    public static void backTo(Activity activity, LinearLayout parent, String label, Runnable action) {
         TextView back = new TextView(activity);
-        back.setText("←  返回");
+        back.setText(label);
         back.setTextSize(15);
         back.setTextColor(colors(activity).primary);
         back.setTypeface(null, Typeface.BOLD);
         back.setGravity(Gravity.CENTER_VERTICAL);
         back.setMinimumHeight(dp(back, 48));
-        back.setContentDescription("返回上一页");
-        back.setOnClickListener(view -> activity.finish());
+        back.setContentDescription(label.replace("←", "").trim());
+        back.setOnClickListener(view -> action.run());
         addSpaced(parent, back, 0, 8);
     }
 

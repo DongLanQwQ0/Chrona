@@ -71,7 +71,14 @@ public final class MainActivity extends Activity {
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
-        UiStyle.back(this, root);
+        if (isTaskRoot()) {
+            // Launched from the system share sheet, so there is nothing behind this screen.
+            // "Back" has to reach the inbox instead of closing the app on the shared content.
+            UiStyle.backTo(this, root, "←  收件箱", () -> startActivity(new Intent(this,
+                    DashboardActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)));
+        } else {
+            UiStyle.back(this, root);
+        }
 
         TextView title = new TextView(this);
         title.setText("记录一件事");

@@ -132,11 +132,18 @@ public final class DashboardActivity extends Activity {
     private String dataSnapshot() {
         try (TaskStore store = new TaskStore(this)) {
             StringBuilder value = new StringBuilder();
+            boolean processing = false;
             for (TaskRecord task : store.listTasks()) {
                 value.append(task.id).append(':').append(task.status).append(';');
+                if (TaskRecord.PROCESSING.equals(task.status)
+                        || TaskRecord.QUEUED.equals(task.status)) processing = true;
             }
+            // While something is parsing the snapshot also moves every five seconds, so a row's
+            // "已 N" keeps counting without a second timer of its own.
             value.append('/').append(store.listCandidates().size())
-                    .append('/').append(System.currentTimeMillis() / 300000L);
+                    .append('/').append(processing
+                            ? System.currentTimeMillis() / 5000L
+                            : System.currentTimeMillis() / 300000L);
             return value.toString();
         } catch (Exception ignored) {
             return "";
@@ -454,10 +461,14 @@ public final class DashboardActivity extends Activity {
     private void taskRow(LinearLayout parent, TaskRecord task, int index) {
         LinearLayout card = card();
         card.addView(text(preview(task), 16, true));
-        TextView meta = text(statusText(task.status) + " · "
-                + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                .format(new Date(task.createdAtMillis)), 13, false);
-        if (TaskRecord.PROCESSING.equals(task.status) || TaskRecord.QUEUED.equals(task.status)) {
+        boolean waiting = TaskRecord.PROCESSING.equals(task.status)
+                || TaskRecord.QUEUED.equals(task.status);
+        // A waiting row counts up instead of showing when it arrived, so "解析中" has a sign of life.
+        TextView meta = text(statusText(task.status) + " · " + (waiting
+                ? "已 " + elapsedText(System.currentTimeMillis() - task.createdAtMillis)
+                : DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                        .format(new Date(task.createdAtMillis))), 13, false);
+        if (waiting) {
             // A quiet pulse so "解析中" reads as alive rather than as a stuck row.
             UiStyle.pulse(meta);
         }
@@ -485,6 +496,14 @@ public final class DashboardActivity extends Activity {
         if (TaskRecord.NEEDS_REVIEW.equals(status)) return "待确认";
         if (TaskRecord.READY.equals(status)) return "已写入日历";
         return "处理失败";
+    }
+
+    private static String elapsedText(long millis) {
+        long seconds = Math.max(0L, millis) / 1000L;
+        if (seconds < 60) return seconds + " 秒";
+        long minutes = seconds / 60;
+        if (minutes < 60) return minutes + " 分 " + (seconds % 60) + " 秒";
+        return (minutes / 60) + " 小时 " + (minutes % 60) + " 分";
     }
 
     private String[] categoryOptions() {
