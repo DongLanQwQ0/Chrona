@@ -37,6 +37,30 @@ public final class StreamingOutputStore {
             android.util.Log.w("Chrona", "Could not remove model output for task " + taskId);
     }
 
+    /**
+     * Removes preview files whose input no longer exists. A process killed mid-parse can leave one
+     * behind, because the delete that normally accompanies a removal never ran.
+     *
+     * @return how many files were removed
+     */
+    public int deleteUnreferenced(java.util.Set<Long> liveTaskIds) {
+        File[] files = directory.listFiles();
+        if (files == null) return 0;
+        int removed = 0;
+        for (File file : files) {
+            String name = file.getName();
+            if (!name.startsWith("task-") || !name.endsWith(".txt")) continue;
+            long id;
+            try {
+                id = Long.parseLong(name.substring("task-".length(), name.length() - 4));
+            } catch (NumberFormatException exception) {
+                continue;
+            }
+            if (!liveTaskIds.contains(id) && file.delete()) removed++;
+        }
+        return removed;
+    }
+
     public long length(long taskId) { return file(taskId).length(); }
 
     public String tail(long taskId) throws IOException {
@@ -71,19 +95,31 @@ public final class StreamingOutputStore {
     }
 
     public static final class Writer implements Closeable {
+        /** Appended once the preview hits its cap, so a reader can tell why it stops. */
+        private static final String TRUNCATION_NOTE = "\n…（输出过长，预览已截断；本次解析不受影响）\n";
         private final BufferedOutputStream output;
         private int written;
         private int pending;
+        private boolean truncated;
         private long lastFlush = System.currentTimeMillis();
 
         private Writer(File file) throws IOException {
             output = new BufferedOutputStream(new FileOutputStream(file, false), 8192);
         }
 
+        /**
+         * Appends one streamed chunk. The cap applies to the preview only: a very long answer is
+         * still assembled and parsed in full, it just stops growing the file the reader pages.
+         */
         public void append(String chunk) throws IOException {
+            if (truncated) return;
             byte[] bytes = chunk.getBytes(StandardCharsets.UTF_8);
-            if (written + bytes.length > MAX_BYTES)
-                throw new IOException("AI output exceeds preview size limit");
+            if (written + bytes.length > MAX_BYTES) {
+                truncated = true;
+                output.write(TRUNCATION_NOTE.getBytes(StandardCharsets.UTF_8));
+                output.flush();
+                return;
+            }
             output.write(bytes);
             written += bytes.length;
             pending += bytes.length;

@@ -33,6 +33,7 @@ import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
+import com.donglan.chrona.processing.StreamingOutputStore;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -391,12 +392,16 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** Best-effort cleanup of attachments left behind by a killed process. */
+    /** Best-effort cleanup of attachments and streamed output left behind by a killed process. */
     private void sweepImages() {
         new Thread(() -> {
             try (TaskStore store = new TaskStore(this)) {
                 int removed = new ImageStore(this).deleteUnreferenced(store.listImageNames());
                 if (removed > 0) DiagLog.add(this, "swept orphan images=" + removed);
+                java.util.Set<Long> live = new java.util.HashSet<>();
+                for (TaskRecord task : store.listTasks()) live.add(task.id);
+                int previews = new StreamingOutputStore(this).deleteUnreferenced(live);
+                if (previews > 0) DiagLog.add(this, "swept orphan model output=" + previews);
             } catch (Exception ignored) {
                 // Storage cleanup must never block the inbox.
             }

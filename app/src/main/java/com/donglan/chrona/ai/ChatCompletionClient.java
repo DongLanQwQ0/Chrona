@@ -212,7 +212,10 @@ public final class ChatCompletionClient {
             }
             if ("[DONE]".equals(event.toString())) done = true;
         }
-        if (!done) throw new IOException("AI stream ended before completion");
+        // Some OpenAI-compatible servers close the stream without the [DONE] sentinel. A reported
+        // finish reason still proves the answer is complete; a connection cut mid-answer does not.
+        if (!done && finishReason == null)
+            throw new IOException("AI stream ended before completion");
         if (completion.length() == 0) throw new IOException("AI stream returned no content");
         JSONObject envelope = new JSONObject();
         try {
