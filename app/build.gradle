@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+def chronaDebugKeystore = providers.gradleProperty('chronaDebugKeystore').orNull
+if (chronaDebugKeystore == null || !file(chronaDebugKeystore).isFile()) {
+    throw new GradleException('Set chronaDebugKeystore to the existing Chrona debug keystore; a new key cannot upgrade the installed app.')
+}
+
 android {
     namespace 'com.donglan.chrona'
     compileSdk 36
@@ -12,6 +17,15 @@ android {
         targetSdk 36
         versionCode 11
         versionName '0.8.0'
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file(chronaDebugKeystore)
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
     }
 
     compileOptions {

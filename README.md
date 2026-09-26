@@ -37,6 +37,8 @@
 
 用户已审核并批准上述 Gradle 与 Android Gradle Plugin 工具链。后续若需要**新增或更换构建工具链**，先提交具体方案供用户审核。项目路径含中文，`gradle.properties` 中的 `android.overridePathCheck=true` 已在当前环境中通过构建。
 
+Debug 构建明确使用 `gradle.properties` 的 `chronaDebugKeystore=F:/Android/user-home/debug.keystore`。这份密钥对应旧版签名证书 SHA-256 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`；私钥不在仓库中。其他环境构建时须将该 Gradle 属性指向同一份密钥，否则构建会停止，避免静默生成无法覆盖安装的 APK。
+
 在 PowerShell 7 中构建：
 
 ```powershell
@@ -52,6 +54,7 @@ $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 ## 已验证
 
 - 2026-09-26：`0.8.0` 的 `assembleDebug` 与 `lintDebug` 通过；全天日期换算、链接正文实体替换的独立 JVM 检查和数据库 v1/v2/v3→v4 的 SQLite 迁移检查通过。新增历史筛选、全天编辑、界面及动画、预设与缓存统计**尚未真机回归**。
+- 2026-09-26：指定旧版 Debug 密钥重建 APK；`apksigner verify --print-certs` 确认 APK 证书 SHA-256 与交接文档记录的旧证书完全一致。覆盖安装仍待设备验证。
 
 - 2026-09-26：`assembleDebug` 构建成功。
 - Debug APK 已安装到一台实际 Android 手机，应用首页启动正常。
