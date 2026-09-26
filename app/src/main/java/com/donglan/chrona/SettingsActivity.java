@@ -17,6 +17,7 @@ public final class SettingsActivity extends Activity {
     private EditText baseUrl;
     private EditText model;
     private EditText apiKey;
+    private TextView imageState;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -40,6 +41,18 @@ public final class SettingsActivity extends Activity {
         save.setText("保存设置");
         save.setOnClickListener(view -> save());
         root.addView(save);
+        imageState = new TextView(this);
+        imageState.setTextSize(14);
+        imageState.setPadding(0, dp(16), 0, dp(6));
+        root.addView(imageState);
+        Button allowImages = new Button(this);
+        allowImages.setText("重新允许图片输入");
+        allowImages.setOnClickListener(view -> {
+            new AiSettingsStore(this).clearImageSupport();
+            refreshImageState();
+            Toast.makeText(this, "图片输入已重新启用", Toast.LENGTH_SHORT).show();
+        });
+        root.addView(allowImages);
         setContentView(root);
         try {
             AiSettings existing = new AiSettingsStore(this).load();
@@ -49,6 +62,25 @@ public final class SettingsActivity extends Activity {
             }
         } catch (Exception exception) {
             Toast.makeText(this, "无法读取现有设置，请重新填写密钥", Toast.LENGTH_LONG).show();
+        }
+        refreshImageState();
+    }
+
+    /** Shows whether this endpoint and model were already found to reject images. */
+    private void refreshImageState() {
+        try {
+            AiSettingsStore store = new AiSettingsStore(this);
+            AiSettings settings = store.load();
+            if (settings == null) {
+                imageState.setText("尚未配置服务，无法判断是否支持图片。");
+            } else if (store.isImageUnsupported(settings)) {
+                imageState.setText("该模型上次拒绝了图片输入，收件箱的图片入口已停用。"
+                        + "确认模型支持视觉后可重新启用。");
+            } else {
+                imageState.setText("当前模型未发现图片输入问题。");
+            }
+        } catch (Exception exception) {
+            imageState.setText("无法读取现有设置：" + exception.getMessage());
         }
     }
 

@@ -14,7 +14,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /** Synchronous network client. Call parse from a worker thread, never the UI thread. */
 public final class ChatCompletionClient {
@@ -42,20 +44,28 @@ public final class ChatCompletionClient {
     }
 
     /** Parses one submitted input and returns all proposed entries plus reported token usage. */
-    public ParseResult parse(long taskId, String rawText, long nowMillis, String timeZoneId)
-            throws IOException {
-        if (rawText == null || rawText.trim().isEmpty()
-                || timeZoneId == null || timeZoneId.trim().isEmpty()) {
-            throw new IllegalArgumentException("Input and timezone are required");
+    public ParseResult parse(long taskId, String rawText, byte[] imageJpeg, long nowMillis,
+            String timeZoneId) throws IOException {
+        boolean hasText = rawText != null && !rawText.trim().isEmpty();
+        if ((!hasText && imageJpeg == null) || timeZoneId == null || timeZoneId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Text or image, and a timezone, are required");
         }
         JSONObject body = new JSONObject();
         try {
             body.put("model", settings.model);
             JSONArray messages = new JSONArray();
             messages.put(new JSONObject().put("role", "system").put("content", SYSTEM_PROMPT));
-            messages.put(new JSONObject().put("role", "user").put("content",
+            JSONArray content = new JSONArray();
+            content.put(new JSONObject().put("type", "text").put("text",
                     "Current Unix time in milliseconds: " + nowMillis + "\nTimezone: "
-                            + timeZoneId + "\nInput:\n" + rawText));
+                            + timeZoneId + "\nInput:\n"
+                            + (hasText ? rawText : "(见随附图片)")));
+            if (imageJpeg != null) {
+                content.put(new JSONObject().put("type", "image_url").put("image_url",
+                        new JSONObject().put("url", "data:image/jpeg;base64,"
+                                + Base64.getEncoder().encodeToString(imageJpeg))));
+            }
+            messages.put(new JSONObject().put("role", "user").put("content", content));
             body.put("messages", messages);
             body.put("stream", false);
         } catch (JSONException e) {
@@ -81,7 +91,7 @@ public final class ChatCompletionClient {
                     ? connection.getInputStream() : connection.getErrorStream();
             String response = stream == null ? "" : readLimited(stream);
             if (status < 200 || status >= 300) {
-                throw new IOException("AI request failed (HTTP " + status + "): "
+                throw new RequestException(status, "AI request failed (HTTP " + status + "): "
                         + errorMessage(response));
             }
             return parseResponse(taskId, response);
@@ -202,6 +212,30 @@ public final class ChatCompletionClient {
                 text.append(buffer, 0, count);
             }
             return text.toString();
+        }
+    }
+
+    /** A non-2xx Chat Completions response, with enough detail to classify the failure. */
+    public static final class RequestException extends IOException {
+        private static final Pattern IMAGE_HINT = Pattern.compile(
+                "image|vision|multimodal|modalit|content|base64", Pattern.CASE_INSENSITIVE);
+
+        public final int statusCode;
+
+        RequestException(int statusCode, String message) {
+            super(message);
+            this.statusCode = statusCode;
+        }
+
+        /**
+         * Heuristic: the endpoint rejected an image-bearing request because of the image.
+         * 415 and 422 are always treated that way; a 400 only when the provider says so, so an
+         * unrelated bad request never disables the image entry.
+         */
+        public boolean rejectsImage() {
+            if (statusCode == 415 || statusCode == 422) return true;
+            return statusCode == 400
+                    && IMAGE_HINT.matcher(String.valueOf(getMessage())).find();
         }
     }
 }

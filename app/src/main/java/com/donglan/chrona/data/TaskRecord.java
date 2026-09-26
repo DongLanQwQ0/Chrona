@@ -10,6 +10,8 @@ public final class TaskRecord {
 
     public final long id;
     public final String rawText;
+    /** Relative name of an attached image in app storage, or null. */
+    public final String imagePath;
     public final String source;
     public final long createdAtMillis;
     public final String status;
@@ -20,14 +22,15 @@ public final class TaskRecord {
 
     public TaskRecord(long id, String rawText, String source, long createdAtMillis,
             String status, String errorMessage) {
-        this(id, rawText, source, createdAtMillis, status, errorMessage, null, null, null);
+        this(id, rawText, null, source, createdAtMillis, status, errorMessage, null, null, null);
     }
 
-    public TaskRecord(long id, String rawText, String source, long createdAtMillis,
+    public TaskRecord(long id, String rawText, String imagePath, String source, long createdAtMillis,
             String status, String errorMessage, Integer promptTokens,
             Integer completionTokens, Integer totalTokens) {
         this.id = id;
         this.rawText = rawText;
+        this.imagePath = imagePath;
         this.source = source;
         this.createdAtMillis = createdAtMillis;
         this.status = status;

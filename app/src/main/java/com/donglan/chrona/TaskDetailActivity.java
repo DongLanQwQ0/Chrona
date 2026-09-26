@@ -5,10 +5,12 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -19,6 +21,7 @@ import com.donglan.chrona.calendar.CalendarStore;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
 
 import java.time.LocalDateTime;
@@ -65,9 +68,17 @@ public final class TaskDetailActivity extends Activity {
                 return;
             }
             label("任务详情", 24);
-            label(task.rawText, 16);
+            label(task.rawText.isEmpty() ? "（仅图片，无文字）" : task.rawText, 16);
             label("状态：" + task.status + (task.errorMessage == null ? "" : "\n" + task.errorMessage), 14);
             if (task.totalTokens != null) label("本次解析 token：" + task.totalTokens, 14);
+            if (task.imagePath != null) {
+                ImageView preview = new ImageView(this);
+                preview.setAdjustViewBounds(true);
+                preview.setMaxHeight(dp(220));
+                preview.setImageURI(Uri.fromFile(new ImageStore(this).fileFor(task.imagePath)));
+                content.addView(preview);
+                button("移除图片", () -> removeImage());
+            }
             List<EventCandidate> candidates = store.getCandidates(taskId);
             int publishedCount = countPublished(candidates);
             Button retry = button("重新解析", () -> retry());
@@ -112,7 +123,9 @@ public final class TaskDetailActivity extends Activity {
                     calendar.deleteEvent(candidate.calendarEventId);
                 }
             }
+            String imagePath = store.clearImage(taskId);
             if (!store.deleteTask(taskId)) throw new IllegalStateException("任务不存在或已删除");
+            if (imagePath != null) new ImageStore(this).delete(imagePath);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.cancel((int) taskId);
             runOnUiThread(() -> {
@@ -125,6 +138,17 @@ public final class TaskDetailActivity extends Activity {
                 render();
                 showError(exception);
             });
+        }
+    }
+
+    /** Drops the attachment so a text-only retry stays possible when images are rejected. */
+    private void removeImage() {
+        try (TaskStore store = new TaskStore(this)) {
+            String imagePath = store.clearImage(taskId);
+            if (imagePath != null) new ImageStore(this).delete(imagePath);
+            render();
+        } catch (Exception exception) {
+            showError(exception);
         }
     }
 
@@ -248,6 +272,12 @@ public final class TaskDetailActivity extends Activity {
 
     private void retry() {
         try (TaskStore store = new TaskStore(this)) {
+            TaskRecord task = store.getTask(taskId);
+            if (task == null) throw new IllegalStateException("任务不存在或已删除");
+            if (task.rawText.trim().isEmpty() && task.imagePath == null) {
+                Toast.makeText(this, "没有可解析的内容，请补充文字或图片", Toast.LENGTH_LONG).show();
+                return;
+            }
             for (EventCandidate candidate : store.getCandidates(taskId)) {
                 if (candidate.calendarEventId != null) {
                     throw new IllegalStateException("已有日程写入日历，请直接编辑已有日程");

@@ -6,14 +6,15 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
+import com.donglan.chrona.image.ImageStore;
+
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
 public final class TaskStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 1;
+    private static final int DATABASE_VERSION = 2;
 
     public TaskStore(Context context) {
         super(context.getApplicationContext(), DATABASE_NAME, null, DATABASE_VERSION);
@@ -30,6 +31,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE tasks ("
                 + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 + "raw_text TEXT NOT NULL, "
+                + "image_path TEXT, "
                 + "source TEXT NOT NULL, "
                 + "created_at_millis INTEGER NOT NULL, "
                 + "status TEXT NOT NULL CHECK(status IN "
@@ -57,14 +59,34 @@ public final class TaskStore extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX candidates_by_task ON event_candidates(task_id, position)");
     }
 
+    /**
+     * Applies migrations in order. Version 1 is already on devices, so every later change must
+     * add a step here instead of editing the older statements; existing rows must be preserved.
+     */
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        throw new IllegalStateException("No migration defined from database version " + oldVersion);
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE tasks ADD COLUMN image_path TEXT");
+        }
     }
 
-    /** Saves an input in queued state and returns its database ID. */
-    public long insertTask(String rawText, String source, long createdAtMillis) {
-        return insertTasks(Collections.singletonList(rawText), source, createdAtMillis).get(0);
+    /** Saves one input in queued state and returns its database ID. */
+    public long insertTask(String rawText, String imagePath, String source, long createdAtMillis) {
+        boolean hasText = rawText != null && !rawText.trim().isEmpty();
+        if (imagePath != null && !ImageStore.isStoredName(imagePath)) {
+            throw new IllegalArgumentException("Unknown attached image");
+        }
+        if (!hasText && imagePath == null) {
+            throw new IllegalArgumentException("An input needs text or an attached image");
+        }
+        requireNonEmpty(source, "source");
+        ContentValues values = new ContentValues();
+        values.put("raw_text", hasText ? rawText : "");
+        values.put("image_path", imagePath);
+        values.put("source", source);
+        values.put("created_at_millis", createdAtMillis);
+        values.put("status", TaskRecord.QUEUED);
+        return getWritableDatabase().insertOrThrow("tasks", null, values);
     }
 
     /**
@@ -130,6 +152,29 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (taskId <= 0) throw new IllegalArgumentException("taskId must be positive");
         return getWritableDatabase().delete("event_candidates", "id = ? AND task_id = ?",
                 new String[] { Long.toString(candidateId), Long.toString(taskId) }) > 0;
+    }
+
+    /** Drops the image reference of an input and returns the name that was attached, or null. */
+    public String clearImage(long taskId) {
+        TaskRecord task = getTask(taskId);
+        if (task == null || task.imagePath == null) return null;
+        ContentValues values = new ContentValues();
+        values.putNull("image_path");
+        getWritableDatabase().update("tasks", values, "id = ?",
+                new String[] { Long.toString(taskId) });
+        return task.imagePath;
+    }
+
+    /** Every image name still referenced by an input; used to collect orphaned files. */
+    public List<String> listImageNames() {
+        List<String> names = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("tasks", new String[] { "image_path" },
+                "image_path IS NOT NULL", null, null, null, null)) {
+            while (cursor.moveToNext()) {
+                names.add(cursor.getString(0));
+            }
+        }
+        return names;
     }
 
     /** Returns false when the task does not exist. A null error clears the previous error. */
@@ -251,6 +296,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         int totalIndex = cursor.getColumnIndexOrThrow("total_tokens");
         return new TaskRecord(cursor.getLong(cursor.getColumnIndexOrThrow("id")),
                 cursor.getString(cursor.getColumnIndexOrThrow("raw_text")),
+                cursor.getString(cursor.getColumnIndexOrThrow("image_path")),
                 cursor.getString(cursor.getColumnIndexOrThrow("source")),
                 cursor.getLong(cursor.getColumnIndexOrThrow("created_at_millis")),
                 cursor.getString(cursor.getColumnIndexOrThrow("status")),

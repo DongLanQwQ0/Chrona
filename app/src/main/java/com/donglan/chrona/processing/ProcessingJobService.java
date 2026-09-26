@@ -23,7 +23,9 @@ import com.donglan.chrona.ai.ChatCompletionClient;
 import com.donglan.chrona.ai.ParseResult;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.image.ImageStore;
 
+import java.io.IOException;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -80,18 +82,31 @@ public final class ProcessingJobService extends JobService {
     }
 
     private void process(JobParameters params, long taskId) {
+        AiSettings settings = null;
+        boolean sentImage = false;
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
             if (task == null) return;
-            AiSettings settings = new AiSettingsStore(this).load();
+            settings = new AiSettingsStore(this).load();
             if (settings == null) {
                 store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, "请先配置 AI 服务");
                 notifyResult(taskId, "请配置 AI 服务后重试");
                 return;
             }
+            byte[] image = null;
+            if (task.imagePath != null) {
+                try {
+                    image = new ImageStore(this).read(task.imagePath);
+                } catch (IOException exception) {
+                    store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, "图片不可用，请移除图片后重试");
+                    notifyResult(taskId, "图片不可用，点按查看详情");
+                    return;
+                }
+            }
+            sentImage = image != null;
             store.updateStatus(taskId, TaskRecord.PROCESSING, null);
             ParseResult result = new ChatCompletionClient(settings).parse(taskId, task.rawText,
-                    System.currentTimeMillis(), TimeZone.getDefault().getID());
+                    image, System.currentTimeMillis(), TimeZone.getDefault().getID());
             if (Thread.currentThread().isInterrupted()) return;
             store.replaceCandidates(taskId, result.candidates);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
@@ -99,18 +114,36 @@ public final class ProcessingJobService extends JobService {
             store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW,
                     result.candidates.isEmpty() ? "未识别到日程，请检查原文或重试" : null);
             notifyResult(taskId, result.candidates.isEmpty() ? "未识别到日程" : "日程草稿待确认");
+        } catch (ChatCompletionClient.RequestException exception) {
+            if (!Thread.currentThread().isInterrupted()) {
+                if (sentImage && settings != null && exception.rejectsImage()) {
+                    // The provider refused the image itself, so stop offering images for this model.
+                    new AiSettingsStore(this).markImageUnsupported(settings);
+                    recordFailure(taskId, "该模型不支持图片输入，可在设置中重新启用："
+                            + message(exception));
+                } else {
+                    recordFailure(taskId, message(exception));
+                }
+            }
         } catch (Exception exception) {
             if (!Thread.currentThread().isInterrupted()) {
-                try (TaskStore store = new TaskStore(this)) {
-                    store.updateStatus(taskId, TaskRecord.FAILED,
-                            exception.getMessage() == null ? "处理失败" : exception.getMessage());
-                }
-                notifyResult(taskId, "处理失败，点按查看详情");
+                recordFailure(taskId, message(exception));
             }
         } finally {
             workers.remove(params.getJobId());
             if (!Thread.currentThread().isInterrupted()) jobFinished(params, false);
         }
+    }
+
+    private void recordFailure(long taskId, String message) {
+        try (TaskStore store = new TaskStore(this)) {
+            store.updateStatus(taskId, TaskRecord.FAILED, message);
+        }
+        notifyResult(taskId, "处理失败，点按查看详情");
+    }
+
+    private static String message(Exception exception) {
+        return exception.getMessage() == null ? "处理失败" : exception.getMessage();
     }
 
     private void notifyResult(long taskId, String text) {

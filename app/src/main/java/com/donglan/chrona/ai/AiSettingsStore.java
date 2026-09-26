@@ -24,6 +24,7 @@ public final class AiSettingsStore {
     private static final String MODEL = "model";
     private static final String ENCRYPTED_KEY = "encrypted_api_key";
     private static final String KEY_IV = "api_key_iv";
+    private static final String IMAGE_REJECTED_FOR = "image_rejected_for";
 
     private final SharedPreferences preferences;
 
@@ -76,6 +77,30 @@ public final class AiSettingsStore {
         if (!preferences.edit().clear().commit()) {
             throw new IllegalStateException("Could not clear AI settings");
         }
+    }
+
+    /**
+     * True when this exact endpoint and model rejected a request that carried an image, so the
+     * image entry stays disabled until the model changes or the user clears the flag.
+     */
+    public boolean isImageUnsupported(AiSettings settings) {
+        return settings != null
+                && identity(settings).equals(preferences.getString(IMAGE_REJECTED_FOR, null));
+    }
+
+    /** Remembers that this endpoint and model cannot take images. */
+    public void markImageUnsupported(AiSettings settings) {
+        if (settings == null) throw new IllegalArgumentException("settings are required");
+        preferences.edit().putString(IMAGE_REJECTED_FOR, identity(settings)).apply();
+    }
+
+    /** Clears the learned rejection so the next request tries the image again. */
+    public void clearImageSupport() {
+        preferences.edit().remove(IMAGE_REJECTED_FOR).apply();
+    }
+
+    private static String identity(AiSettings settings) {
+        return settings.baseUrl + "\n" + settings.model;
     }
 
     private static SecretKey getExistingKey() throws GeneralSecurityException {
