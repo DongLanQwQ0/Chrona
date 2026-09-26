@@ -11,6 +11,8 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
@@ -34,16 +36,19 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 /** Quick inbox for text and Android's share sheet. */
 public final class MainActivity extends Activity {
     /** Guards against a pasted block turning into hundreds of paid parsing requests. */
     private static final int MAX_BATCH_TASKS = 20;
     private static final int PICK_IMAGE_REQUEST = 12;
+    private static final int VOICE_REQUEST = 13;
     private static final String STATE_PENDING_IMAGE = "pending_image";
 
     private EditText input;
     private CheckBox splitInput;
+    private Button voiceInput;
     private Button pickImage;
     private ImageView attachment;
     private Button removeImage;
@@ -80,6 +85,11 @@ public final class MainActivity extends Activity {
         paste.setText("读取剪贴板");
         paste.setOnClickListener(view -> pasteClipboard());
         root.addView(paste);
+
+        voiceInput = new Button(this);
+        voiceInput.setText("语音输入");
+        voiceInput.setOnClickListener(view -> startVoiceInput());
+        root.addView(voiceInput);
 
         pickImage = new Button(this);
         pickImage.setText("选择图片");
@@ -153,6 +163,7 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshImageEntry();
+        refreshVoiceEntry();
         refreshTasks();
     }
 
@@ -172,6 +183,16 @@ public final class MainActivity extends Activity {
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null
                 && data.getData() != null) {
             attachImage(data.getData());
+            return;
+        }
+        if (requestCode == VOICE_REQUEST && resultCode == RESULT_OK && data != null) {
+            ArrayList<String> results = data.getStringArrayListExtra(
+                    RecognizerIntent.EXTRA_RESULTS);
+            if (results == null || results.isEmpty()) {
+                Toast.makeText(this, "没有识别到内容", Toast.LENGTH_SHORT).show();
+            } else {
+                appendText(results.get(0));
+            }
         }
     }
 
@@ -352,14 +373,41 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "剪贴板没有可用文字", Toast.LENGTH_SHORT).show();
             return;
         }
+        appendText(pasted);
+        Toast.makeText(this, "已从剪贴板追加文字", Toast.LENGTH_SHORT).show();
+    }
+
+    /** Speaks one input through the system recognizer and appends whatever it returns. */
+    private void startVoiceInput() {
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                .putExtra(RecognizerIntent.EXTRA_PROMPT, "说出一件事，最好带上时间和地点");
+        try {
+            startActivityForResult(intent, VOICE_REQUEST);
+        } catch (ActivityNotFoundException exception) {
+            Toast.makeText(this, "没有可用的语音识别服务", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Voice capture is a system capability; with no recognizer installed the entry is hidden. */
+    private void refreshVoiceEntry() {
+        voiceInput.setVisibility(SpeechRecognizer.isRecognitionAvailable(this)
+                ? View.VISIBLE : View.GONE);
+    }
+
+    /** Appends pasted or recognized text so several snippets can be collected before one submit. */
+    private void appendText(String addition) {
+        String trimmed = addition == null ? "" : addition.trim();
+        if (trimmed.isEmpty()) return;
         String current = input.getText().toString();
         if (current.trim().isEmpty()) {
-            input.setText(pasted);
+            input.setText(trimmed);
         } else {
-            input.setText((current.endsWith("\n") ? current : current + "\n") + pasted);
+            input.setText((current.endsWith("\n") ? current : current + "\n") + trimmed);
         }
         input.setSelection(input.getText().length());
-        Toast.makeText(this, "已从剪贴板追加文字", Toast.LENGTH_SHORT).show();
     }
 
     /** One entry per non-empty line; the caller decides when splitting is wanted. */
