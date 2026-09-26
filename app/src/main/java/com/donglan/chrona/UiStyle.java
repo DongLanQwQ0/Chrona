@@ -228,7 +228,7 @@ public final class UiStyle {
                 .setDuration(240).start();
     }
 
-    static void pop(View view) {
+    public static void pop(View view) {
         if (!ValueAnimator.areAnimatorsEnabled()) return;
         view.setScaleX(0.94f);
         view.setScaleY(0.94f);
