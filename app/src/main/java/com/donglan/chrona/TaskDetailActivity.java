@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -14,6 +15,7 @@ import android.widget.Button;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -65,9 +67,15 @@ public final class TaskDetailActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(30), dp(20), dp(24));
         UiStyle.page(this, content);
+        content.setBackgroundColor(Color.TRANSPARENT);
         scroll.addView(content);
         UiStyle.back(this, content);
-        setContentView(scroll);
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
+        stage.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        content.setFitsSystemWindows(false);
+        UiStyle.applyInsets(stage, scroll);
+        setContentView(stage);
     }
 
     @Override
@@ -250,7 +258,7 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(14), dp(14), dp(14));
-        UiStyle.card(card);
+        UiStyle.glass(card);
         UiStyle.addSpaced(content, card, 12, 6);
         UiStyle.enter(card, number - 1);
         label(card, "日程 " + number + (candidate.calendarEventId == null ? " · 待写入" : " · 已写入日历"), 19);

@@ -8,6 +8,7 @@ import android.content.ClipDescription;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,6 +19,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -67,6 +69,7 @@ public final class MainActivity extends Activity {
         root.setPadding(dp(20), dp(28), dp(20), dp(12));
         root.setFitsSystemWindows(true);
         UiStyle.page(this, root);
+        root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
         UiStyle.back(this, root);
 
@@ -88,6 +91,7 @@ public final class MainActivity extends Activity {
         input.setGravity(android.view.Gravity.TOP);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         UiStyle.input(input);
+        UiStyle.glass(input);
         UiStyle.addSpaced(root, input, 0, 12);
 
         TextView toolsTitle = new TextView(this);
@@ -146,7 +150,12 @@ public final class MainActivity extends Activity {
         footnote.setText("保存后可在「收件箱」查看处理进度，在「日程」查看已识别的事项。");
         UiStyle.muted(footnote);
         UiStyle.addSpaced(root, footnote, 12, 8);
-        setContentView(page);
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
+        stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        root.setFitsSystemWindows(false);
+        UiStyle.applyInsets(stage, page);
+        setContentView(stage);
         if (savedInstanceState != null) {
             pendingImage = savedInstanceState.getString(STATE_PENDING_IMAGE);
             input.setText(savedInstanceState.getString(STATE_TEXT, ""));

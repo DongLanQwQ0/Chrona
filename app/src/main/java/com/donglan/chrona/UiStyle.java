@@ -11,10 +11,13 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -121,6 +124,26 @@ final class UiStyle {
         view.setElevation(dp(view, 2));
     }
 
+    /** Translucent surface over the softly colored backdrop; text stays opaque. */
+    static void glass(View view) {
+        Palette colors = colors(view.getContext());
+        boolean dark = ThemeStore.dark(view.getContext());
+        GradientDrawable sheet = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{alpha(colors.surface, dark ? 226 : 238),
+                        alpha(colors.surfaceAlt, dark ? 180 : 205)});
+        sheet.setCornerRadius(dp(view, 28));
+        sheet.setStroke(dp(view, 1), alpha(dark ? colors.outline : Color.WHITE,
+                dark ? 210 : 225));
+        view.setBackground(sheet);
+        view.setElevation(dp(view, 8));
+    }
+
+    static void pressable(View view) {
+        view.setForeground(new RippleDrawable(ColorStateList.valueOf(
+                alpha(colors(view.getContext()).primary, 32)), null,
+                shape(view, Color.WHITE, 22, Color.TRANSPARENT)));
+    }
+
     static void pill(View view, boolean selected) {
         Palette colors = colors(view.getContext());
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22006B60),
@@ -134,6 +157,13 @@ final class UiStyle {
         view.setTranslationY(dp(view, 12));
         view.animate().alpha(1f).translationY(0f).setStartDelay(Math.min(index, 6) * 35L)
                 .setDuration(240).start();
+    }
+
+    static void pop(View view) {
+        if (!ValueAnimator.areAnimatorsEnabled()) return;
+        view.setScaleX(0.94f);
+        view.setScaleY(0.94f);
+        view.animate().scaleX(1f).scaleY(1f).setDuration(230).start();
     }
 
     static ObjectAnimator pulse(View view) {
@@ -165,12 +195,49 @@ final class UiStyle {
         addSpaced(parent, back, 0, 8);
     }
 
+    /** Keep controls clear of Android 15+ system bars while the backdrop draws behind them. */
+    static void applyInsets(View stage, View safeContent) {
+        applyInsets(stage, safeContent, null);
+    }
+
+    static void applyInsets(View stage, View safeContent, View floating) {
+        if (Build.VERSION.SDK_INT < 35) return;
+        safeContent.setFitsSystemWindows(false);
+        int left = safeContent.getPaddingLeft();
+        int top = safeContent.getPaddingTop();
+        int right = safeContent.getPaddingRight();
+        int bottom = safeContent.getPaddingBottom();
+        int floatBottom = floating == null ? 0
+                : ((FrameLayout.LayoutParams) floating.getLayoutParams()).bottomMargin;
+        stage.setOnApplyWindowInsetsListener((view, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            int keyboard = insets.getInsets(WindowInsets.Type.ime()).bottom;
+            int safeBottom = Math.max(bars.bottom, keyboard);
+            safeContent.setPadding(left + bars.left, top + bars.top,
+                    right + bars.right, bottom + safeBottom);
+            if (floating != null) {
+                FrameLayout.LayoutParams params =
+                        (FrameLayout.LayoutParams) floating.getLayoutParams();
+                params.bottomMargin = floatBottom + bars.bottom;
+                params.rightMargin = Math.max(params.rightMargin, bars.right);
+                floating.setLayoutParams(params);
+            }
+            return insets;
+        });
+        stage.requestApplyInsets();
+    }
+
     private static GradientDrawable shape(View view, int fill, int radius, int stroke) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(fill);
         drawable.setCornerRadius(dp(view, radius));
         drawable.setStroke(dp(view, 1), stroke);
         return drawable;
+    }
+
+    private static int alpha(int color, int value) {
+        return Color.argb(value, Color.red(color), Color.green(color), Color.blue(color));
     }
     private static AnimatorSet scale(View view, float value, long duration) {
         AnimatorSet pair = new AnimatorSet();

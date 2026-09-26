@@ -1,10 +1,12 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
+import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -18,6 +20,7 @@ public final class AppearanceActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(24), dp(20), dp(28));
         UiStyle.page(this, root);
+        root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
         UiStyle.back(this, root);
 
@@ -49,7 +52,12 @@ public final class AppearanceActivity extends Activity {
                 () -> selectColor(ThemeStore.BLUE));
         option(root, "暖珊瑚", "柔和温暖", ThemeStore.CORAL.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.CORAL));
-        setContentView(page);
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
+        stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        root.setFitsSystemWindows(false);
+        UiStyle.applyInsets(stage, page);
+        setContentView(stage);
         UiStyle.enter(root, 0);
     }
 
@@ -71,7 +79,8 @@ public final class AppearanceActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(15), dp(18), dp(15));
-        UiStyle.pill(card, selected);
+        if (selected) UiStyle.pill(card, true); else UiStyle.glass(card);
+        UiStyle.pressable(card);
         LinearLayout headline = new LinearLayout(this);
         headline.setOrientation(LinearLayout.HORIZONTAL);
         headline.setGravity(android.view.Gravity.CENTER_VERTICAL);

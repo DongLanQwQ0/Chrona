@@ -3,8 +3,9 @@ package com.donglan.chrona;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.graphics.Color;
 import android.os.Bundle;
-import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -24,6 +25,7 @@ public final class SettingsHubActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(24), dp(20), dp(24));
         UiStyle.page(this, root);
+        root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
         UiStyle.back(this, root);
 
@@ -48,7 +50,12 @@ public final class SettingsHubActivity extends Activity {
         version.setText("拾时 · Chrona  " + versionName());
         UiStyle.muted(version);
         UiStyle.addSpaced(root, version, 24, 0);
-        setContentView(page);
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
+        stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        root.setFitsSystemWindows(false);
+        UiStyle.applyInsets(stage, page);
+        setContentView(stage);
         UiStyle.enter(root, 0);
     }
 
@@ -68,7 +75,8 @@ public final class SettingsHubActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(16), dp(18), dp(16));
-        UiStyle.card(card);
+        UiStyle.glass(card);
+        UiStyle.pressable(card);
         TextView heading = new TextView(this);
         heading.setText(title + "   →");
         heading.setTextSize(18);

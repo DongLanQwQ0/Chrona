@@ -1,10 +1,12 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.text.InputType;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.ArrayAdapter;
@@ -34,31 +36,36 @@ public final class SettingsActivity extends Activity {
         root.setPadding(dp(20), dp(30), dp(20), dp(20));
         root.setFitsSystemWindows(true);
         UiStyle.page(this, root);
+        root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
         UiStyle.back(this, root);
         TextView title = new TextView(this);
         title.setText("AI 服务设置");
-        title.setTextSize(24);
+        title.setTextSize(28);
         UiStyle.title(title);
         root.addView(title);
         TextView help = new TextView(this);
-        help.setText("填写兼容 OpenAI Chat Completions 的 HTTPS 地址，例如 https://example.com/v1。密钥保存在本机加密存储中。留空密钥可保留已有密钥。");
+        help.setText("配置解析服务。密钥保存在本机加密存储中，留空可保留已有密钥。");
         help.setPadding(0, dp(12), 0, dp(12));
         UiStyle.muted(help);
         root.addView(help);
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(16), dp(16), dp(16), dp(16));
+        UiStyle.glass(form);
         TextView presetTitle = new TextView(this);
         presetTitle.setText("常用模型预设（选择后仍可编辑）");
         presetTitle.setTextSize(15);
         UiStyle.muted(presetTitle);
-        root.addView(presetTitle);
+        form.addView(presetTitle);
         Spinner preset = new Spinner(this);
         preset.setAdapter(new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_dropdown_item,
                 new String[]{"自定义服务", "DeepSeek Flash", "DeepSeek Pro"}));
         UiStyle.card(preset);
-        UiStyle.addSpaced(root, preset, 5, 10);
-        baseUrl = field(root, "API 基础地址（含 /v1）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        model = field(root, "模型名称", InputType.TYPE_CLASS_TEXT);
+        UiStyle.addSpaced(form, preset, 5, 10);
+        baseUrl = field(form, "API 基础地址（含 /v1）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        model = field(form, "模型名称", InputType.TYPE_CLASS_TEXT);
         preset.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent,
                     android.view.View view, int position, long id) {
@@ -68,17 +75,28 @@ public final class SettingsActivity extends Activity {
             }
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
-        apiKey = field(root, "API 密钥（留空表示不更改）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        apiKey = field(form, "API 密钥（留空表示不更改）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         Button save = new Button(this);
         save.setText("保存设置");
         save.setOnClickListener(view -> save());
         UiStyle.button(save, true);
-        UiStyle.addSpaced(root, save, 12, 8);
+        UiStyle.addSpaced(form, save, 12, 4);
+        UiStyle.addSpaced(root, form, 8, 18);
+
+        LinearLayout imageCard = new LinearLayout(this);
+        imageCard.setOrientation(LinearLayout.VERTICAL);
+        imageCard.setPadding(dp(16), dp(13), dp(16), dp(13));
+        UiStyle.glass(imageCard);
+        TextView imageTitle = new TextView(this);
+        imageTitle.setText("图片支持");
+        imageTitle.setTextSize(18);
+        UiStyle.title(imageTitle);
+        imageCard.addView(imageTitle);
         imageState = new TextView(this);
         imageState.setTextSize(14);
-        imageState.setPadding(0, dp(16), 0, dp(6));
+        imageState.setPadding(0, dp(8), 0, dp(6));
         UiStyle.muted(imageState);
-        root.addView(imageState);
+        imageCard.addView(imageState);
         allowImages = new Button(this);
         allowImages.setText("重新允许图片输入");
         allowImages.setOnClickListener(view -> {
@@ -87,9 +105,16 @@ public final class SettingsActivity extends Activity {
             Toast.makeText(this, "图片输入已重新启用", Toast.LENGTH_SHORT).show();
         });
         UiStyle.button(allowImages, false);
-        UiStyle.addSpaced(root, allowImages, 5, 5);
-        setContentView(page);
-        UiStyle.enter(root, 0);
+        UiStyle.addSpaced(imageCard, allowImages, 5, 5);
+        UiStyle.addSpaced(root, imageCard, 0, 8);
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
+        stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        root.setFitsSystemWindows(false);
+        UiStyle.applyInsets(stage, page);
+        setContentView(stage);
+        UiStyle.enter(form, 0);
+        UiStyle.enter(imageCard, 1);
         try {
             AiSettings existing = new AiSettingsStore(this).load();
             if (existing != null) {
