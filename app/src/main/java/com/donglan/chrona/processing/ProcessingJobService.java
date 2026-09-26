@@ -28,7 +28,10 @@ import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.web.LinkFetcher;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -37,6 +40,12 @@ public final class ProcessingJobService extends JobService {
     private static final String EXTRA_TASK_ID = "task_id";
     private static final int JOB_ID_BASE = 10_000;
     private static final String CHANNEL_ID = "chrona_processing";
+    /** The same input must never be parsed by two workers at once. */
+    private static final Set<Long> IN_FLIGHT = Collections.synchronizedSet(new HashSet<>());
+    private static final int MAX_REQUEST_ATTEMPTS = 3;
+    private static final long RETRY_DELAY_MILLIS = 3_000L;
+    /** Keeps retries inside the job's runtime budget even when a request burns its whole timeout. */
+    private static final long RETRY_BUDGET_MILLIS = 240_000L;
     private final ConcurrentHashMap<Integer, Thread> workers = new ConcurrentHashMap<>();
 
     public static void enqueue(Context context, long taskId) {
@@ -87,6 +96,21 @@ public final class ProcessingJobService extends JobService {
     }
 
     private void process(JobParameters params, long taskId) {
+        if (!IN_FLIGHT.add(taskId)) {
+            // A second run would upload the image and pay for the request twice over.
+            DiagLog.add(this, "job skipped task=" + taskId + " (already being processed)");
+            workers.remove(params.getJobId());
+            jobFinished(params, false);
+            return;
+        }
+        try {
+            processOnce(params, taskId);
+        } finally {
+            IN_FLIGHT.remove(taskId);
+        }
+    }
+
+    private void processOnce(JobParameters params, long taskId) {
         AiSettings settings = null;
         boolean sentImage = false;
         DiagLog.add(this, "job start task=" + taskId);
@@ -127,8 +151,7 @@ public final class ProcessingJobService extends JobService {
                     + " readTimeout=" + (ChatCompletionClient.readTimeoutMillis(sentImage) / 1000)
                     + "s");
             long startedAt = System.currentTimeMillis();
-            ParseResult result = new ChatCompletionClient(settings).parse(taskId, task.rawText,
-                    image, linkText, System.currentTimeMillis(), TimeZone.getDefault().getID());
+            ParseResult result = requestWithRetries(settings, task, image, linkText, taskId);
             long elapsed = System.currentTimeMillis() - startedAt;
             if (Thread.currentThread().isInterrupted()) return;
             store.replaceCandidates(taskId, result.candidates);
@@ -177,6 +200,51 @@ public final class ProcessingJobService extends JobService {
                 + text.length() + " in " + (System.currentTimeMillis() - startedAt) + "ms");
         store.updateLinkFetch(task.id, text.isEmpty() ? null : text, System.currentTimeMillis());
         return text.isEmpty() ? null : text;
+    }
+
+    /**
+     * Sends the request, retrying failures a later attempt can plausibly fix. A phone on a shaky
+     * network otherwise fails on a dropped DNS lookup or an aborted connection and makes the user
+     * press retry by hand.
+     */
+    private ParseResult requestWithRetries(AiSettings settings, TaskRecord task, byte[] image,
+            String linkText, long taskId) throws IOException {
+        long startedAt = System.currentTimeMillis();
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return new ChatCompletionClient(settings).parse(taskId, task.rawText, image,
+                        linkText, System.currentTimeMillis(), TimeZone.getDefault().getID());
+            } catch (IOException exception) {
+                boolean giveUp = attempt >= MAX_REQUEST_ATTEMPTS
+                        || System.currentTimeMillis() - startedAt > RETRY_BUDGET_MILLIS
+                        || !isTransient(exception);
+                if (giveUp) throw exception;
+                DiagLog.add(this, "request attempt " + attempt + " failed task=" + taskId + " "
+                        + exception.getClass().getSimpleName() + ": " + message(exception)
+                        + " -> retry in " + (RETRY_DELAY_MILLIS / 1000) + "s");
+                if (!sleep(RETRY_DELAY_MILLIS)) throw exception;
+            }
+        }
+    }
+
+    /** True for failures worth another attempt; a server that answered 4xx will not change. */
+    private static boolean isTransient(IOException exception) {
+        if (exception instanceof ChatCompletionClient.RequestException) {
+            int status = ((ChatCompletionClient.RequestException) exception).statusCode;
+            return status == 429 || status >= 500;
+        }
+        return true;
+    }
+
+    /** Returns false when the worker was interrupted while waiting. */
+    private static boolean sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+            return true;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private void recordFailure(long taskId, String message) {

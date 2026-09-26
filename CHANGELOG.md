@@ -1,5 +1,17 @@
 # 更新记录
 
+## 0.6.1 — 2026-09-26
+
+真机诊断数据（一台 vivo V2527A / Android 16，`api.deepseek.com` + `deepseek-flash`）暴露了两个问题，均已修复：
+
+- **网络抖动导致必须手动重试**：日志显示同一时段内图片请求三次失败，分别是 `UnknownHostException: Unable to resolve host "api.deepseek.com"` 与 `SocketException: Software caused connection abort`，而纯文字请求 14.4 秒后成功——说明是手机网络/VPN 不稳，不是图片逻辑有问题。现在对可恢复的失败自动重试：最多 3 次、每次间隔 3 秒、总重试预算 240 秒。服务端明确答复的 4xx 不重试；429 与 5xx 视为可重试。重试预算同时保证整个 job 不会超出 `JobScheduler` 的运行时限。
+- **同一输入被并发解析**：日志里 `job start task=1` 在 6 秒内出现两次，前一次没有结局。重复运行意味着重复上传图片并重复计费。现在用进程内 in-flight 集合拦住重复运行（进程重启后集合清空，所以不会让任务卡死）。
+- 顺带确认：整个事件日志、诊断页读取数据库、`JobScheduler` 待处理任务这几项在真机上都正常工作。
+
+依据 [DeepSeek 图像理解文档](https://api-docs.deepseek.com/zh-cn/guides/vision/) 核对：`deepseek-flash` 确实支持图片，应用使用的 `content` 数组 + `image_url` base64 data URL 与官方示例一致；图片在服务端会被归一到约 1300×1300 等效像素、每张最多计 1024 token，因此当前 1568 px / JPEG 90（实测 212 KB）无需再缩小。
+
+没有表结构变更，数据库仍为版本 3。
+
 ## 0.6.0 — 2026-09-26
 
 - 新增「诊断信息（测试版）」页面（收件箱入口，仅在 debuggable 构建里显示），把排查问题需要的事实集中到一屏，并提供「复制全部」以便直接粘贴反馈：
