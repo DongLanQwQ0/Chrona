@@ -86,9 +86,9 @@ public final class ConfigBackup {
         }
         JSONObject appearance = root.optJSONObject("appearance");
         if (appearance != null) {
-            // Last: applying appearance recreates every live screen, this one included.
-            ThemeStore.setMode(context, appearance.optString("mode", ThemeStore.SYSTEM));
-            ThemeStore.setColor(context, appearance.optString("color", ThemeStore.TEAL));
+            // Last, and in one write: applying appearance recreates every live screen, this included.
+            ThemeStore.applyAppearance(context, appearance.optString("mode", ThemeStore.SYSTEM),
+                    appearance.optString("color", ThemeStore.TEAL));
         }
     }
 

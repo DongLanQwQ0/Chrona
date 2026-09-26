@@ -122,6 +122,15 @@ public final class ThemeStore {
         publish(context);
     }
 
+    /**
+     * Applies a whole appearance in one write, so screens are rebuilt exactly once. Importing a
+     * configuration would otherwise rebuild everything twice in a row.
+     */
+    static void applyAppearance(Context context, String mode, String color) {
+        prefs(context).edit().putString(KEY_MODE, mode).putString(KEY_COLOR, color).apply();
+        publish(context);
+    }
+
     static String background(Context context) {
         return prefs(context).getString(KEY_BACKGROUND, null);
     }
