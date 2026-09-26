@@ -150,7 +150,7 @@ public final class AppearanceActivity extends Activity {
             dot.setMargins(0, 0, dp(10), 0);
             headline.addView(color, dot);
         }
-        TextView heading = text((selected ? "✓  " : "     ") + name, 17, true);
+        TextView heading = text(UiStyle.marked(name, selected), 17, true);
         heading.setTextColor(selected ? UiStyle.colors(this).onPrimaryContainer
                 : UiStyle.colors(this).text);
         headline.addView(heading);

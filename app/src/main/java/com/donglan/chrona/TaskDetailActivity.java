@@ -321,17 +321,12 @@ public final class TaskDetailActivity extends Activity {
         label(card, "类型", 14);
         int[] selectedCategory = {EventCategory.indexOf(candidate.category)};
         TextView category = new TextView(this);
-        category.setText(EventCategory.LABELS[selectedCategory[0]] + "  ▾");
-        category.setTextSize(16);
-        category.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
-        category.setPadding(dp(16), 0, dp(16), 0);
-        category.setMinHeight(dp(52));
-        UiStyle.title(category);
-        UiStyle.pill(category, false);
+        category.setText(EventCategory.LABELS[selectedCategory[0]]);
+        UiStyle.fieldTrigger(category);
         category.setOnClickListener(view -> UiStyle.choiceDialog(this, "日程类型",
                 EventCategory.LABELS, selectedCategory[0], index -> {
                     selectedCategory[0] = index;
-                    category.setText(EventCategory.LABELS[index] + "  ▾");
+                    category.setText(EventCategory.LABELS[index]);
                 }));
         card.addView(category);
         CheckBox allDay = new CheckBox(this);

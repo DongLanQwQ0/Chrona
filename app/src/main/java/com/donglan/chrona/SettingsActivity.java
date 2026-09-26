@@ -60,20 +60,15 @@ public final class SettingsActivity extends Activity {
         String[] presets = {"自定义服务", "DeepSeek Flash", "DeepSeek Pro"};
         int[] selectedPreset = {0};
         TextView preset = new TextView(this);
-        preset.setText(presets[0] + "  ▾");
-        preset.setTextSize(16);
-        preset.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        preset.setPadding(dp(16), 0, dp(16), 0);
-        preset.setMinHeight(dp(52));
-        UiStyle.title(preset);
-        UiStyle.pill(preset, false);
+        preset.setText(presets[0]);
+        UiStyle.fieldTrigger(preset);
         UiStyle.addSpaced(form, preset, 5, 10);
         baseUrl = field(form, "API 基础地址（含 /v1）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         model = field(form, "模型名称", InputType.TYPE_CLASS_TEXT);
         preset.setOnClickListener(view -> UiStyle.choiceDialog(this, "常用模型预设",
                 presets, selectedPreset[0], position -> {
                 selectedPreset[0] = position;
-                preset.setText(presets[position] + "  ▾");
+                preset.setText(presets[position]);
                 if (position == 0) return;
                 baseUrl.setText("https://api.deepseek.com");
                 model.setText(position == 1 ? "deepseek-flash" : "deepseek-v4-pro");
@@ -124,7 +119,7 @@ public final class SettingsActivity extends Activity {
                 if ("https://api.deepseek.com".equals(existing.baseUrl)) {
                     if ("deepseek-flash".equals(existing.model)) selectedPreset[0] = 1;
                     else if ("deepseek-v4-pro".equals(existing.model)) selectedPreset[0] = 2;
-                    preset.setText(presets[selectedPreset[0]] + "  ▾");
+                    preset.setText(presets[selectedPreset[0]]);
                 }
             }
         } catch (Exception exception) {

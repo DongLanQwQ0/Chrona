@@ -27,6 +27,12 @@ import java.util.function.IntConsumer;
 
 /** Semantic colors, shapes and motion for the native View interface. */
 public final class UiStyle {
+    /** One radius scale for the whole app: fields and buttons, cards, sheets, and chips. */
+    static final int RADIUS_FIELD = 18;
+    static final int RADIUS_CARD = 22;
+    static final int RADIUS_PANEL = 28;
+    static final int RADIUS_PILL = 24;
+
     static final class Palette {
         final int background, surface, surfaceAlt, text, muted, outline, primary, onPrimary;
         final int primaryContainer, onPrimaryContainer;
@@ -126,9 +132,32 @@ public final class UiStyle {
     static void input(EditText view) {
         Palette colors = colors(view.getContext());
         view.setTextColor(colors.text);
+        view.setTextSize(16);
         view.setHintTextColor(colors.muted);
-        view.setBackground(shape(view, colors.surface, 18, colors.outline));
+        view.setBackground(shape(view, colors.surface, RADIUS_FIELD, colors.outline));
         view.setPadding(dp(view, 16), dp(view, 14), dp(view, 16), dp(view, 14));
+    }
+
+    /**
+     * A dropdown trigger that reads as one of the form's fields, so a filled-in value lines up with
+     * the fields around it. The marker is a compound drawable, which keeps it pinned to the right
+     * edge however long the selected label is.
+     */
+    static void fieldTrigger(TextView view) {
+        Palette colors = colors(view.getContext());
+        view.setTextColor(colors.text);
+        view.setTextSize(16);
+        view.setTypeface(null, Typeface.NORMAL);
+        view.setLetterSpacing(0f);
+        view.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        view.setSingleLine(true);
+        view.setMinHeight(dp(view, 52));
+        view.setPadding(dp(view, 16), dp(view, 14), dp(view, 16), dp(view, 14));
+        view.setCompoundDrawablePadding(dp(view, 8));
+        view.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_chevron_down, 0);
+        view.setCompoundDrawableTintList(ColorStateList.valueOf(colors.muted));
+        view.setBackground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
+                shape(view, colors.surface, RADIUS_FIELD, colors.outline), null));
     }
 
     public static void button(Button view, boolean primary) {
@@ -139,7 +168,7 @@ public final class UiStyle {
         view.setTypeface(null, Typeface.BOLD);
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(
                 primary ? 0x44FFFFFF : alpha(colors.primary, 34)),
-                shape(view, primary ? colors.primary : colors.surface, 18,
+                shape(view, primary ? colors.primary : colors.surface, RADIUS_FIELD,
                         primary ? colors.primary : colors.outline), null));
         view.setMinimumHeight(dp(view, 52));
         StateListAnimator press = new StateListAnimator();
@@ -150,7 +179,7 @@ public final class UiStyle {
 
     public static void card(View view) {
         Palette colors = colors(view.getContext());
-        view.setBackground(shape(view, colors.surface, 22, colors.outline));
+        view.setBackground(shape(view, colors.surface, RADIUS_CARD, colors.outline));
         view.setElevation(dp(view, 2));
     }
 
@@ -161,7 +190,7 @@ public final class UiStyle {
         GradientDrawable sheet = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{alpha(colors.surface, dark ? 226 : 238),
                         alpha(colors.surfaceAlt, dark ? 180 : 205)});
-        sheet.setCornerRadius(dp(view, 28));
+        sheet.setCornerRadius(dp(view, RADIUS_PANEL));
         sheet.setStroke(dp(view, 1), alpha(dark ? colors.outline : Color.WHITE,
                 dark ? 210 : 225));
         view.setBackground(sheet);
@@ -171,14 +200,24 @@ public final class UiStyle {
     static void pressable(View view) {
         view.setForeground(new RippleDrawable(ColorStateList.valueOf(
                 alpha(colors(view.getContext()).primary, 32)), null,
-                shape(view, Color.WHITE, 22, Color.TRANSPARENT)));
+                shape(view, Color.WHITE, RADIUS_CARD, Color.TRANSPARENT)));
+    }
+
+    /** Selectable surface: chips use the pill radius, dialog rows the field radius. */
+    static void choice(View view, boolean selected, int radius) {
+        Palette colors = colors(view.getContext());
+        view.setBackground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
+                shape(view, selected ? colors.primaryContainer : colors.surface, radius,
+                        selected ? colors.primaryContainer : colors.outline), null));
     }
 
     static void pill(View view, boolean selected) {
-        Palette colors = colors(view.getContext());
-        view.setBackground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
-                shape(view, selected ? colors.primaryContainer : colors.surface, 24,
-                        selected ? colors.primaryContainer : colors.outline), null));
+        choice(view, selected, RADIUS_PILL);
+    }
+
+    /** The single marker used by every list of choices: a trailing check on the selected row. */
+    static String marked(String label, boolean selected) {
+        return selected ? label + "   ✓" : label;
     }
 
     static void enter(View view, int index) {
@@ -236,14 +275,14 @@ public final class UiStyle {
         for (int i = 0; i < options.length; i++) {
             final int index = i;
             TextView item = new TextView(activity);
-            item.setText(options[i] + (i == selected ? "  ✓" : ""));
+            item.setText(marked(options[i], i == selected));
             item.setTextSize(16);
             item.setGravity(Gravity.CENTER_VERTICAL);
             item.setMinHeight(dp(item, 52));
             item.setPadding(dp(item, 18), 0, dp(item, 18), 0);
             item.setTextColor(i == selected ? colors(activity).onPrimaryContainer
                     : colors(activity).text);
-            pill(item, i == selected);
+            choice(item, i == selected, RADIUS_FIELD);
             item.setOnClickListener(view -> {
                 dialog.dismiss();
                 onChoice.accept(index);
@@ -319,6 +358,13 @@ public final class UiStyle {
         if (window != null) window.setLayout(
                 Math.min((int) (content.getResources().getDisplayMetrics().widthPixels * .90f),
                         dp(content, 460)), -2);
+        if (!ValueAnimator.areAnimatorsEnabled()) return;
+        // A sheet that fades and settles into place instead of appearing between two frames.
+        content.setAlpha(0f);
+        content.setScaleX(0.93f);
+        content.setScaleY(0.93f);
+        content.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(210)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
     }
 
     /** Keep controls clear of Android 15+ system bars while the backdrop draws behind them. */

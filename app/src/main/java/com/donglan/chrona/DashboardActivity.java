@@ -201,26 +201,25 @@ public final class DashboardActivity extends Activity {
     }
 
     private void addHeader() {
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout words = new LinearLayout(this);
-        words.setOrientation(LinearLayout.VERTICAL);
         String eyebrow = section == HOME
                 ? new SimpleDateFormat("M月d日 EEEE", Locale.CHINA).format(new Date())
                 : "拾时 · Chrona";
         TextView brand = text(eyebrow, 13, true);
         brand.setTextColor(UiStyle.colors(this).primary);
-        words.addView(brand);
+        UiStyle.addSpaced(content, brand, 0, 4);
+        // The gear shares the title's row, so it centres on the title rather than on the two-line
+        // block above it, which used to leave it sitting visibly high.
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = text(section == HOME ? "今天的安排"
                 : section == INBOX ? "收件箱" : "日程", 28, true);
         title.setMaxLines(1);
-        words.addView(title);
-        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         ImageButton settings = new ImageButton(this);
         settings.setImageResource(R.drawable.ic_settings);
         settings.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
         settings.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        settings.setPadding(dp(12), dp(12), dp(12), dp(12));
+        settings.setPadding(dp(13), dp(13), dp(13), dp(13));
         settings.setContentDescription("打开设置");
         UiStyle.pill(settings, false);
         settings.setOnClickListener(view ->
@@ -321,20 +320,16 @@ public final class DashboardActivity extends Activity {
                     updateChipSelection(statusIndex);
                     updateResults();
                 });
-        TextView category = text("类型：" + categoryOptions()[categoryIndex] + "  ▾", 14, true);
+        TextView category = text("类型：" + categoryOptions()[categoryIndex], 16, false);
         categoryChip = category;
-        category.setTextColor(UiStyle.colors(this).primary);
-        category.setGravity(Gravity.CENTER_VERTICAL);
-        category.setPadding(dp(15), 0, dp(15), 0);
-        category.setMinHeight(dp(44));
-        UiStyle.pill(category, false);
+        UiStyle.fieldTrigger(category);
         category.setOnClickListener(view -> {
             String[] choices = categoryOptions();
             UiStyle.choiceDialog(this, "选择收件类型", choices, categoryIndex, selected -> {
                 if (categoryIndex == selected) return;
                 categoryIndex = selected;
                 inboxShown = 12;
-                categoryChip.setText("类型：" + choices[categoryIndex] + "  ▾");
+                categoryChip.setText("类型：" + choices[categoryIndex]);
                 updateResults();
             });
         });
