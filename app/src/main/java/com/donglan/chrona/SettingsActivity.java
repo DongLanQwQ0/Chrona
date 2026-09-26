@@ -14,7 +14,6 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
@@ -106,7 +105,7 @@ public final class SettingsActivity extends Activity {
         allowImages.setOnClickListener(view -> {
             new AiSettingsStore(this).clearImageSupport();
             refreshImageState();
-            Toast.makeText(this, "图片输入已重新启用", Toast.LENGTH_SHORT).show();
+            Feedback.show(this, "图片输入已重新启用");
         });
         UiStyle.button(allowImages, false);
         UiStyle.addSpaced(imageCard, allowImages, 5, 5);
@@ -166,7 +165,7 @@ public final class SettingsActivity extends Activity {
                 }
             }
         } catch (Exception exception) {
-            Toast.makeText(this, "无法读取现有设置，请重新填写密钥", Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "无法读取现有设置，请重新填写密钥");
         }
         refreshImageState();
     }
@@ -217,8 +216,7 @@ public final class SettingsActivity extends Activity {
         try {
             startActivityForResult(intent, CREATE_CONFIG);
         } catch (Exception exception) {
-            Toast.makeText(this, "无法打开文件选择器：" + exception.getMessage(),
-                    Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "无法打开文件选择器：" + exception.getMessage());
         }
     }
 
@@ -229,8 +227,7 @@ public final class SettingsActivity extends Activity {
         try {
             startActivityForResult(intent, PICK_CONFIG);
         } catch (Exception exception) {
-            Toast.makeText(this, "无法打开文件选择器：" + exception.getMessage(),
-                    Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "无法打开文件选择器：" + exception.getMessage());
         }
     }
 
@@ -250,12 +247,11 @@ public final class SettingsActivity extends Activity {
             if (output == null) throw new java.io.IOException("无法写入所选位置");
             output.write(ConfigBackup.export(this, withKey)
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            Toast.makeText(this, withKey
+            Feedback.showLong(this, withKey
                             ? "已导出配置（含 API 密钥，请妥善保管该文件）"
-                            : "已导出配置（不含 API 密钥）",
-                    Toast.LENGTH_LONG).show();
+                            : "已导出配置（不含 API 密钥）");
         } catch (Exception exception) {
-            Toast.makeText(this, "导出失败：" + exception.getMessage(), Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "导出失败：" + exception.getMessage());
         }
     }
 
@@ -269,7 +265,7 @@ public final class SettingsActivity extends Activity {
             while ((read = input.read(chunk)) != -1) buffer.write(chunk, 0, read);
             json = new String(buffer.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception exception) {
-            Toast.makeText(this, "读取失败：" + exception.getMessage(), Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "读取失败：" + exception.getMessage());
             return;
         }
         final String content = json;
@@ -277,8 +273,7 @@ public final class SettingsActivity extends Activity {
         try {
             summary = ConfigBackup.describe(content);
         } catch (Exception exception) {
-            Toast.makeText(this, "这不是可用的配置文件：" + exception.getMessage(),
-                    Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "这不是可用的配置文件：" + exception.getMessage());
             return;
         }
         UiStyle.confirmDialog(this, "导入这份配置？", summary + "现有的同名字段会被覆盖。",
@@ -288,9 +283,9 @@ public final class SettingsActivity extends Activity {
     private void applyImported(String json) {
         try {
             ConfigBackup.apply(this, json);
-            Toast.makeText(this, "配置已导入", Toast.LENGTH_SHORT).show();
+            Feedback.show(this, "配置已导入");
         } catch (Exception exception) {
-            Toast.makeText(this, "导入失败：" + exception.getMessage(), Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "导入失败：" + exception.getMessage());
         }
     }
 
@@ -303,10 +298,10 @@ public final class SettingsActivity extends Activity {
                 if (existing != null) key = existing.apiKey;
             }
             store.save(baseUrl.getText().toString().trim(), model.getText().toString().trim(), key);
-            Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show();
+            Feedback.show(this, "设置已保存");
             finish();
         } catch (Exception exception) {
-            Toast.makeText(this, "保存失败：" + exception.getMessage(), Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "保存失败：" + exception.getMessage());
         }
     }
 

@@ -16,7 +16,6 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.calendar.AllDayDates;
@@ -102,8 +101,7 @@ public final class DashboardActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         int recovered = ProcessingJobService.reconcile(this);
-        if (recovered > 0) Toast.makeText(this,
-                recovered + " 条解析已中断，请在收件箱重试", Toast.LENGTH_LONG).show();
+        if (recovered > 0) Feedback.showLong(this, recovered + " 条解析已中断，请在收件箱重试");
         int oldScroll = restoredScrollY != 0 ? restoredScrollY : scroll.getScrollY();
         restoredScrollY = 0;
         if ((section == INBOX || section == SCHEDULE) && results != null) updateResults();

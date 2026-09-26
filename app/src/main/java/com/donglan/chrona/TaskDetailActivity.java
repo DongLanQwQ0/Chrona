@@ -18,7 +18,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.calendar.CalendarStore;
@@ -258,7 +257,7 @@ public final class TaskDetailActivity extends Activity {
             if (manager != null) manager.cancel((int) taskId);
             DiagLog.add(this, "task deleted id=" + taskId + " image=" + (imagePath != null));
             runOnUiThread(() -> {
-                Toast.makeText(this, "任务已删除", Toast.LENGTH_SHORT).show();
+                Feedback.show(this, "任务已删除");
                 finish();
             });
         } catch (Exception exception) {
@@ -388,7 +387,7 @@ public final class TaskDetailActivity extends Activity {
                 publish[0].setEnabled(false);
                 new Thread(() -> publish(edited), "chrona-calendar-write").start();
             } catch (DateTimeParseException | NumberFormatException exception) {
-                Toast.makeText(this, "请按提示格式填写日期或时间，提醒填写数字", Toast.LENGTH_LONG).show();
+                Feedback.showLong(this, "请按提示格式填写日期或时间，提醒填写数字");
             } catch (Exception exception) {
                 showError(exception);
             }
@@ -420,7 +419,7 @@ public final class TaskDetailActivity extends Activity {
             DiagLog.add(this, "calendar written task=" + taskId + " candidate=" + edited.id
                     + " event=" + edited.calendarEventId);
             runOnUiThread(() -> {
-                Toast.makeText(this, "已写入系统日历", Toast.LENGTH_SHORT).show();
+                Feedback.show(this, "已写入系统日历");
                 render();
             });
         } catch (Exception exception) {
@@ -436,7 +435,7 @@ public final class TaskDetailActivity extends Activity {
             TaskRecord task = store.getTask(taskId);
             if (task == null) throw new IllegalStateException("任务不存在或已删除");
             if (task.rawText.trim().isEmpty() && task.imagePath == null) {
-                Toast.makeText(this, "没有可解析的内容，请补充文字或图片", Toast.LENGTH_LONG).show();
+                Feedback.showLong(this, "没有可解析的内容，请补充文字或图片");
                 return;
             }
             for (EventCandidate candidate : store.getCandidates(taskId)) {
@@ -445,7 +444,7 @@ public final class TaskDetailActivity extends Activity {
                 }
             }
             if (new AiSettingsStore(this).load() == null) {
-                Toast.makeText(this, "请先在设置中配置 AI 服务", Toast.LENGTH_LONG).show();
+                Feedback.showLong(this, "请先在设置中配置 AI 服务");
                 return;
             }
             store.replaceCandidates(taskId, Collections.emptyList());
@@ -453,7 +452,7 @@ public final class TaskDetailActivity extends Activity {
             store.updateStatus(taskId, TaskRecord.QUEUED, null);
             ProcessingJobService.enqueue(this, taskId);
             DiagLog.add(this, "retry task=" + taskId);
-            Toast.makeText(this, "已加入解析队列", Toast.LENGTH_SHORT).show();
+            Feedback.show(this, "已加入解析队列");
             render();
         } catch (Exception exception) {
             showError(exception);
@@ -550,7 +549,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void showError(Exception exception) {
-        Toast.makeText(this, "操作失败：" + exception.getMessage(), Toast.LENGTH_LONG).show();
+        Feedback.showLong(this, "操作失败：" + exception.getMessage());
     }
 
     /** Returns true when both calendar permissions are already granted. */
@@ -566,7 +565,7 @@ public final class TaskDetailActivity extends Activity {
         if (hasCalendarPermission()) return true;
         requestPermissions(new String[]{Manifest.permission.READ_CALENDAR,
                 Manifest.permission.WRITE_CALENDAR}, CALENDAR_PERMISSION_REQUEST);
-        Toast.makeText(this, "授权日历权限后请再次点击", Toast.LENGTH_SHORT).show();
+        Feedback.show(this, "授权日历权限后请再次点击");
         return false;
     }
 

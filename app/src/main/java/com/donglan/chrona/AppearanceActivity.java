@@ -109,8 +109,7 @@ public final class AppearanceActivity extends Activity {
                 releaseBackgroundGrant();
             ThemeStore.setBackground(this, data.getData().toString());
         } catch (Exception exception) {
-            android.widget.Toast.makeText(this, "无法读取所选图片：" + exception.getMessage(),
-                    android.widget.Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "无法读取所选图片：" + exception.getMessage());
         }
     }
 

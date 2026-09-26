@@ -24,7 +24,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
@@ -216,7 +215,7 @@ public final class MainActivity extends Activity {
             ArrayList<String> results = data.getStringArrayListExtra(
                     RecognizerIntent.EXTRA_RESULTS);
             if (results == null || results.isEmpty()) {
-                Toast.makeText(this, "没有识别到内容", Toast.LENGTH_SHORT).show();
+                Feedback.show(this, "没有识别到内容");
             } else {
                 appendText(results.get(0));
                 DiagLog.add(this, "voice appended chars=" + results.get(0).length());
@@ -235,7 +234,7 @@ public final class MainActivity extends Activity {
         if (type != null && type.startsWith("image/")) {
             Uri stream = sharedStream(intent);
             if (stream == null) {
-                Toast.makeText(this, "分享内容里没有图片", Toast.LENGTH_LONG).show();
+                Feedback.showLong(this, "分享内容里没有图片");
             } else {
                 attachImage(stream);
             }
@@ -263,14 +262,12 @@ public final class MainActivity extends Activity {
             return;
         }
         if (entries.size() > MAX_BATCH_TASKS) {
-            Toast.makeText(this, "一次最多拆分 " + MAX_BATCH_TASKS + " 条，请分批发入",
-                    Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "一次最多拆分 " + MAX_BATCH_TASKS + " 条，请分批发入");
             return;
         }
         boolean withImage = pendingImage != null;
         if (withImage && imagesUnsupported()) {
-            Toast.makeText(this, "当前模型不支持图片，请移除图片或切换模型",
-                    Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "当前模型不支持图片，请移除图片或切换模型");
             return;
         }
         String source = Intent.ACTION_SEND.equals(getIntent().getAction()) ? "share" : "app";
@@ -289,7 +286,7 @@ public final class MainActivity extends Activity {
                 }
             }
         } catch (Exception exception) {
-            Toast.makeText(this, "保存失败：" + exception.getMessage(), Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "保存失败：" + exception.getMessage());
             return;
         }
         input.setText("");
@@ -299,8 +296,8 @@ public final class MainActivity extends Activity {
         showPendingImage();
         DiagLog.add(this, "submitted entries=" + taskIds.size() + " source=" + source
                 + " image=" + (withImage ? "yes" : "no"));
-        Toast.makeText(this, taskIds.size() == 1 ? "已存入收件箱"
-                : "已存入收件箱（" + taskIds.size() + " 条）", Toast.LENGTH_SHORT).show();
+        Feedback.show(this, taskIds.size() == 1 ? "已存入收件箱"
+                : "已存入收件箱（" + taskIds.size() + " 条）");
         startActivity(new Intent(this, DashboardActivity.class)
                 .putExtra(DashboardActivity.EXTRA_SECTION, DashboardActivity.INBOX)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
@@ -310,11 +307,10 @@ public final class MainActivity extends Activity {
     /** Copies a picked or shared image into app storage before anything else reads it. */
     private void attachImage(Uri source) {
         if (imagesUnsupported()) {
-            Toast.makeText(this, "当前模型不支持图片输入，可在「AI 服务设置」中重新启用",
-                    Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "当前模型不支持图片输入，可在「AI 服务设置」中重新启用");
             return;
         }
-        Toast.makeText(this, "正在读取图片…", Toast.LENGTH_SHORT).show();
+        Feedback.show(this, "正在读取图片…");
         new Thread(() -> {
             try {
                 String name = new ImageStore(this).importImage(source);
@@ -327,8 +323,7 @@ public final class MainActivity extends Activity {
                 });
             } catch (Exception exception) {
                 DiagLog.add(this, "image import failed " + exception);
-                runOnUiThread(() -> Toast.makeText(this, "读取图片失败：" + exception.getMessage(),
-                        Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> Feedback.showLong(this, "读取图片失败：" + exception.getMessage()));
             }
         }, "chrona-image-import").start();
     }
@@ -340,7 +335,7 @@ public final class MainActivity extends Activity {
         try {
             startActivityForResult(intent, PICK_IMAGE_REQUEST);
         } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, "没有可用的图片选择器", Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "没有可用的图片选择器");
         }
     }
 
@@ -413,24 +408,24 @@ public final class MainActivity extends Activity {
         ClipboardManager manager = getSystemService(ClipboardManager.class);
         ClipData clip = manager == null ? null : manager.getPrimaryClip();
         if (clip == null || clip.getItemCount() == 0) {
-            Toast.makeText(this, "剪贴板没有可用文字", Toast.LENGTH_SHORT).show();
+            Feedback.show(this, "剪贴板没有可用文字");
             return;
         }
         ClipDescription description = clip.getDescription();
         if (!description.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN)
                 && !description.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)) {
-            Toast.makeText(this, "剪贴板内容不是文字，图片支持尚未实现", Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "剪贴板内容不是文字，图片支持尚未实现");
             return;
         }
         CharSequence text = clip.getItemAt(0).coerceToText(this);
         String pasted = text == null ? "" : text.toString().trim();
         if (pasted.isEmpty()) {
-            Toast.makeText(this, "剪贴板没有可用文字", Toast.LENGTH_SHORT).show();
+            Feedback.show(this, "剪贴板没有可用文字");
             return;
         }
         appendText(pasted);
         DiagLog.add(this, "clipboard pasted chars=" + pasted.length());
-        Toast.makeText(this, "已从剪贴板追加文字", Toast.LENGTH_SHORT).show();
+        Feedback.show(this, "已从剪贴板追加文字");
     }
 
     /** Speaks one input through the system recognizer and appends whatever it returns. */
@@ -443,7 +438,7 @@ public final class MainActivity extends Activity {
         try {
             startActivityForResult(intent, VOICE_REQUEST);
         } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, "没有可用的语音识别服务", Toast.LENGTH_LONG).show();
+            Feedback.showLong(this, "没有可用的语音识别服务");
         }
     }
 

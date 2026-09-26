@@ -19,8 +19,8 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
+import com.donglan.chrona.Feedback;
 import com.donglan.chrona.GlassBackdropView;
 import com.donglan.chrona.ThemeStore;
 import com.donglan.chrona.UiStyle;
@@ -115,18 +115,18 @@ public final class DebugActivity extends Activity {
     private void copyAll() {
         ClipboardManager clipboard = getSystemService(ClipboardManager.class);
         if (clipboard == null) {
-            Toast.makeText(this, "剪贴板不可用", Toast.LENGTH_SHORT).show();
+            Feedback.show(this, "剪贴板不可用");
             return;
         }
         clipboard.setPrimaryClip(ClipData.newPlainText("Chrona 诊断", asText(collect())));
-        Toast.makeText(this, "已复制，可直接粘贴发送", Toast.LENGTH_SHORT).show();
+        Feedback.show(this, "已复制，可直接粘贴发送");
     }
 
     private void clearLog() {
         DiagLog.clear(this);
         DiagLog.add(this, "log cleared");
         show(collect());
-        Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show();
+        Feedback.show(this, "日志已清空");
     }
 
     /** One titled block of label/value rows, optionally followed by a monospace excerpt. */
