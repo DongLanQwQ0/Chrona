@@ -322,8 +322,25 @@ public final class ProcessingJobService extends JobService {
             DiagLog.add(this, "attempt " + attempt + "/" + MAX_REQUEST_ATTEMPTS
                     + " task=" + taskId);
             try {
-                return new ChatCompletionClient(settings).parse(taskId, task.rawText, image,
-                        linkText, System.currentTimeMillis(), TimeZone.getDefault().getID());
+                try (StreamingOutputStore.Writer output =
+                        new StreamingOutputStore(this).begin(taskId)) {
+                    ChatCompletionClient client = new ChatCompletionClient(settings);
+                    try {
+                        return client.parse(taskId, task.rawText, image, linkText,
+                                System.currentTimeMillis(), TimeZone.getDefault().getID(),
+                                output::append);
+                    } catch (ChatCompletionClient.RequestException exception) {
+                        String detail = String.valueOf(exception.getMessage()).toLowerCase(
+                                java.util.Locale.ROOT);
+                        if (exception.statusCode != 400 || !detail.contains("stream"))
+                            throw exception;
+                        DiagLog.add(this, "stream unsupported task=" + taskId
+                                + "; retrying ordinary response");
+                        return client.parseWithoutStreaming(taskId, task.rawText, image, linkText,
+                                System.currentTimeMillis(), TimeZone.getDefault().getID(),
+                                output::append);
+                    }
+                }
             } catch (IOException exception) {
                 long attemptMillis = System.currentTimeMillis() - attemptStartedAt;
                 boolean giveUp = attempt >= MAX_REQUEST_ATTEMPTS

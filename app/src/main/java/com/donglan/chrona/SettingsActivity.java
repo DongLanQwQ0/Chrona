@@ -4,13 +4,12 @@ import android.app.Activity;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.InputType;
+import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.ArrayAdapter;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -58,23 +57,27 @@ public final class SettingsActivity extends Activity {
         presetTitle.setTextSize(15);
         UiStyle.muted(presetTitle);
         form.addView(presetTitle);
-        Spinner preset = new Spinner(this);
-        preset.setAdapter(new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item,
-                new String[]{"自定义服务", "DeepSeek Flash", "DeepSeek Pro"}));
-        UiStyle.card(preset);
+        String[] presets = {"自定义服务", "DeepSeek Flash", "DeepSeek Pro"};
+        int[] selectedPreset = {0};
+        TextView preset = new TextView(this);
+        preset.setText(presets[0] + "  ▾");
+        preset.setTextSize(16);
+        preset.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        preset.setPadding(dp(16), 0, dp(16), 0);
+        preset.setMinHeight(dp(52));
+        UiStyle.title(preset);
+        UiStyle.pill(preset, false);
         UiStyle.addSpaced(form, preset, 5, 10);
         baseUrl = field(form, "API 基础地址（含 /v1）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         model = field(form, "模型名称", InputType.TYPE_CLASS_TEXT);
-        preset.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(android.widget.AdapterView<?> parent,
-                    android.view.View view, int position, long id) {
+        preset.setOnClickListener(view -> UiStyle.choiceDialog(this, "常用模型预设",
+                presets, selectedPreset[0], position -> {
+                selectedPreset[0] = position;
+                preset.setText(presets[position] + "  ▾");
                 if (position == 0) return;
                 baseUrl.setText("https://api.deepseek.com");
                 model.setText(position == 1 ? "deepseek-flash" : "deepseek-v4-pro");
-            }
-            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
-        });
+        }));
         apiKey = field(form, "API 密钥（留空表示不更改）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         Button save = new Button(this);
         save.setText("保存设置");
@@ -113,13 +116,16 @@ public final class SettingsActivity extends Activity {
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
-        UiStyle.enter(form, 0);
-        UiStyle.enter(imageCard, 1);
         try {
             AiSettings existing = new AiSettingsStore(this).load();
             if (existing != null) {
                 baseUrl.setText(existing.baseUrl);
                 model.setText(existing.model);
+                if ("https://api.deepseek.com".equals(existing.baseUrl)) {
+                    if ("deepseek-flash".equals(existing.model)) selectedPreset[0] = 1;
+                    else if ("deepseek-v4-pro".equals(existing.model)) selectedPreset[0] = 2;
+                    preset.setText(presets[selectedPreset[0]] + "  ▾");
+                }
             }
         } catch (Exception exception) {
             Toast.makeText(this, "无法读取现有设置，请重新填写密钥", Toast.LENGTH_LONG).show();
@@ -158,6 +164,7 @@ public final class SettingsActivity extends Activity {
         edit.setHint(hint);
         edit.setSingleLine(true);
         edit.setInputType(type);
+        edit.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         UiStyle.input(edit);
         UiStyle.addSpaced(root, edit, 5, 5);
         return edit;

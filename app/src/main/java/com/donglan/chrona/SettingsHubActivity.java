@@ -14,13 +14,12 @@ import com.donglan.chrona.debug.DebugActivity;
 
 /** Secondary destination for appearance, AI service, and diagnostics. */
 public final class SettingsHubActivity extends Activity {
-    private String appearance;
+    private ScrollView page;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
-        appearance = ThemeStore.mode(this) + ThemeStore.color(this) + ThemeStore.dark(this);
-        ScrollView page = new ScrollView(this);
+        page = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(24), dp(20), dp(24));
@@ -56,13 +55,15 @@ public final class SettingsHubActivity extends Activity {
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
-        UiStyle.enter(root, 0);
+        if (state != null) {
+            int scrollY = state.getInt("scroll_y");
+            page.post(() -> page.scrollTo(0, scrollY));
+        }
     }
 
-    @Override protected void onResume() {
-        super.onResume();
-        String current = ThemeStore.mode(this) + ThemeStore.color(this) + ThemeStore.dark(this);
-        if (!current.equals(appearance)) recreate();
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putInt("scroll_y", page.getScrollY());
     }
 
     private void section(LinearLayout root, String eyebrow, String title, String subtitle,

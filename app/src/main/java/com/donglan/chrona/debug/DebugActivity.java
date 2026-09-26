@@ -13,7 +13,10 @@ import android.os.Bundle;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.TypedValue;
+import android.graphics.Color;
+import android.view.Gravity;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -21,6 +24,8 @@ import android.widget.Toast;
 
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ThemeStore;
+import com.donglan.chrona.UiStyle;
+import com.donglan.chrona.GlassBackdropView;
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.image.ImageStore;
@@ -39,38 +44,80 @@ public final class DebugActivity extends Activity {
     protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
+        page = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(24), dp(16), dp(16));
-        root.setFitsSystemWindows(true);
+        root.setPadding(dp(20), dp(24), dp(20), dp(32));
+        UiStyle.page(this, root);
+        root.setBackgroundColor(Color.TRANSPARENT);
+        root.setFitsSystemWindows(false);
+        page.addView(root);
+        UiStyle.back(this, root);
 
         TextView title = new TextView(this);
-        title.setText("诊断信息（测试版）");
-        title.setTextSize(22);
+        title.setText("诊断信息");
+        title.setTextSize(28);
+        UiStyle.title(title);
         root.addView(title);
+        TextView description = new TextView(this);
+        description.setText("查看设备状态与处理日志。复制后可用于排查问题。");
+        description.setTextSize(14);
+        UiStyle.muted(description);
+        UiStyle.addSpaced(root, description, 8, 18);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.addView(action("刷新", view -> refresh()));
-        actions.addView(action("复制全部", view -> copyAll()));
-        actions.addView(action("清空日志", view -> clearLog()));
-        root.addView(actions);
+        addAction(actions, action("刷新", view -> refresh()));
+        addAction(actions, action("复制全部", view -> copyAll()));
+        UiStyle.addSpaced(root, actions, 0, 8);
+        Button clear = action("清空日志", view -> clearLog());
+        UiStyle.addSpaced(root, clear, 0, 16);
 
+        LinearLayout reportCard = new LinearLayout(this);
+        reportCard.setOrientation(LinearLayout.VERTICAL);
+        reportCard.setPadding(dp(18), dp(18), dp(18), dp(18));
+        UiStyle.glass(reportCard);
+        TextView reportTitle = new TextView(this);
+        reportTitle.setText("运行报告");
+        reportTitle.setTextSize(18);
+        UiStyle.title(reportTitle);
+        UiStyle.addSpaced(reportCard, reportTitle, 0, 14);
         output = new TextView(this);
-        output.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        output.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         output.setTextIsSelectable(true);
         output.setTypeface(android.graphics.Typeface.MONOSPACE);
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(output);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        setContentView(root);
+        UiStyle.muted(output);
+        reportCard.addView(output);
+        root.addView(reportCard);
+        stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        UiStyle.applyInsets(stage, page);
+        setContentView(stage);
+        if (state != null) {
+            int scrollY = state.getInt("scroll_y");
+            page.post(() -> page.scrollTo(0, scrollY));
+        }
         refresh();
+    }
+
+    private ScrollView page;
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putInt("scroll_y", page.getScrollY());
+    }
+
+    private void addAction(LinearLayout row, Button button) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(52), 1);
+        params.setMargins(0, 0, dp(8), 0);
+        row.addView(button, params);
     }
 
     private Button action(String text, android.view.View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(text);
+        UiStyle.button(button, false);
         button.setOnClickListener(listener);
         return button;
     }

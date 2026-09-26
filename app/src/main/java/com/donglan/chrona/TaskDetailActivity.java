@@ -2,7 +2,6 @@ package com.donglan.chrona;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -12,14 +11,12 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.widget.Button;
-import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -33,6 +30,7 @@ import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
+import com.donglan.chrona.processing.StreamingOutputStore;
 import com.donglan.chrona.web.LinkFetcher;
 
 import java.text.DateFormat;
@@ -51,6 +49,10 @@ public final class TaskDetailActivity extends Activity {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private long taskId;
     private LinearLayout content;
+    private ScrollView page;
+    private ScrollView previewScroll;
+    private TextView previewText;
+    private long previewLength = -1;
     private boolean deleting;
     private String observedStatus;
     private int observedCandidates = -1;
@@ -62,20 +64,29 @@ public final class TaskDetailActivity extends Activity {
         ThemeStore.apply(this);
         super.onCreate(state);
         taskId = getIntent().getLongExtra("task_id", -1);
-        ScrollView scroll = new ScrollView(this);
+        page = new ScrollView(this);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(30), dp(20), dp(24));
         UiStyle.page(this, content);
         content.setBackgroundColor(Color.TRANSPARENT);
-        scroll.addView(content);
+        page.addView(content);
         UiStyle.back(this, content);
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
-        stage.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
         content.setFitsSystemWindows(false);
-        UiStyle.applyInsets(stage, scroll);
+        UiStyle.applyInsets(stage, page);
         setContentView(stage);
+        if (state != null) {
+            int scrollY = state.getInt("scroll_y");
+            page.post(() -> page.scrollTo(0, scrollY));
+        }
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putInt("scroll_y", page.getScrollY());
     }
 
     @Override
@@ -98,6 +109,7 @@ public final class TaskDetailActivity extends Activity {
             int count = store.getCandidates(taskId).size();
             if (task != null && (!task.status.equals(observedStatus)
                     || count != observedCandidates)) render();
+            else if (task != null) refreshPreview();
         } catch (Exception exception) {
             // A transient database failure should not close a draft being edited.
             android.util.Log.w("Chrona", "Could not refresh task detail", exception);
@@ -107,7 +119,11 @@ public final class TaskDetailActivity extends Activity {
 
     private void render() {
         if (deleting) return;
+        int previousScroll = page.getScrollY();
         content.removeAllViews();
+        previewText = null;
+        previewScroll = null;
+        previewLength = -1;
         UiStyle.back(this, content);
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
@@ -118,6 +134,8 @@ public final class TaskDetailActivity extends Activity {
             label("任务详情", 24);
             label(task.rawText.isEmpty() ? "（仅图片，无文字）" : task.rawText, 16);
             label("状态：" + task.status + (task.errorMessage == null ? "" : "\n" + task.errorMessage), 14);
+            if (TaskRecord.PROCESSING.equals(task.status)
+                    || new StreamingOutputStore(this).length(taskId) > 0) addPreview();
             if (task.totalTokens != null) label("本次解析 token：" + task.totalTokens, 14);
             if (task.cachedTokens != null && task.promptTokens != null) {
                 label("其中缓存命中：" + task.cachedTokens + " / " + task.promptTokens
@@ -152,6 +170,52 @@ public final class TaskDetailActivity extends Activity {
         } catch (Exception exception) {
             showError(exception);
         }
+        page.post(() -> page.scrollTo(0, previousScroll));
+    }
+
+    private void addPreview() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        UiStyle.glass(card);
+        label(card, "模型实时输出", 18);
+        TextView hint = new TextView(this);
+        hint.setText("下方仅显示最新片段，可在窗口内滚动；完整输出按页查看。");
+        hint.setTextSize(13);
+        UiStyle.muted(hint);
+        UiStyle.addSpaced(card, hint, 6, 10);
+        previewScroll = new ScrollView(this);
+        previewText = new TextView(this);
+        previewText.setTextSize(12);
+        previewText.setTypeface(android.graphics.Typeface.MONOSPACE);
+        previewText.setTextIsSelectable(true);
+        UiStyle.muted(previewText);
+        previewScroll.addView(previewText);
+        card.addView(previewScroll, new LinearLayout.LayoutParams(-1, dp(180)));
+        Button full = new Button(this);
+        full.setText("查看完整输出");
+        UiStyle.button(full, false);
+        full.setOnClickListener(view -> startActivity(new android.content.Intent(this,
+                ModelOutputActivity.class).putExtra("task_id", taskId)));
+        UiStyle.addSpaced(card, full, 12, 0);
+        UiStyle.addSpaced(content, card, 10, 12);
+        refreshPreview();
+    }
+
+    private void refreshPreview() {
+        if (previewText == null) return;
+        StreamingOutputStore output = new StreamingOutputStore(this);
+        long length = output.length(taskId);
+        if (length == previewLength) return;
+        previewLength = length;
+        boolean follow = previewScroll.getScrollY() + previewScroll.getHeight()
+                >= previewText.getHeight() - dp(24);
+        try {
+            previewText.setText(length == 0 ? "等待模型开始输出…" : output.tail(taskId));
+            if (follow) previewScroll.post(() -> previewScroll.fullScroll(View.FOCUS_DOWN));
+        } catch (Exception exception) {
+            previewText.setText("预览暂时不可用：" + exception.getMessage());
+        }
     }
 
     private void confirmDelete(int publishedCount) {
@@ -160,17 +224,12 @@ public final class TaskDetailActivity extends Activity {
                 ? "将删除这条输入和所有日程草稿。此操作无法撤销。"
                 : "将删除这条输入、所有日程草稿及已写入系统日历的 "
                         + publishedCount + " 条日程。此操作无法撤销。";
-        new AlertDialog.Builder(this)
-                .setTitle("确认删除任务？")
-                .setMessage(message)
-                .setNegativeButton("取消", null)
-                .setPositiveButton("删除", (dialog, which) -> {
+        UiStyle.confirmDialog(this, "确认删除任务？", message, "删除", () -> {
                     deleting = true;
                     content.removeAllViews();
                     label("正在删除任务与关联日程…", 18);
                     new Thread(this::deleteTask, "chrona-task-delete").start();
-                })
-                .show();
+                });
     }
 
     private void deleteTask() {
@@ -185,6 +244,7 @@ public final class TaskDetailActivity extends Activity {
             }
             String imagePath = store.clearImage(taskId);
             if (!store.deleteTask(taskId)) throw new IllegalStateException("任务不存在或已删除");
+            new StreamingOutputStore(this).delete(taskId);
             if (imagePath != null) new ImageStore(this).delete(imagePath);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.cancel((int) taskId);
@@ -216,14 +276,10 @@ public final class TaskDetailActivity extends Activity {
     private void confirmRemoveCandidate(EventCandidate candidate, int number) {
         boolean published = candidate.calendarEventId != null;
         if (published && !requestCalendarPermission()) return;
-        new AlertDialog.Builder(this)
-                .setTitle("删除日程 " + number + "？")
-                .setMessage(published
+        UiStyle.confirmDialog(this, "删除日程 " + number + "？", published
                         ? "将从系统日历中删除这条日程，并移除对应草稿。此操作无法撤销。"
-                        : "将移除这条日程草稿。此操作无法撤销。")
-                .setNegativeButton("取消", null)
-                .setPositiveButton("删除", (dialog, which) -> removeCandidate(candidate, published))
-                .show();
+                        : "将移除这条日程草稿。此操作无法撤销。", "删除",
+                () -> removeCandidate(candidate, published));
     }
 
     private void removeCandidate(EventCandidate candidate, boolean published) {
@@ -260,15 +316,23 @@ public final class TaskDetailActivity extends Activity {
         card.setPadding(dp(14), dp(14), dp(14), dp(14));
         UiStyle.glass(card);
         UiStyle.addSpaced(content, card, 12, 6);
-        UiStyle.enter(card, number - 1);
         label(card, "日程 " + number + (candidate.calendarEventId == null ? " · 待写入" : " · 已写入日历"), 19);
         EditText title = field(card, "标题", candidate.title);
         label(card, "类型", 14);
-        Spinner category = new Spinner(this);
-        ArrayAdapter<String> categoryAdapter = new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item, EventCategory.LABELS);
-        category.setAdapter(categoryAdapter);
-        category.setSelection(EventCategory.indexOf(candidate.category));
+        int[] selectedCategory = {EventCategory.indexOf(candidate.category)};
+        TextView category = new TextView(this);
+        category.setText(EventCategory.LABELS[selectedCategory[0]] + "  ▾");
+        category.setTextSize(16);
+        category.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
+        category.setPadding(dp(16), 0, dp(16), 0);
+        category.setMinHeight(dp(52));
+        UiStyle.title(category);
+        UiStyle.pill(category, false);
+        category.setOnClickListener(view -> UiStyle.choiceDialog(this, "日程类型",
+                EventCategory.LABELS, selectedCategory[0], index -> {
+                    selectedCategory[0] = index;
+                    category.setText(EventCategory.LABELS[index] + "  ▾");
+                }));
         card.addView(category);
         CheckBox allDay = new CheckBox(this);
         allDay.setText("全天日程");
@@ -317,7 +381,7 @@ public final class TaskDetailActivity extends Activity {
                         location.getText().toString().trim(),
                         description.getText().toString().trim(), minutes, false,
                         candidate.calendarEventId,
-                        EventCategory.VALUES[category.getSelectedItemPosition()], allDay.isChecked());
+                        EventCategory.VALUES[selectedCategory[0]], allDay.isChecked());
                 publish[0].setEnabled(false);
                 new Thread(() -> publish(edited), "chrona-calendar-write").start();
             } catch (DateTimeParseException | NumberFormatException exception) {
@@ -382,6 +446,7 @@ public final class TaskDetailActivity extends Activity {
                 return;
             }
             store.replaceCandidates(taskId, Collections.emptyList());
+            new StreamingOutputStore(this).delete(taskId);
             store.updateStatus(taskId, TaskRecord.QUEUED, null);
             ProcessingJobService.enqueue(this, taskId);
             DiagLog.add(this, "retry task=" + taskId);

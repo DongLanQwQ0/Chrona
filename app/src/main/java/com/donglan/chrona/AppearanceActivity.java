@@ -1,6 +1,8 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -12,10 +14,12 @@ import android.widget.TextView;
 
 /** Selects a durable mode and palette, with immediate visual feedback. */
 public final class AppearanceActivity extends Activity {
+    private static final int PICK_BACKGROUND = 23;
+    private ScrollView page;
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
-        ScrollView page = new ScrollView(this);
+        page = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(24), dp(20), dp(28));
@@ -52,22 +56,73 @@ public final class AppearanceActivity extends Activity {
                 () -> selectColor(ThemeStore.BLUE));
         option(root, "暖珊瑚", "柔和温暖", ThemeStore.CORAL.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.CORAL));
+        heading(root, "背景图片");
+        option(root, "选择本地图片", "为页面设置自己的背景，卡片仍保持清晰可读",
+                ThemeStore.background(this) != null, this::pickBackground);
+        if (ThemeStore.background(this) != null) {
+            option(root, "恢复默认背景", "移除自定义图片", false, () -> {
+                releaseBackgroundGrant();
+                ThemeStore.setBackground(this, null);
+            });
+        }
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
-        UiStyle.enter(root, 0);
+        if (state != null) {
+            int scrollY = state.getInt("scroll_y");
+            page.post(() -> page.scrollTo(0, scrollY));
+        }
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putInt("scroll_y", page.getScrollY());
     }
 
     private void selectMode(String mode) {
         ThemeStore.setMode(this, mode);
-        recreate();
     }
     private void selectColor(String color) {
         ThemeStore.setColor(this, color);
-        recreate();
+    }
+
+    private void pickBackground() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(intent, PICK_BACKGROUND);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_BACKGROUND || resultCode != RESULT_OK
+                || data == null || data.getData() == null) return;
+        try {
+            getContentResolver().takePersistableUriPermission(data.getData(),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (!data.getData().toString().equals(ThemeStore.background(this)))
+                releaseBackgroundGrant();
+            ThemeStore.setBackground(this, data.getData().toString());
+        } catch (Exception exception) {
+            android.widget.Toast.makeText(this, "无法读取所选图片：" + exception.getMessage(),
+                    android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void releaseBackgroundGrant() {
+        String old = ThemeStore.background(this);
+        if (old == null) return;
+        try {
+            getContentResolver().releasePersistableUriPermission(Uri.parse(old),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+            // The document provider may already have revoked the old grant.
+        }
     }
 
     private void heading(LinearLayout root, String label) {

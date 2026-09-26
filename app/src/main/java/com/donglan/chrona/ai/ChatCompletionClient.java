@@ -8,6 +8,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -58,6 +59,30 @@ public final class ChatCompletionClient {
     /** Parses one submitted input and returns all proposed entries plus reported token usage. */
     public ParseResult parse(long taskId, String rawText, byte[] imageJpeg, String linkText,
             long nowMillis, String timeZoneId) throws IOException {
+        return parseInternal(taskId, rawText, imageJpeg, linkText, nowMillis, timeZoneId,
+                null, false);
+    }
+
+    public interface PreviewSink {
+        void append(String chunk) throws IOException;
+    }
+
+    public ParseResult parse(long taskId, String rawText, byte[] imageJpeg, String linkText,
+            long nowMillis, String timeZoneId, PreviewSink preview) throws IOException {
+        return parseInternal(taskId, rawText, imageJpeg, linkText, nowMillis, timeZoneId,
+                preview, true);
+    }
+
+    public ParseResult parseWithoutStreaming(long taskId, String rawText, byte[] imageJpeg,
+            String linkText, long nowMillis, String timeZoneId, PreviewSink preview)
+            throws IOException {
+        return parseInternal(taskId, rawText, imageJpeg, linkText, nowMillis, timeZoneId,
+                preview, false);
+    }
+
+    private ParseResult parseInternal(long taskId, String rawText, byte[] imageJpeg,
+            String linkText, long nowMillis, String timeZoneId, PreviewSink preview,
+            boolean streaming) throws IOException {
         boolean hasText = rawText != null && !rawText.trim().isEmpty();
         if ((!hasText && imageJpeg == null) || timeZoneId == null || timeZoneId.trim().isEmpty()) {
             throw new IllegalArgumentException("Text or image, and a timezone, are required");
@@ -85,7 +110,9 @@ public final class ChatCompletionClient {
             }
             messages.put(new JSONObject().put("role", "user").put("content", content));
             body.put("messages", messages);
-            body.put("stream", false);
+            body.put("stream", streaming);
+            if (streaming) body.put("stream_options",
+                    new JSONObject().put("include_usage", true));
         } catch (JSONException e) {
             throw new IOException("Could not encode AI request", e);
         }
@@ -101,17 +128,33 @@ public final class ChatCompletionClient {
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("Authorization", "Bearer " + settings.apiKey);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Accept", !streaming
+                    ? "application/json" : "text/event-stream, application/json");
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
             int status = connection.getResponseCode();
             InputStream stream = status >= 200 && status < 300
                     ? connection.getInputStream() : connection.getErrorStream();
-            String response = stream == null ? "" : readLimited(stream);
             if (status < 200 || status >= 300) {
+                String response = stream == null ? "" : readLimited(stream);
                 throw new RequestException(status, "AI request failed (HTTP " + status + "): "
                         + errorMessage(response));
+            }
+            if (streaming && stream != null && connection.getContentType() != null
+                    && connection.getContentType().toLowerCase(java.util.Locale.ROOT)
+                    .contains("text/event-stream")) {
+                return parseStream(taskId, stream, preview);
+            }
+            String response = stream == null ? "" : readLimited(stream);
+            if (preview != null) {
+                try {
+                    String content = new JSONObject(response).getJSONArray("choices")
+                            .getJSONObject(0).getJSONObject("message").getString("content");
+                    preview.append(content);
+                } catch (JSONException ignored) {
+                    // The ordinary parser below reports the malformed response.
+                }
             }
             return parseResponse(taskId, response);
         } catch (SocketTimeoutException exception) {
@@ -121,6 +164,66 @@ public final class ChatCompletionClient {
         } finally {
             connection.disconnect();
         }
+    }
+
+    private static ParseResult parseStream(long taskId, InputStream stream, PreviewSink preview)
+            throws IOException {
+        StringBuilder completion = new StringBuilder();
+        JSONObject usage = null;
+        String finishReason = null;
+        boolean done = false;
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            StringBuilder event = new StringBuilder();
+            while ((line = reader.readLine()) != null) {
+                if (Thread.currentThread().isInterrupted()) throw new IOException("Parse interrupted");
+                if (line.isEmpty()) {
+                    if (event.length() == 0) continue;
+                    String data = event.toString();
+                    event.setLength(0);
+                    if ("[DONE]".equals(data)) { done = true; break; }
+                    try {
+                        JSONObject frame = new JSONObject(data);
+                        JSONObject frameUsage = frame.optJSONObject("usage");
+                        if (frameUsage != null) usage = frameUsage;
+                        JSONArray choices = frame.optJSONArray("choices");
+                        if (choices == null || choices.length() == 0) continue;
+                        JSONObject choice = choices.getJSONObject(0);
+                        if (!choice.isNull("finish_reason"))
+                            finishReason = choice.optString("finish_reason", finishReason);
+                        JSONObject delta = choice.optJSONObject("delta");
+                        String chunk = delta == null ? "" : delta.optString("content", "");
+                        if (!chunk.isEmpty()) {
+                            if (completion.length() + chunk.length() > MAX_RESPONSE_CHARS)
+                                throw new IOException("AI response exceeds size limit");
+                            completion.append(chunk);
+                            preview.append(chunk);
+                        }
+                    } catch (JSONException exception) {
+                        throw new IOException("Invalid AI stream frame", exception);
+                    }
+                } else if (line.startsWith("data:")) {
+                    if (event.length() > 0) event.append('\n');
+                    event.append(line.substring(5).trim());
+                    if (event.length() > MAX_RESPONSE_CHARS)
+                        throw new IOException("AI stream frame exceeds size limit");
+                }
+            }
+            if ("[DONE]".equals(event.toString())) done = true;
+        }
+        if (!done) throw new IOException("AI stream ended before completion");
+        if (completion.length() == 0) throw new IOException("AI stream returned no content");
+        JSONObject envelope = new JSONObject();
+        try {
+            envelope.put("choices", new JSONArray().put(new JSONObject()
+                    .put("finish_reason", finishReason)
+                    .put("message", new JSONObject().put("content", completion.toString()))));
+            if (usage != null) envelope.put("usage", usage);
+        } catch (JSONException exception) {
+            throw new IOException("Could not assemble AI response", exception);
+        }
+        return parseResponse(taskId, envelope.toString());
     }
 
     static ParseResult parseResponse(long taskId, String response) throws IOException {

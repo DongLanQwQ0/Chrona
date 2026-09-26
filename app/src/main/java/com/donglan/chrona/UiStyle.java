@@ -5,6 +5,7 @@ import android.animation.ObjectAnimator;
 import android.animation.StateListAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -15,14 +16,17 @@ import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
+import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.function.IntConsumer;
 
 /** Semantic colors, shapes and motion for the native View interface. */
-final class UiStyle {
+public final class UiStyle {
     static final class Palette {
         final int background, surface, surfaceAlt, text, muted, outline, primary, onPrimary;
         final int primaryContainer, onPrimaryContainer;
@@ -45,38 +49,64 @@ final class UiStyle {
 
     static Palette colors(Context context) {
         boolean dark = ThemeStore.dark(context);
-        int background = dark ? 0xFF101B1B : 0xFFF6F8F5;
-        int surface = dark ? 0xFF1A2928 : Color.WHITE;
-        int surfaceAlt = dark ? 0xFF233431 : 0xFFEAF2EE;
-        int text = dark ? 0xFFE5F3EE : 0xFF172B2A;
-        int muted = dark ? 0xFFADC5BB : 0xFF566F67;
-        int outline = dark ? 0xFF40554D : 0xFFD9E6DE;
+        int background, surface, surfaceAlt, text, muted, outline;
         String scheme = ThemeStore.color(context);
         int primary, container, onContainer;
         if (ThemeStore.WALLPAPER.equals(scheme) && ThemeStore.wallpaperAvailable()) {
+            background = context.getColor(dark ? android.R.color.system_neutral1_900
+                    : android.R.color.system_neutral1_10);
+            surface = context.getColor(dark ? android.R.color.system_neutral1_800
+                    : android.R.color.system_neutral1_50);
+            surfaceAlt = context.getColor(dark ? android.R.color.system_neutral2_800
+                    : android.R.color.system_neutral2_100);
+            text = context.getColor(dark ? android.R.color.system_neutral1_50
+                    : android.R.color.system_neutral1_900);
+            muted = context.getColor(dark ? android.R.color.system_neutral2_200
+                    : android.R.color.system_neutral2_700);
+            outline = context.getColor(dark ? android.R.color.system_neutral2_700
+                    : android.R.color.system_neutral2_200);
             primary = context.getColor(dark ? android.R.color.system_accent1_200
                     : android.R.color.system_accent1_700);
             container = context.getColor(dark ? android.R.color.system_accent1_800
                     : android.R.color.system_accent1_100);
-            onContainer = dark ? 0xFFF7FAF8 : 0xFF172B2A;
+            onContainer = context.getColor(dark ? android.R.color.system_accent1_100
+                    : android.R.color.system_accent1_900);
         } else if (ThemeStore.BLUE.equals(scheme)) {
+            background = dark ? 0xFF101722 : 0xFFF7F9FF;
+            surface = dark ? 0xFF1C2636 : 0xFFFFFFFF;
+            surfaceAlt = dark ? 0xFF27354B : 0xFFEAF0FB;
+            text = dark ? 0xFFE4ECFA : 0xFF17263E;
+            muted = dark ? 0xFFAFBED6 : 0xFF586B89;
+            outline = dark ? 0xFF42536C : 0xFFD7E2F1;
             primary = dark ? 0xFFA9C7FF : 0xFF315CA7;
             container = dark ? 0xFF243F6A : 0xFFD8E5FF;
             onContainer = dark ? 0xFFD8E5FF : 0xFF17345F;
         } else if (ThemeStore.CORAL.equals(scheme)) {
+            background = dark ? 0xFF201613 : 0xFFFFF8F5;
+            surface = dark ? 0xFF30221D : 0xFFFFFFFF;
+            surfaceAlt = dark ? 0xFF403029 : 0xFFFFEEE8;
+            text = dark ? 0xFFF8E8E0 : 0xFF37231C;
+            muted = dark ? 0xFFD6B9AB : 0xFF806457;
+            outline = dark ? 0xFF644A3F : 0xFFF0DCD2;
             primary = dark ? 0xFFFFB4A1 : 0xFF9B4B32;
             container = dark ? 0xFF603426 : 0xFFFFDED4;
             onContainer = dark ? 0xFFFFDED4 : 0xFF622B1A;
         } else {
+            background = dark ? 0xFF101B1B : 0xFFF6F8F5;
+            surface = dark ? 0xFF1A2928 : Color.WHITE;
+            surfaceAlt = dark ? 0xFF233431 : 0xFFEAF2EE;
+            text = dark ? 0xFFE5F3EE : 0xFF172B2A;
+            muted = dark ? 0xFFADC5BB : 0xFF566F67;
+            outline = dark ? 0xFF40554D : 0xFFD9E6DE;
             primary = dark ? 0xFF80D8C9 : 0xFF006B60;
             container = dark ? 0xFF12483F : 0xFFC8F1E6;
             onContainer = dark ? 0xFFC8F1E6 : 0xFF004C44;
         }
         return new Palette(background, surface, surfaceAlt, text, muted, outline,
-                primary, dark ? 0xFF122321 : Color.WHITE, container, onContainer);
+                primary, dark ? background : Color.WHITE, container, onContainer);
     }
 
-    static void page(Activity activity, LinearLayout root) {
+    public static void page(Activity activity, LinearLayout root) {
         Palette colors = colors(activity);
         root.setBackgroundColor(colors.background);
         activity.getWindow().setStatusBarColor(colors.background);
@@ -86,12 +116,12 @@ final class UiStyle {
         root.setFitsSystemWindows(true);
     }
 
-    static void title(TextView view) {
+    public static void title(TextView view) {
         view.setTextColor(colors(view.getContext()).text);
         view.setTypeface(null, Typeface.BOLD);
         view.setLetterSpacing(-0.025f);
     }
-    static void muted(TextView view) { view.setTextColor(colors(view.getContext()).muted); }
+    public static void muted(TextView view) { view.setTextColor(colors(view.getContext()).muted); }
 
     static void input(EditText view) {
         Palette colors = colors(view.getContext());
@@ -101,14 +131,14 @@ final class UiStyle {
         view.setPadding(dp(view, 16), dp(view, 14), dp(view, 16), dp(view, 14));
     }
 
-    static void button(Button view, boolean primary) {
+    public static void button(Button view, boolean primary) {
         Palette colors = colors(view.getContext());
         view.setAllCaps(false);
         view.setTextColor(primary ? colors.onPrimary : colors.primary);
         view.setTextSize(15);
         view.setTypeface(null, Typeface.BOLD);
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(
-                primary ? 0x44FFFFFF : 0x22006B60),
+                primary ? 0x44FFFFFF : alpha(colors.primary, 34)),
                 shape(view, primary ? colors.primary : colors.surface, 18,
                         primary ? colors.primary : colors.outline), null));
         view.setMinimumHeight(dp(view, 52));
@@ -118,14 +148,14 @@ final class UiStyle {
         view.setStateListAnimator(press);
     }
 
-    static void card(View view) {
+    public static void card(View view) {
         Palette colors = colors(view.getContext());
         view.setBackground(shape(view, colors.surface, 22, colors.outline));
         view.setElevation(dp(view, 2));
     }
 
     /** Translucent surface over the softly colored backdrop; text stays opaque. */
-    static void glass(View view) {
+    public static void glass(View view) {
         Palette colors = colors(view.getContext());
         boolean dark = ThemeStore.dark(view.getContext());
         GradientDrawable sheet = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
@@ -146,7 +176,7 @@ final class UiStyle {
 
     static void pill(View view, boolean selected) {
         Palette colors = colors(view.getContext());
-        view.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22006B60),
+        view.setBackground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
                 shape(view, selected ? colors.primaryContainer : colors.surface, 24,
                         selected ? colors.primaryContainer : colors.outline), null));
     }
@@ -176,13 +206,13 @@ final class UiStyle {
         return pulse;
     }
 
-    static void addSpaced(LinearLayout parent, View view, int top, int bottom) {
+    public static void addSpaced(LinearLayout parent, View view, int top, int bottom) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.setMargins(0, dp(view, top), 0, dp(view, bottom));
         parent.addView(view, params);
     }
 
-    static void back(Activity activity, LinearLayout parent) {
+    public static void back(Activity activity, LinearLayout parent) {
         TextView back = new TextView(activity);
         back.setText("←  返回");
         back.setTextSize(15);
@@ -195,8 +225,104 @@ final class UiStyle {
         addSpaced(parent, back, 0, 8);
     }
 
+    /** A themed, scrollable choice sheet shared by settings and filters. */
+    public static void choiceDialog(Activity activity, String title, String[] options,
+            int selected, IntConsumer onChoice) {
+        Dialog dialog = dialog(activity);
+        LinearLayout panel = dialogPanel(activity, title);
+        ScrollView scroll = new ScrollView(activity);
+        LinearLayout choices = new LinearLayout(activity);
+        choices.setOrientation(LinearLayout.VERTICAL);
+        for (int i = 0; i < options.length; i++) {
+            final int index = i;
+            TextView item = new TextView(activity);
+            item.setText(options[i] + (i == selected ? "  ✓" : ""));
+            item.setTextSize(16);
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setMinHeight(dp(item, 52));
+            item.setPadding(dp(item, 18), 0, dp(item, 18), 0);
+            item.setTextColor(i == selected ? colors(activity).onPrimaryContainer
+                    : colors(activity).text);
+            pill(item, i == selected);
+            item.setOnClickListener(view -> {
+                dialog.dismiss();
+                onChoice.accept(index);
+            });
+            addSpaced(choices, item, 2, 5);
+        }
+        scroll.addView(choices);
+        int maxHeight = (int) (activity.getResources().getDisplayMetrics().heightPixels * .58f);
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1,
+                Math.min(maxHeight, options.length * dp(scroll, 60))));
+        showDialog(dialog, panel);
+    }
+
+    public static void confirmDialog(Activity activity, String title, String message,
+            String positive, Runnable onConfirm) {
+        Dialog dialog = dialog(activity);
+        LinearLayout panel = dialogPanel(activity, title);
+        TextView explanation = new TextView(activity);
+        explanation.setText(message);
+        explanation.setTextSize(15);
+        muted(explanation);
+        addSpaced(panel, explanation, 4, 20);
+        LinearLayout actions = new LinearLayout(activity);
+        Button cancel = new Button(activity);
+        cancel.setText("取消");
+        button(cancel, false);
+        cancel.setOnClickListener(view -> dialog.dismiss());
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(cancel, 52), 1));
+        Button confirm = new Button(activity);
+        confirm.setText(positive);
+        button(confirm, true);
+        confirm.setOnClickListener(view -> {
+            dialog.dismiss();
+            onConfirm.run();
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(confirm, 52), 1);
+        params.setMargins(dp(confirm, 8), 0, 0, 0);
+        actions.addView(confirm, params);
+        panel.addView(actions);
+        showDialog(dialog, panel);
+    }
+
+    private static Dialog dialog(Activity activity) {
+        Dialog dialog = new Dialog(activity);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            android.view.WindowManager.LayoutParams params = window.getAttributes();
+            params.dimAmount = 0.48f;
+            window.setAttributes(params);
+        }
+        return dialog;
+    }
+
+    private static LinearLayout dialogPanel(Activity activity, String title) {
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(panel, 20), dp(panel, 20), dp(panel, 20), dp(panel, 20));
+        glass(panel);
+        TextView heading = new TextView(activity);
+        heading.setText(title);
+        heading.setTextSize(21);
+        title(heading);
+        addSpaced(panel, heading, 0, 12);
+        return panel;
+    }
+
+    private static void showDialog(Dialog dialog, View content) {
+        dialog.setContentView(content);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) window.setLayout(
+                Math.min((int) (content.getResources().getDisplayMetrics().widthPixels * .90f),
+                        dp(content, 460)), -2);
+    }
+
     /** Keep controls clear of Android 15+ system bars while the backdrop draws behind them. */
-    static void applyInsets(View stage, View safeContent) {
+    public static void applyInsets(View stage, View safeContent) {
         applyInsets(stage, safeContent, null);
     }
 

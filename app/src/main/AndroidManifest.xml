@@ -17,12 +17,14 @@
     </queries>
 
     <application
+        android:name=".ChronaApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.Chrona.Light">
         <activity android:name=".AppearanceActivity" android:exported="false" />
+        <activity android:name=".ModelOutputActivity" android:exported="false" />
         <activity android:name=".SettingsHubActivity" android:exported="false" />
         <activity
             android:name=".TaskDetailActivity"

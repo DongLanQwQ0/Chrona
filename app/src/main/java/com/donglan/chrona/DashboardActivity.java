@@ -14,7 +14,6 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -44,11 +43,14 @@ public final class DashboardActivity extends Activity {
     private int inboxShown = 12, scheduleShown = 12;
     private LinearLayout content;
     private LinearLayout navigation;
+    private LinearLayout results;
+    private LinearLayout filterChips;
+    private TextView categoryChip;
     private ScrollView scroll;
     private GlassBackdropView backdrop;
     private boolean wide;
-    private String appliedAppearance;
     private String snapshot = "";
+    private int restoredScrollY;
     private final Handler refresh = new Handler(Looper.getMainLooper());
     private final Runnable poll = this::pollChanges;
 
@@ -62,11 +64,12 @@ public final class DashboardActivity extends Activity {
             scheduleTab = state.getInt("schedule_tab");
             inboxShown = state.getInt("inbox_shown", 12);
             scheduleShown = state.getInt("schedule_shown", 12);
+            restoredScrollY = state.getInt("scroll_y");
         } else {
             section = getIntent().getIntExtra(EXTRA_SECTION, HOME);
         }
-        appliedAppearance = appearanceKey();
         buildShell();
+        if (state == null) backdrop.playEntrance();
         if (android.os.Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -82,6 +85,7 @@ public final class DashboardActivity extends Activity {
         state.putInt("schedule_tab", scheduleTab);
         state.putInt("inbox_shown", inboxShown);
         state.putInt("schedule_shown", scheduleShown);
+        state.putInt("scroll_y", scroll.getScrollY());
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -89,21 +93,21 @@ public final class DashboardActivity extends Activity {
         setIntent(intent);
         section = intent.getIntExtra(EXTRA_SECTION, section);
         render();
+        scroll.scrollTo(0, 0);
     }
 
     @Override protected void onResume() {
         super.onResume();
-        if (!appearanceKey().equals(appliedAppearance)) {
-            recreate();
-            return;
-        }
         int recovered = ProcessingJobService.reconcile(this);
         if (recovered > 0) Toast.makeText(this,
                 recovered + " 条解析已中断，请在收件箱重试", Toast.LENGTH_LONG).show();
-        render();
+        int oldScroll = restoredScrollY != 0 ? restoredScrollY : scroll.getScrollY();
+        restoredScrollY = 0;
+        if ((section == INBOX || section == SCHEDULE) && results != null) updateResults();
+        else render();
+        scroll.post(() -> scroll.scrollTo(0, oldScroll));
         snapshot = dataSnapshot();
         refresh.postDelayed(poll, 5000L);
-        backdrop.playEntrance();
     }
 
     @Override protected void onPause() {
@@ -116,7 +120,8 @@ public final class DashboardActivity extends Activity {
         String current = dataSnapshot();
         if (!current.equals(snapshot)) {
             int scrollY = scroll.getScrollY();
-            render();
+            if ((section == INBOX || section == SCHEDULE) && results != null) updateResults();
+            else render();
             scroll.post(() -> scroll.scrollTo(0, scrollY));
             snapshot = current;
         }
@@ -135,11 +140,6 @@ public final class DashboardActivity extends Activity {
         } catch (Exception ignored) {
             return "";
         }
-    }
-
-    private String appearanceKey() {
-        return ThemeStore.mode(this) + "/" + ThemeStore.color(this) + "/"
-                + ThemeStore.dark(this);
     }
 
     private void buildShell() {
@@ -180,12 +180,14 @@ public final class DashboardActivity extends Activity {
                 Gravity.END | Gravity.BOTTOM);
         floating.setMargins(0, 0, dp(24), dp(wide ? 24 : 87));
         stage.addView(capture, floating);
-        UiStyle.enter(capture, 2);
         UiStyle.applyInsets(stage, shell, capture);
         setContentView(stage);
     }
 
     private void render() {
+        results = null;
+        filterChips = null;
+        categoryChip = null;
         content.removeAllViews();
         addHeader();
         try (TaskStore store = new TaskStore(this)) {
@@ -196,7 +198,6 @@ public final class DashboardActivity extends Activity {
             message(content, "暂时无法读取日程：" + exception.getMessage());
         }
         drawNavigation();
-        UiStyle.enter(content, 0);
     }
 
     private void addHeader() {
@@ -312,31 +313,40 @@ public final class DashboardActivity extends Activity {
 
     private void inbox(TaskStore store) {
         message(content, "所有输入与处理进度。点开一条，可确认、编辑或重试。");
-        chipRow(new String[]{"全部", "待确认", "处理中", "失败", "已写入"},
+        filterChips = chipRow(new String[]{"全部", "待确认", "处理中", "失败", "已写入"},
                 statusIndex, index -> {
+                    if (statusIndex == index) return;
                     statusIndex = index;
                     inboxShown = 12;
-                    switchContent();
+                    updateChipSelection(statusIndex);
+                    updateResults();
                 });
         TextView category = text("类型：" + categoryOptions()[categoryIndex] + "  ▾", 14, true);
+        categoryChip = category;
         category.setTextColor(UiStyle.colors(this).primary);
         category.setGravity(Gravity.CENTER_VERTICAL);
         category.setPadding(dp(15), 0, dp(15), 0);
         category.setMinHeight(dp(44));
         UiStyle.pill(category, false);
         category.setOnClickListener(view -> {
-            PopupMenu popup = new PopupMenu(this, category);
             String[] choices = categoryOptions();
-            for (int i = 0; i < choices.length; i++) popup.getMenu().add(0, i, i, choices[i]);
-            popup.setOnMenuItemClickListener(item -> {
-                categoryIndex = item.getItemId();
+            UiStyle.choiceDialog(this, "选择收件类型", choices, categoryIndex, selected -> {
+                if (categoryIndex == selected) return;
+                categoryIndex = selected;
                 inboxShown = 12;
-                switchContent();
-                return true;
+                categoryChip.setText("类型：" + choices[categoryIndex] + "  ▾");
+                updateResults();
             });
-            popup.show();
         });
         UiStyle.addSpaced(content, category, 4, 4);
+        results = new LinearLayout(this);
+        results.setOrientation(LinearLayout.VERTICAL);
+        content.addView(results);
+        renderInboxResults(store);
+    }
+
+    private void renderInboxResults(TaskStore store) {
+        results.removeAllViews();
         String selectedCategory = categoryIndex == 0 ? null
                 : EventCategory.VALUES[categoryIndex - 1];
         List<TaskRecord> tasks = statusIndex == 4
@@ -345,24 +355,34 @@ public final class DashboardActivity extends Activity {
                         : store.listTasksByCategory(selectedCategory);
         List<TaskRecord> visible = new ArrayList<>();
         for (TaskRecord task : tasks) if (matches(task)) visible.add(task);
-        sectionTitle("共 " + visible.size() + " 条收件");
-        if (visible.isEmpty()) empty("没有符合条件的收件。");
+        sectionTitle(results, "共 " + visible.size() + " 条收件");
+        if (visible.isEmpty()) empty(results, "没有符合条件的收件。");
         for (int i = 0; i < Math.min(inboxShown, visible.size()); i++)
-            taskRow(content, visible.get(i), i);
+            taskRow(results, visible.get(i), i);
         if (visible.size() > inboxShown) {
             Button more = button("继续浏览 · 还有 " + (visible.size() - inboxShown) + " 条",
-                    false, () -> { inboxShown += 12; expandContent(); });
-            UiStyle.addSpaced(content, more, 8, 0);
+                    false, () -> { inboxShown += 12; updateResults(); });
+            UiStyle.addSpaced(results, more, 8, 0);
         }
     }
 
     private void schedule(TaskStore store) {
         message(content, "按时间浏览解析出的事项，点开即可修改或写入日历。");
-        chipRow(new String[]{"即将到来", "待补全", "较早的"}, scheduleTab, index -> {
+        filterChips = chipRow(new String[]{"即将到来", "待补全", "较早的"}, scheduleTab, index -> {
+            if (scheduleTab == index) return;
             scheduleTab = index;
             scheduleShown = 12;
-            switchContent();
+            updateChipSelection(scheduleTab);
+            updateResults();
         });
+        results = new LinearLayout(this);
+        results.setOrientation(LinearLayout.VERTICAL);
+        content.addView(results);
+        renderScheduleResults(store);
+    }
+
+    private void renderScheduleResults(TaskStore store) {
+        results.removeAllViews();
         List<EventCandidate> candidates = store.listCandidates();
         long now = System.currentTimeMillis();
         List<EventCandidate> visible = new ArrayList<>();
@@ -374,22 +394,49 @@ public final class DashboardActivity extends Activity {
                 visible.add(item);
         }
         if (scheduleTab == 2) java.util.Collections.reverse(visible);
-        sectionTitle((scheduleTab == 0 ? "即将到来" : scheduleTab == 1
+        sectionTitle(results, (scheduleTab == 0 ? "即将到来" : scheduleTab == 1
                 ? "待补全时间" : "较早的日程") + " · " + visible.size());
         if (visible.isEmpty()) {
-            empty(scheduleTab == 0 ? "暂无即将到来的日程。"
+            empty(results, scheduleTab == 0 ? "暂无即将到来的日程。"
                     : scheduleTab == 1 ? "没有待补全时间的事项。" : "还没有较早的日程。");
         }
         for (int i = 0; i < Math.min(scheduleShown, visible.size()); i++)
-            candidateRow(visible.get(i), i);
+            candidateRow(results, visible.get(i), i);
         if (visible.size() > scheduleShown) {
             Button more = button("继续浏览 · 还有 " + (visible.size() - scheduleShown) + " 条",
-                    false, () -> { scheduleShown += 12; expandContent(); });
-            UiStyle.addSpaced(content, more, 8, 0);
+                    false, () -> { scheduleShown += 12; updateResults(); });
+            UiStyle.addSpaced(results, more, 8, 0);
+        }
+    }
+
+    private void updateResults() {
+        if (results == null) return;
+        int previous = scroll.getScrollY();
+        try (TaskStore store = new TaskStore(this)) {
+            if (section == INBOX) renderInboxResults(store);
+            else if (section == SCHEDULE) renderScheduleResults(store);
+        } catch (Exception exception) {
+            results.removeAllViews();
+            message(results, "暂时无法读取日程：" + exception.getMessage());
+        }
+        scroll.post(() -> scroll.scrollTo(0, previous));
+    }
+
+    private void updateChipSelection(int selected) {
+        if (filterChips == null) return;
+        for (int i = 0; i < filterChips.getChildCount(); i++) {
+            TextView chip = (TextView) filterChips.getChildAt(i);
+            chip.setTextColor(i == selected ? UiStyle.colors(this).onPrimaryContainer
+                    : UiStyle.colors(this).primary);
+            UiStyle.pill(chip, i == selected);
         }
     }
 
     private void candidateRow(EventCandidate item, int index) {
+        candidateRow(content, item, index);
+    }
+
+    private void candidateRow(LinearLayout parent, EventCandidate item, int index) {
         LinearLayout card = card();
         card.addView(text(item.title, 17, true));
         String when = item.startAtMillis == null ? "时间待补全" : formatWhen(item);
@@ -398,8 +445,7 @@ public final class DashboardActivity extends Activity {
         UiStyle.addSpaced(card, meta, 6, 0);
         card.setOnClickListener(view -> openTask(item.taskId));
         UiStyle.pressable(card);
-        UiStyle.addSpaced(content, card, 4, 7);
-        UiStyle.enter(card, index);
+        UiStyle.addSpaced(parent, card, 4, 7);
     }
 
     private void taskRow(LinearLayout parent, TaskRecord task, int index) {
@@ -412,7 +458,6 @@ public final class DashboardActivity extends Activity {
         card.setOnClickListener(view -> openTask(task.id));
         UiStyle.pressable(card);
         UiStyle.addSpaced(parent, card, 4, 7);
-        UiStyle.enter(card, index);
     }
 
     private void openTask(long taskId) {
@@ -460,7 +505,6 @@ public final class DashboardActivity extends Activity {
                     ? UiStyle.colors(this).onPrimaryContainer : UiStyle.colors(this).muted));
             item.setContentDescription(labels[i] + (section == i ? "，当前页面" : ""));
             UiStyle.pill(item, section == i);
-            if (section == i) UiStyle.pop(item);
             item.setOnClickListener(view -> switchTo(destination));
             LinearLayout.LayoutParams params = wide
                     ? new LinearLayout.LayoutParams(-1, dp(78))
@@ -499,7 +543,7 @@ public final class DashboardActivity extends Activity {
         return card;
     }
 
-    private void chipRow(String[] labels, int selected, java.util.function.IntConsumer action) {
+    private LinearLayout chipRow(String[] labels, int selected, java.util.function.IntConsumer action) {
         HorizontalScrollView strip = new HorizontalScrollView(this);
         strip.setHorizontalScrollBarEnabled(false);
         strip.setClipToPadding(false);
@@ -514,7 +558,6 @@ public final class DashboardActivity extends Activity {
             chip.setTextColor(i == selected ? UiStyle.colors(this).onPrimaryContainer
                     : UiStyle.colors(this).primary);
             UiStyle.pill(chip, i == selected);
-            if (i == selected) UiStyle.pop(chip);
             chip.setOnClickListener(view -> action.accept(index));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
             params.setMargins(0, 0, dp(8), 0);
@@ -526,17 +569,7 @@ public final class DashboardActivity extends Activity {
             if (selected < row.getChildCount()) strip.scrollTo(
                     Math.max(0, row.getChildAt(selected).getLeft() - dp(20)), 0);
         });
-    }
-
-    private void switchContent() {
-        render();
-        scroll.smoothScrollTo(0, 0);
-    }
-
-    private void expandContent() {
-        int previous = scroll.getScrollY();
-        render();
-        scroll.post(() -> scroll.scrollTo(0, previous));
+        return row;
     }
 
     private String preview(TaskRecord task) {
@@ -598,16 +631,22 @@ public final class DashboardActivity extends Activity {
     }
 
     private void sectionTitle(String title) {
+        sectionTitle(content, title);
+    }
+    private void sectionTitle(LinearLayout parent, String title) {
         TextView label = text(title, 19, true);
-        UiStyle.addSpaced(content, label, 16, 9);
+        UiStyle.addSpaced(parent, label, 16, 9);
     }
     private void message(LinearLayout parent, String text) {
         UiStyle.addSpaced(parent, text(text, 14, false), 0, 0);
     }
     private void empty(String text) {
+        empty(content, text);
+    }
+    private void empty(LinearLayout parent, String text) {
         LinearLayout box = card();
         box.addView(text(text, 15, false));
-        UiStyle.addSpaced(content, box, 3, 8);
+        UiStyle.addSpaced(parent, box, 3, 8);
     }
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
