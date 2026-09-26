@@ -169,9 +169,16 @@ public final class DebugActivity extends Activity {
             for (JobInfo job : pending) {
                 text.append("  jobId=").append(job.getId())
                         .append(" task=").append(job.getExtras().getLong("task_id", -1))
+                        .append(" 用户发起=").append(userInitiated(job))
                         .append('\n');
             }
         }
+    }
+
+    /** User-initiated jobs get priority over background cleaners; only Android 14+ has them. */
+    private static String userInitiated(JobInfo job) {
+        if (Build.VERSION.SDK_INT < 34) return "不适用";
+        return job.isUserInitiated() ? "是" : "否";
     }
 
     private boolean isDebuggable() {

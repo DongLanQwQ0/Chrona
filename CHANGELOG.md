@@ -1,5 +1,26 @@
 # 更新记录
 
+## 0.7.0 — 2026-09-26
+
+**解析改成「用户发起的前台任务」，让系统不再在后台把它清掉。** 起因是 0.6.1/0.6.2 的真机日志：解析跑在普通 `JobService` 里，应用一离开前台就可能被系统清理，进程一死请求就没了着落。
+
+- API 34+ 改用用户发起 job：`JobInfo.Builder.setUserInitiated(true)` + `setEstimatedNetworkBytes(128 KB, 512 KB)`，并在 `onStartJob` 里（10 秒期限之内）调用 `JobService.setNotification(...)` 挂上常驻通知；API 34 以下维持原来的 `setPersisted(true)`。
+- 常驻通知：独立低优先级渠道 `chrona_parsing`，标题「拾时 · Chrona 正在解析」，正文是这条输入的内容摘要，点按进入任务详情；任务结束时由 `JOB_END_NOTIFICATION_POLICY_REMOVE` 自动撤下，结果通知仍走原来的 `chrona_processing` 渠道。
+- 清单新增 `android.permission.RUN_USER_INITIATED_JOBS`（normal 级，安装即授予）。诊断页的待处理任务列表增加「用户发起=是/否」。
+
+**API 用法是核对官方文档后才动手的**（文档更新于 2026-08-28）：`JobInfo.Builder.setNotification` **已从 API 36 的 `android.jar` 中移除**（用 `javap` 直接确认），官方替代路径正是 `setUserInitiated(true)` + `JobService.setNotification(JobParameters,int,Notification,int)`；API 34+ 的用户发起 job 只能用于网络数据传输、必须声明网络约束（我们本来就有 `NETWORK_TYPE_ANY`），且无配额、立即启动、优先级 `PRIORITY_MAX`。
+
+- **修复过期 job 可能重复计费**：`processOnce` 只处理仍处于 `queued` / `processing` 的输入，否则记 `job skipped task=N status=… (no longer waiting to be parsed)` 后直接结束。起因是真机上看到一个 0.6.2 时代 `setPersisted(true)` 留下的 job 正在为一条**已经解析成功**的输入排队等待执行——它一旦运行就会重新上传图片并再次计费。两个入队点（首次提交、详情页「重新解析」）都会先把状态写成 `queued`，所以这个判据不会影响正常解析。
+
+**真机验证（2026-09-26，vivo V2527A / Android 16，`api.deepseek.com` + `deepseek-flash`）**：
+
+- 系统状态确认用户发起 job 生效：`Priority: 500 [MAX]`、`userInitiatedApproved: true (started as UIJ: true)`、`Started with foreground flag: true`、`Internal flags: HAS_FOREGROUND_EXEMPTION`；入队到运行 **2.2 秒**；通知 id `20006`、channel `chrona_parsing`、`flags=ONGOING_EVENT|USER_INITIATED_JOB`。
+- 后台存活 A/B 验证：提交后 **0.4 秒**切到桌面，请求仍在后台跑完（`response task=8 ok in 7619ms`）；全程留在应用内的对照同样成功（`task=9 ok in 9054ms`）。
+- 观察到的边界（如实记录）：这台设备上仍然出现过一次切后台后 `job stopped task=7 worker=true`。因为 `Thread.interrupt()` 不会终止阻塞中的请求，线程继续跑，最终由自动重试接住并成功（`attempt 1 failed after 76180ms` → `attempt 2/3` → `response ok in 92304ms`，token 3462），任务没有卡住。用户随后开启了系统的「后台进程锁」。
+- 过期 job 的跳过分支**未能在真机上直接触发**（已完成的 job 会从调度器注销，无法用 `cmd jobscheduler run` 复现），只验证了正常解析不受影响（`task=10 ok in 6145ms`）。
+
+没有表结构变更，数据库仍为版本 3。
+
 ## 0.6.2 — 2026-09-26
 
 真机日志暴露了一个比网络失败更严重的问题：**图片输入会永远停在「解析中」**，而这一次的日志证据完整且自洽：

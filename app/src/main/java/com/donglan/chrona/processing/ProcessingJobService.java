@@ -40,6 +40,15 @@ public final class ProcessingJobService extends JobService {
     private static final String EXTRA_TASK_ID = "task_id";
     private static final int JOB_ID_BASE = 10_000;
     private static final String CHANNEL_ID = "chrona_processing";
+    private static final String RUNNING_CHANNEL_ID = "chrona_parsing";
+    /** Keeps the running notice clear of the result notice posted for the same input. */
+    private static final int RUNNING_NOTIFICATION_BASE = 20_000;
+    /**
+     * Order-of-magnitude traffic per parse: a one-image input uploads at most ~215 KB and every
+     * response is a few KB of JSON, so one estimate covers both the image and the text path.
+     */
+    private static final long ESTIMATED_DOWNLOAD_BYTES = 128 * 1024L;
+    private static final long ESTIMATED_UPLOAD_BYTES = 512 * 1024L;
     /** The same input must never be parsed by two workers at once. */
     private static final Set<Long> IN_FLIGHT = Collections.synchronizedSet(new HashSet<>());
     private static final int MAX_REQUEST_ATTEMPTS = 3;
@@ -54,19 +63,30 @@ public final class ProcessingJobService extends JobService {
         }
         PersistableBundle extras = new PersistableBundle();
         extras.putLong(EXTRA_TASK_ID, taskId);
-        JobInfo job = new JobInfo.Builder(JOB_ID_BASE + (int) taskId,
+        JobInfo.Builder builder = new JobInfo.Builder(JOB_ID_BASE + (int) taskId,
                 new ComponentName(context, ProcessingJobService.class))
                 .setExtras(extras)
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                .setPersisted(true)
-                .setBackoffCriteria(30_000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
-                .build();
+                .setBackoffCriteria(30_000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // The user just tapped submit and is waiting for one network round trip, which is what
+            // a user-initiated job is for: top priority, exempt from quotas, and the system keeps
+            // the process alive for it instead of letting a background cleaner kill it mid-request.
+            // Such a job cannot be persisted, so an input abandoned by a reboot is failed by
+            // reconcile() on the next launch rather than resumed.
+            builder.setUserInitiated(true)
+                    .setEstimatedNetworkBytes(ESTIMATED_DOWNLOAD_BYTES, ESTIMATED_UPLOAD_BYTES);
+        } else {
+            builder.setPersisted(true);
+        }
+        JobInfo job = builder.build();
         JobScheduler scheduler = context.getSystemService(JobScheduler.class);
         if (scheduler == null || scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
             DiagLog.add(context, "enqueue failed task=" + taskId);
             throw new IllegalStateException("Could not schedule parsing work");
         }
-        DiagLog.add(context, "enqueued task=" + taskId + " jobId=" + (JOB_ID_BASE + (int) taskId));
+        DiagLog.add(context, "enqueued task=" + taskId + " jobId=" + (JOB_ID_BASE + (int) taskId)
+                + " userInitiated=" + job.isUserInitiated());
     }
 
     /** Cancels queued or running parsing before an input is removed. */
@@ -89,11 +109,50 @@ public final class ProcessingJobService extends JobService {
             DiagLog.add(this, "job skipped task=" + taskId + " (already being processed)");
             return false;
         }
-        DiagLog.add(this, "job start task=" + taskId + " jobId=" + params.getJobId());
+        boolean userInitiated = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                && params.isUserInitiatedJob();
+        if (userInitiated) {
+            // A user-initiated job that shows no notification within 10 seconds is stopped by the
+            // system, so this comes before anything else the job does.
+            setNotification(params, RUNNING_NOTIFICATION_BASE + (int) taskId,
+                    runningNotification(taskId), JOB_END_NOTIFICATION_POLICY_REMOVE);
+        }
+        DiagLog.add(this, "job start task=" + taskId + " jobId=" + params.getJobId()
+                + " userInitiated=" + userInitiated);
         Thread worker = new Thread(() -> process(params, taskId), "chrona-parse-" + taskId);
         workers.put(params.getJobId(), worker);
         worker.start();
         return true;
+    }
+
+    /** Describes the work the running job is doing, as a user-initiated job's notice must. */
+    private Notification runningNotification(long taskId) {
+        String preview = "";
+        try (TaskStore store = new TaskStore(this)) {
+            TaskRecord task = store.getTask(taskId);
+            if (task != null) {
+                preview = task.rawText.replace('\n', ' ').trim();
+                if (task.imagePath != null) preview = "[图片] " + preview;
+                if (preview.length() > 40) preview = preview.substring(0, 40) + "…";
+            }
+        } catch (RuntimeException exception) {
+            DiagLog.add(this, "running notice lookup failed task=" + taskId + " " + exception);
+        }
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.createNotificationChannel(new NotificationChannel(RUNNING_CHANNEL_ID, "解析进行中",
+                    NotificationManager.IMPORTANCE_LOW));
+        }
+        Intent intent = new Intent(this, TaskDetailActivity.class).putExtra("task_id", taskId);
+        PendingIntent pending = PendingIntent.getActivity(this, (int) taskId, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        return new Notification.Builder(this, RUNNING_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("拾时 · Chrona 正在解析")
+                .setContentText(preview.isEmpty() ? "正在解析这条输入" : preview)
+                .setOngoing(true)
+                .setContentIntent(pending)
+                .build();
     }
 
     @Override
@@ -147,6 +206,15 @@ public final class ProcessingJobService extends JobService {
             TaskRecord task = store.getTask(taskId);
             if (task == null) {
                 DiagLog.add(this, "job dropped: task=" + taskId + " no longer exists");
+                return;
+            }
+            // A job can outlive the parse it was queued for: a persisted job restored after an
+            // update, or a run the system rescheduled. Only an input that is still waiting for a
+            // parse is worth a request, so a stale run can never pay for the same answer twice.
+            if (!TaskRecord.QUEUED.equals(task.status)
+                    && !TaskRecord.PROCESSING.equals(task.status)) {
+                DiagLog.add(this, "job skipped task=" + taskId + " status=" + task.status
+                        + " (no longer waiting to be parsed)");
                 return;
             }
             settings = new AiSettingsStore(this).load();

@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 14+: parsing runs as a user-initiated job so the system keeps it alive. -->
+    <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
 
     <!-- Android 11+ package visibility: without this SpeechRecognizer cannot see a recognizer. -->
     <queries>
