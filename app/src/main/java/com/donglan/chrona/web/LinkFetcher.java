@@ -208,11 +208,13 @@ public final class LinkFetcher {
     private static String decodeEntities(String text) {
         Matcher matcher = ENTITY.matcher(text);
         StringBuilder result = new StringBuilder();
+        int copiedTo = 0;
         while (matcher.find()) {
-            matcher.appendReplacement(result,
-                    Matcher.quoteReplacement(entityValue(matcher.group(1))));
+            result.append(text, copiedTo, matcher.start());
+            result.append(entityValue(matcher.group(1)));
+            copiedTo = matcher.end();
         }
-        matcher.appendTail(result);
+        result.append(text, copiedTo, text.length());
         return result.toString();
     }
 

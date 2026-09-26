@@ -192,7 +192,9 @@ public final class DebugActivity extends Activity {
 
     private String versionCode() {
         PackageInfo info = packageInfo();
-        return info == null ? "?" : Long.toString(info.getLongVersionCode());
+        if (info == null) return "?";
+        if (Build.VERSION.SDK_INT >= 28) return Long.toString(info.getLongVersionCode());
+        return Integer.toString(info.versionCode);
     }
 
     @SuppressWarnings("deprecation")
