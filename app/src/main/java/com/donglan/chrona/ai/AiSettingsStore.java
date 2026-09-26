@@ -90,7 +90,15 @@ public final class AiSettingsStore {
      */
     public boolean isImageUnsupported(AiSettings settings) {
         return settings != null
-                && identity(settings).equals(preferences.getString(IMAGE_REJECTED_FOR, null));
+                && (isKnownImageUnsupported(settings)
+                    || identity(settings).equals(preferences.getString(IMAGE_REJECTED_FOR, null)));
+    }
+
+    /** The official DeepSeek Pro endpoint currently has no vision input. */
+    public boolean isKnownImageUnsupported(AiSettings settings) {
+        if (settings == null || !"deepseek-v4-pro".equals(settings.model)) return false;
+        return "https://api.deepseek.com".equalsIgnoreCase(settings.baseUrl)
+                || "https://api.deepseek.com/v1".equalsIgnoreCase(settings.baseUrl);
     }
 
     /** Remembers that this endpoint and model cannot take images. */

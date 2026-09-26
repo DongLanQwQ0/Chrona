@@ -19,17 +19,20 @@ import android.speech.SpeechRecognizer;
 import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.data.TaskRecord;
+import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.debug.DebugActivity;
 import com.donglan.chrona.debug.DiagLog;
@@ -58,6 +61,9 @@ public final class MainActivity extends Activity {
     private ImageView attachment;
     private Button removeImage;
     private LinearLayout taskList;
+    private Spinner categoryFilter;
+    private Spinner statusFilter;
+    private TextView historyCount;
     /** Rows of inputs still being parsed, whose elapsed time is counted up in place. */
     private final List<ProcessingRow> processingRows = new ArrayList<>();
     private final Handler ticker = new Handler(Looper.getMainLooper());
@@ -68,19 +74,25 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        ScrollView page = new ScrollView(this);
+        page.setFillViewport(true);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(28), dp(20), dp(12));
         root.setFitsSystemWindows(true);
+        UiStyle.page(this, root);
+        page.addView(root);
 
         TextView title = new TextView(this);
         title.setText("拾时 · Chrona");
         title.setTextSize(26);
+        UiStyle.title(title);
         root.addView(title);
 
         TextView hint = new TextView(this);
         hint.setText("先把事情记下来，后台解析后再确认日程。");
         hint.setPadding(0, dp(6), 0, dp(12));
+        UiStyle.muted(hint);
         root.addView(hint);
 
         input = new EditText(this);
@@ -88,22 +100,26 @@ public final class MainActivity extends Activity {
         input.setMinLines(4);
         input.setGravity(android.view.Gravity.TOP);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        root.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        UiStyle.input(input);
+        UiStyle.addSpaced(root, input, 0, 12);
 
         Button paste = new Button(this);
         paste.setText("读取剪贴板");
         paste.setOnClickListener(view -> pasteClipboard());
-        root.addView(paste);
+        UiStyle.button(paste, false);
+        UiStyle.addSpaced(root, paste, 4, 4);
 
         voiceInput = new Button(this);
         voiceInput.setText("语音输入");
         voiceInput.setOnClickListener(view -> startVoiceInput());
-        root.addView(voiceInput);
+        UiStyle.button(voiceInput, false);
+        UiStyle.addSpaced(root, voiceInput, 4, 4);
 
         pickImage = new Button(this);
         pickImage.setText("选择图片");
         pickImage.setOnClickListener(view -> pickImage());
-        root.addView(pickImage);
+        UiStyle.button(pickImage, false);
+        UiStyle.addSpaced(root, pickImage, 4, 4);
 
         attachment = new ImageView(this);
         attachment.setAdjustViewBounds(true);
@@ -115,7 +131,8 @@ public final class MainActivity extends Activity {
         removeImage.setText("移除图片");
         removeImage.setVisibility(View.GONE);
         removeImage.setOnClickListener(view -> clearPendingImage());
-        root.addView(removeImage);
+        UiStyle.button(removeImage, false);
+        UiStyle.addSpaced(root, removeImage, 4, 4);
 
         splitInput = new CheckBox(this);
         splitInput.setText("按行拆分为多条");
@@ -124,32 +141,62 @@ public final class MainActivity extends Activity {
         Button save = new Button(this);
         save.setText("保存并解析");
         save.setOnClickListener(view -> submit());
-        root.addView(save);
+        UiStyle.button(save, true);
+        UiStyle.addSpaced(root, save, 6, 10);
 
         Button settings = new Button(this);
         settings.setText("AI 服务设置");
         settings.setOnClickListener(view -> startActivity(new Intent(this, SettingsActivity.class)));
-        root.addView(settings);
+        UiStyle.button(settings, false);
+        UiStyle.addSpaced(root, settings, 4, 4);
 
         Button refresh = new Button(this);
         refresh.setText("刷新收件箱");
         refresh.setOnClickListener(view -> refreshTasks());
-        root.addView(refresh);
+        UiStyle.button(refresh, false);
+        UiStyle.addSpaced(root, refresh, 4, 4);
 
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             Button diagnostics = new Button(this);
             diagnostics.setText("诊断信息（测试版）");
             diagnostics.setOnClickListener(
                     view -> startActivity(new Intent(this, DebugActivity.class)));
-            root.addView(diagnostics);
+            UiStyle.button(diagnostics, false);
+            UiStyle.addSpaced(root, diagnostics, 4, 4);
         }
 
-        ScrollView scroll = new ScrollView(this);
+        historyCount = new TextView(this);
+        historyCount.setTextSize(20);
+        historyCount.setPadding(0, dp(20), 0, dp(6));
+        UiStyle.title(historyCount);
+        root.addView(historyCount);
+        categoryFilter = new Spinner(this);
+        String[] categoryOptions = new String[EventCategory.LABELS.length + 1];
+        categoryOptions[0] = "全部类型";
+        System.arraycopy(EventCategory.LABELS, 0, categoryOptions, 1,
+                EventCategory.LABELS.length);
+        categoryFilter.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, categoryOptions));
+        UiStyle.card(categoryFilter);
+        root.addView(categoryFilter);
+        statusFilter = new Spinner(this);
+        statusFilter.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"全部状态", "待确认", "已写入日历", "处理中", "处理失败"}));
+        UiStyle.card(statusFilter);
+        UiStyle.addSpaced(root, statusFilter, 8, 10);
+        android.widget.AdapterView.OnItemSelectedListener filterListener =
+                new android.widget.AdapterView.OnItemSelectedListener() {
+                    @Override public void onItemSelected(android.widget.AdapterView<?> parent,
+                            View view, int position, long id) { refreshTasks(); }
+                    @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+                };
         taskList = new LinearLayout(this);
         taskList.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(taskList);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        setContentView(root);
+        root.addView(taskList);
+        categoryFilter.setOnItemSelectedListener(filterListener);
+        statusFilter.setOnItemSelectedListener(filterListener);
+        setContentView(page);
         if (savedInstanceState != null) {
             pendingImage = savedInstanceState.getString(STATE_PENDING_IMAGE);
         }
@@ -189,6 +236,7 @@ public final class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         ticker.removeCallbacks(tick);
+        for (ProcessingRow row : processingRows) row.stopAnimation();
     }
 
     /** A parse whose job is gone can never finish; failing it hands the retry button back. */
@@ -274,6 +322,11 @@ public final class MainActivity extends Activity {
             return;
         }
         boolean withImage = pendingImage != null;
+        if (withImage && imagesUnsupported()) {
+            Toast.makeText(this, "当前模型不支持图片，请移除图片或切换模型",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         String source = Intent.ACTION_SEND.equals(getIntent().getAction()) ? "share" : "app";
         List<Long> taskIds;
         try (TaskStore store = new TaskStore(this)) {
@@ -366,6 +419,14 @@ public final class MainActivity extends Activity {
     /** Keeps the image entry in step with what the configured model was just found to accept. */
     private void refreshImageEntry() {
         boolean unsupported = imagesUnsupported();
+        boolean knownUnsupported = false;
+        try {
+            AiSettingsStore store = new AiSettingsStore(this);
+            knownUnsupported = store.isKnownImageUnsupported(store.load());
+        } catch (Exception ignored) {
+            // Submission still checks the effective model before sending an attachment.
+        }
+        pickImage.setVisibility(knownUnsupported ? View.GONE : View.VISIBLE);
         pickImage.setEnabled(!unsupported);
         pickImage.setText(unsupported ? "图片已停用（该模型不支持）" : "选择图片");
     }
@@ -463,30 +524,62 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshTasks() {
+        for (ProcessingRow row : processingRows) row.stopAnimation();
         taskList.removeAllViews();
         processingRows.clear();
         long now = System.currentTimeMillis();
+        int visible = 0;
         try (TaskStore store = new TaskStore(this)) {
-            for (TaskRecord task : store.listTasks()) {
+            int categoryPosition = categoryFilter.getSelectedItemPosition();
+            String category = categoryPosition <= 0 ? null
+                    : EventCategory.VALUES[categoryPosition - 1];
+            List<TaskRecord> tasks = statusFilter.getSelectedItemPosition() == 2
+                    ? store.listPublishedTasks(category)
+                    : category == null ? store.listTasks() : store.listTasksByCategory(category);
+            for (TaskRecord task : tasks) {
+                if (!matchesStatus(task.status)) continue;
+                visible++;
                 TextView row = new TextView(this);
                 String preview = task.rawText.replace('\n', ' ');
                 if (task.imagePath != null) preview = "[图片] " + preview;
                 if (preview.length() > 90) preview = preview.substring(0, 90) + "…";
                 row.setText(preview + "\n" + statusLine(task, now));
                 row.setTextSize(16);
+                row.setTextColor(UiStyle.INK);
                 row.setPadding(dp(12), dp(12), dp(12), dp(12));
+                UiStyle.card(row);
                 row.setOnClickListener(view -> startActivity(new Intent(this, TaskDetailActivity.class)
                         .putExtra("task_id", task.id)));
-                taskList.addView(row, new LinearLayout.LayoutParams(-1, -2));
-                if (TaskRecord.PROCESSING.equals(task.status)) {
-                    processingRows.add(new ProcessingRow(row, preview, task.createdAtMillis));
+                UiStyle.addSpaced(taskList, row, 4, 4);
+                UiStyle.enter(row, visible - 1);
+                if (TaskRecord.PROCESSING.equals(task.status)
+                        || TaskRecord.QUEUED.equals(task.status)) {
+                    ProcessingRow active = new ProcessingRow(row, preview, task.createdAtMillis,
+                            task.id, task.status);
+                    if (TaskRecord.PROCESSING.equals(task.status)) active.startAnimation();
+                    processingRows.add(active);
                 }
-                View divider = new View(this);
-                divider.setBackgroundColor(0xFFDDDDDD);
-                taskList.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
             }
         }
+        historyCount.setText("历史日程 · " + visible + " 条");
+        if (visible == 0) {
+            TextView empty = new TextView(this);
+            empty.setText("这里还没有符合筛选条件的日程");
+            empty.setTextSize(15);
+            empty.setPadding(dp(12), dp(24), dp(12), dp(24));
+            taskList.addView(empty);
+        }
         scheduleTick();
+    }
+
+    private boolean matchesStatus(String status) {
+        int selected = statusFilter.getSelectedItemPosition();
+        if (selected == 0) return true;
+        if (selected == 1) return TaskRecord.NEEDS_REVIEW.equals(status);
+        if (selected == 2) return true; // listPublishedTasks already selected matching entries.
+        if (selected == 3) return TaskRecord.QUEUED.equals(status)
+                || TaskRecord.PROCESSING.equals(status);
+        return TaskRecord.FAILED.equals(status);
     }
 
     private String statusText(String status) {
@@ -521,8 +614,19 @@ public final class MainActivity extends Activity {
     /** Counts up in place, so watching a live parse does not rebuild the list every second. */
     private void tickElapsed() {
         long now = System.currentTimeMillis();
+        try (TaskStore store = new TaskStore(this)) {
+            for (ProcessingRow row : processingRows) {
+                TaskRecord latest = store.getTask(row.taskId);
+                if (latest == null || !row.status.equals(latest.status)) {
+                    refreshTasks();
+                    return;
+                }
+            }
+        }
         for (ProcessingRow row : processingRows) {
-            row.view.setText(row.preview + "\n" + processingLine(row.submittedAtMillis, now));
+            if (TaskRecord.PROCESSING.equals(row.status)) {
+                row.view.setText(row.preview + "\n" + processingLine(row.submittedAtMillis, now));
+            }
         }
         scheduleTick();
     }
@@ -541,11 +645,26 @@ public final class MainActivity extends Activity {
         final TextView view;
         final String preview;
         final long submittedAtMillis;
+        final long taskId;
+        final String status;
+        android.animation.ObjectAnimator pulse;
 
-        ProcessingRow(TextView view, String preview, long submittedAtMillis) {
+        ProcessingRow(TextView view, String preview, long submittedAtMillis, long taskId,
+                String status) {
             this.view = view;
             this.preview = preview;
             this.submittedAtMillis = submittedAtMillis;
+            this.taskId = taskId;
+            this.status = status;
+        }
+
+        void startAnimation() { pulse = UiStyle.pulse(view); }
+
+        void stopAnimation() {
+            if (pulse != null) {
+                pulse.cancel();
+                pulse = null;
+            }
         }
     }
 }
