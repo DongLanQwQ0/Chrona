@@ -2,6 +2,8 @@ package com.donglan.chrona;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.NotificationManager;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.View;
@@ -33,6 +35,7 @@ public final class TaskDetailActivity extends Activity {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private long taskId;
     private LinearLayout content;
+    private boolean deleting;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -53,6 +56,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void render() {
+        if (deleting) return;
         content.removeAllViews();
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
@@ -65,20 +69,104 @@ public final class TaskDetailActivity extends Activity {
             label("状态：" + task.status + (task.errorMessage == null ? "" : "\n" + task.errorMessage), 14);
             if (task.totalTokens != null) label("本次解析 token：" + task.totalTokens, 14);
             List<EventCandidate> candidates = store.getCandidates(taskId);
-            boolean hasPublishedEvent = false;
-            for (EventCandidate candidate : candidates) {
-                if (candidate.calendarEventId != null) hasPublishedEvent = true;
-            }
+            int publishedCount = countPublished(candidates);
             Button retry = button("重新解析", () -> retry());
-            retry.setEnabled(!TaskRecord.PROCESSING.equals(task.status) && !hasPublishedEvent);
+            retry.setEnabled(!TaskRecord.PROCESSING.equals(task.status) && publishedCount == 0);
             if (candidates.isEmpty()) {
                 label("暂无日程草稿。可以重新解析，也可以手动添加。", 14);
                 button("手动添加日程", () -> addManualCandidate());
             }
             for (int i = 0; i < candidates.size(); i++) addCandidateEditor(candidates.get(i), i + 1);
+            button("删除任务及关联日程", () -> confirmDelete(publishedCount));
         } catch (Exception exception) {
             showError(exception);
         }
+    }
+
+    private void confirmDelete(int publishedCount) {
+        if (publishedCount > 0 && !requestCalendarPermission()) return;
+        String message = publishedCount == 0
+                ? "将删除这条输入和所有日程草稿。此操作无法撤销。"
+                : "将删除这条输入、所有日程草稿及已写入系统日历的 "
+                        + publishedCount + " 条日程。此操作无法撤销。";
+        new AlertDialog.Builder(this)
+                .setTitle("确认删除任务？")
+                .setMessage(message)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("删除", (dialog, which) -> {
+                    deleting = true;
+                    content.removeAllViews();
+                    label("正在删除任务与关联日程…", 18);
+                    new Thread(this::deleteTask, "chrona-task-delete").start();
+                })
+                .show();
+    }
+
+    private void deleteTask() {
+        try (TaskStore store = new TaskStore(this)) {
+            ProcessingJobService.cancel(this, taskId);
+            CalendarStore calendar = new CalendarStore(this);
+            for (EventCandidate candidate : store.getCandidates(taskId)) {
+                if (candidate.calendarEventId != null) {
+                    // A missing provider row is already deleted; provider errors stop the removal.
+                    calendar.deleteEvent(candidate.calendarEventId);
+                }
+            }
+            if (!store.deleteTask(taskId)) throw new IllegalStateException("任务不存在或已删除");
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) manager.cancel((int) taskId);
+            runOnUiThread(() -> {
+                Toast.makeText(this, "任务已删除", Toast.LENGTH_SHORT).show();
+                finish();
+            });
+        } catch (Exception exception) {
+            runOnUiThread(() -> {
+                deleting = false;
+                render();
+                showError(exception);
+            });
+        }
+    }
+
+    private void confirmRemoveCandidate(EventCandidate candidate, int number) {
+        boolean published = candidate.calendarEventId != null;
+        if (published && !requestCalendarPermission()) return;
+        new AlertDialog.Builder(this)
+                .setTitle("删除日程 " + number + "？")
+                .setMessage(published
+                        ? "将从系统日历中删除这条日程，并移除对应草稿。此操作无法撤销。"
+                        : "将移除这条日程草稿。此操作无法撤销。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("删除", (dialog, which) -> removeCandidate(candidate, published))
+                .show();
+    }
+
+    private void removeCandidate(EventCandidate candidate, boolean published) {
+        deleting = true;
+        content.removeAllViews();
+        label("正在删除日程…", 18);
+        new Thread(() -> {
+            try (TaskStore store = new TaskStore(this)) {
+                if (published) {
+                    // A missing provider row is already deleted; provider errors stop the removal.
+                    new CalendarStore(this).deleteEvent(candidate.calendarEventId);
+                }
+                if (!store.deleteCandidate(candidate.id, taskId)) {
+                    throw new IllegalStateException("日程草稿不存在或已被删除");
+                }
+                store.updateStatus(taskId, reviewStatus(store.getCandidates(taskId)), null);
+                runOnUiThread(() -> {
+                    deleting = false;
+                    render();
+                });
+            } catch (Exception exception) {
+                runOnUiThread(() -> {
+                    deleting = false;
+                    render();
+                    showError(exception);
+                });
+            }
+        }, "chrona-candidate-delete").start();
     }
 
     private void addCandidateEditor(EventCandidate candidate, int number) {
@@ -92,12 +180,7 @@ public final class TaskDetailActivity extends Activity {
                 candidate.reminderMinutesBefore == null ? "" : candidate.reminderMinutesBefore.toString());
         Button[] publish = new Button[1];
         publish[0] = button(candidate.calendarEventId == null ? "确认并写入系统日历" : "保存并更新日历", () -> {
-            if (checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED
-                    || checkSelfPermission(Manifest.permission.WRITE_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.READ_CALENDAR,
-                        Manifest.permission.WRITE_CALENDAR}, CALENDAR_PERMISSION_REQUEST);
-                return;
-            }
+            if (!requestCalendarPermission()) return;
             try {
                 String titleText = title.getText().toString().trim();
                 if (titleText.isEmpty()) throw new IllegalArgumentException("请填写标题");
@@ -122,6 +205,7 @@ public final class TaskDetailActivity extends Activity {
                 showError(exception);
             }
         });
+        button("删除此日程", () -> confirmRemoveCandidate(candidate, number));
         View line = new View(this);
         line.setBackgroundColor(0xFFDDDDDD);
         LinearLayout.LayoutParams divider = new LinearLayout.LayoutParams(-1, dp(1));
@@ -149,11 +233,7 @@ public final class TaskDetailActivity extends Activity {
                 }
             }
             if (!store.updateCandidate(edited)) throw new IllegalStateException("无法保存日程草稿");
-            boolean allPublished = true;
-            for (EventCandidate item : store.getCandidates(taskId)) {
-                if (item.calendarEventId == null) allPublished = false;
-            }
-            store.updateStatus(taskId, allPublished ? TaskRecord.READY : TaskRecord.NEEDS_REVIEW, null);
+            store.updateStatus(taskId, reviewStatus(store.getCandidates(taskId)), null);
             runOnUiThread(() -> {
                 Toast.makeText(this, "已写入系统日历", Toast.LENGTH_SHORT).show();
                 render();
@@ -238,6 +318,39 @@ public final class TaskDetailActivity extends Activity {
 
     private void showError(Exception exception) {
         Toast.makeText(this, "操作失败：" + exception.getMessage(), Toast.LENGTH_LONG).show();
+    }
+
+    /** Returns true when both calendar permissions are already granted. */
+    private boolean hasCalendarPermission() {
+        return checkSelfPermission(Manifest.permission.READ_CALENDAR)
+                == PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(Manifest.permission.WRITE_CALENDAR)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Requests the calendar permissions when missing; false means the caller must wait for a retry. */
+    private boolean requestCalendarPermission() {
+        if (hasCalendarPermission()) return true;
+        requestPermissions(new String[]{Manifest.permission.READ_CALENDAR,
+                Manifest.permission.WRITE_CALENDAR}, CALENDAR_PERMISSION_REQUEST);
+        Toast.makeText(this, "授权日历权限后请再次点击", Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
+    private static int countPublished(List<EventCandidate> candidates) {
+        int count = 0;
+        for (EventCandidate candidate : candidates) {
+            if (candidate.calendarEventId != null) count++;
+        }
+        return count;
+    }
+
+    /** The input is ready only when at least one draft exists and every draft is in the calendar. */
+    private static String reviewStatus(List<EventCandidate> candidates) {
+        if (candidates.isEmpty() || countPublished(candidates) < candidates.size()) {
+            return TaskRecord.NEEDS_REVIEW;
+        }
+        return TaskRecord.READY;
     }
 
     private int dp(int value) {

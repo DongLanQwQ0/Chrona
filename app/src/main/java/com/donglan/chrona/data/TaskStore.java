@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
@@ -63,14 +64,37 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     /** Saves an input in queued state and returns its database ID. */
     public long insertTask(String rawText, String source, long createdAtMillis) {
-        requireNonEmpty(rawText, "rawText");
+        return insertTasks(Collections.singletonList(rawText), source, createdAtMillis).get(0);
+    }
+
+    /**
+     * Saves one batch atomically and returns its IDs in submission order. Entries are stamped a
+     * millisecond apart so the newest-first inbox lists a batch in the order it was pasted.
+     */
+    public List<Long> insertTasks(List<String> rawTexts, String source, long createdAtMillis) {
+        if (rawTexts == null || rawTexts.isEmpty()) {
+            throw new IllegalArgumentException("rawTexts must not be empty");
+        }
         requireNonEmpty(source, "source");
-        ContentValues values = new ContentValues();
-        values.put("raw_text", rawText);
-        values.put("source", source);
-        values.put("created_at_millis", createdAtMillis);
-        values.put("status", TaskRecord.QUEUED);
-        return getWritableDatabase().insertOrThrow("tasks", null, values);
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            List<Long> taskIds = new ArrayList<>(rawTexts.size());
+            for (int position = 0; position < rawTexts.size(); position++) {
+                String rawText = rawTexts.get(position);
+                requireNonEmpty(rawText, "rawText");
+                ContentValues values = new ContentValues();
+                values.put("raw_text", rawText);
+                values.put("source", source);
+                values.put("created_at_millis", createdAtMillis + rawTexts.size() - 1 - position);
+                values.put("status", TaskRecord.QUEUED);
+                taskIds.add(db.insertOrThrow("tasks", null, values));
+            }
+            db.setTransactionSuccessful();
+            return taskIds;
+        } finally {
+            db.endTransaction();
+        }
     }
 
     /** Returns newest inputs first, breaking equal timestamps by database ID. */
@@ -91,6 +115,21 @@ public final class TaskStore extends SQLiteOpenHelper {
                 new String[] { Long.toString(taskId) }, null, null, null)) {
             return cursor.moveToFirst() ? readTask(cursor) : null;
         }
+    }
+
+    /** Deletes an input and its candidate rows through the database foreign key. */
+    public boolean deleteTask(long taskId) {
+        if (taskId <= 0) throw new IllegalArgumentException("taskId must be positive");
+        return getWritableDatabase().delete("tasks", "id = ?",
+                new String[] { Long.toString(taskId) }) > 0;
+    }
+
+    /** Removes one draft. Positions keep their gaps so calendar links stay untouched. */
+    public boolean deleteCandidate(long candidateId, long taskId) {
+        if (candidateId <= 0) throw new IllegalArgumentException("candidateId must be positive");
+        if (taskId <= 0) throw new IllegalArgumentException("taskId must be positive");
+        return getWritableDatabase().delete("event_candidates", "id = ? AND task_id = ?",
+                new String[] { Long.toString(candidateId), Long.toString(taskId) }) > 0;
     }
 
     /** Returns false when the task does not exist. A null error clears the previous error. */

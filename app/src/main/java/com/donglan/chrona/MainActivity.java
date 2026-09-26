@@ -2,6 +2,9 @@ package com.donglan.chrona;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipDescription;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -9,6 +12,7 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -21,11 +25,18 @@ import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.processing.ProcessingJobService;
 
 import java.text.DateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 
 /** Quick inbox for text and Android's share sheet. */
 public final class MainActivity extends Activity {
+    /** Guards against a pasted block turning into hundreds of paid parsing requests. */
+    private static final int MAX_BATCH_TASKS = 20;
+
     private EditText input;
+    private CheckBox splitInput;
     private LinearLayout taskList;
 
     @Override
@@ -52,6 +63,15 @@ public final class MainActivity extends Activity {
         input.setGravity(android.view.Gravity.TOP);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         root.addView(input, new LinearLayout.LayoutParams(-1, -2));
+
+        Button paste = new Button(this);
+        paste.setText("读取剪贴板");
+        paste.setOnClickListener(view -> pasteClipboard());
+        root.addView(paste);
+
+        splitInput = new CheckBox(this);
+        splitInput.setText("按行拆分为多条");
+        root.addView(splitInput);
 
         Button save = new Button(this);
         save.setText("保存并解析");
@@ -109,16 +129,26 @@ public final class MainActivity extends Activity {
             input.setError("请输入内容");
             return;
         }
-        long taskId;
+        List<String> entries = splitInput.isChecked()
+                ? splitLines(text) : Collections.singletonList(text);
+        if (entries.isEmpty()) {
+            input.setError("请输入内容");
+            return;
+        }
+        if (entries.size() > MAX_BATCH_TASKS) {
+            Toast.makeText(this, "一次最多拆分 " + MAX_BATCH_TASKS + " 条，请分批发入",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         try (TaskStore store = new TaskStore(this)) {
             boolean configured = new AiSettingsStore(this).load() != null;
-            taskId = store.insertTask(text,
-                    Intent.ACTION_SEND.equals(getIntent().getAction()) ? "share" : "app",
-                    System.currentTimeMillis());
-            if (!configured) {
-                store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, "请先配置 AI 服务");
-            } else {
-                ProcessingJobService.enqueue(this, taskId);
+            String source = Intent.ACTION_SEND.equals(getIntent().getAction()) ? "share" : "app";
+            for (long taskId : store.insertTasks(entries, source, System.currentTimeMillis())) {
+                if (!configured) {
+                    store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, "请先配置 AI 服务");
+                } else {
+                    ProcessingJobService.enqueue(this, taskId);
+                }
             }
         } catch (Exception exception) {
             Toast.makeText(this, "保存失败：" + exception.getMessage(), Toast.LENGTH_LONG).show();
@@ -126,8 +156,49 @@ public final class MainActivity extends Activity {
         }
         input.setText("");
         setIntent(new Intent(this, MainActivity.class));
-        Toast.makeText(this, "已存入收件箱", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, entries.size() == 1 ? "已存入收件箱"
+                : "已存入收件箱（" + entries.size() + " 条）", Toast.LENGTH_SHORT).show();
         refreshTasks();
+    }
+
+    /** Appends the clipboard text so several snippets can be collected before one submit. */
+    private void pasteClipboard() {
+        ClipboardManager manager = getSystemService(ClipboardManager.class);
+        ClipData clip = manager == null ? null : manager.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) {
+            Toast.makeText(this, "剪贴板没有可用文字", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ClipDescription description = clip.getDescription();
+        if (!description.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN)
+                && !description.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)) {
+            Toast.makeText(this, "剪贴板内容不是文字，图片支持尚未实现", Toast.LENGTH_LONG).show();
+            return;
+        }
+        CharSequence text = clip.getItemAt(0).coerceToText(this);
+        String pasted = text == null ? "" : text.toString().trim();
+        if (pasted.isEmpty()) {
+            Toast.makeText(this, "剪贴板没有可用文字", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String current = input.getText().toString();
+        if (current.trim().isEmpty()) {
+            input.setText(pasted);
+        } else {
+            input.setText((current.endsWith("\n") ? current : current + "\n") + pasted);
+        }
+        input.setSelection(input.getText().length());
+        Toast.makeText(this, "已从剪贴板追加文字", Toast.LENGTH_SHORT).show();
+    }
+
+    /** One entry per non-empty line; the caller decides when splitting is wanted. */
+    private static List<String> splitLines(String text) {
+        List<String> entries = new ArrayList<>();
+        for (String line : text.split("\r\n|\r|\n")) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) entries.add(trimmed);
+        }
+        return entries;
     }
 
     private void refreshTasks() {

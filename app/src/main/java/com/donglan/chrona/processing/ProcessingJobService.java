@@ -53,6 +53,15 @@ public final class ProcessingJobService extends JobService {
         }
     }
 
+    /** Cancels queued or running parsing before an input is removed. */
+    public static void cancel(Context context, long taskId) {
+        if (taskId <= 0 || taskId > Integer.MAX_VALUE - JOB_ID_BASE) {
+            throw new IllegalArgumentException("Unsupported task ID");
+        }
+        JobScheduler scheduler = context.getSystemService(JobScheduler.class);
+        if (scheduler != null) scheduler.cancel(JOB_ID_BASE + (int) taskId);
+    }
+
     @Override
     public boolean onStartJob(JobParameters params) {
         long taskId = params.getExtras().getLong(EXTRA_TASK_ID, -1L);
@@ -105,6 +114,9 @@ public final class ProcessingJobService extends JobService {
     }
 
     private void notifyResult(long taskId, String text) {
+        try (TaskStore store = new TaskStore(this)) {
+            if (store.getTask(taskId) == null) return;
+        }
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) return;
         if (Build.VERSION.SDK_INT >= 33
