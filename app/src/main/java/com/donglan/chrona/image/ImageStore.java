@@ -92,17 +92,33 @@ public final class ImageStore {
     }
 
     /** Deletes stored images that no task references and that are past the in-flight window. */
-    public void deleteUnreferenced(Collection<String> referenced) {
+    public int deleteUnreferenced(Collection<String> referenced) {
         File[] files = directory().listFiles();
-        if (files == null) return;
+        if (files == null) return 0;
         Set<String> keep = new HashSet<>(referenced == null ? Collections.<String>emptySet()
                 : referenced);
         long cutoff = System.currentTimeMillis() - ORPHAN_AGE_MILLIS;
+        int removed = 0;
         for (File file : files) {
             String name = file.getName();
             if (keep.contains(name) || file.lastModified() > cutoff) continue;
-            if (isStoredName(name)) file.delete();
+            if (isStoredName(name) && file.delete()) removed++;
         }
+        return removed;
+    }
+
+    /** File count and total size of app storage; read by the debug screen. */
+    public String describe() {
+        File[] files = directory().listFiles();
+        if (files == null) return "0 个文件, 0 KB";
+        int count = 0;
+        long bytes = 0;
+        for (File file : files) {
+            if (!isStoredName(file.getName())) continue;
+            count++;
+            bytes += file.length();
+        }
+        return count + " 个文件, " + (bytes / 1024) + " KB";
     }
 
     /** True when the name has the shape produced by {@link #importImage}. */

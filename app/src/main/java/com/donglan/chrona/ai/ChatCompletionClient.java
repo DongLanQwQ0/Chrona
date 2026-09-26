@@ -48,6 +48,11 @@ public final class ChatCompletionClient {
         this.settings = settings;
     }
 
+    /** The read timeout this client applies; exposed so diagnostics can report the real value. */
+    public static int readTimeoutMillis(boolean withImage) {
+        return withImage ? IMAGE_READ_TIMEOUT_MILLIS : TEXT_READ_TIMEOUT_MILLIS;
+    }
+
     /** Parses one submitted input and returns all proposed entries plus reported token usage. */
     public ParseResult parse(long taskId, String rawText, byte[] imageJpeg, String linkText,
             long nowMillis, String timeZoneId) throws IOException {
@@ -83,8 +88,7 @@ public final class ChatCompletionClient {
             throw new IOException("Could not encode AI request", e);
         }
 
-        int readTimeout = imageJpeg == null
-                ? TEXT_READ_TIMEOUT_MILLIS : IMAGE_READ_TIMEOUT_MILLIS;
+        int readTimeout = readTimeoutMillis(imageJpeg != null);
         HttpURLConnection connection = (HttpURLConnection) new URL(
                 settings.baseUrl + "/chat/completions").openConnection();
         try {

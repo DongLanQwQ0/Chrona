@@ -44,7 +44,7 @@
 
 ## 4. 当前实际进度（2026-09-26）
 
-原生 Android Java 项目已建立，版本 `0.5.1`。文字、图片或语音进入 SQLite 收件箱；`JobScheduler` 异步调用用户自定义的 Chat Completions 兼容 HTTPS API；应用内审核、修改草稿后写入应用专属系统日历。支持结果通知、失败重试、API 密钥本机加密保存及返回 token 用量记录。主要模块为 `app/src/main/java/com/donglan/chrona/` 下的 `ai/`、`data/`、`image/`、`web/`、`processing/`、`calendar/` 和三个 Activity。
+原生 Android Java 项目已建立，版本 `0.6.0`。文字、图片或语音进入 SQLite 收件箱；`JobScheduler` 异步调用用户自定义的 Chat Completions 兼容 HTTPS API；应用内审核、修改草稿后写入应用专属系统日历。支持结果通知、失败重试、API 密钥本机加密保存及返回 token 用量记录。主要模块为 `app/src/main/java/com/donglan/chrona/` 下的 `ai/`、`data/`、`image/`、`web/`、`debug/`、`processing/`、`calendar/` 和四个 Activity。
 
 `0.2.0` 补齐了日程删除与草稿生命周期：任务详情可逐条删除草稿（已写入日历的同步删除系统日历条目），也可整条删除输入及其全部草稿，并取消该输入排队中或运行中的解析、清除对应通知。同一版本还补齐了剪贴板与批量输入：收件箱可一键读取剪贴板文字并追加到输入框，可勾选「按行拆分为多条」把整段粘贴拆成多条独立输入（单次上限 20 条，同一事务写入）。
 
@@ -53,6 +53,8 @@
 `0.4.0` 补齐了语音输入，方案已由用户确认走**系统能力**：用 `RecognizerIntent.ACTION_RECOGNIZE_SPEECH`（自由说、语言跟随系统）调起系统识别界面，结果追加到输入框，不申请 `RECORD_AUDIO`、不调用云端转写接口、不产生 API 费用。设备没有识别服务时入口直接隐藏；清单已声明 `android.speech.RecognitionService` 的 `<queries>`，否则 Android 11+ 的包可见性会让识别服务不可见。
 
 `0.5.0` 补齐了**按需联网检索的第一步**：解析前自动抓取输入里出现的链接正文，作为上下文一并发送。抓取在设备上完成，不需要任何新服务或密钥，并有硬上限（3 个链接、单页 512 KB、单页正文 2000 字、合计 4000 字、各 10 秒超时、最多 5 次重定向、仅 http/https）。抓取失败不影响解析，任务详情会显示抓取时间、字数与摘要；「重新联网检查并解析」可反复手动触发，没有轮次上限。正文提取自行实现（`web/LinkFetcher`），未引入新依赖。该版本把数据库提升到**版本 3**（`tasks.link_text`、`tasks.link_fetched_at`），版本 1、2 的数据全部保留。**通用联网搜索已由用户决定暂不接入**，理由与后续策略见第 5 节。
+
+`0.6.0` 加入了面向测试期的诊断能力：收件箱里的「诊断信息（测试版）」（仅 debuggable 构建可见）汇总版本、机型、AI 配置（不含密钥）、数据库真实 `user_version` 与列名、记录数、附件占用、`JobScheduler` 待处理任务，以及进程内事件日志，并提供「复制全部」。`debug/DiagLog` 同时写 logcat 与 `files/diagnostics.log`（128 KB 轮转保留上一份）；关键路径（入队、job 生命周期、图片字节、链接抓取耗时、请求体量与生效超时、响应耗时与 token、HTTP 状态与异常类型、数据库建库/升级、日历写入、删除、重试、剪贴板/语音长度、图片导入与清理）均已埋点。数据库仍为版本 3。
 
 用户已批准 Gradle 9.6.0 与 Android Gradle Plugin 9.4.1，缓存位于 F 盘；新构建工具链仍须先经用户审核。`assembleDebug` 已成功，真机安装、启动、API 解析通过；用户确认日历写入测试通过。构建命令与准确路径见 [README.md](README.md)。手机上的 API 密钥、配对码和服务地址不写入仓库。
 

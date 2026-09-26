@@ -23,6 +23,7 @@ import com.donglan.chrona.ai.ChatCompletionClient;
 import com.donglan.chrona.ai.ParseResult;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.web.LinkFetcher;
 
@@ -53,8 +54,10 @@ public final class ProcessingJobService extends JobService {
                 .build();
         JobScheduler scheduler = context.getSystemService(JobScheduler.class);
         if (scheduler == null || scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
+            DiagLog.add(context, "enqueue failed task=" + taskId);
             throw new IllegalStateException("Could not schedule parsing work");
         }
+        DiagLog.add(context, "enqueued task=" + taskId + " jobId=" + (JOB_ID_BASE + (int) taskId));
     }
 
     /** Cancels queued or running parsing before an input is removed. */
@@ -86,39 +89,60 @@ public final class ProcessingJobService extends JobService {
     private void process(JobParameters params, long taskId) {
         AiSettings settings = null;
         boolean sentImage = false;
+        DiagLog.add(this, "job start task=" + taskId);
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
-            if (task == null) return;
+            if (task == null) {
+                DiagLog.add(this, "job dropped: task=" + taskId + " no longer exists");
+                return;
+            }
             settings = new AiSettingsStore(this).load();
             if (settings == null) {
                 store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, "请先配置 AI 服务");
                 notifyResult(taskId, "请配置 AI 服务后重试");
+                DiagLog.add(this, "job skipped: no AI settings");
                 return;
             }
+            DiagLog.add(this, "settings model=" + settings.model + " base=" + settings.baseUrl);
             byte[] image = null;
             if (task.imagePath != null) {
                 try {
                     image = new ImageStore(this).read(task.imagePath);
+                    DiagLog.add(this, "image task=" + taskId + " bytes=" + image.length);
                 } catch (IOException exception) {
                     store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, "图片不可用，请移除图片后重试");
                     notifyResult(taskId, "图片不可用，点按查看详情");
+                    DiagLog.add(this, "image unreadable task=" + taskId
+                            + " path=" + task.imagePath + " " + exception);
                     return;
                 }
             }
             sentImage = image != null;
             store.updateStatus(taskId, TaskRecord.PROCESSING, null);
             String linkText = fetchLinks(store, task);
+            DiagLog.add(this, "request task=" + taskId
+                    + " text=" + task.rawText.length() + "chars"
+                    + " image=" + (sentImage ? image.length + "B" : "none")
+                    + " linkText=" + (linkText == null ? 0 : linkText.length()) + "chars"
+                    + " readTimeout=" + (ChatCompletionClient.readTimeoutMillis(sentImage) / 1000)
+                    + "s");
+            long startedAt = System.currentTimeMillis();
             ParseResult result = new ChatCompletionClient(settings).parse(taskId, task.rawText,
                     image, linkText, System.currentTimeMillis(), TimeZone.getDefault().getID());
+            long elapsed = System.currentTimeMillis() - startedAt;
             if (Thread.currentThread().isInterrupted()) return;
             store.replaceCandidates(taskId, result.candidates);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
                     result.totalTokens);
             store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW,
                     result.candidates.isEmpty() ? "未识别到日程，请检查原文或重试" : null);
+            DiagLog.add(this, "response task=" + taskId + " ok in " + elapsed + "ms events="
+                    + result.candidates.size() + " tokens=" + result.totalTokens);
             notifyResult(taskId, result.candidates.isEmpty() ? "未识别到日程" : "日程草稿待确认");
         } catch (ChatCompletionClient.RequestException exception) {
             if (!Thread.currentThread().isInterrupted()) {
+                DiagLog.add(this, "request rejected task=" + taskId + " HTTP "
+                        + exception.statusCode + " " + message(exception));
                 if (sentImage && settings != null && exception.rejectsImage()) {
                     // The provider refused the image itself, so stop offering images for this model.
                     new AiSettingsStore(this).markImageUnsupported(settings);
@@ -130,6 +154,8 @@ public final class ProcessingJobService extends JobService {
             }
         } catch (Exception exception) {
             if (!Thread.currentThread().isInterrupted()) {
+                DiagLog.add(this, "failed task=" + taskId + " "
+                        + exception.getClass().getSimpleName() + ": " + message(exception));
                 recordFailure(taskId, message(exception));
             }
         } finally {
@@ -145,7 +171,10 @@ public final class ProcessingJobService extends JobService {
     private String fetchLinks(TaskStore store, TaskRecord task) {
         List<String> urls = LinkFetcher.extractUrls(task.rawText);
         if (urls.isEmpty()) return null;
+        long startedAt = System.currentTimeMillis();
         String text = LinkFetcher.fetch(urls);
+        DiagLog.add(this, "links task=" + task.id + " urls=" + urls.size() + " chars="
+                + text.length() + " in " + (System.currentTimeMillis() - startedAt) + "ms");
         store.updateLinkFetch(task.id, text.isEmpty() ? null : text, System.currentTimeMillis());
         return text.isEmpty() ? null : text;
     }

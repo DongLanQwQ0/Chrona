@@ -1,0 +1,190 @@
+package com.donglan.chrona.debug;
+
+import android.app.Activity;
+import android.app.job.JobInfo;
+import android.app.job.JobScheduler;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.util.TypedValue;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.donglan.chrona.ai.AiSettings;
+import com.donglan.chrona.ai.AiSettingsStore;
+import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.image.ImageStore;
+
+import java.util.List;
+import java.util.TimeZone;
+
+/**
+ * Read-only summary of what the app currently sees, so a failure on the phone can be reported
+ * without a connected PC. Reachable only from a debuggable build.
+ */
+public final class DebugActivity extends Activity {
+    private TextView output;
+
+    @Override
+    protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(24), dp(16), dp(16));
+        root.setFitsSystemWindows(true);
+
+        TextView title = new TextView(this);
+        title.setText("诊断信息（测试版）");
+        title.setTextSize(22);
+        root.addView(title);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(action("刷新", view -> refresh()));
+        actions.addView(action("复制全部", view -> copyAll()));
+        actions.addView(action("清空日志", view -> clearLog()));
+        root.addView(actions);
+
+        output = new TextView(this);
+        output.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        output.setTextIsSelectable(true);
+        output.setTypeface(android.graphics.Typeface.MONOSPACE);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(output);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        setContentView(root);
+        refresh();
+    }
+
+    private Button action(String text, android.view.View.OnClickListener listener) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setOnClickListener(listener);
+        return button;
+    }
+
+    private void refresh() {
+        output.setText(report());
+    }
+
+    private void copyAll() {
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        if (clipboard == null) {
+            Toast.makeText(this, "剪贴板不可用", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        clipboard.setPrimaryClip(ClipData.newPlainText("Chrona 诊断", output.getText()));
+        Toast.makeText(this, "已复制，可直接粘贴发送", Toast.LENGTH_SHORT).show();
+    }
+
+    private void clearLog() {
+        DiagLog.clear(this);
+        DiagLog.add(this, "log cleared");
+        refresh();
+        Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show();
+    }
+
+    /** Everything below is read-only: no key material is ever printed. */
+    private String report() {
+        StringBuilder text = new StringBuilder();
+        appendEnvironment(text);
+        appendServices(text);
+        appendStorage(text);
+        appendJobs(text);
+        text.append("\n--- 事件日志（新→旧倒序请看文件末尾） ---\n");
+        String log = DiagLog.read(this);
+        text.append(log.isEmpty() ? "（暂无记录）" : log);
+        return text.toString();
+    }
+
+    private void appendEnvironment(StringBuilder text) {
+        text.append("应用: ").append(versionName()).append(" (versionCode ").append(versionCode())
+                .append(") debuggable=").append(isDebuggable()).append('\n');
+        text.append("设备: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
+                .append(" / Android ").append(Build.VERSION.RELEASE)
+                .append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
+        text.append("时区: ").append(TimeZone.getDefault().getID()).append('\n');
+    }
+
+    private void appendServices(StringBuilder text) {
+        try {
+            AiSettingsStore store = new AiSettingsStore(this);
+            AiSettings settings = store.load();
+            if (settings == null) {
+                text.append("AI 服务: 未配置\n");
+            } else {
+                text.append("AI 服务: ").append(settings.baseUrl)
+                        .append(" model=").append(settings.model)
+                        .append(" key=已保存")
+                        .append(" 图片入口=")
+                        .append(store.isImageUnsupported(settings) ? "已停用（该模型拒过图片）" : "正常")
+                        .append('\n');
+            }
+        } catch (Exception exception) {
+            text.append("AI 服务: 读取失败 ").append(exception).append('\n');
+        }
+    }
+
+    private void appendStorage(StringBuilder text) {
+        try (TaskStore store = new TaskStore(this)) {
+            text.append(store.describe());
+        } catch (Exception exception) {
+            text.append("数据库: 读取失败 ").append(exception).append('\n');
+        }
+        try {
+            text.append("附件: ").append(new ImageStore(this).describe()).append('\n');
+        } catch (Exception exception) {
+            text.append("附件: 读取失败 ").append(exception).append('\n');
+        }
+        text.append("日志文件: ").append(DiagLog.sizeBytes(this) / 1024).append(" KB\n");
+        text.append("内存中日志: ").append(DiagLog.recent().size()).append(" 行\n");
+    }
+
+    private void appendJobs(StringBuilder text) {
+        JobScheduler scheduler = getSystemService(JobScheduler.class);
+        List<JobInfo> pending = scheduler == null ? null : scheduler.getAllPendingJobs();
+        text.append("待处理解析任务: ").append(pending == null ? "不可用" : pending.size()).append(" 个\n");
+        if (pending != null) {
+            for (JobInfo job : pending) {
+                text.append("  jobId=").append(job.getId())
+                        .append(" task=").append(job.getExtras().getLong("task_id", -1))
+                        .append('\n');
+            }
+        }
+    }
+
+    private boolean isDebuggable() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
+    private String versionName() {
+        PackageInfo info = packageInfo();
+        return info == null || info.versionName == null ? "?" : info.versionName;
+    }
+
+    private String versionCode() {
+        PackageInfo info = packageInfo();
+        return info == null ? "?" : Long.toString(info.getLongVersionCode());
+    }
+
+    @SuppressWarnings("deprecation")
+    private PackageInfo packageInfo() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0);
+        } catch (PackageManager.NameNotFoundException exception) {
+            return null;
+        }
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+}

@@ -6,6 +6,8 @@ import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
 
+import com.donglan.chrona.debug.DiagLog;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -26,11 +28,12 @@ public final class AiSettingsStore {
     private static final String KEY_IV = "api_key_iv";
     private static final String IMAGE_REJECTED_FOR = "image_rejected_for";
 
+    private final Context context;
     private final SharedPreferences preferences;
 
     public AiSettingsStore(Context context) {
-        preferences = context.getApplicationContext().getSharedPreferences(
-                PREFERENCES_NAME, Context.MODE_PRIVATE);
+        this.context = context.getApplicationContext();
+        preferences = this.context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE);
     }
 
     /** Replaces the current settings. A failed encryption leaves the previous settings intact. */
@@ -48,6 +51,8 @@ public final class AiSettingsStore {
         if (!saved) {
             throw new IllegalStateException("Could not save AI settings");
         }
+        DiagLog.add(context, "settings saved base=" + settings.baseUrl + " model="
+                + settings.model);
     }
 
     /** Returns null if no settings were saved; propagates decryption failures. */
@@ -92,6 +97,7 @@ public final class AiSettingsStore {
     public void markImageUnsupported(AiSettings settings) {
         if (settings == null) throw new IllegalArgumentException("settings are required");
         preferences.edit().putString(IMAGE_REJECTED_FOR, identity(settings)).apply();
+        DiagLog.add(context, "image entry disabled for model=" + settings.model);
     }
 
     /** Clears the learned rejection so the next request tries the image again. */

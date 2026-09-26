@@ -21,6 +21,7 @@ import com.donglan.chrona.calendar.CalendarStore;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
 import com.donglan.chrona.web.LinkFetcher;
@@ -137,6 +138,7 @@ public final class TaskDetailActivity extends Activity {
             if (imagePath != null) new ImageStore(this).delete(imagePath);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.cancel((int) taskId);
+            DiagLog.add(this, "task deleted id=" + taskId + " image=" + (imagePath != null));
             runOnUiThread(() -> {
                 Toast.makeText(this, "任务已删除", Toast.LENGTH_SHORT).show();
                 finish();
@@ -267,6 +269,8 @@ public final class TaskDetailActivity extends Activity {
             }
             if (!store.updateCandidate(edited)) throw new IllegalStateException("无法保存日程草稿");
             store.updateStatus(taskId, reviewStatus(store.getCandidates(taskId)), null);
+            DiagLog.add(this, "calendar written task=" + taskId + " candidate=" + edited.id
+                    + " event=" + edited.calendarEventId);
             runOnUiThread(() -> {
                 Toast.makeText(this, "已写入系统日历", Toast.LENGTH_SHORT).show();
                 render();
@@ -299,6 +303,7 @@ public final class TaskDetailActivity extends Activity {
             store.replaceCandidates(taskId, Collections.emptyList());
             store.updateStatus(taskId, TaskRecord.QUEUED, null);
             ProcessingJobService.enqueue(this, taskId);
+            DiagLog.add(this, "retry task=" + taskId);
             Toast.makeText(this, "已加入解析队列", Toast.LENGTH_SHORT).show();
             render();
         } catch (Exception exception) {

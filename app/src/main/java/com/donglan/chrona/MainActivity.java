@@ -7,6 +7,7 @@ import android.content.ClipData;
 import android.content.ClipDescription;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -28,6 +29,8 @@ import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.debug.DebugActivity;
+import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
 
@@ -127,6 +130,14 @@ public final class MainActivity extends Activity {
         refresh.setOnClickListener(view -> refreshTasks());
         root.addView(refresh);
 
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            Button diagnostics = new Button(this);
+            diagnostics.setText("诊断信息（测试版）");
+            diagnostics.setOnClickListener(
+                    view -> startActivity(new Intent(this, DebugActivity.class)));
+            root.addView(diagnostics);
+        }
+
         ScrollView scroll = new ScrollView(this);
         taskList = new LinearLayout(this);
         taskList.setOrientation(LinearLayout.VERTICAL);
@@ -192,6 +203,7 @@ public final class MainActivity extends Activity {
                 Toast.makeText(this, "没有识别到内容", Toast.LENGTH_SHORT).show();
             } else {
                 appendText(results.get(0));
+                DiagLog.add(this, "voice appended chars=" + results.get(0).length());
             }
         }
     }
@@ -239,10 +251,11 @@ public final class MainActivity extends Activity {
                     Toast.LENGTH_LONG).show();
             return;
         }
+        boolean withImage = pendingImage != null;
+        String source = Intent.ACTION_SEND.equals(getIntent().getAction()) ? "share" : "app";
         List<Long> taskIds;
         try (TaskStore store = new TaskStore(this)) {
             boolean configured = new AiSettingsStore(this).load() != null;
-            String source = Intent.ACTION_SEND.equals(getIntent().getAction()) ? "share" : "app";
             long now = System.currentTimeMillis();
             taskIds = pendingImage == null
                     ? store.insertTasks(entries, source, now)
@@ -263,6 +276,8 @@ public final class MainActivity extends Activity {
         // The image now belongs to a stored input, so the pending reference is simply dropped.
         pendingImage = null;
         showPendingImage();
+        DiagLog.add(this, "submitted entries=" + taskIds.size() + " source=" + source
+                + " image=" + (withImage ? "yes" : "no"));
         Toast.makeText(this, taskIds.size() == 1 ? "已存入收件箱"
                 : "已存入收件箱（" + taskIds.size() + " 条）", Toast.LENGTH_SHORT).show();
         refreshTasks();
@@ -279,12 +294,15 @@ public final class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 String name = new ImageStore(this).importImage(source);
+                DiagLog.add(this, "image imported name=" + name + " bytes="
+                        + new ImageStore(this).fileFor(name).length());
                 runOnUiThread(() -> {
                     clearPendingImage();
                     pendingImage = name;
                     showPendingImage();
                 });
             } catch (Exception exception) {
+                DiagLog.add(this, "image import failed " + exception);
                 runOnUiThread(() -> Toast.makeText(this, "读取图片失败：" + exception.getMessage(),
                         Toast.LENGTH_LONG).show());
             }
@@ -346,7 +364,8 @@ public final class MainActivity extends Activity {
     private void sweepImages() {
         new Thread(() -> {
             try (TaskStore store = new TaskStore(this)) {
-                new ImageStore(this).deleteUnreferenced(store.listImageNames());
+                int removed = new ImageStore(this).deleteUnreferenced(store.listImageNames());
+                if (removed > 0) DiagLog.add(this, "swept orphan images=" + removed);
             } catch (Exception ignored) {
                 // Storage cleanup must never block the inbox.
             }
@@ -374,6 +393,7 @@ public final class MainActivity extends Activity {
             return;
         }
         appendText(pasted);
+        DiagLog.add(this, "clipboard pasted chars=" + pasted.length());
         Toast.makeText(this, "已从剪贴板追加文字", Toast.LENGTH_SHORT).show();
     }
 

@@ -6,6 +6,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
+import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 
 import java.util.ArrayList;
@@ -16,8 +17,11 @@ public final class TaskStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "chrona.db";
     private static final int DATABASE_VERSION = 3;
 
+    private final Context context;
+
     public TaskStore(Context context) {
         super(context.getApplicationContext(), DATABASE_NAME, null, DATABASE_VERSION);
+        this.context = context.getApplicationContext();
     }
 
     @Override
@@ -67,12 +71,60 @@ public final class TaskStore extends SQLiteOpenHelper {
      */
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        DiagLog.add(context, "db upgrade " + oldVersion + " -> " + newVersion);
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE tasks ADD COLUMN image_path TEXT");
         }
         if (oldVersion < 3) {
             db.execSQL("ALTER TABLE tasks ADD COLUMN link_text TEXT");
             db.execSQL("ALTER TABLE tasks ADD COLUMN link_fetched_at INTEGER");
+        }
+        DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
+    }
+
+    /** One line per fact about the local database; read by the debug screen. */
+    public String describe() {
+        StringBuilder text = new StringBuilder();
+        text.append("数据库: user_version=").append(schemaVersion()).append('\n');
+        text.append("表列: ");
+        try (Cursor cursor = getReadableDatabase().rawQuery("PRAGMA table_info(tasks)", null)) {
+            boolean first = true;
+            while (cursor.moveToNext()) {
+                if (!first) text.append(',');
+                text.append(cursor.getString(cursor.getColumnIndexOrThrow("name")));
+                first = false;
+            }
+        }
+        text.append('\n');
+        text.append("记录: tasks=").append(count("tasks"))
+                .append(" candidates=").append(count("event_candidates"))
+                .append(" 带图片=").append(countWhere("tasks", "image_path IS NOT NULL"))
+                .append(" 带抓取正文=").append(countWhere("tasks", "link_text IS NOT NULL"))
+                .append('\n');
+        return text.toString();
+    }
+
+    private int schemaVersion() {
+        try (Cursor cursor = getReadableDatabase().rawQuery("PRAGMA user_version", null)) {
+            return cursor.moveToFirst() ? cursor.getInt(0) : -1;
+        }
+    }
+
+    private int count(String table) {
+        return countIn(getReadableDatabase(), table);
+    }
+
+    /** Counts through the given handle; onUpgrade must not re-enter getReadableDatabase. */
+    private static int countIn(SQLiteDatabase db, String table) {
+        try (Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM " + table, null)) {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        }
+    }
+
+    private int countWhere(String table, String where) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM " + table + " WHERE " + where, null)) {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
         }
     }
 
