@@ -24,8 +24,10 @@ import com.donglan.chrona.ai.ParseResult;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.image.ImageStore;
+import com.donglan.chrona.web.LinkFetcher;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -105,8 +107,9 @@ public final class ProcessingJobService extends JobService {
             }
             sentImage = image != null;
             store.updateStatus(taskId, TaskRecord.PROCESSING, null);
+            String linkText = fetchLinks(store, task);
             ParseResult result = new ChatCompletionClient(settings).parse(taskId, task.rawText,
-                    image, System.currentTimeMillis(), TimeZone.getDefault().getID());
+                    image, linkText, System.currentTimeMillis(), TimeZone.getDefault().getID());
             if (Thread.currentThread().isInterrupted()) return;
             store.replaceCandidates(taskId, result.candidates);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
@@ -133,6 +136,18 @@ public final class ProcessingJobService extends JobService {
             workers.remove(params.getJobId());
             if (!Thread.currentThread().isInterrupted()) jobFinished(params, false);
         }
+    }
+
+    /**
+     * Reads the pages behind links in the input and remembers the outcome. A link that cannot be
+     * read never fails the parse: the input is simply parsed without that extra text.
+     */
+    private String fetchLinks(TaskStore store, TaskRecord task) {
+        List<String> urls = LinkFetcher.extractUrls(task.rawText);
+        if (urls.isEmpty()) return null;
+        String text = LinkFetcher.fetch(urls);
+        store.updateLinkFetch(task.id, text.isEmpty() ? null : text, System.currentTimeMillis());
+        return text.isEmpty() ? null : text;
     }
 
     private void recordFailure(long taskId, String message) {

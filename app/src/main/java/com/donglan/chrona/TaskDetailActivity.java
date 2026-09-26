@@ -23,13 +23,16 @@ import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
+import com.donglan.chrona.web.LinkFetcher;
 
+import java.text.DateFormat;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 
 /** Review parsed events before committing them to the device calendar. */
@@ -79,9 +82,15 @@ public final class TaskDetailActivity extends Activity {
                 content.addView(preview);
                 button("移除图片", () -> removeImage());
             }
+            List<String> links = LinkFetcher.extractUrls(task.rawText);
+            if (!links.isEmpty()) {
+                label(linkState(task, links), 14);
+                if (task.linkText != null) label(excerpt(task.linkText), 13);
+            }
             List<EventCandidate> candidates = store.getCandidates(taskId);
             int publishedCount = countPublished(candidates);
-            Button retry = button("重新解析", () -> retry());
+            // Re-parsing re-reads the links, so the same entry doubles as the manual re-check.
+            Button retry = button(links.isEmpty() ? "重新解析" : "重新联网检查并解析", () -> retry());
             retry.setEnabled(!TaskRecord.PROCESSING.equals(task.status) && publishedCount == 0);
             if (candidates.isEmpty()) {
                 label("暂无日程草稿。可以重新解析，也可以手动添加。", 14);
@@ -373,6 +382,24 @@ public final class TaskDetailActivity extends Activity {
             if (candidate.calendarEventId != null) count++;
         }
         return count;
+    }
+
+    /** Describes what the last on-demand retrieval managed to read from the input's links. */
+    private static String linkState(TaskRecord task, List<String> links) {
+        String found = "联网检索：输入里有 " + links.size() + " 个链接。";
+        if (task.linkFetchedAtMillis == null) {
+            return found + "解析时会自动抓取正文。";
+        }
+        String when = DateFormat.getDateTimeInstance().format(new Date(task.linkFetchedAtMillis));
+        if (task.linkText == null) {
+            return found + when + " 抓取失败或没有正文，已按原文解析。";
+        }
+        return found + when + " 已抓取 " + task.linkText.length() + " 字。";
+    }
+
+    private static String excerpt(String text) {
+        String flat = text.replace('\n', ' ').trim();
+        return flat.length() <= 220 ? flat : flat.substring(0, 220) + "…";
     }
 
     /** The input is ready only when at least one draft exists and every draft is in the calendar. */

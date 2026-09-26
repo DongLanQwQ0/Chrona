@@ -14,7 +14,7 @@ import java.util.List;
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
 public final class TaskStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 2;
+    private static final int DATABASE_VERSION = 3;
 
     public TaskStore(Context context) {
         super(context.getApplicationContext(), DATABASE_NAME, null, DATABASE_VERSION);
@@ -39,7 +39,9 @@ public final class TaskStore extends SQLiteOpenHelper {
                 + "error_message TEXT, "
                 + "prompt_tokens INTEGER, "
                 + "completion_tokens INTEGER, "
-                + "total_tokens INTEGER)");
+                + "total_tokens INTEGER, "
+                + "link_text TEXT, "
+                + "link_fetched_at INTEGER)");
         db.execSQL("CREATE INDEX tasks_by_created_at ON tasks(created_at_millis DESC, id DESC)");
         db.execSQL("CREATE TABLE event_candidates ("
                 + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -60,13 +62,17 @@ public final class TaskStore extends SQLiteOpenHelper {
     }
 
     /**
-     * Applies migrations in order. Version 1 is already on devices, so every later change must
-     * add a step here instead of editing the older statements; existing rows must be preserved.
+     * Applies migrations in order. Versions 1 and 2 are already on devices, so every later change
+     * must add a step here instead of editing the older statements; existing rows must be kept.
      */
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE tasks ADD COLUMN image_path TEXT");
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE tasks ADD COLUMN link_text TEXT");
+            db.execSQL("ALTER TABLE tasks ADD COLUMN link_fetched_at INTEGER");
         }
     }
 
@@ -175,6 +181,15 @@ public final class TaskStore extends SQLiteOpenHelper {
             }
         }
         return names;
+    }
+
+    /** Records the last link fetch: a null text means that attempt read nothing. */
+    public void updateLinkFetch(long taskId, String linkText, long fetchedAtMillis) {
+        ContentValues values = new ContentValues();
+        values.put("link_text", linkText);
+        values.put("link_fetched_at", fetchedAtMillis);
+        getWritableDatabase().update("tasks", values, "id = ?",
+                new String[] { Long.toString(taskId) });
     }
 
     /** Returns false when the task does not exist. A null error clears the previous error. */
@@ -294,6 +309,8 @@ public final class TaskStore extends SQLiteOpenHelper {
         int promptIndex = cursor.getColumnIndexOrThrow("prompt_tokens");
         int completionIndex = cursor.getColumnIndexOrThrow("completion_tokens");
         int totalIndex = cursor.getColumnIndexOrThrow("total_tokens");
+        int linkTextIndex = cursor.getColumnIndexOrThrow("link_text");
+        int linkFetchedIndex = cursor.getColumnIndexOrThrow("link_fetched_at");
         return new TaskRecord(cursor.getLong(cursor.getColumnIndexOrThrow("id")),
                 cursor.getString(cursor.getColumnIndexOrThrow("raw_text")),
                 cursor.getString(cursor.getColumnIndexOrThrow("image_path")),
@@ -303,7 +320,9 @@ public final class TaskStore extends SQLiteOpenHelper {
                 cursor.getString(cursor.getColumnIndexOrThrow("error_message")),
                 cursor.isNull(promptIndex) ? null : cursor.getInt(promptIndex),
                 cursor.isNull(completionIndex) ? null : cursor.getInt(completionIndex),
-                cursor.isNull(totalIndex) ? null : cursor.getInt(totalIndex));
+                cursor.isNull(totalIndex) ? null : cursor.getInt(totalIndex),
+                cursor.isNull(linkTextIndex) ? null : cursor.getString(linkTextIndex),
+                cursor.isNull(linkFetchedIndex) ? null : cursor.getLong(linkFetchedIndex));
     }
 
     private static EventCandidate readCandidate(Cursor cursor) {

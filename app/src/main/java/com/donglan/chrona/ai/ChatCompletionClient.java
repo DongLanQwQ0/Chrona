@@ -44,8 +44,8 @@ public final class ChatCompletionClient {
     }
 
     /** Parses one submitted input and returns all proposed entries plus reported token usage. */
-    public ParseResult parse(long taskId, String rawText, byte[] imageJpeg, long nowMillis,
-            String timeZoneId) throws IOException {
+    public ParseResult parse(long taskId, String rawText, byte[] imageJpeg, String linkText,
+            long nowMillis, String timeZoneId) throws IOException {
         boolean hasText = rawText != null && !rawText.trim().isEmpty();
         if ((!hasText && imageJpeg == null) || timeZoneId == null || timeZoneId.trim().isEmpty()) {
             throw new IllegalArgumentException("Text or image, and a timezone, are required");
@@ -55,11 +55,17 @@ public final class ChatCompletionClient {
             body.put("model", settings.model);
             JSONArray messages = new JSONArray();
             messages.put(new JSONObject().put("role", "system").put("content", SYSTEM_PROMPT));
+            StringBuilder prompt = new StringBuilder();
+            prompt.append("Current Unix time in milliseconds: ").append(nowMillis)
+                    .append("\nTimezone: ").append(timeZoneId)
+                    .append("\nInput:\n").append(hasText ? rawText : "(见随附图片)");
+            if (linkText != null && !linkText.trim().isEmpty()) {
+                // Fetched on the device only because the input carried a link; may be partial.
+                prompt.append("\n\nText fetched from links in the input (may be incomplete):\n")
+                        .append(linkText.trim());
+            }
             JSONArray content = new JSONArray();
-            content.put(new JSONObject().put("type", "text").put("text",
-                    "Current Unix time in milliseconds: " + nowMillis + "\nTimezone: "
-                            + timeZoneId + "\nInput:\n"
-                            + (hasText ? rawText : "(见随附图片)")));
+            content.put(new JSONObject().put("type", "text").put("text", prompt.toString()));
             if (imageJpeg != null) {
                 content.put(new JSONObject().put("type", "image_url").put("image_url",
                         new JSONObject().put("url", "data:image/jpeg;base64,"
