@@ -12,6 +12,8 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.text.InputType;
@@ -56,6 +58,10 @@ public final class MainActivity extends Activity {
     private ImageView attachment;
     private Button removeImage;
     private LinearLayout taskList;
+    /** Rows of inputs still being parsed, whose elapsed time is counted up in place. */
+    private final List<ProcessingRow> processingRows = new ArrayList<>();
+    private final Handler ticker = new Handler(Looper.getMainLooper());
+    private final Runnable tick = this::tickElapsed;
     /** Stored name of an image attached to the next submit, or null. */
     private String pendingImage;
 
@@ -175,7 +181,23 @@ public final class MainActivity extends Activity {
         super.onResume();
         refreshImageEntry();
         refreshVoiceEntry();
+        recoverInterruptedParsing();
         refreshTasks();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        ticker.removeCallbacks(tick);
+    }
+
+    /** A parse whose job is gone can never finish; failing it hands the retry button back. */
+    private void recoverInterruptedParsing() {
+        int recovered = ProcessingJobService.reconcile(this);
+        if (recovered > 0) {
+            Toast.makeText(this, "有 " + recovered + " 条解析被系统中断，可进详情重新解析",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
@@ -442,24 +464,29 @@ public final class MainActivity extends Activity {
 
     private void refreshTasks() {
         taskList.removeAllViews();
+        processingRows.clear();
+        long now = System.currentTimeMillis();
         try (TaskStore store = new TaskStore(this)) {
             for (TaskRecord task : store.listTasks()) {
                 TextView row = new TextView(this);
                 String preview = task.rawText.replace('\n', ' ');
                 if (task.imagePath != null) preview = "[图片] " + preview;
                 if (preview.length() > 90) preview = preview.substring(0, 90) + "…";
-                row.setText(preview + "\n" + statusText(task.status) + " · "
-                        + DateFormat.getDateTimeInstance().format(new Date(task.createdAtMillis)));
+                row.setText(preview + "\n" + statusLine(task, now));
                 row.setTextSize(16);
                 row.setPadding(dp(12), dp(12), dp(12), dp(12));
                 row.setOnClickListener(view -> startActivity(new Intent(this, TaskDetailActivity.class)
                         .putExtra("task_id", task.id)));
                 taskList.addView(row, new LinearLayout.LayoutParams(-1, -2));
+                if (TaskRecord.PROCESSING.equals(task.status)) {
+                    processingRows.add(new ProcessingRow(row, preview, task.createdAtMillis));
+                }
                 View divider = new View(this);
                 divider.setBackgroundColor(0xFFDDDDDD);
                 taskList.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
             }
         }
+        scheduleTick();
     }
 
     private String statusText(String status) {
@@ -470,7 +497,55 @@ public final class MainActivity extends Activity {
         return "处理失败";
     }
 
+    /** Parsing shows how long it has been running; everything else shows when it arrived. */
+    private String statusLine(TaskRecord task, long nowMillis) {
+        if (TaskRecord.PROCESSING.equals(task.status)) {
+            return processingLine(task.createdAtMillis, nowMillis);
+        }
+        return statusText(task.status) + " · "
+                + DateFormat.getDateTimeInstance().format(new Date(task.createdAtMillis));
+    }
+
+    private static String processingLine(long submittedAtMillis, long nowMillis) {
+        return "解析中 · 已 " + elapsedText(nowMillis - submittedAtMillis);
+    }
+
+    private static String elapsedText(long millis) {
+        long seconds = Math.max(0L, millis) / 1000L;
+        if (seconds < 60) return seconds + " 秒";
+        long minutes = seconds / 60;
+        if (minutes < 60) return minutes + " 分 " + (seconds % 60) + " 秒";
+        return (minutes / 60) + " 小时 " + (minutes % 60) + " 分";
+    }
+
+    /** Counts up in place, so watching a live parse does not rebuild the list every second. */
+    private void tickElapsed() {
+        long now = System.currentTimeMillis();
+        for (ProcessingRow row : processingRows) {
+            row.view.setText(row.preview + "\n" + processingLine(row.submittedAtMillis, now));
+        }
+        scheduleTick();
+    }
+
+    private void scheduleTick() {
+        ticker.removeCallbacks(tick);
+        if (!processingRows.isEmpty()) ticker.postDelayed(tick, 1000L);
+    }
+
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    /** A list row whose status line keeps changing while its input is parsed. */
+    private static final class ProcessingRow {
+        final TextView view;
+        final String preview;
+        final long submittedAtMillis;
+
+        ProcessingRow(TextView view, String preview, long submittedAtMillis) {
+            this.view = view;
+            this.preview = preview;
+            this.submittedAtMillis = submittedAtMillis;
+        }
     }
 }

@@ -10,6 +10,8 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Process;
+import android.os.SystemClock;
 import android.util.TypedValue;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -112,6 +114,17 @@ public final class DebugActivity extends Activity {
                 .append(" / Android ").append(Build.VERSION.RELEASE)
                 .append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
         text.append("时区: ").append(TimeZone.getDefault().getID()).append('\n');
+        // A short uptime next to an input stuck in "parsing" means the system killed the process.
+        text.append("进程已运行: ").append(elapsedText(
+                SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime())).append('\n');
+    }
+
+    private static String elapsedText(long millis) {
+        long seconds = Math.max(0L, millis) / 1000L;
+        if (seconds < 60) return seconds + " 秒";
+        long minutes = seconds / 60;
+        if (minutes < 60) return minutes + " 分 " + (seconds % 60) + " 秒";
+        return (minutes / 60) + " 小时 " + (minutes % 60) + " 分";
     }
 
     private void appendServices(StringBuilder text) {

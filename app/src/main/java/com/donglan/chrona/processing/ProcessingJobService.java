@@ -82,6 +82,14 @@ public final class ProcessingJobService extends JobService {
     public boolean onStartJob(JobParameters params) {
         long taskId = params.getExtras().getLong(EXTRA_TASK_ID, -1L);
         if (taskId <= 0) return false;
+        // Claimed on the main thread so a concurrent reconcile() cannot mistake a starting job
+        // for one that was lost with a dead process.
+        if (!IN_FLIGHT.add(taskId)) {
+            // A second run would upload the image and pay for the request twice over.
+            DiagLog.add(this, "job skipped task=" + taskId + " (already being processed)");
+            return false;
+        }
+        DiagLog.add(this, "job start task=" + taskId + " jobId=" + params.getJobId());
         Thread worker = new Thread(() -> process(params, taskId), "chrona-parse-" + taskId);
         workers.put(params.getJobId(), worker);
         worker.start();
@@ -90,19 +98,41 @@ public final class ProcessingJobService extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
+        long taskId = params.getExtras().getLong(EXTRA_TASK_ID, -1L);
         Thread worker = workers.remove(params.getJobId());
+        DiagLog.add(this, "job stopped task=" + taskId + " worker=" + (worker != null));
         if (worker != null) worker.interrupt();
         return true;
     }
 
-    private void process(JobParameters params, long taskId) {
-        if (!IN_FLIGHT.add(taskId)) {
-            // A second run would upload the image and pay for the request twice over.
-            DiagLog.add(this, "job skipped task=" + taskId + " (already being processed)");
-            workers.remove(params.getJobId());
-            jobFinished(params, false);
-            return;
+    /**
+     * Fails inputs that a dead process left in "parsing": their job is gone and no worker holds
+     * them, so nothing will ever finish them and the detail screen keeps the retry button disabled.
+     * The input is only failed, never re-parsed on its own, so nothing is billed twice.
+     *
+     * @return how many inputs were recovered
+     */
+    public static int reconcile(Context context) {
+        JobScheduler scheduler = context.getSystemService(JobScheduler.class);
+        int recovered = 0;
+        try (TaskStore store = new TaskStore(context)) {
+            for (TaskRecord task : store.listTasks()) {
+                if (!TaskRecord.PROCESSING.equals(task.status)) continue;
+                if (IN_FLIGHT.contains(task.id)) continue;
+                if (scheduler != null
+                        && scheduler.getPendingJob(JOB_ID_BASE + (int) task.id) != null) continue;
+                store.updateStatus(task.id, TaskRecord.FAILED,
+                        "解析被系统中断（应用在后台被清理），请重新解析");
+                DiagLog.add(context, "reconciled task=" + task.id + " stuck parsing -> failed");
+                recovered++;
+            }
+        } catch (RuntimeException exception) {
+            DiagLog.add(context, "reconcile failed: " + exception);
         }
+        return recovered;
+    }
+
+    private void process(JobParameters params, long taskId) {
         try {
             processOnce(params, taskId);
         } finally {
@@ -113,7 +143,6 @@ public final class ProcessingJobService extends JobService {
     private void processOnce(JobParameters params, long taskId) {
         AiSettings settings = null;
         boolean sentImage = false;
-        DiagLog.add(this, "job start task=" + taskId);
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
             if (task == null) {
@@ -153,7 +182,11 @@ public final class ProcessingJobService extends JobService {
             long startedAt = System.currentTimeMillis();
             ParseResult result = requestWithRetries(settings, task, image, linkText, taskId);
             long elapsed = System.currentTimeMillis() - startedAt;
-            if (Thread.currentThread().isInterrupted()) return;
+            if (Thread.currentThread().isInterrupted()) {
+                DiagLog.add(this, "response dropped task=" + taskId + " after " + elapsed
+                        + "ms (job stopped before the draft was saved)");
+                return;
+            }
             store.replaceCandidates(taskId, result.candidates);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
                     result.totalTokens);
@@ -163,7 +196,10 @@ public final class ProcessingJobService extends JobService {
                     + result.candidates.size() + " tokens=" + result.totalTokens);
             notifyResult(taskId, result.candidates.isEmpty() ? "未识别到日程" : "日程草稿待确认");
         } catch (ChatCompletionClient.RequestException exception) {
-            if (!Thread.currentThread().isInterrupted()) {
+            if (Thread.currentThread().isInterrupted()) {
+                DiagLog.add(this, "request abandoned task=" + taskId + " HTTP "
+                        + exception.statusCode + " (job stopped while waiting)");
+            } else {
                 DiagLog.add(this, "request rejected task=" + taskId + " HTTP "
                         + exception.statusCode + " " + message(exception));
                 if (sentImage && settings != null && exception.rejectsImage()) {
@@ -176,7 +212,10 @@ public final class ProcessingJobService extends JobService {
                 }
             }
         } catch (Exception exception) {
-            if (!Thread.currentThread().isInterrupted()) {
+            if (Thread.currentThread().isInterrupted()) {
+                DiagLog.add(this, "parse abandoned task=" + taskId + " (job stopped while waiting) "
+                        + exception.getClass().getSimpleName() + ": " + message(exception));
+            } else {
                 DiagLog.add(this, "failed task=" + taskId + " "
                         + exception.getClass().getSimpleName() + ": " + message(exception));
                 recordFailure(taskId, message(exception));
@@ -211,18 +250,30 @@ public final class ProcessingJobService extends JobService {
             String linkText, long taskId) throws IOException {
         long startedAt = System.currentTimeMillis();
         for (int attempt = 1; ; attempt++) {
+            long attemptStartedAt = System.currentTimeMillis();
+            DiagLog.add(this, "attempt " + attempt + "/" + MAX_REQUEST_ATTEMPTS
+                    + " task=" + taskId);
             try {
                 return new ChatCompletionClient(settings).parse(taskId, task.rawText, image,
                         linkText, System.currentTimeMillis(), TimeZone.getDefault().getID());
             } catch (IOException exception) {
+                long attemptMillis = System.currentTimeMillis() - attemptStartedAt;
                 boolean giveUp = attempt >= MAX_REQUEST_ATTEMPTS
                         || System.currentTimeMillis() - startedAt > RETRY_BUDGET_MILLIS
                         || !isTransient(exception);
-                if (giveUp) throw exception;
-                DiagLog.add(this, "request attempt " + attempt + " failed task=" + taskId + " "
-                        + exception.getClass().getSimpleName() + ": " + message(exception)
-                        + " -> retry in " + (RETRY_DELAY_MILLIS / 1000) + "s");
-                if (!sleep(RETRY_DELAY_MILLIS)) throw exception;
+                if (giveUp) {
+                    DiagLog.add(this, "giving up task=" + taskId + " after " + attempt
+                            + " attempt(s) in " + (System.currentTimeMillis() - startedAt) + "ms: "
+                            + exception.getClass().getSimpleName() + ": " + message(exception));
+                    throw exception;
+                }
+                DiagLog.add(this, "attempt " + attempt + " failed after " + attemptMillis
+                        + "ms task=" + taskId + " " + exception.getClass().getSimpleName() + ": "
+                        + message(exception) + " -> retry in " + (RETRY_DELAY_MILLIS / 1000) + "s");
+                if (!sleep(RETRY_DELAY_MILLIS)) {
+                    DiagLog.add(this, "retry abandoned task=" + taskId + " (worker interrupted)");
+                    throw exception;
+                }
             }
         }
     }
