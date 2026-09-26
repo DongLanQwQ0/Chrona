@@ -19,6 +19,7 @@ public final class TaskRecord {
     public final Integer promptTokens;
     public final Integer completionTokens;
     public final Integer totalTokens;
+    public final Integer cachedTokens;
     /** Text read from links in the input by the last fetch, or null when it read nothing. */
     public final String linkText;
     /** Unix millis of the last link fetch attempt, or null when links were never fetched. */
@@ -27,12 +28,12 @@ public final class TaskRecord {
     public TaskRecord(long id, String rawText, String source, long createdAtMillis,
             String status, String errorMessage) {
         this(id, rawText, null, source, createdAtMillis, status, errorMessage, null, null, null,
-                null, null);
+                null, null, null);
     }
 
     public TaskRecord(long id, String rawText, String imagePath, String source, long createdAtMillis,
             String status, String errorMessage, Integer promptTokens,
-            Integer completionTokens, Integer totalTokens, String linkText,
+            Integer completionTokens, Integer totalTokens, Integer cachedTokens, String linkText,
             Long linkFetchedAtMillis) {
         this.id = id;
         this.rawText = rawText;
@@ -44,6 +45,7 @@ public final class TaskRecord {
         this.promptTokens = promptTokens;
         this.completionTokens = completionTokens;
         this.totalTokens = totalTokens;
+        this.cachedTokens = cachedTokens;
         this.linkText = linkText;
         this.linkFetchedAtMillis = linkFetchedAtMillis;
     }

@@ -1,6 +1,7 @@
 package com.donglan.chrona.ai;
 
 import com.donglan.chrona.data.EventCandidate;
+import com.donglan.chrona.data.EventCategory;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -34,7 +35,8 @@ public final class ChatCompletionClient {
             + "Each event has title (nonempty string), start_at_millis (Unix milliseconds or null), "
             + "end_at_millis (Unix milliseconds or null), time_zone_id (IANA timezone or null), "
             + "location (string or null), description (string or null), "
-            + "reminder_minutes_before (nonnegative integer or null), and needs_confirmation "
+            + "reminder_minutes_before (nonnegative integer or null), category "
+            + "(event, task, reminder, deadline, or note), and needs_confirmation "
             + "(boolean). Preserve separate events as separate array entries. Use null and set "
             + "needs_confirmation to true when timing or another essential detail is uncertain. "
             + "Do not invent dates or facts. Return {\"events\":[]} if there are none.";
@@ -160,13 +162,24 @@ public final class ChatCompletionClient {
                         optionalString(event, "time_zone_id"),
                         optionalString(event, "location"),
                         optionalString(event, "description"), reminder,
-                        (Boolean) confirmation));
+                        (Boolean) confirmation, null,
+                        EventCategory.normalize(event.optString("category", EventCategory.EVENT)),
+                        false));
             }
             JSONObject usage = root.optJSONObject("usage");
+            JSONObject promptDetails = usage == null ? null
+                    : usage.optJSONObject("prompt_tokens_details");
+            Integer cachedTokens = promptDetails == null || !promptDetails.has("cached_tokens") ? null
+                    : optionalInteger(promptDetails, "cached_tokens");
+            if (cachedTokens == null && usage != null
+                    && usage.has("prompt_cache_hit_tokens")) {
+                cachedTokens = optionalInteger(usage, "prompt_cache_hit_tokens");
+            }
             return new ParseResult(candidates,
                     usage == null ? null : optionalInteger(usage, "prompt_tokens"),
                     usage == null ? null : optionalInteger(usage, "completion_tokens"),
-                    usage == null ? null : optionalInteger(usage, "total_tokens"));
+                    usage == null ? null : optionalInteger(usage, "total_tokens"),
+                    cachedTokens);
         } catch (JSONException e) {
             throw new IOException("Invalid AI response JSON: " + e.getMessage(), e);
         }

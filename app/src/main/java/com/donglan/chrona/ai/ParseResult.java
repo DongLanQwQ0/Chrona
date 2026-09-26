@@ -12,12 +12,14 @@ public final class ParseResult {
     public final Integer promptTokens;
     public final Integer completionTokens;
     public final Integer totalTokens;
+    public final Integer cachedTokens;
 
     public ParseResult(List<EventCandidate> candidates, Integer promptTokens,
-            Integer completionTokens, Integer totalTokens) {
+            Integer completionTokens, Integer totalTokens, Integer cachedTokens) {
         this.candidates = Collections.unmodifiableList(new ArrayList<>(candidates));
         this.promptTokens = promptTokens;
         this.completionTokens = completionTokens;
         this.totalTokens = totalTokens;
+        this.cachedTokens = cachedTokens;
     }
 }

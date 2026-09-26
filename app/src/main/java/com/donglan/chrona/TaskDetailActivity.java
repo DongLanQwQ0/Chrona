@@ -7,17 +7,24 @@ import android.app.NotificationManager;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ArrayAdapter;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.calendar.CalendarStore;
+import com.donglan.chrona.calendar.AllDayDates;
+import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
@@ -43,6 +50,10 @@ public final class TaskDetailActivity extends Activity {
     private long taskId;
     private LinearLayout content;
     private boolean deleting;
+    private String observedStatus;
+    private int observedCandidates = -1;
+    private final Handler refreshHandler = new Handler(Looper.getMainLooper());
+    private final Runnable refreshPoll = this::pollForResult;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -52,6 +63,7 @@ public final class TaskDetailActivity extends Activity {
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(30), dp(20), dp(24));
+        UiStyle.page(this, content);
         scroll.addView(content);
         setContentView(scroll);
     }
@@ -60,6 +72,27 @@ public final class TaskDetailActivity extends Activity {
     protected void onResume() {
         super.onResume();
         render();
+        refreshHandler.postDelayed(refreshPoll, 1500L);
+    }
+
+    @Override
+    protected void onPause() {
+        refreshHandler.removeCallbacks(refreshPoll);
+        super.onPause();
+    }
+
+    private void pollForResult() {
+        if (deleting) return;
+        try (TaskStore store = new TaskStore(this)) {
+            TaskRecord task = store.getTask(taskId);
+            int count = store.getCandidates(taskId).size();
+            if (task != null && (!task.status.equals(observedStatus)
+                    || count != observedCandidates)) render();
+        } catch (Exception exception) {
+            // A transient database failure should not close a draft being edited.
+            android.util.Log.w("Chrona", "Could not refresh task detail", exception);
+        }
+        refreshHandler.postDelayed(refreshPoll, 1500L);
     }
 
     private void render() {
@@ -75,6 +108,10 @@ public final class TaskDetailActivity extends Activity {
             label(task.rawText.isEmpty() ? "（仅图片，无文字）" : task.rawText, 16);
             label("状态：" + task.status + (task.errorMessage == null ? "" : "\n" + task.errorMessage), 14);
             if (task.totalTokens != null) label("本次解析 token：" + task.totalTokens, 14);
+            if (task.cachedTokens != null && task.promptTokens != null) {
+                label("其中缓存命中：" + task.cachedTokens + " / " + task.promptTokens
+                        + " 输入 token", 14);
+            }
             if (task.imagePath != null) {
                 ImageView preview = new ImageView(this);
                 preview.setAdjustViewBounds(true);
@@ -89,6 +126,8 @@ public final class TaskDetailActivity extends Activity {
                 if (task.linkText != null) label(excerpt(task.linkText), 13);
             }
             List<EventCandidate> candidates = store.getCandidates(taskId);
+            observedStatus = task.status;
+            observedCandidates = candidates.size();
             int publishedCount = countPublished(candidates);
             // Re-parsing re-reads the links, so the same entry doubles as the manual re-check.
             Button retry = button(links.isEmpty() ? "重新解析" : "重新联网检查并解析", () -> retry());
@@ -205,47 +244,78 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void addCandidateEditor(EventCandidate candidate, int number) {
-        label("日程 " + number + (candidate.calendarEventId == null ? " · 待写入" : " · 已写入日历"), 19);
-        EditText title = field("标题", candidate.title);
-        EditText start = field("开始：yyyy-MM-dd HH:mm", format(candidate.startAtMillis));
-        EditText end = field("结束：yyyy-MM-dd HH:mm", format(candidate.endAtMillis));
-        EditText location = field("地点（可选）", candidate.location);
-        EditText description = field("备注（可选）", candidate.description);
-        EditText reminder = field("提前提醒分钟数（留空表示不提醒）",
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(14), dp(14), dp(14));
+        UiStyle.card(card);
+        UiStyle.addSpaced(content, card, 12, 6);
+        UiStyle.enter(card, number - 1);
+        label(card, "日程 " + number + (candidate.calendarEventId == null ? " · 待写入" : " · 已写入日历"), 19);
+        EditText title = field(card, "标题", candidate.title);
+        label(card, "类型", 14);
+        Spinner category = new Spinner(this);
+        ArrayAdapter<String> categoryAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, EventCategory.LABELS);
+        category.setAdapter(categoryAdapter);
+        category.setSelection(EventCategory.indexOf(candidate.category));
+        card.addView(category);
+        CheckBox allDay = new CheckBox(this);
+        allDay.setText("全天日程");
+        allDay.setChecked(candidate.allDay);
+        card.addView(allDay);
+        EditText start = field(card, candidate.allDay ? "开始日期：yyyy-MM-dd" : "开始：yyyy-MM-dd HH:mm",
+                candidate.allDay ? dayStart(candidate.startAtMillis) : format(candidate.startAtMillis));
+        EditText end = field(card, candidate.allDay ? "结束日期（含当天）：yyyy-MM-dd" : "结束：yyyy-MM-dd HH:mm",
+                candidate.allDay ? dayEnd(candidate.endAtMillis) : format(candidate.endAtMillis));
+        allDay.setOnCheckedChangeListener((view, checked) -> {
+            start.setHint(checked ? "开始日期：yyyy-MM-dd" : "开始：yyyy-MM-dd HH:mm");
+            end.setHint(checked ? "结束日期（含当天）：yyyy-MM-dd" : "结束：yyyy-MM-dd HH:mm");
+            if (checked) {
+                start.setText(datePart(start.getText().toString()));
+                end.setText(datePart(end.getText().toString()));
+            } else {
+                start.setText(withTime(start.getText().toString(), "09:00"));
+                end.setText(withTime(end.getText().toString(), "10:00"));
+            }
+        });
+        EditText location = field(card, "地点（可选）", candidate.location);
+        EditText description = field(card, "备注（可选）", candidate.description);
+        EditText reminder = field(card, "提前提醒分钟数（留空表示不提醒）",
                 candidate.reminderMinutesBefore == null ? "" : candidate.reminderMinutesBefore.toString());
         Button[] publish = new Button[1];
-        publish[0] = button(candidate.calendarEventId == null ? "确认并写入系统日历" : "保存并更新日历", () -> {
+        publish[0] = button(card, candidate.calendarEventId == null ? "确认并写入系统日历" : "保存并更新日历", () -> {
             if (!requestCalendarPermission()) return;
             try {
                 String titleText = title.getText().toString().trim();
                 if (titleText.isEmpty()) throw new IllegalArgumentException("请填写标题");
                 ZoneId zone = ZoneId.systemDefault();
-                Long startAt = parse(start.getText().toString(), zone);
-                Long endAt = parse(end.getText().toString(), zone);
+                Long startAt = allDay.isChecked()
+                        ? parseDayStart(start.getText().toString())
+                        : parse(start.getText().toString(), zone);
+                Long endAt = allDay.isChecked()
+                        ? parseDayEnd(end.getText().toString())
+                        : parse(end.getText().toString(), zone);
                 if (startAt == null || endAt == null || endAt <= startAt) {
-                    throw new IllegalArgumentException("请填写有效的开始和结束时间，结束须晚于开始");
+                    throw new IllegalArgumentException("请填写有效的开始和结束日期，结束不能早于开始");
                 }
                 String reminderText = reminder.getText().toString().trim();
                 Integer minutes = reminderText.isEmpty() ? null : Integer.parseInt(reminderText);
                 if (minutes != null && minutes < 0) throw new IllegalArgumentException("提醒分钟数不能为负数");
                 EventCandidate edited = new EventCandidate(candidate.id, taskId, titleText,
-                        startAt, endAt, zone.getId(), location.getText().toString().trim(),
+                        startAt, endAt, allDay.isChecked() ? "UTC" : zone.getId(),
+                        location.getText().toString().trim(),
                         description.getText().toString().trim(), minutes, false,
-                        candidate.calendarEventId);
+                        candidate.calendarEventId,
+                        EventCategory.VALUES[category.getSelectedItemPosition()], allDay.isChecked());
                 publish[0].setEnabled(false);
                 new Thread(() -> publish(edited), "chrona-calendar-write").start();
             } catch (DateTimeParseException | NumberFormatException exception) {
-                Toast.makeText(this, "请按 yyyy-MM-dd HH:mm 填写时间，提醒填写数字", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "请按提示格式填写日期或时间，提醒填写数字", Toast.LENGTH_LONG).show();
             } catch (Exception exception) {
                 showError(exception);
             }
         });
-        button("删除此日程", () -> confirmRemoveCandidate(candidate, number));
-        View line = new View(this);
-        line.setBackgroundColor(0xFFDDDDDD);
-        LinearLayout.LayoutParams divider = new LinearLayout.LayoutParams(-1, dp(1));
-        divider.setMargins(0, dp(20), 0, dp(20));
-        content.addView(line, divider);
+        button(card, "删除此日程", () -> confirmRemoveCandidate(candidate, number));
     }
 
     private void publish(EventCandidate edited) {
@@ -254,7 +324,7 @@ public final class TaskDetailActivity extends Activity {
             List<Integer> reminders = edited.reminderMinutesBefore == null
                     ? Collections.emptyList() : Collections.singletonList(edited.reminderMinutesBefore);
             CalendarStore.EventInput input = new CalendarStore.EventInput(edited.title,
-                    edited.startAtMillis, edited.endAtMillis, edited.timeZoneId, false,
+                    edited.startAtMillis, edited.endAtMillis, edited.timeZoneId, edited.allDay,
                     edited.description, edited.location, reminders);
             if (edited.calendarEventId != null) {
                 if (!calendar.updateEvent(edited.calendarEventId, input)) {
@@ -325,27 +395,43 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private EditText field(String hint, String value) {
+        return field(content, hint, value);
+    }
+
+    private EditText field(LinearLayout parent, String hint, String value) {
         EditText edit = new EditText(this);
         edit.setHint(hint);
         edit.setSingleLine(true);
         if (value != null) edit.setText(value);
-        content.addView(edit);
+        UiStyle.input(edit);
+        UiStyle.addSpaced(parent, edit, 5, 5);
         return edit;
     }
 
     private void label(String value, int size) {
+        label(content, value, size);
+    }
+
+    private void label(LinearLayout parent, String value, int size) {
         TextView text = new TextView(this);
         text.setText(value);
         text.setTextSize(size);
         text.setPadding(0, dp(5), 0, dp(5));
-        content.addView(text);
+        if (size >= 19) UiStyle.title(text);
+        else UiStyle.muted(text);
+        parent.addView(text);
     }
 
     private Button button(String value, Runnable action) {
+        return button(content, value, action);
+    }
+
+    private Button button(LinearLayout parent, String value, Runnable action) {
         Button button = new Button(this);
         button.setText(value);
         button.setOnClickListener(view -> action.run());
-        content.addView(button);
+        UiStyle.button(button, value.startsWith("确认并") || value.startsWith("保存并"));
+        UiStyle.addSpaced(parent, button, 5, 5);
         return button;
     }
 
@@ -358,6 +444,30 @@ public final class TaskDetailActivity extends Activity {
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : LocalDateTime.parse(trimmed, DATE_TIME)
                 .atZone(zone).toInstant().toEpochMilli();
+    }
+
+    private static Long parseDayStart(String value) {
+        return value.trim().isEmpty() ? null : AllDayDates.utcStart(value);
+    }
+
+    private static Long parseDayEnd(String value) {
+        return value.trim().isEmpty() ? null : AllDayDates.utcExclusiveEnd(value);
+    }
+
+    private static String dayStart(Long millis) {
+        return millis == null ? "" : AllDayDates.displayStart(millis);
+    }
+
+    private static String dayEnd(Long millis) {
+        return millis == null ? "" : AllDayDates.displayEnd(millis);
+    }
+
+    private static String datePart(String value) {
+        return value.length() >= 10 ? value.substring(0, 10) : value;
+    }
+
+    private static String withTime(String value, String time) {
+        return value.length() == 10 ? value + " " + time : value;
     }
 
     private void showError(Exception exception) {

@@ -13,17 +13,29 @@ public final class EventCandidate {
     public final Integer reminderMinutesBefore;
     public final boolean needsConfirmation;
     public final Long calendarEventId;
+    public final String category;
+    public final boolean allDay;
 
     public EventCandidate(long id, long taskId, String title, Long startAtMillis,
             Long endAtMillis, String timeZoneId, String location, String description,
             Integer reminderMinutesBefore, boolean needsConfirmation) {
         this(id, taskId, title, startAtMillis, endAtMillis, timeZoneId, location,
-                description, reminderMinutesBefore, needsConfirmation, null);
+                description, reminderMinutesBefore, needsConfirmation, null, EventCategory.EVENT,
+                false);
     }
 
     public EventCandidate(long id, long taskId, String title, Long startAtMillis,
             Long endAtMillis, String timeZoneId, String location, String description,
             Integer reminderMinutesBefore, boolean needsConfirmation, Long calendarEventId) {
+        this(id, taskId, title, startAtMillis, endAtMillis, timeZoneId, location,
+                description, reminderMinutesBefore, needsConfirmation, calendarEventId,
+                EventCategory.EVENT, false);
+    }
+
+    public EventCandidate(long id, long taskId, String title, Long startAtMillis,
+            Long endAtMillis, String timeZoneId, String location, String description,
+            Integer reminderMinutesBefore, boolean needsConfirmation, Long calendarEventId,
+            String category, boolean allDay) {
         this.id = id;
         this.taskId = taskId;
         this.title = title;
@@ -35,5 +47,7 @@ public final class EventCandidate {
         this.reminderMinutesBefore = reminderMinutesBefore;
         this.needsConfirmation = needsConfirmation;
         this.calendarEventId = calendarEventId;
+        this.category = EventCategory.normalize(category);
+        this.allDay = allDay;
     }
 }

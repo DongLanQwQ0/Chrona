@@ -15,7 +15,7 @@ import java.util.List;
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
 public final class TaskStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 3;
+    private static final int DATABASE_VERSION = 4;
 
     private final Context context;
 
@@ -44,6 +44,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 + "prompt_tokens INTEGER, "
                 + "completion_tokens INTEGER, "
                 + "total_tokens INTEGER, "
+                + "cached_tokens INTEGER, "
                 + "link_text TEXT, "
                 + "link_fetched_at INTEGER)");
         db.execSQL("CREATE INDEX tasks_by_created_at ON tasks(created_at_millis DESC, id DESC)");
@@ -61,6 +62,8 @@ public final class TaskStore extends SQLiteOpenHelper {
                 + "OR reminder_minutes_before >= 0), "
                 + "needs_confirmation INTEGER NOT NULL CHECK(needs_confirmation IN (0,1)), "
                 + "calendar_event_id INTEGER, "
+                + "category TEXT NOT NULL DEFAULT 'event', "
+                + "all_day INTEGER NOT NULL DEFAULT 0 CHECK(all_day IN (0,1)), "
                 + "UNIQUE(task_id, position))");
         db.execSQL("CREATE INDEX candidates_by_task ON event_candidates(task_id, position)");
     }
@@ -78,6 +81,11 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 3) {
             db.execSQL("ALTER TABLE tasks ADD COLUMN link_text TEXT");
             db.execSQL("ALTER TABLE tasks ADD COLUMN link_fetched_at INTEGER");
+        }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE event_candidates ADD COLUMN category TEXT NOT NULL DEFAULT 'event'");
+            db.execSQL("ALTER TABLE event_candidates ADD COLUMN all_day INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE tasks ADD COLUMN cached_tokens INTEGER");
         }
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
@@ -189,6 +197,35 @@ public final class TaskStore extends SQLiteOpenHelper {
         return tasks;
     }
 
+    /** Newest inputs whose proposed entries include this category. */
+    public List<TaskRecord> listTasksByCategory(String category) {
+        List<TaskRecord> tasks = new ArrayList<>();
+        String sql = "SELECT DISTINCT tasks.* FROM tasks JOIN event_candidates ON "
+                + "event_candidates.task_id = tasks.id WHERE event_candidates.category = ? "
+                + "ORDER BY tasks.created_at_millis DESC, tasks.id DESC";
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql,
+                new String[]{EventCategory.normalize(category)})) {
+            while (cursor.moveToNext()) tasks.add(readTask(cursor));
+        }
+        return tasks;
+    }
+
+    /** Inputs with at least one calendar entry, optionally restricted to a category. */
+    public List<TaskRecord> listPublishedTasks(String category) {
+        List<TaskRecord> tasks = new ArrayList<>();
+        String sql = "SELECT DISTINCT tasks.* FROM tasks JOIN event_candidates ON "
+                + "event_candidates.task_id = tasks.id "
+                + "WHERE event_candidates.calendar_event_id IS NOT NULL"
+                + (category == null ? "" : " AND event_candidates.category = ?")
+                + " ORDER BY tasks.created_at_millis DESC, tasks.id DESC";
+        String[] args = category == null ? null
+                : new String[]{EventCategory.normalize(category)};
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, args)) {
+            while (cursor.moveToNext()) tasks.add(readTask(cursor));
+        }
+        return tasks;
+    }
+
     /** Returns null if no task has the given ID. */
     public TaskRecord getTask(long taskId) {
         try (Cursor cursor = getReadableDatabase().query("tasks", null, "id = ?",
@@ -257,11 +294,12 @@ public final class TaskStore extends SQLiteOpenHelper {
     }
 
     public boolean updateUsage(long taskId, Integer promptTokens,
-            Integer completionTokens, Integer totalTokens) {
+            Integer completionTokens, Integer totalTokens, Integer cachedTokens) {
         ContentValues values = new ContentValues();
         values.put("prompt_tokens", promptTokens);
         values.put("completion_tokens", completionTokens);
         values.put("total_tokens", totalTokens);
+        values.put("cached_tokens", cachedTokens);
         return getWritableDatabase().update("tasks", values, "id = ?",
                 new String[] { Long.toString(taskId) }) > 0;
     }
@@ -303,6 +341,8 @@ public final class TaskStore extends SQLiteOpenHelper {
                 values.put("reminder_minutes_before", candidate.reminderMinutesBefore);
                 values.put("needs_confirmation", candidate.needsConfirmation ? 1 : 0);
                 values.put("calendar_event_id", candidate.calendarEventId);
+                values.put("category", candidate.category);
+                values.put("all_day", candidate.allDay ? 1 : 0);
                 db.insertOrThrow("event_candidates", null, values);
             }
             db.setTransactionSuccessful();
@@ -329,6 +369,8 @@ public final class TaskStore extends SQLiteOpenHelper {
         values.put("description", candidate.description);
         values.put("reminder_minutes_before", candidate.reminderMinutesBefore);
         values.put("needs_confirmation", candidate.needsConfirmation ? 1 : 0);
+        values.put("category", candidate.category);
+        values.put("all_day", candidate.allDay ? 1 : 0);
         return getWritableDatabase().update("event_candidates", values,
                 "id = ? AND task_id = ?", new String[] {
                         Long.toString(candidate.id), Long.toString(candidate.taskId) }) > 0;
@@ -361,6 +403,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         int promptIndex = cursor.getColumnIndexOrThrow("prompt_tokens");
         int completionIndex = cursor.getColumnIndexOrThrow("completion_tokens");
         int totalIndex = cursor.getColumnIndexOrThrow("total_tokens");
+        int cachedIndex = cursor.getColumnIndexOrThrow("cached_tokens");
         int linkTextIndex = cursor.getColumnIndexOrThrow("link_text");
         int linkFetchedIndex = cursor.getColumnIndexOrThrow("link_fetched_at");
         return new TaskRecord(cursor.getLong(cursor.getColumnIndexOrThrow("id")),
@@ -373,6 +416,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 cursor.isNull(promptIndex) ? null : cursor.getInt(promptIndex),
                 cursor.isNull(completionIndex) ? null : cursor.getInt(completionIndex),
                 cursor.isNull(totalIndex) ? null : cursor.getInt(totalIndex),
+                cursor.isNull(cachedIndex) ? null : cursor.getInt(cachedIndex),
                 cursor.isNull(linkTextIndex) ? null : cursor.getString(linkTextIndex),
                 cursor.isNull(linkFetchedIndex) ? null : cursor.getLong(linkFetchedIndex));
     }
@@ -392,7 +436,9 @@ public final class TaskStore extends SQLiteOpenHelper {
                 cursor.getString(cursor.getColumnIndexOrThrow("description")),
                 cursor.isNull(reminderIndex) ? null : cursor.getInt(reminderIndex),
                 cursor.getInt(cursor.getColumnIndexOrThrow("needs_confirmation")) != 0,
-                cursor.isNull(calendarEventIndex) ? null : cursor.getLong(calendarEventIndex));
+                cursor.isNull(calendarEventIndex) ? null : cursor.getLong(calendarEventIndex),
+                cursor.getString(cursor.getColumnIndexOrThrow("category")),
+                cursor.getInt(cursor.getColumnIndexOrThrow("all_day")) != 0);
     }
 
     private static void requireNonEmpty(String value, String name) {

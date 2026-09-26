@@ -86,7 +86,7 @@ public final class ProcessingJobService extends JobService {
             throw new IllegalStateException("Could not schedule parsing work");
         }
         DiagLog.add(context, "enqueued task=" + taskId + " jobId=" + (JOB_ID_BASE + (int) taskId)
-                + " userInitiated=" + job.isUserInitiated());
+                + " userInitiated=" + (Build.VERSION.SDK_INT >= 34 && job.isUserInitiated()));
     }
 
     /** Cancels queued or running parsing before an input is removed. */
@@ -257,7 +257,7 @@ public final class ProcessingJobService extends JobService {
             }
             store.replaceCandidates(taskId, result.candidates);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
-                    result.totalTokens);
+                    result.totalTokens, result.cachedTokens);
             store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW,
                     result.candidates.isEmpty() ? "未识别到日程，请检查原文或重试" : null);
             DiagLog.add(this, "response task=" + taskId + " ok in " + elapsed + "ms events="
