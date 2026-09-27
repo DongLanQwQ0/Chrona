@@ -1,5 +1,13 @@
 # 更新记录
 
+## 0.13.27 — 2026-09-27
+
+- 收件箱与日程页在标题与设置按钮之间加入搜索框，按关键词过滤当前标签/筛选的列表：日程匹配标题、地点、备注与类型，收件匹配原始输入与链接正文。搜索词随页面状态保存。
+- 两个列表加入时间排序开关（紧邻搜索框，显示「时间 ↑ / 时间 ↓」）：日程页默认最早在前，收件箱保持最近在前，点击可在两者间切换；排序方向随页面状态保存。
+- 修复全天复选框选中后立即消失：`CompactCheckBoxDrawable` 原本把勾选态放在 `onStateChange(state)` 里从状态集合推导，而 `AllDayToggle` 点击时会 `setPressed`，`ViewGroup.dispatchSetPressed` 又把按压状态传给内部不可点击的 `ImageView`，`ImageView.drawableStateChanged()` 随即用不含 `state_checked` 的状态集合回灌 drawable，勾选被清掉。现在勾选值由 `AllDayToggle` 显式持有并直接写入 drawable，drawable 不再依赖 view 状态集合。
+- 应用图标背景由深青绿 `#006B60` 改为浅橙 `#FFB74D`（`values/colors.xml` 的 `chrona_icon_background`）。
+- versionCode 47；`assembleDebug` 与 `lintDebug` 通过，ADB 覆盖安装成功（设备包信息 versionCode 47/versionName 0.13.27）。截图确认日程页标题、搜索框、「时间 ↑」与设置齿轮同排，且「即将到来」按时间升序排列；全天复选框点击与搜索输入的实际操作未在设备上复验。
+
 ## 0.13.26 — 2026-09-27
 
 - 详情页进一步对齐字段列；全天改为自绘可访问控件，统一标题图标和页码图标/文字的垂直居中，并移除“原始内容”展开入口。
