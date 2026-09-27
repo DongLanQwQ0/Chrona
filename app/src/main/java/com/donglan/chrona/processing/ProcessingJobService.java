@@ -24,6 +24,7 @@ import com.donglan.chrona.ai.ParseResult;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskFileAttachment;
 import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.web.LinkFetcher;
@@ -325,7 +326,93 @@ public final class ProcessingJobService extends JobService {
                     + "|" + candidate.allDay + "|" + candidate.category;
             if (seen.add(key)) unique.add(candidate);
         }
-        return unique;
+        return mergeConcurrentActions(unique);
+    }
+
+    /**
+     * Collapses same-task actions only when they are effectively one scheduled task/reminder.
+     * Appointments, deadlines, notes, places, or conflicting reminder settings stay
+     * separate even when their times overlap.
+     */
+    private static List<com.donglan.chrona.data.EventCandidate> mergeConcurrentActions(
+            List<com.donglan.chrona.data.EventCandidate> candidates) {
+        ArrayList<com.donglan.chrona.data.EventCandidate> merged = new ArrayList<>();
+        for (com.donglan.chrona.data.EventCandidate candidate : candidates) {
+            int match = -1;
+            for (int i = 0; i < merged.size(); i++) {
+                if (canCombineActions(merged.get(i), candidate)) {
+                    match = i;
+                    break;
+                }
+            }
+            if (match < 0) merged.add(candidate);
+            else merged.set(match, combineActions(merged.get(match), candidate));
+        }
+        return merged;
+    }
+
+    private static boolean canCombineActions(com.donglan.chrona.data.EventCandidate first,
+            com.donglan.chrona.data.EventCandidate second) {
+        if (first.taskId != second.taskId || first.allDay || second.allDay
+                || first.calendarEventId != null || second.calendarEventId != null
+                || first.startAtMillis == null || first.endAtMillis == null
+                || second.startAtMillis == null || second.endAtMillis == null
+                || !(mergeableActionCategory(first.category)
+                        && mergeableActionCategory(second.category))
+                || !java.util.Objects.equals(first.timeZoneId, second.timeZoneId)
+                || !samePlace(first.location, second.location)
+                || (first.reminderMinutesBefore != null && second.reminderMinutesBefore != null
+                        && !first.reminderMinutesBefore.equals(second.reminderMinutesBefore))) return false;
+
+        long startDelta = Math.abs(first.startAtMillis - second.startAtMillis);
+        boolean overlap = first.startAtMillis < second.endAtMillis
+                && second.startAtMillis < first.endAtMillis;
+        long combinedSpan = Math.max(first.endAtMillis, second.endAtMillis)
+                - Math.min(first.startAtMillis, second.startAtMillis);
+        return overlap && startDelta <= 60_000L && combinedSpan <= 30 * 60_000L;
+    }
+
+    private static boolean mergeableActionCategory(String category) {
+        return EventCategory.TASK.equals(category) || EventCategory.REMINDER.equals(category);
+    }
+
+    private static boolean samePlace(String first, String second) {
+        String left = normalizeCandidateText(first);
+        String right = normalizeCandidateText(second);
+        return left.equals(right);
+    }
+
+    private static com.donglan.chrona.data.EventCandidate combineActions(
+            com.donglan.chrona.data.EventCandidate first,
+            com.donglan.chrona.data.EventCandidate second) {
+        String title = combineCandidateText(first.title, second.title, "；");
+        String description = combineCandidateText(first.description, second.description, "；");
+        String category = EventCategory.REMINDER.equals(first.category)
+                || EventCategory.REMINDER.equals(second.category)
+                ? EventCategory.REMINDER : EventCategory.TASK;
+        Integer reminder = first.reminderMinutesBefore != null
+                ? first.reminderMinutesBefore : second.reminderMinutesBefore;
+        return new com.donglan.chrona.data.EventCandidate(first.id, first.taskId, title,
+                Math.min(first.startAtMillis, second.startAtMillis),
+                Math.max(first.endAtMillis, second.endAtMillis), first.timeZoneId, first.location,
+                description, reminder,
+                first.needsConfirmation || second.needsConfirmation, first.calendarEventId,
+                category, first.allDay);
+    }
+
+    private static String combineCandidateText(String first, String second, String separator) {
+        String left = first == null ? "" : first.trim();
+        String right = second == null ? "" : second.trim();
+        if (left.isEmpty()) return right;
+        if (right.isEmpty() || normalizeCandidateText(left).equals(normalizeCandidateText(right)))
+            return left;
+        return left + separator + right;
+    }
+
+    private static String normalizeCandidateText(String value) {
+        return java.text.Normalizer.normalize(value == null ? "" : value,
+                java.text.Normalizer.Form.NFKC).trim().replaceAll("\\s+", " ")
+                .toLowerCase(java.util.Locale.ROOT);
     }
 
     /**

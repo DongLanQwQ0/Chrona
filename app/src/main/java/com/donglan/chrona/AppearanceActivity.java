@@ -5,15 +5,23 @@ import android.content.Intent;
 import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.app.Dialog;
 import android.os.Bundle;
+import android.content.res.ColorStateList;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.widget.LinearLayout;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.SeekBar;
+import android.widget.TextView;
 import android.widget.Switch;
+
+import java.util.Locale;
 
 /** Selects a durable mode and palette, with immediate visual feedback. */
 public final class AppearanceActivity extends Activity {
@@ -38,7 +46,7 @@ public final class AppearanceActivity extends Activity {
         else page.removeAllViews();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(24), dp(20), dp(28));
+        root.setPadding(dp(20), dp(8), dp(20), dp(28));
         UiStyle.page(this, root);
         root.setFitsSystemWindows(false);
         root.setBackgroundColor(Color.TRANSPARENT);
@@ -73,13 +81,23 @@ public final class AppearanceActivity extends Activity {
                 () -> selectColor(ThemeStore.BLUE));
         option(root, "暖珊瑚", "柔和温暖", ThemeStore.CORAL.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.CORAL));
+        option(root, "紫罗兰", "清晰而沉静", ThemeStore.PURPLE.equals(ThemeStore.color(this)),
+                () -> selectColor(ThemeStore.PURPLE));
+        option(root, "琥珀", "温暖明亮", ThemeStore.AMBER.equals(ThemeStore.color(this)),
+                () -> selectColor(ThemeStore.AMBER));
+        option(root, "玫瑰", "柔和醒目", ThemeStore.ROSE.equals(ThemeStore.color(this)),
+                () -> selectColor(ThemeStore.ROSE));
+        option(root, "森林绿", "自然沉稳", ThemeStore.FOREST.equals(ThemeStore.color(this)),
+                () -> selectColor(ThemeStore.FOREST));
+        option(root, "自定义颜色", ThemeStore.customColorHex(this),
+                ThemeStore.CUSTOM.equals(ThemeStore.color(this)), this::showCustomColorDialog);
         heading(root, "毛玻璃与层级");
         acrylicControls(root);
         heading(root, "背景图片");
-        option(root, "选择本地图片", "为页面设置自己的背景，卡片仍保持清晰可读",
+        option(root, "选择本地图片", null,
                 ThemeStore.background(this) != null, this::pickBackground);
         if (ThemeStore.background(this) != null) {
-            option(root, "恢复默认背景", "移除自定义图片", false, () -> {
+            option(root, "恢复默认背景", null, false, () -> {
                 releaseBackgroundGrant();
                 ThemeStore.setBackground(this, null);
             });
@@ -176,12 +194,13 @@ public final class AppearanceActivity extends Activity {
         LinearLayout labels = new LinearLayout(this);
         labels.setOrientation(LinearLayout.VERTICAL);
         TextView title = text("一级面板背景模糊", 16, true);
-        TextView description = text("卡片模糊的是静态壁纸；弹窗会实时模糊底层页面，文字保持清晰（Android 12 及以上）", 13, false);
         labels.addView(title);
-        UiStyle.addSpaced(labels, description, 3, 0);
         row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1f));
         Switch toggle = new Switch(this);
         toggle.setChecked(ThemeStore.acrylicEnabled(this));
+        toggle.setThumbTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
+        toggle.setTrackTintList(ColorStateList.valueOf(
+                withAlpha(UiStyle.colors(this).primary, 96)));
         row.addView(toggle);
         card.addView(row);
         toggle.setOnCheckedChangeListener((button, checked) ->
@@ -189,8 +208,6 @@ public final class AppearanceActivity extends Activity {
 
         TextView blurLabel = text("模糊方式", 15, true);
         UiStyle.addSpaced(card, blurLabel, 14, 4);
-        TextView blurHint = text("普通模糊更轻；高斯模糊更柔和", 12, false);
-        UiStyle.addSpaced(card, blurHint, 0, 4);
         LinearLayout blurChoices = new LinearLayout(this);
         blurChoices.setOrientation(LinearLayout.HORIZONTAL);
         boolean gaussian = ThemeStore.gaussianBlur(this);
@@ -208,6 +225,7 @@ public final class AppearanceActivity extends Activity {
                 15, true);
         UiStyle.addSpaced(card, strengthLabel, 12, 0);
         SeekBar strengthSlider = new SeekBar(this);
+        tintSeekBar(strengthSlider);
         strengthSlider.setMax(4);
         strengthSlider.setProgress(ThemeStore.blurStrength(this) - 1);
         card.addView(strengthSlider, new LinearLayout.LayoutParams(-1, dp(44)));
@@ -228,6 +246,7 @@ public final class AppearanceActivity extends Activity {
                 15, true);
         UiStyle.addSpaced(card, mixLabel, 10, 0);
         SeekBar mixSlider = new SeekBar(this);
+        tintSeekBar(mixSlider);
         mixSlider.setMax(60);
         mixSlider.setProgress(ThemeStore.surfaceMix(this) - 10);
         card.addView(mixSlider, new LinearLayout.LayoutParams(-1, dp(44)));
@@ -250,35 +269,6 @@ public final class AppearanceActivity extends Activity {
             @Override public void onStopTrackingTouch(SeekBar seekBar) { }
         });
 
-        TextView transparency = text("二级控件透明度 · "
-                + ThemeStore.childTransparency(this) + "%", 15, true);
-        UiStyle.addSpaced(card, transparency, 15, 0);
-        SeekBar slider = new SeekBar(this);
-        slider.setMax(55);
-        slider.setProgress(ThemeStore.childTransparency(this) - 10);
-        card.addView(slider, new LinearLayout.LayoutParams(-1, dp(44)));
-        LinearLayout transparencyRange = new LinearLayout(this);
-        transparencyRange.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView moreOpaque = text("更实", 12, false);
-        TextView moreTransparent = text("更透明", 12, false);
-        transparencyRange.addView(moreOpaque,
-                new LinearLayout.LayoutParams(0, -2, 1));
-        moreTransparent.setGravity(android.view.Gravity.END);
-        transparencyRange.addView(moreTransparent,
-                new LinearLayout.LayoutParams(0, -2, 1));
-        card.addView(transparencyRange, new LinearLayout.LayoutParams(-1, -2));
-        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int progress,
-                    boolean fromUser) {
-                transparency.setText("二级控件透明度 · " + (progress + 10) + "%");
-                if (fromUser) ThemeStore.previewChildTransparency(AppearanceActivity.this,
-                        progress + 10);
-            }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                ThemeStore.setChildTransparency(AppearanceActivity.this, seekBar.getProgress() + 10);
-            }
-        });
         UiStyle.addSpaced(root, card, 4, 7);
     }
 
@@ -289,6 +279,18 @@ public final class AppearanceActivity extends Activity {
         option.setTextColor(selected ? UiStyle.colors(this).onPrimaryContainer
                 : UiStyle.colors(this).text);
         return option;
+    }
+
+    private void tintSeekBar(SeekBar seekBar) {
+        int color = UiStyle.colors(this).primary;
+        seekBar.setThumbTintList(ColorStateList.valueOf(color));
+        seekBar.setProgressTintList(ColorStateList.valueOf(color));
+        seekBar.setProgressBackgroundTintList(ColorStateList.valueOf(
+                withAlpha(color, 72)));
+    }
+
+    private int withAlpha(int color, int alpha) {
+        return Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color));
     }
 
     private void option(LinearLayout root, String name, String description, boolean selected,
@@ -317,9 +319,11 @@ public final class AppearanceActivity extends Activity {
                 : UiStyle.colors(this).text);
         headline.addView(heading);
         card.addView(headline);
-        TextView detail = text(description, 14, false);
-        if (selected) detail.setTextColor(UiStyle.colors(this).onPrimaryContainer);
-        UiStyle.addSpaced(card, detail, 5, 0);
+        if (description != null && !description.isEmpty()) {
+            TextView detail = text(description, 14, false);
+            if (selected) detail.setTextColor(UiStyle.colors(this).onPrimaryContainer);
+            UiStyle.addSpaced(card, detail, 5, 0);
+        }
         card.setOnClickListener(view -> action.run());
         UiStyle.addSpaced(root, card, 3, 7);
     }
@@ -336,9 +340,148 @@ public final class AppearanceActivity extends Activity {
         if ("青绿".equals(name)) return 0xFF006B60;
         if ("晴蓝".equals(name)) return 0xFF315CA7;
         if ("暖珊瑚".equals(name)) return 0xFF9B4B32;
+        if ("紫罗兰".equals(name)) return ThemeStore.paletteSeed(this, ThemeStore.PURPLE);
+        if ("琥珀".equals(name)) return ThemeStore.paletteSeed(this, ThemeStore.AMBER);
+        if ("玫瑰".equals(name)) return ThemeStore.paletteSeed(this, ThemeStore.ROSE);
+        if ("森林绿".equals(name)) return ThemeStore.paletteSeed(this, ThemeStore.FOREST);
+        if ("自定义颜色".equals(name)) return ThemeStore.customColor(this);
         if ("壁纸配色".equals(name) && ThemeStore.wallpaperAvailable())
             return getColor(android.R.color.system_accent1_700);
         return 0;
+    }
+
+    private void showCustomColorDialog() {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(22), dp(20), dp(22), dp(20));
+        UiStyle.glass(panel);
+        TextView title = text("自定义主题色", 20, true);
+        panel.addView(title);
+        TextView hint = text("拖动 HSV 滑杆或输入 #RRGGBB，确认后应用。", 13, false);
+        UiStyle.addSpaced(panel, hint, 4, 12);
+
+        int[] chosen = {ThemeStore.customColor(this)};
+        float[] hsv = new float[3];
+        Color.colorToHSV(chosen[0], hsv);
+        boolean[] syncing = {false};
+        View preview = new View(this);
+        panel.addView(preview, new LinearLayout.LayoutParams(-1, dp(52)));
+        EditText hex = new EditText(this);
+        hex.setSingleLine(true);
+        hex.setHint("#RRGGBB");
+        hex.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        UiStyle.input(hex);
+        UiStyle.addSpaced(panel, hex, 10, 6);
+
+        TextView hueLabel = text("色相 · " + Math.round(hsv[0]) + "°", 14, true);
+        UiStyle.addSpaced(panel, hueLabel, 4, 0);
+        SeekBar hue = new SeekBar(this);
+        tintSeekBar(hue);
+        hue.setMax(359);
+        panel.addView(hue, new LinearLayout.LayoutParams(-1, dp(40)));
+        TextView saturationLabel = text("饱和度 · " + Math.round(hsv[1] * 100) + "%", 14, true);
+        UiStyle.addSpaced(panel, saturationLabel, 4, 0);
+        SeekBar saturation = new SeekBar(this);
+        tintSeekBar(saturation);
+        saturation.setMax(100);
+        panel.addView(saturation, new LinearLayout.LayoutParams(-1, dp(40)));
+        TextView valueLabel = text("明度 · " + Math.round(hsv[2] * 100) + "%", 14, true);
+        UiStyle.addSpaced(panel, valueLabel, 4, 0);
+        SeekBar value = new SeekBar(this);
+        tintSeekBar(value);
+        value.setMax(100);
+        panel.addView(value, new LinearLayout.LayoutParams(-1, dp(40)));
+
+        LinearLayout actions = new LinearLayout(this);
+        Button cancel = new Button(this);
+        cancel.setText("取消");
+        UiStyle.button(cancel, false);
+        cancel.setOnClickListener(view -> dialog.dismiss());
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(50), 1));
+        Button apply = new Button(this);
+        apply.setText("应用颜色");
+        UiStyle.button(apply, true);
+        LinearLayout.LayoutParams applyParams = new LinearLayout.LayoutParams(0, dp(50), 1);
+        applyParams.setMargins(dp(8), 0, 0, 0);
+        actions.addView(apply, applyParams);
+        UiStyle.addSpaced(panel, actions, 12, 0);
+
+        Runnable paintPreview = () -> {
+            GradientDrawable swatch = new GradientDrawable();
+            swatch.setColor(chosen[0]);
+            swatch.setCornerRadius(dp(16));
+            swatch.setStroke(dp(1), UiStyle.colors(this).outline);
+            preview.setBackground(swatch);
+        };
+        Runnable updateHex = () -> {
+            syncing[0] = true;
+            hex.setText(String.format(Locale.US, "#%06X", chosen[0] & 0xFFFFFF));
+            hex.setSelection(hex.length());
+            syncing[0] = false;
+        };
+        Runnable updateFromHsv = () -> {
+            chosen[0] = Color.HSVToColor(hsv);
+            paintPreview.run();
+            updateHex.run();
+        };
+        Runnable syncSliders = () -> {
+            syncing[0] = true;
+            hue.setProgress(Math.round(hsv[0]));
+            saturation.setProgress(Math.round(hsv[1] * 100));
+            value.setProgress(Math.round(hsv[2] * 100));
+            syncing[0] = false;
+        };
+        hue.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                hueLabel.setText("色相 · " + progress + "°");
+                if (!syncing[0]) { hsv[0] = progress; updateFromHsv.run(); }
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        saturation.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                saturationLabel.setText("饱和度 · " + progress + "%");
+                if (!syncing[0]) { hsv[1] = progress / 100f; updateFromHsv.run(); }
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        value.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                valueLabel.setText("明度 · " + progress + "%");
+                if (!syncing[0]) { hsv[2] = progress / 100f; updateFromHsv.run(); }
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        hex.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (syncing[0] || !ThemeStore.isHexColor(s.toString().trim())) {
+                    apply.setEnabled(syncing[0] || ThemeStore.isHexColor(s.toString().trim()));
+                    return;
+                }
+                chosen[0] = Color.parseColor(s.charAt(0) == '#' ? s.toString().trim()
+                        : "#" + s.toString().trim());
+                Color.colorToHSV(chosen[0], hsv);
+                syncSliders.run();
+                paintPreview.run();
+                apply.setEnabled(true);
+            }
+            @Override public void afterTextChanged(Editable s) { }
+        });
+        apply.setOnClickListener(view -> {
+            if (!ThemeStore.isHexColor(hex.getText().toString().trim())) return;
+            dialog.dismiss();
+            ThemeStore.setCustomColor(this, chosen[0]);
+        });
+        paintPreview.run();
+        updateHex.run();
+        syncSliders.run();
+        UiStyle.showFloatingDialog(dialog, panel);
     }
 
     private int dp(int value) {

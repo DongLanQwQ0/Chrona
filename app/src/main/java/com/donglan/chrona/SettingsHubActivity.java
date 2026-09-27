@@ -3,8 +3,12 @@ package com.donglan.chrona;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -26,29 +30,36 @@ public final class SettingsHubActivity extends Activity {
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
-        UiStyle.back(this, root);
-
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        UiStyle.back(this, header);
+        View back = header.getChildAt(0);
+        LinearLayout.LayoutParams backParams = (LinearLayout.LayoutParams) back.getLayoutParams();
+        backParams.bottomMargin = 0;
+        back.setLayoutParams(backParams);
         TextView title = new TextView(this);
         title.setText("设置");
         title.setTextSize(28);
         UiStyle.title(title);
-        UiStyle.addSpaced(root, title, 0, 8);
-        TextView help = new TextView(this);
-        help.setText("调整外观和解析服务。所有设置仅保存在这台设备上。");
-        UiStyle.muted(help);
-        UiStyle.addSpaced(root, help, 0, 20);
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        UiStyle.addSpaced(root, header, 0, 20);
 
-        section(root, "个性化", "外观与配色", "跟随系统、浅色、深色与主题配色",
+        section(root, "外观与配色", "跟随系统、浅色、深色与主题配色",
                 AppearanceActivity.class);
-        section(root, "解析", "AI 服务", "地址、模型、密钥和图片支持",
+        timelineLimitSection(root);
+        section(root, "备份与恢复", "导出或恢复收件箱、附件、模型输出和设置",
+                BackupRestoreActivity.class);
+        section(root, "AI 服务", "地址、模型、密钥和图片支持",
                 SettingsActivity.class);
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            section(root, "帮助", "诊断信息", "查看本机运行状态与日志", DebugActivity.class);
+            section(root, "诊断信息", "查看本机运行状态与日志", DebugActivity.class);
         }
         TextView version = new TextView(this);
-        version.setText("拾时 · Chrona  " + versionName());
+        version.setText("拾时 · Chrona  " + appVersionName());
+        version.setGravity(Gravity.CENTER);
         UiStyle.muted(version);
-        UiStyle.addSpaced(root, version, 24, 0);
+        UiStyle.addSpaced(root, version, 24, 16);
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
@@ -66,13 +77,8 @@ public final class SettingsHubActivity extends Activity {
         state.putInt("scroll_y", page.getScrollY());
     }
 
-    private void section(LinearLayout root, String eyebrow, String title, String subtitle,
+    private void section(LinearLayout root, String title, String subtitle,
             Class<? extends Activity> target) {
-        TextView label = new TextView(this);
-        label.setText(eyebrow);
-        label.setTextSize(13);
-        UiStyle.muted(label);
-        UiStyle.addSpaced(root, label, 8, 8);
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(16), dp(18), dp(16));
@@ -91,15 +97,50 @@ public final class SettingsHubActivity extends Activity {
         UiStyle.addSpaced(root, card, 0, 8);
     }
 
+    private String appVersionName() {
+        try {
+            PackageManager packageManager = getPackageManager();
+            if (Build.VERSION.SDK_INT >= 33) {
+                return packageManager.getPackageInfo(getPackageName(),
+                        PackageManager.PackageInfoFlags.of(0)).versionName;
+            }
+            return packageManager.getPackageInfo(getPackageName(), 0).versionName;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return "版本信息不可用";
+        }
+    }
+
+    private void timelineLimitSection(LinearLayout root) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(16), dp(18), dp(16));
+        UiStyle.glass(card);
+        UiStyle.pressable(card);
+        TextView heading = new TextView(this);
+        heading.setText("首页时间线数量   →");
+        heading.setTextSize(18);
+        UiStyle.title(heading);
+        card.addView(heading);
+        TextView description = new TextView(this);
+        UiStyle.muted(description);
+        card.addView(description);
+        Runnable updateLabel = () -> description.setText("每次最多显示 "
+                + HomeTimelinePreferences.getItemLimit(this) + " 项（5–50）");
+        updateLabel.run();
+        card.setOnClickListener(view -> {
+            String[] options = new String[10];
+            for (int i = 0; i < options.length; i++) options[i] = (5 + i * 5) + " 项";
+            int selected = (HomeTimelinePreferences.getItemLimit(this) - 5) / 5;
+            UiStyle.choiceDialog(this, "首页时间线数量", options, selected, choice -> {
+                HomeTimelinePreferences.setItemLimit(this, 5 + choice * 5);
+                updateLabel.run();
+            });
+        });
+        UiStyle.addSpaced(root, card, 0, 8);
+    }
+
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private String versionName() {
-        try {
-            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-        } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
-            return "";
-        }
-    }
 }

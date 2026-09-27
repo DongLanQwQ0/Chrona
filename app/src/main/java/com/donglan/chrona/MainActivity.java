@@ -12,15 +12,12 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.speech.RecognizerIntent;
-import android.speech.SpeechRecognizer;
 import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -43,15 +40,14 @@ import java.util.Locale;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** A focused capture page for text, voice, images and Android's share sheet. */
+/** A focused capture page for text, images and Android's share sheet. */
 public final class MainActivity extends Activity {
     /** Guards against a pasted block turning into hundreds of paid parsing requests. */
     private static final int MAX_BATCH_TASKS = 20;
     private static final int PICK_IMAGE_REQUEST = 12;
-    private static final int VOICE_REQUEST = 13;
     private static final int PICK_FILE_REQUEST = 14;
     private static final int FILE_STORAGE_REQUEST = 16;
-    private static final String STATE_PENDING_IMAGE = "pending_image";
+    private static final String STATE_PENDING_IMAGES = "pending_images";
     private static final String STATE_PENDING_FILES = "pending_files";
     private static final String STATE_PENDING_FILE_NAMES = "pending_file_names";
     private static final String STATE_PENDING_FILE_TYPES = "pending_file_types";
@@ -61,13 +57,11 @@ public final class MainActivity extends Activity {
 
     private EditText input;
     private CheckBox splitInput;
-    private Button voiceInput;
     private Button pickImage;
-    private ImageView attachment;
-    private Button removeImage;
+    private LinearLayout pendingImagesContainer;
     private LinearLayout pendingFilesContainer;
-    /** Stored name of an image attached to the next submit, or null. */
-    private String pendingImage;
+    /** Stored image names attached to the next submit, in picker order. */
+    private final List<String> pendingImages = new ArrayList<>();
     private final List<TaskFileAttachment> pendingFiles = new ArrayList<>();
     private final List<Uri> deferredFileUris = new ArrayList<>();
 
@@ -100,7 +94,7 @@ public final class MainActivity extends Activity {
         root.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("文字、图片或语音都可以。保存后自动解析，你可以继续记录下一件事。");
+        hint.setText("文字或图片都可以。保存后自动解析，你可以继续记录下一件事。");
         hint.setPadding(0, dp(6), 0, dp(12));
         UiStyle.muted(hint);
         root.addView(hint);
@@ -128,13 +122,6 @@ public final class MainActivity extends Activity {
         UiStyle.button(paste, false);
         addTool(quickTools, paste);
 
-        voiceInput = new Button(this);
-        voiceInput.setText("语音");
-        voiceInput.setContentDescription("语音输入");
-        voiceInput.setOnClickListener(view -> startVoiceInput());
-        UiStyle.button(voiceInput, false);
-        addTool(quickTools, voiceInput);
-
         pickImage = new Button(this);
         pickImage.setText("图片");
         pickImage.setContentDescription("选择图片");
@@ -149,18 +136,9 @@ public final class MainActivity extends Activity {
         addTool(quickTools, pickFile);
         UiStyle.addSpaced(root, quickTools, 0, 14);
 
-        attachment = new ImageView(this);
-        attachment.setAdjustViewBounds(true);
-        attachment.setMaxHeight(dp(180));
-        attachment.setVisibility(View.GONE);
-        root.addView(attachment);
-
-        removeImage = new Button(this);
-        removeImage.setText("移除图片");
-        removeImage.setVisibility(View.GONE);
-        removeImage.setOnClickListener(view -> clearPendingImage());
-        UiStyle.button(removeImage, false);
-        UiStyle.addSpaced(root, removeImage, 4, 4);
+        pendingImagesContainer = new LinearLayout(this);
+        pendingImagesContainer.setOrientation(LinearLayout.VERTICAL);
+        root.addView(pendingImagesContainer);
 
         pendingFilesContainer = new LinearLayout(this);
         pendingFilesContainer.setOrientation(LinearLayout.VERTICAL);
@@ -187,7 +165,8 @@ public final class MainActivity extends Activity {
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
         if (savedInstanceState != null) {
-            pendingImage = savedInstanceState.getString(STATE_PENDING_IMAGE);
+            ArrayList<String> images = savedInstanceState.getStringArrayList(STATE_PENDING_IMAGES);
+            if (images != null) pendingImages.addAll(images);
             ArrayList<String> stored = savedInstanceState.getStringArrayList(STATE_PENDING_FILES);
             String[] names = savedInstanceState.getStringArray(STATE_PENDING_FILE_NAMES);
             String[] types = savedInstanceState.getStringArray(STATE_PENDING_FILE_TYPES);
@@ -201,7 +180,7 @@ public final class MainActivity extends Activity {
             input.setText(savedInstanceState.getString(STATE_TEXT, ""));
             splitInput.setChecked(savedInstanceState.getBoolean(STATE_SPLIT));
         }
-        showPendingImage();
+        showPendingImages();
         showPendingFiles();
         if (savedInstanceState == null) sweepImages();
         if (savedInstanceState == null) receiveShared(getIntent());
@@ -215,7 +194,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
-        state.putString(STATE_PENDING_IMAGE, pendingImage);
+        state.putStringArrayList(STATE_PENDING_IMAGES, new ArrayList<>(pendingImages));
         ArrayList<String> stored = new ArrayList<>();
         String[] names = new String[pendingFiles.size()];
         String[] types = new String[pendingFiles.size()];
@@ -246,19 +225,19 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshImageEntry();
-        refreshVoiceEntry();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         // A pending attachment that was never submitted does not belong to any input.
-        if (isFinishing() && pendingImage != null) {
-            new ImageStore(this).delete(pendingImage);
-            pendingImage = null;
+        if (isFinishing() && !pendingImages.isEmpty()) {
+            ImageStore images = new ImageStore(this);
+            for (String image : pendingImages) images.delete(image);
+            pendingImages.clear();
         }
         if (isFinishing()) {
-            // Files are in public Downloads; abandoning an unsaved capture only drops references.
+            // Imported files stay in public Downloads; abandoning capture drops task references.
             pendingFiles.clear();
         }
     }
@@ -266,9 +245,16 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null
-                && data.getData() != null) {
-            attachImage(data.getData());
+        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
+            ArrayList<Uri> sources = new ArrayList<>();
+            ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri source = clip.getItemAt(i).getUri();
+                    if (source != null) sources.add(source);
+                }
+            } else if (data.getData() != null) sources.add(data.getData());
+            attachImages(sources);
             return;
         }
         if (requestCode == PICK_FILE_REQUEST && resultCode == RESULT_OK && data != null) {
@@ -282,16 +268,6 @@ public final class MainActivity extends Activity {
             } else if (data.getData() != null) sources.add(data.getData());
             addPickedAttachments(data, sources);
             return;
-        }
-        if (requestCode == VOICE_REQUEST && resultCode == RESULT_OK && data != null) {
-            ArrayList<String> results = data.getStringArrayListExtra(
-                    RecognizerIntent.EXTRA_RESULTS);
-            if (results == null || results.isEmpty()) {
-                Feedback.show(this, "没有识别到内容");
-            } else {
-                appendText(results.get(0));
-                DiagLog.add(this, "voice appended chars=" + results.get(0).length());
-            }
         }
     }
 
@@ -328,9 +304,7 @@ public final class MainActivity extends Activity {
                 else files.add(stream);
             }
             if (!images.isEmpty()) {
-                attachImage(images.get(0));
-                if (images.size() > 1)
-                    Feedback.showLong(this, "记录页一次接收一张图片；其余图片可在详情页追加");
+                attachImages(images);
             }
             persistPickedUris(intent, files);
             attachFiles(files);
@@ -386,9 +360,7 @@ public final class MainActivity extends Activity {
             else files.add(source);
         }
         if (!images.isEmpty()) {
-            attachImage(images.get(0));
-            if (images.size() > 1)
-                Feedback.showLong(this, "记录页一次接收一张图片；其余图片可在详情页追加");
+            attachImages(images);
         }
         persistPickedUris(result, files);
         attachFiles(files);
@@ -396,15 +368,15 @@ public final class MainActivity extends Activity {
 
     private void submit() {
         String text = input.getText().toString().trim();
-        if (text.isEmpty() && pendingImage == null && pendingFiles.isEmpty()) {
+        if (text.isEmpty() && pendingImages.isEmpty() && pendingFiles.isEmpty()) {
             input.setError("请输入内容或添加附件");
             return;
         }
-        List<String> entries = pendingImage == null && pendingFiles.isEmpty()
+        List<String> entries = pendingImages.isEmpty() && pendingFiles.isEmpty()
                 && splitInput.isChecked()
                 ? splitLines(text) : Collections.singletonList(text);
         if (entries.isEmpty() || (entries.get(0).trim().isEmpty()
-                && pendingImage == null && pendingFiles.isEmpty())) {
+                && pendingImages.isEmpty() && pendingFiles.isEmpty())) {
             input.setError("请输入内容");
             return;
         }
@@ -412,7 +384,7 @@ public final class MainActivity extends Activity {
             Feedback.showLong(this, "一次最多拆分 " + MAX_BATCH_TASKS + " 条，请分批发入");
             return;
         }
-        boolean withImage = pendingImage != null;
+        boolean withImage = !pendingImages.isEmpty();
         int attachedFileCount = pendingFiles.size();
         if (withImage && imagesUnsupported()) {
             Feedback.showLong(this, "当前模型不支持图片，请移除图片或切换模型");
@@ -425,8 +397,9 @@ public final class MainActivity extends Activity {
         int duplicateCount = 0;
         Set<String> seenInBatch = new LinkedHashSet<>();
         try (TaskStore store = new TaskStore(this)) {
-            if (pendingImage != null || !pendingFiles.isEmpty()) {
-                TaskRecord duplicate = store.findDuplicateTask(text, pendingImage, pendingFiles);
+            if (!pendingImages.isEmpty() || !pendingFiles.isEmpty()) {
+                TaskRecord duplicate = store.findDuplicateTask(text,
+                        pendingImages.isEmpty() ? null : pendingImages.get(0), pendingFiles);
                 if (duplicate != null) {
                     existingDuplicate = duplicate;
                     duplicateCount++;
@@ -496,10 +469,16 @@ public final class MainActivity extends Activity {
         try (TaskStore store = new TaskStore(this)) {
             boolean configured = new AiSettingsStore(this).load() != null;
             long now = System.currentTimeMillis();
-            taskIds = pendingImage == null && pendingFiles.isEmpty()
+            taskIds = pendingImages.isEmpty() && pendingFiles.isEmpty()
                     ? store.insertTasks(entries, source, now)
-                    : Collections.singletonList(store.insertTask(text, pendingImage,
+                    : Collections.singletonList(store.insertTask(text,
+                            pendingImages.isEmpty() ? null : pendingImages.get(0),
                             pendingFiles, source, now));
+            if (!pendingImages.isEmpty()) {
+                long taskId = taskIds.get(0);
+                for (int i = 1; i < pendingImages.size(); i++)
+                    store.addImageAttachment(taskId, pendingImages.get(i));
+            }
             for (long taskId : taskIds) {
                 if (!configured) {
                     store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, "请先配置 AI 服务");
@@ -514,9 +493,9 @@ public final class MainActivity extends Activity {
         input.setText("");
         setIntent(new Intent(this, MainActivity.class));
         // The image now belongs to a stored input, so the pending reference is simply dropped.
-        pendingImage = null;
+        pendingImages.clear();
         pendingFiles.clear();
-        showPendingImage();
+        showPendingImages();
         showPendingFiles();
         DiagLog.add(this, "submitted entries=" + taskIds.size() + " source=" + source
                 + " image=" + (withImage ? "yes" : "no")
@@ -529,34 +508,43 @@ public final class MainActivity extends Activity {
         finish();
     }
 
-    /** Copies a picked or shared image into app storage before anything else reads it. */
-    private void attachImage(Uri source) {
+    /** Copies picked/shared images into app storage so parsing can read them later. */
+    private void attachImages(List<Uri> sources) {
+        if (sources == null || sources.isEmpty()) return;
         if (imagesUnsupported()) {
             Feedback.showLong(this, "当前模型不支持图片输入，可在「AI 服务设置」中重新启用");
             return;
         }
-        Feedback.show(this, "正在读取图片…");
+        Feedback.show(this, "正在读取 " + sources.size() + " 张图片…");
         new Thread(() -> {
-            try {
-                String name = new ImageStore(this).importImage(source);
-                DiagLog.add(this, "image imported name=" + name + " bytes="
-                        + new ImageStore(this).fileFor(name).length());
-                runOnUiThread(() -> {
-                    clearPendingImage();
-                    pendingImage = name;
-                    showPendingImage();
-                });
-            } catch (Exception exception) {
-                DiagLog.add(this, "image import failed " + exception);
-                runOnUiThread(() -> Feedback.showLong(this, "读取图片失败：" + exception.getMessage()));
+            ArrayList<String> imported = new ArrayList<>();
+            int failed = 0;
+            for (Uri source : sources) {
+                try {
+                    String name = new ImageStore(this).importImage(source);
+                    imported.add(name);
+                    DiagLog.add(this, "image imported name=" + name + " bytes="
+                            + new ImageStore(this).fileFor(name).length());
+                } catch (Exception exception) {
+                    failed++;
+                    DiagLog.add(this, "image import failed " + exception);
+                }
             }
+            int failedCount = failed;
+            runOnUiThread(() -> {
+                pendingImages.addAll(imported);
+                showPendingImages();
+                Feedback.show(this, failedCount == 0 ? "已添加 " + imported.size() + " 张图片"
+                        : "已添加 " + imported.size() + " 张，" + failedCount + " 张失败");
+            });
         }, "chrona-image-import").start();
     }
 
     private void pickImage() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("image/*");
+                .setType("image/*")
+                .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         try {
             startActivityForResult(intent, PICK_IMAGE_REQUEST);
         } catch (ActivityNotFoundException exception) {
@@ -585,7 +573,7 @@ public final class MainActivity extends Activity {
                     FILE_STORAGE_REQUEST);
             return;
         }
-        Feedback.show(this, "正在读取附件…");
+        Feedback.show(this, "正在保存到公共 Downloads/Chrona…");
         new Thread(() -> {
             ArrayList<TaskFileAttachment> imported = new ArrayList<>();
             int failed = 0;
@@ -600,7 +588,7 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 pendingFiles.addAll(imported);
                 showPendingFiles();
-                Feedback.show(this, failedCount == 0 ? "已添加 " + imported.size() + " 个附件"
+                Feedback.show(this, failedCount == 0 ? "已添加 " + imported.size() + " 个文件"
                         : "已添加 " + imported.size() + " 个，" + failedCount + " 个失败");
             });
         }, "chrona-file-import").start();
@@ -628,13 +616,16 @@ public final class MainActivity extends Activity {
             remove.setMinHeight(dp(48));
             remove.setTextColor(UiStyle.colors(this).primary);
             remove.setOnClickListener(view -> {
-                pendingFiles.remove(file);
-                showPendingFiles();
+                UiStyle.confirmDialog(this, "移除这个文件？", file.displayName
+                        + " 将从本次记录中移除，公共 Downloads/Chrona 中的副本会保留。", "移除", () -> {
+                    pendingFiles.remove(file);
+                    showPendingFiles();
+                });
             });
             row.addView(remove, new LinearLayout.LayoutParams(dp(56), dp(48)));
             UiStyle.addSpaced(pendingFilesContainer, row, 1, 1);
         }
-        splitInput.setEnabled(pendingFiles.isEmpty() && pendingImage == null);
+        splitInput.setEnabled(pendingFiles.isEmpty() && pendingImages.isEmpty());
     }
 
     private static String formatFileSize(long bytes) {
@@ -643,25 +634,27 @@ public final class MainActivity extends Activity {
         return String.format(Locale.ROOT, "%.1f MB", bytes / (1024f * 1024));
     }
 
-    /** Drops the pending attachment and deletes its file; the file is not in any input yet. */
-    private void clearPendingImage() {
-        if (pendingImage == null) return;
-        new ImageStore(this).delete(pendingImage);
-        pendingImage = null;
-        showPendingImage();
-    }
-
-    private void showPendingImage() {
-        boolean attached = pendingImage != null;
-        attachment.setVisibility(attached ? View.VISIBLE : View.GONE);
-        removeImage.setVisibility(attached ? View.VISIBLE : View.GONE);
-        // Attachments belong to one input, so line splitting does not apply while attached.
-        splitInput.setEnabled(!attached && pendingFiles.isEmpty());
-        if (attached) {
-            attachment.setImageURI(Uri.fromFile(new ImageStore(this).fileFor(pendingImage)));
-        } else {
-            attachment.setImageDrawable(null);
+    /** Rebuilds the visible image list for the next unsaved input. */
+    private void showPendingImages() {
+        if (pendingImagesContainer == null) return;
+        pendingImagesContainer.removeAllViews();
+        for (String imageName : new ArrayList<>(pendingImages)) {
+            AttachmentImageTile tile = new AttachmentImageTile(this,
+                    Uri.fromFile(new ImageStore(this).fileFor(imageName)), imageName,
+                    () -> startActivity(new Intent(this, AttachmentViewerActivity.class)
+                            .putExtra(AttachmentViewerActivity.EXTRA_IMAGE_NAME, imageName)),
+                    () -> UiStyle.confirmDialog(this, "移除图片？",
+                            "将从本次记录中移除图片“" + imageName + "”。",
+                            "移除图片", () -> {
+                                pendingImages.remove(imageName);
+                                new ImageStore(this).delete(imageName);
+                                showPendingImages();
+                            }));
+            LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(-1, dp(160));
+            tileParams.setMargins(0, dp(4), 0, dp(4));
+            pendingImagesContainer.addView(tile, tileParams);
         }
+        splitInput.setEnabled(pendingImages.isEmpty() && pendingFiles.isEmpty());
     }
 
     /** Keeps the image entry in step with what the configured model was just found to accept. */
@@ -732,27 +725,7 @@ public final class MainActivity extends Activity {
         Feedback.show(this, "已从剪贴板追加文字");
     }
 
-    /** Speaks one input through the system recognizer and appends whatever it returns. */
-    private void startVoiceInput() {
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-                .putExtra(RecognizerIntent.EXTRA_PROMPT, "说出一件事，最好带上时间和地点");
-        try {
-            startActivityForResult(intent, VOICE_REQUEST);
-        } catch (ActivityNotFoundException exception) {
-            Feedback.showLong(this, "没有可用的语音识别服务");
-        }
-    }
-
-    /** Voice capture is a system capability; with no recognizer installed the entry is hidden. */
-    private void refreshVoiceEntry() {
-        voiceInput.setVisibility(SpeechRecognizer.isRecognitionAvailable(this)
-                ? View.VISIBLE : View.GONE);
-    }
-
-    /** Appends pasted or recognized text so several snippets can be collected before one submit. */
+    /** Appends pasted text so several snippets can be collected before one submit. */
     private void appendText(String addition) {
         String trimmed = addition == null ? "" : addition.trim();
         if (trimmed.isEmpty()) return;

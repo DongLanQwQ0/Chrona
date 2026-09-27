@@ -329,17 +329,14 @@ public final class TaskDetailActivity extends Activity {
             long outputBytes = new StreamingOutputStore(this).length(taskId);
             if (previewExpanded == null) previewExpanded = false;
             if (candidates.isEmpty()) {
-                label("待确认日程", 19);
+                label("没有日程", 19);
                 label("还没有识别出日程。你可以重新解析，或手动添加。", 14);
                 button("手动添加日程", () -> addManualCandidate());
             } else {
-                int pendingCount = candidates.size() - publishedCount;
-                label(pendingCount > 0 ? "待确认 " + pendingCount + " 项 · 共 "
-                        + candidates.size() + " 项"
-                        : "已写入日历 · " + candidates.size() + " 项", 19);
                 if (candidates.size() == 1) {
-                    Button save = addCandidateEditor(candidates.get(0), 1, true);
-                    showCompletionAction(save);
+                    EventCandidate candidate = candidates.get(0);
+                    Button save = addCandidateEditor(candidate, 1, true);
+                    showCompletionAction(save, candidate);
                 } else {
                     addCandidateCarousel(candidates);
                 }
@@ -383,16 +380,23 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView position = new TextView(this);
-        position.setText(current < 0 ? "收件箱" : "收件箱  ·  " + (current + 1)
-                + " / " + tasks.size() + (tasks.size() > 1 ? "  ·  左右滑动切换" : ""));
+        position.setText(current < 0 ? "收件箱" : "" + (current + 1) + " / " + tasks.size());
         position.setTextSize(13);
         UiStyle.muted(position);
+        Drawable inboxIcon = getDrawable(R.drawable.ic_inbox_outline);
+        if (inboxIcon != null) {
+            inboxIcon.setTint(UiStyle.colors(this).primary);
+            position.setCompoundDrawablesRelativeWithIntrinsicBounds(inboxIcon, null, null, null);
+            position.setCompoundDrawablePadding(dp(6));
+        }
+        position.setContentDescription(current < 0 ? "收件箱" : "收件箱，第" + (current + 1)
+                + "条，共" + tasks.size() + "条" + (tasks.size() > 1 ? "，可左右滑动切换" : ""));
         row.addView(position, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView badge = new TextView(this);
         badge.setText(statusLabel(status));
         badge.setTextSize(12);
-        badge.setTypeface(null, android.graphics.Typeface.BOLD);
-        badge.setPadding(dp(10), dp(5), dp(10), dp(5));
+        badge.setPadding(dp(9), dp(4), dp(9), dp(4));
+        badge.setContentDescription("任务状态：" + statusLabel(status));
         UiStyle.pill(badge, true);
         row.addView(badge, new LinearLayout.LayoutParams(-2, -2));
         UiStyle.addSpaced(content, row, 2, 5);
@@ -401,8 +405,9 @@ public final class TaskDetailActivity extends Activity {
     private void addCandidateCarousel(List<EventCandidate> candidates) {
         candidatePageIndex = Math.max(0, Math.min(candidatePageIndex, candidates.size() - 1));
         TextView indicator = new TextView(this);
-        indicator.setText("日程 " + (candidatePageIndex + 1) + " / " + candidates.size()
-                + "  ·  左右滑动切换");
+        indicator.setText("日程 " + (candidatePageIndex + 1) + " / " + candidates.size());
+        indicator.setContentDescription("第" + (candidatePageIndex + 1) + "项日程，共"
+                + candidates.size() + "项，可左右滑动切换");
         indicator.setTextSize(14);
         UiStyle.muted(indicator);
         UiStyle.addSpaced(content, indicator, 2, 5);
@@ -424,15 +429,17 @@ public final class TaskDetailActivity extends Activity {
                     Math.round(scrollX / (float) pageWidth)));
             if (index != candidatePageIndex) {
                 candidatePageIndex = index;
-                indicator.setText("日程 " + (index + 1) + " / " + candidates.size()
-                        + "  ·  左右滑动切换");
+                indicator.setText("日程 " + (index + 1) + " / " + candidates.size());
+                indicator.setContentDescription("第" + (index + 1) + "项日程，共"
+                        + candidates.size() + "项，可左右滑动切换");
                 setCompletionAction(() -> requestCandidateSave(candidates.get(index).id,
-                        saves[index]));
+                        saves[index]), candidates.get(index), candidates);
             }
         });
         UiStyle.addSpaced(content, carousel, 0, 8);
         setCompletionAction(() -> requestCandidateSave(
-                candidates.get(candidatePageIndex).id, saves[candidatePageIndex]));
+                candidates.get(candidatePageIndex).id, saves[candidatePageIndex]),
+                candidates.get(candidatePageIndex), candidates);
         carousel.post(() -> carousel.scrollTo(candidatePageIndex * pageWidth, 0));
     }
 
@@ -442,11 +449,11 @@ public final class TaskDetailActivity extends Activity {
         return Math.max(dp(280), width);
     }
 
-    private void showCompletionAction(Button action) {
+    private void showCompletionAction(Button action, EventCandidate candidate) {
         ViewGroup parent = (ViewGroup) action.getParent();
         if (parent != null) parent.removeView(action);
-        // The caller binds the single candidate id in the editor action itself.
-        setCompletionAction(action::performClick);
+        setCompletionAction(action::performClick, candidate,
+                Collections.singletonList(candidate));
     }
 
     private void requestCandidateSave(long candidateId, Button action) {
@@ -537,10 +544,14 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.addSpaced(content, row, 0, 2);
     }
 
-    private void setCompletionAction(Runnable action) {
+    private void setCompletionAction(Runnable action, EventCandidate candidate,
+            List<EventCandidate> candidates) {
         if (completionAction == null) return;
         completionAction.setVisibility(View.VISIBLE);
         completionAction.setEnabled(true);
+        int remaining = Math.max(0, candidates.size() - countPublished(candidates));
+        completionAction.setContentDescription("确认当前日程：" + candidate.title
+                + "。本任务还有 " + remaining + " 项待确认；保存后会自动跳到下一项。");
         completionAction.setOnClickListener(view -> action.run());
     }
 
@@ -647,7 +658,6 @@ public final class TaskDetailActivity extends Activity {
             }
             refreshHandler.postDelayed(refresh[0], 1500L);
         };
-        dialog.setOnDismissListener(ignored -> refreshHandler.removeCallbacks(refresh[0]));
         refreshHandler.post(refresh[0]);
         sizeFloatingDialog(dialog, dp(420), Gravity.CENTER);
     }
@@ -1102,42 +1112,11 @@ public final class TaskDetailActivity extends Activity {
             images.setOrientation(LinearLayout.HORIZONTAL);
             images.setClipChildren(true);
             for (String imagePath : imagePaths) {
-                FrameLayout tile = new FrameLayout(this);
-                tile.setClipChildren(true);
-                tile.setClipToPadding(true);
-                tile.setClipToOutline(true);
-                tile.setOutlineProvider(galleryViewport.getOutlineProvider());
-                ImageView preview = new ImageView(this);
-                preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                preview.setClipToOutline(true);
-                preview.setOutlineProvider(new ViewOutlineProvider() {
-                    @Override public void getOutline(View view, Outline outline) {
-                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(10));
-                    }
-                });
-                preview.setContentDescription("点按查看大图并保存");
-                preview.setImageURI(Uri.fromFile(new ImageStore(this).fileFor(imagePath)));
-                preview.setOnClickListener(view -> startActivity(new Intent(this,
-                        AttachmentViewerActivity.class).putExtra(
-                                AttachmentViewerActivity.EXTRA_IMAGE_NAME, imagePath)));
-                tile.addView(preview, new FrameLayout.LayoutParams(dp(236), dp(172)));
-                Button remove = new Button(this);
-                remove.setText("×");
-                remove.setTextSize(20);
-                remove.setGravity(android.view.Gravity.CENTER);
-                remove.setPadding(0, 0, 0, 0);
-                remove.setTextColor(UiStyle.colors(this).primary);
-                UiStyle.glass(remove);
-                UiStyle.pressable(remove);
-                remove.setMinimumHeight(dp(48));
-                remove.setMinHeight(dp(48));
-                remove.setMinWidth(dp(48));
-                remove.setOnClickListener(view -> removeImage(imagePath));
-                remove.setContentDescription("移除图片");
-                FrameLayout.LayoutParams removeParams = new FrameLayout.LayoutParams(dp(48), dp(48),
-                        android.view.Gravity.TOP | android.view.Gravity.END);
-                removeParams.setMargins(0, dp(6), dp(6), 0);
-                tile.addView(remove, removeParams);
+                AttachmentImageTile tile = new AttachmentImageTile(this,
+                        Uri.fromFile(new ImageStore(this).fileFor(imagePath)), imagePath,
+                        () -> startActivity(new Intent(this, AttachmentViewerActivity.class)
+                                .putExtra(AttachmentViewerActivity.EXTRA_IMAGE_NAME, imagePath)),
+                        () -> confirmRemoveImage(imagePath));
                 LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(dp(236), dp(172));
                 tileParams.setMargins(0, dp(3), dp(10), dp(3));
                 images.addView(tile, tileParams);
@@ -1394,7 +1373,8 @@ public final class TaskDetailActivity extends Activity {
         actions.setGravity(android.view.Gravity.CENTER_VERTICAL);
         Button open = compactActionButton("↗ 打开", 0, () -> openOrdinaryFile(file));
         Button save = compactActionButton("↓ 保存副本", 0, () -> exportFile(file));
-        Button remove = compactActionButton("× 移除", 0, () -> removeOrdinaryFile(file));
+        Button remove = compactActionButton("× 移除", 0,
+                () -> confirmRemoveOrdinaryFile(file));
         for (Button action : new Button[] {open, save, remove}) {
             action.setTextSize(12);
             action.setPadding(dp(4), 0, dp(4), 0);
@@ -1450,6 +1430,13 @@ public final class TaskDetailActivity extends Activity {
         } catch (Exception exception) {
             showError(exception);
         }
+    }
+
+    private void confirmRemoveOrdinaryFile(TaskFileAttachment file) {
+        UiStyle.confirmDialog(this, "移除普通文件？",
+                "将从此任务移除“" + file.displayName
+                        + "”的附件关联。公共 Downloads 文件不会被删除。",
+                "移除关联", () -> removeOrdinaryFile(file));
     }
 
     private static String formatFileSize(long bytes) {
@@ -1699,6 +1686,13 @@ public final class TaskDetailActivity extends Activity {
     }
 
     /** Drops the attachment so a text-only retry stays possible when images are rejected. */
+    private void confirmRemoveImage(String imagePath) {
+        UiStyle.confirmDialog(this, "移除图片？",
+                "将从任务捕获内容中删除图片“" + imagePath
+                        + "”；重新解析将不再使用它。",
+                "移除图片", () -> removeImage(imagePath));
+    }
+
     private void removeImage(String imagePath) {
         try (TaskStore store = new TaskStore(this)) {
             String removed = store.removeImageAttachment(taskId, imagePath);
@@ -1766,40 +1760,64 @@ public final class TaskDetailActivity extends Activity {
         if (destination == content) {
             UiStyle.addSpaced(destination, card, 12, 6);
         } else {
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(pageWidth, -2);
-            params.setMargins(0, dp(6), 0, dp(6));
+            int pageGutter = dp(8);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    Math.max(dp(240), pageWidth - pageGutter * 2), -2);
+            params.setMargins(pageGutter, dp(6), pageGutter, dp(6));
             destination.addView(card, params);
         }
-        label(card, "日程 " + number + (candidate.calendarEventId == null ? " · 待写入" : " · 已写入日历"), 19);
+        LinearLayout cardHeader = new LinearLayout(this);
+        cardHeader.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView cardTitle = new TextView(this);
+        cardTitle.setText("日程 " + number);
+        cardTitle.setTextSize(17);
+        UiStyle.title(cardTitle);
+        cardHeader.addView(cardTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button removeCandidate = new Button(this);
+        removeCandidate.setContentDescription("删除日程 " + candidate.title);
+        removeCandidate.setOnClickListener(view -> confirmRemoveCandidate(candidate, number));
+        removeCandidate.setPadding(0, 0, 0, 0);
+        removeCandidate.setTextColor(UiStyle.colors(this).primary);
+        Drawable deleteIcon = getDrawable(R.drawable.ic_delete);
+        if (deleteIcon != null) deleteIcon.setTint(UiStyle.colors(this).primary);
+        removeCandidate.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                deleteIcon, null, null, null);
+        UiStyle.glass(removeCandidate);
+        UiStyle.pressable(removeCandidate);
+        removeCandidate.setMinimumWidth(dp(48));
+        removeCandidate.setMinimumHeight(dp(48));
+        cardHeader.addView(removeCandidate, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        UiStyle.addSpaced(card, cardHeader, 0, 2);
         EditText title = inlineField(formRow(card, "标题"), "添加标题", candidate.title, 1f);
         trackUnsavedChanges(title, candidate.id);
+        CheckBox allDay = new CheckBox(this);
+        allDay.setText("全天");
+        allDay.setChecked(candidate.allDay);
         int[] selectedCategory = {EventCategory.indexOf(candidate.category)};
         TextView category = new TextView(this);
         category.setText(EventCategory.LABELS[selectedCategory[0]]);
         UiStyle.fieldTrigger(category);
         category.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout categoryRow = formRow(card, "类型");
+        LinearLayout categoryRow = formRow(card, "类型", R.drawable.ic_event);
         categoryRow.addView(category, new LinearLayout.LayoutParams(-1, -2));
-        CheckBox allDay = new CheckBox(this);
-        allDay.setText("全天日程");
-        allDay.setChecked(candidate.allDay);
-        card.addView(allDay, new LinearLayout.LayoutParams(-1, -2));
-        LinearLayout timeRow = formRow(card, "时间");
-        timeRow.setOrientation(LinearLayout.VERTICAL);
-        timeRow.setGravity(android.view.Gravity.START);
-        timeRow.getChildAt(0).setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout timeRow = formRow(card, "时间", R.drawable.ic_schedule);
+        LinearLayout timeValues = new LinearLayout(this);
+        timeValues.setOrientation(LinearLayout.VERTICAL);
+        timeValues.setMinimumWidth(0);
         String startHint = candidate.allDay ? "开始日期：yyyy-MM-dd"
                 : EventCategory.DEADLINE.equals(candidate.category)
                         ? "截止前开始：yyyy-MM-dd HH:mm" : "开始：yyyy-MM-dd HH:mm";
         String endHint = candidate.allDay ? "结束日期（含当天）：yyyy-MM-dd"
                 : EventCategory.DEADLINE.equals(candidate.category)
                         ? "截止时间：yyyy-MM-dd HH:mm" : "结束：yyyy-MM-dd HH:mm";
-        EditText start = inlineField(timeRow, startHint,
+        EditText start = inlineField(timeValues, startHint,
                 candidate.allDay ? dayStart(defaulted.startAtMillis)
                         : format(defaulted.startAtMillis), 1f);
-        EditText end = inlineField(timeRow, endHint,
+        EditText end = inlineField(timeValues, endHint,
                 candidate.allDay ? dayEnd(defaulted.endAtMillis)
                         : format(defaulted.endAtMillis), 1f);
+        timeValues.addView(allDay, new LinearLayout.LayoutParams(-1, -2));
+        timeRow.addView(timeValues, new LinearLayout.LayoutParams(0, -2, 1f));
         start.setTextSize(13);
         end.setTextSize(13);
         trackUnsavedChanges(start, candidate.id);
@@ -1896,20 +1914,26 @@ public final class TaskDetailActivity extends Activity {
             }
             syncingRange[0] = false;
         });
-        EditText location = inlineField(formRow(card, "地点"), "不填写", candidate.location, 1f);
-        EditText description = inlineField(formRow(card, "备注"), "不填写",
-                candidate.description, 1f);
-        description.setSingleLine(false);
-        description.setHorizontallyScrolling(false);
-        description.setMinLines(2);
-        description.setMaxLines(4);
-        description.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
-        LinearLayout reminderRow = formRow(card, "提醒");
-        TextView reminderPrefix = new TextView(this);
-        reminderPrefix.setText("提前");
-        reminderPrefix.setTextSize(15);
-        UiStyle.muted(reminderPrefix);
-        reminderRow.addView(reminderPrefix);
+        EditText location = inlineField(formRow(card, "地点", R.drawable.ic_place),
+                "不填写", candidate.location, 1f);
+        String[] currentDescription = {candidate.description == null ? "" : candidate.description};
+        LinearLayout noteRow = formRow(card, "备注", R.drawable.ic_notes);
+        TextView notePreview = new TextView(this);
+        notePreview.setText(shortNote(currentDescription[0]));
+        notePreview.setTextSize(14);
+        notePreview.setMaxLines(2);
+        notePreview.setEllipsize(TextUtils.TruncateAt.END);
+        notePreview.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        UiStyle.muted(notePreview);
+        noteRow.addView(notePreview, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button editNote = compactActionButton("展开", R.drawable.ic_expand_more,
+                () -> showNoteEditorDialog(candidate, currentDescription, notePreview));
+        editNote.setContentDescription("展开并编辑备注");
+        noteRow.addView(editNote, new LinearLayout.LayoutParams(-2, -2));
+        notePreview.setOnClickListener(view -> showNoteEditorDialog(candidate,
+                currentDescription, notePreview));
+        notePreview.setContentDescription("备注，点按展开并编辑；" + currentDescription[0]);
+        LinearLayout reminderRow = formRow(card, "提醒", R.drawable.ic_notifications);
         EditText reminder = inlineField(reminderRow, "不提醒",
                 candidate.reminderMinutesBefore == null ? ""
                         : candidate.reminderMinutesBefore.toString(), .5f);
@@ -1919,7 +1943,6 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.muted(reminderSuffix);
         reminderRow.addView(reminderSuffix);
         trackUnsavedChanges(location, candidate.id);
-        trackUnsavedChanges(description, candidate.id);
         trackUnsavedChanges(reminder, candidate.id);
         Button[] publish = new Button[1];
         publish[0] = button(card, candidate.calendarEventId == null
@@ -1944,7 +1967,7 @@ public final class TaskDetailActivity extends Activity {
                 EventCandidate edited = new EventCandidate(candidate.id, taskId, titleText,
                         startAt, endAt, allDay.isChecked() ? "UTC" : zone.getId(),
                         location.getText().toString().trim(),
-                        description.getText().toString().trim(), minutes, false,
+                        currentDescription[0].trim(), minutes, false,
                         candidate.calendarEventId,
                         EventCategory.VALUES[selectedCategory[0]], allDay.isChecked());
                 saveInFlight = true;
@@ -1961,7 +1984,6 @@ public final class TaskDetailActivity extends Activity {
             ViewGroup parent = (ViewGroup) publish[0].getParent();
             if (parent != null) parent.removeView(publish[0]);
         }
-        button(card, "删除此日程", () -> confirmRemoveCandidate(candidate, number));
         return publish[0];
     }
 
@@ -1974,32 +1996,34 @@ public final class TaskDetailActivity extends Activity {
                     edited.startAtMillis, edited.endAtMillis, edited.timeZoneId, edited.allDay,
                     edited.description, edited.location, reminders);
             if (edited.calendarEventId != null) {
+                if (!store.updateCandidate(edited))
+                    throw new IllegalStateException("无法保存日程草稿");
                 if (!calendar.updateEvent(edited.calendarEventId, input)) {
                     throw new IllegalStateException("日历中的原日程已被删除，请重新解析或手动添加");
                 }
             } else {
+                if (!store.updateCandidate(edited))
+                    throw new IllegalStateException("无法保存日程草稿");
                 long eventId = calendar.insertEvent(input);
                 if (!store.setCalendarEventId(edited.id, taskId, eventId)) {
                     calendar.deleteEvent(eventId);
                     throw new IllegalStateException("无法保存日程关联");
                 }
             }
-            if (!store.updateCandidate(edited)) throw new IllegalStateException("无法保存日程草稿");
-            store.updateStatus(taskId, reviewStatus(store.getCandidates(taskId)), null);
+            List<EventCandidate> savedCandidates = store.getCandidates(taskId);
+            store.updateStatus(taskId, reviewStatus(savedCandidates), null);
+            savedCandidates = store.getCandidates(taskId);
             DiagLog.add(this, "calendar written task=" + taskId + " candidate=" + edited.id
                     + " event=" + edited.calendarEventId);
+            List<EventCandidate> result = savedCandidates;
             runOnUiThread(() -> {
-                dirtyCandidateIds.remove(edited.id);
-                updateDirtyState();
-                saveInFlight = false;
-                Feedback.show(this, "已更新");
-                finish();
+                continueCandidateConfirmation(edited.id, result);
             });
         } catch (Exception exception) {
             runOnUiThread(() -> {
                 saveInFlight = false;
                 if (completionAction != null) completionAction.setEnabled(true);
-                showError(exception);
+                showCandidateError(edited, exception);
             });
         }
     }
@@ -2046,7 +2070,7 @@ public final class TaskDetailActivity extends Activity {
             runOnUiThread(() -> {
                 saveInFlight = false;
                 if (completionAction != null) completionAction.setEnabled(true);
-                showError(exception);
+                showCandidateError(edited, exception);
             });
         }
     }
@@ -2057,24 +2081,52 @@ public final class TaskDetailActivity extends Activity {
                     edited.startAtMillis, edited.endAtMillis, edited.timeZoneId, edited.location,
                     edited.description, edited.reminderMinutesBefore, edited.needsConfirmation,
                     eventId, edited.category, edited.allDay);
-            if (!store.setCalendarEventId(edited.id, taskId, eventId)
-                    || !store.updateCandidate(linked))
+            if (!store.updateCandidate(linked)
+                    || !store.setCalendarEventId(edited.id, taskId, eventId))
                 throw new IllegalStateException("无法保存日程关联");
-            store.updateStatus(taskId, reviewStatus(store.getCandidates(taskId)), null);
+            List<EventCandidate> savedCandidates = store.getCandidates(taskId);
+            store.updateStatus(taskId, reviewStatus(savedCandidates), null);
+            savedCandidates = store.getCandidates(taskId);
+            List<EventCandidate> result = savedCandidates;
             runOnUiThread(() -> {
-                dirtyCandidateIds.remove(edited.id);
-                updateDirtyState();
-                saveInFlight = false;
-                Feedback.show(this, "已关联已有日程");
-                finish();
+                continueCandidateConfirmation(edited.id, result);
             });
         } catch (Exception exception) {
             runOnUiThread(() -> {
                 saveInFlight = false;
                 if (completionAction != null) completionAction.setEnabled(true);
-                showError(exception);
+                showCandidateError(edited, exception);
             });
         }
+    }
+
+    private void continueCandidateConfirmation(long savedCandidateId,
+            List<EventCandidate> candidates) {
+        dirtyCandidateIds.remove(savedCandidateId);
+        updateDirtyState();
+        saveInFlight = false;
+        int nextPending = -1;
+        for (int i = 0; i < candidates.size(); i++) {
+            if (candidates.get(i).calendarEventId == null) {
+                nextPending = i;
+                break;
+            }
+        }
+        if (nextPending < 0) {
+            Feedback.show(this, "整条任务已确认，日程均已写入日历");
+            finish();
+            return;
+        }
+        int remaining = candidates.size() - countPublished(candidates);
+        candidatePageIndex = nextPending;
+        render();
+        Feedback.show(this, "当前日程已保存；还有 " + remaining + " 项待确认，已切换到下一项");
+    }
+
+    private void showCandidateError(EventCandidate candidate, Exception exception) {
+        String detail = exception.getMessage();
+        Feedback.showLong(this, "日程“" + candidate.title + "”尚未完成，仍待确认："
+                + (detail == null || detail.trim().isEmpty() ? "保存失败，请重试" : detail));
     }
 
     private void retry() {
@@ -2145,6 +2197,93 @@ public final class TaskDetailActivity extends Activity {
         row.addView(key, new LinearLayout.LayoutParams(dp(54), -2));
         UiStyle.addSpaced(card, row, 1, 1);
         return row;
+    }
+
+    private LinearLayout formRow(LinearLayout card, String label, int iconResource) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+        LinearLayout key = new LinearLayout(this);
+        key.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconResource);
+        icon.setColorFilter(UiStyle.colors(this).primary);
+        icon.setContentDescription(label);
+        key.addView(icon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        TextView text = new TextView(this);
+        text.setText(label);
+        text.setTextSize(13);
+        UiStyle.muted(text);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
+        textParams.setMargins(dp(4), 0, 0, 0);
+        key.addView(text, textParams);
+        row.addView(key, new LinearLayout.LayoutParams(dp(78), -2));
+        UiStyle.addSpaced(card, row, 1, 1);
+        return row;
+    }
+
+    private String shortNote(String note) {
+        String value = note == null ? "" : note.trim();
+        return value.isEmpty() ? "添加备注" : value;
+    }
+
+    private void showNoteEditorDialog(EventCandidate candidate, String[] currentDescription,
+            TextView preview) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = floatingDialogPanel("备注");
+        EditText editor = new EditText(this);
+        editor.setText(currentDescription[0]);
+        editor.setSingleLine(false);
+        editor.setMinLines(5);
+        editor.setMaxLines(Integer.MAX_VALUE);
+        editor.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
+        editor.setHint("补充日程说明");
+        editor.setTextSize(15);
+        editor.setPadding(dp(12), dp(10), dp(12), dp(10));
+        UiStyle.input(editor);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(editor, new ScrollView.LayoutParams(-1, -2));
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(280)));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        Button cancel = new Button(this);
+        cancel.setText("取消");
+        cancel.setOnClickListener(view -> dialog.dismiss());
+        UiStyle.button(cancel, false);
+        cancel.setMinimumHeight(dp(48));
+        Button save = new Button(this);
+        save.setText("保存备注");
+        save.setOnClickListener(view -> {
+            String value = editor.getText().toString().trim();
+            try (TaskStore store = new TaskStore(this)) {
+                EventCandidate updated = new EventCandidate(candidate.id, taskId, candidate.title,
+                        candidate.startAtMillis, candidate.endAtMillis, candidate.timeZoneId,
+                        candidate.location, value, candidate.reminderMinutesBefore,
+                        candidate.needsConfirmation, candidate.calendarEventId,
+                        candidate.category, candidate.allDay);
+                if (!store.updateCandidate(updated))
+                    throw new IllegalStateException("无法保存备注");
+                currentDescription[0] = value;
+                preview.setText(shortNote(value));
+                preview.setContentDescription("备注，点按展开并编辑；" + value);
+                dialog.dismiss();
+                Feedback.show(this, "备注已保存");
+            } catch (Exception exception) {
+                showError(exception);
+            }
+        });
+        UiStyle.button(save, true);
+        save.setMinimumHeight(dp(48));
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        cancelParams.setMargins(0, 0, dp(6), 0);
+        actions.addView(cancel, cancelParams);
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        saveParams.setMargins(dp(6), 0, 0, 0);
+        actions.addView(save, saveParams);
+        panel.addView(actions);
+        UiStyle.showFloatingDialog(dialog, panel);
+        editor.requestFocus();
     }
 
     private EditText inlineField(LinearLayout row, String hint, String value, float weight) {

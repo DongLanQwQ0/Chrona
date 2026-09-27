@@ -156,6 +156,8 @@ public final class UiStyle {
         int background, surface, surfaceAlt, text, muted, outline;
         String scheme = ThemeStore.color(context);
         int primary, container, onContainer;
+        int seed = ThemeStore.paletteSeed(context, scheme);
+        if (seed != 0) return accentPalette(dark, seed);
         if (ThemeStore.WALLPAPER.equals(scheme) && ThemeStore.wallpaperAvailable()) {
             background = context.getColor(dark ? android.R.color.system_neutral1_900
                     : android.R.color.system_neutral1_10);
@@ -210,6 +212,40 @@ public final class UiStyle {
                 primary, dark ? background : Color.WHITE, container, onContainer);
     }
 
+    private static Palette accentPalette(boolean dark, int seed) {
+        float[] hsv = new float[3];
+        Color.colorToHSV(seed, hsv);
+        float hue = hsv[0];
+        float saturation = Math.max(.48f, Math.min(.92f, hsv[1]));
+        int background, surface, surfaceAlt, text, muted, outline;
+        int primary, onPrimary, container, onContainer;
+        if (dark) {
+            background = Color.HSVToColor(new float[]{hue, .18f, .09f});
+            surface = Color.HSVToColor(new float[]{hue, .20f, .14f});
+            surfaceAlt = Color.HSVToColor(new float[]{hue, .23f, .19f});
+            text = 0xFFF0F1F5;
+            muted = 0xFFBEC3CD;
+            outline = Color.HSVToColor(new float[]{hue, .18f, .36f});
+            primary = Color.HSVToColor(new float[]{hue, saturation, .91f});
+            onPrimary = Color.luminance(primary) > .179f ? Color.BLACK : Color.WHITE;
+            container = Color.HSVToColor(new float[]{hue, saturation * .72f, .38f});
+            onContainer = Color.HSVToColor(new float[]{hue, .10f, .97f});
+        } else {
+            background = Color.HSVToColor(new float[]{hue, .08f, .985f});
+            surface = Color.WHITE;
+            surfaceAlt = Color.HSVToColor(new float[]{hue, .045f, .96f});
+            text = Color.HSVToColor(new float[]{hue, .28f, .14f});
+            muted = Color.HSVToColor(new float[]{hue, .24f, .43f});
+            outline = Color.HSVToColor(new float[]{hue, .10f, .80f});
+            primary = Color.HSVToColor(new float[]{hue, saturation, .48f});
+            onPrimary = Color.luminance(primary) > .179f ? Color.BLACK : Color.WHITE;
+            container = Color.HSVToColor(new float[]{hue, saturation * .20f, .98f});
+            onContainer = Color.HSVToColor(new float[]{hue, saturation * .55f, .23f});
+        }
+        return new Palette(background, surface, surfaceAlt, text, muted, outline,
+                primary, onPrimary, container, onContainer);
+    }
+
     public static void page(Activity activity, LinearLayout root) {
         Palette colors = colors(activity);
         root.setBackgroundColor(colors.background);
@@ -232,7 +268,7 @@ public final class UiStyle {
         view.setTextColor(colors.text);
         view.setTextSize(16);
         view.setHintTextColor(colors.muted);
-        view.setBackground(shape(view, childSurface(view, colors.surface),
+        view.setBackground(shape(view, childSurface(colors.surface),
                 RADIUS_FIELD, colors.outline));
         view.setPadding(dp(view, 16), dp(view, 14), dp(view, 16), dp(view, 14));
         rememberChildSurface(view, 0, false, 0, false);
@@ -257,7 +293,7 @@ public final class UiStyle {
         view.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_chevron_down, 0);
         view.setCompoundDrawableTintList(ColorStateList.valueOf(colors.muted));
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
-                shape(view, childSurface(view, colors.surface), RADIUS_FIELD, colors.outline), null));
+                shape(view, childSurface(colors.surface), RADIUS_FIELD, colors.outline), null));
         rememberChildSurface(view, 1, false, 0, false);
     }
 
@@ -269,7 +305,7 @@ public final class UiStyle {
         view.setTypeface(null, Typeface.BOLD);
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(
                 primary ? 0x44FFFFFF : alpha(colors.primary, 34)),
-                shape(view, primary ? colors.primary : childSurface(view, colors.surface), RADIUS_FIELD,
+                shape(view, primary ? colors.primary : childSurface(colors.surface), RADIUS_FIELD,
                         primary ? colors.primary : colors.outline), null));
         view.setMinimumHeight(dp(view, 52));
         StateListAnimator press = new StateListAnimator();
@@ -287,6 +323,11 @@ public final class UiStyle {
     /** Translucent surface over the softly colored backdrop; text stays opaque. */
     public static void glass(View view) {
         acrylicSurface(view, RADIUS_PANEL);
+    }
+
+    /** Pill-shaped acrylic surface for transient in-app messages. */
+    public static void glassPill(View view) {
+        acrylicSurface(view, 999);
     }
 
     private static void acrylicSurface(View view, int radius) {
@@ -323,13 +364,11 @@ public final class UiStyle {
         private int lastSurface, lastAlt, lastOutline;
         private int lastText;
         private boolean lastDark;
-        private long blurReadyAt;
-        private boolean backdropWasReady;
+        private boolean lastSelected;
         private int drawableAlpha = 255;
         private final View host;
-        private final boolean selected;
-        private final boolean outline;
-        private final Runnable frameInvalidator;
+        private boolean selected;
+        private boolean outline;
 
         AcrylicSurfaceDrawable(View host, GradientDrawable blurredSurface,
                 GradientDrawable fallbackSurface, int radius, boolean selected, boolean outline) {
@@ -339,7 +378,19 @@ public final class UiStyle {
             this.radius = radius;
             this.selected = selected;
             this.outline = outline;
-            this.frameInvalidator = host::invalidate;
+            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface);
+        }
+
+        boolean belongsTo(View candidate, int candidateRadius) {
+            return host == candidate && radius == candidateRadius;
+        }
+
+        void updateSelection(boolean selected, boolean outline) {
+            if (this.selected == selected && this.outline == outline) return;
+            this.selected = selected;
+            this.outline = outline;
+            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface);
+            invalidateSelf();
         }
 
         @Override public void draw(android.graphics.Canvas canvas) {
@@ -363,25 +414,11 @@ public final class UiStyle {
             blurredSurface.setBounds(getBounds());
             fallbackSurface.setBounds(getBounds());
             if (!backdropReady) {
-                backdropWasReady = false;
-                fallbackSurface.setAlpha(255);
+                fallbackSurface.setAlpha(drawableAlpha);
                 fallbackSurface.draw(canvas);
                 return;
             }
-            if (!backdropWasReady) {
-                backdropWasReady = true;
-                blurReadyAt = android.os.SystemClock.uptimeMillis();
-            }
-            long elapsed = android.os.SystemClock.uptimeMillis() - blurReadyAt;
-            int fallbackAlpha = elapsed >= 160 ? 0 : 255 - (int) (elapsed * 255 / 160);
-            if (fallbackAlpha > 0) {
-                fallbackSurface.setAlpha(drawableAlpha * fallbackAlpha / 255);
-                fallbackSurface.draw(canvas);
-                fallbackSurface.setAlpha(drawableAlpha);
-                scheduleSelf(frameInvalidator, android.os.SystemClock.uptimeMillis() + 16);
-            } else {
-                unscheduleSelf(frameInvalidator);
-            }
+            fallbackSurface.setAlpha(drawableAlpha);
             blurredSurface.draw(canvas);
         }
 
@@ -392,7 +429,8 @@ public final class UiStyle {
             int outlineColor = selected ? palette.primary
                     : dark ? palette.outline : Color.WHITE;
             if (lastMix == mix && lastSurface == palette.surface && lastAlt == palette.surfaceAlt
-                    && lastOutline == outlineColor && lastText == palette.text && lastDark == dark)
+                    && lastOutline == outlineColor && lastText == palette.text && lastDark == dark
+                    && lastSelected == selected)
                 return;
             lastMix = mix;
             lastSurface = palette.surface;
@@ -400,6 +438,7 @@ public final class UiStyle {
             lastOutline = outlineColor;
             lastText = palette.text;
             lastDark = dark;
+            lastSelected = selected;
             // A gentle theme-aware RGB shift makes the wallpaper blur read through the tint:
             // dark surfaces lift toward the text color; light surfaces settle toward black.
             float toneShift = dark ? .20f : .12f;
@@ -412,12 +451,7 @@ public final class UiStyle {
             }
             blurredSurface.setColors(new int[]{alpha(mixedSurface, mix * 255 / 100),
                     alpha(mixedAlt, mix * 225 / 100)});
-            int strokeColor = outline ? outlineColor : Color.TRANSPARENT;
-            int strokeAlpha = selected ? 240 : dark ? 210 : 225;
-            blurredSurface.setStroke(dp(host, selected ? 2 : 1),
-                    outline ? alpha(strokeColor, strokeAlpha) : Color.TRANSPARENT);
-            fallbackSurface.setStroke(dp(host, selected ? 2 : 1),
-                    outline ? alpha(strokeColor, strokeAlpha) : Color.TRANSPARENT);
+            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface);
         }
 
         @Override public void setAlpha(int alpha) {
@@ -430,6 +464,18 @@ public final class UiStyle {
             fallbackSurface.setColorFilter(filter);
         }
         @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    private static void applyAcrylicStroke(View host, boolean selected, boolean outline,
+            GradientDrawable blurredSurface, GradientDrawable fallbackSurface) {
+        Palette palette = colors(host.getContext());
+        boolean dark = ThemeStore.dark(host.getContext());
+        int width = outline ? dp(host, selected ? 2 : 1) : 0;
+        int strokeColor = selected ? palette.primary : dark ? palette.outline : Color.WHITE;
+        int strokeAlpha = selected ? 240 : dark ? 210 : 225;
+        int color = outline ? alpha(strokeColor, strokeAlpha) : Color.TRANSPARENT;
+        blurredSurface.setStroke(width, color);
+        fallbackSurface.setStroke(width, color);
     }
 
     private static boolean insideAcrylicSurface(View view) {
@@ -479,14 +525,20 @@ public final class UiStyle {
     /** Theme-mixed acrylic selection surface; set outline=false for borderless navigation chips. */
     public static void acrylicChoice(View view, boolean selected, int radius, boolean outline) {
         Palette colors = colors(view.getContext());
-        boolean dark = ThemeStore.dark(view.getContext());
-        GradientDrawable blurred = surfaceDrawable(view, colors, radius,
-                ThemeStore.surfaceMix(view.getContext()) * 255 / 100,
-                ThemeStore.surfaceMix(view.getContext()) * 225 / 100);
-        GradientDrawable fallback = surfaceDrawable(view, colors, radius,
-                dark ? 246 : 248, dark ? 238 : 242);
-        view.setBackground(new AcrylicSurfaceDrawable(view, blurred, fallback, radius,
-                selected, outline));
+        Drawable existing = view.getBackground();
+        if (existing instanceof AcrylicSurfaceDrawable acrylic
+                && acrylic.belongsTo(view, radius)) {
+            acrylic.updateSelection(selected, outline);
+        } else {
+            boolean dark = ThemeStore.dark(view.getContext());
+            GradientDrawable blurred = surfaceDrawable(view, colors, radius,
+                    ThemeStore.surfaceMix(view.getContext()) * 255 / 100,
+                    ThemeStore.surfaceMix(view.getContext()) * 225 / 100);
+            GradientDrawable fallback = surfaceDrawable(view, colors, radius,
+                    dark ? 246 : 248, dark ? 238 : 242);
+            view.setBackground(new AcrylicSurfaceDrawable(view, blurred, fallback, radius,
+                    selected, outline));
+        }
         view.setForeground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
                 null, shape(view, Color.WHITE, radius, Color.TRANSPARENT)));
         rememberChildSurface(view, 3, false, radius, selected, outline);
@@ -905,11 +957,10 @@ public final class UiStyle {
                 Math.round(Color.blue(color) * inverse + Color.blue(target) * amount));
     }
 
-    private static int childSurface(View view, int color) {
-        int transparency = ThemeStore.childTransparency(view.getContext());
-        int opacity = 248 - (transparency - 10) * 136 / 55;
+    private static int childSurface(int color) {
         int baseAlpha = Color.alpha(color);
-        return alpha(color, baseAlpha * opacity / 255);
+        // Preserve the former default surface strength without a nonfunctional preference.
+        return alpha(color, baseAlpha * 194 / 255);
     }
 
     private static void rememberChildSurface(View view, int kind, boolean primary, int radius,

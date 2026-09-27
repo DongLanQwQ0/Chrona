@@ -44,7 +44,14 @@ public final class ChatCompletionClient {
             + "start_at_millis one minute earlier only when the due instant is known but no "
             + "duration is stated. For activities use a one-hour interval, tasks 30 minutes, "
             + "reminders 5 minutes, and notes 15 minutes only when a precise start time exists "
-            + "and no end is stated. Preserve separate events as separate array entries. Use null and set "
+            + "and no end is stated. Combine actions that can be completed together in one time/place "
+            + "into one candidate (for example, at 11 pm combine 'remind me to buy melatonin' "
+            + "and 'put the tissues in my bag' into one reminder); include both actions in the title "
+            + "and preserve their details "
+            + "in the description. Do not split a compound task just because it spans clauses or "
+            + "sentences. A task and reminder at the same time/place may form one combined reminder. "
+            + "Keep separate candidates when times, places, or other calendar categories differ, "
+            + "or actions are independent/conflicting appointments. Use null and set "
             + "needs_confirmation to true when timing or another essential detail is uncertain. "
             + "Do not invent dates or facts. Return {\"events\":[]} if there are none.";
 

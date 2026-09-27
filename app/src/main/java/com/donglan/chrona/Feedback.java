@@ -44,7 +44,7 @@ public final class Feedback {
             pill.setGravity(Gravity.CENTER_VERTICAL);
             pill.setPadding(dp(pill, 18), dp(pill, 12), dp(pill, 18), dp(pill, 12));
             pill.setTextColor(UiStyle.colors(activity).text);
-            pill.setBackground(shape(activity));
+            UiStyle.glassPill(pill);
             pill.setElevation(dp(pill, 12));
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, -2,
                     Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
@@ -84,17 +84,6 @@ public final class Feedback {
         // Clear of the navigation bar, and of the keyboard when the user is typing.
         return Math.max(insets.getInsets(WindowInsets.Type.navigationBars()).bottom,
                 insets.getInsets(WindowInsets.Type.ime()).bottom);
-    }
-
-    private static android.graphics.drawable.Drawable shape(Activity activity) {
-        UiStyle.Palette colors = UiStyle.colors(activity);
-        android.graphics.drawable.GradientDrawable sheet =
-                new android.graphics.drawable.GradientDrawable(
-                        android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                        new int[]{colors.surface, colors.surfaceAlt});
-        sheet.setCornerRadius(dp(activity, 999));
-        sheet.setStroke(dp(activity, 1), colors.outline);
-        return sheet;
     }
 
     private static int dp(View view, int value) {

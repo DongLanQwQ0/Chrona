@@ -35,9 +35,11 @@ import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -60,18 +62,10 @@ public final class DashboardActivity extends Activity {
     private static final class HomeTimelineEntry {
         final long timestampMillis;
         final EventCandidate candidate;
-        final TaskRecord task;
 
         HomeTimelineEntry(EventCandidate candidate) {
             this.timestampMillis = candidate.startAtMillis;
             this.candidate = candidate;
-            this.task = null;
-        }
-
-        HomeTimelineEntry(TaskRecord task) {
-            this.timestampMillis = task.createdAtMillis;
-            this.candidate = null;
-            this.task = task;
         }
     }
     private static final class ElapsedLabel {
@@ -260,9 +254,9 @@ public final class DashboardActivity extends Activity {
             dockParams.setMargins(dp(14), 0, dp(94), dp(8));
             mobileBottomArea.addView(navigation, dockParams);
             LinearLayout record = mobileRecordButton();
-            FrameLayout.LayoutParams recordParams = new FrameLayout.LayoutParams(dp(64), -2,
+            FrameLayout.LayoutParams recordParams = new FrameLayout.LayoutParams(dp(52), dp(52),
                     Gravity.BOTTOM | Gravity.END);
-            recordParams.setMargins(0, 0, dp(14), dp(4));
+            recordParams.setMargins(0, 0, dp(14), dp(14));
             mobileBottomArea.addView(record, recordParams);
         }
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
@@ -340,71 +334,103 @@ public final class DashboardActivity extends Activity {
         for (TaskRecord task : tasks) {
             if (TaskRecord.NEEDS_REVIEW.equals(task.status)) review++;
         }
-        EventCandidate next = null;
         long now = System.currentTimeMillis();
         List<EventCandidate> candidates = store.listCandidates();
-        for (EventCandidate item : candidates) {
-            if (isUpcoming(item, now)) {
-                next = item;
-                break;
-            }
-        }
+        showUpcomingCarousel(candidates, now);
 
-        LinearLayout hero = card();
-        hero.setPadding(dp(15), dp(13), dp(15), dp(13));
-        UiStyle.glass(hero);
-        TextView kicker = text(next != null ? "下一件事" : "轻松开始", 13, true);
-        kicker.setTextColor(UiStyle.colors(this).primary);
-        hero.addView(kicker);
-        String headline = next != null ? next.title : "把想到的事交给拾时";
-        TextView lead = text(headline, 20, true);
-        lead.setMaxLines(2);
-        lead.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        UiStyle.addSpaced(hero, lead, 8, 7);
-        String description = next != null ? formatWhen(next)
-                : "记录文字、图片或语音，日程稍后再确认";
-        TextView sub = text(description, 14, false);
-        hero.addView(sub);
-        TextView link = text(next != null ? "查看日程  →" : "开始记录  →", 14, true);
-        link.setTextColor(UiStyle.colors(this).primary);
-        UiStyle.addSpaced(hero, link, 13, 0);
-        final EventCandidate selectedNext = next;
-        hero.setOnClickListener(view -> {
-            if (selectedNext != null) openTask(selectedNext.taskId);
-            else startActivity(new Intent(this, MainActivity.class));
-        });
-        UiStyle.pressable(hero);
-        UiStyle.addSpaced(content, hero, 0, 10);
-
-        inboxShortcut(review);
-        sectionHeading("日程与收件", "查看日程", SCHEDULE);
+        if (review > 0) inboxShortcut(review);
         ZoneId zone = ZoneId.systemDefault();
-        long todayStart = System.currentTimeMillis();
-        List<HomeTimelineEntry> today = new ArrayList<>();
-        List<HomeTimelineEntry> tomorrow = new ArrayList<>();
-        Set<Long> shownTaskIds = new LinkedHashSet<>();
+        LocalDate today = LocalDate.now(zone);
+        LocalDate endDate = today.plusMonths(1);
+        long rangeStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
+        long rangeEnd = endDate.atStartOfDay(zone).toInstant().toEpochMilli();
+        List<HomeTimelineEntry> all = new ArrayList<>();
+        Set<Long> candidateIds = new HashSet<>();
         for (EventCandidate item : candidates) {
-            if (item.startAtMillis == null || !isUpcoming(item, now)) continue;
-            long day = candidateDayOffset(item, todayStart, zone);
-            if (day == 0) {
-                today.add(new HomeTimelineEntry(item));
-                shownTaskIds.add(item.taskId);
-            } else if (day == 1) {
-                tomorrow.add(new HomeTimelineEntry(item));
-                shownTaskIds.add(item.taskId);
+            if (!candidateIntersects(item, today, endDate, rangeStart, rangeEnd, now))
+                continue;
+            if (!candidateIds.add(item.id)) continue;
+            all.add(new HomeTimelineEntry(item));
+        }
+        all.sort(java.util.Comparator.comparingLong(entry -> entry.timestampMillis));
+        int limit = HomeTimelinePreferences.getItemLimit(this);
+        if (all.size() > limit) all = new ArrayList<>(all.subList(0, limit));
+        Map<LocalDate, List<HomeTimelineEntry>> byDate = new java.util.TreeMap<>();
+        for (HomeTimelineEntry entry : all) {
+            LocalDate date = timelineDate(entry, today, zone);
+            byDate.computeIfAbsent(date, ignored -> new ArrayList<>()).add(entry);
+        }
+        for (Map.Entry<LocalDate, List<HomeTimelineEntry>> day : byDate.entrySet())
+            timelineDay(timelineDayTitle(day.getKey(), today), day.getKey(), day.getValue());
+    }
+
+    private void showUpcomingCarousel(List<EventCandidate> candidates, long now) {
+        TextView heading = text("下一件事", 15, true);
+        UiStyle.addSpaced(content, heading, 0, 6);
+        List<EventCandidate> upcoming = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        for (EventCandidate candidate : candidates) {
+            if (isUpcoming(candidate, now) && seen.add(candidate.id)) upcoming.add(candidate);
+        }
+        upcoming.sort(java.util.Comparator.comparingLong(item -> item.startAtMillis));
+        if (upcoming.size() > 5) upcoming = new ArrayList<>(upcoming.subList(0, 5));
+        HorizontalScrollView strip = new HorizontalScrollView(this);
+        strip.setHorizontalScrollBarEnabled(false);
+        strip.setFillViewport(false);
+        strip.setClipToPadding(false);
+        strip.setPadding(0, 0, dp(12), 0);
+        LinearLayout cards = new LinearLayout(this);
+        cards.setOrientation(LinearLayout.HORIZONTAL);
+        if (upcoming.isEmpty()) {
+            LinearLayout empty = card();
+            empty.setPadding(dp(14), dp(12), dp(14), dp(12));
+            empty.addView(text("还没有即将到来的日程", 14, false));
+            cards.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
+        } else {
+            for (EventCandidate candidate : upcoming) {
+                LinearLayout item = card();
+                item.setPadding(dp(14), dp(12), dp(14), dp(12));
+                TextView title = text(candidate.title, 15, true);
+                title.setMaxLines(2);
+                title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                item.addView(title);
+                UiStyle.addSpaced(item, text(formatWhen(candidate), 12, false), 7, 0);
+                item.setOnClickListener(view -> openTask(candidate.taskId));
+                UiStyle.pressable(item);
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(240), -2);
+                params.setMargins(0, 0, dp(10), 0);
+                cards.addView(item, params);
             }
         }
-        for (TaskRecord task : tasks) {
-            long day = HomeTimelineDates.dayOffset(task.createdAtMillis, todayStart, zone);
-            if (day == 0 && !shownTaskIds.contains(task.id)) today.add(new HomeTimelineEntry(task));
-            else if (day == 1 && !shownTaskIds.contains(task.id))
-                tomorrow.add(new HomeTimelineEntry(task));
+        strip.addView(cards);
+        UiStyle.addSpaced(content, strip, 0, 10);
+    }
+
+    private boolean candidateIntersects(EventCandidate item, LocalDate today, LocalDate endDate,
+            long rangeStart, long rangeEnd, long now) {
+        if (item.startAtMillis == null || item.endAtMillis == null) return false;
+        if (item.allDay) {
+            LocalDate start = LocalDate.parse(AllDayDates.displayStart(item.startAtMillis));
+            LocalDate inclusiveEnd = LocalDate.parse(AllDayDates.displayEnd(item.endAtMillis));
+            return !inclusiveEnd.isBefore(today) && start.isBefore(endDate);
         }
-        today.sort(java.util.Comparator.comparingLong(entry -> entry.timestampMillis));
-        tomorrow.sort(java.util.Comparator.comparingLong(entry -> entry.timestampMillis));
-        LocalDate date = LocalDate.now(zone);
-        timelineDay("今天", date, today);
-        timelineDay("明天", date.plusDays(1), tomorrow);
+        return item.endAtMillis > now && item.endAtMillis > rangeStart
+                && item.startAtMillis < rangeEnd;
+    }
+
+    private LocalDate timelineDate(HomeTimelineEntry entry, LocalDate today, ZoneId zone) {
+        LocalDate date = entry.candidate.allDay
+                ? LocalDate.parse(AllDayDates.displayStart(entry.candidate.startAtMillis))
+                : Instant.ofEpochMilli(entry.timestampMillis).atZone(zone).toLocalDate();
+        return date.isBefore(today) ? today : date;
+    }
+
+    private String timelineDayTitle(LocalDate date, LocalDate today) {
+        if (date.equals(today)) return "今天";
+        if (date.equals(today.plusDays(1))) return "明天";
+        DayOfWeek day = date.getDayOfWeek();
+        String[] week = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
+        return week[day.getValue() - 1];
     }
 
     private void inbox(TaskStore store) {
@@ -483,8 +509,18 @@ public final class DashboardActivity extends Activity {
         for (TaskRecord task : visible) matchingInboxIds.add(task.id);
         selectedInboxIds.retainAll(matchingInboxIds);
         updateSelectionUi();
-        sectionTitle(results, "共 " + visible.size() + " 条收件");
-        if (visible.isEmpty()) empty(results, "没有符合条件的收件。");
+        if (visible.isEmpty()) {
+            UiStyle.addSpaced(results, text("共 0 条收件", 13, false), 12, 2);
+            LinearLayout emptyCard = card();
+            emptyCard.setGravity(Gravity.CENTER);
+            emptyCard.setMinimumHeight(dp(168));
+            TextView emptyCopy = text("这里空空\n终于没事了~", 17, false);
+            emptyCopy.setGravity(Gravity.CENTER);
+            emptyCard.addView(emptyCopy, new LinearLayout.LayoutParams(-1, -2));
+            UiStyle.addSpaced(results, emptyCard, 3, 8);
+        } else {
+            sectionTitle(results, "共 " + visible.size() + " 条收件");
+        }
         for (int i = 0; i < Math.min(inboxShown, visible.size()); i++)
             taskRow(results, visible.get(i), i);
         if (visible.size() > inboxShown) {
@@ -875,7 +911,7 @@ public final class DashboardActivity extends Activity {
     private LinearLayout mobileRecordButton() {
         LinearLayout item = new LinearLayout(this);
         item.setOrientation(LinearLayout.VERTICAL);
-        item.setGravity(Gravity.CENTER_HORIZONTAL);
+        item.setGravity(Gravity.CENTER);
         TextView plus = text("＋", 24, true);
         plus.setGravity(Gravity.CENTER);
         plus.setTextColor(UiStyle.colors(this).onPrimary);
@@ -884,15 +920,11 @@ public final class DashboardActivity extends Activity {
         circle.setColor(UiStyle.colors(this).primary);
         plus.setBackground(circle);
         plus.setElevation(dp(8));
-        item.addView(plus, new LinearLayout.LayoutParams(dp(56), dp(56)));
-        TextView caption = text("记录", 11, true);
-        caption.setGravity(Gravity.CENTER);
-        caption.setTextColor(UiStyle.colors(this).primary);
-        item.addView(caption, new LinearLayout.LayoutParams(-1, -2));
+        item.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
         item.setContentDescription("记录一件事");
         item.setFocusable(true);
-        item.setMinimumWidth(dp(56));
-        item.setMinimumHeight(dp(64));
+        item.setMinimumWidth(dp(52));
+        item.setMinimumHeight(dp(52));
         item.setElevation(dp(6));
         item.setOnClickListener(view -> startActivity(new Intent(this, MainActivity.class)));
         return item;
@@ -926,10 +958,12 @@ public final class DashboardActivity extends Activity {
         strip.setHorizontalScrollBarEnabled(false);
         strip.setClipChildren(true);
         strip.setClipToPadding(true);
+        strip.setFillViewport(false);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        // Leave a real scrollable tail so the final status chip can clear the fixed filter button.
-        if (trailingAction != null) row.setPadding(0, 0, dp(24), 0);
+        // Keep the final chip fully inside the scroll viewport at maximum scroll. The filter
+        // button is a sibling in the bar below, so it never covers the scrolling chip content.
+        if (trailingAction != null) row.setPadding(0, 0, dp(28), 0);
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
             TextView chip = text(labels[i], 14, true);
@@ -961,8 +995,19 @@ public final class DashboardActivity extends Activity {
             UiStyle.addSpaced(content, bar, 8, 10);
         }
         strip.post(() -> {
-            if (selected < row.getChildCount()) strip.scrollTo(
-                    Math.max(0, row.getChildAt(selected).getLeft() - dp(20)), 0);
+            if (selected >= row.getChildCount()) return;
+            View selectedChip = row.getChildAt(selected);
+            int viewportWidth = strip.getWidth() - strip.getPaddingLeft()
+                    - strip.getPaddingRight();
+            int currentX = strip.getScrollX();
+            int visibleRight = currentX + viewportWidth;
+            int targetX = currentX;
+            if (selectedChip.getLeft() < currentX) {
+                targetX = selectedChip.getLeft();
+            } else if (selectedChip.getRight() > visibleRight) {
+                targetX = selectedChip.getRight() - viewportWidth;
+            }
+            if (targetX != currentX) strip.scrollTo(Math.max(0, targetX), 0);
         });
         return row;
     }
@@ -993,17 +1038,6 @@ public final class DashboardActivity extends Activity {
                     .isBefore(LocalDate.now());
         }
         return item.endAtMillis > now;
-    }
-
-    private long candidateDayOffset(EventCandidate item, long referenceMillis, ZoneId zone) {
-        if (item.allDay) {
-            LocalDate target = LocalDate.parse(AllDayDates.displayStart(item.startAtMillis));
-            LocalDate today = Instant.ofEpochMilli(referenceMillis).atZone(zone).toLocalDate();
-            if (target.equals(today)) return 0;
-            if (target.equals(today.plusDays(1))) return 1;
-            return -1;
-        }
-        return HomeTimelineDates.dayOffset(item.startAtMillis, referenceMillis, zone);
     }
 
     private void inboxShortcut(int reviewCount) {
@@ -1042,6 +1076,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries) {
+        if (entries.isEmpty()) return;
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(Gravity.CENTER_VERTICAL);
         View marker = new View(this);
@@ -1063,13 +1098,6 @@ public final class DashboardActivity extends Activity {
         heading.addView(divider, dividerParams);
         UiStyle.addSpaced(content, heading, 7, 2);
 
-        if (entries.isEmpty()) {
-            TextView emptyDay = text("暂无安排", 14, false);
-            LinearLayout.LayoutParams emptyParams = new LinearLayout.LayoutParams(-1, -2);
-            emptyParams.setMargins(dp(24), dp(6), 0, dp(5));
-            content.addView(emptyDay, emptyParams);
-            return;
-        }
         for (int i = 0; i < entries.size(); i++) {
             HomeTimelineEntry entry = entries.get(i);
             LinearLayout row = new LinearLayout(this);
@@ -1102,19 +1130,16 @@ public final class DashboardActivity extends Activity {
 
             LinearLayout itemCard = card();
             itemCard.setPadding(dp(14), dp(12), dp(14), dp(12));
-            String headline = entry.candidate != null ? entry.candidate.title : preview(entry.task);
+            String headline = entry.candidate.title;
             TextView headlineView = text(headline, 15, true);
             headlineView.setMaxLines(2);
             headlineView.setEllipsize(android.text.TextUtils.TruncateAt.END);
             itemCard.addView(headlineView);
-            String metadata = entry.candidate != null
-                    ? EventCategory.label(entry.candidate.category)
-                            + (entry.candidate.location == null || entry.candidate.location.trim().isEmpty()
-                                    ? "" : " · " + entry.candidate.location)
-                    : statusText(entry.task.status);
+            String metadata = EventCategory.label(entry.candidate.category)
+                    + (entry.candidate.location == null || entry.candidate.location.trim().isEmpty()
+                            ? "" : " · " + entry.candidate.location);
             UiStyle.addSpaced(itemCard, text(metadata, 12, false), 4, 0);
-            long taskId = entry.candidate != null ? entry.candidate.taskId : entry.task.id;
-            itemCard.setOnClickListener(view -> openTask(taskId));
+            itemCard.setOnClickListener(view -> openTask(entry.candidate.taskId));
             UiStyle.pressable(itemCard);
             row.addView(itemCard, new LinearLayout.LayoutParams(0, -2, 1));
             UiStyle.addSpaced(content, row, 2, 7);

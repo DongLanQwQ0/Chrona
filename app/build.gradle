@@ -15,8 +15,8 @@ android {
         applicationId 'com.donglan.chrona'
         minSdk 26
         targetSdk 36
-        versionCode 37
-        versionName '0.13.17'
+        versionCode 40
+        versionName '0.13.20'
     }
 
     signingConfigs {

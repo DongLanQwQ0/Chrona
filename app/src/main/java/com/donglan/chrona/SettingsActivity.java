@@ -38,7 +38,7 @@ public final class SettingsActivity extends Activity {
         page.setFillViewport(true);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(30), dp(20), dp(20));
+        root.setPadding(dp(20), dp(8), dp(20), dp(20));
         root.setFitsSystemWindows(true);
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);

@@ -23,11 +23,10 @@ public final class ConfigBackup {
 
     public static final class Imported {
         public final boolean hasAi, hasApiKey, hasAppearance;
-        public final boolean hasAcrylic, acrylicEnabled, hasChildTransparency;
-        public final boolean hasGaussianBlur, gaussianBlur;
+        public final boolean hasAcrylic, acrylicEnabled;
+        public final boolean hasGaussianBlur, gaussianBlur, hasCustomColor;
         public final boolean hasSurfaceMix, hasBlurStrength;
-        public final String baseUrl, model, apiKey, mode, color;
-        public final int childTransparency;
+        public final String baseUrl, model, apiKey, mode, color, customColor;
         public final int surfaceMix, blurStrength;
 
         private Imported(JSONObject root) {
@@ -41,11 +40,10 @@ public final class ConfigBackup {
             hasAppearance = appearance != null;
             mode = hasAppearance ? appearance.optString("mode", ThemeStore.SYSTEM) : null;
             color = hasAppearance ? appearance.optString("color", ThemeStore.TEAL) : null;
+            hasCustomColor = hasAppearance && appearance.has("customColor");
+            customColor = hasCustomColor ? appearance.optString("customColor", null) : null;
             hasAcrylic = hasAppearance && appearance.has("acrylicEnabled");
             acrylicEnabled = hasAcrylic && appearance.optBoolean("acrylicEnabled");
-            hasChildTransparency = hasAppearance && appearance.has("childTransparency");
-            childTransparency = hasChildTransparency
-                    ? appearance.optInt("childTransparency", 32) : 32;
             hasGaussianBlur = hasAppearance && appearance.has("gaussianBlur");
             gaussianBlur = hasGaussianBlur && appearance.optBoolean("gaussianBlur");
             hasSurfaceMix = hasAppearance && appearance.has("surfaceMix");
@@ -60,8 +58,8 @@ public final class ConfigBackup {
             hasAppearance = false;
             hasAcrylic = false;
             acrylicEnabled = false;
-            hasChildTransparency = false;
             hasGaussianBlur = false;
+            hasCustomColor = false;
             hasSurfaceMix = false;
             hasBlurStrength = false;
             gaussianBlur = false;
@@ -70,7 +68,7 @@ public final class ConfigBackup {
             apiKey = null;
             mode = null;
             color = null;
-            childTransparency = 32;
+            customColor = null;
             surfaceMix = 40;
             blurStrength = 2;
         }
@@ -105,8 +103,8 @@ public final class ConfigBackup {
         JSONObject appearance = new JSONObject();
         appearance.put("mode", ThemeStore.mode(context));
         appearance.put("color", ThemeStore.color(context));
+        appearance.put("customColor", ThemeStore.customColorHex(context));
         appearance.put("acrylicEnabled", ThemeStore.acrylicEnabled(context));
-        appearance.put("childTransparency", ThemeStore.childTransparency(context));
         appearance.put("gaussianBlur", ThemeStore.gaussianBlur(context));
         appearance.put("surfaceMix", ThemeStore.surfaceMix(context));
         appearance.put("blurStrength", ThemeStore.blurStrength(context));
@@ -143,9 +141,9 @@ public final class ConfigBackup {
         }
         if (config.hasAppearance) text.append("· 外观 ").append(config.mode)
                 .append(" / ").append(config.color)
+                .append(config.hasCustomColor && ThemeStore.CUSTOM.equals(config.color)
+                        ? " " + config.customColor : "")
                 .append(config.hasAcrylic ? (config.acrylicEnabled ? " / 毛玻璃开启" : " / 毛玻璃关闭") : "")
-                .append(config.hasChildTransparency
-                        ? " / 二级控件透明度 " + config.childTransparency + "%" : "")
                 .append(config.hasGaussianBlur
                         ? (config.gaussianBlur ? " / 高斯模糊" : " / 普通模糊") : "")
                 .append(config.hasSurfaceMix ? " / 面板纯色浓度 " + config.surfaceMix + "%" : "")
@@ -183,10 +181,10 @@ public final class ConfigBackup {
         if (imported.hasAppearance) {
             ThemeStore.applyAppearance(context, imported.mode, imported.color,
                     imported.hasAcrylic ? imported.acrylicEnabled : null,
-                    imported.hasChildTransparency ? imported.childTransparency : null,
                     imported.hasGaussianBlur ? imported.gaussianBlur : null,
                     imported.hasSurfaceMix ? imported.surfaceMix : null,
-                    imported.hasBlurStrength ? imported.blurStrength : null);
+                    imported.hasBlurStrength ? imported.blurStrength : null,
+                    imported.hasCustomColor ? imported.customColor : null);
         }
         return imported;
     }
@@ -242,19 +240,17 @@ public final class ConfigBackup {
             String color = appearance.optString("color", "");
             if (!(ThemeStore.SYSTEM.equals(mode) || ThemeStore.LIGHT.equals(mode)
                     || ThemeStore.DARK.equals(mode))) throw new JSONException("显示模式无效");
-            if (!(ThemeStore.TEAL.equals(color) || ThemeStore.BLUE.equals(color)
-                    || ThemeStore.CORAL.equals(color)
-                    || ThemeStore.WALLPAPER.equals(color))) throw new JSONException("主题配色无效");
+            if (!ThemeStore.supportedColor(color)) throw new JSONException("主题配色无效");
+            if (appearance.has("customColor")) {
+                Object custom = appearance.opt("customColor");
+                if (!(custom instanceof String) || !ThemeStore.isHexColor((String) custom))
+                    throw new JSONException("自定义主题色无效");
+            } else if (ThemeStore.CUSTOM.equals(color)) {
+                throw new JSONException("自定义主题色缺少颜色值");
+            }
             if (appearance.has("acrylicEnabled")
                     && !(appearance.opt("acrylicEnabled") instanceof Boolean))
                 throw new JSONException("毛玻璃设置格式无效");
-            if (appearance.has("childTransparency")) {
-                Object transparency = appearance.opt("childTransparency");
-                if (!(transparency instanceof Number)
-                        || ((Number) transparency).intValue() < 10
-                        || ((Number) transparency).intValue() > 65)
-                    throw new JSONException("二级控件透明度无效");
-            }
             if (appearance.has("gaussianBlur")
                     && !(appearance.opt("gaussianBlur") instanceof Boolean))
                 throw new JSONException("模糊类型格式无效");

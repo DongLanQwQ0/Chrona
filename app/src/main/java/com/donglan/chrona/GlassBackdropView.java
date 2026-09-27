@@ -17,11 +17,17 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.animation.DecelerateInterpolator;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 /** Soft, locally drawn color light beneath translucent surfaces. */
 public final class GlassBackdropView extends View {
     private static final Object WALLPAPER_CACHE_LOCK = new Object();
+    private static final Object WALLPAPER_DISK_CACHE_LOCK = new Object();
     private static WallpaperCache wallpaperCache;
 
     /** Process-local decoded wallpaper and its one current-size blur result. */
@@ -45,7 +51,7 @@ public final class GlassBackdropView extends View {
     private Bitmap blurredWallpaper;
     private Bitmap pendingBackgroundImage;
     private int pendingBackgroundLoadToken;
-    private int blurBuildToken;
+    private volatile int blurBuildToken;
     private int requestedBlurStrength = -1;
     private boolean requestedGaussian;
     private int backgroundLoadToken;
@@ -80,6 +86,10 @@ public final class GlassBackdropView extends View {
             invalidate();
             if (getParent() instanceof View parent) parent.invalidate();
         } else {
+            // A newly selected wallpaper must not be shown behind acrylic hosts before its
+            // matching blur is ready. The pre-draw gate has a bounded timeout and failure path.
+            firstFrameDrawn = false;
+            installFirstFrameGate();
             Bitmap cached = cachedSource(requested);
             if (cached != null) {
                 backgroundImage = cached;
@@ -207,9 +217,10 @@ public final class GlassBackdropView extends View {
         }
         boolean gaussian = ThemeStore.gaussianBlur(getContext());
         int strength = ThemeStore.blurStrength(getContext());
+        String wallpaperUri = loadedBackground;
         requestedGaussian = gaussian;
         requestedBlurStrength = strength;
-        Bitmap cached = cachedBlurred(loadedBackground, width, height, gaussian, strength);
+        Bitmap cached = cachedBlurred(wallpaperUri, width, height, gaussian, strength);
         if (cached != null) {
             blurredWallpaper = cached;
             wallpaperPreparationFailed = false;
@@ -217,19 +228,27 @@ public final class GlassBackdropView extends View {
             return;
         }
         Thread worker = new Thread(() -> {
-            Bitmap result = safeCreateBlurredWallpaper(source, width, height, gaussian, strength);
+            String diskKey = diskBlurKey(wallpaperUri, source, width, height, gaussian,
+                    strength);
+            Bitmap result = loadDiskBlur(diskKey, width, height);
+            boolean writeDiskCache = result == null;
+            if (result == null)
+                result = safeCreateBlurredWallpaper(source, width, height, gaussian, strength);
+            Bitmap readyResult = result;
             post(() -> {
                 if (token == blurBuildToken && isAttachedToWindow() && backgroundImage == source) {
-                    if (result != null) {
-                        storeBlurred(loadedBackground, source, result, width, height, gaussian,
+                    if (readyResult != null) {
+                        storeBlurred(wallpaperUri, source, readyResult, width, height, gaussian,
                                 strength);
                         wallpaperPreparationFailed = false;
-                        replaceBlurredWallpaper(result);
+                        replaceBlurredWallpaper(readyResult);
                     } else wallpaperPreparationFailed = true;
-                } else if (result != null && !result.isRecycled()) {
-                    result.recycle();
+                } else if (readyResult != null && !readyResult.isRecycled()) {
+                    readyResult.recycle();
                 }
             });
+            if (writeDiskCache && readyResult != null && !readyResult.isRecycled())
+                saveDiskBlur(diskKey, readyResult, token);
         }, "chrona-wallpaper-blur");
         worker.setPriority(Thread.NORM_PRIORITY - 1);
         worker.start();
@@ -243,9 +262,10 @@ public final class GlassBackdropView extends View {
         int blurToken = ++blurBuildToken;
         boolean gaussian = ThemeStore.gaussianBlur(getContext());
         int strength = ThemeStore.blurStrength(getContext());
+        String wallpaperUri = loadedBackground;
         requestedGaussian = gaussian;
         requestedBlurStrength = strength;
-        Bitmap cached = cachedBlurred(loadedBackground, width, height, gaussian, strength);
+        Bitmap cached = cachedBlurred(wallpaperUri, width, height, gaussian, strength);
         if (cached != null) {
             pendingBackgroundImage = null;
             backgroundImage = source;
@@ -255,21 +275,29 @@ public final class GlassBackdropView extends View {
             return;
         }
         Thread worker = new Thread(() -> {
-            Bitmap result = safeCreateBlurredWallpaper(source, width, height, gaussian, strength);
+            String diskKey = diskBlurKey(wallpaperUri, source, width, height, gaussian,
+                    strength);
+            Bitmap result = loadDiskBlur(diskKey, width, height);
+            boolean writeDiskCache = result == null;
+            if (result == null)
+                result = safeCreateBlurredWallpaper(source, width, height, gaussian, strength);
+            Bitmap readyResult = result;
             post(() -> {
                 if (blurToken == blurBuildToken && loadToken == backgroundLoadToken
                         && isAttachedToWindow() && source == pendingBackgroundImage) {
                     pendingBackgroundImage = null;
                     backgroundImage = source;
-                    if (result != null) storeBlurred(loadedBackground, source, result,
+                    if (readyResult != null) storeBlurred(wallpaperUri, source, readyResult,
                             width, height, gaussian, strength);
-                    else storeSource(loadedBackground, source);
-                    wallpaperPreparationFailed = result == null;
-                    replaceBlurredWallpaper(result);
-                } else if (result != null && !result.isRecycled()) {
-                    result.recycle();
+                    else storeSource(wallpaperUri, source);
+                    wallpaperPreparationFailed = readyResult == null;
+                    replaceBlurredWallpaper(readyResult);
+                } else if (readyResult != null && !readyResult.isRecycled()) {
+                    readyResult.recycle();
                 }
             });
+            if (writeDiskCache && readyResult != null && !readyResult.isRecycled())
+                saveDiskBlur(diskKey, readyResult, blurToken);
         }, "chrona-wallpaper-prepare");
         worker.setPriority(Thread.NORM_PRIORITY - 1);
         worker.start();
@@ -282,6 +310,99 @@ public final class GlassBackdropView extends View {
         } catch (RuntimeException | OutOfMemoryError ignored) {
             return null;
         }
+    }
+
+    /** Stable, bounded disk cache for the expensive reduced-size wallpaper blur. */
+    private String diskBlurKey(String uri, Bitmap source, int width, int height,
+            boolean gaussian, int strength) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(uri.getBytes(StandardCharsets.UTF_8));
+            digestInt(digest, source.getWidth());
+            digestInt(digest, source.getHeight());
+            digestInt(digest, width);
+            digestInt(digest, height);
+            digestInt(digest, gaussian ? 1 : 0);
+            digestInt(digest, strength);
+            // Detect providers that replace image bytes behind the same document URI without
+            // hashing the full image on the startup path.
+            for (int gy = 0; gy < 5; gy++) {
+                int y = gy * Math.max(0, source.getHeight() - 1) / 4;
+                for (int gx = 0; gx < 5; gx++) {
+                    int x = gx * Math.max(0, source.getWidth() - 1) / 4;
+                    digestInt(digest, source.getPixel(x, y));
+                }
+            }
+            StringBuilder key = new StringBuilder(64);
+            for (byte value : digest.digest()) key.append(String.format(java.util.Locale.ROOT,
+                    "%02x", value & 0xff));
+            return key.toString();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static void digestInt(MessageDigest digest, int value) {
+        digest.update(ByteBuffer.allocate(4).putInt(value).array());
+    }
+
+    private Bitmap loadDiskBlur(String key, int width, int height) {
+        if (key == null) return null;
+        File file = new File(getContext().getCacheDir(), "chrona-wallpaper-blur-" + key + ".png");
+        if (!file.isFile()) return null;
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        Bitmap cached;
+        try {
+            cached = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+        } catch (RuntimeException | OutOfMemoryError ignored) {
+            file.delete();
+            return null;
+        }
+        int expectedWidth = sampleDimension(width, height, true);
+        int expectedHeight = sampleDimension(width, height, false);
+        if (cached != null && cached.getWidth() == expectedWidth
+                && cached.getHeight() == expectedHeight) return cached;
+        if (cached != null && !cached.isRecycled()) cached.recycle();
+        // A corrupt/obsolete cache is disposable; the original wallpaper remains untouched.
+        file.delete();
+        return null;
+    }
+
+    private void saveDiskBlur(String key, Bitmap bitmap, int buildToken) {
+        if (key == null || bitmap == null || bitmap.isRecycled()) return;
+        File directory = getContext().getCacheDir();
+        File target = new File(directory, "chrona-wallpaper-blur-" + key + ".png");
+        File temporary = new File(directory, "chrona-wallpaper-blur-" + key + ".tmp");
+        synchronized (WALLPAPER_DISK_CACHE_LOCK) {
+            if (buildToken != blurBuildToken || target.isFile()) return;
+            try {
+                try (FileOutputStream output = new FileOutputStream(temporary)) {
+                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                        temporary.delete();
+                        return;
+                    }
+                    output.flush();
+                    output.getFD().sync();
+                }
+                if (!temporary.renameTo(target)) {
+                    temporary.delete();
+                    return;
+                }
+                File[] stale = directory.listFiles((dir, name) ->
+                        name.startsWith("chrona-wallpaper-blur-")
+                                && !name.equals(target.getName()));
+                if (stale != null) for (File file : stale) file.delete();
+            } catch (Exception ignored) {
+                temporary.delete();
+                // Cache I/O is best-effort; the in-memory result is already available to this view.
+            }
+        }
+    }
+
+    private static int sampleDimension(int width, int height, boolean horizontal) {
+        float scale = Math.min(1f, Math.min(540f / width, 1080f / height));
+        return Math.max(1, Math.round((horizontal ? width : height) * scale));
     }
 
     private void replaceBlurredWallpaper(Bitmap replacement) {

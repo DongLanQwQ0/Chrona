@@ -29,6 +29,7 @@
         <activity android:name=".ModelOutputActivity" android:exported="false" />
         <activity android:name=".AttachmentViewerActivity" android:exported="false" />
         <activity android:name=".SettingsHubActivity" android:exported="false" />
+        <activity android:name=".BackupRestoreActivity" android:exported="false" />
         <activity
             android:name=".TaskDetailActivity"
             android:exported="false" />

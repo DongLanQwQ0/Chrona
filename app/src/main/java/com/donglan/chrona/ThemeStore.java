@@ -4,12 +4,14 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
+import android.graphics.Color;
 import android.os.Build;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 
 /** Small, local appearance preference shared by every screen. */
 public final class ThemeStore {
@@ -20,19 +22,26 @@ public final class ThemeStore {
     static final String TEAL = "teal";
     static final String BLUE = "blue";
     static final String CORAL = "coral";
+    static final String PURPLE = "purple";
+    static final String AMBER = "amber";
+    static final String ROSE = "rose";
+    static final String FOREST = "forest";
+    static final String CUSTOM = "custom";
 
     private static final String PREFS = "appearance";
     private static final String KEY_MODE = "mode";
     private static final String KEY_COLOR = "color";
+    private static final String KEY_CUSTOM_COLOR = "custom_color";
     private static final String KEY_BACKGROUND = "background";
     private static final String KEY_ACRYLIC = "acrylic_enabled";
-    private static final String KEY_CHILD_TRANSPARENCY = "child_transparency";
+    private static final String REMOVED_CHILD_TRANSPARENCY_KEY = "child_transparency";
     private static final String KEY_GAUSSIAN_BLUR = "gaussian_blur";
     private static final String KEY_SURFACE_MIX = "surface_mix";
     private static final String KEY_BLUR_STRENGTH = "blur_strength";
     private static final String KEY_REVISION = "revision";
     /** Live screens, so an appearance change reaches the ones already sitting behind this one. */
     private static final List<WeakReference<Activity>> LIVE = new ArrayList<>();
+    private static volatile boolean removedChildTransparencyPreference;
     /** Revision each live screen was built at, used to spot a screen the change could not reach. */
     private static final java.util.Map<Activity, Integer> SEEN = new java.util.WeakHashMap<>();
 
@@ -102,7 +111,16 @@ public final class ThemeStore {
     }
 
     private static SharedPreferences prefs(Context context) {
-        return context.getSharedPreferences(PREFS, 0);
+        SharedPreferences preferences = context.getSharedPreferences(PREFS, 0);
+        if (!removedChildTransparencyPreference) {
+            synchronized (ThemeStore.class) {
+                if (!removedChildTransparencyPreference) {
+                    preferences.edit().remove(REMOVED_CHILD_TRANSPARENCY_KEY).apply();
+                    removedChildTransparencyPreference = true;
+                }
+            }
+        }
+        return preferences;
     }
 
     static String mode(Context context) {
@@ -111,6 +129,38 @@ public final class ThemeStore {
 
     static String color(Context context) {
         return prefs(context).getString(KEY_COLOR, TEAL);
+    }
+
+    static String customColorHex(Context context) {
+        int color = prefs(context).getInt(KEY_CUSTOM_COLOR, 0xFF7353BA);
+        return String.format(Locale.US, "#%06X", color & 0xFFFFFF);
+    }
+
+    static int customColor(Context context) {
+        return prefs(context).getInt(KEY_CUSTOM_COLOR, 0xFF7353BA);
+    }
+
+    static boolean isHexColor(String value) {
+        if (value == null) return false;
+        String hex = value.startsWith("#") ? value.substring(1) : value;
+        return hex.matches("[0-9A-Fa-f]{6}");
+    }
+
+    static int paletteSeed(Context context, String scheme) {
+        return switch (scheme) {
+            case PURPLE -> 0xFF7353BA;
+            case AMBER -> 0xFF9A4D00;
+            case ROSE -> 0xFFB42362;
+            case FOREST -> 0xFF38734F;
+            case CUSTOM -> customColor(context);
+            default -> 0;
+        };
+    }
+
+    static boolean supportedColor(String scheme) {
+        return TEAL.equals(scheme) || BLUE.equals(scheme) || CORAL.equals(scheme)
+                || WALLPAPER.equals(scheme) || PURPLE.equals(scheme) || AMBER.equals(scheme)
+                || ROSE.equals(scheme) || FOREST.equals(scheme) || CUSTOM.equals(scheme);
     }
 
     static void setMode(Context context, String mode) {
@@ -125,6 +175,13 @@ public final class ThemeStore {
         publish(context);
     }
 
+    static void setCustomColor(Context context, int color) {
+        int opaque = Color.rgb(Color.red(color), Color.green(color), Color.blue(color));
+        if (CUSTOM.equals(color(context)) && customColor(context) == opaque) return;
+        prefs(context).edit().putInt(KEY_CUSTOM_COLOR, opaque).putString(KEY_COLOR, CUSTOM).apply();
+        publish(context);
+    }
+
     /**
      * Applies a whole appearance in one write, so screens are rebuilt exactly once. Importing a
      * configuration would otherwise rebuild everything twice in a row.
@@ -136,27 +193,37 @@ public final class ThemeStore {
     }
 
     static void applyAppearance(Context context, String mode, String color,
-            Boolean acrylicEnabled, Integer childTransparency, Boolean gaussianBlur) {
-        applyAppearance(context, mode, color, acrylicEnabled, childTransparency, gaussianBlur,
-                null, null);
+            Boolean acrylicEnabled, Boolean gaussianBlur) {
+        applyAppearance(context, mode, color, acrylicEnabled, gaussianBlur, null, null, null);
     }
 
     static void applyAppearance(Context context, String mode, String color,
-            Boolean acrylicEnabled, Integer childTransparency, Boolean gaussianBlur,
+            Boolean acrylicEnabled, Boolean gaussianBlur,
             Integer surfaceMix, Integer blurStrength) {
+        applyAppearance(context, mode, color, acrylicEnabled, gaussianBlur,
+                surfaceMix, blurStrength, null);
+    }
+
+    static void applyAppearance(Context context, String mode, String color,
+            Boolean acrylicEnabled, Boolean gaussianBlur,
+            Integer surfaceMix, Integer blurStrength, String customColor) {
         SharedPreferences preferences = prefs(context);
         SharedPreferences.Editor editor = preferences.edit();
         boolean changed = !mode(context).equals(mode) || !color(context).equals(color);
         boolean blurChanged = false;
         editor.putString(KEY_MODE, mode).putString(KEY_COLOR, color);
+        if (customColor != null) {
+            if (!isHexColor(customColor))
+                throw new IllegalArgumentException("Invalid custom theme color");
+            int parsed = Color.parseColor(customColor.startsWith("#")
+                    ? customColor : "#" + customColor);
+            int opaque = Color.rgb(Color.red(parsed), Color.green(parsed), Color.blue(parsed));
+            changed |= customColor(context) != opaque;
+            editor.putInt(KEY_CUSTOM_COLOR, opaque);
+        }
         if (acrylicEnabled != null) {
             changed |= acrylicEnabled(context) != acrylicEnabled;
             editor.putBoolean(KEY_ACRYLIC, acrylicEnabled);
-        }
-        if (childTransparency != null) {
-            int value = Math.max(10, Math.min(65, childTransparency));
-            changed |= childTransparency(context) != value;
-            editor.putInt(KEY_CHILD_TRANSPARENCY, value);
         }
         if (gaussianBlur != null) {
             blurChanged = gaussianBlur(context) != gaussianBlur;
@@ -232,13 +299,6 @@ public final class ThemeStore {
         previewSurfaceMix(context, percent);
     }
 
-    static void previewChildTransparency(Context context, int percent) {
-        int value = Math.max(10, Math.min(65, percent));
-        if (childTransparency(context) == value) return;
-        prefs(context).edit().putInt(KEY_CHILD_TRANSPARENCY, value).apply();
-        refreshLiveAppearance(context);
-    }
-
     static void setBlurStrength(Context context, int strength) {
         int value = Math.max(1, Math.min(5, strength));
         if (blurStrength(context) == value) return;
@@ -275,19 +335,6 @@ public final class ThemeStore {
             GlassBackdropView backdrop = content == null ? null : GlassBackdropView.findFor(content);
             if (backdrop != null) backdrop.refreshBackground();
         }
-    }
-
-    /** A restrained transparency range keeps nested controls readable over custom wallpapers. */
-    static int childTransparency(Context context) {
-        return Math.max(10, Math.min(65,
-                prefs(context).getInt(KEY_CHILD_TRANSPARENCY, 32)));
-    }
-
-    static void setChildTransparency(Context context, int percent) {
-        int value = Math.max(10, Math.min(65, percent));
-        if (childTransparency(context) == value) return;
-        prefs(context).edit().putInt(KEY_CHILD_TRANSPARENCY, value).apply();
-        refreshLiveAppearance(context);
     }
 
     static boolean dark(Context context) {
