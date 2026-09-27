@@ -254,6 +254,9 @@ public final class TaskDetailActivity extends Activity {
                 : state.getLong("task_id", getIntent().getLongExtra("task_id", -1));
         if (state != null) exportFileName = state.getString("export_file_uri");
         page = new ScrollView(this);
+        // The detail page reads as a stack of cards; a scrollbar down the right edge just cuts
+        // into the field column.
+        page.setVerticalScrollBarEnabled(false);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(8), dp(20), dp(24));
@@ -1144,6 +1147,7 @@ public final class TaskDetailActivity extends Activity {
     private PagerPage buildAdjacentPage(long targetId) {
         PagerPage current = capturePagerPage();
         ScrollView targetScroll = new ScrollView(this);
+        targetScroll.setVerticalScrollBarEnabled(false);
         LinearLayout targetContent = new LinearLayout(this);
         targetContent.setOrientation(LinearLayout.VERTICAL);
         targetContent.setPadding(dp(20), dp(8), dp(20), dp(24));
