@@ -38,8 +38,8 @@ import java.time.ZoneId;
 import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -94,13 +94,15 @@ public final class DashboardActivity extends Activity {
     private Button selectAllButton;
     private Button deleteSelectedButton;
     private final Set<Long> selectedInboxIds = new LinkedHashSet<>();
-    private final Map<Long, InboxRow> inboxRows = new HashMap<>();
+    private final Map<Long, InboxRow> inboxRows = new LinkedHashMap<>();
     private List<Long> matchingInboxIds = new ArrayList<>();
     private ScrollView scroll;
     private GlassBackdropView backdrop;
     private boolean wide;
     /** Cards stagger in only for a screen the user just opened, never for a rebuild. */
     private boolean animateEntrances;
+    /** Only a deliberate inbox status-filter change animates the newly shown task rows. */
+    private boolean animateInboxFilterResults;
     private String snapshot = "";
     private int restoredScrollY;
     private final List<ElapsedLabel> elapsedLabels = new ArrayList<>();
@@ -441,6 +443,7 @@ public final class DashboardActivity extends Activity {
                     clearInboxSelection();
                     statusIndex = index;
                     inboxShown = 12;
+                    animateInboxFilterResults = true;
                     updateChipSelection(statusIndex);
                     updateResults();
                 }, inboxCategoryButton());
@@ -494,6 +497,8 @@ public final class DashboardActivity extends Activity {
     }
 
     private void renderInboxResults(TaskStore store) {
+        boolean animateRows = animateInboxFilterResults;
+        animateInboxFilterResults = false;
         results.removeAllViews();
         elapsedLabels.clear();
         inboxRows.clear();
@@ -527,6 +532,23 @@ public final class DashboardActivity extends Activity {
             Button more = button("继续浏览 · 还有 " + (visible.size() - inboxShown) + " 条",
                     false, () -> { inboxShown += 12; updateResults(); });
             UiStyle.addSpaced(results, more, 8, 0);
+        }
+        if (animateRows) animateInboxFilterRows();
+    }
+
+    private void animateInboxFilterRows() {
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) return;
+        int index = 0;
+        for (InboxRow row : inboxRows.values()) {
+            View card = row.card;
+            card.animate().cancel();
+            card.setAlpha(0f);
+            card.setTranslationY(dp(7));
+            card.animate().alpha(1f).translationY(0f)
+                    .setStartDelay(Math.min(index++, 7) * 24L)
+                    .setDuration(180L)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
         }
     }
 

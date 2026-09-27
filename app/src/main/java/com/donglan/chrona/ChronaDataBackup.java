@@ -396,7 +396,10 @@ public final class ChronaDataBackup {
             }
             staged.execSQL("UPDATE tasks SET status='failed', error_message=? WHERE status IN ('processing','queued')",
                     new Object[]{"从备份恢复后需要重新解析；请手动重试"});
-            staged.execSQL("PRAGMA wal_checkpoint(FULL)");
+            try (Cursor checkpoint = staged.rawQuery("PRAGMA wal_checkpoint(FULL)", null)) {
+                if (checkpoint.moveToFirst() && checkpoint.getInt(0) != 0)
+                    throw new IOException("备份数据库仍在写入，无法完成恢复准备");
+            }
         } finally {
             staged.close();
         }
