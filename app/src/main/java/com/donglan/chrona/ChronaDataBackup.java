@@ -269,7 +269,10 @@ public final class ChronaDataBackup {
                 throw new IOException("备份来源或版本不受支持");
             String config = manifest.getString("config");
             ConfigBackup.inspect(config);
-            inspectDatabase(new File(directory, "chrona.db"));
+            long[] databaseCounts = inspectDatabase(new File(directory, "chrona.db"));
+            if (databaseCounts[0] != manifest.optInt("tasks", -1)
+                    || databaseCounts[1] != manifest.optInt("candidates", -1))
+                throw new IOException("备份清单与数据库记录数量不一致，已取消恢复");
             validateManifestPaths(manifest, directory);
             return new Prepared(archive, directory, manifest, config);
         } catch (Exception exception) {
@@ -322,7 +325,7 @@ public final class ChronaDataBackup {
         if (events == null) throw new IOException("备份日程清单缺失");
     }
 
-    private static void inspectDatabase(File database) throws Exception {
+    private static long[] inspectDatabase(File database) throws Exception {
         if (!database.isFile()) throw new IOException("备份中没有数据库");
         SQLiteDatabase db = SQLiteDatabase.openDatabase(database.getAbsolutePath(), null,
                 SQLiteDatabase.OPEN_READONLY);
@@ -335,23 +338,39 @@ public final class ChronaDataBackup {
                 if (!cursor.moveToFirst() || cursor.getInt(0) != 6)
                     throw new IOException("备份数据库版本与当前应用不兼容");
             }
+            long tasks;
+            long candidates;
+            try (Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM tasks", null)) {
+                if (!cursor.moveToFirst()) throw new IOException("无法读取备份收件箱数量");
+                tasks = cursor.getLong(0);
+            }
+            try (Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM event_candidates", null)) {
+                if (!cursor.moveToFirst()) throw new IOException("无法读取备份日程数量");
+                candidates = cursor.getLong(0);
+            }
+            return new long[]{tasks, candidates};
         } finally {
             db.close();
         }
     }
 
     public static String restore(Context context, Prepared prepared) throws Exception {
+        long[] previousDatabaseCounts = new long[2];
         try (TaskStore current = new TaskStore(context)) {
-            for (TaskRecord task : current.listTasks()) {
+            List<TaskRecord> currentTasks = current.listTasks();
+            for (TaskRecord task : currentTasks) {
                 if (TaskRecord.PROCESSING.equals(task.status))
                     throw new IOException("当前仍有任务正在解析，请完成或停止解析后再恢复备份");
             }
+            previousDatabaseCounts[0] = currentTasks.size();
+            previousDatabaseCounts[1] = current.listCandidates().size();
         }
         File stagedDb = new File(prepared.directory, "chrona.db");
         ArrayList<File> createdImages = new ArrayList<>();
         ArrayList<Uri> createdFiles = new ArrayList<>();
         ArrayList<Long> createdEvents = new ArrayList<>();
         File installedPrevious = null;
+        boolean[] databaseInstallStarted = new boolean[]{false};
         boolean databaseInstalled = false;
         File outputDirectory = new File(context.getFilesDir(), "model-output");
         File previousOutputs = new File(context.getFilesDir(), "model-output.previous");
@@ -404,8 +423,12 @@ public final class ChronaDataBackup {
             staged.close();
         }
         JobSchedulerBridge.cancel(context);
-        installedPrevious = installDatabase(context, stagedDb);
+        installedPrevious = installDatabase(context, stagedDb, databaseInstallStarted);
         databaseInstalled = true;
+        long[] installedCounts = inspectDatabase(context.getDatabasePath("chrona.db"));
+        if (installedCounts[0] != prepared.manifest.optInt("tasks", -1)
+                || installedCounts[1] != prepared.manifest.optInt("candidates", -1))
+            throw new IOException("恢复后的数据库记录数量与备份清单不一致");
         File stagedOutputs = prepareOutputs(context, prepared);
         if (previousOutputs.exists()) deleteTree(previousOutputs);
         if (outputDirectory.exists() && !outputDirectory.renameTo(previousOutputs))
@@ -414,7 +437,10 @@ public final class ChronaDataBackup {
             if (previousOutputs.exists()) previousOutputs.renameTo(outputDirectory);
             throw new IOException("无法安装解析草稿");
         }
-        ConfigBackup.apply(context, prepared.config);
+        // Applying appearance preferences may publish a theme update. An Activity context would
+        // call Activity.recreate() from this background restore thread. The Activity itself
+        // recreates on the main thread after this method succeeds.
+        ConfigBackup.apply(context.getApplicationContext(), prepared.config);
         HomeTimelinePreferences.setItemLimit(context,
                 prepared.manifest.optInt("homeTimelineLimit", HomeTimelinePreferences.DEFAULT_ITEM_LIMIT));
         if (installedPrevious != null) installedPrevious.delete();
@@ -423,30 +449,85 @@ public final class ChronaDataBackup {
                 ? "数据已恢复；部分日程因日历权限不可用已转为待确认。"
                 : "收件箱、日程与设置已恢复。";
         } catch (Exception exception) {
-            try { ConfigBackup.apply(context, previousConfig); } catch (Exception ignored) { }
-            HomeTimelinePreferences.setItemLimit(context, previousTimelineLimit);
-            if (databaseInstalled && installedPrevious != null && installedPrevious.exists()) {
+            IOException failure = new IOException("恢复失败：" + exception.getMessage(), exception);
+            try {
+                ConfigBackup.apply(context.getApplicationContext(), previousConfig);
+            } catch (Exception rollbackConfigFailure) {
+                failure.addSuppressed(rollbackConfigFailure);
+            }
+            try {
+                HomeTimelinePreferences.setItemLimit(context, previousTimelineLimit);
+            } catch (Exception rollbackPreferenceFailure) {
+                failure.addSuppressed(rollbackPreferenceFailure);
+            }
+            boolean databaseRollbackSucceeded = !databaseInstalled && !databaseInstallStarted[0];
+            if (databaseInstalled || databaseInstallStarted[0]) {
                 File current = context.getDatabasePath("chrona.db");
-                current.delete();
-                installedPrevious.renameTo(current);
-            } else if (databaseInstalled) {
-                File current = context.getDatabasePath("chrona.db");
-                current.delete();
-                new File(current.getPath() + "-wal").delete();
-                new File(current.getPath() + "-shm").delete();
+                File rollbackCopy = installedPrevious != null
+                        ? installedPrevious
+                        : new File(current.getParentFile(), "chrona.db.previous");
+                try {
+                    deleteDatabaseFile(current);
+                    if (rollbackCopy.exists()) {
+                        if (!rollbackCopy.renameTo(current))
+                            throw new IOException("无法恢复旧数据库");
+                        long[] restoredCounts = inspectDatabase(current);
+                        if (restoredCounts[0] != previousDatabaseCounts[0]
+                                || restoredCounts[1] != previousDatabaseCounts[1])
+                            throw new IOException("恢复后的旧数据库记录数量不一致");
+                    } else if (previousDatabaseCounts[0] != 0
+                            || previousDatabaseCounts[1] != 0) {
+                        throw new IOException("旧数据库回滚副本不存在");
+                    }
+                    databaseRollbackSucceeded = true;
+                } catch (Exception rollbackDatabaseFailure) {
+                    String recoveryPath = rollbackCopy.exists()
+                            ? "旧数据库副本保留在 " + rollbackCopy.getAbsolutePath()
+                            : "请检查当前数据库文件 " + current.getAbsolutePath();
+                    failure.addSuppressed(new IOException("旧数据库未能自动还原；" + recoveryPath,
+                            rollbackDatabaseFailure));
+                }
             }
-            if (previousOutputs.exists()) {
-                deleteTree(outputDirectory);
-                previousOutputs.renameTo(outputDirectory);
+            if (databaseRollbackSucceeded) {
+                if (previousOutputs.exists()) {
+                    try {
+                        deleteTree(outputDirectory);
+                        if (!previousOutputs.renameTo(outputDirectory))
+                            throw new IOException("无法恢复旧解析草稿目录");
+                    } catch (Exception rollbackOutputsFailure) {
+                        failure.addSuppressed(rollbackOutputsFailure);
+                    }
+                }
+                for (File file : createdImages) {
+                    try {
+                        if (file.exists() && !file.delete() && file.exists())
+                            throw new IOException("无法清理恢复图片：" + file.getName());
+                    } catch (Exception cleanupFailure) {
+                        failure.addSuppressed(cleanupFailure);
+                    }
+                }
+                for (Uri uri : createdFiles) {
+                    try {
+                        context.getContentResolver().delete(uri, null, null);
+                    } catch (Exception cleanupFailure) {
+                        failure.addSuppressed(cleanupFailure);
+                    }
+                }
+                try {
+                    CalendarStore calendar = new CalendarStore(context);
+                    for (Long eventId : createdEvents) {
+                        try {
+                            calendar.deleteEvent(eventId);
+                        } catch (Exception cleanupFailure) {
+                            failure.addSuppressed(cleanupFailure);
+                        }
+                    }
+                } catch (Exception cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+                rescheduleQueuedTasks(context);
             }
-            for (File file : createdImages) file.delete();
-            for (Uri uri : createdFiles) context.getContentResolver().delete(uri, null, null);
-            CalendarStore calendar = new CalendarStore(context);
-            for (Long eventId : createdEvents) {
-                try { calendar.deleteEvent(eventId); } catch (RuntimeException ignored) { }
-            }
-            rescheduleQueuedTasks(context);
-            throw exception;
+            throw failure;
         }
     }
 
@@ -623,7 +704,8 @@ public final class ChronaDataBackup {
         return value == null || value == JSONObject.NULL ? null : String.valueOf(value);
     }
 
-    private static File installDatabase(Context context, File staged) throws IOException {
+    private static File installDatabase(Context context, File staged, boolean[] installStarted)
+            throws IOException {
         try (TaskStore store = new TaskStore(context)) {
             SQLiteDatabase db = store.getWritableDatabase();
             try (Cursor checkpoint = db.rawQuery("PRAGMA wal_checkpoint(FULL)", null)) {
@@ -634,16 +716,28 @@ public final class ChronaDataBackup {
         File target = context.getDatabasePath("chrona.db");
         File temp = new File(target.getParentFile(), "chrona.db.restore");
         File previous = new File(target.getParentFile(), "chrona.db.previous");
+        if (previous.exists())
+            throw new IOException("发现未处理的旧数据库恢复副本，已保留：" + previous.getAbsolutePath());
         copyFile(staged, temp);
-        if (previous.exists() && !previous.delete()) throw new IOException("无法清理旧恢复点");
-        if (target.exists() && !target.renameTo(previous)) throw new IOException("无法创建恢复回滚点");
+        if (target.exists()) {
+            if (!target.renameTo(previous)) throw new IOException("无法创建恢复回滚点");
+            installStarted[0] = true;
+        }
         if (!temp.renameTo(target)) {
-            if (previous.exists()) previous.renameTo(target);
             throw new IOException("无法安装恢复数据库");
         }
         new File(target.getPath() + "-wal").delete();
         new File(target.getPath() + "-shm").delete();
         return previous.exists() ? previous : null;
+    }
+
+    private static void deleteDatabaseFile(File database) throws IOException {
+        File[] files = new File[]{database, new File(database.getPath() + "-wal"),
+                new File(database.getPath() + "-shm")};
+        for (File file : files) {
+            if (file.exists() && !file.delete() && file.exists())
+                throw new IOException("无法移除恢复数据库文件：" + file.getName());
+        }
     }
 
     private static File prepareOutputs(Context context, Prepared prepared) throws Exception {

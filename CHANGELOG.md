@@ -1,5 +1,10 @@
 # 更新记录
 
+## 0.13.22 — 2026-09-27
+
+- 修复备份导入触发 `Must be called from main thread`：恢复设置使用 application context，再由主线程刷新界面；换库前后校验清单、任务和候选数量，并增强失败回滚。
+- versionCode 42；`assembleDebug`、`lintDebug` 与 ADB 安装验证通过（设备包信息为 versionCode 42/versionName 0.13.22）；分身导入恢复成功；用户确认收件箱、日程、图片和普通附件齐全，背景图片未包含（符合备份范围）。
+
 ## 0.13.21 — 2026-09-27
 
 - 修复 ZIP 恢复时将 `PRAGMA wal_checkpoint` 错用 `execSQL` 导致 SQLite 导入失败的问题；收件箱状态筛选结果卡采用轻量错峰进入动画，并保留滚动位置。

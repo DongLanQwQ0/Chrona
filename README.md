@@ -2,7 +2,7 @@
 
 独立 Android 日程应用。首版闭环是：输入文字或通过系统分享文字 → 后台调用用户配置的 AI 服务 → 在应用内审核、修改日程草稿 → 写入专属的本地系统日历并由系统提醒。
 
-当前版本：`0.13.21`。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。
+当前版本：`0.13.22`。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。
 
 ## 当前功能
 
@@ -65,6 +65,7 @@ $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 
 ## 已验证
 
+- 2026-09-27：`0.13.22` 修复备份导入的主线程调用错误；恢复设置使用 application context，并在主线程刷新界面。换库前后校验清单、任务和候选数量，增强失败回滚。versionCode 42；`assembleDebug`、`lintDebug` 与 ADB 安装验证通过（设备包信息为 versionCode 42/versionName 0.13.22）；分身导入恢复成功；用户确认收件箱、日程、图片和普通附件齐全，背景图片未包含（符合备份范围）。
 - 2026-09-27：`0.13.21` 修复 ZIP 恢复时 `PRAGMA wal_checkpoint` 调用方式导致的 SQLite 导入失败；收件箱状态筛选结果卡加入轻量错峰进入动画并保留滚动位置。versionCode 41；`assembleDebug`、`lintDebug` 与 ADB 安装验证通过，ZIP 实际导入和筛选动画回归待用户操作。
 - 2026-09-27：`0.13.20` 新增完整 ZIP 备份/恢复入口与导入校验、回滚处理。versionCode 40；本次构建和真机操作尚未验证（ADB 当前离线）。壁纸图片不包含在备份中；API 密钥默认排除；日历恢复取决于权限和本机日历 provider。
 - 2026-09-27：`0.13.19` 增加预设与自定义主题色，调整记录页附件选择/列表和详情交互，支持首页时间线数量设置与横滑浏览，并修复亚克力切换/首帧模糊闪变。versionCode 39；`assembleDebug` 与 `lintDebug` 已通过，真机视觉回归待确认。
