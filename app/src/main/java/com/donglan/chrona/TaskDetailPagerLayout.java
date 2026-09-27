@@ -24,6 +24,7 @@ final class TaskDetailPagerLayout extends FrameLayout {
     private boolean touchStartedInPriorityChild;
     private float downX;
     private float downY;
+    private float dragOriginX;
     private float dispatchDownX;
     private float dispatchDownY;
     private CandidatePagerScrollView candidatePagerAtDown;
@@ -101,6 +102,7 @@ final class TaskDetailPagerLayout extends FrameLayout {
         if (action == MotionEvent.ACTION_DOWN) {
             downX = event.getX();
             downY = event.getY();
+            dragOriginX = downX;
             pagingGesture = false;
             return false;
         }
@@ -110,6 +112,9 @@ final class TaskDetailPagerLayout extends FrameLayout {
         float dy = event.getY() - downY;
         if (Math.abs(dx) > touchSlop && Math.abs(dx) > Math.abs(dy) * 1.25f) {
             pagingGesture = true;
+            // Consume the touch slop: the page starts moving from the point where the gesture was
+            // recognised, so it never jumps by the dead-zone distance on the first frame.
+            dragOriginX = event.getX();
             listener.onStart();
             return true;
         }
@@ -120,7 +125,7 @@ final class TaskDetailPagerLayout extends FrameLayout {
         if (!pagingGesture) return false;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_MOVE) {
-            listener.onDrag(event.getX() - downX);
+            listener.onDrag(event.getX() - dragOriginX);
             return true;
         }
         if (action == MotionEvent.ACTION_UP) {
@@ -129,7 +134,7 @@ final class TaskDetailPagerLayout extends FrameLayout {
                 velocityTracker.computeCurrentVelocity(1000);
                 velocityX = velocityTracker.getXVelocity();
             }
-            listener.onRelease(event.getX() - downX, velocityX);
+            listener.onRelease(event.getX() - dragOriginX, velocityX);
             pagingGesture = false;
             return true;
         }

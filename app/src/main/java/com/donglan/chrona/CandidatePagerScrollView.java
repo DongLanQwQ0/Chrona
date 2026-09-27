@@ -15,6 +15,8 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
     private int pageCount;
     private float downX;
     private float downY;
+    /** Where the drag itself starts: the touch slop is consumed instead of being applied. */
+    private float dragOriginX;
     private int startScrollX;
     private int startPage;
     private boolean tracking;
@@ -44,6 +46,7 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
             if (settleAnimator != null) settleAnimator.cancel();
             downX = event.getX();
             downY = event.getY();
+            dragOriginX = downX;
             startScrollX = getScrollX();
             startPage = clamp(Math.round(startScrollX / (float) pageWidth));
             int maxScroll = Math.max(0, (pageCount - 1) * pageWidth);
@@ -68,6 +71,9 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
             float dy = event.getY() - downY;
             if (Math.abs(dx) > touchSlop && Math.abs(dx) > Math.abs(dy) * 1.25f) {
                 tracking = true;
+                // Track from the frame the gesture is recognised so the first followed frame is
+                // still at the resting offset, not already displaced by the touch slop.
+                dragOriginX = event.getX();
                 MotionEvent cancel = MotionEvent.obtain(event);
                 cancel.setAction(MotionEvent.ACTION_CANCEL);
                 super.dispatchTouchEvent(cancel);
@@ -80,7 +86,7 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
         if (action == MotionEvent.ACTION_MOVE) {
             int maxScroll = Math.max(0, (pageCount - 1) * pageWidth);
             scrollTo(Math.max(0, Math.min(maxScroll,
-                    startScrollX - Math.round(event.getX() - downX))), 0);
+                    startScrollX - Math.round(event.getX() - dragOriginX))), 0);
             return true;
         }
         if (action == MotionEvent.ACTION_UP) {
