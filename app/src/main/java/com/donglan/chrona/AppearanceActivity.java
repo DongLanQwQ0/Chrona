@@ -21,11 +21,24 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Switch;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /** Selects a durable mode and palette, with immediate visual feedback. */
 public final class AppearanceActivity extends Activity {
     private static final int PICK_BACKGROUND = 23;
+    /** One preset of the two-column colour grid. */
+    private static final class ColorOption {
+        final String name;
+        final String description;
+        final String key;
+        ColorOption(String name, String description, String key) {
+            this.name = name;
+            this.description = description;
+            this.key = key;
+        }
+    }
     private ScrollView page;
     private FrameLayout stage;
     private GlassBackdropView backdrop;
@@ -70,27 +83,35 @@ public final class AppearanceActivity extends Activity {
                 () -> selectMode(ThemeStore.DARK));
 
         heading(root, "主题配色");
-        if (ThemeStore.wallpaperAvailable()) {
-            themeOption(root, "壁纸配色", "跟随 Android 系统配色",
-                    ThemeStore.WALLPAPER.equals(ThemeStore.color(this)),
-                    () -> selectColor(ThemeStore.WALLPAPER));
+        List<ColorOption> colors = new ArrayList<>();
+        if (ThemeStore.wallpaperAvailable())
+            colors.add(new ColorOption("壁纸配色", "跟随 Android 系统配色", ThemeStore.WALLPAPER));
+        colors.add(new ColorOption("青绿", "拾时经典", ThemeStore.TEAL));
+        colors.add(new ColorOption("晴蓝", "明朗沉静", ThemeStore.BLUE));
+        colors.add(new ColorOption("暖珊瑚", "柔和温暖", ThemeStore.CORAL));
+        colors.add(new ColorOption("紫罗兰", "清晰而沉静", ThemeStore.PURPLE));
+        colors.add(new ColorOption("琥珀", "温暖明亮", ThemeStore.AMBER));
+        colors.add(new ColorOption("玫瑰", "柔和醒目", ThemeStore.ROSE));
+        colors.add(new ColorOption("森林绿", "自然沉稳", ThemeStore.FOREST));
+        colors.add(new ColorOption("自定义颜色", ThemeStore.customColorHex(this), ThemeStore.CUSTOM));
+        LinearLayout colorGrid = new LinearLayout(this);
+        colorGrid.setOrientation(LinearLayout.VERTICAL);
+        UiStyle.addSpaced(root, colorGrid, 2, 4);
+        LinearLayout colorRow = null;
+        for (int index = 0; index < colors.size(); index++) {
+            if (index % 2 == 0) {
+                colorRow = new LinearLayout(this);
+                colorRow.setOrientation(LinearLayout.HORIZONTAL);
+                colorRow.setBaselineAligned(false);
+                colorGrid.addView(colorRow, new LinearLayout.LayoutParams(-1, -2));
+            }
+            ColorOption item = colors.get(index);
+            themeOption(colorRow, item, item.key.equals(ThemeStore.color(this)),
+                    () -> selectColor(item.key));
         }
-        themeOption(root, "青绿", "拾时经典", ThemeStore.TEAL.equals(ThemeStore.color(this)),
-                () -> selectColor(ThemeStore.TEAL));
-        themeOption(root, "晴蓝", "明朗沉静", ThemeStore.BLUE.equals(ThemeStore.color(this)),
-                () -> selectColor(ThemeStore.BLUE));
-        themeOption(root, "暖珊瑚", "柔和温暖", ThemeStore.CORAL.equals(ThemeStore.color(this)),
-                () -> selectColor(ThemeStore.CORAL));
-        themeOption(root, "紫罗兰", "清晰而沉静", ThemeStore.PURPLE.equals(ThemeStore.color(this)),
-                () -> selectColor(ThemeStore.PURPLE));
-        themeOption(root, "琥珀", "温暖明亮", ThemeStore.AMBER.equals(ThemeStore.color(this)),
-                () -> selectColor(ThemeStore.AMBER));
-        themeOption(root, "玫瑰", "柔和醒目", ThemeStore.ROSE.equals(ThemeStore.color(this)),
-                () -> selectColor(ThemeStore.ROSE));
-        themeOption(root, "森林绿", "自然沉稳", ThemeStore.FOREST.equals(ThemeStore.color(this)),
-                () -> selectColor(ThemeStore.FOREST));
-        themeOption(root, "自定义颜色", ThemeStore.customColorHex(this),
-                ThemeStore.CUSTOM.equals(ThemeStore.color(this)), this::showCustomColorDialog);
+        // An odd preset count would leave the final cell stretched across the row.
+        if (colorRow != null && colors.size() % 2 == 1)
+            colorRow.addView(new View(this), new LinearLayout.LayoutParams(0, dp(1), 1));
         heading(root, "毛玻璃与层级");
         acrylicControls(root);
         heading(root, "背景图片");
@@ -328,43 +349,53 @@ public final class AppearanceActivity extends Activity {
         UiStyle.addSpaced(root, card, 3, 7);
     }
 
-    private void themeOption(LinearLayout root, String name, String description,
-            boolean selected, Runnable action) {
+    /** One cell of the two-column colour grid: swatch + name, then the short description. */
+    private void themeOption(LinearLayout row, ColorOption option, boolean selected,
+            Runnable action) {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(16), dp(6), dp(16), dp(6));
-        card.setMinimumHeight(dp(56));
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setMinimumHeight(dp(82));
         UiStyle.choice(card, selected, UiStyle.RADIUS_PANEL);
         UiStyle.pressable(card);
 
-        int swatch = swatch(name);
+        LinearLayout headline = new LinearLayout(this);
+        headline.setOrientation(LinearLayout.HORIZONTAL);
+        headline.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        int swatch = swatch(option.name);
         if (swatch != 0) {
             View color = new View(this);
             GradientDrawable circle = new GradientDrawable();
             circle.setShape(GradientDrawable.OVAL);
             circle.setColor(swatch);
             color.setBackground(circle);
-            LinearLayout.LayoutParams dot = new LinearLayout.LayoutParams(dp(20), dp(20));
-            dot.setMargins(0, 0, dp(12), 0);
-            card.addView(color, dot);
+            LinearLayout.LayoutParams dot = new LinearLayout.LayoutParams(dp(18), dp(18));
+            dot.setMargins(0, 0, dp(8), 0);
+            headline.addView(color, dot);
         }
-
-        LinearLayout labels = new LinearLayout(this);
-        labels.setOrientation(LinearLayout.VERTICAL);
-        labels.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView heading = text(UiStyle.marked(name, selected), 16, true);
+        // The name ellipsizes instead of pushing the marker out of the narrow cell.
+        TextView heading = text(UiStyle.marked(option.name, false), 15, true);
+        heading.setMaxLines(1);
+        heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
         heading.setTextColor(selected ? UiStyle.colors(this).onPrimaryContainer
                 : UiStyle.colors(this).text);
-        labels.addView(heading);
-        if (description != null && !description.isEmpty()) {
-            TextView detail = text(description, 13, false);
-            if (selected) detail.setTextColor(UiStyle.colors(this).onPrimaryContainer);
-            labels.addView(detail);
+        headline.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        if (selected) {
+            TextView marker = text("✓", 15, true);
+            marker.setTextColor(UiStyle.colors(this).onPrimaryContainer);
+            headline.addView(marker);
         }
-        card.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+        card.addView(headline);
+        if (option.description != null && !option.description.isEmpty()) {
+            TextView detail = text(option.description, 12, false);
+            detail.setMaxLines(2);
+            if (selected) detail.setTextColor(UiStyle.colors(this).onPrimaryContainer);
+            UiStyle.addSpaced(card, detail, 4, 0);
+        }
         card.setOnClickListener(view -> action.run());
-        UiStyle.addSpaced(root, card, 3, 4);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1);
+        params.setMargins(dp(3), dp(3), dp(3), dp(3));
+        row.addView(card, params);
     }
 
     private TextView text(String value, int size, boolean bold) {
