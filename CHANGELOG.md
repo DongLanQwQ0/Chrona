@@ -1,5 +1,16 @@
 # 更新记录
 
+## 0.13.33 — 2026-09-27
+
+- **修复点击 Dock 栏必崩**：`IllegalStateException: ScrollView can host only one direct child`。`DashboardActivity` 的页面主体原先直接挂在 `ScrollView` 下，而切换 section 的交叉淡化要把旧内容的快照作为**第二个**子 View 插进容器的父级；`ScrollView` 是 `FrameLayout` 的子类，于是通过了 `instanceof FrameLayout` 判断却在 `addView` 抛异常。现在两处页面主体都套一层 `FrameLayout` 宿主（`contentHost` / `targetHost`），并把 `UiStyle.swap` 的子 View 容纳判断收紧为 `hostsSeveralChildren()`：`ScrollView` / `HorizontalScrollView` 一律退回直接重建，不再依赖「父级是 FrameLayout」这一条过宽的判断。
+- 收件箱「选择收件类型」弹窗收窄并居中：这类弹窗只有一两个词的短标签，之前用默认宽度（屏幕 90%）使每行都像一条空条。`showDialog` 新增宽度重载，`choiceDialog` 取屏幕 72% 与 300 dp 的较小值，行文字由左对齐改为居中（左右内边距 18 dp → 14 dp）。
+- 任务详情右上角菜单精简：去掉「详情内容与操作」标题；「模型输出预览」→「输出预览」、「查看完整模型输出」→「完整输出」、「来源与检索」→「来源链接」、「删除任务及关联日程」→「删除任务」；`UiStyle.danger()` 新增语义红色，删除项以红色文字显示（浅色 `#B3261E` / 深色 `#FFB4AB`）。
+- 新增 `JsonFormat`，模型输出按 JSON 显示：完整可解析的值走 `org.json` 的 `toString(2)`；流式过程中尚未闭合的 JSON（以 `{`/`[` 开头）用状态机重新缩进，字符串内的逗号/冒号不受影响；纯文本原样返回。`[模型输出]` 分隔标记由 `StreamingOutputStore.CONTENT_SECTION_MARKER` 提供，标记上方的思考内容不动。**模型完整输出**页与任务详情的**输出预览**共用同一套格式化（原先只有预览做了、且不完整的部分仍是原始长行）。
+- 确认删除任务对话框文案精简：改为「删除这条输入及其日程草稿，无法撤销。」／「删除这条输入、日程草稿，以及已写入日历的 N 条日程，无法撤销。」，去掉公共存储副本的说明段落。
+- 图片右上角的移除按钮收小：`AttachmentImageTile` 的 `×` 从 48 dp / 20 sp 收到 36 dp / 16 sp（任务详情与记录页共用同一个组件），在缩略图上的存在感明显降低。
+- 提示词补充截止时间规则：明确要求把截止时刻用文字写进标题（如 `submit the report (due 5 March 18:00)`），并且已知截止时间必须设置 `reminder_minutes_before`，按紧急程度在 **10 至 360 分钟**之间取值（一小时内 10、当天 30、数日内 120–180、远期重要事项至 360），不允许超出这个区间。
+- versionCode 53；`assembleDebug` 与 `lintDebug` 通过，ADB 覆盖安装成功（设备包信息 versionCode 53/versionName 0.13.33）。截图确认：点击 Dock「收件箱」正常切页且无崩溃日志（此前必崩）、类型弹窗变窄且文字居中、详情右上角菜单为四项且「删除任务」为红色、`完整输出` 页 JSON 已缩进、删除确认对话框为新文案、图片右上角 `×` 变小。
+
 ## 0.13.32 — 2026-09-27
 
 - 修复端点方向拖动时亚克力卡片不重新采样：`DashboardActivity.onDrag` 在「该方向没有相邻页」的分支里提前 `return`，跳过了每帧的 `invalidateSectionSurfaces()`，卡片因此停在拖动开始时的模糊位图上——表现为背景不动态模糊、并且新旧采样交替闪烁。现在该分支在阻尼位移后同样重采样，页面也恢复跟手（0.3 阻尼），不再是不动的。

@@ -119,6 +119,8 @@ public final class UiStyle {
     static final int RADIUS_PILL = 24;
     /** Filter chips: a soft rectangle, deliberately much less round than a pill. */
     static final int RADIUS_CHIP = 12;
+    /** Choice sheets carry short labels only, so they stay well inside the default sheet width. */
+    private static final int CHOICE_SHEET_WIDTH_DP = 300;
     /** Length of the in-place cross-fade used when a screen rebuilds itself. */
     static final long SWAP_MILLIS = 220L;
     /** Marks the temporary snapshot view a swap leaves over the container while it fades. */
@@ -256,6 +258,11 @@ public final class UiStyle {
         }
         return new Palette(background, surface, surfaceAlt, text, muted, outline,
                 primary, onPrimary, container, onContainer);
+    }
+
+    /** Destructive labels ("删除") read as red; the shade follows the theme's light/dark mode. */
+    static int danger(Context context) {
+        return ThemeStore.dark(context) ? 0xFFFFB4AB : 0xFFB3261E;
     }
 
     public static void page(Activity activity, LinearLayout root) {
@@ -628,7 +635,8 @@ public final class UiStyle {
         }
         Bitmap outgoing = snapshot(snapshotOf);
         if (outgoing == null || snapshotOf.getWidth() <= 0
-                || !(snapshotOf.getParent() instanceof FrameLayout host)) {
+                || !(snapshotOf.getParent() instanceof FrameLayout host)
+                || !hostsSeveralChildren(host)) {
             container.setAlpha(1f);
             rebuild.run();
             return;
@@ -654,6 +662,16 @@ public final class UiStyle {
         ghost.animate().alpha(0f).setDuration(SWAP_MILLIS)
                 .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
                 .withEndAction(() -> host.removeView(ghost)).start();
+    }
+
+    /**
+     * The ghost is a second child, so the host has to accept one. Scrolling containers extend
+     * FrameLayout but raise {@code IllegalStateException} on a second child, which crashed the
+     * section switch while its body still lived directly in a ScrollView.
+     */
+    private static boolean hostsSeveralChildren(ViewGroup host) {
+        return !(host instanceof ScrollView)
+                && !(host instanceof android.widget.HorizontalScrollView);
     }
 
     /** Half-scale copy of what the container shows now; null when it has nothing to copy yet. */
@@ -755,9 +773,11 @@ public final class UiStyle {
             TextView item = new TextView(activity);
             item.setText(marked(options[i], i == selected));
             item.setTextSize(16);
-            item.setGravity(Gravity.CENTER_VERTICAL);
+            // A short list of short labels reads better as a centred column than as rows of text
+            // pinned to the left edge of a full-width sheet.
+            item.setGravity(Gravity.CENTER);
             item.setMinHeight(dp(item, 52));
-            item.setPadding(dp(item, 18), 0, dp(item, 18), 0);
+            item.setPadding(dp(item, 14), 0, dp(item, 14), 0);
             item.setTextColor(i == selected ? colors(activity).onPrimaryContainer
                     : colors(activity).text);
             choice(item, i == selected, RADIUS_FIELD);
@@ -771,7 +791,11 @@ public final class UiStyle {
         int maxHeight = (int) (activity.getResources().getDisplayMetrics().heightPixels * .58f);
         panel.addView(scroll, new LinearLayout.LayoutParams(-1,
                 Math.min(maxHeight, options.length * dp(scroll, 60))));
-        showDialog(dialog, panel);
+        // Narrower than the default sheet: these are one-word choices, and the full width left the
+        // rows looking like empty bars.
+        showDialog(dialog, panel, Math.min(
+                (int) (activity.getResources().getDisplayMetrics().widthPixels * .72f),
+                dp(panel, CHOICE_SHEET_WIDTH_DP)));
     }
 
     public static void confirmDialog(Activity activity, String title, String message,
@@ -867,6 +891,12 @@ public final class UiStyle {
     }
 
     private static void showDialog(Dialog dialog, View content) {
+        showDialog(dialog, content, Math.min(
+                (int) (content.getResources().getDisplayMetrics().widthPixels * .90f),
+                dp(content, 460)));
+    }
+
+    private static void showDialog(Dialog dialog, View content, int widthPx) {
         dialog.setContentView(content);
         Window dialogWindow = dialog.getWindow();
         if (dialogWindow != null) {
@@ -892,9 +922,7 @@ public final class UiStyle {
         }
         dialog.show();
         Window window = dialog.getWindow();
-        if (window != null) window.setLayout(
-                Math.min((int) (content.getResources().getDisplayMetrics().widthPixels * .90f),
-                        dp(content, 460)), -2);
+        if (window != null) window.setLayout(widthPx, -2);
         if (!ValueAnimator.areAnimatorsEnabled()) return;
         // A sheet that fades and settles into place instead of appearing between two frames.
         content.setAlpha(0f);

@@ -33,17 +33,17 @@ final class AttachmentImageTile extends FrameLayout {
 
         Button remove = new Button(activity);
         remove.setText("×");
-        remove.setTextSize(20);
+        remove.setTextSize(16);
         remove.setGravity(Gravity.CENTER);
         remove.setPadding(0, 0, 0, 0);
         remove.setTextColor(UiStyle.colors(activity).primary);
         remove.setContentDescription("移除图片：" + imageName);
-        remove.setMinimumWidth(dp(48));
-        remove.setMinimumHeight(dp(48));
+        remove.setMinimumWidth(dp(36));
+        remove.setMinimumHeight(dp(36));
         UiStyle.glass(remove);
         UiStyle.pressable(remove);
         remove.setOnClickListener(view -> onRemove.run());
-        FrameLayout.LayoutParams removeParams = new FrameLayout.LayoutParams(dp(48), dp(48),
+        FrameLayout.LayoutParams removeParams = new FrameLayout.LayoutParams(dp(36), dp(36),
                 Gravity.TOP | Gravity.END);
         removeParams.setMargins(0, dp(6), dp(6), 0);
         addView(remove, removeParams);

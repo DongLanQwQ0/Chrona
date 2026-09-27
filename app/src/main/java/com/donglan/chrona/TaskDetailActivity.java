@@ -65,9 +65,6 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Map;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import org.json.JSONTokener;
 import java.util.List;
 import java.util.Set;
 
@@ -771,13 +768,6 @@ public final class TaskDetailActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(8), dp(8), dp(8), dp(8));
         UiStyle.card(panel);
-        TextView title = new TextView(this);
-        title.setText("详情内容与操作");
-        title.setTextSize(13);
-        title.setGravity(Gravity.CENTER);
-        UiStyle.muted(title);
-        title.setPadding(dp(12), dp(8), dp(12), dp(6));
-        panel.addView(title);
         TaskRecord task = null;
         List<EventCandidate> candidates = Collections.emptyList();
         try (TaskStore store = new TaskStore(this)) {
@@ -792,16 +782,15 @@ public final class TaskDetailActivity extends Activity {
         List<String> links = task == null ? Collections.emptyList() : LinkFetcher.extractUrls(task.rawText);
         TaskRecord menuTask = task;
         if (hasOutput) {
-            addHeaderMenuRow(panel, dialog, "模型输出预览", this::showModelOutputPreviewDialog);
-            addHeaderMenuRow(panel, dialog, "查看完整模型输出", () -> startActivity(
+            addHeaderMenuRow(panel, dialog, "输出预览", this::showModelOutputPreviewDialog);
+            addHeaderMenuRow(panel, dialog, "完整输出", () -> startActivity(
                     new Intent(this, ModelOutputActivity.class).putExtra("task_id", taskId)));
         }
         if (hasUsage) addHeaderMenuRow(panel, dialog, "解析用量", () -> showUsageDialog(menuTask));
         if (!links.isEmpty())
-            addHeaderMenuRow(panel, dialog, "来源与检索", () -> showLinksDialog(menuTask, links));
+            addHeaderMenuRow(panel, dialog, "来源链接", () -> showLinksDialog(menuTask, links));
         int publishedCount = countPublished(candidates);
-        addHeaderMenuRow(panel, dialog, "删除任务及关联日程",
-                () -> confirmDelete(publishedCount));
+        addHeaderMenuRow(panel, dialog, "删除任务", true, () -> confirmDelete(publishedCount));
         UiStyle.showFloatingDialog(dialog, panel);
         android.view.Window window = dialog.getWindow();
         if (dialog.getWindow() != null) {
@@ -815,7 +804,12 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void addHeaderMenuRow(LinearLayout panel, Dialog dialog, String title, Runnable action) {
-        TextView row = headerMenuAction(title);
+        addHeaderMenuRow(panel, dialog, title, false, action);
+    }
+
+    private void addHeaderMenuRow(LinearLayout panel, Dialog dialog, String title,
+            boolean destructive, Runnable action) {
+        TextView row = headerMenuAction(title, destructive);
         row.setOnClickListener(view -> {
             dialog.dismiss();
             action.run();
@@ -823,14 +817,14 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.addSpaced(panel, row, 2, 2);
     }
 
-    private TextView headerMenuAction(String text) {
+    private TextView headerMenuAction(String text, boolean destructive) {
         TextView action = new TextView(this);
         action.setText(text);
         action.setTextSize(15);
         action.setGravity(android.view.Gravity.CENTER);
         action.setPadding(dp(12), 0, dp(12), 0);
         action.setMinHeight(dp(48));
-        action.setTextColor(UiStyle.colors(this).primary);
+        action.setTextColor(destructive ? UiStyle.danger(this) : UiStyle.colors(this).primary);
         UiStyle.pill(action, false);
         return action;
     }
@@ -860,7 +854,8 @@ public final class TaskDetailActivity extends Activity {
                     boolean follow = scroll.getScrollY() + scroll.getHeight()
                             >= text.getHeight() - dp(24);
                     lastLength[0] = length;
-                    text.setText(length == 0 ? "等待模型开始输出…" : prettyJson(output.tail(taskId)));
+                    text.setText(length == 0 ? "等待模型开始输出…"
+                            : JsonFormat.formatModelOutput(output.tail(taskId)));
                     if (follow) scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
                 }
             } catch (Exception exception) {
@@ -1830,36 +1825,19 @@ public final class TaskDetailActivity extends Activity {
                 && previewScroll.getScrollY() + previewScroll.getHeight()
                 >= previewText.getHeight() - dp(24);
         try {
-            previewText.setText(length == 0 ? "等待模型开始输出…" : prettyJson(output.tail(taskId)));
+            previewText.setText(length == 0 ? "等待模型开始输出…"
+                    : JsonFormat.formatModelOutput(output.tail(taskId)));
             if (follow) previewScroll.post(() -> previewScroll.fullScroll(View.FOCUS_DOWN));
         } catch (Exception exception) {
             previewText.setText("预览暂时不可用：" + exception.getMessage());
         }
     }
 
-    private static String prettyJson(String value) {
-        if (value == null) return "";
-        String trimmed = value.trim();
-        if (trimmed.isEmpty()) return value;
-        try {
-            JSONTokener tokener = new JSONTokener(trimmed);
-            Object parsed = tokener.nextValue();
-            if (tokener.nextClean() != 0) return value;
-            if (parsed instanceof JSONObject) return ((JSONObject) parsed).toString(2);
-            if (parsed instanceof JSONArray) return ((JSONArray) parsed).toString(2);
-        } catch (Exception ignored) {
-            // Streaming output is often incomplete JSON; keep its original text until it parses.
-        }
-        return value;
-    }
-
     private void confirmDelete(int publishedCount) {
         if (publishedCount > 0 && !requestCalendarPermission()) return;
         String message = publishedCount == 0
-                ? "将删除这条输入和所有日程草稿。此操作无法撤销。"
-                : "将删除这条输入、所有日程草稿及已写入系统日历的 "
-                        + publishedCount + " 条日程。此操作无法撤销。";
-        message += "\n普通文件副本会保留在公共存储中；Android 10 及以上可在 Downloads/Chrona 找到。";
+                ? "删除这条输入及其日程草稿，无法撤销。"
+                : "删除这条输入、日程草稿，以及已写入日历的 " + publishedCount + " 条日程，无法撤销。";
         UiStyle.confirmDialog(this, "确认删除任务？", message, "删除", () -> {
                     deleting = true;
                     content.removeAllViews();

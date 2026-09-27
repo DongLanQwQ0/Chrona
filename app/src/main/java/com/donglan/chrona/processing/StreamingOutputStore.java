@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 public final class StreamingOutputStore {
     public static final int WINDOW_BYTES = 12 * 1024;
     public static final int PAGE_BYTES = 16 * 1024;
+    /** Written before the answer when the model streamed reasoning first; readers split on it. */
+    public static final String CONTENT_SECTION_MARKER = "[模型输出]";
     private static final int MAX_BYTES = 8 * 1024 * 1024;
     private final File directory;
 
@@ -117,7 +119,7 @@ public final class StreamingOutputStore {
         public void append(String chunk) throws IOException {
             if (chunk == null || chunk.isEmpty()) return;
             if (reasoningStarted && (!contentStarted || lastSection != 2)) {
-                appendRaw((written == 0 ? "" : "\n\n") + "[模型输出]\n");
+                appendRaw((written == 0 ? "" : "\n\n") + CONTENT_SECTION_MARKER + "\n");
                 contentStarted = true;
             } else if (!contentStarted) {
                 contentStarted = true;

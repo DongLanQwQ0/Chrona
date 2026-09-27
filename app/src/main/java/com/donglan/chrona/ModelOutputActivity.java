@@ -104,7 +104,7 @@ public final class ModelOutputActivity extends Activity {
         next.setEnabled(index + 1 < pages);
         try {
             String part = store.page(taskId, index);
-            String text = part.isEmpty() ? "尚无模型输出。" : part;
+            String text = part.isEmpty() ? "尚无模型输出。" : JsonFormat.formatModelOutput(part);
             boolean first = output.getText().length() == 0;
             output.setText(text);
             scroll.scrollTo(0, 0);

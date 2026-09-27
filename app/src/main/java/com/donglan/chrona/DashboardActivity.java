@@ -292,7 +292,9 @@ public final class DashboardActivity extends Activity {
                 (getResources().getConfiguration().screenWidthDp - 90 - 720) / 2) : 20;
         targetContent.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
-        targetScroll.addView(targetContent);
+        FrameLayout targetHost = new FrameLayout(this);
+        targetHost.addView(targetContent, new FrameLayout.LayoutParams(-1, -2));
+        targetScroll.addView(targetHost, new FrameLayout.LayoutParams(-1, -2));
 
         scroll = targetScroll;
         content = targetContent;
@@ -540,7 +542,11 @@ public final class DashboardActivity extends Activity {
                 (getResources().getConfiguration().screenWidthDp - 90 - 720) / 2) : 20;
         content.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
-        scroll.addView(content);
+        // The cross-fade of a section switch drops a snapshot of the outgoing body next to it, so
+        // the body needs a parent that accepts a second child; a ScrollView raises instead.
+        FrameLayout contentHost = new FrameLayout(this);
+        contentHost.addView(content, new FrameLayout.LayoutParams(-1, -2));
+        scroll.addView(contentHost, new FrameLayout.LayoutParams(-1, -2));
         pager = new SwipePagerLayout(this, sectionPagerListener);
         pager.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         navigation = new LinearLayout(this);
