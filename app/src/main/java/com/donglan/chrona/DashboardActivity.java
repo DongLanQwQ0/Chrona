@@ -10,9 +10,14 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
@@ -80,15 +85,28 @@ public final class DashboardActivity extends Activity {
     }
     static final String EXTRA_SECTION = "section";
     static final int HOME = 0, INBOX = 1, SCHEDULE = 2;
+    /** Entries keep their store order when they have no start time of their own. */
+    private static final java.util.Comparator<EventCandidate> BY_START_TIME = (left, right) -> {
+        if (left.startAtMillis == null && right.startAtMillis == null) return 0;
+        if (left.startAtMillis == null) return 1;
+        if (right.startAtMillis == null) return -1;
+        return Long.compare(left.startAtMillis, right.startAtMillis);
+    };
     private int section = HOME;
     private int categoryIndex, statusIndex;
     private int scheduleTab;
     private int inboxShown = 12, scheduleShown = 12;
+    /** The two browsable lists keep their own keyword and time direction. */
+    private String inboxQuery = "";
+    private String scheduleQuery = "";
+    private boolean scheduleOldestFirst = true;
+    private boolean inboxOldestFirst = false;
     private LinearLayout content;
     private LinearLayout navigation;
     private LinearLayout results;
     private LinearLayout filterChips;
     private ImageButton categoryChip;
+    private TextView orderToggle;
     private LinearLayout selectionBar;
     private TextView selectionCount;
     private Button selectAllButton;
@@ -130,6 +148,10 @@ public final class DashboardActivity extends Activity {
             scheduleTab = state.getInt("schedule_tab");
             inboxShown = state.getInt("inbox_shown", 12);
             scheduleShown = state.getInt("schedule_shown", 12);
+            inboxQuery = state.getString("inbox_query", "");
+            scheduleQuery = state.getString("schedule_query", "");
+            scheduleOldestFirst = state.getBoolean("schedule_oldest_first", true);
+            inboxOldestFirst = state.getBoolean("inbox_oldest_first", false);
             long[] selected = state.getLongArray("selected_inbox_ids");
             if (selected != null) for (long id : selected) selectedInboxIds.add(id);
             restoredScrollY = state.getInt("scroll_y");
@@ -154,6 +176,10 @@ public final class DashboardActivity extends Activity {
         state.putInt("schedule_tab", scheduleTab);
         state.putInt("inbox_shown", inboxShown);
         state.putInt("schedule_shown", scheduleShown);
+        state.putString("inbox_query", inboxQuery);
+        state.putString("schedule_query", scheduleQuery);
+        state.putBoolean("schedule_oldest_first", scheduleOldestFirst);
+        state.putBoolean("inbox_oldest_first", inboxOldestFirst);
         state.putInt("scroll_y", scroll.getScrollY());
         long[] selected = new long[selectedInboxIds.size()];
         int selectedIndex = 0;
@@ -285,6 +311,7 @@ public final class DashboardActivity extends Activity {
         results = null;
         filterChips = null;
         categoryChip = null;
+        orderToggle = null;
         elapsedLabels.clear();
         content.removeAllViews();
         addHeader();
@@ -316,7 +343,17 @@ public final class DashboardActivity extends Activity {
         TextView title = text(section == HOME ? "今天的安排"
                 : section == INBOX ? "收件箱" : "日程", section == HOME ? 25 : 28, true);
         title.setMaxLines(1);
-        row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        if (section == HOME) {
+            row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        } else {
+            // The search field sits between the page title and the gear, so filtering never moves
+            // the settings entry and the keyword stays reachable while scrolling.
+            row.addView(title, new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(44), 1);
+            searchParams.setMargins(dp(8), 0, dp(8), 0);
+            row.addView(buildSearchField(), searchParams);
+            row.addView(buildOrderToggle(), new LinearLayout.LayoutParams(-2, dp(44)));
+        }
         ImageButton settings = new ImageButton(this);
         settings.setImageResource(R.drawable.ic_settings);
         settings.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
@@ -328,6 +365,86 @@ public final class DashboardActivity extends Activity {
                 startActivity(new Intent(this, SettingsHubActivity.class)));
         row.addView(settings, new LinearLayout.LayoutParams(dp(50), dp(50)));
         UiStyle.addSpaced(content, row, 0, section == HOME ? 10 : 14);
+    }
+
+    /** A compact keyword field for the two browsable lists; typing only re-renders the results. */
+    private EditText buildSearchField() {
+        EditText field = new EditText(this);
+        field.setSingleLine(true);
+        field.setHint(section == INBOX ? "搜索收件" : "搜索日程");
+        field.setTextSize(14);
+        field.setTextColor(UiStyle.colors(this).text);
+        field.setHintTextColor(UiStyle.colors(this).muted);
+        field.setInputType(InputType.TYPE_CLASS_TEXT);
+        field.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        field.setGravity(Gravity.CENTER_VERTICAL);
+        field.setPadding(dp(14), 0, dp(14), 0);
+        UiStyle.acrylicChoice(field, false, UiStyle.RADIUS_PILL, false);
+        String current = section == INBOX ? inboxQuery : scheduleQuery;
+        field.setText(current);
+        if (!current.isEmpty()) field.setSelection(current.length());
+        field.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence value, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence value, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable value) {
+                String keyword = value.toString();
+                if (section == INBOX) inboxQuery = keyword; else scheduleQuery = keyword;
+                inboxShown = 12;
+                scheduleShown = 12;
+                updateResults();
+                scroll.scrollTo(0, 0);
+            }
+        });
+        return field;
+    }
+
+    /** Flips the list between oldest-first and newest-first without rebuilding the header. */
+    private TextView buildOrderToggle() {
+        TextView toggle = text("", 13, true);
+        toggle.setGravity(Gravity.CENTER);
+        toggle.setMinWidth(dp(60));
+        toggle.setPadding(dp(12), 0, dp(12), 0);
+        toggle.setOnClickListener(view -> {
+            if (section == INBOX) inboxOldestFirst = !inboxOldestFirst;
+            else scheduleOldestFirst = !scheduleOldestFirst;
+            inboxShown = 12;
+            scheduleShown = 12;
+            refreshOrderToggle();
+            updateResults();
+        });
+        orderToggle = toggle;
+        refreshOrderToggle();
+        return toggle;
+    }
+
+    private void refreshOrderToggle() {
+        if (orderToggle == null) return;
+        boolean oldestFirst = section == INBOX ? inboxOldestFirst : scheduleOldestFirst;
+        orderToggle.setText(oldestFirst ? "时间 ↑" : "时间 ↓");
+        orderToggle.setContentDescription(oldestFirst
+                ? "当前按时间顺序排列，最早在前；点击改为最近在前"
+                : "当前按时间倒序排列，最近在前；点击改为最早在前");
+        orderToggle.setTextColor(UiStyle.colors(this).primary);
+        applyThemeControlSurface(orderToggle, false, UiStyle.RADIUS_PILL);
+    }
+
+    private static String normalizedQuery(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean containsQuery(String value, String query) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(query);
+    }
+
+    private boolean matchesQuery(EventCandidate item, String query) {
+        return containsQuery(item.title, query)
+                || containsQuery(item.location, query)
+                || containsQuery(item.description, query)
+                || containsQuery(EventCategory.label(item.category), query);
+    }
+
+    private static boolean matchesQuery(TaskRecord task, String query) {
+        return containsQuery(task.rawText, query) || containsQuery(task.linkText, query);
     }
 
     private void home(TaskStore store) {
@@ -508,21 +625,29 @@ public final class DashboardActivity extends Activity {
                 ? store.listPublishedTasks(selectedCategory)
                 : selectedCategory == null ? store.listTasks()
                         : store.listTasksByCategory(selectedCategory);
+        String query = normalizedQuery(inboxQuery);
         List<TaskRecord> visible = new ArrayList<>();
-        for (TaskRecord task : tasks) if (matches(task)) visible.add(task);
+        for (TaskRecord task : tasks)
+            if (matches(task) && (query.isEmpty() || matchesQuery(task, query))) visible.add(task);
+        // The store hands the newest input back first; the toggle asks for the other direction.
+        if (inboxOldestFirst) java.util.Collections.reverse(visible);
         matchingInboxIds = new ArrayList<>();
         for (TaskRecord task : visible) matchingInboxIds.add(task.id);
         selectedInboxIds.retainAll(matchingInboxIds);
         updateSelectionUi();
         if (visible.isEmpty()) {
             UiStyle.addSpaced(results, text("共 0 条收件", 13, false), 12, 2);
-            LinearLayout emptyCard = card();
-            emptyCard.setGravity(Gravity.CENTER);
-            emptyCard.setMinimumHeight(dp(168));
-            TextView emptyCopy = text("这里空空\n终于没事了~", 17, false);
-            emptyCopy.setGravity(Gravity.CENTER);
-            emptyCard.addView(emptyCopy, new LinearLayout.LayoutParams(-1, -2));
-            UiStyle.addSpaced(results, emptyCard, 3, 8);
+            if (!query.isEmpty()) {
+                empty(results, "没有匹配「" + inboxQuery.trim() + "」的收件。");
+            } else {
+                LinearLayout emptyCard = card();
+                emptyCard.setGravity(Gravity.CENTER);
+                emptyCard.setMinimumHeight(dp(168));
+                TextView emptyCopy = text("这里空空\n终于没事了~", 17, false);
+                emptyCopy.setGravity(Gravity.CENTER);
+                emptyCard.addView(emptyCopy, new LinearLayout.LayoutParams(-1, -2));
+                UiStyle.addSpaced(results, emptyCard, 3, 8);
+            }
         } else {
             sectionTitle(results, "共 " + visible.size() + " 条收件");
         }
@@ -571,20 +696,24 @@ public final class DashboardActivity extends Activity {
         results.removeAllViews();
         List<EventCandidate> candidates = store.listCandidates();
         long now = System.currentTimeMillis();
+        String query = normalizedQuery(scheduleQuery);
         List<EventCandidate> visible = new ArrayList<>();
         for (EventCandidate item : candidates) {
             boolean complete = item.startAtMillis != null && item.endAtMillis != null;
-            if ((scheduleTab == 0 && isUpcoming(item, now))
+            boolean listed = (scheduleTab == 0 && isUpcoming(item, now))
                     || (scheduleTab == 1 && !complete)
-                    || (scheduleTab == 2 && complete && !isUpcoming(item, now)))
-                visible.add(item);
+                    || (scheduleTab == 2 && complete && !isUpcoming(item, now));
+            if (listed && (query.isEmpty() || matchesQuery(item, query))) visible.add(item);
         }
-        if (scheduleTab == 2) java.util.Collections.reverse(visible);
+        visible.sort(BY_START_TIME);
+        if (!scheduleOldestFirst) java.util.Collections.reverse(visible);
         sectionTitle(results, (scheduleTab == 0 ? "即将到来" : scheduleTab == 1
                 ? "待补全时间" : "较早的日程") + " · " + visible.size());
         if (visible.isEmpty()) {
-            empty(results, scheduleTab == 0 ? "暂无即将到来的日程。"
-                    : scheduleTab == 1 ? "没有待补全时间的事项。" : "还没有较早的日程。");
+            empty(results, !query.isEmpty()
+                    ? "没有匹配「" + scheduleQuery.trim() + "」的日程。"
+                    : scheduleTab == 0 ? "暂无即将到来的日程。"
+                            : scheduleTab == 1 ? "没有待补全时间的事项。" : "还没有较早的日程。");
         }
         for (int i = 0; i < Math.min(scheduleShown, visible.size()); i++)
             candidateRow(results, visible.get(i), i);
