@@ -48,10 +48,18 @@ public final class AppearanceActivity extends Activity {
         buildAppearance(state == null ? 0 : state.getInt("scroll_y"));
     }
 
-    /** Updates the appearance page in place and keeps its scroll position. */
+    /** Updates the appearance page in place, keeping its scroll position. */
     void refreshAppearance() {
         ThemeStore.apply(this);
-        buildAppearance(page == null ? 0 : page.getScrollY());
+        if (page == null) {
+            buildAppearance(0);
+            return;
+        }
+        int scrollY = page.getScrollY();
+        // Cross-fade the whole stage, not just the page: the page's own background is transparent,
+        // so a snapshot of it alone would let the already-recoloured backdrop show through and the
+        // switch would still read as instant.
+        UiStyle.swap(stage, page, () -> buildAppearance(scrollY));
     }
 
     private void buildAppearance(int scrollY) {

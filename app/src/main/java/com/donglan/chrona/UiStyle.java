@@ -8,6 +8,8 @@ import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.PixelFormat;
@@ -18,6 +20,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
 import android.view.Window;
@@ -114,6 +117,12 @@ public final class UiStyle {
     static final int RADIUS_CARD = 22;
     static final int RADIUS_PANEL = 28;
     static final int RADIUS_PILL = 24;
+    /** Filter chips: a soft rectangle, deliberately much less round than a pill. */
+    static final int RADIUS_CHIP = 12;
+    /** Length of the in-place cross-fade used when a screen rebuilds itself. */
+    static final long SWAP_MILLIS = 220L;
+    /** Marks the temporary snapshot view a swap leaves over the container while it fades. */
+    private static final Object SWAP_GHOST = new Object();
 
     static final class Palette {
         final int background, surface, surfaceAlt, text, muted, outline, primary, onPrimary;
@@ -591,17 +600,87 @@ public final class UiStyle {
         for (int i = 0; i < parent.getChildCount(); i++) enter(parent.getChildAt(i), i);
     }
 
-    /** Rebuilds a container's contents behind a short fade instead of swapping them mid-frame. */
+    /**
+     * Rebuilds a container's contents as a cross-fade: a snapshot of the outgoing content fades
+     * out while the rebuilt content fades in. The earlier version dipped the container towards
+     * transparent first and only rebuilt afterwards, so the new content appeared once the old one
+     * was already gone.
+     *
+     * <p>The snapshot is placed in the container's own parent, at the container's layout position,
+     * so the parent's scroll offset applies to it exactly as it does to the rebuilt content.
+     * Pinning it to window coordinates instead left it behind whenever the rebuild scrolled the
+     * page (a section switch resets the scroll), which only lined up at zero offset.
+     */
     public static void swap(View container, Runnable rebuild) {
+        swap(container, container, rebuild);
+    }
+
+    /**
+     * Cross-fades a rebuild where the outgoing look is taken from {@code snapshotOf} but
+     * {@code container} is the view that fades back in. Use this when the rebuilt content sits on
+     * a transparent background — for example an activity page over the shared backdrop — so the
+     * ghost covers the whole visual, background included.
+     */
+    public static void swap(View snapshotOf, View container, Runnable rebuild) {
         if (!ValueAnimator.areAnimatorsEnabled()) {
             rebuild.run();
             return;
         }
-        container.animate().cancel();
-        container.animate().alpha(0.2f).setDuration(90).withEndAction(() -> {
+        Bitmap outgoing = snapshot(snapshotOf);
+        if (outgoing == null || snapshotOf.getWidth() <= 0
+                || !(snapshotOf.getParent() instanceof FrameLayout host)) {
+            container.setAlpha(1f);
             rebuild.run();
-            container.animate().alpha(1f).setDuration(180).start();
-        }).start();
+            return;
+        }
+        dropSwapGhosts(host);
+        ImageView ghost = new ImageView(snapshotOf.getContext());
+        ghost.setImageBitmap(outgoing);
+        ghost.setScaleType(ImageView.ScaleType.FIT_XY);
+        ghost.setTag(SWAP_GHOST);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                snapshotOf.getWidth(), snapshotOf.getHeight());
+        params.leftMargin = snapshotOf.getLeft();
+        params.topMargin = snapshotOf.getTop();
+        // Added after the snapshot source so it draws on top of it.
+        host.addView(ghost, params);
+
+        rebuild.run();
+        container.animate().cancel();
+        container.setAlpha(0f);
+        container.animate().alpha(1f).setDuration(SWAP_MILLIS)
+                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+                .start();
+        ghost.animate().alpha(0f).setDuration(SWAP_MILLIS)
+                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+                .withEndAction(() -> host.removeView(ghost)).start();
+    }
+
+    /** Half-scale copy of what the container shows now; null when it has nothing to copy yet. */
+    private static Bitmap snapshot(View container) {
+        int width = container.getWidth();
+        int height = container.getHeight();
+        if (width <= 0 || height <= 0) return null;
+        try {
+            Bitmap bitmap = Bitmap.createBitmap(Math.max(1, width / 2), Math.max(1, height / 2),
+                    Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            canvas.scale(0.5f, 0.5f);
+            container.draw(canvas);
+            return bitmap;
+        } catch (OutOfMemoryError error) {
+            return null;
+        }
+    }
+
+    /** A second swap replaces the previous cross-fade instead of stacking ghosts. */
+    private static void dropSwapGhosts(ViewGroup host) {
+        for (int i = host.getChildCount() - 1; i >= 0; i--) {
+            View child = host.getChildAt(i);
+            if (child.getTag() != SWAP_GHOST) continue;
+            child.animate().cancel();
+            host.removeView(child);
+        }
     }
 
     public static void pop(View view) {

@@ -56,6 +56,8 @@ public final class DashboardActivity extends Activity {
     private static final int CALENDAR_PERMISSION_REQUEST = 12;
     private static final int MOBILE_DOCK_HEIGHT_DP = 64;
     private static final int MOBILE_BOTTOM_AREA_HEIGHT_DP = 88;
+    /** How far the page follows a drag towards a section that does not exist. */
+    private static final float NO_NEIGHBOUR_RESISTANCE = 0.3f;
     private static final int RECORD_ENTRY_SIZE_DP = 52;
     private static final class InboxRow {
         final LinearLayout card;
@@ -124,8 +126,9 @@ public final class DashboardActivity extends Activity {
     private boolean pageTransitionRunning;
     /** A neighbouring page is being rendered off-screen; the dock must not follow it. */
     private boolean previewRender;
-    /** Entries waiting for review; shown as the dock's inbox badge instead of a home-page line. */
+    /** Entries waiting for review or already failed; shown on the dock and on the inbox filters. */
     private int pendingReview;
+    private int pendingFailed;
     private final List<View> strips = new ArrayList<>();
     private GlassBackdropView backdrop;
     private boolean wide;
@@ -343,9 +346,11 @@ public final class DashboardActivity extends Activity {
             if (!dragTargetLoaded && Math.abs(offset) >= dp(10)) {
                 int destination = section + direction;
                 if (destination < HOME || destination > SCHEDULE) {
-                    // Nothing lies that way: hold the page still. Translating it would uncover the
-                    // pager's own background — an unblurred strip with a hard, flickering seam.
-                    scroll.setTranslationX(0f);
+                    // Nothing lies that way: the page only gives a little, but it still has to
+                    // resample its acrylic cards every frame like a normal drag does — skipping
+                    // that here left them showing the snapshot taken when the drag began.
+                    scroll.setTranslationX(offset * NO_NEIGHBOUR_RESISTANCE);
+                    invalidateSectionSurfaces();
                     return;
                 }
                 dragDirection = direction;
@@ -594,8 +599,11 @@ public final class DashboardActivity extends Activity {
         addHeader();
         try (TaskStore store = new TaskStore(this)) {
             pendingReview = 0;
-            for (TaskRecord task : store.listTasks())
+            pendingFailed = 0;
+            for (TaskRecord task : store.listTasks()) {
                 if (TaskRecord.NEEDS_REVIEW.equals(task.status)) pendingReview++;
+                else if (TaskRecord.FAILED.equals(task.status)) pendingFailed++;
+            }
             if (section == HOME) home(store);
             else if (section == INBOX) inbox(store);
             else schedule(store);
@@ -863,7 +871,8 @@ public final class DashboardActivity extends Activity {
                     animateInboxFilterResults = true;
                     updateChipSelection(statusIndex);
                     updateResults();
-                }, inboxCategoryButton());
+                }, inboxCategoryButton(),
+                new int[]{0, pendingReview, 0, pendingFailed, 0});
         selectionBar = new LinearLayout(this);
         selectionBar.setOrientation(LinearLayout.VERTICAL);
         selectionBar.setPadding(dp(14), dp(10), dp(14), dp(10));
@@ -1040,10 +1049,13 @@ public final class DashboardActivity extends Activity {
     private void updateChipSelection(int selected) {
         if (filterChips == null) return;
         for (int i = 0; i < filterChips.getChildCount(); i++) {
-            TextView chip = (TextView) filterChips.getChildAt(i);
+            View cell = filterChips.getChildAt(i);
+            // A counted chip is wrapped so its badge can sit on the corner; the pill is inside.
+            TextView chip = (TextView) (cell instanceof FrameLayout
+                    ? ((FrameLayout) cell).getChildAt(0) : cell);
             chip.setTextColor(i == selected ? UiStyle.colors(this).onPrimaryContainer
                     : UiStyle.colors(this).primary);
-            applyThemeControlSurface(chip, i == selected, UiStyle.RADIUS_PILL);
+            applyThemeControlSurface(chip, i == selected, UiStyle.RADIUS_CHIP);
         }
     }
 
@@ -1351,32 +1363,38 @@ public final class DashboardActivity extends Activity {
                     : new LinearLayout.LayoutParams(0, -1, 1);
             params.setMargins(dp(wide ? 3 : 4), dp(wide ? 5 : 0),
                     dp(wide ? 3 : 4), 0);
-            navigation.addView(i == INBOX && pendingReview > 0
+            navigation.addView(i == INBOX && attentionCount() > 0
                     ? withInboxBadge(item, destination) : (View) item, params);
         }
     }
 
+    /** Everything that still wants the user's attention, whichever way it is shown. */
+    private int attentionCount() {
+        return pendingReview + pendingFailed;
+    }
+
     /** Translucent count badge on the inbox entry; the dock keeps the page numbers off the list. */
     private View withInboxBadge(View item, int destination) {
+        int count = attentionCount();
         FrameLayout wrapper = new FrameLayout(this);
+        // The item's own elevation is what keeps the icon above the badge; move it to the wrapper
+        // so the badge sits on top of the glyph instead of disappearing behind it.
+        float itemElevation = item.getElevation();
+        item.setElevation(0f);
+        wrapper.setElevation(itemElevation);
         wrapper.addView(item, new FrameLayout.LayoutParams(-1, -1));
-        int primary = UiStyle.colors(this).primary;
-        TextView badge = text(pendingReview > 99 ? "99+" : Integer.toString(pendingReview), 11, true);
-        badge.setGravity(Gravity.CENTER);
-        badge.setTextColor(primary);
-        badge.setMinWidth(dp(18));
-        badge.setPadding(dp(5), 0, dp(5), 0);
-        GradientDrawable shape = new GradientDrawable();
-        shape.setCornerRadius(dp(20));
-        // Theme-tinted rather than solid, so the badge sits on the glass dock without a hard block.
-        shape.setColor(Color.argb(52, Color.red(primary), Color.green(primary), Color.blue(primary)));
-        badge.setBackground(shape);
-        badge.setContentDescription("待确认 " + pendingReview + " 项");
+        TextView badge = countBadge(count);
+        badge.setContentDescription("待处理 " + count + " 项：待确认 " + pendingReview
+                + "，失败 " + pendingFailed);
         badge.setOnClickListener(view -> switchTo(destination));
+        // Centred on the icon's own top-right corner: the glyph is 24dp wide and sits centred in
+        // the item, so the badge centre belongs 12dp right of the item centre and level with the
+        // glyph's top edge rather than halfway down its side.
         FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(-2, dp(18),
-                Gravity.TOP | Gravity.END);
-        badgeParams.setMargins(0, dp(3), dp(12), 0);
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        badgeParams.setMargins(0, dp(2), 0, 0);
         wrapper.addView(badge, badgeParams);
+        badge.setTranslationX(dp(13));
         return wrapper;
     }
 
@@ -1408,11 +1426,20 @@ public final class DashboardActivity extends Activity {
     }
 
     private LinearLayout chipRow(String[] labels, int selected, java.util.function.IntConsumer action) {
-        return chipRow(labels, selected, action, null);
+        return chipRow(labels, selected, action, null, null);
     }
 
     private LinearLayout chipRow(String[] labels, int selected,
             java.util.function.IntConsumer action, View trailingAction) {
+        return chipRow(labels, selected, action, trailingAction, null);
+    }
+
+    /**
+     * @param counts optional per-chip counts, appended to the label in a smaller run so a filter
+     *               can say how much is waiting behind it.
+     */
+    private LinearLayout chipRow(String[] labels, int selected,
+            java.util.function.IntConsumer action, View trailingAction, int[] counts) {
         HorizontalScrollView strip = new HorizontalScrollView(this);
         strip.setHorizontalScrollBarEnabled(false);
         strip.setClipChildren(true);
@@ -1424,20 +1451,48 @@ public final class DashboardActivity extends Activity {
         // Keep the final chip fully inside the scroll viewport at maximum scroll. The filter
         // button is a sibling in the bar below, so it never covers the scrolling chip content.
         if (trailingAction != null) row.setPadding(0, 0, dp(28), 0);
+        int horizontalPadding = trailingAction == null ? 18 : 12;
+        List<TextView> chips = new ArrayList<>();
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
             TextView chip = text(labels[i], 14, true);
             chip.setGravity(Gravity.CENTER);
             chip.setMinHeight(dp(48));
-            int horizontalPadding = trailingAction == null ? 18 : 12;
             chip.setPadding(dp(horizontalPadding), 0, dp(horizontalPadding), 0);
             chip.setTextColor(i == selected ? UiStyle.colors(this).onPrimaryContainer
                     : UiStyle.colors(this).primary);
-            applyThemeControlSurface(chip, i == selected, UiStyle.RADIUS_PILL);
+            applyThemeControlSurface(chip, i == selected, UiStyle.RADIUS_CHIP);
             chip.setOnClickListener(view -> action.accept(index));
+            chips.add(chip);
+        }
+        // Measure the widest label so every chip comes out the same width instead of hugging its
+        // own text; the count sits in a corner badge, so it never changes the pill's size.
+        if (!chips.isEmpty()) {
+            float widest = 0;
+            for (String label : labels) widest = Math.max(widest, chips.get(0).getPaint().measureText(label));
+            int chipWidth = Math.round(widest) + dp(horizontalPadding * 2);
+            for (TextView chip : chips) chip.setMinWidth(chipWidth);
+        }
+        for (int i = 0; i < chips.size(); i++) {
+            TextView chip = chips.get(i);
+            int count = counts != null && i < counts.length ? counts[i] : 0;
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
             params.setMargins(0, 0, dp(8), 0);
-            row.addView(chip, params);
+            if (count > 0) {
+                FrameLayout cell = new FrameLayout(this);
+                cell.addView(chip, new FrameLayout.LayoutParams(-1, -1));
+                TextView badge = countBadge(count);
+                FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(-2, dp(18),
+                        Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+                badgeParams.setMargins(0, dp(6), 0, 0);
+                cell.addView(badge, badgeParams);
+                // Sits on the label's top-right corner, inside the pill: pinned to the pill's own
+                // corner it was clipped by the chip row and the scrolling strip around it.
+                badge.setTranslationX(chip.getPaint().measureText(labels[i]) / 2f - dp(3));
+                row.addView(cell, params);
+            } else {
+                row.addView(chip, params);
+            }
         }
         strip.addView(row);
         if (trailingAction == null) {
@@ -1456,8 +1511,7 @@ public final class DashboardActivity extends Activity {
         }
         strip.post(() -> {
             if (selected >= row.getChildCount()) return;
-            View selectedChip = row.getChildAt(selected);
-            int viewportWidth = strip.getWidth() - strip.getPaddingLeft()
+            View selectedChip = row.getChildAt(selected);            int viewportWidth = strip.getWidth() - strip.getPaddingLeft()
                     - strip.getPaddingRight();
             int currentX = strip.getScrollX();
             int visibleRight = currentX + viewportWidth;
@@ -1470,6 +1524,24 @@ public final class DashboardActivity extends Activity {
             if (targetX != currentX) strip.scrollTo(Math.max(0, targetX), 0);
         });
         return row;
+    }
+
+    /** The one count marker: a translucent, theme-tinted pill used by every corner badge. */
+    private TextView countBadge(int count) {
+        int primary = UiStyle.colors(this).primary;
+        TextView badge = text(count > 99 ? "99+" : Integer.toString(count), 11, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setTextColor(primary);
+        badge.setMinWidth(dp(18));
+        badge.setPadding(dp(5), 0, dp(5), 0);
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(9));
+        shape.setColor(Color.argb(52, Color.red(primary), Color.green(primary), Color.blue(primary)));
+        badge.setBackground(shape);
+        // Anchors carry an elevation (the dock items animate theirs); without this the badge is
+        // drawn underneath them, so its digit disappears behind the icon and only the tint shows.
+        badge.setElevation(dp(6));
+        return badge;
     }
 
     private String preview(TaskRecord task) {

@@ -352,15 +352,12 @@ public final class MainActivity extends Activity {
     private void submit() {
         String text = input.getText().toString().trim();
         if (text.isEmpty() && pendingImages.isEmpty() && pendingFiles.isEmpty()) {
-            input.setError("请输入内容或添加附件");
+            // The platform error bubble is a white system popup; the app speaks through Feedback.
+            Feedback.show(this, "请输入内容或添加附件");
+            input.requestFocus();
             return;
         }
         List<String> entries = Collections.singletonList(text);
-        if (entries.isEmpty() || (entries.get(0).trim().isEmpty()
-                && pendingImages.isEmpty() && pendingFiles.isEmpty())) {
-            input.setError("请输入内容");
-            return;
-        }
         boolean withImage = !pendingImages.isEmpty();
         int attachedFileCount = pendingFiles.size();
         if (withImage && imagesUnsupported()) {
