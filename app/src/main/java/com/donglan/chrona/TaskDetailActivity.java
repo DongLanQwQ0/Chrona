@@ -203,6 +203,11 @@ public final class TaskDetailActivity extends Activity {
     private static final int PICK_CAPTURE_FILES = 14;
     private static final int CREATE_FILE_DOCUMENT = 15;
     private static final int FILE_STORAGE_REQUEST = 16;
+    /** A drag that stops short of the threshold glides back over this window. */
+    private static final long RECOIL_MIN_MS = 260L;
+    private static final long RECOIL_MAX_MS = 420L;
+    private static final android.view.animation.Interpolator RECOIL_INTERPOLATOR =
+            new DecelerateInterpolator(1.9f);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private long taskId;
     private String exportFileName;
@@ -973,10 +978,21 @@ public final class TaskDetailActivity extends Activity {
     private void settleTaskPageAtCurrent() {
         if (pageTransitionRunning) return;
         shell.animate().cancel();
-        shell.animate().translationX(0f).setDuration(190L)
-                .setInterpolator(new DecelerateInterpolator(1.5f))
+        float width = Math.max(page.getWidth(), getResources().getDisplayMetrics().widthPixels);
+        shell.animate().translationX(0f)
+                .setDuration(recoilDuration(Math.abs(shell.getTranslationX()), width))
+                .setInterpolator(RECOIL_INTERPOLATOR)
                 .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces())
                 .withEndAction(this::invalidateVisibleAcrylicSurfaces).start();
+    }
+
+    /**
+     * Returning to rest gets a longer, more strongly decelerating settle than a committed page
+     * change: a drag that never reached the threshold should glide back, not snap back.
+     */
+    private static long recoilDuration(float remaining, float width) {
+        float ratio = width <= 0 ? 1f : Math.min(1f, Math.max(0f, remaining / width));
+        return RECOIL_MIN_MS + Math.round((RECOIL_MAX_MS - RECOIL_MIN_MS) * ratio);
     }
 
     private boolean hasTaskPage(int direction) {
@@ -1195,12 +1211,16 @@ public final class TaskDetailActivity extends Activity {
             return;
         }
         float remaining = Math.abs(currentTarget - shell.getTranslationX());
-        long duration = Math.max(120L, Math.min(270L, Math.round(260f * remaining / width)));
+        long duration = commit
+                ? Math.max(140L, Math.min(280L, Math.round(280f * remaining / width)))
+                : recoilDuration(remaining, width);
+        android.view.animation.Interpolator interpolator = commit
+                ? new DecelerateInterpolator(1.35f) : RECOIL_INTERPOLATOR;
         shell.animate().translationX(currentTarget).setDuration(duration)
-                .setInterpolator(new DecelerateInterpolator(1.35f))
+                .setInterpolator(interpolator)
                 .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces()).start();
         adjacentPage.shell.animate().translationX(adjacentTarget).setDuration(duration)
-                .setInterpolator(new DecelerateInterpolator(1.35f))
+                .setInterpolator(interpolator)
                 .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces())
                 .withEndAction(() -> completeAdjacentPageGesture(commit)).start();
     }

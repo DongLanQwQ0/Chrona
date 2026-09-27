@@ -115,10 +115,16 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
             return;
         }
         if (settleAnimator != null) settleAnimator.cancel();
+        // A release that never reached the threshold stays on its page; give that glide-back more
+        // time and a stronger ease-out so it reads as settling instead of snapping.
+        boolean recoil = page == startPage;
+        int distance = Math.abs(targetX - startX);
+        long duration = Math.max(recoil ? 240L : 260L,
+                Math.min(380L, Math.round(380f * distance / pageWidth)));
         ValueAnimator animator = ValueAnimator.ofInt(startX, targetX);
         settleAnimator = animator;
-        animator.setDuration(300);
-        animator.setInterpolator(new DecelerateInterpolator(1.5f));
+        animator.setDuration(duration);
+        animator.setInterpolator(new DecelerateInterpolator(recoil ? 1.9f : 1.5f));
         animator.addUpdateListener(value -> scrollTo((int) value.getAnimatedValue(), 0));
         animator.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator animation) {
