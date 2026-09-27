@@ -109,21 +109,17 @@ public final class TaskDetailActivity extends Activity {
             }
         }
 
-        @Override protected boolean onStateChange(int[] state) {
-            boolean next = false;
-            for (int value : state) {
-                if (value == android.R.attr.state_checked) {
-                    next = true;
-                    break;
-                }
-            }
-            if (checked == next) return false;
-            checked = next;
+        void setChecked(boolean value) {
+            if (checked == value) return;
+            checked = value;
             invalidateSelf();
-            return true;
         }
 
-        @Override public boolean isStateful() { return true; }
+        // The owning ImageView forwards pressed/focused states without state_checked. Keep the
+        // toggle value explicit so those transient drawable states cannot clear the checkmark.
+        @Override protected boolean onStateChange(int[] state) { return false; }
+
+        @Override public boolean isStateful() { return false; }
         @Override public int getIntrinsicWidth() { return size; }
         @Override public int getIntrinsicHeight() { return size; }
         @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
@@ -176,7 +172,7 @@ public final class TaskDetailActivity extends Activity {
         void setChecked(boolean value) {
             if (checked == value) return;
             checked = value;
-            checkbox.setState(value ? new int[]{android.R.attr.state_checked} : new int[0]);
+            checkbox.setChecked(value);
             sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent
                     .TYPE_WINDOW_CONTENT_CHANGED);
             if (listener != null) listener.onCheckedChanged(this, value);
