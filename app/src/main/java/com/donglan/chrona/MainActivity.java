@@ -15,9 +15,9 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -42,8 +42,6 @@ import java.util.Set;
 
 /** A focused capture page for text, images and Android's share sheet. */
 public final class MainActivity extends Activity {
-    /** Guards against a pasted block turning into hundreds of paid parsing requests. */
-    private static final int MAX_BATCH_TASKS = 20;
     private static final int PICK_IMAGE_REQUEST = 12;
     private static final int PICK_FILE_REQUEST = 14;
     private static final int FILE_STORAGE_REQUEST = 16;
@@ -53,11 +51,9 @@ public final class MainActivity extends Activity {
     private static final String STATE_PENDING_FILE_TYPES = "pending_file_types";
     private static final String STATE_PENDING_FILE_SIZES = "pending_file_sizes";
     private static final String STATE_TEXT = "draft_text";
-    private static final String STATE_SPLIT = "draft_split";
 
     private EditText input;
-    private CheckBox splitInput;
-    private Button pickImage;
+    private ImageButton pickImage;
     private LinearLayout pendingImagesContainer;
     private LinearLayout pendingFilesContainer;
     /** Stored image names attached to the next submit, in picker order. */
@@ -78,20 +74,41 @@ public final class MainActivity extends Activity {
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
-        if (isTaskRoot()) {
-            // Launched from the system share sheet, so there is nothing behind this screen.
-            // "Back" has to reach the inbox instead of closing the app on the shared content.
-            UiStyle.backTo(this, root, "←  收件箱", () -> startActivity(new Intent(this,
-                    DashboardActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)));
+        // Header bar: back on the left, the confirm tick on the right, matching the detail page.
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        String backLabel = isTaskRoot() ? "收件箱" : null;
+        if (backLabel == null) {
+            topBar.addView(headerButton("←", 24, "返回", this::finish),
+                    new LinearLayout.LayoutParams(dp(48), dp(48)));
         } else {
-            UiStyle.back(this, root);
+            // Launched from the system share sheet, so there is nothing behind this screen:
+            // "Back" has to reach the inbox instead of closing the app on the shared content.
+            TextView back = headerButton("←  " + backLabel, 15, backLabel, () ->
+                    startActivity(new Intent(this, DashboardActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)));
+            topBar.addView(back, new LinearLayout.LayoutParams(-2, dp(48)));
         }
+        topBar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        topBar.addView(headerButton("✓", 20, "保存并解析", this::submit),
+                new LinearLayout.LayoutParams(dp(48), dp(48)));
+        UiStyle.addSpaced(root, topBar, 0, 6);
 
+        // The three quick inputs live on the title line so the page keeps one obvious title row.
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView title = new TextView(this);
         title.setText("记录一件事");
         title.setTextSize(26);
         UiStyle.title(title);
-        root.addView(title);
+        titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        titleRow.addView(iconTool(R.drawable.ic_content_paste, "读取剪贴板文字",
+                view -> pasteClipboard()));
+        pickImage = iconTool(R.drawable.ic_add_photo, "选择图片", view -> pickImage());
+        titleRow.addView(pickImage);
+        titleRow.addView(iconTool(R.drawable.ic_attach_file, "选择普通文件附件",
+                view -> pickFile()));
+        UiStyle.addSpaced(root, titleRow, 0, 4);
 
         TextView hint = new TextView(this);
         hint.setText("文字或图片都可以。保存后自动解析，你可以继续记录下一件事。");
@@ -108,34 +125,6 @@ public final class MainActivity extends Activity {
         UiStyle.glass(input);
         UiStyle.addSpaced(root, input, 0, 12);
 
-        TextView toolsTitle = new TextView(this);
-        toolsTitle.setText("快速添加");
-        toolsTitle.setTextSize(16);
-        UiStyle.title(toolsTitle);
-        UiStyle.addSpaced(root, toolsTitle, 8, 5);
-        LinearLayout quickTools = new LinearLayout(this);
-        quickTools.setOrientation(LinearLayout.HORIZONTAL);
-        Button paste = new Button(this);
-        paste.setText("剪贴板");
-        paste.setContentDescription("读取剪贴板文字");
-        paste.setOnClickListener(view -> pasteClipboard());
-        UiStyle.button(paste, false);
-        addTool(quickTools, paste);
-
-        pickImage = new Button(this);
-        pickImage.setText("图片");
-        pickImage.setContentDescription("选择图片");
-        pickImage.setOnClickListener(view -> pickImage());
-        UiStyle.button(pickImage, false);
-        addTool(quickTools, pickImage);
-        Button pickFile = new Button(this);
-        pickFile.setText("文件");
-        pickFile.setContentDescription("选择普通文件附件");
-        pickFile.setOnClickListener(view -> pickFile());
-        UiStyle.button(pickFile, false);
-        addTool(quickTools, pickFile);
-        UiStyle.addSpaced(root, quickTools, 0, 14);
-
         pendingImagesContainer = new LinearLayout(this);
         pendingImagesContainer.setOrientation(LinearLayout.VERTICAL);
         root.addView(pendingImagesContainer);
@@ -143,16 +132,6 @@ public final class MainActivity extends Activity {
         pendingFilesContainer = new LinearLayout(this);
         pendingFilesContainer.setOrientation(LinearLayout.VERTICAL);
         root.addView(pendingFilesContainer);
-
-        splitInput = new CheckBox(this);
-        splitInput.setText("按行拆分为多条");
-        root.addView(splitInput);
-
-        Button save = new Button(this);
-        save.setText("保存并解析");
-        save.setOnClickListener(view -> submit());
-        UiStyle.button(save, true);
-        UiStyle.addSpaced(root, save, 6, 10);
 
         TextView footnote = new TextView(this);
         footnote.setText("保存后可在「收件箱」查看处理进度，在「日程」查看已识别的事项。");
@@ -178,9 +157,7 @@ public final class MainActivity extends Activity {
                         new TaskFileAttachment(0, 0, stored.get(i), names[i], types[i], sizes[i]));
             }
             input.setText(savedInstanceState.getString(STATE_TEXT, ""));
-            splitInput.setChecked(savedInstanceState.getBoolean(STATE_SPLIT));
         }
-        updateSplitInputVisibility(getIntent());
         showPendingImages();
         showPendingFiles();
         if (savedInstanceState == null) sweepImages();
@@ -212,14 +189,12 @@ public final class MainActivity extends Activity {
         state.putStringArray(STATE_PENDING_FILE_TYPES, types);
         state.putLongArray(STATE_PENDING_FILE_SIZES, sizes);
         state.putString(STATE_TEXT, input.getText().toString());
-        state.putBoolean(STATE_SPLIT, splitInput.isChecked());
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        updateSplitInputVisibility(intent);
         receiveShared(intent);
     }
 
@@ -315,13 +290,6 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void updateSplitInputVisibility(Intent intent) {
-        if (splitInput == null) return;
-        boolean shared = isShareIntent(intent);
-        splitInput.setVisibility(shared ? View.GONE : View.VISIBLE);
-        if (shared) splitInput.setChecked(false);
-    }
-
     private static boolean isShareIntent(Intent intent) {
         if (intent == null) return false;
         return Intent.ACTION_SEND.equals(intent.getAction())
@@ -387,16 +355,10 @@ public final class MainActivity extends Activity {
             input.setError("请输入内容或添加附件");
             return;
         }
-        List<String> entries = pendingImages.isEmpty() && pendingFiles.isEmpty()
-                && splitInput.isChecked()
-                ? splitLines(text) : Collections.singletonList(text);
+        List<String> entries = Collections.singletonList(text);
         if (entries.isEmpty() || (entries.get(0).trim().isEmpty()
                 && pendingImages.isEmpty() && pendingFiles.isEmpty())) {
             input.setError("请输入内容");
-            return;
-        }
-        if (entries.size() > MAX_BATCH_TASKS) {
-            Feedback.showLong(this, "一次最多拆分 " + MAX_BATCH_TASKS + " 条，请分批发入");
             return;
         }
         boolean withImage = !pendingImages.isEmpty();
@@ -639,7 +601,7 @@ public final class MainActivity extends Activity {
             row.addView(remove, new LinearLayout.LayoutParams(dp(56), dp(48)));
             UiStyle.addSpaced(pendingFilesContainer, row, 1, 1);
         }
-        splitInput.setEnabled(pendingFiles.isEmpty() && pendingImages.isEmpty());
+        pickImage.setEnabled(pendingFiles.isEmpty() && pendingImages.isEmpty());
     }
 
     private static String formatFileSize(long bytes) {
@@ -668,7 +630,7 @@ public final class MainActivity extends Activity {
             tileParams.setMargins(0, dp(4), 0, dp(4));
             pendingImagesContainer.addView(tile, tileParams);
         }
-        splitInput.setEnabled(pendingImages.isEmpty() && pendingFiles.isEmpty());
+        pickImage.setEnabled(pendingImages.isEmpty() && pendingFiles.isEmpty());
     }
 
     /** Keeps the image entry in step with what the configured model was just found to accept. */
@@ -683,7 +645,9 @@ public final class MainActivity extends Activity {
         }
         pickImage.setVisibility(knownUnsupported ? View.GONE : View.VISIBLE);
         pickImage.setEnabled(!unsupported);
-        pickImage.setText(unsupported ? "图片不可用" : "图片");
+        // The icon stays an icon; unavailability is carried by the alpha and the description.
+        pickImage.setAlpha(unsupported ? 0.45f : 1f);
+        pickImage.setContentDescription(unsupported ? "当前模型不支持图片" : "选择图片");
     }
 
     /** True when the configured endpoint and model already rejected an image request. */
@@ -752,23 +716,43 @@ public final class MainActivity extends Activity {
         input.setSelection(input.getText().length());
     }
 
-    /** One entry per non-empty line; the caller decides when splitting is wanted. */
-    private static List<String> splitLines(String text) {
-        List<String> entries = new ArrayList<>();
-        for (String line : text.split("\r\n|\r|\n")) {
-            String trimmed = line.trim();
-            if (!trimmed.isEmpty()) entries.add(trimmed);
-        }
-        return entries;
-    }
-
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private void addTool(LinearLayout row, Button button) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1);
-        params.setMargins(dp(3), 0, dp(3), 0);
-        row.addView(button, params);
+    /** Glass square affordance shared by the page header: the back arrow and the confirm tick. */
+    private TextView headerButton(String glyph, int textSize, String description,
+            Runnable action) {
+        TextView button = new TextView(this);
+        button.setText(glyph);
+        button.setTextSize(textSize);
+        button.setTypeface(null, android.graphics.Typeface.BOLD);
+        button.setTextColor(UiStyle.colors(this).primary);
+        button.setGravity(android.view.Gravity.CENTER);
+        button.setContentDescription(description);
+        UiStyle.glass(button);
+        UiStyle.pressable(button);
+        button.setOnClickListener(view -> action.run());
+        return button;
+    }
+
+    /** Compact icon affordance for the quick inputs, in the same style as the header buttons. */
+    private ImageButton iconTool(int drawable, String description,
+            android.view.View.OnClickListener action) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(drawable);
+        button.setImageTintList(android.content.res.ColorStateList.valueOf(
+                UiStyle.colors(this).primary));
+        button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        button.setPadding(dp(11), dp(11), dp(11), dp(11));
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setContentDescription(description);
+        UiStyle.glass(button);
+        UiStyle.pressable(button);
+        button.setOnClickListener(action);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(44), dp(44));
+        params.setMargins(dp(6), 0, 0, 0);
+        button.setLayoutParams(params);
+        return button;
     }
 }

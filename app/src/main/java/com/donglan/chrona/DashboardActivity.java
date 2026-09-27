@@ -13,11 +13,8 @@ import android.os.Looper;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
-import android.view.GestureDetector;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
@@ -59,6 +56,7 @@ public final class DashboardActivity extends Activity {
     private static final int CALENDAR_PERMISSION_REQUEST = 12;
     private static final int MOBILE_DOCK_HEIGHT_DP = 64;
     private static final int MOBILE_BOTTOM_AREA_HEIGHT_DP = 88;
+    private static final int RECORD_ENTRY_SIZE_DP = 52;
     private static final class InboxRow {
         final LinearLayout card;
         final TextView marker;
@@ -115,9 +113,20 @@ public final class DashboardActivity extends Activity {
     private Button selectAllButton;
     private Button deleteSelectedButton;
     private final Set<Long> selectedInboxIds = new LinkedHashSet<>();
-    private final Map<Long, InboxRow> inboxRows = new LinkedHashMap<>();
+    private Map<Long, InboxRow> inboxRows = new LinkedHashMap<>();
     private List<Long> matchingInboxIds = new ArrayList<>();
     private ScrollView scroll;
+    private SwipePagerLayout pager;
+    /** The neighbouring section, built on demand while a horizontal drag is in flight. */
+    private SectionPage adjacentPage;
+    private int dragDirection;
+    private boolean dragTargetLoaded;
+    private boolean pageTransitionRunning;
+    /** A neighbouring page is being rendered off-screen; the dock must not follow it. */
+    private boolean previewRender;
+    /** Entries waiting for review; shown as the dock's inbox badge instead of a home-page line. */
+    private int pendingReview;
+    private final List<View> strips = new ArrayList<>();
     private GlassBackdropView backdrop;
     private boolean wide;
     /** Cards stagger in only for a screen the user just opened, never for a rebuild. */
@@ -126,11 +135,8 @@ public final class DashboardActivity extends Activity {
     private boolean animateInboxFilterResults;
     private String snapshot = "";
     private int restoredScrollY;
-    private final List<ElapsedLabel> elapsedLabels = new ArrayList<>();
+    private List<ElapsedLabel> elapsedLabels = new ArrayList<>();
     private final Handler refresh = new Handler(Looper.getMainLooper());
-    /** Horizontal flings page between 首页 / 收件箱 / 日程, unless a strip owns the gesture. */
-    private GestureDetector sectionSwipe;
-    private boolean swipeStartedInStrip;
     private final Runnable poll = this::pollChanges;
     private final Runnable elapsedTicker = new Runnable() {
         @Override public void run() {
@@ -147,21 +153,6 @@ public final class DashboardActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
-        sectionSwipe = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
-            @Override public boolean onDown(MotionEvent event) { return true; }
-
-            @Override public boolean onFling(MotionEvent from, MotionEvent to, float velocityX,
-                    float velocityY) {
-                if (from == null || to == null || swipeStartedInStrip) return false;
-                float dx = to.getX() - from.getX();
-                float dy = to.getY() - from.getY();
-                if (Math.abs(dx) < dp(56) || Math.abs(dx) < Math.abs(dy) * 1.5f) return false;
-                int destination = section + (dx < 0 ? 1 : -1);
-                if (destination < HOME || destination > SCHEDULE) return false;
-                switchTo(destination);
-                return true;
-            }
-        });
         if (state != null) {
             section = state.getInt(EXTRA_SECTION, HOME);
             categoryIndex = state.getInt("category");
@@ -208,30 +199,266 @@ public final class DashboardActivity extends Activity {
         state.putLongArray("selected_inbox_ids", selected);
     }
 
-    @Override public boolean dispatchTouchEvent(MotionEvent event) {
-        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-            swipeStartedInStrip = insideHorizontalStrip(getWindow().getDecorView(),
-                    event.getRawX(), event.getRawY());
+    /** Every piece of state render() writes to, so a neighbour can be built and swapped in. */
+    private final class SectionPage {
+        final int section;
+        final ScrollView scroll;
+        final LinearLayout content;
+        final LinearLayout results;
+        final LinearLayout filterChips;
+        final ImageButton categoryChip;
+        final TextView orderToggle;
+        final LinearLayout selectionBar;
+        final TextView selectionCount;
+        final Button selectAllButton;
+        final Button deleteSelectedButton;
+        final Map<Long, InboxRow> inboxRows;
+        final List<Long> matchingInboxIds;
+        final List<ElapsedLabel> elapsedLabels;
+        final List<View> strips;
+        final String inboxQuery;
+        final String scheduleQuery;
+        final boolean inboxOldestFirst;
+        final boolean scheduleOldestFirst;
+        final int categoryIndex;
+        final int statusIndex;
+        final int scheduleTab;
+
+        SectionPage() {
+            this.section = DashboardActivity.this.section;
+            this.scroll = DashboardActivity.this.scroll;
+            this.content = DashboardActivity.this.content;
+            this.results = DashboardActivity.this.results;
+            this.filterChips = DashboardActivity.this.filterChips;
+            this.categoryChip = DashboardActivity.this.categoryChip;
+            this.orderToggle = DashboardActivity.this.orderToggle;
+            this.selectionBar = DashboardActivity.this.selectionBar;
+            this.selectionCount = DashboardActivity.this.selectionCount;
+            this.selectAllButton = DashboardActivity.this.selectAllButton;
+            this.deleteSelectedButton = DashboardActivity.this.deleteSelectedButton;
+            this.inboxRows = DashboardActivity.this.inboxRows;
+            this.matchingInboxIds = DashboardActivity.this.matchingInboxIds;
+            this.elapsedLabels = DashboardActivity.this.elapsedLabels;
+            this.strips = new ArrayList<>(DashboardActivity.this.strips);
+            this.inboxQuery = DashboardActivity.this.inboxQuery;
+            this.scheduleQuery = DashboardActivity.this.scheduleQuery;
+            this.inboxOldestFirst = DashboardActivity.this.inboxOldestFirst;
+            this.scheduleOldestFirst = DashboardActivity.this.scheduleOldestFirst;
+            this.categoryIndex = DashboardActivity.this.categoryIndex;
+            this.statusIndex = DashboardActivity.this.statusIndex;
+            this.scheduleTab = DashboardActivity.this.scheduleTab;
         }
-        if (!swipeStartedInStrip) sectionSwipe.onTouchEvent(event);
-        return super.dispatchTouchEvent(event);
     }
 
-    /** The chip rows and the "next up" carousel own horizontal drags that start inside them. */
-    private boolean insideHorizontalStrip(View view, float rawX, float rawY) {
-        if (!(view instanceof ViewGroup)) return false;
-        ViewGroup group = (ViewGroup) view;
-        int[] location = new int[2];
-        for (int i = group.getChildCount() - 1; i >= 0; i--) {
-            View child = group.getChildAt(i);
-            if (child.getVisibility() != View.VISIBLE) continue;
-            child.getLocationOnScreen(location);
-            if (rawX < location[0] || rawX >= location[0] + child.getWidth()
-                    || rawY < location[1] || rawY >= location[1] + child.getHeight()) continue;
-            if (child instanceof HorizontalScrollView) return true;
-            return insideHorizontalStrip(child, rawX, rawY);
+    private void activateSectionPage(SectionPage page) {
+        section = page.section;
+        scroll = page.scroll;
+        content = page.content;
+        results = page.results;
+        filterChips = page.filterChips;
+        categoryChip = page.categoryChip;
+        orderToggle = page.orderToggle;
+        selectionBar = page.selectionBar;
+        selectionCount = page.selectionCount;
+        selectAllButton = page.selectAllButton;
+        deleteSelectedButton = page.deleteSelectedButton;
+        inboxRows = page.inboxRows;
+        matchingInboxIds = page.matchingInboxIds;
+        elapsedLabels = page.elapsedLabels;
+        strips.clear();
+        strips.addAll(page.strips);
+        inboxQuery = page.inboxQuery;
+        scheduleQuery = page.scheduleQuery;
+        inboxOldestFirst = page.inboxOldestFirst;
+        scheduleOldestFirst = page.scheduleOldestFirst;
+        categoryIndex = page.categoryIndex;
+        statusIndex = page.statusIndex;
+        scheduleTab = page.scheduleTab;
+        if (pager != null) pager.setGesturePriorityChildren(strips);
+    }
+
+    /** Renders a neighbouring section off-screen, then puts the live page's state back. */
+    private SectionPage buildAdjacentSection(int destination) {
+        SectionPage current = new SectionPage();
+        ScrollView targetScroll = new ScrollView(this);
+        targetScroll.setFillViewport(true);
+        targetScroll.setVerticalScrollBarEnabled(false);
+        LinearLayout targetContent = new LinearLayout(this);
+        targetContent.setOrientation(LinearLayout.VERTICAL);
+        int horizontal = wide ? Math.max(32,
+                (getResources().getConfiguration().screenWidthDp - 90 - 720) / 2) : 20;
+        targetContent.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
+                dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
+        targetScroll.addView(targetContent);
+
+        scroll = targetScroll;
+        content = targetContent;
+        section = destination;
+        results = null;
+        filterChips = null;
+        categoryChip = null;
+        orderToggle = null;
+        selectionBar = null;
+        selectionCount = null;
+        selectAllButton = null;
+        deleteSelectedButton = null;
+        inboxRows = new LinkedHashMap<>();
+        matchingInboxIds = new ArrayList<>();
+        elapsedLabels = new ArrayList<>();
+        strips.clear();
+        boolean previousEntrances = animateEntrances;
+        animateEntrances = false;
+        previewRender = true;
+        try {
+            render();
+        } finally {
+            previewRender = false;
+            animateEntrances = previousEntrances;
         }
-        return false;
+
+        SectionPage target = new SectionPage();
+        activateSectionPage(current);
+        return target;
+    }
+
+    private final SwipePagerLayout.Listener sectionPagerListener = new SwipePagerLayout.Listener() {
+        @Override public void onStart() {
+            scroll.animate().cancel();
+            if (adjacentPage != null) {
+                adjacentPage.scroll.animate().cancel();
+                pager.removeView(adjacentPage.scroll);
+                adjacentPage = null;
+            }
+            pageTransitionRunning = false;
+            dragTargetLoaded = false;
+            dragDirection = 0;
+            scroll.setTranslationX(0f);
+        }
+
+        @Override public void onDrag(float distanceX) {
+            if (pageTransitionRunning) return;
+            float width = sectionPageWidth();
+            float offset = Math.max(-width, Math.min(width, distanceX));
+            int direction = offset < 0 ? 1 : -1;
+            if (!dragTargetLoaded && Math.abs(offset) >= dp(10)) {
+                int destination = section + direction;
+                if (destination < HOME || destination > SCHEDULE) {
+                    // Nothing lies that way: hold the page still. Translating it would uncover the
+                    // pager's own background — an unblurred strip with a hard, flickering seam.
+                    scroll.setTranslationX(0f);
+                    return;
+                }
+                dragDirection = direction;
+                SectionPage preview = buildAdjacentSection(destination);
+                // Positioned before it joins the pager so no frame can show it at the origin.
+                preview.scroll.setTranslationX(direction > 0 ? width : -width);
+                pager.addView(preview.scroll, 1, new FrameLayout.LayoutParams(-1, -1));
+                adjacentPage = preview;
+                dragTargetLoaded = true;
+            }
+            if (dragTargetLoaded && adjacentPage != null) {
+                if (dragDirection > 0 && offset > 0 || dragDirection < 0 && offset < 0) offset = 0;
+                scroll.setTranslationX(offset);
+                adjacentPage.scroll.setTranslationX((dragDirection > 0 ? width : -width) + offset);
+            } else {
+                scroll.setTranslationX(offset);
+            }
+            invalidateSectionSurfaces();
+        }
+
+        @Override public void onRelease(float distanceX, float velocityX) {
+            if (pageTransitionRunning) return;
+            float width = sectionPageWidth();
+            boolean quick = Math.abs(velocityX) > dp(900) && Math.abs(distanceX) > dp(24);
+            boolean commit = dragTargetLoaded && adjacentPage != null
+                    && (Math.abs(distanceX) >= Math.max(dp(64), width * .18f) || quick);
+            finishSectionDrag(commit, width);
+        }
+
+        @Override public void onCancel() {
+            if (pageTransitionRunning) return;
+            finishSectionDrag(false, sectionPageWidth());
+        }
+    };
+
+    private float sectionPageWidth() {
+        return Math.max(scroll.getWidth(), getResources().getDisplayMetrics().widthPixels);
+    }
+
+    private void finishSectionDrag(boolean commit, float width) {
+        if (adjacentPage == null) {
+            settleCurrentSection();
+            return;
+        }
+        float direction = dragDirection > 0 ? -1f : 1f;
+        float currentTarget = commit ? direction * width : 0f;
+        float adjacentTarget = commit ? 0f : -direction * width;
+        pageTransitionRunning = true;
+        scroll.animate().cancel();
+        adjacentPage.scroll.animate().cancel();
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled() || width <= 0) {
+            scroll.setTranslationX(currentTarget);
+            adjacentPage.scroll.setTranslationX(adjacentTarget);
+            completeSectionDrag(commit);
+            return;
+        }
+        float remaining = Math.abs(currentTarget - scroll.getTranslationX());
+        long duration = commit
+                ? Math.max(140L, Math.min(280L, Math.round(280f * remaining / width)))
+                : SwipePagerLayout.recoilDuration(remaining, width);
+        android.view.animation.Interpolator interpolator = commit
+                ? new android.view.animation.DecelerateInterpolator(1.35f)
+                : SwipePagerLayout.RECOIL_INTERPOLATOR;
+        scroll.animate().translationX(currentTarget).setDuration(duration)
+                .setInterpolator(interpolator)
+                .setUpdateListener(animation -> invalidateSectionSurfaces()).start();
+        adjacentPage.scroll.animate().translationX(adjacentTarget).setDuration(duration)
+                .setInterpolator(interpolator)
+                .setUpdateListener(animation -> invalidateSectionSurfaces())
+                .withEndAction(() -> completeSectionDrag(commit)).start();
+    }
+
+    private void settleCurrentSection() {
+        if (pageTransitionRunning) return;
+        scroll.animate().cancel();
+        scroll.animate().translationX(0f)
+                .setDuration(SwipePagerLayout.recoilDuration(
+                        Math.abs(scroll.getTranslationX()), sectionPageWidth()))
+                .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
+                .setUpdateListener(animation -> invalidateSectionSurfaces())
+                .withEndAction(this::invalidateSectionSurfaces).start();
+    }
+
+    /**
+     * Acrylic cards sample the blurred backdrop at their own position, so every translated frame
+     * has to invalidate them; otherwise they keep the snapshot taken before the drag started.
+     */
+    private void invalidateSectionSurfaces() {
+        if (pager != null && pager.isAttachedToWindow()) UiStyle.invalidateAcrylicSurfaces(pager);
+    }
+
+    private void completeSectionDrag(boolean commit) {
+        SectionPage target = adjacentPage;
+        adjacentPage = null;
+        dragTargetLoaded = false;
+        dragDirection = 0;
+        pageTransitionRunning = false;
+        if (target == null) {
+            scroll.setTranslationX(0f);
+            return;
+        }
+        if (commit) {
+            pager.removeView(scroll);
+            target.scroll.setTranslationX(0f);
+            activateSectionPage(target);
+            drawNavigation();
+            scroll.scrollTo(0, 0);
+        } else {
+            pager.removeView(target.scroll);
+            scroll.setTranslationX(0f);
+        }
+        invalidateSectionSurfaces();
+        snapshot = dataSnapshot();
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -301,6 +528,7 @@ public final class DashboardActivity extends Activity {
         shell.setBackgroundColor(Color.TRANSPARENT);
         scroll = new ScrollView(this);
         scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         int horizontal = wide ? Math.max(32,
@@ -308,6 +536,8 @@ public final class DashboardActivity extends Activity {
         content.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
         scroll.addView(content);
+        pager = new SwipePagerLayout(this, sectionPagerListener);
+        pager.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         navigation = new LinearLayout(this);
         navigation.setOrientation(wide ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         navigation.setPadding(dp(wide ? 8 : 8), dp(wide ? 24 : 6),
@@ -316,9 +546,9 @@ public final class DashboardActivity extends Activity {
         FrameLayout mobileBottomArea = null;
         if (wide) {
             shell.addView(navigation, new LinearLayout.LayoutParams(dp(90), -1));
-            shell.addView(scroll, new LinearLayout.LayoutParams(0, -1, 1));
+            shell.addView(pager, new LinearLayout.LayoutParams(0, -1, 1));
         } else {
-            shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+            shell.addView(pager, new LinearLayout.LayoutParams(-1, 0, 1));
             mobileBottomArea = new FrameLayout(this);
             mobileBottomArea.setClipChildren(false);
             mobileBottomArea.setClipToPadding(false);
@@ -328,18 +558,17 @@ public final class DashboardActivity extends Activity {
                     dp(MOBILE_DOCK_HEIGHT_DP), Gravity.BOTTOM | Gravity.START);
             dockParams.setMargins(dp(14), 0, dp(94), dp(8));
             mobileBottomArea.addView(navigation, dockParams);
-            LinearLayout record = mobileRecordButton();
-            FrameLayout.LayoutParams recordParams = new FrameLayout.LayoutParams(dp(52), dp(52),
+            ImageButton record = UiStyle.recordEntry(this, this::openCapture);
+            FrameLayout.LayoutParams recordParams = new FrameLayout.LayoutParams(
+                    dp(RECORD_ENTRY_SIZE_DP), dp(RECORD_ENTRY_SIZE_DP),
                     Gravity.BOTTOM | Gravity.END);
             recordParams.setMargins(0, 0, dp(14), dp(14));
             mobileBottomArea.addView(record, recordParams);
         }
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
         if (wide) {
-            Button capture = button("＋ 记录", true, () ->
-                    startActivity(new Intent(this, MainActivity.class)));
-            capture.setElevation(dp(12));
-            FrameLayout.LayoutParams floating = new FrameLayout.LayoutParams(-2, dp(54),
+            ImageButton capture = UiStyle.recordEntry(this, this::openCapture);
+            FrameLayout.LayoutParams floating = new FrameLayout.LayoutParams(dp(56), dp(56),
                     Gravity.END | Gravity.BOTTOM);
             floating.setMargins(0, 0, dp(24), dp(24));
             stage.addView(capture, floating);
@@ -359,10 +588,14 @@ public final class DashboardActivity extends Activity {
         filterChips = null;
         categoryChip = null;
         orderToggle = null;
+        strips.clear();
         elapsedLabels.clear();
         content.removeAllViews();
         addHeader();
         try (TaskStore store = new TaskStore(this)) {
+            pendingReview = 0;
+            for (TaskRecord task : store.listTasks())
+                if (TaskRecord.NEEDS_REVIEW.equals(task.status)) pendingReview++;
             if (section == HOME) home(store);
             else if (section == INBOX) inbox(store);
             else schedule(store);
@@ -374,6 +607,7 @@ public final class DashboardActivity extends Activity {
             UiStyle.enterChildren(content);
         }
         drawNavigation();
+        if (pager != null) pager.setGesturePriorityChildren(strips);
     }
 
     private void addHeader() {
@@ -390,6 +624,10 @@ public final class DashboardActivity extends Activity {
         TextView title = text(section == HOME ? "今天的安排"
                 : section == INBOX ? "收件箱" : "日程", section == HOME ? 25 : 28, true);
         title.setMaxLines(1);
+        // Without this the large CJK glyphs ride above the centre line and no longer match the
+        // search field, the order arrow and the gear they share the row with.
+        title.setIncludeFontPadding(false);
+        title.setGravity(Gravity.CENTER_VERTICAL);
         if (section == HOME) {
             row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         } else {
@@ -515,15 +753,10 @@ public final class DashboardActivity extends Activity {
 
     private void home(TaskStore store) {
         List<TaskRecord> tasks = store.listTasks();
-        int review = 0;
-        for (TaskRecord task : tasks) {
-            if (TaskRecord.NEEDS_REVIEW.equals(task.status)) review++;
-        }
         long now = System.currentTimeMillis();
         List<EventCandidate> candidates = store.listCandidates();
         showUpcomingCarousel(candidates, now);
 
-        if (review > 0) inboxShortcut(review);
         ZoneId zone = ZoneId.systemDefault();
         LocalDate today = LocalDate.now(zone);
         LocalDate endDate = today.plusMonths(1);
@@ -564,6 +797,7 @@ public final class DashboardActivity extends Activity {
         strip.setFillViewport(false);
         strip.setClipToPadding(false);
         strip.setPadding(0, 0, dp(12), 0);
+        strips.add(strip);
         LinearLayout cards = new LinearLayout(this);
         cards.setOrientation(LinearLayout.HORIZONTAL);
         if (upcoming.isEmpty()) {
@@ -1089,6 +1323,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void drawNavigation() {
+        if (previewRender) return;
         navigation.removeAllViews();
         String[] labels = {"首页", "收件箱", "日程"};
         int[] icons = {R.drawable.ic_nav_home, R.drawable.ic_nav_inbox,
@@ -1116,8 +1351,33 @@ public final class DashboardActivity extends Activity {
                     : new LinearLayout.LayoutParams(0, -1, 1);
             params.setMargins(dp(wide ? 3 : 4), dp(wide ? 5 : 0),
                     dp(wide ? 3 : 4), 0);
-            navigation.addView(item, params);
+            navigation.addView(i == INBOX && pendingReview > 0
+                    ? withInboxBadge(item, destination) : (View) item, params);
         }
+    }
+
+    /** Translucent count badge on the inbox entry; the dock keeps the page numbers off the list. */
+    private View withInboxBadge(View item, int destination) {
+        FrameLayout wrapper = new FrameLayout(this);
+        wrapper.addView(item, new FrameLayout.LayoutParams(-1, -1));
+        int primary = UiStyle.colors(this).primary;
+        TextView badge = text(pendingReview > 99 ? "99+" : Integer.toString(pendingReview), 11, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setTextColor(primary);
+        badge.setMinWidth(dp(18));
+        badge.setPadding(dp(5), 0, dp(5), 0);
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(20));
+        // Theme-tinted rather than solid, so the badge sits on the glass dock without a hard block.
+        shape.setColor(Color.argb(52, Color.red(primary), Color.green(primary), Color.blue(primary)));
+        badge.setBackground(shape);
+        badge.setContentDescription("待确认 " + pendingReview + " 项");
+        badge.setOnClickListener(view -> switchTo(destination));
+        FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(-2, dp(18),
+                Gravity.TOP | Gravity.END);
+        badgeParams.setMargins(0, dp(3), dp(12), 0);
+        wrapper.addView(badge, badgeParams);
+        return wrapper;
     }
 
     /** Theme-tinted, borderless surface for dashboard controls. */
@@ -1125,26 +1385,8 @@ public final class DashboardActivity extends Activity {
         UiStyle.acrylicChoice(view, selected, radius, false);
     }
 
-    private LinearLayout mobileRecordButton() {
-        LinearLayout item = new LinearLayout(this);
-        item.setOrientation(LinearLayout.VERTICAL);
-        item.setGravity(Gravity.CENTER);
-        TextView plus = text("＋", 24, true);
-        plus.setGravity(Gravity.CENTER);
-        plus.setTextColor(UiStyle.colors(this).onPrimary);
-        GradientDrawable circle = new GradientDrawable();
-        circle.setShape(GradientDrawable.OVAL);
-        circle.setColor(UiStyle.colors(this).primary);
-        plus.setBackground(circle);
-        plus.setElevation(dp(8));
-        item.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        item.setContentDescription("记录一件事");
-        item.setFocusable(true);
-        item.setMinimumWidth(dp(52));
-        item.setMinimumHeight(dp(52));
-        item.setElevation(dp(6));
-        item.setOnClickListener(view -> startActivity(new Intent(this, MainActivity.class)));
-        return item;
+    private void openCapture() {
+        startActivity(new Intent(this, MainActivity.class));
     }
 
     private void switchTo(int destination) {
@@ -1176,6 +1418,7 @@ public final class DashboardActivity extends Activity {
         strip.setClipChildren(true);
         strip.setClipToPadding(true);
         strip.setFillViewport(false);
+        strips.add(strip);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         // Keep the final chip fully inside the scroll viewport at maximum scroll. The filter
@@ -1255,41 +1498,6 @@ public final class DashboardActivity extends Activity {
                     .isBefore(LocalDate.now());
         }
         return item.endAtMillis > now;
-    }
-
-    private void inboxShortcut(int reviewCount) {
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(48));
-        row.setPadding(dp(2), 0, dp(2), 0);
-        TextView title = text("收件箱", 16, true);
-        row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView action = text("查看收件箱", 13, true);
-        action.setTextColor(UiStyle.colors(this).primary);
-        row.addView(action);
-        if (reviewCount > 0) {
-            TextView badge = text(reviewCount > 99 ? "99+" : Integer.toString(reviewCount), 12, true);
-            badge.setGravity(Gravity.CENTER);
-            badge.setTextColor(UiStyle.colors(this).onPrimary);
-            badge.setMinWidth(dp(24));
-            badge.setMinHeight(dp(24));
-            badge.setPadding(dp(6), 0, dp(6), 0);
-            GradientDrawable badgeShape = new GradientDrawable();
-            badgeShape.setColor(UiStyle.colors(this).primary);
-            badgeShape.setCornerRadius(dp(30));
-            badge.setBackground(badgeShape);
-            LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(-2, dp(24));
-            badgeParams.setMargins(dp(8), 0, 0, 0);
-            row.addView(badge, badgeParams);
-        }
-        row.setContentDescription("查看收件箱，待确认 " + reviewCount + " 项");
-        row.setOnClickListener(view -> {
-            statusIndex = 1;
-            categoryIndex = 0;
-            switchTo(INBOX);
-        });
-        UiStyle.pressable(row);
-        UiStyle.addSpaced(content, row, 0, 10);
     }
 
     private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries) {

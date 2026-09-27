@@ -24,6 +24,8 @@ import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -314,6 +316,25 @@ public final class UiStyle {
         press.addState(new int[]{}, scale(view, 1f, 160));
         view.setStateListAnimator(press);
         if (!primary) rememberChildSurface(view, 2, false, 0, false);
+    }
+
+    /**
+     * The single record entry: the shared plus glyph on the app's translucent acrylic surface,
+     * tinted with the theme colour. Phone (floating over the dock) and wide (corner) both build it
+     * here, so the two layouts can never drift into different-looking controls.
+     */
+    public static ImageButton recordEntry(Activity activity, Runnable action) {
+        ImageButton button = new ImageButton(activity);
+        button.setImageResource(R.drawable.ic_add);
+        button.setImageTintList(ColorStateList.valueOf(colors(activity).primary));
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        button.setPadding(dp(button, 14), dp(button, 14), dp(button, 14), dp(button, 14));
+        button.setBackgroundColor(Color.TRANSPARENT);
+        glassPill(button);
+        pressable(button);
+        button.setContentDescription("记录一件事");
+        button.setOnClickListener(view -> action.run());
+        return button;
     }
 
     public static void card(View view) {

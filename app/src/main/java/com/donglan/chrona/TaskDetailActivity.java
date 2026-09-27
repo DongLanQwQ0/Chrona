@@ -203,11 +203,6 @@ public final class TaskDetailActivity extends Activity {
     private static final int PICK_CAPTURE_FILES = 14;
     private static final int CREATE_FILE_DOCUMENT = 15;
     private static final int FILE_STORAGE_REQUEST = 16;
-    /** A drag that stops short of the threshold glides back over this window. */
-    private static final long RECOIL_MIN_MS = 260L;
-    private static final long RECOIL_MAX_MS = 420L;
-    private static final android.view.animation.Interpolator RECOIL_INTERPOLATOR =
-            new DecelerateInterpolator(1.9f);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private long taskId;
     private String exportFileName;
@@ -220,7 +215,7 @@ public final class TaskDetailActivity extends Activity {
     private View advancedDetailsView;
     private View usageDetailsView;
     private View linkBodyView;
-    private TaskDetailPagerLayout detailPager;
+    private SwipePagerLayout detailPager;
     private TextView previewText;
     private long previewLength = -1;
     private boolean deleting;
@@ -271,8 +266,8 @@ public final class TaskDetailActivity extends Activity {
         shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.addView(page, new LinearLayout.LayoutParams(-1, 0, 1f));
-        TaskDetailPagerLayout stage = new TaskDetailPagerLayout(this,
-                new TaskDetailPagerLayout.Listener() {
+        SwipePagerLayout stage = new SwipePagerLayout(this,
+                new SwipePagerLayout.Listener() {
                     @Override public void onStart() {
                         if (pageTransitionRunning) return;
                         shell.animate().cancel();
@@ -980,19 +975,11 @@ public final class TaskDetailActivity extends Activity {
         shell.animate().cancel();
         float width = Math.max(page.getWidth(), getResources().getDisplayMetrics().widthPixels);
         shell.animate().translationX(0f)
-                .setDuration(recoilDuration(Math.abs(shell.getTranslationX()), width))
-                .setInterpolator(RECOIL_INTERPOLATOR)
+                .setDuration(SwipePagerLayout.recoilDuration(
+                        Math.abs(shell.getTranslationX()), width))
+                .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
                 .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces())
                 .withEndAction(this::invalidateVisibleAcrylicSurfaces).start();
-    }
-
-    /**
-     * Returning to rest gets a longer, more strongly decelerating settle than a committed page
-     * change: a drag that never reached the threshold should glide back, not snap back.
-     */
-    private static long recoilDuration(float remaining, float width) {
-        float ratio = width <= 0 ? 1f : Math.min(1f, Math.max(0f, remaining / width));
-        return RECOIL_MIN_MS + Math.round((RECOIL_MAX_MS - RECOIL_MIN_MS) * ratio);
     }
 
     private boolean hasTaskPage(int direction) {
@@ -1213,9 +1200,9 @@ public final class TaskDetailActivity extends Activity {
         float remaining = Math.abs(currentTarget - shell.getTranslationX());
         long duration = commit
                 ? Math.max(140L, Math.min(280L, Math.round(280f * remaining / width)))
-                : recoilDuration(remaining, width);
+                : SwipePagerLayout.recoilDuration(remaining, width);
         android.view.animation.Interpolator interpolator = commit
-                ? new DecelerateInterpolator(1.35f) : RECOIL_INTERPOLATOR;
+                ? new DecelerateInterpolator(1.35f) : SwipePagerLayout.RECOIL_INTERPOLATOR;
         shell.animate().translationX(currentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
                 .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces()).start();

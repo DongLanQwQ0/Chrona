@@ -5,17 +5,34 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.VelocityTracker;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 
 import java.util.ArrayList;
+import java.util.List;
 
-/** Allows horizontal task paging while leaving vertical drags to the page ScrollView. */
-final class TaskDetailPagerLayout extends FrameLayout {
+/** Allows horizontal page paging while leaving vertical drags to a page ScrollView. */
+final class SwipePagerLayout extends FrameLayout {
     interface Listener {
         void onStart();
         void onDrag(float distanceX);
         void onRelease(float distanceX, float velocityX);
         void onCancel();
+    }
+
+    /** A drag that stops short of the threshold glides back over this window. */
+    static final long RECOIL_MIN_MS = 260L;
+    static final long RECOIL_MAX_MS = 420L;
+    static final android.view.animation.Interpolator RECOIL_INTERPOLATOR =
+            new DecelerateInterpolator(1.9f);
+
+    /**
+     * Returning to rest gets a longer, more strongly decelerating settle than a committed page
+     * change: a drag that never reached the threshold should glide back, not snap back.
+     */
+    static long recoilDuration(float remaining, float width) {
+        float ratio = width <= 0 ? 1f : Math.min(1f, Math.max(0f, remaining / width));
+        return RECOIL_MIN_MS + Math.round((RECOIL_MAX_MS - RECOIL_MIN_MS) * ratio);
     }
 
     private final int touchSlop;
@@ -33,7 +50,7 @@ final class TaskDetailPagerLayout extends FrameLayout {
     private VelocityTracker velocityTracker;
     private boolean taskPagingEnabled = true;
 
-    TaskDetailPagerLayout(Context context, Listener listener) {
+    SwipePagerLayout(Context context, Listener listener) {
         super(context);
         this.listener = listener;
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
@@ -42,6 +59,13 @@ final class TaskDetailPagerLayout extends FrameLayout {
     void setGesturePriorityChild(View child) {
         gesturePriorityChildren.clear();
         addGesturePriorityChild(child);
+    }
+
+    /** Strips that own a horizontal drag starting inside them (chip rows, carousels). */
+    void setGesturePriorityChildren(List<View> children) {
+        gesturePriorityChildren.clear();
+        if (children == null) return;
+        for (View child : children) addGesturePriorityChild(child);
     }
 
     void addGesturePriorityChild(View child) {

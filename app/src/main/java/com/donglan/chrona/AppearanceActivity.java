@@ -214,7 +214,7 @@ public final class AppearanceActivity extends Activity {
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         LinearLayout labels = new LinearLayout(this);
         labels.setOrientation(LinearLayout.VERTICAL);
-        TextView title = text("一级面板背景模糊", 16, true);
+        TextView title = text("启用背景模糊", 16, true);
         labels.addView(title);
         row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1f));
         Switch toggle = new Switch(this);
@@ -242,7 +242,7 @@ public final class AppearanceActivity extends Activity {
         blurChoices.addView(gaussianOption, gaussianParams);
         card.addView(blurChoices);
 
-        TextView strengthLabel = text("模糊强度 · " + ThemeStore.blurStrength(this) + " / 5",
+        TextView strengthLabel = text("强度 · " + ThemeStore.blurStrength(this) + " / 5",
                 15, true);
         UiStyle.addSpaced(card, strengthLabel, 12, 0);
         SeekBar strengthSlider = new SeekBar(this);
@@ -254,7 +254,7 @@ public final class AppearanceActivity extends Activity {
             @Override public void onProgressChanged(SeekBar seekBar, int progress,
                     boolean fromUser) {
                 int value = progress + 1;
-                strengthLabel.setText("模糊强度 · " + value + " / 5");
+                strengthLabel.setText("强度 · " + value + " / 5");
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) { }
             @Override public void onStopTrackingTouch(SeekBar seekBar) {
@@ -263,27 +263,18 @@ public final class AppearanceActivity extends Activity {
             }
         });
 
-        TextView mixLabel = text("面板纯色浓度 · " + ThemeStore.surfaceMix(this) + "%",
-                15, true);
+        TextView mixLabel = text("浓度 · " + ThemeStore.surfaceMix(this) + "%", 15, true);
         UiStyle.addSpaced(card, mixLabel, 10, 0);
         SeekBar mixSlider = new SeekBar(this);
         tintSeekBar(mixSlider);
         mixSlider.setMax(60);
         mixSlider.setProgress(ThemeStore.surfaceMix(this) - 10);
         card.addView(mixSlider, new LinearLayout.LayoutParams(-1, dp(44)));
-        LinearLayout mixRange = new LinearLayout(this);
-        mixRange.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView clearer = text("更透", 12, false);
-        TextView moreSolid = text("更实", 12, false);
-        mixRange.addView(clearer, new LinearLayout.LayoutParams(0, -2, 1));
-        moreSolid.setGravity(android.view.Gravity.END);
-        mixRange.addView(moreSolid, new LinearLayout.LayoutParams(0, -2, 1));
-        card.addView(mixRange);
         mixSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress,
                     boolean fromUser) {
                 int value = progress + 10;
-                mixLabel.setText("面板纯色浓度 · " + value + "%");
+                mixLabel.setText("浓度 · " + value + "%");
                 if (fromUser) ThemeStore.previewSurfaceMix(AppearanceActivity.this, value);
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) { }
@@ -354,14 +345,15 @@ public final class AppearanceActivity extends Activity {
             Runnable action) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setGravity(android.view.Gravity.CENTER);
+        card.setPadding(dp(10), dp(10), dp(10), dp(10));
         card.setMinimumHeight(dp(82));
         UiStyle.choice(card, selected, UiStyle.RADIUS_PANEL);
         UiStyle.pressable(card);
 
         LinearLayout headline = new LinearLayout(this);
         headline.setOrientation(LinearLayout.HORIZONTAL);
-        headline.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        headline.setGravity(android.view.Gravity.CENTER);
         int swatch = swatch(option.name);
         if (swatch != 0) {
             View color = new View(this);
@@ -373,21 +365,24 @@ public final class AppearanceActivity extends Activity {
             dot.setMargins(0, 0, dp(8), 0);
             headline.addView(color, dot);
         }
-        // The name ellipsizes instead of pushing the marker out of the narrow cell.
-        TextView heading = text(UiStyle.marked(option.name, false), 15, true);
+        // The name is centred in what is left of the cell and ellipsizes when it still overflows,
+        // so neither the swatch nor the marker is ever pushed out of the narrow cell.
+        TextView heading = text(option.name, 15, true);
+        heading.setGravity(android.view.Gravity.CENTER);
         heading.setMaxLines(1);
         heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
         heading.setTextColor(selected ? UiStyle.colors(this).onPrimaryContainer
                 : UiStyle.colors(this).text);
         headline.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        if (selected) {
-            TextView marker = text("✓", 15, true);
-            marker.setTextColor(UiStyle.colors(this).onPrimaryContainer);
-            headline.addView(marker);
-        }
-        card.addView(headline);
+        // Always present so the centred group does not shift when the marker appears.
+        TextView marker = text("✓", 15, true);
+        marker.setTextColor(UiStyle.colors(this).onPrimaryContainer);
+        marker.setVisibility(selected ? View.VISIBLE : View.INVISIBLE);
+        headline.addView(marker);
+        card.addView(headline, new LinearLayout.LayoutParams(-1, -2));
         if (option.description != null && !option.description.isEmpty()) {
             TextView detail = text(option.description, 12, false);
+            detail.setGravity(android.view.Gravity.CENTER);
             detail.setMaxLines(2);
             if (selected) detail.setTextColor(UiStyle.colors(this).onPrimaryContainer);
             UiStyle.addSpaced(card, detail, 4, 0);
