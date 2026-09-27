@@ -44,7 +44,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ProcessingJobService extends JobService {
     private static final String EXTRA_TASK_ID = "task_id";
     private static final int JOB_ID_BASE = 10_000;
-    private static final String CHANNEL_ID = "chrona_processing";
+    private static final String CHANNEL_ID = "chrona_results";
+    /** The pre-0.13.29 result channel; deleted once because its importance can never be raised. */
+    private static final String LEGACY_CHANNEL_ID = "chrona_processing";
     private static final String RUNNING_CHANNEL_ID = "chrona_parsing";
     /** Keeps the running notice clear of the result notice posted for the same input. */
     private static final int RUNNING_NOTIFICATION_BASE = 20_000;
@@ -549,8 +551,13 @@ public final class ProcessingJobService extends JobService {
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) return;
-        manager.createNotificationChannel(new NotificationChannel(CHANNEL_ID, "处理结果",
-                NotificationManager.IMPORTANCE_DEFAULT));
+        // Channel importance is frozen when the channel is created, so the old DEFAULT-importance
+        // channel cannot be promoted in place; it is dropped and replaced by a HIGH one.
+        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID);
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "处理结果",
+                NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("解析完成的提醒，以悬浮通知弹出");
+        manager.createNotificationChannel(channel);
         Intent intent = new Intent(this, TaskDetailActivity.class).putExtra("task_id", taskId);
         PendingIntent pending = PendingIntent.getActivity(this, (int) taskId, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -558,6 +565,7 @@ public final class ProcessingJobService extends JobService {
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("拾时 · Chrona")
                 .setContentText(text)
+                .setCategory(Notification.CATEGORY_REMINDER)
                 .setAutoCancel(true)
                 .setContentIntent(pending)
                 .build();
