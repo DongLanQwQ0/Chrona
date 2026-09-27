@@ -1800,24 +1800,52 @@ public final class TaskDetailActivity extends Activity {
         category.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout categoryRow = formRow(card, "类型", R.drawable.ic_event);
         categoryRow.addView(category, new LinearLayout.LayoutParams(-1, -2));
-        LinearLayout timeRow = formRow(card, "时间", R.drawable.ic_schedule);
-        LinearLayout timeValues = new LinearLayout(this);
-        timeValues.setOrientation(LinearLayout.VERTICAL);
-        timeValues.setMinimumWidth(0);
+        LinearLayout timeRows = new LinearLayout(this);
+        timeRows.setOrientation(LinearLayout.VERTICAL);
+        UiStyle.addSpaced(card, timeRows, 1, 1);
+        LinearLayout startRow = new LinearLayout(this);
+        startRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        startRow.setPadding(0, dp(3), 0, dp(3));
+        LinearLayout timeKey = new LinearLayout(this);
+        timeKey.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        ImageView timeIcon = new ImageView(this);
+        timeIcon.setImageResource(R.drawable.ic_schedule);
+        timeIcon.setColorFilter(UiStyle.colors(this).primary);
+        timeIcon.setContentDescription("时间");
+        timeKey.addView(timeIcon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        TextView timeLabel = new TextView(this);
+        timeLabel.setText("时间");
+        timeLabel.setTextSize(13);
+        UiStyle.muted(timeLabel);
+        LinearLayout.LayoutParams timeLabelParams = new LinearLayout.LayoutParams(-2, -2);
+        timeLabelParams.setMargins(dp(4), 0, 0, 0);
+        timeKey.addView(timeLabel, timeLabelParams);
+        startRow.addView(timeKey, new LinearLayout.LayoutParams(dp(78), -2));
+        LinearLayout endRow = new LinearLayout(this);
+        endRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        endRow.setPadding(0, dp(3), 0, dp(3));
         String startHint = candidate.allDay ? "开始日期：yyyy-MM-dd"
                 : EventCategory.DEADLINE.equals(candidate.category)
                         ? "截止前开始：yyyy-MM-dd HH:mm" : "开始：yyyy-MM-dd HH:mm";
         String endHint = candidate.allDay ? "结束日期（含当天）：yyyy-MM-dd"
                 : EventCategory.DEADLINE.equals(candidate.category)
                         ? "截止时间：yyyy-MM-dd HH:mm" : "结束：yyyy-MM-dd HH:mm";
-        EditText start = inlineField(timeValues, startHint,
+        EditText start = inlineField(startRow, startHint,
                 candidate.allDay ? dayStart(defaulted.startAtMillis)
                         : format(defaulted.startAtMillis), 1f);
-        EditText end = inlineField(timeValues, endHint,
+        start.setPadding(dp(4), dp(5), dp(4), dp(5));
+        start.setMinHeight(dp(40));
+        allDay.setPadding(0, 0, 0, 0);
+        allDay.setMinHeight(dp(40));
+        allDay.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
+        endRow.addView(allDay, new LinearLayout.LayoutParams(dp(78), -2));
+        EditText end = inlineField(endRow, endHint,
                 candidate.allDay ? dayEnd(defaulted.endAtMillis)
                         : format(defaulted.endAtMillis), 1f);
-        timeValues.addView(allDay, new LinearLayout.LayoutParams(-1, -2));
-        timeRow.addView(timeValues, new LinearLayout.LayoutParams(0, -2, 1f));
+        end.setPadding(dp(4), dp(5), dp(4), dp(5));
+        end.setMinHeight(dp(40));
+        timeRows.addView(startRow, new LinearLayout.LayoutParams(-1, -2));
+        timeRows.addView(endRow, new LinearLayout.LayoutParams(-1, -2));
         start.setTextSize(13);
         end.setTextSize(13);
         trackUnsavedChanges(start, candidate.id);

@@ -28,6 +28,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,6 +48,8 @@ public final class ChronaDataBackup {
     private static final int FORMAT = 1;
     private static final long MAX_ARCHIVE_BYTES = 1024L * 1024 * 1024;
     private static final long MAX_ENTRY_BYTES = 512L * 1024 * 1024;
+    private static final long MAX_WALLPAPER_BYTES = 64L * 1024 * 1024;
+    private static final String WALLPAPER_ENTRY = "wallpaper/background.bin";
 
     private ChronaDataBackup() { }
 
@@ -63,10 +67,14 @@ public final class ChronaDataBackup {
         }
 
         public String summary() throws Exception {
+            String wallpaperSummary = !manifest.has("wallpaperIncluded")
+                    ? "· 旧备份不含背景图；导入会保留本机背景\n"
+                    : manifest.optJSONObject("wallpaper") == null
+                    ? "· 自定义背景图：未设置\n" : "· 自定义背景图：已包含\n";
             return "· 收件箱 " + manifest.optInt("tasks") + " 条，日程 "
                     + manifest.optInt("candidates") + " 项\n· 图片 "
                     + manifest.optInt("imageCount") + " 张，普通附件 "
-                    + manifest.optInt("fileCount") + " 个\n· "
+                    + manifest.optInt("fileCount") + " 个\n" + wallpaperSummary + "· "
                     + ConfigBackup.describe(config)
                     + "· 导入会替换本机收件箱与日程状态；公共下载副本和系统日历中未关联的事件会保留。";
         }
@@ -93,6 +101,7 @@ public final class ChronaDataBackup {
             File database = context.getDatabasePath("chrona.db");
             JSONArray files = new JSONArray();
             JSONArray images = new JSONArray();
+            JSONObject wallpaper = null;
             JSONArray outputs = new JSONArray();
             JSONArray events = new JSONArray();
             int taskCount;
@@ -183,6 +192,16 @@ public final class ChronaDataBackup {
                 }
             }
             if (!database.isFile()) throw new IOException("找不到 Chrona 数据库");
+            String wallpaperUri = ThemeStore.background(context);
+            WallpaperPayload wallpaperPayload = wallpaperUri == null ? null
+                    : inspectWallpaper(context, Uri.parse(wallpaperUri));
+            if (wallpaperPayload != null) {
+                wallpaper = new JSONObject();
+                wallpaper.put("entry", WALLPAPER_ENTRY);
+                wallpaper.put("mime", wallpaperPayload.mimeType);
+                wallpaper.put("size", wallpaperPayload.size);
+                wallpaper.put("sha256", wallpaperPayload.sha256);
+            }
             JSONObject manifest = new JSONObject();
             manifest.put("app", APP);
             manifest.put("format", FORMAT);
@@ -196,6 +215,8 @@ public final class ChronaDataBackup {
             manifest.put("events", events);
             manifest.put("homeTimelineLimit", HomeTimelinePreferences.getItemLimit(context));
             manifest.put("config", ConfigBackup.export(context, includeApiKey));
+            manifest.put("wallpaperIncluded", true);
+            manifest.put("wallpaper", wallpaper == null ? JSONObject.NULL : wallpaper);
             try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(
                     new FileOutputStream(archive)))) {
                 addFile(zip, database, "chrona.db");
@@ -224,6 +245,8 @@ public final class ChronaDataBackup {
                     addFile(zip, entry.getValue(), entry.getKey());
                     entry.getValue().delete();
                 }
+                if (wallpaperPayload != null)
+                    addWallpaper(zip, context, Uri.parse(wallpaperUri), wallpaperPayload);
                 File outputDir = new File(context.getFilesDir(), "model-output");
                 for (int i = 0; i < outputs.length(); i++) {
                     long id = outputs.getLong(i);
@@ -284,6 +307,26 @@ public final class ChronaDataBackup {
 
     private static void validateManifestPaths(JSONObject manifest, File directory)
             throws Exception {
+        if (manifest.has("wallpaperIncluded")) {
+            if (!manifest.optBoolean("wallpaperIncluded") || !manifest.has("wallpaper"))
+                throw new IOException("背景图清单无效");
+            if (!JSONObject.NULL.equals(manifest.get("wallpaper"))) {
+                JSONObject wallpaper = manifest.getJSONObject("wallpaper");
+                String entry = wallpaper.getString("entry");
+                String mime = wallpaper.getString("mime");
+                long size = wallpaper.getLong("size");
+                String sha256 = wallpaper.getString("sha256");
+                File payload = new File(directory, entry);
+                if (!safeEntry(entry) || !WALLPAPER_ENTRY.equals(entry)
+                        || !mime.startsWith("image/") || size <= 0 || size > MAX_WALLPAPER_BYTES
+                        || !sha256.matches("[0-9a-f]{64}") || !payload.isFile()
+                        || payload.length() != size
+                        || !sha256.equals(sha256(payload, MAX_WALLPAPER_BYTES)))
+                    throw new IOException("备份背景图缺失或校验失败");
+            } else if (new File(directory, WALLPAPER_ENTRY).exists()) {
+                throw new IOException("备份背景图清单不匹配");
+            }
+        }
         JSONArray images = manifest.getJSONArray("images");
         if (manifest.optInt("imageCount", -1) != images.length())
             throw new IOException("备份图片清单数量不匹配");
@@ -372,6 +415,9 @@ public final class ChronaDataBackup {
         File installedPrevious = null;
         boolean[] databaseInstallStarted = new boolean[]{false};
         boolean databaseInstalled = false;
+        String previousWallpaper = ThemeStore.background(context);
+        WallpaperMedia restoredWallpaper = null;
+        boolean wallpaperApplied = false;
         File outputDirectory = new File(context.getFilesDir(), "model-output");
         File previousOutputs = new File(context.getFilesDir(), "model-output.previous");
         String previousConfig = ConfigBackup.export(context, true);
@@ -380,6 +426,10 @@ public final class ChronaDataBackup {
         try {
         Map<String, String> imageNames = restoreImages(context, prepared, createdImages);
         Map<Long, TaskFileAttachment> restoredFiles = restoreFiles(context, prepared, createdFiles);
+        if (prepared.manifest.optBoolean("wallpaperIncluded", false)) {
+            JSONObject wallpaper = prepared.manifest.optJSONObject("wallpaper");
+            if (wallpaper != null) restoredWallpaper = restoreWallpaper(context, prepared, wallpaper);
+        }
         calendarLinks = restoreCalendarLinks(context, prepared, createdEvents);
         SQLiteDatabase staged = SQLiteDatabase.openDatabase(stagedDb.getAbsolutePath(), null,
                 SQLiteDatabase.OPEN_READWRITE);
@@ -441,6 +491,11 @@ public final class ChronaDataBackup {
         // call Activity.recreate() from this background restore thread. The Activity itself
         // recreates on the main thread after this method succeeds.
         ConfigBackup.apply(context.getApplicationContext(), prepared.config);
+        if (prepared.manifest.optBoolean("wallpaperIncluded", false)) {
+            wallpaperApplied = true;
+            ThemeStore.setBackground(context.getApplicationContext(),
+                    restoredWallpaper == null ? null : restoredWallpaper.uri.toString());
+        }
         HomeTimelinePreferences.setItemLimit(context,
                 prepared.manifest.optInt("homeTimelineLimit", HomeTimelinePreferences.DEFAULT_ITEM_LIMIT));
         if (installedPrevious != null) installedPrevious.delete();
@@ -459,6 +514,22 @@ public final class ChronaDataBackup {
                 HomeTimelinePreferences.setItemLimit(context, previousTimelineLimit);
             } catch (Exception rollbackPreferenceFailure) {
                 failure.addSuppressed(rollbackPreferenceFailure);
+            }
+            if (wallpaperApplied) {
+                try {
+                    ThemeStore.setBackground(context.getApplicationContext(), previousWallpaper);
+                } catch (Exception rollbackWallpaperFailure) {
+                    failure.addSuppressed(rollbackWallpaperFailure);
+                }
+            }
+            if (restoredWallpaper != null
+                    && !restoredWallpaper.uri.toString().equals(
+                    ThemeStore.background(context.getApplicationContext()))) {
+                try {
+                    cleanupWallpaper(context, restoredWallpaper);
+                } catch (Exception cleanupWallpaperFailure) {
+                    failure.addSuppressed(cleanupWallpaperFailure);
+                }
             }
             boolean databaseRollbackSucceeded = !databaseInstalled && !databaseInstallStarted[0];
             if (databaseInstalled || databaseInstallStarted[0]) {
@@ -540,6 +611,201 @@ public final class ChronaDataBackup {
                 }
             }
         } catch (RuntimeException ignored) { }
+    }
+
+    private static WallpaperPayload inspectWallpaper(Context context, Uri uri) throws Exception {
+        String mime = context.getContentResolver().getType(uri);
+        if (mime == null || !mime.startsWith("image/"))
+            throw new IOException("无法识别自定义背景图格式");
+        MessageDigest digest = newSha256();
+        long size = 0;
+        try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("无法读取自定义背景图");
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                size += count;
+                if (size > MAX_WALLPAPER_BYTES) throw new IOException("自定义背景图超过 64 MiB");
+                digest.update(buffer, 0, count);
+            }
+        }
+        if (size == 0) throw new IOException("自定义背景图为空");
+        return new WallpaperPayload(mime, size, toHex(digest.digest()));
+    }
+
+    private static void addWallpaper(ZipOutputStream zip, Context context, Uri uri,
+            WallpaperPayload expected) throws IOException {
+        zip.putNextEntry(new ZipEntry(WALLPAPER_ENTRY));
+        MessageDigest digest = newSha256();
+        long size = 0;
+        try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("无法读取自定义背景图");
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                size += count;
+                if (size > MAX_WALLPAPER_BYTES) throw new IOException("自定义背景图超过 64 MiB");
+                digest.update(buffer, 0, count);
+                zip.write(buffer, 0, count);
+            }
+        }
+        zip.closeEntry();
+        if (size != expected.size || !toHex(digest.digest()).equals(expected.sha256))
+            throw new IOException("备份期间自定义背景图发生变化，请重试");
+    }
+
+    private static WallpaperMedia restoreWallpaper(Context context, Prepared prepared,
+            JSONObject metadata) throws Exception {
+        File source = new File(prepared.directory, metadata.getString("entry"));
+        String mime = metadata.getString("mime");
+        String sha256 = metadata.getString("sha256");
+        long size = metadata.getLong("size");
+        String name = "chrona-background-" + UUID.randomUUID() + wallpaperExtension(mime);
+        android.content.ContentResolver resolver = context.getContentResolver();
+        Uri uri = null;
+        File legacyFile = null;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH,
+                        Environment.DIRECTORY_PICTURES + "/Chrona");
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new IOException("无法创建公共背景图条目");
+                try (OutputStream output = resolver.openOutputStream(uri, "w")) {
+                    if (output == null) throw new IOException("无法写入公共背景图");
+                    copyWallpaperVerified(source, output, size, sha256);
+                }
+                ContentValues ready = new ContentValues();
+                ready.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                if (resolver.update(uri, ready, null, null) <= 0)
+                    throw new IOException("无法发布公共背景图");
+            } else {
+                if (context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                    throw new IOException("请授予存储权限后恢复公共背景图");
+                File pictures = Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_PICTURES);
+                File directory = new File(pictures, "Chrona");
+                if (!directory.isDirectory() && !directory.mkdirs())
+                    throw new IOException("无法创建 Pictures/Chrona");
+                legacyFile = new File(directory, name);
+                try (OutputStream output = new FileOutputStream(legacyFile)) {
+                    copyWallpaperVerified(source, output, size, sha256);
+                }
+                ContentValues values = new ContentValues();
+                values.put("_data", legacyFile.getAbsolutePath());
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                values.put(MediaStore.MediaColumns.TITLE, name);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                values.put(MediaStore.MediaColumns.SIZE, size);
+                uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new IOException("无法登记公共背景图");
+            }
+            return new WallpaperMedia(uri, legacyFile);
+        } catch (Exception exception) {
+            if (uri != null) {
+                try { resolver.delete(uri, null, null); }
+                catch (RuntimeException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
+            }
+            if (legacyFile != null && legacyFile.exists() && !legacyFile.delete())
+                exception.addSuppressed(new IOException("无法清理未完成的公共背景图"));
+            throw exception;
+        }
+    }
+
+    private static void copyWallpaperVerified(File source, OutputStream output, long expectedSize,
+            String expectedSha256) throws IOException {
+        MessageDigest digest = newSha256();
+        long size = 0;
+        try (InputStream input = new BufferedInputStream(new FileInputStream(source))) {
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                size += count;
+                if (size > MAX_WALLPAPER_BYTES) throw new IOException("自定义背景图超过 64 MiB");
+                digest.update(buffer, 0, count);
+                output.write(buffer, 0, count);
+            }
+        }
+        output.flush();
+        if (size != expectedSize || !toHex(digest.digest()).equals(expectedSha256))
+            throw new IOException("恢复背景图校验失败");
+    }
+
+    private static void cleanupWallpaper(Context context, WallpaperMedia wallpaper)
+            throws IOException {
+        IOException failure = null;
+        try {
+            if (context.getContentResolver().delete(wallpaper.uri, null, null) <= 0)
+                failure = new IOException("无法删除本次恢复的背景图条目");
+        } catch (RuntimeException exception) {
+            failure = new IOException("无法删除本次恢复的背景图条目", exception);
+        }
+        if (wallpaper.legacyFile != null && wallpaper.legacyFile.exists()
+                && !wallpaper.legacyFile.delete() && wallpaper.legacyFile.exists()) {
+            IOException fileFailure = new IOException("无法删除本次恢复的公共背景图文件");
+            if (failure == null) failure = fileFailure;
+            else failure.addSuppressed(fileFailure);
+        }
+        if (failure != null) throw failure;
+    }
+
+    private static String wallpaperExtension(String mime) {
+        String extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);
+        if (extension == null || !extension.matches("[A-Za-z0-9]{1,8}")) return ".img";
+        return "." + extension.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static MessageDigest newSha256() throws IOException {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IOException("设备不支持 SHA-256", exception);
+        }
+    }
+
+    private static String sha256(File file, long maxBytes) throws IOException {
+        MessageDigest digest = newSha256();
+        long size = 0;
+        try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                size += count;
+                if (size > maxBytes) throw new IOException("备份文件过大");
+                digest.update(buffer, 0, count);
+            }
+        }
+        return toHex(digest.digest());
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) result.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
+        return result.toString();
+    }
+
+    private static final class WallpaperPayload {
+        final String mimeType;
+        final long size;
+        final String sha256;
+        WallpaperPayload(String mimeType, long size, String sha256) {
+            this.mimeType = mimeType;
+            this.size = size;
+            this.sha256 = sha256;
+        }
+    }
+
+    private static final class WallpaperMedia {
+        final Uri uri;
+        final File legacyFile;
+        WallpaperMedia(Uri uri, File legacyFile) {
+            this.uri = uri;
+            this.legacyFile = legacyFile;
+        }
     }
 
     private static Map<String, String> restoreImages(Context context, Prepared prepared)
@@ -776,8 +1042,11 @@ public final class ChronaDataBackup {
                     while ((count = zip.read(buffer)) != -1) {
                         entrySize += count;
                         total += count;
-                        if (entrySize > MAX_ENTRY_BYTES || total > MAX_ARCHIVE_BYTES)
+                        long entryLimit = WALLPAPER_ENTRY.equals(name)
+                                ? MAX_WALLPAPER_BYTES : MAX_ENTRY_BYTES;
+                        if (entrySize > entryLimit || total > MAX_ARCHIVE_BYTES) {
                             throw new IOException("备份文件过大");
+                        }
                         output.write(buffer, 0, count);
                     }
                 }
@@ -789,6 +1058,7 @@ public final class ChronaDataBackup {
     private static boolean safeEntry(String name) {
         return "manifest.json".equals(name) || "chrona.db".equals(name)
                 || name.matches("images/[0-9a-fA-F\\-]{36}\\.jpg")
+                || WALLPAPER_ENTRY.equals(name)
                 || name.matches("files/[0-9]+\\.bin")
                 || name.matches("outputs/[0-9]+\\.txt");
     }

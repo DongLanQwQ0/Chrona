@@ -1,5 +1,10 @@
 # 更新记录
 
+## 0.13.23 — 2026-09-27
+
+- ZIP 备份现包含自定义背景图片，使用固定条目保存并校验大小与 SHA-256；恢复时重建 `Pictures/Chrona` 公共图片 URI。旧 ZIP 可继续导入：缺少背景字段时保留本机背景；失败回滚会恢复原背景设置。
+- versionCode 43；`assembleDebug`、`lintDebug` 与 ADB 安装验证通过（设备包信息为 versionCode 43/versionName 0.13.23）；分身自定义背景导出/导入及时间区视觉回归待用户确认。
+
 ## 0.13.22 — 2026-09-27
 
 - 修复备份导入触发 `Must be called from main thread`：恢复设置使用 application context，再由主线程刷新界面；换库前后校验清单、任务和候选数量，并增强失败回滚。
