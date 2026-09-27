@@ -13,8 +13,11 @@ import android.os.Looper;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
+import android.view.GestureDetector;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
@@ -125,6 +128,9 @@ public final class DashboardActivity extends Activity {
     private int restoredScrollY;
     private final List<ElapsedLabel> elapsedLabels = new ArrayList<>();
     private final Handler refresh = new Handler(Looper.getMainLooper());
+    /** Horizontal flings page between 首页 / 收件箱 / 日程, unless a strip owns the gesture. */
+    private GestureDetector sectionSwipe;
+    private boolean swipeStartedInStrip;
     private final Runnable poll = this::pollChanges;
     private final Runnable elapsedTicker = new Runnable() {
         @Override public void run() {
@@ -141,6 +147,21 @@ public final class DashboardActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
+        sectionSwipe = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDown(MotionEvent event) { return true; }
+
+            @Override public boolean onFling(MotionEvent from, MotionEvent to, float velocityX,
+                    float velocityY) {
+                if (from == null || to == null || swipeStartedInStrip) return false;
+                float dx = to.getX() - from.getX();
+                float dy = to.getY() - from.getY();
+                if (Math.abs(dx) < dp(56) || Math.abs(dx) < Math.abs(dy) * 1.5f) return false;
+                int destination = section + (dx < 0 ? 1 : -1);
+                if (destination < HOME || destination > SCHEDULE) return false;
+                switchTo(destination);
+                return true;
+            }
+        });
         if (state != null) {
             section = state.getInt(EXTRA_SECTION, HOME);
             categoryIndex = state.getInt("category");
@@ -185,6 +206,32 @@ public final class DashboardActivity extends Activity {
         int selectedIndex = 0;
         for (long id : selectedInboxIds) selected[selectedIndex++] = id;
         state.putLongArray("selected_inbox_ids", selected);
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            swipeStartedInStrip = insideHorizontalStrip(getWindow().getDecorView(),
+                    event.getRawX(), event.getRawY());
+        }
+        if (!swipeStartedInStrip) sectionSwipe.onTouchEvent(event);
+        return super.dispatchTouchEvent(event);
+    }
+
+    /** The chip rows and the "next up" carousel own horizontal drags that start inside them. */
+    private boolean insideHorizontalStrip(View view, float rawX, float rawY) {
+        if (!(view instanceof ViewGroup)) return false;
+        ViewGroup group = (ViewGroup) view;
+        int[] location = new int[2];
+        for (int i = group.getChildCount() - 1; i >= 0; i--) {
+            View child = group.getChildAt(i);
+            if (child.getVisibility() != View.VISIBLE) continue;
+            child.getLocationOnScreen(location);
+            if (rawX < location[0] || rawX >= location[0] + child.getWidth()
+                    || rawY < location[1] || rawY >= location[1] + child.getHeight()) continue;
+            if (child instanceof HorizontalScrollView) return true;
+            return insideHorizontalStrip(child, rawX, rawY);
+        }
+        return false;
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -258,7 +305,7 @@ public final class DashboardActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         int horizontal = wide ? Math.max(32,
                 (getResources().getConfiguration().screenWidthDp - 90 - 720) / 2) : 20;
-        content.setPadding(dp(horizontal), dp(wide ? 18 : 14), dp(horizontal),
+        content.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
         scroll.addView(content);
         navigation = new LinearLayout(this);
@@ -346,25 +393,62 @@ public final class DashboardActivity extends Activity {
         if (section == HOME) {
             row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         } else {
-            // The search field sits between the page title and the gear, so filtering never moves
-            // the settings entry and the keyword stays reachable while scrolling.
+            // The search field sits between the page title and the trailing control, so filtering
+            // never moves the settings entry and the keyword stays reachable while scrolling.
             row.addView(title, new LinearLayout.LayoutParams(-2, -2));
-            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(44), 1);
+            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(36), 1);
             searchParams.setMargins(dp(8), 0, dp(8), 0);
             row.addView(buildSearchField(), searchParams);
-            row.addView(buildOrderToggle(), new LinearLayout.LayoutParams(-2, dp(44)));
+        }
+        row.addView(buildHeaderControls(), new LinearLayout.LayoutParams(-2, dp(44)));
+        UiStyle.addSpaced(content, row, 0, section == HOME ? 10 : 12);
+    }
+
+    /**
+     * The order arrow and the settings entry share a single pill: two separate bubbles in the same
+     * corner read as unrelated controls and cost width the search field needs.
+     */
+    private LinearLayout buildHeaderControls() {
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.HORIZONTAL);
+        group.setGravity(Gravity.CENTER_VERTICAL);
+        UiStyle.acrylicChoice(group, false, UiStyle.RADIUS_PILL, false);
+        orderToggle = null;
+        if (section != HOME) {
+            TextView order = text("", 15, true);
+            order.setGravity(Gravity.CENTER);
+            order.setMinWidth(dp(40));
+            order.setPadding(dp(10), 0, dp(10), 0);
+            order.setOnClickListener(view -> toggleOrder());
+            UiStyle.pressable(order);
+            orderToggle = order;
+            refreshOrderToggle();
+            group.addView(order, new LinearLayout.LayoutParams(-2, -1));
+            View divider = new View(this);
+            divider.setBackgroundColor(UiStyle.colors(this).outline);
+            group.addView(divider, new LinearLayout.LayoutParams(dp(1), dp(16)));
         }
         ImageButton settings = new ImageButton(this);
         settings.setImageResource(R.drawable.ic_settings);
         settings.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
         settings.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        settings.setPadding(dp(13), dp(13), dp(13), dp(13));
+        settings.setPadding(dp(10), dp(10), dp(10), dp(10));
+        settings.setBackgroundColor(Color.TRANSPARENT);
         settings.setContentDescription("打开设置");
-        UiStyle.pill(settings, false);
         settings.setOnClickListener(view ->
                 startActivity(new Intent(this, SettingsHubActivity.class)));
-        row.addView(settings, new LinearLayout.LayoutParams(dp(50), dp(50)));
-        UiStyle.addSpaced(content, row, 0, section == HOME ? 10 : 14);
+        UiStyle.pressable(settings);
+        group.addView(settings, new LinearLayout.LayoutParams(dp(44), -1));
+        return group;
+    }
+
+    private void toggleOrder() {
+        if (section == INBOX) inboxOldestFirst = !inboxOldestFirst;
+        else scheduleOldestFirst = !scheduleOldestFirst;
+        inboxShown = 12;
+        scheduleShown = 12;
+        refreshOrderToggle();
+        updateResults();
     }
 
     /** A compact keyword field for the two browsable lists; typing only re-renders the results. */
@@ -372,13 +456,14 @@ public final class DashboardActivity extends Activity {
         EditText field = new EditText(this);
         field.setSingleLine(true);
         field.setHint(section == INBOX ? "搜索收件" : "搜索日程");
-        field.setTextSize(14);
+        field.setTextSize(13);
+        field.setIncludeFontPadding(false);
         field.setTextColor(UiStyle.colors(this).text);
         field.setHintTextColor(UiStyle.colors(this).muted);
         field.setInputType(InputType.TYPE_CLASS_TEXT);
         field.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         field.setGravity(Gravity.CENTER_VERTICAL);
-        field.setPadding(dp(14), 0, dp(14), 0);
+        field.setPadding(dp(12), 0, dp(12), 0);
         UiStyle.acrylicChoice(field, false, UiStyle.RADIUS_PILL, false);
         String current = section == INBOX ? inboxQuery : scheduleQuery;
         field.setText(current);
@@ -398,34 +483,15 @@ public final class DashboardActivity extends Activity {
         return field;
     }
 
-    /** Flips the list between oldest-first and newest-first without rebuilding the header. */
-    private TextView buildOrderToggle() {
-        TextView toggle = text("", 13, true);
-        toggle.setGravity(Gravity.CENTER);
-        toggle.setMinWidth(dp(60));
-        toggle.setPadding(dp(12), 0, dp(12), 0);
-        toggle.setOnClickListener(view -> {
-            if (section == INBOX) inboxOldestFirst = !inboxOldestFirst;
-            else scheduleOldestFirst = !scheduleOldestFirst;
-            inboxShown = 12;
-            scheduleShown = 12;
-            refreshOrderToggle();
-            updateResults();
-        });
-        orderToggle = toggle;
-        refreshOrderToggle();
-        return toggle;
-    }
-
+    /** One arrow is enough: it flips between time-ascending and time-descending. */
     private void refreshOrderToggle() {
         if (orderToggle == null) return;
         boolean oldestFirst = section == INBOX ? inboxOldestFirst : scheduleOldestFirst;
-        orderToggle.setText(oldestFirst ? "时间 ↑" : "时间 ↓");
+        orderToggle.setText(oldestFirst ? "↑" : "↓");
         orderToggle.setContentDescription(oldestFirst
-                ? "当前按时间顺序排列，最早在前；点击改为最近在前"
-                : "当前按时间倒序排列，最近在前；点击改为最早在前");
+                ? "时间顺序排列，最早在前；点击改为最近在前"
+                : "时间倒序排列，最近在前；点击改为最早在前");
         orderToggle.setTextColor(UiStyle.colors(this).primary);
-        applyThemeControlSurface(orderToggle, false, UiStyle.RADIUS_PILL);
     }
 
     private static String normalizedQuery(String value) {
