@@ -33,6 +33,7 @@ import java.util.WeakHashMap;
 
 /** Semantic colors, shapes and motion for the native View interface. */
 public final class UiStyle {
+    private static final long DIALOG_BACKGROUND_SCALE_IN_DURATION_MS = 180L * 2L;
     private static final WeakHashMap<Activity, DialogScaleState> DIALOG_SCALES = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> DIALOG_ACRYLIC_ROOTS = new WeakHashMap<>();
     private static final WeakHashMap<View, AcrylicScrollWatcher> ACRYLIC_SCROLL_WATCHERS =
@@ -843,7 +844,8 @@ public final class UiStyle {
         if (!ValueAnimator.areAnimatorsEnabled()) return;
         state.content.animate().cancel();
         state.content.animate().scaleX(state.scaleX * 1.04f).scaleY(state.scaleY * 1.04f)
-                .setDuration(180).setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .setDuration(DIALOG_BACKGROUND_SCALE_IN_DURATION_MS)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
                 .start();
     }
 

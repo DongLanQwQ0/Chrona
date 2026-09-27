@@ -101,6 +101,9 @@ public final class StreamingOutputStore {
         private int written;
         private int pending;
         private boolean truncated;
+        private boolean reasoningStarted;
+        private boolean contentStarted;
+        private int lastSection;
         private long lastFlush = System.currentTimeMillis();
 
         private Writer(File file) throws IOException {
@@ -112,6 +115,29 @@ public final class StreamingOutputStore {
          * still assembled and parsed in full, it just stops growing the file the reader pages.
          */
         public void append(String chunk) throws IOException {
+            if (chunk == null || chunk.isEmpty()) return;
+            if (reasoningStarted && (!contentStarted || lastSection != 2)) {
+                appendRaw((written == 0 ? "" : "\n\n") + "[模型输出]\n");
+                contentStarted = true;
+            } else if (!contentStarted) {
+                contentStarted = true;
+            }
+            lastSection = 2;
+            appendRaw(chunk);
+        }
+
+        /** Stores optional model reasoning in the same backward-compatible output file. */
+        public void appendReasoning(String chunk) throws IOException {
+            if (chunk == null || chunk.isEmpty()) return;
+            if (!reasoningStarted || lastSection != 1) {
+                appendRaw((written == 0 ? "" : "\n\n") + "[思考内容]\n");
+                reasoningStarted = true;
+            }
+            lastSection = 1;
+            appendRaw(chunk);
+        }
+
+        private void appendRaw(String chunk) throws IOException {
             if (truncated) return;
             byte[] bytes = chunk.getBytes(StandardCharsets.UTF_8);
             if (written + bytes.length > MAX_BYTES) {

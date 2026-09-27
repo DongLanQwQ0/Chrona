@@ -446,11 +446,20 @@ public final class ProcessingJobService extends JobService {
                 try (StreamingOutputStore.Writer output =
                         new StreamingOutputStore(this).begin(taskId)) {
                     ChatCompletionClient client = new ChatCompletionClient(settings);
+                    ChatCompletionClient.PreviewSink preview = new ChatCompletionClient.PreviewSink() {
+                        @Override public void append(String chunk) throws IOException {
+                            output.append(chunk);
+                        }
+
+                        @Override public void appendReasoning(String chunk) throws IOException {
+                            output.appendReasoning(chunk);
+                        }
+                    };
                     try {
                         return client.parseImages(taskId, task.rawText, images, linkText,
                                 attachmentMetadata,
                                 System.currentTimeMillis(), TimeZone.getDefault().getID(),
-                                output::append, true);
+                                preview, true);
                     } catch (ChatCompletionClient.RequestException exception) {
                         String detail = String.valueOf(exception.getMessage()).toLowerCase(
                                 java.util.Locale.ROOT);
@@ -461,7 +470,7 @@ public final class ProcessingJobService extends JobService {
                         return client.parseImages(taskId, task.rawText, images, linkText,
                                 attachmentMetadata,
                                 System.currentTimeMillis(), TimeZone.getDefault().getID(),
-                                output::append, false);
+                                preview, false);
                     }
                 }
             } catch (IOException exception) {

@@ -180,6 +180,7 @@ public final class MainActivity extends Activity {
             input.setText(savedInstanceState.getString(STATE_TEXT, ""));
             splitInput.setChecked(savedInstanceState.getBoolean(STATE_SPLIT));
         }
+        updateSplitInputVisibility(getIntent());
         showPendingImages();
         showPendingFiles();
         if (savedInstanceState == null) sweepImages();
@@ -218,6 +219,7 @@ public final class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        updateSplitInputVisibility(intent);
         receiveShared(intent);
     }
 
@@ -313,6 +315,19 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void updateSplitInputVisibility(Intent intent) {
+        if (splitInput == null) return;
+        boolean shared = isShareIntent(intent);
+        splitInput.setVisibility(shared ? View.GONE : View.VISIBLE);
+        if (shared) splitInput.setChecked(false);
+    }
+
+    private static boolean isShareIntent(Intent intent) {
+        if (intent == null) return false;
+        return Intent.ACTION_SEND.equals(intent.getAction())
+                || Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction());
+    }
+
     @SuppressWarnings("deprecation")
     private static Uri sharedStream(Intent intent) {
         if (Build.VERSION.SDK_INT >= 33) {
@@ -390,8 +405,7 @@ public final class MainActivity extends Activity {
             Feedback.showLong(this, "当前模型不支持图片，请移除图片或切换模型");
             return;
         }
-        String source = Intent.ACTION_SEND.equals(getIntent().getAction())
-                || Intent.ACTION_SEND_MULTIPLE.equals(getIntent().getAction()) ? "share" : "app";
+        String source = isShareIntent(getIntent()) ? "share" : "app";
         List<String> nonDuplicateEntries = new ArrayList<>();
         TaskRecord existingDuplicate = null;
         int duplicateCount = 0;

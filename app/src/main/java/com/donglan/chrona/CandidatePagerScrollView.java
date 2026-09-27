@@ -19,6 +19,8 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
     private int startPage;
     private boolean tracking;
     private boolean startedAtSystemEdge;
+    private boolean startedAtBoundary;
+    private boolean yieldingToTaskPager;
     private ValueAnimator settleAnimator;
 
     CandidatePagerScrollView(Context context) {
@@ -44,10 +46,22 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
             downY = event.getY();
             startScrollX = getScrollX();
             startPage = clamp(Math.round(startScrollX / (float) pageWidth));
+            int maxScroll = Math.max(0, (pageCount - 1) * pageWidth);
+            startedAtBoundary = pageCount > 1
+                    && (startScrollX <= touchSlop || startScrollX >= maxScroll - touchSlop);
             startedAtSystemEdge = downX <= systemEdgeInset
                     || downX >= getWidth() - systemEdgeInset;
             tracking = false;
+            yieldingToTaskPager = false;
             return super.dispatchTouchEvent(event);
+        }
+        if (yieldingToTaskPager) {
+            if (action == MotionEvent.ACTION_CANCEL) {
+                yieldingToTaskPager = false;
+                startedAtBoundary = false;
+                return super.dispatchTouchEvent(event);
+            }
+            yieldingToTaskPager = false;
         }
         if (action == MotionEvent.ACTION_MOVE && !tracking && !startedAtSystemEdge) {
             float dx = event.getX() - downX;
@@ -110,6 +124,22 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
 
     private void finishTracking() {
         tracking = false;
+        startedAtBoundary = false;
+        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
+    }
+
+    boolean canYieldToTaskPager(float fingerDistanceX) {
+        if (!startedAtBoundary || startedAtSystemEdge
+                || Math.abs(fingerDistanceX) <= touchSlop) return false;
+        int maxScroll = Math.max(0, (pageCount - 1) * pageWidth);
+        return fingerDistanceX > 0 && startScrollX <= touchSlop
+                || fingerDistanceX < 0 && startScrollX >= maxScroll - touchSlop;
+    }
+
+    void prepareForTaskPagerHandoff() {
+        if (settleAnimator != null) settleAnimator.cancel();
+        tracking = false;
+        yieldingToTaskPager = true;
         if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
     }
 

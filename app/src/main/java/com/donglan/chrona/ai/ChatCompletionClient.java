@@ -80,6 +80,8 @@ public final class ChatCompletionClient {
 
     public interface PreviewSink {
         void append(String chunk) throws IOException;
+
+        default void appendReasoning(String chunk) throws IOException { }
     }
 
     public ParseResult parse(long taskId, String rawText, byte[] imageJpeg, String linkText,
@@ -196,6 +198,8 @@ public final class ChatCompletionClient {
                 try {
                     JSONObject message = new JSONObject(response).getJSONArray("choices")
                             .getJSONObject(0).getJSONObject("message");
+                    String reasoning = reasoningFrom(message);
+                    if (!reasoning.isEmpty()) preview.appendReasoning(reasoning);
                     String content = StreamChunkContent.fromJsonValue(message.opt("content"));
                     if (!content.isEmpty()) preview.append(content);
                 } catch (JSONException ignored) {
@@ -215,6 +219,7 @@ public final class ChatCompletionClient {
     private static ParseResult parseStream(long taskId, InputStream stream, PreviewSink preview)
             throws IOException {
         StringBuilder completion = new StringBuilder();
+        StringBuilder reasoning = new StringBuilder();
         JSONObject usage = null;
         String finishReason = null;
         boolean done = false;
@@ -239,13 +244,22 @@ public final class ChatCompletionClient {
                         if (!choice.isNull("finish_reason"))
                             finishReason = choice.optString("finish_reason", finishReason);
                         JSONObject delta = choice.optJSONObject("delta");
+                        String reasoningChunk = delta == null ? "" : reasoningFrom(delta);
+                        if (!reasoningChunk.isEmpty()) {
+                            if (completion.length() + reasoning.length() + reasoningChunk.length()
+                                    > MAX_RESPONSE_CHARS)
+                                throw new IOException("AI response exceeds size limit");
+                            reasoning.append(reasoningChunk);
+                            if (preview != null) preview.appendReasoning(reasoningChunk);
+                        }
                         String chunk = delta == null ? ""
                                 : StreamChunkContent.fromJsonValue(delta.opt("content"));
                         if (!chunk.isEmpty()) {
-                            if (completion.length() + chunk.length() > MAX_RESPONSE_CHARS)
+                            if (completion.length() + reasoning.length() + chunk.length()
+                                    > MAX_RESPONSE_CHARS)
                                 throw new IOException("AI response exceeds size limit");
                             completion.append(chunk);
-                            preview.append(chunk);
+                            if (preview != null) preview.append(chunk);
                         }
                     } catch (JSONException exception) {
                         throw new IOException("Invalid AI stream frame", exception);
@@ -274,6 +288,12 @@ public final class ChatCompletionClient {
             throw new IOException("Could not assemble AI response", exception);
         }
         return parseResponse(taskId, envelope.toString());
+    }
+
+    private static String reasoningFrom(JSONObject message) {
+        String reasoning = StreamChunkContent.fromJsonValue(message.opt("reasoning_content"));
+        return reasoning.isEmpty()
+                ? StreamChunkContent.fromJsonValue(message.opt("reasoning")) : reasoning;
     }
 
     static ParseResult parseResponse(long taskId, String response) throws IOException {

@@ -8,6 +8,11 @@ import android.content.pm.PackageManager;
 import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.PixelFormat;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.Outline;
 import android.net.Uri;
@@ -24,10 +29,10 @@ import android.view.Gravity;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -68,6 +73,135 @@ import java.util.Set;
 
 /** Review parsed events before committing them to the device calendar. */
 public final class TaskDetailActivity extends Activity {
+    private static final class CompactCheckBoxDrawable extends Drawable {
+        private final int size;
+        private final int checkedColor;
+        private final int checkColor;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private boolean checked;
+
+        CompactCheckBoxDrawable(int size, int checkedColor, int checkColor) {
+            this.size = size;
+            this.checkedColor = checkedColor;
+            this.checkColor = checkColor;
+        }
+
+        @Override public void draw(Canvas canvas) {
+            RectF bounds = new RectF(getBounds());
+            float unit = size / 18f;
+            float inset = 1.5f * unit;
+            bounds.inset(inset, inset);
+            paint.setStrokeWidth(1f * unit);
+            paint.setStyle(checked ? Paint.Style.FILL : Paint.Style.STROKE);
+            paint.setColor(checkedColor);
+            canvas.drawRoundRect(bounds, 3f * unit, 3f * unit, paint);
+            if (checked) {
+                Path tick = new Path();
+                tick.moveTo(bounds.left + 3.2f * unit, bounds.top + 6.8f * unit);
+                tick.lineTo(bounds.left + 6.3f * unit, bounds.top + 10.1f * unit);
+                tick.lineTo(bounds.left + 12.8f * unit, bounds.top + 3.8f * unit);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                paint.setStrokeJoin(Paint.Join.ROUND);
+                paint.setStrokeWidth(1.8f * unit);
+                paint.setColor(checkColor);
+                canvas.drawPath(tick, paint);
+            }
+        }
+
+        @Override protected boolean onStateChange(int[] state) {
+            boolean next = false;
+            for (int value : state) {
+                if (value == android.R.attr.state_checked) {
+                    next = true;
+                    break;
+                }
+            }
+            if (checked == next) return false;
+            checked = next;
+            invalidateSelf();
+            return true;
+        }
+
+        @Override public boolean isStateful() { return true; }
+        @Override public int getIntrinsicWidth() { return size; }
+        @Override public int getIntrinsicHeight() { return size; }
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); invalidateSelf(); }
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) {
+            paint.setColorFilter(filter);
+            invalidateSelf();
+        }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    private static final class AllDayToggle extends LinearLayout {
+        interface OnCheckedChangeListener {
+            void onCheckedChanged(AllDayToggle view, boolean checked);
+        }
+
+        private final CompactCheckBoxDrawable checkbox;
+        private final TextView label;
+        private boolean checked;
+        private OnCheckedChangeListener listener;
+
+        AllDayToggle(Activity activity, int size, int checkedColor, int checkColor) {
+            super(activity);
+            setOrientation(HORIZONTAL);
+            setGravity(android.view.Gravity.CENTER_VERTICAL);
+            float density = activity.getResources().getDisplayMetrics().density;
+            setMinimumHeight(Math.round(48 * density));
+            setClickable(true);
+            setFocusable(true);
+            setContentDescription("全天日程");
+            checkbox = new CompactCheckBoxDrawable(size, checkedColor, checkColor);
+            checkbox.setBounds(0, 0, size, size);
+            ImageView check = new ImageView(activity);
+            check.setImageDrawable(checkbox);
+            check.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            addView(check, new LinearLayout.LayoutParams(size, size));
+            label = new TextView(activity);
+            label.setText("全天");
+            label.setTextSize(DETAIL_LABEL_TEXT_SP);
+            UiStyle.muted(label);
+            label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
+            labelParams.setMargins(Math.round(4 * density), 0, 0, 0);
+            addView(label, labelParams);
+        }
+
+        void setOnCheckedChangeListener(OnCheckedChangeListener value) { listener = value; }
+
+        boolean isChecked() { return checked; }
+
+        void setChecked(boolean value) {
+            if (checked == value) return;
+            checked = value;
+            checkbox.setState(value ? new int[]{android.R.attr.state_checked} : new int[0]);
+            sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent
+                    .TYPE_WINDOW_CONTENT_CHANGED);
+            if (listener != null) listener.onCheckedChanged(this, value);
+        }
+
+        @Override public boolean performClick() {
+            setChecked(!checked);
+            super.performClick();
+            return true;
+        }
+
+        @Override public void onInitializeAccessibilityNodeInfo(
+                android.view.accessibility.AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName(android.widget.CompoundButton.class.getName());
+            info.setCheckable(true);
+            info.setChecked(checked);
+            info.setContentDescription("全天日程");
+        }
+    }
+
+    private static final int DETAIL_FIELD_LABEL_WIDTH_DP = 78;
+    private static final int DETAIL_FIELD_ICON_SIZE_DP = 18;
+    private static final int DETAIL_LABEL_TEXT_SP = 13;
+    private static final int DETAIL_VALUE_TEXT_SP = 15;
     private static final int CALENDAR_PERMISSION_REQUEST = 11;
     private static final int PICK_CAPTURE_IMAGES = 13;
     private static final int PICK_CAPTURE_FILES = 14;
@@ -98,13 +232,14 @@ public final class TaskDetailActivity extends Activity {
     private View gesturePriorityChild;
     private View galleryGesturePriorityChild;
     private final Map<Long, Integer> taskScrollPositions = new HashMap<>();
+    /** Candidate selection is session-local and follows the inbox task while paging. */
+    private final Map<Long, Integer> taskCandidatePagePositions = new HashMap<>();
     private int candidatePageIndex;
     private float dragStartOffset;
     private final Set<Long> dirtyCandidateIds = new HashSet<>();
     private final List<Uri> deferredFileUris = new ArrayList<>();
     /** Cards stagger in only for a freshly opened screen, not on every rebuild. */
     private boolean animateEntrances;
-    private boolean sourceExpanded;
     private Boolean previewExpanded;
     private boolean detailsExpanded;
     private boolean usageExpanded;
@@ -209,8 +344,8 @@ public final class TaskDetailActivity extends Activity {
         setContentView(stage);
         if (state != null) {
             int scrollY = state.getInt("scroll_y");
-            sourceExpanded = state.getBoolean("source_expanded");
             candidatePageIndex = state.getInt("candidate_page_index");
+            taskCandidatePagePositions.put(taskId, candidatePageIndex);
             if (state.containsKey("preview_expanded"))
                 previewExpanded = state.getBoolean("preview_expanded");
             detailsExpanded = state.getBoolean("details_expanded");
@@ -221,6 +356,12 @@ public final class TaskDetailActivity extends Activity {
             if (savedIds != null && savedValues != null) {
                 for (int i = 0; i < Math.min(savedIds.length, savedValues.length); i++)
                     taskScrollPositions.put(savedIds[i], savedValues[i]);
+            }
+            long[] candidateTaskIds = state.getLongArray("candidate_task_ids");
+            int[] candidateIndexes = state.getIntArray("candidate_task_indexes");
+            if (candidateTaskIds != null && candidateIndexes != null) {
+                for (int i = 0; i < Math.min(candidateTaskIds.length, candidateIndexes.length); i++)
+                    taskCandidatePagePositions.put(candidateTaskIds[i], Math.max(0, candidateIndexes[i]));
             }
             page.post(() -> page.scrollTo(0, scrollY));
         } else {
@@ -241,9 +382,18 @@ public final class TaskDetailActivity extends Activity {
         }
         state.putLongArray("task_scroll_ids", savedIds);
         state.putIntArray("task_scroll_values", savedValues);
+        taskCandidatePagePositions.put(taskId, candidatePageIndex);
+        long[] candidateTaskIds = new long[taskCandidatePagePositions.size()];
+        int[] candidateIndexes = new int[taskCandidatePagePositions.size()];
+        int candidateSavedIndex = 0;
+        for (Map.Entry<Long, Integer> entry : taskCandidatePagePositions.entrySet()) {
+            candidateTaskIds[candidateSavedIndex] = entry.getKey();
+            candidateIndexes[candidateSavedIndex++] = entry.getValue();
+        }
+        state.putLongArray("candidate_task_ids", candidateTaskIds);
+        state.putIntArray("candidate_task_indexes", candidateIndexes);
         state.putInt("candidate_page_index", candidatePageIndex);
         state.putLong("task_id", taskId);
-        state.putBoolean("source_expanded", sourceExpanded);
         state.putBoolean("details_expanded", detailsExpanded);
         state.putBoolean("usage_expanded", usageExpanded);
         state.putBoolean("links_expanded", linksExpanded);
@@ -296,6 +446,7 @@ public final class TaskDetailActivity extends Activity {
     private void render() {
         if (deleting) return;
         final long renderedTaskId = taskId;
+        candidatePageIndex = taskCandidatePagePositions.getOrDefault(taskId, candidatePageIndex);
         if (detailPager != null) detailPager.setGesturePriorityChild(null);
         gesturePriorityChild = null;
         galleryGesturePriorityChild = null;
@@ -319,6 +470,9 @@ public final class TaskDetailActivity extends Activity {
             }
             addDetailHeader();
             List<EventCandidate> candidates = store.getCandidates(taskId);
+            candidatePageIndex = candidates.isEmpty() ? 0
+                    : Math.max(0, Math.min(candidatePageIndex, candidates.size() - 1));
+            taskCandidatePagePositions.put(taskId, candidatePageIndex);
             addTaskPagerIndicator(store.listTasks(), task.status);
             observedStatus = task.status;
             observedCandidates = candidates.size();
@@ -381,12 +535,15 @@ public final class TaskDetailActivity extends Activity {
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView position = new TextView(this);
         position.setText(current < 0 ? "收件箱" : "" + (current + 1) + " / " + tasks.size());
-        position.setTextSize(13);
+        position.setTextSize(16);
+        position.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        position.setMinHeight(dp(48));
         UiStyle.muted(position);
         Drawable inboxIcon = getDrawable(R.drawable.ic_inbox_outline);
         if (inboxIcon != null) {
             inboxIcon.setTint(UiStyle.colors(this).primary);
-            position.setCompoundDrawablesRelativeWithIntrinsicBounds(inboxIcon, null, null, null);
+            inboxIcon.setBounds(0, 0, dp(20), dp(20));
+            position.setCompoundDrawablesRelative(inboxIcon, null, null, null);
             position.setCompoundDrawablePadding(dp(6));
         }
         position.setContentDescription(current < 0 ? "收件箱" : "收件箱，第" + (current + 1)
@@ -404,6 +561,7 @@ public final class TaskDetailActivity extends Activity {
 
     private void addCandidateCarousel(List<EventCandidate> candidates) {
         candidatePageIndex = Math.max(0, Math.min(candidatePageIndex, candidates.size() - 1));
+        taskCandidatePagePositions.put(taskId, candidatePageIndex);
         TextView indicator = new TextView(this);
         indicator.setText("日程 " + (candidatePageIndex + 1) + " / " + candidates.size());
         indicator.setContentDescription("第" + (candidatePageIndex + 1) + "项日程，共"
@@ -429,6 +587,7 @@ public final class TaskDetailActivity extends Activity {
                     Math.round(scrollX / (float) pageWidth)));
             if (index != candidatePageIndex) {
                 candidatePageIndex = index;
+                taskCandidatePagePositions.put(taskId, index);
                 indicator.setText("日程 " + (index + 1) + " / " + candidates.size());
                 indicator.setContentDescription("第" + (index + 1) + "项日程，共"
                         + candidates.size() + "项，可左右滑动切换");
@@ -498,8 +657,7 @@ public final class TaskDetailActivity extends Activity {
             if (saveInFlight) {
                 Feedback.show(this, "正在保存日程，请稍候");
             } else if (hasUnsavedEdits) {
-                UiStyle.confirmDialog(this, "放弃未保存的修改？",
-                        "返回后将丢弃当前日程的修改。", "放弃修改", this::finish);
+                showUnsavedEditsDialog();
             } else {
                 finish();
             }
@@ -511,6 +669,9 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.title(title);
         title.setPadding(dp(8), 0, 0, 0);
         row.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout headerActions = new LinearLayout(this);
+        headerActions.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        UiStyle.glassPill(headerActions);
         completionAction = new Button(this);
         completionAction.setText("✓");
         completionAction.setAllCaps(false);
@@ -523,10 +684,17 @@ public final class TaskDetailActivity extends Activity {
         completionAction.setTextColor(UiStyle.colors(this).primary);
         completionAction.setTextSize(20);
         completionAction.setTypeface(null, android.graphics.Typeface.BOLD);
-        UiStyle.glass(completionAction);
+        completionAction.setBackgroundColor(Color.TRANSPARENT);
         UiStyle.pressable(completionAction);
         completionAction.setVisibility(View.GONE);
-        row.addView(completionAction, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        headerActions.addView(completionAction,
+                new LinearLayout.LayoutParams(dp(48), dp(48)));
+        View actionDivider = new View(this);
+        actionDivider.setBackgroundColor(UiStyle.colors(this).outline);
+        actionDivider.setVisibility(View.GONE);
+        completionAction.setTag(actionDivider);
+        headerActions.addView(actionDivider,
+                new LinearLayout.LayoutParams(dp(1), dp(24)));
         TextView more = new TextView(this);
         more.setText("⋮");
         more.setTextSize(24);
@@ -537,17 +705,60 @@ public final class TaskDetailActivity extends Activity {
         more.setMinHeight(dp(48));
         more.setMinimumWidth(dp(48));
         more.setMinimumHeight(dp(48));
-        UiStyle.glass(more);
         UiStyle.pressable(more);
         more.setOnClickListener(view -> showHeaderMenu());
-        row.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        headerActions.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        row.addView(headerActions, new LinearLayout.LayoutParams(-2, dp(48)));
         UiStyle.addSpaced(content, row, 0, 2);
+    }
+
+    private void showUnsavedEditsDialog() {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = floatingDialogPanel("未保存的修改");
+        TextView message = new TextView(this);
+        message.setText("保存会确认并提交当前日程；放弃会丢弃修改。点击外部可继续编辑。 ");
+        message.setTextSize(14);
+        UiStyle.muted(message);
+        UiStyle.addSpaced(panel, message, 0, 14);
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        Button abandon = new Button(this);
+        abandon.setText("放弃");
+        UiStyle.button(abandon, false);
+        abandon.setMinimumHeight(dp(48));
+        abandon.setOnClickListener(view -> {
+            dialog.dismiss();
+            finish();
+        });
+        LinearLayout.LayoutParams abandonParams = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        abandonParams.setMargins(0, 0, dp(6), 0);
+        actions.addView(abandon, abandonParams);
+        Button save = new Button(this);
+        save.setText("保存");
+        UiStyle.button(save, true);
+        save.setMinimumHeight(dp(48));
+        save.setOnClickListener(view -> {
+            dialog.dismiss();
+            if (completionAction != null && completionAction.isEnabled()) {
+                completionAction.performClick();
+            } else {
+                Feedback.show(this, "当前日程暂时无法保存");
+            }
+        });
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        saveParams.setMargins(dp(6), 0, 0, 0);
+        actions.addView(save, saveParams);
+        panel.addView(actions);
+        dialog.setCanceledOnTouchOutside(true);
+        UiStyle.showFloatingDialog(dialog, panel);
     }
 
     private void setCompletionAction(Runnable action, EventCandidate candidate,
             List<EventCandidate> candidates) {
         if (completionAction == null) return;
         completionAction.setVisibility(View.VISIBLE);
+        if (completionAction.getTag() instanceof View divider)
+            divider.setVisibility(View.VISIBLE);
         completionAction.setEnabled(true);
         int remaining = Math.max(0, candidates.size() - countPublished(candidates));
         completionAction.setContentDescription("确认当前日程：" + candidate.title
@@ -837,14 +1048,14 @@ public final class TaskDetailActivity extends Activity {
         shell.animate().cancel();
         float startX = shell.getTranslationX();
         float remaining = Math.max(0f, distance - Math.abs(startX));
-        long duration = Math.max(90L, Math.min(210L, Math.round(210f * remaining / distance)));
+        long duration = Math.max(110L, Math.min(260L, Math.round(260f * remaining / distance)));
         shell.animate().translationX(outgoingDirection * distance)
                 .setDuration(duration).setInterpolator(new AccelerateInterpolator(1.25f))
                 .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces())
                 .withEndAction(() -> {
                     renderTaskPage(nextTaskId);
                     shell.setTranslationX(-outgoingDirection * distance);
-                    shell.animate().translationX(0f).setDuration(245L)
+                    shell.animate().translationX(0f).setDuration(285L)
                             .setInterpolator(new DecelerateInterpolator(1.35f))
                             .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces())
                             .withEndAction(() -> {
@@ -857,7 +1068,7 @@ public final class TaskDetailActivity extends Activity {
 
     private void renderTaskPage(long nextTaskId) {
         taskId = nextTaskId;
-        candidatePageIndex = 0;
+        candidatePageIndex = taskCandidatePagePositions.getOrDefault(nextTaskId, 0);
         resetScrollForNextRender = true;
         setIntent(new android.content.Intent(getIntent()).putExtra("task_id", taskId));
         render();
@@ -924,6 +1135,7 @@ public final class TaskDetailActivity extends Activity {
         linkBodyView = saved.linkBodyView;
         previewLength = saved.previewLength;
         candidatePageIndex = saved.candidatePageIndex;
+        taskCandidatePagePositions.put(saved.id, saved.candidatePageIndex);
         observedStatus = saved.observedStatus;
         observedCandidates = saved.observedCandidates;
         gesturePriorityChild = saved.gestureChild;
@@ -957,7 +1169,7 @@ public final class TaskDetailActivity extends Activity {
         previewText = null;
         previewScroll = null;
         previewLength = -1;
-        candidatePageIndex = 0;
+        candidatePageIndex = taskCandidatePagePositions.getOrDefault(targetId, 0);
         resetScrollForNextRender = true;
         render();
         PagerPage adjacent = capturePagerPage();
@@ -983,7 +1195,7 @@ public final class TaskDetailActivity extends Activity {
             return;
         }
         float remaining = Math.abs(currentTarget - shell.getTranslationX());
-        long duration = Math.max(100L, Math.min(240L, Math.round(220f * remaining / width)));
+        long duration = Math.max(120L, Math.min(270L, Math.round(260f * remaining / width)));
         shell.animate().translationX(currentTarget).setDuration(duration)
                 .setInterpolator(new DecelerateInterpolator(1.35f))
                 .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces()).start();
@@ -1034,7 +1246,7 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView headingLabel = new TextView(this);
-        headingLabel.setText("原始内容  ▾");
+        headingLabel.setText("原始内容");
         headingLabel.setTextSize(15);
         UiStyle.title(headingLabel);
         heading.addView(headingLabel, new LinearLayout.LayoutParams(0, -2, 1));
@@ -1053,19 +1265,8 @@ public final class TaskDetailActivity extends Activity {
         String source = rawText == null || rawText.trim().isEmpty()
                 ? "仅图片输入" : rawText;
         body.setText(source);
-        body.setMaxLines(sourceExpanded ? Integer.MAX_VALUE : 1);
-        body.setEllipsize(sourceExpanded ? null : TextUtils.TruncateAt.END);
-        Runnable toggle = () -> {
-            sourceExpanded = !sourceExpanded;
-            body.setMaxLines(sourceExpanded ? Integer.MAX_VALUE : 1);
-            body.setEllipsize(sourceExpanded ? null : TextUtils.TruncateAt.END);
-            headingLabel.setText(sourceExpanded ? "原始内容  ▴" : "原始内容  ▾");
-            body.animate().cancel();
-            body.setAlpha(1f);
-            body.setTranslationY(0f);
-        };
-        headingLabel.setOnClickListener(view -> toggle.run());
-        body.setOnClickListener(view -> toggle.run());
+        body.setMaxLines(1);
+        body.setEllipsize(TextUtils.TruncateAt.END);
         UiStyle.addSpaced(card, heading, 0, 4);
         card.addView(body);
     }
@@ -1175,7 +1376,11 @@ public final class TaskDetailActivity extends Activity {
     private Button compactActionButton(String text, int iconResource, Runnable action) {
         Button button = new Button(this);
         button.setOnClickListener(view -> action.run());
-        UiStyle.button(button, false);
+        UiStyle.glass(button);
+        UiStyle.pressable(button);
+        button.setTextColor(UiStyle.colors(this).primary);
+        button.setTypeface(android.graphics.Typeface.create("sans-serif-medium",
+                android.graphics.Typeface.NORMAL));
         button.setMinimumHeight(dp(48));
         button.setMinHeight(dp(48));
         setCompactActionPresentation(button, text, iconResource);
@@ -1184,13 +1389,17 @@ public final class TaskDetailActivity extends Activity {
 
     private void setCompactActionPresentation(Button button, String text, int iconResource) {
         button.setText(text);
-        button.setTextSize(14);
+        button.setTextSize(DETAIL_LABEL_TEXT_SP);
         button.setGravity(android.view.Gravity.CENTER);
-        button.setPadding(dp(10), 0, dp(10), 0);
+        button.setPadding(dp(9), 0, dp(9), 0);
         Drawable icon = iconResource == 0 ? null : getDrawable(iconResource);
-        if (icon != null) icon.setTint(UiStyle.colors(this).primary);
-        button.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, null, null, null);
-        button.setCompoundDrawablePadding(dp(7));
+        if (icon != null) {
+            icon = icon.mutate();
+            icon.setTint(UiStyle.colors(this).primary);
+            icon.setBounds(0, 0, dp(DETAIL_FIELD_ICON_SIZE_DP), dp(DETAIL_FIELD_ICON_SIZE_DP));
+        }
+        button.setCompoundDrawablesRelative(icon, null, null, null);
+        button.setCompoundDrawablePadding(dp(6));
     }
 
     private void confirmReparseCapture() {
@@ -1773,54 +1982,44 @@ public final class TaskDetailActivity extends Activity {
         cardTitle.setTextSize(17);
         UiStyle.title(cardTitle);
         cardHeader.addView(cardTitle, new LinearLayout.LayoutParams(0, -2, 1f));
-        Button removeCandidate = new Button(this);
+        ImageButton removeCandidate = new ImageButton(this);
         removeCandidate.setContentDescription("删除日程 " + candidate.title);
         removeCandidate.setOnClickListener(view -> confirmRemoveCandidate(candidate, number));
         removeCandidate.setPadding(0, 0, 0, 0);
-        removeCandidate.setTextColor(UiStyle.colors(this).primary);
         Drawable deleteIcon = getDrawable(R.drawable.ic_delete);
         if (deleteIcon != null) deleteIcon.setTint(UiStyle.colors(this).primary);
-        removeCandidate.setCompoundDrawablesRelativeWithIntrinsicBounds(
-                deleteIcon, null, null, null);
+        removeCandidate.setImageDrawable(deleteIcon);
+        removeCandidate.setScaleType(ImageView.ScaleType.CENTER);
         UiStyle.glass(removeCandidate);
         UiStyle.pressable(removeCandidate);
         removeCandidate.setMinimumWidth(dp(48));
         removeCandidate.setMinimumHeight(dp(48));
         cardHeader.addView(removeCandidate, new LinearLayout.LayoutParams(dp(48), dp(48)));
         UiStyle.addSpaced(card, cardHeader, 0, 2);
-        EditText title = inlineField(formRow(card, "标题"), "添加标题", candidate.title, 1f);
+        EditText title = inlineField(formRow(card, "标题", R.drawable.ic_title),
+                "添加标题", candidate.title, 1f);
         trackUnsavedChanges(title, candidate.id);
-        CheckBox allDay = new CheckBox(this);
-        allDay.setText("全天");
-        allDay.setChecked(candidate.allDay);
+        AllDayToggle allDay = new AllDayToggle(this, dp(DETAIL_FIELD_ICON_SIZE_DP),
+                UiStyle.colors(this).primary, UiStyle.colors(this).onPrimaryContainer);
         int[] selectedCategory = {EventCategory.indexOf(candidate.category)};
         TextView category = new TextView(this);
         category.setText(EventCategory.LABELS[selectedCategory[0]]);
         UiStyle.fieldTrigger(category);
+        category.setTextSize(DETAIL_VALUE_TEXT_SP);
+        category.setMinHeight(dp(40));
+        category.setPadding(dp(4), dp(5), dp(4), dp(5));
+        category.setCompoundDrawablePadding(dp(4));
         category.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout categoryRow = formRow(card, "类型", R.drawable.ic_event);
-        categoryRow.addView(category, new LinearLayout.LayoutParams(-1, -2));
+        categoryRow.addView(category, new LinearLayout.LayoutParams(0, -2, 1f));
         LinearLayout timeRows = new LinearLayout(this);
         timeRows.setOrientation(LinearLayout.VERTICAL);
         UiStyle.addSpaced(card, timeRows, 1, 1);
         LinearLayout startRow = new LinearLayout(this);
         startRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         startRow.setPadding(0, dp(3), 0, dp(3));
-        LinearLayout timeKey = new LinearLayout(this);
-        timeKey.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        ImageView timeIcon = new ImageView(this);
-        timeIcon.setImageResource(R.drawable.ic_schedule);
-        timeIcon.setColorFilter(UiStyle.colors(this).primary);
-        timeIcon.setContentDescription("时间");
-        timeKey.addView(timeIcon, new LinearLayout.LayoutParams(dp(18), dp(18)));
-        TextView timeLabel = new TextView(this);
-        timeLabel.setText("时间");
-        timeLabel.setTextSize(13);
-        UiStyle.muted(timeLabel);
-        LinearLayout.LayoutParams timeLabelParams = new LinearLayout.LayoutParams(-2, -2);
-        timeLabelParams.setMargins(dp(4), 0, 0, 0);
-        timeKey.addView(timeLabel, timeLabelParams);
-        startRow.addView(timeKey, new LinearLayout.LayoutParams(dp(78), -2));
+        startRow.addView(fieldLabel("时间", R.drawable.ic_schedule),
+                new LinearLayout.LayoutParams(dp(DETAIL_FIELD_LABEL_WIDTH_DP), -2));
         LinearLayout endRow = new LinearLayout(this);
         endRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         endRow.setPadding(0, dp(3), 0, dp(3));
@@ -1834,20 +2033,17 @@ public final class TaskDetailActivity extends Activity {
                 candidate.allDay ? dayStart(defaulted.startAtMillis)
                         : format(defaulted.startAtMillis), 1f);
         start.setPadding(dp(4), dp(5), dp(4), dp(5));
-        start.setMinHeight(dp(40));
-        allDay.setPadding(0, 0, 0, 0);
-        allDay.setMinHeight(dp(40));
-        allDay.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
-        endRow.addView(allDay, new LinearLayout.LayoutParams(dp(78), -2));
+        start.setMinHeight(dp(48));
+        allDay.setChecked(candidate.allDay);
+        endRow.addView(allDay, new LinearLayout.LayoutParams(
+                dp(DETAIL_FIELD_LABEL_WIDTH_DP), dp(48)));
         EditText end = inlineField(endRow, endHint,
                 candidate.allDay ? dayEnd(defaulted.endAtMillis)
                         : format(defaulted.endAtMillis), 1f);
         end.setPadding(dp(4), dp(5), dp(4), dp(5));
-        end.setMinHeight(dp(40));
+        end.setMinHeight(dp(48));
         timeRows.addView(startRow, new LinearLayout.LayoutParams(-1, -2));
         timeRows.addView(endRow, new LinearLayout.LayoutParams(-1, -2));
-        start.setTextSize(13);
-        end.setTextSize(13);
         trackUnsavedChanges(start, candidate.id);
         trackUnsavedChanges(end, candidate.id);
         start.addTextChangedListener(new TextWatcher() {
@@ -1948,11 +2144,12 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout noteRow = formRow(card, "备注", R.drawable.ic_notes);
         TextView notePreview = new TextView(this);
         notePreview.setText(shortNote(currentDescription[0]));
-        notePreview.setTextSize(14);
+        notePreview.setTextSize(DETAIL_VALUE_TEXT_SP);
         notePreview.setMaxLines(2);
         notePreview.setEllipsize(TextUtils.TruncateAt.END);
         notePreview.setGravity(android.view.Gravity.CENTER_VERTICAL);
         UiStyle.muted(notePreview);
+        notePreview.setPadding(dp(4), 0, 0, 0);
         noteRow.addView(notePreview, new LinearLayout.LayoutParams(0, -2, 1f));
         Button editNote = compactActionButton("展开", R.drawable.ic_expand_more,
                 () -> showNoteEditorDialog(candidate, currentDescription, notePreview));
@@ -1967,7 +2164,7 @@ public final class TaskDetailActivity extends Activity {
                         : candidate.reminderMinutesBefore.toString(), .5f);
         TextView reminderSuffix = new TextView(this);
         reminderSuffix.setText("分钟");
-        reminderSuffix.setTextSize(15);
+        reminderSuffix.setTextSize(DETAIL_VALUE_TEXT_SP);
         UiStyle.muted(reminderSuffix);
         reminderRow.addView(reminderSuffix);
         trackUnsavedChanges(location, candidate.id);
@@ -2147,6 +2344,7 @@ public final class TaskDetailActivity extends Activity {
         }
         int remaining = candidates.size() - countPublished(candidates);
         candidatePageIndex = nextPending;
+        taskCandidatePagePositions.put(taskId, candidatePageIndex);
         render();
         Feedback.show(this, "当前日程已保存；还有 " + remaining + " 项待确认，已切换到下一项");
     }
@@ -2218,11 +2416,8 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(3), 0, dp(3));
-        TextView key = new TextView(this);
-        key.setText(label);
-        key.setTextSize(14);
-        UiStyle.muted(key);
-        row.addView(key, new LinearLayout.LayoutParams(dp(54), -2));
+        row.addView(fieldLabel(label, 0),
+                new LinearLayout.LayoutParams(dp(DETAIL_FIELD_LABEL_WIDTH_DP), -2));
         UiStyle.addSpaced(card, row, 1, 1);
         return row;
     }
@@ -2231,23 +2426,32 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(3), 0, dp(3));
-        LinearLayout key = new LinearLayout(this);
-        key.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(iconResource);
-        icon.setColorFilter(UiStyle.colors(this).primary);
-        icon.setContentDescription(label);
-        key.addView(icon, new LinearLayout.LayoutParams(dp(18), dp(18)));
-        TextView text = new TextView(this);
-        text.setText(label);
-        text.setTextSize(13);
-        UiStyle.muted(text);
-        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
-        textParams.setMargins(dp(4), 0, 0, 0);
-        key.addView(text, textParams);
-        row.addView(key, new LinearLayout.LayoutParams(dp(78), -2));
+        row.addView(fieldLabel(label, iconResource),
+                new LinearLayout.LayoutParams(dp(DETAIL_FIELD_LABEL_WIDTH_DP), -2));
         UiStyle.addSpaced(card, row, 1, 1);
         return row;
+    }
+
+    private LinearLayout fieldLabel(String label, int iconResource) {
+        LinearLayout key = new LinearLayout(this);
+        key.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        if (iconResource != 0) {
+            ImageView icon = new ImageView(this);
+            icon.setImageResource(iconResource);
+            icon.setColorFilter(UiStyle.colors(this).primary);
+            icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            key.addView(icon, new LinearLayout.LayoutParams(
+                    dp(DETAIL_FIELD_ICON_SIZE_DP), dp(DETAIL_FIELD_ICON_SIZE_DP)));
+        }
+        TextView text = new TextView(this);
+        text.setText(label);
+        text.setTextSize(DETAIL_LABEL_TEXT_SP);
+        text.setContentDescription(label);
+        UiStyle.muted(text);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
+        if (iconResource != 0) textParams.setMargins(dp(4), 0, 0, 0);
+        key.addView(text, textParams);
+        return key;
     }
 
     private String shortNote(String note) {
@@ -2320,6 +2524,7 @@ public final class TaskDetailActivity extends Activity {
         edit.setSingleLine(true);
         if (value != null) edit.setText(value);
         UiStyle.input(edit);
+        edit.setTextSize(DETAIL_VALUE_TEXT_SP);
         edit.setBackgroundColor(Color.TRANSPARENT);
         edit.setPadding(dp(4), dp(9), dp(4), dp(9));
         edit.setGravity(android.view.Gravity.CENTER_VERTICAL | android.view.Gravity.START);

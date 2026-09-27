@@ -71,25 +71,25 @@ public final class AppearanceActivity extends Activity {
 
         heading(root, "主题配色");
         if (ThemeStore.wallpaperAvailable()) {
-            option(root, "壁纸配色", "跟随 Android 系统配色",
+            themeOption(root, "壁纸配色", "跟随 Android 系统配色",
                     ThemeStore.WALLPAPER.equals(ThemeStore.color(this)),
                     () -> selectColor(ThemeStore.WALLPAPER));
         }
-        option(root, "青绿", "拾时经典", ThemeStore.TEAL.equals(ThemeStore.color(this)),
+        themeOption(root, "青绿", "拾时经典", ThemeStore.TEAL.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.TEAL));
-        option(root, "晴蓝", "明朗沉静", ThemeStore.BLUE.equals(ThemeStore.color(this)),
+        themeOption(root, "晴蓝", "明朗沉静", ThemeStore.BLUE.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.BLUE));
-        option(root, "暖珊瑚", "柔和温暖", ThemeStore.CORAL.equals(ThemeStore.color(this)),
+        themeOption(root, "暖珊瑚", "柔和温暖", ThemeStore.CORAL.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.CORAL));
-        option(root, "紫罗兰", "清晰而沉静", ThemeStore.PURPLE.equals(ThemeStore.color(this)),
+        themeOption(root, "紫罗兰", "清晰而沉静", ThemeStore.PURPLE.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.PURPLE));
-        option(root, "琥珀", "温暖明亮", ThemeStore.AMBER.equals(ThemeStore.color(this)),
+        themeOption(root, "琥珀", "温暖明亮", ThemeStore.AMBER.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.AMBER));
-        option(root, "玫瑰", "柔和醒目", ThemeStore.ROSE.equals(ThemeStore.color(this)),
+        themeOption(root, "玫瑰", "柔和醒目", ThemeStore.ROSE.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.ROSE));
-        option(root, "森林绿", "自然沉稳", ThemeStore.FOREST.equals(ThemeStore.color(this)),
+        themeOption(root, "森林绿", "自然沉稳", ThemeStore.FOREST.equals(ThemeStore.color(this)),
                 () -> selectColor(ThemeStore.FOREST));
-        option(root, "自定义颜色", ThemeStore.customColorHex(this),
+        themeOption(root, "自定义颜色", ThemeStore.customColorHex(this),
                 ThemeStore.CUSTOM.equals(ThemeStore.color(this)), this::showCustomColorDialog);
         heading(root, "毛玻璃与层级");
         acrylicControls(root);
@@ -326,6 +326,45 @@ public final class AppearanceActivity extends Activity {
         }
         card.setOnClickListener(view -> action.run());
         UiStyle.addSpaced(root, card, 3, 7);
+    }
+
+    private void themeOption(LinearLayout root, String name, String description,
+            boolean selected, Runnable action) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(16), dp(6), dp(16), dp(6));
+        card.setMinimumHeight(dp(56));
+        UiStyle.choice(card, selected, UiStyle.RADIUS_PANEL);
+        UiStyle.pressable(card);
+
+        int swatch = swatch(name);
+        if (swatch != 0) {
+            View color = new View(this);
+            GradientDrawable circle = new GradientDrawable();
+            circle.setShape(GradientDrawable.OVAL);
+            circle.setColor(swatch);
+            color.setBackground(circle);
+            LinearLayout.LayoutParams dot = new LinearLayout.LayoutParams(dp(20), dp(20));
+            dot.setMargins(0, 0, dp(12), 0);
+            card.addView(color, dot);
+        }
+
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView heading = text(UiStyle.marked(name, selected), 16, true);
+        heading.setTextColor(selected ? UiStyle.colors(this).onPrimaryContainer
+                : UiStyle.colors(this).text);
+        labels.addView(heading);
+        if (description != null && !description.isEmpty()) {
+            TextView detail = text(description, 13, false);
+            if (selected) detail.setTextColor(UiStyle.colors(this).onPrimaryContainer);
+            labels.addView(detail);
+        }
+        card.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+        card.setOnClickListener(view -> action.run());
+        UiStyle.addSpaced(root, card, 3, 4);
     }
 
     private TextView text(String value, int size, boolean bold) {

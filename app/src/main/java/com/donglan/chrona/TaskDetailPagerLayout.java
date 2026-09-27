@@ -26,6 +26,7 @@ final class TaskDetailPagerLayout extends FrameLayout {
     private float downY;
     private float dispatchDownX;
     private float dispatchDownY;
+    private CandidatePagerScrollView candidatePagerAtDown;
     private boolean pagingGesture;
     private boolean startedAtSystemEdge;
     private VelocityTracker velocityTracker;
@@ -58,14 +59,22 @@ final class TaskDetailPagerLayout extends FrameLayout {
             velocityTracker.addMovement(event);
             dispatchDownX = event.getX();
             dispatchDownY = event.getY();
-            touchStartedInPriorityChild = containsGesturePriorityChild(
-                    event.getRawX(), event.getRawY());
+            candidatePagerAtDown = candidatePagerAt(event.getRawX(), event.getRawY());
+            touchStartedInPriorityChild = candidatePagerAtDown != null
+                    || containsGesturePriorityChild(event.getRawX(), event.getRawY());
             int edgeInset = dp(32);
             startedAtSystemEdge = dispatchDownX <= edgeInset
                     || dispatchDownX >= getWidth() - edgeInset;
         } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
             float dx = event.getX() - dispatchDownX;
             float dy = event.getY() - dispatchDownY;
+            if (candidatePagerAtDown != null && !startedAtSystemEdge
+                    && Math.abs(dx) > touchSlop && Math.abs(dx) > Math.abs(dy) * 1.25f
+                    && candidatePagerAtDown.canYieldToTaskPager(dx)) {
+                candidatePagerAtDown.prepareForTaskPagerHandoff();
+                candidatePagerAtDown = null;
+                touchStartedInPriorityChild = false;
+            }
             if (!touchStartedInPriorityChild && Math.abs(dx) > touchSlop
                     && Math.abs(dx) > Math.abs(dy) * 1.25f) {
                 // A nested preview may have asked its vertical parent to keep the gesture.
@@ -78,6 +87,7 @@ final class TaskDetailPagerLayout extends FrameLayout {
         boolean handled = super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             touchStartedInPriorityChild = false;
+            candidatePagerAtDown = null;
             if (velocityTracker != null) {
                 velocityTracker.recycle();
                 velocityTracker = null;
@@ -149,5 +159,18 @@ final class TaskDetailPagerLayout extends FrameLayout {
             else if (contains(child, rawX, rawY)) return true;
         }
         return false;
+    }
+
+    private CandidatePagerScrollView candidatePagerAt(float rawX, float rawY) {
+        for (int i = gesturePriorityChildren.size() - 1; i >= 0; i--) {
+            View child = gesturePriorityChildren.get(i);
+            if (!child.isAttachedToWindow()) {
+                gesturePriorityChildren.remove(i);
+            } else if (child instanceof CandidatePagerScrollView pager
+                    && contains(child, rawX, rawY)) {
+                return pager;
+            }
+        }
+        return null;
     }
 }

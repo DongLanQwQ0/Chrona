@@ -2,7 +2,7 @@
 
 独立 Android 日程应用。首版闭环是：输入文字或通过系统分享文字 → 后台调用用户配置的 AI 服务 → 在应用内审核、修改日程草稿 → 写入专属的本地系统日历并由系统提醒。
 
-当前版本：`0.13.23`。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。
+当前版本：`0.13.26`。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。
 
 ## 当前功能
 
@@ -65,6 +65,9 @@ $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 
 ## 已验证
 
+- 2026-09-27：`0.13.26` 详情页对齐字段列、自绘可访问全天控件、标题与页码布局，并移除原始内容展开入口；按 taskId 保留详情会话日程页，退出时清除；未保存修改弹窗改为“放弃/保存”，外部点击继续编辑。versionCode 46；`assembleDebug` 与 `lintDebug` 通过。ADB 安装尝试因无线设备 offline 失败，未能进行真机视觉或手势回归。
+- 2026-09-27：`0.13.25` 优化首页时间线几何/字号、详情字段对齐与按钮/横滑、外观主题卡高度、分享进入记录页隐藏拆分选项（普通记录页保留）和模型思考输出查看；悬浮页弹出时背景窗口缩放动画时长加倍。versionCode 45；`assembleDebug`、`lintDebug` 和 ADB 安装通过，设备包信息为 versionCode 45/versionName 0.13.25。截图实测确认详情顶部连体按钮、删除图标和全天方框视觉；任务横滑、首页时间线及 reasoning 响应仍待设备验证。
+- 2026-09-27：`0.13.24` 修正首页时间线同日竖线、日期点和事件轨道对齐；统一详情字段标签/图标/全天/紧凑按钮；收紧外观页主题色卡高度。versionCode 44；`assembleDebug`、`lintDebug` 和 ADB 安装通过。
 - 2026-09-27：`0.13.23` ZIP 备份增加自定义背景图片，恢复时在公共 `Pictures/Chrona` 重建 URI 并校验内容；旧 ZIP 无背景字段时保留本机背景。versionCode 43；`assembleDebug`、`lintDebug` 与 ADB 安装验证通过（设备包信息为 versionCode 43/versionName 0.13.23）；分身自定义背景导出/导入及时间区视觉回归待用户确认。
 - 2026-09-27：`0.13.22` 修复备份导入的主线程调用错误；恢复设置使用 application context，并在主线程刷新界面。换库前后校验清单、任务和候选数量，增强失败回滚。versionCode 42；`assembleDebug`、`lintDebug` 与 ADB 安装验证通过（设备包信息为 versionCode 42/versionName 0.13.22）；分身导入恢复成功；用户确认收件箱、日程、图片和普通附件齐全，背景图片未包含（符合备份范围）。
 - 2026-09-27：`0.13.21` 修复 ZIP 恢复时 `PRAGMA wal_checkpoint` 调用方式导致的 SQLite 导入失败；收件箱状态筛选结果卡加入轻量错峰进入动画并保留滚动位置。versionCode 41；`assembleDebug`、`lintDebug` 与 ADB 安装验证通过，ZIP 实际导入和筛选动画回归待用户操作。
