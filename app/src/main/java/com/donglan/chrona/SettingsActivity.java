@@ -22,6 +22,7 @@ import com.donglan.chrona.ai.AiSettingsStore;
 public final class SettingsActivity extends Activity {
     private static final int CREATE_CONFIG = 31;
     private static final int PICK_CONFIG = 32;
+    private static final int MAX_CONFIG_BYTES = 256 * 1024;
     private EditText baseUrl;
     private EditText model;
     private EditText apiKey;
@@ -131,6 +132,11 @@ public final class SettingsActivity extends Activity {
         includeKey.setText("导出时包含 API 密钥");
         includeKey.setChecked(false);
         UiStyle.addSpaced(backupCard, includeKey, 0, 8);
+        TextView keyNote = new TextView(this);
+        keyNote.setText("勾选后密钥会以明文写入导出文件，只保存到可信位置。");
+        keyNote.setTextSize(13);
+        UiStyle.muted(keyNote);
+        UiStyle.addSpaced(backupCard, keyNote, 0, 10);
         LinearLayout backupActions = new LinearLayout(this);
         backupActions.setOrientation(LinearLayout.HORIZONTAL);
         Button export = new Button(this);
@@ -166,6 +172,15 @@ public final class SettingsActivity extends Activity {
             }
         } catch (Exception exception) {
             Feedback.showLong(this, "无法读取现有设置，请重新填写密钥");
+        }
+        ConfigBackup.Imported pending = ConfigBackup.pending(this);
+        if (pending != null) {
+            try {
+                if (new AiSettingsStore(this).load() == null) {
+                    baseUrl.setText(pending.baseUrl);
+                    model.setText(pending.model);
+                }
+            } catch (Exception ignored) { }
         }
         refreshImageState();
     }
@@ -243,13 +258,16 @@ public final class SettingsActivity extends Activity {
 
     private void writeConfig(Uri target) {
         boolean withKey = includeKey != null && includeKey.isChecked();
-        try (java.io.OutputStream output = getContentResolver().openOutputStream(target)) {
-            if (output == null) throw new java.io.IOException("无法写入所选位置");
-            output.write(ConfigBackup.export(this, withKey)
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            Feedback.showLong(this, withKey
-                            ? "已导出配置（含 API 密钥，请妥善保管该文件）"
-                            : "已导出配置（不含 API 密钥）");
+        try {
+            String json = ConfigBackup.export(this, withKey, baseUrl.getText().toString(),
+                    model.getText().toString(), apiKey.getText().toString());
+            try (java.io.OutputStream output = getContentResolver().openOutputStream(target)) {
+                if (output == null) throw new java.io.IOException("无法写入所选位置");
+                output.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            Feedback.showLong(this, ConfigBackup.containsApiKey(json)
+                    ? "已导出配置（含 API 密钥，请妥善保管该文件）"
+                    : "已导出配置（不含 API 密钥）");
         } catch (Exception exception) {
             Feedback.showLong(this, "导出失败：" + exception.getMessage());
         }
@@ -262,8 +280,13 @@ public final class SettingsActivity extends Activity {
             java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
             byte[] chunk = new byte[8192];
             int read;
-            while ((read = input.read(chunk)) != -1) buffer.write(chunk, 0, read);
+            while ((read = input.read(chunk)) != -1) {
+                if (buffer.size() + read > MAX_CONFIG_BYTES)
+                    throw new java.io.IOException("配置文件超过 256 KB");
+                buffer.write(chunk, 0, read);
+            }
             json = new String(buffer.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+            if (json.startsWith("\uFEFF")) json = json.substring(1);
         } catch (Exception exception) {
             Feedback.showLong(this, "读取失败：" + exception.getMessage());
             return;
@@ -282,7 +305,12 @@ public final class SettingsActivity extends Activity {
 
     private void applyImported(String json) {
         try {
-            ConfigBackup.apply(this, json);
+            ConfigBackup.Imported imported = ConfigBackup.apply(this, json);
+            if (imported.hasAi) {
+                baseUrl.setText(imported.baseUrl);
+                model.setText(imported.model);
+                apiKey.setText("");
+            }
             Feedback.show(this, "配置已导入");
         } catch (Exception exception) {
             Feedback.showLong(this, "导入失败：" + exception.getMessage());
@@ -298,6 +326,7 @@ public final class SettingsActivity extends Activity {
                 if (existing != null) key = existing.apiKey;
             }
             store.save(baseUrl.getText().toString().trim(), model.getText().toString().trim(), key);
+            ConfigBackup.clearDraft(this);
             Feedback.show(this, "设置已保存");
             finish();
         } catch (Exception exception) {

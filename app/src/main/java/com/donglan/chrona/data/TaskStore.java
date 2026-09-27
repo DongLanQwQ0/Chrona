@@ -11,11 +11,16 @@ import com.donglan.chrona.image.ImageStore;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.text.Normalizer;
+import java.util.Locale;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.io.IOException;
 
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
 public final class TaskStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 4;
+    private static final int DATABASE_VERSION = 6;
 
     private final Context context;
 
@@ -48,6 +53,8 @@ public final class TaskStore extends SQLiteOpenHelper {
                 + "link_text TEXT, "
                 + "link_fetched_at INTEGER)");
         db.execSQL("CREATE INDEX tasks_by_created_at ON tasks(created_at_millis DESC, id DESC)");
+        createTaskAttachments(db);
+        createTaskFiles(db);
         db.execSQL("CREATE TABLE event_candidates ("
                 + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                 + "task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, "
@@ -87,7 +94,36 @@ public final class TaskStore extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE event_candidates ADD COLUMN all_day INTEGER NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE tasks ADD COLUMN cached_tokens INTEGER");
         }
+        if (oldVersion < 5) {
+            createTaskAttachments(db);
+            db.execSQL("INSERT INTO task_attachments(task_id, image_path, position) "
+                    + "SELECT id, image_path, 0 FROM tasks WHERE image_path IS NOT NULL");
+        }
+        if (oldVersion < 6) createTaskFiles(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
+    }
+
+    private static void createTaskAttachments(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE task_attachments ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "task_id INTEGER NOT NULL, "
+                + "image_path TEXT NOT NULL, "
+                + "position INTEGER NOT NULL, "
+                + "UNIQUE(task_id, position))");
+        db.execSQL("CREATE INDEX attachments_by_task ON task_attachments(task_id, position)");
+    }
+
+    private static void createTaskFiles(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE task_files ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, "
+                + "stored_name TEXT NOT NULL, "
+                + "display_name TEXT NOT NULL, "
+                + "mime_type TEXT NOT NULL, "
+                + "size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0), "
+                + "position INTEGER NOT NULL, "
+                + "UNIQUE(task_id, position))");
+        db.execSQL("CREATE INDEX files_by_task ON task_files(task_id, position)");
     }
 
     /** One line per fact about the local database; read by the debug screen. */
@@ -138,13 +174,21 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     /** Saves one input in queued state and returns its database ID. */
     public long insertTask(String rawText, String imagePath, String source, long createdAtMillis) {
+        return insertTask(rawText, imagePath, new ArrayList<>(), source, createdAtMillis);
+    }
+
+    /** Saves an input and its private file attachments atomically. */
+    public long insertTask(String rawText, String imagePath, List<TaskFileAttachment> files,
+            String source, long createdAtMillis) {
         boolean hasText = rawText != null && !rawText.trim().isEmpty();
         if (imagePath != null && !ImageStore.isStoredName(imagePath)) {
             throw new IllegalArgumentException("Unknown attached image");
         }
-        if (!hasText && imagePath == null) {
-            throw new IllegalArgumentException("An input needs text or an attached image");
+        List<TaskFileAttachment> attachments = files == null ? new ArrayList<>() : files;
+        if (!hasText && imagePath == null && attachments.isEmpty()) {
+            throw new IllegalArgumentException("An input needs text or an attachment");
         }
+        for (TaskFileAttachment file : attachments) validateFileAttachment(file);
         requireNonEmpty(source, "source");
         ContentValues values = new ContentValues();
         values.put("raw_text", hasText ? rawText : "");
@@ -152,7 +196,23 @@ public final class TaskStore extends SQLiteOpenHelper {
         values.put("source", source);
         values.put("created_at_millis", createdAtMillis);
         values.put("status", TaskRecord.QUEUED);
-        return getWritableDatabase().insertOrThrow("tasks", null, values);
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            long taskId = db.insertOrThrow("tasks", null, values);
+            if (imagePath != null) {
+                ContentValues attachment = new ContentValues();
+                attachment.put("task_id", taskId);
+                attachment.put("image_path", imagePath);
+                attachment.put("position", 0);
+                db.insertOrThrow("task_attachments", null, attachment);
+            }
+            insertTaskFiles(db, taskId, attachments);
+            db.setTransactionSuccessful();
+            return taskId;
+        } finally {
+            db.endTransaction();
+        }
     }
 
     /**
@@ -182,6 +242,57 @@ public final class TaskStore extends SQLiteOpenHelper {
             return taskIds;
         } finally {
             db.endTransaction();
+        }
+    }
+
+    /** Finds an existing capture with the same normalized text and attachment identities. */
+    public TaskRecord findDuplicateTask(String rawText, String imagePath,
+            List<TaskFileAttachment> files) throws IOException {
+        String normalizedText = normalizeInputText(rawText);
+        String incomingAttachments = attachmentIdentity(
+                imagePath == null ? new ArrayList<>() : java.util.Collections.singletonList(imagePath),
+                files == null ? new ArrayList<>() : files);
+        for (TaskRecord candidate : listTasks()) {
+            if (!normalizedText.equals(normalizeInputText(candidate.rawText))) continue;
+            String existingAttachments = attachmentIdentity(getImagePaths(candidate.id),
+                    getFileAttachments(candidate.id));
+            if (incomingAttachments.equals(existingAttachments)) return candidate;
+        }
+        return null;
+    }
+
+    /** Canonical text form shared with batch duplicate detection. */
+    public static String normalizeInputText(String value) {
+        if (value == null) return "";
+        return Normalizer.normalize(value, Normalizer.Form.NFKC).trim()
+                .replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    private String attachmentIdentity(List<String> images, List<TaskFileAttachment> files)
+            throws IOException {
+        StringBuilder identity = new StringBuilder();
+        identity.append("images:").append(images.size()).append(';');
+        ImageStore imageStore = new ImageStore(context);
+        for (String image : images) {
+            identity.append(sha256(imageStore.read(image))).append(';');
+        }
+        identity.append("files:").append(files.size()).append(';');
+        for (TaskFileAttachment file : files) {
+            identity.append(normalizeInputText(file.displayName)).append('|')
+                    .append(normalizeInputText(file.mimeType)).append('|')
+                    .append(file.sizeBytes).append(';');
+        }
+        return identity.toString();
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte value : digest) hex.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+            return hex.toString();
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
         }
     }
 
@@ -237,8 +348,18 @@ public final class TaskStore extends SQLiteOpenHelper {
     /** Deletes an input and its candidate rows through the database foreign key. */
     public boolean deleteTask(long taskId) {
         if (taskId <= 0) throw new IllegalArgumentException("taskId must be positive");
-        return getWritableDatabase().delete("tasks", "id = ?",
-                new String[] { Long.toString(taskId) }) > 0;
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            String[] id = { Long.toString(taskId) };
+            db.delete("task_attachments", "task_id = ?", id);
+            db.delete("task_files", "task_id = ?", id);
+            boolean deleted = db.delete("tasks", "id = ?", id) > 0;
+            db.setTransactionSuccessful();
+            return deleted;
+        } finally {
+            db.endTransaction();
+        }
     }
 
     /** Removes one draft. Positions keep their gaps so calendar links stay untouched. */
@@ -253,6 +374,8 @@ public final class TaskStore extends SQLiteOpenHelper {
     public String clearImage(long taskId) {
         TaskRecord task = getTask(taskId);
         if (task == null || task.imagePath == null) return null;
+        getWritableDatabase().delete("task_attachments", "task_id = ?",
+                new String[] { Long.toString(taskId) });
         ContentValues values = new ContentValues();
         values.putNull("image_path");
         getWritableDatabase().update("tasks", values, "id = ?",
@@ -260,11 +383,181 @@ public final class TaskStore extends SQLiteOpenHelper {
         return task.imagePath;
     }
 
+    /** Returns every image in capture order, including legacy rows during migration recovery. */
+    public List<String> getImagePaths(long taskId) {
+        List<String> paths = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("task_attachments",
+                new String[] { "image_path" }, "task_id = ?",
+                new String[] { Long.toString(taskId) }, null, null, "position ASC")) {
+            while (cursor.moveToNext()) paths.add(cursor.getString(0));
+        }
+        if (paths.isEmpty()) {
+            TaskRecord task = getTask(taskId);
+            if (task != null && task.imagePath != null) paths.add(task.imagePath);
+        }
+        return paths;
+    }
+
+    /** Attaches an already-imported app-private image to an existing capture. */
+    public boolean addImageAttachment(long taskId, String imagePath) {
+        if (!ImageStore.isStoredName(imagePath))
+            throw new IllegalArgumentException("Unknown attached image");
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            TaskRecord task = getTask(taskId);
+            if (task == null) return false;
+            int position = 0;
+            try (Cursor cursor = db.rawQuery(
+                    "SELECT COALESCE(MAX(position), -1) + 1 FROM task_attachments WHERE task_id = ?",
+                    new String[] { Long.toString(taskId) })) {
+                if (cursor.moveToFirst()) position = cursor.getInt(0);
+            }
+            ContentValues attachment = new ContentValues();
+            attachment.put("task_id", taskId);
+            attachment.put("image_path", imagePath);
+            attachment.put("position", position);
+            db.insertOrThrow("task_attachments", null, attachment);
+            if (task.imagePath == null) {
+                ContentValues primary = new ContentValues();
+                primary.put("image_path", imagePath);
+                db.update("tasks", primary, "id = ?",
+                        new String[] { Long.toString(taskId) });
+            }
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    /** Removes one attachment and keeps the legacy primary-image column aligned. */
+    public String removeImageAttachment(long taskId, String imagePath) {
+        if (!ImageStore.isStoredName(imagePath)) return null;
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            int removed = db.delete("task_attachments", "task_id = ? AND image_path = ?",
+                    new String[] { Long.toString(taskId), imagePath });
+            if (removed == 0) return null;
+            String next = null;
+            try (Cursor cursor = db.query("task_attachments", new String[] { "image_path" },
+                    "task_id = ?", new String[] { Long.toString(taskId) }, null, null,
+                    "position ASC", "1")) {
+                if (cursor.moveToFirst()) next = cursor.getString(0);
+            }
+            ContentValues primary = new ContentValues();
+            if (next == null) primary.putNull("image_path");
+            else primary.put("image_path", next);
+            db.update("tasks", primary, "id = ?", new String[] { Long.toString(taskId) });
+            db.setTransactionSuccessful();
+            return imagePath;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    public boolean updateRawText(long taskId, String rawText) {
+        String value = rawText == null ? "" : rawText;
+        TaskRecord task = getTask(taskId);
+        if (task == null) return false;
+        if (value.trim().isEmpty() && getImagePaths(taskId).isEmpty()
+                && getFileAttachments(taskId).isEmpty())
+            throw new IllegalArgumentException("文字、图片或普通文件至少保留一项");
+        ContentValues values = new ContentValues();
+        values.put("raw_text", value);
+        return getWritableDatabase().update("tasks", values, "id = ?",
+                new String[] { Long.toString(taskId) }) > 0;
+    }
+
+    public List<TaskFileAttachment> getFileAttachments(long taskId) {
+        List<TaskFileAttachment> files = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("task_files", null, "task_id = ?",
+                new String[] { Long.toString(taskId) }, null, null, "position ASC")) {
+            while (cursor.moveToNext()) {
+                files.add(new TaskFileAttachment(cursor.getLong(cursor.getColumnIndexOrThrow("id")),
+                        cursor.getLong(cursor.getColumnIndexOrThrow("task_id")),
+                        cursor.getString(cursor.getColumnIndexOrThrow("stored_name")),
+                        cursor.getString(cursor.getColumnIndexOrThrow("display_name")),
+                        cursor.getString(cursor.getColumnIndexOrThrow("mime_type")),
+                        cursor.getLong(cursor.getColumnIndexOrThrow("size_bytes"))));
+            }
+        }
+        return files;
+    }
+
+    public boolean addFileAttachment(long taskId, TaskFileAttachment file) {
+        validateFileAttachment(file);
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            if (getTask(taskId) == null) return false;
+            int position = 0;
+            try (Cursor cursor = db.rawQuery(
+                    "SELECT COALESCE(MAX(position), -1) + 1 FROM task_files WHERE task_id = ?",
+                    new String[] { Long.toString(taskId) })) {
+                if (cursor.moveToFirst()) position = cursor.getInt(0);
+            }
+            insertTaskFile(db, taskId, file, position);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    public TaskFileAttachment removeFileAttachment(long taskId, long fileId) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            TaskFileAttachment found = null;
+            try (Cursor cursor = db.query("task_files", null, "task_id = ? AND id = ?",
+                    new String[] { Long.toString(taskId), Long.toString(fileId) },
+                    null, null, null)) {
+                if (cursor.moveToFirst()) found = new TaskFileAttachment(fileId, taskId,
+                        cursor.getString(cursor.getColumnIndexOrThrow("stored_name")),
+                        cursor.getString(cursor.getColumnIndexOrThrow("display_name")),
+                        cursor.getString(cursor.getColumnIndexOrThrow("mime_type")),
+                        cursor.getLong(cursor.getColumnIndexOrThrow("size_bytes")));
+            }
+            if (found == null) return null;
+            db.delete("task_files", "task_id = ? AND id = ?",
+                    new String[] { Long.toString(taskId), Long.toString(fileId) });
+            db.setTransactionSuccessful();
+            return found;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    private static void insertTaskFiles(SQLiteDatabase db, long taskId,
+            List<TaskFileAttachment> files) {
+        for (int i = 0; i < files.size(); i++) insertTaskFile(db, taskId, files.get(i), i);
+    }
+
+    private static void insertTaskFile(SQLiteDatabase db, long taskId, TaskFileAttachment file,
+            int position) {
+        ContentValues values = new ContentValues();
+        values.put("task_id", taskId);
+        values.put("stored_name", file.storedName);
+        values.put("display_name", file.displayName);
+        values.put("mime_type", file.mimeType);
+        values.put("size_bytes", file.sizeBytes);
+        values.put("position", position);
+        db.insertOrThrow("task_files", null, values);
+    }
+
+    private static void validateFileAttachment(TaskFileAttachment file) {
+        if (file == null || !TaskFileStore.isStoredName(file.storedName)
+                || file.displayName == null || file.mimeType == null || file.sizeBytes < 0)
+            throw new IllegalArgumentException("Invalid file attachment");
+    }
+
     /** Every image name still referenced by an input; used to collect orphaned files. */
     public List<String> listImageNames() {
         List<String> names = new ArrayList<>();
-        try (Cursor cursor = getReadableDatabase().query("tasks", new String[] { "image_path" },
-                "image_path IS NOT NULL", null, null, null, null)) {
+        try (Cursor cursor = getReadableDatabase().query("task_attachments",
+                new String[] { "image_path" }, null, null, null, null, null)) {
             while (cursor.moveToNext()) {
                 names.add(cursor.getString(0));
             }

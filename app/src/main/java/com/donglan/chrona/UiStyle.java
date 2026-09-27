@@ -10,11 +10,15 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.PixelFormat;
+import android.graphics.RenderEffect;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
 import android.view.Window;
 import android.widget.Button;
@@ -24,9 +28,84 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.function.IntConsumer;
+import java.util.function.Consumer;
+import java.util.WeakHashMap;
 
 /** Semantic colors, shapes and motion for the native View interface. */
 public final class UiStyle {
+    private static final WeakHashMap<Activity, DialogScaleState> DIALOG_SCALES = new WeakHashMap<>();
+    private static final WeakHashMap<View, Boolean> DIALOG_ACRYLIC_ROOTS = new WeakHashMap<>();
+    private static final WeakHashMap<View, AcrylicScrollWatcher> ACRYLIC_SCROLL_WATCHERS =
+            new WeakHashMap<>();
+    private static final java.util.ArrayList<ChildSurfaceRecord> CHILD_SURFACES =
+            new java.util.ArrayList<>();
+
+    private static final class ChildSurfaceRecord {
+        final java.lang.ref.WeakReference<View> view;
+        int kind, radius;
+        boolean primary;
+        boolean selected;
+        boolean outline = true;
+        Runnable customRefresh;
+        ChildSurfaceRecord(View view, int kind, boolean primary, int radius, boolean selected) {
+            this(view, kind, primary, radius, selected, null);
+        }
+        ChildSurfaceRecord(View view, int kind, boolean primary, int radius, boolean selected,
+                Runnable customRefresh) {
+            this.view = new java.lang.ref.WeakReference<>(view);
+            this.kind = kind;
+            this.primary = primary;
+            this.radius = radius;
+            this.selected = selected;
+            this.customRefresh = customRefresh;
+        }
+    }
+
+    /** Invalidates visible translucent surfaces when a parent scroll changes their backdrop. */
+    private static final class AcrylicScrollWatcher
+            implements ViewTreeObserver.OnScrollChangedListener {
+        private final java.lang.ref.WeakReference<ViewTreeObserver> observer;
+        private final java.util.ArrayList<java.lang.ref.WeakReference<View>> hosts =
+                new java.util.ArrayList<>();
+        AcrylicScrollWatcher(ViewTreeObserver observer) {
+            this.observer = new java.lang.ref.WeakReference<>(observer);
+        }
+        void addHost(View host) {
+            java.util.Iterator<java.lang.ref.WeakReference<View>> iterator = hosts.iterator();
+            while (iterator.hasNext()) {
+                View existing = iterator.next().get();
+                if (existing == null) iterator.remove();
+                else if (existing == host) return;
+            }
+            hosts.add(new java.lang.ref.WeakReference<>(host));
+        }
+        @Override public void onScrollChanged() {
+            java.util.Iterator<java.lang.ref.WeakReference<View>> iterator = hosts.iterator();
+            while (iterator.hasNext()) {
+                View host = iterator.next().get();
+                if (host == null) {
+                    iterator.remove();
+                } else if (host.isAttachedToWindow()
+                        && host.getGlobalVisibleRect(new android.graphics.Rect())) {
+                    host.invalidate();
+                }
+            }
+        }
+    }
+
+    private static final class DialogScaleState {
+        final View content;
+        final float scaleX, scaleY;
+        final Object originalRenderEffect;
+        int count;
+        DialogScaleState(View content, Object originalRenderEffect) {
+            this.content = content;
+            scaleX = content.getScaleX();
+            scaleY = content.getScaleY();
+            this.originalRenderEffect = originalRenderEffect;
+            count = 1;
+        }
+    }
     /** One radius scale for the whole app: fields and buttons, cards, sheets, and chips. */
     static final int RADIUS_FIELD = 18;
     static final int RADIUS_CARD = 22;
@@ -52,6 +131,25 @@ public final class UiStyle {
     }
 
     private UiStyle() { }
+
+    private static void watchAcrylicScroll(View host) {
+        View root = host.getRootView();
+        ViewTreeObserver observer = root.getViewTreeObserver();
+        if (!observer.isAlive()) return;
+        synchronized (ACRYLIC_SCROLL_WATCHERS) {
+            AcrylicScrollWatcher watcher = ACRYLIC_SCROLL_WATCHERS.get(root);
+            if (watcher == null || watcher.observer.get() != observer) {
+                if (watcher != null && watcher.observer.get() != null
+                        && watcher.observer.get().isAlive()) {
+                    watcher.observer.get().removeOnScrollChangedListener(watcher);
+                }
+                watcher = new AcrylicScrollWatcher(observer);
+                ACRYLIC_SCROLL_WATCHERS.put(root, watcher);
+                observer.addOnScrollChangedListener(watcher);
+            }
+            watcher.addHost(host);
+        }
+    }
 
     static Palette colors(Context context) {
         boolean dark = ThemeStore.dark(context);
@@ -134,8 +232,10 @@ public final class UiStyle {
         view.setTextColor(colors.text);
         view.setTextSize(16);
         view.setHintTextColor(colors.muted);
-        view.setBackground(shape(view, colors.surface, RADIUS_FIELD, colors.outline));
+        view.setBackground(shape(view, childSurface(view, colors.surface),
+                RADIUS_FIELD, colors.outline));
         view.setPadding(dp(view, 16), dp(view, 14), dp(view, 16), dp(view, 14));
+        rememberChildSurface(view, 0, false, 0, false);
     }
 
     /**
@@ -157,7 +257,8 @@ public final class UiStyle {
         view.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_chevron_down, 0);
         view.setCompoundDrawableTintList(ColorStateList.valueOf(colors.muted));
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
-                shape(view, colors.surface, RADIUS_FIELD, colors.outline), null));
+                shape(view, childSurface(view, colors.surface), RADIUS_FIELD, colors.outline), null));
+        rememberChildSurface(view, 1, false, 0, false);
     }
 
     public static void button(Button view, boolean primary) {
@@ -168,33 +269,200 @@ public final class UiStyle {
         view.setTypeface(null, Typeface.BOLD);
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(
                 primary ? 0x44FFFFFF : alpha(colors.primary, 34)),
-                shape(view, primary ? colors.primary : colors.surface, RADIUS_FIELD,
+                shape(view, primary ? colors.primary : childSurface(view, colors.surface), RADIUS_FIELD,
                         primary ? colors.primary : colors.outline), null));
         view.setMinimumHeight(dp(view, 52));
         StateListAnimator press = new StateListAnimator();
         press.addState(new int[]{android.R.attr.state_pressed}, scale(view, 0.97f, 110));
         press.addState(new int[]{}, scale(view, 1f, 160));
         view.setStateListAnimator(press);
+        if (!primary) rememberChildSurface(view, 2, false, 0, false);
     }
 
     public static void card(View view) {
-        Palette colors = colors(view.getContext());
-        view.setBackground(shape(view, colors.surface, RADIUS_CARD, colors.outline));
+        acrylicSurface(view, RADIUS_CARD);
         view.setElevation(dp(view, 2));
     }
 
     /** Translucent surface over the softly colored backdrop; text stays opaque. */
     public static void glass(View view) {
+        acrylicSurface(view, RADIUS_PANEL);
+    }
+
+    private static void acrylicSurface(View view, int radius) {
         Palette colors = colors(view.getContext());
         boolean dark = ThemeStore.dark(view.getContext());
-        GradientDrawable sheet = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{alpha(colors.surface, dark ? 226 : 238),
-                        alpha(colors.surfaceAlt, dark ? 180 : 205)});
-        sheet.setCornerRadius(dp(view, RADIUS_PANEL));
-        sheet.setStroke(dp(view, 1), alpha(dark ? colors.outline : Color.WHITE,
+        GradientDrawable blurred = surfaceDrawable(view, colors, radius,
+                ThemeStore.surfaceMix(view.getContext()) * 255 / 100,
+                ThemeStore.surfaceMix(view.getContext()) * 225 / 100);
+        GradientDrawable fallback = surfaceDrawable(view, colors, radius,
+                dark ? 246 : 248, dark ? 238 : 242);
+        view.setBackground(new AcrylicSurfaceDrawable(view, blurred, fallback, radius,
+                false, true));
+        view.setElevation(dp(view, radius == RADIUS_CARD ? 2 : 8));
+    }
+
+    private static GradientDrawable surfaceDrawable(View view, Palette colors, int radius,
+            int firstAlpha, int secondAlpha) {
+        GradientDrawable surface = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{alpha(colors.surface, firstAlpha), alpha(colors.surfaceAlt, secondAlpha)});
+        boolean dark = ThemeStore.dark(view.getContext());
+        surface.setCornerRadius(dp(view, radius));
+        surface.setStroke(dp(view, 1), alpha(dark ? colors.outline : Color.WHITE,
                 dark ? 210 : 225));
-        view.setBackground(sheet);
-        view.setElevation(dp(view, 8));
+        return surface;
+    }
+
+    /** Blurs only the wallpaper sampled behind this surface; labels remain separate and sharp. */
+    private static final class AcrylicSurfaceDrawable extends Drawable {
+        private final GradientDrawable blurredSurface;
+        private final GradientDrawable fallbackSurface;
+        private final int radius;
+        private GlassBackdropView backdrop;
+        private int lastMix = -1;
+        private int lastSurface, lastAlt, lastOutline;
+        private int lastText;
+        private boolean lastDark;
+        private long blurReadyAt;
+        private boolean backdropWasReady;
+        private int drawableAlpha = 255;
+        private final View host;
+        private final boolean selected;
+        private final boolean outline;
+        private final Runnable frameInvalidator;
+
+        AcrylicSurfaceDrawable(View host, GradientDrawable blurredSurface,
+                GradientDrawable fallbackSurface, int radius, boolean selected, boolean outline) {
+            this.host = host;
+            this.blurredSurface = blurredSurface;
+            this.fallbackSurface = fallbackSurface;
+            this.radius = radius;
+            this.selected = selected;
+            this.outline = outline;
+            this.frameInvalidator = host::invalidate;
+        }
+
+        @Override public void draw(android.graphics.Canvas canvas) {
+            boolean backdropReady = false;
+            boolean acrylic = ThemeStore.acrylicEnabled(host.getContext());
+            if (acrylic && (insideAcrylicSurface(host) || insideAcrylicDialog(host))) {
+                // The ancestor already drew a sampled surface or owns a blurred dialog window.
+                backdropReady = true;
+            } else if (acrylic) {
+                watchAcrylicScroll(host);
+                if (backdrop == null) {
+                    backdrop = GlassBackdropView.findFor(host);
+                }
+                backdropReady = backdrop != null && backdrop.drawBlurredWallpaper(canvas, host,
+                        getBounds(), dp(host, radius), colors(host.getContext()));
+            }
+            updateBlurredSurface(host);
+            // A translucent mix is only safe when the matching blurred wallpaper was actually
+            // drawn underneath. Until then, use the opaque fallback; cache completion invalidates
+            // acrylic hosts so they switch to the mixed surface on their next frame.
+            blurredSurface.setBounds(getBounds());
+            fallbackSurface.setBounds(getBounds());
+            if (!backdropReady) {
+                backdropWasReady = false;
+                fallbackSurface.setAlpha(255);
+                fallbackSurface.draw(canvas);
+                return;
+            }
+            if (!backdropWasReady) {
+                backdropWasReady = true;
+                blurReadyAt = android.os.SystemClock.uptimeMillis();
+            }
+            long elapsed = android.os.SystemClock.uptimeMillis() - blurReadyAt;
+            int fallbackAlpha = elapsed >= 160 ? 0 : 255 - (int) (elapsed * 255 / 160);
+            if (fallbackAlpha > 0) {
+                fallbackSurface.setAlpha(drawableAlpha * fallbackAlpha / 255);
+                fallbackSurface.draw(canvas);
+                fallbackSurface.setAlpha(drawableAlpha);
+                scheduleSelf(frameInvalidator, android.os.SystemClock.uptimeMillis() + 16);
+            } else {
+                unscheduleSelf(frameInvalidator);
+            }
+            blurredSurface.draw(canvas);
+        }
+
+        private void updateBlurredSurface(View host) {
+            int mix = ThemeStore.surfaceMix(host.getContext());
+            Palette palette = colors(host.getContext());
+            boolean dark = ThemeStore.dark(host.getContext());
+            int outlineColor = selected ? palette.primary
+                    : dark ? palette.outline : Color.WHITE;
+            if (lastMix == mix && lastSurface == palette.surface && lastAlt == palette.surfaceAlt
+                    && lastOutline == outlineColor && lastText == palette.text && lastDark == dark)
+                return;
+            lastMix = mix;
+            lastSurface = palette.surface;
+            lastAlt = palette.surfaceAlt;
+            lastOutline = outlineColor;
+            lastText = palette.text;
+            lastDark = dark;
+            // A gentle theme-aware RGB shift makes the wallpaper blur read through the tint:
+            // dark surfaces lift toward the text color; light surfaces settle toward black.
+            float toneShift = dark ? .20f : .12f;
+            int toneTarget = dark ? palette.text : Color.BLACK;
+            int mixedSurface = blendRgb(palette.surface, toneTarget, toneShift);
+            int mixedAlt = blendRgb(palette.surfaceAlt, toneTarget, toneShift);
+            if (selected) {
+                mixedSurface = blendRgb(mixedSurface, palette.primaryContainer, .34f);
+                mixedAlt = blendRgb(mixedAlt, palette.primaryContainer, .34f);
+            }
+            blurredSurface.setColors(new int[]{alpha(mixedSurface, mix * 255 / 100),
+                    alpha(mixedAlt, mix * 225 / 100)});
+            int strokeColor = outline ? outlineColor : Color.TRANSPARENT;
+            int strokeAlpha = selected ? 240 : dark ? 210 : 225;
+            blurredSurface.setStroke(dp(host, selected ? 2 : 1),
+                    outline ? alpha(strokeColor, strokeAlpha) : Color.TRANSPARENT);
+            fallbackSurface.setStroke(dp(host, selected ? 2 : 1),
+                    outline ? alpha(strokeColor, strokeAlpha) : Color.TRANSPARENT);
+        }
+
+        @Override public void setAlpha(int alpha) {
+            drawableAlpha = alpha;
+            blurredSurface.setAlpha(alpha);
+            fallbackSurface.setAlpha(alpha);
+        }
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) {
+            blurredSurface.setColorFilter(filter);
+            fallbackSurface.setColorFilter(filter);
+        }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+    }
+
+    private static boolean insideAcrylicSurface(View view) {
+        android.view.ViewParent parent = view.getParent();
+        while (parent instanceof View ancestor) {
+            if (ancestor.getBackground() instanceof AcrylicSurfaceDrawable) return true;
+            parent = ancestor.getParent();
+        }
+        return false;
+    }
+
+    private static boolean insideAcrylicDialog(View view) {
+        android.view.ViewParent parent = view.getParent();
+        while (parent instanceof View ancestor) {
+            synchronized (DIALOG_ACRYLIC_ROOTS) {
+                if (DIALOG_ACRYLIC_ROOTS.containsKey(ancestor)) return true;
+            }
+            parent = ancestor.getParent();
+        }
+        return false;
+    }
+
+    static void invalidateAcrylicSurfaces(View root) {
+        invalidateAcrylicSurfaces(root, new android.graphics.Rect());
+    }
+
+    private static void invalidateAcrylicSurfaces(View root, android.graphics.Rect visible) {
+        if (!root.getGlobalVisibleRect(visible)) return;
+        if (root.getBackground() instanceof AcrylicSurfaceDrawable) root.invalidate();
+        if (root instanceof android.view.ViewGroup group) {
+            for (int i = 0; i < group.getChildCount(); i++)
+                invalidateAcrylicSurfaces(group.getChildAt(i), visible);
+        }
     }
 
     static void pressable(View view) {
@@ -205,10 +473,23 @@ public final class UiStyle {
 
     /** Selectable surface: chips use the pill radius, dialog rows the field radius. */
     static void choice(View view, boolean selected, int radius) {
+        acrylicChoice(view, selected, radius, true);
+    }
+
+    /** Theme-mixed acrylic selection surface; set outline=false for borderless navigation chips. */
+    public static void acrylicChoice(View view, boolean selected, int radius, boolean outline) {
         Palette colors = colors(view.getContext());
-        view.setBackground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
-                shape(view, selected ? colors.primaryContainer : colors.surface, radius,
-                        selected ? colors.primaryContainer : colors.outline), null));
+        boolean dark = ThemeStore.dark(view.getContext());
+        GradientDrawable blurred = surfaceDrawable(view, colors, radius,
+                ThemeStore.surfaceMix(view.getContext()) * 255 / 100,
+                ThemeStore.surfaceMix(view.getContext()) * 225 / 100);
+        GradientDrawable fallback = surfaceDrawable(view, colors, radius,
+                dark ? 246 : 248, dark ? 238 : 242);
+        view.setBackground(new AcrylicSurfaceDrawable(view, blurred, fallback, radius,
+                selected, outline));
+        view.setForeground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
+                null, shape(view, Color.WHITE, radius, Color.TRANSPARENT)));
+        rememberChildSurface(view, 3, false, radius, selected, outline);
     }
 
     static void pill(View view, boolean selected) {
@@ -279,7 +560,19 @@ public final class UiStyle {
     }
 
     public static void back(Activity activity, LinearLayout parent) {
-        backTo(activity, parent, "←  返回", activity::finish);
+        TextView back = new TextView(activity);
+        back.setText("←");
+        back.setTextSize(24);
+        back.setTextColor(colors(activity).primary);
+        back.setTypeface(null, Typeface.BOLD);
+        back.setGravity(Gravity.CENTER);
+        back.setContentDescription("返回");
+        glass(back);
+        pressable(back);
+        back.setOnClickListener(view -> activity.finish());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(back, 48), dp(back, 48));
+        params.setMargins(0, 0, 0, dp(back, 8));
+        parent.addView(back, params);
     }
 
     /** Same affordance with a different destination, for a screen that is also an app entry point. */
@@ -357,6 +650,43 @@ public final class UiStyle {
         showDialog(dialog, panel);
     }
 
+    static void textEditorDialog(Activity activity, String title, String initialValue,
+            String positive, Consumer<String> onSave) {
+        Dialog dialog = dialog(activity);
+        LinearLayout panel = dialogPanel(activity, title);
+        EditText editor = new EditText(activity);
+        editor.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        editor.setGravity(Gravity.TOP | Gravity.START);
+        editor.setMinLines(4);
+        editor.setMaxLines(9);
+        editor.setText(initialValue == null ? "" : initialValue);
+        editor.setSelection(editor.length());
+        input(editor);
+        addSpaced(panel, editor, 0, 16);
+        LinearLayout actions = new LinearLayout(activity);
+        Button cancel = new Button(activity);
+        cancel.setText("取消");
+        button(cancel, false);
+        cancel.setOnClickListener(view -> dialog.dismiss());
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(cancel, 52), 1));
+        Button save = new Button(activity);
+        save.setText(positive);
+        button(save, true);
+        save.setOnClickListener(view -> {
+            String value = editor.getText().toString();
+            dialog.dismiss();
+            onSave.accept(value);
+        });
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(save, 52), 1);
+        saveParams.setMargins(dp(save, 8), 0, 0, 0);
+        actions.addView(save, saveParams);
+        panel.addView(actions);
+        showDialog(dialog, panel);
+        editor.requestFocus();
+    }
+
     private static Dialog dialog(Activity activity) {
         Dialog dialog = new Dialog(activity);
         Window window = dialog.getWindow();
@@ -364,7 +694,7 @@ public final class UiStyle {
             window.setBackgroundDrawableResource(android.R.color.transparent);
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             android.view.WindowManager.LayoutParams params = window.getAttributes();
-            params.dimAmount = 0.48f;
+            params.dimAmount = 0.44f;
             window.setAttributes(params);
         }
         return dialog;
@@ -385,6 +715,28 @@ public final class UiStyle {
 
     private static void showDialog(Dialog dialog, View content) {
         dialog.setContentView(content);
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            // Some callers create Dialog directly instead of using dialog(Activity). Clear the
+            // framework's rectangular window surface so the rounded panel is the outer edge.
+            dialogWindow.setBackgroundDrawableResource(android.R.color.transparent);
+        }
+        Activity owner = content.getContext() instanceof Activity activity ? activity : null;
+        if (owner != null) {
+            beginDialogScale(owner);
+            applyDialogSurface(content, owner);
+            boolean dialogAcrylic = Build.VERSION.SDK_INT >= 31
+                    && ThemeStore.acrylicEnabled(owner);
+            if (dialogAcrylic) synchronized (DIALOG_ACRYLIC_ROOTS) {
+                DIALOG_ACRYLIC_ROOTS.put(content, Boolean.TRUE);
+            }
+            dialog.setOnDismissListener(ignored -> {
+                if (dialogAcrylic) synchronized (DIALOG_ACRYLIC_ROOTS) {
+                    DIALOG_ACRYLIC_ROOTS.remove(content);
+                }
+                endDialogScale(owner);
+            });
+        }
         dialog.show();
         Window window = dialog.getWindow();
         if (window != null) window.setLayout(
@@ -399,6 +751,71 @@ public final class UiStyle {
                 .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
     }
 
+    /** Applies the shared backdrop blur and page scale to a custom floating dialog. */
+    static void showFloatingDialog(Dialog dialog, View content) {
+        showDialog(dialog, content);
+    }
+
+    private static void applyDialogSurface(View content, Activity owner) {
+        if (Build.VERSION.SDK_INT >= 31 && ThemeStore.acrylicEnabled(owner)) {
+            Palette palette = colors(content.getContext());
+            boolean dark = ThemeStore.dark(content.getContext());
+            content.setBackground(surfaceDrawable(content, palette, RADIUS_PANEL,
+                    dark ? 112 : 124, dark ? 100 : 112));
+            content.setElevation(dp(content, 8));
+        } else {
+            glass(content);
+        }
+    }
+
+    private static void beginDialogScale(Activity activity) {
+        if (activity.isFinishing() || activity.isDestroyed())
+            return;
+        DialogScaleState state;
+        synchronized (DIALOG_SCALES) {
+            state = DIALOG_SCALES.get(activity);
+            if (state != null) {
+                state.count++;
+                return;
+            }
+            View content = activity.findViewById(android.R.id.content);
+            if (content == null) return;
+            // This app does not install a persistent effect on the Activity content root.
+            state = new DialogScaleState(content, null);
+            DIALOG_SCALES.put(activity, state);
+        }
+        if (Build.VERSION.SDK_INT >= 31 && ThemeStore.acrylicEnabled(activity)) {
+            state.content.setRenderEffect(RenderEffect.createBlurEffect(dp(state.content, 13),
+                    dp(state.content, 13), android.graphics.Shader.TileMode.CLAMP));
+        }
+        if (!ValueAnimator.areAnimatorsEnabled()) return;
+        state.content.animate().cancel();
+        state.content.animate().scaleX(state.scaleX * 1.04f).scaleY(state.scaleY * 1.04f)
+                .setDuration(180).setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .start();
+    }
+
+    private static void endDialogScale(Activity activity) {
+        DialogScaleState state;
+        synchronized (DIALOG_SCALES) {
+            state = DIALOG_SCALES.get(activity);
+            if (state == null) return;
+            if (--state.count > 0) return;
+            DIALOG_SCALES.remove(activity);
+        }
+        View content = state.content;
+        content.animate().cancel();
+        if (Build.VERSION.SDK_INT >= 31) content.setRenderEffect(
+                (RenderEffect) state.originalRenderEffect);
+        if (!ValueAnimator.areAnimatorsEnabled() || activity.isFinishing() || activity.isDestroyed()) {
+            content.setScaleX(state.scaleX);
+            content.setScaleY(state.scaleY);
+        } else {
+            content.animate().scaleX(state.scaleX).scaleY(state.scaleY).setDuration(160)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        }
+    }
+
     /** Keep controls clear of Android 15+ system bars while the backdrop draws behind them. */
     public static void applyInsets(View stage, View safeContent) {
         applyInsets(stage, safeContent, null);
@@ -406,6 +823,7 @@ public final class UiStyle {
 
     static void applyInsets(View stage, View safeContent, View floating) {
         if (Build.VERSION.SDK_INT < 35) return;
+        enableEdgeToEdge(stage);
         safeContent.setFitsSystemWindows(false);
         int left = safeContent.getPaddingLeft();
         int top = safeContent.getPaddingTop();
@@ -432,6 +850,41 @@ public final class UiStyle {
         stage.requestApplyInsets();
     }
 
+    /** Insets the viewport, clipping scrolling text and controls safely away from system bars. */
+    static void applyScrollableInsets(View stage, View scrollContent) {
+        if (Build.VERSION.SDK_INT < 35) return;
+        enableEdgeToEdge(stage);
+        ScrollView viewport = scrollContent.getParent() instanceof ScrollView scrollView
+                ? scrollView : null;
+        View insetTarget = viewport == null ? scrollContent : viewport;
+        insetTarget.setFitsSystemWindows(false);
+        scrollContent.setFitsSystemWindows(false);
+        int left = insetTarget.getPaddingLeft();
+        int top = insetTarget.getPaddingTop();
+        int right = insetTarget.getPaddingRight();
+        int bottom = insetTarget.getPaddingBottom();
+        if (viewport != null) viewport.setClipToPadding(true);
+        scrollContent.setOnApplyWindowInsetsListener((view, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            int keyboard = insets.getInsets(WindowInsets.Type.ime()).bottom;
+            insetTarget.setPadding(left + bars.left, top + bars.top,
+                    right + bars.right, bottom + Math.max(bars.bottom, keyboard));
+            return insets;
+        });
+        stage.requestApplyInsets();
+    }
+
+    private static void enableEdgeToEdge(View stage) {
+        if (stage.getContext() instanceof Activity activity) {
+            Window window = activity.getWindow();
+            if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false);
+            // Let the full-screen GlassBackdropView paint beneath the status bar. The safe
+            // content below still receives the system inset, so controls keep their positions.
+            window.setStatusBarColor(Color.TRANSPARENT);
+        }
+    }
+
     private static GradientDrawable shape(View view, int fill, int radius, int stroke) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(fill);
@@ -442,6 +895,118 @@ public final class UiStyle {
 
     private static int alpha(int color, int value) {
         return Color.argb(value, Color.red(color), Color.green(color), Color.blue(color));
+    }
+
+    private static int blendRgb(int color, int target, float amount) {
+        float inverse = 1f - amount;
+        return Color.argb(Color.alpha(color),
+                Math.round(Color.red(color) * inverse + Color.red(target) * amount),
+                Math.round(Color.green(color) * inverse + Color.green(target) * amount),
+                Math.round(Color.blue(color) * inverse + Color.blue(target) * amount));
+    }
+
+    private static int childSurface(View view, int color) {
+        int transparency = ThemeStore.childTransparency(view.getContext());
+        int opacity = 248 - (transparency - 10) * 136 / 55;
+        int baseAlpha = Color.alpha(color);
+        return alpha(color, baseAlpha * opacity / 255);
+    }
+
+    private static void rememberChildSurface(View view, int kind, boolean primary, int radius,
+            boolean selected) {
+        rememberChildSurface(view, kind, primary, radius, selected, true);
+    }
+
+    private static void rememberChildSurface(View view, int kind, boolean primary, int radius,
+            boolean selected, boolean outline) {
+        synchronized (CHILD_SURFACES) {
+            java.util.Iterator<ChildSurfaceRecord> iterator = CHILD_SURFACES.iterator();
+            while (iterator.hasNext()) {
+                ChildSurfaceRecord record = iterator.next();
+                View existing = record.view.get();
+                if (existing == null) iterator.remove();
+                else if (existing == view) {
+                    record.kind = kind;
+                    record.primary = primary;
+                    record.radius = radius;
+                    record.selected = selected;
+                    record.outline = outline;
+                    record.customRefresh = null;
+                    return;
+                }
+            }
+            ChildSurfaceRecord record = new ChildSurfaceRecord(view, kind, primary, radius,
+                    selected);
+            record.outline = outline;
+            CHILD_SURFACES.add(record);
+        }
+    }
+
+    /** Repaints already-created controls and acrylic surfaces while appearance sliders move. */
+    static void refreshAppearancePreview(Activity activity) {
+        View content = activity.findViewById(android.R.id.content);
+        if (content == null) return;
+        invalidateAcrylicSurfaces(content);
+        synchronized (CHILD_SURFACES) {
+            java.util.Iterator<ChildSurfaceRecord> iterator = CHILD_SURFACES.iterator();
+            while (iterator.hasNext()) {
+                ChildSurfaceRecord record = iterator.next();
+                View view = record.view.get();
+                if (view == null) {
+                    iterator.remove();
+                } else if (view.isAttachedToWindow() && isDescendantOf(view, content)) {
+                    switch (record.kind) {
+                        case 0 -> input((EditText) view);
+                        case 1 -> fieldTrigger((TextView) view);
+                        case 2 -> button((Button) view, record.primary);
+                        case 3 -> acrylicChoice(view, record.selected, record.radius,
+                                record.outline);
+                        case 4 -> { if (record.customRefresh != null) record.customRefresh.run(); }
+                        default -> { }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Registers custom themed controls so appearance sliders can repaint them in place. */
+    public static void registerDynamicSurface(View view, Runnable refresh) {
+        java.lang.ref.WeakReference<View> weakView = new java.lang.ref.WeakReference<>(view);
+        view.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View attached) { }
+            @Override public void onViewDetachedFromWindow(View detached) {
+                synchronized (CHILD_SURFACES) {
+                    java.util.Iterator<ChildSurfaceRecord> iterator = CHILD_SURFACES.iterator();
+                    while (iterator.hasNext()) {
+                        ChildSurfaceRecord record = iterator.next();
+                        if (record.view.get() == weakView.get()) iterator.remove();
+                    }
+                }
+            }
+        });
+        synchronized (CHILD_SURFACES) {
+            java.util.Iterator<ChildSurfaceRecord> iterator = CHILD_SURFACES.iterator();
+            while (iterator.hasNext()) {
+                ChildSurfaceRecord record = iterator.next();
+                View existing = record.view.get();
+                if (existing == null) iterator.remove();
+                else if (existing == view) {
+                    iterator.remove();
+                    break;
+                }
+            }
+            CHILD_SURFACES.add(new ChildSurfaceRecord(view, 4, false, 0, false, refresh));
+        }
+    }
+
+    private static boolean isDescendantOf(View view, View root) {
+        View current = view;
+        while (current != null) {
+            if (current == root) return true;
+            android.view.ViewParent parent = current.getParent();
+            current = parent instanceof View parentView ? parentView : null;
+        }
+        return false;
     }
     private static AnimatorSet scale(View view, float value, long duration) {
         AnimatorSet pair = new AnimatorSet();

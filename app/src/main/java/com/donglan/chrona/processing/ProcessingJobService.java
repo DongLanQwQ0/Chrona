@@ -22,6 +22,7 @@ import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.ai.ChatCompletionClient;
 import com.donglan.chrona.ai.ParseResult;
 import com.donglan.chrona.data.TaskRecord;
+import com.donglan.chrona.data.TaskFileAttachment;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
@@ -29,8 +30,11 @@ import com.donglan.chrona.web.LinkFetcher;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.text.Normalizer;
+import java.util.Locale;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
@@ -225,44 +229,56 @@ public final class ProcessingJobService extends JobService {
                 return;
             }
             DiagLog.add(this, "settings model=" + settings.model + " base=" + settings.baseUrl);
-            byte[] image = null;
-            if (task.imagePath != null) {
+            List<String> imagePaths = store.getImagePaths(taskId);
+            List<byte[]> images = new ArrayList<>(imagePaths.size());
+            int imageBytes = 0;
+            if (!imagePaths.isEmpty()) {
                 try {
-                    image = new ImageStore(this).read(task.imagePath);
-                    DiagLog.add(this, "image task=" + taskId + " bytes=" + image.length);
+                    ImageStore imageStore = new ImageStore(this);
+                    for (String imagePath : imagePaths) {
+                        byte[] image = imageStore.read(imagePath);
+                        images.add(image);
+                        imageBytes += image.length;
+                    }
+                    DiagLog.add(this, "images task=" + taskId + " count=" + images.size()
+                            + " bytes=" + imageBytes);
                 } catch (IOException exception) {
                     store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, "图片不可用，请移除图片后重试");
                     notifyResult(taskId, "图片不可用，点按查看详情");
                     DiagLog.add(this, "image unreadable task=" + taskId
-                            + " path=" + task.imagePath + " " + exception);
+                            + " " + exception);
                     return;
                 }
             }
-            sentImage = image != null;
+            sentImage = !images.isEmpty();
+            String attachmentMetadata = formatFileMetadata(store.getFileAttachments(taskId));
             store.updateStatus(taskId, TaskRecord.PROCESSING, null);
             String linkText = fetchLinks(store, task);
             DiagLog.add(this, "request task=" + taskId
                     + " text=" + task.rawText.length() + "chars"
-                    + " image=" + (sentImage ? image.length + "B" : "none")
+                    + " images=" + (sentImage ? images.size() + "/" + imageBytes + "B" : "none")
+                    + " files=" + store.getFileAttachments(taskId).size()
                     + " linkText=" + (linkText == null ? 0 : linkText.length()) + "chars"
                     + " readTimeout=" + (ChatCompletionClient.readTimeoutMillis(sentImage) / 1000)
                     + "s");
             long startedAt = System.currentTimeMillis();
-            ParseResult result = requestWithRetries(settings, task, image, linkText, taskId);
+            ParseResult result = requestWithRetries(settings, task, images, linkText,
+                    attachmentMetadata, taskId);
             long elapsed = System.currentTimeMillis() - startedAt;
             if (Thread.currentThread().isInterrupted()) {
                 DiagLog.add(this, "response dropped task=" + taskId + " after " + elapsed
                         + "ms (job stopped before the draft was saved)");
                 return;
             }
-            store.replaceCandidates(taskId, result.candidates);
+            List<com.donglan.chrona.data.EventCandidate> candidates = deduplicateCandidates(result.candidates);
+            store.replaceCandidates(taskId, candidates);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
                     result.totalTokens, result.cachedTokens);
             store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW,
-                    result.candidates.isEmpty() ? "未识别到日程，请检查原文或重试" : null);
+                    candidates.isEmpty() ? "未识别到日程，请检查原文或重试" : null);
             DiagLog.add(this, "response task=" + taskId + " ok in " + elapsed + "ms events="
-                    + result.candidates.size() + " tokens=" + result.totalTokens);
-            notifyResult(taskId, result.candidates.isEmpty() ? "未识别到日程" : "日程草稿待确认");
+                    + candidates.size() + " tokens=" + result.totalTokens);
+            notifyResult(taskId, candidates.isEmpty() ? "未识别到日程" : "日程草稿待确认");
         } catch (ChatCompletionClient.RequestException exception) {
             if (Thread.currentThread().isInterrupted()) {
                 DiagLog.add(this, "request abandoned task=" + taskId + " HTTP "
@@ -294,6 +310,24 @@ public final class ProcessingJobService extends JobService {
         }
     }
 
+    private static List<com.donglan.chrona.data.EventCandidate> deduplicateCandidates(
+            List<com.donglan.chrona.data.EventCandidate> candidates) {
+        ArrayList<com.donglan.chrona.data.EventCandidate> unique = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (com.donglan.chrona.data.EventCandidate candidate : candidates) {
+            if (candidate.startAtMillis == null || candidate.endAtMillis == null) {
+                unique.add(candidate);
+                continue;
+            }
+            String title = Normalizer.normalize(candidate.title == null ? "" : candidate.title,
+                    Normalizer.Form.NFKC).trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+            String key = title + "|" + candidate.startAtMillis + "|" + candidate.endAtMillis
+                    + "|" + candidate.allDay + "|" + candidate.category;
+            if (seen.add(key)) unique.add(candidate);
+        }
+        return unique;
+    }
+
     /**
      * Reads the pages behind links in the input and remembers the outcome. A link that cannot be
      * read never fails the parse: the input is simply parsed without that extra text.
@@ -314,8 +348,8 @@ public final class ProcessingJobService extends JobService {
      * network otherwise fails on a dropped DNS lookup or an aborted connection and makes the user
      * press retry by hand.
      */
-    private ParseResult requestWithRetries(AiSettings settings, TaskRecord task, byte[] image,
-            String linkText, long taskId) throws IOException {
+    private ParseResult requestWithRetries(AiSettings settings, TaskRecord task, List<byte[]> images,
+            String linkText, String attachmentMetadata, long taskId) throws IOException {
         long startedAt = System.currentTimeMillis();
         for (int attempt = 1; ; attempt++) {
             long attemptStartedAt = System.currentTimeMillis();
@@ -326,9 +360,10 @@ public final class ProcessingJobService extends JobService {
                         new StreamingOutputStore(this).begin(taskId)) {
                     ChatCompletionClient client = new ChatCompletionClient(settings);
                     try {
-                        return client.parse(taskId, task.rawText, image, linkText,
+                        return client.parseImages(taskId, task.rawText, images, linkText,
+                                attachmentMetadata,
                                 System.currentTimeMillis(), TimeZone.getDefault().getID(),
-                                output::append);
+                                output::append, true);
                     } catch (ChatCompletionClient.RequestException exception) {
                         String detail = String.valueOf(exception.getMessage()).toLowerCase(
                                 java.util.Locale.ROOT);
@@ -336,9 +371,10 @@ public final class ProcessingJobService extends JobService {
                             throw exception;
                         DiagLog.add(this, "stream unsupported task=" + taskId
                                 + "; retrying ordinary response");
-                        return client.parseWithoutStreaming(taskId, task.rawText, image, linkText,
+                        return client.parseImages(taskId, task.rawText, images, linkText,
+                                attachmentMetadata,
                                 System.currentTimeMillis(), TimeZone.getDefault().getID(),
-                                output::append);
+                                output::append, false);
                     }
                 }
             } catch (IOException exception) {
@@ -361,6 +397,20 @@ public final class ProcessingJobService extends JobService {
                 }
             }
         }
+    }
+
+    private static String formatFileMetadata(List<TaskFileAttachment> files) {
+        if (files == null || files.isEmpty()) return null;
+        StringBuilder text = new StringBuilder();
+        for (TaskFileAttachment file : files) {
+            String name = file.displayName == null ? "附件" : file.displayName
+                    .replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+                    .replace('"', '\'');
+            text.append("- \"").append(name).append("\" | ")
+                    .append(file.mimeType).append(" | ").append(file.sizeBytes)
+                    .append(" bytes\n");
+        }
+        return text.toString().trim();
     }
 
     /** True for failures worth another attempt; a server that answered 4xx will not change. */

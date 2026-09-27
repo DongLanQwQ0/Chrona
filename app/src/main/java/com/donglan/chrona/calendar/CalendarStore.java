@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.TimeZone;
+import java.text.Normalizer;
+import java.util.Locale;
 
 /** Direct access to Chrona's device-local system calendar. Call from a background thread. */
 public final class CalendarStore {
@@ -120,6 +122,34 @@ public final class CalendarStore {
         ContentProviderResult[] results = apply(operations);
         if (results[0].uri == null) throw new IllegalStateException("Event insert returned no URI");
         return ContentUris.parseId(results[0].uri);
+    }
+
+    /** Finds likely duplicates in Chrona's own calendar before asking the user to publish. */
+    public List<Long> findMatchingEvents(EventInput input) {
+        requireRead();
+        if (input == null) throw new IllegalArgumentException("input is required");
+        Long calendarId = findCalendarId();
+        if (calendarId == null) return Collections.emptyList();
+        ArrayList<Long> matches = new ArrayList<>();
+        String[] projection = {Events._ID, Events.TITLE};
+        String selection = Events.CALENDAR_ID + "=? AND " + Events.DTSTART + "=? AND "
+                + Events.DTEND + "=? AND " + Events.ALL_DAY + "=?";
+        String[] args = {Long.toString(calendarId), Long.toString(input.startMillis),
+                Long.toString(input.endMillis), input.allDay ? "1" : "0"};
+        String title = normalizeTitle(input.title);
+        try (Cursor cursor = resolver.query(Events.CONTENT_URI, projection, selection, args,
+                Events._ID + " ASC")) {
+            if (cursor == null) throw new IllegalStateException("Calendar provider returned no cursor");
+            while (cursor.moveToNext()) {
+                if (title.equals(normalizeTitle(cursor.getString(1)))) matches.add(cursor.getLong(0));
+            }
+        }
+        return matches;
+    }
+
+    private static String normalizeTitle(String value) {
+        return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
+                .trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     /** Returns false if the event ID is stale or belongs to another calendar. */

@@ -1,0 +1,123 @@
+package com.donglan.chrona;
+
+import android.animation.ValueAnimator;
+import android.content.Context;
+import android.view.MotionEvent;
+import android.view.ViewConfiguration;
+import android.view.animation.DecelerateInterpolator;
+import android.widget.HorizontalScrollView;
+
+/** A pager whose content tracks the finger, then visibly settles on the selected page. */
+final class CandidatePagerScrollView extends HorizontalScrollView {
+    private final int touchSlop;
+    private final int systemEdgeInset;
+    private int pageWidth;
+    private int pageCount;
+    private float downX;
+    private float downY;
+    private int startScrollX;
+    private int startPage;
+    private boolean tracking;
+    private boolean startedAtSystemEdge;
+    private ValueAnimator settleAnimator;
+
+    CandidatePagerScrollView(Context context) {
+        super(context);
+        touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        systemEdgeInset = dp(32);
+        setHorizontalScrollBarEnabled(false);
+        setFillViewport(true);
+        setClipToPadding(false);
+        setOverScrollMode(OVER_SCROLL_NEVER);
+    }
+
+    void setPages(int pageWidth, int pageCount) {
+        this.pageWidth = Math.max(1, pageWidth);
+        this.pageCount = Math.max(1, pageCount);
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            if (settleAnimator != null) settleAnimator.cancel();
+            downX = event.getX();
+            downY = event.getY();
+            startScrollX = getScrollX();
+            startPage = clamp(Math.round(startScrollX / (float) pageWidth));
+            startedAtSystemEdge = downX <= systemEdgeInset
+                    || downX >= getWidth() - systemEdgeInset;
+            tracking = false;
+            return super.dispatchTouchEvent(event);
+        }
+        if (action == MotionEvent.ACTION_MOVE && !tracking && !startedAtSystemEdge) {
+            float dx = event.getX() - downX;
+            float dy = event.getY() - downY;
+            if (Math.abs(dx) > touchSlop && Math.abs(dx) > Math.abs(dy) * 1.25f) {
+                tracking = true;
+                MotionEvent cancel = MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+                if (getParent() != null)
+                    getParent().requestDisallowInterceptTouchEvent(true);
+            }
+        }
+        if (!tracking) return super.dispatchTouchEvent(event);
+        if (action == MotionEvent.ACTION_MOVE) {
+            int maxScroll = Math.max(0, (pageCount - 1) * pageWidth);
+            scrollTo(Math.max(0, Math.min(maxScroll,
+                    startScrollX - Math.round(event.getX() - downX))), 0);
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP) {
+            float dx = event.getX() - downX;
+            int threshold = Math.max(dp(48), Math.round(getWidth() * .14f));
+            int target = Math.abs(dx) >= threshold
+                    ? startPage + (dx < 0 ? 1 : -1)
+                    : Math.round(getScrollX() / (float) pageWidth);
+            settleOn(clamp(target));
+            finishTracking();
+            return true;
+        }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            settleOn(clamp(Math.round(getScrollX() / (float) pageWidth)));
+            finishTracking();
+            return true;
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void settleOn(int page) {
+        int targetX = page * pageWidth;
+        int startX = getScrollX();
+        if (startX == targetX || !ValueAnimator.areAnimatorsEnabled()) {
+            scrollTo(targetX, 0);
+            return;
+        }
+        if (settleAnimator != null) settleAnimator.cancel();
+        ValueAnimator animator = ValueAnimator.ofInt(startX, targetX);
+        settleAnimator = animator;
+        animator.setDuration(300);
+        animator.setInterpolator(new DecelerateInterpolator(1.5f));
+        animator.addUpdateListener(value -> scrollTo((int) value.getAnimatedValue(), 0));
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (settleAnimator == animator) settleAnimator = null;
+            }
+        });
+        animator.start();
+    }
+
+    private void finishTracking() {
+        tracking = false;
+        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
+    }
+
+    private int clamp(int page) {
+        return Math.max(0, Math.min(pageCount - 1, page));
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density + .5f);
+    }
+}
