@@ -387,7 +387,8 @@ public final class ProcessingJobService extends JobService {
     }
 
     private static String formatFileMetadata(List<TaskFileAttachment> files) {
-        if (files == null || files.isEmpty()) return null;
+        // Metadata is optional, but its internal representation is always a non-null string.
+        if (files == null || files.isEmpty()) return "";
         StringBuilder text = new StringBuilder();
         for (TaskFileAttachment file : files) {
             String name = file.displayName == null ? "附件" : file.displayName
