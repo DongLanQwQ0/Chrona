@@ -1742,11 +1742,12 @@ public final class DashboardActivity extends Activity {
         boolean written = candidate == null || candidate.calendarEventId != null;
         boolean confirmation = candidate != null && !written && candidate.needsConfirmation;
         if (!home || confirmation) {
-            String status = written ? "已写入" : confirmation ? "待确认" : "未写入";
+            String status = written ? "已写入" : UiStyle.uncertaintyLabel(candidate.uncertaintyLevel);
             LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
             statusParams.leftMargin = dp(8);
             footer.addView(scheduleAttribute(written ? R.drawable.ic_check
-                    : R.drawable.ic_help_outline, status, "日历状态", 12, 1, confirmation), statusParams);
+                    : UiStyle.uncertaintyIcon(candidate.uncertaintyLevel), status,
+                    written ? "日历状态" : "解析存疑等级，仍需确认后写入日历", 12, 1, confirmation), statusParams);
         }
         UiStyle.addSpaced(body, footer, home ? 12 : 8, 0);
     }

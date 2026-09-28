@@ -379,7 +379,7 @@ public final class ChronaDataBackup {
                     throw new IOException("备份数据库完整性检查失败");
             }
             try (Cursor cursor = db.rawQuery("PRAGMA user_version", null)) {
-                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 8)
+                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 9)
                     throw new IOException("备份数据库版本与当前应用不兼容");
             }
             long tasks;
@@ -452,6 +452,14 @@ public final class ChronaDataBackup {
                     staged.setTransactionSuccessful();
                 } finally { staged.endTransaction(); }
             }
+            if (staged.getVersion() < 9) {
+                staged.beginTransaction();
+                try {
+                    TaskStore.addUncertaintyLevel(staged);
+                    staged.setVersion(9);
+                    staged.setTransactionSuccessful();
+                } finally { staged.endTransaction(); }
+            }
             for (Map.Entry<String, String> entry : imageNames.entrySet()) {
                 ContentValues values = new ContentValues();
                 values.put("image_path", entry.getValue());
@@ -474,9 +482,11 @@ public final class ChronaDataBackup {
                 if (entry.getValue() == null) {
                     values.putNull("calendar_event_id");
                     values.put("needs_confirmation", 1);
+                    values.put("uncertainty_level", EventCandidate.DOUBTFUL);
                 } else {
                     values.put("calendar_event_id", entry.getValue());
                     values.put("needs_confirmation", 0);
+                    values.put("uncertainty_level", EventCandidate.CERTAIN);
                 }
                 staged.update("event_candidates", values, "id = ?",
                         new String[]{Long.toString(entry.getKey())});

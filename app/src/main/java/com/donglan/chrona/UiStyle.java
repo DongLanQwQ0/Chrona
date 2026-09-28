@@ -369,6 +369,18 @@ public final class UiStyle {
         acrylicSurface(view, 999);
     }
 
+    public static int uncertaintyIcon(int level) {
+        if (level == com.donglan.chrona.data.EventCandidate.INFERRED) return R.drawable.ic_help_outline;
+        if (level == com.donglan.chrona.data.EventCandidate.DOUBTFUL) return R.drawable.ic_warning_outline;
+        return R.drawable.ic_check;
+    }
+
+    public static String uncertaintyLabel(int level) {
+        if (level == com.donglan.chrona.data.EventCandidate.INFERRED) return "推定";
+        if (level == com.donglan.chrona.data.EventCandidate.DOUBTFUL) return "高存疑";
+        return "明确";
+    }
+
     private static void acrylicSurface(View view, int radius) {
         Palette colors = colors(view.getContext());
         boolean dark = ThemeStore.dark(view.getContext());
