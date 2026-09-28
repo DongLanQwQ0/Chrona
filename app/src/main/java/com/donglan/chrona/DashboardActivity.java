@@ -1308,7 +1308,7 @@ public final class DashboardActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         filterChips = new LinearLayout(this);
-        String[] labels = {"未来", "安排", "以前", "全部"};
+        String[] labels = {"未来", "未定", "以前", "全部"};
         for (int i = 0; i < labels.length; i++) {
             final int tab = i;
             TextView chip = text(labels[i], 14, true);
@@ -1371,7 +1371,7 @@ public final class DashboardActivity extends Activity {
         String previousDate = "";
         for (int i = 0; i < visible.size(); i++) {
             EventCandidate item = visible.get(i);
-            String date = item.startAtMillis == null ? "待安排" : item.allDay
+            String date = item.startAtMillis == null ? "未定" : item.allDay
                     ? AllDayDates.displayStart(item.startAtMillis)
                     : AllDayDates.localDate(item.startAtMillis, ZoneId.systemDefault());
             if (!date.equals(previousDate)) {
@@ -1384,28 +1384,18 @@ public final class DashboardActivity extends Activity {
     }
 
     private LocalDate[] scheduleWindow(boolean system) {
-        LocalDate today = LocalDate.now();
-        if (scheduleRange == 1) return new LocalDate[]{today, today.plusDays(1)};
-        if (scheduleRange == 2) {
-            LocalDate start = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-            return new LocalDate[]{start, start.plusWeeks(1)};
-        }
-        if (scheduleRange == 3 || (system && scheduleRange == 0)) {
-            LocalDate start = scheduleDate.withDayOfMonth(1);
-            return new LocalDate[]{start, start.plusMonths(1)};
-        }
-        if (scheduleRange == 4) return new LocalDate[]{scheduleDate, scheduleDate.plusDays(1)};
-        if (scheduleRange == 5) {
-            LocalDate until = scheduleUntil.plusDays(1);
-            if (system && until.isAfter(scheduleDate.plusYears(1))) until = scheduleDate.plusYears(1);
-            return new LocalDate[]{scheduleDate, until};
-        }
-        return new LocalDate[]{null, null};
+        com.donglan.chrona.data.ScheduleFilterState state =
+                new com.donglan.chrona.data.ScheduleFilterState(scheduleRange, scheduleCategory,
+                        schedulePublication, system ? 1 : 0, scheduleTab, scheduleDate, scheduleUntil);
+        LocalDate[] window = state.window(LocalDate.now());
+        if (system && window[0] != null && window[1].isAfter(window[0].plusYears(1)))
+            window[1] = window[0].plusYears(1);
+        return window;
     }
 
     private void scheduleDayHeading(String date) {
         String label = date;
-        if (!"待安排".equals(date)) {
+        if (!"未定".equals(date)) {
             LocalDate day = LocalDate.parse(date);
             LocalDate today = LocalDate.now();
             label = (day.equals(today) || day.equals(today.plusDays(1))
@@ -1448,34 +1438,6 @@ public final class DashboardActivity extends Activity {
         return control;
     }
 
-    private String scheduleRangeLabel() {
-        LocalDate[] window = scheduleWindow(scheduleSource == 1);
-        return window[0] == null ? "全部日期" : scheduleRange == 4
-                ? scheduleDate.toString() : scheduleRange == 5
-                ? scheduleDate + " — " + scheduleUntil
-                : window[0] + " — " + window[1].minusDays(1);
-    }
-
-    private void shiftScheduleRange(int direction) {
-        LocalDate[] window = scheduleWindow(scheduleSource == 1);
-        boolean month = scheduleRange == 3 || scheduleRange == 0;
-        if (window[0] == null) {
-            Feedback.show(this, "先选择日期范围");
-            return;
-        }
-        LocalDate[] shifted = com.donglan.chrona.data.ScheduleRangeStep.shift(
-                window[0], window[1], month, direction);
-        if (scheduleSource == 1 && shifted[1].isAfter(shifted[0].plusYears(1))) {
-            Feedback.show(this, "系统日历每次最多查询一年");
-            return;
-        }
-        scheduleDate = shifted[0];
-        scheduleUntil = shifted[1].minusDays(1);
-        scheduleRange = month ? 3 : scheduleRange == 1 || scheduleRange == 4 ? 4 : 5;
-        scheduleTab = 3;
-        applyScheduleFilters();
-    }
-
     private void applyScheduleFilters() {
         schedulePage = 0;
         selectedScheduleIds.clear();
@@ -1488,135 +1450,24 @@ public final class DashboardActivity extends Activity {
     }
 
     private void showScheduleFilters() {
-        android.app.Dialog dialog = new android.app.Dialog(this);
-        dialog.setCanceledOnTouchOutside(true);
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(16), dp(14), dp(16), dp(14));
-        UiStyle.glass(panel);
-        TextView heading = text("筛选日程", 18, true);
-        heading.setGravity(Gravity.CENTER);
-        UiStyle.addSpaced(panel, heading, 0, 10);
-        String type = scheduleCategory == 0 ? "全部类型" : EventCategory.LABELS[scheduleCategory - 1];
-        String status = new String[]{"全部", "待确认", "已写入"}[schedulePublication];
-        String[] fields = {"日期范围", "类型 · " + type, "写入 · " + status,
-                "来源 · " + (scheduleSource == 0 ? "拾时" : "系统其他日程")};
-        Button range = scheduleAction(scheduleRangeLabel(), () -> {
-            dialog.dismiss();
-            pickScheduleDate("跳转日期", scheduleDate, date -> {
-                scheduleDate = date; scheduleRange = 4; scheduleTab = 3;
-                applyScheduleFilters();
-            });
-        });
-        range.setTextSize(13);
-        range.setSingleLine(false);
-        range.setMaxLines(2);
-        range.setPadding(dp(10), dp(7), dp(10), dp(7));
-        range.setContentDescription("日期范围，左右滑动切换区间，点击跳转日期");
-        range.setOnTouchListener(new View.OnTouchListener() {
-            float downX, downY;
-            boolean horizontal;
-            @Override public boolean onTouch(View view, android.view.MotionEvent event) {
-                if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
-                    downX = event.getX(); downY = event.getY(); horizontal = false;
-                } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_MOVE) {
-                    float dx = event.getX() - downX, dy = event.getY() - downY;
-                    if (Math.abs(dx) > dp(10) && Math.abs(dx) > Math.abs(dy)) {
-                        horizontal = true;
-                        view.getParent().requestDisallowInterceptTouchEvent(true);
-                        view.setPressed(false);
-                    }
-                    return horizontal;
-                } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP) {
-                    view.getParent().requestDisallowInterceptTouchEvent(false);
-                    float dx = event.getX() - downX, dy = event.getY() - downY;
-                    horizontal = horizontal || (Math.abs(dx) >= dp(36) && Math.abs(dx) > Math.abs(dy));
-                    if (horizontal) {
-                        if (Math.abs(event.getX() - downX) >= dp(36)) {
-                            shiftScheduleRange(event.getX() < downX ? 1 : -1);
-                            range.setText(scheduleRangeLabel());
-                        }
-                        view.setPressed(false);
-                        return true;
-                    }
-                } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL) {
-                    view.getParent().requestDisallowInterceptTouchEvent(false);
-                    view.setPressed(false);
-                    return horizontal;
-                }
-                return false;
+        com.donglan.chrona.data.ScheduleFilterState initial =
+                new com.donglan.chrona.data.ScheduleFilterState(scheduleRange, scheduleCategory,
+                        schedulePublication, scheduleSource, scheduleTab, scheduleDate, scheduleUntil);
+        ScheduleFilterSheet.show(this, initial, this::pickScheduleDate, chosen -> {
+            scheduleRange = chosen.range;
+            scheduleCategory = chosen.category;
+            schedulePublication = chosen.publication;
+            scheduleSource = chosen.source;
+            scheduleTab = chosen.tab;
+            scheduleDate = chosen.date;
+            scheduleUntil = chosen.until;
+            if (scheduleSource == 1 && !new CalendarStore(this).hasReadPermission()) {
+                calendarPermissionForSchedule = true;
+                requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR},
+                        HOME_CALENDAR_PERMISSION_REQUEST);
             }
+            applyScheduleFilters();
         });
-        for (int i = 0; i < fields.length; i++) {
-            final int field = i;
-            Button control = scheduleAction(fields[i], () -> {
-                dialog.dismiss();
-                chooseScheduleFilter(field);
-            });
-            control.setTextSize(14);
-            UiStyle.addSpaced(panel, control, 0, 5);
-            if (i == 0) UiStyle.addSpaced(panel, range, 0, 8);
-        }
-        LinearLayout actions = new LinearLayout(this);
-        actions.addView(scheduleAction("今天", () -> {
-            scheduleDate = LocalDate.now(); scheduleRange = 1; scheduleTab = 3;
-            applyScheduleFilters(); range.setText(scheduleRangeLabel());
-        }), new LinearLayout.LayoutParams(0, dp(40), 1));
-        Button reset = scheduleAction("重置", () -> {
-            dialog.dismiss(); chooseScheduleFilter(4);
-        });
-        LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(0, dp(40), 1);
-        resetParams.setMargins(dp(6), 0, 0, 0);
-        actions.addView(reset, resetParams);
-        UiStyle.addSpaced(panel, actions, 5, 0);
-        UiStyle.showFloatingDialog(dialog, panel);
-    }
-
-    private void chooseScheduleFilter(int field) {
-            if (field == 0) {
-                UiStyle.choiceDialog(this, "时间范围", new String[]{"全部日期", "今天", "本周", "所选月份", "指定日期", "自定义范围"}, scheduleRange, range -> {
-                    if (range == 4 || range == 5) {
-                        pickScheduleDate(range == 4 ? "指定日期" : "起始日期", scheduleDate, from -> {
-                            if (range == 4) {
-                                scheduleDate = from; scheduleRange = 4; scheduleTab = 3;
-                                applyScheduleFilters();
-                            } else pickScheduleDate("结束日期", from.isAfter(scheduleUntil) ? from : scheduleUntil, to -> {
-                                if (to.isBefore(from)) { Feedback.show(this, "结束日期不能早于起始日期"); return; }
-                                if (scheduleSource == 1 && to.plusDays(1).isAfter(from.plusYears(1))) {
-                                    Feedback.show(this, "系统日历每次最多查询一年"); return;
-                                }
-                                scheduleDate = from; scheduleUntil = to; scheduleRange = 5;
-                                scheduleTab = 3; applyScheduleFilters();
-                            });
-                        });
-                    } else { scheduleRange = range; applyScheduleFilters(); }
-                });
-            } else if (field == 1) {
-                UiStyle.choiceDialog(this, "类型", categoryOptions(), scheduleCategory, type -> {
-                    scheduleCategory = type; applyScheduleFilters();
-                });
-            } else if (field == 2) {
-                UiStyle.choiceDialog(this, "写入状态", new String[]{"全部", "待确认", "已写入"}, schedulePublication, status -> {
-                    schedulePublication = status; applyScheduleFilters();
-                });
-            } else if (field == 3) {
-                UiStyle.choiceDialog(this, "来源", new String[]{"拾时", "系统其他日程"}, scheduleSource, source -> {
-                    scheduleSource = source;
-                    if (source == 1 && scheduleRange == 5
-                            && scheduleUntil.plusDays(1).isAfter(scheduleDate.plusYears(1))) {
-                        scheduleUntil = scheduleDate.plusYears(1).minusDays(1);
-                        Feedback.show(this, "系统日历查询范围已缩小为一年");
-                    }
-                    if (source == 1 && !new CalendarStore(this).hasReadPermission()) {
-                        calendarPermissionForSchedule = true;
-                        requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR}, HOME_CALENDAR_PERMISSION_REQUEST);
-                    }
-                    applyScheduleFilters();
-                });
-            } else {
-                scheduleRange = scheduleCategory = schedulePublication = scheduleSource = 0;
-                scheduleDate = LocalDate.now(); applyScheduleFilters();
-            }
     }
 
     private void pickScheduleDate(String title, LocalDate initial, java.util.function.Consumer<LocalDate> chosen) {
@@ -2466,9 +2317,10 @@ public final class DashboardActivity extends Activity {
             itemCard.addView(headlineView);
             String location = entry.candidate != null ? entry.candidate.location : entry.systemEvent.location;
             String metadata = entry.candidate != null ? EventCategory.label(entry.candidate.category)
-                    : "系统日历" + (entry.systemEvent.calendarName.isEmpty() ? "" : " · " + entry.systemEvent.calendarName);
-            metadata += location == null || location.trim().isEmpty() ? "" : " · " + location;
-            UiStyle.addSpaced(itemCard, text(metadata, 12, false), 4, 0);
+                    : entry.systemEvent.calendarName;
+            if (location != null && !location.trim().isEmpty())
+                metadata += (metadata.isEmpty() ? "" : " · ") + location;
+            if (!metadata.isEmpty()) UiStyle.addSpaced(itemCard, text(metadata, 12, false), 4, 0);
             itemCard.setOnClickListener(view -> openHomeEntry(entry));
             UiStyle.pressable(itemCard);
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1);
