@@ -15,6 +15,7 @@ import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
@@ -880,20 +881,16 @@ public final class DashboardActivity extends Activity {
                 }, inboxCategoryButton(),
                 new int[]{0, pendingReview, 0, pendingFailed, 0});
         selectionBar = new LinearLayout(this);
-        selectionBar.setOrientation(LinearLayout.VERTICAL);
-        selectionBar.setPadding(dp(14), dp(10), dp(14), dp(10));
-        UiStyle.glass(selectionBar);
-        LinearLayout selectionActions = new LinearLayout(this);
-        selectionActions.setGravity(Gravity.CENTER_VERTICAL);
-        selectionCount = text("已选择 0 项", 14, true);
-        selectionActions.addView(selectionCount, new LinearLayout.LayoutParams(0, -2, 1));
-        selectAllButton = button("选中本筛选", false, this::toggleSelectAll);
-        deleteSelectedButton = button("删除", true, this::confirmDeleteSelected);
-        selectionActions.addView(selectAllButton);
-        selectionActions.addView(deleteSelectedButton);
-        selectionBar.addView(selectionActions);
+        selectionBar.setOrientation(LinearLayout.HORIZONTAL);
+        selectionBar.setGravity(Gravity.CENTER_VERTICAL);
+        selectionCount = text("0/0", 12, false);
+        selectionCount.setSingleLine(true);
+        selectionBar.addView(selectionCount);
+        selectAllButton = inboxSelectionAction("全选", this::toggleSelectAll);
+        deleteSelectedButton = inboxSelectionAction("删除", this::confirmDeleteSelected);
+        selectionBar.addView(selectAllButton);
+        selectionBar.addView(deleteSelectedButton);
         selectionBar.setVisibility(View.GONE);
-        UiStyle.addSpaced(content, selectionBar, 7, 6);
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
         content.addView(results);
@@ -949,9 +946,9 @@ public final class DashboardActivity extends Activity {
         matchingInboxIds = new ArrayList<>();
         for (TaskRecord task : visible) matchingInboxIds.add(task.id);
         selectedInboxIds.retainAll(matchingInboxIds);
+        addInboxResultsHeading(visible.size());
         updateSelectionUi();
         if (visible.isEmpty()) {
-            UiStyle.addSpaced(results, text("共 0 条收件", 13, false), 12, 2);
             if (!query.isEmpty()) {
                 empty(results, "没有匹配「" + inboxQuery.trim() + "」的收件。");
             } else {
@@ -963,8 +960,6 @@ public final class DashboardActivity extends Activity {
                 emptyCard.addView(emptyCopy, new LinearLayout.LayoutParams(-1, -2));
                 UiStyle.addSpaced(results, emptyCard, 3, 8);
             }
-        } else {
-            sectionTitle(results, "共 " + visible.size() + " 条收件");
         }
         for (int i = 0; i < Math.min(inboxShown, visible.size()); i++)
             taskRow(results, visible.get(i), i);
@@ -974,6 +969,46 @@ public final class DashboardActivity extends Activity {
             UiStyle.addSpaced(results, more, 8, 0);
         }
         if (animateRows) animateInboxFilterRows();
+    }
+
+    private Button inboxSelectionAction(String label, Runnable action) {
+        Button control = new Button(this);
+        control.setText(label);
+        control.setAllCaps(false);
+        control.setSingleLine(true);
+        control.setTextSize(13);
+        control.setTextColor(UiStyle.colors(this).primary);
+        control.setIncludeFontPadding(false);
+        control.setMinWidth(0);
+        control.setMinimumWidth(0);
+        control.setMinHeight(0);
+        control.setMinimumHeight(0);
+        control.setPadding(dp(8), 0, dp(8), 0);
+        UiStyle.glassPill(control);
+        UiStyle.pressable(control);
+        control.setOnClickListener(view -> action.run());
+        return control;
+    }
+
+    private void addInboxResultsHeading(int count) {
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = text("共 " + count + " 条收件", 19, true);
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        int height = Math.max(dp(40), (int) Math.ceil(title.getPaint().getFontSpacing()) + dp(8));
+        heading.addView(title, new LinearLayout.LayoutParams(0, height, 1f));
+        ViewGroup previous = (ViewGroup) selectionBar.getParent();
+        if (previous != null) previous.removeView(selectionBar);
+        for (Button control : new Button[]{selectAllButton, deleteSelectedButton}) {
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, height);
+            params.setMargins(dp(6), 0, 0, 0);
+            control.setLayoutParams(params);
+        }
+        heading.addView(selectionBar, new LinearLayout.LayoutParams(-2, height));
+        // This height exists before selection too, so entering selection never moves the cards.
+        UiStyle.addSpaced(results, heading, 16, 9);
     }
 
     private void animateInboxFilterRows() {
@@ -1178,12 +1213,14 @@ public final class DashboardActivity extends Activity {
             selectionBar.setTranslationY(0f);
             selectionBar.setVisibility(active ? View.VISIBLE : View.GONE);
         }
-        selectionCount.setText("已选 " + selectedInboxIds.size() + " / "
-                + matchingInboxIds.size() + " 条");
+        selectionCount.setText(selectedInboxIds.size() + "/" + matchingInboxIds.size());
+        selectionCount.setContentDescription("已选 " + selectedInboxIds.size() + " 条，共 " + matchingInboxIds.size() + " 条");
         boolean all = !matchingInboxIds.isEmpty()
                 && selectedInboxIds.containsAll(matchingInboxIds);
-        selectAllButton.setText(all ? "取消全选" : "选中本筛选");
-        deleteSelectedButton.setText("删除 " + selectedInboxIds.size() + " 项");
+        selectAllButton.setText(all ? "取消" : "全选");
+        selectAllButton.setContentDescription(all ? "取消全选" : "选中本筛选的全部收件");
+        deleteSelectedButton.setText("删除");
+        deleteSelectedButton.setContentDescription("删除已选 " + selectedInboxIds.size() + " 项");
         for (Map.Entry<Long, InboxRow> entry : inboxRows.entrySet())
             applyInboxRowSelection(entry.getKey());
     }
@@ -1239,7 +1276,8 @@ public final class DashboardActivity extends Activity {
         List<Long> taskIds = new ArrayList<>(selectedInboxIds);
         deleteSelectedButton.setEnabled(false);
         selectAllButton.setEnabled(false);
-        selectionCount.setText("正在清理关联日程…");
+        selectionCount.setText("…");
+        selectionCount.setContentDescription("正在清理关联日程");
         new Thread(() -> {
             int deleted = 0;
             int failed = 0;

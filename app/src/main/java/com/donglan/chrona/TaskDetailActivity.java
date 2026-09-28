@@ -791,10 +791,20 @@ public final class TaskDetailActivity extends Activity {
             addHeaderMenuRow(panel, dialog, "来源链接", () -> showLinksDialog(menuTask, links));
         int publishedCount = countPublished(candidates);
         addHeaderMenuRow(panel, dialog, "删除任务", true, () -> confirmDelete(publishedCount));
+        float longestText = 0;
+        for (int i = 0; i < panel.getChildCount(); i++) {
+            View item = panel.getChildAt(i);
+            if (item instanceof TextView) {
+                TextView row = (TextView) item;
+                longestText = Math.max(longestText, row.getPaint().measureText(row.getText().toString()));
+            }
+        }
+        int menuWidth = Math.min((int) Math.ceil(longestText * 1.5f),
+                getResources().getDisplayMetrics().widthPixels - dp(40));
         UiStyle.showFloatingDialog(dialog, panel);
         android.view.Window window = dialog.getWindow();
         if (dialog.getWindow() != null) {
-            window.setLayout(dp(240), -2);
+            window.setLayout(menuWidth, -2);
             window.setGravity(android.view.Gravity.TOP | android.view.Gravity.RIGHT);
             android.view.WindowManager.LayoutParams params = window.getAttributes();
             params.y = dp(58);
@@ -822,7 +832,8 @@ public final class TaskDetailActivity extends Activity {
         action.setText(text);
         action.setTextSize(15);
         action.setGravity(android.view.Gravity.CENTER);
-        action.setPadding(dp(12), 0, dp(12), 0);
+        action.setPadding(dp(4), 0, dp(4), 0);
+        action.setSingleLine(true);
         action.setMinHeight(dp(48));
         action.setTextColor(destructive ? UiStyle.danger(this) : UiStyle.colors(this).primary);
         UiStyle.pill(action, false);
