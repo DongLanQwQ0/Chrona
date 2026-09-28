@@ -37,8 +37,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.DatePicker;
-import android.widget.TimePicker;
 
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.calendar.CalendarStore;
@@ -2530,20 +2528,22 @@ public final class TaskDetailActivity extends Activity {
             final boolean dateOnly = allDay.isChecked();
             Dialog dialog = new Dialog(this);
             LinearLayout panel = floatingDialogPanel(title);
-            DatePicker dates = new DatePicker(this);
-            dates.init(seed.getYear(), seed.getMonthValue() - 1, seed.getDayOfMonth(), null);
-            TimePicker times = new TimePicker(this);
-            times.setIs24HourView(true);
-            times.setHour(seed.getHour());
-            times.setMinute(seed.getMinute());
-            times.setVisibility(View.GONE);
-            LinearLayout pickers = new LinearLayout(this);
-            pickers.setOrientation(LinearLayout.VERTICAL);
-            pickers.addView(dates, new LinearLayout.LayoutParams(-1, -2));
-            pickers.addView(times, new LinearLayout.LayoutParams(-1, -2));
-            ScrollView body = new ScrollView(this);
-            body.addView(pickers);
-            panel.addView(body, new LinearLayout.LayoutParams(-1, dp(320)));
+            GlassDateTimePickerView picker = new GlassDateTimePickerView(this, seed);
+            TextView selected = new TextView(this);
+            selected.setTextSize(15);
+            selected.setGravity(Gravity.CENTER);
+            UiStyle.title(selected);
+            Runnable displaySelection = () -> selected.setText(dateOnly
+                    ? picker.value().toLocalDate().toString() : picker.value().format(DATE_TIME));
+            picker.onChanged(displaySelection);
+            displaySelection.run();
+            UiStyle.addSpaced(panel, selected, 0, 8);
+            android.graphics.Rect visible = new android.graphics.Rect();
+            getWindow().getDecorView().getWindowVisibleDisplayFrame(visible);
+            int availableHeight = visible.height() > 0 ? visible.height()
+                    : getResources().getDisplayMetrics().heightPixels;
+            int pickerHeight = Math.max(dp(64), Math.min(dp(240), availableHeight - dp(170)));
+            panel.addView(picker, new LinearLayout.LayoutParams(-1, pickerHeight));
             LinearLayout actions = new LinearLayout(this);
             Button cancel = new Button(this);
             cancel.setText("取消");
@@ -2551,21 +2551,25 @@ public final class TaskDetailActivity extends Activity {
             cancel.setOnClickListener(v -> dialog.dismiss());
             Button choose = new Button(this);
             choose.setText(dateOnly ? "确定" : "选择时间");
-            UiStyle.button(choose, true);
+            UiStyle.button(choose, false);
+            boolean[] timeStep = {false};
+            selected.setContentDescription("当前选择，点按返回日期选择");
+            selected.setOnClickListener(v -> {
+                picker.finishSelection();
+                timeStep[0] = false;
+                picker.showTime(false);
+                choose.setText(dateOnly ? "确定" : "选择时间");
+            });
             choose.setOnClickListener(v -> {
-                dates.clearFocus();
-                if (!dateOnly && dates.getVisibility() == View.VISIBLE) {
-                    dates.setVisibility(View.GONE);
-                    times.setVisibility(View.VISIBLE);
+                picker.finishSelection();
+                if (!dateOnly && !timeStep[0]) {
+                    timeStep[0] = true;
+                    picker.showTime(true);
                     choose.setText("确定");
-                    body.scrollTo(0, 0);
                     return;
                 }
-                times.clearFocus();
-                java.time.LocalDate day = java.time.LocalDate.of(
-                        dates.getYear(), dates.getMonth() + 1, dates.getDayOfMonth());
-                String value = dateOnly ? day.toString()
-                        : day.atTime(times.getHour(), times.getMinute()).format(DATE_TIME);
+                String value = dateOnly ? picker.value().toLocalDate().toString()
+                        : picker.value().format(DATE_TIME);
                 field.setText(value);
                 dialog.dismiss();
             });
@@ -2574,6 +2578,13 @@ public final class TaskDetailActivity extends Activity {
             actions.addView(cancel, left);
             actions.addView(choose, new LinearLayout.LayoutParams(0, dp(48), 1f));
             panel.addView(actions);
+            // Account for actual title/button heights, including the user's font scale.
+            int panelWidth = Math.min(dp(420), getResources().getDisplayMetrics().widthPixels - dp(40));
+            panel.measure(View.MeasureSpec.makeMeasureSpec(Math.max(1, panelWidth), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int overhead = panel.getMeasuredHeight() - picker.getMeasuredHeight();
+            picker.getLayoutParams().height = Math.max(1, Math.min(dp(240), availableHeight - overhead - dp(32)));
+            picker.requestLayout();
             UiStyle.showFloatingDialog(dialog, panel);
             dialog.setCanceledOnTouchOutside(true);
             sizeFloatingDialog(dialog, dp(420), Gravity.CENTER);
