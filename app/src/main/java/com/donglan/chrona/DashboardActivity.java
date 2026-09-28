@@ -1239,27 +1239,31 @@ public final class DashboardActivity extends Activity {
         int pages = (total + InboxQuery.PAGE_SIZE - 1) / InboxQuery.PAGE_SIZE;
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        Button previous = inboxPageArrow(R.drawable.ic_chevron_left, () -> changeInboxPage(-1));
+        ImageButton previous = pageArrow(R.drawable.ic_chevron_left, () -> changeInboxPage(-1));
         previous.setContentDescription("上一页收件");
         previous.setEnabled(inboxPage > 0);
-        row.addView(previous, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        row.addView(previous, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView label = text((inboxPage + 1) + " / " + pages, 13, false);
         label.setGravity(Gravity.CENTER);
-        row.addView(label, new LinearLayout.LayoutParams(0, dp(42), 1));
-        Button next = inboxPageArrow(R.drawable.ic_chevron_right, () -> changeInboxPage(1));
+        row.addView(label, new LinearLayout.LayoutParams(0, dp(48), 1));
+        ImageButton next = pageArrow(R.drawable.ic_chevron_right, () -> changeInboxPage(1));
         next.setContentDescription("下一页收件");
         next.setEnabled(inboxPage + 1 < pages);
-        row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
         UiStyle.addSpaced(results, row, 12, 0);
     }
 
-    private Button inboxPageArrow(int resource, Runnable action) {
-        Button button = scheduleAction("", action);
-        android.graphics.drawable.Drawable icon = getDrawable(resource).mutate();
-        icon.setTint(UiStyle.colors(this).primary);
-        icon.setBounds(0, 0, dp(18), dp(18));
-        button.setCompoundDrawables(icon, null, null, null);
-        button.setGravity(Gravity.CENTER);
+    private ImageButton pageArrow(int resource, Runnable action) {
+        ImageButton button = new ImageButton(this);
+        button.setMinimumWidth(0);
+        button.setMinimumHeight(0);
+        UiStyle.glassPill(button);
+        button.setPadding(dp(14), dp(14), dp(14), dp(14));
+        button.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        button.setImageResource(resource);
+        button.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
+        UiStyle.pressable(button);
+        button.setOnClickListener(view -> action.run());
         return button;
     }
 
@@ -1450,17 +1454,17 @@ public final class DashboardActivity extends Activity {
         int pages = (total + ScheduleQuery.PAGE_SIZE - 1) / ScheduleQuery.PAGE_SIZE;
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        Button previous = scheduleAction("‹", () -> changeSchedulePage(-1));
+        ImageButton previous = pageArrow(R.drawable.ic_chevron_left, () -> changeSchedulePage(-1));
         previous.setContentDescription("上一页日程");
         previous.setEnabled(schedulePage > 0);
-        row.addView(previous, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        row.addView(previous, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView label = text((schedulePage + 1) + " / " + pages, 13, false);
         label.setGravity(Gravity.CENTER);
-        row.addView(label, new LinearLayout.LayoutParams(0, dp(42), 1));
-        Button next = scheduleAction("›", () -> changeSchedulePage(1));
+        row.addView(label, new LinearLayout.LayoutParams(0, dp(48), 1));
+        ImageButton next = pageArrow(R.drawable.ic_chevron_right, () -> changeSchedulePage(1));
         next.setContentDescription("下一页日程");
         next.setEnabled(schedulePage + 1 < pages);
-        row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
         UiStyle.addSpaced(results, row, 12, 0);
     }
 
