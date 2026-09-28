@@ -103,6 +103,7 @@ public final class UiStyle {
         final View content;
         final float scaleX, scaleY;
         final Object originalRenderEffect;
+        final java.util.List<View> dialogRoots = new java.util.ArrayList<>();
         int count;
         DialogScaleState(View content, Object originalRenderEffect) {
             this.content = content;
@@ -907,7 +908,8 @@ public final class UiStyle {
         Activity owner = content.getContext() instanceof Activity activity ? activity : null;
         if (owner != null) {
             beginDialogScale(owner);
-            applyDialogSurface(content, owner);
+            boolean nested = registerDialogLayer(owner, content);
+            applyDialogSurface(content, owner, nested);
             boolean dialogAcrylic = Build.VERSION.SDK_INT >= 31
                     && ThemeStore.acrylicEnabled(owner);
             if (dialogAcrylic) synchronized (DIALOG_ACRYLIC_ROOTS) {
@@ -917,6 +919,7 @@ public final class UiStyle {
                 if (dialogAcrylic) synchronized (DIALOG_ACRYLIC_ROOTS) {
                     DIALOG_ACRYLIC_ROOTS.remove(content);
                 }
+                removeDialogLayer(owner, content);
                 endDialogScale(owner);
             });
         }
@@ -937,15 +940,50 @@ public final class UiStyle {
         showDialog(dialog, content);
     }
 
-    private static void applyDialogSurface(View content, Activity owner) {
+    private static void applyDialogSurface(View content, Activity owner, boolean nested) {
         if (Build.VERSION.SDK_INT >= 31 && ThemeStore.acrylicEnabled(owner)) {
             Palette palette = colors(content.getContext());
             boolean dark = ThemeStore.dark(content.getContext());
             content.setBackground(surfaceDrawable(content, palette, RADIUS_PANEL,
-                    dark ? 112 : 124, dark ? 100 : 112));
+                    nested ? 220 : dark ? 112 : 124, nested ? 212 : dark ? 100 : 112));
             content.setElevation(dp(content, 8));
         } else {
-            glass(content);
+            if (nested) content.setBackground(surfaceDrawable(content, colors(owner), RADIUS_PANEL, 244, 240));
+            else glass(content);
+        }
+    }
+
+    /** A child modal obscures the previous dialog window as well as the Activity behind it. */
+    private static boolean registerDialogLayer(Activity owner, View root) {
+        synchronized (DIALOG_SCALES) {
+            DialogScaleState state = DIALOG_SCALES.get(owner);
+            if (state == null) return false;
+            boolean nested = !state.dialogRoots.isEmpty();
+            for (View parent : state.dialogRoots) {
+                parent.animate().cancel();
+                parent.setScaleX(1f);
+                parent.setScaleY(1f);
+                parent.setAlpha(.4f);
+                if (Build.VERSION.SDK_INT >= 31)
+                    parent.setRenderEffect(RenderEffect.createBlurEffect(dp(parent, 12), dp(parent, 12),
+                            android.graphics.Shader.TileMode.CLAMP));
+            }
+            state.dialogRoots.add(root);
+            return nested;
+        }
+    }
+
+    private static void removeDialogLayer(Activity owner, View root) {
+        synchronized (DIALOG_SCALES) {
+            DialogScaleState state = DIALOG_SCALES.get(owner);
+            if (state == null) return;
+            state.dialogRoots.remove(root);
+            // These sheet roots have no persistent effects; only the top layer is interactive.
+            if (!state.dialogRoots.isEmpty()) {
+                View parent = state.dialogRoots.get(state.dialogRoots.size() - 1);
+                if (Build.VERSION.SDK_INT >= 31) parent.setRenderEffect(null);
+                parent.setAlpha(1f);
+            }
         }
     }
 

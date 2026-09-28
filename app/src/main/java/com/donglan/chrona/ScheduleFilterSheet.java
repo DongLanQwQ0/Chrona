@@ -162,10 +162,16 @@ final class ScheduleFilterSheet {
         TextView title = label(name, 14, false);
         title.setPadding(dp(8), 0, 0, 0);
         setting.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView current = label(value + (enabled ? expanded == field ? "  ⌃" : "  ›" : ""), 14, false);
+        TextView current = label(value, 14, false);
         current.setTextColor(UiStyle.colors(activity).muted);
         setting.addView(current);
         if (enabled) {
+            ImageView arrow = new ImageView(activity);
+            arrow.setImageResource(expanded == field ? R.drawable.ic_expand_less : R.drawable.ic_chevron_down);
+            arrow.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));
+            LinearLayout.LayoutParams arrowParams = new LinearLayout.LayoutParams(dp(18), dp(18));
+            arrowParams.leftMargin = dp(6);
+            setting.addView(arrow, arrowParams);
             setting.setContentDescription(name + "，" + value + "，展开选项");
             setting.setOnClickListener(view -> { expanded = expanded == field ? -1 : field; render(); });
         }
@@ -250,8 +256,7 @@ final class ScheduleFilterSheet {
         button.setMinHeight(0); button.setMinimumHeight(dp(38));
         button.setPadding(dp(5), 0, dp(5), 0);
         button.setTextColor(selected ? UiStyle.colors(activity).primary : UiStyle.colors(activity).text);
-        if (selected) UiStyle.acrylicChoice(button, true, UiStyle.RADIUS_PILL, false);
-        else UiStyle.glassPill(button);
+        UiStyle.acrylicChoice(button, selected, UiStyle.RADIUS_PILL, true);
         UiStyle.pressable(button);
         button.setOnClickListener(view -> action.run());
         return button;
