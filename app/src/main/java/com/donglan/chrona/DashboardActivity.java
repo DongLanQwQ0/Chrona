@@ -34,6 +34,7 @@ import com.donglan.chrona.calendar.CalendarOccurrence;
 import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.data.ScheduleQuery;
 import com.donglan.chrona.processing.ProcessingJobService;
 import com.donglan.chrona.processing.StreamingOutputStore;
 import com.donglan.chrona.image.ImageStore;
@@ -107,17 +108,14 @@ public final class DashboardActivity extends Activity {
     }
     static final String EXTRA_SECTION = "section";
     static final int HOME = 0, INBOX = 1, SCHEDULE = 2;
-    /** Entries keep their store order when they have no start time of their own. */
-    private static final java.util.Comparator<EventCandidate> BY_START_TIME = (left, right) -> {
-        if (left.startAtMillis == null && right.startAtMillis == null) return 0;
-        if (left.startAtMillis == null) return 1;
-        if (right.startAtMillis == null) return -1;
-        return Long.compare(left.startAtMillis, right.startAtMillis);
-    };
     private int section = HOME;
     private int categoryIndex, statusIndex;
     private int scheduleTab;
-    private int inboxShown = 12, scheduleShown = 12;
+    private int schedulePage, scheduleRange, scheduleCategory, schedulePublication, scheduleSource;
+    private LocalDate scheduleDate = LocalDate.now(), scheduleUntil = LocalDate.now();
+    private LinearLayout scheduleControls;
+    private boolean calendarPermissionForSchedule;
+    private int inboxShown = 12;
     /** The two browsable lists keep their own keyword and time direction. */
     private String inboxQuery = "";
     private String scheduleQuery = "";
@@ -163,8 +161,10 @@ public final class DashboardActivity extends Activity {
     private final java.util.concurrent.ExecutorService calendarReader =
             java.util.concurrent.Executors.newSingleThreadExecutor();
     private List<CalendarOccurrence> systemCalendarEvents = java.util.Collections.emptyList();
-    private boolean calendarLoading, foreground, calendarErrorShown, homeRefreshPending;
+    private boolean calendarLoading, foreground, calendarErrorShown, homeRefreshPending, scheduleRefreshPending;
     private long calendarGeneration, lastCalendarFetch;
+    private String calendarWindow = "";
+    private String calendarResultWindow = "";
     private android.os.CancellationSignal calendarCancellation;
     private final Runnable poll = this::pollChanges;
     private final Runnable elapsedTicker = new Runnable() {
@@ -187,8 +187,15 @@ public final class DashboardActivity extends Activity {
             categoryIndex = state.getInt("category");
             statusIndex = state.getInt("status");
             scheduleTab = state.getInt("schedule_tab");
+            schedulePage = state.getInt("schedule_page");
+            scheduleRange = state.getInt("schedule_range");
+            scheduleCategory = state.getInt("schedule_category");
+            schedulePublication = state.getInt("schedule_publication");
+            scheduleSource = state.getInt("schedule_source");
+            scheduleDate = LocalDate.parse(state.getString("schedule_date", LocalDate.now().toString()));
+            scheduleUntil = LocalDate.parse(state.getString("schedule_until", scheduleDate.toString()));
             inboxShown = state.getInt("inbox_shown", 12);
-            scheduleShown = state.getInt("schedule_shown", 12);
+            calendarPermissionForSchedule = state.getBoolean("schedule_permission_pending");
             inboxQuery = state.getString("inbox_query", "");
             scheduleQuery = state.getString("schedule_query", "");
             scheduleOldestFirst = state.getBoolean("schedule_oldest_first", true);
@@ -217,8 +224,15 @@ public final class DashboardActivity extends Activity {
         state.putInt("category", categoryIndex);
         state.putInt("status", statusIndex);
         state.putInt("schedule_tab", scheduleTab);
+        state.putInt("schedule_page", schedulePage);
+        state.putInt("schedule_range", scheduleRange);
+        state.putInt("schedule_category", scheduleCategory);
+        state.putInt("schedule_publication", schedulePublication);
+        state.putInt("schedule_source", scheduleSource);
+        state.putString("schedule_date", scheduleDate.toString());
+        state.putString("schedule_until", scheduleUntil.toString());
         state.putInt("inbox_shown", inboxShown);
-        state.putInt("schedule_shown", scheduleShown);
+        state.putBoolean("schedule_permission_pending", calendarPermissionForSchedule);
         state.putString("inbox_query", inboxQuery);
         state.putString("schedule_query", scheduleQuery);
         state.putBoolean("schedule_oldest_first", scheduleOldestFirst);
@@ -255,6 +269,8 @@ public final class DashboardActivity extends Activity {
         final int categoryIndex;
         final int statusIndex;
         final int scheduleTab;
+        final int schedulePage;
+        final LinearLayout scheduleControls;
 
         SectionPage() {
             this.section = DashboardActivity.this.section;
@@ -279,6 +295,8 @@ public final class DashboardActivity extends Activity {
             this.categoryIndex = DashboardActivity.this.categoryIndex;
             this.statusIndex = DashboardActivity.this.statusIndex;
             this.scheduleTab = DashboardActivity.this.scheduleTab;
+            this.schedulePage = DashboardActivity.this.schedulePage;
+            this.scheduleControls = DashboardActivity.this.scheduleControls;
         }
     }
 
@@ -306,6 +324,8 @@ public final class DashboardActivity extends Activity {
         categoryIndex = page.categoryIndex;
         statusIndex = page.statusIndex;
         scheduleTab = page.scheduleTab;
+        schedulePage = page.schedulePage;
+        scheduleControls = page.scheduleControls;
         if (pager != null) pager.setGesturePriorityChildren(strips);
     }
 
@@ -498,6 +518,10 @@ public final class DashboardActivity extends Activity {
             scroll.setTranslationX(0f);
             if (homeRefreshPending) refreshHomeContent();
         }
+        if (scheduleRefreshPending && section == SCHEDULE) {
+            scheduleRefreshPending = false;
+            updateResults();
+        }
         invalidateSectionSurfaces();
         snapshot = dataSnapshot();
     }
@@ -542,7 +566,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void pollChanges() {
-        if (section == HOME) refreshSystemCalendar();
+        if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
         String current = dataSnapshot();
         if (!current.equals(snapshot)) {
             int scrollY = scroll.getScrollY();
@@ -556,23 +580,31 @@ public final class DashboardActivity extends Activity {
 
     private void refreshSystemCalendar() {
         if (!foreground || isDestroyed() || calendarLoading) return;
-        if (!HomeTimelinePreferences.includesSystemCalendar(this)
+        boolean systemSchedule = section == SCHEDULE && scheduleSource == 1;
+        if ((!systemSchedule && !HomeTimelinePreferences.includesSystemCalendar(this))
                 || !new CalendarStore(this).hasReadPermission()) {
             if (!systemCalendarEvents.isEmpty()) {
                 systemCalendarEvents = java.util.Collections.emptyList();
-                refreshHomeContent();
+                calendarResultWindow = "";
+                if (systemSchedule) updateResults();
+                else refreshHomeContent();
             }
             return;
         }
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zone);
+        LocalDate[] window = systemSchedule ? scheduleWindow(true)
+                : new LocalDate[]{today, today.plusMonths(1)};
+        long begin = window[0].atStartOfDay(zone).toInstant().toEpochMilli();
+        long end = window[1].atStartOfDay(zone).toInstant().toEpochMilli();
+        String windowKey = begin + ":" + end;
         long elapsed = android.os.SystemClock.elapsedRealtime();
-        if (lastCalendarFetch != 0 && elapsed - lastCalendarFetch < SYSTEM_CALENDAR_REFRESH_MILLIS) return;
+        if (windowKey.equals(calendarWindow) && lastCalendarFetch != 0
+                && elapsed - lastCalendarFetch < SYSTEM_CALENDAR_REFRESH_MILLIS) return;
+        calendarWindow = windowKey;
         lastCalendarFetch = elapsed;
         calendarLoading = true;
         long generation = calendarGeneration;
-        ZoneId zone = ZoneId.systemDefault();
-        LocalDate today = LocalDate.now(zone);
-        long begin = today.atStartOfDay(zone).toInstant().toEpochMilli();
-        long end = today.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli();
         android.os.CancellationSignal cancellation = new android.os.CancellationSignal();
         calendarCancellation = cancellation;
         calendarReader.execute(() -> {
@@ -594,8 +626,13 @@ public final class DashboardActivity extends Activity {
             refresh.post(() -> {
                 calendarLoading = false;
                 calendarCancellation = null;
-                if (generation != calendarGeneration || !foreground || isDestroyed()
-                        || !HomeTimelinePreferences.includesSystemCalendar(this)) return;
+                if (generation != calendarGeneration || !foreground || isDestroyed()) return;
+                LocalDate[] desired = section == SCHEDULE && scheduleSource == 1
+                        ? scheduleWindow(true) : new LocalDate[]{LocalDate.now(), LocalDate.now().plusMonths(1)};
+                if (!windowKey.equals(calendarWindowKey(desired))) {
+                    refresh.post(this::refreshSystemCalendar);
+                    return;
+                }
                 if (!new CalendarStore(this).hasReadPermission()) return;
                 if (error) {
                     if (!calendarErrorShown) Feedback.show(this, "无法读取系统日程，请稍后重试");
@@ -603,9 +640,14 @@ public final class DashboardActivity extends Activity {
                     return;
                 }
                 calendarErrorShown = false;
-                if (!systemCalendarEvents.equals(result)) {
+                if (!systemCalendarEvents.equals(result) || !windowKey.equals(calendarResultWindow)) {
                     systemCalendarEvents = result;
-                    refreshHomeContent();
+                    calendarResultWindow = windowKey;
+                    if (section == SCHEDULE && scheduleSource == 1) {
+                        if (pageTransitionRunning || dragTargetLoaded) scheduleRefreshPending = true;
+                        else updateResults();
+                    }
+                    else refreshHomeContent();
                 }
             });
         });
@@ -625,6 +667,17 @@ public final class DashboardActivity extends Activity {
             scroll.scrollTo(0, y);
             if (!strips.isEmpty()) strips.get(0).scrollTo(x, 0);
         });
+    }
+
+    private String calendarWindowKey(LocalDate[] window) {
+        ZoneId zone = ZoneId.systemDefault();
+        return window[0].atStartOfDay(zone).toInstant().toEpochMilli() + ":"
+                + window[1].atStartOfDay(zone).toInstant().toEpochMilli();
+    }
+
+    private List<CalendarOccurrence> calendarEventsForWindow(LocalDate[] window) {
+        return calendarResultWindow.equals(calendarWindowKey(window)) ? systemCalendarEvents
+                : java.util.Collections.emptyList();
     }
 
     private String homeEntryWhen(HomeTimelineEntry entry) {
@@ -658,14 +711,8 @@ public final class DashboardActivity extends Activity {
 
     private String dataSnapshot() {
         try (TaskStore store = new TaskStore(this)) {
-            StringBuilder value = new StringBuilder();
-            for (TaskRecord task : store.listTasks()) {
-                value.append(task.id).append(':').append(task.status).append(';');
-            }
-            // While something is parsing the snapshot also moves every five seconds, so a row's
-            // "已 N" keeps counting without a second timer of its own.
-            value.append('/').append(store.listCandidates().size());
-            return value.toString();
+            // Database triggers track edits too; time buckets move ended events between tabs.
+            return store.dataRevision() + ":" + (System.currentTimeMillis() / 60000L);
         } catch (Exception ignored) {
             return "";
         }
@@ -743,6 +790,7 @@ public final class DashboardActivity extends Activity {
 
     private void render() {
         results = null;
+        scheduleControls = null;
         filterChips = null;
         categoryChip = null;
         orderToggle = null;
@@ -751,12 +799,8 @@ public final class DashboardActivity extends Activity {
         content.removeAllViews();
         addHeader();
         try (TaskStore store = new TaskStore(this)) {
-            pendingReview = 0;
-            pendingFailed = 0;
-            for (TaskRecord task : store.listTasks()) {
-                if (TaskRecord.NEEDS_REVIEW.equals(task.status)) pendingReview++;
-                else if (TaskRecord.FAILED.equals(task.status)) pendingFailed++;
-            }
+            pendingReview = store.taskCountByStatus(TaskRecord.NEEDS_REVIEW);
+            pendingFailed = store.taskCountByStatus(TaskRecord.FAILED);
             if (section == HOME) home(store);
             else if (section == INBOX) inbox(store);
             else schedule(store);
@@ -768,7 +812,8 @@ public final class DashboardActivity extends Activity {
             UiStyle.enterChildren(content);
         }
         drawNavigation();
-        if (section == HOME && !previewRender) scroll.post(this::refreshSystemCalendar);
+        if ((section == HOME || (section == SCHEDULE && scheduleSource == 1)) && !previewRender)
+            scroll.post(this::refreshSystemCalendar);
         if (pager != null) pager.setGesturePriorityChildren(strips);
     }
 
@@ -846,7 +891,7 @@ public final class DashboardActivity extends Activity {
         if (section == INBOX) inboxOldestFirst = !inboxOldestFirst;
         else scheduleOldestFirst = !scheduleOldestFirst;
         inboxShown = 12;
-        scheduleShown = 12;
+        schedulePage = 0;
         refreshOrderToggle();
         updateResultsWithEntrance();
     }
@@ -875,7 +920,7 @@ public final class DashboardActivity extends Activity {
                 String keyword = value.toString();
                 if (section == INBOX) inboxQuery = keyword; else scheduleQuery = keyword;
                 inboxShown = 12;
-                scheduleShown = 12;
+                schedulePage = 0;
                 updateResults();
                 scroll.scrollTo(0, 0);
             }
@@ -900,13 +945,6 @@ public final class DashboardActivity extends Activity {
 
     private static boolean containsQuery(String value, String query) {
         return value != null && value.toLowerCase(Locale.ROOT).contains(query);
-    }
-
-    private boolean matchesQuery(EventCandidate item, String query) {
-        return containsQuery(item.title, query)
-                || containsQuery(item.location, query)
-                || containsQuery(item.description, query)
-                || containsQuery(EventCategory.label(item.category), query);
     }
 
     private static boolean matchesQuery(TaskRecord task, String query) {
@@ -934,26 +972,26 @@ public final class DashboardActivity extends Activity {
         });
         UiStyle.addSpaced(content, include, 0, 4);
         long now = System.currentTimeMillis();
-        List<EventCandidate> candidates = store.listCandidates();
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zone);
+        LocalDate endDate = today.plusMonths(1);
+        int limit = HomeTimelinePreferences.getItemLimit(this);
+        List<EventCandidate> candidates = store.queryScheduleFirst(new ScheduleQuery(0, null, 0,
+                "", today, endDate, now, zone), limit);
         List<HomeTimelineEntry> upcoming = new ArrayList<>();
-        for (EventCandidate candidate : candidates)
-            if (isUpcoming(candidate, now)) upcoming.add(new HomeTimelineEntry(candidate));
+        for (EventCandidate candidate : store.queryScheduleFirst(new ScheduleQuery(0, null, 0,
+                "", null, null, now, zone), 5)) upcoming.add(new HomeTimelineEntry(candidate));
         List<CalendarOccurrence> external = java.util.Collections.emptyList();
         if (HomeTimelinePreferences.includesSystemCalendar(this)
                 && new CalendarStore(this).hasReadPermission()) {
-            Set<Long> linkedIds = new HashSet<>();
-            for (EventCandidate candidate : candidates)
-                if (candidate.calendarEventId != null) linkedIds.add(candidate.calendarEventId);
-            external = CalendarOccurrence.unlinked(systemCalendarEvents, linkedIds);
+            Set<Long> linkedIds = new HashSet<>(store.linkedCalendarIds());
+            external = CalendarOccurrence.unlinked(calendarEventsForWindow(new LocalDate[]{today, endDate}), linkedIds);
             for (CalendarOccurrence event : external)
                 if (event.displayEnd(ZoneId.systemDefault()) > now)
                     upcoming.add(new HomeTimelineEntry(event));
         }
         showUpcomingCarousel(upcoming);
 
-        ZoneId zone = ZoneId.systemDefault();
-        LocalDate today = LocalDate.now(zone);
-        LocalDate endDate = today.plusMonths(1);
         long rangeStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
         long rangeEnd = endDate.atStartOfDay(zone).toInstant().toEpochMilli();
         List<HomeTimelineEntry> all = new ArrayList<>();
@@ -969,7 +1007,6 @@ public final class DashboardActivity extends Activity {
                 all.add(new HomeTimelineEntry(event));
         }
         all.sort(java.util.Comparator.comparingLong(entry -> entry.timestampMillis));
-        int limit = HomeTimelinePreferences.getItemLimit(this);
         if (all.size() > limit) all = new ArrayList<>(all.subList(0, limit));
         Map<LocalDate, List<HomeTimelineEntry>> byDate = new java.util.TreeMap<>();
         for (HomeTimelineEntry entry : all) {
@@ -1199,8 +1236,14 @@ public final class DashboardActivity extends Activity {
         for (InboxRow row : inboxRows.values()) {
             animateResultCard(row.card, index++);
         }
+        if (inboxRows.isEmpty() && results != null) {
+            for (int i = 0; i < results.getChildCount(); i++) {
+                View item = results.getChildAt(i);
+                if (item.isClickable()) animateResultCard(item, index++);
+            }
+        }
         // Empty-state cards enter too; keep the count and selection controls stationary.
-        if (inboxRows.isEmpty() && results != null && results.getChildCount() > 1)
+        if (index == 0 && results != null && results.getChildCount() > 1)
             animateResultCard(results.getChildAt(1), 0);
     }
 
@@ -1217,13 +1260,17 @@ public final class DashboardActivity extends Activity {
 
     private void schedule(TaskStore store) {
         message(content, "按时间浏览解析出的事项，点开即可修改或写入日历。");
-        filterChips = chipRow(new String[]{"即将到来", "待补全", "较早的"}, scheduleTab, index -> {
+        filterChips = chipRow(new String[]{"即将到来", "待安排", "较早的", "全部"}, scheduleTab, index -> {
             if (scheduleTab == index) return;
             scheduleTab = index;
-            scheduleShown = 12;
+            schedulePage = 0;
             updateChipSelection(scheduleTab);
             updateResultsWithEntrance();
         });
+        scheduleControls = new LinearLayout(this);
+        scheduleControls.setOrientation(LinearLayout.VERTICAL);
+        content.addView(scheduleControls);
+        renderScheduleControls();
         buildSelectionBar();
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
@@ -1233,38 +1280,298 @@ public final class DashboardActivity extends Activity {
 
     private void renderScheduleResults(TaskStore store) {
         results.removeAllViews();
-        List<EventCandidate> candidates = store.listCandidates();
-        long now = System.currentTimeMillis();
-        String query = normalizedQuery(scheduleQuery);
-        List<EventCandidate> visible = new ArrayList<>();
-        for (EventCandidate item : candidates) {
-            boolean complete = item.startAtMillis != null && item.endAtMillis != null;
-            boolean listed = (scheduleTab == 0 && isUpcoming(item, now))
-                    || (scheduleTab == 1 && !complete)
-                    || (scheduleTab == 2 && complete && !isUpcoming(item, now));
-            if (listed && (query.isEmpty() || matchesQuery(item, query))) visible.add(item);
+        renderScheduleControls();
+        if (scheduleSource == 1) {
+            renderSystemSchedule(store);
+            return;
         }
-        visible.sort(BY_START_TIME);
-        if (!scheduleOldestFirst) java.util.Collections.reverse(visible);
+        long now = System.currentTimeMillis();
+        LocalDate[] window = scheduleWindow(false);
+        ScheduleQuery query = new ScheduleQuery(scheduleTab,
+                scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
+                schedulePublication, scheduleQuery, window[0], window[1], now, ZoneId.systemDefault());
         inboxRows.clear();
-        matchingInboxIds = new ArrayList<>();
-        for (EventCandidate item : visible) matchingInboxIds.add(item.id);
+        matchingInboxIds = store.queryScheduleIds(query);
         selectedScheduleIds.retainAll(matchingInboxIds);
-        addInboxResultsHeading(visible.size());
+        int total = matchingInboxIds.size();
+        schedulePage = Math.min(schedulePage, Math.max(0, (total - 1) / ScheduleQuery.PAGE_SIZE));
+        List<EventCandidate> visible = store.querySchedulePage(query, scheduleOldestFirst, schedulePage);
+        addInboxResultsHeading(total);
         updateSelectionUi();
         if (visible.isEmpty()) {
-            empty(results, !query.isEmpty()
-                    ? "没有匹配「" + scheduleQuery.trim() + "」的日程。"
-                    : scheduleTab == 0 ? "暂无即将到来的日程。"
-                            : scheduleTab == 1 ? "没有待补全时间的事项。" : "还没有较早的日程。");
+            empty(results, "这里空空\n换个日期或筛选看看");
         }
-        for (int i = 0; i < Math.min(scheduleShown, visible.size()); i++)
-            candidateRow(results, visible.get(i), i);
-        if (visible.size() > scheduleShown) {
-            Button more = button("继续浏览 · 还有 " + (visible.size() - scheduleShown) + " 条",
-                    false, () -> { scheduleShown += 12; updateResults(); });
-            UiStyle.addSpaced(results, more, 8, 0);
+        String previousDate = "";
+        for (int i = 0; i < visible.size(); i++) {
+            EventCandidate item = visible.get(i);
+            String date = item.startAtMillis == null ? "待安排" : item.allDay
+                    ? AllDayDates.displayStart(item.startAtMillis)
+                    : AllDayDates.localDate(item.startAtMillis, ZoneId.systemDefault());
+            if (!date.equals(previousDate)) {
+                scheduleDayHeading(date);
+                previousDate = date;
+            }
+            candidateRow(results, item, i);
         }
+        schedulePageControls(total);
+    }
+
+    private LocalDate[] scheduleWindow(boolean system) {
+        LocalDate today = LocalDate.now();
+        if (scheduleRange == 1) return new LocalDate[]{today, today.plusDays(1)};
+        if (scheduleRange == 2) {
+            LocalDate start = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            return new LocalDate[]{start, start.plusWeeks(1)};
+        }
+        if (scheduleRange == 3 || (system && scheduleRange == 0)) {
+            LocalDate start = scheduleDate.withDayOfMonth(1);
+            return new LocalDate[]{start, start.plusMonths(1)};
+        }
+        if (scheduleRange == 4) return new LocalDate[]{scheduleDate, scheduleDate.plusDays(1)};
+        if (scheduleRange == 5) {
+            LocalDate until = scheduleUntil.plusDays(1);
+            if (system && until.isAfter(scheduleDate.plusYears(1))) until = scheduleDate.plusYears(1);
+            return new LocalDate[]{scheduleDate, until};
+        }
+        return new LocalDate[]{null, null};
+    }
+
+    private void scheduleDayHeading(String date) {
+        String label = date;
+        if (!"待安排".equals(date)) {
+            LocalDate day = LocalDate.parse(date);
+            LocalDate today = LocalDate.now();
+            label = (day.equals(today) || day.equals(today.plusDays(1))
+                    ? timelineDayTitle(day, today) + " · " : "") + date;
+        }
+        TextView heading = text(label, 15, true);
+        heading.setTextColor(UiStyle.colors(this).primary);
+        UiStyle.addSpaced(results, heading, 14, 5);
+    }
+
+    private void schedulePageControls(int total) {
+        if (total <= ScheduleQuery.PAGE_SIZE) return;
+        int pages = (total + ScheduleQuery.PAGE_SIZE - 1) / ScheduleQuery.PAGE_SIZE;
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        Button previous = scheduleAction("‹", () -> changeSchedulePage(-1));
+        previous.setContentDescription("上一页日程");
+        previous.setEnabled(schedulePage > 0);
+        row.addView(previous, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        TextView label = text((schedulePage + 1) + " / " + pages, 13, false);
+        label.setGravity(Gravity.CENTER);
+        row.addView(label, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Button next = scheduleAction("›", () -> changeSchedulePage(1));
+        next.setContentDescription("下一页日程");
+        next.setEnabled(schedulePage + 1 < pages);
+        row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        UiStyle.addSpaced(results, row, 12, 0);
+    }
+
+    private void changeSchedulePage(int delta) {
+        schedulePage = Math.max(0, schedulePage + delta);
+        updateResultsWithEntrance();
+        scroll.scrollTo(0, Math.max(0, scheduleControls.getTop() - dp(8)));
+    }
+
+    private Button scheduleAction(String title, Runnable action) {
+        Button control = inboxSelectionAction(title, action);
+        control.setPadding(dp(10), 0, dp(10), 0);
+        return control;
+    }
+
+    private void renderScheduleControls() {
+        if (scheduleControls == null) return;
+        scheduleControls.removeAllViews();
+        LinearLayout dates = new LinearLayout(this);
+        dates.setGravity(Gravity.CENTER_VERTICAL);
+        Button previous = scheduleAction("‹", () -> shiftScheduleMonth(-1));
+        previous.setContentDescription("上个月");
+        dates.addView(previous, new LinearLayout.LayoutParams(dp(36), dp(40)));
+        LocalDate[] window = scheduleWindow(scheduleSource == 1);
+        String rangeLabel = window[0] == null ? "全部日期" : scheduleRange == 4
+                ? scheduleDate.toString() : scheduleRange == 5
+                ? scheduleDate + " — " + scheduleUntil
+                : window[0] + " — " + window[1].minusDays(1);
+        Button jump = scheduleAction(rangeLabel, () -> pickScheduleDate("跳转日期", scheduleDate, date -> {
+            scheduleDate = date;
+            scheduleRange = 4;
+            scheduleTab = 3;
+            applyScheduleFilters();
+        }));
+        jump.setTextSize(12);
+        dates.addView(jump, new LinearLayout.LayoutParams(0, dp(40), 1));
+        Button next = scheduleAction("›", () -> shiftScheduleMonth(1));
+        next.setContentDescription("下个月");
+        dates.addView(next, new LinearLayout.LayoutParams(dp(36), dp(40)));
+        Button today = scheduleAction("今天", () -> {
+            scheduleDate = LocalDate.now(); scheduleRange = 1; scheduleTab = 3;
+            applyScheduleFilters();
+        });
+        LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(-2, dp(40));
+        todayParams.setMargins(dp(5), 0, 0, 0);
+        dates.addView(today, todayParams);
+        UiStyle.addSpaced(scheduleControls, dates, 8, 5);
+        String type = scheduleCategory == 0 ? "全部类型" : EventCategory.LABELS[scheduleCategory - 1];
+        String status = new String[]{"全部状态", "待确认", "已写入"}[schedulePublication];
+        Button filters = scheduleAction(type + " · " + status + " · "
+                + (scheduleSource == 0 ? "拾时" : "系统其他日程") + "  ▾", this::showScheduleFilters);
+        filters.setTextSize(12);
+        scheduleControls.addView(filters, new LinearLayout.LayoutParams(-1, dp(38)));
+    }
+
+    private void shiftScheduleMonth(int direction) {
+        scheduleDate = scheduleDate.withDayOfMonth(1).plusMonths(direction);
+        scheduleRange = 3;
+        scheduleTab = 3;
+        applyScheduleFilters();
+    }
+
+    private void applyScheduleFilters() {
+        schedulePage = 0;
+        selectedScheduleIds.clear();
+        lastCalendarFetch = 0;
+        calendarGeneration++;
+        updateChipSelection(scheduleTab);
+        updateResultsWithEntrance();
+        scroll.scrollTo(0, 0);
+        if (scheduleSource == 1) scroll.post(this::refreshSystemCalendar);
+    }
+
+    private void showScheduleFilters() {
+        UiStyle.choiceDialog(this, "筛选日程", new String[]{"时间范围", "类型", "写入状态", "来源", "清除筛选"}, -1, field -> {
+            if (field == 0) {
+                UiStyle.choiceDialog(this, "时间范围", new String[]{"全部日期", "今天", "本周", "所选月份", "指定日期", "自定义范围"}, scheduleRange, range -> {
+                    if (range == 4 || range == 5) {
+                        pickScheduleDate(range == 4 ? "指定日期" : "起始日期", scheduleDate, from -> {
+                            if (range == 4) {
+                                scheduleDate = from; scheduleRange = 4; scheduleTab = 3;
+                                applyScheduleFilters();
+                            } else pickScheduleDate("结束日期", from.isAfter(scheduleUntil) ? from : scheduleUntil, to -> {
+                                if (to.isBefore(from)) { Feedback.show(this, "结束日期不能早于起始日期"); return; }
+                                if (scheduleSource == 1 && to.plusDays(1).isAfter(from.plusYears(1))) {
+                                    Feedback.show(this, "系统日历每次最多查询一年"); return;
+                                }
+                                scheduleDate = from; scheduleUntil = to; scheduleRange = 5;
+                                scheduleTab = 3; applyScheduleFilters();
+                            });
+                        });
+                    } else { scheduleRange = range; applyScheduleFilters(); }
+                });
+            } else if (field == 1) {
+                UiStyle.choiceDialog(this, "类型", categoryOptions(), scheduleCategory, type -> {
+                    scheduleCategory = type; applyScheduleFilters();
+                });
+            } else if (field == 2) {
+                UiStyle.choiceDialog(this, "写入状态", new String[]{"全部", "待确认", "已写入"}, schedulePublication, status -> {
+                    schedulePublication = status; applyScheduleFilters();
+                });
+            } else if (field == 3) {
+                UiStyle.choiceDialog(this, "来源", new String[]{"拾时", "系统其他日程"}, scheduleSource, source -> {
+                    scheduleSource = source;
+                    if (source == 1 && scheduleRange == 5
+                            && scheduleUntil.plusDays(1).isAfter(scheduleDate.plusYears(1))) {
+                        scheduleUntil = scheduleDate.plusYears(1).minusDays(1);
+                        Feedback.show(this, "系统日历查询范围已缩小为一年");
+                    }
+                    if (source == 1 && !new CalendarStore(this).hasReadPermission()) {
+                        calendarPermissionForSchedule = true;
+                        requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR}, HOME_CALENDAR_PERMISSION_REQUEST);
+                    }
+                    applyScheduleFilters();
+                });
+            } else {
+                scheduleRange = scheduleCategory = schedulePublication = scheduleSource = 0;
+                scheduleDate = LocalDate.now(); applyScheduleFilters();
+            }
+        });
+    }
+
+    private void pickScheduleDate(String title, LocalDate initial, java.util.function.Consumer<LocalDate> chosen) {
+        android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.setCanceledOnTouchOutside(true);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16), dp(16), dp(16), dp(16));
+        UiStyle.glass(panel);
+        TextView heading = text(title, 18, true);
+        heading.setGravity(Gravity.CENTER);
+        panel.addView(heading);
+        GlassDateTimePickerView picker = new GlassDateTimePickerView(this, initial.atStartOfDay());
+        TextView value = text(initial.toString(), 14, false);
+        value.setGravity(Gravity.CENTER);
+        picker.onChanged(() -> value.setText(picker.value().toLocalDate().toString()));
+        UiStyle.addSpaced(panel, value, 8, 4);
+        android.graphics.Rect visible = new android.graphics.Rect();
+        getWindow().getDecorView().getWindowVisibleDisplayFrame(visible);
+        int height = Math.max(dp(80), Math.min(dp(210), visible.height() - dp(180)));
+        panel.addView(picker, new LinearLayout.LayoutParams(-1, height));
+        LinearLayout actions = new LinearLayout(this);
+        Button cancel = scheduleAction("取消", dialog::dismiss);
+        Button select = scheduleAction("确定", () -> {
+            picker.finishSelection();
+            LocalDate date = picker.value().toLocalDate();
+            dialog.dismiss();
+            refresh.post(() -> chosen.accept(date));
+        });
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(44), 1));
+        LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, dp(44), 1);
+        right.setMargins(dp(6), 0, 0, 0);
+        actions.addView(select, right);
+        UiStyle.addSpaced(panel, actions, 8, 0);
+        UiStyle.showFloatingDialog(dialog, panel);
+    }
+
+    private void renderSystemSchedule(TaskStore store) {
+        inboxRows.clear(); matchingInboxIds = new ArrayList<>(); selectedScheduleIds.clear();
+        if (!new CalendarStore(this).hasReadPermission()) {
+            addInboxResultsHeading(0);
+            updateSelectionUi();
+            empty(results, "需要读取日历权限");
+            return;
+        }
+        LocalDate[] window = scheduleWindow(true);
+        ZoneId zone = ZoneId.systemDefault();
+        long start = window[0].atStartOfDay(zone).toInstant().toEpochMilli();
+        long end = window[1].atStartOfDay(zone).toInstant().toEpochMilli();
+        long now = System.currentTimeMillis();
+        List<CalendarOccurrence> visible = new ArrayList<>();
+        Set<Long> linked = new HashSet<>();
+        for (long id : store.linkedCalendarIds()) linked.add(id);
+        for (CalendarOccurrence event : CalendarOccurrence.unlinked(calendarEventsForWindow(window), linked)) {
+            boolean future = event.displayEnd(zone) > now;
+            if (event.displayStart(zone) >= end || event.displayEnd(zone) <= start
+                    || scheduleTab == 1 || (scheduleTab == 0 && !future) || (scheduleTab == 2 && future)
+                    || schedulePublication == 1 || (scheduleCategory != 0 && scheduleCategory != 1)) continue;
+            String keyword = normalizedQuery(scheduleQuery);
+            if (!keyword.isEmpty() && !containsQuery(event.title, keyword)
+                    && !containsQuery(event.location, keyword)) continue;
+            visible.add(event);
+        }
+        visible.sort(java.util.Comparator.comparingLong((CalendarOccurrence event) -> event.displayStart(zone))
+                .thenComparingLong(event -> event.eventId));
+        if (!scheduleOldestFirst) java.util.Collections.reverse(visible);
+        int total = visible.size();
+        schedulePage = Math.min(schedulePage, Math.max(0, (total - 1) / ScheduleQuery.PAGE_SIZE));
+        addInboxResultsHeading(total);
+        updateSelectionUi();
+        if (total == 0) empty(results, "这里空空\n换个日期或筛选看看");
+        String day = "";
+        for (int i = schedulePage * ScheduleQuery.PAGE_SIZE;
+                i < Math.min(total, (schedulePage + 1) * ScheduleQuery.PAGE_SIZE); i++) {
+            CalendarOccurrence event = visible.get(i);
+            String date = AllDayDates.localDate(event.displayStart(zone), zone);
+            if (!day.equals(date)) { scheduleDayHeading(date); day = date; }
+            LinearLayout item = card();
+            item.addView(text(event.title, 17, true));
+            UiStyle.addSpaced(item, text(homeEntryWhen(new HomeTimelineEntry(event))
+                    + (event.location.isEmpty() ? "" : " · " + event.location), 13, false), 6, 0);
+            item.setOnClickListener(view -> openHomeEntry(new HomeTimelineEntry(event)));
+            UiStyle.pressable(item);
+            UiStyle.addSpaced(results, item, 4, 7);
+        }
+        message(results, "系统日程只读；每次最多读取 1000 项。按月份或日期缩小范围。");
+        schedulePageControls(total);
     }
 
     private void updateResults() {
@@ -1510,8 +1817,7 @@ public final class DashboardActivity extends Activity {
     private void confirmDeleteSchedules() {
         List<EventCandidate> chosen = new ArrayList<>();
         try (TaskStore store = new TaskStore(this)) {
-            for (EventCandidate item : store.listCandidates())
-                if (selectedScheduleIds.contains(item.id)) chosen.add(item);
+            chosen.addAll(store.getCandidatesByIds(selectedScheduleIds));
         }
         if (chosen.isEmpty()) return;
         boolean linked = false;
@@ -1641,6 +1947,13 @@ public final class DashboardActivity extends Activity {
         if (requestCode == HOME_CALENDAR_PERMISSION_REQUEST) {
             boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (calendarPermissionForSchedule) {
+                calendarPermissionForSchedule = false;
+                if (!granted) scheduleSource = 0;
+                applyScheduleFilters();
+                if (!granted) Feedback.show(this, "未获得读取日历权限");
+                return;
+            }
             HomeTimelinePreferences.setIncludesSystemCalendar(this, granted);
             calendarGeneration++;
             lastCalendarFetch = 0;

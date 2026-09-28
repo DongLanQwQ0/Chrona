@@ -20,7 +20,7 @@ import java.io.IOException;
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
 public final class TaskStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 7;
+    private static final int DATABASE_VERSION = 8;
 
     private final Context context;
 
@@ -74,6 +74,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 + "end_auto_generated INTEGER NOT NULL DEFAULT 0 CHECK(end_auto_generated IN (0,1)), "
                 + "UNIQUE(task_id, position))");
         db.execSQL("CREATE INDEX candidates_by_task ON event_candidates(task_id, position)");
+        addScheduleBrowsing(db);
     }
 
     /**
@@ -104,12 +105,99 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 7) {
             addEndTimeProvenance(db);
         }
+        if (oldVersion < 8) addScheduleBrowsing(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
 
     /** Also used when upgrading a staged v6 backup before installation. */
     public static void addEndTimeProvenance(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE event_candidates ADD COLUMN end_auto_generated INTEGER NOT NULL DEFAULT 0 CHECK(end_auto_generated IN (0,1))");
+    }
+
+    /** Shared with staged backup migration. Revision avoids loading all rows during polling. */
+    public static void addScheduleBrowsing(SQLiteDatabase db) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS candidates_by_start ON event_candidates(start_at_millis,id)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS candidates_by_end ON event_candidates(end_at_millis,id)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS tasks_by_status ON tasks(status)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS data_revision (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL)");
+        db.execSQL("INSERT OR IGNORE INTO data_revision VALUES(1,0)");
+        for (String table : new String[]{"tasks", "event_candidates", "task_attachments", "task_files"}) {
+            for (String operation : new String[]{"INSERT", "UPDATE", "DELETE"}) {
+                db.execSQL("CREATE TRIGGER IF NOT EXISTS revision_" + table + "_" + operation
+                        + " AFTER " + operation + " ON " + table
+                        + " BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END");
+            }
+        }
+    }
+
+    public long dataRevision() {
+        try (Cursor cursor = getReadableDatabase().rawQuery("SELECT revision FROM data_revision WHERE id=1", null)) {
+            return cursor.moveToFirst() ? cursor.getLong(0) : 0;
+        }
+    }
+
+    public int taskCountByStatus(String status) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM tasks WHERE status=?", new String[]{status})) {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        }
+    }
+
+    public List<EventCandidate> queryScheduleFirst(ScheduleQuery query, int limit) {
+        List<EventCandidate> items = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                query.selection, query.arguments, null, null, query.orderBy(true),
+                Integer.toString(Math.max(1, limit)))) {
+            while (cursor.moveToNext()) items.add(readCandidate(cursor));
+        }
+        return items;
+    }
+
+    public List<Long> queryScheduleIds(ScheduleQuery query) {
+        List<Long> ids = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", new String[]{"id"},
+                query.selection, query.arguments, null, null, "id ASC")) {
+            while (cursor.moveToNext()) ids.add(cursor.getLong(0));
+        }
+        return ids;
+    }
+
+    public List<EventCandidate> querySchedulePage(ScheduleQuery query, boolean oldestFirst, int page) {
+        List<EventCandidate> items = new ArrayList<>();
+        long offset = (long) Math.max(0, page) * ScheduleQuery.PAGE_SIZE;
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                query.selection, query.arguments, null, null, query.orderBy(oldestFirst),
+                offset + "," + ScheduleQuery.PAGE_SIZE)) {
+            while (cursor.moveToNext()) items.add(readCandidate(cursor));
+        }
+        return items;
+    }
+
+    public List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids) {
+        List<EventCandidate> items = new ArrayList<>();
+        java.util.Iterator<Long> iterator = ids.iterator();
+        // Stay below old SQLite versions' bind parameter limit during large bulk selections.
+        final int batchSize = 400;
+        while (iterator.hasNext()) {
+            List<String> values = new ArrayList<>();
+            while (iterator.hasNext() && values.size() < batchSize)
+                values.add(Long.toString(iterator.next()));
+            String placeholders = String.join(",", java.util.Collections.nCopies(values.size(), "?"));
+            try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                    "id IN (" + placeholders + ")", values.toArray(new String[0]), null, null, "id ASC")) {
+                while (cursor.moveToNext()) items.add(readCandidate(cursor));
+            }
+        }
+        return items;
+    }
+
+    public List<Long> linkedCalendarIds() {
+        List<Long> ids = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT DISTINCT calendar_event_id FROM event_candidates WHERE calendar_event_id IS NOT NULL", null)) {
+            while (cursor.moveToNext()) ids.add(cursor.getLong(0));
+        }
+        return ids;
     }
 
     private static void createTaskAttachments(SQLiteDatabase db) {

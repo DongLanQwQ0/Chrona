@@ -379,7 +379,7 @@ public final class ChronaDataBackup {
                     throw new IOException("备份数据库完整性检查失败");
             }
             try (Cursor cursor = db.rawQuery("PRAGMA user_version", null)) {
-                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 7)
+                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 8)
                     throw new IOException("备份数据库版本与当前应用不兼容");
             }
             long tasks;
@@ -441,6 +441,14 @@ public final class ChronaDataBackup {
                 try {
                     TaskStore.addEndTimeProvenance(staged);
                     staged.setVersion(7);
+                    staged.setTransactionSuccessful();
+                } finally { staged.endTransaction(); }
+            }
+            if (staged.getVersion() < 8) {
+                staged.beginTransaction();
+                try {
+                    TaskStore.addScheduleBrowsing(staged);
+                    staged.setVersion(8);
                     staged.setTransactionSuccessful();
                 } finally { staged.endTransaction(); }
             }
