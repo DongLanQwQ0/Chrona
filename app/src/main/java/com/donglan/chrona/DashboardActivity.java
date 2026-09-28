@@ -111,6 +111,7 @@ public final class DashboardActivity extends Activity {
     }
     static final String EXTRA_SECTION = "section";
     static final int HOME = 0, INBOX = 1, SCHEDULE = 2;
+    private static final int[] SECTION_ORDER = {HOME, SCHEDULE, INBOX};
     private int section = HOME;
     private int categoryIndex, statusIndex;
     private int scheduleTab;
@@ -423,8 +424,8 @@ public final class DashboardActivity extends Activity {
             float offset = Math.max(-width, Math.min(width, distanceX));
             int direction = offset < 0 ? 1 : -1;
             if (!dragTargetLoaded && Math.abs(offset) >= dp(10)) {
-                int destination = section + direction;
-                if (destination < HOME || destination > SCHEDULE) {
+                int targetPosition = sectionPosition(section) + direction;
+                if (targetPosition < 0 || targetPosition >= SECTION_ORDER.length) {
                     // Nothing lies that way: the page only gives a little, but it still has to
                     // resample its acrylic cards every frame like a normal drag does — skipping
                     // that here left them showing the snapshot taken when the drag began.
@@ -432,6 +433,7 @@ public final class DashboardActivity extends Activity {
                     invalidateSectionSurfaces();
                     return;
                 }
+                int destination = SECTION_ORDER[targetPosition];
                 dragDirection = direction;
                 SectionPage preview = buildAdjacentSection(destination);
                 // Positioned before it joins the pager so no frame can show it at the origin.
@@ -2203,25 +2205,25 @@ public final class DashboardActivity extends Activity {
     private void drawNavigation() {
         if (previewRender) return;
         navigation.removeAllViews();
-        String[] labels = {"首页", "收件箱", "日程"};
-        int[] icons = {R.drawable.ic_nav_home, R.drawable.ic_nav_inbox,
-                R.drawable.ic_nav_schedule};
+        String[] labels = {"首页", "日程", "收件箱"};
+        int[] icons = {R.drawable.ic_nav_home, R.drawable.ic_nav_schedule,
+                R.drawable.ic_nav_inbox};
         for (int i = 0; i < labels.length; i++) {
-            final int destination = i;
+            final int destination = SECTION_ORDER[i];
             TextView item = text(labels[i], 13, true);
             item.setGravity(Gravity.CENTER);
             item.setCompoundDrawablesWithIntrinsicBounds(0, icons[i], 0, 0);
             item.setCompoundDrawablePadding(dp(4));
             item.setPadding(0, dp(wide ? 8 : 2), 0, dp(wide ? 8 : 2));
-            item.setTextColor(section == i ? UiStyle.colors(this).onPrimaryContainer
+            item.setTextColor(section == destination ? UiStyle.colors(this).onPrimaryContainer
                     : UiStyle.colors(this).muted);
-            item.setCompoundDrawableTintList(ColorStateList.valueOf(section == i
+            item.setCompoundDrawableTintList(ColorStateList.valueOf(section == destination
                     ? UiStyle.colors(this).onPrimaryContainer : UiStyle.colors(this).muted));
-            item.setContentDescription(labels[i] + (section == i ? "，当前页面" : ""));
-            if (wide) UiStyle.pill(item, section == i);
+            item.setContentDescription(labels[i] + (section == destination ? "，当前页面" : ""));
+            if (wide) UiStyle.pill(item, section == destination);
             else {
-                applyThemeControlSurface(item, section == i, UiStyle.RADIUS_PANEL);
-                item.setElevation(dp(section == i ? 3 : 1));
+                applyThemeControlSurface(item, section == destination, UiStyle.RADIUS_PANEL);
+                item.setElevation(dp(section == destination ? 3 : 1));
             }
             item.setOnClickListener(view -> switchTo(destination));
             LinearLayout.LayoutParams params = wide
@@ -2229,7 +2231,7 @@ public final class DashboardActivity extends Activity {
                     : new LinearLayout.LayoutParams(0, -1, 1);
             params.setMargins(dp(wide ? 3 : 4), dp(wide ? 5 : 0),
                     dp(wide ? 3 : 4), 0);
-            navigation.addView(i == INBOX && attentionCount() > 0
+            navigation.addView(destination == INBOX && attentionCount() > 0
                     ? withInboxBadge(item, destination) : (View) item, params);
         }
     }
@@ -2273,11 +2275,18 @@ public final class DashboardActivity extends Activity {
         startActivity(new Intent(this, MainActivity.class));
     }
 
+    private static int sectionPosition(int destination) {
+        for (int i = 0; i < SECTION_ORDER.length; i++) {
+            if (SECTION_ORDER[i] == destination) return i;
+        }
+        return -1;
+    }
+
     private void switchTo(int destination) {
         if (destination == section || destination < HOME || destination > SCHEDULE
                 || pageTransitionRunning || dragTargetLoaded) return;
         sectionPagerListener.onStart();
-        dragDirection = destination > section ? 1 : -1;
+        dragDirection = sectionPosition(destination) > sectionPosition(section) ? 1 : -1;
         adjacentPage = buildAdjacentSection(destination);
         float width = sectionPageWidth();
         adjacentPage.scroll.setTranslationX(dragDirection > 0 ? width : -width);
