@@ -18,6 +18,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -29,6 +30,7 @@ import android.widget.TextView;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.calendar.AllDayDates;
 import com.donglan.chrona.calendar.CalendarStore;
+import com.donglan.chrona.calendar.CalendarOccurrence;
 import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
@@ -55,6 +57,8 @@ import java.util.Set;
 /** Three clear destinations: overview, incoming inputs, and extracted schedule. */
 public final class DashboardActivity extends Activity {
     private static final int CALENDAR_PERMISSION_REQUEST = 12;
+    private static final int HOME_CALENDAR_PERMISSION_REQUEST = 13;
+    private static final long SYSTEM_CALENDAR_REFRESH_MILLIS = 5000L;
     private static final int MOBILE_DOCK_HEIGHT_DP = 64;
     private static final int MOBILE_BOTTOM_AREA_HEIGHT_DP = 88;
     /** How far the page follows a drag towards a section that does not exist. */
@@ -71,11 +75,25 @@ public final class DashboardActivity extends Activity {
     private static final class HomeTimelineEntry {
         final long timestampMillis;
         final EventCandidate candidate;
+        final CalendarOccurrence systemEvent;
 
         HomeTimelineEntry(EventCandidate candidate) {
-            this.timestampMillis = candidate.startAtMillis;
+            this.timestampMillis = candidate.allDay
+                    ? LocalDate.parse(AllDayDates.displayStart(candidate.startAtMillis))
+                            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    : candidate.startAtMillis;
             this.candidate = candidate;
+            this.systemEvent = null;
         }
+
+        HomeTimelineEntry(CalendarOccurrence event) {
+            timestampMillis = event.displayStart(ZoneId.systemDefault());
+            candidate = null;
+            systemEvent = event;
+        }
+
+        String title() { return candidate != null ? candidate.title : systemEvent.title; }
+        boolean allDay() { return candidate != null ? candidate.allDay : systemEvent.allDay; }
     }
     private static final class ElapsedLabel {
         final TextView view;
@@ -144,6 +162,12 @@ public final class DashboardActivity extends Activity {
     private int restoredScrollY;
     private List<ElapsedLabel> elapsedLabels = new ArrayList<>();
     private final Handler refresh = new Handler(Looper.getMainLooper());
+    private final java.util.concurrent.ExecutorService calendarReader =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+    private List<CalendarOccurrence> systemCalendarEvents = java.util.Collections.emptyList();
+    private boolean calendarLoading, foreground, calendarErrorShown, homeRefreshPending;
+    private long calendarGeneration, lastCalendarFetch;
+    private android.os.CancellationSignal calendarCancellation;
     private final Runnable poll = this::pollChanges;
     private final Runnable elapsedTicker = new Runnable() {
         @Override public void run() {
@@ -466,13 +490,15 @@ public final class DashboardActivity extends Activity {
             pager.removeView(scroll);
             target.scroll.setTranslationX(0f);
             activateSectionPage(target);
-            updateResults();
+            if (section == HOME) render();
+            else updateResults();
             updateSelectionBack();
             drawNavigation();
             scroll.scrollTo(0, 0);
         } else {
             pager.removeView(target.scroll);
             scroll.setTranslationX(0f);
+            if (homeRefreshPending) refreshHomeContent();
         }
         invalidateSectionSurfaces();
         snapshot = dataSnapshot();
@@ -488,6 +514,8 @@ public final class DashboardActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        foreground = true;
+        lastCalendarFetch = 0;
         int recovered = ProcessingJobService.reconcile(this);
         if (recovered > 0) Feedback.showLong(this, recovered + " 条解析已中断，请在收件箱重试");
         int oldScroll = restoredScrollY != 0 ? restoredScrollY : scroll.getScrollY();
@@ -501,13 +529,22 @@ public final class DashboardActivity extends Activity {
     }
 
     @Override protected void onPause() {
+        foreground = false;
+        calendarGeneration++;
+        if (calendarCancellation != null) calendarCancellation.cancel();
         refresh.removeCallbacks(poll);
         refresh.removeCallbacks(elapsedTicker);
         backdrop.stop();
         super.onPause();
     }
 
+    @Override protected void onDestroy() {
+        calendarReader.shutdownNow();
+        super.onDestroy();
+    }
+
     private void pollChanges() {
+        if (section == HOME) refreshSystemCalendar();
         String current = dataSnapshot();
         if (!current.equals(snapshot)) {
             int scrollY = scroll.getScrollY();
@@ -517,6 +554,108 @@ public final class DashboardActivity extends Activity {
             snapshot = current;
         }
         refresh.postDelayed(poll, 5000L);
+    }
+
+    private void refreshSystemCalendar() {
+        if (!foreground || isDestroyed() || calendarLoading) return;
+        if (!HomeTimelinePreferences.includesSystemCalendar(this)
+                || !new CalendarStore(this).hasReadPermission()) {
+            if (!systemCalendarEvents.isEmpty()) {
+                systemCalendarEvents = java.util.Collections.emptyList();
+                refreshHomeContent();
+            }
+            return;
+        }
+        long elapsed = android.os.SystemClock.elapsedRealtime();
+        if (lastCalendarFetch != 0 && elapsed - lastCalendarFetch < SYSTEM_CALENDAR_REFRESH_MILLIS) return;
+        lastCalendarFetch = elapsed;
+        calendarLoading = true;
+        long generation = calendarGeneration;
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zone);
+        long begin = today.atStartOfDay(zone).toInstant().toEpochMilli();
+        long end = today.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli();
+        android.os.CancellationSignal cancellation = new android.os.CancellationSignal();
+        calendarCancellation = cancellation;
+        calendarReader.execute(() -> {
+            List<CalendarOccurrence> loaded = new ArrayList<>();
+            boolean failed = false;
+            try {
+                // UTC all-day bounds may fall outside the local midnight window.
+                long padding = java.time.Duration.ofDays(1).toMillis();
+                for (CalendarOccurrence event : new CalendarStore(getApplicationContext())
+                        .listInstances(begin - padding, end + padding, cancellation)) {
+                    if (event.displayEnd(zone) > begin && event.displayStart(zone) < end)
+                        loaded.add(event);
+                }
+            } catch (RuntimeException exception) {
+                failed = !cancellation.isCanceled();
+            }
+            List<CalendarOccurrence> result = java.util.Collections.unmodifiableList(loaded);
+            boolean error = failed;
+            refresh.post(() -> {
+                calendarLoading = false;
+                calendarCancellation = null;
+                if (generation != calendarGeneration || !foreground || isDestroyed()
+                        || !HomeTimelinePreferences.includesSystemCalendar(this)) return;
+                if (!new CalendarStore(this).hasReadPermission()) return;
+                if (error) {
+                    if (!calendarErrorShown) Feedback.show(this, "无法读取系统日程，请稍后重试");
+                    calendarErrorShown = true;
+                    return;
+                }
+                calendarErrorShown = false;
+                if (!systemCalendarEvents.equals(result)) {
+                    systemCalendarEvents = result;
+                    refreshHomeContent();
+                }
+            });
+        });
+    }
+
+    private void refreshHomeContent() {
+        if (section != HOME || previewRender) return;
+        if (pageTransitionRunning || dragTargetLoaded) {
+            homeRefreshPending = true;
+            return;
+        }
+        homeRefreshPending = false;
+        int y = scroll.getScrollY();
+        int x = strips.isEmpty() ? 0 : strips.get(0).getScrollX();
+        render();
+        scroll.post(() -> {
+            scroll.scrollTo(0, y);
+            if (!strips.isEmpty()) strips.get(0).scrollTo(x, 0);
+        });
+    }
+
+    private String homeEntryWhen(HomeTimelineEntry entry) {
+        if (entry.candidate != null) return formatWhen(entry.candidate);
+        CalendarOccurrence event = entry.systemEvent;
+        if (event.allDay) {
+            String start = AllDayDates.displayStart(event.startMillis);
+            String end = AllDayDates.displayEnd(event.endMillis);
+            return (start.equals(end) ? start : start + " 至 " + end) + " · 全天";
+        }
+        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                .format(new Date(event.startMillis));
+    }
+
+    private void openHomeEntry(HomeTimelineEntry entry) {
+        if (entry.candidate != null) {
+            openTask(entry.candidate.taskId);
+            return;
+        }
+        CalendarOccurrence event = entry.systemEvent;
+        Intent intent = new Intent(Intent.ACTION_VIEW, android.content.ContentUris.withAppendedId(
+                android.provider.CalendarContract.Events.CONTENT_URI, event.eventId));
+        intent.putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.startMillis);
+        intent.putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, event.endMillis);
+        intent.putExtra(android.provider.CalendarContract.EXTRA_EVENT_ALL_DAY, event.allDay);
+        try { startActivity(intent); }
+        catch (android.content.ActivityNotFoundException exception) {
+            Feedback.show(this, "未找到可打开日程的日历应用");
+        }
     }
 
     private String dataSnapshot() {
@@ -631,6 +770,7 @@ public final class DashboardActivity extends Activity {
             UiStyle.enterChildren(content);
         }
         drawNavigation();
+        if (section == HOME && !previewRender) scroll.post(this::refreshSystemCalendar);
         if (pager != null) pager.setGesturePriorityChildren(strips);
     }
 
@@ -776,10 +916,42 @@ public final class DashboardActivity extends Activity {
     }
 
     private void home(TaskStore store) {
-        List<TaskRecord> tasks = store.listTasks();
+        CheckBox include = new CheckBox(this);
+        include.setText("包含系统其他日程");
+        include.setTextSize(13);
+        include.setTextColor(UiStyle.colors(this).muted);
+        include.setButtonTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
+        include.setChecked(HomeTimelinePreferences.includesSystemCalendar(this));
+        include.setOnCheckedChangeListener((button, enabled) -> {
+            if (enabled && !new CalendarStore(this).hasReadPermission()) {
+                requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR},
+                        HOME_CALENDAR_PERMISSION_REQUEST);
+                return;
+            }
+            HomeTimelinePreferences.setIncludesSystemCalendar(this, enabled);
+            calendarGeneration++;
+            lastCalendarFetch = 0;
+            if (!enabled) systemCalendarEvents = java.util.Collections.emptyList();
+            refreshHomeContent();
+        });
+        UiStyle.addSpaced(content, include, 0, 4);
         long now = System.currentTimeMillis();
         List<EventCandidate> candidates = store.listCandidates();
-        showUpcomingCarousel(candidates, now);
+        List<HomeTimelineEntry> upcoming = new ArrayList<>();
+        for (EventCandidate candidate : candidates)
+            if (isUpcoming(candidate, now)) upcoming.add(new HomeTimelineEntry(candidate));
+        List<CalendarOccurrence> external = java.util.Collections.emptyList();
+        if (HomeTimelinePreferences.includesSystemCalendar(this)
+                && new CalendarStore(this).hasReadPermission()) {
+            Set<Long> linkedIds = new HashSet<>();
+            for (EventCandidate candidate : candidates)
+                if (candidate.calendarEventId != null) linkedIds.add(candidate.calendarEventId);
+            external = CalendarOccurrence.unlinked(systemCalendarEvents, linkedIds);
+            for (CalendarOccurrence event : external)
+                if (event.displayEnd(ZoneId.systemDefault()) > now)
+                    upcoming.add(new HomeTimelineEntry(event));
+        }
+        showUpcomingCarousel(upcoming);
 
         ZoneId zone = ZoneId.systemDefault();
         LocalDate today = LocalDate.now(zone);
@@ -794,6 +966,10 @@ public final class DashboardActivity extends Activity {
             if (!candidateIds.add(item.id)) continue;
             all.add(new HomeTimelineEntry(item));
         }
+        for (CalendarOccurrence event : external) {
+            if (event.displayEnd(zone) > now && event.displayStart(zone) < rangeEnd)
+                all.add(new HomeTimelineEntry(event));
+        }
         all.sort(java.util.Comparator.comparingLong(entry -> entry.timestampMillis));
         int limit = HomeTimelinePreferences.getItemLimit(this);
         if (all.size() > limit) all = new ArrayList<>(all.subList(0, limit));
@@ -806,15 +982,10 @@ public final class DashboardActivity extends Activity {
             timelineDay(timelineDayTitle(day.getKey(), today), day.getKey(), day.getValue());
     }
 
-    private void showUpcomingCarousel(List<EventCandidate> candidates, long now) {
+    private void showUpcomingCarousel(List<HomeTimelineEntry> upcoming) {
         TextView heading = text("下一件事", 15, true);
         UiStyle.addSpaced(content, heading, 0, 6);
-        List<EventCandidate> upcoming = new ArrayList<>();
-        Set<Long> seen = new HashSet<>();
-        for (EventCandidate candidate : candidates) {
-            if (isUpcoming(candidate, now) && seen.add(candidate.id)) upcoming.add(candidate);
-        }
-        upcoming.sort(java.util.Comparator.comparingLong(item -> item.startAtMillis));
+        upcoming.sort(java.util.Comparator.comparingLong(item -> item.timestampMillis));
         if (upcoming.size() > 5) upcoming = new ArrayList<>(upcoming.subList(0, 5));
         HorizontalScrollView strip = new HorizontalScrollView(this);
         strip.setHorizontalScrollBarEnabled(false);
@@ -830,15 +1001,15 @@ public final class DashboardActivity extends Activity {
             empty.addView(text("还没有即将到来的日程", 14, false));
             cards.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
         } else {
-            for (EventCandidate candidate : upcoming) {
+            for (HomeTimelineEntry entry : upcoming) {
                 LinearLayout item = card();
                 item.setPadding(dp(14), dp(12), dp(14), dp(12));
-                TextView title = text(candidate.title, 15, true);
+                TextView title = text(entry.title(), 15, true);
                 title.setMaxLines(2);
                 title.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 item.addView(title);
-                UiStyle.addSpaced(item, text(formatWhen(candidate), 12, false), 7, 0);
-                item.setOnClickListener(view -> openTask(candidate.taskId));
+                UiStyle.addSpaced(item, text(homeEntryWhen(entry), 12, false), 7, 0);
+                item.setOnClickListener(view -> openHomeEntry(entry));
                 UiStyle.pressable(item);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(240), -2);
                 params.setMargins(0, 0, dp(10), 0);
@@ -862,9 +1033,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private LocalDate timelineDate(HomeTimelineEntry entry, LocalDate today, ZoneId zone) {
-        LocalDate date = entry.candidate.allDay
-                ? LocalDate.parse(AllDayDates.displayStart(entry.candidate.startAtMillis))
-                : Instant.ofEpochMilli(entry.timestampMillis).atZone(zone).toLocalDate();
+        LocalDate date = Instant.ofEpochMilli(entry.timestampMillis).atZone(zone).toLocalDate();
         return date.isBefore(today) ? today : date;
     }
 
@@ -1463,6 +1632,15 @@ public final class DashboardActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
             int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == HOME_CALENDAR_PERMISSION_REQUEST) {
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            HomeTimelinePreferences.setIncludesSystemCalendar(this, granted);
+            calendarGeneration++;
+            lastCalendarFetch = 0;
+            refreshHomeContent();
+            if (!granted) Feedback.show(this, "未获得读取日历权限");
+        }
         if (requestCode == CALENDAR_PERMISSION_REQUEST) {
             Feedback.show(this, grantResults.length >= 2
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED
@@ -1826,16 +2004,17 @@ public final class DashboardActivity extends Activity {
 
             LinearLayout itemCard = card();
             itemCard.setPadding(dp(14), dp(12), dp(14), dp(12));
-            String headline = entry.candidate.title;
+            String headline = entry.title();
             TextView headlineView = text(headline, 15, true);
             headlineView.setMaxLines(2);
             headlineView.setEllipsize(android.text.TextUtils.TruncateAt.END);
             itemCard.addView(headlineView);
-            String metadata = EventCategory.label(entry.candidate.category)
-                    + (entry.candidate.location == null || entry.candidate.location.trim().isEmpty()
-                            ? "" : " · " + entry.candidate.location);
+            String location = entry.candidate != null ? entry.candidate.location : entry.systemEvent.location;
+            String metadata = entry.candidate != null ? EventCategory.label(entry.candidate.category)
+                    : "系统日历" + (entry.systemEvent.calendarName.isEmpty() ? "" : " · " + entry.systemEvent.calendarName);
+            metadata += location == null || location.trim().isEmpty() ? "" : " · " + location;
             UiStyle.addSpaced(itemCard, text(metadata, 12, false), 4, 0);
-            itemCard.setOnClickListener(view -> openTask(entry.candidate.taskId));
+            itemCard.setOnClickListener(view -> openHomeEntry(entry));
             UiStyle.pressable(itemCard);
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1);
             cardParams.setMargins(0, dp(4), 0, dp(4));
@@ -1882,7 +2061,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private String timelineTime(HomeTimelineEntry entry) {
-        if (entry.candidate != null && entry.candidate.allDay) return "全天";
+        if (entry.allDay()) return "全天";
         return new SimpleDateFormat("HH:mm", Locale.CHINA).format(
                 new Date(entry.timestampMillis));
     }

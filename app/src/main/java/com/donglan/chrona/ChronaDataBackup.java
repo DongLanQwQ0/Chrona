@@ -214,6 +214,7 @@ public final class ChronaDataBackup {
             manifest.put("outputs", outputs);
             manifest.put("events", events);
             manifest.put("homeTimelineLimit", HomeTimelinePreferences.getItemLimit(context));
+            manifest.put("includeSystemCalendar", HomeTimelinePreferences.includesSystemCalendar(context));
             manifest.put("config", ConfigBackup.export(context, includeApiKey));
             manifest.put("wallpaperIncluded", true);
             manifest.put("wallpaper", wallpaper == null ? JSONObject.NULL : wallpaper);
@@ -422,6 +423,7 @@ public final class ChronaDataBackup {
         File previousOutputs = new File(context.getFilesDir(), "model-output.previous");
         String previousConfig = ConfigBackup.export(context, true);
         int previousTimelineLimit = HomeTimelinePreferences.getItemLimit(context);
+        boolean previousSystemCalendar = HomeTimelinePreferences.includesSystemCalendar(context);
         Map<Long, Long> calendarLinks = new HashMap<>();
         try {
         Map<String, String> imageNames = restoreImages(context, prepared, createdImages);
@@ -506,6 +508,8 @@ public final class ChronaDataBackup {
         }
         HomeTimelinePreferences.setItemLimit(context,
                 prepared.manifest.optInt("homeTimelineLimit", HomeTimelinePreferences.DEFAULT_ITEM_LIMIT));
+        HomeTimelinePreferences.setIncludesSystemCalendar(context,
+                prepared.manifest.optBoolean("includeSystemCalendar", false));
         if (installedPrevious != null) installedPrevious.delete();
         deleteTree(previousOutputs);
         return calendarLinks.containsValue(null)
@@ -520,6 +524,7 @@ public final class ChronaDataBackup {
             }
             try {
                 HomeTimelinePreferences.setItemLimit(context, previousTimelineLimit);
+                HomeTimelinePreferences.setIncludesSystemCalendar(context, previousSystemCalendar);
             } catch (Exception rollbackPreferenceFailure) {
                 failure.addSuppressed(rollbackPreferenceFailure);
             }

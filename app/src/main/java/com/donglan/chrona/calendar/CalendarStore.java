@@ -31,6 +31,7 @@ public final class CalendarStore {
 
     private static final int CALENDAR_COLOR = 0xFF486A85;
     private static final int MAX_REMINDERS = 5;
+    private static final int MAX_HOME_INSTANCES = 1000;
     private static final String[] CALENDAR_ID_PROJECTION = {Calendars._ID};
     private static final String[] EVENT_PROJECTION = {
             Events._ID, Events.CALENDAR_ID, Events.TITLE, Events.DTSTART, Events.DTEND,
@@ -59,6 +60,33 @@ public final class CalendarStore {
         return context.checkPermission(Manifest.permission.WRITE_CALENDAR,
                 Process.myPid(), Process.myUid())
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Expands visible calendars' recurrences in a bounded window. No reminder queries or writes. */
+    public List<CalendarOccurrence> listInstances(long begin, long end,
+            android.os.CancellationSignal cancellation) {
+        requireRead();
+        Uri.Builder uri = CalendarContract.Instances.CONTENT_URI.buildUpon();
+        ContentUris.appendId(uri, begin);
+        ContentUris.appendId(uri, end);
+        String[] projection = {CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN,
+                CalendarContract.Instances.END, Events.TITLE, Events.ALL_DAY,
+                Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME};
+        List<CalendarOccurrence> result = new ArrayList<>();
+        try (Cursor cursor = resolver.query(uri.build(), projection, Calendars.VISIBLE + "=1 AND ("
+                + Events.STATUS + " IS NULL OR " + Events.STATUS + "!=?)",
+                new String[]{Integer.toString(Events.STATUS_CANCELED)},
+                CalendarContract.Instances.BEGIN + " ASC", cancellation)) {
+            if (cursor == null) throw new IllegalStateException("Calendar provider returned no cursor");
+            while (cursor.moveToNext() && result.size() < MAX_HOME_INSTANCES) {
+                if (cursor.isNull(0) || cursor.isNull(1) || cursor.isNull(2)) continue;
+                long start = cursor.getLong(1), finish = cursor.getLong(2);
+                if (finish <= start) continue;
+                result.add(new CalendarOccurrence(cursor.getLong(0), start, finish,
+                        cursor.getString(3), cursor.getInt(4) != 0, cursor.getString(5), cursor.getString(6)));
+            }
+        }
+        return result;
     }
 
     /** Returns null when the calendar was removed from the provider. */

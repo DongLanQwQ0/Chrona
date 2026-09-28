@@ -10,6 +10,7 @@ public final class HomeTimelinePreferences {
     public static final int MAX_ITEM_LIMIT = 50;
     private static final String PREFS = "home_timeline";
     private static final String KEY_ITEM_LIMIT = "item_limit";
+    private static final String KEY_SYSTEM_CALENDAR = "include_system_calendar";
 
     private HomeTimelinePreferences() { }
 
@@ -20,6 +21,14 @@ public final class HomeTimelinePreferences {
     public static void setItemLimit(Context context, int limit) {
         preferences(context).edit().putInt(KEY_ITEM_LIMIT,
                 Math.max(MIN_ITEM_LIMIT, Math.min(MAX_ITEM_LIMIT, limit))).apply();
+    }
+
+    public static boolean includesSystemCalendar(Context context) {
+        return preferences(context).getBoolean(KEY_SYSTEM_CALENDAR, false);
+    }
+
+    public static void setIncludesSystemCalendar(Context context, boolean include) {
+        preferences(context).edit().putBoolean(KEY_SYSTEM_CALENDAR, include).apply();
     }
 
     private static SharedPreferences preferences(Context context) {
