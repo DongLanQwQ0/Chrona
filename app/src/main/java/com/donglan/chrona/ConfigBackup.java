@@ -26,7 +26,7 @@ public final class ConfigBackup {
         public final boolean hasAcrylic, acrylicEnabled;
         public final boolean hasGaussianBlur, gaussianBlur, hasCustomColor;
         public final boolean hasSurfaceMix, hasBlurStrength;
-        public final String baseUrl, model, apiKey, mode, color, customColor;
+        public final String baseUrl, model, apiKey, mode, color, customColor, reasoningEffort;
         public final int surfaceMix, blurStrength;
 
         private Imported(JSONObject root) {
@@ -35,6 +35,7 @@ public final class ConfigBackup {
             hasApiKey = hasAi && ai.has("apiKey");
             baseUrl = hasAi ? ai.optString("baseUrl", "").trim() : "";
             model = hasAi ? ai.optString("model", "").trim() : "";
+            reasoningEffort = hasAi ? ai.optString("reasoningEffort", "auto") : "auto";
             apiKey = hasApiKey ? ai.optString("apiKey", "") : null;
             JSONObject appearance = root.optJSONObject("appearance");
             hasAppearance = appearance != null;
@@ -52,7 +53,7 @@ public final class ConfigBackup {
             blurStrength = hasBlurStrength ? appearance.optInt("blurStrength", 2) : 2;
         }
 
-        private Imported(String baseUrl, String model) {
+        private Imported(String baseUrl, String model, String reasoningEffort) {
             hasAi = true;
             hasApiKey = false;
             hasAppearance = false;
@@ -65,6 +66,7 @@ public final class ConfigBackup {
             gaussianBlur = false;
             this.baseUrl = baseUrl;
             this.model = model;
+            this.reasoningEffort = reasoningEffort;
             apiKey = null;
             mode = null;
             color = null;
@@ -77,8 +79,15 @@ public final class ConfigBackup {
     /** The address and model are taken from the visible form; only the key follows the checkbox. */
     public static String export(Context context, boolean includeKey, String baseUrl, String model,
             String enteredKey) throws JSONException, java.security.GeneralSecurityException {
+        return export(context, includeKey, baseUrl, model, enteredKey, null);
+    }
+
+    public static String export(Context context, boolean includeKey, String baseUrl, String model,
+            String enteredKey, String reasoningEffort)
+            throws JSONException, java.security.GeneralSecurityException {
         boolean needSavedSettings = baseUrl == null || baseUrl.trim().isEmpty()
                 || model == null || model.trim().isEmpty()
+                || reasoningEffort == null
                 || (includeKey && (enteredKey == null || enteredKey.trim().isEmpty()));
         AiSettings saved = needSavedSettings ? new AiSettingsStore(context).load() : null;
         SharedPreferences draft = context.getSharedPreferences(DRAFT, Context.MODE_PRIVATE);
@@ -88,6 +97,9 @@ public final class ConfigBackup {
         if (model == null || model.trim().isEmpty()) {
             model = saved != null ? saved.model : draft.getString("model", "");
         }
+        if (reasoningEffort == null) reasoningEffort = saved != null ? saved.reasoningEffort
+                : draft.getString("reasoningEffort", "auto");
+        AiSettings.validateReasoningEffort(reasoningEffort);
         JSONObject root = new JSONObject();
         root.put("app", APP);
         root.put("format", FORMAT);
@@ -96,6 +108,7 @@ public final class ConfigBackup {
         JSONObject ai = new JSONObject();
         ai.put("baseUrl", baseUrl == null ? "" : baseUrl.trim());
         ai.put("model", model == null ? "" : model.trim());
+        ai.put("reasoningEffort", reasoningEffort);
         String key = enteredKey == null || enteredKey.trim().isEmpty()
                 ? saved == null ? null : saved.apiKey : enteredKey.trim();
         if (includeKey && key != null && !key.isEmpty()) ai.put("apiKey", key);
@@ -136,6 +149,7 @@ public final class ConfigBackup {
         else {
             text.append("· 基础地址 ").append(empty(config.baseUrl)).append('\n');
             text.append("· 模型 ").append(empty(config.model)).append('\n');
+            text.append("· 思考强度 ").append(config.reasoningEffort).append('\n');
             text.append(config.hasApiKey ? "· 含 API 密钥，将覆盖本机密钥\n"
                     : "· 不含 API 密钥；本机已有密钥会保留，新设备需补填密钥\n");
         }
@@ -167,8 +181,10 @@ public final class ConfigBackup {
                 throw new JSONException("API 密钥不能为空；如需保留本机密钥，请重新导出且不包含密钥");
             if (imported.hasApiKey || existing != null) {
                 String key = imported.hasApiKey ? imported.apiKey : existing.apiKey;
-                AiSettings validated = new AiSettings(imported.baseUrl, imported.model, key);
-                store.save(validated.baseUrl, validated.model, validated.apiKey);
+                AiSettings validated = new AiSettings(imported.baseUrl, imported.model, key,
+                        imported.reasoningEffort);
+                store.save(validated.baseUrl, validated.model, validated.apiKey,
+                        validated.reasoningEffort);
                 clearDraft(context);
             } else {
                 // A keyless file is still useful on a new device: keep its fields until the user
@@ -176,6 +192,8 @@ public final class ConfigBackup {
                 context.getSharedPreferences(DRAFT, Context.MODE_PRIVATE).edit()
                         .putString("baseUrl", imported.baseUrl)
                         .putString("model", imported.model).apply();
+                context.getSharedPreferences(DRAFT, Context.MODE_PRIVATE).edit()
+                        .putString("reasoningEffort", imported.reasoningEffort).apply();
             }
         }
         if (imported.hasAppearance) {
@@ -194,7 +212,8 @@ public final class ConfigBackup {
         String baseUrl = preferences.getString("baseUrl", null);
         String model = preferences.getString("model", null);
         return baseUrl == null && model == null ? null
-                : new Imported(baseUrl == null ? "" : baseUrl, model == null ? "" : model);
+                : new Imported(baseUrl == null ? "" : baseUrl, model == null ? "" : model,
+                        preferences.getString("reasoningEffort", "auto"));
     }
 
     public static void clearDraft(Context context) {
@@ -216,6 +235,13 @@ public final class ConfigBackup {
                 throw new JSONException("解析服务配置缺少基础地址或模型名称");
             if (ai.has("apiKey") && !(ai.opt("apiKey") instanceof String))
                 throw new JSONException("API 密钥格式无效");
+            if (ai.has("reasoningEffort") && !(ai.opt("reasoningEffort") instanceof String))
+                throw new JSONException("思考强度格式无效");
+            try {
+                AiSettings.validateReasoningEffort(ai.optString("reasoningEffort", "auto"));
+            } catch (IllegalArgumentException exception) {
+                throw new JSONException("思考强度无效");
+            }
             String baseUrl = ai.optString("baseUrl", "").trim();
             String model = ai.optString("model", "").trim();
             String key = ai.optString("apiKey", "");

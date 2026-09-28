@@ -30,10 +30,32 @@ public final class JsonFormat {
     /** Formats the answer part of a stored model output, leaving any reasoning text above it. */
     public static String formatModelOutput(String value) {
         if (value == null) return "";
-        int marker = value.lastIndexOf(StreamingOutputStore.CONTENT_SECTION_MARKER);
-        if (marker < 0) return format(value);
-        int start = marker + StreamingOutputStore.CONTENT_SECTION_MARKER.length();
-        return value.substring(0, start) + "\n" + format(value.substring(start));
+        java.util.regex.Matcher sections = java.util.regex.Pattern.compile(
+                "(?m)^\\[(思考内容|模型输出)\\](?:\\r?\\n|$)").matcher(value);
+        StringBuilder result = new StringBuilder();
+        int start = 0;
+        boolean reasoning = false;
+        boolean found = false;
+        while (sections.find()) {
+            result.append(reasoning ? value.substring(start, sections.start())
+                    : formatPreservingEdges(value.substring(start, sections.start())));
+            result.append(sections.group());
+            reasoning = "思考内容".equals(sections.group(1));
+            start = sections.end();
+            found = true;
+        }
+        if (!found) return format(value);
+        result.append(reasoning ? value.substring(start)
+                : formatPreservingEdges(value.substring(start)));
+        return result.toString();
+    }
+
+    private static String formatPreservingEdges(String value) {
+        int first = 0, last = value.length();
+        while (first < last && Character.isWhitespace(value.charAt(first))) first++;
+        while (last > first && Character.isWhitespace(value.charAt(last - 1))) last--;
+        return value.substring(0, first) + format(value.substring(first, last))
+                + value.substring(last);
     }
 
     /** The canonical rendering when the whole value is one complete JSON document, else null. */
@@ -56,7 +78,15 @@ public final class JsonFormat {
      */
     private static boolean looksLikeJson(String value) {
         char first = value.charAt(0);
-        return first == '{' || first == '[';
+        int next = 1;
+        while (next < value.length() && Character.isWhitespace(value.charAt(next))) next++;
+        if (next == value.length()) return true;
+        char token = value.charAt(next);
+        if (first == '{') return token == '"' || token == '}';
+        return first == '[' && (token == '"' || token == '{' || token == '['
+                || token == ']' || token == '-' || Character.isDigit(token)
+                || value.startsWith("true", next) || value.startsWith("false", next)
+                || value.startsWith("null", next));
     }
 
     /** Re-indents JSON without parsing it, so a half-received object still reads as a tree. */

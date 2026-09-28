@@ -8,8 +8,14 @@ public final class AiSettings {
     public final String baseUrl;
     public final String model;
     public final String apiKey;
+    public final String reasoningEffort;
 
     public AiSettings(String baseUrl, String model, String apiKey) {
+        this(baseUrl, model, apiKey, "auto");
+    }
+
+    public AiSettings(String baseUrl, String model, String apiKey, String reasoningEffort) {
+        validateReasoningEffort(reasoningEffort);
         if (baseUrl == null || model == null || model.trim().isEmpty()
                 || apiKey == null || apiKey.trim().isEmpty()
                 || apiKey.indexOf('\n') >= 0 || apiKey.indexOf('\r') >= 0) {
@@ -30,5 +36,12 @@ public final class AiSettings {
         this.baseUrl = normalized;
         this.model = model;
         this.apiKey = apiKey;
+        this.reasoningEffort = reasoningEffort;
+    }
+
+    public static void validateReasoningEffort(String value) {
+        if (!("auto".equals(value) || "none".equals(value) || "low".equals(value)
+                || "medium".equals(value) || "high".equals(value) || "max".equals(value)))
+            throw new IllegalArgumentException("Invalid reasoning effort");
     }
 }

@@ -24,6 +24,7 @@ public final class AiSettingsStore {
     private static final String KEY_ALIAS = "chrona_ai_api_key";
     private static final String BASE_URL = "base_url";
     private static final String MODEL = "model";
+    private static final String REASONING_EFFORT = "reasoning_effort";
     private static final String ENCRYPTED_KEY = "encrypted_api_key";
     private static final String KEY_IV = "api_key_iv";
     private static final String IMAGE_REJECTED_FOR = "image_rejected_for";
@@ -38,13 +39,19 @@ public final class AiSettingsStore {
 
     /** Replaces the current settings. A failed encryption leaves the previous settings intact. */
     public void save(String baseUrl, String model, String apiKey) throws GeneralSecurityException {
-        AiSettings settings = new AiSettings(baseUrl, model, apiKey);
+        save(baseUrl, model, apiKey, "auto");
+    }
+
+    public void save(String baseUrl, String model, String apiKey, String reasoningEffort)
+            throws GeneralSecurityException {
+        AiSettings settings = new AiSettings(baseUrl, model, apiKey, reasoningEffort);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
         byte[] encrypted = cipher.doFinal(settings.apiKey.getBytes(StandardCharsets.UTF_8));
         boolean saved = preferences.edit()
                 .putString(BASE_URL, settings.baseUrl)
                 .putString(MODEL, settings.model)
+                .putString(REASONING_EFFORT, settings.reasoningEffort)
                 .putString(ENCRYPTED_KEY, Base64.encodeToString(encrypted, Base64.NO_WRAP))
                 .putString(KEY_IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
                 .commit();
@@ -72,7 +79,8 @@ public final class AiSettingsStore {
             cipher.init(Cipher.DECRYPT_MODE, getExistingKey(),
                     new GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)));
             byte[] plain = cipher.doFinal(Base64.decode(encrypted, Base64.NO_WRAP));
-            return new AiSettings(baseUrl, model, new String(plain, StandardCharsets.UTF_8));
+            return new AiSettings(baseUrl, model, new String(plain, StandardCharsets.UTF_8),
+                    preferences.getString(REASONING_EFFORT, "auto"));
         } catch (IllegalArgumentException e) {
             throw new GeneralSecurityException("Invalid saved AI settings", e);
         }

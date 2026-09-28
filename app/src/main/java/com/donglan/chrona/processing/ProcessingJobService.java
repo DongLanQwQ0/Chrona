@@ -24,7 +24,7 @@ import com.donglan.chrona.ai.ParseResult;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskFileAttachment;
 import com.donglan.chrona.data.TaskStore;
-import com.donglan.chrona.data.EventCategory;
+import com.donglan.chrona.data.CandidateRules;
 import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.web.LinkFetcher;
@@ -32,11 +32,9 @@ import com.donglan.chrona.web.LinkFetcher;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.text.Normalizer;
-import java.util.Locale;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -273,7 +271,7 @@ public final class ProcessingJobService extends JobService {
                         + "ms (job stopped before the draft was saved)");
                 return;
             }
-            List<com.donglan.chrona.data.EventCandidate> candidates = deduplicateCandidates(result.candidates);
+            List<com.donglan.chrona.data.EventCandidate> candidates = CandidateRules.apply(result.candidates);
             store.replaceCandidates(taskId, candidates);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
                     result.totalTokens, result.cachedTokens);
@@ -288,7 +286,7 @@ public final class ProcessingJobService extends JobService {
                         + exception.statusCode + " (job stopped while waiting)");
             } else {
                 DiagLog.add(this, "request rejected task=" + taskId + " HTTP "
-                        + exception.statusCode + " " + message(exception));
+                        + exception.statusCode);
                 if (sentImage && settings != null && exception.rejectsImage()) {
                     // The provider refused the image itself, so stop offering images for this model.
                     new AiSettingsStore(this).markImageUnsupported(settings);
@@ -301,120 +299,16 @@ public final class ProcessingJobService extends JobService {
         } catch (Exception exception) {
             if (Thread.currentThread().isInterrupted()) {
                 DiagLog.add(this, "parse abandoned task=" + taskId + " (job stopped while waiting) "
-                        + exception.getClass().getSimpleName() + ": " + message(exception));
+                        + exception.getClass().getSimpleName());
             } else {
                 DiagLog.add(this, "failed task=" + taskId + " "
-                        + exception.getClass().getSimpleName() + ": " + message(exception));
+                        + exception.getClass().getSimpleName());
                 recordFailure(taskId, message(exception));
             }
         } finally {
             workers.remove(params.getJobId());
             if (!Thread.currentThread().isInterrupted()) jobFinished(params, false);
         }
-    }
-
-    private static List<com.donglan.chrona.data.EventCandidate> deduplicateCandidates(
-            List<com.donglan.chrona.data.EventCandidate> candidates) {
-        ArrayList<com.donglan.chrona.data.EventCandidate> unique = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
-        for (com.donglan.chrona.data.EventCandidate candidate : candidates) {
-            if (candidate.startAtMillis == null || candidate.endAtMillis == null) {
-                unique.add(candidate);
-                continue;
-            }
-            String title = Normalizer.normalize(candidate.title == null ? "" : candidate.title,
-                    Normalizer.Form.NFKC).trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
-            String key = title + "|" + candidate.startAtMillis + "|" + candidate.endAtMillis
-                    + "|" + candidate.allDay + "|" + candidate.category;
-            if (seen.add(key)) unique.add(candidate);
-        }
-        return mergeConcurrentActions(unique);
-    }
-
-    /**
-     * Collapses same-task actions only when they are effectively one scheduled task/reminder.
-     * Appointments, deadlines, notes, places, or conflicting reminder settings stay
-     * separate even when their times overlap.
-     */
-    private static List<com.donglan.chrona.data.EventCandidate> mergeConcurrentActions(
-            List<com.donglan.chrona.data.EventCandidate> candidates) {
-        ArrayList<com.donglan.chrona.data.EventCandidate> merged = new ArrayList<>();
-        for (com.donglan.chrona.data.EventCandidate candidate : candidates) {
-            int match = -1;
-            for (int i = 0; i < merged.size(); i++) {
-                if (canCombineActions(merged.get(i), candidate)) {
-                    match = i;
-                    break;
-                }
-            }
-            if (match < 0) merged.add(candidate);
-            else merged.set(match, combineActions(merged.get(match), candidate));
-        }
-        return merged;
-    }
-
-    private static boolean canCombineActions(com.donglan.chrona.data.EventCandidate first,
-            com.donglan.chrona.data.EventCandidate second) {
-        if (first.taskId != second.taskId || first.allDay || second.allDay
-                || first.calendarEventId != null || second.calendarEventId != null
-                || first.startAtMillis == null || first.endAtMillis == null
-                || second.startAtMillis == null || second.endAtMillis == null
-                || !(mergeableActionCategory(first.category)
-                        && mergeableActionCategory(second.category))
-                || !java.util.Objects.equals(first.timeZoneId, second.timeZoneId)
-                || !samePlace(first.location, second.location)
-                || (first.reminderMinutesBefore != null && second.reminderMinutesBefore != null
-                        && !first.reminderMinutesBefore.equals(second.reminderMinutesBefore))) return false;
-
-        long startDelta = Math.abs(first.startAtMillis - second.startAtMillis);
-        boolean overlap = first.startAtMillis < second.endAtMillis
-                && second.startAtMillis < first.endAtMillis;
-        long combinedSpan = Math.max(first.endAtMillis, second.endAtMillis)
-                - Math.min(first.startAtMillis, second.startAtMillis);
-        return overlap && startDelta <= 60_000L && combinedSpan <= 30 * 60_000L;
-    }
-
-    private static boolean mergeableActionCategory(String category) {
-        return EventCategory.TASK.equals(category) || EventCategory.REMINDER.equals(category);
-    }
-
-    private static boolean samePlace(String first, String second) {
-        String left = normalizeCandidateText(first);
-        String right = normalizeCandidateText(second);
-        return left.equals(right);
-    }
-
-    private static com.donglan.chrona.data.EventCandidate combineActions(
-            com.donglan.chrona.data.EventCandidate first,
-            com.donglan.chrona.data.EventCandidate second) {
-        String title = combineCandidateText(first.title, second.title, "；");
-        String description = combineCandidateText(first.description, second.description, "；");
-        String category = EventCategory.REMINDER.equals(first.category)
-                || EventCategory.REMINDER.equals(second.category)
-                ? EventCategory.REMINDER : EventCategory.TASK;
-        Integer reminder = first.reminderMinutesBefore != null
-                ? first.reminderMinutesBefore : second.reminderMinutesBefore;
-        return new com.donglan.chrona.data.EventCandidate(first.id, first.taskId, title,
-                Math.min(first.startAtMillis, second.startAtMillis),
-                Math.max(first.endAtMillis, second.endAtMillis), first.timeZoneId, first.location,
-                description, reminder,
-                first.needsConfirmation || second.needsConfirmation, first.calendarEventId,
-                category, first.allDay);
-    }
-
-    private static String combineCandidateText(String first, String second, String separator) {
-        String left = first == null ? "" : first.trim();
-        String right = second == null ? "" : second.trim();
-        if (left.isEmpty()) return right;
-        if (right.isEmpty() || normalizeCandidateText(left).equals(normalizeCandidateText(right)))
-            return left;
-        return left + separator + right;
-    }
-
-    private static String normalizeCandidateText(String value) {
-        return java.text.Normalizer.normalize(value == null ? "" : value,
-                java.text.Normalizer.Form.NFKC).trim().replaceAll("\\s+", " ")
-                .toLowerCase(java.util.Locale.ROOT);
     }
 
     /**
@@ -440,6 +334,8 @@ public final class ProcessingJobService extends JobService {
     private ParseResult requestWithRetries(AiSettings settings, TaskRecord task, List<byte[]> images,
             String linkText, String attachmentMetadata, long taskId) throws IOException {
         long startedAt = System.currentTimeMillis();
+        final long referenceTime = startedAt;
+        final String referenceZone = TimeZone.getDefault().getID();
         for (int attempt = 1; ; attempt++) {
             long attemptStartedAt = System.currentTimeMillis();
             DiagLog.add(this, "attempt " + attempt + "/" + MAX_REQUEST_ATTEMPTS
@@ -457,23 +353,8 @@ public final class ProcessingJobService extends JobService {
                             output.appendReasoning(chunk);
                         }
                     };
-                    try {
-                        return client.parseImages(taskId, task.rawText, images, linkText,
-                                attachmentMetadata,
-                                System.currentTimeMillis(), TimeZone.getDefault().getID(),
-                                preview, true);
-                    } catch (ChatCompletionClient.RequestException exception) {
-                        String detail = String.valueOf(exception.getMessage()).toLowerCase(
-                                java.util.Locale.ROOT);
-                        if (exception.statusCode != 400 || !detail.contains("stream"))
-                            throw exception;
-                        DiagLog.add(this, "stream unsupported task=" + taskId
-                                + "; retrying ordinary response");
-                        return client.parseImages(taskId, task.rawText, images, linkText,
-                                attachmentMetadata,
-                                System.currentTimeMillis(), TimeZone.getDefault().getID(),
-                                preview, false);
-                    }
+                    return client.parseImages(taskId, task.rawText, images, linkText,
+                            attachmentMetadata, referenceTime, referenceZone, preview, true);
                 }
             } catch (IOException exception) {
                 long attemptMillis = System.currentTimeMillis() - attemptStartedAt;
@@ -483,12 +364,12 @@ public final class ProcessingJobService extends JobService {
                 if (giveUp) {
                     DiagLog.add(this, "giving up task=" + taskId + " after " + attempt
                             + " attempt(s) in " + (System.currentTimeMillis() - startedAt) + "ms: "
-                            + exception.getClass().getSimpleName() + ": " + message(exception));
+                            + exception.getClass().getSimpleName());
                     throw exception;
                 }
                 DiagLog.add(this, "attempt " + attempt + " failed after " + attemptMillis
-                        + "ms task=" + taskId + " " + exception.getClass().getSimpleName() + ": "
-                        + message(exception) + " -> retry in " + (RETRY_DELAY_MILLIS / 1000) + "s");
+                        + "ms task=" + taskId + " " + exception.getClass().getSimpleName()
+                        + " -> retry in " + (RETRY_DELAY_MILLIS / 1000) + "s");
                 if (!sleep(RETRY_DELAY_MILLIS)) {
                     DiagLog.add(this, "retry abandoned task=" + taskId + " (worker interrupted)");
                     throw exception;
@@ -513,6 +394,7 @@ public final class ProcessingJobService extends JobService {
 
     /** True for failures worth another attempt; a server that answered 4xx will not change. */
     private static boolean isTransient(IOException exception) {
+        if (exception instanceof ChatCompletionClient.ResponseException) return false;
         if (exception instanceof ChatCompletionClient.RequestException) {
             int status = ((ChatCompletionClient.RequestException) exception).statusCode;
             return status == 429 || status >= 500;

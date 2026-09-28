@@ -29,6 +29,10 @@ public final class SettingsActivity extends Activity {
     private TextView imageState;
     private Button allowImages;
     private CheckBox includeKey;
+    private static final String[] EFFORT_VALUES = {"auto", "none", "low", "medium", "high", "max"};
+    private static final String[] EFFORT_LABELS = {"自动", "关闭", "低", "中", "高", "最高"};
+    private String reasoningEffort = "auto";
+    private TextView effortChoice;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -71,6 +75,21 @@ public final class SettingsActivity extends Activity {
         UiStyle.addSpaced(form, preset, 5, 10);
         baseUrl = field(form, "API 基础地址（含 /v1）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         model = field(form, "模型名称", InputType.TYPE_CLASS_TEXT);
+        TextView effortTitle = new TextView(this);
+        effortTitle.setText("思考强度");
+        UiStyle.muted(effortTitle);
+        UiStyle.addSpaced(form, effortTitle, 8, 4);
+        effortChoice = new TextView(this);
+        effortChoice.setText(EFFORT_LABELS[0]);
+        UiStyle.fieldTrigger(effortChoice);
+        UiStyle.addSpaced(form, effortChoice, 4, 8);
+        TextView effortNote = new TextView(this);
+        effortNote.setText("按模型能力映射；部分模型无法关闭思考，自定义接口可能忽略此选项。");
+        effortNote.setTextSize(12);
+        UiStyle.muted(effortNote);
+        UiStyle.addSpaced(form, effortNote, 0, 4);
+        effortChoice.setOnClickListener(view -> UiStyle.choiceDialog(this, "思考强度",
+                EFFORT_LABELS, effortIndex(), position -> setEffort(EFFORT_VALUES[position])));
         preset.setOnClickListener(view -> UiStyle.choiceDialog(this, "常用模型预设",
                 presets, selectedPreset[0], position -> {
                 selectedPreset[0] = position;
@@ -164,6 +183,7 @@ public final class SettingsActivity extends Activity {
             if (existing != null) {
                 baseUrl.setText(existing.baseUrl);
                 model.setText(existing.model);
+                setEffort(existing.reasoningEffort);
                 if ("https://api.deepseek.com".equals(existing.baseUrl)) {
                     if ("deepseek-flash".equals(existing.model)) selectedPreset[0] = 1;
                     else if ("deepseek-v4-pro".equals(existing.model)) selectedPreset[0] = 2;
@@ -179,6 +199,7 @@ public final class SettingsActivity extends Activity {
                 if (new AiSettingsStore(this).load() == null) {
                     baseUrl.setText(pending.baseUrl);
                     model.setText(pending.model);
+                    setEffort(pending.reasoningEffort);
                 }
             } catch (Exception ignored) { }
         }
@@ -260,7 +281,7 @@ public final class SettingsActivity extends Activity {
         boolean withKey = includeKey != null && includeKey.isChecked();
         try {
             String json = ConfigBackup.export(this, withKey, baseUrl.getText().toString(),
-                    model.getText().toString(), apiKey.getText().toString());
+                    model.getText().toString(), apiKey.getText().toString(), reasoningEffort);
             try (java.io.OutputStream output = getContentResolver().openOutputStream(target)) {
                 if (output == null) throw new java.io.IOException("无法写入所选位置");
                 output.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -309,6 +330,7 @@ public final class SettingsActivity extends Activity {
             if (imported.hasAi) {
                 baseUrl.setText(imported.baseUrl);
                 model.setText(imported.model);
+                setEffort(imported.reasoningEffort);
                 apiKey.setText("");
             }
             Feedback.show(this, "配置已导入");
@@ -325,13 +347,25 @@ public final class SettingsActivity extends Activity {
                 AiSettings existing = store.load();
                 if (existing != null) key = existing.apiKey;
             }
-            store.save(baseUrl.getText().toString().trim(), model.getText().toString().trim(), key);
+            store.save(baseUrl.getText().toString().trim(), model.getText().toString().trim(), key,
+                    reasoningEffort);
             ConfigBackup.clearDraft(this);
             Feedback.show(this, "设置已保存");
             finish();
         } catch (Exception exception) {
             Feedback.showLong(this, "保存失败：" + exception.getMessage());
         }
+    }
+
+    private int effortIndex() {
+        for (int i = 0; i < EFFORT_VALUES.length; i++)
+            if (EFFORT_VALUES[i].equals(reasoningEffort)) return i;
+        return 0;
+    }
+
+    private void setEffort(String value) {
+        reasoningEffort = value;
+        effortChoice.setText(EFFORT_LABELS[effortIndex()]);
     }
 
     private int dp(int value) {

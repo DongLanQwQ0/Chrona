@@ -21,11 +21,13 @@ public final class ModelOutputActivity extends Activity {
     private Button previous;
     private Button next;
     private ScrollView scroll;
+    private StreamingOutputStore outputStore;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
         taskId = getIntent().getLongExtra("task_id", -1);
+        outputStore = new StreamingOutputStore(this);
         if (state != null) index = state.getInt("page_index");
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
@@ -94,17 +96,16 @@ public final class ModelOutputActivity extends Activity {
     }
 
     private void showPage() {
-        StreamingOutputStore store = new StreamingOutputStore(this);
-        long bytes = store.length(taskId);
-        int pages = Math.max(1, (int) ((bytes + StreamingOutputStore.PAGE_BYTES - 1)
-                / StreamingOutputStore.PAGE_BYTES));
-        index = Math.max(0, Math.min(index, pages - 1));
-        pageLabel.setText("第 " + (index + 1) + " / " + pages + " 页 · " + bytes + " 字节");
-        previous.setEnabled(index > 0);
-        next.setEnabled(index + 1 < pages);
         try {
-            String part = store.page(taskId, index);
-            String text = part.isEmpty() ? "尚无模型输出。" : JsonFormat.formatModelOutput(part);
+            long bytes = outputStore.renderedLength(taskId);
+            int pages = Math.max(1, (int) ((bytes + StreamingOutputStore.PAGE_BYTES - 1)
+                    / StreamingOutputStore.PAGE_BYTES));
+            index = Math.max(0, Math.min(index, pages - 1));
+            pageLabel.setText("第 " + (index + 1) + " / " + pages + " 页 · " + bytes + " 字节");
+            previous.setEnabled(index > 0);
+            next.setEnabled(index + 1 < pages);
+            String part = outputStore.readPage(taskId, index);
+            String text = part.isEmpty() ? "尚无模型输出。" : part;
             boolean first = output.getText().length() == 0;
             output.setText(text);
             scroll.scrollTo(0, 0);
