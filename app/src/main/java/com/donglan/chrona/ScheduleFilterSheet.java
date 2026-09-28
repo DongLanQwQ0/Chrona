@@ -9,6 +9,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -31,6 +32,16 @@ final class ScheduleFilterSheet {
     private final LinearLayout body;
     private int expanded = -1;
     private int scrollY;
+    private int renderGeneration;
+    private TextView intervalLabel;
+    private final java.util.Map<Integer, Expansion> expansions = new java.util.HashMap<>();
+
+    private static final class Expansion {
+        final LinearLayout options;
+        final ImageView arrow;
+        android.animation.ValueAnimator animator;
+        Expansion(LinearLayout options, ImageView arrow) { this.options = options; this.arrow = arrow; }
+    }
 
     static void show(Activity activity, ScheduleFilterState initial, DatePicker picker,
             Consumer<ScheduleFilterState> apply) {
@@ -93,6 +104,10 @@ final class ScheduleFilterSheet {
     }
 
     private void render() {
+        renderGeneration++;
+        for (Expansion item : expansions.values()) if (item.animator != null) item.animator.cancel();
+        expansions.clear();
+        intervalLabel = null;
         body.removeAllViews();
         TextView dates = label("日期", 13, true);
         dates.setTextColor(UiStyle.colors(activity).muted);
@@ -114,21 +129,38 @@ final class ScheduleFilterSheet {
             if (i != names.length - 1) params.rightMargin = dp(4);
             presets.addView(option, params);
         }
-        body.addView(presets);
+        LinearLayout.LayoutParams presetsParams = new LinearLayout.LayoutParams(-1, -2);
+        presetsParams.bottomMargin = dp(12);
+        body.addView(presets, presetsParams);
         LocalDate[] window = draft.window(LocalDate.now());
         if (window[0] != null) {
-            Button interval = pill(window[0] + " — " + window[1].minusDays(1),
-                    this::pickCustomRange, false);
-            interval.setSingleLine(false);
-            interval.setMaxLines(2);
-            interval.setPadding(dp(8), dp(6), dp(8), dp(6));
-            interval.setTextColor(UiStyle.colors(activity).text);
-            installIntervalSwipe(interval);
-            UiStyle.addSpaced(body, interval, 8, 0);
-            TextView hint = label("左右滑动切换 · 点击修改", 11, false);
-            hint.setTextColor(UiStyle.colors(activity).muted);
-            hint.setGravity(Gravity.CENTER);
-            UiStyle.addSpaced(body, hint, 3, 8);
+            FrameLayout interval = new FrameLayout(activity);
+            interval.setClipChildren(true);
+            UiStyle.acrylicChoice(interval, false, UiStyle.RADIUS_PILL, true);
+            interval.setOnClickListener(view -> pickCustomRange());
+            FrameLayout labelHost = new FrameLayout(activity);
+            labelHost.setClipChildren(true);
+            FrameLayout.LayoutParams labelHostParams = new FrameLayout.LayoutParams(-1, -1);
+            labelHostParams.setMargins(dp(30), dp(4), dp(30), dp(4));
+            interval.addView(labelHost, labelHostParams);
+            TextView value = label(window[0] + " — " + window[1].minusDays(1), 13, false);
+            value.setGravity(Gravity.CENTER);
+            value.setMaxLines(2);
+            labelHost.addView(value, new FrameLayout.LayoutParams(-1, -1));
+            intervalLabel = value;
+            for (int side = 0; side < 2; side++) {
+                ImageView arrow = new ImageView(activity);
+                arrow.setImageResource(side == 0 ? R.drawable.ic_chevron_left : R.drawable.ic_chevron_right);
+                arrow.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));
+                FrameLayout.LayoutParams arrowParams = new FrameLayout.LayoutParams(dp(20), dp(20),
+                        Gravity.CENTER_VERTICAL | (side == 0 ? Gravity.LEFT : Gravity.RIGHT));
+                arrowParams.leftMargin = arrowParams.rightMargin = dp(8);
+                interval.addView(arrow, arrowParams);
+            }
+            installIntervalSwipe(interval, value);
+            LinearLayout.LayoutParams intervalParams = new LinearLayout.LayoutParams(-1, dp(48));
+            intervalParams.bottomMargin = dp(12);
+            body.addView(interval, intervalParams);
         }
         addSetting("类型", draft.source == 1 ? "系统活动" : categoryOptions()[draft.category],
                 R.drawable.ic_event, 0, categoryOptions(), draft.category, value -> draft.category = value,
@@ -165,32 +197,96 @@ final class ScheduleFilterSheet {
         TextView current = label(value, 14, false);
         current.setTextColor(UiStyle.colors(activity).muted);
         setting.addView(current);
+        ImageView arrow = new ImageView(activity);
         if (enabled) {
-            ImageView arrow = new ImageView(activity);
-            arrow.setImageResource(expanded == field ? R.drawable.ic_expand_less : R.drawable.ic_chevron_down);
+            arrow.setImageResource(R.drawable.ic_chevron_down);
+            arrow.setRotation(expanded == field ? 180f : 0f);
             arrow.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));
             LinearLayout.LayoutParams arrowParams = new LinearLayout.LayoutParams(dp(18), dp(18));
             arrowParams.leftMargin = dp(6);
             setting.addView(arrow, arrowParams);
             setting.setContentDescription(name + "，" + value + "，展开选项");
-            setting.setOnClickListener(view -> { expanded = expanded == field ? -1 : field; render(); });
+            setting.setOnClickListener(view -> toggleExpansion(field));
         }
         body.addView(setting);
-        if (enabled && expanded == field) {
+        if (enabled) {
+            LinearLayout choicesHost = column();
             for (int i = 0; i < choices.length; i += 3) {
                 LinearLayout options = row();
                 for (int j = i; j < Math.min(i + 3, choices.length); j++) {
                     final int index = j;
                     Button option = pill(choices[j], () -> {
-                        chosen.accept(index); expanded = -1; render();
+                        chosen.accept(index);
+                        // Synchronize labels/selected styles now, independent of collapse completion.
+                        render();
+                        expanded = -1;
+                        animateExpansion(expansions.get(field), false);
                     }, j == selected);
                     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1);
                     params.setMargins(0, 0, dp(4), 0);
                     options.addView(option, params);
                 }
-                UiStyle.addSpaced(body, options, 0, 5);
+                UiStyle.addSpaced(choicesHost, options, 0, 5);
             }
+            choicesHost.setVisibility(expanded == field ? View.VISIBLE : View.GONE);
+            body.addView(choicesHost, new LinearLayout.LayoutParams(-1, -2));
+            expansions.put(field, new Expansion(choicesHost, arrow));
         }
+    }
+
+    private void toggleExpansion(int field) {
+        int previous = expanded;
+        expanded = previous == field ? -1 : field;
+        if (previous != -1) animateExpansion(expansions.get(previous), false);
+        if (expanded != -1) animateExpansion(expansions.get(expanded), true);
+    }
+
+    private void animateExpansion(Expansion item, boolean opening) {
+        if (item == null) return;
+        if (item.animator != null) item.animator.cancel();
+        LinearLayout options = item.options;
+        options.measure(View.MeasureSpec.makeMeasureSpec(body.getWidth(), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        // A synchronous render creates a visible host before its first layout.
+        int initial = options.getVisibility() == View.GONE ? 0
+                : options.isLaidOut() ? options.getHeight() : options.getMeasuredHeight();
+        float initialAlpha = initial == 0 ? 0f : options.getAlpha();
+        int target = opening ? options.getMeasuredHeight() : 0;
+        item.arrow.animate().cancel();
+        item.arrow.animate().rotation(opening ? 180f : 0f).setDuration(220).start();
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            options.setVisibility(opening ? View.VISIBLE : View.GONE);
+            options.getLayoutParams().height = -2;
+            options.setAlpha(1f);
+            options.requestLayout();
+            return;
+        }
+        int generation = renderGeneration;
+        options.setVisibility(View.VISIBLE);
+        android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofInt(initial, target);
+        item.animator = animator;
+        animator.setDuration(220);
+        animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        animator.addUpdateListener(value -> {
+            int height = (int) value.getAnimatedValue();
+            options.getLayoutParams().height = height;
+            float targetAlpha = opening ? 1f : 0f;
+            options.setAlpha(initialAlpha + (targetAlpha - initialAlpha) * value.getAnimatedFraction());
+            options.requestLayout();
+        });
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            boolean cancelled;
+            @Override public void onAnimationCancel(android.animation.Animator animation) { cancelled = true; }
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (cancelled || generation != renderGeneration) return;
+                item.animator = null;
+                options.setVisibility(opening ? View.VISIBLE : View.GONE);
+                options.getLayoutParams().height = -2;
+                options.setAlpha(1f);
+                options.requestLayout();
+            }
+        });
+        animator.start();
     }
 
     private void pickCustomRange() {
@@ -210,14 +306,19 @@ final class ScheduleFilterSheet {
         });
     }
 
-    private void installIntervalSwipe(View interval) {
+    private void installIntervalSwipe(View interval, TextView value) {
         interval.setContentDescription("日期区间，左右滑动切换，点击修改起止日期");
         interval.setOnTouchListener(new View.OnTouchListener() {
-            float x, y; boolean horizontal;
+            float x, y, initialTranslation; boolean horizontal;
             @Override public boolean onTouch(View view, android.view.MotionEvent event) {
                 float dx = event.getX() - x, dy = event.getY() - y;
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
+                        value.animate().cancel();
+                        LocalDate[] active = draft.window(LocalDate.now());
+                        if (active[0] != null) value.setText(active[0] + " — " + active[1].minusDays(1));
+                        value.setAlpha(1f);
+                        initialTranslation = value.getTranslationX();
                         x = event.getX(); y = event.getY(); horizontal = false; break;
                     case MotionEvent.ACTION_MOVE:
                         if (Math.abs(dx) > dp(10) && Math.abs(dx) > Math.abs(dy)) {
@@ -225,6 +326,8 @@ final class ScheduleFilterSheet {
                             view.getParent().requestDisallowInterceptTouchEvent(true);
                             view.setPressed(false);
                         }
+                        if (horizontal) value.setTranslationX(Math.max(-value.getWidth(),
+                                Math.min(value.getWidth(), initialTranslation + dx)));
                         return horizontal;
                     case MotionEvent.ACTION_UP:
                         horizontal |= Math.abs(dx) >= dp(36) && Math.abs(dx) > Math.abs(dy);
@@ -232,20 +335,53 @@ final class ScheduleFilterSheet {
                         if (horizontal) {
                             view.setPressed(false);
                             if (Math.abs(dx) >= dp(36)) {
-                                if (draft.shift(dx < 0 ? 1 : -1, LocalDate.now())) render();
-                                else Feedback.show(activity, "系统日历每次最多查询一年");
-                            }
+                                finishIntervalSwipe(value, dx);
+                            } else settleInterval(value);
                             return true;
                         }
+                        value.setTranslationX(0f);
                         break;
                     case MotionEvent.ACTION_CANCEL:
                         view.getParent().requestDisallowInterceptTouchEvent(false);
-                        view.setPressed(false); return horizontal;
+                        view.setPressed(false);
+                        settleInterval(value);
+                        return horizontal;
                     default: break;
                 }
                 return false;
             }
         });
+    }
+
+    private void settleInterval(TextView value) {
+        value.animate().translationX(0f).alpha(1f).setDuration(180).start();
+    }
+
+    private void finishIntervalSwipe(TextView value, float distance) {
+        int direction = distance < 0 ? 1 : -1;
+        LocalDate today = LocalDate.now();
+        ScheduleFilterState next = draft.copy();
+        if (!next.shift(direction, today)) {
+            Feedback.show(activity, "系统日历每次最多查询一年");
+            settleInterval(value);
+            return;
+        }
+        int generation = renderGeneration;
+        // Apply must see the released gesture immediately, even if the exit animation is interrupted.
+        draft.shift(direction, today);
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            render(); return;
+        }
+        value.animate().translationX(direction > 0 ? -value.getWidth() : value.getWidth())
+                .alpha(0f).setDuration(110).withEndAction(() -> {
+                    if (generation != renderGeneration || !dialog.isShowing()) return;
+                    render();
+                    TextView incoming = intervalLabel;
+                    if (incoming == null) return;
+                    incoming.setTranslationX(direction > 0 ? value.getWidth() : -value.getWidth());
+                    incoming.setAlpha(0f);
+                    incoming.animate().translationX(0f).alpha(1f).setDuration(180).start();
+                }).start();
     }
 
     private Button pill(String title, Runnable action, boolean selected) {
