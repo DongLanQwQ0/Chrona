@@ -141,6 +141,10 @@ public final class DashboardActivity extends Activity {
     private SwipePagerLayout pager;
     /** The neighbouring section, built on demand while a horizontal drag is in flight. */
     private SectionPage adjacentPage;
+    /** At most three retained view trees, owned only by this Activity. */
+    private final Map<Integer, SectionPage> sectionPages = new LinkedHashMap<>();
+    private final Map<Integer, String> sectionVersions = new LinkedHashMap<>();
+    private final Set<Integer> dirtySections = new java.util.HashSet<>();
     private int dragDirection;
     private boolean dragTargetLoaded;
     private boolean pageTransitionRunning;
@@ -262,14 +266,6 @@ public final class DashboardActivity extends Activity {
         final List<Long> matchingInboxIds;
         final List<ElapsedLabel> elapsedLabels;
         final List<View> strips;
-        final String inboxQuery;
-        final String scheduleQuery;
-        final boolean inboxOldestFirst;
-        final boolean scheduleOldestFirst;
-        final int categoryIndex;
-        final int statusIndex;
-        final int scheduleTab;
-        final int schedulePage;
         final LinearLayout scheduleControls;
 
         SectionPage() {
@@ -288,14 +284,6 @@ public final class DashboardActivity extends Activity {
             this.matchingInboxIds = DashboardActivity.this.matchingInboxIds;
             this.elapsedLabels = DashboardActivity.this.elapsedLabels;
             this.strips = new ArrayList<>(DashboardActivity.this.strips);
-            this.inboxQuery = DashboardActivity.this.inboxQuery;
-            this.scheduleQuery = DashboardActivity.this.scheduleQuery;
-            this.inboxOldestFirst = DashboardActivity.this.inboxOldestFirst;
-            this.scheduleOldestFirst = DashboardActivity.this.scheduleOldestFirst;
-            this.categoryIndex = DashboardActivity.this.categoryIndex;
-            this.statusIndex = DashboardActivity.this.statusIndex;
-            this.scheduleTab = DashboardActivity.this.scheduleTab;
-            this.schedulePage = DashboardActivity.this.schedulePage;
             this.scheduleControls = DashboardActivity.this.scheduleControls;
         }
     }
@@ -317,14 +305,7 @@ public final class DashboardActivity extends Activity {
         elapsedLabels = page.elapsedLabels;
         strips.clear();
         strips.addAll(page.strips);
-        inboxQuery = page.inboxQuery;
-        scheduleQuery = page.scheduleQuery;
-        inboxOldestFirst = page.inboxOldestFirst;
-        scheduleOldestFirst = page.scheduleOldestFirst;
-        categoryIndex = page.categoryIndex;
-        statusIndex = page.statusIndex;
-        scheduleTab = page.scheduleTab;
-        schedulePage = page.schedulePage;
+        // Filters belong to the Activity; an old hidden page must not roll them back.
         scheduleControls = page.scheduleControls;
         if (pager != null) pager.setGesturePriorityChildren(strips);
     }
@@ -332,6 +313,22 @@ public final class DashboardActivity extends Activity {
     /** Renders a neighbouring section off-screen, then puts the live page's state back. */
     private SectionPage buildAdjacentSection(int destination) {
         SectionPage current = new SectionPage();
+        sectionPages.put(section, current);
+        SectionPage cached = sectionPages.get(destination);
+        if (cached != null) {
+            activateSectionPage(cached);
+            boolean previousPreview = previewRender;
+            previewRender = true;
+            try {
+                refreshActivePageIfNeeded();
+                cached = new SectionPage();
+                sectionPages.put(destination, cached);
+            } finally {
+                previewRender = previousPreview;
+                activateSectionPage(current);
+            }
+            return cached;
+        }
         ScrollView targetScroll = new ScrollView(this);
         targetScroll.setFillViewport(true);
         targetScroll.setVerticalScrollBarEnabled(false);
@@ -371,8 +368,32 @@ public final class DashboardActivity extends Activity {
         }
 
         SectionPage target = new SectionPage();
+        sectionPages.put(destination, target);
         activateSectionPage(current);
         return target;
+    }
+
+    private void rememberRenderedPage() {
+        sectionPages.put(section, new SectionPage());
+        sectionVersions.put(section, dataSnapshot());
+        dirtySections.remove(section);
+    }
+
+    private void refreshActivePageIfNeeded() {
+        String version = dataSnapshot();
+        if (dirtySections.contains(section) || !version.equals(sectionVersions.get(section))) {
+            int y = scroll.getScrollY();
+            int x = section == HOME && !strips.isEmpty() ? strips.get(0).getScrollX() : 0;
+            if (section != HOME && results != null) updateResults();
+            else render();
+            ScrollView refreshed = scroll;
+            View strip = section == HOME && !strips.isEmpty() ? strips.get(0) : null;
+            refreshed.post(() -> {
+                refreshed.scrollTo(0, y);
+                if (strip != null) strip.scrollTo(x, 0);
+            });
+            if (section == HOME) homeRefreshPending = false;
+        }
     }
 
     private final SwipePagerLayout.Listener sectionPagerListener = new SwipePagerLayout.Listener() {
@@ -505,18 +526,19 @@ public final class DashboardActivity extends Activity {
         }
         if (commit) {
             clearCurrentSelection();
+            sectionPages.put(section, new SectionPage());
             pager.removeView(scroll);
             target.scroll.setTranslationX(0f);
             activateSectionPage(target);
-            if (section == HOME) render();
-            else updateResults();
+            refreshActivePageIfNeeded();
             updateSelectionBack();
             drawNavigation();
-            scroll.scrollTo(0, 0);
         } else {
             pager.removeView(target.scroll);
+            target.scroll.setTranslationX(0f);
             scroll.setTranslationX(0f);
             if (homeRefreshPending) refreshHomeContent();
+            refreshActivePageIfNeeded();
         }
         if (scheduleRefreshPending && section == SCHEDULE) {
             scheduleRefreshPending = false;
@@ -524,14 +546,14 @@ public final class DashboardActivity extends Activity {
         }
         invalidateSectionSurfaces();
         snapshot = dataSnapshot();
+        if (section == HOME || (section == SCHEDULE && scheduleSource == 1))
+            refresh.post(this::refreshSystemCalendar);
     }
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        section = intent.getIntExtra(EXTRA_SECTION, section);
-        render();
-        scroll.scrollTo(0, 0);
+        switchTo(intent.getIntExtra(EXTRA_SECTION, section));
     }
 
     @Override protected void onResume() {
@@ -542,12 +564,13 @@ public final class DashboardActivity extends Activity {
         if (recovered > 0) Feedback.showLong(this, recovered + " 条解析已中断，请在收件箱重试");
         int oldScroll = restoredScrollY != 0 ? restoredScrollY : scroll.getScrollY();
         restoredScrollY = 0;
-        if ((section == INBOX || section == SCHEDULE) && results != null) updateResults();
-        else render();
-        scroll.post(() -> scroll.scrollTo(0, oldScroll));
+        refreshActivePageIfNeeded();
+        ScrollView resumed = scroll;
+        resumed.post(() -> resumed.scrollTo(0, oldScroll));
         snapshot = dataSnapshot();
         refresh.postDelayed(poll, 5000L);
         refresh.postDelayed(elapsedTicker, 1000L);
+        refresh.post(this::refreshSystemCalendar);
     }
 
     @Override protected void onPause() {
@@ -561,6 +584,10 @@ public final class DashboardActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        refresh.removeCallbacksAndMessages(null);
+        sectionPages.clear();
+        sectionVersions.clear();
+        dirtySections.clear();
         calendarReader.shutdownNow();
         super.onDestroy();
     }
@@ -569,11 +596,10 @@ public final class DashboardActivity extends Activity {
         if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
         String current = dataSnapshot();
         if (!current.equals(snapshot)) {
-            int scrollY = scroll.getScrollY();
-            if ((section == INBOX || section == SCHEDULE) && results != null) updateResults();
-            else render();
-            scroll.post(() -> scroll.scrollTo(0, scrollY));
-            snapshot = current;
+            if (!pageTransitionRunning && !dragTargetLoaded) {
+                refreshActivePageIfNeeded();
+                snapshot = current;
+            }
         }
         refresh.postDelayed(poll, 5000L);
     }
@@ -643,6 +669,8 @@ public final class DashboardActivity extends Activity {
                 if (!systemCalendarEvents.equals(result) || !windowKey.equals(calendarResultWindow)) {
                     systemCalendarEvents = result;
                     calendarResultWindow = windowKey;
+                    dirtySections.add(HOME);
+                    dirtySections.add(SCHEDULE);
                     if (section == SCHEDULE && scheduleSource == 1) {
                         if (pageTransitionRunning || dragTargetLoaded) scheduleRefreshPending = true;
                         else updateResults();
@@ -663,9 +691,11 @@ public final class DashboardActivity extends Activity {
         int y = scroll.getScrollY();
         int x = strips.isEmpty() ? 0 : strips.get(0).getScrollX();
         render();
-        scroll.post(() -> {
-            scroll.scrollTo(0, y);
-            if (!strips.isEmpty()) strips.get(0).scrollTo(x, 0);
+        ScrollView refreshed = scroll;
+        View strip = strips.isEmpty() ? null : strips.get(0);
+        refreshed.post(() -> {
+            refreshed.scrollTo(0, y);
+            if (strip != null) strip.scrollTo(x, 0);
         });
     }
 
@@ -712,7 +742,10 @@ public final class DashboardActivity extends Activity {
     private String dataSnapshot() {
         try (TaskStore store = new TaskStore(this)) {
             // Database triggers track edits too; time buckets move ended events between tabs.
-            return store.dataRevision() + ":" + (System.currentTimeMillis() / 60000L);
+            return store.dataRevision() + ":" + (System.currentTimeMillis() / 60000L)
+                    + ":" + HomeTimelinePreferences.getItemLimit(this)
+                    + ":" + HomeTimelinePreferences.includesSystemCalendar(this)
+                    + ":" + new CalendarStore(this).hasReadPermission();
         } catch (Exception ignored) {
             return "";
         }
@@ -815,6 +848,7 @@ public final class DashboardActivity extends Activity {
         if ((section == HOME || (section == SCHEDULE && scheduleSource == 1)) && !previewRender)
             scroll.post(this::refreshSystemCalendar);
         if (pager != null) pager.setGesturePriorityChildren(strips);
+        rememberRenderedPage();
     }
 
     private void addHeader() {
@@ -888,16 +922,20 @@ public final class DashboardActivity extends Activity {
     }
 
     private void toggleOrder() {
-        if (section == INBOX) inboxOldestFirst = !inboxOldestFirst;
-        else scheduleOldestFirst = !scheduleOldestFirst;
-        inboxShown = 12;
-        schedulePage = 0;
+        if (section == INBOX) {
+            inboxOldestFirst = !inboxOldestFirst;
+            inboxShown = 12;
+        } else {
+            scheduleOldestFirst = !scheduleOldestFirst;
+            schedulePage = 0;
+        }
         refreshOrderToggle();
         updateResultsWithEntrance();
     }
 
     /** A compact keyword field for the two browsable lists; typing only re-renders the results. */
     private EditText buildSearchField() {
+        final int ownerSection = section;
         EditText field = new EditText(this);
         field.setSingleLine(true);
         field.setHint(section == INBOX ? "搜索收件" : "搜索日程");
@@ -918,9 +956,17 @@ public final class DashboardActivity extends Activity {
             @Override public void onTextChanged(CharSequence value, int a, int b, int c) { }
             @Override public void afterTextChanged(Editable value) {
                 String keyword = value.toString();
-                if (section == INBOX) inboxQuery = keyword; else scheduleQuery = keyword;
-                inboxShown = 12;
-                schedulePage = 0;
+                if (ownerSection == INBOX) {
+                    inboxQuery = keyword;
+                    inboxShown = 12;
+                } else {
+                    scheduleQuery = keyword;
+                    schedulePage = 0;
+                }
+                if (section != ownerSection) {
+                    dirtySections.add(ownerSection);
+                    return;
+                }
                 updateResults();
                 scroll.scrollTo(0, 0);
             }
@@ -1585,6 +1631,7 @@ public final class DashboardActivity extends Activity {
             message(results, "暂时无法读取日程：" + exception.getMessage());
         }
         scroll.scrollTo(0, previous);
+        rememberRenderedPage();
     }
 
     private void updateChipSelection(int selected) {
@@ -1756,11 +1803,12 @@ public final class DashboardActivity extends Activity {
             selectionBar.animate().alpha(1f).translationY(0f).setDuration(170).start();
         } else if (!active && wasVisible
                 && android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            selectionBar.animate().alpha(0f).translationY(-dp(4)).setDuration(120)
+            LinearLayout outgoingBar = selectionBar;
+            outgoingBar.animate().alpha(0f).translationY(-dp(4)).setDuration(120)
                     .withEndAction(() -> {
-                        selectionBar.setVisibility(View.GONE);
-                        selectionBar.setAlpha(1f);
-                        selectionBar.setTranslationY(0f);
+                        outgoingBar.setVisibility(View.GONE);
+                        outgoingBar.setAlpha(1f);
+                        outgoingBar.setTranslationY(0f);
                     }).start();
         } else {
             selectionBar.setAlpha(1f);
@@ -2078,14 +2126,16 @@ public final class DashboardActivity extends Activity {
     }
 
     private void switchTo(int destination) {
-        if (destination == section) return;
-        clearCurrentSelection();
-        section = destination;
-        updateSelectionBack();
-        UiStyle.swap(content, () -> {
-            render();
-            scroll.scrollTo(0, 0);
-        });
+        if (destination == section || destination < HOME || destination > SCHEDULE
+                || pageTransitionRunning || dragTargetLoaded) return;
+        sectionPagerListener.onStart();
+        dragDirection = destination > section ? 1 : -1;
+        adjacentPage = buildAdjacentSection(destination);
+        float width = sectionPageWidth();
+        adjacentPage.scroll.setTranslationX(dragDirection > 0 ? width : -width);
+        pager.addView(adjacentPage.scroll, 1, new FrameLayout.LayoutParams(-1, -1));
+        dragTargetLoaded = true;
+        finishSectionDrag(true, width);
     }
 
     private LinearLayout card() {
