@@ -1061,8 +1061,11 @@ public final class DashboardActivity extends Activity {
             LocalDate date = timelineDate(entry, today, zone);
             byDate.computeIfAbsent(date, ignored -> new ArrayList<>()).add(entry);
         }
-        for (Map.Entry<LocalDate, List<HomeTimelineEntry>> day : byDate.entrySet())
-            timelineDay(timelineDayTitle(day.getKey(), today), day.getKey(), day.getValue());
+        boolean firstDay = true;
+        for (Map.Entry<LocalDate, List<HomeTimelineEntry>> day : byDate.entrySet()) {
+            timelineDay(timelineDayTitle(day.getKey(), today), day.getKey(), day.getValue(), firstDay);
+            firstDay = false;
+        }
     }
 
     private void showUpcomingCarousel(List<HomeTimelineEntry> upcoming) {
@@ -1087,7 +1090,15 @@ public final class DashboardActivity extends Activity {
             for (HomeTimelineEntry entry : upcoming) {
                 LinearLayout item = card();
                 item.setPadding(dp(14), dp(12), dp(14), dp(12));
-                addScheduleCardContent(item, entry.candidate, entry.systemEvent, true, true, null);
+                TextView title = text(entry.title(), 16, true);
+                title.setIncludeFontPadding(false);
+                title.setMinLines(2);
+                title.setMaxLines(2);
+                title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                item.addView(title);
+                UiStyle.addSpaced(item, scheduleAttribute(R.drawable.ic_schedule,
+                        homeCardBoundary(entry.candidate, entry.systemEvent, false, true),
+                        "时间", 14, 1, false), 6, 0);
                 item.setOnClickListener(view -> openHomeEntry(entry));
                 UiStyle.pressable(item);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(240), -2);
@@ -1668,15 +1679,8 @@ public final class DashboardActivity extends Activity {
                     "时间", 14, 2, false), 6, 0);
         }
         if (location != null && !location.trim().isEmpty()) {
-            if (home) {
-                TextView place = text(location.trim(), 14, false);
-                place.setIncludeFontPadding(false);
-                place.setMaxLines(2);
-                place.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                place.setContentDescription("地点：" + location.trim());
-                UiStyle.addSpaced(body, place, 8, 0);
-            } else UiStyle.addSpaced(body, scheduleAttribute(R.drawable.ic_place, location.trim(),
-                    "地点", 14, 2, false), 6, 0);
+            UiStyle.addSpaced(body, scheduleAttribute(R.drawable.ic_place, location.trim(),
+                    "地点", 14, 2, false), home ? 8 : 6, 0);
         }
         if (home) {
             addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, true, showTime),
@@ -1739,13 +1743,10 @@ public final class DashboardActivity extends Activity {
     }
 
     private void addHomeTimeNode(LinearLayout body, FrameLayout interval, String value, String label) {
-        TextView caption = text(value, 14, false);
-        caption.setTextColor(UiStyle.colors(this).text);
-        caption.setIncludeFontPadding(false);
-        caption.setMaxLines(2);
-        caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        caption.setContentDescription(label + "：" + value);
-        UiStyle.addSpaced(body, caption, 8, 0);
+        LinearLayout timeRow = scheduleAttribute("起始时间".equals(label)
+                ? R.drawable.ic_time_start : R.drawable.ic_time_end, value, label, 14, 2, false);
+        TextView caption = (TextView) timeRow.getChildAt(1);
+        UiStyle.addSpaced(body, timeRow, 8, 0);
         View dot = new View(this);
         dot.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         GradientDrawable circle = new GradientDrawable();
@@ -1757,10 +1758,10 @@ public final class DashboardActivity extends Activity {
         params.leftMargin = dp(HOME_CARD_RAIL_CENTER_DP) - dp(HOME_CARD_TIME_DOT_DP) / 2;
         interval.addView(dot, params);
         // Compute the first-line center after layout; this also follows Android font scaling.
-        caption.addOnLayoutChangeListener((view, left, top, right, bottom,
+        timeRow.addOnLayoutChangeListener((view, left, top, right, bottom,
                 oldLeft, oldTop, oldRight, oldBottom) -> {
             android.graphics.Paint.FontMetricsInt metrics = caption.getPaint().getFontMetricsInt();
-            int center = body.getTop() + caption.getTop() + caption.getBaseline()
+            int center = body.getTop() + timeRow.getTop() + caption.getTop() + caption.getBaseline()
                     + (metrics.ascent + metrics.descent) / 2;
             int dotTop = center - dp(HOME_CARD_TIME_DOT_DP) / 2;
             FrameLayout.LayoutParams current = (FrameLayout.LayoutParams) dot.getLayoutParams();
@@ -2414,15 +2415,37 @@ public final class DashboardActivity extends Activity {
         return item.endAtMillis > now;
     }
 
-    private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries) {
+    private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries, boolean firstDay) {
         if (entries.isEmpty()) return;
-        FrameLayout dayGroup = new FrameLayout(this);
+        List<View> dayCards = new ArrayList<>();
+        View[] dateNode = new View[1];
+        android.graphics.Paint railPaint = new android.graphics.Paint();
+        railPaint.setColor(UiStyle.colors(this).outline);
+        FrameLayout dayGroup = new FrameLayout(this) {
+            @Override protected void dispatchDraw(android.graphics.Canvas canvas) {
+                // Card interiors draw the same rail. Only draw the gaps here, so translucent
+                // surfaces never receive a duplicate line underneath their own line.
+                android.graphics.Rect bounds = new android.graphics.Rect();
+                int previousBottom = 0;
+                if (dateNode[0] != null && firstDay) {
+                    bounds.set(0, 0, dateNode[0].getWidth(), dateNode[0].getHeight());
+                    offsetDescendantRectToMyCoords(dateNode[0], bounds);
+                    previousBottom = bounds.centerY();
+                }
+                for (View item : dayCards) {
+                    bounds.set(0, 0, item.getWidth(), item.getHeight());
+                    offsetDescendantRectToMyCoords(item, bounds);
+                    canvas.drawRect(dp(HOME_CARD_RAIL_CENTER_DP - 1), previousBottom,
+                            dp(HOME_CARD_RAIL_CENTER_DP + 1), bounds.top, railPaint);
+                    previousBottom = bounds.bottom;
+                }
+                canvas.drawRect(dp(HOME_CARD_RAIL_CENTER_DP - 1), previousBottom,
+                        dp(HOME_CARD_RAIL_CENTER_DP + 1), getHeight(), railPaint);
+                super.dispatchDraw(canvas);
+            }
+        };
         LinearLayout dayContent = new LinearLayout(this);
         dayContent.setOrientation(LinearLayout.VERTICAL);
-        View dateToFirstEntry = new View(this);
-        dateToFirstEntry.setBackgroundColor(UiStyle.colors(this).outline);
-        dayGroup.addView(dateToFirstEntry, new FrameLayout.LayoutParams(dp(2), 0,
-                Gravity.TOP | Gravity.LEFT));
         dayGroup.addView(dayContent, new FrameLayout.LayoutParams(-1, -2));
 
         LinearLayout heading = new LinearLayout(this);
@@ -2433,13 +2456,16 @@ public final class DashboardActivity extends Activity {
         markerShape.setShape(GradientDrawable.OVAL);
         markerShape.setColor(UiStyle.colors(this).primary);
         marker.setBackground(markerShape);
+        dateNode[0] = marker;
         markerSlot.addView(marker, new FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER));
-        heading.addView(markerSlot, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        heading.addView(markerSlot, new LinearLayout.LayoutParams(dp(48), dp(18)));
         TextView label = text(title, 17, true);
+        label.setIncludeFontPadding(false);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
-        labelParams.setMargins(dp(6), 0, dp(8), 0);
+        labelParams.setMargins(0, 0, dp(8), 0);
         heading.addView(label, labelParams);
         TextView dateLabel = text(date.getMonthValue() + "月" + date.getDayOfMonth() + "日", 15, false);
+        dateLabel.setIncludeFontPadding(false);
         heading.addView(dateLabel);
         View divider = new View(this);
         divider.setBackgroundColor(UiStyle.colors(this).outline);
@@ -2450,86 +2476,19 @@ public final class DashboardActivity extends Activity {
 
         LinearLayout dayRows = new LinearLayout(this);
         dayRows.setOrientation(LinearLayout.VERTICAL);
-        View firstEventMarker = null;
         for (int i = 0; i < entries.size(); i++) {
             HomeTimelineEntry entry = entries.get(i);
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.TOP);
-            FrameLayout rail = new FrameLayout(this);
-            LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(dp(18), -1);
-            railParams.setMargins(0, 0, dp(8), 0);
-            row.addView(rail, railParams);
-            if (entries.size() > 1) {
-                View line = new View(this);
-                line.setBackgroundColor(UiStyle.colors(this).outline);
-                FrameLayout.LayoutParams lineParams = new FrameLayout.LayoutParams(dp(2), -1,
-                        Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-                int nodeCenter = 28;
-                if (i == 0) {
-                    lineParams.topMargin = dp(nodeCenter);
-                } else if (i == entries.size() - 1) {
-                    lineParams.height = dp(nodeCenter);
-                }
-                rail.addView(line, lineParams);
-            }
-            View dot = new View(this);
-            GradientDrawable dotShape = new GradientDrawable();
-            dotShape.setShape(GradientDrawable.OVAL);
-            dotShape.setColor(UiStyle.colors(this).primary);
-            dot.setBackground(dotShape);
-            FrameLayout.LayoutParams dotParams = new FrameLayout.LayoutParams(dp(8), dp(8),
-                    Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-            dotParams.topMargin = dp(24);
-            rail.addView(dot, dotParams);
-            if (i == 0) firstEventMarker = dot;
-
             LinearLayout itemCard = card();
-            itemCard.setPadding(dp(14), dp(12), dp(14), dp(12));
             addScheduleCardContent(itemCard, entry.candidate, entry.systemEvent, false, true, null);
             itemCard.setOnClickListener(view -> openHomeEntry(entry));
             UiStyle.pressable(itemCard);
-            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1);
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
             cardParams.setMargins(0, dp(4), 0, dp(4));
-            row.addView(itemCard, cardParams);
-            dayRows.addView(row, new LinearLayout.LayoutParams(-1, -2));
+            dayRows.addView(itemCard, cardParams);
+            dayCards.add(itemCard);
         }
         UiStyle.addSpaced(dayContent, dayRows, 2, 7);
         UiStyle.addSpaced(content, dayGroup, 0, 0);
-        if (firstEventMarker != null)
-            connectTimelineMarkers(dayGroup, marker, firstEventMarker, dateToFirstEntry);
-    }
-
-    private void connectTimelineMarkers(FrameLayout container, View start, View end, View line) {
-        container.getViewTreeObserver().addOnPreDrawListener(
-                new android.view.ViewTreeObserver.OnPreDrawListener() {
-                    @Override public boolean onPreDraw() {
-                        if (container.getWidth() == 0 || start.getWidth() == 0 || end.getWidth() == 0)
-                            return true;
-                        int[] containerLocation = new int[2];
-                        int[] startLocation = new int[2];
-                        int[] endLocation = new int[2];
-                        container.getLocationOnScreen(containerLocation);
-                        start.getLocationOnScreen(startLocation);
-                        end.getLocationOnScreen(endLocation);
-                        int left = startLocation[0] - containerLocation[0]
-                                + start.getWidth() / 2 - dp(1);
-                        int top = startLocation[1] - containerLocation[1]
-                                + start.getHeight() / 2;
-                        int bottom = endLocation[1] - containerLocation[1]
-                                + end.getHeight() / 2;
-                        int height = Math.max(0, bottom - top);
-                        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) line.getLayoutParams();
-                        if (params.leftMargin != left || params.topMargin != top || params.height != height) {
-                            params.leftMargin = left;
-                            params.topMargin = top;
-                            params.height = height;
-                            line.setLayoutParams(params);
-                            return false;
-                        }
-                        container.getViewTreeObserver().removeOnPreDrawListener(this);
-                        return true;
-                    }
-                });
     }
 
     private void sectionHeading(String title, String action, int destination) {
