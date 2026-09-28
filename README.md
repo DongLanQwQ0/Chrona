@@ -2,7 +2,7 @@
 
 独立 Android 日程应用。首版闭环是：输入文字或通过系统分享文字 → 后台调用用户配置的 AI 服务 → 在应用内审核、修改日程草稿 → 写入专属的本地系统日历并由系统提醒。
 
-当前版本：`0.13.39`。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。AI 链路、缓存策略和验证边界见 [docs/ai-pipeline.md](docs/ai-pipeline.md)，自绘日期时间选择器见 [docs/date-time-picker.md](docs/date-time-picker.md)，首页系统日历合并见 [docs/system-calendar-home.md](docs/system-calendar-home.md)。
+当前版本：`0.13.40`。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。AI 链路、缓存策略和验证边界见 [docs/ai-pipeline.md](docs/ai-pipeline.md)，自绘日期时间选择器见 [docs/date-time-picker.md](docs/date-time-picker.md)，首页系统日历合并见 [docs/system-calendar-home.md](docs/system-calendar-home.md)，列表筛选动画见 [docs/list-entry-animation.md](docs/list-entry-animation.md)。
 
 ## 当前功能
 

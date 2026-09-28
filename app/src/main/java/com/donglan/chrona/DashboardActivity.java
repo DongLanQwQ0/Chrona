@@ -156,8 +156,6 @@ public final class DashboardActivity extends Activity {
     private boolean wide;
     /** Cards stagger in only for a screen the user just opened, never for a rebuild. */
     private boolean animateEntrances;
-    /** Only a deliberate inbox status-filter change animates the newly shown task rows. */
-    private boolean animateInboxFilterResults;
     private String snapshot = "";
     private int restoredScrollY;
     private List<ElapsedLabel> elapsedLabels = new ArrayList<>();
@@ -850,7 +848,7 @@ public final class DashboardActivity extends Activity {
         inboxShown = 12;
         scheduleShown = 12;
         refreshOrderToggle();
-        updateResults();
+        updateResultsWithEntrance();
     }
 
     /** A compact keyword field for the two browsable lists; typing only re-renders the results. */
@@ -1053,9 +1051,8 @@ public final class DashboardActivity extends Activity {
                     clearInboxSelection();
                     statusIndex = index;
                     inboxShown = 12;
-                    animateInboxFilterResults = true;
                     updateChipSelection(statusIndex);
-                    updateResults();
+                    updateResultsWithEntrance();
                 }, inboxCategoryButton(),
                 new int[]{0, pendingReview, 0, pendingFailed, 0});
         buildSelectionBar();
@@ -1101,15 +1098,13 @@ public final class DashboardActivity extends Activity {
                         ? UiStyle.colors(this).muted : UiStyle.colors(this).primary));
                 applyThemeControlSurface(categoryChip, categoryIndex > 0,
                         UiStyle.RADIUS_PILL);
-                updateResults();
+                updateResultsWithEntrance();
             });
         });
         return category;
     }
 
     private void renderInboxResults(TaskStore store) {
-        boolean animateRows = animateInboxFilterResults;
-        animateInboxFilterResults = false;
         results.removeAllViews();
         elapsedLabels.clear();
         inboxRows.clear();
@@ -1150,7 +1145,6 @@ public final class DashboardActivity extends Activity {
                     false, () -> { inboxShown += 12; updateResults(); });
             UiStyle.addSpaced(results, more, 8, 0);
         }
-        if (animateRows) animateInboxFilterRows();
     }
 
     private Button inboxSelectionAction(String label, Runnable action) {
@@ -1193,20 +1187,32 @@ public final class DashboardActivity extends Activity {
         UiStyle.addSpaced(results, heading, 16, 9);
     }
 
-    private void animateInboxFilterRows() {
+    /** User-driven filter/order changes animate cards, while polling remains still. */
+    private void updateResultsWithEntrance() {
+        updateResults();
+        animateResultRows();
+    }
+
+    private void animateResultRows() {
         if (!android.animation.ValueAnimator.areAnimatorsEnabled()) return;
         int index = 0;
         for (InboxRow row : inboxRows.values()) {
-            View card = row.card;
-            card.animate().cancel();
-            card.setAlpha(0f);
-            card.setTranslationY(dp(7));
-            card.animate().alpha(1f).translationY(0f)
-                    .setStartDelay(Math.min(index++, 7) * 24L)
-                    .setDuration(180L)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                    .start();
+            animateResultCard(row.card, index++);
         }
+        // Empty-state cards enter too; keep the count and selection controls stationary.
+        if (inboxRows.isEmpty() && results != null && results.getChildCount() > 1)
+            animateResultCard(results.getChildAt(1), 0);
+    }
+
+    private void animateResultCard(View card, int index) {
+        card.animate().cancel();
+        card.setAlpha(0f);
+        card.setTranslationY(dp(7));
+        card.animate().alpha(1f).translationY(0f)
+                .setStartDelay(Math.min(index, 7) * 24L)
+                .setDuration(180L)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .start();
     }
 
     private void schedule(TaskStore store) {
@@ -1216,7 +1222,7 @@ public final class DashboardActivity extends Activity {
             scheduleTab = index;
             scheduleShown = 12;
             updateChipSelection(scheduleTab);
-            updateResults();
+            updateResultsWithEntrance();
         });
         buildSelectionBar();
         results = new LinearLayout(this);
