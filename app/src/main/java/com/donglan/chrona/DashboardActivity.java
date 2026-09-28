@@ -23,6 +23,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -1085,11 +1086,7 @@ public final class DashboardActivity extends Activity {
             for (HomeTimelineEntry entry : upcoming) {
                 LinearLayout item = card();
                 item.setPadding(dp(14), dp(12), dp(14), dp(12));
-                TextView title = text(entry.title(), 15, true);
-                title.setMaxLines(2);
-                title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                item.addView(title);
-                UiStyle.addSpaced(item, text(homeEntryWhen(entry), 12, false), 7, 0);
+                addScheduleCardContent(item, entry.candidate, entry.systemEvent, true, true, null);
                 item.setOnClickListener(view -> openHomeEntry(entry));
                 UiStyle.pressable(item);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(240), -2);
@@ -1546,9 +1543,7 @@ public final class DashboardActivity extends Activity {
             String date = AllDayDates.localDate(event.displayStart(zone), zone);
             if (!day.equals(date)) { scheduleDayHeading(date); day = date; }
             LinearLayout item = card();
-            item.addView(text(event.title, 17, true));
-            UiStyle.addSpaced(item, text(homeEntryWhen(new HomeTimelineEntry(event))
-                    + (event.location.isEmpty() ? "" : " · " + event.location), 13, false), 6, 0);
+            addScheduleCardContent(item, null, event, true, false, null);
             item.setOnClickListener(view -> openHomeEntry(new HomeTimelineEntry(event)));
             UiStyle.pressable(item);
             UiStyle.addSpaced(results, item, 4, 7);
@@ -1590,21 +1585,10 @@ public final class DashboardActivity extends Activity {
 
     private void candidateRow(LinearLayout parent, EventCandidate item, int index) {
         LinearLayout card = card();
-        TextView title = text(item.title, 17, true);
-        title.setMaxLines(2);
-        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         boolean selectable = section == SCHEDULE && parent == results;
         TextView marker = text("○", 22, false);
         marker.setGravity(Gravity.CENTER);
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        if (selectable) titleRow.addView(marker, new LinearLayout.LayoutParams(dp(34), dp(34)));
-        card.addView(titleRow);
-        String when = item.startAtMillis == null ? "时间待补全" : formatWhen(item);
-        TextView meta = text(EventCategory.label(item.category) + " · " + when
-                + (item.calendarEventId == null ? " · 待确认" : " · 已写入"), 13, false);
-        UiStyle.addSpaced(card, meta, 6, 0);
+        addScheduleCardContent(card, item, null, true, false, selectable ? marker : null);
         if (selectable) {
             inboxRows.put(item.id, new InboxRow(card, marker));
             card.setOnLongClickListener(view -> {
@@ -1622,6 +1606,109 @@ public final class DashboardActivity extends Activity {
         } else card.setOnClickListener(view -> openTask(item.taskId));
         UiStyle.pressable(card);
         UiStyle.addSpaced(parent, card, 4, 7);
+    }
+
+    /** Shared hierarchy for the timeline, upcoming strip and schedule results. */
+    private void addScheduleCardContent(LinearLayout card, EventCandidate candidate,
+            CalendarOccurrence systemEvent, boolean showTime, boolean home, TextView selection) {
+        String category = candidate == null ? EventCategory.EVENT : candidate.category;
+        String titleText = candidate == null ? systemEvent.title : candidate.title;
+        String location = candidate == null ? systemEvent.location : candidate.location;
+        String source = candidate == null ? systemEvent.calendarName : "拾时";
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = text(titleText, home ? 16 : 17, true);
+        title.setIncludeFontPadding(false);
+        title.setMaxLines(2);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        if (!home) {
+            LinearLayout type = scheduleAttribute(categoryIcon(category),
+                    EventCategory.label(category), "类型", 12, 1, true);
+            LinearLayout.LayoutParams typeParams = new LinearLayout.LayoutParams(-2, -2);
+            typeParams.leftMargin = dp(8);
+            heading.addView(type, typeParams);
+        }
+        if (selection != null) heading.addView(selection,
+                new LinearLayout.LayoutParams(dp(34), dp(34)));
+        card.addView(heading);
+
+        if (showTime) {
+            String when = candidate == null ? homeEntryWhen(new HomeTimelineEntry(systemEvent))
+                    : candidate.startAtMillis == null ? "时间待补全" : formatWhen(candidate);
+            UiStyle.addSpaced(card, scheduleAttribute(R.drawable.ic_schedule, when,
+                    "时间", 14, 2, false), 6, 0);
+        }
+        if (location != null && !location.trim().isEmpty()) {
+            UiStyle.addSpaced(card, scheduleAttribute(R.drawable.ic_place, location.trim(),
+                    "地点", 14, 2, false), 6, 0);
+        }
+
+        LinearLayout footer = new LinearLayout(this);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        if (home) {
+            footer.addView(scheduleAttribute(categoryIcon(category), EventCategory.label(category),
+                    "类型", 13, 1, true), new LinearLayout.LayoutParams(-2, -2));
+        }
+        if (source != null && !source.trim().isEmpty()) {
+            LinearLayout.LayoutParams sourceParams = new LinearLayout.LayoutParams(0, -2, 1);
+            sourceParams.leftMargin = home ? dp(10) : 0;
+            footer.addView(scheduleAttribute(candidate == null ? R.drawable.ic_calendar_source
+                    : R.drawable.ic_inbox_outline, source.trim(), "来源", home ? 13 : 12, 1, false),
+                    sourceParams);
+        } else {
+            footer.addView(new View(this), new LinearLayout.LayoutParams(0, 0, 1));
+        }
+        // A published item is settled even if its original AI uncertainty flag remains set.
+        boolean written = candidate == null || candidate.calendarEventId != null;
+        boolean confirmation = candidate != null && !written && candidate.needsConfirmation;
+        if (!home || confirmation) {
+            String status = written ? "已写入" : confirmation ? "待确认" : "未写入";
+            LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
+            statusParams.leftMargin = dp(8);
+            footer.addView(scheduleAttribute(written ? R.drawable.ic_check
+                    : R.drawable.ic_help_outline, status, "日历状态", 12, 1, confirmation), statusParams);
+        }
+        UiStyle.addSpaced(card, footer, 8, 0);
+    }
+
+    private int categoryIcon(String category) {
+        switch (category) {
+            case EventCategory.TASK: return R.drawable.ic_content_paste;
+            case EventCategory.REMINDER: return R.drawable.ic_notifications;
+            case EventCategory.DEADLINE: return R.drawable.ic_schedule;
+            case EventCategory.NOTE: return R.drawable.ic_notes;
+            default: return R.drawable.ic_event;
+        }
+    }
+
+    /** Explicit vector bounds avoid intrinsic-size differences and font baseline offsets. */
+    private LinearLayout scheduleAttribute(int resource, String value, String label,
+            int textSize, int maxLines, boolean emphasized) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(maxLines == 1 ? Gravity.CENTER_VERTICAL : Gravity.TOP);
+        TextView caption = text(value, textSize, false);
+        caption.setIncludeFontPadding(false);
+        caption.setMaxLines(maxLines);
+        caption.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        caption.setTextColor(emphasized ? UiStyle.colors(this).primary
+                : textSize >= 14 ? UiStyle.colors(this).text : UiStyle.colors(this).muted);
+        caption.setContentDescription(label + "：" + value);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(resource);
+        icon.setImageTintList(ColorStateList.valueOf(emphasized
+                ? UiStyle.colors(this).primary : UiStyle.colors(this).muted));
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        icon.setPadding(0, 0, 0, 0);
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(18), dp(18));
+        iconParams.rightMargin = dp(6);
+        if (maxLines > 1) iconParams.topMargin = Math.max(0, (caption.getLineHeight() - dp(18)) / 2);
+        row.addView(icon, iconParams);
+        row.addView(caption, new LinearLayout.LayoutParams(-2, -2));
+        return row;
     }
 
     private void taskRow(LinearLayout parent, TaskRecord task, int index) {
@@ -2310,17 +2397,7 @@ public final class DashboardActivity extends Activity {
 
             LinearLayout itemCard = card();
             itemCard.setPadding(dp(14), dp(12), dp(14), dp(12));
-            String headline = entry.title();
-            TextView headlineView = text(headline, 15, true);
-            headlineView.setMaxLines(2);
-            headlineView.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            itemCard.addView(headlineView);
-            String location = entry.candidate != null ? entry.candidate.location : entry.systemEvent.location;
-            String metadata = entry.candidate != null ? EventCategory.label(entry.candidate.category)
-                    : entry.systemEvent.calendarName;
-            if (location != null && !location.trim().isEmpty())
-                metadata += (metadata.isEmpty() ? "" : " · ") + location;
-            if (!metadata.isEmpty()) UiStyle.addSpaced(itemCard, text(metadata, 12, false), 4, 0);
+            addScheduleCardContent(itemCard, entry.candidate, entry.systemEvent, false, true, null);
             itemCard.setOnClickListener(view -> openHomeEntry(entry));
             UiStyle.pressable(itemCard);
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, -2, 1);
