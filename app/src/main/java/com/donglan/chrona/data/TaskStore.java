@@ -393,6 +393,39 @@ public final class TaskStore extends SQLiteOpenHelper {
         }
     }
 
+    /** Scan IDs only; text columns are read only when a keyword search needs them. */
+    public List<Long> queryInboxIds(InboxQuery query, boolean oldestFirst) {
+        List<Long> ids = new ArrayList<>();
+        String[] columns = query.keyword.isEmpty() ? new String[]{"id"}
+                : new String[]{"id", "raw_text", "link_text"};
+        try (Cursor cursor = getReadableDatabase().query("tasks", columns, query.selection,
+                query.arguments, null, null, query.orderBy(oldestFirst))) {
+            while (cursor.moveToNext()) {
+                if (query.keyword.isEmpty() || query.matchesSearch(cursor.getString(1), cursor.getString(2)))
+                    ids.add(cursor.getLong(0));
+            }
+        }
+        return ids;
+    }
+
+    /** Fetch only the page IDs; counts/full-filter selection never materialize every TaskRecord. */
+    public List<TaskRecord> queryInboxPage(InboxQuery query, boolean oldestFirst,
+            int page, List<Long> matchingIds) {
+        List<TaskRecord> tasks = new ArrayList<>();
+        long offset = (long) Math.max(0, page) * InboxQuery.PAGE_SIZE;
+        if (offset >= matchingIds.size()) return tasks;
+        int end = (int) Math.min(offset + InboxQuery.PAGE_SIZE, matchingIds.size());
+        List<String> ids = new ArrayList<>();
+        for (int i = (int) offset; i < end; i++) ids.add(Long.toString(matchingIds.get(i)));
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        try (Cursor cursor = getReadableDatabase().query("tasks", null, "id IN (" + placeholders + ")",
+                ids.toArray(new String[0]), null, null, query.orderBy(oldestFirst),
+                Integer.toString(InboxQuery.PAGE_SIZE))) {
+            while (cursor.moveToNext()) tasks.add(readTask(cursor));
+        }
+        return tasks;
+    }
+
     /** Returns newest inputs first, breaking equal timestamps by database ID. */
     public List<TaskRecord> listTasks() {
         List<TaskRecord> tasks = new ArrayList<>();

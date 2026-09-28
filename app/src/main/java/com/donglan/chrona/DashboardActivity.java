@@ -36,6 +36,7 @@ import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.data.ScheduleQuery;
+import com.donglan.chrona.data.InboxQuery;
 import com.donglan.chrona.processing.ProcessingJobService;
 import com.donglan.chrona.processing.StreamingOutputStore;
 import com.donglan.chrona.image.ImageStore;
@@ -117,7 +118,10 @@ public final class DashboardActivity extends Activity {
     private LocalDate scheduleDate = LocalDate.now(), scheduleUntil = LocalDate.now();
     private LinearLayout scheduleControls;
     private boolean calendarPermissionForSchedule;
-    private int inboxShown = 12;
+    private int inboxPage;
+    private String inboxIdCacheKey = "";
+    private long inboxIdCacheRevision = -1;
+    private List<Long> inboxIdCache = new ArrayList<>();
     /** The two browsable lists keep their own keyword and time direction. */
     private String inboxQuery = "";
     private String scheduleQuery = "";
@@ -200,7 +204,8 @@ public final class DashboardActivity extends Activity {
             scheduleSource = state.getInt("schedule_source");
             scheduleDate = LocalDate.parse(state.getString("schedule_date", LocalDate.now().toString()));
             scheduleUntil = LocalDate.parse(state.getString("schedule_until", scheduleDate.toString()));
-            inboxShown = state.getInt("inbox_shown", 12);
+            inboxPage = Math.max(0, state.getInt("inbox_page",
+                    state.getInt("inbox_shown", 12) / InboxQuery.PAGE_SIZE - 1));
             calendarPermissionForSchedule = state.getBoolean("schedule_permission_pending");
             inboxQuery = state.getString("inbox_query", "");
             scheduleQuery = state.getString("schedule_query", "");
@@ -237,7 +242,7 @@ public final class DashboardActivity extends Activity {
         state.putInt("schedule_source", scheduleSource);
         state.putString("schedule_date", scheduleDate.toString());
         state.putString("schedule_until", scheduleUntil.toString());
-        state.putInt("inbox_shown", inboxShown);
+        state.putInt("inbox_page", inboxPage);
         state.putBoolean("schedule_permission_pending", calendarPermissionForSchedule);
         state.putString("inbox_query", inboxQuery);
         state.putString("schedule_query", scheduleQuery);
@@ -926,7 +931,7 @@ public final class DashboardActivity extends Activity {
     private void toggleOrder() {
         if (section == INBOX) {
             inboxOldestFirst = !inboxOldestFirst;
-            inboxShown = 12;
+            inboxPage = 0;
         } else {
             scheduleOldestFirst = !scheduleOldestFirst;
             schedulePage = 0;
@@ -960,7 +965,7 @@ public final class DashboardActivity extends Activity {
                 String keyword = value.toString();
                 if (ownerSection == INBOX) {
                     inboxQuery = keyword;
-                    inboxShown = 12;
+                    inboxPage = 0;
                 } else {
                     scheduleQuery = keyword;
                     schedulePage = 0;
@@ -993,10 +998,6 @@ public final class DashboardActivity extends Activity {
 
     private static boolean containsQuery(String value, String query) {
         return value != null && value.toLowerCase(Locale.ROOT).contains(query);
-    }
-
-    private static boolean matchesQuery(TaskRecord task, String query) {
-        return containsQuery(task.rawText, query) || containsQuery(task.linkText, query);
     }
 
     private void home(TaskStore store) {
@@ -1061,10 +1062,8 @@ public final class DashboardActivity extends Activity {
             LocalDate date = timelineDate(entry, today, zone);
             byDate.computeIfAbsent(date, ignored -> new ArrayList<>()).add(entry);
         }
-        boolean firstDay = true;
         for (Map.Entry<LocalDate, List<HomeTimelineEntry>> day : byDate.entrySet()) {
-            timelineDay(timelineDayTitle(day.getKey(), today), day.getKey(), day.getValue(), firstDay);
-            firstDay = false;
+            timelineDay(timelineDayTitle(day.getKey(), today), day.getKey(), day.getValue());
         }
     }
 
@@ -1142,7 +1141,7 @@ public final class DashboardActivity extends Activity {
                     if (statusIndex == index) return;
                     clearInboxSelection();
                     statusIndex = index;
-                    inboxShown = 12;
+                    inboxPage = 0;
                     updateChipSelection(statusIndex);
                     updateResultsWithEntrance();
                 }, inboxCategoryButton(),
@@ -1184,7 +1183,7 @@ public final class DashboardActivity extends Activity {
                 if (categoryIndex == selected) return;
                 clearInboxSelection();
                 categoryIndex = selected;
-                inboxShown = 12;
+                inboxPage = 0;
                 categoryChip.setContentDescription("类型筛选：" + choices[categoryIndex]);
                 categoryChip.setImageTintList(ColorStateList.valueOf(categoryIndex == 0
                         ? UiStyle.colors(this).muted : UiStyle.colors(this).primary));
@@ -1202,23 +1201,23 @@ public final class DashboardActivity extends Activity {
         inboxRows.clear();
         String selectedCategory = categoryIndex == 0 ? null
                 : EventCategory.VALUES[categoryIndex - 1];
-        List<TaskRecord> tasks = statusIndex == 4
-                ? store.listPublishedTasks(selectedCategory)
-                : selectedCategory == null ? store.listTasks()
-                        : store.listTasksByCategory(selectedCategory);
-        String query = normalizedQuery(inboxQuery);
-        List<TaskRecord> visible = new ArrayList<>();
-        for (TaskRecord task : tasks)
-            if (matches(task) && (query.isEmpty() || matchesQuery(task, query))) visible.add(task);
-        // The store hands the newest input back first; the toggle asks for the other direction.
-        if (inboxOldestFirst) java.util.Collections.reverse(visible);
-        matchingInboxIds = new ArrayList<>();
-        for (TaskRecord task : visible) matchingInboxIds.add(task.id);
+        InboxQuery query = new InboxQuery(statusIndex, selectedCategory, inboxQuery);
+        String key = statusIndex + ":" + categoryIndex + ":" + inboxOldestFirst + ":" + query.keyword;
+        long revision = store.dataRevision();
+        if (!key.equals(inboxIdCacheKey) || revision != inboxIdCacheRevision) {
+            inboxIdCache = store.queryInboxIds(query, inboxOldestFirst);
+            inboxIdCacheKey = key;
+            inboxIdCacheRevision = revision;
+        }
+        matchingInboxIds = inboxIdCache;
+        int total = matchingInboxIds.size();
+        inboxPage = Math.min(inboxPage, Math.max(0, (total - 1) / InboxQuery.PAGE_SIZE));
+        List<TaskRecord> visible = store.queryInboxPage(query, inboxOldestFirst, inboxPage, matchingInboxIds);
         selectedInboxIds.retainAll(matchingInboxIds);
-        addInboxResultsHeading(visible.size());
+        addInboxResultsHeading(total);
         updateSelectionUi();
         if (visible.isEmpty()) {
-            if (!query.isEmpty()) {
+            if (!query.keyword.isEmpty()) {
                 empty(results, "没有匹配「" + inboxQuery.trim() + "」的收件。");
             } else {
                 LinearLayout emptyCard = card();
@@ -1230,13 +1229,44 @@ public final class DashboardActivity extends Activity {
                 UiStyle.addSpaced(results, emptyCard, 3, 8);
             }
         }
-        for (int i = 0; i < Math.min(inboxShown, visible.size()); i++)
+        for (int i = 0; i < visible.size(); i++)
             taskRow(results, visible.get(i), i);
-        if (visible.size() > inboxShown) {
-            Button more = button("继续浏览 · 还有 " + (visible.size() - inboxShown) + " 条",
-                    false, () -> { inboxShown += 12; updateResults(); });
-            UiStyle.addSpaced(results, more, 8, 0);
-        }
+        inboxPageControls(total);
+    }
+
+    private void inboxPageControls(int total) {
+        if (total <= InboxQuery.PAGE_SIZE) return;
+        int pages = (total + InboxQuery.PAGE_SIZE - 1) / InboxQuery.PAGE_SIZE;
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        Button previous = inboxPageArrow(R.drawable.ic_chevron_left, () -> changeInboxPage(-1));
+        previous.setContentDescription("上一页收件");
+        previous.setEnabled(inboxPage > 0);
+        row.addView(previous, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        TextView label = text((inboxPage + 1) + " / " + pages, 13, false);
+        label.setGravity(Gravity.CENTER);
+        row.addView(label, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Button next = inboxPageArrow(R.drawable.ic_chevron_right, () -> changeInboxPage(1));
+        next.setContentDescription("下一页收件");
+        next.setEnabled(inboxPage + 1 < pages);
+        row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        UiStyle.addSpaced(results, row, 12, 0);
+    }
+
+    private Button inboxPageArrow(int resource, Runnable action) {
+        Button button = scheduleAction("", action);
+        android.graphics.drawable.Drawable icon = getDrawable(resource).mutate();
+        icon.setTint(UiStyle.colors(this).primary);
+        icon.setBounds(0, 0, dp(18), dp(18));
+        button.setCompoundDrawables(icon, null, null, null);
+        button.setGravity(Gravity.CENTER);
+        return button;
+    }
+
+    private void changeInboxPage(int delta) {
+        inboxPage = Math.max(0, inboxPage + delta);
+        updateResultsWithEntrance();
+        scroll.scrollTo(0, Math.max(0, results.getTop() - dp(8)));
     }
 
     private Button inboxSelectionAction(String label, Runnable action) {
@@ -2143,14 +2173,6 @@ public final class DashboardActivity extends Activity {
         startActivity(new Intent(this, TaskDetailActivity.class).putExtra("task_id", taskId));
     }
 
-    private boolean matches(TaskRecord task) {
-        if (statusIndex == 0 || statusIndex == 4) return true;
-        if (statusIndex == 1) return TaskRecord.NEEDS_REVIEW.equals(task.status);
-        if (statusIndex == 2) return TaskRecord.QUEUED.equals(task.status)
-                || TaskRecord.PROCESSING.equals(task.status);
-        return TaskRecord.FAILED.equals(task.status);
-    }
-
     private String statusText(String status) {
         if (TaskRecord.QUEUED.equals(status)) return "排队中";
         if (TaskRecord.PROCESSING.equals(status)) return "解析中";
@@ -2415,7 +2437,7 @@ public final class DashboardActivity extends Activity {
         return item.endAtMillis > now;
     }
 
-    private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries, boolean firstDay) {
+    private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries) {
         if (entries.isEmpty()) return;
         List<View> dayCards = new ArrayList<>();
         View[] dateNode = new View[1];
@@ -2427,7 +2449,7 @@ public final class DashboardActivity extends Activity {
                 // surfaces never receive a duplicate line underneath their own line.
                 android.graphics.Rect bounds = new android.graphics.Rect();
                 int previousBottom = 0;
-                if (dateNode[0] != null && firstDay) {
+                if (dateNode[0] != null) {
                     bounds.set(0, 0, dateNode[0].getWidth(), dateNode[0].getHeight());
                     offsetDescendantRectToMyCoords(dateNode[0], bounds);
                     previousBottom = bounds.centerY();
@@ -2439,8 +2461,6 @@ public final class DashboardActivity extends Activity {
                             dp(HOME_CARD_RAIL_CENTER_DP + 1), bounds.top, railPaint);
                     previousBottom = bounds.bottom;
                 }
-                canvas.drawRect(dp(HOME_CARD_RAIL_CENTER_DP - 1), previousBottom,
-                        dp(HOME_CARD_RAIL_CENTER_DP + 1), getHeight(), railPaint);
                 super.dispatchDraw(canvas);
             }
         };
