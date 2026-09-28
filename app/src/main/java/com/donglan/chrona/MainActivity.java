@@ -56,15 +56,34 @@ public final class MainActivity extends Activity {
     private ImageButton pickImage;
     private LinearLayout pendingImagesContainer;
     private LinearLayout pendingFilesContainer;
-    /** Stored image names attached to the next submit, in picker order. */
-    private final List<String> pendingImages = new ArrayList<>();
-    private final List<TaskFileAttachment> pendingFiles = new ArrayList<>();
-    private final List<Uri> deferredFileUris = new ArrayList<>();
+    /** Retained across rotation so an import never completes against a stale draft snapshot. */
+    private static final class DraftSession {
+        final List<String> images = new ArrayList<>();
+        final List<TaskFileAttachment> files = new ArrayList<>();
+        final List<Uri> deferredUris = new ArrayList<>();
+        String text = "";
+        int importsInFlight;
+        java.lang.ref.WeakReference<MainActivity> owner = new java.lang.ref.WeakReference<>(null);
+    }
+    private DraftSession draftSession = new DraftSession();
+    private List<String> pendingImages = draftSession.images;
+    private List<TaskFileAttachment> pendingFiles = draftSession.files;
+    private List<Uri> deferredFileUris = draftSession.deferredUris;
+    private boolean draftReady;
+    private android.window.OnBackInvokedCallback captureBack;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         ThemeStore.apply(this);
         super.onCreate(savedInstanceState);
+        Object retained = getLastNonConfigurationInstance();
+        if (retained instanceof DraftSession session) {
+            draftSession = session;
+            pendingImages = session.images;
+            pendingFiles = session.files;
+            deferredFileUris = session.deferredUris;
+        }
+        draftSession.owner = new java.lang.ref.WeakReference<>(this);
         ScrollView page = new ScrollView(this);
         page.setFillViewport(true);
         LinearLayout root = new LinearLayout(this);
@@ -79,14 +98,12 @@ public final class MainActivity extends Activity {
         topBar.setGravity(android.view.Gravity.CENTER_VERTICAL);
         String backLabel = isTaskRoot() ? "收件箱" : null;
         if (backLabel == null) {
-            topBar.addView(headerButton("←", 24, "返回", this::finish),
+            topBar.addView(headerButton("←", 24, "返回", this::requestExit),
                     new LinearLayout.LayoutParams(dp(48), dp(48)));
         } else {
             // Launched from the system share sheet, so there is nothing behind this screen:
             // "Back" has to reach the inbox instead of closing the app on the shared content.
-            TextView back = headerButton("←  " + backLabel, 15, backLabel, () ->
-                    startActivity(new Intent(this, DashboardActivity.class)
-                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)));
+            TextView back = headerButton("←  " + backLabel, 15, backLabel, this::requestExit);
             topBar.addView(back, new LinearLayout.LayoutParams(-2, dp(48)));
         }
         topBar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
@@ -143,7 +160,16 @@ public final class MainActivity extends Activity {
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
-        if (savedInstanceState != null) {
+        if (retained instanceof DraftSession) {
+            input.setText(draftSession.text);
+        } else if (savedInstanceState == null || new CaptureDraftStore(this).hasDraft()) {
+            // Imports may finish after Android saves an older instance-state bundle.
+            // Persisted content is authoritative when no live retained session exists.
+            CaptureDraftStore.Draft draft = new CaptureDraftStore(this).load();
+            input.setText(draft.text);
+            pendingImages.addAll(draft.images);
+            pendingFiles.addAll(draft.files);
+        } else {
             ArrayList<String> images = savedInstanceState.getStringArrayList(STATE_PENDING_IMAGES);
             if (images != null) pendingImages.addAll(images);
             ArrayList<String> stored = savedInstanceState.getStringArrayList(STATE_PENDING_FILES);
@@ -160,6 +186,20 @@ public final class MainActivity extends Activity {
         }
         showPendingImages();
         showPendingFiles();
+        draftReady = true;
+        saveDraft();
+        input.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                saveDraft();
+            }
+            @Override public void afterTextChanged(android.text.Editable s) { }
+        });
+        if (Build.VERSION.SDK_INT >= 33) {
+            captureBack = this::requestExit;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, captureBack);
+        }
         if (savedInstanceState == null) sweepImages();
         if (savedInstanceState == null) receiveShared(getIntent());
         if (Build.VERSION.SDK_INT >= 33
@@ -204,19 +244,62 @@ public final class MainActivity extends Activity {
         refreshImageEntry();
     }
 
+    @Override protected void onStop() {
+        saveDraft();
+        super.onStop();
+    }
+
+    // Android 13+ uses captureBack above; this fallback is exclusively for Android 8–12.
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Override public void onBackPressed() { requestExit(); }
+
+    @Override public Object onRetainNonConfigurationInstance() { return draftSession; }
+
+    private void saveDraft() {
+        if (draftReady && draftSession.owner.get() == this) {
+            draftSession.text = input.getText().toString();
+            new CaptureDraftStore(this).save(draftSession.text, pendingImages, pendingFiles);
+        }
+    }
+
+    private void requestExit() {
+        if (draftSession.importsInFlight > 0) {
+            Feedback.show(this, "附件正在读取，请稍候再退出");
+            return;
+        }
+        if (input.getText().length() == 0 && pendingImages.isEmpty() && pendingFiles.isEmpty()) {
+            leaveCapture();
+            return;
+        }
+        UiStyle.choiceDialog(this, "尚未提交这条记录", new String[]{"保留草稿", "放弃", "取消"},
+                -1, choice -> {
+                    if (choice == 0) {
+                        saveDraft();
+                        leaveCapture();
+                    } else if (choice == 1) {
+                        for (String image : pendingImages) new ImageStore(this).delete(image);
+                        pendingImages.clear();
+                        pendingFiles.clear();
+                        input.setText("");
+                        new CaptureDraftStore(this).clear();
+                        leaveCapture();
+                    }
+                });
+    }
+
+    private void leaveCapture() {
+        if (isTaskRoot()) startActivity(new Intent(this, DashboardActivity.class)
+                .putExtra(DashboardActivity.EXTRA_SECTION, DashboardActivity.INBOX)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+        finish();
+    }
+
     @Override
     protected void onDestroy() {
+        if (Build.VERSION.SDK_INT >= 33 && captureBack != null)
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(captureBack);
+        if (draftSession.owner.get() == this) draftSession.owner.clear();
         super.onDestroy();
-        // A pending attachment that was never submitted does not belong to any input.
-        if (isFinishing() && !pendingImages.isEmpty()) {
-            ImageStore images = new ImageStore(this);
-            for (String image : pendingImages) images.delete(image);
-            pendingImages.clear();
-        }
-        if (isFinishing()) {
-            // Imported files stay in public Downloads; abandoning capture drops task references.
-            pendingFiles.clear();
-        }
     }
 
     @Override
@@ -268,7 +351,7 @@ public final class MainActivity extends Activity {
         String type = intent.getType();
         if ("text/plain".equals(type) && Intent.ACTION_SEND.equals(intent.getAction())) {
             String shared = intent.getStringExtra(Intent.EXTRA_TEXT);
-            if (shared != null) input.setText(shared);
+            if (shared != null) appendText(shared);
         }
         ArrayList<Uri> streams = sharedStreams(intent);
         if (!streams.isEmpty()) {
@@ -350,6 +433,10 @@ public final class MainActivity extends Activity {
     }
 
     private void submit() {
+        if (draftSession.importsInFlight > 0) {
+            Feedback.show(this, "附件正在读取，请稍候再提交");
+            return;
+        }
         String text = input.getText().toString().trim();
         if (text.isEmpty() && pendingImages.isEmpty() && pendingFiles.isEmpty()) {
             // The platform error bubble is a white system popup; the app speaks through Feedback.
@@ -423,9 +510,7 @@ public final class MainActivity extends Activity {
             if (existing == null && choice == 0 || existing != null && choice == 1) {
                 if (nonDuplicateEntries.isEmpty()) {
                     Feedback.show(this, "没有新的内容需要提交");
-                    startActivity(new Intent(this, DashboardActivity.class)
-                            .putExtra(DashboardActivity.EXTRA_SECTION, DashboardActivity.INBOX));
-                    finish();
+                    requestExit();
                     return;
                 }
                 saveSubmission(text, nonDuplicateEntries, source, withImage, attachedFileCount);
@@ -468,6 +553,7 @@ public final class MainActivity extends Activity {
         // The image now belongs to a stored input, so the pending reference is simply dropped.
         pendingImages.clear();
         pendingFiles.clear();
+        new CaptureDraftStore(this).clear();
         showPendingImages();
         showPendingFiles();
         DiagLog.add(this, "submitted entries=" + taskIds.size() + " source=" + source
@@ -489,15 +575,18 @@ public final class MainActivity extends Activity {
             return;
         }
         Feedback.show(this, "正在读取 " + sources.size() + " 张图片…");
+        draftSession.importsInFlight++;
+        DraftSession importingSession = draftSession;
+        android.content.Context importContext = getApplicationContext();
         new Thread(() -> {
             ArrayList<String> imported = new ArrayList<>();
             int failed = 0;
             for (Uri source : sources) {
                 try {
-                    String name = new ImageStore(this).importImage(source);
+                    String name = new ImageStore(importContext).importImage(source);
                     imported.add(name);
-                    DiagLog.add(this, "image imported name=" + name + " bytes="
-                            + new ImageStore(this).fileFor(name).length());
+                    DiagLog.add(importContext, "image imported name=" + name + " bytes="
+                            + new ImageStore(importContext).fileFor(name).length());
                 } catch (Exception exception) {
                     failed++;
                     DiagLog.add(this, "image import failed " + exception);
@@ -505,10 +594,16 @@ public final class MainActivity extends Activity {
             }
             int failedCount = failed;
             runOnUiThread(() -> {
-                pendingImages.addAll(imported);
-                showPendingImages();
-                Feedback.show(this, failedCount == 0 ? "已添加 " + imported.size() + " 张图片"
-                        : "已添加 " + imported.size() + " 张，" + failedCount + " 张失败");
+                importingSession.importsInFlight--;
+                importingSession.images.addAll(imported);
+                new CaptureDraftStore(importContext).save(importingSession.text,
+                        importingSession.images, importingSession.files);
+                MainActivity owner = importingSession.owner.get();
+                if (owner != null && !owner.isDestroyed()) {
+                    owner.showPendingImages();
+                    Feedback.show(owner, failedCount == 0 ? "已添加 " + imported.size() + " 张图片"
+                            : "已添加 " + imported.size() + " 张，" + failedCount + " 张失败");
+                }
             });
         }, "chrona-image-import").start();
     }
@@ -547,22 +642,31 @@ public final class MainActivity extends Activity {
             return;
         }
         Feedback.show(this, "正在保存到公共 Downloads/Chrona…");
+        draftSession.importsInFlight++;
+        DraftSession importingSession = draftSession;
+        android.content.Context importContext = getApplicationContext();
         new Thread(() -> {
             ArrayList<TaskFileAttachment> imported = new ArrayList<>();
             int failed = 0;
             for (Uri source : sources) {
                 try {
-                    imported.add(new TaskFileStore(this).importFile(source));
+                    imported.add(new TaskFileStore(importContext).importFile(source));
                 } catch (Exception exception) {
                     failed++;
                 }
             }
             int failedCount = failed;
             runOnUiThread(() -> {
-                pendingFiles.addAll(imported);
-                showPendingFiles();
-                Feedback.show(this, failedCount == 0 ? "已添加 " + imported.size() + " 个文件"
-                        : "已添加 " + imported.size() + " 个，" + failedCount + " 个失败");
+                importingSession.importsInFlight--;
+                importingSession.files.addAll(imported);
+                new CaptureDraftStore(importContext).save(importingSession.text,
+                        importingSession.images, importingSession.files);
+                MainActivity owner = importingSession.owner.get();
+                if (owner != null && !owner.isDestroyed()) {
+                    owner.showPendingFiles();
+                    Feedback.show(owner, failedCount == 0 ? "已添加 " + imported.size() + " 个文件"
+                            : "已添加 " + imported.size() + " 个，" + failedCount + " 个失败");
+                }
             });
         }, "chrona-file-import").start();
     }
@@ -599,6 +703,7 @@ public final class MainActivity extends Activity {
             UiStyle.addSpaced(pendingFilesContainer, row, 1, 1);
         }
         pickImage.setEnabled(pendingFiles.isEmpty() && pendingImages.isEmpty());
+        saveDraft();
     }
 
     private static String formatFileSize(long bytes) {
@@ -628,6 +733,7 @@ public final class MainActivity extends Activity {
             pendingImagesContainer.addView(tile, tileParams);
         }
         pickImage.setEnabled(pendingImages.isEmpty() && pendingFiles.isEmpty());
+        saveDraft();
     }
 
     /** Keeps the image entry in step with what the configured model was just found to accept. */
@@ -663,7 +769,9 @@ public final class MainActivity extends Activity {
     private void sweepImages() {
         new Thread(() -> {
             try (TaskStore store = new TaskStore(this)) {
-                int removed = new ImageStore(this).deleteUnreferenced(store.listImageNames());
+                java.util.Set<String> references = new java.util.HashSet<>(store.listImageNames());
+                references.addAll(new CaptureDraftStore(this).load().images);
+                int removed = new ImageStore(this).deleteUnreferenced(references);
                 if (removed > 0) DiagLog.add(this, "swept orphan images=" + removed);
                 java.util.Set<Long> live = new java.util.HashSet<>();
                 for (TaskRecord task : store.listTasks()) live.add(task.id);

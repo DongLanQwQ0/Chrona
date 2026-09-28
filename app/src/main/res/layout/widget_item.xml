@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_content" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="8dp" android:paddingBottom="8dp">
+<TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/widget_preview_title" android:textSize="17sp" android:textStyle="bold" android:textColor="#F4EDEB" android:maxLines="2" android:ellipsize="end"/>
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="6dp">
+<ImageView android:id="@+id/widget_time_icon" android:layout_width="18dp" android:layout_height="18dp" android:src="@drawable/ic_time_start" android:importantForAccessibility="no"/>
+<TextView android:id="@+id/widget_time" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="6dp" android:text="@string/widget_preview_time" android:textSize="14sp" android:textColor="#F4EDEB"/>
+</LinearLayout>
+<LinearLayout android:id="@+id/widget_location_row" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="4dp">
+<ImageView android:id="@+id/widget_location_icon" android:layout_width="18dp" android:layout_height="18dp" android:src="@drawable/ic_place" android:importantForAccessibility="no"/>
+<TextView android:id="@+id/widget_location" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="6dp" android:textSize="13sp" android:maxLines="1" android:ellipsize="end" android:textColor="#CAC4C3"/>
+</LinearLayout>
+<TextView android:id="@+id/widget_meta" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textSize="12sp" android:maxLines="1" android:ellipsize="end" android:textColor="#CAC4C3"/>
+</LinearLayout>

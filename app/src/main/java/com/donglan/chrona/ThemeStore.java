@@ -100,6 +100,7 @@ public final class ThemeStore {
     private static void publish(Context context) {
         SharedPreferences preferences = prefs(context);
         preferences.edit().putInt(KEY_REVISION, preferences.getInt(KEY_REVISION, 0) + 1).apply();
+        AgendaWidgetProvider.requestRefresh(context);
         if (context instanceof AppearanceActivity appearance && !appearance.isFinishing()
                 && !appearance.isDestroyed()) {
             appearance.refreshAppearance();

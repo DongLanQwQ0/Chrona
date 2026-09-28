@@ -26,6 +26,28 @@
         android:theme="@style/Theme.Chrona.Light"
         android:enableOnBackInvokedCallback="true">
         <activity android:name=".AppearanceActivity" android:exported="false" />
+        <activity android:name=".WidgetLaunchActivity" android:exported="false"
+            android:theme="@android:style/Theme.NoDisplay" />
+        <service android:name=".AgendaWidgetService" android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <receiver android:name=".AgendaWidgetProvider" android:exported="false"
+            android:label="@string/widget_today">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today" />
+        </receiver>
+        <receiver android:name=".NextWidgetProvider" android:exported="false"
+            android:label="@string/widget_next">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_next" />
+        </receiver>
         <activity android:name=".ModelOutputActivity" android:exported="false" />
         <activity android:name=".AttachmentViewerActivity" android:exported="false" />
         <activity android:name=".SettingsHubActivity" android:exported="false" />

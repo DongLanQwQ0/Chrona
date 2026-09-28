@@ -29,6 +29,7 @@ public final class HomeTimelinePreferences {
 
     public static void setIncludesSystemCalendar(Context context, boolean include) {
         preferences(context).edit().putBoolean(KEY_SYSTEM_CALENDAR, include).apply();
+        AgendaWidgetProvider.requestRefresh(context);
     }
 
     private static SharedPreferences preferences(Context context) {

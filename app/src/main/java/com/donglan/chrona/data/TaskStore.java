@@ -19,10 +19,13 @@ import java.io.IOException;
 
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
 public final class TaskStore extends SQLiteOpenHelper {
+    public static final int WIDGET_ITEM_LIMIT = 200;
     private static final String DATABASE_NAME = "chrona.db";
     private static final int DATABASE_VERSION = 9;
 
     private final Context context;
+    private SQLiteDatabase openedDatabase;
+    private long openedRevision;
 
     public TaskStore(Context context) {
         super(context.getApplicationContext(), DATABASE_NAME, null, DATABASE_VERSION);
@@ -35,6 +38,42 @@ public final class TaskStore extends SQLiteOpenHelper {
         db.setForeignKeyConstraintsEnabled(true);
     }
 
+    @Override public void onOpen(SQLiteDatabase db) {
+        super.onOpen(db);
+        openedDatabase = db;
+        openedRevision = revisionOf(db);
+    }
+
+    private static long revisionOf(SQLiteDatabase db) {
+        try (Cursor cursor = db.rawQuery("SELECT revision FROM data_revision WHERE id=1", null)) {
+            return cursor.moveToFirst() ? cursor.getLong(0) : 0;
+        }
+    }
+
+    @Override public synchronized void close() {
+        boolean changed = false;
+        try {
+            if (openedDatabase != null && openedDatabase.isOpen())
+                changed = openedRevision != revisionOf(openedDatabase);
+        } finally {
+            openedDatabase = null;
+            super.close();
+            if (changed) com.donglan.chrona.AgendaWidgetProvider.requestRefresh(context);
+        }
+    }
+
+    /** Bounded widget window; avoids hydrating the full task/candidate history. */
+    public List<EventCandidate> widgetCandidates(long begin, long end) {
+        List<EventCandidate> result = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                "start_at_millis IS NOT NULL AND start_at_millis<? "
+                        + "AND COALESCE(end_at_millis,start_at_millis)>=?",
+                new String[]{Long.toString(end), Long.toString(begin)}, null, null,
+                "start_at_millis ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
+            while (cursor.moveToNext()) result.add(readCandidate(cursor));
+        }
+        return result;
+    }
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE tasks ("

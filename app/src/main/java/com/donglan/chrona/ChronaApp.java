@@ -10,6 +10,25 @@ import android.os.Bundle;
  * showing the colours it was created with.
  */
 public final class ChronaApp extends Application {
+    private android.database.ContentObserver calendarObserver;
+
+    private void observeCalendar() {
+        if (calendarObserver != null || checkSelfPermission(android.Manifest.permission.READ_CALENDAR)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        android.database.ContentObserver observer = new android.database.ContentObserver(
+                new android.os.Handler(android.os.Looper.getMainLooper())) {
+            @Override public void onChange(boolean selfChange) {
+                AgendaWidgetProvider.requestRefresh(ChronaApp.this);
+            }
+        };
+        try {
+            getContentResolver().registerContentObserver(android.provider.CalendarContract.CONTENT_URI,
+                    true, observer);
+            calendarObserver = observer;
+        } catch (SecurityException ignored) {
+            // The launcher refresh button and periodic refresh remain available.
+        }
+    }
 
     @Override public void onCreate() {
         super.onCreate();
@@ -25,6 +44,8 @@ public final class ChronaApp extends Application {
             @Override public void onActivityStarted(Activity activity) { }
 
             @Override public void onActivityResumed(Activity activity) {
+                observeCalendar();
+                if (activity instanceof DashboardActivity) AgendaWidgetProvider.requestRefresh(activity);
                 // Covers the change that could not reach a stopped screen, and a system light/dark
                 // switch made while the screen sat in the back stack.
                 if (ThemeStore.outdated(activity)) activity.recreate();

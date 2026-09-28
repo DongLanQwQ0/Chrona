@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">拾时 · Chrona</string>
+    <string name="widget_today">今天的安排</string>
+    <string name="widget_next">下一件事</string>
+    <string name="widget_refresh">刷新日程</string>
+    <string name="widget_capture">记录一件事</string>
+    <string name="widget_empty_today">今天暂无安排</string>
+    <string name="widget_empty_next">未来一个月暂无安排</string>
+    <string name="widget_preview_title">日程标题</string>
+    <string name="widget_preview_time">18:00 — 19:00</string>
 </resources>
