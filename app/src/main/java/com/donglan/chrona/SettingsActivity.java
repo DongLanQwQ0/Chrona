@@ -1,14 +1,11 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
-import android.content.Intent;
 import android.graphics.Color;
-import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -20,15 +17,11 @@ import com.donglan.chrona.ai.AiSettingsStore;
 
 /** User-supplied HTTPS Chat Completions endpoint and model. */
 public final class SettingsActivity extends Activity {
-    private static final int CREATE_CONFIG = 31;
-    private static final int PICK_CONFIG = 32;
-    private static final int MAX_CONFIG_BYTES = 256 * 1024;
     private EditText baseUrl;
     private EditText model;
     private EditText apiKey;
     private TextView imageState;
     private Button allowImages;
-    private CheckBox includeKey;
     private static final String[] EFFORT_VALUES = {"auto", "none", "low", "medium", "high", "max"};
     private static final String[] EFFORT_LABELS = {"自动", "关闭", "低", "中", "高", "最高"};
     private String reasoningEffort = "auto";
@@ -131,47 +124,6 @@ public final class SettingsActivity extends Activity {
         UiStyle.addSpaced(imageCard, allowImages, 5, 5);
         UiStyle.addSpaced(root, imageCard, 0, 8);
 
-        LinearLayout backupCard = new LinearLayout(this);
-        backupCard.setOrientation(LinearLayout.VERTICAL);
-        backupCard.setPadding(dp(16), dp(13), dp(16), dp(13));
-        UiStyle.glass(backupCard);
-        TextView backupTitle = new TextView(this);
-        backupTitle.setText("备份与恢复");
-        backupTitle.setTextSize(18);
-        UiStyle.title(backupTitle);
-        backupCard.addView(backupTitle);
-        TextView backupState = new TextView(this);
-        backupState.setText("导出的文件总是包含基础地址与模型。API 密钥默认不导出，"
-                + "取消勾选时密钥不会写入文件。");
-        backupState.setTextSize(14);
-        backupState.setPadding(0, dp(8), 0, dp(6));
-        UiStyle.muted(backupState);
-        backupCard.addView(backupState);
-        includeKey = new CheckBox(this);
-        includeKey.setText("导出时包含 API 密钥");
-        includeKey.setChecked(false);
-        UiStyle.addSpaced(backupCard, includeKey, 0, 8);
-        TextView keyNote = new TextView(this);
-        keyNote.setText("勾选后密钥会以明文写入导出文件，只保存到可信位置。");
-        keyNote.setTextSize(13);
-        UiStyle.muted(keyNote);
-        UiStyle.addSpaced(backupCard, keyNote, 0, 10);
-        LinearLayout backupActions = new LinearLayout(this);
-        backupActions.setOrientation(LinearLayout.HORIZONTAL);
-        Button export = new Button(this);
-        export.setText("导出配置");
-        export.setOnClickListener(view -> exportConfig());
-        UiStyle.button(export, false);
-        backupActions.addView(export, new LinearLayout.LayoutParams(0, dp(52), 1));
-        Button importButton = new Button(this);
-        importButton.setText("导入配置");
-        importButton.setOnClickListener(view -> importConfig());
-        UiStyle.button(importButton, false);
-        LinearLayout.LayoutParams importParams = new LinearLayout.LayoutParams(0, dp(52), 1);
-        importParams.setMargins(dp(8), 0, 0, 0);
-        backupActions.addView(importButton, importParams);
-        UiStyle.addSpaced(backupCard, backupActions, 0, 0);
-        UiStyle.addSpaced(root, backupCard, 0, 8);
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
@@ -243,102 +195,7 @@ public final class SettingsActivity extends Activity {
         return edit;
     }
 
-    /** Writes the settings the user filled in to a file they choose. */
-    private void exportConfig() {
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("application/json")
-                .putExtra(Intent.EXTRA_TITLE, "chrona-config.json");
-        try {
-            startActivityForResult(intent, CREATE_CONFIG);
-        } catch (Exception exception) {
-            Feedback.showLong(this, "无法打开文件选择器：" + exception.getMessage());
-        }
-    }
-
-    private void importConfig() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("*/*");
-        try {
-            startActivityForResult(intent, PICK_CONFIG);
-        } catch (Exception exception) {
-            Feedback.showLong(this, "无法打开文件选择器：" + exception.getMessage());
-        }
-    }
-
-    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        if (requestCode == CREATE_CONFIG) {
-            writeConfig(data.getData());
-        } else if (requestCode == PICK_CONFIG) {
-            readConfig(data.getData());
-        }
-    }
-
-    private void writeConfig(Uri target) {
-        boolean withKey = includeKey != null && includeKey.isChecked();
-        try {
-            String json = ConfigBackup.export(this, withKey, baseUrl.getText().toString(),
-                    model.getText().toString(), apiKey.getText().toString(), reasoningEffort);
-            try (java.io.OutputStream output = getContentResolver().openOutputStream(target)) {
-                if (output == null) throw new java.io.IOException("无法写入所选位置");
-                output.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            }
-            Feedback.showLong(this, ConfigBackup.containsApiKey(json)
-                    ? "已导出配置（含 API 密钥，请妥善保管该文件）"
-                    : "已导出配置（不含 API 密钥）");
-        } catch (Exception exception) {
-            Feedback.showLong(this, "导出失败：" + exception.getMessage());
-        }
-    }
-
-    private void readConfig(Uri source) {
-        String json;
-        try (java.io.InputStream input = getContentResolver().openInputStream(source)) {
-            if (input == null) throw new java.io.IOException("无法读取所选文件");
-            java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-            byte[] chunk = new byte[8192];
-            int read;
-            while ((read = input.read(chunk)) != -1) {
-                if (buffer.size() + read > MAX_CONFIG_BYTES)
-                    throw new java.io.IOException("配置文件超过 256 KB");
-                buffer.write(chunk, 0, read);
-            }
-            json = new String(buffer.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
-            if (json.startsWith("\uFEFF")) json = json.substring(1);
-        } catch (Exception exception) {
-            Feedback.showLong(this, "读取失败：" + exception.getMessage());
-            return;
-        }
-        final String content = json;
-        String summary;
-        try {
-            summary = ConfigBackup.describe(content);
-        } catch (Exception exception) {
-            Feedback.showLong(this, "这不是可用的配置文件：" + exception.getMessage());
-            return;
-        }
-        UiStyle.confirmDialog(this, "导入这份配置？", summary + "现有的同名字段会被覆盖。",
-                "导入", () -> applyImported(content));
-    }
-
-    private void applyImported(String json) {
-        try {
-            ConfigBackup.Imported imported = ConfigBackup.apply(this, json);
-            if (imported.hasAi) {
-                baseUrl.setText(imported.baseUrl);
-                model.setText(imported.model);
-                setEffort(imported.reasoningEffort);
-                apiKey.setText("");
-            }
-            Feedback.show(this, "配置已导入");
-        } catch (Exception exception) {
-            Feedback.showLong(this, "导入失败：" + exception.getMessage());
-        }
-    }
-
+    /** Saves service settings; file transfer belongs to BackupRestoreActivity. */
     private void save() {
         try {
             AiSettingsStore store = new AiSettingsStore(this);

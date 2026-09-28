@@ -799,7 +799,8 @@ public final class TaskDetailActivity extends Activity {
                 longestText = Math.max(longestText, row.getPaint().measureText(row.getText().toString()));
             }
         }
-        int menuWidth = Math.min((int) Math.ceil(longestText * 1.5f),
+        int menuWidth = Math.min((int) Math.ceil(longestText * 1.5f) + dp(12)
+                + panel.getPaddingLeft() + panel.getPaddingRight(),
                 getResources().getDisplayMetrics().widthPixels - dp(40));
         UiStyle.showFloatingDialog(dialog, panel);
         android.view.Window window = dialog.getWindow();
@@ -832,7 +833,7 @@ public final class TaskDetailActivity extends Activity {
         action.setText(text);
         action.setTextSize(15);
         action.setGravity(android.view.Gravity.CENTER);
-        action.setPadding(dp(4), 0, dp(4), 0);
+        action.setPadding(dp(6), 0, dp(6), 0);
         action.setSingleLine(true);
         action.setMinHeight(dp(48));
         action.setTextColor(destructive ? UiStyle.danger(this) : UiStyle.colors(this).primary);
@@ -904,6 +905,18 @@ public final class TaskDetailActivity extends Activity {
         summary.setTextSize(14);
         UiStyle.muted(summary);
         body.addView(summary);
+        for (String link : links) {
+            Button open = new Button(this);
+            open.setText("打开来源");
+            open.setTextColor(UiStyle.colors(this).primary);
+            UiStyle.glassPill(open);
+            UiStyle.pressable(open);
+            open.setOnClickListener(view -> {
+                try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(link))); }
+                catch (Exception exception) { Feedback.show(this, "无法打开来源链接"); }
+            });
+            UiStyle.addSpaced(body, open, 6, 0);
+        }
         if (task.linkText != null && !task.linkText.trim().isEmpty()) {
             TextView contentText = new TextView(this);
             contentText.setText(task.linkText);
@@ -2734,7 +2747,8 @@ public final class TaskDetailActivity extends Activity {
         }
         String when = DateFormat.getDateTimeInstance().format(new Date(task.linkFetchedAtMillis));
         if (task.linkText == null) {
-            return found + when + " 抓取失败或没有正文，已按原文解析。";
+            return found + when + " 未读取到正文。"
+                    + (task.errorMessage == null ? "请打开来源、复制正文或添加截图。" : task.errorMessage);
         }
         return found + when + " 已抓取 " + task.linkText.length() + " 字。";
     }

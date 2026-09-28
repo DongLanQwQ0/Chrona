@@ -254,7 +254,13 @@ public final class ProcessingJobService extends JobService {
             sentImage = !images.isEmpty();
             String attachmentMetadata = formatFileMetadata(store.getFileAttachments(taskId));
             store.updateStatus(taskId, TaskRecord.PROCESSING, null);
-            String linkText = fetchLinks(store, task);
+            LinkFetcher.FetchResult fetched = fetchLinks(store, task);
+            String linkText = fetched.text.isEmpty() ? null : fetched.text;
+            if (linkText == null && images.isEmpty() && attachmentMetadata.isEmpty()
+                    && LinkFetcher.onlyLinks(task.rawText)) {
+                recordFailure(taskId, fetched.warning == null ? "链接未能读取，请补充正文或截图" : fetched.warning);
+                return;
+            }
             DiagLog.add(this, "request task=" + taskId
                     + " text=" + task.rawText.length() + "chars"
                     + " images=" + (sentImage ? images.size() + "/" + imageBytes + "B" : "none")
@@ -276,7 +282,8 @@ public final class ProcessingJobService extends JobService {
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
                     result.totalTokens, result.cachedTokens);
             store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW,
-                    candidates.isEmpty() ? "未识别到日程，请检查原文或重试" : null);
+                    candidates.isEmpty() ? (fetched.warning == null ? "未识别到日程，请检查原文或重试"
+                            : fetched.warning) : fetched.warning);
             DiagLog.add(this, "response task=" + taskId + " ok in " + elapsed + "ms events="
                     + candidates.size() + " tokens=" + result.totalTokens);
             notifyResult(taskId, candidates.isEmpty() ? "未识别到日程" : "日程草稿待确认");
@@ -313,17 +320,18 @@ public final class ProcessingJobService extends JobService {
 
     /**
      * Reads the pages behind links in the input and remembers the outcome. A link that cannot be
-     * read never fails the parse: the input is simply parsed without that extra text.
+     * read contributes no model text. Link-only inputs are stopped by the caller when unreadable.
      */
-    private String fetchLinks(TaskStore store, TaskRecord task) {
+    private LinkFetcher.FetchResult fetchLinks(TaskStore store, TaskRecord task) {
         List<String> urls = LinkFetcher.extractUrls(task.rawText);
-        if (urls.isEmpty()) return null;
+        if (urls.isEmpty()) return new LinkFetcher.FetchResult("", null);
         long startedAt = System.currentTimeMillis();
-        String text = LinkFetcher.fetch(urls);
+        LinkFetcher.FetchResult fetched = LinkFetcher.fetchResult(urls);
+        String text = fetched.text;
         DiagLog.add(this, "links task=" + task.id + " urls=" + urls.size() + " chars="
                 + text.length() + " in " + (System.currentTimeMillis() - startedAt) + "ms");
         store.updateLinkFetch(task.id, text.isEmpty() ? null : text, System.currentTimeMillis());
-        return text.isEmpty() ? null : text;
+        return fetched;
     }
 
     /**

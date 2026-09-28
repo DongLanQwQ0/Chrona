@@ -189,7 +189,21 @@ public final class DebugActivity extends Activity {
                     UiStyle.muted(hint);
                     UiStyle.addSpaced(card, hint, 6, 6);
                 }
-                ScrollView window = new ScrollView(this);
+                ScrollView window = new ScrollView(this) {
+                    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+                        int action = event.getActionMasked();
+                        if (getParent() != null && action == MotionEvent.ACTION_DOWN
+                                && (canScrollVertically(1) || canScrollVertically(-1))) {
+                            getParent().requestDisallowInterceptTouchEvent(true);
+                        }
+                        boolean handled = super.dispatchTouchEvent(event);
+                        if (getParent() != null && (action == MotionEvent.ACTION_UP
+                                || action == MotionEvent.ACTION_CANCEL)) {
+                            getParent().requestDisallowInterceptTouchEvent(false);
+                        }
+                        return handled;
+                    }
+                };
                 TextView body = new TextView(this);
                 body.setText(section.block);
                 body.setTextSize(12);
@@ -197,35 +211,11 @@ public final class DebugActivity extends Activity {
                 body.setTypeface(android.graphics.Typeface.MONOSPACE);
                 UiStyle.muted(body);
                 window.addView(body);
-                if ("事件日志".equals(section.title)) prioritizeInnerVerticalScroll(window);
                 card.addView(window, new LinearLayout.LayoutParams(-1, dp(240)));
             }
             UiStyle.addSpaced(root, card, 0, 10);
         }
         UiStyle.pop(sections.isEmpty() ? root : root.getChildAt(root.getChildCount() - 1));
-    }
-
-    /** Let the log viewport consume vertical drags while it can scroll; hand off at either edge. */
-    private void prioritizeInnerVerticalScroll(ScrollView inner) {
-        float[] down = {0f, 0f};
-        inner.setOnTouchListener((view, event) -> {
-            int action = event.getActionMasked();
-            if (action == MotionEvent.ACTION_DOWN) {
-                down[0] = event.getX();
-                down[1] = event.getY();
-                inner.requestDisallowInterceptTouchEvent(false);
-            } else if (action == MotionEvent.ACTION_MOVE) {
-                float deltaX = event.getX() - down[0];
-                float deltaY = event.getY() - down[1];
-                if (Math.abs(deltaY) > dp(6) && Math.abs(deltaY) > Math.abs(deltaX)) {
-                    boolean innerCanScroll = inner.canScrollVertically(deltaY < 0 ? 1 : -1);
-                    inner.requestDisallowInterceptTouchEvent(innerCanScroll);
-                }
-            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                inner.requestDisallowInterceptTouchEvent(false);
-            }
-            return false;
-        });
     }
 
     /** Everything below is read-only: no key material is ever printed. */

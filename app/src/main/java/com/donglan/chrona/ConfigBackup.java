@@ -76,28 +76,14 @@ public final class ConfigBackup {
         }
     }
 
-    /** The address and model are taken from the visible form; only the key follows the checkbox. */
-    public static String export(Context context, boolean includeKey, String baseUrl, String model,
-            String enteredKey) throws JSONException, java.security.GeneralSecurityException {
-        return export(context, includeKey, baseUrl, model, enteredKey, null);
-    }
-
-    public static String export(Context context, boolean includeKey, String baseUrl, String model,
-            String enteredKey, String reasoningEffort)
+    /** Exports saved settings, or the pending settings restored without an API key. */
+    public static String export(Context context, boolean includeKey)
             throws JSONException, java.security.GeneralSecurityException {
-        boolean needSavedSettings = baseUrl == null || baseUrl.trim().isEmpty()
-                || model == null || model.trim().isEmpty()
-                || reasoningEffort == null
-                || (includeKey && (enteredKey == null || enteredKey.trim().isEmpty()));
-        AiSettings saved = needSavedSettings ? new AiSettingsStore(context).load() : null;
+        AiSettings saved = new AiSettingsStore(context).load();
         SharedPreferences draft = context.getSharedPreferences(DRAFT, Context.MODE_PRIVATE);
-        if (baseUrl == null || baseUrl.trim().isEmpty()) {
-            baseUrl = saved != null ? saved.baseUrl : draft.getString("baseUrl", "");
-        }
-        if (model == null || model.trim().isEmpty()) {
-            model = saved != null ? saved.model : draft.getString("model", "");
-        }
-        if (reasoningEffort == null) reasoningEffort = saved != null ? saved.reasoningEffort
+        String baseUrl = saved != null ? saved.baseUrl : draft.getString("baseUrl", "");
+        String model = saved != null ? saved.model : draft.getString("model", "");
+        String reasoningEffort = saved != null ? saved.reasoningEffort
                 : draft.getString("reasoningEffort", "auto");
         AiSettings.validateReasoningEffort(reasoningEffort);
         JSONObject root = new JSONObject();
@@ -109,8 +95,7 @@ public final class ConfigBackup {
         ai.put("baseUrl", baseUrl == null ? "" : baseUrl.trim());
         ai.put("model", model == null ? "" : model.trim());
         ai.put("reasoningEffort", reasoningEffort);
-        String key = enteredKey == null || enteredKey.trim().isEmpty()
-                ? saved == null ? null : saved.apiKey : enteredKey.trim();
+        String key = saved == null ? null : saved.apiKey;
         if (includeKey && key != null && !key.isEmpty()) ai.put("apiKey", key);
         root.put("ai", ai);
         JSONObject appearance = new JSONObject();
@@ -123,19 +108,6 @@ public final class ConfigBackup {
         appearance.put("blurStrength", ThemeStore.blurStrength(context));
         root.put("appearance", appearance);
         return root.toString(2);
-    }
-
-    /** Kept for callers that export the last saved service settings. */
-    public static String export(Context context, boolean includeKey)
-            throws JSONException, java.security.GeneralSecurityException {
-        AiSettings settings = new AiSettingsStore(context).load();
-        return export(context, includeKey, settings == null ? "" : settings.baseUrl,
-                settings == null ? "" : settings.model, null);
-    }
-
-    public static boolean containsApiKey(String json) throws JSONException {
-        JSONObject ai = parse(json).optJSONObject("ai");
-        return ai != null && ai.has("apiKey");
     }
 
     public static Imported inspect(String json) throws JSONException {

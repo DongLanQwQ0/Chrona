@@ -116,6 +116,9 @@ public final class DashboardActivity extends Activity {
     private Button selectAllButton;
     private Button deleteSelectedButton;
     private final Set<Long> selectedInboxIds = new LinkedHashSet<>();
+    private final Set<Long> selectedScheduleIds = new LinkedHashSet<>();
+    private boolean selectionBackRegistered;
+    private android.window.OnBackInvokedCallback selectionBack;
     private Map<Long, InboxRow> inboxRows = new LinkedHashMap<>();
     private List<Long> matchingInboxIds = new ArrayList<>();
     private ScrollView scroll;
@@ -170,6 +173,8 @@ public final class DashboardActivity extends Activity {
             inboxOldestFirst = state.getBoolean("inbox_oldest_first", false);
             long[] selected = state.getLongArray("selected_inbox_ids");
             if (selected != null) for (long id : selected) selectedInboxIds.add(id);
+            long[] selectedSchedules = state.getLongArray("selected_schedule_ids");
+            if (selectedSchedules != null) for (long id : selectedSchedules) selectedScheduleIds.add(id);
             restoredScrollY = state.getInt("scroll_y");
         } else {
             section = getIntent().getIntExtra(EXTRA_SECTION, HOME);
@@ -201,6 +206,7 @@ public final class DashboardActivity extends Activity {
         int selectedIndex = 0;
         for (long id : selectedInboxIds) selected[selectedIndex++] = id;
         state.putLongArray("selected_inbox_ids", selected);
+        state.putLongArray("selected_schedule_ids", selectedScheduleIds.stream().mapToLong(Long::longValue).toArray());
     }
 
     /** Every piece of state render() writes to, so a neighbour can be built and swapped in. */
@@ -456,9 +462,12 @@ public final class DashboardActivity extends Activity {
             return;
         }
         if (commit) {
+            clearCurrentSelection();
             pager.removeView(scroll);
             target.scroll.setTranslationX(0f);
             activateSectionPage(target);
+            updateResults();
+            updateSelectionBack();
             drawNavigation();
             scroll.scrollTo(0, 0);
         } else {
@@ -880,6 +889,14 @@ public final class DashboardActivity extends Activity {
                     updateResults();
                 }, inboxCategoryButton(),
                 new int[]{0, pendingReview, 0, pendingFailed, 0});
+        buildSelectionBar();
+        results = new LinearLayout(this);
+        results.setOrientation(LinearLayout.VERTICAL);
+        content.addView(results);
+        renderInboxResults(store);
+    }
+
+    private void buildSelectionBar() {
         selectionBar = new LinearLayout(this);
         selectionBar.setOrientation(LinearLayout.HORIZONTAL);
         selectionBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -891,10 +908,6 @@ public final class DashboardActivity extends Activity {
         selectionBar.addView(selectAllButton);
         selectionBar.addView(deleteSelectedButton);
         selectionBar.setVisibility(View.GONE);
-        results = new LinearLayout(this);
-        results.setOrientation(LinearLayout.VERTICAL);
-        content.addView(results);
-        renderInboxResults(store);
     }
 
     private ImageButton inboxCategoryButton() {
@@ -993,7 +1006,7 @@ public final class DashboardActivity extends Activity {
     private void addInboxResultsHeading(int count) {
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text("共 " + count + " 条收件", 19, true);
+        TextView title = text("共 " + count + (section == SCHEDULE ? " 条日程" : " 条收件"), 19, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -1036,6 +1049,7 @@ public final class DashboardActivity extends Activity {
             updateChipSelection(scheduleTab);
             updateResults();
         });
+        buildSelectionBar();
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
         content.addView(results);
@@ -1057,8 +1071,12 @@ public final class DashboardActivity extends Activity {
         }
         visible.sort(BY_START_TIME);
         if (!scheduleOldestFirst) java.util.Collections.reverse(visible);
-        sectionTitle(results, (scheduleTab == 0 ? "即将到来" : scheduleTab == 1
-                ? "待补全时间" : "较早的日程") + " · " + visible.size());
+        inboxRows.clear();
+        matchingInboxIds = new ArrayList<>();
+        for (EventCandidate item : visible) matchingInboxIds.add(item.id);
+        selectedScheduleIds.retainAll(matchingInboxIds);
+        addInboxResultsHeading(visible.size());
+        updateSelectionUi();
         if (visible.isEmpty()) {
             empty(results, !query.isEmpty()
                     ? "没有匹配「" + scheduleQuery.trim() + "」的日程。"
@@ -1109,12 +1127,33 @@ public final class DashboardActivity extends Activity {
         TextView title = text(item.title, 17, true);
         title.setMaxLines(2);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        card.addView(title);
+        boolean selectable = section == SCHEDULE && parent == results;
+        TextView marker = text("○", 22, false);
+        marker.setGravity(Gravity.CENTER);
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        if (selectable) titleRow.addView(marker, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        card.addView(titleRow);
         String when = item.startAtMillis == null ? "时间待补全" : formatWhen(item);
         TextView meta = text(EventCategory.label(item.category) + " · " + when
                 + (item.calendarEventId == null ? " · 待确认" : " · 已写入"), 13, false);
         UiStyle.addSpaced(card, meta, 6, 0);
-        card.setOnClickListener(view -> openTask(item.taskId));
+        if (selectable) {
+            inboxRows.put(item.id, new InboxRow(card, marker));
+            card.setOnLongClickListener(view -> {
+                selectedScheduleIds.add(item.id);
+                updateSelectionUi();
+                return true;
+            });
+            card.setOnClickListener(view -> {
+                if (!selectedScheduleIds.isEmpty()) {
+                    if (!selectedScheduleIds.remove(item.id)) selectedScheduleIds.add(item.id);
+                    updateSelectionUi();
+                } else openTask(item.taskId);
+            });
+            applyInboxRowSelection(item.id);
+        } else card.setOnClickListener(view -> openTask(item.taskId));
         UiStyle.pressable(card);
         UiStyle.addSpaced(parent, card, 4, 7);
     }
@@ -1177,10 +1216,11 @@ public final class DashboardActivity extends Activity {
 
     private void toggleSelectAll() {
         if (matchingInboxIds.isEmpty()) return;
-        if (selectedInboxIds.containsAll(matchingInboxIds)) {
-            selectedInboxIds.removeAll(matchingInboxIds);
+        Set<Long> selected = currentSelection();
+        if (selected.containsAll(matchingInboxIds)) {
+            selected.removeAll(matchingInboxIds);
         } else {
-            selectedInboxIds.addAll(matchingInboxIds);
+            selected.addAll(matchingInboxIds);
         }
         updateSelectionUi();
     }
@@ -1190,9 +1230,41 @@ public final class DashboardActivity extends Activity {
         updateSelectionUi();
     }
 
+    private Set<Long> currentSelection() {
+        return section == SCHEDULE ? selectedScheduleIds : selectedInboxIds;
+    }
+
+    private void clearCurrentSelection() {
+        currentSelection().clear();
+        updateSelectionUi();
+    }
+
+    // Legacy devices use this path; API 33+ gestures use selectionBack registered above.
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Override public void onBackPressed() {
+        if ((section == INBOX || section == SCHEDULE) && !currentSelection().isEmpty())
+            clearCurrentSelection();
+        else super.onBackPressed();
+    }
+
+    private void updateSelectionBack() {
+        if (android.os.Build.VERSION.SDK_INT < 33 || previewRender) return;
+        boolean active = (section == INBOX || section == SCHEDULE) && !currentSelection().isEmpty();
+        if (active == selectionBackRegistered) return;
+        if (active) {
+            if (selectionBack == null) selectionBack = this::clearCurrentSelection;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, selectionBack);
+        }
+        else getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(selectionBack);
+        selectionBackRegistered = active;
+    }
+
     private void updateSelectionUi() {
+        updateSelectionBack();
         if (selectionBar == null) return;
-        boolean active = !selectedInboxIds.isEmpty();
+        Set<Long> selected = currentSelection();
+        boolean active = !selected.isEmpty();
         boolean wasVisible = selectionBar.getVisibility() == View.VISIBLE;
         selectionBar.animate().cancel();
         if (active && !wasVisible && android.animation.ValueAnimator.areAnimatorsEnabled()) {
@@ -1213,14 +1285,14 @@ public final class DashboardActivity extends Activity {
             selectionBar.setTranslationY(0f);
             selectionBar.setVisibility(active ? View.VISIBLE : View.GONE);
         }
-        selectionCount.setText(selectedInboxIds.size() + "/" + matchingInboxIds.size());
-        selectionCount.setContentDescription("已选 " + selectedInboxIds.size() + " 条，共 " + matchingInboxIds.size() + " 条");
+        selectionCount.setText(selected.size() + "/" + matchingInboxIds.size());
+        selectionCount.setContentDescription("已选 " + selected.size() + " 条，共 " + matchingInboxIds.size() + " 条");
         boolean all = !matchingInboxIds.isEmpty()
-                && selectedInboxIds.containsAll(matchingInboxIds);
+                && selected.containsAll(matchingInboxIds);
         selectAllButton.setText(all ? "取消" : "全选");
-        selectAllButton.setContentDescription(all ? "取消全选" : "选中本筛选的全部收件");
+        selectAllButton.setContentDescription(all ? "取消全选" : "选中本筛选的全部事项");
         deleteSelectedButton.setText("删除");
-        deleteSelectedButton.setContentDescription("删除已选 " + selectedInboxIds.size() + " 项");
+        deleteSelectedButton.setContentDescription("删除已选 " + selected.size() + " 项");
         for (Map.Entry<Long, InboxRow> entry : inboxRows.entrySet())
             applyInboxRowSelection(entry.getKey());
     }
@@ -1228,8 +1300,8 @@ public final class DashboardActivity extends Activity {
     private void applyInboxRowSelection(long taskId) {
         InboxRow row = inboxRows.get(taskId);
         if (row == null) return;
-        boolean selected = selectedInboxIds.contains(taskId);
-        row.marker.setVisibility(selectedInboxIds.isEmpty() ? View.GONE : View.VISIBLE);
+        boolean selected = currentSelection().contains(taskId);
+        row.marker.setVisibility(currentSelection().isEmpty() ? View.GONE : View.VISIBLE);
         row.marker.setText(selected ? "✓" : "○");
         row.marker.setTextColor(selected ? UiStyle.colors(this).primary
                 : UiStyle.colors(this).muted);
@@ -1238,6 +1310,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void confirmDeleteSelected() {
+        if (section == SCHEDULE) { confirmDeleteSchedules(); return; }
         if (selectedInboxIds.isEmpty()) return;
         int publishedCount = 0;
         try (TaskStore store = new TaskStore(this)) {
@@ -1259,6 +1332,62 @@ public final class DashboardActivity extends Activity {
                 "删除", () -> deleteSelectedTasks());
     }
 
+    private void confirmDeleteSchedules() {
+        List<EventCandidate> chosen = new ArrayList<>();
+        try (TaskStore store = new TaskStore(this)) {
+            for (EventCandidate item : store.listCandidates())
+                if (selectedScheduleIds.contains(item.id)) chosen.add(item);
+        }
+        if (chosen.isEmpty()) return;
+        boolean linked = false;
+        for (EventCandidate item : chosen) if (item.calendarEventId != null) linked = true;
+        if (linked && !requestCalendarPermission()) return;
+        UiStyle.confirmDialog(this, "删除所选日程？", "将删除 " + chosen.size()
+                + " 条日程及其系统日历关联，原始收件会保留。此操作无法撤销。", "删除",
+                () -> deleteSchedules(chosen));
+    }
+
+    private void deleteSchedules(List<EventCandidate> chosen) {
+        Button deleteAction = deleteSelectedButton;
+        Button selectAction = selectAllButton;
+        deleteAction.setEnabled(false);
+        selectAction.setEnabled(false);
+        new Thread(() -> {
+            int failed = 0;
+            try (TaskStore store = new TaskStore(this)) {
+                CalendarStore calendar = new CalendarStore(this);
+                Set<Long> affectedTasks = new LinkedHashSet<>();
+                for (EventCandidate item : chosen) {
+                    try {
+                        if (item.calendarEventId != null) calendar.deleteEvent(item.calendarEventId);
+                        if (!store.deleteCandidate(item.id, item.taskId))
+                            throw new IllegalStateException("日程已变化，请刷新后重试");
+                        affectedTasks.add(item.taskId);
+                    } catch (Exception exception) { failed++; }
+                }
+                for (long taskId : affectedTasks) {
+                    List<EventCandidate> remaining = store.getCandidates(taskId);
+                    boolean allPublished = !remaining.isEmpty();
+                    for (EventCandidate item : remaining)
+                        if (item.calendarEventId == null) allPublished = false;
+                    store.updateStatus(taskId, allPublished ? TaskRecord.READY : TaskRecord.NEEDS_REVIEW, null);
+                }
+            } catch (Exception exception) { failed = chosen.size(); }
+            int failures = failed;
+            runOnUiThread(() -> {
+                deleteAction.setEnabled(true);
+                selectAction.setEnabled(true);
+                selectedScheduleIds.clear();
+                if (isFinishing() || isDestroyed()) return;
+                updateResults();
+                updateSelectionBack();
+                Feedback.showLong(this, failures == 0 ? "已删除 " + chosen.size() + " 条日程"
+                        : "有 " + failures + " 条未完成删除，请检查后重试");
+                snapshot = dataSnapshot();
+            });
+        }, "chrona-schedule-bulk-delete").start();
+    }
+
     private boolean requestCalendarPermission() {
         boolean granted = checkSelfPermission(android.Manifest.permission.READ_CALENDAR)
                 == PackageManager.PERMISSION_GRANTED
@@ -1274,6 +1403,8 @@ public final class DashboardActivity extends Activity {
     private void deleteSelectedTasks() {
         if (selectedInboxIds.isEmpty()) return;
         List<Long> taskIds = new ArrayList<>(selectedInboxIds);
+        Button deleteAction = deleteSelectedButton;
+        Button selectAction = selectAllButton;
         deleteSelectedButton.setEnabled(false);
         selectAllButton.setEnabled(false);
         selectionCount.setText("…");
@@ -1316,13 +1447,11 @@ public final class DashboardActivity extends Activity {
             int failedCount = failed;
             runOnUiThread(() -> {
                 selectedInboxIds.clear();
-                deleteSelectedButton.setEnabled(true);
-                selectAllButton.setEnabled(true);
-                try (TaskStore store = new TaskStore(this)) {
-                    renderInboxResults(store);
-                } catch (Exception exception) {
-                    Feedback.showLong(this, "刷新收件箱失败：" + exception.getMessage());
-                }
+                deleteAction.setEnabled(true);
+                selectAction.setEnabled(true);
+                if (isFinishing() || isDestroyed()) return;
+                updateResults();
+                updateSelectionBack();
                 Feedback.showLong(this, failedCount == 0
                         ? "已删除 " + deletedCount + " 条收件"
                         : "已删除 " + deletedCount + " 条，" + failedCount + " 条未删除，可重试");
@@ -1453,8 +1582,9 @@ public final class DashboardActivity extends Activity {
 
     private void switchTo(int destination) {
         if (destination == section) return;
-        if (section == INBOX && destination != INBOX) clearInboxSelection();
+        clearCurrentSelection();
         section = destination;
+        updateSelectionBack();
         UiStyle.swap(content, () -> {
             render();
             scroll.scrollTo(0, 0);
