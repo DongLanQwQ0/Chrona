@@ -520,10 +520,22 @@ public final class GlassBackdropView extends View {
         }
     }
 
-    /** Background worker only: reuse exactly the application's wallpaper blur algorithm. */
-    static Bitmap blurredForWidget(Context context, int width, int height) {
+    private static final android.util.LruCache<String, Bitmap> WIDGET_WALLPAPERS =
+            new android.util.LruCache<>(2);
+
+    /** Background worker only. Borrowed full-screen bitmap; callers must not recycle it. */
+    static Bitmap blurredForWidget(Context context) {
         String uri = ThemeStore.background(context);
         if (uri == null) return null;
+        android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        int width = Math.max(1, metrics.widthPixels);
+        int height = Math.max(1, metrics.heightPixels);
+        boolean gaussian = ThemeStore.gaussianBlur(context);
+        int strength = ThemeStore.blurStrength(context);
+        String key = uri + ":" + ThemeStore.revision(context) + ":" + width + ":" + height
+                + ":" + gaussian + ":" + strength;
+        Bitmap cached = WIDGET_WALLPAPERS.get(key);
+        if (cached != null) return cached;
         Bitmap source = cachedSource(uri);
         boolean owned = source == null;
         try {
@@ -541,8 +553,10 @@ public final class GlassBackdropView extends View {
                     source = BitmapFactory.decodeStream(input, null, options);
                 }
             }
-            return source == null ? null : createBlurredWallpaper(source, width, height,
-                    ThemeStore.gaussianBlur(context), ThemeStore.blurStrength(context));
+            if (source == null) return null;
+            Bitmap blurred = createBlurredWallpaper(source, width, height, gaussian, strength);
+            WIDGET_WALLPAPERS.put(key, blurred);
+            return blurred;
         } catch (Exception | OutOfMemoryError ignored) {
             return null;
         } finally {

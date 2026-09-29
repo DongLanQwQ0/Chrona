@@ -79,27 +79,29 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
             if (sizes != null && !sizes.isEmpty() && sizes.size() <= 16) {
                 java.util.Map<android.util.SizeF, RemoteViews> variants = new java.util.LinkedHashMap<>();
                 for (android.util.SizeF size : sizes) variants.put(size, render(context, id, next,
-                        data, new WidgetSize(Math.round(size.getWidth()), Math.round(size.getHeight()))));
+                        data, new WidgetSize(Math.round(size.getWidth()), Math.round(size.getHeight())),
+                        sizes.size()));
                 manager.updateAppWidget(id, new RemoteViews(variants));
                 return;
             }
         }
         WidgetSize size = new WidgetSize(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180),
                 options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 180));
-        manager.updateAppWidget(id, render(context, id, next, data, size));
+        manager.updateAppWidget(id, render(context, id, next, data, size, 1));
         if (!next && !size.compact() && Build.VERSION.SDK_INT < 31)
             manager.notifyAppWidgetViewDataChanged(id, R.id.widget_list);
     }
 
     private static RemoteViews render(Context context, int id, boolean next, WidgetAgenda data,
-            WidgetSize size) {
+            WidgetSize size, int variantCount) {
         boolean single = next || size.compact();
         RemoteViews views = new RemoteViews(context.getPackageName(),
                 size.compact() ? R.layout.widget_compact
                         : next ? R.layout.widget_next : R.layout.widget_today);
         UiStyle.Palette palette = UiStyle.colors(context);
         views.setInt(R.id.widget_background, "setBackgroundColor", android.graphics.Color.TRANSPARENT);
-        views.setImageViewBitmap(R.id.widget_background, background(context, palette.surface, size));
+        views.setImageViewBitmap(R.id.widget_background,
+                background(context, palette.surface, size, variantCount));
         int pad = Math.round(size.padding() * context.getResources().getDisplayMetrics().density);
         views.setViewPadding(R.id.widget_body, pad, pad, pad, pad);
         views.setViewVisibility(R.id.widget_header, size.header() ? android.view.View.VISIBLE : android.view.View.GONE);
@@ -243,30 +245,48 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         return bitmap;
     }
 
-    private static Bitmap background(Context context, int color, WidgetSize size) {
-        float scale = Math.min(1f, 480f / Math.max(size.width, size.height));
-        int width = Math.max(1, Math.round(size.width * scale));
-        int height = Math.max(1, Math.round(size.height * scale));
+    private static Bitmap background(Context context, int color, WidgetSize size, int variantCount) {
+        android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        // The layouts have 4dp outer padding on each side. Render at physical-pixel density,
+        // sharing a bounded parcel budget across the launcher's responsive variants.
+        float physicalWidth = Math.max(1, size.width - 8) * metrics.density;
+        float physicalHeight = Math.max(1, size.height - 8) * metrics.density;
+        float pixelBudget = Math.min(768f * 768f,
+                .9f * metrics.widthPixels * metrics.heightPixels / Math.max(1, variantCount));
+        float scale = Math.min(1f, Math.min(1280f / Math.max(physicalWidth, physicalHeight),
+                (float) Math.sqrt(pixelBudget / (physicalWidth * physicalHeight))));
+        int width = Math.max(1, Math.round(physicalWidth * scale));
+        int height = Math.max(1, Math.round(physicalHeight * scale));
         String key = ThemeStore.background(context) + ":" + ThemeStore.revision(context)
-                + ":" + width + ":" + height + ":" + color;
+                + ":" + width + ":" + height + ":" + color + ":" + size.width + ":" + size.height
+                + ":" + metrics.widthPixels + ":" + metrics.heightPixels + ":" + metrics.density;
         Bitmap cached = BACKGROUNDS.get(key);
         if (cached != null) return cached;
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
-        android.graphics.Path clip = new android.graphics.Path();
-        clip.addRoundRect(new RectF(0, 0, width, height), 20, 20, android.graphics.Path.Direction.CW);
-        canvas.clipPath(clip);
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        Bitmap wallpaper = GlassBackdropView.blurredForWidget(context, width, height);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        Bitmap wallpaper = GlassBackdropView.blurredForWidget(context);
         if (wallpaper != null) {
             paint.setAlpha(150);
-            canvas.drawBitmap(wallpaper, null, new RectF(0, 0, width, height), paint);
-            wallpaper.recycle();
+            // Crop a window from the full-screen wallpaper. Its scale never depends on the
+            // widget's aspect ratio; resizing changes only the visible area around the centre.
+            float screenWidth = metrics.widthPixels * scale;
+            float screenHeight = metrics.heightPixels * scale;
+            canvas.drawBitmap(wallpaper, null, new RectF((width - screenWidth) / 2f,
+                    (height - screenHeight) / 2f, (width + screenWidth) / 2f,
+                    (height + screenHeight) / 2f), paint);
         }
         paint.setColor(color);
         paint.setAlpha(wallpaper == null ? 190 : Math.round(ThemeStore.surfaceMix(context) * 2.55f));
         canvas.drawRect(0, 0, width, height, paint);
-        BACKGROUNDS.put(key, bitmap);
-        return bitmap;
+        Bitmap rounded = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        edge.setShader(new android.graphics.BitmapShader(bitmap,
+                android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP));
+        float radius = Math.min(22f * metrics.density * scale, Math.min(width, height) / 2f);
+        new Canvas(rounded).drawRoundRect(new RectF(0, 0, width, height), radius, radius, edge);
+        bitmap.recycle();
+        BACKGROUNDS.put(key, rounded);
+        return rounded;
     }
 }
