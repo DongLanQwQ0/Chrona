@@ -21,7 +21,6 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -68,21 +67,32 @@ public final class ScheduleCompareActivity extends Activity {
         title.setPadding(dp(12), 0, dp(8), 0);
         UiStyle.title(title);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        header.addView(icon(R.drawable.ic_refresh, "刷新网页", () -> {
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        UiStyle.acrylicChoice(actions, false, UiStyle.RADIUS_PILL, false);
+        round(actions, UiStyle.RADIUS_PILL);
+        ImageButton refresh = icon(R.drawable.ic_refresh, "刷新网页", () -> {
             if (web != null) web.reload();
-        }), new LinearLayout.LayoutParams(dp(44), dp(44)));
-        Button browser = new Button(this);
+        });
+        refresh.setBackgroundColor(Color.TRANSPARENT);
+        actions.addView(refresh, new LinearLayout.LayoutParams(dp(44), -1));
+        View divider = new View(this);
+        divider.setBackgroundColor(UiStyle.colors(this).outline);
+        actions.addView(divider, new LinearLayout.LayoutParams(dp(1), dp(16)));
+        TextView browser = new TextView(this);
         browser.setText("浏览器");
-        UiStyle.button(browser, false);
-        browser.setTextSize(12);
-        browser.setMinHeight(0);
-        browser.setMinimumHeight(0);
-        browser.setMinWidth(0);
-        browser.setMinimumWidth(0);
-        browser.setPadding(dp(10), 0, dp(10), 0);
+        browser.setTextSize(14);
+        browser.setTextColor(UiStyle.colors(this).primary);
+        browser.setTypeface(null, android.graphics.Typeface.BOLD);
+        browser.setIncludeFontPadding(false);
+        browser.setGravity(Gravity.CENTER);
+        browser.setPadding(dp(12), 0, dp(12), 0);
+        browser.setContentDescription("在浏览器中打开课表对比");
+        UiStyle.pressable(browser);
         browser.setOnClickListener(view -> openBrowser(Uri.parse(web != null
                 && isSite(web.getUrl()) ? web.getUrl() : SITE)));
-        header.addView(browser, new LinearLayout.LayoutParams(-2, dp(36)));
+        actions.addView(browser, new LinearLayout.LayoutParams(-2, -1));
+        header.addView(actions, new LinearLayout.LayoutParams(-2, dp(44)));
         root.addView(header);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setProgressTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
@@ -96,7 +106,12 @@ public final class ScheduleCompareActivity extends Activity {
         try {
             web = new WebView(this);
             configureWebView();
-            root.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
+            FrameLayout website = new FrameLayout(this);
+            round(website, UiStyle.RADIUS_CARD);
+            website.addView(web, new FrameLayout.LayoutParams(-1, -1));
+            LinearLayout.LayoutParams viewport = new LinearLayout.LayoutParams(-1, 0, 1);
+            viewport.topMargin = dp(8);
+            root.addView(website, viewport);
         } catch (RuntimeException exception) {
             if (web != null) { web.destroy(); web = null; }
             showError("系统 WebView 不可用，请更新 Android System WebView，或点击浏览器打开。");
@@ -123,6 +138,16 @@ public final class ScheduleCompareActivity extends Activity {
         UiStyle.pressable(button);
         button.setOnClickListener(view -> action.run());
         return button;
+    }
+
+    /** Clip the actual child rendering, including WebView's opaque page background. */
+    private void round(View view, int radius) {
+        view.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override public void getOutline(View target, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, target.getWidth(), target.getHeight(), dp(radius));
+            }
+        });
+        view.setClipToOutline(true);
     }
 
     private void configureWebView() {
