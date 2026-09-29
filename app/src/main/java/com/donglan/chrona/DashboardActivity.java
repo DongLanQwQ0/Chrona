@@ -880,6 +880,22 @@ public final class DashboardActivity extends Activity {
             // The search field sits between the page title and the trailing control, so filtering
             // never moves the settings entry and the keyword stays reachable while scrolling.
             row.addView(title, new LinearLayout.LayoutParams(-2, -2));
+            if (section == SCHEDULE) {
+                Button compare = new Button(this);
+                compare.setText("课表对比");
+                UiStyle.button(compare, false);
+                compare.setTextSize(12);
+                compare.setMinHeight(0);
+                compare.setMinimumHeight(0);
+                compare.setMinWidth(0);
+                compare.setMinimumWidth(0);
+                compare.setPadding(dp(10), 0, dp(10), 0);
+                compare.setOnClickListener(view ->
+                        startActivity(new Intent(this, ScheduleCompareActivity.class)));
+                LinearLayout.LayoutParams entry = new LinearLayout.LayoutParams(-2, dp(36));
+                entry.setMargins(dp(8), 0, 0, 0);
+                row.addView(compare, entry);
+            }
             LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(36), 1);
             searchParams.setMargins(dp(8), 0, dp(8), 0);
             row.addView(buildSearchField(), searchParams);

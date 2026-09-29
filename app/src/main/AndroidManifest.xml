@@ -49,6 +49,8 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_next" />
         </receiver>
         <activity android:name=".ModelOutputActivity" android:exported="false" />
+        <activity android:name=".ScheduleCompareActivity" android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".AttachmentViewerActivity" android:exported="false" />
         <activity android:name=".SettingsHubActivity" android:exported="false" />
         <activity android:name=".BackupRestoreActivity" android:exported="false" />
