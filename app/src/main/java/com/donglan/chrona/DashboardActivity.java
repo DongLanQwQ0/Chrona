@@ -885,8 +885,28 @@ public final class DashboardActivity extends Activity {
                 entry.setGravity(Gravity.CENTER_VERTICAL);
                 entry.setMinimumHeight(dp(44));
                 entry.addView(title, new LinearLayout.LayoutParams(-2, -2));
-                View underline = new View(this);
-                underline.setBackgroundColor(UiStyle.colors(this).primary);
+                View underline = new View(this) {
+                    private final android.graphics.Rect ink = new android.graphics.Rect();
+                    private final android.graphics.Paint paint = new android.graphics.Paint(
+                            android.graphics.Paint.ANTI_ALIAS_FLAG);
+                    @Override protected void onDraw(android.graphics.Canvas canvas) {
+                        super.onDraw(canvas);
+                        android.text.Layout layout = title.getLayout();
+                        if (layout == null) return;
+                        String label = title.getText().toString();
+                        title.getPaint().getTextBounds(label, 0, label.length(), ink);
+                        float origin = title.getLeft() - getLeft() + title.getTotalPaddingLeft()
+                                + layout.getLineLeft(0);
+                        float left = origin + ink.left;
+                        float right = origin + ink.right;
+                        // Font side bearings need not be equal. Extend both ink edges equally.
+                        float extension = Math.max(0, Math.min(dp(2),
+                                Math.min(left, getWidth() - right)));
+                        paint.setColor(UiStyle.colors(DashboardActivity.this).primary);
+                        canvas.drawRoundRect(left - extension, 0, right + extension, getHeight(),
+                                dp(1), dp(1), paint);
+                    }
+                };
                 underline.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
                 LinearLayout.LayoutParams line = new LinearLayout.LayoutParams(-1, dp(2));
                 line.topMargin = dp(3);
