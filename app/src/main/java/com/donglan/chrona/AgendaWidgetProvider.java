@@ -22,6 +22,7 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
     static final String REFRESH = "com.donglan.chrona.WIDGET_REFRESH";
     private static final ExecutorService UPDATES = Executors.newSingleThreadExecutor();
     private static final android.util.LruCache<String, Bitmap> ICONS = new android.util.LruCache<>(16);
+    private static final android.util.LruCache<String, Bitmap> BACKGROUNDS = new android.util.LruCache<>(8);
     private static final android.os.Handler REFRESH_HANDLER =
             new android.os.Handler(android.os.Looper.getMainLooper());
     private static Runnable scheduledRefresh;
@@ -71,17 +72,47 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
 
     private static void update(Context context, AppWidgetManager manager, int id, boolean next,
             WidgetAgenda data) {
+        Bundle options = manager.getAppWidgetOptions(id);
+        if (Build.VERSION.SDK_INT >= 31) {
+            java.util.ArrayList<android.util.SizeF> sizes = options.getParcelableArrayList(
+                    AppWidgetManager.OPTION_APPWIDGET_SIZES);
+            if (sizes != null && !sizes.isEmpty() && sizes.size() <= 16) {
+                java.util.Map<android.util.SizeF, RemoteViews> variants = new java.util.LinkedHashMap<>();
+                for (android.util.SizeF size : sizes) variants.put(size, render(context, id, next,
+                        data, new WidgetSize(Math.round(size.getWidth()), Math.round(size.getHeight()))));
+                manager.updateAppWidget(id, new RemoteViews(variants));
+                return;
+            }
+        }
+        WidgetSize size = new WidgetSize(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180),
+                options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 180));
+        manager.updateAppWidget(id, render(context, id, next, data, size));
+        if (!next && !size.compact() && Build.VERSION.SDK_INT < 31)
+            manager.notifyAppWidgetViewDataChanged(id, R.id.widget_list);
+    }
+
+    private static RemoteViews render(Context context, int id, boolean next, WidgetAgenda data,
+            WidgetSize size) {
+        boolean single = next || size.compact();
         RemoteViews views = new RemoteViews(context.getPackageName(),
-                next ? R.layout.widget_next : R.layout.widget_today);
+                size.compact() ? R.layout.widget_compact
+                        : next ? R.layout.widget_next : R.layout.widget_today);
         UiStyle.Palette palette = UiStyle.colors(context);
-        views.setImageViewBitmap(R.id.widget_background, background(palette.surface));
+        views.setInt(R.id.widget_background, "setBackgroundColor", android.graphics.Color.TRANSPARENT);
+        views.setImageViewBitmap(R.id.widget_background, background(context, palette.surface, size));
+        int pad = Math.round(size.padding() * context.getResources().getDisplayMetrics().density);
+        views.setViewPadding(R.id.widget_body, pad, pad, pad, pad);
+        views.setViewVisibility(R.id.widget_header, size.header() ? android.view.View.VISIBLE : android.view.View.GONE);
+        views.setViewVisibility(R.id.widget_heading, size.heading() ? android.view.View.VISIBLE : android.view.View.GONE);
+        views.setViewVisibility(R.id.widget_refresh, size.refresh() ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setTextColor(R.id.widget_heading, palette.text);
         views.setTextColor(R.id.widget_empty, palette.muted);
         views.setTextColor(R.id.widget_notice, palette.muted);
-        views.setTextViewText(R.id.widget_notice, "系统日历未能读取 · 点击标题检查权限");
-        views.setViewVisibility(R.id.widget_notice, data.calendarUnavailable
+        views.setTextViewText(R.id.widget_notice, "系统日历未能读取 · 点击此处检查权限");
+        views.setViewVisibility(R.id.widget_notice, data.calendarUnavailable && size.height >= 160
                 ? android.view.View.VISIBLE : android.view.View.GONE);
-        views.setTextViewText(R.id.widget_heading, next ? "下一件事" : "今天的安排");
+        views.setTextViewText(R.id.widget_heading, size.width < 220
+                ? next ? "下一件" : "今日" : next ? "下一件事" : "今天的安排");
         views.setImageViewBitmap(R.id.widget_add, icon(context, R.drawable.ic_add, palette.primary));
         views.setImageViewBitmap(R.id.widget_refresh,
                 icon(context, R.drawable.ic_refresh, palette.primary));
@@ -95,23 +126,45 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_heading, PendingIntent.getActivity(context, id,
                 new Intent(context, DashboardActivity.class), PendingIntent.FLAG_UPDATE_CURRENT
                         | PendingIntent.FLAG_IMMUTABLE));
+        PendingIntent openHome = PendingIntent.getActivity(context, id,
+                new Intent(context, DashboardActivity.class), PendingIntent.FLAG_UPDATE_CURRENT
+                        | PendingIntent.FLAG_IMMUTABLE);
+        views.setOnClickPendingIntent(R.id.widget_notice, openHome);
+        views.setOnClickPendingIntent(R.id.widget_empty, openHome);
         String empty = data.failed ? "读取失败，点击刷新重试"
-                : data.calendarUnavailable ? "系统日历未能读取，点击标题检查权限"
+                : data.calendarUnavailable ? "系统日历未能读取，点击检查权限"
                 : next ? "未来一个月暂无安排" : "今天暂无安排";
-        if (next) {
-            boolean hasItem = data.next != null && !data.failed;
+        if (single) {
+            WidgetAgenda.Item item = next ? data.next : data.today.stream()
+                    .filter(event -> event.end > data.now).findFirst()
+                    .orElse(data.today.isEmpty() ? null : data.today.get(0));
+            boolean hasItem = item != null && !data.failed;
             views.setViewVisibility(R.id.widget_content, hasItem ? android.view.View.VISIBLE
                     : android.view.View.GONE);
             views.setViewVisibility(R.id.widget_empty, hasItem ? android.view.View.GONE
                     : android.view.View.VISIBLE);
             views.setTextViewText(R.id.widget_empty, empty);
             if (hasItem) {
-                fill(context, views, data.next, data.now, data.zone);
+                fill(context, views, item, data.now, data.zone);
+                if (size.compact()) {
+                    views.setTextViewText(R.id.widget_time, compactTime(item, data));
+                    views.setViewVisibility(R.id.widget_location_row, android.view.View.GONE);
+                    views.setViewVisibility(R.id.widget_meta, android.view.View.GONE);
+                    views.setViewVisibility(R.id.widget_time_icon, size.width < 100
+                            ? android.view.View.GONE : android.view.View.VISIBLE);
+                    views.setTextViewTextSize(R.id.widget_title, android.util.TypedValue.COMPLEX_UNIT_SP,
+                            size.width < 100 || size.height < 70 ? 12 : 15);
+                    views.setTextViewTextSize(R.id.widget_time, android.util.TypedValue.COMPLEX_UNIT_SP,
+                            size.width < 100 || size.height < 70 ? 10 : 12);
+                    views.setInt(R.id.widget_title, "setMaxLines", size.height < 90 ? 1 : 2);
+                    if (size.height >= 180 && !item.location.isEmpty())
+                        views.setViewVisibility(R.id.widget_location_row, android.view.View.VISIBLE);
+                }
                 views.setOnClickPendingIntent(R.id.widget_content, PendingIntent.getActivity(
                         context, id + 100000, new Intent(context, WidgetLaunchActivity.class)
-                                .putExtra("task_id", data.next.taskId)
-                                .putExtra("event_id", data.next.system ? data.next.id : 0)
-                                .putExtra("begin", data.next.start).putExtra("end", data.next.end),
+                                .putExtra("task_id", item.taskId)
+                                .putExtra("event_id", item.system ? item.id : 0)
+                                .putExtra("begin", item.start).putExtra("end", item.end),
                         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
             }
         } else {
@@ -135,9 +188,15 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
                 views.setRemoteAdapter(R.id.widget_list, service);
             }
         }
-        manager.updateAppWidget(id, views);
-        if (!next && Build.VERSION.SDK_INT < 31)
-            manager.notifyAppWidgetViewDataChanged(id, R.id.widget_list);
+        return views;
+    }
+
+    private static String compactTime(WidgetAgenda.Item item, WidgetAgenda data) {
+        if (item.allDay) return "全天";
+        java.time.ZonedDateTime start = java.time.Instant.ofEpochMilli(item.start).atZone(data.zone);
+        java.time.LocalDate today = java.time.Instant.ofEpochMilli(data.now).atZone(data.zone).toLocalDate();
+        return java.time.format.DateTimeFormatter.ofPattern(start.toLocalDate().equals(today)
+                ? "HH:mm" : "M/d HH:mm").format(start);
     }
 
     static RemoteViews row(Context context, WidgetAgenda.Item item, long now,
@@ -184,11 +243,30 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         return bitmap;
     }
 
-    private static Bitmap background(int color) {
-        Bitmap bitmap = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888);
+    private static Bitmap background(Context context, int color, WidgetSize size) {
+        float scale = Math.min(1f, 480f / Math.max(size.width, size.height));
+        int width = Math.max(1, Math.round(size.width * scale));
+        int height = Math.max(1, Math.round(size.height * scale));
+        String key = ThemeStore.background(context) + ":" + ThemeStore.revision(context)
+                + ":" + width + ":" + height + ":" + color;
+        Bitmap cached = BACKGROUNDS.get(key);
+        if (cached != null) return cached;
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        android.graphics.Path clip = new android.graphics.Path();
+        clip.addRoundRect(new RectF(0, 0, width, height), 20, 20, android.graphics.Path.Direction.CW);
+        canvas.clipPath(clip);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        Bitmap wallpaper = GlassBackdropView.blurredForWidget(context, width, height);
+        if (wallpaper != null) {
+            paint.setAlpha(150);
+            canvas.drawBitmap(wallpaper, null, new RectF(0, 0, width, height), paint);
+            wallpaper.recycle();
+        }
         paint.setColor(color);
-        new Canvas(bitmap).drawRoundRect(new RectF(0, 0, 240, 240), 20, 20, paint);
+        paint.setAlpha(wallpaper == null ? 190 : Math.round(ThemeStore.surfaceMix(context) * 2.55f));
+        canvas.drawRect(0, 0, width, height, paint);
+        BACKGROUNDS.put(key, bitmap);
         return bitmap;
     }
 }

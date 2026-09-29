@@ -520,7 +520,37 @@ public final class GlassBackdropView extends View {
         }
     }
 
-    private Bitmap createBlurredWallpaper(Bitmap source, int width, int height,
+    /** Background worker only: reuse exactly the application's wallpaper blur algorithm. */
+    static Bitmap blurredForWidget(Context context, int width, int height) {
+        String uri = ThemeStore.background(context);
+        if (uri == null) return null;
+        Bitmap source = cachedSource(uri);
+        boolean owned = source == null;
+        try {
+            if (source == null) {
+                BitmapFactory.Options bounds = new BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                try (InputStream input = context.getContentResolver().openInputStream(Uri.parse(uri))) {
+                    BitmapFactory.decodeStream(input, null, bounds);
+                }
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inSampleSize = 1;
+                while (Math.max(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 1024)
+                    options.inSampleSize *= 2;
+                try (InputStream input = context.getContentResolver().openInputStream(Uri.parse(uri))) {
+                    source = BitmapFactory.decodeStream(input, null, options);
+                }
+            }
+            return source == null ? null : createBlurredWallpaper(source, width, height,
+                    ThemeStore.gaussianBlur(context), ThemeStore.blurStrength(context));
+        } catch (Exception | OutOfMemoryError ignored) {
+            return null;
+        } finally {
+            if (owned && source != null) source.recycle();
+        }
+    }
+
+    private static Bitmap createBlurredWallpaper(Bitmap source, int width, int height,
             boolean gaussian, int strength) {
         float sampleScale = Math.min(1f, Math.min(540f / width, 1080f / height));
         int sampleWidth = Math.max(1, Math.round(width * sampleScale));
@@ -615,7 +645,7 @@ public final class GlassBackdropView extends View {
         }
     }
 
-    private void drawWallpaper(Canvas canvas, Bitmap image, float width, float height, Paint paint) {
+    private static void drawWallpaper(Canvas canvas, Bitmap image, float width, float height, Paint paint) {
         int imageWidth = image.getWidth();
         int imageHeight = image.getHeight();
         float scale = Math.max(width / imageWidth, height / imageHeight);
