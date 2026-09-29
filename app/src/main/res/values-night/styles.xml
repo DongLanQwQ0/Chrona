@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="chrona_startup_background">#101B1B</color>
+    <bool name="chrona_startup_light_bars">false</bool>
+    <style name="Theme.Chrona.Starting.Base" parent="Theme.Chrona.Dark">
+        <item name="android:windowBackground">@color/chrona_startup_background</item>
+    </style>
+</resources>

@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="chrona_startup_background">#F6F8F5</color>
+    <bool name="chrona_startup_light_bars">true</bool>
+    <style name="Theme.Chrona.Starting.Base" parent="Theme.Chrona.Light">
+        <item name="android:windowBackground">@color/chrona_startup_background</item>
+    </style>
+    <style name="Theme.Chrona.Starting" parent="Theme.Chrona.Starting.Base" />
     <style name="Theme.Chrona.Light" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F6F8F5</item>
         <item name="android:colorAccent">#006B60</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">#F6F8F5</item>
@@ -8,6 +15,7 @@
         <item name="android:windowActionModeOverlay">true</item>
     </style>
     <style name="Theme.Chrona.Dark" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#101B1B</item>
         <item name="android:colorAccent">#80D8C9</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:navigationBarColor">#101B1B</item>

@@ -23,7 +23,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@style/Theme.Chrona.Light"
+        android:theme="@style/Theme.Chrona.Starting"
         android:enableOnBackInvokedCallback="true">
         <activity android:name=".AppearanceActivity" android:exported="false" />
         <activity android:name=".WidgetLaunchActivity" android:exported="false"

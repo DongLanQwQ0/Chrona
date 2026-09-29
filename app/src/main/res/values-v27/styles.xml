@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Chrona.Starting" parent="Theme.Chrona.Starting.Base">
+        <item name="android:windowLightNavigationBar">@bool/chrona_startup_light_bars</item>
+    </style>
+</resources>
