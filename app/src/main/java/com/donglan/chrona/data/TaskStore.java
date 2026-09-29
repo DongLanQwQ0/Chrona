@@ -851,14 +851,53 @@ public final class TaskStore extends SQLiteOpenHelper {
     }
 
     public boolean setCalendarEventId(long candidateId, long taskId, long calendarEventId) {
+        return setCalendarEventId(candidateId, taskId, calendarEventId, false);
+    }
+
+    public boolean setCalendarEventIdIfUnlinked(long candidateId, long taskId, long calendarEventId) {
+        return setCalendarEventId(candidateId, taskId, calendarEventId, true);
+    }
+
+    private boolean setCalendarEventId(long candidateId, long taskId, long calendarEventId,
+            boolean onlyUnlinked) {
         if (calendarEventId <= 0) throw new IllegalArgumentException("calendarEventId must be positive");
         ContentValues values = new ContentValues();
         values.put("calendar_event_id", calendarEventId);
         values.put("needs_confirmation", 0);
         values.put("uncertainty_level", EventCandidate.CERTAIN);
         return getWritableDatabase().update("event_candidates", values,
-                "id = ? AND task_id = ?", new String[] {
+                "id = ? AND task_id = ?" + (onlyUnlinked ? " AND calendar_event_id IS NULL" : ""), new String[] {
                         Long.toString(candidateId), Long.toString(taskId) }) > 0;
+    }
+
+    /** Clear only verified stale IDs; preserve drafts and atomically update publication status. */
+    public int clearMissingCalendarLinks(java.util.Collection<Long> missingIds) {
+        if (missingIds.isEmpty()) return 0;
+        SQLiteDatabase db = getWritableDatabase();
+        int changed = 0;
+        java.util.Set<Long> tasks = new java.util.HashSet<>();
+        db.beginTransaction();
+        try {
+            for (long eventId : missingIds) {
+                String[] arguments = {Long.toString(eventId)};
+                try (Cursor cursor = db.query("event_candidates", new String[]{"task_id"},
+                        "calendar_event_id=?", arguments, null, null, null)) {
+                    while (cursor.moveToNext()) tasks.add(cursor.getLong(0));
+                }
+                ContentValues values = new ContentValues();
+                values.putNull("calendar_event_id");
+                changed += db.update("event_candidates", values, "calendar_event_id=?", arguments);
+            }
+            for (long id : tasks) {
+                ContentValues values = new ContentValues();
+                values.put("status", TaskRecord.NEEDS_REVIEW);
+                values.putNull("error_message");
+                db.update("tasks", values, "id=? AND status=?",
+                        new String[]{Long.toString(id), TaskRecord.READY});
+            }
+            db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+        return changed;
     }
 
     /** Returns candidates in the order supplied by the parser; empty for an unknown task. */

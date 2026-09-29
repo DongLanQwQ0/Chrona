@@ -18,6 +18,7 @@ public final class ChronaApp extends Application {
         android.database.ContentObserver observer = new android.database.ContentObserver(
                 new android.os.Handler(android.os.Looper.getMainLooper())) {
             @Override public void onChange(boolean selfChange) {
+                CalendarLinkReconciler.request(ChronaApp.this);
                 AgendaWidgetProvider.requestRefresh(ChronaApp.this);
             }
         };
@@ -45,6 +46,8 @@ public final class ChronaApp extends Application {
 
             @Override public void onActivityResumed(Activity activity) {
                 observeCalendar();
+                if (activity instanceof DashboardActivity || activity instanceof TaskDetailActivity)
+                    CalendarLinkReconciler.request(activity);
                 if (activity instanceof DashboardActivity) AgendaWidgetProvider.requestRefresh(activity);
                 // Covers the change that could not reach a stopped screen, and a system light/dark
                 // switch made while the screen sat in the back stack.

@@ -66,6 +66,7 @@ final class WidgetAgenda {
     }
 
     static WidgetAgenda load(Context context) {
+        CalendarLinkReconciler.reconcileNow(context);
         WidgetAgenda result = new WidgetAgenda(System.currentTimeMillis(), ZoneId.systemDefault());
         LocalDate date = Instant.ofEpochMilli(result.now).atZone(result.zone).toLocalDate();
         long begin = date.atStartOfDay(result.zone).toInstant().toEpochMilli();

@@ -233,6 +233,29 @@ public final class CalendarStore {
         return calendarId == null ? null : getEvent(calendarId, eventId);
     }
 
+    /** Verify linked IDs in bounded batches; a provider failure never means an event was deleted. */
+    public java.util.Set<Long> existingEventIds(List<Long> ids) {
+        requireRead();
+        java.util.Set<Long> existing = new java.util.HashSet<>();
+        for (int offset = 0; offset < ids.size(); offset += 200) {
+            List<Long> batch = ids.subList(offset, Math.min(offset + 200, ids.size()));
+            String[] arguments = new String[batch.size()];
+            StringBuilder selection = new StringBuilder(Events.DELETED + "=0 AND " + Events._ID + " IN (");
+            for (int i = 0; i < batch.size(); i++) {
+                if (i > 0) selection.append(',');
+                selection.append('?');
+                arguments[i] = Long.toString(batch.get(i));
+            }
+            selection.append(')');
+            try (Cursor cursor = resolver.query(Events.CONTENT_URI, new String[]{Events._ID},
+                    selection.toString(), arguments, null)) {
+                if (cursor == null) throw new IllegalStateException("Calendar provider returned no cursor");
+                while (cursor.moveToNext()) existing.add(cursor.getLong(0));
+            }
+        }
+        return existing;
+    }
+
     /** The calendar ID is checked against the current provider row before reading. */
     public EventRecord getEvent(long calendarId, long eventId) {
         requireRead();
