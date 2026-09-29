@@ -67,7 +67,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
                 "start_at_millis IS NOT NULL AND start_at_millis<? "
-                        + "AND COALESCE(end_at_millis,start_at_millis)>=?",
+                        + "AND COALESCE(end_at_millis,start_at_millis)>=CAST(? AS INTEGER)",
                 new String[]{Long.toString(end), Long.toString(begin)}, null, null,
                 "start_at_millis ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));

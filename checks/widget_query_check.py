@@ -17,8 +17,10 @@ db.executemany("INSERT INTO event_candidates VALUES(?,?,?)", [
     (1, None, None), (2, 5, 9), (3, 5, 11), (4, 20, 22), (5, 10, None),
     (6, 15, 17), (7, 15, 18)])
 query = f"SELECT id FROM event_candidates WHERE {selection} ORDER BY start_at_millis ASC,id ASC LIMIT {limit}"
-assert [row[0] for row in db.execute(query, (20, 10))] == [3, 5, 6, 7]
+# Android SQLiteDatabase.query binds selectionArgs as strings, not integers.
+arguments = ("20", "10")
+assert [row[0] for row in db.execute(query, arguments)] == [3, 5, 6, 7]
 db.executemany("INSERT INTO event_candidates VALUES(?,?,?)", [(i, 16, 18) for i in range(8, 300)])
-rows = list(db.execute(query, (20, 10)))
+rows = list(db.execute(query, arguments))
 assert len(rows) == limit and rows[:4] == [(3,), (5,), (6,), (7,)]
 print("Widget SQL checks passed: window, null time, overlapping event, stable order, bounded limit")
