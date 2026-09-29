@@ -202,11 +202,8 @@ public final class MainActivity extends Activity {
         }
         if (savedInstanceState == null) sweepImages();
         if (savedInstanceState == null) receiveShared(getIntent());
-        if (Build.VERSION.SDK_INT >= 33
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 10);
-        }
+        // On Android 8/9, a shared file may already have opened the storage permission dialog.
+        if (deferredFileUris.isEmpty()) StartupPermissions.requestFirstLaunch(this);
     }
 
     @Override
@@ -343,6 +340,7 @@ public final class MainActivity extends Activity {
             deferredFileUris.clear();
             Feedback.showLong(this, "需要允许写入公共 Downloads/Chrona 才能保存普通文件");
         }
+        StartupPermissions.requestFirstLaunch(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
     }
 
     private void receiveShared(Intent intent) {

@@ -223,11 +223,7 @@ public final class DashboardActivity extends Activity {
         }
         buildShell();
         if (state == null) backdrop.playEntrance();
-        if (android.os.Build.VERSION.SDK_INT >= 33
-                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 10);
-        }
+        StartupPermissions.requestFirstLaunch(this);
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -2151,6 +2147,12 @@ public final class DashboardActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
             int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == StartupPermissions.REQUEST_CODE) {
+            lastCalendarFetch = 0;
+            refreshSystemCalendar();
+            AgendaWidgetProvider.requestRefresh(this);
+            return;
+        }
         if (requestCode == HOME_CALENDAR_PERMISSION_REQUEST) {
             boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
