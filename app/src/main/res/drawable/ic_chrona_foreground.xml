@@ -1,19 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive-icon foreground. The face is deliberately smaller than the visible 72dp area so the
-     light orange background reads as a frame instead of showing up only in the mask corners. -->
+<!-- Shared application mark: transparent clock face and orange ring/hands. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#F5F7F2"
-        android:pathData="M54,28.1 A25.9,25.9 0,1 1,54,79.9 A25.9,25.9 0,1 1,54,28.1" />
-    <path android:fillColor="#00000000" android:strokeColor="#006B60"
+    <path android:fillColor="#00000000" android:strokeColor="@color/chrona_icon_orange"
         android:strokeWidth="5"
         android:pathData="M54,28.1 A25.9,25.9 0,1 1,54,79.9 A25.9,25.9 0,1 1,54,28.1" />
-    <path android:fillColor="#00000000" android:strokeColor="#006B60"
+    <path android:fillColor="#00000000" android:strokeColor="@color/chrona_icon_orange"
         android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round"
         android:pathData="M54,41.7 L54,54 L62.6,59" />
-    <path android:fillColor="#006B60"
+    <path android:fillColor="@color/chrona_icon_orange"
         android:pathData="M54,49 A5,5 0,1 1,54,59 A5,5 0,1 1,54,49" />
 </vector>

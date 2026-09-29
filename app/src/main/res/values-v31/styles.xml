@@ -3,6 +3,8 @@
     <style name="Theme.Chrona.Starting" parent="Theme.Chrona.Starting.Base">
         <item name="android:windowLightNavigationBar">@bool/chrona_startup_light_bars</item>
         <item name="android:windowSplashScreenBackground">@color/chrona_startup_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_chrona_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
     </style>
     <style name="Theme.Chrona.Wallpaper.Light" parent="Theme.Chrona.Light">
         <item name="android:colorAccent">@android:color/system_accent1_700</item>
