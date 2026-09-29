@@ -7,10 +7,15 @@ import android.widget.RemoteViewsService;
 /** Collection fallback for Android 8–11; Android 12+ uses direct collection items. */
 public final class AgendaWidgetService extends RemoteViewsService {
     @Override public RemoteViewsFactory onGetViewFactory(Intent intent) {
+        int id = intent.getIntExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID,
+                android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID);
         return new RemoteViewsFactory() {
             private WidgetAgenda data;
             @Override public void onCreate() { }
-            @Override public void onDataSetChanged() { data = WidgetAgenda.load(getApplicationContext()); }
+            @Override public void onDataSetChanged() {
+                data = WidgetAgenda.load(getApplicationContext());
+                AgendaWidgetProvider.positionAfterLoad(getApplicationContext(), id, data);
+            }
             @Override public void onDestroy() { data = null; }
             @Override public int getCount() { return data == null ? 0 : data.today.size(); }
             @Override public RemoteViews getViewAt(int position) {

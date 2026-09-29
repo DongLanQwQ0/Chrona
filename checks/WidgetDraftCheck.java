@@ -37,6 +37,7 @@ public final class WidgetDraftCheck {
         check(agenda.today.size() == 3, "exclusive midnight and tomorrow excluded; point event retained");
         check(agenda.next.id == 4, "ongoing preferred over future, past excluded");
         check(agenda.today.get(0).id == 6, "stable chronological ordering");
+        check(agenda.todayStartPosition() == 2, "focus ongoing after retained historical rows");
         check(items.get(4).time(now, zone).equals("11:00 — 13:00"), "local clock rendering");
         check(item(7, begin, tomorrow, true).time(now, zone).equals("全天"), "all-day rendering");
         check(item(8, tomorrow - 3600000L, tomorrow + 3600000L, false).time(now, zone)
@@ -45,6 +46,15 @@ public final class WidgetDraftCheck {
         tomorrowOnly.select(new ArrayList<>(List.of(item(9, tomorrow, tomorrow + 1, false))),
                 begin, tomorrow, tomorrow + 86400000L);
         check(tomorrowOnly.today.isEmpty() && tomorrowOnly.next.id == 9, "future is next, not today");
+        check(tomorrowOnly.todayStartPosition() == 0, "empty today has safe initial position");
+        WidgetAgenda finished = new WidgetAgenda(now, zone);
+        finished.today.add(item(11, begin, begin + 1, false));
+        finished.today.add(item(12, now - 2, now, false));
+        check(finished.todayStartPosition() == 1, "all finished focuses latest historical row");
+        finished.today.add(item(13, now + 1, now + 2, false));
+        check(finished.todayStartPosition() == 2, "next future row follows expired rows");
+        finished.today.add(2, item(14, now, now, false));
+        check(finished.todayStartPosition() == 2, "point occurrence at current instant is eligible");
         WidgetAgenda empty = new WidgetAgenda(now, zone);
         empty.select(new ArrayList<>(List.of(item(10, tomorrow + 86400000L,
                 tomorrow + 86400001L, false))), begin, tomorrow, tomorrow + 86400000L);

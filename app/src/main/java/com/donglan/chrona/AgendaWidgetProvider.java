@@ -20,6 +20,8 @@ import java.util.concurrent.Executors;
 /** Uses native RemoteViews: no activity, model request or device wake lock needed to render. */
 public class AgendaWidgetProvider extends AppWidgetProvider {
     static final String REFRESH = "com.donglan.chrona.WIDGET_REFRESH";
+    private static final String MANUAL_REFRESH = "manual_refresh";
+    private static final String POSITION_PREFERENCES = "widget_positions";
     private static final ExecutorService UPDATES = Executors.newSingleThreadExecutor();
     private static final android.util.LruCache<String, Bitmap> ICONS = new android.util.LruCache<>(16);
     private static final android.util.LruCache<String, Bitmap> BACKGROUNDS = new android.util.LruCache<>(8);
@@ -54,6 +56,9 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
             PendingResult pending = goAsync();
             Context app = context.getApplicationContext();
             boolean next = this instanceof NextWidgetProvider;
+            boolean manual = intent.getBooleanExtra(MANUAL_REFRESH, false);
+            int requestedId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,
+                    AppWidgetManager.INVALID_APPWIDGET_ID);
             UPDATES.execute(() -> {
                 try {
                     AppWidgetManager manager = AppWidgetManager.getInstance(app);
@@ -61,7 +66,10 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
                             next ? NextWidgetProvider.class : AgendaWidgetProvider.class));
                     if (ids.length == 0) return;
                     WidgetAgenda data = WidgetAgenda.load(app);
-                    for (int id : ids) update(app, manager, id, next, data);
+                    for (int id : ids) {
+                        if (!manual || requestedId == id)
+                            update(app, manager, id, next, data, manual);
+                    }
                 } finally { pending.finish(); }
             });
         } else super.onReceive(context, intent);
@@ -70,26 +78,93 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
     @Override public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager,
             int id, Bundle options) { requestRefresh(context); }
 
+    @Override public void onDeleted(Context context, int[] ids) {
+        android.content.SharedPreferences.Editor editor = context.getSharedPreferences(
+                POSITION_PREFERENCES, Context.MODE_PRIVATE).edit();
+        for (int id : ids) editor.remove("day_" + id).remove("pending_" + id);
+        editor.apply();
+    }
+
     private static void update(Context context, AppWidgetManager manager, int id, boolean next,
-            WidgetAgenda data) {
+            WidgetAgenda data, boolean manual) {
         Bundle options = manager.getAppWidgetOptions(id);
+        android.content.SharedPreferences positions = context.getSharedPreferences(
+                POSITION_PREFERENCES, Context.MODE_PRIVATE);
+        String day = java.time.Instant.ofEpochMilli(data.now).atZone(data.zone).toLocalDate().toString();
+        boolean focus = !next && !data.failed && !data.today.isEmpty()
+                && (manual || !day.equals(positions.getString("day_" + id, "")));
         if (Build.VERSION.SDK_INT >= 31) {
             java.util.ArrayList<android.util.SizeF> sizes = options.getParcelableArrayList(
                     AppWidgetManager.OPTION_APPWIDGET_SIZES);
             if (sizes != null && !sizes.isEmpty() && sizes.size() <= 16) {
                 java.util.Map<android.util.SizeF, RemoteViews> variants = new java.util.LinkedHashMap<>();
+                boolean hasList = false;
+                for (android.util.SizeF size : sizes)
+                    hasList |= !next && !new WidgetSize(Math.round(size.getWidth()),
+                            Math.round(size.getHeight())).compact();
+                if (focus && hasList) positions.edit().putBoolean("pending_" + id, true).apply();
                 for (android.util.SizeF size : sizes) variants.put(size, render(context, id, next,
                         data, new WidgetSize(Math.round(size.getWidth()), Math.round(size.getHeight())),
                         sizes.size()));
                 manager.updateAppWidget(id, new RemoteViews(variants));
+                if (focus && hasList) {
+                    positions.edit().putString("day_" + id, day).apply();
+                    positionAfterLoad(context, id, data);
+                }
                 return;
             }
         }
         WidgetSize size = new WidgetSize(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180),
                 options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 180));
+        boolean hasList = !next && !size.compact();
+        if (focus && hasList) positions.edit().putBoolean("pending_" + id, true).apply();
         manager.updateAppWidget(id, render(context, id, next, data, size, 1));
+        if (focus && hasList) positions.edit().putString("day_" + id, day).apply();
         if (!next && !size.compact() && Build.VERSION.SDK_INT < 31)
             manager.notifyAppWidgetViewDataChanged(id, R.id.widget_list);
+        else if (focus && hasList) positionAfterLoad(context, id, data);
+    }
+
+    /** Separate from adapter binding: legacy service calls this after its data has loaded. */
+    static void positionAfterLoad(Context context, int id, WidgetAgenda data) {
+        android.content.SharedPreferences positions = context.getSharedPreferences(
+                POSITION_PREFERENCES, Context.MODE_PRIVATE);
+        if (data.failed || data.today.isEmpty() || !positions.getBoolean("pending_" + id, false)) return;
+        positions.edit().remove("pending_" + id).apply();
+        Context app = context.getApplicationContext();
+        REFRESH_HANDLER.postDelayed(() -> UPDATES.execute(() -> {
+            AppWidgetManager manager = AppWidgetManager.getInstance(app);
+            if (manager.getAppWidgetInfo(id) == null) return;
+            WidgetAgenda fresh = WidgetAgenda.load(app);
+            if (fresh.failed || fresh.today.isEmpty()) return;
+            int target = fresh.todayStartPosition();
+            Bundle options = manager.getAppWidgetOptions(id);
+            if (Build.VERSION.SDK_INT >= 31) {
+                java.util.ArrayList<android.util.SizeF> sizes = options.getParcelableArrayList(
+                        AppWidgetManager.OPTION_APPWIDGET_SIZES);
+                if (sizes != null && !sizes.isEmpty() && sizes.size() <= 16) {
+                    java.util.Map<android.util.SizeF, RemoteViews> variants = new java.util.LinkedHashMap<>();
+                    for (android.util.SizeF size : sizes) {
+                        WidgetSize dimensions = new WidgetSize(Math.round(size.getWidth()),
+                                Math.round(size.getHeight()));
+                        RemoteViews view = render(app, id, false, fresh, dimensions, sizes.size());
+                        if (!dimensions.compact()) view.setScrollPosition(R.id.widget_list, target);
+                        variants.put(size, view);
+                    }
+                    // Partial updates do not merge actions into size-specific child RemoteViews.
+                    manager.updateAppWidget(id, new RemoteViews(variants));
+                    return;
+                }
+            }
+            WidgetSize dimensions = new WidgetSize(options.getInt(
+                    AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180), options.getInt(
+                    AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 180));
+            if (dimensions.compact()) return;
+            RemoteViews scroll = new RemoteViews(app.getPackageName(), R.layout.widget_today);
+            // Supported by RemoteViews; the launcher decides the exact visible alignment.
+            scroll.setScrollPosition(R.id.widget_list, target);
+            manager.partiallyUpdateAppWidget(id, scroll);
+        }), 350);
     }
 
     private static RemoteViews render(Context context, int id, boolean next, WidgetAgenda data,
@@ -123,7 +198,9 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
                         | PendingIntent.FLAG_IMMUTABLE));
         Class<?> provider = next ? NextWidgetProvider.class : AgendaWidgetProvider.class;
         views.setOnClickPendingIntent(R.id.widget_refresh, PendingIntent.getBroadcast(context, id,
-                new Intent(REFRESH).setComponent(new ComponentName(context, provider)),
+                new Intent(REFRESH).setComponent(new ComponentName(context, provider))
+                        .putExtra(MANUAL_REFRESH, true)
+                        .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         views.setOnClickPendingIntent(R.id.widget_heading, PendingIntent.getActivity(context, id,
                 new Intent(context, DashboardActivity.class), PendingIntent.FLAG_UPDATE_CURRENT
@@ -137,9 +214,8 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
                 : data.calendarUnavailable ? "系统日历未能读取，点击检查权限"
                 : next ? "未来一个月暂无安排" : "今天暂无安排";
         if (single) {
-            WidgetAgenda.Item item = next ? data.next : data.today.stream()
-                    .filter(event -> event.end > data.now).findFirst()
-                    .orElse(data.today.isEmpty() ? null : data.today.get(0));
+            WidgetAgenda.Item item = next ? data.next : data.today.isEmpty() ? null
+                    : data.today.get(data.todayStartPosition());
             boolean hasItem = item != null && !data.failed;
             views.setViewVisibility(R.id.widget_content, hasItem ? android.view.View.VISIBLE
                     : android.view.View.GONE);

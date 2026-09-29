@@ -54,6 +54,15 @@ final class WidgetAgenda {
 
     WidgetAgenda(long now, ZoneId zone) { this.now = now; this.zone = zone; }
 
+    /** Keep history in chronological order; focus the first unfinished occurrence. */
+    int todayStartPosition() {
+        for (int i = 0; i < today.size(); i++) {
+            Item item = today.get(i);
+            if (item.end > now || item.start >= now) return i;
+        }
+        return Math.max(0, today.size() - 1);
+    }
+
     void select(List<Item> items, long begin, long tomorrow, long horizon) {
         items.sort(Comparator.comparingLong((Item item) -> item.start)
                 .thenComparingLong(item -> item.id));
