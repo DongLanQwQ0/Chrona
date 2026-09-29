@@ -17,6 +17,7 @@ import android.os.Build;
 import android.os.PersistableBundle;
 
 import com.donglan.chrona.TaskDetailActivity;
+import com.donglan.chrona.R;
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.ai.ChatCompletionClient;
@@ -151,8 +152,7 @@ public final class ProcessingJobService extends JobService {
         Intent intent = new Intent(this, TaskDetailActivity.class).putExtra("task_id", taskId);
         PendingIntent pending = PendingIntent.getActivity(this, (int) taskId, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        return new Notification.Builder(this, RUNNING_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+        return notificationBuilder(RUNNING_CHANNEL_ID)
                 .setContentTitle("拾时 · Chrona 正在解析")
                 .setContentText(preview.isEmpty() ? "正在解析这条输入" : preview)
                 .setOngoing(true)
@@ -452,8 +452,7 @@ public final class ProcessingJobService extends JobService {
         Intent intent = new Intent(this, TaskDetailActivity.class).putExtra("task_id", taskId);
         PendingIntent pending = PendingIntent.getActivity(this, (int) taskId, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+        Notification notification = notificationBuilder(CHANNEL_ID)
                 .setContentTitle("拾时 · Chrona")
                 .setContentText(text)
                 .setCategory(Notification.CATEGORY_REMINDER)
@@ -461,5 +460,13 @@ public final class ProcessingJobService extends JobService {
                 .setContentIntent(pending)
                 .build();
         manager.notify((int) taskId, notification);
+    }
+
+    private Notification.Builder notificationBuilder(String channelId) {
+        return new Notification.Builder(this, channelId)
+                .setSmallIcon(R.drawable.ic_chrona_foreground)
+                .setLargeIcon(android.graphics.drawable.Icon.createWithResource(
+                        this, R.drawable.ic_chrona_foreground))
+                .setColor(getColor(R.color.chrona_icon_orange));
     }
 }
