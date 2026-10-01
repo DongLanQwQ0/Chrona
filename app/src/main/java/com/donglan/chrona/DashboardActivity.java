@@ -223,7 +223,6 @@ public final class DashboardActivity extends Activity {
         }
         buildShell();
         if (state == null) backdrop.playEntrance();
-        StartupPermissions.requestFirstLaunch(this);
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -563,6 +562,9 @@ public final class DashboardActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (!GuideActivity.showIfNeeded(this)) {
+            StartupPermissions.requestFirstLaunch(this);
+        }
         foreground = true;
         lastCalendarFetch = 0;
         int recovered = ProcessingJobService.reconcile(this);

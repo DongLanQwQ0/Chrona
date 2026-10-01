@@ -53,6 +53,7 @@ public final class SettingsHubActivity extends Activity {
                 BackupRestoreActivity.class);
         section(root, "AI 服务", "地址、模型、密钥和图片支持",
                 SettingsActivity.class);
+        section(root, "使用引导", "从记录、审核到系统日历提醒", GuideActivity.class);
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             section(root, "诊断信息", "查看本机运行状态与日志", DebugActivity.class);
         }
