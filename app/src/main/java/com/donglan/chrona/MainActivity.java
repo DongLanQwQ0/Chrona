@@ -736,11 +736,13 @@ public final class MainActivity extends Activity {
 
     /** Keeps the image entry in step with what the configured model was just found to accept. */
     private void refreshImageEntry() {
-        boolean unsupported = imagesUnsupported();
+        boolean unsupported = false;
         boolean knownUnsupported = false;
         try {
             AiSettingsStore store = new AiSettingsStore(this);
-            knownUnsupported = store.isKnownImageUnsupported(store.load());
+            AiSettings settings = store.load();
+            unsupported = settings != null && store.isImageUnsupported(settings);
+            knownUnsupported = store.isKnownImageUnsupported(settings);
         } catch (Exception ignored) {
             // Submission still checks the effective model before sending an attachment.
         }

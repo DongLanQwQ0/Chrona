@@ -226,6 +226,9 @@ public final class TaskDetailActivity extends Activity {
     private boolean dragTargetLoaded;
     private int activeDragDirection;
     private PagerPage adjacentPage;
+    private final List<View> movingSurfaces = new ArrayList<>();
+    private final android.graphics.Rect movingVisibleRect = new android.graphics.Rect();
+    private boolean movingSurfacesDirty = true;
     private View gesturePriorityChild;
     private View galleryGesturePriorityChild;
     private final Map<Long, Integer> taskScrollPositions = new HashMap<>();
@@ -238,6 +241,7 @@ public final class TaskDetailActivity extends Activity {
     private final Map<Long, Bundle> candidateDrafts = new HashMap<>();
     private Map<Long, Supplier<Bundle>> draftReaders = new HashMap<>();
     private android.window.OnBackInvokedCallback detailBack;
+    private boolean detailBackRegistered;
     private SaveSession saveSession;
     private static final class SaveSession {
         WeakReference<TaskDetailActivity> owner = new WeakReference<>(null);
@@ -309,6 +313,7 @@ public final class TaskDetailActivity extends Activity {
                         dragTargetLoaded = false;
                         activeDragDirection = 0;
                         taskScrollPositions.put(taskId, page.getScrollY());
+                        movingSurfacesDirty = true;
                     }
 
                     @Override public void onDrag(float distanceX) {
@@ -327,6 +332,7 @@ public final class TaskDetailActivity extends Activity {
                                     FrameLayout stage = detailPager;
                                     stage.addView(adjacentPage.shell, 1,
                                             new FrameLayout.LayoutParams(-1, -1));
+                                    movingSurfacesDirty = true;
                                     stage.requestApplyInsets();
                                     adjacentPage.shell.setTranslationX(direction > 0 ? width : -width);
                                     long restoredY = taskScrollPositions.getOrDefault(targetId, 0);
@@ -370,6 +376,7 @@ public final class TaskDetailActivity extends Activity {
                     }
                 });
         detailPager = stage;
+        stage.setFramePacingEnabled(true);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
         content.setFitsSystemWindows(false);
@@ -406,11 +413,7 @@ public final class TaskDetailActivity extends Activity {
         } else {
             animateEntrances = true;
         }
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            detailBack = this::requestExit;
-            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, detailBack);
-        }
+        updateDetailBack();
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -468,7 +471,7 @@ public final class TaskDetailActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (saveSession.owner.get() == this) saveSession.owner.clear();
-        if (android.os.Build.VERSION.SDK_INT >= 33 && detailBack != null)
+        if (android.os.Build.VERSION.SDK_INT >= 33 && detailBackRegistered)
             getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(detailBack);
         super.onDestroy();
     }
@@ -545,6 +548,7 @@ public final class TaskDetailActivity extends Activity {
 
     private void render() {
         if (deleting) return;
+        movingSurfacesDirty = true;
         snapshotDrafts();
         draftReaders = new HashMap<>();
         final long renderedTaskId = taskId;
@@ -1076,6 +1080,19 @@ public final class TaskDetailActivity extends Activity {
     private void updateDirtyState() {
         hasUnsavedEdits = !dirtyCandidateIds.isEmpty();
         if (detailPager != null) detailPager.setTaskPagingEnabled(!hasUnsavedEdits && !saveInFlight);
+        updateDetailBack();
+    }
+
+    private void updateDetailBack() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return;
+        boolean protectEdits = hasUnsavedEdits || saveInFlight;
+        if (protectEdits == detailBackRegistered) return;
+        if (protectEdits) {
+            if (detailBack == null) detailBack = this::requestExit;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, detailBack);
+        } else getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(detailBack);
+        detailBackRegistered = protectEdits;
     }
 
     /** direction +1 moves to an older inbox item; -1 moves to a newer one. */
@@ -1338,7 +1355,7 @@ public final class TaskDetailActivity extends Activity {
                 .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces()).start();
         adjacentPage.shell.animate().translationX(adjacentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
-                .setUpdateListener(animation -> invalidateVisibleAcrylicSurfaces())
+                .setUpdateListener(null)
                 .withEndAction(() -> completeAdjacentPageGesture(commit)).start();
     }
 
@@ -1360,6 +1377,7 @@ public final class TaskDetailActivity extends Activity {
             activatePagerPage(capturePagerPage());
         }
         adjacentPage = null;
+        movingSurfacesDirty = true;
         dragTargetLoaded = false;
         activeDragDirection = 0;
         pageTransitionRunning = false;
@@ -1368,15 +1386,16 @@ public final class TaskDetailActivity extends Activity {
 
     /** Re-samples acrylic cards after horizontal translations; vertical scroll alone is insufficient. */
     private void invalidateVisibleAcrylicSurfaces() {
-        if (shell != null && shell.isAttachedToWindow()
-                && shell.getGlobalVisibleRect(new android.graphics.Rect())) {
-            UiStyle.invalidateAcrylicSurfaces(shell);
+        if (movingSurfacesDirty) {
+            movingSurfaces.clear();
+            if (shell != null) UiStyle.collectAcrylicSurfaces(shell, movingSurfaces);
+            if (adjacentPage != null)
+                UiStyle.collectAcrylicSurfaces(adjacentPage.shell, movingSurfaces);
+            movingSurfacesDirty = false;
         }
-        PagerPage adjacent = adjacentPage;
-        if (adjacent != null && adjacent.shell.isAttachedToWindow()
-                && adjacent.shell.getGlobalVisibleRect(new android.graphics.Rect())) {
-            UiStyle.invalidateAcrylicSurfaces(adjacent.shell);
-        }
+        for (View surface : movingSurfaces)
+            if (surface.isAttachedToWindow() && surface.getGlobalVisibleRect(movingVisibleRect))
+                surface.invalidate();
     }
 
     private void addSourceSection(String rawText, LinearLayout card) {
