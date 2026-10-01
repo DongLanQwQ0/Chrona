@@ -61,6 +61,35 @@ public final class SettingsHubActivity extends Activity {
         version.setGravity(Gravity.CENTER);
         UiStyle.muted(version);
         UiStyle.addSpaced(root, version, 24, 16);
+        TextView github = new TextView(this);
+        github.setText("GitHub主页 https://github.com/DongLanQwQ0");
+        github.setGravity(Gravity.CENTER);
+        github.setTextColor(UiStyle.colors(this).primary);
+        github.setOnClickListener(view -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/DongLanQwQ0")));
+            } catch (android.content.ActivityNotFoundException exception) {
+                android.widget.Toast.makeText(this, "没有可用的浏览器", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        });
+        UiStyle.addSpaced(root, github, 0, 8);
+        TextView qq = new TextView(this);
+        qq.setText("QQ:2590339284(可以长按复制)");
+        qq.setGravity(Gravity.CENTER);
+        UiStyle.muted(qq);
+        qq.setOnLongClickListener(view -> {
+            android.content.ClipboardManager clipboard = getSystemService(android.content.ClipboardManager.class);
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "2590339284"));
+            android.widget.Toast.makeText(this, "QQ号已复制", android.widget.Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        UiStyle.addSpaced(root, qq, 0, 8);
+        TextView welcome = new TextView(this);
+        welcome.setText("欢迎来找我喵~QwQ");
+        welcome.setGravity(Gravity.CENTER);
+        UiStyle.muted(welcome);
+        UiStyle.addSpaced(root, welcome, 0, 16);
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
