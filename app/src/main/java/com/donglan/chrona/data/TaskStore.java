@@ -824,6 +824,14 @@ public final class TaskStore extends SQLiteOpenHelper {
     }
 
     /** Updates a reviewed candidate without changing its calendar association. */
+    public boolean updateCandidateDescription(long candidateId, long taskId, String description) {
+        ContentValues values = new ContentValues();
+        values.put("description", description);
+        return getWritableDatabase().update("event_candidates", values, "id=? AND task_id=?",
+                new String[]{Long.toString(candidateId), Long.toString(taskId)}) == 1;
+    }
+
+    /** Updates a reviewed candidate without changing its calendar association. */
     public boolean updateCandidate(EventCandidate candidate) {
         if (candidate == null || candidate.id <= 0) {
             throw new IllegalArgumentException("Saved candidate is required");

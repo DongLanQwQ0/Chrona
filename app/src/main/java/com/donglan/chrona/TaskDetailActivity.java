@@ -67,6 +67,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
+import java.util.function.Consumer;
+import java.lang.ref.WeakReference;
 
 /** Review parsed events before committing them to the device calendar. */
 public final class TaskDetailActivity extends Activity {
@@ -232,6 +235,32 @@ public final class TaskDetailActivity extends Activity {
     private long initialCandidateId;
     private float dragStartOffset;
     private final Set<Long> dirtyCandidateIds = new HashSet<>();
+    private final Map<Long, Bundle> candidateDrafts = new HashMap<>();
+    private Map<Long, Supplier<Bundle>> draftReaders = new HashMap<>();
+    private android.window.OnBackInvokedCallback detailBack;
+    private SaveSession saveSession;
+    private static final class SaveSession {
+        WeakReference<TaskDetailActivity> owner = new WeakReference<>(null);
+        boolean busy;
+        Consumer<TaskDetailActivity> pending;
+        final Map<Long, String> savedNotes = new HashMap<>();
+        final Set<Long> completedCandidates = new HashSet<>();
+        void restoreDrafts(Map<Long, Bundle> drafts) {
+            drafts.keySet().removeAll(completedCandidates);
+            for (Map.Entry<Long, String> note : savedNotes.entrySet()) {
+                Bundle draft = drafts.get(note.getKey());
+                if (draft != null) draft.putString("description", note.getValue());
+            }
+        }
+        void deliver() {
+            TaskDetailActivity activity = owner.get();
+            if (activity == null || activity.isFinishing() || activity.isDestroyed()
+                    || pending == null) return;
+            Consumer<TaskDetailActivity> action = pending;
+            pending = null;
+            action.accept(activity);
+        }
+    }
     private final List<Uri> deferredFileUris = new ArrayList<>();
     /** Cards stagger in only for a freshly opened screen, not on every rebuild. */
     private boolean animateEntrances;
@@ -250,6 +279,10 @@ public final class TaskDetailActivity extends Activity {
     protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
+        Object retained = getLastNonConfigurationInstance();
+        saveSession = retained instanceof SaveSession ? (SaveSession) retained : new SaveSession();
+        saveSession.owner = new WeakReference<>(this);
+        saveInFlight = saveSession.busy;
         taskId = state == null ? getIntent().getLongExtra("task_id", -1)
                 : state.getLong("task_id", getIntent().getLongExtra("task_id", -1));
         initialCandidateId = state == null ? getIntent().getLongExtra(EXTRA_CANDIDATE_ID, 0) : 0;
@@ -279,7 +312,7 @@ public final class TaskDetailActivity extends Activity {
                     }
 
                     @Override public void onDrag(float distanceX) {
-                        if (pageTransitionRunning || hasUnsavedEdits) return;
+                        if (pageTransitionRunning || hasUnsavedEdits || saveInFlight) return;
                         float width = Math.max(page.getWidth(),
                                 getResources().getDisplayMetrics().widthPixels);
                         float offset = Math.max(-width, Math.min(width, dragStartOffset + distanceX));
@@ -364,13 +397,29 @@ public final class TaskDetailActivity extends Activity {
                     taskCandidatePagePositions.put(candidateTaskIds[i], Math.max(0, candidateIndexes[i]));
             }
             page.post(() -> page.scrollTo(0, scrollY));
+            Bundle drafts = state.getBundle("candidate_drafts");
+            if (drafts != null) for (String id : drafts.keySet()) {
+                Bundle draft = drafts.getBundle(id);
+                if (draft != null) candidateDrafts.put(Long.parseLong(id), draft);
+            }
+            saveSession.restoreDrafts(candidateDrafts);
         } else {
             animateEntrances = true;
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            detailBack = this::requestExit;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, detailBack);
         }
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
+        snapshotDrafts();
+        Bundle drafts = new Bundle();
+        for (Map.Entry<Long, Bundle> entry : candidateDrafts.entrySet())
+            drafts.putBundle(Long.toString(entry.getKey()), entry.getValue());
+        state.putBundle("candidate_drafts", drafts);
         state.putInt("scroll_y", page.getScrollY());
         taskScrollPositions.put(taskId, page.getScrollY());
         long[] savedIds = new long[taskScrollPositions.size()];
@@ -404,7 +453,8 @@ public final class TaskDetailActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (!hasUnsavedEdits && !saveInFlight) render();
+        if (content.getChildCount() == 0 || !hasUnsavedEdits && !saveInFlight) render();
+        saveSession.deliver();
         refreshHandler.postDelayed(refreshPoll, 1500L);
     }
 
@@ -412,6 +462,55 @@ public final class TaskDetailActivity extends Activity {
     protected void onPause() {
         refreshHandler.removeCallbacks(refreshPoll);
         super.onPause();
+    }
+
+    @Override public Object onRetainNonConfigurationInstance() { return saveSession; }
+
+    @Override protected void onDestroy() {
+        if (saveSession.owner.get() == this) saveSession.owner.clear();
+        if (android.os.Build.VERSION.SDK_INT >= 33 && detailBack != null)
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(detailBack);
+        super.onDestroy();
+    }
+
+    @android.annotation.SuppressLint("GestureBackNavigation") // API 33+ uses detailBack above.
+    @Override public void onBackPressed() { requestExit(); }
+
+    private void requestExit() {
+        if (saveInFlight) Feedback.show(this, "正在保存日程，请稍候");
+        else if (hasUnsavedEdits) showUnsavedEditsDialog();
+        else finish();
+    }
+
+    private void snapshotDrafts() {
+        for (long id : dirtyCandidateIds) {
+            Supplier<Bundle> reader = draftReaders.get(id);
+            if (reader != null) candidateDrafts.put(id, reader.get());
+        }
+    }
+
+    private void setSaving(boolean busy) {
+        saveSession.busy = busy;
+        saveInFlight = busy;
+        updateDirtyState();
+        if (completionAction != null) completionAction.setEnabled(!busy);
+        setContentEnabled(content, !busy);
+    }
+
+    private static void setContentEnabled(View view, boolean enabled) {
+        view.setEnabled(enabled);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++)
+                setContentEnabled(group.getChildAt(i), enabled);
+        }
+    }
+
+    private void deliverSave(Consumer<TaskDetailActivity> action) {
+        refreshHandler.post(() -> {
+            saveSession.pending = action;
+            saveSession.deliver();
+        });
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
@@ -446,6 +545,8 @@ public final class TaskDetailActivity extends Activity {
 
     private void render() {
         if (deleting) return;
+        snapshotDrafts();
+        draftReaders = new HashMap<>();
         final long renderedTaskId = taskId;
         candidatePageIndex = taskCandidatePagePositions.getOrDefault(taskId, candidatePageIndex);
         if (detailPager != null) detailPager.setGesturePriorityChild(null);
@@ -515,6 +616,7 @@ public final class TaskDetailActivity extends Activity {
             animateEntrances = false;
             enterDetailChildren(content);
         }
+        if (saveInFlight) setSaving(true);
     }
 
     /** Fade detail cards in without translating them while their acrylic samples are drawn. */
@@ -635,6 +737,7 @@ public final class TaskDetailActivity extends Activity {
             UiStyle.confirmDialog(this, "保存当前日程？",
                     "其他日程有未保存修改。继续后会放弃那些修改。", "继续保存", () -> {
                         dirtyCandidateIds.removeIf(id -> id != candidateId);
+                        candidateDrafts.keySet().removeIf(id -> id != candidateId);
                         updateDirtyState();
                         action.performClick();
                     });
@@ -660,15 +763,7 @@ public final class TaskDetailActivity extends Activity {
         back.setTextColor(UiStyle.colors(this).primary);
         UiStyle.glass(back);
         UiStyle.pressable(back);
-        back.setOnClickListener(view -> {
-            if (saveInFlight) {
-                Feedback.show(this, "正在保存日程，请稍候");
-            } else if (hasUnsavedEdits) {
-                showUnsavedEditsDialog();
-            } else {
-                finish();
-            }
-        });
+        back.setOnClickListener(view -> requestExit());
         row.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView title = new TextView(this);
         title.setText("任务详情");
@@ -973,19 +1068,20 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void markCandidateDirty(long candidateId) {
+        saveSession.completedCandidates.remove(candidateId);
         dirtyCandidateIds.add(candidateId);
         updateDirtyState();
     }
 
     private void updateDirtyState() {
         hasUnsavedEdits = !dirtyCandidateIds.isEmpty();
-        if (detailPager != null) detailPager.setTaskPagingEnabled(!hasUnsavedEdits);
+        if (detailPager != null) detailPager.setTaskPagingEnabled(!hasUnsavedEdits && !saveInFlight);
     }
 
     /** direction +1 moves to an older inbox item; -1 moves to a newer one. */
     private void finishTaskPageGesture(float distanceX, float velocityX) {
         if (deleting || pageTransitionRunning) return;
-        if (hasUnsavedEdits) {
+        if (hasUnsavedEdits || saveInFlight) {
             settleTaskPageAtCurrent();
             Feedback.show(this, "请先保存当前修改，再切换收件");
             return;
@@ -1047,7 +1143,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void changeTaskPage(int direction) {
-        if (deleting || pageTransitionRunning || direction == 0) return;
+        if (deleting || pageTransitionRunning || hasUnsavedEdits || saveInFlight || direction == 0) return;
         long nextTaskId;
         try (TaskStore store = new TaskStore(this)) {
             List<TaskRecord> tasks = store.listTasks();
@@ -1127,6 +1223,7 @@ public final class TaskDetailActivity extends Activity {
         final View gestureChild;
         final View galleryGestureChild;
         final boolean resetScroll;
+        final Map<Long, Supplier<Bundle>> readers;
 
         PagerPage(long id) {
             this.id = id;
@@ -1147,6 +1244,7 @@ public final class TaskDetailActivity extends Activity {
             this.gestureChild = gesturePriorityChild;
             this.galleryGestureChild = galleryGesturePriorityChild;
             this.resetScroll = resetScrollForNextRender;
+            this.readers = draftReaders;
         }
     }
 
@@ -1174,6 +1272,7 @@ public final class TaskDetailActivity extends Activity {
         gesturePriorityChild = saved.gestureChild;
         galleryGesturePriorityChild = saved.galleryGestureChild;
         resetScrollForNextRender = saved.resetScroll;
+        draftReaders = saved.readers;
         detailPager.setGesturePriorityChild(gesturePriorityChild);
         detailPager.addGesturePriorityChild(galleryGesturePriorityChild);
     }
@@ -1534,6 +1633,7 @@ public final class TaskDetailActivity extends Activity {
 
     private void addCaptureImages(List<Uri> sources) {
         if (sources.isEmpty()) return;
+        final long targetTaskId = taskId;
         Feedback.show(this, "正在添加图片…");
         new Thread(() -> {
             int added = 0;
@@ -1544,7 +1644,7 @@ public final class TaskDetailActivity extends Activity {
                     String stored = null;
                     try {
                         stored = images.importImage(source);
-                        if (store.addImageAttachment(taskId, stored)) added++;
+                        if (store.addImageAttachment(targetTaskId, stored)) added++;
                         else {
                             images.delete(stored);
                             failed++;
@@ -1558,7 +1658,8 @@ public final class TaskDetailActivity extends Activity {
             int addedCount = added;
             int failedCount = failed;
             runOnUiThread(() -> {
-                render();
+                if (isFinishing() || isDestroyed() || taskId != targetTaskId) return;
+                if (!hasUnsavedEdits && !saveInFlight) render();
                 Feedback.show(this, failedCount == 0 ? "已添加 " + addedCount + " 张图片"
                         : "已添加 " + addedCount + " 张，" + failedCount + " 张失败");
             });
@@ -1567,6 +1668,7 @@ public final class TaskDetailActivity extends Activity {
 
     private void addOrdinaryFiles(List<Uri> sources) {
         if (sources.isEmpty()) return;
+        final long targetTaskId = taskId;
         if (android.os.Build.VERSION.SDK_INT < 29 && checkSelfPermission(
                 Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             deferredFileUris.addAll(sources);
@@ -1584,7 +1686,7 @@ public final class TaskDetailActivity extends Activity {
                     TaskFileAttachment file = null;
                     try {
                         file = fileStore.importFile(source);
-                        if (store.addFileAttachment(taskId, file)) added++;
+                        if (store.addFileAttachment(targetTaskId, file)) added++;
                         else {
                             failed++;
                         }
@@ -1596,7 +1698,8 @@ public final class TaskDetailActivity extends Activity {
             int addedCount = added;
             int failedCount = failed;
             runOnUiThread(() -> {
-                render();
+                if (isFinishing() || isDestroyed() || taskId != targetTaskId) return;
+                if (!hasUnsavedEdits && !saveInFlight) render();
                 Feedback.show(this, failedCount == 0 ? "已添加 " + addedCount + " 个文件"
                         : "已添加 " + addedCount + " 个，" + failedCount + " 个失败");
             });
@@ -2213,6 +2316,50 @@ public final class TaskDetailActivity extends Activity {
         reminderRow.addView(reminderSuffix);
         trackUnsavedChanges(location, candidate.id);
         trackUnsavedChanges(reminder, candidate.id);
+        draftReaders.put(candidate.id, () -> {
+            Bundle draft = new Bundle();
+            draft.putString("title", title.getText().toString());
+            draft.putString("start", start.getText().toString());
+            draft.putString("end", end.getText().toString());
+            draft.putString("location", location.getText().toString());
+            draft.putString("reminder", reminder.getText().toString());
+            draft.putString("description", currentDescription[0]);
+            draft.putInt("category", selectedCategory[0]);
+            draft.putBoolean("all_day", allDay.isChecked());
+            draft.putBoolean("auto_end", autoEnd[0]);
+            draft.putStringArray("timed_range", timedRange.clone());
+            return draft;
+        });
+        Bundle draft = candidateDrafts.get(candidate.id);
+        if (draft != null) {
+            selectedCategory[0] = Math.max(0, Math.min(EventCategory.VALUES.length - 1,
+                    draft.getInt("category")));
+            category.setText(EventCategory.LABELS[selectedCategory[0]]);
+            allDay.setChecked(draft.getBoolean("all_day"));
+            syncingRange[0] = true;
+            title.setText(draft.getString("title", ""));
+            start.setText(draft.getString("start", ""));
+            end.setText(draft.getString("end", ""));
+            location.setText(draft.getString("location", ""));
+            reminder.setText(draft.getString("reminder", ""));
+            // Notes are saved independently. The database may be newer than Android's Bundle.
+            currentDescription[0] = candidate.description == null ? "" : candidate.description;
+            notePreview.setText(shortNote(currentDescription[0]));
+            notePreview.setContentDescription("备注，点按展开并编辑；" + currentDescription[0]);
+            String[] range = draft.getStringArray("timed_range");
+            if (range != null && range.length == 2) {
+                timedRange[0] = range[0];
+                timedRange[1] = range[1];
+            }
+            autoEnd[0] = draft.getBoolean("auto_end");
+            syncingRange[0] = false;
+            boolean deadline = EventCategory.DEADLINE.equals(EventCategory.VALUES[selectedCategory[0]]);
+            start.setHint(allDay.isChecked() ? "开始日期：yyyy-MM-dd" : deadline
+                    ? "截止前开始：yyyy-MM-dd HH:mm" : "开始：yyyy-MM-dd HH:mm");
+            end.setHint(allDay.isChecked() ? "结束日期（含当天）：yyyy-MM-dd" : deadline
+                    ? "截止时间：yyyy-MM-dd HH:mm" : "结束：yyyy-MM-dd HH:mm");
+            markCandidateDirty(candidate.id);
+        }
         Button[] publish = new Button[1];
         publish[0] = button(card, candidate.calendarEventId == null
                 ? "确认并写入日历" : "保存并更新日历", () -> {
@@ -2234,14 +2381,14 @@ public final class TaskDetailActivity extends Activity {
                 String reminderText = reminder.getText().toString().trim();
                 Integer minutes = reminderText.isEmpty() ? null : Integer.parseInt(reminderText);
                 if (minutes != null && minutes < 0) throw new IllegalArgumentException("提醒分钟数不能为负数");
-                EventCandidate edited = new EventCandidate(candidate.id, taskId, titleText,
+                EventCandidate edited = new EventCandidate(candidate.id, candidate.taskId, titleText,
                         startAt, endAt, allDay.isChecked() ? "UTC" : zone.getId(),
                         location.getText().toString().trim(),
                         currentDescription[0].trim(), minutes, false,
                         candidate.calendarEventId,
                         EventCategory.VALUES[selectedCategory[0]], allDay.isChecked(), autoEnd[0]);
-                saveInFlight = true;
-                if (completionAction != null) completionAction.setEnabled(false);
+                snapshotDrafts();
+                setSaving(true);
                 new Thread(() -> checkCalendarDuplicateThenPublish(edited),
                         "chrona-calendar-write").start();
             } catch (DateTimeParseException | NumberFormatException exception) {
@@ -2270,7 +2417,7 @@ public final class TaskDetailActivity extends Activity {
                     throw new IllegalStateException("无法保存日程草稿");
                 if (!calendar.updateEvent(edited.calendarEventId, input)) {
                     store.clearMissingCalendarLinks(Collections.singletonList(edited.calendarEventId));
-                    EventCandidate current = store.getCandidates(taskId).stream()
+                    EventCandidate current = store.getCandidates(edited.taskId).stream()
                             .filter(candidate -> candidate.id == edited.id).findFirst().orElse(null);
                     if (current == null || current.calendarEventId != null)
                         throw new IllegalStateException("日程关联已变化，请刷新后重试");
@@ -2286,25 +2433,26 @@ public final class TaskDetailActivity extends Activity {
                 if (!store.updateCandidate(edited))
                     throw new IllegalStateException("无法保存日程草稿");
                 long eventId = calendar.insertEvent(input);
-                if (!store.setCalendarEventIdIfUnlinked(edited.id, taskId, eventId)) {
+                if (!store.setCalendarEventIdIfUnlinked(edited.id, edited.taskId, eventId)) {
                     calendar.deleteEvent(eventId);
                     throw new IllegalStateException("无法保存日程关联");
                 }
             }
-            List<EventCandidate> savedCandidates = store.getCandidates(taskId);
-            store.updateStatus(taskId, reviewStatus(savedCandidates), null);
-            savedCandidates = store.getCandidates(taskId);
-            DiagLog.add(this, "calendar written task=" + taskId + " candidate=" + edited.id
+            List<EventCandidate> savedCandidates = store.getCandidates(edited.taskId);
+            store.updateStatus(edited.taskId, reviewStatus(savedCandidates), null);
+            savedCandidates = store.getCandidates(edited.taskId);
+            DiagLog.add(this, "calendar written task=" + edited.taskId + " candidate=" + edited.id
                     + " event=" + edited.calendarEventId);
             List<EventCandidate> result = savedCandidates;
-            runOnUiThread(() -> {
-                continueCandidateConfirmation(edited.id, result);
+            deliverSave(owner -> {
+                owner.setSaving(false);
+                if (owner.taskId == edited.taskId)
+                    owner.continueCandidateConfirmation(edited.id, result);
             });
         } catch (Exception exception) {
-            runOnUiThread(() -> {
-                saveInFlight = false;
-                if (completionAction != null) completionAction.setEnabled(true);
-                showCandidateError(edited, exception);
+            deliverSave(owner -> {
+                owner.setSaving(false);
+                if (owner.taskId == edited.taskId) owner.showCandidateError(edited, exception);
             });
         }
     }
@@ -2325,33 +2473,32 @@ public final class TaskDetailActivity extends Activity {
                 publish(edited);
                 return;
             }
-            runOnUiThread(() -> {
-                saveInFlight = false;
-                if (completionAction != null) completionAction.setEnabled(true);
+            deliverSave(owner -> {
+                owner.setSaving(false);
+                if (owner.taskId != edited.taskId) return;
                 String[] options = new String[matches.size() + 2];
                 for (int i = 0; i < matches.size(); i++)
                     options[i] = "关联已有日程（" + matches.get(i) + "）";
                 options[matches.size()] = "仍然新建";
                 options[matches.size() + 1] = "取消";
-                UiStyle.choiceDialog(this, "发现相同日程 · 选择关联或新建",
+                UiStyle.choiceDialog(owner, "发现相同日程 · 选择关联或新建",
                         options, -1, choice -> {
                             if (choice < 0 || choice >= options.length - 1) return;
-                            saveInFlight = true;
-                            if (completionAction != null) completionAction.setEnabled(false);
+                            owner.snapshotDrafts();
+                            owner.setSaving(true);
                             if (choice < matches.size()) {
                                 long eventId = matches.get(choice);
-                                new Thread(() -> associateExistingEvent(edited, eventId),
+                                new Thread(() -> owner.associateExistingEvent(edited, eventId),
                                         "chrona-calendar-link").start();
                             } else {
-                                new Thread(() -> publish(edited), "chrona-calendar-write").start();
+                                new Thread(() -> owner.publish(edited), "chrona-calendar-write").start();
                             }
                         });
             });
         } catch (Exception exception) {
-            runOnUiThread(() -> {
-                saveInFlight = false;
-                if (completionAction != null) completionAction.setEnabled(true);
-                showCandidateError(edited, exception);
+            deliverSave(owner -> {
+                owner.setSaving(false);
+                if (owner.taskId == edited.taskId) owner.showCandidateError(edited, exception);
             });
         }
     }
@@ -2363,20 +2510,21 @@ public final class TaskDetailActivity extends Activity {
                     edited.description, edited.reminderMinutesBefore, edited.needsConfirmation,
                     eventId, edited.category, edited.allDay, edited.endAutoGenerated, edited.uncertaintyLevel);
             if (!store.updateCandidate(linked)
-                    || !store.setCalendarEventIdIfUnlinked(edited.id, taskId, eventId))
+                    || !store.setCalendarEventIdIfUnlinked(edited.id, edited.taskId, eventId))
                 throw new IllegalStateException("无法保存日程关联");
-            List<EventCandidate> savedCandidates = store.getCandidates(taskId);
-            store.updateStatus(taskId, reviewStatus(savedCandidates), null);
-            savedCandidates = store.getCandidates(taskId);
+            List<EventCandidate> savedCandidates = store.getCandidates(edited.taskId);
+            store.updateStatus(edited.taskId, reviewStatus(savedCandidates), null);
+            savedCandidates = store.getCandidates(edited.taskId);
             List<EventCandidate> result = savedCandidates;
-            runOnUiThread(() -> {
-                continueCandidateConfirmation(edited.id, result);
+            deliverSave(owner -> {
+                owner.setSaving(false);
+                if (owner.taskId == edited.taskId)
+                    owner.continueCandidateConfirmation(edited.id, result);
             });
         } catch (Exception exception) {
-            runOnUiThread(() -> {
-                saveInFlight = false;
-                if (completionAction != null) completionAction.setEnabled(true);
-                showCandidateError(edited, exception);
+            deliverSave(owner -> {
+                owner.setSaving(false);
+                if (owner.taskId == edited.taskId) owner.showCandidateError(edited, exception);
             });
         }
     }
@@ -2384,8 +2532,10 @@ public final class TaskDetailActivity extends Activity {
     private void continueCandidateConfirmation(long savedCandidateId,
             List<EventCandidate> candidates) {
         dirtyCandidateIds.remove(savedCandidateId);
+        candidateDrafts.remove(savedCandidateId);
+        saveSession.completedCandidates.add(savedCandidateId);
         updateDirtyState();
-        saveInFlight = false;
+        setSaving(false);
         int nextPending = -1;
         for (int i = 0; i < candidates.size(); i++) {
             if (candidates.get(i).calendarEventId == null) {
@@ -2543,23 +2693,49 @@ public final class TaskDetailActivity extends Activity {
         Button save = new Button(this);
         save.setText("保存备注");
         save.setOnClickListener(view -> {
+            if (saveInFlight) return;
+            if (candidate.calendarEventId != null && !requestCalendarPermission()) return;
             String value = editor.getText().toString().trim();
-            try (TaskStore store = new TaskStore(this)) {
-                EventCandidate updated = new EventCandidate(candidate.id, taskId, candidate.title,
-                        candidate.startAtMillis, candidate.endAtMillis, candidate.timeZoneId,
-                        candidate.location, value, candidate.reminderMinutesBefore,
-                        candidate.needsConfirmation, candidate.calendarEventId,
-                        candidate.category, candidate.allDay, candidate.endAutoGenerated, candidate.uncertaintyLevel);
-                if (!store.updateCandidate(updated))
-                    throw new IllegalStateException("无法保存备注");
-                currentDescription[0] = value;
-                preview.setText(shortNote(value));
-                preview.setContentDescription("备注，点按展开并编辑；" + value);
-                dialog.dismiss();
-                Feedback.show(this, "备注已保存");
-            } catch (Exception exception) {
-                showError(exception);
-            }
+            snapshotDrafts();
+            setSaving(true);
+            save.setEnabled(false);
+            new Thread(() -> {
+                try (TaskStore store = new TaskStore(this)) {
+                    EventCandidate current = store.getCandidates(candidate.taskId).stream()
+                            .filter(item -> item.id == candidate.id).findFirst().orElse(null);
+                    if (current == null) throw new IllegalStateException("日程已删除");
+                    if (current.calendarEventId != null && !new CalendarStore(this)
+                            .updateDescription(current.calendarEventId, value))
+                        throw new IllegalStateException("系统日程已删除，请刷新后重试");
+                    if (!store.updateCandidateDescription(current.id, current.taskId, value))
+                        throw new IllegalStateException("无法保存备注");
+                    deliverSave(owner -> {
+                        owner.saveSession.savedNotes.put(candidate.id, value);
+                        owner.setSaving(false);
+                        if (owner.taskId != candidate.taskId) return;
+                        if (owner == this) {
+                            currentDescription[0] = value;
+                            preview.setText(shortNote(value));
+                            preview.setContentDescription("备注，点按展开并编辑；" + value);
+                            dialog.dismiss();
+                        } else {
+                            owner.snapshotDrafts();
+                            Bundle draft = owner.candidateDrafts.get(candidate.id);
+                            if (draft != null) draft.putString("description", value);
+                            owner.draftReaders.remove(candidate.id);
+                            owner.render();
+                        }
+                        Feedback.show(owner, "备注已保存" + (current.calendarEventId == null
+                                ? "" : "并同步到日历"));
+                    });
+                } catch (Exception exception) {
+                    deliverSave(owner -> {
+                        owner.setSaving(false);
+                        if (owner == this) save.setEnabled(true);
+                        owner.showError(exception);
+                    });
+                }
+            }, "chrona-note-save").start();
         });
         UiStyle.button(save, true);
         save.setMinimumHeight(dp(48));

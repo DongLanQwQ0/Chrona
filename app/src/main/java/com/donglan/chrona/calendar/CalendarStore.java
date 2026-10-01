@@ -181,6 +181,25 @@ public final class CalendarStore {
     }
 
     /** Returns false if the event ID is stale or belongs to another calendar. */
+    public boolean updateDescription(long eventId, String description) {
+        requireReadWrite();
+        requireId(eventId);
+        Long calendarId = findCalendarId();
+        if (calendarId == null || getEvent(calendarId, eventId) == null) return false;
+        ArrayList<ContentProviderOperation> operations = new ArrayList<>();
+        operations.add(ContentProviderOperation.newUpdate(syncUri(Events.CONTENT_URI))
+                .withSelection(Events._ID + "=? AND " + Events.CALENDAR_ID + "=?",
+                        new String[]{Long.toString(eventId), Long.toString(calendarId)})
+                .withValue(Events.DESCRIPTION, description).withExpectedCount(1).build());
+        try { apply(operations); }
+        catch (IllegalStateException exception) {
+            if (getEvent(calendarId, eventId) == null) return false;
+            throw exception;
+        }
+        return true;
+    }
+
+    /** Returns false if the event ID is stale or belongs to another calendar. */
     public boolean updateEvent(long eventId, EventInput input) {
         requireReadWrite();
         requireId(eventId);
