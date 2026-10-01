@@ -48,6 +48,7 @@ public final class SettingsHubActivity extends Activity {
         section(root, "外观与配色", "跟随系统、浅色、深色与主题配色",
                 AppearanceActivity.class);
         timelineLimitSection(root);
+        widgetPreviewSection(root);
         section(root, "备份与恢复", "导出或恢复收件箱、附件、模型输出和设置",
                 BackupRestoreActivity.class);
         section(root, "AI 服务", "地址、模型、密钥和图片支持",
@@ -135,6 +136,36 @@ public final class SettingsHubActivity extends Activity {
                 HomeTimelinePreferences.setItemLimit(this, 5 + choice * 5);
                 updateLabel.run();
             });
+        });
+        UiStyle.addSpaced(root, card, 0, 8);
+    }
+
+    private void widgetPreviewSection(LinearLayout root) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(16), dp(18), dp(16));
+        UiStyle.glass(card);
+        UiStyle.pressable(card);
+        TextView heading = new TextView(this);
+        heading.setText("明日安排预览时间   →");
+        heading.setTextSize(18);
+        UiStyle.title(heading);
+        card.addView(heading);
+        TextView description = new TextView(this);
+        UiStyle.muted(description);
+        UiStyle.addSpaced(card, description, 7, 0);
+        Runnable updateLabel = () -> {
+            int minutes = WidgetPreferences.previewMinutes(this);
+            description.setText(String.format(java.util.Locale.ROOT,
+                    "每天 %02d:%02d 起，小组件显示「现在与明天」", minutes / 60, minutes % 60));
+        };
+        updateLabel.run();
+        card.setOnClickListener(view -> {
+            int minutes = WidgetPreferences.previewMinutes(this);
+            new android.app.TimePickerDialog(this, (picker, hour, minute) -> {
+                WidgetPreferences.setPreviewMinutes(this, hour * 60 + minute);
+                updateLabel.run();
+            }, minutes / 60, minutes % 60, true).show();
         });
         UiStyle.addSpaced(root, card, 0, 8);
     }

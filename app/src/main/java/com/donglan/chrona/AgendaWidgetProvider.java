@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
 public class AgendaWidgetProvider extends AppWidgetProvider {
     static final String REFRESH = "com.donglan.chrona.WIDGET_REFRESH";
     private static final String MANUAL_REFRESH = "manual_refresh";
+    private static final String TRANSITION = "com.donglan.chrona.WIDGET_TRANSITION";
     private static final String POSITION_PREFERENCES = "widget_positions";
     private static final ExecutorService UPDATES = Executors.newSingleThreadExecutor();
     private static final android.util.LruCache<String, Bitmap> ICONS = new android.util.LruCache<>(16);
@@ -50,7 +51,9 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
 
     @Override public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        if (REFRESH.equals(action) || AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)
+        if (REFRESH.equals(action) || TRANSITION.equals(action)
+                || Intent.ACTION_BOOT_COMPLETED.equals(action)
+                || AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(action)
                 || Intent.ACTION_TIME_CHANGED.equals(action)
                 || Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
             PendingResult pending = goAsync();
@@ -64,8 +67,12 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
                     AppWidgetManager manager = AppWidgetManager.getInstance(app);
                     int[] ids = manager.getAppWidgetIds(new ComponentName(app,
                             next ? NextWidgetProvider.class : AgendaWidgetProvider.class));
-                    if (ids.length == 0) return;
+                    if (ids.length == 0) {
+                        if (!next) scheduleTransition(app, 0);
+                        return;
+                    }
                     WidgetAgenda data = WidgetAgenda.load(app);
+                    if (!next) scheduleTransition(app, data.nextTransition);
                     for (int id : ids) {
                         if (!manual || requestedId == id)
                             update(app, manager, id, next, data, manual);
@@ -77,6 +84,20 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
 
     @Override public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager,
             int id, Bundle options) { requestRefresh(context); }
+
+    private static void scheduleTransition(Context context, long at) {
+        android.app.AlarmManager alarms = context.getSystemService(android.app.AlarmManager.class);
+        PendingIntent intent = PendingIntent.getBroadcast(context, 0,
+                new Intent(TRANSITION).setComponent(new ComponentName(context, AgendaWidgetProvider.class)),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        if (at == 0) alarms.cancel(intent);
+        // Inexact, non-wakeup alarm: no extra permission or background service.
+        else alarms.set(android.app.AlarmManager.RTC, at, intent);
+    }
+
+    @Override public void onDisabled(Context context) {
+        if (!(this instanceof NextWidgetProvider)) scheduleTransition(context, 0);
+    }
 
     @Override public void onDeleted(Context context, int[] ids) {
         android.content.SharedPreferences.Editor editor = context.getSharedPreferences(
@@ -90,7 +111,8 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         Bundle options = manager.getAppWidgetOptions(id);
         android.content.SharedPreferences positions = context.getSharedPreferences(
                 POSITION_PREFERENCES, Context.MODE_PRIVATE);
-        String day = java.time.Instant.ofEpochMilli(data.now).atZone(data.zone).toLocalDate().toString();
+        String day = java.time.Instant.ofEpochMilli(data.now).atZone(data.zone).toLocalDate().toString()
+                + (data.previewTomorrow ? ":preview" : ":today");
         boolean focus = !next && !data.failed && !data.today.isEmpty()
                 && (manual || !day.equals(positions.getString("day_" + id, "")));
         if (Build.VERSION.SDK_INT >= 31) {
@@ -174,6 +196,7 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
                 size.compact() ? R.layout.widget_compact
                         : next ? R.layout.widget_next : R.layout.widget_today);
         UiStyle.Palette palette = UiStyle.colors(context);
+        WidgetDanmaku.bind(context, views, size, palette.text, id, data.now);
         views.setInt(R.id.widget_background, "setBackgroundColor", android.graphics.Color.TRANSPARENT);
         views.setImageViewBitmap(R.id.widget_background,
                 background(context, palette.surface, size, variantCount));
@@ -189,7 +212,8 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         views.setViewVisibility(R.id.widget_notice, data.calendarUnavailable && size.height >= 160
                 ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setTextViewText(R.id.widget_heading, size.width < 220
-                ? next ? "下一件" : "今日" : next ? "下一件事" : "今天的安排");
+                ? next ? "下一件" : data.previewTomorrow ? "现在与明天" : "今日"
+                : next ? "下一件事" : data.previewTomorrow ? "现在与明天" : "今天的安排");
         views.setImageViewBitmap(R.id.widget_add, icon(context, R.drawable.ic_add, palette.primary));
         views.setImageViewBitmap(R.id.widget_refresh,
                 icon(context, R.drawable.ic_refresh, palette.primary));
@@ -212,7 +236,8 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_empty, openHome);
         String empty = data.failed ? "读取失败，点击刷新重试"
                 : data.calendarUnavailable ? "系统日历未能读取，点击检查权限"
-                : next ? "未来一个月暂无安排" : "今天暂无安排";
+                : next ? "未来一个月暂无安排"
+                : data.previewTomorrow ? "现在与明天暂无安排" : "今天暂无安排";
         if (single) {
             WidgetAgenda.Item item = next ? data.next : data.today.isEmpty() ? null
                     : data.today.get(data.todayStartPosition());
@@ -270,9 +295,10 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
     }
 
     private static String compactTime(WidgetAgenda.Item item, WidgetAgenda data) {
-        if (item.allDay) return "全天";
         java.time.ZonedDateTime start = java.time.Instant.ofEpochMilli(item.start).atZone(data.zone);
         java.time.LocalDate today = java.time.Instant.ofEpochMilli(data.now).atZone(data.zone).toLocalDate();
+        if (item.allDay) return start.toLocalDate().equals(today) ? "全天"
+                : java.time.format.DateTimeFormatter.ofPattern("M/d ").format(start) + "全天";
         return java.time.format.DateTimeFormatter.ofPattern(start.toLocalDate().equals(today)
                 ? "HH:mm" : "M/d HH:mm").format(start);
     }

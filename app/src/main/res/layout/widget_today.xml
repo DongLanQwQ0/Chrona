@@ -11,4 +11,5 @@
 <ListView android:id="@+id/widget_list" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:divider="@android:color/transparent" android:dividerHeight="8dp" android:scrollbars="none"/>
 <TextView android:id="@+id/widget_empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="16dp" android:text="@string/widget_empty_today" android:textSize="14sp" android:textColor="#CAC4C3"/>
 </LinearLayout>
+<include layout="@layout/widget_danmaku"/>
 </FrameLayout>

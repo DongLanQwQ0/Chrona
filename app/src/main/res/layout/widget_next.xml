@@ -11,4 +11,5 @@
 <include layout="@layout/widget_item" android:layout_width="match_parent" android:layout_height="wrap_content"/>
 <TextView android:id="@+id/widget_empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="16dp" android:text="@string/widget_empty_next" android:textSize="14sp" android:textColor="#CAC4C3"/>
 </LinearLayout>
+<include layout="@layout/widget_danmaku"/>
 </FrameLayout>

@@ -48,4 +48,5 @@
         <TextView android:id="@+id/widget_empty" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:textSize="11sp" android:maxLines="3" android:ellipsize="end"/>
     </LinearLayout>
+    <include layout="@layout/widget_danmaku"/>
 </FrameLayout>

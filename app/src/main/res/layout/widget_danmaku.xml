@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_danmaku" android:layout_width="match_parent"
+    android:layout_height="match_parent" android:orientation="vertical" android:paddingHorizontal="12dp"
+    android:paddingTop="60dp" android:paddingBottom="12dp"
+    android:clickable="false" android:focusable="false"
+    android:clipChildren="true" android:importantForAccessibility="noHideDescendants">
+    <ViewFlipper android:id="@+id/widget_bullets_left" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1"
+        android:clipChildren="true" android:clipToPadding="true"
+        android:clickable="false" android:focusable="false"
+        android:autoStart="true" android:flipInterval="10000"
+        android:animateFirstView="false" android:inAnimation="@anim/widget_bullet_left" />
+    <ViewFlipper android:id="@+id/widget_bullets_right" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="8dp"
+        android:clipChildren="true" android:clipToPadding="true"
+        android:clickable="false" android:focusable="false"
+        android:autoStart="true" android:flipInterval="14000"
+        android:animateFirstView="false" android:inAnimation="@anim/widget_bullet_right" />
+</LinearLayout>

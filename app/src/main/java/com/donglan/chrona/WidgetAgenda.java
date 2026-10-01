@@ -51,8 +51,27 @@ final class WidgetAgenda {
     boolean failed;
     final long now;
     final ZoneId zone;
+    final boolean previewTomorrow;
+    final long nextTransition;
 
-    WidgetAgenda(long now, ZoneId zone) { this.now = now; this.zone = zone; }
+    WidgetAgenda(long now, ZoneId zone) {
+        this(now, zone, WidgetPreferences.DEFAULT_PREVIEW_MINUTES);
+    }
+
+    WidgetAgenda(long now, ZoneId zone, int previewMinutes) {
+        this.now = now;
+        this.zone = zone;
+        java.time.ZonedDateTime local = Instant.ofEpochMilli(now).atZone(zone);
+        java.time.LocalTime preview = java.time.LocalTime.of(previewMinutes / 60, previewMinutes % 60);
+        previewTomorrow = !local.toLocalTime().isBefore(preview);
+        java.time.ZonedDateTime transition = previewTomorrow
+                ? local.toLocalDate().plusDays(1).atStartOfDay(zone)
+                : java.time.ZonedDateTime.ofLocal(local.toLocalDate().atTime(preview),
+                        zone, local.getOffset());
+        if (transition.toInstant().toEpochMilli() <= now)
+            transition = local.toLocalDate().plusDays(1).atStartOfDay(zone);
+        nextTransition = transition.toInstant().toEpochMilli();
+    }
 
     /** Keep history in chronological order; focus the first unfinished occurrence. */
     int todayStartPosition() {
@@ -64,11 +83,14 @@ final class WidgetAgenda {
     }
 
     void select(List<Item> items, long begin, long tomorrow, long horizon) {
+        long windowEnd = previewTomorrow ? Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+                .plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli() : tomorrow;
+        long windowBegin = previewTomorrow ? now : begin;
         items.sort(Comparator.comparingLong((Item item) -> item.start)
                 .thenComparingLong(item -> item.id));
         for (Item item : items) {
             if (item.start >= horizon || item.end < begin) continue;
-            if (item.start < tomorrow && (item.end > begin || item.start >= begin)
+            if (item.start < windowEnd && (item.end > windowBegin || item.start >= windowBegin)
                     && today.size() < MAX_ITEMS) today.add(item);
             if (next == null && (item.end > now || item.start >= now)) next = item;
         }
@@ -76,7 +98,8 @@ final class WidgetAgenda {
 
     static WidgetAgenda load(Context context) {
         CalendarLinkReconciler.reconcileNow(context);
-        WidgetAgenda result = new WidgetAgenda(System.currentTimeMillis(), ZoneId.systemDefault());
+        WidgetAgenda result = new WidgetAgenda(System.currentTimeMillis(), ZoneId.systemDefault(),
+                WidgetPreferences.previewMinutes(context));
         LocalDate date = Instant.ofEpochMilli(result.now).atZone(result.zone).toLocalDate();
         long begin = date.atStartOfDay(result.zone).toInstant().toEpochMilli();
         long tomorrow = date.plusDays(1).atStartOfDay(result.zone).toInstant().toEpochMilli();

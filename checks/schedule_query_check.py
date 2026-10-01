@@ -16,7 +16,9 @@ for line in output.splitlines():
 db = sqlite3.connect(':memory:')
 db.execute('CREATE TABLE event_candidates (id INTEGER PRIMARY KEY,title TEXT,location TEXT,'
            'description TEXT,category TEXT,all_day INTEGER,start_at_millis INTEGER,'
-           'end_at_millis INTEGER,calendar_event_id INTEGER)')
+           'end_at_millis INTEGER,calendar_event_id INTEGER,completed INTEGER NOT NULL DEFAULT 0)')
+INSERT_SQL = ('INSERT INTO event_candidates(id,title,location,description,category,all_day,'
+              'start_at_millis,end_at_millis,calendar_event_id) VALUES (?,?,?,?,?,?,?,?,?)')
 
 def ms(value):
     return int(dt.datetime.fromisoformat(value).timestamp() * 1000)
@@ -31,7 +33,7 @@ rows = [
     (7, '%_确切文字', '', '', 'note', 0, None, None, None),
     (8, '百分号匹配陷阱', '', '', 'note', 0, None, None, None),
 ]
-db.executemany('INSERT INTO event_candidates VALUES (?,?,?,?,?,?,?,?,?)', rows)
+db.executemany(INSERT_SQL, rows)
 
 def ids(name):
     where, order, *args = queries[name]
@@ -45,9 +47,15 @@ assert set(ids('combined')) == {2, 3}
 assert set(ids('literal')) == {7}
 assert set(ids('published')) == {1}
 assert set(ids('label')) == {2, 3, 4}
+db.execute('UPDATE event_candidates SET completed=1 WHERE id=3')
+assert set(ids('completed')) == {3}, 'Completed must be explicit, never inferred from past time'
+assert set(ids('upcoming')) == {1, 6}, 'Completed tasks must leave the upcoming list'
+assert 3 in ids('all'), 'Completed tasks must remain searchable in all items'
+db.execute('UPDATE event_candidates SET completed=0 WHERE id=3')
+assert set(ids('upcoming')) == {1, 3, 6}, 'Undo completion must restore the task'
 
 # Identical timestamps must retain stable unique IDs across every page boundary.
-db.executemany('INSERT INTO event_candidates VALUES (?,?,?,?,?,?,?,?,?)', [
+db.executemany(INSERT_SQL, [
     (i, '大量同刻日程', '', '', 'event', 0, ms('2026-10-01T09:00+08:00'),
      ms('2026-10-01T10:00+08:00'), None) for i in range(10, 4010)])
 where, order, *args = queries['all']
@@ -65,7 +73,7 @@ for offset in range(0, len(whole), 24):
     reverse_pages.extend(r[0] for r in db.execute('SELECT id FROM event_candidates WHERE ' + where
                          + ' ORDER BY ' + order + ' LIMIT ? OFFSET ?', [*args, 24, offset]))
 assert reverse_pages == ids('reverse') and len(set(reverse_pages)) == len(whole)
-db.executemany('INSERT INTO event_candidates VALUES (?,?,?,?,?,?,?,?,?)', [
+db.executemany(INSERT_SQL, [
     (5000, 'before DST day', '', '', 'event', 0, ms('2026-03-08T07:00+00:00'), ms('2026-03-08T08:00+00:00'), None),
     (5001, 'DST day', '', '', 'event', 0, ms('2026-03-08T08:00+00:00'), ms('2026-03-09T07:00+00:00'), None),
     (5002, 'after DST day', '', '', 'event', 0, ms('2026-03-09T07:00+00:00'), ms('2026-03-09T08:00+00:00'), None),

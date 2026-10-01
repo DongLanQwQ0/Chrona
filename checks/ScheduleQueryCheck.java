@@ -18,6 +18,7 @@ public final class ScheduleQueryCheck {
         emit("combined", new ScheduleQuery(3, "task", 1, "", day, day.plusDays(1), now, zone));
         emit("literal", new ScheduleQuery(3, null, 0, "%_", null, null, now, zone));
         emit("published", new ScheduleQuery(3, null, 2, "", null, null, now, zone));
+        emit("completed", new ScheduleQuery(4, null, 0, "", null, null, now, zone));
         emit("label", new ScheduleQuery(3, null, 0, "待办", null, null, now, zone));
         ScheduleQuery all = new ScheduleQuery(3, null, 0, "", null, null, now, zone);
         emit("reverse", all, false);
