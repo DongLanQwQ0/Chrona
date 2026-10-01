@@ -97,8 +97,10 @@ public final class ChronaDataBackup {
 
     private static File createArchive(Context context, boolean includeApiKey) throws Exception {
         File archive = File.createTempFile("chrona-backup-", ".zip", context.getCacheDir());
+        File database = File.createTempFile("chrona-snapshot-", ".db", context.getCacheDir());
+        List<File> extractedFiles = new ArrayList<>();
         try {
-            File database = context.getDatabasePath("chrona.db");
+            try (TaskStore live = new TaskStore(context)) { live.createSnapshot(database); }
             JSONArray files = new JSONArray();
             JSONArray images = new JSONArray();
             JSONObject wallpaper = null;
@@ -106,12 +108,8 @@ public final class ChronaDataBackup {
             JSONArray events = new JSONArray();
             int taskCount;
             int candidateCount;
-            try (TaskStore store = new TaskStore(context)) {
-                SQLiteDatabase db = store.getWritableDatabase();
-                try (Cursor checkpoint = db.rawQuery("PRAGMA wal_checkpoint(FULL)", null)) {
-                    if (checkpoint.moveToFirst() && checkpoint.getInt(0) != 0)
-                        throw new IOException("数据库仍在写入，请稍后重试备份");
-                }
+            Map<Long, TaskFileAttachment> attachmentRows = new HashMap<>();
+            try (TaskStore store = TaskStore.openSnapshot(context, database)) {
                 List<TaskRecord> tasks = store.listTasks();
                 List<EventCandidate> candidates = store.listCandidates();
                 taskCount = tasks.size();
@@ -120,6 +118,7 @@ public final class ChronaDataBackup {
                 int fileSequence = 0;
                 for (TaskRecord task : tasks) {
                     for (TaskFileAttachment file : store.getFileAttachments(task.id)) {
+                        attachmentRows.put(file.id, file);
                         String entry = copiedUris.get(file.storedName);
                         if (entry == null) {
                             entry = "files/" + (fileSequence++) + ".bin";
@@ -231,10 +230,11 @@ public final class ChronaDataBackup {
                     JSONObject item = files.getJSONObject(i);
                     String entry = item.getString("entry");
                     if (fileEntries.containsKey(entry)) continue;
-                    TaskFileAttachment found = findAttachment(context, item.getLong("rowId"));
+                    TaskFileAttachment found = attachmentRows.get(item.getLong("rowId"));
                     if (found == null) throw new IOException("普通附件记录不存在");
                     File extracted = new File(context.getCacheDir(), "chrona-source-"
                             + UUID.randomUUID());
+                    extractedFiles.add(extracted);
                     try (InputStream input = context.getContentResolver().openInputStream(
                             Uri.parse(found.storedName)); OutputStream output = new FileOutputStream(extracted)) {
                         if (input == null) throw new IOException("无法读取附件：" + found.displayName);
@@ -262,16 +262,11 @@ public final class ChronaDataBackup {
         } catch (Exception exception) {
             archive.delete();
             throw exception;
+        } finally {
+            for (File extracted : extractedFiles) extracted.delete();
+            for (String suffix : new String[]{"", "-wal", "-shm", "-journal"})
+                new File(database.getAbsolutePath() + suffix).delete();
         }
-    }
-
-    private static TaskFileAttachment findAttachment(Context context, long rowId) {
-        try (TaskStore store = new TaskStore(context)) {
-            for (TaskRecord task : store.listTasks())
-                for (TaskFileAttachment file : store.getFileAttachments(task.id))
-                    if (file.id == rowId) return file;
-        }
-        return null;
     }
 
     public static Prepared prepare(Context context, Uri source) throws Exception {
@@ -493,6 +488,9 @@ public final class ChronaDataBackup {
             }
             staged.execSQL("UPDATE tasks SET status='failed', error_message=? WHERE status IN ('processing','queued')",
                     new Object[]{"从备份恢复后需要重新解析；请手动重试"});
+            staged.execSQL("UPDATE tasks SET status='needs_review',error_message=NULL WHERE status='ready' "
+                    + "AND EXISTS(SELECT 1 FROM event_candidates WHERE task_id=tasks.id "
+                    + "AND calendar_event_id IS NULL)");
             try (Cursor checkpoint = staged.rawQuery("PRAGMA wal_checkpoint(FULL)", null)) {
                 if (checkpoint.moveToFirst() && checkpoint.getInt(0) != 0)
                     throw new IOException("备份数据库仍在写入，无法完成恢复准备");
@@ -939,6 +937,7 @@ public final class ChronaDataBackup {
     private static Map<Long, Long> restoreCalendarLinks(Context context, Prepared prepared,
             List<Long> createdEvents) {
         Map<Long, Long> links = new HashMap<>();
+        Map<Long, Long> remappedEvents = new HashMap<>();
         Set<Long> usedEventIds = new HashSet<>();
         CalendarStore calendar = new CalendarStore(context);
         JSONArray events = prepared.manifest.optJSONArray("events");
@@ -948,9 +947,15 @@ public final class ChronaDataBackup {
             if (event == null) continue;
             long candidateId = event.optLong("candidateId", -1);
             if (candidateId <= 0) continue;
+            long oldId = event.optLong("oldEventId", -1);
+            if (oldId > 0 && remappedEvents.containsKey(oldId)) {
+                links.put(candidateId, remappedEvents.get(oldId));
+                continue;
+            }
             try {
                 if (!calendar.hasReadPermission() || !calendar.hasWritePermission()) {
                     links.put(candidateId, null);
+                    if (oldId > 0) remappedEvents.put(oldId, null);
                     continue;
                 }
                 JSONArray remindersJson = event.optJSONArray("reminders");
@@ -962,7 +967,6 @@ public final class ChronaDataBackup {
                         event.optString("timeZone", "UTC"), event.optBoolean("allDay"),
                         nullable(event, "description"), nullable(event, "location"), reminders);
                 Long id = null;
-                long oldId = event.optLong("oldEventId", -1);
                 if (oldId > 0) {
                     CalendarStore.EventRecord old = calendar.getEvent(oldId);
                     if (sameEvent(old, input) && !usedEventIds.contains(old.id)) id = old.id;
@@ -982,8 +986,10 @@ public final class ChronaDataBackup {
                 }
                 usedEventIds.add(id);
                 links.put(candidateId, id);
+                if (oldId > 0) remappedEvents.put(oldId, id);
             } catch (Exception exception) {
                 links.put(candidateId, null);
+                if (oldId > 0) remappedEvents.put(oldId, null);
             }
         }
         return links;

@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.io.IOException;
+import java.io.File;
 
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
 public final class TaskStore extends SQLiteOpenHelper {
@@ -28,8 +29,42 @@ public final class TaskStore extends SQLiteOpenHelper {
     private long openedRevision;
 
     public TaskStore(Context context) {
-        super(context.getApplicationContext(), DATABASE_NAME, null, DATABASE_VERSION);
+        this(context, DATABASE_NAME);
+    }
+
+    private TaskStore(Context context, String databaseName) {
+        super(context.getApplicationContext(), databaseName, null, DATABASE_VERSION);
         this.context = context.getApplicationContext();
+    }
+
+    /** Independent read source for backups; never reads the live database again. */
+    public static TaskStore openSnapshot(Context context, File snapshot) {
+        return new TaskStore(context, snapshot.getAbsolutePath());
+    }
+
+    /** Copies all tables in one SQLite transaction, preserving deleted-ID high-water marks. */
+    public void createSnapshot(File snapshot) {
+        try (SQLiteDatabase target = SQLiteDatabase.openOrCreateDatabase(snapshot, null)) {
+            onCreate(target);
+            target.setVersion(DATABASE_VERSION);
+        }
+        SQLiteDatabase source = getWritableDatabase();
+        source.execSQL("ATTACH DATABASE ? AS backup_snapshot",
+                new Object[]{snapshot.getAbsolutePath()});
+        try {
+            source.beginTransaction();
+            try {
+                for (String table : new String[]{"tasks", "event_candidates", "task_attachments",
+                        "task_files", "data_revision", "sqlite_sequence"}) {
+                    source.execSQL("DELETE FROM backup_snapshot." + table);
+                    source.execSQL("INSERT INTO backup_snapshot." + table
+                            + " SELECT * FROM main." + table);
+                }
+                source.setTransactionSuccessful();
+            } finally { source.endTransaction(); }
+        } finally {
+            source.execSQL("DETACH DATABASE backup_snapshot");
+        }
     }
 
     @Override

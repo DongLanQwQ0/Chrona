@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -14,6 +16,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Full portable snapshot flow, separate from the AI connection settings screen. */
 public final class BackupRestoreActivity extends Activity {
@@ -23,6 +26,17 @@ public final class BackupRestoreActivity extends Activity {
     private Button exportButton;
     private Button importButton;
     private TextView progress;
+    private ChronaDataBackup.Prepared pendingRestore;
+    private Dialog confirmation;
+    private static final AtomicBoolean OPERATION_IN_PROGRESS = new AtomicBoolean();
+    private final Handler lifecycleHandler = new Handler(Looper.getMainLooper());
+    private final Runnable operationPoll = new Runnable() {
+        @Override public void run() {
+            if (isFinishing() || isDestroyed()) return;
+            if (OPERATION_IN_PROGRESS.get()) lifecycleHandler.postDelayed(this, 500L);
+            else setBusy(false, null);
+        }
+    };
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
@@ -42,7 +56,7 @@ public final class BackupRestoreActivity extends Activity {
         UiStyle.addSpaced(root, title, 4, 8);
         TextView description = new TextView(this);
         description.setText("完整备份收件箱、日程草稿、图片、普通附件、模型输出和应用设置。"
-                + "系统日历会按日程内容重新关联；壁纸图片不包含在备份中。");
+                + "系统日历会按日程内容重新关联；自定义背景图也会包含在备份中。");
         description.setTextSize(14);
         UiStyle.muted(description);
         root.addView(description);
@@ -85,6 +99,23 @@ public final class BackupRestoreActivity extends Activity {
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
+        if (OPERATION_IN_PROGRESS.get()) setBusy(true, "备份或恢复仍在进行，请稍候…");
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        lifecycleHandler.post(operationPoll);
+    }
+
+    @Override protected void onPause() {
+        lifecycleHandler.removeCallbacks(operationPoll);
+        super.onPause();
+    }
+
+    private boolean claimOperation() {
+        if (OPERATION_IN_PROGRESS.compareAndSet(false, true)) return true;
+        Feedback.show(this, "已有备份或恢复正在进行，请稍候");
+        return false;
     }
 
     private void chooseBackupDestination() {
@@ -111,6 +142,7 @@ public final class BackupRestoreActivity extends Activity {
     }
 
     private void exportTo(Uri destination) {
+        if (!claimOperation()) return;
         setBusy(true, "正在打包本机数据…");
         boolean withKey = includeApiKey.isChecked();
         new Thread(() -> {
@@ -119,9 +151,12 @@ public final class BackupRestoreActivity extends Activity {
                 ChronaDataBackup.write(this, destination, withKey);
             } catch (Exception exception) {
                 error = exception.getMessage();
+            } finally {
+                OPERATION_IN_PROGRESS.set(false);
             }
             String result = error;
             runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
                 setBusy(false, null);
                 Feedback.showLong(this, result == null ? "完整备份已导出" : "导出失败：" + result);
             });
@@ -129,6 +164,7 @@ public final class BackupRestoreActivity extends Activity {
     }
 
     private void prepareImport(Uri source) {
+        if (!claimOperation()) return;
         setBusy(true, "正在校验备份…");
         new Thread(() -> {
             ChronaDataBackup.Prepared prepared = null;
@@ -137,10 +173,16 @@ public final class BackupRestoreActivity extends Activity {
                 prepared = ChronaDataBackup.prepare(this, source);
             } catch (Exception exception) {
                 error = exception.getMessage();
+            } finally {
+                OPERATION_IN_PROGRESS.set(false);
             }
             ChronaDataBackup.Prepared result = prepared;
             String failure = error;
             runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    if (result != null) result.cleanup();
+                    return;
+                }
                 setBusy(false, null);
                 if (failure != null) {
                     Feedback.showLong(this, "备份校验失败：" + failure);
@@ -153,6 +195,8 @@ public final class BackupRestoreActivity extends Activity {
 
     private void showRestoreConfirmation(ChronaDataBackup.Prepared prepared) {
         Dialog dialog = new Dialog(this);
+        confirmation = dialog;
+        pendingRestore = prepared;
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(18), dp(16), dp(18), dp(16));
@@ -168,6 +212,8 @@ public final class BackupRestoreActivity extends Activity {
             summary.setText(prepared.summary());
         } catch (Exception exception) {
             prepared.cleanup();
+            pendingRestore = null;
+            confirmation = null;
             Feedback.showLong(this, "无法读取备份摘要：" + exception.getMessage());
             return;
         }
@@ -191,6 +237,7 @@ public final class BackupRestoreActivity extends Activity {
         restore.setText("恢复并替换");
         UiStyle.button(restore, true);
         restore.setOnClickListener(view -> {
+            pendingRestore = null;
             dialog.dismiss();
             restorePrepared(prepared);
         });
@@ -202,11 +249,15 @@ public final class BackupRestoreActivity extends Activity {
         actions.addView(restore, restoreParams);
         panel.addView(actions);
         UiStyle.showFloatingDialog(dialog, panel);
-        dialog.setOnCancelListener(ignored -> prepared.cleanup());
+        dialog.setOnCancelListener(ignored -> {
+            pendingRestore = null;
+            prepared.cleanup();
+        });
         dialog.setCanceledOnTouchOutside(false);
     }
 
     private void restorePrepared(ChronaDataBackup.Prepared prepared) {
+        if (!claimOperation()) { prepared.cleanup(); return; }
         setBusy(true, "正在恢复数据…请勿退出应用");
         new Thread(() -> {
             String message = null;
@@ -217,10 +268,12 @@ public final class BackupRestoreActivity extends Activity {
                 error = exception.getMessage();
             } finally {
                 prepared.cleanup();
+                OPERATION_IN_PROGRESS.set(false);
             }
             String result = message;
             String failure = error;
             runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
                 setBusy(false, null);
                 if (failure != null) Feedback.showLong(this, "恢复失败：" + failure);
                 else {
@@ -237,6 +290,16 @@ public final class BackupRestoreActivity extends Activity {
         includeApiKey.setEnabled(!busy);
         progress.setVisibility(busy ? View.VISIBLE : View.GONE);
         if (busy && message != null) progress.setText(message);
+    }
+
+    @Override protected void onDestroy() {
+        lifecycleHandler.removeCallbacks(operationPoll);
+        if (confirmation != null) confirmation.dismiss();
+        if (pendingRestore != null) {
+            pendingRestore.cleanup();
+            pendingRestore = null;
+        }
+        super.onDestroy();
     }
 
     private int dp(int value) {

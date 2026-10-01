@@ -117,7 +117,8 @@ public final class ConfigBackup {
     public static String describe(String json) throws JSONException {
         Imported config = inspect(json);
         StringBuilder text = new StringBuilder();
-        if (!config.hasAi) text.append("· 不含解析服务设置\n");
+        if (!config.hasAi || config.baseUrl.isEmpty() && config.model.isEmpty())
+            text.append("· 不含已配置的解析服务；保留本机解析服务设置\n");
         else {
             text.append("· 基础地址 ").append(empty(config.baseUrl)).append('\n');
             text.append("· 模型 ").append(empty(config.model)).append('\n');
@@ -146,7 +147,7 @@ public final class ConfigBackup {
             throws JSONException, java.security.GeneralSecurityException {
         JSONObject root = parse(json);
         Imported imported = new Imported(root);
-        if (imported.hasAi) {
+        if (imported.hasAi && !imported.baseUrl.isEmpty() && !imported.model.isEmpty()) {
             AiSettingsStore store = new AiSettingsStore(context);
             AiSettings existing = store.load();
             if (imported.hasApiKey && imported.apiKey.isEmpty())
@@ -217,6 +218,8 @@ public final class ConfigBackup {
             String baseUrl = ai.optString("baseUrl", "").trim();
             String model = ai.optString("model", "").trim();
             String key = ai.optString("apiKey", "");
+            if (baseUrl.isEmpty() != model.isEmpty())
+                throw new JSONException("解析服务地址和模型必须同时填写，或同时留空");
             if (ai.has("apiKey") && (baseUrl.isEmpty() || model.isEmpty() || key.trim().isEmpty()))
                 throw new JSONException("包含 API 密钥的配置必须同时包含有效地址和模型");
             if (!baseUrl.isEmpty() && !model.isEmpty()) {
