@@ -27,12 +27,14 @@ public final class AttachmentViewerActivity extends Activity {
     static final String EXTRA_IMAGE_NAME = "image_name";
     private static final int CREATE_IMAGE_DOCUMENT = 1;
     private final Matrix imageMatrix = new Matrix();
+    private final Matrix fitMatrix = new Matrix();
     private ImageView image;
     private String imageName;
     private float scale = 1f;
     private float lastX;
     private float lastY;
     private boolean matrixReady;
+    private boolean dragReady;
     private ScaleGestureDetector scaleDetector;
     private GestureDetector gestureDetector;
 
@@ -99,11 +101,7 @@ public final class AttachmentViewerActivity extends Activity {
                     @Override public boolean onScale(ScaleGestureDetector detector) {
                         if (!matrixReady) return false;
                         float next = Math.max(1f, Math.min(6f, scale * detector.getScaleFactor()));
-                        float factor = next / scale;
-                        imageMatrix.postScale(factor, factor, detector.getFocusX(),
-                                detector.getFocusY());
-                        scale = next;
-                        image.setImageMatrix(imageMatrix);
+                        applyScale(next, detector.getFocusX(), detector.getFocusY());
                         return true;
                     }
                 });
@@ -112,10 +110,7 @@ public final class AttachmentViewerActivity extends Activity {
                     @Override public boolean onDoubleTap(MotionEvent event) {
                         if (!matrixReady) return false;
                         float next = scale > 1.05f ? 1f : 2.5f;
-                        imageMatrix.postScale(next / scale, next / scale,
-                                event.getX(), event.getY());
-                        scale = next;
-                        image.setImageMatrix(imageMatrix);
+                        applyScale(next, event.getX(), event.getY());
                         return true;
                     }
                 });
@@ -131,6 +126,7 @@ public final class AttachmentViewerActivity extends Activity {
             float top = (image.getHeight() - drawable.getIntrinsicHeight() * fit) / 2f;
             imageMatrix.setScale(fit, fit);
             imageMatrix.postTranslate(left, top);
+            fitMatrix.set(imageMatrix);
             image.setImageMatrix(imageMatrix);
             matrixReady = true;
         });
@@ -139,11 +135,22 @@ public final class AttachmentViewerActivity extends Activity {
     private boolean onImageTouch(MotionEvent event) {
         gestureDetector.onTouchEvent(event);
         scaleDetector.onTouchEvent(event);
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_POINTER_UP) {
+            int remaining = event.getActionIndex() == 0 ? 1 : 0;
+            lastX = event.getX(remaining);
+            lastY = event.getY(remaining);
+            dragReady = true;
+            return true;
+        }
+        if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_UP
+                || action == MotionEvent.ACTION_CANCEL) dragReady = false;
         if (event.getPointerCount() == 1 && scale > 1f && !scaleDetector.isInProgress()) {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            if (action == MotionEvent.ACTION_DOWN || !dragReady) {
                 lastX = event.getX();
                 lastY = event.getY();
-            } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                dragReady = true;
+            } else if (action == MotionEvent.ACTION_MOVE) {
                 float dx = event.getX() - lastX;
                 float dy = event.getY() - lastY;
                 imageMatrix.postTranslate(dx, dy);
@@ -153,6 +160,13 @@ public final class AttachmentViewerActivity extends Activity {
             }
         }
         return true;
+    }
+
+    private void applyScale(float next, float focusX, float focusY) {
+        if (next <= 1f) imageMatrix.set(fitMatrix);
+        else imageMatrix.postScale(next / scale, next / scale, focusX, focusY);
+        scale = next;
+        image.setImageMatrix(imageMatrix);
     }
 
     private void saveImage() {

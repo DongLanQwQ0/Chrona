@@ -3,6 +3,8 @@ package com.donglan.chrona.image;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.media.ExifInterface;
 import android.net.Uri;
 
 import java.io.File;
@@ -146,7 +148,31 @@ public final class ImageStore {
             decoded = BitmapFactory.decodeStream(input, null, options);
         }
         if (decoded == null) throw new IOException("无法读取所选图片");
-        return scaleDown(decoded);
+        Bitmap scaled = scaleDown(decoded);
+        int orientation = ExifInterface.ORIENTATION_NORMAL;
+        try (InputStream input = open(source)) {
+            orientation = new ExifInterface(input).getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL);
+        } catch (IOException ignored) {
+            // Providers and formats without readable EXIF still have valid image pixels.
+        }
+        Matrix transform = new Matrix();
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_FLIP_HORIZONTAL: transform.setScale(-1, 1); break;
+            case ExifInterface.ORIENTATION_ROTATE_180: transform.setRotate(180); break;
+            case ExifInterface.ORIENTATION_FLIP_VERTICAL: transform.setScale(1, -1); break;
+            case ExifInterface.ORIENTATION_TRANSPOSE:
+                transform.setRotate(90); transform.postScale(-1, 1); break;
+            case ExifInterface.ORIENTATION_ROTATE_90: transform.setRotate(90); break;
+            case ExifInterface.ORIENTATION_TRANSVERSE:
+                transform.setRotate(270); transform.postScale(-1, 1); break;
+            case ExifInterface.ORIENTATION_ROTATE_270: transform.setRotate(270); break;
+            default: return scaled;
+        }
+        Bitmap oriented = Bitmap.createBitmap(scaled, 0, 0, scaled.getWidth(), scaled.getHeight(),
+                transform, true);
+        if (oriented != scaled) scaled.recycle();
+        return oriented;
     }
 
     private InputStream open(Uri source) throws IOException {
