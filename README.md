@@ -2,10 +2,13 @@
 
 独立 Android 日程应用。首版闭环是：输入文字或通过系统分享文字 → 后台调用用户配置的 AI 服务 → 在应用内审核、修改日程草稿 → 写入专属的本地系统日历并由系统提醒。
 
-当前版本：`0.13.41`。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。AI 链路、缓存策略和验证边界见 [docs/ai-pipeline.md](docs/ai-pipeline.md)，自绘日期时间选择器见 [docs/date-time-picker.md](docs/date-time-picker.md)，首页系统日历合并见 [docs/system-calendar-home.md](docs/system-calendar-home.md)，列表筛选动画见 [docs/list-entry-animation.md](docs/list-entry-animation.md)，大量日程浏览见 [docs/schedule-browser.md](docs/schedule-browser.md)。
+当前版本：`0.13.71`（versionCode 91）。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。AI 链路、缓存策略和验证边界见 [docs/ai-pipeline.md](docs/ai-pipeline.md)，自绘日期时间选择器见 [docs/date-time-picker.md](docs/date-time-picker.md)，首页系统日历合并见 [docs/system-calendar-home.md](docs/system-calendar-home.md)，列表筛选动画见 [docs/list-entry-animation.md](docs/list-entry-animation.md)，大量日程浏览见 [docs/schedule-browser.md](docs/schedule-browser.md)，GitHub 分发见 [docs/github-releases.md](docs/github-releases.md)。
 
 ## 当前功能
 
+- 首次启动显示使用引导，设置里可再次查看：配置 AI、记录、审核多项日程、系统日历提醒和备份更新。引导显示后再请求首次权限。
+- 首页、日程列表和桌面小组件按具体日程 ID 定位详情；一条收件生成多项日程时，点击第二或第三项会打开对应页，旋转与后续刷新保留当前页。
+- 设置提供 GitHub Release 更新检查、说明和 APK 浏览器下载；默认每天后台检查一次，同一新版本只提示一次，可关闭自动检查。暂未发布、网络失败或非法版本信息会显示检查失败，不会误报「最新版本」。更新源为 `DongLanQwQ0/Chrona`，发布方法和签名要求见分发文档。
 - 应用内文字输入、Android `text/plain` 分享入口；每条输入先存入本地 SQLite 收件箱。记录页顶栏左为返回、右为 ✓ 保存，剪贴板、图片、文件三个入口以图标形式排在「记录一件事」标题右侧。
 - 收件箱可一键读取剪贴板文字（追加到输入框）；不再提供按行拆分多条，一次提交即一条输入。
 - 图片输入：可从系统分享菜单接收图片，也可选择相册图片或截图；图片存入应用私有目录并缩放到长边 1568 px、JPEG 质量 90 后随请求发送。支持「只发图片」的输入。若服务拒绝带图片的请求，应用会判定该「地址 + 模型」不支持图片并停用图片入口，可在设置中重新启用。缩略图右上角的移除按钮为 36 dp 的小圆形 `×`（记录页与任务详情共用）。
@@ -63,9 +66,11 @@ $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 .\gradlew.bat :app:assembleDebug --no-daemon --console=plain
 ```
 
-产物位于 `app\build\outputs\apk\debug\app-debug.apk`，构建产物和本机配置已被 `.gitignore` 排除。Android Studio 可直接打开本目录。项目尚无远程 Git 仓库。
+产物位于 `app\build\outputs\apk\debug\app-debug.apk`，构建产物和本机配置已被 `.gitignore` 排除。Android Studio 可直接打开本目录。源码与分发仓库为 https://github.com/DongLanQwQ0/Chrona，正式版 APK 见 [Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
 
 ## 已验证
+
+- 2026-10-01：`0.13.71`（versionCode 91）的 `assembleDebug`、`lintDebug`、`GuideReleaseCheck` 和 `git diff --check` 通过；APK 签名 SHA-256 与旧版一致。GitHub 正式 Release 已发布，上传资产大小和 SHA-256 与本地产物一致，`releases/latest` 返回本版。当前无连接设备，首次引导、多日程点击/旋转、浏览器下载和覆盖安装尚未真机回归。
 
 - 2026-09-27：`0.13.33` 修复点击 Dock 栏必崩（`IllegalStateException: ScrollView can host only one direct child`：页面主体原先直接挂在 `ScrollView` 下，而切页交叉淡化要把旧内容快照作为第二个子 View 插进容器父级，`ScrollView` 继承 `FrameLayout` 因而通过了原有判断）；页面主体改套一层 `FrameLayout` 宿主，`UiStyle.swap` 的子 View 容纳判断收紧为 `hostsSeveralChildren()`。收件箱「选择收件类型」弹窗收窄（屏幕 72% 与 300 dp 取小）并让行文字居中。任务详情右上角菜单去掉标题、精简为「输出预览 / 完整输出 / 解析用量 / 来源链接 / 删除任务」，「删除任务」用新增的 `UiStyle.danger()` 标红。新增 `JsonFormat`：模型完整输出与实时预览都按 JSON 缩进（完整值走 `toString(2)`，未闭合的流式 JSON 用状态机重新缩进，纯文本原样）。确认删除任务对话框文案精简为一句。提示词要求把截止时刻写进标题文字，并已知截止必须给出 10–360 分钟的提醒。图片右上角移除按钮由 48 dp/20 sp 收到 36 dp/16 sp。versionCode 53；`assembleDebug` 与 `lintDebug` 通过，ADB 覆盖安装成功（设备包信息 versionCode 53/versionName 0.13.33）。设备实测：点击 Dock「收件箱」切页成功且 `logcat -b crash` 无 FATAL（此前必崩，崩溃栈为 `UiStyle.swap` → `ScrollView.addView`）；「选择收件类型」弹窗宽度约为屏幕 72% 且各行为居中文字；详情右上角菜单为四项、无标题、「删除任务」显示为红色；「模型完整输出」页把该任务的回复渲染为两空格缩进的 JSON 树；删除确认对话框显示新文案（已点「取消」，未删除数据）；图片缩略图右上角 `×` 明显变小。提示词变更为纯文本，需真实 API 请求才能复验其是否按 10–360 分钟设置提醒。
 

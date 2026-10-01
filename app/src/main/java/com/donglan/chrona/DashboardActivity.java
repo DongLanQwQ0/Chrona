@@ -564,6 +564,7 @@ public final class DashboardActivity extends Activity {
         super.onResume();
         if (!GuideActivity.showIfNeeded(this)) {
             StartupPermissions.requestFirstLaunch(this);
+            ReleaseUpdates.checkAutomatically(this);
         }
         foreground = true;
         lastCalendarFetch = 0;
@@ -588,6 +589,11 @@ public final class DashboardActivity extends Activity {
         refresh.removeCallbacks(elapsedTicker);
         backdrop.stop();
         super.onPause();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) ReleaseUpdates.showPending(this);
     }
 
     @Override protected void onDestroy() {

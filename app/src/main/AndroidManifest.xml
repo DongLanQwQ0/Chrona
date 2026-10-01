@@ -27,6 +27,7 @@
         android:enableOnBackInvokedCallback="true">
         <activity android:name=".AppearanceActivity" android:exported="false" />
         <activity android:name=".GuideActivity" android:exported="false" />
+        <activity android:name=".UpdateActivity" android:exported="false" />
         <activity android:name=".WidgetLaunchActivity" android:exported="false"
             android:theme="@android:style/Theme.NoDisplay" />
         <service android:name=".AgendaWidgetService" android:exported="false"

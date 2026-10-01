@@ -1,5 +1,12 @@
 # 更新记录
 
+## 0.13.71 — 2026-10-01
+
+- 添加首次启动使用引导与设置内常驻入口，说明 AI 配置、记录、逐项审核、系统提醒和备份更新流程。
+- 修复一个 capture 含多个日程时点击错误跳转：首页、日程列表、小组件传递具体日程 ID，详情按 ID 定位并仅消费一次初始目标；恢复页面保留用户选择。
+- 加入 `DongLanQwQ0/Chrona` 的 GitHub 正式 Release 检查、说明及 APK 下载。支持每日自动检查、关闭自动检查和同版本只提示一次；后台查到的版本保留到页面前台可见时提示。暂无 Release、限流、网络错误和无 APK 均有明确状态。
+- 数据库无变更，versionCode 91。构建、lint、ID 定位/版本解析检查、原签名和上传 APK 哈希验证通过，GitHub 正式 Release 已发布；设备交互、下载和覆盖安装仍待真机验证。
+
 ## 0.13.33 — 2026-09-27
 
 - **修复点击 Dock 栏必崩**：`IllegalStateException: ScrollView can host only one direct child`。`DashboardActivity` 的页面主体原先直接挂在 `ScrollView` 下，而切换 section 的交叉淡化要把旧内容的快照作为**第二个**子 View 插进容器的父级；`ScrollView` 是 `FrameLayout` 的子类，于是通过了 `instanceof FrameLayout` 判断却在 `addView` 抛异常。现在两处页面主体都套一层 `FrameLayout` 宿主（`contentHost` / `targetHost`），并把 `UiStyle.swap` 的子 View 容纳判断收紧为 `hostsSeveralChildren()`：`ScrollView` / `HorizontalScrollView` 一律退回直接重建，不再依赖「父级是 FrameLayout」这一条过宽的判断。
