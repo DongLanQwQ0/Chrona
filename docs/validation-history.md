@@ -11,6 +11,7 @@
 - `:app:assembleDebug :app:lintDebug --no-daemon --console=plain` 通过，versionName 0.13.77 / versionCode 97。lint 为 0 error、83 warning；新增两项 ApplySharedPref 提醒来自明确在后台线程的同步持久化，避免将未完成的 apply 写入留给 Activity 生命周期等待。
 - 原签名 SHA-256 仍为 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`。APK 为 1,316,658 字节，SHA-256 为 `42a87fb6dca0acce34f2b783545a2e475b74589e715363dd3dd719cdd0bdaaf9`。
 - 本轮未进行真机启动耗时、帧率、下载或覆盖安装验证；离线线程约束检查不等同于实际零掉帧保证。
+- 源码提交 `b79cc6f` 与 `v0.13.77` 标签已推送，[正式 Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.13.77) 已发布；复查 latest 返回 v0.13.77，稳定 APK 下载地址、大小和 SHA-256 与本地产物一致。
 
 ## 2026-10-01 · 0.13.76 统一动效与启动优化
 
