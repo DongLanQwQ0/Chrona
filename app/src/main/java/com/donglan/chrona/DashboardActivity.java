@@ -130,6 +130,7 @@ public final class DashboardActivity extends Activity {
     private boolean inboxOldestFirst = false;
     private LinearLayout content;
     private LinearLayout navigation;
+    private DockNavigationLayout mobileDock;
     private LinearLayout results;
     private LinearLayout filterChips;
     private ImageButton categoryChip;
@@ -155,6 +156,9 @@ public final class DashboardActivity extends Activity {
     private int dragDirection;
     private boolean dragTargetLoaded;
     private boolean pageTransitionRunning;
+    private int pendingSection = -1;
+    private final List<View> sectionAcrylicSurfaces = new ArrayList<>();
+    private final android.graphics.Rect sectionVisibleRect = new android.graphics.Rect();
     /** A neighbouring page is being rendered off-screen; the dock must not follow it. */
     private boolean previewRender;
     /** Entries waiting for review or already failed; shown on the dock and on the inbox filters. */
@@ -380,6 +384,9 @@ public final class DashboardActivity extends Activity {
         sectionPages.put(section, new SectionPage());
         sectionVersions.put(section, dataSnapshot());
         dirtySections.remove(section);
+        // A calendar/poll refresh can rebuild the page during an end-of-strip drag.
+        // Replace references to detached cards before the next translated frame.
+        if (!previewRender && !sectionAcrylicSurfaces.isEmpty()) collectSectionSurfaces();
     }
 
     private void refreshActivePageIfNeeded() {
@@ -408,9 +415,13 @@ public final class DashboardActivity extends Activity {
                 adjacentPage = null;
             }
             pageTransitionRunning = false;
+            // A new body gesture supersedes any older dock request waiting on that animation.
+            pendingSection = -1;
             dragTargetLoaded = false;
             dragDirection = 0;
             scroll.setTranslationX(0f);
+            if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(section));
+            collectSectionSurfaces();
         }
 
         @Override public void onDrag(float distanceX) {
@@ -436,6 +447,7 @@ public final class DashboardActivity extends Activity {
                 pager.addView(preview.scroll, 1, new FrameLayout.LayoutParams(-1, -1));
                 adjacentPage = preview;
                 dragTargetLoaded = true;
+                collectSectionSurfaces();
             }
             if (dragTargetLoaded && adjacentPage != null) {
                 if (dragDirection > 0 && offset > 0 || dragDirection < 0 && offset < 0) offset = 0;
@@ -495,7 +507,7 @@ public final class DashboardActivity extends Activity {
                 .setUpdateListener(animation -> invalidateSectionSurfaces()).start();
         adjacentPage.scroll.animate().translationX(adjacentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
-                .setUpdateListener(animation -> invalidateSectionSurfaces())
+                .setUpdateListener(null)
                 .withEndAction(() -> completeSectionDrag(commit)).start();
     }
 
@@ -507,7 +519,11 @@ public final class DashboardActivity extends Activity {
                         Math.abs(scroll.getTranslationX()), sectionPageWidth()))
                 .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
                 .setUpdateListener(animation -> invalidateSectionSurfaces())
-                .withEndAction(this::invalidateSectionSurfaces).start();
+                .withEndAction(() -> {
+                    sectionAcrylicSurfaces.clear();
+                    invalidateSectionSurfaces();
+                    switchToPendingSection();
+                }).start();
     }
 
     /**
@@ -515,7 +531,26 @@ public final class DashboardActivity extends Activity {
      * has to invalidate them; otherwise they keep the snapshot taken before the drag started.
      */
     private void invalidateSectionSurfaces() {
-        if (pager != null && pager.isAttachedToWindow()) UiStyle.invalidateAcrylicSurfaces(pager);
+        if (pager == null || !pager.isAttachedToWindow()) return;
+        if (sectionAcrylicSurfaces.isEmpty()) {
+            UiStyle.invalidateAcrylicSurfaces(pager);
+        } else {
+            for (View surface : sectionAcrylicSurfaces) {
+                if (surface.isAttachedToWindow() && surface.getGlobalVisibleRect(sectionVisibleRect))
+                    surface.invalidate();
+            }
+        }
+    }
+
+    private void collectSectionSurfaces() {
+        sectionAcrylicSurfaces.clear();
+        UiStyle.collectAcrylicSurfaces(pager, sectionAcrylicSurfaces);
+    }
+
+    private void switchToPendingSection() {
+        int destination = pendingSection;
+        pendingSection = -1;
+        if (destination >= 0) switchTo(destination);
     }
 
     private void completeSectionDrag(boolean commit) {
@@ -524,6 +559,7 @@ public final class DashboardActivity extends Activity {
         dragTargetLoaded = false;
         dragDirection = 0;
         pageTransitionRunning = false;
+        sectionAcrylicSurfaces.clear();
         if (target == null) {
             scroll.setTranslationX(0f);
             return;
@@ -552,6 +588,7 @@ public final class DashboardActivity extends Activity {
         snapshot = dataSnapshot();
         if (section == HOME || (section == SCHEDULE && scheduleSource == 1))
             refresh.post(this::refreshSystemCalendar);
+        switchToPendingSection();
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -599,6 +636,7 @@ public final class DashboardActivity extends Activity {
     @Override protected void onDestroy() {
         refresh.removeCallbacksAndMessages(null);
         sectionPages.clear();
+        sectionAcrylicSurfaces.clear();
         sectionVersions.clear();
         dirtySections.clear();
         calendarReader.shutdownNow();
@@ -788,8 +826,11 @@ public final class DashboardActivity extends Activity {
         contentHost.addView(content, new FrameLayout.LayoutParams(-1, -2));
         scroll.addView(contentHost, new FrameLayout.LayoutParams(-1, -2));
         pager = new SwipePagerLayout(this, sectionPagerListener);
+        pager.setFramePacingEnabled(true);
         pager.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        navigation = new LinearLayout(this);
+        mobileDock = wide ? null : new DockNavigationLayout(this,
+                index -> switchTo(SECTION_ORDER[index]), this::drawNavigation);
+        navigation = wide ? new LinearLayout(this) : mobileDock;
         navigation.setOrientation(wide ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         navigation.setPadding(dp(wide ? 8 : 8), dp(wide ? 24 : 6),
                 dp(wide ? 8 : 8), dp(wide ? 10 : 6));
@@ -2259,6 +2300,7 @@ public final class DashboardActivity extends Activity {
 
     private void drawNavigation() {
         if (previewRender) return;
+        if (mobileDock != null && (mobileDock.isTrackingTouch() || pageTransitionRunning)) return;
         navigation.removeAllViews();
         String[] labels = {"首页", "日程", "收件箱"};
         int[] icons = {R.drawable.ic_nav_home, R.drawable.ic_nav_schedule,
@@ -2277,8 +2319,7 @@ public final class DashboardActivity extends Activity {
             item.setContentDescription(labels[i] + (section == destination ? "，当前页面" : ""));
             if (wide) UiStyle.pill(item, section == destination);
             else {
-                applyThemeControlSurface(item, section == destination, UiStyle.RADIUS_PANEL);
-                item.setElevation(dp(section == destination ? 3 : 1));
+                item.setBackgroundColor(Color.TRANSPARENT);
             }
             item.setOnClickListener(view -> switchTo(destination));
             LinearLayout.LayoutParams params = wide
@@ -2289,6 +2330,7 @@ public final class DashboardActivity extends Activity {
             navigation.addView(destination == INBOX && attentionCount() > 0
                     ? withInboxBadge(item, destination) : (View) item, params);
         }
+        if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(section));
     }
 
     /** Everything that still wants the user's attention, whichever way it is shown. */
@@ -2338,15 +2380,22 @@ public final class DashboardActivity extends Activity {
     }
 
     private void switchTo(int destination) {
-        if (destination == section || destination < HOME || destination > SCHEDULE
-                || pageTransitionRunning || dragTargetLoaded) return;
+        if (destination < HOME || destination > SCHEDULE) return;
+        if (pageTransitionRunning || dragTargetLoaded) {
+            pendingSection = destination;
+            if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(destination));
+            return;
+        }
+        if (destination == section) return;
         sectionPagerListener.onStart();
+        if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(destination));
         dragDirection = sectionPosition(destination) > sectionPosition(section) ? 1 : -1;
         adjacentPage = buildAdjacentSection(destination);
         float width = sectionPageWidth();
         adjacentPage.scroll.setTranslationX(dragDirection > 0 ? width : -width);
         pager.addView(adjacentPage.scroll, 1, new FrameLayout.LayoutParams(-1, -1));
         dragTargetLoaded = true;
+        collectSectionSurfaces();
         finishSectionDrag(true, width);
     }
 

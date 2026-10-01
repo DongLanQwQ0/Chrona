@@ -553,6 +553,15 @@ public final class UiStyle {
         invalidateAcrylicSurfaces(root, new android.graphics.Rect());
     }
 
+    /** Collect once for a page gesture; ordinary text and icons need no per-frame traversal. */
+    static void collectAcrylicSurfaces(View root, java.util.List<View> surfaces) {
+        if (root.getBackground() instanceof AcrylicSurfaceDrawable) surfaces.add(root);
+        if (root instanceof android.view.ViewGroup group) {
+            for (int i = 0; i < group.getChildCount(); i++)
+                collectAcrylicSurfaces(group.getChildAt(i), surfaces);
+        }
+    }
+
     private static void invalidateAcrylicSurfaces(View root, android.graphics.Rect visible) {
         if (!root.getGlobalVisibleRect(visible)) return;
         if (root.getBackground() instanceof AcrylicSurfaceDrawable) root.invalidate();

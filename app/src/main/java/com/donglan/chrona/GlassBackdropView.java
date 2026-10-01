@@ -62,6 +62,10 @@ public final class GlassBackdropView extends View {
     private Runnable firstFrameTimeout;
     private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF blurDestination = new RectF();
+    private final int[] backdropLocation = new int[2];
+    private final int[] targetLocation = new int[2];
+    private final Path surfaceClip = new Path();
+    private final RectF surfaceBounds = new RectF();
 
     public GlassBackdropView(Context context) {
         super(context);
@@ -692,22 +696,21 @@ public final class GlassBackdropView extends View {
                 || requestedGaussian != ThemeStore.gaussianBlur(getContext()))
             rebuildBlurredWallpaper();
         if (blurredWallpaper == null || blurredWallpaper.isRecycled()) return false;
-        int[] backdropLocation = new int[2];
-        int[] targetLocation = new int[2];
         getLocationInWindow(backdropLocation);
         target.getLocationInWindow(targetLocation);
         int left = targetLocation[0] - backdropLocation[0];
         int top = targetLocation[1] - backdropLocation[1];
         int save = canvas.save();
-        Path clip = new Path();
-        clip.addRoundRect(new RectF(destination), cornerRadius, cornerRadius, Path.Direction.CW);
-        canvas.clipPath(clip);
+        surfaceClip.rewind();
+        surfaceBounds.set(destination);
+        surfaceClip.addRoundRect(surfaceBounds, cornerRadius, cornerRadius, Path.Direction.CW);
+        canvas.clipPath(surfaceClip);
         canvas.translate(-left, -top);
         canvas.drawBitmap(blurredWallpaper, null, blurDestination, imagePaint);
         canvas.restoreToCount(save);
 
         save = canvas.save();
-        canvas.clipPath(clip);
+        canvas.clipPath(surfaceClip);
         if (ThemeStore.dark(getContext())) {
             canvas.drawColor(Color.argb(128, 0, 0, 0));
             canvas.drawColor(tint(palette.background, 76));

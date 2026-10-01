@@ -49,6 +49,15 @@ final class SwipePagerLayout extends FrameLayout {
     private boolean startedAtSystemEdge;
     private VelocityTracker velocityTracker;
     private boolean taskPagingEnabled = true;
+    private boolean framePacingEnabled;
+    private boolean dragFramePending;
+    private float pendingDistanceX;
+    private final Runnable dragFrame = this::dispatchDragFrame;
+
+    private void dispatchDragFrame() {
+        dragFramePending = false;
+        if (pagingGesture) listener.onDrag(pendingDistanceX);
+    }
 
     SwipePagerLayout(Context context, Listener listener) {
         super(context);
@@ -75,6 +84,18 @@ final class SwipePagerLayout extends FrameLayout {
 
     void setTaskPagingEnabled(boolean enabled) {
         taskPagingEnabled = enabled;
+    }
+
+    /** Keep high-rate touch input to one page transform per display frame. */
+    void setFramePacingEnabled(boolean enabled) {
+        framePacingEnabled = enabled;
+    }
+
+    private void flushDragFrame() {
+        if (!dragFramePending) return;
+        removeCallbacks(dragFrame);
+        dragFramePending = false;
+        listener.onDrag(pendingDistanceX);
     }
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
@@ -149,10 +170,20 @@ final class SwipePagerLayout extends FrameLayout {
         if (!pagingGesture) return false;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_MOVE) {
-            listener.onDrag(event.getX() - dragOriginX);
+            pendingDistanceX = event.getX() - dragOriginX;
+            if (!framePacingEnabled) listener.onDrag(pendingDistanceX);
+            else if (!dragFramePending) {
+                dragFramePending = true;
+                postOnAnimation(dragFrame);
+            }
             return true;
         }
         if (action == MotionEvent.ACTION_UP) {
+            if (framePacingEnabled) {
+                pendingDistanceX = event.getX() - dragOriginX;
+                if (!dragFramePending) listener.onDrag(pendingDistanceX);
+            }
+            flushDragFrame();
             float velocityX = 0f;
             if (velocityTracker != null) {
                 velocityTracker.computeCurrentVelocity(1000);
@@ -163,10 +194,18 @@ final class SwipePagerLayout extends FrameLayout {
             return true;
         }
         if (action == MotionEvent.ACTION_CANCEL) {
+            removeCallbacks(dragFrame);
+            dragFramePending = false;
             listener.onCancel();
             pagingGesture = false;
         }
         return true;
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        removeCallbacks(dragFrame);
+        dragFramePending = false;
+        super.onDetachedFromWindow();
     }
 
     private int dp(int value) {
