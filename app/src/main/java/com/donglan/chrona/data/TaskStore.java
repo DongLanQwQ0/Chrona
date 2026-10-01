@@ -540,6 +540,24 @@ public final class TaskStore extends SQLiteOpenHelper {
         return tasks;
     }
 
+    /** Recovery only needs IDs in this state, never full text and the entire task history. */
+    public List<Long> processingTaskIds() {
+        List<Long> ids = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("tasks", new String[]{"id"},
+                "status = ?", new String[]{TaskRecord.PROCESSING}, null, null, "id ASC")) {
+            while (cursor.moveToNext()) ids.add(cursor.getLong(0));
+        }
+        return ids;
+    }
+
+    public boolean failInterruptedProcessing(long id, String message) {
+        ContentValues values = new ContentValues();
+        values.put("status", TaskRecord.FAILED);
+        values.put("error_message", message);
+        return getWritableDatabase().update("tasks", values, "id = ? AND status = ?",
+                new String[]{Long.toString(id), TaskRecord.PROCESSING}) > 0;
+    }
+
     /** Newest inputs whose proposed entries include this category. */
     public List<TaskRecord> listTasksByCategory(String category) {
         List<TaskRecord> tasks = new ArrayList<>();

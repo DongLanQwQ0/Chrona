@@ -173,6 +173,14 @@ public final class DashboardActivity extends Activity {
     private int restoredScrollY;
     private List<ElapsedLabel> elapsedLabels = new ArrayList<>();
     private final Handler refresh = new Handler(Looper.getMainLooper());
+    private final java.util.concurrent.ExecutorService startupReader =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+    private boolean initialDataReady, initialLoadRunning, startupReported, startupReadFailed;
+    private int resumeGeneration;
+    private HomeData startupHome;
+    private long startupRevision;
+    private boolean applyingStartupData;
+    private final long createdAt = android.os.SystemClock.elapsedRealtime();
     private final java.util.concurrent.ExecutorService calendarReader =
             java.util.concurrent.Executors.newSingleThreadExecutor();
     private List<CalendarOccurrence> systemCalendarEvents = java.util.Collections.emptyList();
@@ -223,10 +231,13 @@ public final class DashboardActivity extends Activity {
             restoredScrollY = state.getInt("scroll_y");
         } else {
             section = getIntent().getIntExtra(EXTRA_SECTION, HOME);
-            animateEntrances = true;
+            animateEntrances = false;
         }
         buildShell();
-        if (state == null) backdrop.playEntrance();
+        // First draw contains working navigation; data preparation never blocks its frame.
+        addHeader();
+        message(content, "正在读取日程…");
+        drawNavigation();
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -607,6 +618,7 @@ public final class DashboardActivity extends Activity {
         if (section == HOME || (section == SCHEDULE && scheduleSource == 1))
             refresh.post(this::refreshSystemCalendar);
         switchToPendingSection();
+        if (!startupReported) afterDraw(scroll, this::maybeReportStartup);
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -617,29 +629,141 @@ public final class DashboardActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        foreground = true;
+        if (!initialDataReady) {
+            loadInitialData();
+            return;
+        }
+        resumeDashboard();
+    }
+
+    private void loadInitialData() {
+        if (initialLoadRunning) return;
+        initialLoadRunning = true;
+        final boolean home = section == HOME;
+        startupReader.execute(() -> {
+            HomeData loaded = null;
+            long revision = 0;
+            String error = null;
+            try (TaskStore store = new TaskStore(getApplicationContext())) {
+                android.database.sqlite.SQLiteDatabase db = store.getReadableDatabase();
+                db.beginTransaction();
+                try {
+                    if (home) loaded = new HomeData(getApplicationContext(), store);
+                    revision = store.dataRevision();
+                    db.setTransactionSuccessful();
+                } finally { db.endTransaction(); }
+            } catch (RuntimeException exception) {
+                error = exception.toString();
+            }
+            HomeData result = loaded;
+            long resultRevision = revision;
+            String failure = error;
+            refresh.post(() -> {
+                if (isDestroyed() || isFinishing()) return;
+                initialLoadRunning = false;
+                initialDataReady = true;
+                startupReadFailed = failure != null;
+                pager.setTaskPagingEnabled(true);
+                startupHome = result;
+                startupRevision = resultRevision;
+                applyingStartupData = true;
+                try {
+                    if (failure != null) {
+                        content.removeAllViews();
+                        addHeader();
+                        message(content, "暂时无法读取日程，请稍后重试");
+                    } else render();
+                    snapshot = dataSnapshot();
+                } finally {
+                    applyingStartupData = false;
+                    startupHome = null;
+                }
+                switchToPendingSection();
+                if (foreground) finishResume();
+            });
+        });
+    }
+
+    private void resumeDashboard() {
+        refreshActivePageIfNeeded();
+        snapshot = dataSnapshot();
+        finishResume();
+    }
+
+    private void finishResume() {
+        int oldScroll = restoredScrollY != 0 ? restoredScrollY : scroll.getScrollY();
+        restoredScrollY = 0;
+        ScrollView resumed = scroll;
+        resumed.post(() -> resumed.scrollTo(0, oldScroll));
+        refresh.removeCallbacks(poll);
+        refresh.removeCallbacks(elapsedTicker);
+        refresh.postDelayed(poll, 5000L);
+        refresh.postDelayed(elapsedTicker, 1000L);
+        refresh.post(this::refreshSystemCalendar);
+        // Wait for one actual traversal before permissions, maintenance or update prompts.
+        int generation = resumeGeneration;
+        afterDraw(resumed, () -> {
+            if (generation != resumeGeneration || !foreground || isDestroyed() || isFinishing()) return;
+            maybeReportStartup();
+            afterFirstContent();
+        });
+    }
+
+    private void afterDraw(View view, Runnable action) {
+        view.getViewTreeObserver().addOnDrawListener(new android.view.ViewTreeObserver.OnDrawListener() {
+            private boolean posted;
+            @Override public void onDraw() {
+                if (posted) return;
+                posted = true;
+                view.post(() -> {
+                    if (view.getViewTreeObserver().isAlive())
+                        view.getViewTreeObserver().removeOnDrawListener(this);
+                    if (!foreground || isDestroyed() || isFinishing()) return;
+                    action.run();
+                });
+            }
+        });
+        view.invalidate();
+    }
+
+    private void maybeReportStartup() {
+        if (startupReported || startupReadFailed || !initialDataReady || calendarLoading
+                || pageTransitionRunning || dragTargetLoaded) return;
+        if (HomeTimelinePreferences.includesSystemCalendar(this)
+                && new CalendarStore(this).hasReadPermission() && !calendarErrorShown
+                && !calendarWindowKey(new LocalDate[]{LocalDate.now(), LocalDate.now().plusMonths(1)})
+                        .equals(calendarResultWindow) && section == HOME) return;
+        startupReported = true;
+        reportFullyDrawn();
+        android.util.Log.i("ChronaStartup", "content_ready activity_ms="
+                + (android.os.SystemClock.elapsedRealtime() - createdAt)
+                + " run=" + getIntent().getLongExtra("startup_measurement", 0));
+    }
+
+    private void afterFirstContent() {
         if (!GuideActivity.showIfNeeded(this)) {
             StartupPermissions.requestFirstLaunch(this);
             ReleaseUpdates.checkAutomatically(this);
         }
-        foreground = true;
-        lastCalendarFetch = 0;
-        int recovered = ProcessingJobService.reconcile(this);
-        if (recovered > 0) Feedback.showLong(this, recovered + " 条解析已中断，请在收件箱重试");
-        int oldScroll = restoredScrollY != 0 ? restoredScrollY : scroll.getScrollY();
-        restoredScrollY = 0;
-        refreshActivePageIfNeeded();
-        ScrollView resumed = scroll;
-        resumed.post(() -> resumed.scrollTo(0, oldScroll));
-        snapshot = dataSnapshot();
-        refresh.postDelayed(poll, 5000L);
-        refresh.postDelayed(elapsedTicker, 1000L);
-        refresh.post(this::refreshSystemCalendar);
+        startupReader.execute(() -> {
+            int recovered = ProcessingJobService.reconcile(getApplicationContext());
+            if (recovered > 0) refresh.post(() -> {
+                if (!foreground || isDestroyed()) return;
+                Feedback.showLong(this, recovered + " 条解析已中断，请在收件箱重试");
+                if (!pageTransitionRunning && !dragTargetLoaded) refreshActivePageIfNeeded();
+            });
+        });
     }
 
     @Override protected void onPause() {
         foreground = false;
+        resumeGeneration++;
         calendarGeneration++;
-        if (calendarCancellation != null) calendarCancellation.cancel();
+        if (calendarCancellation != null) {
+            calendarCancellation.cancel();
+            lastCalendarFetch = 0;
+        }
         refresh.removeCallbacks(poll);
         refresh.removeCallbacks(elapsedTicker);
         backdrop.stop();
@@ -658,6 +782,7 @@ public final class DashboardActivity extends Activity {
         sectionVersions.clear();
         dirtySections.clear();
         calendarReader.shutdownNow();
+        startupReader.shutdownNow();
         super.onDestroy();
     }
 
@@ -721,7 +846,11 @@ public final class DashboardActivity extends Activity {
             refresh.post(() -> {
                 calendarLoading = false;
                 calendarCancellation = null;
-                if (generation != calendarGeneration || !foreground || isDestroyed()) return;
+                if (generation != calendarGeneration || !foreground || isDestroyed()) {
+                    lastCalendarFetch = 0;
+                    if (foreground && !isDestroyed()) refresh.post(this::refreshSystemCalendar);
+                    return;
+                }
                 LocalDate[] desired = section == SCHEDULE && scheduleSource == 1
                         ? scheduleWindow(true) : new LocalDate[]{LocalDate.now(), LocalDate.now().plusMonths(1)};
                 if (!windowKey.equals(calendarWindowKey(desired))) {
@@ -732,6 +861,8 @@ public final class DashboardActivity extends Activity {
                 if (error) {
                     if (!calendarErrorShown) Feedback.show(this, "无法读取系统日程，请稍后重试");
                     calendarErrorShown = true;
+                    lastCalendarFetch = 0;
+                    afterDraw(scroll, this::maybeReportStartup);
                     return;
                 }
                 calendarErrorShown = false;
@@ -746,6 +877,7 @@ public final class DashboardActivity extends Activity {
                     }
                     else refreshHomeContent();
                 }
+                afterDraw(scroll, this::maybeReportStartup);
             });
         });
     }
@@ -809,15 +941,20 @@ public final class DashboardActivity extends Activity {
     }
 
     private String dataSnapshot() {
+        if (applyingStartupData) return snapshotForRevision(startupRevision);
         try (TaskStore store = new TaskStore(this)) {
             // Database triggers track edits too; time buckets move ended events between tabs.
-            return store.dataRevision() + ":" + (System.currentTimeMillis() / 60000L)
-                    + ":" + HomeTimelinePreferences.getItemLimit(this)
-                    + ":" + HomeTimelinePreferences.includesSystemCalendar(this)
-                    + ":" + new CalendarStore(this).hasReadPermission();
+            return snapshotForRevision(store.dataRevision());
         } catch (Exception ignored) {
             return "";
         }
+    }
+
+    private String snapshotForRevision(long revision) {
+        return revision + ":" + (System.currentTimeMillis() / 60000L)
+                + ":" + HomeTimelinePreferences.getItemLimit(this)
+                + ":" + HomeTimelinePreferences.includesSystemCalendar(this)
+                + ":" + new CalendarStore(this).hasReadPermission();
     }
 
     private void buildShell() {
@@ -844,6 +981,7 @@ public final class DashboardActivity extends Activity {
         contentHost.addView(content, new FrameLayout.LayoutParams(-1, -2));
         scroll.addView(contentHost, new FrameLayout.LayoutParams(-1, -2));
         pager = new SwipePagerLayout(this, sectionPagerListener);
+        pager.setTaskPagingEnabled(false);
         pager.setFramePacingEnabled(true);
         pager.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         mobileDock = wide ? null : new DockNavigationLayout(this,
@@ -903,12 +1041,22 @@ public final class DashboardActivity extends Activity {
         elapsedLabels.clear();
         content.removeAllViews();
         addHeader();
-        try (TaskStore store = new TaskStore(this)) {
-            pendingReview = store.taskCountByStatus(TaskRecord.NEEDS_REVIEW);
-            pendingFailed = store.taskCountByStatus(TaskRecord.FAILED);
-            if (section == HOME) home(store);
-            else if (section == INBOX) inbox(store);
-            else schedule(store);
+        if (section == HOME && startupHome != null) {
+            pendingReview = startupHome.review;
+            pendingFailed = startupHome.failed;
+            home(startupHome);
+        } else try (TaskStore store = new TaskStore(this)) {
+            if (section == HOME) {
+                HomeData data = new HomeData(this, store);
+                pendingReview = data.review;
+                pendingFailed = data.failed;
+                home(data);
+            } else {
+                pendingReview = store.taskCountByStatus(TaskRecord.NEEDS_REVIEW);
+                pendingFailed = store.taskCountByStatus(TaskRecord.FAILED);
+                if (section == INBOX) inbox(store);
+                else schedule(store);
+            }
         } catch (Exception exception) {
             message(content, "暂时无法读取日程：" + exception.getMessage());
         }
@@ -1103,12 +1251,11 @@ public final class DashboardActivity extends Activity {
         return value != null && value.toLowerCase(Locale.ROOT).contains(query);
     }
 
-    private void home(TaskStore store) {
+    private void home(HomeData data) {
         CheckBox include = new CheckBox(this);
         include.setText("包含系统其他日程");
         include.setTextSize(13);
-        include.setTextColor(UiStyle.colors(this).muted);
-        include.setButtonTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
+        UiStyle.toggle(include);
         include.setChecked(HomeTimelinePreferences.includesSystemCalendar(this));
         include.setOnCheckedChangeListener((button, enabled) -> {
             if (enabled && !new CalendarStore(this).hasReadPermission()) {
@@ -1123,20 +1270,18 @@ public final class DashboardActivity extends Activity {
             refreshHomeContent();
         });
         UiStyle.addSpaced(content, include, 0, 4);
-        long now = System.currentTimeMillis();
-        ZoneId zone = ZoneId.systemDefault();
-        LocalDate today = LocalDate.now(zone);
-        LocalDate endDate = today.plusMonths(1);
-        int limit = HomeTimelinePreferences.getItemLimit(this);
-        List<EventCandidate> candidates = store.queryScheduleFirst(new ScheduleQuery(0, null, 0,
-                "", today, endDate, now, zone), limit);
+        long now = data.now;
+        ZoneId zone = data.zone;
+        LocalDate today = data.today;
+        LocalDate endDate = data.endDate;
+        int limit = data.limit;
+        List<EventCandidate> candidates = data.candidates;
         List<HomeTimelineEntry> upcoming = new ArrayList<>();
-        for (EventCandidate candidate : store.queryScheduleFirst(new ScheduleQuery(0, null, 0,
-                "", null, null, now, zone), 5)) upcoming.add(new HomeTimelineEntry(candidate));
+        for (EventCandidate candidate : data.upcoming) upcoming.add(new HomeTimelineEntry(candidate));
         List<CalendarOccurrence> external = java.util.Collections.emptyList();
         if (HomeTimelinePreferences.includesSystemCalendar(this)
                 && new CalendarStore(this).hasReadPermission()) {
-            Set<Long> linkedIds = new HashSet<>(store.linkedCalendarIds());
+            Set<Long> linkedIds = new HashSet<>(data.linkedIds);
             external = CalendarOccurrence.unlinked(calendarEventsForWindow(new LocalDate[]{today, endDate}), linkedIds);
             for (CalendarOccurrence event : external)
                 if (event.displayEnd(ZoneId.systemDefault()) > now)
@@ -2399,6 +2544,10 @@ public final class DashboardActivity extends Activity {
 
     private void switchTo(int destination) {
         if (destination < HOME || destination > SCHEDULE) return;
+        if (!initialDataReady) {
+            pendingSection = destination;
+            return;
+        }
         if (pageTransitionRunning || dragTargetLoaded) {
             pendingSection = destination;
             return;

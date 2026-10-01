@@ -14,7 +14,6 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.net.Uri;
 import android.view.View;
-import android.view.ViewTreeObserver;
 import android.view.animation.DecelerateInterpolator;
 
 import java.io.File;
@@ -47,6 +46,8 @@ public final class GlassBackdropView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private float reveal;
     private ValueAnimator entrance;
+    private ValueAnimator wallpaperEntrance;
+    private float wallpaperOpacity = 1f;
     private Bitmap backgroundImage;
     private Bitmap blurredWallpaper;
     private Bitmap pendingBackgroundImage;
@@ -56,10 +57,7 @@ public final class GlassBackdropView extends View {
     private boolean requestedGaussian;
     private int backgroundLoadToken;
     private String loadedBackground;
-    private boolean wallpaperPreparationFailed;
-    private boolean firstFrameDrawn;
-    private ViewTreeObserver.OnPreDrawListener firstFrameGate;
-    private Runnable firstFrameTimeout;
+    private boolean blurFailed;
     private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF blurDestination = new RectF();
     private final int[] backdropLocation = new int[2];
@@ -80,7 +78,7 @@ public final class GlassBackdropView extends View {
         String requested = ThemeStore.background(getContext());
         if (java.util.Objects.equals(requested, loadedBackground)) return;
         loadedBackground = requested;
-        wallpaperPreparationFailed = false;
+        blurFailed = false;
         blurBuildToken++;
         backgroundLoadToken++;
         if (requested == null) {
@@ -90,10 +88,7 @@ public final class GlassBackdropView extends View {
             invalidate();
             if (getParent() instanceof View parent) parent.invalidate();
         } else {
-            // A newly selected wallpaper must not be shown behind acrylic hosts before its
-            // matching blur is ready. The pre-draw gate has a bounded timeout and failure path.
-            firstFrameDrawn = false;
-            installFirstFrameGate();
+            // Keep drawing the theme surface while the image and its matching blur prepare.
             Bitmap cached = cachedSource(requested);
             if (cached != null) {
                 backgroundImage = cached;
@@ -137,11 +132,10 @@ public final class GlassBackdropView extends View {
                         preparePendingBackground();
                     } else image.recycle();
                 });
-            } catch (Exception ignored) {
+            } catch (Exception | OutOfMemoryError ignored) {
                 post(() -> {
                     if (loadToken == backgroundLoadToken) {
-                        wallpaperPreparationFailed = true;
-                        releaseFirstFrameGate();
+                        invalidateAcrylicHosts();
                     }
                 });
             }
@@ -151,14 +145,12 @@ public final class GlassBackdropView extends View {
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         refreshBackground();
-        installFirstFrameGate();
     }
 
     @Override protected void onDetachedFromWindow() {
         stop();
         blurBuildToken++;
         backgroundLoadToken++;
-        releaseFirstFrameGate();
         if (blurredWallpaper != null) {
             clearBlurredWallpaper();
         }
@@ -179,7 +171,6 @@ public final class GlassBackdropView extends View {
                     ThemeStore.blurStrength(getContext()));
             if (cached != null) {
                 blurredWallpaper = cached;
-                wallpaperPreparationFailed = false;
                 invalidateAcrylicHosts();
             } else rebuildBlurredWallpaper();
         }
@@ -191,13 +182,16 @@ public final class GlassBackdropView extends View {
         canvas.drawColor(palette.background);
         float width = getWidth();
         float height = getHeight();
-        if (backgroundImage != null && width > 0 && height > 0) {
+        if (backgroundImage != null && width > 0 && height > 0
+                && (!ThemeStore.acrylicEnabled(getContext()) || blurredWallpaper != null || blurFailed)) {
+            imagePaint.setAlpha(Math.round(255 * wallpaperOpacity));
             drawWallpaper(canvas, backgroundImage, width, height, imagePaint);
+            imagePaint.setAlpha(255);
             if (ThemeStore.dark(getContext())) {
-                canvas.drawColor(Color.argb(128, 0, 0, 0));
-                canvas.drawColor(tint(palette.background, 76));
+                canvas.drawColor(Color.argb(Math.round(128 * wallpaperOpacity), 0, 0, 0));
+                canvas.drawColor(tint(palette.background, Math.round(76 * wallpaperOpacity)));
             } else {
-                canvas.drawColor(tint(palette.background, 164));
+                canvas.drawColor(tint(palette.background, Math.round(164 * wallpaperOpacity)));
             }
         }
         float spread = Math.max(width, height);
@@ -227,7 +221,6 @@ public final class GlassBackdropView extends View {
         Bitmap cached = cachedBlurred(wallpaperUri, width, height, gaussian, strength);
         if (cached != null) {
             blurredWallpaper = cached;
-            wallpaperPreparationFailed = false;
             invalidateAcrylicHosts();
             return;
         }
@@ -244,9 +237,11 @@ public final class GlassBackdropView extends View {
                     if (readyResult != null) {
                         storeBlurred(wallpaperUri, source, readyResult, width, height, gaussian,
                                 strength);
-                        wallpaperPreparationFailed = false;
                         replaceBlurredWallpaper(readyResult);
-                    } else wallpaperPreparationFailed = true;
+                    } else {
+                        blurFailed = true;
+                        invalidateAcrylicHosts();
+                    }
                 } else if (readyResult != null && !readyResult.isRecycled()) {
                     readyResult.recycle();
                 }
@@ -274,7 +269,6 @@ public final class GlassBackdropView extends View {
             pendingBackgroundImage = null;
             backgroundImage = source;
             blurredWallpaper = cached;
-            wallpaperPreparationFailed = false;
             invalidateAcrylicHosts();
             return;
         }
@@ -294,7 +288,6 @@ public final class GlassBackdropView extends View {
                     if (readyResult != null) storeBlurred(wallpaperUri, source, readyResult,
                             width, height, gaussian, strength);
                     else storeSource(wallpaperUri, source);
-                    wallpaperPreparationFailed = readyResult == null;
                     replaceBlurredWallpaper(readyResult);
                 } else if (readyResult != null && !readyResult.isRecycled()) {
                     readyResult.recycle();
@@ -411,7 +404,22 @@ public final class GlassBackdropView extends View {
 
     private void replaceBlurredWallpaper(Bitmap replacement) {
         blurredWallpaper = replacement;
-        if (replacement != null) wallpaperPreparationFailed = false;
+        blurFailed = replacement == null;
+        if (wallpaperEntrance != null) wallpaperEntrance.cancel();
+        wallpaperOpacity = 1f;
+        if (ValueAnimator.areAnimatorsEnabled() && isShown()) {
+            wallpaperEntrance = ValueAnimator.ofFloat(0f, 1f);
+            wallpaperEntrance.setDuration(UiMotion.EXIT);
+            wallpaperEntrance.setInterpolator(UiMotion.SETTLE);
+            java.util.List<View> surfaces = new java.util.ArrayList<>();
+            UiStyle.collectAcrylicSurfaces(getRootView(), surfaces);
+            wallpaperEntrance.addUpdateListener(animation -> {
+                wallpaperOpacity = (float) animation.getAnimatedValue();
+                invalidate();
+                for (View surface : surfaces) if (surface.isAttachedToWindow()) surface.invalidate();
+            });
+            wallpaperEntrance.start();
+        }
         invalidateAcrylicHosts();
     }
 
@@ -436,45 +444,6 @@ public final class GlassBackdropView extends View {
     void refreshTheme() {
         invalidate();
         invalidateAcrylicHosts();
-    }
-
-    private void installFirstFrameGate() {
-        if (firstFrameDrawn || loadedBackground == null || firstFrameGate != null) return;
-        View root = getRootView();
-        ViewTreeObserver observer = root.getViewTreeObserver();
-        if (!observer.isAlive()) return;
-        firstFrameGate = () -> {
-            if (!wallpaperReady()) return false;
-            firstFrameDrawn = true;
-            releaseFirstFrameGate();
-            return true;
-        };
-        observer.addOnPreDrawListener(firstFrameGate);
-        firstFrameTimeout = () -> {
-            if (firstFrameGate == null) return;
-            wallpaperPreparationFailed = true;
-            firstFrameDrawn = true;
-            releaseFirstFrameGate();
-            root.invalidate();
-        };
-        // Providers can stall or revoke access; never leave the Activity blocked indefinitely.
-        root.postDelayed(firstFrameTimeout, 2500);
-    }
-
-    private boolean wallpaperReady() {
-        if (loadedBackground == null || wallpaperPreparationFailed) return true;
-        if (backgroundImage == null) return false;
-        return !ThemeStore.acrylicEnabled(getContext()) || blurredWallpaper != null;
-    }
-
-    private void releaseFirstFrameGate() {
-        if (firstFrameGate == null) return;
-        View root = getRootView();
-        ViewTreeObserver observer = root.getViewTreeObserver();
-        if (observer.isAlive()) observer.removeOnPreDrawListener(firstFrameGate);
-        if (firstFrameTimeout != null) root.removeCallbacks(firstFrameTimeout);
-        firstFrameGate = null;
-        firstFrameTimeout = null;
     }
 
     private static Bitmap cachedSource(String uri) {
@@ -705,17 +674,20 @@ public final class GlassBackdropView extends View {
         surfaceBounds.set(destination);
         surfaceClip.addRoundRect(surfaceBounds, cornerRadius, cornerRadius, Path.Direction.CW);
         canvas.clipPath(surfaceClip);
+        canvas.drawColor(palette.background);
         canvas.translate(-left, -top);
+        imagePaint.setAlpha(Math.round(255 * wallpaperOpacity));
         canvas.drawBitmap(blurredWallpaper, null, blurDestination, imagePaint);
+        imagePaint.setAlpha(255);
         canvas.restoreToCount(save);
 
         save = canvas.save();
         canvas.clipPath(surfaceClip);
         if (ThemeStore.dark(getContext())) {
-            canvas.drawColor(Color.argb(128, 0, 0, 0));
-            canvas.drawColor(tint(palette.background, 76));
+            canvas.drawColor(Color.argb(Math.round(128 * wallpaperOpacity), 0, 0, 0));
+            canvas.drawColor(tint(palette.background, Math.round(76 * wallpaperOpacity)));
         } else {
-            canvas.drawColor(tint(palette.background, 164));
+            canvas.drawColor(tint(palette.background, Math.round(164 * wallpaperOpacity)));
         }
         canvas.restoreToCount(save);
         return true;
@@ -743,6 +715,12 @@ public final class GlassBackdropView extends View {
     }
 
     void stop() {
+        if (wallpaperEntrance != null) {
+            wallpaperEntrance.cancel();
+            wallpaperEntrance = null;
+            wallpaperOpacity = 1f;
+            invalidateAcrylicHosts();
+        }
         if (entrance != null) {
             entrance.cancel();
             entrance = null;

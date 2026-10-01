@@ -125,7 +125,10 @@ public final class ProcessingJobService extends JobService {
         // Claimed on the main thread so a concurrent reconcile() cannot mistake a starting job
         // for one that was lost with a dead process.
         Execution execution = new Execution();
-        Execution preceding = IN_FLIGHT.putIfAbsent(taskId, execution);
+        Execution preceding;
+        synchronized (IN_FLIGHT) {
+            preceding = IN_FLIGHT.putIfAbsent(taskId, execution);
+        }
         boolean userInitiated = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                 && params.isUserInitiatedJob();
         if (userInitiated) {
@@ -196,14 +199,15 @@ public final class ProcessingJobService extends JobService {
         JobScheduler scheduler = context.getSystemService(JobScheduler.class);
         int recovered = 0;
         try (TaskStore store = new TaskStore(context)) {
-            for (TaskRecord task : store.listTasks()) {
-                if (!TaskRecord.PROCESSING.equals(task.status)) continue;
-                if (IN_FLIGHT.containsKey(task.id)) continue;
-                if (scheduler != null
-                        && scheduler.getPendingJob(JOB_ID_BASE + (int) task.id) != null) continue;
-                store.updateStatus(task.id, TaskRecord.FAILED,
-                        "解析被系统中断（应用在后台被清理），请重新解析");
-                DiagLog.add(context, "reconciled task=" + task.id + " stuck parsing -> failed");
+            for (long id : store.processingTaskIds()) {
+                synchronized (IN_FLIGHT) {
+                    if (IN_FLIGHT.containsKey(id)) continue;
+                    if (scheduler != null
+                            && scheduler.getPendingJob(JOB_ID_BASE + (int) id) != null) continue;
+                    if (!store.failInterruptedProcessing(id,
+                            "解析被系统中断（应用在后台被清理），请重新解析")) continue;
+                }
+                DiagLog.add(context, "reconciled task=" + id + " stuck parsing -> failed");
                 recovered++;
             }
         } catch (RuntimeException exception) {
@@ -219,7 +223,10 @@ public final class ProcessingJobService extends JobService {
             while (!claimed) {
                 execution.control.check();
                 if (!sleep(50L)) execution.control.check();
-                claimed = IN_FLIGHT.putIfAbsent(taskId, execution) == null;
+                synchronized (IN_FLIGHT) {
+                    execution.control.check();
+                    claimed = IN_FLIGHT.putIfAbsent(taskId, execution) == null;
+                }
             }
             execution.control.check();
             processOnce(params, taskId, execution.control);
