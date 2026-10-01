@@ -36,7 +36,6 @@ public final class ChronaApp extends Application {
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityCreated(Activity activity, Bundle state) {
                 ThemeStore.watch(activity);
-                UiMotion.install(activity);
             }
 
             @Override public void onActivityDestroyed(Activity activity) {

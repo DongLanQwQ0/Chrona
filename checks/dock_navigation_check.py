@@ -57,6 +57,7 @@ public class View {
   if(e.a==MotionEvent.ACTION_UP&&pressed)post(perform);
   return true;}
  public boolean post(Runnable action){return postDelayed(action,0);}
+ public void postOnAnimation(Runnable action){postDelayed(action,16);}
  public boolean postDelayed(Runnable action,long delay){jobs.add(new Job(this,action,now+delay,sequence++));return true;}
  public boolean removeCallbacks(Runnable action){return jobs.removeIf(j->j.owner==this&&j.action==action);}
  public void invalidate(){} public boolean performHapticFeedback(int x){return true;}
@@ -145,6 +146,21 @@ public class DockNavigationCheck {
   dock.updatePageSettle(.5f);require(center()>released&&center()<250,"Dock release settles from finger toward target");
   init();dock.beginPageSettle(1);dock.updatePageSettle(.6f);float interrupted=center();dock.beginBodyDrag();dock.showPageProgress(0,1,0);close(center(),interrupted,"New body gesture preserves interrupted highlight position");
   dock.showPageProgress(0,1,.5f);close(center(),130,"Interrupted gesture moves continuously toward target");
+  init();touch(0,225,35);touch(2,245,35);close(center(),50,"Remote drag begins at existing highlight");
+  View.advance(16);float first=center();require(first>50&&first<245,"First frame moves partway toward finger");
+  View.advance(32);float next=center();require(next>first&&next<245,"Subsequent frames approach finger");
+  touch(2,150,35);close(center(),next,"Retargeting does not teleport during MOVE");
+  View.advance(16);require(center()<next&&center()>150,"Frame follows changed finger direction");
+  float beforeUp=center();touch(1,245,35);close(center(),beforeUp,"Release preserves visual position");
+  require(selected.equals(List.of(2)),"Fast release selects finger target despite visual lag");
+  dock.updatePageSettle(.5f);float settled=center();View.advance(80);close(center(),settled,"Finger loop stops when page animation takes over");
+  init();touch(0,245,35);View.advance(500);close(center(),50,"Long press starts at existing highlight");
+  View.advance(32);require(center()>50&&center()<245,"Long press smoothly approaches finger");
+  touch(3,245,35);View.advance(400);close(center(),50,"Cancel stops finger loop and returns");
+  init();touch(0,225,35);touch(2,245,35);View.advance(32);touch(5,245,35);View.advance(400);close(center(),50,"Multiple pointers stop follow");
+  init();touch(0,225,35);touch(2,245,35);View.advance(32);float detached=center();dock.onDetachedFromWindow();View.advance(400);close(center(),detached,"Detach cancels scheduled follow");
+  init();touch(0,225,35);touch(2,245,35);View.advance(32);float bodyStart=center();dock.beginBodyDrag();View.advance(400);close(center(),bodyStart,"Body gesture cancels scheduled follow");
+  init();android.animation.ValueAnimator.enabled=false;touch(0,225,35);touch(2,245,35);close(center(),245,"Disabled animations follow immediately");android.animation.ValueAnimator.enabled=true;
   System.out.println("Dock navigation checks passed: "+checks+" (queue test double, not device runtime)");
  }
 }

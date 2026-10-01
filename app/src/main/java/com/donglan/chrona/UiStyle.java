@@ -850,6 +850,8 @@ public final class UiStyle {
         Dialog dialog = dialog(activity);
         LinearLayout panel = dialogPanel(activity, title);
         ScrollView scroll = new ScrollView(activity);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout choices = new LinearLayout(activity);
         choices.setOrientation(LinearLayout.VERTICAL);
         for (int i = 0; i < options.length; i++) {
