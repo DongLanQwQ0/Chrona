@@ -2,11 +2,11 @@
 
 独立 Android 日程应用。首版闭环是：输入文字或通过系统分享文字 → 后台调用用户配置的 AI 服务 → 在应用内审核、修改日程草稿 → 写入专属的本地系统日历并由系统提醒。
 
-当前版本：`0.13.71`（versionCode 91）。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。AI 链路、缓存策略和验证边界见 [docs/ai-pipeline.md](docs/ai-pipeline.md)，自绘日期时间选择器见 [docs/date-time-picker.md](docs/date-time-picker.md)，首页系统日历合并见 [docs/system-calendar-home.md](docs/system-calendar-home.md)，列表筛选动画见 [docs/list-entry-animation.md](docs/list-entry-animation.md)，大量日程浏览见 [docs/schedule-browser.md](docs/schedule-browser.md)，GitHub 分发见 [docs/github-releases.md](docs/github-releases.md)。
+当前版本：`0.13.72`（versionCode 92）。完整产品需求与历史决策见 [HANDOFF.md](HANDOFF.md)。AI 链路、缓存策略和验证边界见 [docs/ai-pipeline.md](docs/ai-pipeline.md)，自绘日期时间选择器见 [docs/date-time-picker.md](docs/date-time-picker.md)，首页系统日历合并见 [docs/system-calendar-home.md](docs/system-calendar-home.md)，列表筛选动画见 [docs/list-entry-animation.md](docs/list-entry-animation.md)，大量日程浏览见 [docs/schedule-browser.md](docs/schedule-browser.md)，GitHub 分发见 [docs/github-releases.md](docs/github-releases.md)。
 
 ## 当前功能
 
-- 首次启动显示使用引导，设置里可再次查看：配置 AI、记录、审核多项日程、系统日历提醒和备份更新。引导显示后再请求首次权限。
+- 使用引导以六步带用户认识页面、配置 AI、记录第一件事、逐项审核、开启日历提醒和日常维护。每步提供具体操作与完成结果，上一步/下一步按钮固定在底部，可跳过；可复制练习示例并直达 AI 设置、记录和备份页面。首次启动及从旧版升级后显示新版教程，设置里可随时重看，旋转保留当前步骤与滚动位置。引导显示后再请求首次权限。
 - 首页、日程列表和桌面小组件按具体日程 ID 定位详情；一条收件生成多项日程时，点击第二或第三项会打开对应页，旋转与后续刷新保留当前页。
 - 设置提供 GitHub Release 更新检查、说明和 APK 浏览器下载；默认每天后台检查一次，同一新版本只提示一次，可关闭自动检查。暂未发布、网络失败或非法版本信息会显示检查失败，不会误报「最新版本」。更新源为 `DongLanQwQ0/Chrona`，发布方法和签名要求见分发文档。
 - 应用内文字输入、Android `text/plain` 分享入口；每条输入先存入本地 SQLite 收件箱。记录页顶栏左为返回、右为 ✓ 保存，剪贴板、图片、文件三个入口以图标形式排在「记录一件事」标题右侧。
@@ -69,6 +69,8 @@ $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 产物位于 `app\build\outputs\apk\debug\app-debug.apk`，构建产物和本机配置已被 `.gitignore` 排除。Android Studio 可直接打开本目录。源码与分发仓库为 https://github.com/DongLanQwQ0/Chrona，正式版 APK 见 [Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
 
 ## 已验证
+
+- 2026-10-01：`0.13.72`（versionCode 92）的六步使用引导通过 `assembleDebug`、`lintDebug` 与独立静态复核；引导页码边界、旋转恢复及旧版引导升级逻辑已核对。设备交互尚未真机回归。
 
 - 2026-10-01：`0.13.71`（versionCode 91）的 `assembleDebug`、`lintDebug`、`GuideReleaseCheck` 和 `git diff --check` 通过；APK 签名 SHA-256 与旧版一致。GitHub 正式 Release 已发布，上传资产大小和 SHA-256 与本地产物一致，`releases/latest` 返回本版。当前无连接设备，首次引导、多日程点击/旋转、浏览器下载和覆盖安装尚未真机回归。
 
