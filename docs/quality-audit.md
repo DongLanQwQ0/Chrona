@@ -53,3 +53,9 @@
 - 后台：预览文件异常仅影响可查看的输出；取消先停等待者，再释放原执行，避免旧任务退出时等待者发起请求。链接、AI、兼容降级和重试共用单调 deadline，持续慢速输出不能无限续期。
 - 界面：小组件历史与未来分池，图片方向和复位修正，长输出后台格式化；文档和旧迁移检查与当前实现对齐。
 - 具体离线检查、复核和设备限制见[验证记录](validation-history.md)。这些检查使用真实 Java/SQL 与明确标注的替身，不等同于 Android 真机验收。ADB 当前无设备，未安装或运行真实数据恢复，也没有付费 AI 请求。
+
+### 源码与分发结果
+
+- 修复分为 8 个独立提交，源代码构建基点 `8eaa5be36293da0fa39972ab97b48e0c621baf98`，标签 `v0.13.75` 已推送到 `DongLanQwQ0/Chrona`；本节为发布后的文档记录。
+- [0.13.75 正式 Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.13.75) 已发布并设为最新，官方 latest 接口复查一致。
+- [Chrona-0.13.75.apk](https://github.com/DongLanQwQ0/Chrona/releases/download/v0.13.75/Chrona-0.13.75.apk) 为 1,323,922 字节；远程资产 digest 与本地 SHA-256 `896eab67688458a8117b819ac7048a2d74543e7ed15ec9026ad69b245dec89c5` 一致，原签名保持不变。
