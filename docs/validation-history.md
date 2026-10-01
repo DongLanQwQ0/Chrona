@@ -4,6 +4,19 @@
 
 以下记录从原 README 完整迁出，保留各版本实际发生过的验证及当时限制。较早条目中的安装包位置、数据库版本与未完成项属于当时状态，不应据此判断最新版本。新的验证记录可按日期追加在本页，用户可见的版本说明发布在 GitHub Releases。
 
+## 2026-10-01 · 0.13.75 软件审查与数据保护
+
+- [完整清单](quality-audit.md) 先列出确认问题，再实施；最终 21 项，包括实施时发现的备份背景图说明矛盾。数据库无迁移，没有调用付费模型、增加依赖或修改工具链。
+- `detail_draft_check.py` 提取实际 SaveSession，用最小 Activity/Bundle 替身验证旧 Bundle 在保存完成后的合并、原始标题保留、完成草稿移除和回调归属。实际编辑器的 Android 重建仍待设备验证。
+- `data_integrity_check.py` 执行生产快照/状态/窗口 SQL：并发 SQLite writer 被快照事务隔离，附属库触发器、revision、删除 ID 高水位、外键、READY 降级及小组件历史溢出和全天边界检查通过。Android 自带 SQLite 的 ATTACH/WAL 行为未做设备验证。
+- `config_backup_check.py` 执行实际 ConfigBackup，偏好和密钥存储使用内存替身；空 AI 配置在新旧设备配置下、密钥保留/覆盖、待配置草稿及半空配置拒绝均通过。未测试真实密钥加密层。
+- `NetworkSafetyCheck` 运行实际 ChatCompletionClient、LinkFetcher、RequestControl 和 BestEffortPreview。HTTPS 连接全部为本地替身：预览 append/reasoning/close 失败不丢结果且仅一次请求，取消前不发 POST，阻塞链接/模型取消、慢速 SSE 总 deadline、剩余 timeout 和连接身份清理通过。`AiRequestCheck`、`LinkFetcherCheck` 回归通过。
+- `job_execution_check.py` 提取实际 process/cancel/wasStopped 协调方法，work body 和 JobScheduler 为替身；验证取消标记早于 interrupt 的判断、串行重新调度、旧 finally 不移除新执行，以及延迟系统 stop、owner 在 cancel 内退出时仍先取消 waiter。两个实际 processOnce catch 的接入由源码复核确认；替身 work body 不直接覆盖它们，不能据此声称系统 JobScheduler 真机行为通过。
+- 独立复核发现并修正旧 Bundle 覆盖已保存备注、类别提示恢复遗漏、取消误标失败和等待者漏取消；复核后的定向回归通过。
+- 最终 `assembleDebug` 与 `lintDebug` 通过：0.13.75 / versionCode 95。lint 无 error，81 项 warning；新增一项建议使用 AndroidX EXIF 的提示，本次保留 minSdk 已支持的系统 API，未增加依赖。Dock 的 33 项队列回归、完整输出分页、43 项语义解析及 v1–v4、v6→v7、v8→v9 迁移范围检查通过；早期迁移检查已限制到原本测试的范围。
+- APK 原签名校验通过，证书 SHA-256 保持 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`；构建包 1,323,922 字节，SHA-256 为 `896eab67688458a8117b819ac7048a2d74543e7ed15ec9026ad69b245dec89c5`。文档检查覆盖 10 个文件、47 项本地链接/锚点和 SVG，diff 检查通过。
+- ADB 检查无连接设备。未安装、不测试真实供应商或真实数据恢复；图片方向/缩放、旋转/返回、小组件桌面显示、系统调度、覆盖安装和整体流畅度仍待真机验收。
+
 ## 2026-10-01 · 0.13.74 Dock 点击与连续高光
 
 - 用户反馈 0.13.73 底部按钮失效；此前的构建与静态复核未覆盖子按钮在 UP 后延迟执行点击、detach 取消回调的运行时顺序。

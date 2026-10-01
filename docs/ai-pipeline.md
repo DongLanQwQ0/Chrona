@@ -1,4 +1,4 @@
-# AI 解析链路（0.13.34）
+# AI 解析链路
 
 ## 时间与存疑提示（0.13.53）
 
@@ -19,7 +19,7 @@
 
 ## 固定前缀与缓存
 
-`SchedulePrompt.VERSION = schedule-v2` 管理静态 system/rules/schema。动态数据放后续 user 消息，包含 ISO 8601 本地时间、IANA 时区、原文、链接正文和附件元信息，图片随后附加。固定部分不含时间或任务 ID；没有缓存填充。OpenAI 官方接口传版本化缓存键，DeepSeek 使用自动前缀缓存；真实 cached_tokens 来自供应商 usage，缺失保留 null。
+`SchedulePrompt.VERSION = schedule-v3` 管理静态 system/rules/schema。动态数据放后续 user 消息，包含 ISO 8601 本地时间、IANA 时区、原文、链接正文和附件元信息，图片随后附加。固定部分不含时间或任务 ID；没有缓存填充。OpenAI 官方接口传版本化缓存键，DeepSeek 使用自动前缀缓存；真实 cached_tokens 来自供应商 usage，缺失保留 null。
 
 输入预算：原文最多 24000 字符，超出明确报错；链接 4000、普通附件元信息 6000，截断有标记。JSON 编码有额外开销；附件元信息不是附件正文。外部数据由系统规则标记为不可信，但这不能保证模型绝不受提示注入影响。
 
@@ -27,7 +27,9 @@
 
 设置新增自动/关闭/低/中/高/最高思考强度，包含在备份中。详细参数映射见 ai-request-notes.md。minSdk 26 支持本次使用的 java.time，无需额外依赖或服务。保留模型选择、视觉限制、附件、链接、输出思考内容和用户确认流程。
 
-Java 17 离线检查：AiRequestCheck、SemanticEventNormalizerCheck（43 项）、ModelOutputCheck、v6→v7 来源字段迁移检查已通过。Gradle assembleDebug / lintDebug 已通过。未执行手机验收或真实供应商调用；实际语义准确率、Token 节省量、缓存命中率尚未测量。历史文件若空格已被写入前丢失，无法自动还原；本次修正显示阶段造成的丢失。完整输出首次加载/变化后的格式化目前在 UI 线程，最大约 8 MB；预览增量读取不走此路径。
+Java 17 离线检查：AiRequestCheck、SemanticEventNormalizerCheck（43 项）、ModelOutputCheck、v6→v7 来源字段迁移检查已通过。Gradle assembleDebug / lintDebug 已通过。未执行手机验收或真实供应商调用；实际语义准确率、Token 节省量、缓存命中率尚未测量。历史文件若空格已被写入前丢失，无法自动还原；本次修正显示阶段造成的丢失。完整输出首次加载/变化后的格式化与分页读取现在在独立工作线程执行，最大约 8 MB；预览增量读取不走此路径。
+
+后台处理共用 240 秒总网络预算，链接抓取、请求降级与重试均使用剩余额度。取消会断开当前连接，并在后续网络阶段前检查；本地输出预览不可写时保留正常解析结果，不因预览异常重复请求。完整输出因此可能缺失，诊断日志会记录预览保存失败。
 
 ## 时间编辑
 

@@ -11,7 +11,7 @@
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.13.74`，versionCode `94` |
+| 当前版本 | `0.13.75`，versionCode `95` |
 | 最低 Android 版本 | API 26（Android 8.0） |
 | 编译 / 目标 SDK | 36 / 36 |
 | Java 源码级别 | 17 |
@@ -73,6 +73,10 @@ $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 Dock 点击与高光回归检查：设置现有 `JAVA_HOME` 后运行 `python checks/dock_navigation_check.py`。它编译并执行真实 `DockNavigationLayout`，用最小 UI 队列替身模拟子 View 的点击入队、detach 取消回调和布局几何，检查点击、长按、取消及连续动画的绘制位置。无需新增依赖，生成文件位于忽略的 `build/`；这不等同于 Android 运行时或真机触摸验证。
 
 ## 技术文档
+
+当前问题审查与修复记录：[软件审查与完善清单](quality-audit.md)。数据格式保持 v9；备份使用 SQLite ATTACH 事务复制快照，避免使用旧 Android SQLite 不支持的 VACUUM INTO。
+
+本轮离线回归：`python checks/detail_draft_check.py`、`python checks/job_execution_check.py`、`python checks/data_integrity_check.py`、`python checks/config_backup_check.py`。前三项分别执行实际 retained session/协调方法与真实 SQLite SQL；配置检查用内存偏好和密钥存储替身执行实际 ConfigBackup。Java 客户端检查 `checks/NetworkSafetyCheck.java` 使用离线 HTTPS 假连接，需要现有 org.json 检查运行库，不访问真实模型。检查生成物均在 `build/`，这些检查不能替代 Android 生命周期与设备测试。
 
 - [AI 处理链路](ai-pipeline.md)、[请求说明](ai-request-notes.md)、[输出与设置](ai-settings-output-notes.md)、[日程规范化](ai-normalization-notes.md)
 - [日程浏览与筛选](schedule-browser.md)、[首页系统日历](system-calendar-home.md)
