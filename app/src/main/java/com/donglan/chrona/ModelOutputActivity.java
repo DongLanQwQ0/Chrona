@@ -12,6 +12,9 @@ import android.widget.TextView;
 
 import com.donglan.chrona.processing.StreamingOutputStore;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /** Reads long model output one bounded page at a time. */
 public final class ModelOutputActivity extends Activity {
     private long taskId;
@@ -20,8 +23,11 @@ public final class ModelOutputActivity extends Activity {
     private TextView output;
     private Button previous;
     private Button next;
+    private Button reload;
     private ScrollView scroll;
     private StreamingOutputStore outputStore;
+    private final ExecutorService reader = Executors.newSingleThreadExecutor();
+    private int readGeneration;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
@@ -70,7 +76,7 @@ public final class ModelOutputActivity extends Activity {
         actions.setGravity(Gravity.CENTER_VERTICAL);
         previous = action("上一页", () -> { index--; showPage(); });
         next = action("下一页", () -> { index++; showPage(); });
-        Button reload = action("刷新", this::showPage);
+        reload = action("刷新", this::showPage);
         actions.addView(previous, new LinearLayout.LayoutParams(0, dp(50), 1));
         actions.addView(next, new LinearLayout.LayoutParams(0, dp(50), 1));
         actions.addView(reload, new LinearLayout.LayoutParams(0, dp(50), 1));
@@ -96,23 +102,49 @@ public final class ModelOutputActivity extends Activity {
     }
 
     private void showPage() {
+        int generation = ++readGeneration;
+        int requestedIndex = index;
+        previous.setEnabled(false);
+        next.setEnabled(false);
+        reload.setEnabled(false);
+        pageLabel.setText("正在加载输出…");
+        reader.execute(() -> loadPage(generation, requestedIndex));
+    }
+
+    private void loadPage(int generation, int requestedIndex) {
         try {
             long bytes = outputStore.renderedLength(taskId);
             int pages = Math.max(1, (int) ((bytes + StreamingOutputStore.PAGE_BYTES - 1)
                     / StreamingOutputStore.PAGE_BYTES));
-            index = Math.max(0, Math.min(index, pages - 1));
-            pageLabel.setText("第 " + (index + 1) + " / " + pages + " 页 · " + bytes + " 字节");
-            previous.setEnabled(index > 0);
-            next.setEnabled(index + 1 < pages);
-            String part = outputStore.readPage(taskId, index);
+            int loadedIndex = Math.max(0, Math.min(requestedIndex, pages - 1));
+            String part = outputStore.readPage(taskId, loadedIndex);
             String text = part.isEmpty() ? "尚无模型输出。" : part;
-            boolean first = output.getText().length() == 0;
-            output.setText(text);
-            scroll.scrollTo(0, 0);
-            if (!first) UiStyle.pop(output);
+            runOnUiThread(() -> {
+                if (generation != readGeneration || isFinishing() || isDestroyed()) return;
+                index = loadedIndex;
+                pageLabel.setText("第 " + (index + 1) + " / " + pages + " 页 · " + bytes + " 字节");
+                previous.setEnabled(index > 0);
+                next.setEnabled(index + 1 < pages);
+                reload.setEnabled(true);
+                boolean first = output.getText().length() == 0;
+                output.setText(text);
+                scroll.scrollTo(0, 0);
+                if (!first) UiStyle.pop(output);
+            });
         } catch (Exception exception) {
-            output.setText("无法读取输出：" + exception.getMessage());
+            runOnUiThread(() -> {
+                if (generation != readGeneration || isFinishing() || isDestroyed()) return;
+                pageLabel.setText("读取失败");
+                output.setText("无法读取输出：" + exception.getMessage());
+                reload.setEnabled(true);
+            });
         }
+    }
+
+    @Override protected void onDestroy() {
+        ++readGeneration;
+        reader.shutdownNow();
+        super.onDestroy();
     }
 
     private int dp(int value) {
