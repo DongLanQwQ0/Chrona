@@ -1,12 +1,14 @@
 package com.donglan.chrona;
 
 import android.content.Context;
+import android.animation.ValueAnimator;
 import android.graphics.Canvas;
 import android.graphics.drawable.GradientDrawable;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -20,8 +22,20 @@ final class DockNavigationLayout extends LinearLayout {
     private final IntConsumer select;
     private final Runnable finished;
     private float downX, downY, highlightCenter;
+    private float visualPosition = Float.NaN;
+    private float bodyDragFrom = Float.NaN;
+    private float settleFrom, settleTo, settleFraction, settleBaseFraction;
+    private boolean pageSettling;
+    private ValueAnimator recoil;
     private int selectedIndex, tapIndex, labelIndex = -1;
-    private boolean tracking, dragging, ignoreTouch;
+    private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
+    private final Runnable finishTouch = this::finishTouch;
+
+    private void finishTouch() {
+        // The child posts its normal PerformClick before this runnable. Detaching it earlier
+        // removes that callback and silently loses the tap.
+        if (!tracking) finished.run();
+    }
     private final Runnable longPress = () -> {
         if (tracking && !dragging && !ignoreTouch) {
             beginDrag(downX);
@@ -41,9 +55,75 @@ final class DockNavigationLayout extends LinearLayout {
 
     void setSelectedIndex(int index) {
         selectedIndex = index;
+        if (Float.isNaN(visualPosition)) visualPosition = index;
         labelIndex = -1;
-        if (!dragging) updateLabels(index);
+        if (!dragging) updateLabels(Math.round(visualPosition));
         invalidate();
+    }
+
+    void showPageProgress(int from, int to, float progress) {
+        if (dragging) return;
+        cancelRecoil();
+        pageSettling = false;
+        float start = Float.isNaN(bodyDragFrom) ? from : bodyDragFrom;
+        setVisualPosition(start + (to - start) * Math.max(0f, Math.min(1f, progress)));
+    }
+
+    void beginBodyDrag() {
+        cancelRecoil();
+        pageSettling = false;
+        bodyDragFrom = visualPosition;
+    }
+
+    /** Use the page's animator, starting at the actual highlight position after a dock drag. */
+    void beginPageSettle(int destination) {
+        cancelRecoil();
+        settleFrom = Float.isNaN(visualPosition) ? selectedIndex : visualPosition;
+        settleTo = destination;
+        settleFraction = settleBaseFraction = 0f;
+        bodyDragFrom = Float.NaN;
+        pageSettling = true;
+    }
+
+    void updatePageSettle(float fraction) {
+        settleFraction = fraction;
+        if (dragging || !pageSettling) return;
+        float progress = settleBaseFraction >= 1f ? 1f
+                : Math.max(0f, Math.min(1f, (fraction - settleBaseFraction) / (1f - settleBaseFraction)));
+        setVisualPosition(settleFrom + (settleTo - settleFrom) * progress);
+    }
+
+    void finishPageSelection(int index) {
+        pageSettling = false;
+        bodyDragFrom = Float.NaN;
+        setSelectedIndex(index);
+        if (!dragging) setVisualPosition(index);
+    }
+
+    private void setVisualPosition(float position) {
+        visualPosition = Math.max(0f, Math.min(Math.max(0, getChildCount() - 1), position));
+        updateLabels(Math.round(visualPosition));
+        invalidate();
+    }
+
+    private void cancelRecoil() {
+        if (recoil != null) { recoil.cancel(); recoil = null; }
+    }
+
+    private void resumeOrReturnHighlight() {
+        if (pageSettling) {
+            // A dock drag may have moved it while the page was already animating.
+            settleFrom = visualPosition;
+            settleBaseFraction = settleFraction;
+        } else {
+            cancelRecoil();
+            if (!ValueAnimator.areAnimatorsEnabled()) { setVisualPosition(selectedIndex); return; }
+            recoil = ValueAnimator.ofFloat(visualPosition, selectedIndex);
+            recoil.setDuration(180L);
+            recoil.setInterpolator(new DecelerateInterpolator(1.5f));
+            recoil.addUpdateListener(animation -> setVisualPosition((float) animation.getAnimatedValue()));
+            recoil.start();
+        }
     }
 
     private float center(int index) {
@@ -61,12 +141,28 @@ final class DockNavigationLayout extends LinearLayout {
         return result;
     }
 
+    private float centerAt(float position) {
+        int from = (int) Math.floor(position);
+        int to = Math.min(getChildCount() - 1, from + 1);
+        return center(from) + (center(to) - center(from)) * (position - from);
+    }
+
+    private float positionAt(float x) {
+        for (int i = 0; i < getChildCount() - 1; i++) {
+            float a = center(i), b = center(i + 1);
+            if (a != b && x >= Math.min(a, b) && x <= Math.max(a, b))
+                return i + (x - a) / (b - a);
+        }
+        return nearest(x);
+    }
+
     private void moveHighlight(float x) {
         if (getChildCount() == 0) return;
         // Clamp using physical bounds, which also works with RTL child ordering.
         float left = Math.min(center(0), center(getChildCount() - 1));
         float right = Math.max(center(0), center(getChildCount() - 1));
         highlightCenter = Math.max(left, Math.min(right, x));
+        visualPosition = positionAt(highlightCenter);
         updateLabels(nearest(highlightCenter));
         invalidate();
     }
@@ -89,7 +185,7 @@ final class DockNavigationLayout extends LinearLayout {
     @Override protected void dispatchDraw(Canvas canvas) {
         View cell = getChildAt(selectedIndex);
         if (cell != null) {
-            float x = dragging ? highlightCenter : center(selectedIndex);
+            float x = dragging ? highlightCenter : centerAt(visualPosition);
             int left = Math.round(x - cell.getWidth() / 2f);
             highlight.setColor(UiStyle.colors(getContext()).primaryContainer);
             highlight.setBounds(left, cell.getTop(), left + cell.getWidth(), cell.getBottom());
@@ -107,6 +203,7 @@ final class DockNavigationLayout extends LinearLayout {
 
     private void beginDrag(float x) {
         removeCallbacks(longPress);
+        cancelRecoil();
         cancelChildTouch();
         dragging = true;
         getParent().requestDisallowInterceptTouchEvent(true);
@@ -116,9 +213,11 @@ final class DockNavigationLayout extends LinearLayout {
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
+            removeCallbacks(finishTouch);
             tracking = true;
             ignoreTouch = false;
             dragging = false;
+            tapLeftBounds = false;
             downX = event.getX();
             downY = event.getY();
             postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
@@ -127,18 +226,15 @@ final class DockNavigationLayout extends LinearLayout {
             if (!dragging) cancelChildTouch();
             dragging = false;
             ignoreTouch = true;
-            updateLabels(selectedIndex);
-            invalidate();
+            resumeOrReturnHighlight();
         } else if (action == MotionEvent.ACTION_MOVE && tracking && !ignoreTouch) {
+            if (!insideDock(event)) tapLeftBounds = true;
             float dx = Math.abs(event.getX() - downX);
             float dy = Math.abs(event.getY() - downY);
             if (!dragging && (dx > touchSlop || dy > touchSlop)) {
                 removeCallbacks(longPress);
                 if (dx > dy * 1.25f) beginDrag(event.getX());
-                else {
-                    cancelChildTouch();
-                    ignoreTouch = true;
-                }
+                // Vertical movement within a button is still an ordinary Android tap.
             }
             if (dragging) moveHighlight(event.getX());
         }
@@ -147,31 +243,38 @@ final class DockNavigationLayout extends LinearLayout {
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             removeCallbacks(longPress);
             boolean commit = dragging && action == MotionEvent.ACTION_UP
-                    && event.getX() >= -touchSlop && event.getX() <= getWidth() + touchSlop
-                    && event.getY() >= -touchSlop && event.getY() <= getHeight() + touchSlop;
+                    && insideDock(event);
             if (commit) moveHighlight(event.getX());
             int destination = nearest(highlightCenter);
             tracking = false;
             dragging = false;
             ignoreTouch = false;
             if (commit) {
-                selectedIndex = destination;
+                if (pageSettling) resumeOrReturnHighlight();
                 select.accept(destination);
+                if (!pageSettling) resumeOrReturnHighlight();
+            } else if (owned) {
+                resumeOrReturnHighlight();
             }
-            updateLabels(selectedIndex);
             invalidate();
-            finished.run();
+            post(finishTouch);
         }
         return handled;
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
         // Padding and gaps are also valid starts for a dock gesture.
-        if (event.getActionMasked() == MotionEvent.ACTION_UP && !dragging && !ignoreTouch) {
+        if (event.getActionMasked() == MotionEvent.ACTION_UP && !dragging && !ignoreTouch
+                && !tapLeftBounds && insideDock(event)) {
             tapIndex = nearest(event.getX());
             performClick();
         }
         return true;
+    }
+
+    private boolean insideDock(MotionEvent event) {
+        return event.getX() >= -touchSlop && event.getX() <= getWidth() + touchSlop
+                && event.getY() >= -touchSlop && event.getY() <= getHeight() + touchSlop;
     }
 
     @Override public boolean performClick() {
@@ -182,6 +285,8 @@ final class DockNavigationLayout extends LinearLayout {
 
     @Override protected void onDetachedFromWindow() {
         removeCallbacks(longPress);
+        removeCallbacks(finishTouch);
+        cancelRecoil();
         tracking = dragging = ignoreTouch = false;
         super.onDetachedFromWindow();
     }

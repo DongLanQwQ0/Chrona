@@ -420,7 +420,7 @@ public final class DashboardActivity extends Activity {
             dragTargetLoaded = false;
             dragDirection = 0;
             scroll.setTranslationX(0f);
-            if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(section));
+            if (mobileDock != null) mobileDock.beginBodyDrag();
             collectSectionSurfaces();
         }
 
@@ -436,6 +436,8 @@ public final class DashboardActivity extends Activity {
                     // resample its acrylic cards every frame like a normal drag does — skipping
                     // that here left them showing the snapshot taken when the drag began.
                     scroll.setTranslationX(offset * NO_NEIGHBOUR_RESISTANCE);
+                    if (mobileDock != null) mobileDock.showPageProgress(
+                            sectionPosition(section), sectionPosition(section), 0f);
                     invalidateSectionSurfaces();
                     return;
                 }
@@ -456,6 +458,9 @@ public final class DashboardActivity extends Activity {
             } else {
                 scroll.setTranslationX(offset);
             }
+            if (mobileDock != null) mobileDock.showPageProgress(sectionPosition(section),
+                    adjacentPage == null ? sectionPosition(section) : sectionPosition(adjacentPage.section),
+                    Math.abs(offset) / width);
             invalidateSectionSurfaces();
         }
 
@@ -487,11 +492,14 @@ public final class DashboardActivity extends Activity {
         float currentTarget = commit ? direction * width : 0f;
         float adjacentTarget = commit ? 0f : -direction * width;
         pageTransitionRunning = true;
+        if (mobileDock != null) mobileDock.beginPageSettle(sectionPosition(
+                commit ? adjacentPage.section : section));
         scroll.animate().cancel();
         adjacentPage.scroll.animate().cancel();
         if (!android.animation.ValueAnimator.areAnimatorsEnabled() || width <= 0) {
             scroll.setTranslationX(currentTarget);
             adjacentPage.scroll.setTranslationX(adjacentTarget);
+            if (mobileDock != null) mobileDock.updatePageSettle(1f);
             completeSectionDrag(commit);
             return;
         }
@@ -504,7 +512,10 @@ public final class DashboardActivity extends Activity {
                 : SwipePagerLayout.RECOIL_INTERPOLATOR;
         scroll.animate().translationX(currentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
-                .setUpdateListener(animation -> invalidateSectionSurfaces()).start();
+                .setUpdateListener(animation -> {
+                    if (mobileDock != null) mobileDock.updatePageSettle(animation.getAnimatedFraction());
+                    invalidateSectionSurfaces();
+                }).start();
         adjacentPage.scroll.animate().translationX(adjacentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
                 .setUpdateListener(null)
@@ -514,12 +525,17 @@ public final class DashboardActivity extends Activity {
     private void settleCurrentSection() {
         if (pageTransitionRunning) return;
         scroll.animate().cancel();
+        if (mobileDock != null) mobileDock.beginPageSettle(sectionPosition(section));
         scroll.animate().translationX(0f)
                 .setDuration(SwipePagerLayout.recoilDuration(
                         Math.abs(scroll.getTranslationX()), sectionPageWidth()))
                 .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
-                .setUpdateListener(animation -> invalidateSectionSurfaces())
+                .setUpdateListener(animation -> {
+                    if (mobileDock != null) mobileDock.updatePageSettle(animation.getAnimatedFraction());
+                    invalidateSectionSurfaces();
+                })
                 .withEndAction(() -> {
+                    if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
                     sectionAcrylicSurfaces.clear();
                     invalidateSectionSurfaces();
                     switchToPendingSection();
@@ -570,6 +586,7 @@ public final class DashboardActivity extends Activity {
             pager.removeView(scroll);
             target.scroll.setTranslationX(0f);
             activateSectionPage(target);
+            if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
             refreshActivePageIfNeeded();
             updateSelectionBack();
             drawNavigation();
@@ -577,6 +594,7 @@ public final class DashboardActivity extends Activity {
             pager.removeView(target.scroll);
             target.scroll.setTranslationX(0f);
             scroll.setTranslationX(0f);
+            if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
             if (homeRefreshPending) refreshHomeContent();
             refreshActivePageIfNeeded();
         }
@@ -2383,12 +2401,10 @@ public final class DashboardActivity extends Activity {
         if (destination < HOME || destination > SCHEDULE) return;
         if (pageTransitionRunning || dragTargetLoaded) {
             pendingSection = destination;
-            if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(destination));
             return;
         }
         if (destination == section) return;
         sectionPagerListener.onStart();
-        if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(destination));
         dragDirection = sectionPosition(destination) > sectionPosition(section) ? 1 : -1;
         adjacentPage = buildAdjacentSection(destination);
         float width = sectionPageWidth();

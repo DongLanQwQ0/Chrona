@@ -4,6 +4,15 @@
 
 以下记录从原 README 完整迁出，保留各版本实际发生过的验证及当时限制。较早条目中的安装包位置、数据库版本与未完成项属于当时状态，不应据此判断最新版本。新的验证记录可按日期追加在本页，用户可见的版本说明发布在 GitHub Releases。
 
+## 2026-10-01 · 0.13.74 Dock 点击与连续高光
+
+- 用户反馈 0.13.73 底部按钮失效；此前的构建与静态复核未覆盖子按钮在 UP 后延迟执行点击、detach 取消回调的运行时顺序。
+- `checks/dock_navigation_check.py` 编译并执行实际 Dock 类，使用最小 UI 队列替身，33 项通过。覆盖三按钮/角标/短按/连点、按钮内漂移、间隙点击与越界、长按拖动/取消/多指、高光绘制位置、布局刷新、中断与松手连续性。在同一队列模型中，0.13.73 源码复现了普通按钮点击丢失。该模型检查不等同于 Android 运行时测试。
+- 独立复核确认点击先于按钮重建、高光随页面动画更新、中断保存真实起点、间隙越界不误触。
+- `:app:assembleDebug :app:lintDebug --no-daemon --console=plain` 通过，APK 为 versionCode 94 / versionName 0.13.74。lint 为 80 项 warning，无 error。
+- 原签名校验通过，证书 SHA-256 保持 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`；数据库无变更，diff 与文档本地链接检查通过。
+- ADB 无连接设备，真实 Android 事件分发、点击反馈、动画手感、TalkBack 和覆盖安装仍待真机验证。
+
 ## 2026-10-01 · 0.13.73 Dock 手势与横滑优化
 
 - `:app:assembleDebug :app:lintDebug --no-daemon --console=plain` 通过，APK 元数据为 versionCode 93 / versionName 0.13.73。
