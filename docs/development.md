@@ -11,7 +11,7 @@
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.13.75`，versionCode `95` |
+| 当前版本 | `0.13.76`，versionCode `96` |
 | 最低 Android 版本 | API 26（Android 8.0） |
 | 编译 / 目标 SDK | 36 / 36 |
 | Java 源码级别 | 17 |
@@ -73,6 +73,8 @@ $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 Dock 点击与高光回归检查：设置现有 `JAVA_HOME` 后运行 `python checks/dock_navigation_check.py`。它编译并执行真实 `DockNavigationLayout`，用最小 UI 队列替身模拟子 View 的点击入队、detach 取消回调和布局几何，检查点击、长按、取消及连续动画的绘制位置。无需新增依赖，生成文件位于忽略的 `build/`；这不等同于 Android 运行时或真机触摸验证。
 
 ## 技术文档
+
+动效和启动优化见 [统一动效与启动测量](motion-startup.md)。`checks/lifecycle_motion_check.py` 使用替身运行实际返回保护和中断恢复方法；`checks/startup_metrics_check.py` 只校验测量数据解析。连接设备后使用 `checks/measure_startup.py` 测 TTID/TTFD，不能用离线检查代替 1 秒验收。
 
 当前问题审查与修复记录：[软件审查与完善清单](quality-audit.md)。数据格式保持 v9；备份使用 SQLite ATTACH 事务复制快照，避免使用旧 Android SQLite 不支持的 VACUUM INTO。
 
