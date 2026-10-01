@@ -109,6 +109,26 @@ public final class TaskStore extends SQLiteOpenHelper {
         }
         return result;
     }
+
+    /** Timed instants and all-day UTC dates use separate bounds before applying the limit. */
+    public List<EventCandidate> widgetCandidates(long begin, long end,
+            long allDayBegin, long allDayEnd) {
+        List<EventCandidate> result = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                "start_at_millis IS NOT NULL AND ((all_day=0 AND start_at_millis<? "
+                        + "AND (COALESCE(end_at_millis,start_at_millis)>CAST(? AS INTEGER) "
+                        + "OR start_at_millis>=CAST(? AS INTEGER))) "
+                        + "OR (all_day=1 AND start_at_millis<? "
+                        + "AND (COALESCE(end_at_millis,start_at_millis)>CAST(? AS INTEGER) "
+                        + "OR start_at_millis>=CAST(? AS INTEGER))))",
+                new String[]{Long.toString(end), Long.toString(begin), Long.toString(begin),
+                        Long.toString(allDayEnd), Long.toString(allDayBegin),
+                        Long.toString(allDayBegin)}, null, null,
+                "start_at_millis ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
+            while (cursor.moveToNext()) result.add(readCandidate(cursor));
+        }
+        return result;
+    }
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE tasks ("

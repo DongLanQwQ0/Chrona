@@ -10,12 +10,15 @@ import com.donglan.chrona.data.TaskStore;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 /** A bounded, read-only snapshot shared by both desktop widgets. */
 final class WidgetAgenda {
@@ -106,7 +109,16 @@ final class WidgetAgenda {
         long horizon = date.plusMonths(1).atStartOfDay(result.zone).toInstant().toEpochMilli();
         List<Item> items = new ArrayList<>();
         try (TaskStore store = new TaskStore(context)) {
-            for (EventCandidate candidate : store.widgetCandidates(begin - 86400000L, horizon)) {
+            long utcBegin = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
+            long utcTomorrow = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
+            long utcHorizon = date.plusMonths(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
+            Map<Long, EventCandidate> local = new LinkedHashMap<>();
+            for (EventCandidate candidate : store.widgetCandidates(begin, tomorrow, utcBegin, utcTomorrow))
+                local.put(candidate.id, candidate);
+            // Finished history may fill today's page, but must never hide the next unfinished item.
+            for (EventCandidate candidate : store.widgetCandidates(result.now, horizon, utcBegin, utcHorizon))
+                local.put(candidate.id, candidate);
+            for (EventCandidate candidate : local.values()) {
                 long start = candidate.startAtMillis;
                 long end = candidate.endAtMillis == null ? start : candidate.endAtMillis;
                 if (candidate.allDay) {
