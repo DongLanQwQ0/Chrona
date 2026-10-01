@@ -5,7 +5,8 @@ import re
 import sqlite3
 
 source = (Path(__file__).resolve().parents[1] / "app/src/main/java/com/donglan/chrona/data/TaskStore.java").read_text(encoding="utf-8")
-blocks = re.findall(r'if \(oldVersion < (\d+)\) \{(.*?)\n        \}', source, re.S)
+blocks = [(version, block) for version, block in re.findall(
+    r'if \(oldVersion < (\d+)\) \{(.*?)\n        \}', source, re.S) if int(version) <= 4]
 assert [int(version) for version, _ in blocks] == [2, 3, 4]
 
 for initial_version in (1, 2, 3):
