@@ -16,7 +16,7 @@
   <a href="https://github.com/DongLanQwQ0/Chrona/issues">反馈问题</a>
 </p>
 
-<p align="center">Android 8.0 及以上 · 当前版本 0.13.78</p>
+<p align="center">Android 8.0 及以上 · 当前版本 0.13.79</p>
 
 ---
 

@@ -33,6 +33,7 @@ public final class ThemeStore {
     private static final String KEY_COLOR = "color";
     private static final String KEY_CUSTOM_COLOR = "custom_color";
     private static final String KEY_BACKGROUND = "background";
+    private static final String KEY_BACKGROUND_ENABLED = "background_enabled";
     private static final String KEY_ACRYLIC = "acrylic_enabled";
     private static final String REMOVED_CHILD_TRANSPARENCY_KEY = "child_transparency";
     private static final String KEY_GAUSSIAN_BLUR = "gaussian_blur";
@@ -254,8 +255,26 @@ public final class ThemeStore {
     }
 
     static void setBackground(Context context, String uri) {
-        if (java.util.Objects.equals(background(context), uri)) return;
-        prefs(context).edit().putString(KEY_BACKGROUND, uri).apply();
+        if (java.util.Objects.equals(background(context), uri)
+                && backgroundEnabled(context) == (uri != null)) return;
+        prefs(context).edit().putString(KEY_BACKGROUND, uri)
+                .putBoolean(KEY_BACKGROUND_ENABLED, uri != null).apply();
+        refreshWallpaper(context);
+        publish(context);
+    }
+
+    static boolean backgroundEnabled(Context context) {
+        return background(context) != null && prefs(context).getBoolean(KEY_BACKGROUND_ENABLED, true);
+    }
+
+    static String activeBackground(Context context) {
+        return backgroundEnabled(context) ? background(context) : null;
+    }
+
+    static void setBackgroundEnabled(Context context, boolean enabled) {
+        enabled = enabled && background(context) != null;
+        if (backgroundEnabled(context) == enabled) return;
+        prefs(context).edit().putBoolean(KEY_BACKGROUND_ENABLED, enabled).apply();
         refreshWallpaper(context);
         publish(context);
     }

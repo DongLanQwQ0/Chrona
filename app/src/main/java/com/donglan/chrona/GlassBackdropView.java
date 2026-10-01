@@ -67,7 +67,7 @@ public final class GlassBackdropView extends View {
 
     public GlassBackdropView(Context context) {
         super(context);
-        loadedBackground = ThemeStore.background(context);
+        loadedBackground = ThemeStore.activeBackground(context);
         if (loadedBackground != null) {
             backgroundImage = cachedSource(loadedBackground);
             if (backgroundImage == null) loadImage(loadedBackground);
@@ -75,7 +75,7 @@ public final class GlassBackdropView extends View {
     }
 
     void refreshBackground() {
-        String requested = ThemeStore.background(getContext());
+        String requested = ThemeStore.activeBackground(getContext());
         if (java.util.Objects.equals(requested, loadedBackground)) return;
         loadedBackground = requested;
         blurFailed = false;
@@ -498,7 +498,7 @@ public final class GlassBackdropView extends View {
 
     /** Background worker only. Borrowed full-screen bitmap; callers must not recycle it. */
     static Bitmap blurredForWidget(Context context) {
-        String uri = ThemeStore.background(context);
+        String uri = ThemeStore.activeBackground(context);
         if (uri == null) return null;
         android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         int width = Math.max(1, metrics.widthPixels);

@@ -122,15 +122,7 @@ public final class AppearanceActivity extends Activity {
             colorRow.addView(new View(this), new LinearLayout.LayoutParams(0, dp(1), 1));
         heading(root, "毛玻璃与层级");
         acrylicControls(root);
-        heading(root, "背景图片");
-        option(root, "选择本地图片", null,
-                ThemeStore.background(this) != null, this::pickBackground);
-        if (ThemeStore.background(this) != null) {
-            option(root, "恢复默认背景", null, false, () -> {
-                releaseBackgroundGrant();
-                ThemeStore.setBackground(this, null);
-            });
-        }
+        backgroundControls(root);
         if (stage == null) {
             stage = new FrameLayout(this);
             backdrop = new GlassBackdropView(this);
@@ -211,6 +203,42 @@ public final class AppearanceActivity extends Activity {
 
     private void heading(LinearLayout root, String label) {
         UiStyle.addSpaced(root, text(label, 19, true), 16, 10);
+    }
+
+    private void backgroundControls(LinearLayout root) {
+        boolean hasImage = ThemeStore.background(this) != null;
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        heading.addView(text("背景图片", 19, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        Switch enabled = new Switch(this);
+        enabled.setContentDescription(hasImage ? "启用背景图片" : "启用背景图片，请先选择图片");
+        enabled.setChecked(ThemeStore.backgroundEnabled(this));
+        enabled.setEnabled(hasImage);
+        UiStyle.toggle(enabled);
+        heading.addView(enabled);
+        enabled.setOnCheckedChangeListener((button, checked) ->
+                ThemeStore.setBackgroundEnabled(this, checked));
+        UiStyle.addSpaced(root, heading, 16, 10);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setBaselineAligned(false);
+        Button choose = new Button(this);
+        choose.setText("选择图片");
+        UiStyle.button(choose, false);
+        choose.setOnClickListener(view -> pickBackground());
+        LinearLayout.LayoutParams chooseParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        chooseParams.setMarginEnd(dp(8));
+        actions.addView(choose, chooseParams);
+        Button reset = new Button(this);
+        reset.setText("恢复默认");
+        reset.setEnabled(hasImage);
+        UiStyle.button(reset, false);
+        reset.setOnClickListener(view -> {
+            releaseBackgroundGrant();
+            ThemeStore.setBackground(this, null);
+        });
+        actions.addView(reset, new LinearLayout.LayoutParams(0, -2, 1f));
+        UiStyle.addSpaced(root, actions, 2, 4);
     }
 
     private void acrylicControls(LinearLayout root) {

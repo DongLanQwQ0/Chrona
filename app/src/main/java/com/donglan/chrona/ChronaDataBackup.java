@@ -216,6 +216,7 @@ public final class ChronaDataBackup {
             manifest.put("includeSystemCalendar", HomeTimelinePreferences.includesSystemCalendar(context));
             manifest.put("config", ConfigBackup.export(context, includeApiKey));
             manifest.put("wallpaperIncluded", true);
+            manifest.put("wallpaperEnabled", ThemeStore.backgroundEnabled(context));
             manifest.put("wallpaper", wallpaper == null ? JSONObject.NULL : wallpaper);
             try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(
                     new FileOutputStream(archive)))) {
@@ -412,6 +413,7 @@ public final class ChronaDataBackup {
         boolean[] databaseInstallStarted = new boolean[]{false};
         boolean databaseInstalled = false;
         String previousWallpaper = ThemeStore.background(context);
+        boolean previousWallpaperEnabled = ThemeStore.backgroundEnabled(context);
         WallpaperMedia restoredWallpaper = null;
         boolean wallpaperApplied = false;
         File outputDirectory = new File(context.getFilesDir(), "model-output");
@@ -521,6 +523,8 @@ public final class ChronaDataBackup {
             wallpaperApplied = true;
             ThemeStore.setBackground(context.getApplicationContext(),
                     restoredWallpaper == null ? null : restoredWallpaper.uri.toString());
+            ThemeStore.setBackgroundEnabled(context.getApplicationContext(),
+                    prepared.manifest.optBoolean("wallpaperEnabled", true));
         }
         HomeTimelinePreferences.setItemLimit(context,
                 prepared.manifest.optInt("homeTimelineLimit", HomeTimelinePreferences.DEFAULT_ITEM_LIMIT));
@@ -547,6 +551,7 @@ public final class ChronaDataBackup {
             if (wallpaperApplied) {
                 try {
                     ThemeStore.setBackground(context.getApplicationContext(), previousWallpaper);
+                    ThemeStore.setBackgroundEnabled(context.getApplicationContext(), previousWallpaperEnabled);
                 } catch (Exception rollbackWallpaperFailure) {
                     failure.addSuppressed(rollbackWallpaperFailure);
                 }
