@@ -29,13 +29,12 @@ import com.donglan.chrona.data.CandidateRules;
 import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.web.LinkFetcher;
+import com.donglan.chrona.net.RequestControl;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.HashSet;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -56,12 +55,16 @@ public final class ProcessingJobService extends JobService {
     private static final long ESTIMATED_DOWNLOAD_BYTES = 128 * 1024L;
     private static final long ESTIMATED_UPLOAD_BYTES = 512 * 1024L;
     /** The same input must never be parsed by two workers at once. */
-    private static final Set<Long> IN_FLIGHT = Collections.synchronizedSet(new HashSet<>());
+    private static final ConcurrentHashMap<Long, Execution> IN_FLIGHT = new ConcurrentHashMap<>();
     private static final int MAX_REQUEST_ATTEMPTS = 3;
     private static final long RETRY_DELAY_MILLIS = 3_000L;
     /** Keeps retries inside the job's runtime budget even when a request burns its whole timeout. */
     private static final long RETRY_BUDGET_MILLIS = 240_000L;
-    private final ConcurrentHashMap<Integer, Thread> workers = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, Execution> workers = new ConcurrentHashMap<>();
+    private static final class Execution {
+        final RequestControl control = new RequestControl(RETRY_BUDGET_MILLIS);
+        Thread thread;
+    }
 
     public static void enqueue(Context context, long taskId) {
         if (taskId <= 0 || taskId > Integer.MAX_VALUE - JOB_ID_BASE) {
@@ -100,6 +103,17 @@ public final class ProcessingJobService extends JobService {
         if (taskId <= 0 || taskId > Integer.MAX_VALUE - JOB_ID_BASE) {
             throw new IllegalArgumentException("Unsupported task ID");
         }
+        Execution execution = IN_FLIGHT.get(taskId);
+        Execution scheduled = workers.get(JOB_ID_BASE + (int) taskId);
+        // Stop the waiter before disconnecting its predecessor can release the claim.
+        if (scheduled != null) {
+            scheduled.control.cancel();
+            if (scheduled.thread != null) scheduled.thread.interrupt();
+        }
+        if (execution != null && execution != scheduled) {
+            execution.control.cancel();
+            if (execution.thread != null) execution.thread.interrupt();
+        }
         JobScheduler scheduler = context.getSystemService(JobScheduler.class);
         if (scheduler != null) scheduler.cancel(JOB_ID_BASE + (int) taskId);
     }
@@ -110,11 +124,8 @@ public final class ProcessingJobService extends JobService {
         if (taskId <= 0) return false;
         // Claimed on the main thread so a concurrent reconcile() cannot mistake a starting job
         // for one that was lost with a dead process.
-        if (!IN_FLIGHT.add(taskId)) {
-            // A second run would upload the image and pay for the request twice over.
-            DiagLog.add(this, "job skipped task=" + taskId + " (already being processed)");
-            return false;
-        }
+        Execution execution = new Execution();
+        Execution preceding = IN_FLIGHT.putIfAbsent(taskId, execution);
         boolean userInitiated = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                 && params.isUserInitiatedJob();
         if (userInitiated) {
@@ -125,8 +136,10 @@ public final class ProcessingJobService extends JobService {
         }
         DiagLog.add(this, "job start task=" + taskId + " jobId=" + params.getJobId()
                 + " userInitiated=" + userInitiated);
-        Thread worker = new Thread(() -> process(params, taskId), "chrona-parse-" + taskId);
-        workers.put(params.getJobId(), worker);
+        Thread worker = new Thread(() -> process(params, taskId, execution, preceding),
+                "chrona-parse-" + taskId);
+        execution.thread = worker;
+        workers.put(params.getJobId(), execution);
         worker.start();
         return true;
     }
@@ -163,9 +176,12 @@ public final class ProcessingJobService extends JobService {
     @Override
     public boolean onStopJob(JobParameters params) {
         long taskId = params.getExtras().getLong(EXTRA_TASK_ID, -1L);
-        Thread worker = workers.remove(params.getJobId());
-        DiagLog.add(this, "job stopped task=" + taskId + " worker=" + (worker != null));
-        if (worker != null) worker.interrupt();
+        Execution execution = workers.remove(params.getJobId());
+        DiagLog.add(this, "job stopped task=" + taskId + " worker=" + (execution != null));
+        if (execution != null) {
+            execution.control.cancel();
+            execution.thread.interrupt();
+        }
         return true;
     }
 
@@ -182,7 +198,7 @@ public final class ProcessingJobService extends JobService {
         try (TaskStore store = new TaskStore(context)) {
             for (TaskRecord task : store.listTasks()) {
                 if (!TaskRecord.PROCESSING.equals(task.status)) continue;
-                if (IN_FLIGHT.contains(task.id)) continue;
+                if (IN_FLIGHT.containsKey(task.id)) continue;
                 if (scheduler != null
                         && scheduler.getPendingJob(JOB_ID_BASE + (int) task.id) != null) continue;
                 store.updateStatus(task.id, TaskRecord.FAILED,
@@ -196,15 +212,30 @@ public final class ProcessingJobService extends JobService {
         return recovered;
     }
 
-    private void process(JobParameters params, long taskId) {
+    private void process(JobParameters params, long taskId, Execution execution, Execution preceding) {
+        boolean claimed = preceding == null;
         try {
-            processOnce(params, taskId);
+            // A rescheduled run waits for the stopped connection to close before claiming work.
+            while (!claimed) {
+                execution.control.check();
+                if (!sleep(50L)) execution.control.check();
+                claimed = IN_FLIGHT.putIfAbsent(taskId, execution) == null;
+            }
+            execution.control.check();
+            processOnce(params, taskId, execution.control);
+        } catch (IOException exception) {
+            if (claimed && !execution.control.isCancelled()
+                    && !Thread.currentThread().isInterrupted()) recordFailure(taskId, message(exception));
         } finally {
-            IN_FLIGHT.remove(taskId);
+            IN_FLIGHT.remove(taskId, execution);
+            workers.remove(params.getJobId(), execution);
+            execution.control.close();
+            if (!execution.control.isCancelled() && !Thread.currentThread().isInterrupted())
+                jobFinished(params, !claimed);
         }
     }
 
-    private void processOnce(JobParameters params, long taskId) {
+    private void processOnce(JobParameters params, long taskId, RequestControl control) {
         AiSettings settings = null;
         boolean sentImage = false;
         try (TaskStore store = new TaskStore(this)) {
@@ -254,7 +285,9 @@ public final class ProcessingJobService extends JobService {
             sentImage = !images.isEmpty();
             String attachmentMetadata = formatFileMetadata(store.getFileAttachments(taskId));
             store.updateStatus(taskId, TaskRecord.PROCESSING, null);
-            LinkFetcher.FetchResult fetched = fetchLinks(store, task);
+            control.check();
+            LinkFetcher.FetchResult fetched = fetchLinks(store, task, control);
+            control.check();
             String linkText = fetched.text.isEmpty() ? null : fetched.text;
             if (linkText == null && images.isEmpty() && attachmentMetadata.isEmpty()
                     && LinkFetcher.onlyLinks(task.rawText)) {
@@ -270,9 +303,10 @@ public final class ProcessingJobService extends JobService {
                     + "s");
             long startedAt = System.currentTimeMillis();
             ParseResult result = requestWithRetries(settings, task, images, linkText,
-                    attachmentMetadata, taskId);
+                    attachmentMetadata, taskId, control);
+            control.check();
             long elapsed = System.currentTimeMillis() - startedAt;
-            if (Thread.currentThread().isInterrupted()) {
+            if (wasStopped(control)) {
                 DiagLog.add(this, "response dropped task=" + taskId + " after " + elapsed
                         + "ms (job stopped before the draft was saved)");
                 return;
@@ -288,7 +322,7 @@ public final class ProcessingJobService extends JobService {
                     + candidates.size() + " tokens=" + result.totalTokens);
             notifyResult(taskId, candidates.isEmpty() ? "未识别到日程" : "日程草稿待确认");
         } catch (ChatCompletionClient.RequestException exception) {
-            if (Thread.currentThread().isInterrupted()) {
+            if (wasStopped(control)) {
                 DiagLog.add(this, "request abandoned task=" + taskId + " HTTP "
                         + exception.statusCode + " (job stopped while waiting)");
             } else {
@@ -304,7 +338,7 @@ public final class ProcessingJobService extends JobService {
                 }
             }
         } catch (Exception exception) {
-            if (Thread.currentThread().isInterrupted()) {
+            if (wasStopped(control)) {
                 DiagLog.add(this, "parse abandoned task=" + taskId + " (job stopped while waiting) "
                         + exception.getClass().getSimpleName());
             } else {
@@ -312,9 +346,6 @@ public final class ProcessingJobService extends JobService {
                         + exception.getClass().getSimpleName());
                 recordFailure(taskId, message(exception));
             }
-        } finally {
-            workers.remove(params.getJobId());
-            if (!Thread.currentThread().isInterrupted()) jobFinished(params, false);
         }
     }
 
@@ -322,11 +353,13 @@ public final class ProcessingJobService extends JobService {
      * Reads the pages behind links in the input and remembers the outcome. A link that cannot be
      * read contributes no model text. Link-only inputs are stopped by the caller when unreadable.
      */
-    private LinkFetcher.FetchResult fetchLinks(TaskStore store, TaskRecord task) {
+    private LinkFetcher.FetchResult fetchLinks(TaskStore store, TaskRecord task,
+            RequestControl control) throws IOException {
         List<String> urls = LinkFetcher.extractUrls(task.rawText);
         if (urls.isEmpty()) return new LinkFetcher.FetchResult("", null);
         long startedAt = System.currentTimeMillis();
-        LinkFetcher.FetchResult fetched = LinkFetcher.fetchResult(urls);
+        LinkFetcher.FetchResult fetched = LinkFetcher.fetchResult(urls, control);
+        control.check();
         String text = fetched.text;
         DiagLog.add(this, "links task=" + task.id + " urls=" + urls.size() + " chars="
                 + text.length() + " in " + (System.currentTimeMillis() - startedAt) + "ms");
@@ -340,34 +373,34 @@ public final class ProcessingJobService extends JobService {
      * press retry by hand.
      */
     private ParseResult requestWithRetries(AiSettings settings, TaskRecord task, List<byte[]> images,
-            String linkText, String attachmentMetadata, long taskId) throws IOException {
+            String linkText, String attachmentMetadata, long taskId, RequestControl control) throws IOException {
         long startedAt = System.currentTimeMillis();
         final long referenceTime = startedAt;
         final String referenceZone = TimeZone.getDefault().getID();
         for (int attempt = 1; ; attempt++) {
+            control.check();
             long attemptStartedAt = System.currentTimeMillis();
             DiagLog.add(this, "attempt " + attempt + "/" + MAX_REQUEST_ATTEMPTS
                     + " task=" + taskId);
             try {
-                try (StreamingOutputStore.Writer output =
-                        new StreamingOutputStore(this).begin(taskId)) {
-                    ChatCompletionClient client = new ChatCompletionClient(settings);
-                    ChatCompletionClient.PreviewSink preview = new ChatCompletionClient.PreviewSink() {
-                        @Override public void append(String chunk) throws IOException {
-                            output.append(chunk);
-                        }
-
-                        @Override public void appendReasoning(String chunk) throws IOException {
-                            output.appendReasoning(chunk);
-                        }
-                    };
+                StreamingOutputStore.Writer output = null;
+                try { output = new StreamingOutputStore(this).begin(taskId); }
+                catch (IOException exception) { previewFailure(taskId, exception); }
+                StreamingOutputStore.Writer writer = output;
+                ChatCompletionClient.PreviewSink sink = writer == null ? null : new ChatCompletionClient.PreviewSink() {
+                    @Override public void append(String chunk) throws IOException { writer.append(chunk); }
+                    @Override public void appendReasoning(String chunk) throws IOException { writer.appendReasoning(chunk); }
+                };
+                try (BestEffortPreview preview = new BestEffortPreview(sink, writer,
+                        exception -> previewFailure(taskId, exception))) {
+                    ChatCompletionClient client = new ChatCompletionClient(settings, control);
                     return client.parseImages(taskId, task.rawText, images, linkText,
                             attachmentMetadata, referenceTime, referenceZone, preview, true);
                 }
             } catch (IOException exception) {
+                control.check();
                 long attemptMillis = System.currentTimeMillis() - attemptStartedAt;
                 boolean giveUp = attempt >= MAX_REQUEST_ATTEMPTS
-                        || System.currentTimeMillis() - startedAt > RETRY_BUDGET_MILLIS
                         || !isTransient(exception);
                 if (giveUp) {
                     DiagLog.add(this, "giving up task=" + taskId + " after " + attempt
@@ -378,12 +411,21 @@ public final class ProcessingJobService extends JobService {
                 DiagLog.add(this, "attempt " + attempt + " failed after " + attemptMillis
                         + "ms task=" + taskId + " " + exception.getClass().getSimpleName()
                         + " -> retry in " + (RETRY_DELAY_MILLIS / 1000) + "s");
-                if (!sleep(RETRY_DELAY_MILLIS)) {
+                if (!sleep(control.timeoutMillis((int) RETRY_DELAY_MILLIS))) {
                     DiagLog.add(this, "retry abandoned task=" + taskId + " (worker interrupted)");
                     throw exception;
                 }
             }
         }
+    }
+
+    private void previewFailure(long taskId, IOException exception) {
+        DiagLog.add(this, "preview unavailable task=" + taskId + " "
+                + exception.getClass().getSimpleName() + " (parse continues)");
+    }
+
+    private static boolean wasStopped(RequestControl control) {
+        return control.isCancelled() || Thread.currentThread().isInterrupted();
     }
 
     private static String formatFileMetadata(List<TaskFileAttachment> files) {

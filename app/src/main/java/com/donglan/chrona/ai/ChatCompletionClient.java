@@ -1,6 +1,7 @@
 package com.donglan.chrona.ai;
 
 import com.donglan.chrona.data.EventCandidate;
+import com.donglan.chrona.net.RequestControl;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -31,12 +32,18 @@ public final class ChatCompletionClient {
     private static final int MAX_RESPONSE_CHARS = 2_000_000;
 
     private final AiSettings settings;
+    private final RequestControl control;
 
     public ChatCompletionClient(AiSettings settings) {
+        this(settings, null);
+    }
+
+    public ChatCompletionClient(AiSettings settings, RequestControl control) {
         if (settings == null) {
             throw new IllegalArgumentException("settings must not be null");
         }
         this.settings = settings;
+        this.control = control;
     }
 
     /** The read timeout this client applies; exposed so diagnostics can report the real value. */
@@ -93,6 +100,7 @@ public final class ChatCompletionClient {
     private ParseResult parseInternal(long taskId, String rawText, List<byte[]> imagesJpeg,
             String linkText, String attachmentMetadata, long nowMillis, String timeZoneId,
             PreviewSink preview, boolean streaming) throws IOException {
+        RequestControl.check(control);
         boolean hasText = rawText != null && !rawText.trim().isEmpty();
         boolean hasImages = imagesJpeg != null && !imagesJpeg.isEmpty();
         boolean hasFileMetadata = attachmentMetadata != null && !attachmentMetadata.trim().isEmpty();
@@ -133,12 +141,16 @@ public final class ChatCompletionClient {
     private ParseResult execute(long taskId, JSONObject body, boolean hasImages, PreviewSink preview,
             long nowMillis, String timeZoneId, boolean canDowngrade) throws IOException {
         boolean streaming = body.optBoolean("stream");
-        int readTimeout = readTimeoutMillis(hasImages);
+        RequestControl.check(control);
+        int readTimeout = control == null ? readTimeoutMillis(hasImages)
+                : control.timeoutMillis(readTimeoutMillis(hasImages));
         HttpURLConnection connection = (HttpURLConnection) new URL(
                 settings.baseUrl + "/chat/completions").openConnection();
         try {
+            if (control != null) control.register(connection);
             connection.setRequestMethod("POST");
-            connection.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
+            connection.setConnectTimeout(control == null ? CONNECT_TIMEOUT_MILLIS
+                    : control.timeoutMillis(CONNECT_TIMEOUT_MILLIS));
             connection.setReadTimeout(readTimeout);
             connection.setDoOutput(true);
             connection.setInstanceFollowRedirects(false);
@@ -146,14 +158,16 @@ public final class ChatCompletionClient {
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", !streaming
                     ? "application/json" : "text/event-stream, application/json");
+            RequestControl.check(control);
             try (OutputStream output = connection.getOutputStream()) {
+                RequestControl.check(control);
                 output.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
             int status = connection.getResponseCode();
             InputStream stream = status >= 200 && status < 300
                     ? connection.getInputStream() : connection.getErrorStream();
             if (status < 200 || status >= 300) {
-                String response = stream == null ? "" : readLimited(stream);
+                String response = stream == null ? "" : readLimited(stream, control);
                 String detail = errorMessage(response);
                 if (canDowngrade && RequestOptions.downgrade(body, status, detail)) {
                     connection.disconnect();
@@ -164,9 +178,9 @@ public final class ChatCompletionClient {
             if (streaming && stream != null && connection.getContentType() != null
                     && connection.getContentType().toLowerCase(java.util.Locale.ROOT)
                     .contains("text/event-stream")) {
-                return parseStream(taskId, stream, preview, nowMillis, timeZoneId);
+                return parseStream(taskId, stream, preview, nowMillis, timeZoneId, control);
             }
-            String response = stream == null ? "" : readLimited(stream);
+            String response = stream == null ? "" : readLimited(stream, control);
             if (preview != null) {
                 try {
                     JSONObject message = new JSONObject(response).getJSONArray("choices")
@@ -181,10 +195,15 @@ public final class ChatCompletionClient {
             }
             return parseResponse(taskId, response, nowMillis, timeZoneId);
         } catch (SocketTimeoutException exception) {
+            RequestControl.check(control);
             throw new IOException("AI 服务在 " + (readTimeout / 1000) + " 秒内没有返回结果"
                     + (!hasImages ? "，请稍后重试"
                             : "（图片请求较慢，可重试或先改用文字描述）"), exception);
+        } catch (IOException exception) {
+            RequestControl.check(control);
+            throw exception;
         } finally {
+            if (control != null) control.unregister(connection);
             connection.disconnect();
         }
     }
@@ -192,6 +211,11 @@ public final class ChatCompletionClient {
     static ParseResult parseStream(long taskId, InputStream stream, PreviewSink preview,
             long nowMillis, String timeZoneId)
             throws IOException {
+        return parseStream(taskId, stream, preview, nowMillis, timeZoneId, null);
+    }
+
+    private static ParseResult parseStream(long taskId, InputStream stream, PreviewSink preview,
+            long nowMillis, String timeZoneId, RequestControl control) throws IOException {
         StringBuilder completion = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
         JSONObject usage = null;
@@ -202,13 +226,14 @@ public final class ChatCompletionClient {
             String line;
             StringBuilder event = new StringBuilder();
             while (true) {
+                RequestControl.check(control);
                 line = reader.readLine();
                 // EOF terminates the final SSE frame even when the server omits its blank line.
                 if (line == null) {
                     if (event.length() == 0) break;
                     line = "";
                 }
-                if (Thread.currentThread().isInterrupted()) throw new IOException("Parse interrupted");
+                RequestControl.check(control);
                 if (line.isEmpty()) {
                     if (event.length() == 0) continue;
                     String data = event.toString();
@@ -367,12 +392,13 @@ public final class ChatCompletionClient {
                 Math.min(response.length(), 500));
     }
 
-    private static String readLimited(InputStream stream) throws IOException {
+    private static String readLimited(InputStream stream, RequestControl control) throws IOException {
         try (InputStreamReader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
             StringBuilder text = new StringBuilder();
             char[] buffer = new char[4096];
             int count;
             while ((count = reader.read(buffer)) != -1) {
+                RequestControl.check(control);
                 if (text.length() + count > MAX_RESPONSE_CHARS) {
                     throw new ResponseException("AI response exceeds size limit");
                 }

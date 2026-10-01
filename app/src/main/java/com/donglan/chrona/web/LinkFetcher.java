@@ -1,5 +1,7 @@
 package com.donglan.chrona.web;
 
+import com.donglan.chrona.net.RequestControl;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -76,12 +78,21 @@ public final class LinkFetcher {
     }
 
     public static FetchResult fetchResult(List<String> urls) {
+        try { return fetchResult(urls, null); }
+        catch (IOException exception) {
+            return new FetchResult("", "来源链接读取已停止");
+        }
+    }
+
+    public static FetchResult fetchResult(List<String> urls, RequestControl control) throws IOException {
+        RequestControl.check(control);
         if (urls == null || urls.isEmpty()) return new FetchResult("", null);
         StringBuilder combined = new StringBuilder();
         String warning = null;
         for (String url : urls.subList(0, Math.min(urls.size(), MAX_LINKS))) {
+            RequestControl.check(control);
             if (combined.length() >= MAX_TEXT_CHARS) break;
-            FetchResult result = readPage(url);
+            FetchResult result = readPage(url, control);
             if (result.warning != null) warning = result.warning;
             String page = truncate(result.text, MAX_PAGE_CHARS);
             if (page.isEmpty()) continue;
@@ -96,20 +107,25 @@ public final class LinkFetcher {
                 && LINK.matcher(input).replaceAll("").replaceAll("[\\s\\p{Punct}，。；：！？（）【】《》、]+", "").isEmpty();
     }
 
-    private static FetchResult readPage(String url) {
+    private static FetchResult readPage(String url, RequestControl control) throws IOException {
         String current = url;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             HttpURLConnection connection = null;
             try {
+                RequestControl.check(control);
                 connection = (HttpURLConnection) URI.create(current).toURL().openConnection();
+                if (control != null) control.register(connection);
                 connection.setRequestMethod("GET");
-                connection.setConnectTimeout(TIMEOUT_MILLIS);
-                connection.setReadTimeout(TIMEOUT_MILLIS);
+                connection.setConnectTimeout(control == null ? TIMEOUT_MILLIS
+                        : control.timeoutMillis(TIMEOUT_MILLIS));
+                connection.setReadTimeout(control == null ? TIMEOUT_MILLIS
+                        : control.timeoutMillis(TIMEOUT_MILLIS));
                 // Redirects are followed by hand so an http link may still land on https.
                 connection.setInstanceFollowRedirects(false);
                 connection.setRequestProperty("User-Agent", USER_AGENT);
                 connection.setRequestProperty("Accept", "text/html,text/plain;q=0.9,*/*;q=0.1");
                 connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.5");
+                RequestControl.check(control);
                 int status = connection.getResponseCode();
                 if (status >= 300 && status < 400) {
                     String next = resolve(current, connection.getHeaderField("Location"));
@@ -124,12 +140,14 @@ public final class LinkFetcher {
                         && !type.toLowerCase(Locale.ROOT).contains("html")
                         && !type.toLowerCase(Locale.ROOT).contains("json"))
                     return new FetchResult("", "来源不是可读取的网页正文，请补充文字或截图");
-                byte[] body = readLimited(connection.getInputStream());
+                byte[] body = readLimited(connection.getInputStream(), control);
                 String charset = charsetOf(connection.getContentType(), body);
                 return extractPage(current, decode(body, charset));
             } catch (IOException | RuntimeException exception) {
+                RequestControl.check(control);
                 return new FetchResult("", "来源链接连接失败或超时，请补充正文或截图后重试");
             } finally {
+                if (control != null && connection != null) control.unregister(connection);
                 if (connection != null) connection.disconnect();
             }
         }
@@ -211,12 +229,13 @@ public final class LinkFetcher {
         }
     }
 
-    private static byte[] readLimited(InputStream stream) throws IOException {
+    private static byte[] readLimited(InputStream stream, RequestControl control) throws IOException {
         try (InputStream input = stream) {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[8192];
             int count;
             while ((count = input.read(chunk)) != -1) {
+                RequestControl.check(control);
                 if (buffer.size() + count > MAX_BYTES) {
                     buffer.write(chunk, 0, MAX_BYTES - buffer.size());
                     break;
