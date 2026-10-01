@@ -193,10 +193,10 @@ public final class SettingsHubActivity extends Activity {
         updateLabel.run();
         card.setOnClickListener(view -> {
             int minutes = WidgetPreferences.previewMinutes(this);
-            new android.app.TimePickerDialog(this, (picker, hour, minute) -> {
-                WidgetPreferences.setPreviewMinutes(this, hour * 60 + minute);
+            UiStyle.timeDialog(this, "明日安排预览时间", minutes, selected -> {
+                WidgetPreferences.setPreviewMinutes(this, selected);
                 updateLabel.run();
-            }, minutes / 60, minutes % 60, true).show();
+            });
         });
         UiStyle.addSpaced(root, card, 0, 8);
     }

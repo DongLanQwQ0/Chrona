@@ -227,9 +227,7 @@ public final class AppearanceActivity extends Activity {
         row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1f));
         Switch toggle = new Switch(this);
         toggle.setChecked(ThemeStore.acrylicEnabled(this));
-        toggle.setThumbTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
-        toggle.setTrackTintList(ColorStateList.valueOf(
-                withAlpha(UiStyle.colors(this).primary, 96)));
+        UiStyle.toggle(toggle);
         row.addView(toggle);
         card.addView(row);
         toggle.setOnCheckedChangeListener((button, checked) ->

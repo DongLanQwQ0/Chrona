@@ -114,11 +114,15 @@ public final class GuideActivity extends Activity {
         progress.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);
         UiStyle.addSpaced(shell, progress, 12, 8);
         page = new ScrollView(this);
+        page.setVerticalScrollBarEnabled(false);
+        page.setFillViewport(true);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(0, dp(4), 0, dp(12));
         page.addView(content);
-        shell.addView(page, new LinearLayout.LayoutParams(-1, 0, 1f));
+        FrameLayout pageHost = new FrameLayout(this);
+        pageHost.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        shell.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1f));
         LinearLayout controls = new LinearLayout(this);
         previous = new Button(this);
         previous.setText("上一步");
@@ -139,11 +143,18 @@ public final class GuideActivity extends Activity {
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
         UiStyle.applyInsets(stage, shell);
         setContentView(stage);
-        showStep(currentStep);
+        renderStep(currentStep);
         if (state != null) page.post(() -> page.scrollTo(0, state.getInt("scroll_y")));
     }
 
     private void showStep(int index) {
+        int destination = Math.max(0, Math.min(STEPS.length - 1, index));
+        if (destination == currentStep) return;
+        // Snapshot only the visible viewport, never the full height of a tutorial step.
+        UiStyle.swap(page, () -> renderStep(destination));
+    }
+
+    private void renderStep(int index) {
         currentStep = Math.max(0, Math.min(STEPS.length - 1, index));
         Step step = STEPS[currentStep];
         content.removeAllViews();

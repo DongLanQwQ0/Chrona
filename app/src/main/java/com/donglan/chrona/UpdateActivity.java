@@ -35,8 +35,7 @@ public final class UpdateActivity extends Activity {
         CheckBox automatic = new CheckBox(this);
         automatic.setText("每天自动检查新版本");
         automatic.setChecked(ReleaseUpdates.preferences(this).getBoolean("automatic", true));
-        automatic.setTextColor(UiStyle.colors(this).text);
-        automatic.setButtonTintList(android.content.res.ColorStateList.valueOf(UiStyle.colors(this).primary));
+        UiStyle.toggle(automatic);
         automatic.setOnCheckedChangeListener((button, checked) -> ReleaseUpdates.preferences(this)
                 .edit().putBoolean("automatic", checked).apply());
         UiStyle.addSpaced(root, automatic, 12, 4);

@@ -73,6 +73,7 @@ public final class UiStyle {
         private final java.lang.ref.WeakReference<ViewTreeObserver> observer;
         private final java.util.ArrayList<java.lang.ref.WeakReference<View>> hosts =
                 new java.util.ArrayList<>();
+        private final android.graphics.Rect visible = new android.graphics.Rect();
         AcrylicScrollWatcher(ViewTreeObserver observer) {
             this.observer = new java.lang.ref.WeakReference<>(observer);
         }
@@ -92,7 +93,7 @@ public final class UiStyle {
                 if (host == null) {
                     iterator.remove();
                 } else if (host.isAttachedToWindow()
-                        && host.getGlobalVisibleRect(new android.graphics.Rect())) {
+                        && host.getGlobalVisibleRect(visible)) {
                     host.invalidate();
                 }
             }
@@ -288,8 +289,9 @@ public final class UiStyle {
         view.setTextColor(colors.text);
         view.setTextSize(16);
         view.setHintTextColor(colors.muted);
-        view.setBackground(shape(view, childSurface(colors.surface),
-                RADIUS_FIELD, colors.outline));
+        view.setBackgroundTintList(null);
+        acrylicSurface(view, RADIUS_FIELD);
+        view.setElevation(0f);
         view.setPadding(dp(view, 16), dp(view, 14), dp(view, 16), dp(view, 14));
         rememberChildSurface(view, 0, false, 0, false);
     }
@@ -312,27 +314,79 @@ public final class UiStyle {
         view.setCompoundDrawablePadding(dp(view, 8));
         view.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_chevron_down, 0);
         view.setCompoundDrawableTintList(ColorStateList.valueOf(colors.muted));
-        view.setBackground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
-                shape(view, childSurface(colors.surface), RADIUS_FIELD, colors.outline), null));
+        view.setBackgroundTintList(null);
+        acrylicChoice(view, false, RADIUS_FIELD, false);
         rememberChildSurface(view, 1, false, 0, false);
     }
 
     public static void button(Button view, boolean primary) {
         Palette colors = colors(view.getContext());
         view.setAllCaps(false);
-        view.setTextColor(primary ? colors.onPrimary : colors.primary);
+        view.setTextColor(new ColorStateList(new int[][]{
+                new int[]{-android.R.attr.state_enabled}, new int[]{}
+        }, new int[]{alpha(colors.muted, 115), primary ? colors.primary : colors.text}));
         view.setTextSize(15);
         view.setTypeface(null, Typeface.BOLD);
-        view.setBackground(new RippleDrawable(ColorStateList.valueOf(
-                primary ? 0x44FFFFFF : alpha(colors.primary, 34)),
-                shape(view, primary ? colors.primary : childSurface(colors.surface), RADIUS_FIELD,
-                        primary ? colors.primary : colors.outline), null));
+        view.setBackgroundTintList(null);
+        acrylicChoice(view, primary, RADIUS_FIELD, false);
+        view.setPadding(dp(view, 18), dp(view, 10), dp(view, 18), dp(view, 10));
         view.setMinimumHeight(dp(view, 52));
         StateListAnimator press = new StateListAnimator();
-        press.addState(new int[]{android.R.attr.state_pressed}, scale(view, 0.97f, 110));
+        press.addState(new int[]{android.R.attr.state_enabled, android.R.attr.state_pressed},
+                scale(view, 0.97f, 90));
         press.addState(new int[]{}, scale(view, 1f, 160));
         view.setStateListAnimator(press);
-        if (!primary) rememberChildSurface(view, 2, false, 0, false);
+        rememberChildSurface(view, 2, primary, RADIUS_FIELD, primary);
+    }
+
+    static void toggle(android.widget.CompoundButton view) {
+        applyToggleColors(view);
+        view.setMinHeight(dp(view, 48));
+        registerDynamicSurface(view, () -> applyToggleColors(view));
+    }
+
+    private static void applyToggleColors(android.widget.CompoundButton view) {
+        Palette palette = colors(view.getContext());
+        int[][] states = {new int[]{-android.R.attr.state_enabled},
+                new int[]{android.R.attr.state_checked}, new int[]{}};
+        ColorStateList tint = new ColorStateList(states,
+                new int[]{alpha(palette.muted, 100), palette.primary, palette.muted});
+        view.setTextColor(new ColorStateList(new int[][]{
+                new int[]{-android.R.attr.state_enabled}, new int[]{}},
+                new int[]{alpha(palette.muted, 115), palette.text}));
+        if (view instanceof android.widget.Switch toggle) {
+            toggle.setThumbTintList(tint);
+            toggle.setTrackTintList(new ColorStateList(states, new int[]{
+                    alpha(palette.muted, 30), alpha(palette.primary, 70), alpha(palette.muted, 45)}));
+        } else view.setButtonTintList(tint);
+    }
+
+    static void timeDialog(Activity activity, String title, int minutes, IntConsumer onSave) {
+        Dialog dialog = dialog(activity);
+        LinearLayout panel = dialogPanel(activity, title);
+        GlassDateTimePickerView picker = new GlassDateTimePickerView(activity,
+                java.time.LocalDate.now().atTime(minutes / 60, minutes % 60));
+        picker.showTime(true);
+        panel.addView(picker, new LinearLayout.LayoutParams(-1, dp(panel, 220)));
+        LinearLayout actions = new LinearLayout(activity);
+        Button cancel = new Button(activity);
+        cancel.setText("取消");
+        button(cancel, false);
+        cancel.setOnClickListener(view -> dialog.dismiss());
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(panel, 52), 1));
+        Button save = new Button(activity);
+        save.setText("保存");
+        button(save, true);
+        save.setOnClickListener(view -> {
+            java.time.LocalDateTime value = picker.value();
+            dialog.dismiss();
+            onSave.accept(value.getHour() * 60 + value.getMinute());
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(panel, 52), 1);
+        params.leftMargin = dp(panel, 8);
+        actions.addView(save, params);
+        addSpaced(panel, actions, 12, 0);
+        showDialog(dialog, panel);
     }
 
     /**
@@ -615,10 +669,11 @@ public final class UiStyle {
 
     static void enter(View view, int index) {
         if (!ValueAnimator.areAnimatorsEnabled()) return;
+        view.animate().cancel();
         view.setAlpha(0f);
-        view.setTranslationY(dp(view, 12));
-        view.animate().alpha(1f).translationY(0f).setStartDelay(Math.min(index, 6) * 35L)
-                .setDuration(240).start();
+        view.setTranslationY(dp(view, 8));
+        view.animate().alpha(1f).translationY(0f).setStartDelay(Math.min(index, 4) * 18L)
+                .setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE).start();
     }
 
     /**
@@ -651,19 +706,26 @@ public final class UiStyle {
      * ghost covers the whole visual, background included.
      */
     public static void swap(View snapshotOf, View container, Runnable rebuild) {
+        container.animate().cancel();
+        container.setAlpha(1f);
+        if (snapshotOf.getParent() instanceof FrameLayout previousHost
+                && hostsSeveralChildren(previousHost)) dropSwapGhosts(previousHost);
         if (!ValueAnimator.areAnimatorsEnabled()) {
             rebuild.run();
             return;
         }
-        Bitmap outgoing = snapshot(snapshotOf);
-        if (outgoing == null || snapshotOf.getWidth() <= 0
+        if (snapshotOf.getWidth() <= 0
                 || !(snapshotOf.getParent() instanceof FrameLayout host)
                 || !hostsSeveralChildren(host)) {
-            container.setAlpha(1f);
             rebuild.run();
             return;
         }
         dropSwapGhosts(host);
+        Bitmap outgoing = snapshot(snapshotOf);
+        if (outgoing == null) {
+            rebuild.run();
+            return;
+        }
         ImageView ghost = new ImageView(snapshotOf.getContext());
         ghost.setImageBitmap(outgoing);
         ghost.setScaleType(ImageView.ScaleType.FIT_XY);
@@ -678,11 +740,11 @@ public final class UiStyle {
         rebuild.run();
         container.animate().cancel();
         container.setAlpha(0f);
-        container.animate().alpha(1f).setDuration(SWAP_MILLIS)
-                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+        container.animate().alpha(1f).setStartDelay(0).setDuration(SWAP_MILLIS)
+                .setInterpolator(UiMotion.SETTLE)
                 .start();
         ghost.animate().alpha(0f).setDuration(SWAP_MILLIS)
-                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+                .setInterpolator(UiMotion.SETTLE)
                 .withEndAction(() -> host.removeView(ghost)).start();
     }
 
@@ -925,6 +987,8 @@ public final class UiStyle {
             // Some callers create Dialog directly instead of using dialog(Activity). Clear the
             // framework's rectangular window surface so the rounded panel is the outer edge.
             dialogWindow.setBackgroundDrawableResource(android.R.color.transparent);
+            dialogWindow.setWindowAnimations(ValueAnimator.areAnimatorsEnabled()
+                    ? R.style.Animation_Chrona_Dialog : 0);
         }
         Activity owner = content.getContext() instanceof Activity activity ? activity : null;
         if (owner != null) {
@@ -947,13 +1011,8 @@ public final class UiStyle {
         dialog.show();
         Window window = dialog.getWindow();
         if (window != null) window.setLayout(widthPx, -2);
-        if (!ValueAnimator.areAnimatorsEnabled()) return;
-        // A sheet that fades and settles into place instead of appearing between two frames.
-        content.setAlpha(0f);
-        content.setScaleX(0.93f);
-        content.setScaleY(0.93f);
-        content.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(210)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        // The window owns both enter and exit, including outside-tap and system-back dismissals.
+        // No delayed dismiss callback can outlive the Activity or block a confirmation action.
     }
 
     /** Applies the shared backdrop blur and page scale to a custom floating dialog. */

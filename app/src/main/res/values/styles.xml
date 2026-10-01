@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <style name="Animation.Chrona.Page" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/page_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/page_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/page_return</item>
+        <item name="android:activityCloseExitAnimation">@anim/page_close</item>
+    </style>
+    <style name="Animation.Chrona.Dialog" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/dialog_enter</item>
+        <item name="android:windowExitAnimation">@anim/dialog_exit</item>
+    </style>
     <color name="chrona_startup_background">#F6F8F5</color>
     <bool name="chrona_startup_light_bars">true</bool>
     <style name="Theme.Chrona.Starting.Base" parent="Theme.Chrona.Light">

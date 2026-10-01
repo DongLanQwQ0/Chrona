@@ -67,6 +67,7 @@ public final class BackupRestoreActivity extends Activity {
         UiStyle.glass(card);
         includeApiKey = new CheckBox(this);
         includeApiKey.setText("备份中包含 API 密钥");
+        UiStyle.toggle(includeApiKey);
         includeApiKey.setContentDescription("选择是否把 API 密钥写入备份文件");
         card.addView(includeApiKey);
         TextView warning = new TextView(this);
