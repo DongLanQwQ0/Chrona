@@ -39,7 +39,8 @@ public final class UpdateActivity extends Activity {
         automatic.setOnCheckedChangeListener((button, checked) -> ReleaseUpdates.preferences(this)
                 .edit().putBoolean("automatic", checked).apply());
         UiStyle.addSpaced(root, automatic, 12, 4);
-        text(root, "有新版本时提示一次；下载后由系统安装，保留现有数据。", 14, false);
+        text(root, "每天首次启动后在后台检查，不等待网络结果再显示首页。"
+                + "同一新版本只提示一次；点击下载后由系统安装，保留现有数据。", 14, false);
         check = new Button(this);
         check.setText("检查更新");
         UiStyle.button(check, true);

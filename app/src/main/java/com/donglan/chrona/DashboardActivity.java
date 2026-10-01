@@ -177,6 +177,7 @@ public final class DashboardActivity extends Activity {
             java.util.concurrent.Executors.newSingleThreadExecutor();
     private boolean initialDataReady, initialLoadRunning, startupReported, startupReadFailed;
     private int resumeGeneration;
+    private boolean updateChecksReady;
     private HomeData startupHome;
     private long startupRevision;
     private boolean applyingStartupData;
@@ -744,6 +745,7 @@ public final class DashboardActivity extends Activity {
     private void afterFirstContent() {
         if (!GuideActivity.showIfNeeded(this)) {
             StartupPermissions.requestFirstLaunch(this);
+            updateChecksReady = true;
             ReleaseUpdates.checkAutomatically(this);
         }
         startupReader.execute(() -> {
@@ -758,6 +760,7 @@ public final class DashboardActivity extends Activity {
 
     @Override protected void onPause() {
         foreground = false;
+        updateChecksReady = false;
         resumeGeneration++;
         calendarGeneration++;
         if (calendarCancellation != null) {
@@ -772,7 +775,7 @@ public final class DashboardActivity extends Activity {
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) ReleaseUpdates.showPending(this);
+        if (hasFocus && updateChecksReady) ReleaseUpdates.checkAutomatically(this);
     }
 
     @Override protected void onDestroy() {
