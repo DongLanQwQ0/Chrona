@@ -266,6 +266,7 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
                 views.setOnClickPendingIntent(R.id.widget_content, PendingIntent.getActivity(
                         context, id + 100000, new Intent(context, WidgetLaunchActivity.class)
                                 .putExtra("task_id", item.taskId)
+                                .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, item.system ? 0 : item.id)
                                 .putExtra("event_id", item.system ? item.id : 0)
                                 .putExtra("begin", item.start).putExtra("end", item.end),
                         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
@@ -309,6 +310,7 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         fill(context, row, item, now, zone);
         row.setOnClickFillInIntent(R.id.widget_content, new Intent()
                 .putExtra("task_id", item.taskId).putExtra("event_id", item.system ? item.id : 0)
+                .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, item.system ? 0 : item.id)
                 .putExtra("begin", item.start).putExtra("end", item.end));
         return row;
     }

@@ -729,7 +729,7 @@ public final class DashboardActivity extends Activity {
 
     private void openHomeEntry(HomeTimelineEntry entry) {
         if (entry.candidate != null) {
-            openTask(entry.candidate.taskId);
+            openCandidate(entry.candidate);
             return;
         }
         CalendarOccurrence event = entry.systemEvent;
@@ -1682,10 +1682,10 @@ public final class DashboardActivity extends Activity {
                 if (!selectedScheduleIds.isEmpty()) {
                     if (!selectedScheduleIds.remove(item.id)) selectedScheduleIds.add(item.id);
                     updateSelectionUi();
-                } else openTask(item.taskId);
+                } else openCandidate(item);
             });
             applyInboxRowSelection(item.id);
-        } else card.setOnClickListener(view -> openTask(item.taskId));
+        } else card.setOnClickListener(view -> openCandidate(item));
         UiStyle.pressable(card);
         UiStyle.addSpaced(parent, card, 4, 7);
     }
@@ -2218,6 +2218,12 @@ public final class DashboardActivity extends Activity {
 
     private void openTask(long taskId) {
         startActivity(new Intent(this, TaskDetailActivity.class).putExtra("task_id", taskId));
+    }
+
+    private void openCandidate(EventCandidate candidate) {
+        startActivity(new Intent(this, TaskDetailActivity.class)
+                .putExtra("task_id", candidate.taskId)
+                .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, candidate.id));
     }
 
     private String statusText(String status) {

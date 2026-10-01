@@ -13,6 +13,8 @@ public final class WidgetLaunchActivity extends Activity {
         long task = getIntent().getLongExtra("task_id", 0);
         long event = getIntent().getLongExtra("event_id", 0);
         Intent target = task > 0 ? new Intent(this, TaskDetailActivity.class).putExtra("task_id", task)
+                .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID,
+                        getIntent().getLongExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, 0))
                 : event > 0 ? new Intent(Intent.ACTION_VIEW,
                         ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event))
                         .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME,

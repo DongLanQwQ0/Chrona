@@ -70,6 +70,7 @@ import java.util.Set;
 
 /** Review parsed events before committing them to the device calendar. */
 public final class TaskDetailActivity extends Activity {
+    static final String EXTRA_CANDIDATE_ID = "candidate_id";
     private static final class CompactCheckBoxDrawable extends Drawable {
         private final int size;
         private final int checkedColor;
@@ -228,6 +229,7 @@ public final class TaskDetailActivity extends Activity {
     /** Candidate selection is session-local and follows the inbox task while paging. */
     private final Map<Long, Integer> taskCandidatePagePositions = new HashMap<>();
     private int candidatePageIndex;
+    private long initialCandidateId;
     private float dragStartOffset;
     private final Set<Long> dirtyCandidateIds = new HashSet<>();
     private final List<Uri> deferredFileUris = new ArrayList<>();
@@ -250,6 +252,7 @@ public final class TaskDetailActivity extends Activity {
         super.onCreate(state);
         taskId = state == null ? getIntent().getLongExtra("task_id", -1)
                 : state.getLong("task_id", getIntent().getLongExtra("task_id", -1));
+        initialCandidateId = state == null ? getIntent().getLongExtra(EXTRA_CANDIDATE_ID, 0) : 0;
         if (state != null) exportFileName = state.getString("export_file_uri");
         page = new ScrollView(this);
         // The detail page reads as a stack of cards; a scrollbar down the right edge just cuts
@@ -468,6 +471,11 @@ public final class TaskDetailActivity extends Activity {
             }
             addDetailHeader();
             List<EventCandidate> candidates = store.getCandidates(taskId);
+            if (initialCandidateId > 0) {
+                candidatePageIndex = CandidateSelection.indexOf(candidates, initialCandidateId,
+                        candidatePageIndex);
+                initialCandidateId = 0;
+            }
             candidatePageIndex = candidates.isEmpty() ? 0
                     : Math.max(0, Math.min(candidatePageIndex, candidates.size() - 1));
             taskCandidatePagePositions.put(taskId, candidatePageIndex);
