@@ -27,12 +27,22 @@ final class WidgetAgenda {
         final long id, taskId, start, end;
         final String title, location, category, source;
         final boolean system, allDay;
+        final CourseAgenda.Item course;
         Item(long id, long taskId, long start, long end, String title, String location,
                 String category, String source, boolean system, boolean allDay) {
+            this(id, taskId, start, end, title, location, category, source, system, allDay, null);
+        }
+        private Item(long id, long taskId, long start, long end, String title, String location,
+                String category, String source, boolean system, boolean allDay, CourseAgenda.Item course) {
             this.id = id; this.taskId = taskId; this.start = start; this.end = end;
             this.title = title; this.location = location == null ? "" : location;
             this.category = category; this.source = source; this.system = system;
             this.allDay = allDay;
+            this.course = course;
+        }
+        Item(CourseAgenda.Item course) {
+            this(0, 0, course.start, course.end, course.title, course.location,
+                    "课程", "课表", false, course.allDay, course);
         }
         String time(long now, ZoneId zone) {
             LocalDate today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
@@ -51,6 +61,7 @@ final class WidgetAgenda {
     final List<Item> today = new ArrayList<>();
     Item next;
     boolean calendarUnavailable;
+    boolean courseUnavailable;
     boolean failed;
     final long now;
     final ZoneId zone;
@@ -147,6 +158,10 @@ final class WidgetAgenda {
                     } catch (RuntimeException exception) { result.calendarUnavailable = true; }
                 }
             }
+            try {
+                for (CourseAgenda.Item course : CourseAgenda.load(context, begin, horizon, result.zone))
+                    items.add(new Item(course));
+            } catch (Exception exception) { result.courseUnavailable = true; }
             result.select(items, begin, tomorrow, horizon);
         } catch (RuntimeException exception) {
             result.failed = true;

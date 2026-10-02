@@ -28,6 +28,8 @@ class R {
  static class array {static final int widget_encouragements=1;}
 }
 class View {static final int VISIBLE=0,GONE=8;}
+class ValueAnimator {static boolean enabled=true;static boolean areAnimatorsEnabled(){return enabled;}}
+class WidgetPreferences {static boolean enabled=true;static boolean danmakuEnabled(Context c){return enabled;}}
 class DisplayMetrics {float density=1,scaledDensity=1;}
 class Paint {
  static int height=18;
@@ -67,6 +69,7 @@ class Flipper {
  long staleText(){return disappearing.stream().filter(c->!c.text.isEmpty()).count();}
 }
 class Host {
+ int visibility;
  Flipper left=new Flipper(),right=new Flipper();
  Flipper lane(int id){return id==R.id.widget_bullets_left?left:right;}
 }
@@ -79,7 +82,7 @@ class RemoteViews {
  void setInt(int id,String method,int value){actions.add(h->h.lane(id).interval=value);}
  void setTextViewText(int id,String value){text=value;}
  void setTextColor(int id,int value){}
- void setViewVisibility(int id,int value){}
+ void setViewVisibility(int id,int value){if(id==R.id.widget_danmaku)actions.add(h->h.visibility=value);}
  void setViewPadding(int id,int l,int t,int r,int b){}
  void apply(Host h){for(Consumer<Host> a:actions)a.accept(h);}
 }
@@ -112,6 +115,18 @@ public class WidgetDanmakuRefreshCheck {
    check(h.left.children.isEmpty()&&h.right.children.isEmpty(),"hidden overlay cleared");
    bind(h,260,18,0);
    check(h.left.children.size()==4&&h.right.children.size()==4,"restore both lanes");
+   for(int reason=0;reason<2;reason++){
+    h.left.select(active);h.right.select(active);
+    if(reason==0)WidgetPreferences.enabled=false;else ValueAnimator.enabled=false;
+    bind(h,260,18,0);
+    check(h.visibility==View.GONE,"disabled overlay hidden");
+    check(h.left.children.isEmpty()&&h.right.children.isEmpty(),"disabled overlay clears animated children");
+    WidgetPreferences.enabled=true;ValueAnimator.enabled=true;
+    bind(h,260,18,0);
+    check(h.visibility==View.VISIBLE,"re-enabled overlay visible");
+    check(h.left.children.size()==4&&h.right.children.size()==4,"re-enabled overlay restored");
+    check(h.left.index==0&&h.right.index==0,"re-enabled overlay starts blank");
+   }
   }
   System.out.println("Widget refresh checks passed: "+checks+"; Android host behavior modeled, not device-tested");
  }

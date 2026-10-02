@@ -32,7 +32,11 @@ final class TimetableStore {
     private static final int MAX_SNAPSHOT_BYTES = TimetableParser.MAX_BYTES * 12;
     private static final int MAX_DOCUMENTS = 12;
     private static final Object LOCK = new Object();
+    private static volatile long revision;
+    private static File cachedFile;
+    private static Library cachedLibrary;
     private final AtomicFile file;
+    private final Context context;
 
     static final class Document {
         final String name, source;
@@ -146,6 +150,7 @@ final class TimetableStore {
     }
 
     TimetableStore(Context context) {
+        this.context = context;
         file = new AtomicFile(new File(context.getFilesDir(), "course-timetable.json"));
     }
 
@@ -159,8 +164,23 @@ final class TimetableStore {
     }
 
     Library load() throws Exception {
-        String snapshot = snapshot();
-        return snapshot == null ? null : inspect(snapshot);
+        synchronized (LOCK) {
+            if (file.getBaseFile().equals(cachedFile)) return cachedLibrary;
+            String snapshot = snapshot();
+            Library library = snapshot == null ? null : inspect(snapshot);
+            cachedLibrary = library;
+            cachedFile = file.getBaseFile();
+            return library;
+        }
+    }
+
+    // Main-thread cache checks must never wait for the worker's ICS parsing lock.
+    static long revision() { return revision; }
+
+    private static void invalidate() {
+        cachedFile = null;
+        cachedLibrary = null;
+        revision++;
     }
 
     String snapshot() throws IOException {
@@ -239,17 +259,19 @@ final class TimetableStore {
 
     void save(Library library) throws Exception {
         write(encode(library));
+        AgendaWidgetProvider.requestRefresh(context);
     }
 
     /** Used by full backup restore, including rollback to the previous saved document. */
     void restore(String snapshot) throws Exception {
         if (snapshot != null) inspect(snapshot);
         write(snapshot);
+        AgendaWidgetProvider.requestRefresh(context);
     }
 
     private void write(String snapshot) throws IOException {
         synchronized (LOCK) {
-            if (snapshot == null) { file.delete(); return; }
+            if (snapshot == null) { file.delete(); invalidate(); return; }
             byte[] bytes = snapshot.getBytes(StandardCharsets.UTF_8);
             if (bytes.length > MAX_SNAPSHOT_BYTES) throw new IOException("课表数据过大");
             FileOutputStream stream = null;
@@ -257,6 +279,7 @@ final class TimetableStore {
                 stream = file.startWrite();
                 stream.write(bytes);
                 file.finishWrite(stream);
+                invalidate();
             } catch (IOException exception) {
                 if (stream != null) file.failWrite(stream);
                 throw exception;

@@ -382,7 +382,8 @@ public final class ProcessingJobService extends JobService {
     private ParseResult requestWithRetries(AiSettings settings, TaskRecord task, List<byte[]> images,
             String linkText, String attachmentMetadata, long taskId, RequestControl control) throws IOException {
         long startedAt = System.currentTimeMillis();
-        final long referenceTime = startedAt;
+        // A queued input and all of its retries/re-parses keep the same meaning of "tomorrow".
+        final long referenceTime = task.createdAtMillis;
         final String referenceZone = TimeZone.getDefault().getID();
         for (int attempt = 1; ; attempt++) {
             control.check();

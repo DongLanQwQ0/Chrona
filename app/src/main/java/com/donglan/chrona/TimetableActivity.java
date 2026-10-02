@@ -56,7 +56,7 @@ public final class TimetableActivity extends Activity {
         String importYear;
         int importMode;
         LocalDate importStart, importSplit, importEnd;
-        boolean initialized, busy;
+        boolean initialized, busy, courseOpened;
         String error, operation;
         int scrollX, scrollY;
     }
@@ -727,7 +727,30 @@ public final class TimetableActivity extends Activity {
     }
     private static void notifyOwner(Session target) {
         TimetableActivity owner = target.owner.get();
-        if (owner != null) owner.render();
+        if (owner != null) { owner.render(); owner.openRequestedCourse(); }
+    }
+
+    private void openRequestedCourse() {
+        if (!resumed || session.busy || !session.initialized || session.courseOpened) return;
+        String termId = getIntent().getStringExtra(CourseAgenda.EXTRA_TERM);
+        String key = getIntent().getStringExtra(CourseAgenda.EXTRA_OCCURRENCE);
+        if (termId == null || key == null) return;
+        session.courseOpened = true;
+        if (session.library != null) for (TimetableStore.Semester term : session.library.semesters) {
+            if (!term.id().equals(termId)) continue;
+            session.library = session.library.select(termId);
+            render();
+            for (Timetable.Occurrence occurrence : term.view.all) if (occurrence.key().equals(key)) {
+                Timetable single = new Timetable(Collections.singletonList(occurrence), term.document.table.zone, 1);
+                if (!single.blocks.isEmpty()) {
+                    boolean special = term.view.special.stream().anyMatch(entry -> entry.key().equals(key));
+                    showCourse(single.blocks.get(0), special);
+                    return;
+                }
+            }
+            break;
+        }
+        Feedback.show(this, "这条课程安排已更新或删除");
     }
     private void rememberScroll() {
         if (vertical != null) session.scrollY = vertical.getScrollY();
@@ -736,6 +759,7 @@ public final class TimetableActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        openRequestedCourse();
         if (session.pending != null) confirmImport();
         if (session.error != null && session.library != null) {
             Feedback.showLong(this, session.error);

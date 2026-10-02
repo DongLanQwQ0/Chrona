@@ -915,8 +915,20 @@ public final class UiStyle {
 
     static void textEditorDialog(Activity activity, String title, String initialValue,
             String positive, Consumer<String> onSave) {
+        textEditorDialog(activity, title, initialValue, positive, null, onSave);
+    }
+
+    static void textEditorDialog(Activity activity, String title, String initialValue,
+            String positive, String hint, Consumer<String> onSave) {
         Dialog dialog = dialog(activity);
         LinearLayout panel = dialogPanel(activity, title);
+        if (hint != null && !hint.isEmpty()) {
+            TextView explanation = new TextView(activity);
+            explanation.setText(hint);
+            explanation.setTextSize(12);
+            muted(explanation);
+            addSpaced(panel, explanation, 0, 10);
+        }
         EditText editor = new EditText(activity);
         editor.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE

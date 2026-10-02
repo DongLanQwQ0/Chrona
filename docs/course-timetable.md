@@ -26,6 +26,10 @@ TimetableParser 使用 [biweekly 0.6.8](https://github.com/mangstadt/biweekly) �
 
 ## 验证
 
+0.13.85：`CourseAgenda` 将所有启用学期的实际安排提供给首页与小组件，包含特殊安排，独立于用户当前浏览学期；跨源课表按标题、地点、实际起止与全天标记去重。来源仍为课表，不写系统日历，也不启发式合并外部同名日程。点击携带学期 ID 与 occurrence key 定位详情，过期入口保留可用课表页面并提示。
+
+`TimetableStore.load()` 缓存解析结果；成功保存、删除、恢复和回滚时清缓存并刷新小组件。`revision` 为无锁可见的单调版本，主线程查询不会等待解析锁。首页 `HomeCourses` 异步读取当前日期至一个月的窗口，并按版本、日期和时区丢弃过期结果；关闭页面后丢弃回调。
+
 - `python checks/timetable_check.py`：实际解析与布局回归。
 - `python checks/academic_terms_check.py [本地ICS路径]`：学期边界、统计、分类、替换与保留、选择、删除、序列化、失败保留。使用实际业务代码、JSON 库，以及最小 Android 文件 API 替身；可选 ICS 参数仅本地读取，文件不提交到仓库。
 - Android 设备上的导入日期选择、旋转、主题/大字体、浮窗触摸、完整备份恢复和覆盖安装仍需实机验收。

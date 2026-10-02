@@ -77,28 +77,6 @@ public final class DashboardActivity extends Activity {
             this.marker = marker;
         }
     }
-    private static final class HomeTimelineEntry {
-        final long timestampMillis;
-        final EventCandidate candidate;
-        final CalendarOccurrence systemEvent;
-
-        HomeTimelineEntry(EventCandidate candidate) {
-            this.timestampMillis = candidate.allDay
-                    ? LocalDate.parse(AllDayDates.displayStart(candidate.startAtMillis))
-                            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                    : candidate.startAtMillis;
-            this.candidate = candidate;
-            this.systemEvent = null;
-        }
-
-        HomeTimelineEntry(CalendarOccurrence event) {
-            timestampMillis = event.displayStart(ZoneId.systemDefault());
-            candidate = null;
-            systemEvent = event;
-        }
-
-        String title() { return candidate != null ? candidate.title : systemEvent.title; }
-    }
     private static final class ElapsedLabel {
         final TextView view;
         final long startedAt;
@@ -179,6 +157,7 @@ public final class DashboardActivity extends Activity {
     private int resumeGeneration;
     private boolean updateChecksReady;
     private HomeData startupHome;
+    private HomeCourses homeCourses;
     private long startupRevision;
     private boolean applyingStartupData;
     private final long createdAt = android.os.SystemClock.elapsedRealtime();
@@ -693,6 +672,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void finishResume() {
+        refreshCourses();
         int oldScroll = restoredScrollY != 0 ? restoredScrollY : scroll.getScrollY();
         restoredScrollY = 0;
         ScrollView resumed = scroll;
@@ -731,6 +711,7 @@ public final class DashboardActivity extends Activity {
     private void maybeReportStartup() {
         if (startupReported || startupReadFailed || !initialDataReady || calendarLoading
                 || pageTransitionRunning || dragTargetLoaded) return;
+        if (section == HOME && (homeCourses == null || homeCourses.pending())) return;
         if (HomeTimelinePreferences.includesSystemCalendar(this)
                 && new CalendarStore(this).hasReadPermission() && !calendarErrorShown
                 && !calendarWindowKey(new LocalDate[]{LocalDate.now(), LocalDate.now().plusMonths(1)})
@@ -786,10 +767,12 @@ public final class DashboardActivity extends Activity {
         dirtySections.clear();
         calendarReader.shutdownNow();
         startupReader.shutdownNow();
+        if (homeCourses != null) homeCourses.close();
         super.onDestroy();
     }
 
     private void pollChanges() {
+        refreshCourses();
         if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
         String current = dataSnapshot();
         if (!current.equals(snapshot)) {
@@ -903,6 +886,18 @@ public final class DashboardActivity extends Activity {
         });
     }
 
+    private void refreshCourses() {
+        if (!foreground || isDestroyed() || isFinishing()) return;
+        if (homeCourses == null) homeCourses = new HomeCourses(this);
+        homeCourses.refresh(() -> {
+            if (isDestroyed() || isFinishing()) return;
+            dirtySections.add(HOME);
+            if (!foreground) return;
+            refreshHomeContent();
+            if (section == HOME) afterDraw(scroll, this::maybeReportStartup);
+        });
+    }
+
     private String calendarWindowKey(LocalDate[] window) {
         ZoneId zone = ZoneId.systemDefault();
         return window[0].atStartOfDay(zone).toInstant().toEpochMilli() + ":"
@@ -927,6 +922,10 @@ public final class DashboardActivity extends Activity {
     }
 
     private void openHomeEntry(HomeTimelineEntry entry) {
+        if (entry.course != null) {
+            startActivity(CourseAgenda.intent(this, entry.course));
+            return;
+        }
         if (entry.candidate != null) {
             openCandidate(entry.candidate);
             return;
@@ -957,6 +956,7 @@ public final class DashboardActivity extends Activity {
         return revision + ":" + (System.currentTimeMillis() / 60000L)
                 + ":" + HomeTimelinePreferences.getItemLimit(this)
                 + ":" + HomeTimelinePreferences.includesSystemCalendar(this)
+                + ":" + CourseAgenda.revision() + ":" + ZoneId.systemDefault()
                 + ":" + new CalendarStore(this).hasReadPermission();
     }
 
@@ -1200,6 +1200,7 @@ public final class DashboardActivity extends Activity {
     private EditText buildSearchField() {
         final int ownerSection = section;
         EditText field = new EditText(this);
+        if (ownerSection == SCHEDULE) field.setTag("schedule_search");
         field.setSingleLine(true);
         field.setHint(section == INBOX ? "搜索收件" : "搜索日程");
         field.setTextSize(13);
@@ -1219,6 +1220,7 @@ public final class DashboardActivity extends Activity {
             @Override public void onTextChanged(CharSequence value, int a, int b, int c) { }
             @Override public void afterTextChanged(Editable value) {
                 String keyword = value.toString();
+                if (keyword.equals(ownerSection == INBOX ? inboxQuery : scheduleQuery)) return;
                 if (ownerSection == INBOX) {
                     inboxQuery = keyword;
                     inboxPage = 0;
@@ -1274,7 +1276,21 @@ public final class DashboardActivity extends Activity {
             if (!enabled) systemCalendarEvents = java.util.Collections.emptyList();
             refreshHomeContent();
         });
-        UiStyle.addSpaced(content, include, 0, 4);
+        LinearLayout sources = new LinearLayout(this);
+        sources.setGravity(Gravity.CENTER_VERTICAL);
+        sources.addView(include, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView courses = text("课表", 13, true);
+        courses.setTextColor(UiStyle.colors(this).primary);
+        courses.setGravity(Gravity.CENTER);
+        courses.setPadding(dp(12), 0, dp(12), 0);
+        courses.setMinimumHeight(dp(44));
+        applyThemeControlSurface(courses, false, UiStyle.RADIUS_CHIP);
+        courses.setOnClickListener(view -> startActivity(new Intent(this, TimetableActivity.class)));
+        UiStyle.pressable(courses);
+        sources.addView(courses, new LinearLayout.LayoutParams(-2, -2));
+        UiStyle.addSpaced(content, sources, 0, 4);
+        if (homeCourses == null || homeCourses.pending()) message(content, "正在读取课表…");
+        else if (homeCourses.unavailable()) message(content, "课表暂时无法读取，可进入课表重试");
         long now = data.now;
         ZoneId zone = data.zone;
         LocalDate today = data.today;
@@ -1292,6 +1308,10 @@ public final class DashboardActivity extends Activity {
                 if (event.displayEnd(ZoneId.systemDefault()) > now)
                     upcoming.add(new HomeTimelineEntry(event));
         }
+        List<CourseAgenda.Item> courseItems = homeCourses == null
+                ? java.util.Collections.emptyList() : homeCourses.items();
+        for (CourseAgenda.Item course : courseItems)
+            if (course.end > now || course.start >= now) upcoming.add(new HomeTimelineEntry(course));
         showUpcomingCarousel(upcoming);
 
         long rangeStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
@@ -1308,6 +1328,9 @@ public final class DashboardActivity extends Activity {
             if (event.displayEnd(zone) > now && event.displayStart(zone) < rangeEnd)
                 all.add(new HomeTimelineEntry(event));
         }
+        for (CourseAgenda.Item course : courseItems)
+            if ((course.end > now || course.start >= now) && course.start < rangeEnd)
+                all.add(new HomeTimelineEntry(course));
         all.sort(java.util.Comparator.comparingLong(entry -> entry.timestampMillis));
         if (all.size() > limit) all = new ArrayList<>(all.subList(0, limit));
         Map<LocalDate, List<HomeTimelineEntry>> byDate = new java.util.TreeMap<>();
@@ -1349,8 +1372,11 @@ public final class DashboardActivity extends Activity {
                 title.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 item.addView(title);
                 UiStyle.addSpaced(item, scheduleAttribute(R.drawable.ic_schedule,
-                        homeCardBoundary(entry.candidate, entry.systemEvent, false, true),
+                        entry.course == null ? homeCardBoundary(entry.candidate, entry.systemEvent, false, true)
+                                : courseBoundary(entry.course, false, true),
                         "时间", 14, 1, false), 6, 0);
+                if (entry.course != null) UiStyle.addSpaced(item,
+                        scheduleAttribute(R.drawable.ic_calendar_source, "课表", "来源", 12, 1, false), 6, 0);
                 item.setOnClickListener(view -> openHomeEntry(entry));
                 UiStyle.pressable(item);
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(240), -2);
@@ -1644,6 +1670,7 @@ public final class DashboardActivity extends Activity {
 
     private void renderScheduleResults(TaskStore store) {
         results.removeAllViews();
+        addScheduleFilterSummary();
         if (scheduleSource == 1) {
             renderSystemSchedule(store);
             return;
@@ -1687,6 +1714,42 @@ public final class DashboardActivity extends Activity {
         if (system && window[0] != null && window[1].isAfter(window[0].plusYears(1)))
             window[1] = window[0].plusYears(1);
         return window;
+    }
+
+    private void addScheduleFilterSummary() {
+        com.donglan.chrona.data.ScheduleFilterState state =
+                new com.donglan.chrona.data.ScheduleFilterState(scheduleRange, scheduleCategory,
+                        schedulePublication, scheduleSource, scheduleTab, scheduleDate, scheduleUntil);
+        String summary = com.donglan.chrona.data.ScheduleFilterSummary.describe(state, scheduleQuery, LocalDate.now());
+        if (summary.isEmpty()) return;
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView active = text(summary, 12, false);
+        active.setTextColor(UiStyle.colors(this).primary);
+        active.setMaxLines(2);
+        active.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        active.setContentDescription("当前筛选：" + summary + "，点击修改");
+        active.setMinimumHeight(dp(44));
+        active.setGravity(Gravity.CENTER_VERTICAL);
+        active.setOnClickListener(view -> showScheduleFilters());
+        row.addView(active, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView reset = text("重置", 13, true);
+        reset.setTextColor(UiStyle.colors(this).primary);
+        reset.setPadding(dp(12), 0, dp(8), 0);
+        reset.setMinimumHeight(dp(44));
+        reset.setGravity(Gravity.CENTER);
+        reset.setContentDescription("清除日期、类型、状态、来源和搜索条件");
+        reset.setOnClickListener(view -> {
+            scheduleRange = scheduleCategory = schedulePublication = scheduleSource = 0;
+            scheduleDate = scheduleUntil = LocalDate.now();
+            scheduleQuery = "";
+            EditText search = content.findViewWithTag("schedule_search");
+            if (search != null) search.setText("");
+            applyScheduleFilters();
+        });
+        UiStyle.pressable(reset);
+        row.addView(reset, new LinearLayout.LayoutParams(-2, -2));
+        results.addView(row);
     }
 
     private void scheduleDayHeading(String date) {
@@ -1910,10 +1973,16 @@ public final class DashboardActivity extends Activity {
     /** Shared hierarchy for the timeline, upcoming strip and schedule results. */
     private void addScheduleCardContent(LinearLayout card, EventCandidate candidate,
             CalendarOccurrence systemEvent, boolean showTime, boolean home, TextView selection) {
+        addScheduleCardContent(card, candidate, systemEvent, null, showTime, home, selection);
+    }
+
+    private void addScheduleCardContent(LinearLayout card, EventCandidate candidate,
+            CalendarOccurrence systemEvent, CourseAgenda.Item course, boolean showTime,
+            boolean home, TextView selection) {
         String category = candidate == null ? EventCategory.EVENT : candidate.category;
-        String titleText = candidate == null ? systemEvent.title : candidate.title;
-        String location = candidate == null ? systemEvent.location : candidate.location;
-        String source = candidate == null ? systemEvent.calendarName : "拾时";
+        String titleText = course != null ? course.title : candidate == null ? systemEvent.title : candidate.title;
+        String location = course != null ? course.location : candidate == null ? systemEvent.location : candidate.location;
+        String source = course != null ? "课表" : candidate == null ? systemEvent.calendarName : "拾时";
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout body = card;
         FrameLayout interval = null;
@@ -1957,7 +2026,8 @@ public final class DashboardActivity extends Activity {
         body.addView(heading);
 
         if (home) {
-            addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, false, showTime),
+            addHomeTimeNode(body, interval, course == null ? homeCardBoundary(candidate, systemEvent, false, showTime)
+                            : courseBoundary(course, false, showTime),
                     "起始时间");
         } else if (showTime) {
             String when = candidate == null ? homeEntryWhen(new HomeTimelineEntry(systemEvent))
@@ -1970,14 +2040,15 @@ public final class DashboardActivity extends Activity {
                     "地点", 14, 2, false), home ? 8 : 6, 0);
         }
         if (home) {
-            addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, true, showTime),
+            addHomeTimeNode(body, interval, course == null ? homeCardBoundary(candidate, systemEvent, true, showTime)
+                            : courseBoundary(course, true, showTime),
                     "终止时间");
         }
 
         LinearLayout footer = new LinearLayout(this);
         footer.setGravity(Gravity.CENTER_VERTICAL);
         if (home) {
-            footer.addView(scheduleAttribute(categoryIcon(category), EventCategory.label(category),
+            footer.addView(scheduleAttribute(categoryIcon(category), course == null ? EventCategory.label(category) : "课程",
                     "类型", 13, 1, true), new LinearLayout.LayoutParams(-2, -2));
         }
         if (source != null && !source.trim().isEmpty()) {
@@ -1992,7 +2063,7 @@ public final class DashboardActivity extends Activity {
         // A published item is settled even if its original AI uncertainty flag remains set.
         boolean written = candidate == null || candidate.calendarEventId != null;
         boolean confirmation = candidate != null && !written && candidate.needsConfirmation;
-        if (!home || confirmation) {
+        if (course == null && (!home || confirmation)) {
             String status = written ? "已写入" : "未写入 · " + UiStyle.uncertaintyLabel(candidate.uncertaintyLevel);
             LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
             statusParams.leftMargin = dp(8);
@@ -2028,6 +2099,18 @@ public final class DashboardActivity extends Activity {
         String pattern = showYear ? "yyyy年M月d日 HH:mm"
                 : includeDate || crossesDay || startedEarlier ? "M月d日 HH:mm" : "HH:mm";
         return new SimpleDateFormat(pattern, Locale.CHINA).format(new Date(millis));
+    }
+
+    private String courseBoundary(CourseAgenda.Item course, boolean end, boolean includeDate) {
+        ZoneId zone = ZoneId.systemDefault();
+        java.time.ZonedDateTime boundary = Instant.ofEpochMilli(end ? course.end : course.start).atZone(zone);
+        if (course.allDay) return (end ? boundary.toLocalDate().minusDays(1) : boundary.toLocalDate()) + " · 全天";
+        LocalDate start = Instant.ofEpochMilli(course.start).atZone(zone).toLocalDate();
+        LocalDate today = LocalDate.now(zone);
+        boolean date = includeDate || !start.equals(boundary.toLocalDate()) || start.isBefore(today);
+        String pattern = boundary.getYear() != today.getYear() ? "yyyy年M月d日 HH:mm"
+                : date ? "M月d日 HH:mm" : "HH:mm";
+        return java.time.format.DateTimeFormatter.ofPattern(pattern, Locale.CHINA).format(boundary);
     }
 
     private void addHomeTimeNode(LinearLayout body, FrameLayout interval, String value, String label) {
@@ -2786,7 +2869,7 @@ public final class DashboardActivity extends Activity {
         for (int i = 0; i < entries.size(); i++) {
             HomeTimelineEntry entry = entries.get(i);
             LinearLayout itemCard = card();
-            addScheduleCardContent(itemCard, entry.candidate, entry.systemEvent, false, true, null);
+            addScheduleCardContent(itemCard, entry.candidate, entry.systemEvent, entry.course, false, true, null);
             itemCard.setOnClickListener(view -> openHomeEntry(entry));
             UiStyle.pressable(itemCard);
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);

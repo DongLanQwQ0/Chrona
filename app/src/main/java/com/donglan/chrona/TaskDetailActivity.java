@@ -608,7 +608,7 @@ public final class TaskDetailActivity extends Activity {
                 }
             }
 
-            addAttachmentSection(task.rawText, store.getImagePaths(taskId),
+            addAttachmentSection(task, store.getImagePaths(taskId),
                     store.getFileAttachments(taskId));
         } catch (Exception exception) {
             showError(exception);
@@ -867,8 +867,9 @@ public final class TaskDetailActivity extends Activity {
             divider.setVisibility(View.VISIBLE);
         completionAction.setEnabled(true);
         int remaining = Math.max(0, candidates.size() - countPublished(candidates));
-        completionAction.setContentDescription("确认当前日程：" + candidate.title
-                + "。本任务还有 " + remaining + " 项待确认；保存后会自动跳到下一项。");
+        completionAction.setContentDescription((candidate.calendarEventId == null
+                ? "确认并写入日历：" : "保存并更新日历：") + candidate.title
+                + (remaining > 0 ? "。本任务还有 " + remaining + " 项待确认。" : ""));
         completionAction.setOnClickListener(view -> action.run());
     }
 
@@ -1398,7 +1399,8 @@ public final class TaskDetailActivity extends Activity {
                 surface.invalidate();
     }
 
-    private void addSourceSection(String rawText, LinearLayout card) {
+    private void addSourceSection(TaskRecord task, LinearLayout card) {
+        String rawText = task.rawText;
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView headingLabel = new TextView(this);
@@ -1412,23 +1414,41 @@ public final class TaskDetailActivity extends Activity {
         edit.setMinHeight(dp(44));
         edit.setGravity(android.view.Gravity.CENTER);
         edit.setTextColor(UiStyle.colors(this).primary);
-        edit.setOnClickListener(view -> editCaptureContent(rawText));
+        edit.setOnClickListener(view -> editCaptureContent(task));
         heading.addView(edit, new LinearLayout.LayoutParams(dp(52), dp(44)));
         TextView body = new TextView(this);
         body.setTextSize(15);
         body.setLineSpacing(dp(2), 1.08f);
         UiStyle.muted(body);
         String source = rawText == null || rawText.trim().isEmpty()
-                ? "仅图片输入" : rawText;
+                ? "未填写文字" : rawText;
         body.setText(source);
         body.setMaxLines(1);
         body.setEllipsize(TextUtils.TruncateAt.END);
         UiStyle.addSpaced(card, heading, 0, 4);
         card.addView(body);
+        TextView reference = new TextView(this);
+        reference.setText(relativeTimeReference(task));
+        reference.setTextSize(12);
+        UiStyle.muted(reference);
+        UiStyle.addSpaced(card, reference, 6, 0);
+        List<String> links = LinkFetcher.extractUrls(rawText);
+        if (!links.isEmpty() && task.linkFetchedAtMillis != null
+                && (task.linkText == null || task.linkText.trim().isEmpty())) {
+            TextView fetchState = new TextView(this);
+            fetchState.setText("链接未读取到正文，可补充文字或截图");
+            fetchState.setTextSize(12);
+            UiStyle.muted(fetchState);
+            UiStyle.addSpaced(card, fetchState, 4, 0);
+        }
     }
 
-    private void editCaptureContent(String rawText) {
-        UiStyle.textEditorDialog(this, "编辑捕获内容", rawText, "保存", updated -> {
+    private String relativeTimeReference(TaskRecord task) {
+        return "相对时间按记录时间解析 · " + format(task.createdAtMillis);
+    }
+
+    private void editCaptureContent(TaskRecord task) {
+        UiStyle.textEditorDialog(this, "编辑捕获内容", task.rawText, "保存", relativeTimeReference(task), updated -> {
             try (TaskStore store = new TaskStore(this)) {
                 if (!store.updateRawText(taskId, updated))
                     throw new IllegalStateException("任务不存在或已删除");
@@ -1440,12 +1460,12 @@ public final class TaskDetailActivity extends Activity {
         });
     }
 
-    private void addAttachmentSection(String rawText, List<String> imagePaths,
+    private void addAttachmentSection(TaskRecord task, List<String> imagePaths,
             List<TaskFileAttachment> files) {
         LinearLayout attachment = new LinearLayout(this);
         attachment.setOrientation(LinearLayout.VERTICAL);
         LinearLayout sourceCard = sectionCard();
-        addSourceSection(rawText, sourceCard);
+        addSourceSection(task, sourceCard);
         UiStyle.addSpaced(attachment, sourceCard, 0, 4);
         label(attachment, "图片与文件", 16);
         if (!imagePaths.isEmpty()) {
@@ -1498,7 +1518,7 @@ public final class TaskDetailActivity extends Activity {
         Button addFile = compactActionButton("添加文件", R.drawable.ic_attach_file,
                 this::pickCaptureFiles);
         addImage.setContentDescription("添加图片附件");
-        addFile.setContentDescription("添加普通文件附件");
+        addFile.setContentDescription("添加普通文件附件，仅文件信息");
         LinearLayout.LayoutParams addImageParams = new LinearLayout.LayoutParams(-2, -2);
         addImageParams.setMargins(0, dp(3), dp(8), dp(3));
         LinearLayout.LayoutParams addFileParams = new LinearLayout.LayoutParams(-2, -2);
@@ -1507,7 +1527,7 @@ public final class TaskDetailActivity extends Activity {
         addActions.addView(addFile, addFileParams);
         attachment.addView(addActions);
         if (!files.isEmpty()) {
-            label(attachment, "普通文件 · " + files.size() + "（仅发送文件名、类型和大小给 AI）", 14);
+            label(attachment, "普通文件 · " + files.size(), 14);
             for (TaskFileAttachment file : files) addOrdinaryFileRow(attachment, file);
         }
         LinearLayout reparseCard = sectionCard();
@@ -1515,7 +1535,7 @@ public final class TaskDetailActivity extends Activity {
         reparseRow.setOrientation(LinearLayout.HORIZONTAL);
         reparseRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView hint = new TextView(this);
-        hint.setText("重新解析将使用文字和全部图片；普通文件只发送名称、类型与大小。");
+        hint.setText("解析文字与图片；普通文件仅文件信息");
         hint.setTextSize(13);
         UiStyle.muted(hint);
         Button reparse = compactActionButton("重新解析", R.drawable.ic_refresh,
@@ -1734,7 +1754,7 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.title(name);
         card.addView(name);
         TextView metadata = new TextView(this);
-        metadata.setText(file.mimeType + " · " + formatFileSize(file.sizeBytes));
+        metadata.setText(file.mimeType + " · " + formatFileSize(file.sizeBytes) + " · 仅文件信息");
         metadata.setTextSize(12);
         UiStyle.muted(metadata);
         UiStyle.addSpaced(card, metadata, 2, 2);
@@ -2103,7 +2123,8 @@ public final class TaskDetailActivity extends Activity {
     private Button addCandidateEditor(EventCandidate candidate, int number,
             boolean dockSaveAction, LinearLayout destination, int pageWidth) {
         EventCandidate defaulted = EventTimeDefaults.completeInterval(candidate);
-        boolean[] autoEnd = {candidate.endAtMillis == null || candidate.endAutoGenerated};
+        boolean[] autoEnd = {CandidateFeedback.automaticEnd(candidate.endAtMillis,
+                defaulted.endAutoGenerated, EventCategory.DEADLINE.equals(candidate.category))};
         boolean[] syncingRange = {false};
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -2139,9 +2160,16 @@ public final class TaskDetailActivity extends Activity {
         removeCandidate.setMinimumHeight(dp(48));
         cardHeader.addView(removeCandidate, new LinearLayout.LayoutParams(dp(48), dp(48)));
         UiStyle.addSpaced(card, cardHeader, 0, 2);
+        TextView publication = new TextView(this);
+        publication.setTextSize(13);
+        UiStyle.muted(publication);
+        Runnable refreshPublication = () -> publication.setText(CandidateFeedback.state(
+                candidate.calendarEventId != null, dirtyCandidateIds.contains(candidate.id)));
+        refreshPublication.run();
+        UiStyle.addSpaced(card, publication, 2, 2);
         if (candidate.calendarEventId == null) {
             TextView uncertainty = new TextView(this);
-            uncertainty.setText("未写入 · " + UiStyle.uncertaintyLabel(candidate.uncertaintyLevel));
+            uncertainty.setText(UiStyle.uncertaintyLabel(candidate.uncertaintyLevel));
             uncertainty.setTextSize(13);
             uncertainty.setIncludeFontPadding(false);
             uncertainty.setGravity(Gravity.CENTER_VERTICAL);
@@ -2204,6 +2232,17 @@ public final class TaskDetailActivity extends Activity {
         end.setMinHeight(dp(48));
         timeRows.addView(startRow, new LinearLayout.LayoutParams(-1, -2));
         timeRows.addView(endRow, new LinearLayout.LayoutParams(-1, -2));
+        TextView timeHint = new TextView(this);
+        timeHint.setTextSize(12);
+        UiStyle.muted(timeHint);
+        timeHint.setPadding(dp(DETAIL_FIELD_LABEL_WIDTH_DP + 4), 0, 0, dp(3));
+        timeRows.addView(timeHint, new LinearLayout.LayoutParams(-1, -2));
+        Runnable refreshTimeHint = () -> {
+            String text = CandidateFeedback.timeHint(start.getText().toString(),
+                    end.getText().toString(), autoEnd[0], allDay.isChecked());
+            timeHint.setText(text);
+            timeHint.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+        };
         configureTimePicker(start, allDay, "开始时间");
         configureTimePicker(end, allDay, "结束 / 截止时间");
         String[] timedRange = {start.getText().toString(), end.getText().toString()};
@@ -2237,6 +2276,7 @@ public final class TaskDetailActivity extends Activity {
                 EventCategory.LABELS, selectedCategory[0], index -> {
                     if (index == selectedCategory[0]) return;
                     markCandidateDirty(candidate.id);
+                    refreshPublication.run();
                     int previousCategory = selectedCategory[0];
                     selectedCategory[0] = index;
                     category.setText(EventCategory.LABELS[index]);
@@ -2251,26 +2291,14 @@ public final class TaskDetailActivity extends Activity {
                         ZoneId zone = ZoneId.systemDefault();
                         Long startAt = parse(start.getText().toString(), zone);
                         Long endAt = parse(end.getText().toString(), zone);
-                        Long anchor = EventCategory.DEADLINE.equals(
-                                EventCategory.VALUES[previousCategory]) ? endAt : startAt;
-                        if (anchor == null) return;
-                        long nextStart;
-                        long nextEnd;
-                        if (deadline) {
-                            long due = EventCategory.DEADLINE.equals(
-                                    EventCategory.VALUES[previousCategory]) ? anchor : startAt;
-                            nextStart = due - EventTimeDefaults.durationMillis(
-                                    EventCategory.DEADLINE);
-                            nextEnd = due;
-                        } else {
-                            nextStart = EventCategory.DEADLINE.equals(
-                                    EventCategory.VALUES[previousCategory]) ? anchor : startAt;
-                            nextEnd = nextStart + EventTimeDefaults.durationMillis(
-                                    EventCategory.VALUES[index]);
-                        }
+                        CategoryTimeChange changed = CategoryTimeChange.from(
+                                EventCategory.VALUES[previousCategory], EventCategory.VALUES[index],
+                                startAt, endAt, autoEnd[0], allDay.isChecked());
+                        if (changed == null) return;
+                        autoEnd[0] = changed.automaticEnd;
                         syncingRange[0] = true;
-                        start.setText(format(nextStart));
-                        end.setText(format(nextEnd));
+                        start.setText(format(changed.start));
+                        end.setText(format(changed.end));
                         syncingRange[0] = false;
                     } catch (DateTimeParseException ignored) {
                         // The user can correct an incomplete time without losing the new category.
@@ -2278,6 +2306,7 @@ public final class TaskDetailActivity extends Activity {
                 }));
         allDay.setOnCheckedChangeListener((view, checked) -> {
             markCandidateDirty(candidate.id);
+            refreshPublication.run();
             boolean deadline = EventCategory.DEADLINE.equals(
                     EventCategory.VALUES[selectedCategory[0]]);
             start.setHint(checked ? "开始日期：yyyy-MM-dd" : deadline
@@ -2379,6 +2408,18 @@ public final class TaskDetailActivity extends Activity {
                     ? "截止时间：yyyy-MM-dd HH:mm" : "结束：yyyy-MM-dd HH:mm");
             markCandidateDirty(candidate.id);
         }
+        TextWatcher feedbackWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int st, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int st, int before, int count) { }
+            @Override public void afterTextChanged(Editable value) {
+                refreshPublication.run();
+                refreshTimeHint.run();
+            }
+        };
+        for (EditText field : new EditText[]{title, start, end, location, reminder})
+            field.addTextChangedListener(feedbackWatcher);
+        refreshPublication.run();
+        refreshTimeHint.run();
         Button[] publish = new Button[1];
         publish[0] = button(card, candidate.calendarEventId == null
                 ? "确认并写入日历" : "保存并更新日历", () -> {
@@ -2571,12 +2612,13 @@ public final class TaskDetailActivity extends Activity {
         candidatePageIndex = nextPending;
         taskCandidatePagePositions.put(taskId, candidatePageIndex);
         render();
-        Feedback.show(this, "当前日程已保存；还有 " + remaining + " 项待确认，已切换到下一项");
+        Feedback.show(this, "当前日程已写入日历；还有 " + remaining + " 项待确认，已切换到下一项");
     }
 
     private void showCandidateError(EventCandidate candidate, Exception exception) {
         String detail = exception.getMessage();
-        Feedback.showLong(this, "日程“" + candidate.title + "”尚未完成，仍待确认："
+        Feedback.showLong(this, "日程“" + candidate.title + "”"
+                + CandidateFeedback.saveFailure(candidate.calendarEventId != null)
                 + (detail == null || detail.trim().isEmpty() ? "保存失败，请重试" : detail));
     }
 

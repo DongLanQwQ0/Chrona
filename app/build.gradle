@@ -22,8 +22,8 @@ android {
         applicationId 'com.donglan.chrona'
         minSdk 26
         targetSdk 36
-        versionCode 104
-        versionName '0.13.84'
+        versionCode 106
+        versionName '0.13.86'
     }
 
     signingConfigs {
@@ -32,6 +32,15 @@ android {
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled false
+            // Preserve the signing identity used by installed Chrona versions.
+            signingConfig signingConfigs.debug
         }
     }
 

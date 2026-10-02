@@ -217,6 +217,8 @@ public final class ChronaDataBackup {
             manifest.put("events", events);
             manifest.put("homeTimelineLimit", HomeTimelinePreferences.getItemLimit(context));
             manifest.put("includeSystemCalendar", HomeTimelinePreferences.includesSystemCalendar(context));
+            manifest.put("widgetPreviewMinutes", WidgetPreferences.previewMinutes(context));
+            manifest.put("widgetDanmakuEnabled", WidgetPreferences.danmakuEnabled(context));
             manifest.put("config", ConfigBackup.export(context, includeApiKey));
             manifest.put("wallpaperIncluded", true);
             manifest.put("wallpaperEnabled", ThemeStore.backgroundEnabled(context));
@@ -428,6 +430,8 @@ public final class ChronaDataBackup {
         String previousConfig = ConfigBackup.export(context, true);
         int previousTimelineLimit = HomeTimelinePreferences.getItemLimit(context);
         boolean previousSystemCalendar = HomeTimelinePreferences.includesSystemCalendar(context);
+        int previousWidgetPreviewMinutes = WidgetPreferences.previewMinutes(context);
+        boolean previousWidgetDanmakuEnabled = WidgetPreferences.danmakuEnabled(context);
         String previousTimetable = new TimetableStore(context).snapshot();
         boolean timetableApplied = false;
         Map<Long, Long> calendarLinks = new HashMap<>();
@@ -539,6 +543,14 @@ public final class ChronaDataBackup {
                 prepared.manifest.optInt("homeTimelineLimit", HomeTimelinePreferences.DEFAULT_ITEM_LIMIT));
         HomeTimelinePreferences.setIncludesSystemCalendar(context,
                 prepared.manifest.optBoolean("includeSystemCalendar", false));
+        if (prepared.manifest.has("widgetPreviewMinutes")) {
+            WidgetPreferences.setPreviewMinutes(context,
+                    prepared.manifest.optInt("widgetPreviewMinutes", previousWidgetPreviewMinutes));
+        }
+        if (prepared.manifest.has("widgetDanmakuEnabled")) {
+            WidgetPreferences.setDanmakuEnabled(context,
+                    prepared.manifest.optBoolean("widgetDanmakuEnabled", previousWidgetDanmakuEnabled));
+        }
         if (prepared.manifest.has("timetable")) {
             timetableApplied = true;
             new TimetableStore(context).restore(prepared.manifest.isNull("timetable")
@@ -565,6 +577,12 @@ public final class ChronaDataBackup {
                 HomeTimelinePreferences.setIncludesSystemCalendar(context, previousSystemCalendar);
             } catch (Exception rollbackPreferenceFailure) {
                 failure.addSuppressed(rollbackPreferenceFailure);
+            }
+            try {
+                WidgetPreferences.setPreviewMinutes(context, previousWidgetPreviewMinutes);
+                WidgetPreferences.setDanmakuEnabled(context, previousWidgetDanmakuEnabled);
+            } catch (Exception rollbackWidgetPreferenceFailure) {
+                failure.addSuppressed(rollbackWidgetPreferenceFailure);
             }
             if (wallpaperApplied) {
                 try {

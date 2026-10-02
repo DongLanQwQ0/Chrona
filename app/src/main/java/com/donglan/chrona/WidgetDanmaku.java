@@ -1,5 +1,6 @@
 package com.donglan.chrona;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Color;
 import android.view.View;
@@ -27,7 +28,8 @@ final class WidgetDanmaku {
         android.graphics.Paint.FontMetricsInt font = textPaint.getFontMetricsInt();
         int textHeight = Math.max(22, (int) Math.ceil((font.bottom - font.top) / metrics.density) + 4);
         WidgetDanmakuLayout placement = new WidgetDanmakuLayout(size.height, textHeight);
-        boolean visible = size.width >= MIN_WIDTH_DP && size.height >= MIN_HEIGHT_DP
+        boolean visible = WidgetPreferences.danmakuEnabled(context) && ValueAnimator.areAnimatorsEnabled()
+                && size.width >= MIN_WIDTH_DP && size.height >= MIN_HEIGHT_DP
                 && placement.visible();
         for (int lane : new int[]{R.id.widget_bullets_left, R.id.widget_bullets_right}) {
             // Child 0 is always blank. Selecting it clears the shared in-animation from

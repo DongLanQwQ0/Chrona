@@ -1,97 +1,63 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import com.donglan.chrona.debug.DebugActivity;
 
-/** Secondary destination for appearance, AI service, and diagnostics. */
+/** Compact grouped settings; details belong to their destination or dialog. */
 public final class SettingsHubActivity extends Activity {
     private ScrollView page;
+    private Dialog aboutDialog;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
         page = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(24), dp(20), dp(24));
+        page.setVerticalScrollBarEnabled(false);
+        LinearLayout root = column();
+        root.setPadding(dp(20), dp(16), dp(20), dp(24));
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        UiStyle.back(this, header);
-        View back = header.getChildAt(0);
-        LinearLayout.LayoutParams backParams = (LinearLayout.LayoutParams) back.getLayoutParams();
-        backParams.bottomMargin = 0;
-        back.setLayoutParams(backParams);
-        TextView title = new TextView(this);
-        title.setText("设置");
-        title.setTextSize(28);
-        UiStyle.title(title);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
-        UiStyle.addSpaced(root, header, 0, 20);
+        header(root);
 
-        section(root, "外观与配色", "跟随系统、浅色、深色与主题配色",
-                AppearanceActivity.class);
-        timelineLimitSection(root);
-        widgetPreviewSection(root);
-        section(root, "备份与恢复", "导出或恢复收件箱、附件、模型输出和设置",
-                BackupRestoreActivity.class);
-        section(root, "AI 服务", "地址、模型、密钥和图片支持",
-                SettingsActivity.class);
-        section(root, "使用引导", "六步学会基本操作，可复制示例跟着练习", GuideActivity.class);
-        section(root, "检查更新", "GitHub Release · 版本说明与 APK 下载", UpdateActivity.class);
-        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            section(root, "诊断信息", "查看本机运行状态与日志", DebugActivity.class);
-        }
-        TextView version = new TextView(this);
-        version.setText("拾时 · Chrona  " + appVersionName());
-        version.setGravity(Gravity.CENTER);
-        UiStyle.muted(version);
-        UiStyle.addSpaced(root, version, 24, 16);
-        TextView github = new TextView(this);
-        github.setText("GitHub主页 https://github.com/DongLanQwQ0");
-        github.setGravity(Gravity.CENTER);
-        github.setTextColor(UiStyle.colors(this).primary);
-        github.setOnClickListener(view -> {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW,
-                        android.net.Uri.parse("https://github.com/DongLanQwQ0")));
-            } catch (android.content.ActivityNotFoundException exception) {
-                android.widget.Toast.makeText(this, "没有可用的浏览器", android.widget.Toast.LENGTH_SHORT).show();
-            }
-        });
-        UiStyle.addSpaced(root, github, 0, 8);
-        TextView qq = new TextView(this);
-        qq.setText("QQ:2590339284(可以长按复制)");
-        qq.setGravity(Gravity.CENTER);
-        UiStyle.muted(qq);
-        qq.setOnLongClickListener(view -> {
-            android.content.ClipboardManager clipboard = getSystemService(android.content.ClipboardManager.class);
-            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "2590339284"));
-            android.widget.Toast.makeText(this, "QQ号已复制", android.widget.Toast.LENGTH_SHORT).show();
-            return true;
-        });
-        UiStyle.addSpaced(root, qq, 0, 8);
-        TextView welcome = new TextView(this);
-        welcome.setText("欢迎来找我喵~QwQ");
-        welcome.setGravity(Gravity.CENTER);
-        UiStyle.muted(welcome);
-        UiStyle.addSpaced(root, welcome, 0, 16);
+        LinearLayout display = group(root, "外观与显示");
+        destination(display, "外观与配色", AppearanceActivity.class);
+        timelineLimit(display);
+
+        LinearLayout widgets = group(root, "桌面小组件");
+        widgetPreview(widgets);
+        widgetDanmaku(widgets);
+
+        LinearLayout services = group(root, "服务与数据");
+        destination(services, "AI 服务", SettingsActivity.class);
+        destination(services, "备份与恢复", BackupRestoreActivity.class);
+        destination(services, "提醒诊断", ReminderDiagnosticsActivity.class);
+
+        LinearLayout help = group(root, "帮助与关于");
+        destination(help, "使用引导", GuideActivity.class);
+        destination(help, "检查更新", UpdateActivity.class);
+        row(help, "关于拾时", appVersionName(), this::showAbout);
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+            destination(help, "诊断信息", DebugActivity.class);
+
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
@@ -104,105 +70,198 @@ public final class SettingsHubActivity extends Activity {
         }
     }
 
-    @Override protected void onSaveInstanceState(Bundle state) {
-        super.onSaveInstanceState(state);
-        state.putInt("scroll_y", page.getScrollY());
+    private void header(LinearLayout root) {
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        ImageButton back = new ImageButton(this);
+        back.setImageResource(R.drawable.ic_arrow_left);
+        back.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
+        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        back.setPadding(dp(12), dp(12), dp(12), dp(12));
+        back.setContentDescription("返回");
+        UiStyle.acrylicChoice(back, false, UiStyle.RADIUS_PILL, false);
+        back.setOnClickListener(view -> finish());
+        header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        TextView title = text("设置", 24);
+        UiStyle.title(title);
+        title.setPadding(dp(12), 0, 0, 0);
+        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        UiStyle.addSpaced(root, header, 0, 2);
     }
 
-    private void section(LinearLayout root, String title, String subtitle,
-            Class<? extends Activity> target) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(16), dp(18), dp(16));
-        UiStyle.glass(card);
-        UiStyle.pressable(card);
-        TextView heading = new TextView(this);
-        heading.setText(title + "   →");
-        heading.setTextSize(18);
-        UiStyle.title(heading);
-        card.addView(heading);
-        TextView description = new TextView(this);
-        description.setText(subtitle);
-        UiStyle.muted(description);
-        UiStyle.addSpaced(card, description, 7, 0);
-        card.setOnClickListener(view -> startActivity(new Intent(this, target)));
-        UiStyle.addSpaced(root, card, 0, 8);
+    private LinearLayout group(LinearLayout root, String name) {
+        TextView heading = text(name, 12);
+        UiStyle.muted(heading);
+        heading.setPadding(dp(4), 0, dp(4), 0);
+        if (Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true);
+        UiStyle.addSpaced(root, heading, 16, 7);
+        LinearLayout group = column();
+        UiStyle.glass(group);
+        root.addView(group, new LinearLayout.LayoutParams(-1, -2));
+        return group;
     }
 
-    private String appVersionName() {
-        try {
-            PackageManager packageManager = getPackageManager();
-            if (Build.VERSION.SDK_INT >= 33) {
-                return packageManager.getPackageInfo(getPackageName(),
-                        PackageManager.PackageInfoFlags.of(0)).versionName;
-            }
-            return packageManager.getPackageInfo(getPackageName(), 0).versionName;
-        } catch (PackageManager.NameNotFoundException ignored) {
-            return "版本信息不可用";
-        }
+    private void destination(LinearLayout group, String title, Class<? extends Activity> target) {
+        row(group, title, null, () -> startActivity(new Intent(this, target)));
     }
 
-    private void timelineLimitSection(LinearLayout root) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(16), dp(18), dp(16));
-        UiStyle.glass(card);
-        UiStyle.pressable(card);
-        TextView heading = new TextView(this);
-        heading.setText("首页时间线数量   →");
-        heading.setTextSize(18);
-        UiStyle.title(heading);
-        card.addView(heading);
-        TextView description = new TextView(this);
-        UiStyle.muted(description);
-        card.addView(description);
-        Runnable updateLabel = () -> description.setText("每次最多显示 "
-                + HomeTimelinePreferences.getItemLimit(this) + " 项（5–50）");
-        updateLabel.run();
-        card.setOnClickListener(view -> {
+    /** Full-row targets, wrapping labels, and values aligned before a trailing chevron. */
+    private TextView row(LinearLayout group, String title, String value, Runnable action) {
+        divider(group);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(54));
+        row.setPadding(dp(16), dp(10), dp(12), dp(10));
+        row.addView(text(title, 16), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView current = text(value == null ? "" : value, 13);
+        UiStyle.muted(current);
+        current.setGravity(Gravity.END);
+        current.setPadding(dp(8), 0, dp(8), 0);
+        current.setMaxWidth(dp(110));
+        current.setVisibility(value == null ? View.GONE : View.VISIBLE);
+        row.addView(current, new LinearLayout.LayoutParams(-2, -2));
+        ImageView chevron = new ImageView(this);
+        chevron.setImageResource(R.drawable.ic_chevron_right_line);
+        chevron.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).muted));
+        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(chevron, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        row.setFocusable(true);
+        row.setOnClickListener(view -> action.run());
+        UiStyle.pressable(row);
+        group.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        return current;
+    }
+
+    private void divider(LinearLayout group) {
+        if (group.getChildCount() == 0) return;
+        View line = new View(this);
+        line.setBackgroundColor(UiStyle.colors(this).outline);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(1));
+        params.setMargins(dp(16), 0, dp(16), 0);
+        group.addView(line, params);
+    }
+
+    private void timelineLimit(LinearLayout group) {
+        TextView[] value = new TextView[1];
+        value[0] = row(group, "首页时间线数量", HomeTimelinePreferences.getItemLimit(this) + " 项", () -> {
             String[] options = new String[10];
             for (int i = 0; i < options.length; i++) options[i] = (5 + i * 5) + " 项";
             int selected = (HomeTimelinePreferences.getItemLimit(this) - 5) / 5;
             UiStyle.choiceDialog(this, "首页时间线数量", options, selected, choice -> {
                 HomeTimelinePreferences.setItemLimit(this, 5 + choice * 5);
-                updateLabel.run();
+                value[0].setText(HomeTimelinePreferences.getItemLimit(this) + " 项");
             });
         });
-        UiStyle.addSpaced(root, card, 0, 8);
     }
 
-    private void widgetPreviewSection(LinearLayout root) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(16), dp(18), dp(16));
-        UiStyle.glass(card);
-        UiStyle.pressable(card);
-        TextView heading = new TextView(this);
-        heading.setText("明日安排预览时间   →");
-        heading.setTextSize(18);
-        UiStyle.title(heading);
-        card.addView(heading);
-        TextView description = new TextView(this);
-        UiStyle.muted(description);
-        UiStyle.addSpaced(card, description, 7, 0);
-        Runnable updateLabel = () -> {
-            int minutes = WidgetPreferences.previewMinutes(this);
-            description.setText(String.format(java.util.Locale.ROOT,
-                    "每天 %02d:%02d 起，小组件显示「现在与明天」", minutes / 60, minutes % 60));
-        };
-        updateLabel.run();
-        card.setOnClickListener(view -> {
-            int minutes = WidgetPreferences.previewMinutes(this);
-            UiStyle.timeDialog(this, "明日安排预览时间", minutes, selected -> {
-                WidgetPreferences.setPreviewMinutes(this, selected);
-                updateLabel.run();
-            });
+    private void widgetPreview(LinearLayout group) {
+        TextView[] value = new TextView[1];
+        value[0] = row(group, "明日安排预览", previewTime(), () ->
+                UiStyle.timeDialog(this, "明日安排预览时间", WidgetPreferences.previewMinutes(this), selected -> {
+                    WidgetPreferences.setPreviewMinutes(this, selected);
+                    value[0].setText(previewTime());
+                }));
+    }
+
+    private String previewTime() {
+        int minutes = WidgetPreferences.previewMinutes(this);
+        return String.format(java.util.Locale.ROOT, "%02d:%02d", minutes / 60, minutes % 60);
+    }
+
+    private void widgetDanmaku(LinearLayout group) {
+        divider(group);
+        Switch enabled = new Switch(this);
+        enabled.setText("鼓励弹幕");
+        enabled.setTextSize(16);
+        enabled.setPadding(dp(16), dp(3), dp(16), dp(3));
+        enabled.setSwitchPadding(dp(12));
+        UiStyle.toggle(enabled);
+        enabled.setMinHeight(dp(54));
+        enabled.setChecked(WidgetPreferences.danmakuEnabled(this));
+        enabled.setOnCheckedChangeListener((button, checked) ->
+                WidgetPreferences.setDanmakuEnabled(this, checked));
+        group.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void showAbout() {
+        if (aboutDialog != null && aboutDialog.isShowing()) return;
+        aboutDialog = new Dialog(this);
+        LinearLayout panel = column();
+        panel.setPadding(dp(20), dp(20), dp(20), dp(16));
+        TextView title = text("拾时 · Chrona", 22);
+        UiStyle.title(title);
+        panel.addView(title);
+        TextView version = text(appVersionName(), 13);
+        UiStyle.muted(version);
+        UiStyle.addSpaced(panel, version, 4, 16);
+        LinearLayout links = column();
+        row(links, "GitHub 主页", null, () -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/DongLanQwQ0")));
+            } catch (android.content.ActivityNotFoundException exception) {
+                Feedback.show(this, "没有可用的浏览器");
+            }
         });
-        UiStyle.addSpaced(root, card, 0, 8);
+        TextView qq = row(links, "联系作者", "2590339284", this::copyQq);
+        View qqRow = (View) qq.getParent();
+        qqRow.setOnLongClickListener(view -> { copyQq(); return true; });
+        qqRow.setContentDescription("作者 QQ 2590339284，点击或长按复制");
+        panel.addView(links);
+        TextView welcome = text("欢迎来找我喵~QwQ", 13);
+        welcome.setGravity(Gravity.CENTER);
+        UiStyle.muted(welcome);
+        UiStyle.addSpaced(panel, welcome, 16, 2);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(panel);
+        UiStyle.showFloatingDialog(aboutDialog, scroll);
+    }
+
+    private void copyQq() {
+        android.content.ClipboardManager clipboard = getSystemService(android.content.ClipboardManager.class);
+        if (clipboard == null) { Feedback.show(this, "剪贴板暂时不可用"); return; }
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("QQ", "2590339284"));
+        Feedback.show(this, "QQ号已复制");
+    }
+
+    private String appVersionName() {
+        try {
+            PackageManager manager = getPackageManager();
+            if (Build.VERSION.SDK_INT >= 33)
+                return manager.getPackageInfo(getPackageName(), PackageManager.PackageInfoFlags.of(0)).versionName;
+            return manager.getPackageInfo(getPackageName(), 0).versionName;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return "版本信息不可用";
+        }
+    }
+
+    private LinearLayout column() {
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        return column;
+    }
+
+    private TextView text(String value, int size) {
+        TextView text = new TextView(this);
+        text.setText(value);
+        text.setTextSize(size);
+        text.setTextColor(UiStyle.colors(this).text);
+        text.setIncludeFontPadding(false);
+        return text;
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putInt("scroll_y", page.getScrollY());
+    }
+
+    @Override protected void onDestroy() {
+        if (aboutDialog != null) aboutDialog.dismiss();
+        super.onDestroy();
     }
 
     private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
-
 }

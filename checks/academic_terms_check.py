@@ -8,6 +8,15 @@ root = Path(__file__).resolve().parents[1]
 out = root / 'build/academic-terms-check'
 out.mkdir(parents=True, exist_ok=True)
 fixtures = {
+    'android/content/Intent.java': '''package android.content;
+public class Intent { public final Class<?> target; private final java.util.Map<String,String> extras=new java.util.HashMap<>();
+public Intent(Context context,Class<?> target) { this.target=target; }
+public Intent putExtra(String key,String value) { extras.put(key,value); return this; }
+public String getStringExtra(String key) { return extras.get(key); } }''',
+    'com/donglan/chrona/TimetableActivity.java': 'package com.donglan.chrona; public class TimetableActivity {}',
+    'com/donglan/chrona/AgendaWidgetProvider.java': '''package com.donglan.chrona;
+public class AgendaWidgetProvider { public static int refreshes;
+public static void requestRefresh(android.content.Context context) { refreshes++; } }''',
     'android/content/Context.java': '''package android.content;
 public class Context { private final java.io.File directory;
 public Context(java.io.File directory) { this.directory=directory; }
@@ -44,9 +53,12 @@ classpath = os.pathsep.join(map(str, jars))
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 sources = list((root / 'app/src/main/java/com/donglan/chrona/timetable').glob('*.java'))
 sources += [root / 'app/src/main/java/com/donglan/chrona/TimetableStore.java',
+            root / 'app/src/main/java/com/donglan/chrona/CourseAgenda.java',
+            root / 'checks/CourseAgendaCheck.java',
             root / 'checks/AcademicTermsCheck.java', root / 'checks/TimetableLibraryCheck.java', *stubs]
 subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', classpath,
                 '-d', str(out), *map(str, sources)], check=True)
 run = [str(java / 'java.exe'), '-cp', str(out) + os.pathsep + classpath]
 subprocess.run([*run, 'com.donglan.chrona.timetable.AcademicTermsCheck', *sys.argv[1:]], check=True)
 subprocess.run([*run, 'com.donglan.chrona.TimetableLibraryCheck'], check=True)
+subprocess.run([*run, 'com.donglan.chrona.CourseAgendaCheck'], check=True)

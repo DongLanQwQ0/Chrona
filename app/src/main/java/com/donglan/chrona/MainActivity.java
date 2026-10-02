@@ -115,7 +115,7 @@ public final class MainActivity extends Activity {
                 view -> pasteClipboard()));
         pickImage = iconTool(R.drawable.ic_add_photo, "选择图片", view -> pickImage());
         titleRow.addView(pickImage);
-        titleRow.addView(iconTool(R.drawable.ic_attach_file, "选择普通文件附件",
+        titleRow.addView(iconTool(R.drawable.ic_attach_file, "选择普通文件附件，仅文件信息",
                 view -> pickFile()));
         UiStyle.addSpaced(root, titleRow, 0, 4);
 
@@ -670,7 +670,7 @@ public final class MainActivity extends Activity {
             row.setGravity(android.view.Gravity.CENTER_VERTICAL);
             TextView label = new TextView(this);
             label.setText(file.displayName + " · " + file.mimeType + " · "
-                    + formatFileSize(file.sizeBytes));
+                    + formatFileSize(file.sizeBytes) + " · 仅文件信息");
             label.setTextSize(13);
             label.setMaxLines(2);
             UiStyle.muted(label);

@@ -3,11 +3,19 @@ import base64
 import datetime as dt
 import sqlite3
 import subprocess
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+JAVA = Path(os.environ['JAVA_HOME']) / 'bin'
+OUT = ROOT / 'build/schedule-checks'
+OUT.mkdir(parents=True, exist_ok=True)
+subprocess.run([str(JAVA / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(OUT),
+                str(ROOT / 'app/src/main/java/com/donglan/chrona/data/ScheduleQuery.java'),
+                str(ROOT / 'app/src/main/java/com/donglan/chrona/data/EventCategory.java'),
+                str(ROOT / 'checks/ScheduleQueryCheck.java')], check=True)
 output = subprocess.check_output([
-    r'D:\Minecraft\java21\bin\java.exe', '-cp', str(ROOT / 'build/schedule-checks'),
+    str(JAVA / 'java.exe'), '-cp', str(OUT),
     'com.donglan.chrona.data.ScheduleQueryCheck'], text=True)
 queries = {}
 for line in output.splitlines():
@@ -16,7 +24,7 @@ for line in output.splitlines():
 db = sqlite3.connect(':memory:')
 db.execute('CREATE TABLE event_candidates (id INTEGER PRIMARY KEY,title TEXT,location TEXT,'
            'description TEXT,category TEXT,all_day INTEGER,start_at_millis INTEGER,'
-           'end_at_millis INTEGER,calendar_event_id INTEGER,completed INTEGER NOT NULL DEFAULT 0)')
+           'end_at_millis INTEGER,calendar_event_id INTEGER)')
 INSERT_SQL = ('INSERT INTO event_candidates(id,title,location,description,category,all_day,'
               'start_at_millis,end_at_millis,calendar_event_id) VALUES (?,?,?,?,?,?,?,?,?)')
 
@@ -47,12 +55,9 @@ assert set(ids('combined')) == {2, 3}
 assert set(ids('literal')) == {7}
 assert set(ids('published')) == {1}
 assert set(ids('label')) == {2, 3, 4}
-db.execute('UPDATE event_candidates SET completed=1 WHERE id=3')
-assert set(ids('completed')) == {3}, 'Completed must be explicit, never inferred from past time'
-assert set(ids('upcoming')) == {1, 6}, 'Completed tasks must leave the upcoming list'
-assert 3 in ids('all'), 'Completed tasks must remain searchable in all items'
-db.execute('UPDATE event_candidates SET completed=0 WHERE id=3')
-assert set(ids('upcoming')) == {1, 3, 6}, 'Undo completion must restore the task'
+# Current product has date tabs, not a completion-state column or a fifth tab.
+# Passing an event's time changes its tab, never deletes it from searchable history.
+assert {2, 5}.issubset(ids('all')), 'Past items must remain searchable in all items'
 
 # Identical timestamps must retain stable unique IDs across every page boundary.
 db.executemany(INSERT_SQL, [
@@ -98,9 +103,9 @@ public final class SchemaExport {
 ''' + method + '\n}'
 generated = ROOT / 'build/schedule-checks/SchemaExport.java'
 generated.write_text(wrapper, encoding='utf-8')
-subprocess.run([r'D:\Minecraft\java21\bin\javac.exe', '--release', '17', '-encoding', 'UTF-8',
+subprocess.run([str(JAVA / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8',
                 '-d', str(generated.parent), str(generated)], check=True)
-schema = subprocess.check_output([r'D:\Minecraft\java21\bin\java.exe', '-cp',
+schema = subprocess.check_output([str(JAVA / 'java.exe'), '-cp',
                                   str(generated.parent), 'SchemaExport'], text=True)
 db.execute('CREATE TABLE tasks(id INTEGER PRIMARY KEY,status TEXT)')
 db.execute('CREATE TABLE task_attachments(id INTEGER PRIMARY KEY)')
