@@ -96,16 +96,8 @@ public final class MainActivity extends Activity {
         // Header bar: back on the left, the confirm tick on the right, matching the detail page.
         LinearLayout topBar = new LinearLayout(this);
         topBar.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        String backLabel = isTaskRoot() ? "收件箱" : null;
-        if (backLabel == null) {
-            topBar.addView(headerButton("←", 24, "返回", this::requestExit),
-                    new LinearLayout.LayoutParams(dp(48), dp(48)));
-        } else {
-            // Launched from the system share sheet, so there is nothing behind this screen:
-            // "Back" has to reach the inbox instead of closing the app on the shared content.
-            TextView back = headerButton("←  " + backLabel, 15, backLabel, this::requestExit);
-            topBar.addView(back, new LinearLayout.LayoutParams(-2, dp(48)));
-        }
+        topBar.addView(headerButton("←", 24, "返回", this::requestExit),
+                new LinearLayout.LayoutParams(dp(48), dp(48)));
         topBar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
         topBar.addView(headerButton("✓", 20, "保存并解析", this::submit),
                 new LinearLayout.LayoutParams(dp(48), dp(48)));

@@ -13,6 +13,7 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -56,16 +57,18 @@ public final class AttachmentViewerActivity extends Activity {
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setPadding(dp(16), dp(6), dp(16), dp(10));
-        TextView back = new TextView(this);
-        back.setText("‹");
-        back.setTextSize(32);
-        back.setGravity(Gravity.CENTER);
+        ImageButton back = new ImageButton(this);
+        back.setImageResource(R.drawable.ic_arrow_left);
+        back.setImageTintList(android.content.res.ColorStateList.valueOf(
+                UiStyle.colors(this).primary));
+        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         back.setContentDescription("返回图片附件");
         UiStyle.pill(back, false);
+        back.setPadding(dp(12), dp(12), dp(12), dp(12));
         back.setOnClickListener(view -> finish());
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(back, new LinearLayout.LayoutParams(dp(50), dp(50)));
+        header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView title = new TextView(this);
         title.setText("图片附件");
         title.setTextSize(17);

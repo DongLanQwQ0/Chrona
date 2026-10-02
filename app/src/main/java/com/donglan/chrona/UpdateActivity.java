@@ -28,7 +28,7 @@ public final class UpdateActivity extends Activity {
         page.setVerticalScrollBarEnabled(false);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(8), dp(20), dp(28));
+        root.setPadding(dp(20), dp(24), dp(20), dp(24));
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);
         UiStyle.back(this, root);
@@ -78,6 +78,8 @@ public final class UpdateActivity extends Activity {
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        // The viewport owns system insets; the content keeps its page gutters.
+        root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
         check();
