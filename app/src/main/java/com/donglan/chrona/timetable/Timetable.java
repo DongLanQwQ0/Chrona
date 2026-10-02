@@ -15,6 +15,7 @@ import java.util.TreeSet;
 public final class Timetable {
     public static final int MAX_BLOCKS = 512;
     public final List<Block> blocks;
+    public final List<Occurrence> occurrences;
     public final ZoneId zone;
     public final int eventCount;
     public final int courseCount;
@@ -35,6 +36,12 @@ public final class Timetable {
             this.allDay = allDay;
             this.openEnded = openEnded;
             this.recurrence = recurrence;
+        }
+
+        /** Stable across imports and day-split blocks; descriptions do not change identity. */
+        public String key() {
+            return title.length() + ":" + title + location.length() + ":" + location
+                    + "/" + start + "/" + end + "/" + allDay;
         }
     }
 
@@ -69,11 +76,15 @@ public final class Timetable {
     }
 
     public Timetable(List<Occurrence> occurrences, ZoneId zone, int eventCount) {
+        Map<String, Occurrence> unique = new LinkedHashMap<>();
+        for (Occurrence entry : occurrences)
+            unique.putIfAbsent(entry.key() + "/" + entry.description.length() + ":" + entry.description + "/" + entry.recurrence, entry);
+        this.occurrences = Collections.unmodifiableList(new ArrayList<>(unique.values()));
         this.zone = zone;
         this.eventCount = eventCount;
         Map<List<Object>, Block> groups = new LinkedHashMap<>();
         TreeSet<String> courses = new TreeSet<>();
-        for (Occurrence entry : occurrences) {
+        for (Occurrence entry : this.occurrences) {
             courses.add(entry.title);
             LocalDate date = entry.start.toLocalDate();
             while (date.atStartOfDay().isBefore(entry.end)) {

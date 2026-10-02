@@ -49,7 +49,7 @@ public final class ChronaDataBackup {
     private static final long MAX_ARCHIVE_BYTES = 1024L * 1024 * 1024;
     private static final long MAX_ENTRY_BYTES = 512L * 1024 * 1024;
     private static final long MAX_WALLPAPER_BYTES = 64L * 1024 * 1024;
-    private static final long MAX_MANIFEST_BYTES = 8L * 1024 * 1024;
+    private static final long MAX_MANIFEST_BYTES = 20L * 1024 * 1024;
     private static final String WALLPAPER_ENTRY = "wallpaper/background.bin";
 
     private ChronaDataBackup() { }

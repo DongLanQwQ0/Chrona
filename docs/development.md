@@ -11,7 +11,7 @@
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.13.83`，versionCode `103` |
+| 当前版本 | `0.13.84`，versionCode `104` |
 | 最低 Android 版本 | API 26（Android 8.0） |
 | 编译 / 目标 SDK | 36 / 36 |
 | Java 源码级别 | 17 |
