@@ -29,6 +29,14 @@ final class WidgetDanmaku {
         WidgetDanmakuLayout placement = new WidgetDanmakuLayout(size.height, textHeight);
         boolean visible = size.width >= MIN_WIDTH_DP && size.height >= MIN_HEIGHT_DP
                 && placement.visible();
+        for (int lane : new int[]{R.id.widget_bullets_left, R.id.widget_bullets_right}) {
+            // Child 0 is always blank. Selecting it clears the shared in-animation from
+            // every text child before RemoteViews removes them. Otherwise ViewGroup
+            // keeps removed, animated phrases as disappearing children until a draw,
+            // which may be delayed while the launcher is hidden. Clear hidden lanes too.
+            views.setDisplayedChild(lane, 0);
+            views.removeAllViews(lane);
+        }
         views.setViewVisibility(R.id.widget_danmaku, visible ? View.VISIBLE : View.GONE);
         if (!visible) return;
         views.setViewPadding(R.id.widget_danmaku, Math.round(12 * metrics.density),
@@ -43,12 +51,10 @@ final class WidgetDanmaku {
         int translucent = Color.argb(TEXT_ALPHA, Color.red(color), Color.green(color), Color.blue(color));
         for (int lane : new int[]{R.id.widget_bullets_left, R.id.widget_bullets_right}) {
             if (lane == R.id.widget_bullets_right && !placement.twoLanes) {
-                views.removeAllViews(lane);
                 continue;
             }
             int interval = MIN_INTERVAL_MS + random.nextInt(MAX_INTERVAL_MS - MIN_INTERVAL_MS + 1)
                     + (lane == R.id.widget_bullets_right ? SLOW_LANE_EXTRA_INTERVAL_MS : 0);
-            views.removeAllViews(lane);
             // Start empty so the first phrase also waits for its lane's interval.
             views.addView(lane, new RemoteViews(context.getPackageName(), R.layout.widget_bullet));
             views.setInt(lane, "setFlipInterval", interval);

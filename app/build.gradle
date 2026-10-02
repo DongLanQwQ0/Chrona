@@ -2,6 +2,13 @@ plugins {
     id 'com.android.application'
 }
 
+dependencies {
+    // iCalendar parsing and recurrence expansion; only the text reader is used.
+    implementation('net.sf.biweekly:biweekly:0.6.8') {
+        exclude group: 'com.fasterxml.jackson.core'
+    }
+}
+
 def chronaDebugKeystore = providers.gradleProperty('chronaDebugKeystore').orNull
 if (chronaDebugKeystore == null || !file(chronaDebugKeystore).isFile()) {
     throw new GradleException('Set chronaDebugKeystore to the existing Chrona debug keystore; a new key cannot upgrade the installed app.')
@@ -15,8 +22,8 @@ android {
         applicationId 'com.donglan.chrona'
         minSdk 26
         targetSdk 36
-        versionCode 101
-        versionName '0.13.81'
+        versionCode 103
+        versionName '0.13.83'
     }
 
     signingConfigs {

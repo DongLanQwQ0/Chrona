@@ -1093,48 +1093,16 @@ public final class DashboardActivity extends Activity {
         title.setIncludeFontPadding(false);
         title.setGravity(Gravity.CENTER_VERTICAL);
         if (section == HOME) {
-            row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+            FrameLayout titleSlot = new FrameLayout(this);
+            titleSlot.addView(underlinedTitle(title, "今天的安排，点击查看课表", TimetableActivity.class),
+                    new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL));
+            row.addView(titleSlot, new LinearLayout.LayoutParams(0, -2, 1));
         } else {
             // The search field sits between the page title and the trailing control, so filtering
             // never moves the settings entry and the keyword stays reachable while scrolling.
             if (section == SCHEDULE) {
-                LinearLayout entry = new LinearLayout(this);
-                entry.setOrientation(LinearLayout.VERTICAL);
-                entry.setGravity(Gravity.CENTER_VERTICAL);
-                entry.setMinimumHeight(dp(44));
-                entry.addView(title, new LinearLayout.LayoutParams(-2, -2));
-                View underline = new View(this) {
-                    private final android.graphics.Rect ink = new android.graphics.Rect();
-                    private final android.graphics.Paint paint = new android.graphics.Paint(
-                            android.graphics.Paint.ANTI_ALIAS_FLAG);
-                    @Override protected void onDraw(android.graphics.Canvas canvas) {
-                        super.onDraw(canvas);
-                        android.text.Layout layout = title.getLayout();
-                        if (layout == null) return;
-                        String label = title.getText().toString();
-                        title.getPaint().getTextBounds(label, 0, label.length(), ink);
-                        float origin = title.getLeft() - getLeft() + title.getTotalPaddingLeft()
-                                + layout.getLineLeft(0);
-                        float left = origin + ink.left;
-                        float right = origin + ink.right;
-                        // Font side bearings need not be equal. Extend both ink edges equally.
-                        float extension = Math.max(0, Math.min(dp(2),
-                                Math.min(left, getWidth() - right)));
-                        paint.setColor(UiStyle.colors(DashboardActivity.this).primary);
-                        canvas.drawRoundRect(left - extension, 0, right + extension, getHeight(),
-                                dp(1), dp(1), paint);
-                    }
-                };
-                underline.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-                LinearLayout.LayoutParams line = new LinearLayout.LayoutParams(-1, dp(2));
-                line.topMargin = dp(3);
-                entry.addView(underline, line);
-                entry.setContentDescription("日程，点击打开课表对比");
-                entry.setFocusable(true);
-                UiStyle.pressable(entry);
-                entry.setOnClickListener(view ->
-                        startActivity(new Intent(this, ScheduleCompareActivity.class)));
-                row.addView(entry, new LinearLayout.LayoutParams(-2, -2));
+                row.addView(underlinedTitle(title, "日程，点击打开课表对比", ScheduleCompareActivity.class),
+                        new LinearLayout.LayoutParams(-2, -2));
             } else row.addView(title, new LinearLayout.LayoutParams(-2, -2));
             LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(36), 1);
             searchParams.setMargins(dp(8), 0, dp(8), 0);
@@ -1142,6 +1110,40 @@ public final class DashboardActivity extends Activity {
         }
         row.addView(buildHeaderControls(), new LinearLayout.LayoutParams(-2, dp(44)));
         UiStyle.addSpaced(content, row, 0, section == HOME ? 10 : 12);
+    }
+
+    /** Shared title entry: center the underline on the glyph ink, with equal side extension. */
+    private View underlinedTitle(TextView title, String description, Class<? extends Activity> destination) {
+        LinearLayout entry = new LinearLayout(this);
+        entry.setOrientation(LinearLayout.VERTICAL);
+        entry.setGravity(Gravity.CENTER_VERTICAL);
+        entry.setMinimumHeight(dp(44));
+        entry.addView(title, new LinearLayout.LayoutParams(-2, -2));
+        View underline = new View(this) {
+            private final android.graphics.Rect ink = new android.graphics.Rect();
+            private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(android.graphics.Canvas canvas) {
+                super.onDraw(canvas);
+                android.text.Layout layout = title.getLayout();
+                if (layout == null) return;
+                String label = title.getText().toString();
+                title.getPaint().getTextBounds(label, 0, label.length(), ink);
+                float origin = title.getLeft() - getLeft() + title.getTotalPaddingLeft() + layout.getLineLeft(0);
+                float left = origin + ink.left, right = origin + ink.right;
+                float extension = Math.max(0, Math.min(dp(2), Math.min(left, getWidth() - right)));
+                paint.setColor(UiStyle.colors(DashboardActivity.this).primary);
+                canvas.drawRoundRect(left - extension, 0, right + extension, getHeight(), dp(1), dp(1), paint);
+            }
+        };
+        underline.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams line = new LinearLayout.LayoutParams(-1, dp(2));
+        line.topMargin = dp(3);
+        entry.addView(underline, line);
+        entry.setContentDescription(description);
+        entry.setFocusable(true);
+        UiStyle.pressable(entry);
+        entry.setOnClickListener(view -> startActivity(new Intent(this, destination)));
+        return entry;
     }
 
     /**

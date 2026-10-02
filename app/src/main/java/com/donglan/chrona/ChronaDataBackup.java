@@ -49,6 +49,7 @@ public final class ChronaDataBackup {
     private static final long MAX_ARCHIVE_BYTES = 1024L * 1024 * 1024;
     private static final long MAX_ENTRY_BYTES = 512L * 1024 * 1024;
     private static final long MAX_WALLPAPER_BYTES = 64L * 1024 * 1024;
+    private static final long MAX_MANIFEST_BYTES = 8L * 1024 * 1024;
     private static final String WALLPAPER_ENTRY = "wallpaper/background.bin";
 
     private ChronaDataBackup() { }
@@ -74,7 +75,9 @@ public final class ChronaDataBackup {
             return "· 收件箱 " + manifest.optInt("tasks") + " 条，日程 "
                     + manifest.optInt("candidates") + " 项\n· 图片 "
                     + manifest.optInt("imageCount") + " 张，普通附件 "
-                    + manifest.optInt("fileCount") + " 个\n" + wallpaperSummary + "· "
+                    + manifest.optInt("fileCount") + " 个\n" + wallpaperSummary
+                    + (manifest.has("timetable") ? "· 导入课表："
+                            + (manifest.isNull("timetable") ? "未设置\n" : "已包含\n") : "") + "· "
                     + ConfigBackup.describe(config)
                     + "· 导入会替换本机收件箱与日程状态；公共下载副本和系统日历中未关联的事件会保留。";
         }
@@ -218,6 +221,8 @@ public final class ChronaDataBackup {
             manifest.put("wallpaperIncluded", true);
             manifest.put("wallpaperEnabled", ThemeStore.backgroundEnabled(context));
             manifest.put("wallpaper", wallpaper == null ? JSONObject.NULL : wallpaper);
+            String timetable = new TimetableStore(context).snapshot();
+            manifest.put("timetable", timetable == null ? JSONObject.NULL : new JSONObject(timetable));
             try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(
                     new FileOutputStream(archive)))) {
                 addFile(zip, database, "chrona.db");
@@ -282,13 +287,15 @@ public final class ChronaDataBackup {
             }
             unzip(archive, directory);
             File manifestFile = new File(directory, "manifest.json");
-            if (!manifestFile.isFile() || manifestFile.length() > 4 * 1024 * 1024)
+            if (!manifestFile.isFile() || manifestFile.length() > MAX_MANIFEST_BYTES)
                 throw new IOException("备份清单缺失或过大");
         JSONObject manifest = new JSONObject(readText(manifestFile));
             if (!APP.equals(manifest.optString("app")) || manifest.optInt("format") != FORMAT)
                 throw new IOException("备份来源或版本不受支持");
             String config = manifest.getString("config");
             ConfigBackup.inspect(config);
+            if (manifest.has("timetable") && !manifest.isNull("timetable"))
+                TimetableStore.inspect(manifest.getJSONObject("timetable").toString());
             long[] databaseCounts = inspectDatabase(new File(directory, "chrona.db"));
             if (databaseCounts[0] != manifest.optInt("tasks", -1)
                     || databaseCounts[1] != manifest.optInt("candidates", -1))
@@ -421,6 +428,8 @@ public final class ChronaDataBackup {
         String previousConfig = ConfigBackup.export(context, true);
         int previousTimelineLimit = HomeTimelinePreferences.getItemLimit(context);
         boolean previousSystemCalendar = HomeTimelinePreferences.includesSystemCalendar(context);
+        String previousTimetable = new TimetableStore(context).snapshot();
+        boolean timetableApplied = false;
         Map<Long, Long> calendarLinks = new HashMap<>();
         try {
         Map<String, String> imageNames = restoreImages(context, prepared, createdImages);
@@ -530,6 +539,11 @@ public final class ChronaDataBackup {
                 prepared.manifest.optInt("homeTimelineLimit", HomeTimelinePreferences.DEFAULT_ITEM_LIMIT));
         HomeTimelinePreferences.setIncludesSystemCalendar(context,
                 prepared.manifest.optBoolean("includeSystemCalendar", false));
+        if (prepared.manifest.has("timetable")) {
+            timetableApplied = true;
+            new TimetableStore(context).restore(prepared.manifest.isNull("timetable")
+                    ? null : prepared.manifest.getJSONObject("timetable").toString());
+        }
         if (installedPrevious != null) installedPrevious.delete();
         deleteTree(previousOutputs);
         return calendarLinks.containsValue(null)
@@ -537,6 +551,10 @@ public final class ChronaDataBackup {
                 : "收件箱、日程与设置已恢复。";
         } catch (Exception exception) {
             IOException failure = new IOException("恢复失败：" + exception.getMessage(), exception);
+            if (timetableApplied) {
+                try { new TimetableStore(context).restore(previousTimetable); }
+                catch (Exception rollbackTimetableFailure) { failure.addSuppressed(rollbackTimetableFailure); }
+            }
             try {
                 ConfigBackup.apply(context.getApplicationContext(), previousConfig);
             } catch (Exception rollbackConfigFailure) {
