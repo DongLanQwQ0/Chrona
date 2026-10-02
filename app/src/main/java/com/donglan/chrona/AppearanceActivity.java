@@ -163,7 +163,8 @@ public final class AppearanceActivity extends Activity {
         ThemeStore.setMode(this, mode);
     }
     private void selectColor(String color) {
-        ThemeStore.setColor(this, color);
+        if (ThemeStore.CUSTOM.equals(color)) showCustomColorDialog();
+        else ThemeStore.setColor(this, color);
     }
 
     private void pickBackground() {
@@ -457,41 +458,52 @@ public final class AppearanceActivity extends Activity {
         UiStyle.glass(panel);
         TextView title = text("自定义主题色", 20, true);
         panel.addView(title);
-        TextView hint = text("拖动 HSV 滑杆或输入 #RRGGBB，确认后应用。", 13, false);
-        UiStyle.addSpaced(panel, hint, 4, 12);
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        ScrollView viewport = new ScrollView(this) {
+            @Override protected void onMeasure(int width, int height) {
+                int limit = Math.min(dp(360), getResources().getDisplayMetrics().heightPixels / 2);
+                if (View.MeasureSpec.getMode(height) != View.MeasureSpec.UNSPECIFIED)
+                    limit = Math.min(limit, View.MeasureSpec.getSize(height));
+                super.onMeasure(width, View.MeasureSpec.makeMeasureSpec(limit, View.MeasureSpec.AT_MOST));
+            }
+        };
+        viewport.setVerticalScrollBarEnabled(false);
+        viewport.addView(controls);
+        UiStyle.addSpaced(panel, viewport, 12, 0);
 
         int[] chosen = {ThemeStore.customColor(this)};
         float[] hsv = new float[3];
         Color.colorToHSV(chosen[0], hsv);
         boolean[] syncing = {false};
         View preview = new View(this);
-        panel.addView(preview, new LinearLayout.LayoutParams(-1, dp(52)));
+        controls.addView(preview, new LinearLayout.LayoutParams(-1, dp(52)));
         EditText hex = new EditText(this);
         hex.setSingleLine(true);
         hex.setHint("#RRGGBB");
         hex.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         UiStyle.input(hex);
-        UiStyle.addSpaced(panel, hex, 10, 6);
+        UiStyle.addSpaced(controls, hex, 10, 6);
 
         TextView hueLabel = text("色相 · " + Math.round(hsv[0]) + "°", 14, true);
-        UiStyle.addSpaced(panel, hueLabel, 4, 0);
+        UiStyle.addSpaced(controls, hueLabel, 4, 0);
         SeekBar hue = new SeekBar(this);
         tintSeekBar(hue);
         hue.setMax(359);
-        panel.addView(hue, new LinearLayout.LayoutParams(-1, dp(40)));
+        controls.addView(hue, new LinearLayout.LayoutParams(-1, dp(40)));
         TextView saturationLabel = text("饱和度 · " + Math.round(hsv[1] * 100) + "%", 14, true);
-        UiStyle.addSpaced(panel, saturationLabel, 4, 0);
+        UiStyle.addSpaced(controls, saturationLabel, 4, 0);
         SeekBar saturation = new SeekBar(this);
         tintSeekBar(saturation);
         saturation.setMax(100);
-        panel.addView(saturation, new LinearLayout.LayoutParams(-1, dp(40)));
+        controls.addView(saturation, new LinearLayout.LayoutParams(-1, dp(40)));
         TextView valueLabel = text("明度 · " + Math.round(hsv[2] * 100) + "%", 14, true);
-        UiStyle.addSpaced(panel, valueLabel, 4, 0);
+        UiStyle.addSpaced(controls, valueLabel, 4, 0);
         SeekBar value = new SeekBar(this);
         tintSeekBar(value);
         value.setMax(100);
-        panel.addView(value, new LinearLayout.LayoutParams(-1, dp(40)));
+        controls.addView(value, new LinearLayout.LayoutParams(-1, dp(40)));
 
         LinearLayout actions = new LinearLayout(this);
         Button cancel = new Button(this);
@@ -559,12 +571,12 @@ public final class AppearanceActivity extends Activity {
         hex.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                if (syncing[0] || !ThemeStore.isHexColor(s.toString().trim())) {
-                    apply.setEnabled(syncing[0] || ThemeStore.isHexColor(s.toString().trim()));
+                String input = s.toString().trim();
+                if (syncing[0] || !ThemeStore.isHexColor(input)) {
+                    apply.setEnabled(syncing[0] || ThemeStore.isHexColor(input));
                     return;
                 }
-                chosen[0] = Color.parseColor(s.charAt(0) == '#' ? s.toString().trim()
-                        : "#" + s.toString().trim());
+                chosen[0] = Color.parseColor(input.startsWith("#") ? input : "#" + input);
                 Color.colorToHSV(chosen[0], hsv);
                 syncSliders.run();
                 paintPreview.run();

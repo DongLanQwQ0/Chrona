@@ -995,8 +995,8 @@ public final class UiStyle {
         Activity owner = content.getContext() instanceof Activity activity ? activity : null;
         if (owner != null) {
             beginDialogScale(owner);
-            boolean nested = registerDialogLayer(owner, content);
-            applyDialogSurface(content, owner, nested);
+            registerDialogLayer(owner, content);
+            applyDialogSurface(content, owner);
             boolean dialogAcrylic = Build.VERSION.SDK_INT >= 31
                     && ThemeStore.acrylicEnabled(owner);
             if (dialogAcrylic) synchronized (DIALOG_ACRYLIC_ROOTS) {
@@ -1022,36 +1022,35 @@ public final class UiStyle {
         showDialog(dialog, content);
     }
 
-    private static void applyDialogSurface(View content, Activity owner, boolean nested) {
+    private static void applyDialogSurface(View content, Activity owner) {
         if (Build.VERSION.SDK_INT >= 31 && ThemeStore.acrylicEnabled(owner)) {
             Palette palette = colors(content.getContext());
             boolean dark = ThemeStore.dark(content.getContext());
+            // Lower dialog layers are already blurred. Keep the same translucent surface at
+            // every depth so a child picker does not hide that blur behind an opaque panel.
             content.setBackground(surfaceDrawable(content, palette, RADIUS_PANEL,
-                    nested ? 220 : dark ? 112 : 124, nested ? 212 : dark ? 100 : 112));
+                    dark ? 112 : 124, dark ? 100 : 112));
             content.setElevation(dp(content, 8));
         } else {
-            if (nested) content.setBackground(surfaceDrawable(content, colors(owner), RADIUS_PANEL, 244, 240));
-            else glass(content);
+            glass(content);
         }
     }
 
     /** A child modal obscures the previous dialog window as well as the Activity behind it. */
-    private static boolean registerDialogLayer(Activity owner, View root) {
+    private static void registerDialogLayer(Activity owner, View root) {
         synchronized (DIALOG_SCALES) {
             DialogScaleState state = DIALOG_SCALES.get(owner);
-            if (state == null) return false;
-            boolean nested = !state.dialogRoots.isEmpty();
+            if (state == null) return;
             for (View parent : state.dialogRoots) {
                 parent.animate().cancel();
                 parent.setScaleX(1f);
                 parent.setScaleY(1f);
                 parent.setAlpha(.4f);
-                if (Build.VERSION.SDK_INT >= 31)
+                if (Build.VERSION.SDK_INT >= 31 && ThemeStore.acrylicEnabled(owner))
                     parent.setRenderEffect(RenderEffect.createBlurEffect(dp(parent, 12), dp(parent, 12),
                             android.graphics.Shader.TileMode.CLAMP));
             }
             state.dialogRoots.add(root);
-            return nested;
         }
     }
 
