@@ -41,17 +41,20 @@ public final class DetailDraftCheck {
         Bundle titleDraft = new Bundle();
         titleDraft.putString("title","unsaved title");
         titleDraft.putString("description","old note");
+        titleDraft.putString("baseline","old baseline");
         oldState.put(1L,titleDraft);
         oldState.put(2L,new Bundle());
         // Android has saved the old state before the live owner's completion is delivered.
         session.pending = owner -> {
             session.savedNotes.put(1L,"saved new note");
+            session.savedBaselines.put(1L,"committed baseline");
             session.completedCandidates.add(2L);
             owner.callbacks++;
         };
         session.deliver();
         session.restoreDrafts(oldState);
         check(oldState.get(1L).getString("description").equals("saved new note"),"late saved note");
+        check(oldState.get(1L).getString("baseline").equals("committed baseline"),"late committed baseline");
         check(oldState.get(1L).getString("title").equals("unsaved title"),"raw draft preserved");
         check(!oldState.containsKey(2L),"completed candidate no longer dirty");
         session.owner.clear();

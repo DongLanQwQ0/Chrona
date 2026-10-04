@@ -248,12 +248,17 @@ public final class TaskDetailActivity extends Activity {
         boolean busy;
         Consumer<TaskDetailActivity> pending;
         final Map<Long, String> savedNotes = new HashMap<>();
+        final Map<Long, String> savedBaselines = new HashMap<>();
         final Set<Long> completedCandidates = new HashSet<>();
         void restoreDrafts(Map<Long, Bundle> drafts) {
             drafts.keySet().removeAll(completedCandidates);
             for (Map.Entry<Long, String> note : savedNotes.entrySet()) {
                 Bundle draft = drafts.get(note.getKey());
                 if (draft != null) draft.putString("description", note.getValue());
+            }
+            for (Map.Entry<Long, String> baseline : savedBaselines.entrySet()) {
+                Bundle draft = drafts.get(baseline.getKey());
+                if (draft != null) draft.putString("baseline", baseline.getValue());
             }
         }
         void deliver() {
@@ -1448,15 +1453,44 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void editCaptureContent(TaskRecord task) {
-        UiStyle.textEditorDialog(this, "编辑捕获内容", task.rawText, "保存", relativeTimeReference(task), updated -> {
-            try (TaskStore store = new TaskStore(this)) {
-                if (!store.updateRawText(taskId, updated))
-                    throw new IllegalStateException("任务不存在或已删除");
-                Feedback.show(this, "捕获内容已更新");
-                render();
+        editCaptureContent(task, task.rawText);
+    }
+
+    private void editCaptureContent(TaskRecord task, String draft) {
+        UiStyle.textEditorDialog(this, "编辑捕获内容", draft, "保存", relativeTimeReference(task), updated -> {
+            if (saveInFlight) return;
+            snapshotDrafts();
+            setSaving(true);
+            new Thread(() -> {
+            try {
+                synchronized (AndroidSync.LOCK) {
+                    try (TaskStore store = new TaskStore(this)) {
+                        store.getWritableDatabase().beginTransaction();
+                        try {
+                            TaskRecord current = store.getTask(task.id);
+                            if (current == null || !java.util.Objects.equals(current.rawText, task.rawText)
+                                    || !java.util.Objects.equals(current.status, task.status))
+                                throw new IllegalStateException("原文已在其他页面更新，请重新打开记录后再编辑");
+                            if (!store.updateRawText(task.id, updated)) throw new IllegalStateException("任务不存在或已删除");
+                            store.getWritableDatabase().setTransactionSuccessful();
+                        } finally { store.getWritableDatabase().endTransaction(); }
+                    }
+                }
+                deliverSave(owner -> {
+                    owner.setSaving(false);
+                    if (owner.taskId != task.id) return;
+                    Feedback.show(owner, "捕获内容已更新");
+                    owner.render();
+                });
             } catch (Exception exception) {
-                showError(exception);
+                deliverSave(owner -> {
+                    owner.setSaving(false);
+                    if (owner.taskId != task.id) return;
+                    owner.showError(exception);
+                    owner.editCaptureContent(task, updated);
+                });
             }
+            }, "chrona-raw-save").start();
         });
     }
 
@@ -1988,7 +2022,7 @@ public final class TaskDetailActivity extends Activity {
         if (TaskRecord.QUEUED.equals(status)) return "排队中";
         if (TaskRecord.PROCESSING.equals(status)) return "解析中";
         if (TaskRecord.NEEDS_REVIEW.equals(status)) return "待确认";
-        if (TaskRecord.READY.equals(status)) return "已写入日历";
+        if (TaskRecord.READY.equals(status)) return "已确认";
         if (TaskRecord.FAILED.equals(status)) return "解析失败";
         return "任务状态";
     }
@@ -2336,6 +2370,9 @@ public final class TaskDetailActivity extends Activity {
         EditText location = inlineField(formRow(card, "地点", R.drawable.ic_place),
                 "不填写", candidate.location, 1f);
         String[] currentDescription = {candidate.description == null ? "" : candidate.description};
+        Bundle retainedDraft = candidateDrafts.get(candidate.id);
+        String[] baseline = {retainedDraft == null ? CandidateEditBaseline.of(candidate)
+                : retainedDraft.getString("baseline", "")};
         LinearLayout noteRow = formRow(card, "备注", R.drawable.ic_notes);
         TextView notePreview = new TextView(this);
         notePreview.setText(shortNote(currentDescription[0]));
@@ -2347,11 +2384,11 @@ public final class TaskDetailActivity extends Activity {
         notePreview.setPadding(dp(4), 0, 0, 0);
         noteRow.addView(notePreview, new LinearLayout.LayoutParams(0, -2, 1f));
         Button editNote = compactActionButton("展开", R.drawable.ic_expand_more,
-                () -> showNoteEditorDialog(candidate, currentDescription, notePreview));
+                () -> showNoteEditorDialog(candidate, baseline, currentDescription, notePreview));
         editNote.setContentDescription("展开并编辑备注");
         noteRow.addView(editNote, new LinearLayout.LayoutParams(-2, -2));
         notePreview.setOnClickListener(view -> showNoteEditorDialog(candidate,
-                currentDescription, notePreview));
+                baseline, currentDescription, notePreview));
         notePreview.setContentDescription("备注，点按展开并编辑；" + currentDescription[0]);
         LinearLayout reminderRow = formRow(card, "提醒", R.drawable.ic_notifications);
         EditText reminder = inlineField(reminderRow, "不提醒",
@@ -2372,6 +2409,7 @@ public final class TaskDetailActivity extends Activity {
             draft.putString("location", location.getText().toString());
             draft.putString("reminder", reminder.getText().toString());
             draft.putString("description", currentDescription[0]);
+            draft.putString("baseline", baseline[0]);
             draft.putInt("category", selectedCategory[0]);
             draft.putBoolean("all_day", allDay.isChecked());
             draft.putBoolean("auto_end", autoEnd[0]);
@@ -2449,7 +2487,8 @@ public final class TaskDetailActivity extends Activity {
                         EventCategory.VALUES[selectedCategory[0]], allDay.isChecked(), autoEnd[0]);
                 snapshotDrafts();
                 setSaving(true);
-                new Thread(() -> checkCalendarDuplicateThenPublish(edited),
+                String expected = baseline[0];
+                new Thread(() -> checkCalendarDuplicateThenPublish(edited, expected),
                         "chrona-calendar-write").start();
             } catch (DateTimeParseException | NumberFormatException exception) {
                 Feedback.showLong(this, "请按提示格式填写日期或时间，提醒填写数字");
@@ -2464,8 +2503,16 @@ public final class TaskDetailActivity extends Activity {
         return publish[0];
     }
 
-    private void publish(EventCandidate edited) {
-        try (TaskStore store = new TaskStore(this)) {
+    private void publish(EventCandidate edited, String expected) {
+        EventCandidate retry = null;
+        String retryBaseline = null;
+        List<EventCandidate> committed = null;
+        try {
+          synchronized (AndroidSync.LOCK) {
+            try (TaskStore store = new TaskStore(this)) {
+              store.getWritableDatabase().beginTransaction();
+              try {
+                requireCandidateBaseline(store, edited.taskId, edited.id, expected);
             CalendarStore calendar = new CalendarStore(this);
             List<Integer> reminders = edited.reminderMinutesBefore == null
                     ? Collections.emptyList() : Collections.singletonList(edited.reminderMinutesBefore);
@@ -2486,8 +2533,8 @@ public final class TaskDetailActivity extends Activity {
                             edited.location, edited.description, edited.reminderMinutesBefore,
                             edited.needsConfirmation, null, edited.category, edited.allDay,
                             edited.endAutoGenerated, edited.uncertaintyLevel);
-                    checkCalendarDuplicateThenPublish(unlinked);
-                    return;
+                    retry = unlinked;
+                    retryBaseline = CandidateEditBaseline.of(current);
                 }
             } else {
                 if (!store.updateCandidate(edited))
@@ -2498,17 +2545,28 @@ public final class TaskDetailActivity extends Activity {
                     throw new IllegalStateException("无法保存日程关联");
                 }
             }
+            if (retry == null) {
             List<EventCandidate> savedCandidates = store.getCandidates(edited.taskId);
             store.updateStatus(edited.taskId, reviewStatus(savedCandidates), null);
             savedCandidates = store.getCandidates(edited.taskId);
             DiagLog.add(this, "calendar written task=" + edited.taskId + " candidate=" + edited.id
                     + " event=" + edited.calendarEventId);
-            List<EventCandidate> result = savedCandidates;
-            deliverSave(owner -> {
-                owner.setSaving(false);
-                if (owner.taskId == edited.taskId)
-                    owner.continueCandidateConfirmation(edited.id, result);
-            });
+            committed = savedCandidates;
+            }
+            store.getWritableDatabase().setTransactionSuccessful();
+              } finally { store.getWritableDatabase().endTransaction(); }
+            }
+          }
+            if (retry != null) {
+                checkCalendarDuplicateThenPublish(retry, retryBaseline);
+            } else {
+                List<EventCandidate> result = committed;
+                deliverSave(owner -> {
+                    owner.setSaving(false);
+                    if (owner.taskId == edited.taskId)
+                        owner.continueCandidateConfirmation(edited.id, result);
+                });
+            }
         } catch (Exception exception) {
             deliverSave(owner -> {
                 owner.setSaving(false);
@@ -2517,9 +2575,9 @@ public final class TaskDetailActivity extends Activity {
         }
     }
 
-    private void checkCalendarDuplicateThenPublish(EventCandidate edited) {
+    private void checkCalendarDuplicateThenPublish(EventCandidate edited, String expected) {
         if (edited.calendarEventId != null) {
-            publish(edited);
+            publish(edited, expected);
             return;
         }
         try {
@@ -2530,7 +2588,7 @@ public final class TaskDetailActivity extends Activity {
                     edited.description, edited.location, reminders);
             List<Long> matches = new CalendarStore(this).findMatchingEvents(input);
             if (matches.isEmpty()) {
-                publish(edited);
+                publish(edited, expected);
                 return;
             }
             deliverSave(owner -> {
@@ -2548,10 +2606,10 @@ public final class TaskDetailActivity extends Activity {
                             owner.setSaving(true);
                             if (choice < matches.size()) {
                                 long eventId = matches.get(choice);
-                                new Thread(() -> owner.associateExistingEvent(edited, eventId),
+                                new Thread(() -> owner.associateExistingEvent(edited, expected, eventId),
                                         "chrona-calendar-link").start();
                             } else {
-                                new Thread(() -> owner.publish(edited), "chrona-calendar-write").start();
+                                new Thread(() -> owner.publish(edited, expected), "chrona-calendar-write").start();
                             }
                         });
             });
@@ -2563,8 +2621,14 @@ public final class TaskDetailActivity extends Activity {
         }
     }
 
-    private void associateExistingEvent(EventCandidate edited, long eventId) {
-        try (TaskStore store = new TaskStore(this)) {
+    private void associateExistingEvent(EventCandidate edited, String expected, long eventId) {
+        List<EventCandidate> committed;
+        try {
+          synchronized (AndroidSync.LOCK) {
+            try (TaskStore store = new TaskStore(this)) {
+              store.getWritableDatabase().beginTransaction();
+              try {
+            requireCandidateBaseline(store, edited.taskId, edited.id, expected);
             EventCandidate linked = new EventCandidate(edited.id, edited.taskId, edited.title,
                     edited.startAtMillis, edited.endAtMillis, edited.timeZoneId, edited.location,
                     edited.description, edited.reminderMinutesBefore, edited.needsConfirmation,
@@ -2575,7 +2639,12 @@ public final class TaskDetailActivity extends Activity {
             List<EventCandidate> savedCandidates = store.getCandidates(edited.taskId);
             store.updateStatus(edited.taskId, reviewStatus(savedCandidates), null);
             savedCandidates = store.getCandidates(edited.taskId);
-            List<EventCandidate> result = savedCandidates;
+            committed = savedCandidates;
+            store.getWritableDatabase().setTransactionSuccessful();
+              } finally { store.getWritableDatabase().endTransaction(); }
+            }
+          }
+            List<EventCandidate> result = committed;
             deliverSave(owner -> {
                 owner.setSaving(false);
                 if (owner.taskId == edited.taskId)
@@ -2587,6 +2656,17 @@ public final class TaskDetailActivity extends Activity {
                 if (owner.taskId == edited.taskId) owner.showCandidateError(edited, exception);
             });
         }
+    }
+
+    private static EventCandidate requireCandidateBaseline(TaskStore store, long taskId,
+            long candidateId, String expected) {
+        EventCandidate current = store.getCandidates(taskId).stream()
+                .filter(item -> item.id == candidateId).findFirst().orElse(null);
+        CandidateEditBaseline.require(current, expected);
+        TaskRecord task = store.getTask(taskId);
+        if (task == null || TaskRecord.QUEUED.equals(task.status) || TaskRecord.PROCESSING.equals(task.status))
+            throw new IllegalStateException("记录正在处理，请稍后重新打开记录");
+        return current;
     }
 
     private void continueCandidateConfirmation(long savedCandidateId,
@@ -2726,8 +2806,9 @@ public final class TaskDetailActivity extends Activity {
         return value.isEmpty() ? "添加备注" : value;
     }
 
-    private void showNoteEditorDialog(EventCandidate candidate, String[] currentDescription,
+    private void showNoteEditorDialog(EventCandidate candidate, String[] baseline, String[] currentDescription,
             TextView preview) {
+        String expected = baseline[0];
         Dialog dialog = new Dialog(this);
         LinearLayout panel = floatingDialogPanel("备注");
         EditText editor = new EditText(this);
@@ -2761,20 +2842,32 @@ public final class TaskDetailActivity extends Activity {
             setSaving(true);
             save.setEnabled(false);
             new Thread(() -> {
-                try (TaskStore store = new TaskStore(this)) {
-                    EventCandidate current = store.getCandidates(candidate.taskId).stream()
-                            .filter(item -> item.id == candidate.id).findFirst().orElse(null);
-                    if (current == null) throw new IllegalStateException("日程已删除");
-                    if (current.calendarEventId != null && !new CalendarStore(this)
-                            .updateDescription(current.calendarEventId, value))
-                        throw new IllegalStateException("系统日程已删除，请刷新后重试");
-                    if (!store.updateCandidateDescription(current.id, current.taskId, value))
-                        throw new IllegalStateException("无法保存备注");
+                try {
+                    EventCandidate current;
+                    String savedBaseline;
+                    synchronized (AndroidSync.LOCK) {
+                        try (TaskStore store = new TaskStore(this)) {
+                            store.getWritableDatabase().beginTransaction();
+                            try {
+                                current = requireCandidateBaseline(store, candidate.taskId, candidate.id, expected);
+                                if (current.calendarEventId != null && !new CalendarStore(this)
+                                        .updateDescription(current.calendarEventId, value))
+                                    throw new IllegalStateException("系统日程已删除，请刷新后重试");
+                                if (!store.updateCandidateDescription(current.id, current.taskId, value))
+                                    throw new IllegalStateException("无法保存备注");
+                                savedBaseline = CandidateEditBaseline.of(store.getCandidates(candidate.taskId).stream()
+                                        .filter(item -> item.id == candidate.id).findFirst().orElse(null));
+                                store.getWritableDatabase().setTransactionSuccessful();
+                            } finally { store.getWritableDatabase().endTransaction(); }
+                        }
+                    }
                     deliverSave(owner -> {
                         owner.saveSession.savedNotes.put(candidate.id, value);
+                        owner.saveSession.savedBaselines.put(candidate.id, savedBaseline);
                         owner.setSaving(false);
                         if (owner.taskId != candidate.taskId) return;
                         if (owner == this) {
+                            baseline[0] = savedBaseline;
                             currentDescription[0] = value;
                             preview.setText(shortNote(value));
                             preview.setContentDescription("备注，点按展开并编辑；" + value);
@@ -2782,7 +2875,10 @@ public final class TaskDetailActivity extends Activity {
                         } else {
                             owner.snapshotDrafts();
                             Bundle draft = owner.candidateDrafts.get(candidate.id);
-                            if (draft != null) draft.putString("description", value);
+                            if (draft != null) {
+                                draft.putString("description", value);
+                                draft.putString("baseline", savedBaseline);
+                            }
                             owner.draftReaders.remove(candidate.id);
                             owner.render();
                         }

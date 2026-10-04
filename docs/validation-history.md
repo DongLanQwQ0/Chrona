@@ -4,6 +4,17 @@
 
 以下记录从原 README 完整迁出，保留各版本实际发生过的验证及当时限制。较早条目中的安装包位置、数据库版本与未完成项属于当时状态，不应据此判断最新版本。新的验证记录可按日期追加在本页，用户可见的版本说明发布在 GitHub Releases。
 
+## 2026-10-04 · 0.14.0 局域网网页与多设备同步
+
+- 取消独立 Windows 客户端后，以 Android 内置局域网 HTTP 服务与离线网页替代；同步核心保留。修改前备份 `build/backups/20261004-105512-lan-web` 含本轮调整前代码/文档，用户 AGENTS 与角色配置未改动。
+- `:app:assembleRelease :app:lintRelease :app:assembleDebugAndroidTest` 成功，日志 `build/lan-review-fixes-final-build.log`；lint 0 errors / 83 warnings。APK 为 0.14.0 / 107，未启用调试，证书 SHA-256 保持 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`。
+- 统一完整离线回归 26/26 通过，日志 `build/lan-review-fixes-checks.log`；同步核心检查通过。生产 `LanSecurity` 的 25 项认证、来源/地址、限流、会话到期/关闭验证通过。
+- 使用已安装 Edge 和隔离的后台浏览器配置验证网页，手机接口为明确的模拟数据。配对、今日/日程/收件箱/课表、原文 XSS 与修改、日程修改、手机时区转换、全天 UTC、手动建日程、ICS 预览/导入、退出、深浅主题和 390px 宽度无页面溢出通过。生产 CSP 限制下检查通过，深色玻璃背景检查通过，页面异常 0。结果与四张截图位于 `build/lan-web-checks/`。
+- `LanAccessInstrumentation` 使用真实 HTTP 服务和 Android SQLite 的隔离数据库，检查包编译通过；ADB 无在线设备，仪器检查未实际运行。手机设置视觉、系统授权/日历写入、真实附件权限、锁屏/后台服务、网络变化/关闭撤销及手机/电脑局域网端到端仍待真机验证。未使用真实坚果云账号或 AI 密钥，真实多机同步和提醒送达也未验收。
+- 审查修复后产物 `build/distributions/Chrona-0.14.0.apk`，1,704,614 字节；SHA-256 `1ddd7084a1e707ad7a52783937d0d4894acc8574110714074ecc094c344cd026`。签名与元数据证据分别为 `build/lan-final-signature.log`、`build/lan-final-apk-metadata.log`。
+- 独立审查修复：手机原文/候选/备注保存先原子比对打开时基线，Calendar 副作用前验证；数据库提交后反馈，原文后台保存，失败保留输入，旋转与重复日历确认保留基线。网络身份与 IPv4 任一变化撤销会话，同 IPv4 不同网络也关闭。生产逻辑与事务接线离线检查 `build/lan-edit-conflict.log`、草稿检查 `build/lan-detail-draft.log` 通过；未将这些检查等同于真机并发/网络测试。
+- 发布前只读查询确认远端最新 `v0.13.84`，发布于 2026-10-02；不存在 `v0.14.0`，证据 `build/lan-remote-version.json`。此记录为发布前实现验证，发布另须独立审查与远端结果确认。
+
 ## 2026-10-03 · 0.13.86 设置分组
 
 - 设置主页面改为四组紧凑列表，原有操作入口保留，版本和联系方式进入关于浮窗；复用现有主题表面和线性图标，选项值右对齐，触控行至少 54dp。

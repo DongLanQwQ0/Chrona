@@ -11,13 +11,17 @@
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.13.86`，versionCode `106` |
+| 当前版本 | `0.14.0`，versionCode `107` |
 | 最低 Android 版本 | API 26（Android 8.0） |
 | 编译 / 目标 SDK | 36 / 36 |
 | Java 源码级别 | 17 |
 | 数据库版本 | 9；升级必须保留已有记录 |
 
 ## 本地构建与签名
+
+电脑通过手机内置的局域网网页访问，不设独立客户端或构建模块。离线资源位于 `app/src/main/assets/lan/`；HTTP 使用 NanoHTTPD 2.3.1，服务/权限、认证与真实存储适配分别由 `LanAccessService`、`LanSecurity`、`LanWebServer` 管理，协议和验收边界见 [局域网访问](lan-access.md)。
+
+同步核心保留在 `shared/src/main/java/` 并由 Android 源集直接编译。运行 `python checks/sync_core_check.py` 使用既有 Gradle 缓存中的 OkHttp/Okio/Kotlin 及 `build/ai-checks/json.jar`；可通过 `CHRONA_SYNC_CLASSPATH` 指定现有检查依赖。同步协议见 [sync-contract.md](sync-contract.md)。
 
 以下是项目已经验证的 Windows 环境。盘符路径属于本机配置，其他环境请替换成实际路径。私钥、本机配置与构建产物不应提交到仓库。
 
@@ -40,6 +44,7 @@ Debug 构建明确使用 `gradle.properties` 的 `chronaDebugKeystore=F\:/Androi
 $ErrorActionPreference = 'Stop'
 $env:JAVA_HOME = 'D:\Minecraft\java21'
 $env:ANDROID_HOME = 'F:\Android\Sdk'
+$env:ANDROID_USER_HOME = 'F:\Android\user-home'
 $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 .\gradlew.bat :app:assembleDebug --no-daemon --console=plain
 ```
@@ -67,6 +72,8 @@ $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
 | 日历与链接正文 | `calendar/`、`web/` |
 | 外观与界面样式 | `ThemeStore`、`UiStyle` |
 | 更新与桌面小组件 | `GitHubRelease`、`ReleaseUpdates`、`AgendaWidgetProvider` |
+| 局域网访问 | `LanSettingsActivity`、`LanAccessService`、`LanSecurity`、`LanWebServer`、`assets/lan/` |
+| 多设备同步 | `SyncSettingsActivity`、`AndroidSync`、`AndroidSyncData`、`SyncJobService`、`shared/` |
 
 独立检查位于 `checks/`。不同检查的依赖与运行方式并不相同，应按修改范围选择，并阅读对应检查文件。
 

@@ -3,6 +3,8 @@ plugins {
 }
 
 dependencies {
+    implementation('org.nanohttpd:nanohttpd:2.3.1')
+    implementation('com.squareup.okhttp3:okhttp:4.12.0')
     // iCalendar parsing and recurrence expansion; only the text reader is used.
     implementation('net.sf.biweekly:biweekly:0.6.8') {
         exclude group: 'com.fasterxml.jackson.core'
@@ -15,6 +17,7 @@ if (chronaDebugKeystore == null || !file(chronaDebugKeystore).isFile()) {
 }
 
 android {
+    sourceSets.main.java.srcDir '../shared/src/main/java'
     namespace 'com.donglan.chrona'
     compileSdk 36
 
@@ -22,8 +25,9 @@ android {
         applicationId 'com.donglan.chrona'
         minSdk 26
         targetSdk 36
-        versionCode 106
-        versionName '0.13.86'
+        versionCode 107
+        versionName '0.14.0'
+        testInstrumentationRunner 'com.donglan.chrona.LanAccessInstrumentation'
     }
 
     signingConfigs {

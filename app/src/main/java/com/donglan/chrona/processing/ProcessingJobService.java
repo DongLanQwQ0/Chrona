@@ -67,6 +67,15 @@ public final class ProcessingJobService extends JobService {
     }
 
     public static void enqueue(Context context, long taskId) {
+        enqueue(context, taskId, true);
+    }
+
+    /** Browser actions arrive while the Activity may be backgrounded: UIDT is ineligible. */
+    public static void enqueueRemote(Context context, long taskId) {
+        enqueue(context, taskId, false);
+    }
+
+    private static void enqueue(Context context, long taskId, boolean fromActivity) {
         if (taskId <= 0 || taskId > Integer.MAX_VALUE - JOB_ID_BASE) {
             throw new IllegalArgumentException("Unsupported task ID");
         }
@@ -77,7 +86,7 @@ public final class ProcessingJobService extends JobService {
                 .setExtras(extras)
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                 .setBackoffCriteria(30_000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (fromActivity && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             // The user just tapped submit and is waiting for one network round trip, which is what
             // a user-initiated job is for: top priority, exempt from quotas, and the system keeps
             // the process alive for it instead of letting a background cleaner kill it mid-request.

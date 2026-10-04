@@ -49,7 +49,7 @@ public final class ChronaDataBackup {
     private static final long MAX_ARCHIVE_BYTES = 1024L * 1024 * 1024;
     private static final long MAX_ENTRY_BYTES = 512L * 1024 * 1024;
     private static final long MAX_WALLPAPER_BYTES = 64L * 1024 * 1024;
-    private static final long MAX_MANIFEST_BYTES = 20L * 1024 * 1024;
+    private static final long MAX_MANIFEST_BYTES = 40L * 1024 * 1024;
     private static final String WALLPAPER_ENTRY = "wallpaper/background.bin";
 
     private ChronaDataBackup() { }
@@ -404,6 +404,15 @@ public final class ChronaDataBackup {
     }
 
     public static String restore(Context context, Prepared prepared) throws Exception {
+        // A cloud apply must not retain an open handle to the database being replaced here.
+        synchronized (AndroidSync.LOCK) {
+            String result = restoreExclusive(context, prepared);
+            AndroidSync.resetAfterRestore(context);
+            return result + "\n自动同步已关闭。恢复的日程会作为新记录同步，可能与原有云端记录重复，请整理后再手动同步。";
+        }
+    }
+
+    private static String restoreExclusive(Context context, Prepared prepared) throws Exception {
         long[] previousDatabaseCounts = new long[2];
         try (TaskStore current = new TaskStore(context)) {
             List<TaskRecord> currentTasks = current.listTasks();

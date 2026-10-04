@@ -48,6 +48,8 @@ public final class SettingsHubActivity extends Activity {
 
         LinearLayout services = group(root, "服务与数据");
         destination(services, "AI 服务", SettingsActivity.class);
+        destination(services, "跨设备同步", SyncSettingsActivity.class);
+        destination(services, "局域网访问", LanSettingsActivity.class);
         destination(services, "备份与恢复", BackupRestoreActivity.class);
         destination(services, "提醒诊断", ReminderDiagnosticsActivity.class);
 

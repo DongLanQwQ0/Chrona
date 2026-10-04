@@ -33,6 +33,7 @@ public final class ChronaApp extends Application {
 
     @Override public void onCreate() {
         super.onCreate();
+        SyncJobService.schedule(this);
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityCreated(Activity activity, Bundle state) {
                 ThemeStore.watch(activity);
@@ -45,6 +46,7 @@ public final class ChronaApp extends Application {
             @Override public void onActivityStarted(Activity activity) { }
 
             @Override public void onActivityResumed(Activity activity) {
+                AndroidSync.foreground(ChronaApp.this);
                 observeCalendar();
                 if (activity instanceof DashboardActivity || activity instanceof TaskDetailActivity)
                     CalendarLinkReconciler.request(activity);

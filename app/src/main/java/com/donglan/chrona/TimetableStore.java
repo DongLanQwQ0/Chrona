@@ -29,8 +29,10 @@ import java.util.Set;
 /** The original ICS is kept privately and replaced atomically only after a successful import. */
 final class TimetableStore {
     private static final int FORMAT = 1;
-    private static final int MAX_SNAPSHOT_BYTES = TimetableParser.MAX_BYTES * 12;
-    private static final int MAX_DOCUMENTS = 12;
+    // Match the bounded wire protocol; independently synchronized semesters may split sources.
+    // Keep local capacity aligned with the v1 sync contract without depending on HTTP code.
+    private static final int MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024;
+    private static final int MAX_DOCUMENTS = 10_000;
     private static final Object LOCK = new Object();
     private static volatile long revision;
     private static File cachedFile;
@@ -82,7 +84,7 @@ final class TimetableStore {
         final String selected;
         final List<Semester> semesters;
         Library(List<Document> documents, String selected) {
-            if (documents.size() > MAX_DOCUMENTS) throw new IllegalArgumentException("最多保留 12 份课表，请先删除不再需要的学期");
+            if (documents.size() > MAX_DOCUMENTS) throw new IllegalArgumentException("课表数量超过同步协议上限");
             this.documents = Collections.unmodifiableList(new ArrayList<>(documents));
             this.selected = selected;
             List<Semester> terms = new ArrayList<>();
@@ -267,6 +269,17 @@ final class TimetableStore {
         if (snapshot != null) inspect(snapshot);
         write(snapshot);
         AgendaWidgetProvider.requestRefresh(context);
+    }
+
+    /** Commit a sync result only if no import or selection changed the captured library. */
+    boolean compareAndRestore(String expected, String replacement) throws Exception {
+        if (replacement != null) inspect(replacement);
+        synchronized (LOCK) {
+            if (!java.util.Objects.equals(expected, snapshot())) return false;
+            write(replacement);
+        }
+        AgendaWidgetProvider.requestRefresh(context);
+        return true;
     }
 
     private void write(String snapshot) throws IOException {

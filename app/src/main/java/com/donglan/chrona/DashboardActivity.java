@@ -2530,7 +2530,7 @@ public final class DashboardActivity extends Activity {
         if (TaskRecord.QUEUED.equals(status)) return "排队中";
         if (TaskRecord.PROCESSING.equals(status)) return "解析中";
         if (TaskRecord.NEEDS_REVIEW.equals(status)) return "待确认";
-        if (TaskRecord.READY.equals(status)) return "已写入日历";
+        if (TaskRecord.READY.equals(status)) return "已确认";
         return "处理失败";
     }
 

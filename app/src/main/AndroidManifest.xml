@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Android 16's optional local-network restriction uses this permission. -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
@@ -57,6 +62,14 @@
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".AttachmentViewerActivity" android:exported="false" />
         <activity android:name=".SettingsHubActivity" android:exported="false" />
+        <activity android:name=".SyncSettingsActivity" android:exported="false" />
+        <activity android:name=".LanSettingsActivity" android:exported="false" />
+        <service android:name=".LanAccessService" android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+        <service android:name=".SyncJobService" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <provider android:name=".AndroidSyncBlobProvider" android:exported="false"
+            android:grantUriPermissions="false" android:authorities="${applicationId}.syncblobs" />
         <activity android:name=".ReminderDiagnosticsActivity" android:exported="false" />
         <activity android:name=".BackupRestoreActivity" android:exported="false" />
         <activity
