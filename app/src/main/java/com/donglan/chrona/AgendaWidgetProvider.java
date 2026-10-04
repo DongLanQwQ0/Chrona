@@ -208,11 +208,8 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         views.setTextColor(R.id.widget_heading, palette.text);
         views.setTextColor(R.id.widget_empty, palette.muted);
         views.setTextColor(R.id.widget_notice, palette.muted);
-        views.setTextViewText(R.id.widget_notice, data.calendarUnavailable && data.courseUnavailable
-                ? "系统日历与课表未能读取 · 点击查看"
-                : data.courseUnavailable ? "课表未能读取 · 点击查看"
-                : "系统日历未能读取 · 点击此处检查权限");
-        views.setViewVisibility(R.id.widget_notice, (data.calendarUnavailable || data.courseUnavailable) && size.height >= 160
+        views.setTextViewText(R.id.widget_notice, "系统日历未能读取 · 点击此处检查权限");
+        views.setViewVisibility(R.id.widget_notice, data.calendarUnavailable && size.height >= 160
                 ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setTextViewText(R.id.widget_heading, size.width < 220
                 ? next ? "下一件" : data.previewTomorrow ? "现在与明天" : "今日"
@@ -239,7 +236,6 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_empty, openHome);
         String empty = data.failed ? "读取失败，点击刷新重试"
                 : data.calendarUnavailable ? "系统日历未能读取，点击检查权限"
-                : data.courseUnavailable ? "课表未能读取，点击查看"
                 : next ? "未来一个月暂无安排"
                 : data.previewTomorrow ? "现在与明天暂无安排" : "今天暂无安排";
         if (single) {
@@ -316,9 +312,7 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         return new Intent()
                 .putExtra("task_id", item.taskId).putExtra("event_id", item.system ? item.id : 0)
                 .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, item.system ? 0 : item.id)
-                .putExtra("begin", item.start).putExtra("end", item.end)
-                .putExtra(CourseAgenda.EXTRA_TERM, item.course == null ? null : item.course.termId)
-                .putExtra(CourseAgenda.EXTRA_OCCURRENCE, item.course == null ? null : item.course.key);
+                .putExtra("begin", item.start).putExtra("end", item.end);
     }
 
     private static void fill(Context context, RemoteViews views, WidgetAgenda.Item item, long now,

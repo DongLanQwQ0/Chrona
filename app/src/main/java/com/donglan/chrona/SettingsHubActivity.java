@@ -23,6 +23,7 @@ import com.donglan.chrona.debug.DebugActivity;
 
 /** Compact grouped settings; details belong to their destination or dialog. */
 public final class SettingsHubActivity extends Activity {
+    private static final int REQUEST_SYSTEM_CALENDAR = 701;
     private ScrollView page;
     private Dialog aboutDialog;
 
@@ -41,6 +42,7 @@ public final class SettingsHubActivity extends Activity {
         LinearLayout display = group(root, "外观与显示");
         destination(display, "外观与配色", AppearanceActivity.class);
         timelineLimit(display);
+        systemCalendarToggle(display);
 
         LinearLayout widgets = group(root, "桌面小组件");
         widgetPreview(widgets);
@@ -52,6 +54,7 @@ public final class SettingsHubActivity extends Activity {
         destination(services, "局域网访问", LanSettingsActivity.class);
         destination(services, "备份与恢复", BackupRestoreActivity.class);
         destination(services, "提醒诊断", ReminderDiagnosticsActivity.class);
+        destination(services, "合并完全相同日程", CandidateMergeActivity.class);
 
         LinearLayout help = group(root, "帮助与关于");
         destination(help, "使用引导", GuideActivity.class);
@@ -154,6 +157,22 @@ public final class SettingsHubActivity extends Activity {
                 value[0].setText(HomeTimelinePreferences.getItemLimit(this) + " 项");
             });
         });
+    }
+    private Switch systemCalendar;
+    private void systemCalendarToggle(LinearLayout group) {
+        systemCalendar=new Switch(this);systemCalendar.setText("包含系统其他日程");systemCalendar.setTextSize(16);
+        systemCalendar.setPadding(dp(16),dp(3),dp(16),dp(3));systemCalendar.setSwitchPadding(dp(12));systemCalendar.setMinHeight(dp(54));UiStyle.toggle(systemCalendar);
+        systemCalendar.setChecked(HomeTimelinePreferences.includesSystemCalendar(this));
+        systemCalendar.setOnCheckedChangeListener((button,enabled)->{
+            if(enabled&&!new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()){
+                systemCalendar.setChecked(false);requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR},REQUEST_SYSTEM_CALENDAR);return;
+            }
+            HomeTimelinePreferences.setIncludesSystemCalendar(this,enabled);
+        });group.addView(systemCalendar,new LinearLayout.LayoutParams(-1,-2));
+    }
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
+        super.onRequestPermissionsResult(request,permissions,results);
+        if(request==REQUEST_SYSTEM_CALENDAR){boolean granted=results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED;systemCalendar.setChecked(granted);if(!granted)Feedback.show(this,"未获得读取日历权限");}
     }
 
     private void widgetPreview(LinearLayout group) {

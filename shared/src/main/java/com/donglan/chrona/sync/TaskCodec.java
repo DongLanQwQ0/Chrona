@@ -84,10 +84,28 @@ public final class TaskCodec {
                     if (file.getBoolean("image") && !"image/jpeg".equals(file.getString("mime")))
                         throw new IOException("同步图片需要使用 JPEG 格式");
                 }
+            } else if ("merge".equals(kind)) {
+                only(value,"kind","sourceTask","sourceCandidate","targetTask","targetCandidate","source");
+                for(String key:new String[]{"sourceTask","targetTask"}) {
+                    String task=value.getString(key);
+                    if(!task.startsWith("task_")) throw new IOException("合并来源身份无效");
+                    MergeLedger.candidateId(task.substring(5));
+                }
+                String sourceId=MergeLedger.candidateId(value.getString("sourceCandidate"));
+                String targetId=MergeLedger.candidateId(value.getString("targetCandidate"));
+                if(sourceId.compareTo(targetId)<=0) throw new IOException("合并身份必须严格递减");
+                JSONObject snapshot=value.getJSONObject("source");
+                only(snapshot,"rawText","source","createdAt","linkText","candidate");
+                string(snapshot,"rawText",1_000_000,false);string(snapshot,"source",200,false);
+                string(snapshot,"linkText",200_000,false);
+                long created=integer(snapshot,"createdAt");
+                if(created<MIN_TIME||created>MAX_TIME)throw new IOException("合并来源时间无效");
+                checkCandidate(snapshot.getJSONObject("candidate"));
+                if(!sourceId.equals(snapshot.getJSONObject("candidate").getString("id")))throw new IOException("合并来源日程身份不一致");
             } else if ("term".equals(kind)) {
                 only(value, "kind", "index", "document");
                 term(value);
-            } else throw new IOException("不支持的同步内容类型");
+            } else throw new IOException("同步格式不受支持，请将所有同步设备升级到最新版本后重试");
             return value;
         } catch (Exception exception) { throw invalid(exception); }
     }
@@ -97,6 +115,8 @@ public final class TaskCodec {
             if ("task".equals(payload.getString("kind"))) {
                 if (!id.matches("task_[0-9a-fA-F-]{36}")) throw new IOException("任务身份无效");
                 UUID.fromString(id.substring(5));
+            } else if ("merge".equals(payload.getString("kind"))) {
+                if(!id.equals("merge_"+payload.getString("sourceCandidate")))throw new IOException("合并记录身份不一致");
             } else {
                 JSONObject plan = payload.getJSONObject("document").getJSONObject("plan");
                 int mode = plan.getInt("mode"), index = payload.getInt("index");

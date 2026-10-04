@@ -69,12 +69,18 @@ final class LanWebServer extends NanoHTTPD {
             UiStyle.Palette colors = UiStyle.colors(context);
             return data(new JSONObject().put("csrf", security.csrf()).put("zone", ZoneId.systemDefault().getId())
                     .put("palette", new JSONObject().put("background", hex(colors.background)).put("text", hex(colors.text)).put("muted", hex(colors.muted)).put("primary", hex(colors.primary)).put("surface", hex(colors.surface)).put("outline", hex(colors.outline)))
-                    .put("calendarAllowed", new CalendarStore(context).hasWritePermission()).put("syncStatus", new WebDavSettingsStore(context).status()));
+                    .put("calendarAllowed", new CalendarStore(context).hasWritePermission()).put("calendarReadable",new CalendarStore(context).hasReadPermission())
+                    .put("systemCalendarIncluded",HomeTimelinePreferences.includesSystemCalendar(context)).put("syncStatus", new WebDavSettingsStore(context).status()));
         }
         if (method == Method.POST && path.equals("/api/logout")) { security.logout(headers.get("cookie")); Response result = data(new JSONObject().put("ok",true)); result.addHeader("Set-Cookie", "chrona_session=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/"); return result; }
         // Sync apply and browser mutations must not interleave their database/file snapshots.
         synchronized (AndroidSync.LOCK) {
             if (closed) return json(Response.Status.SERVICE_UNAVAILABLE, "局域网访问已关闭");
+            if(method==Method.POST&&path.equals("/api/preferences")){
+                JSONObject body=body(request,256);boolean included=bool(body,"systemCalendarIncluded");
+                if(included&&!new CalendarStore(context).hasReadPermission())return json(Response.Status.FORBIDDEN,"系统日历读取权限需在手机授予");
+                HomeTimelinePreferences.setIncludesSystemCalendar(context,included);return data(new JSONObject().put("ok",true).put("systemCalendarIncluded",included));
+            }
             if (path.startsWith("/api/attachment/")) return method == Method.GET ? attachment(request) : json(Response.Status.METHOD_NOT_ALLOWED,"请求方法无效");
             if (path.equals("/api/ics") && method != Method.GET) return json(Response.Status.METHOD_NOT_ALLOWED,"请求方法无效");
             if (path.equals("/api/timetable") || path.equals("/api/ics")) return timetable(request);
@@ -95,14 +101,23 @@ final class LanWebServer extends NanoHTTPD {
     }
     private Response read(IHTTPSession request, TaskStore store) throws Exception {
         String path = request.getUri(); JSONObject result = new JSONObject().put("revision", store.dataRevision());
+        if(path.equals("/api/merge/preview")){
+            store.getWritableDatabase().beginTransaction();try{
+                CandidateMerges.Preview preview=CandidateMerges.scan(store);JSONArray groups=new JSONArray();
+                for(List<EventCandidate> group:preview.groups){JSONArray sources=new JSONArray();for(EventCandidate item:group){TaskRecord task=preview.tasks.get(item.taskId);sources.put(new JSONObject().put("taskId",task.id).put("candidateId",item.id).put("source",task.source));}
+                    groups.put(new JSONObject().put("candidate",candidate(group.get(0))).put("sources",sources));}
+                store.getWritableDatabase().setTransactionSuccessful();
+                return data(new JSONObject().put("revision",preview.revision).put("removed",preview.removed()).put("groups",groups));
+            }finally{store.getWritableDatabase().endTransaction();}
+        }
         if (path.equals("/api/task")) {
             long id = positive(request.getParms().get("id")); TaskRecord record = store.getTask(id);
             if (record == null) return json(Response.Status.NOT_FOUND,"记录已不存在");
             JSONArray candidates = new JSONArray(), images = new JSONArray(), files = new JSONArray();
-            for (EventCandidate item : store.getCandidates(id)) candidates.put(candidate(item));
+            for (EventCandidate item : store.getCandidates(id)) candidates.put(candidate(item).put("mergedSources",CandidateMerges.sources(store,item.id)));
             List<String> paths = store.getImagePaths(id); for (int i=0;i<paths.size();i++) images.put(new JSONObject().put("index",i));
             for (TaskFileAttachment item : store.getFileAttachments(id)) files.put(new JSONObject().put("id",item.id).put("name",item.displayName).put("size",item.sizeBytes));
-            return data(result.put("task", task(record)).put("candidates",candidates).put("images",images).put("files",files));
+            return data(result.put("task", task(record)).put("candidates",candidates).put("images",images).put("files",files).put("mergedTargets",CandidateMerges.targets(store,id)));
         }
         if (path.equals("/api/inbox")) {
             int page = integer(request.getParms().get("page"), 0, 0, 100000), status = integer(request.getParms().get("status"),0,0,4);
@@ -120,19 +135,19 @@ final class LanWebServer extends NanoHTTPD {
         }
         if (path.equals("/api/home")) {
             ZoneId zone=ZoneId.systemDefault(); LocalDate date=LocalDate.now(zone); long start=date.atStartOfDay(zone).toInstant().toEpochMilli(),end=date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
-            JSONArray entries=new JSONArray(), courses=new JSONArray(), calendar=new JSONArray();
+            JSONArray entries=new JSONArray(), calendar=new JSONArray();
             for(EventCandidate item:store.widgetCandidates(start,end,date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()))entries.put(candidate(item));
-            for(CourseAgenda.Item item:CourseAgenda.load(context,start,end,zone))courses.put(new JSONObject().put("title",item.title).put("location",item.location).put("start",item.start).put("end",item.end).put("term",item.termId));
             String calendarState="系统日历需在手机授权"; CalendarStore provider=new CalendarStore(context);
             if(HomeTimelinePreferences.includesSystemCalendar(context)&&provider.hasReadPermission()) {
                 try { Set<Long> linked=new HashSet<>(store.linkedCalendarIds()); for(CalendarOccurrence item:provider.listInstances(start,end,null)) if(!linked.contains(item.eventId)) calendar.put(new JSONObject().put("title",item.title).put("location",item.location).put("start",item.displayStart(zone)).put("end",item.displayEnd(zone))); calendarState=""; }
                 catch(RuntimeException error){calendarState="系统日历暂时无法读取";}
             } else if(!HomeTimelinePreferences.includesSystemCalendar(context)) calendarState="手机已关闭系统日历时间线";
-            return data(result.put("items",entries).put("courses",courses).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",store.taskCountByStatus(TaskRecord.NEEDS_REVIEW)).put("failed",store.taskCountByStatus(TaskRecord.FAILED)));
+            return data(result.put("items",entries).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",store.taskCountByStatus(TaskRecord.NEEDS_REVIEW)).put("failed",store.taskCountByStatus(TaskRecord.FAILED)));
         }
         return json(Response.Status.NOT_FOUND,"页面不存在");
     }
     private JSONObject mutate(String path,JSONObject body,TaskStore store)throws Exception {
+        if(path.equals("/api/candidate/merge"))return new JSONObject().put("removed",CandidateMerges.mergeRows(store,whole(body,"revision",0,Long.MAX_VALUE)));
         if(path.equals("/api/task/create")) {
             String raw=string(body,"text",100000,true); long id=store.insertTask(raw,null,"局域网浏览器",System.currentTimeMillis());
             if(bool(body,"process")) enqueue(store,id); else store.updateStatus(id,TaskRecord.READY,null); return new JSONObject().put("id",id);

@@ -30,6 +30,10 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     CREATE TABLE task_attachments(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id));
     CREATE TABLE task_files(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id));
     CREATE TABLE data_revision(id INTEGER PRIMARY KEY,revision INTEGER);
+    CREATE TABLE candidate_merges(source_candidate TEXT PRIMARY KEY,record TEXT,calendar_event_id INTEGER);
+    CREATE TABLE sync_task_map(sync_id TEXT PRIMARY KEY,local_id INTEGER UNIQUE,baseline TEXT,baseline_clock TEXT);
+    CREATE TABLE sync_candidate_map(local_id INTEGER PRIMARY KEY,sync_id TEXT UNIQUE);
+    CREATE TABLE sync_meta(id INTEGER PRIMARY KEY,identity TEXT);
     INSERT INTO data_revision VALUES(1,0);
     """
     trigger_expression = re.search(r'db.execSQL\(("CREATE TRIGGER.*?)\);', store, re.S)[1]

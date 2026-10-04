@@ -22,7 +22,7 @@ import java.io.File;
 public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 9;
+    private static final int DATABASE_VERSION = 10;
 
     private final Context context;
     private SQLiteDatabase openedDatabase;
@@ -55,7 +55,8 @@ public final class TaskStore extends SQLiteOpenHelper {
             source.beginTransaction();
             try {
                 for (String table : new String[]{"tasks", "event_candidates", "task_attachments",
-                        "task_files", "data_revision", "sqlite_sequence"}) {
+                        "task_files", "candidate_merges", "sync_task_map", "sync_candidate_map",
+                        "sync_meta", "data_revision", "sqlite_sequence"}) {
                     source.execSQL("DELETE FROM backup_snapshot." + table);
                     source.execSQL("INSERT INTO backup_snapshot." + table
                             + " SELECT * FROM main." + table);
@@ -170,6 +171,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 + "UNIQUE(task_id, position))");
         db.execSQL("CREATE INDEX candidates_by_task ON event_candidates(task_id, position)");
         addScheduleBrowsing(db);
+        addCandidateMerges(db);
     }
 
     /**
@@ -202,6 +204,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         }
         if (oldVersion < 8) addScheduleBrowsing(db);
         if (oldVersion < 9) addUncertaintyLevel(db);
+        if (oldVersion < 10) addCandidateMerges(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
 
@@ -236,6 +239,71 @@ public final class TaskStore extends SQLiteOpenHelper {
         try (Cursor cursor = getReadableDatabase().rawQuery("SELECT revision FROM data_revision WHERE id=1", null)) {
             return cursor.moveToFirst() ? cursor.getLong(0) : 0;
         }
+    }
+    /** Local audit survives task deletion; stable IDs are shared with WebDAV. */
+    public static void addCandidateMerges(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS sync_task_map(sync_id TEXT PRIMARY KEY,local_id INTEGER UNIQUE,baseline TEXT,baseline_clock TEXT)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS sync_candidate_map(local_id INTEGER PRIMARY KEY,sync_id TEXT UNIQUE)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS sync_meta(id INTEGER PRIMARY KEY CHECK(id=1),identity TEXT NOT NULL)");
+        db.execSQL("INSERT OR IGNORE INTO sync_meta(id,identity) VALUES(1,?)",new Object[]{java.util.UUID.randomUUID().toString()});
+        db.execSQL("CREATE TABLE IF NOT EXISTS candidate_merges(source_candidate TEXT PRIMARY KEY,record TEXT NOT NULL,calendar_event_id INTEGER)");
+        for(String operation:new String[]{"INSERT","UPDATE","DELETE"})db.execSQL("CREATE TRIGGER IF NOT EXISTS revision_candidate_merges_"+operation+" AFTER "+operation+" ON candidate_merges BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END");
+    }
+    private String scalar(String sql,String argument) {
+        try(Cursor cursor=getReadableDatabase().rawQuery(sql,new String[]{argument})) {return cursor.moveToFirst()?cursor.getString(0):null;}
+    }
+    public String stableTaskId(long local) {
+        String key=Long.toString(local),existing=scalar("SELECT sync_id FROM sync_task_map WHERE local_id=?",key);
+        if(existing==null){String identity=scalar("SELECT identity FROM sync_meta WHERE id=?","1");String value="task_"+java.util.UUID.nameUUIDFromBytes((identity+":task:"+local).getBytes(java.nio.charset.StandardCharsets.UTF_8));getWritableDatabase().execSQL("INSERT OR IGNORE INTO sync_task_map(sync_id,local_id) VALUES(?,?)",new Object[]{value,local});existing=scalar("SELECT sync_id FROM sync_task_map WHERE local_id=?",key);}return existing;
+    }
+    public String stableCandidateId(long local) {
+        String key=Long.toString(local),existing=scalar("SELECT sync_id FROM sync_candidate_map WHERE local_id=?",key);
+        if(existing==null){String identity=scalar("SELECT identity FROM sync_meta WHERE id=?","1");String value=java.util.UUID.nameUUIDFromBytes((identity+":candidate:"+local).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();getWritableDatabase().execSQL("INSERT OR IGNORE INTO sync_candidate_map(local_id,sync_id) VALUES(?,?)",new Object[]{local,value});existing=scalar("SELECT sync_id FROM sync_candidate_map WHERE local_id=?",key);}return existing;
+    }
+    public long localTaskId(String stable) {String value=scalar("SELECT local_id FROM sync_task_map WHERE sync_id=?",stable);return value==null?0:Long.parseLong(value);}
+    public long localCandidateId(String stable) {String value=scalar("SELECT local_id FROM sync_candidate_map WHERE sync_id=?",stable);return value==null?0:Long.parseLong(value);}
+    /** Existing restored entities keep their UUIDs; future reused local IDs get a new namespace. */
+    public void rotateRestoredSyncIdentity() {
+        if(!getWritableDatabase().inTransaction())throw new IllegalStateException("恢复身份必须在事务中更新");
+        for(TaskRecord task:listTasks()){
+            stableTaskId(task.id);
+            for(EventCandidate candidate:getCandidates(task.id))stableCandidateId(candidate.id);
+        }
+        getWritableDatabase().execSQL("UPDATE sync_meta SET identity=? WHERE id=1",new Object[]{java.util.UUID.randomUUID().toString()});
+    }
+    public com.donglan.chrona.sync.MergeLedger mergeLedger() throws Exception {
+        com.donglan.chrona.sync.MergeLedger ledger=new com.donglan.chrona.sync.MergeLedger();
+        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT record FROM candidate_merges ORDER BY source_candidate",null)){while(cursor.moveToNext())ledger.add(new org.json.JSONObject(cursor.getString(0)));}return ledger;
+    }
+    public void acceptMerge(org.json.JSONObject incoming) throws Exception {
+        if(!getWritableDatabase().inTransaction())throw new IllegalStateException("合并记录必须在事务中写入");
+        org.json.JSONObject record=com.donglan.chrona.sync.TaskCodec.validate(incoming);String source=record.getString("sourceCandidate");
+        com.donglan.chrona.sync.TaskCodec.validateId("merge_"+source,record);
+        String previous=scalar("SELECT record FROM candidate_merges WHERE source_candidate=?",source);
+        org.json.JSONObject chosen=com.donglan.chrona.sync.MergeLedger.preferred(previous==null?null:new org.json.JSONObject(previous),record);
+        String candidate=scalar("SELECT local_id FROM sync_candidate_map WHERE sync_id=?",source);Long calendar=null;
+        if(candidate!=null){String task=scalar("SELECT task_id FROM event_candidates WHERE id=?",candidate);if(task!=null){if(!stableTaskId(Long.parseLong(task)).equals(record.getString("sourceTask")))throw new IOException("合并来源与本机日程身份不一致");String linked=scalar("SELECT calendar_event_id FROM event_candidates WHERE id=?",candidate);if(linked!=null)calendar=Long.parseLong(linked);}}
+        if(previous==null||!com.donglan.chrona.sync.SyncState.canonical(chosen).equals(com.donglan.chrona.sync.SyncState.canonical(new org.json.JSONObject(previous)))){
+            ContentValues values=new ContentValues();values.put("source_candidate",source);values.put("record",chosen.toString());if(calendar!=null)values.put("calendar_event_id",calendar);
+            if(previous==null)getWritableDatabase().insertOrThrow("candidate_merges",null,values);else getWritableDatabase().update("candidate_merges",values,"source_candidate=?",new String[]{source});
+        }else if(calendar!=null){ContentValues values=new ContentValues();values.put("calendar_event_id",calendar);getWritableDatabase().update("candidate_merges",values,"source_candidate=? AND calendar_event_id IS NULL",new String[]{source});}
+        if(candidate!=null)getWritableDatabase().delete("event_candidates","id=?",new String[]{candidate});
+        String baseline=scalar("SELECT baseline FROM sync_task_map WHERE sync_id=?",record.getString("sourceTask"));
+        if(baseline!=null&&!baseline.equals("null")){
+            // This deletion is sync metadata, not a new user edit. Preserve all other fields
+            // and its applied clock so real local raw-text/attachment changes still conflict.
+            org.json.JSONObject payload=new org.json.JSONObject(baseline);
+            String filtered=com.donglan.chrona.sync.SyncState.canonical(withoutMergedCandidates(payload));
+            getWritableDatabase().execSQL("UPDATE sync_task_map SET baseline=? WHERE sync_id=?",new Object[]{filtered,record.getString("sourceTask")});
+        }
+    }
+
+    public org.json.JSONObject withoutMergedCandidates(org.json.JSONObject payload)throws Exception {
+        org.json.JSONObject result=new org.json.JSONObject(payload.toString());
+        org.json.JSONArray input=result.getJSONArray("candidates"),kept=new org.json.JSONArray();
+        com.donglan.chrona.sync.MergeLedger ledger=mergeLedger();
+        for(int i=0;i<input.length();i++)if(!ledger.removed(input.getJSONObject(i).getString("id")))kept.put(input.getJSONObject(i));
+        return result.put("candidates",kept);
     }
 
     public int taskCountByStatus(String status) {
@@ -296,7 +364,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<Long> linkedCalendarIds() {
         List<Long> ids = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().rawQuery(
-                "SELECT DISTINCT calendar_event_id FROM event_candidates WHERE calendar_event_id IS NOT NULL", null)) {
+                "SELECT calendar_event_id FROM event_candidates WHERE calendar_event_id IS NOT NULL UNION SELECT calendar_event_id FROM candidate_merges WHERE calendar_event_id IS NOT NULL", null)) {
             while (cursor.moveToNext()) ids.add(cursor.getLong(0));
         }
         return ids;

@@ -31,7 +31,7 @@ GROUPS = {
         "widget_preferences_check.py",
     ),
     "cached_dependencies": (
-        "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py",
+        "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",
     ),
 }
 SUITES = {"quick": ("python",), "full": tuple(GROUPS)}

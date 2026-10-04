@@ -384,7 +384,7 @@ public final class ChronaDataBackup {
                     throw new IOException("备份数据库完整性检查失败");
             }
             try (Cursor cursor = db.rawQuery("PRAGMA user_version", null)) {
-                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 9)
+                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 10)
                     throw new IOException("备份数据库版本与当前应用不兼容");
             }
             long tasks;
@@ -408,7 +408,7 @@ public final class ChronaDataBackup {
         synchronized (AndroidSync.LOCK) {
             String result = restoreExclusive(context, prepared);
             AndroidSync.resetAfterRestore(context);
-            return result + "\n自动同步已关闭。恢复的日程会作为新记录同步，可能与原有云端记录重复，请整理后再手动同步。";
+            return result + "\n自动同步已关闭。已有日程保留同步身份，与云端不同的版本可能待确认，请整理后再手动同步。";
         }
     }
 
@@ -479,6 +479,7 @@ public final class ChronaDataBackup {
                     staged.setTransactionSuccessful();
                 } finally { staged.endTransaction(); }
             }
+            if(staged.getVersion()<10){staged.beginTransaction();try{TaskStore.addCandidateMerges(staged);staged.setVersion(10);staged.setTransactionSuccessful();}finally{staged.endTransaction();}}
             for (Map.Entry<String, String> entry : imageNames.entrySet()) {
                 ContentValues values = new ContentValues();
                 values.put("image_path", entry.getValue());

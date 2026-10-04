@@ -49,6 +49,8 @@ public final class SyncSettingsActivity extends Activity {
             if (!AndroidSync.request(this, completion())) status.setText("同步正在进行");
         });
         status = text(settings.status(), 13); UiStyle.muted(status); status.setPadding(dp(14), dp(10), dp(14), dp(14)); actions.addView(status);
+        TextView version = text("合并日程后，所有同步设备需使用 0.14.4 或更新版本",13);
+        UiStyle.muted(version);version.setPadding(dp(14),0,dp(14),dp(14));actions.addView(version);
         pending = group(root, "待确认记录");
         button(pending, "查看待确认记录", this::loadPending);
         SettingsPageLayout.show(this, root);

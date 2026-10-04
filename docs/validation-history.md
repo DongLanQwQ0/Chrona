@@ -1,5 +1,13 @@
 # 历史验证记录
 
+## 0.14.4 — 2026-10-04
+
+- `checks/candidate_merge_check.py`：64 项，生产 TaskStore/CandidateMerges、共享同步模型，以及实际 AndroidSyncData staging/apply/changed 方法；Android SQLite API 传输替身接真实 SQLite。新增恢复序列回退后的 UUID 不重用（含未映射实体先固化），远端合并同时修改原文/附件正常落地且下一次 capture 不造假冲突，真正本地修改仍保留。
+- `checks/widget_source_failure_check.py`：真实 loader 不读取课表，系统开关关闭不列系统实例、开启保留同内容不同外部事件，仅排除自身关联 ID。
+- `checks/run_checks.py full`：30/30；`checks/sync_core_check.py`：通过；Edge `checks/lan_web_check.cjs`：37 组，模拟 API 检查预览/过期拒绝重扫/实体删除与来源导航/统一显示开关，截图 `build/lan-web-checks/desktop-merge-preview.png`。
+- 最终 `assembleRelease/lintRelease/assembleDebugAndroidTest`：94 tasks，7 秒；lint 0 错误/82 警告。APK 0.14.4/code111、原证书 SHA256 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`，1,937,378 字节，SHA256 `722cae8574ebe76d8139483dc59b24b15f09bc977f40320b4f70e9ce7173ac8f`。
+- 日志：`build/calendar-merge-core.log`、`calendar-merge-web.log`、`calendar-merge-full-checks.log`、`calendar-merge-final-build.log`、`calendar-merge-signature.log`、`calendar-merge-version.log`。未执行真机原生渲染、实际日历提醒、WebDAV 两机/覆盖安装或 LAN 端到端验收。
+
 [开发文档](development.md) · [项目首页](../README.md)
 
 以下记录从原 README 完整迁出，保留各版本实际发生过的验证及当时限制。较早条目中的安装包位置、数据库版本与未完成项属于当时状态，不应据此判断最新版本。新的验证记录可按日期追加在本页，用户可见的版本说明发布在 GitHub Releases。

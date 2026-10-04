@@ -159,6 +159,7 @@ final class AndroidSyncData implements AutoCloseable {
     /** Staged content only; caller holds a short transaction for mapping and baseline updates. */
     void captureTasks(SyncState state, Snapshot snapshot) throws Exception {
         requireRevision(snapshot);
+        for(JSONObject record:store.mergeLedger().records())state.put("merge_"+record.getString("sourceCandidate"),record);
         Set<Long> present = new HashSet<>();
         for (TaskRecord task : snapshot.tasks) {
             present.add(task.id);
@@ -269,6 +270,16 @@ final class AndroidSyncData implements AutoCloseable {
         }
         requireRevision(snapshot);
     }
+    void applyMergeRecords(SyncState state) throws Exception {
+        db.beginTransaction();try{
+            for(Map.Entry<String,List<SyncState.Version>> entry:state.records().entrySet())if(entry.getKey().startsWith("merge_"))
+                for(SyncState.Version version:entry.getValue()){
+                    if(version.deleted)throw new IOException("合并标记不可删除");
+                    TaskCodec.validateId(entry.getKey(),version.payload);store.acceptMerge(version.payload);
+                }
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
     void applyTask(String id, SyncState.Version version) throws Exception {
         long local = localId(id); TaskRecord existing = local == 0 ? null : store.getTask(local);
         if (busy(existing)) return;
@@ -297,8 +308,10 @@ final class AndroidSyncData implements AutoCloseable {
         // Free unique positions before ordering retained candidates.
         db.execSQL("UPDATE event_candidates SET position=-id WHERE task_id=?", new Object[]{local});
         JSONArray candidates = p.getJSONArray("candidates");
+        com.donglan.chrona.sync.MergeLedger ledger=store.mergeLedger();
         for (int i = 0; i < candidates.length(); i++) {
             JSONObject json = candidates.getJSONObject(i); String stable = json.getString("id");
+            if(ledger.removed(stable))continue;
             EventCandidate incoming = staged.candidates.get(i), prior = old.remove(stable);
             ContentValues values = new ContentValues(); values.put("task_id", local); values.put("position", i);
             values.put("title", incoming.title); values.put("start_at_millis", incoming.startAtMillis);
@@ -328,7 +341,7 @@ final class AndroidSyncData implements AutoCloseable {
         }
         // The local image filename differs from the remote name; preserve protocol attachment names separately.
         db.execSQL("INSERT OR REPLACE INTO sync_task_map(sync_id,local_id,baseline,baseline_clock) VALUES(?,?,?,?)",
-                new Object[]{id, local, canonical(p), new JSONObject(version.clock).toString()});
+                new Object[]{id, local, canonical(store.withoutMergedCandidates(p)), new JSONObject(version.clock).toString()});
     }
     void applyTerms(SyncState state, String expected) throws Exception {
         if (db.inTransaction()) throw new IllegalStateException("ICS parsing cannot hold a database transaction");

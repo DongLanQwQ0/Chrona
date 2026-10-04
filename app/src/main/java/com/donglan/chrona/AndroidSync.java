@@ -7,6 +7,7 @@ import android.util.AtomicFile;
 import com.donglan.chrona.calendar.CalendarStore;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.data.TaskRecord;
+import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.sync.*;
 import org.json.JSONObject;
 import java.io.*;
@@ -52,15 +53,16 @@ public final class AndroidSync {
                 android.database.sqlite.SQLiteDatabase db = tasks.getWritableDatabase();
                 db.beginTransaction();
                 try {
-                    db.execSQL("DROP TABLE IF EXISTS sync_task_map");
-                    db.execSQL("DROP TABLE IF EXISTS sync_candidate_map");
+                    TaskStore.addCandidateMerges(db);
+                    tasks.rotateRestoredSyncIdentity();
+                    db.execSQL("UPDATE sync_task_map SET baseline=NULL,baseline_clock=NULL");
                     db.execSQL("DROP TABLE IF EXISTS sync_term_map");
-                    db.execSQL("DROP TABLE IF EXISTS sync_meta");
+                    db.execSQL("UPDATE candidate_merges SET calendar_event_id=NULL");
                     db.setTransactionSuccessful();
                 } finally { db.endTransaction(); }
             }
             new WebDavSettingsStore(context).automatic(false);
-            new WebDavSettingsStore(context).status("备份恢复后自动同步已关闭；恢复的日程会作为新记录同步，可能与云端重复。请整理后手动同步。");
+            new WebDavSettingsStore(context).status("备份恢复后自动同步已关闭；已有日程保留同步身份，与云端不同的版本可能待确认。请整理后手动同步。");
             SyncJobService.schedule(context);
         }
     }
@@ -78,6 +80,7 @@ public final class AndroidSync {
                 else if (Arrays.asList("记录已变化，请重新选择", "记录正在处理", "日历旧事件未能全部移除，请重试",
                         "需要确认移除本机日历旧事件", "课表正在修改，请重新同步", "请输入账号和应用密码",
                         "记录正在修改，请稍后重新同步",
+                        "同步格式不受支持，请将所有同步设备升级到最新版本后重试",
                         "同步记录超过 32 MiB，请减少记录或附件后重试",
                         "请输入有效的 HTTPS WebDAV 地址", "请重新输入应用密码").contains(e.getMessage())) result = e.getMessage();
                 else result = "操作失败，请检查网络、应用密码和附件权限后重试（" + e.getClass().getSimpleName() + "）";
@@ -108,6 +111,8 @@ public final class AndroidSync {
                     save(app, latest); merged.merge(latest); save(app, merged);
                     data.db.setTransactionSuccessful();
                 } finally { data.db.endTransaction(); }
+                data.applyMergeRecords(merged);
+                snapshot=data.prepareCapture();
                 data.prepareTaskApply(merged, snapshot, null);
                 data.db.beginTransaction();
                 try {
@@ -160,6 +165,7 @@ public final class AndroidSync {
         SyncState state = read(context); List<Pending> result = new ArrayList<>();
         try (AndroidSyncData data = new AndroidSyncData(context)) {
             for (Map.Entry<String, List<SyncState.Version>> entry : state.records().entrySet()) {
+                if(entry.getKey().startsWith("merge_"))continue;
                 boolean linked = entry.getKey().startsWith("task_") && data.linked(data.localId(entry.getKey()));
                 if (entry.getValue().size() > 1 || (linked && data.taskDifferent(entry.getKey(), entry.getValue().get(0))))
                     result.add(new Pending(entry.getKey(), entry.getValue(), linked));
@@ -196,6 +202,8 @@ public final class AndroidSync {
                         if (term == null) state.delete(choice.id); else state.put(choice.id, term);
                     }
                 } else state.resolve(choice.id, versions.get(index));
+                data.applyMergeRecords(state);
+                snapshot=data.prepareCapture();
                 boolean clearCalendar = index >= 0 && data.linked(local);
                 if (clearCalendar && !removeCalendar) throw new IOException("需要确认移除本机日历旧事件");
                 data.prepareTaskApply(state, snapshot, clearCalendar ? choice.id : null, choice.id);

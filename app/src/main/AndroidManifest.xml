@@ -63,6 +63,7 @@
         <activity android:name=".AttachmentViewerActivity" android:exported="false" />
         <activity android:name=".SettingsHubActivity" android:exported="false" />
         <activity android:name=".SyncSettingsActivity" android:exported="false" />
+        <activity android:name=".CandidateMergeActivity" android:exported="false" />
         <activity android:name=".LanSettingsActivity" android:exported="false" />
         <service android:name=".LanAccessService" android:exported="false"
             android:foregroundServiceType="connectedDevice" />

@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-04 · 0.14.4
+
+本轮按用户确认将导入课表限定在课表页/API，删除 HomeCourses 异步首页注入与小组件课程分支。系统其他日程统一读取 HomeTimelinePreferences，设置/首页/网页共用一个开关；开启保持系统原样及既有 calendarEventId 自身副本排除。
+
+新增 CandidateMergeActivity 与网页设置入口，后台一致快照扫描、具体分组预览、revision 确认和一次 SQLite 事务合并，仅删除重复 candidate，保留 task/raw/attachments。完整字段比较、来源追溯与独立永久 merge_<UUID> 同步记录见 [合并日程说明](docs/candidate-merge.md)。DB10 保存审计/身份；恢复先固化已有 UUID 再轮换新实体命名空间。合并标记同事务仅过滤应用基线中的已删除 UUID，保留其他字段/clock 与真实编辑保护。所有同步设备需 >=0.14.4，旧客户端不能解析 merge 内容。
+
+备份 `build/backups/20261004-155709-calendar-scope-merge`。核心 64 项使用生产 Java/SQL 与真实 SQLite（Android API 传输替身），Edge 模拟 API 37 组、离线 full 30/30 通过；release/lint/androidTest 集成成功，lint 0 错误/82 警告，原证书签名 0.14.4/code111 APK 1,937,378 字节、SHA256 `722cae8574ebe76d8139483dc59b24b15f09bc977f40320b4f70e9ce7173ac8f`。证据 `build/calendar-merge-{core,web,full-checks,final-build,signature,version}.log`、`build/calendar-merge-artifact.json`、`build/lan-web-checks/result.json`。这些检查不能替代 Android 真机渲染、系统日历/提醒、实际 WebDAV 多机、后台或覆盖安装验收。独立审查已通过，生产代码与 APK 已冻结；正式发布按 v0.14.4 核对远端、附件摘要和原生更新解析结果。下文为历史记录。
+
 # 本轮补充 · 2026-10-04 · 0.14.3
 
 网页根页面、dialog、textarea 和 week-wrapper 隐藏原生滚动条，保留 overflow；课表 API 以只读 Library.select("").current(浏览日期) 复用已确认边界/命中/最近规则，忽略手机历史选择且不写回。文件名选择器删除，保留周切换，标题使用真实学期标签。同类 select 保留原表单值/事件，由主题圆角按钮和顶层 popover 提供键盘/触摸入口，支持开合与减少动态偏好。记录按钮的 Lucide 加号移除文字基线偏移。此前扩大动效任务在用户澄清忘记刷新后取消，未产生改动；本轮下拉动效来自后续明确要求。备份 `build/backups/20261004-134026-hide-web-scrollbars`。真实 Edge 模拟 API 验证浅深短视口滚动、草稿、保存可达、无横移、下拉键盘/弹窗不裁切和加号中心；未做真机端到端验证。下文为历史记录。

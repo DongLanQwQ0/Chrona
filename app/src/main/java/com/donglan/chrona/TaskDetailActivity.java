@@ -615,6 +615,7 @@ public final class TaskDetailActivity extends Activity {
 
             addAttachmentSection(task, store.getImagePaths(taskId),
                     store.getFileAttachments(taskId));
+            addMergedSources(store,candidates);
         } catch (Exception exception) {
             showError(exception);
         }
@@ -2152,6 +2153,22 @@ public final class TaskDetailActivity extends Activity {
     private Button addCandidateEditor(EventCandidate candidate, int number,
             boolean dockSaveAction) {
         return addCandidateEditor(candidate, number, dockSaveAction, content, -1);
+    }
+    private void addMergedSources(TaskStore store,List<EventCandidate> candidates)throws Exception{
+        for(EventCandidate candidate:candidates){org.json.JSONArray sources=CandidateMerges.sources(store,candidate.id);if(sources.length()==0)continue;
+            label("合并来源 · "+candidate.title,17);
+            for(int i=0;i<sources.length();i++){org.json.JSONObject source=sources.getJSONObject(i);long origin=source.getLong("taskId");
+                if(origin==taskId)continue;
+                if(origin>0)button(source.getString("source")+" · 查看原文与附件",()->startActivity(new Intent(this,TaskDetailActivity.class).putExtra("task_id",origin)));
+                else label(source.getString("source")+"\n"+source.getString("text"),14);
+            }
+        }
+        org.json.JSONArray targets=CandidateMerges.targets(store,taskId);
+        for(int i=0;i<targets.length();i++){org.json.JSONObject target=targets.getJSONObject(i);long origin=target.getLong("taskId"),candidate=target.getLong("candidateId");
+            if(origin==taskId)continue;
+            if(origin>0)button("已合并 · "+target.getString("title"),()->startActivity(new Intent(this,TaskDetailActivity.class).putExtra("task_id",origin).putExtra(EXTRA_CANDIDATE_ID,candidate)));
+            else label("已合并 · "+target.getString("title")+"（保留日程已不存在）",14);
+        }
     }
 
     private Button addCandidateEditor(EventCandidate candidate, int number,

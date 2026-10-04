@@ -54,7 +54,10 @@ public final class SyncState {
     }
     private void update(String id, boolean deleted, JSONObject payload) {
         validId(id);
+        if(id.startsWith("merge_")&&deleted)throw new IllegalArgumentException("合并标记不可删除");
+        if(id.startsWith("merge_"))validateMergeIdentity(id,payload);
         List<Version> existing = data.getOrDefault(id, Collections.emptyList());
+        if(id.startsWith("merge_"))for(Version version:existing)payload=preferredMerge(payload,version.payload);
         if (existing.size() == 1 && existing.get(0).deleted == deleted
                 && canonical(existing.get(0).payload).equals(canonical(payload))) return;
         if (!data.containsKey(id) && data.size() >= MAX_RECORDS) throw new IllegalArgumentException("Too many sync records");
@@ -89,6 +92,18 @@ public final class SyncState {
         for (String id : ids) {
             List<Version> union = new ArrayList<>(data.getOrDefault(id, Collections.emptyList()));
             union.addAll(other.data.getOrDefault(id, Collections.emptyList()));
+            if(id.startsWith("merge_")) {
+                JSONObject chosen=null;Map<String,Long> clock=new TreeMap<>();
+                for(Version version:union){
+                    if(version.deleted)throw new IllegalArgumentException("合并标记不可删除");
+                    validateMergeIdentity(id,version.payload);
+                    chosen=preferredMerge(chosen,version.payload);
+                    version.clock.forEach((device,count)->clock.merge(device,count,Math::max));
+                }
+                if(clock.size()>MAX_DEVICES)throw new IllegalArgumentException("Too many sync devices");
+                merged.put(id,new ArrayList<>(Collections.singletonList(new Version(clock,false,chosen))));
+                continue;
+            }
             for (Version a : union) for (Version b : union)
                 if (a.clock.equals(b.clock) && !same(a,b)) throw new IllegalArgumentException("Inconsistent sync version");
             List<Version> keep = new ArrayList<>();
@@ -102,6 +117,17 @@ public final class SyncState {
             merged.put(id,keep);
         }
         data.clear(); data.putAll(merged);
+    }
+    private static void validateMergeIdentity(String id,JSONObject payload) {
+        String source=payload==null?"":payload.optString("sourceCandidate"),target=payload==null?"":payload.optString("targetCandidate");
+        if(payload==null||!"merge".equals(payload.optString("kind"))||!id.equals("merge_"+source)
+                ||!UUID.fromString(source).toString().equals(source)||!UUID.fromString(target).toString().equals(target)||source.compareTo(target)<=0)
+            throw new IllegalArgumentException("合并记录身份无效");
+    }
+    public static JSONObject preferredMerge(JSONObject first,JSONObject second) {
+        if(first==null)return second;if(second==null)return first;
+        int order=first.optString("targetCandidate").compareTo(second.optString("targetCandidate"));
+        return order<0||(order==0&&canonical(first).compareTo(canonical(second))<=0)?first:second;
     }
     private static boolean dominates(Map<String,Long> a, Map<String,Long> b) {
         if (a.equals(b)) return false;
