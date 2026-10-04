@@ -17,10 +17,12 @@ public final class SyncSettingsActivity extends Activity {
     private EditText url, user, password;
     private TextView status;
     private LinearLayout pending;
+    private int pendingLoad;
     private final android.os.Handler refresh = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable poll = new Runnable() {
         @Override public void run() {
             status.setText(AndroidSync.running() ? "正在同步…" : new WebDavSettingsStore(SyncSettingsActivity.this).status());
+            updatePendingButtons();
             refresh.postDelayed(this, 1500);
         }
     };
@@ -58,23 +60,35 @@ public final class SyncSettingsActivity extends Activity {
     @Override protected void onResume() { super.onResume(); refresh.post(poll); }
     @Override protected void onPause() { refresh.removeCallbacks(poll); super.onPause(); }
     private AndroidSync.Completion completion() {
+        return completion(null);
+    }
+    private AndroidSync.Completion completion(String savedPassword) {
         WeakReference<SyncSettingsActivity> owner = new WeakReference<>(this);
         return result -> { SyncSettingsActivity activity = owner.get();
-            if (activity != null && !activity.isDestroyed() && !activity.isFinishing()) activity.status.setText(result);
+            if (activity == null || activity.isDestroyed() || activity.isFinishing()) return;
+            activity.status.setText(result);
+            if (savedPassword != null && "同步设置已保存".equals(result)
+                    && savedPassword.equals(activity.password.getText().toString())) activity.password.setText("");
+            activity.updatePendingButtons();
+            activity.loadPending();
         };
     }
     private void save(boolean test) {
         String base = url.getText().toString().trim(), account = user.getText().toString().trim(), secret = password.getText().toString();
-        if (AndroidSync.work(this, completion(), app -> {
+        if (!AndroidSync.work(this, completion(test ? null : secret), app -> {
             WebDavSettingsStore settings = new WebDavSettingsStore(app);
             String actual = secret.isEmpty() && settings.configured() ? settings.password() : secret;
-            settings.save(base, account, actual); SyncJobService.schedule(app);
-            if (test) try (WebDavClient client = new WebDavClient(base, account, actual)) { client.testConnection(); }
+            if (test) {
+                if (account.isEmpty() || actual.isEmpty()) throw new java.io.IOException("请输入账号和应用密码");
+                try (WebDavClient client = new WebDavClient(base, account, actual)) { client.testConnection(); }
+            } else {
+                settings.save(base, account, actual); SyncJobService.schedule(app);
+            }
             return test ? "连接成功" : "同步设置已保存";
-        })) password.setText("");
-        else status.setText("同步正在进行，请稍后保存");
+        })) status.setText(test ? "同步正在进行，请稍后测试" : "同步正在进行，请稍后保存");
     }
     private void loadPending() {
+        int generation = ++pendingLoad;
         WeakReference<SyncSettingsActivity> owner = new WeakReference<>(this);
         android.content.Context app = getApplicationContext();
         java.util.concurrent.ExecutorService reader = Executors.newSingleThreadExecutor();
@@ -85,10 +99,15 @@ public final class SyncSettingsActivity extends Activity {
             List<AndroidSync.Pending> result = records;
             new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                 SyncSettingsActivity activity = owner.get();
-                if (activity == null || activity.isDestroyed() || activity.isFinishing()) return;
+                if (activity == null || activity.isDestroyed() || activity.isFinishing() || generation != activity.pendingLoad) return;
+                if (result == null) {
+                    activity.status.setText("无法读取待确认记录，请重试");
+                    return;
+                }
                 activity.pending.removeViews(1, activity.pending.getChildCount() - 1);
-                if (result == null || result.isEmpty()) activity.pending.addView(activity.text(result == null ? "无法读取待确认记录" : "暂无待确认记录", 14));
+                if (result.isEmpty()) activity.pending.addView(activity.text("暂无待确认记录", 14));
                 else for (AndroidSync.Pending record : result) activity.button(activity.pending, record.title, () -> activity.choose(record));
+                activity.updatePendingButtons();
             }); reader.shutdown();
         });
     }
@@ -96,12 +115,26 @@ public final class SyncSettingsActivity extends Activity {
         String[] labels = new String[record.versions.size() + 1]; labels[0] = "保留本机版本";
         for (int i = 0; i < record.versions.size(); i++) labels[i + 1] = "版本 " + (i + 1) + "\n" + AndroidSync.describe(record.versions.get(i));
         UiStyle.choiceDialog(this, record.title, labels, -1, which -> {
-            if (which == 0) { AndroidSync.resolve(this, record, -1, false, completion()); return; }
-            if (!record.calendar) { AndroidSync.resolve(this, record, which - 1, false, completion()); return; }
+            if (which == 0) { resolve(record, -1, false); return; }
+            if (!record.calendar) { resolve(record, which - 1, false); return; }
             UiStyle.confirmDialog(this, "移除本机日历中的旧事件并应用云端版本",
                     "此操作将移除这条记录已写入系统日历的全部旧事件及其系统提醒，然后应用所选版本。新日程需再次手动写入日历。若部分移除失败，将保留记录供重试。",
-                    "移除旧事件并应用", () -> AndroidSync.resolve(this, record, which - 1, true, completion()));
+                    "移除旧事件并应用", () -> resolve(record, which - 1, true));
         });
+    }
+    private void resolve(AndroidSync.Pending record, int index, boolean removeCalendar) {
+        if (AndroidSync.resolve(this, record, index, removeCalendar, completion())) status.setText("正在处理待确认记录…");
+        else {
+            status.setText("同步正在进行，请稍后处理");
+            Toast.makeText(this, "同步正在进行，请稍后处理", Toast.LENGTH_SHORT).show();
+        }
+        updatePendingButtons();
+    }
+    private void updatePendingButtons() {
+        for (int i = 0; i < pending.getChildCount(); i++) {
+            android.view.View child = pending.getChildAt(i);
+            if (child instanceof Button) child.setEnabled(!AndroidSync.running());
+        }
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private TextView text(String value, int size) { TextView text = new TextView(this); text.setText(value); text.setTextSize(size); text.setTextColor(UiStyle.colors(this).text); return text; }

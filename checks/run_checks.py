@@ -26,12 +26,13 @@ GROUPS = {
         "lifecycle_motion_check.py", "automatic_update_check.py",
         "background_preference_check.py", "custom_color_check.py",
         "dialog_layers_check.py", "widget_danmaku_refresh_check.py",
-        "home_filter_reference_check.py",
+        "home_filter_reference_check.py", "sync_settings_check.py",
         "widget_source_failure_check.py",
         "widget_preferences_check.py",
     ),
     "cached_dependencies": (
         "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",
+        "sync_core_check.py",
     ),
 }
 SUITES = {"quick": ("python",), "full": tuple(GROUPS)}

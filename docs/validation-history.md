@@ -1,5 +1,14 @@
 # 历史验证记录
 
+## 0.14.5 — 2026-10-05
+
+- `checks/sync_settings_check.py`：16 个离线场景通过，执行生产设置/完成回调/冲突选择方法，UI、存储、网络使用替身；覆盖测试不保存、不安排同步、密码保留/成功清空、忙碌反馈、处理后刷新及销毁保护。
+- `checks/sync_core_check.py` 定向通过。`checks/lan_feedback_check.cjs` 在真实 Edge 与模拟手机 API 上通过，覆盖弹窗错误、单次提交、失败后重试以及关闭/重开时清理已有提示；独立代码审查通过。
+- `checks/run_checks.py full --list` 共 32 项，同步核心与同步设置各出现一次；本轮未重跑全部 32 项。最终 `assembleRelease/lintRelease` 成功，46 tasks、9 秒，lint 0 错误/82 警告。
+- 正式 APK `build/distributions/Chrona-0.14.5.apk`，versionCode 112，1,938,098 字节，SHA-256 `2f2acf940d61fc198625f79fd74f6f2c32d1eb4d35c0e3dc022a2cf7e1cb51f9`；实际 APK 未启用调试。新包与上一版 APK 的签名证书 SHA-256 均为 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`，包内 LAN 全部资源逐字节匹配当前源码。
+- 构建、签名、版本与产物证据：`build/release-0.14.5-build.log`、`release-0.14.5-signature.log`、`release-0.14.5-previous-signature.log`、`release-0.14.5-version.log`、`release-0.14.5-artifact.json`；网页截图 `build/lan-feedback-checks/modal-error-mobile.png`。
+- 未进行真实 Android 界面、实际 WebDAV、手机 LAN 端到端或覆盖安装验收。备份 `build/backups/20261005-002106-release-0.14.5`。
+
 ## 0.14.4 — 2026-10-04
 
 - `checks/candidate_merge_check.py`：64 项，生产 TaskStore/CandidateMerges、共享同步模型，以及实际 AndroidSyncData staging/apply/changed 方法；Android SQLite API 传输替身接真实 SQLite。新增恢复序列回退后的 UUID 不重用（含未映射实体先固化），远端合并同时修改原文/附件正常落地且下一次 capture 不造假冲突，真正本地修改仍保留。

@@ -11,11 +11,11 @@
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.14.3`，versionCode `110` |
+| 当前版本 | `0.14.5`，versionCode `112` |
 | 最低 Android 版本 | API 26（Android 8.0） |
 | 编译 / 目标 SDK | 36 / 36 |
 | Java 源码级别 | 17 |
-| 数据库版本 | 9；升级必须保留已有记录 |
+| 数据库版本 | 10；升级必须保留已有记录 |
 
 网页滚动条用 `scrollbar-width:none` 与 `::-webkit-scrollbar` 隐藏轨道，禁止通过 `overflow:hidden` 禁止滚动。统一下拉保留原 select 的 name/value/input/change，触发按钮使用 combobox、选项使用 listbox/option，顶层 popover 避免 dialog 裁切；键盘方向/Home/End/Enter/Space/Escape/Tab 与焦点回归必须验证。课表按浏览周只读调用 `library.select("").current(day)`，沿用手机学期边界和最近规则，不持久化网页选择。
 
@@ -98,9 +98,9 @@ Dock 点击与高光回归检查：设置现有 `JAVA_HOME` 后运行 `python ch
 
 动效和启动优化见 [统一动效与启动测量](motion-startup.md)。`checks/lifecycle_motion_check.py` 使用替身运行实际返回保护和中断恢复方法；`checks/startup_metrics_check.py` 只校验测量数据解析。连接设备后使用 `checks/measure_startup.py` 测 TTID/TTFD，不能用离线检查代替 1 秒验收。
 
-当前整合：[首页、课程与可信反馈](home-course-integration.md)。历史问题审查与修复记录：[软件审查与完善清单](quality-audit.md)。数据格式保持 v9；备份使用 SQLite ATTACH 事务复制快照，避免使用旧 Android SQLite 不支持的 VACUUM INTO。
+当前整合：[首页、课程与可信反馈](home-course-integration.md)。历史问题审查与修复记录：[软件审查与完善清单](quality-audit.md)。当前数据库版本为 v10；备份使用 SQLite ATTACH 事务复制快照，避免使用旧 Android SQLite 不支持的 VACUUM INTO。
 
-统一离线验证使用 `python checks/run_checks.py full`，环境与正式构建、APK 验签说明见 [分发文档](github-releases.md)。设备流程单独按 [验收清单](device-acceptance.md) 记录。正式包使用 `:app:assembleRelease`，关闭调试并沿用既有签名；开发包仍使用 debug。
+统一离线验证使用 `python checks/run_checks.py full`，其中包含同步核心检查 `sync_core_check.py`；可用 `python checks/run_checks.py full --list` 查看清单。浏览器交互检查仍需单独运行，未纳入该离线清单。环境与正式构建、APK 验签说明见 [分发文档](github-releases.md)。设备流程单独按 [验收清单](device-acceptance.md) 记录。正式包使用 `:app:assembleRelease`，关闭调试并沿用既有签名；开发包仍使用 debug。
 
 本轮离线回归：`python checks/detail_draft_check.py`、`python checks/job_execution_check.py`、`python checks/data_integrity_check.py`、`python checks/config_backup_check.py`。前三项分别执行实际 retained session/协调方法与真实 SQLite SQL；配置检查用内存偏好和密钥存储替身执行实际 ConfigBackup。Java 客户端检查 `checks/NetworkSafetyCheck.java` 使用离线 HTTPS 假连接，需要现有 org.json 检查运行库，不访问真实模型。检查生成物均在 `build/`，这些检查不能替代 Android 生命周期与设备测试。
 
