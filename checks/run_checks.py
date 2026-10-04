@@ -22,7 +22,7 @@ GROUPS = {
     "java": (
         "inbox_query_check.py", "schedule_query_check.py", "detail_draft_check.py",
         "job_execution_check.py", "dock_navigation_check.py",
-        "lan_security_check.py", "edit_conflict_check.py",
+        "lan_security_check.py", "edit_conflict_check.py", "settings_layout_check.py",
         "lifecycle_motion_check.py", "automatic_update_check.py",
         "background_preference_check.py", "custom_color_check.py",
         "dialog_layers_check.py", "widget_danmaku_refresh_check.py",
@@ -31,7 +31,7 @@ GROUPS = {
         "widget_preferences_check.py",
     ),
     "cached_dependencies": (
-        "config_backup_check.py", "timetable_check.py", "academic_terms_check.py",
+        "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py",
     ),
 }
 SUITES = {"quick": ("python",), "full": tuple(GROUPS)}

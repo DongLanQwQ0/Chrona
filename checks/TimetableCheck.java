@@ -172,6 +172,60 @@ public class TimetableCheck {
         return new Timetable.Occurrence(title, "", "", day.plusMinutes(start), day.plusMinutes(end), false, false, "");
     }
 
+    public void alternatingLocationsShareOneBlockWithoutLosingDates() throws Exception {
+        Timetable table = parse(event("odd", course("20261005T080000", "20261005T093500")
+                        + "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=3\r\n"),
+                event("even", course("20261012T080000", "20261012T093500")
+                        .replace("东2-204", "东6-328") + "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=3\r\n"));
+        assertEquals(1, table.blocks.size());
+        assertEquals(6, table.occurrences.size());
+        assertEquals(6, table.blocks.get(0).occurrences().size());
+        assertEquals("", table.blocks.get(0).location);
+        assertEquals("东2-204", table.blocks.get(0).occurrences().get(0).location);
+        assertEquals("东6-328", table.blocks.get(0).occurrences().get(1).location);
+        assertEquals(12, table.blocks.get(0).occurrences().get(1).start.getDayOfMonth());
+        assertEquals(1, table.courseCount);
+        assertEquals(1, new TimetableLayout(table.blocks).dayColumns[0]);
+        AcademicTerms.View view = new AcademicTerms.View(table.occurrences, ZONE,
+                java.util.Collections.emptyMap());
+        assertEquals(1, view.regular.blocks.size());
+        assertEquals(0, view.special.size());
+        assertEquals(1, view.courseCount);
+        assertEquals(570L, view.minutes);
+    }
+
+    public void sameTitleAtOtherTimesOrWeekdaysStillHasSeparateBlocks() throws Exception {
+        Timetable table = parse(event("a", course("20261005T080000", "20261005T093500")),
+                event("b", course("20261005T100000", "20261005T113500")),
+                event("c", course("20261006T080000", "20261006T093500")),
+                event("d", course("20261005T080000", "20261005T093500").replace("微积分", "线性代数")));
+        assertEquals(4, table.blocks.size());
+        assertEquals(2, new TimetableLayout(table.blocks).dayColumns[0]);
+    }
+
+    public void simultaneousDifferentLocationsRemainDistinctOccurrences() throws Exception {
+        Timetable table = parse(event("a", course("20261005T080000", "20261005T093500")),
+                event("b", course("20261005T080000", "20261005T093500").replace("东2-204", "东6-328")));
+        assertEquals(2, table.blocks.size());
+        assertEquals(2, new TimetableLayout(table.blocks).dayColumns[0]);
+        assertEquals(2, table.occurrences.size());
+        assertEquals(1, table.blocks.get(0).occurrences().size());
+        assertFalse(table.occurrences.get(0).key().equals(table.occurrences.get(1).key()));
+    }
+
+    public void shortAlternatingSeriesRetainsExistingAutomaticClassification() throws Exception {
+        Timetable table = parse(event("odd", course("20261005T080000", "20261005T093500")
+                        + "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=2\r\n"),
+                event("even", course("20261012T080000", "20261012T093500")
+                        .replace("东2-204", "东6-328") + "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=2\r\n"));
+        assertEquals(1, table.blocks.size());
+        AcademicTerms.View view = new AcademicTerms.View(table.occurrences, ZONE,
+                java.util.Collections.emptyMap());
+        assertEquals(0, view.regular.blocks.size());
+        assertEquals(4, view.special.size());
+        assertEquals(380L, view.minutes);
+    }
+
     private static void assertTrue(boolean value) { if (!value) throw new AssertionError("Expected true"); }
     private static void assertFalse(boolean value) { assertTrue(!value); }
     private static void fail(String message) { throw new AssertionError(message); }

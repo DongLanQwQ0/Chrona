@@ -48,7 +48,9 @@ public final class Timetable {
     /** A multi-hour class is a single block; only midnight splits it into day segments. */
     public static final class Block {
         public final int day, startMinute, endMinute;
-        public final String title, location, description;
+        public final String title, description;
+        /** Shared location only; varying locations remain on the individual occurrences. */
+        public String location;
         public final boolean allDay;
         private final List<Occurrence> entries = new ArrayList<>();
         private final TreeSet<String> seen = new TreeSet<>();
@@ -64,8 +66,17 @@ public final class Timetable {
         }
 
         void add(Occurrence entry) {
-            String key = entry.start + "/" + entry.end + "/" + entry.description + "/" + entry.recurrence;
+            String key = entry.key() + "/" + entry.description + "/" + entry.recurrence;
             if (seen.add(key)) entries.add(entry);
+            if (!location.equals(entry.location)) location = "";
+        }
+
+        boolean accepts(Occurrence entry) {
+            for (Occurrence existing : entries)
+                if (!existing.location.equals(entry.location)
+                        && existing.start.isBefore(entry.end) && entry.start.isBefore(existing.end))
+                    return false;
+            return true;
         }
 
         public List<Occurrence> occurrences() { return Collections.unmodifiableList(entries); }
@@ -82,7 +93,8 @@ public final class Timetable {
         this.occurrences = Collections.unmodifiableList(new ArrayList<>(unique.values()));
         this.zone = zone;
         this.eventCount = eventCount;
-        Map<List<Object>, Block> groups = new LinkedHashMap<>();
+        Map<List<Object>, List<Block>> groups = new LinkedHashMap<>();
+        ArrayList<Block> sorted = new ArrayList<>();
         TreeSet<String> courses = new TreeSet<>();
         for (Occurrence entry : this.occurrences) {
             courses.add(entry.title);
@@ -96,20 +108,25 @@ public final class Timetable {
                 int end = until.toLocalDate().isAfter(date) ? 1440
                         : (until.toLocalTime().toSecondOfDay() + 59) / 60;
                 int day = date.getDayOfWeek().getValue() - 1;
-                List<Object> key = java.util.Arrays.asList(entry.title, entry.location,
+                List<Object> key = java.util.Arrays.asList(entry.title,
                         entry.allDay, day, start, end);
-                Block block = groups.get(key);
+                List<Block> candidates = groups.computeIfAbsent(key, ignored -> new ArrayList<>());
+                Block block = null;
+                for (Block candidate : candidates) if (candidate.accepts(entry)) {
+                    block = candidate;
+                    break;
+                }
                 if (block == null) {
-                    if (groups.size() >= MAX_BLOCKS)
+                    if (sorted.size() >= MAX_BLOCKS)
                         throw new IllegalArgumentException("课程时段过多，请分别导入不同学期的课表");
                     block = new Block(entry, day, start, end);
-                    groups.put(key, block);
+                    candidates.add(block);
+                    sorted.add(block);
                 }
                 block.add(entry);
                 date = date.plusDays(1);
             }
         }
-        ArrayList<Block> sorted = new ArrayList<>(groups.values());
         sorted.sort(Comparator.comparingInt((Block b) -> b.day)
                 .thenComparingInt(b -> b.startMinute).thenComparingInt(b -> b.endMinute)
                 .thenComparing(b -> b.title));

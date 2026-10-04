@@ -64,7 +64,6 @@ public final class TimetableActivity extends Activity {
     private Session session;
     private LinearLayout shell;
     private FrameLayout body;
-    private TextView source;
     private Button importButton;
     private ScrollView vertical;
     private HorizontalScrollView horizontal;
@@ -109,10 +108,6 @@ public final class TimetableActivity extends Activity {
         importButton.setOnClickListener(view -> pickIcs());
         header.addView(importButton, new LinearLayout.LayoutParams(-2, dp(48)));
         UiStyle.addSpaced(shell, header, 0, 12);
-        source = label("", 12, false);
-        source.setMaxLines(2);
-        source.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        UiStyle.addSpaced(shell, source, 0, 12);
         body = new FrameLayout(this);
         shell.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
@@ -369,7 +364,6 @@ public final class TimetableActivity extends Activity {
         gridWidth = body.getWidth();
         TimetableStore.Semester term = currentTerm();
         if (term == null) {
-            source.setVisibility(View.GONE);
             LinearLayout empty = new LinearLayout(this);
             empty.setOrientation(LinearLayout.VERTICAL);
             empty.setGravity(Gravity.CENTER);
@@ -392,8 +386,6 @@ public final class TimetableActivity extends Activity {
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
             body.addView(empty, params);
         } else {
-            source.setVisibility(View.VISIBLE);
-            source.setText(term.document.name + " · " + term.document.table.zone.getId());
             vertical = new ScrollView(this);
             vertical.setVerticalScrollBarEnabled(false);
             LinearLayout content = new LinearLayout(this);
@@ -601,13 +593,15 @@ public final class TimetableActivity extends Activity {
         TreeSet<String> dates = new TreeSet<>();
         for (Timetable.Occurrence entry : block.occurrences()) {
             if (entry.openEnded) {
-                rules.add(entry.recurrence);
+                rules.add(entry.recurrence + (block.location.isEmpty() && !entry.location.isEmpty()
+                        ? " · " + entry.location : ""));
             } else {
                 String value = entry.allDay ? DATE.format(entry.start) : DATE.format(entry.start) + "  " + TIME.format(entry.start);
                 value += entry.allDay ? (entry.end.toLocalDate().minusDays(1).isAfter(entry.start.toLocalDate())
                         ? "–" + DATE.format(entry.end.minusDays(1)) : "")
                         : "–" + (entry.start.toLocalDate().equals(entry.end.toLocalDate())
                                 ? TIME.format(entry.end) : DATE_TIME.format(entry.end));
+                if (block.location.isEmpty() && !entry.location.isEmpty()) value += " · " + entry.location;
                 dates.add(value);
             }
         }

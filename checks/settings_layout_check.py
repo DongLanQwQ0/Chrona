@@ -1,0 +1,42 @@
+from pathlib import Path
+import os,subprocess
+root=Path(__file__).resolve().parents[1];src=root/'app/src/main/java/com/donglan/chrona';out=root/'build/settings-layout-check';out.mkdir(exist_ok=True)
+def method(text,marker):
+ a=text.index(marker);b=text.index('{',a);depth=1;i=b+1
+ while depth:
+  if text[i]=='{':depth+=1
+  elif text[i]=='}':depth-=1
+  i+=1
+ return text[a:i]
+layout=(src/'SettingsPageLayout.java').read_text(encoding='utf-8');ui=(src/'UiStyle.java').read_text(encoding='utf-8')
+files={
+'android/os/Build.java':'package android.os; public class Build { public static class VERSION {public static int SDK_INT=35;} }',
+'android/graphics/Color.java':'package android.graphics; public class Color {public static final int TRANSPARENT=0;}',
+'android/graphics/Insets.java':'package android.graphics; public class Insets {public int left,top,right,bottom;public Insets(int l,int t,int r,int b){left=l;top=t;right=r;bottom=b;}}',
+'android/view/WindowInsets.java':'package android.view; public class WindowInsets {public static class Type {public static int systemBars(){return 1;}public static int displayCutout(){return 2;}public static int ime(){return 4;}}public android.graphics.Insets bars;public int keyboard;public WindowInsets(int l,int t,int r,int b,int k){bars=new android.graphics.Insets(l,t,r,b);keyboard=k;}public android.graphics.Insets getInsets(int type){return type==4?new android.graphics.Insets(0,0,0,keyboard):bars;}}',
+'android/view/View.java':'''package android.view; public class View {public static int SYSTEM_UI_FLAG_LIGHT_STATUS_BAR=1,SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR=2;public void setSystemUiVisibility(int v){}public int l,t,r,b;public boolean fits;public Object params; public java.util.List<View> children=new java.util.ArrayList<>();public View(android.app.Activity a){} public void setPadding(int l,int t,int r,int b){this.l=l;this.t=t;this.r=r;this.b=b;}public int getPaddingLeft(){return l;}public int getPaddingTop(){return t;}public int getPaddingRight(){return r;}public int getPaddingBottom(){return b;}public void setFitsSystemWindows(boolean v){fits=v;}public void setBackgroundColor(int c){} public Object getLayoutParams(){return params;}public void setLayoutParams(Object p){params=p;}public interface Listener{WindowInsets apply(View v,WindowInsets i);}public Listener listener;public void setOnApplyWindowInsetsListener(Listener l){listener=l;}public void requestApplyInsets(){}public void dispatch(WindowInsets i){if(fits)setPadding(i.bars.left,i.bars.top,i.bars.right,i.bars.bottom);if(listener!=null)listener.apply(this,i);for(View c:children)c.dispatch(i);}public void addView(View v){children.add(v);}public void addView(View v,Object p){v.params=p;children.add(v);}}''',
+'android/widget/LinearLayout.java':'package android.widget; public class LinearLayout extends android.view.View {public static int VERTICAL=1;public LinearLayout(android.app.Activity a){super(a);} public void setOrientation(int o){}}',
+'android/widget/FrameLayout.java':'package android.widget; public class FrameLayout extends android.view.View {public FrameLayout(android.app.Activity a){super(a);}public static class LayoutParams {public int bottomMargin,rightMargin;public LayoutParams(int w,int h){}}}',
+'android/widget/ScrollView.java':'package android.widget; public class ScrollView extends android.view.View {public ScrollView(android.app.Activity a){super(a);}public void setVerticalScrollBarEnabled(boolean b){}}',
+'android/app/Activity.java':'package android.app; public class Activity {public android.view.View content;public float density;public Activity(float d){density=d;}public static class Metrics{public float density;}public class Resources{public Metrics getDisplayMetrics(){Metrics m=new Metrics();m.density=density;return m;}}public static class Window{public void setStatusBarColor(int c){}public void setNavigationBarColor(int c){}public android.view.View getDecorView(){return new android.view.View(null);}}public Window getWindow(){return new Window();}public Resources getResources(){return new Resources();}public void setContentView(android.view.View v){content=v;}}',
+'com/donglan/chrona/GlassBackdropView.java':'package com.donglan.chrona;class GlassBackdropView extends android.view.View {GlassBackdropView(android.app.Activity a){super(a);}}',
+}
+# Execute unchanged production helper methods, with Android platform stand-ins only.
+files['com/donglan/chrona/SettingsPageLayout.java']='package com.donglan.chrona;import android.app.Activity;import android.graphics.Color;import android.widget.*;final class SettingsPageLayout {static final int GUTTER_DP=20;'+''.join(method(layout,m) for m in ['static LinearLayout content(', 'static void show(', 'private static int dp('])+'}'
+files['com/donglan/chrona/ThemeStore.java']='package com.donglan.chrona;class ThemeStore{static boolean dark(android.app.Activity a){return false;}}'
+files['com/donglan/chrona/UiStyle.java']='''package com.donglan.chrona;import android.app.Activity;import android.view.*;import android.widget.*;import android.os.Build;class UiStyle {static class Palette{int background;}static Palette colors(android.app.Activity a){return new Palette();}static void enableEdgeToEdge(View v){}'''+method(ui,'public static void page(')+method(ui,'public static void applyInsets(View stage, View safeContent)')+method(ui,'static void applyInsets(View stage, View safeContent, View floating)')+'}'
+files['com/donglan/chrona/SettingsLayoutCheck.java']='''package com.donglan.chrona;import android.widget.*;import android.view.*;public class SettingsLayoutCheck {public static void main(String[]args){int count=0;for(int sdk:new int[]{26,34,35,36})for(float density:new float[]{1,1.5f,3}){android.os.Build.VERSION.SDK_INT=sdk;android.app.Activity a=new android.app.Activity(density);LinearLayout root=SettingsPageLayout.content(a);View card=new View(a);root.addView(card);SettingsPageLayout.show(a,root);View stage=a.content;check(stage.children.size()==2&&stage.children.get(0) instanceof GlassBackdropView,"backdrop hierarchy");View viewport=stage.children.get(1);check(viewport instanceof ScrollView&&viewport.children.size()==1&&viewport.children.get(0)==root,"single content viewport");for(WindowInsets bars:new WindowInsets[]{new WindowInsets(0,24,0,20,0),new WindowInsets(12,24,8,20,300),new WindowInsets(0,24,0,20,0)}){stage.dispatch(bars);int gutter=Math.round(20*density);check(!root.fits&&root.l==gutter&&root.r==gutter,"page gutters survive insets");check(root.t==Math.round(8*density)&&root.b==Math.round(28*density),"vertical whitespace preserved");if(sdk>=35)check(viewport.l==bars.bars.left&&viewport.r==bars.bars.right&&viewport.b==Math.max(bars.bars.bottom,bars.keyboard),"viewport safe area / keyboard / no accumulation");int cardLeft=viewport.l+root.l;int cardRight=viewport.r+root.r;check(cardLeft>=gutter&&cardRight>=gutter,"full width card/header/control outer edges");count++;}}System.out.println("Settings layout: "+count+" actual helper/inset executions passed; Android platform stand-ins, no device rendering");}static void check(boolean b,String s){if(!b)throw new AssertionError(s);}}'''
+for name,text in files.items():p=out/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text,encoding='utf-8')
+java=Path(os.environ.get('JAVA_HOME','D:/Minecraft/java21'))/'bin'
+subprocess.run([str(java/'javac.exe'),'--release','17','-encoding','UTF-8','-d',str(out),*map(str,(out/x for x in files))],check=True)
+subprocess.run([str(java/'java.exe'),'-cp',str(out),'com.donglan.chrona.SettingsLayoutCheck'],check=True)
+
+# Reproduce the original defect in an isolated compiled copy: the check must reject it.
+helper = out / 'com/donglan/chrona/SettingsPageLayout.java'
+original = helper.read_text(encoding='utf-8')
+helper.write_text(original.replace('root.setFitsSystemWindows(false)', 'root.setFitsSystemWindows(true)'), encoding='utf-8')
+subprocess.run([str(java/'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', str(out), '-d', str(out), str(helper)], check=True)
+mutant = subprocess.run([str(java/'java.exe'), '-cp', str(out), 'com.donglan.chrona.SettingsLayoutCheck'], capture_output=True, text=True)
+assert mutant.returncode != 0 and 'page gutters survive insets' in mutant.stderr, 'original defect was not detected'
+helper.write_text(original, encoding='utf-8')
+print('Original fitsSystemWindows defect rejected by numeric gutter assertions')

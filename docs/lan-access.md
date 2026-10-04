@@ -14,12 +14,14 @@ NanoHTTPD 2.3.1 负责 HTTP 解析与 Socket 生命周期，最多 8 个连接�
 
 ## 访问保护
 
-- 每次开启生成 128 位临时配对码及 256 位会话/写入凭证，保存在内存；配对码通过 POST JSON 提交，会话使用 HttpOnly、SameSite=Strict 的会话 Cookie，写入凭证使用请求头。凭证不放 URL、日志或持久化网页存储。
+- 每次开启生成安全随机六位十进制配对码（保留前导零、10 分钟有效）及独立 256 位会话/写入凭证，保存在内存；配对码通过 POST JSON 提交，会话使用 HttpOnly、SameSite=Strict 的会话 Cookie，写入凭证使用请求头。凭证不放 URL、日志或持久化网页存储。
 - Host 必须等于正在监听的 IP:端口，Origin 必须同源；存在 Sec-Fetch-Site 时只允许 same-origin/none。所有非公开接口及附件在读取存储前验证会话。所有修改仅允许 POST，并要求 Origin 与写入凭证，拒绝跨站请求与域名重绑定。
-- 配对每个来源一分钟最多 5 次、全局一分钟最多 20 次，最多 16 个会话；会话 12 小时后失效。关闭服务清空所有凭证、关闭 Socket。
+- 配对每个来源一分钟最多 5 次、全局一分钟最多 20 次，最多 16 个会话；会话 12 小时后失效，配对码过期不影响已建立会话；新浏览器配对需在手机重新配对。关闭服务清空所有凭证、关闭 Socket。
 - JSON 请求最大 1 MiB，配对请求最大 256 字节；拒绝未知方法、分块请求体、错误 MIME、无效 UTF-8、超范围/非整数数值和缺失必需字段。静态文件白名单、内容类型限制及 CSP 阻止用户文本成为可执行 HTML。
 
 HTTP 仅适合可信局域网。Android 16/target36 默认允许 INTERNET 应用访问局域网，本实现同时声明/请求附近设备权限以覆盖 Android 16 可选限制。未来提升到 target37 时应按新的 ACCESS_LOCAL_NETWORK 规则调整；当前 target36 不声明该权限。官方说明：[本地网络权限](https://developer.android.com/privacy-and-security/local-network-permission)、[前台服务类型](https://developer.android.com/develop/background-work/services/fgs/service-types)、[NanoHTTPD](https://github.com/NanoHttpd/nanohttpd)。
+
+二维码由本地 ZXing core 3.5.3 生成，仅包含当前访问 URL，不含配对码或会话凭据；服务关闭清除图像，地址变化重新生成。保留可选取复制的地址与六位码，扫码打开仍须配对。编码与实际解码、启停/变址行为通过 `python checks/lan_qr_check.py` 离线检查。
 
 ## 验证与复现
 

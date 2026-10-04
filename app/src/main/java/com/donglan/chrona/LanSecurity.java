@@ -9,24 +9,26 @@ import java.util.function.LongSupplier;
 /** In-memory, per-server credentials; no secrets in preferences, URLs or logs. */
 final class LanSecurity {
     private static final long WINDOW = 60_000L, SESSION_LIFETIME = 12 * 60 * 60_000L;
+    private static final long PAIRING_LIFETIME = 10 * 60_000L;
     private final LongSupplier clock;
     private final String authority;
+    private final long pairingIssued;
     private final Map<String, Attempt> attempts = new HashMap<>();
     private final Map<String, Long> sessions = new HashMap<>();
-    private String pairing = random(16), csrf = random(32);
+    private String pairing = pairingCode(new SecureRandom()), csrf = random(32);
     private long globalStart;
     private int globalCount;
     private boolean closed;
     private static final class Attempt { long start; int count; Attempt(long now) { start = now; } }
     LanSecurity(String authority) { this(authority, System::currentTimeMillis); }
-    LanSecurity(String authority, LongSupplier clock) { this.authority = authority; this.clock = clock; }
-    synchronized String pairing() { return pairing; }
+    LanSecurity(String authority, LongSupplier clock) { this.authority = authority; this.clock = clock; pairingIssued = clock.getAsLong(); }
+    synchronized String pairing() { return clock.getAsLong() - pairingIssued < PAIRING_LIFETIME ? pairing : ""; }
     synchronized String csrf() { return csrf; }
     boolean host(String host) { return authority.equals(host); }
     boolean origin(String origin) { return ("http://" + authority).equals(origin); }
     synchronized String pair(String remote, String code) {
         long now = clock.getAsLong();
-        if (closed) return null;
+        if (closed || now - pairingIssued >= PAIRING_LIFETIME) return null;
         attempts.entrySet().removeIf(entry -> now - entry.getValue().start >= WINDOW);
         sessions.entrySet().removeIf(entry -> now - entry.getValue() >= SESSION_LIFETIME);
         if (now - globalStart >= WINDOW) { globalStart = now; globalCount = 0; }
@@ -60,5 +62,8 @@ final class LanSecurity {
         byte[] bytes = new byte[count]; new SecureRandom().nextBytes(bytes);
         StringBuilder result = new StringBuilder(); for (byte value : bytes) result.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
         return result.toString();
+    }
+    static String pairingCode(SecureRandom random) {
+        return String.format(java.util.Locale.ROOT, "%06d", random.nextInt(1_000_000));
     }
 }

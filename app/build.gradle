@@ -3,6 +3,7 @@ plugins {
 }
 
 dependencies {
+    implementation('com.google.zxing:core:3.5.3')
     implementation('org.nanohttpd:nanohttpd:2.3.1')
     implementation('com.squareup.okhttp3:okhttp:4.12.0')
     // iCalendar parsing and recurrence expansion; only the text reader is used.
@@ -25,8 +26,8 @@ android {
         applicationId 'com.donglan.chrona'
         minSdk 26
         targetSdk 36
-        versionCode 107
-        versionName '0.14.0'
+        versionCode 108
+        versionName '0.14.1'
         testInstrumentationRunner 'com.donglan.chrona.LanAccessInstrumentation'
     }
 

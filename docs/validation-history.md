@@ -4,6 +4,18 @@
 
 以下记录从原 README 完整迁出，保留各版本实际发生过的验证及当时限制。较早条目中的安装包位置、数据库版本与未完成项属于当时状态，不应据此判断最新版本。新的验证记录可按日期追加在本页，用户可见的版本说明发布在 GitHub Releases。
 
+## 2026-10-04 · 0.14.1 设置留白、配对与网页/课表修正
+
+- 核查发现只有 HANDOFF 与历史记录描述了更新页 20dp 留白，原开发文档没有集中可执行页面规范。两页虽设 padding，却遗漏关闭 `UiStyle.page` 开启的 fitsSystemWindows，系统 inset 会重置内容留白；已由 `SettingsPageLayout` 统一内容/顶栏/视口。具体执行条款见 [开发文档](development.md#原生设置页布局规范)。
+- 备份 `build/backups/20261004-124011-settings-gutters-pairing` 与 `build/backups/20261004-timetable-merge`；未修改用户 AGENTS 或角色 TOML。
+- 安全随机六位数字码保留前导零，10 分钟有效；独立 256 位会话/写入凭证及限流/退出/停服撤销保持。认证检查 29 项通过。ZXing core 在本地生成纯 URL 二维码，真实解码验证两 URL、变址重绘、缓存及停服清图通过，日志 `build/settings-qr-check.log`。
+- 布局检查执行真实内容/视口方法及真实 UiStyle.page/applyInsets，36 组 SDK/密度/系统栏/键盘下的层级和留白数值通过；隔离故障变体重新开启 fitsSystemWindows 后确实被断言拒绝，日志 `build/settings-layout-check.log`。该检查使用 Android 平台替身，不代表原生渲染。
+- 网页中性浅/深背景、正文/次文字与卡片对比 ≥4.5、前导零码输入、完整学期名及现有操作共 16 组 Edge 检查通过；模拟手机接口、无网页异常。浅/深课表对照截图 `build/lan-web-checks/desktop-light-timetable.png`、`desktop-dark-timetable.png` 已查看；日志 `build/settings-web-check.log`。
+- 手机课表不同地点仅在实际日期互斥时聚合；同日同时间异地保持独立色块/冲突列，各 occurrence 地点和定位 key 保留。课表模型 19 场景及学期/CourseAgenda 检查通过，LAN 直接使用实际 occurrence 地点，无接口迁移。
+- 完整离线回归 28/28 通过，日志 `build/settings-reviewed-final-checks.log`；同步核心检查通过，日志 `build/settings-sync-core.log`。
+- 最终 `assembleRelease/lintRelease/assembleDebugAndroidTest` 成功，日志 `build/settings-reviewed-final-build.log`，lint 0 errors / 82 warnings；正式包 `build/distributions/Chrona-0.14.1.apk`，版本 0.14.1 / 108，未启用调试，1,927,130 字节，SHA-256 `0823cecb1cafaf595c1f3cc06e55938f30ea2f6655fd847545be98994e3d0db3`，原证书保持。签名与实际包元数据：`build/settings-final-signature.log`、`settings-final-metadata.log`。
+- ADB 无在线设备：尚无两页 Android 渲染截图、实际扫码/后台/LAN 端到端、系统日历/权限、课表触控/大字体/旋转、覆盖升级和真实 WebDAV 多机验证；网页截图不能替代原生验收。
+
 ## 2026-10-04 · 0.14.0 局域网网页与多设备同步
 
 - 取消独立 Windows 客户端后，以 Android 内置局域网 HTTP 服务与离线网页替代；同步核心保留。修改前备份 `build/backups/20261004-105512-lan-web` 含本轮调整前代码/文档，用户 AGENTS 与角色配置未改动。

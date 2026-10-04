@@ -11,15 +11,28 @@
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.14.0`，versionCode `107` |
+| 当前版本 | `0.14.1`，versionCode `108` |
 | 最低 Android 版本 | API 26（Android 8.0） |
 | 编译 / 目标 SDK | 36 / 36 |
 | Java 源码级别 | 17 |
 | 数据库版本 | 9；升级必须保留已有记录 |
 
+## 原生设置页布局规范
+
+新增或修改设置类页面必须遵守以下规则，禁止页面主体、顶栏或卡片外缘贴屏幕左右边缘。此规则具体化既有外观页、设置主页和更新页的实现；此前只有历史修复记录，没有集中写明容器与调用顺序。
+
+1. 层级为 `FrameLayout stage → GlassBackdropView + ScrollView viewport → 一个纵向 LinearLayout content → 顶栏/分组标题/卡片/操作控件`。背景可以铺满屏幕，内容容器左右必须各有 **20dp** 留白。全宽卡片、输入框和按钮的宽度仅填满内容区域，不能跨过这层留白。卡片内边距不替代页面留白。
+2. 跨设备同步、局域网访问及以后同类二级设置页使用 `SettingsPageLayout.content/header/show`，不要另写安全区容器。公共实现保留内容上下 8dp/28dp；设置主页已有 16dp/24dp、更新页已有 24dp/24dp 不在本轮改变。顶栏采用 48dp 返回触控区域、居中 Lucide 箭头和同一行标题；顶栏位于内容容器中，与卡片外缘对齐。
+3. `UiStyle.page(activity, content)` 会设置背景、系统栏配色并调用 **`content.setFitsSystemWindows(true)`**，因此正确顺序是 `page → content.setFitsSystemWindows(false) → content.setPadding(20dp, top, 20dp, bottom) → transparent background`。遗漏关闭会使 Android 的系统 inset 分发覆盖内容 padding；只在调用 page 前设置 padding 无法保证留白。
+4. 系统栏、屏幕挖孔和键盘安全区只由视口负责：`UiStyle.applyInsets(stage, viewport)`。API 35+ 会将初始视口 padding 与系统 inset 相加、底部取导航栏与键盘的较大值。不得把 content 作为安全区目标，或在 content 再开启 fitsSystemWindows；不得重复叠加 inset。背景仍可延伸到系统栏下面。API 26–34 保持系统默认窗口安全区。
+5. 控件复用 `UiStyle.colors/title/muted/input/button/toggle/glass`，图标采用 Lucide；主题及深色状态使用现有 ThemeStore。`input` 和 `fieldTrigger` 会把内部 padding 设置为 16dp/14dp，`button` 会设置为 18dp/10dp；确需局部覆盖时在样式调用之后设置，不能依赖调用之前的值。`glass` 保留容器 padding，`toggle` 调整颜色及最小高度。控件 margin 只负责卡片内部布局，不承担页面 20dp 留白。
+6. 不增加无必要的说明文字。布局改动保持原有分组间距、滚动能力、触控区域和功能。二维码为白底黑码、四模块静区，布局在已有内容区域内居中，不能撑破卡片。
+
+发布前检查：运行 `python checks/settings_layout_check.py`，执行真实内容构建及 inset 方法，在多 SDK/密度与侧边挖孔/键盘变化下检查层级、左右像素值和不累加安全区；同时运行完整离线检查与 Android 构建/lint。该 JVM 检查使用 Android 平台替身，不构成 Android 渲染验收。具备设备时，在两页分别检查浅色/深色、纵横屏、首屏/滚动底部、打开键盘、大字体，截图确认顶栏/卡片外缘/全宽控件始终留有左右 20dp 内容留白（系统侧边安全区另加），安全区不遮挡；没有设备必须在验证记录中写明，不能用网页截图代替原生页面验收。
+
 ## 本地构建与签名
 
-电脑通过手机内置的局域网网页访问，不设独立客户端或构建模块。离线资源位于 `app/src/main/assets/lan/`；HTTP 使用 NanoHTTPD 2.3.1，服务/权限、认证与真实存储适配分别由 `LanAccessService`、`LanSecurity`、`LanWebServer` 管理，协议和验收边界见 [局域网访问](lan-access.md)。
+电脑通过手机内置的局域网网页访问，不设独立客户端或构建模块。离线资源位于 `app/src/main/assets/lan/`；二维码在本地由 [ZXing core 3.5.3](https://github.com/zxing/zxing) 编码，纯访问 URL 的启停/变址与实际解码检查为 `python checks/lan_qr_check.py`；HTTP 使用 NanoHTTPD 2.3.1，服务/权限、认证与真实存储适配分别由 `LanAccessService`、`LanSecurity`、`LanWebServer` 管理，协议和验收边界见 [局域网访问](lan-access.md)。
 
 同步核心保留在 `shared/src/main/java/` 并由 Android 源集直接编译。运行 `python checks/sync_core_check.py` 使用既有 Gradle 缓存中的 OkHttp/Okio/Kotlin 及 `build/ai-checks/json.jar`；可通过 `CHRONA_SYNC_CLASSPATH` 指定现有检查依赖。同步协议见 [sync-contract.md](sync-contract.md)。
 

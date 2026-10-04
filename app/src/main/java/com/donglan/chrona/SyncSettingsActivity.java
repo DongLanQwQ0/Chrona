@@ -27,18 +27,8 @@ public final class SyncSettingsActivity extends Activity {
     @Override protected void onCreate(Bundle saved) {
         ThemeStore.apply(this); super.onCreate(saved);
         WebDavSettingsStore settings = new WebDavSettingsStore(this);
-        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(8), dp(20), dp(28)); UiStyle.page(this, root);
-        root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-        LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
-        ImageButton back = new ImageButton(this); back.setImageResource(R.drawable.ic_arrow_left);
-        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        back.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
-        back.setPadding(dp(12), dp(12), dp(12), dp(12)); back.setContentDescription("返回");
-        UiStyle.acrylicChoice(back, false, UiStyle.RADIUS_PILL, false); back.setOnClickListener(v -> finish());
-        header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        TextView title = text("跨设备同步", 24); UiStyle.title(title); title.setPadding(dp(12), 0, 0, 0);
-        header.addView(title); root.addView(header);
+        LinearLayout root = SettingsPageLayout.content(this);
+        SettingsPageLayout.header(this, root, "跨设备同步");
         LinearLayout account = group(root, "坚果云 WebDAV");
         url = field(account, "WebDAV 地址", settings.url(), false);
         user = field(account, "账号", settings.user(), false);
@@ -61,11 +51,7 @@ public final class SyncSettingsActivity extends Activity {
         status = text(settings.status(), 13); UiStyle.muted(status); status.setPadding(dp(14), dp(10), dp(14), dp(14)); actions.addView(status);
         pending = group(root, "待确认记录");
         button(pending, "查看待确认记录", this::loadPending);
-        ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false); scroll.addView(root);
-        FrameLayout stage = new FrameLayout(this);
-        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
-        stage.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        UiStyle.applyInsets(stage, scroll); setContentView(stage);
+        SettingsPageLayout.show(this, root);
     }
     @Override protected void onResume() { super.onResume(); refresh.post(poll); }
     @Override protected void onPause() { refresh.removeCallbacks(poll); super.onPause(); }
