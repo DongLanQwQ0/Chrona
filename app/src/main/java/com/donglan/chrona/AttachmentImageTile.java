@@ -6,7 +6,7 @@ import android.view.Gravity;
 import android.graphics.Outline;
 import android.view.View;
 import android.view.ViewOutlineProvider;
-import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
@@ -45,12 +45,13 @@ final class AttachmentImageTile extends FrameLayout {
         preview.setOnClickListener(view -> onOpen.run());
         addView(preview, new FrameLayout.LayoutParams(-1, -1));
 
-        Button remove = new Button(activity);
-        remove.setText("×");
-        remove.setTextSize(16);
-        remove.setGravity(Gravity.CENTER);
-        remove.setPadding(0, 0, 0, 0);
-        remove.setTextColor(UiStyle.colors(activity).primary);
+        ImageButton remove = new ImageButton(activity);
+        remove.setImageResource(R.drawable.ic_x);
+        remove.setImageTintList(android.content.res.ColorStateList.valueOf(
+                UiStyle.colors(activity).primary));
+        remove.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        // Center the vector's visible strokes, independent of text baselines and font scale.
+        remove.setPadding(dp(8), dp(8), dp(8), dp(8));
         remove.setContentDescription("移除图片：" + imageName);
         remove.setMinimumWidth(dp(36));
         remove.setMinimumHeight(dp(36));

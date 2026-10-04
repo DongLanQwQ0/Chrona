@@ -12,6 +12,7 @@ public final class LanSettingsActivity extends Activity {
     private Switch enabled;
     private TextView status, address, code;
     private ImageView qr;
+    private FrameLayout qrFrame;
     private boolean refreshing;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable poll = new Runnable() { public void run() { refresh(); handler.postDelayed(this, 1000); } };
@@ -26,16 +27,26 @@ public final class LanSettingsActivity extends Activity {
         enabled.setOnCheckedChangeListener((button, checked) -> { if (refreshing) return; if (!checked) LanAccessService.stop(this); else enable(); refresh(); });
         status = text("", 14); UiStyle.muted(status); add(session, status);
         LinearLayout access = group(root, "浏览器配对"); address = text("", 16); address.setTextIsSelectable(true); add(access, address);
-        qr = new ImageView(this); qr.setContentDescription("访问地址二维码");
+        qr = new ImageView(this); qr.setContentDescription("扫码连接手机");
         qr.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams qrLayout = new LinearLayout.LayoutParams(dp(200), dp(200));
+        qrFrame = new FrameLayout(this);
+        android.graphics.drawable.GradientDrawable qrSurface = new android.graphics.drawable.GradientDrawable();
+        qrSurface.setColor(Color.WHITE);
+        qrSurface.setCornerRadius(dp(UiStyle.RADIUS_FIELD));
+        qrSurface.setStroke(dp(1), UiStyle.colors(this).outline);
+        qrFrame.setBackground(qrSurface);
+        qrFrame.setPadding(dp(8), dp(8), dp(8), dp(8));
+        qrFrame.addView(qr, new FrameLayout.LayoutParams(-1, -1));
+        qrFrame.setVisibility(android.view.View.GONE);
+        LinearLayout.LayoutParams qrLayout = new LinearLayout.LayoutParams(dp(172), dp(172));
         qrLayout.gravity = android.view.Gravity.CENTER_HORIZONTAL;
         qrLayout.setMargins(dp(16), dp(4), dp(16), dp(12));
-        access.addView(qr, qrLayout);
+        access.addView(qrFrame, qrLayout);
         code = text("", 16); code.setTextIsSelectable(true); code.setTypeface(android.graphics.Typeface.MONOSPACE); add(access, code);
+        code.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
         Button rotate = new Button(this); rotate.setText("重新配对所有浏览器"); UiStyle.button(rotate, false);
         rotate.setOnClickListener(v -> { LanAccessService.stop(this); enable(); }); UiStyle.addSpaced(root, rotate, 16, 0);
-        TextView note = text("手机和电脑连接同一可信局域网，在浏览器输入上方地址，再输入配对码。HTTP 连接仅适合可信网络。关闭会立即撤销所有连接；应用退出或网络变化后需重新开启。", 13);
+        TextView note = text("同一可信局域网内扫码即可连接，或输入地址和配对码。HTTP 仅适合可信网络；关闭或网络变化会撤销连接。", 13);
         UiStyle.muted(note); UiStyle.addSpaced(root, note, 18, 0);
         SettingsPageLayout.show(this, root);
     }
@@ -64,9 +75,13 @@ public final class LanSettingsActivity extends Activity {
         String pairing = LanAccessService.pairing();
         code.setText(!LanAccessService.running() ? "开启后生成临时配对码"
                 : pairing.isEmpty() ? "配对码已过期，请重新配对" : pairing);
-        try { LanAddressQr.update(qr, LanAccessService.running() ? LanAccessService.url() : ""); }
+        try {
+            LanAddressQr.update(qr, LanAccessService.running() ? LanAccessService.url() : "", pairing);
+            qrFrame.setVisibility(qr.getVisibility());
+        }
         catch (com.google.zxing.WriterException error) {
             qr.setImageDrawable(null); qr.setTag(null); qr.setVisibility(android.view.View.GONE);
+            qrFrame.setVisibility(android.view.View.GONE);
             status.setText("无法生成二维码，请复制访问地址");
         }
     }

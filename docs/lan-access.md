@@ -21,7 +21,11 @@ NanoHTTPD 2.3.1 负责 HTTP 解析与 Socket 生命周期，最多 8 个连接�
 
 HTTP 仅适合可信局域网。Android 16/target36 默认允许 INTERNET 应用访问局域网，本实现同时声明/请求附近设备权限以覆盖 Android 16 可选限制。未来提升到 target37 时应按新的 ACCESS_LOCAL_NETWORK 规则调整；当前 target36 不声明该权限。官方说明：[本地网络权限](https://developer.android.com/privacy-and-security/local-network-permission)、[前台服务类型](https://developer.android.com/develop/background-work/services/fgs/service-types)、[NanoHTTPD](https://github.com/NanoHttpd/nanohttpd)。
 
-二维码由本地 ZXing core 3.5.3 生成，仅包含当前访问 URL，不含配对码或会话凭据；服务关闭清除图像，地址变化重新生成。保留可选取复制的地址与六位码，扫码打开仍须配对。编码与实际解码、启停/变址行为通过 `python checks/lan_qr_check.py` 离线检查。
+二维码由本地 ZXing core 3.5.3 生成，访问 URL 的 **fragment** 携带当前六位配对码（形如 `/#pair=000007`，此处为测试码）。扫码打开后网页最先读取并立即用 `history.replaceState` 清除 fragment，再仅尝试一次现有 `/api/pair` POST；片段不会随 HTTP 请求或 Referer 发送。成功仍取得独立高熵会话，错误/过期/无效二维码回到手动入口，不自动重试、不写持久存储。普通可复制地址不带配对码。二维码须视作临时配对凭据，仅向可信设备展示；10 分钟过期、关闭/重新配对/网络变化的既有撤销机制保留。地址或码变化重绘，过期/关闭清除图像。
+
+二维码承载为 172dp 主题描边圆角白底，8dp 内距，实际码图 156dp；保持黑白对比与四模块静区，不裁切有效码。真实解码、前导零 fragment、码/地址变化、过期及停服通过 `python checks/lan_qr_check.py`；浏览器自动配对、URL 先清理、失败/过期回退、刷新不重用、手动配对通过 `node checks/lan_web_check.cjs`。
+
+网页图标使用标准 Lucide 设置齿轮，与主题图标同尺寸/笔画。主要路由切换、弹窗进出、链接正文展开收起和反馈使用 120–180ms 可取消动画；列表/按钮保留轻量交互反馈。普通刷新不重播页面动画，快速重复操作以最后一次为准；`prefers-reduced-motion` 关闭这些动画。浏览器检查覆盖触发/结束、快速路由/弹窗/展开切换、输入焦点和草稿保持、桌面/移动与浅/深主题。
 
 ## 验证与复现
 

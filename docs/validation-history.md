@@ -4,6 +4,15 @@
 
 以下记录从原 README 完整迁出，保留各版本实际发生过的验证及当时限制。较早条目中的安装包位置、数据库版本与未完成项属于当时状态，不应据此判断最新版本。新的验证记录可按日期追加在本页，用户可见的版本说明发布在 GitHub Releases。
 
+## 2026-10-04 · 0.14.2 扫码自动配对、网页动效与附件按钮
+
+- 按用户新要求，二维码包含临时六位配对码 fragment；网页首段脚本读取后立即清理地址，再只 POST 一次现有认证。保留普通干净地址和手动配对，失败/过期回到手动入口，不持久化或自动重试；独立高熵会话、限流及关闭/重配/网络变化撤销保持。
+- 二维码改为 172dp 圆角主题描边白底、8dp 内距，156dp 码图保留四模块静区；到期/关闭移除图像，地址/码变化重绘。真实生成位图经 ZXing 解码，fake 前导零配对 fragment、变址/变码/到期/停服通过，`build/qr-auto-pair-decode.log`。
+- 官方 Lucide 设置齿轮与主题图标统一 21px/2px 笔画；导航、弹窗、展开收起与提示采用 120–180ms 可取消有限动画，普通刷新不重播，减少动态模式关闭。真实 Edge 模拟接口 28 组通过，涵盖自动配对/URL 先清理/失效无重试/手输、图标中心、动画触发结束/快速操作/减少动态、输入草稿/焦点及浅深/桌面移动；无网页异常，`build/qr-motion-web-check.log`。截图在 `build/lan-web-checks/`，新增浅深齿轮特写已查看。
+- 图片附件删除改为 Lucide 矢量 X；真实构造器/JVM 平台替身 18 次执行与离线可见笔画光栅化通过，非对称 padding 故障变体被拒绝，原图与删除回调保持。该检查已纳入完整离线组，不代表 Android 渲染。
+- 完整离线回归 29/29，`build/qr-motion-final-checks.log`。`assembleRelease/lintRelease/assembleDebugAndroidTest` 成功，`build/qr-motion-final-build.log`，lint 0 errors / 82 warnings。APK `build/distributions/Chrona-0.14.2.apk`，0.14.2 / 109，未启用调试，1,928,918 字节，SHA-256 `fe20d0c4a78576ca9f6859914cf41765c41ea7f0342cdd246c1c07521b23791b`；原证书保持，签名/元数据证据 `build/qr-motion-final-signature.log`、`qr-motion-final-metadata.log`。
+- 修改前备份 `build/backups/20261004-130948-qr-auto-pair`、`build/backups/20261004-130914-attachment-remove-center`；用户 AGENTS 和角色 TOML 未改动。ADB 无设备，未验证原生二维码/附件实际渲染、实扫/真实 LAN、系统权限/日历、后台/真实 WebDAV 多机及覆盖升级；网页截图与 JVM 检查不替代设备验收。
+
 ## 2026-10-04 · 0.14.1 设置留白、配对与网页/课表修正
 
 - 核查发现只有 HANDOFF 与历史记录描述了更新页 20dp 留白，原开发文档没有集中可执行页面规范。两页虽设 padding，却遗漏关闭 `UiStyle.page` 开启的 fitsSystemWindows，系统 inset 会重置内容留白；已由 `SettingsPageLayout` 统一内容/顶栏/视口。具体执行条款见 [开发文档](development.md#原生设置页布局规范)。
