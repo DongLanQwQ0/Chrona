@@ -216,8 +216,8 @@ final class LanWebServer extends NanoHTTPD {
         if(request.getUri().equals("/api/ics")){
             String id=request.getParms().get("term");if(library!=null)for(TimetableStore.Semester term:library.semesters)if(term.id().equals(id)){Response result=newFixedLengthResponse(Response.Status.OK,"text/calendar; charset=utf-8",term.document.source);result.addHeader("Content-Disposition","attachment; filename=chrona-timetable.ics");return result;}return json(Response.Status.NOT_FOUND,"课表已不存在");
         }
-        JSONArray terms=new JSONArray(),entries=new JSONArray();String chosen=request.getParms().get("term"); LocalDate day=LocalDate.parse(request.getParms().getOrDefault("date",LocalDate.now().toString()));
-        if(library!=null){TimetableStore.Semester selected=library.current(day);for(TimetableStore.Semester term:library.semesters){terms.put(new JSONObject().put("id",term.id()).put("name",term.document.name));if(term.id().equals(chosen))selected=term;}
+        JSONArray terms=new JSONArray(),entries=new JSONArray();String chosen=""; LocalDate day=LocalDate.parse(request.getParms().getOrDefault("date",LocalDate.now().toString()));
+        if(library!=null){TimetableStore.Semester selected=library.select("").current(day);for(TimetableStore.Semester term:library.semesters){terms.put(new JSONObject().put("id",term.id()).put("name",term.document.plan.groupLabel()+" · "+term.document.plan.label(term.index)));}
             if(selected!=null){LocalDate monday=day.minusDays(day.getDayOfWeek().getValue()-1);for(Timetable.Occurrence item:selected.view.all)if(!item.start.toLocalDate().isBefore(monday)&&item.start.toLocalDate().isBefore(monday.plusDays(7)))entries.put(new JSONObject().put("title",item.title).put("location",item.location).put("description",item.description).put("start",item.start.toString()).put("end",item.end.toString()).put("allDay",item.allDay));chosen=selected.id();}}
         return data(new JSONObject().put("terms",terms).put("items",entries).put("selected",chosen==null?"":chosen).put("date",day.toString()).put("revision",TimetableStore.revision()));
     }

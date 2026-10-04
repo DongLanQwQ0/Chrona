@@ -4,6 +4,15 @@
 
 以下记录从原 README 完整迁出，保留各版本实际发生过的验证及当时限制。较早条目中的安装包位置、数据库版本与未完成项属于当时状态，不应据此判断最新版本。新的验证记录可按日期追加在本页，用户可见的版本说明发布在 GitHub Releases。
 
+## 2026-10-04 · 0.14.3 网页滚动、学期与统一控件
+
+- 真实 Edge 加载生产静态资源与模拟手机 API；1280/390 × 500px、浅深主题四种长编辑表单均隐藏弹窗/textarea 原生滚动条，dialog 仍为 overflow:auto。弹窗滚动超过 590/690px、textarea 1456px，实际滚轮/键盘滚动、草稿保持、保存按钮可达、无横移；无网页异常。日志 `build/scrollbar-browser-check.log`，截图 `build/lan-web-checks/scrollbar-*.png`。临时滚动验证脚本在忽略的 build 目录，未新增镜像测试。
+- 原有浏览器回归追加统一下拉浅深主题、top-layer 菜单、方向/Escape、实际 Enter 更新原生 form 值、移动弹窗不裁切和焦点、实际触摸选择、外点关闭；33 组通过。加号 SVG 与可见路径中心均和按钮一致（dx/dy=0，路径中心12/12）。截图 `dropdown-light.png`、`dropdown-dark.png`、`dropdown-mobile-modal.png`，同目录。
+- 实际 TimetableStore/AcademicTerms JVM 检查追加只读忽略旧选择、春夏秋冬边界、跨年、无当期最近、空库及多源，保留手机持久化选择；`build/scrollbar-term-check.log`。网页 API 使用同一选择表达式，不重新推断日期。
+- 增量浏览器检查验证上一周/本周/下一周保持课程、请求不携带旧学期，以及下拉减少动态模式、Home/End/Tab；同一浏览器日志记录 PASS。
+- Firefox 隐藏规则为标准 scrollbar-width:none；本轮实际运行 Edge，未运行 Firefox 或手机端到端、真机覆盖安装。动效扩大任务未产生任何改动。
+- 完整离线组 29/29；release/lint/Android检查包构建 94 tasks 成功，lint 0 errors / 82 warnings，签名保持原证书。日志 `build/scrollbar-final-checks.log`、`scrollbar-final-build.log`、`scrollbar-final-signature.log`、`scrollbar-final-metadata.log`。APK `build/distributions/Chrona-0.14.3.apk`，1,930,598 字节，SHA-256 `a8f9211a877858d76da1d34da2c8c351be2cc9d40d989213d7c02101eeff3d5a`，versionCode 110；未运行真机检查包。
+
 ## 2026-10-04 · 0.14.2 扫码自动配对、网页动效与附件按钮
 
 - 按用户新要求，二维码包含临时六位配对码 fragment；网页首段脚本读取后立即清理地址，再只 POST 一次现有认证。保留普通干净地址和手动配对，失败/过期回到手动入口，不持久化或自动重试；独立高熵会话、限流及关闭/重配/网络变化撤销保持。

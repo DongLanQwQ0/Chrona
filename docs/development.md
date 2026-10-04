@@ -11,11 +11,13 @@
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.14.2`，versionCode `109` |
+| 当前版本 | `0.14.3`，versionCode `110` |
 | 最低 Android 版本 | API 26（Android 8.0） |
 | 编译 / 目标 SDK | 36 / 36 |
 | Java 源码级别 | 17 |
 | 数据库版本 | 9；升级必须保留已有记录 |
+
+网页滚动条用 `scrollbar-width:none` 与 `::-webkit-scrollbar` 隐藏轨道，禁止通过 `overflow:hidden` 禁止滚动。统一下拉保留原 select 的 name/value/input/change，触发按钮使用 combobox、选项使用 listbox/option，顶层 popover 避免 dialog 裁切；键盘方向/Home/End/Enter/Space/Escape/Tab 与焦点回归必须验证。课表按浏览周只读调用 `library.select("").current(day)`，沿用手机学期边界和最近规则，不持久化网页选择。
 
 ## 原生设置页布局规范
 
