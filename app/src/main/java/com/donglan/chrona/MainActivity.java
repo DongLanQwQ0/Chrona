@@ -152,6 +152,7 @@ public final class MainActivity extends Activity {
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
+        if (savedInstanceState == null) UiMotion.observeScroll(page, root);
         if (retained instanceof DraftSession) {
             input.setText(draftSession.text);
         } else if (savedInstanceState == null || new CaptureDraftStore(this).hasDraft()) {

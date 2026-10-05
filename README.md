@@ -16,7 +16,7 @@
   <a href="https://github.com/DongLanQwQ0/Chrona/issues">反馈问题</a>
 </p>
 
-<p align="center">Android 8.0 及以上 · 电脑浏览器局域网访问 · 当前版本 0.14.5</p>
+<p align="center">Android 8.0 及以上 · 电脑浏览器局域网访问 · 当前版本 0.14.6</p>
 
 ---
 

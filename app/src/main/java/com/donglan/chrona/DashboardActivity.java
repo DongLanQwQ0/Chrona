@@ -145,8 +145,10 @@ public final class DashboardActivity extends Activity {
     private final List<View> strips = new ArrayList<>();
     private GlassBackdropView backdrop;
     private boolean wide;
-    /** Cards stagger in only for a screen the user just opened, never for a rebuild. */
-    private boolean animateEntrances;
+    /** Recreated pages and restored sessions must not replay their card entrances. */
+    private final Set<Integer> motionSections = new HashSet<>();
+    private boolean restoringMotion;
+    private int resultMotionGeneration;
     private String snapshot = "";
     private int restoredScrollY;
     private List<ElapsedLabel> elapsedLabels = new ArrayList<>();
@@ -182,6 +184,7 @@ public final class DashboardActivity extends Activity {
     };
 
     @Override protected void onCreate(Bundle state) {
+        restoringMotion = state != null;
         ThemeStore.apply(this);
         super.onCreate(state);
         if (state != null) {
@@ -210,7 +213,6 @@ public final class DashboardActivity extends Activity {
             restoredScrollY = state.getInt("scroll_y");
         } else {
             section = getIntent().getIntExtra(EXTRA_SECTION, HOME);
-            animateEntrances = false;
         }
         buildShell();
         // First draw contains working navigation; data preparation never blocks its frame.
@@ -354,14 +356,11 @@ public final class DashboardActivity extends Activity {
         matchingInboxIds = new ArrayList<>();
         elapsedLabels = new ArrayList<>();
         strips.clear();
-        boolean previousEntrances = animateEntrances;
-        animateEntrances = false;
         previewRender = true;
         try {
             render();
         } finally {
             previewRender = false;
-            animateEntrances = previousEntrances;
         }
 
         SectionPage target = new SectionPage();
@@ -495,7 +494,7 @@ public final class DashboardActivity extends Activity {
         }
         float remaining = Math.abs(currentTarget - scroll.getTranslationX());
         long duration = commit
-                ? Math.max(140L, Math.min(280L, Math.round(280f * remaining / width)))
+                ? Math.max(120L, Math.min(UiMotion.ENTER, Math.round(UiMotion.ENTER * remaining / width)))
                 : SwipePagerLayout.recoilDuration(remaining, width);
         android.view.animation.Interpolator interpolator = commit
                 ? new android.view.animation.DecelerateInterpolator(1.35f)
@@ -516,6 +515,14 @@ public final class DashboardActivity extends Activity {
         if (pageTransitionRunning) return;
         scroll.animate().cancel();
         if (mobileDock != null) mobileDock.beginPageSettle(sectionPosition(section));
+        if (!UiMotion.isEnabled()) {
+            scroll.setTranslationX(0f);
+            if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+            sectionAcrylicSurfaces.clear();
+            invalidateSectionSurfaces();
+            switchToPendingSection();
+            return;
+        }
         scroll.animate().translationX(0f)
                 .setDuration(SwipePagerLayout.recoilDuration(
                         Math.abs(scroll.getTranslationX()), sectionPageWidth()))
@@ -1043,10 +1050,9 @@ public final class DashboardActivity extends Activity {
         } catch (Exception exception) {
             message(content, "暂时无法读取日程：" + exception.getMessage());
         }
-        if (animateEntrances) {
-            animateEntrances = false;
-            UiStyle.enterChildren(content);
-        }
+        ViewGroup cards = results == null ? content : results;
+        if (!restoringMotion && motionSections.add(section)) UiMotion.observeScroll(scroll, cards);
+        else UiMotion.settleScroll(scroll, cards);
         drawNavigation();
         if ((section == HOME || (section == SCHEDULE && scheduleSource == 1)) && !previewRender)
             scroll.post(this::refreshSystemCalendar);
@@ -1567,31 +1573,30 @@ public final class DashboardActivity extends Activity {
     }
 
     private void animateResultRows() {
-        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) return;
-        int index = 0;
-        for (InboxRow row : inboxRows.values()) {
-            animateResultCard(row.card, index++);
-        }
-        if (inboxRows.isEmpty() && results != null) {
-            for (int i = 0; i < results.getChildCount(); i++) {
-                View item = results.getChildAt(i);
-                if (item.isClickable()) animateResultCard(item, index++);
+        if (results == null) return;
+        final LinearLayout renderedResults = results;
+        final int generation = resultMotionGeneration;
+        renderedResults.post(() -> {
+            if (results != renderedResults || generation != resultMotionGeneration
+                    || !renderedResults.isAttachedToWindow()) return;
+            int index = 0;
+            for (InboxRow row : inboxRows.values()) {
+                animateResultCard(row.card, index++);
             }
-        }
-        // Empty-state cards enter too; keep the count and selection controls stationary.
-        if (index == 0 && results != null && results.getChildCount() > 1)
-            animateResultCard(results.getChildAt(1), 0);
+            if (inboxRows.isEmpty()) {
+                for (int i = 0; i < renderedResults.getChildCount(); i++) {
+                    View item = renderedResults.getChildAt(i);
+                    if (item.isClickable()) animateResultCard(item, index++);
+                }
+            }
+            // Empty-state cards enter too; keep the count and selection controls stationary.
+            if (index == 0 && renderedResults.getChildCount() > 1)
+                animateResultCard(renderedResults.getChildAt(1), 0);
+        });
     }
 
     private void animateResultCard(View card, int index) {
-        card.animate().cancel();
-        card.setAlpha(0f);
-        card.setTranslationY(dp(7));
-        card.animate().alpha(1f).translationY(0f)
-                .setStartDelay(Math.min(index, 7) * 24L)
-                .setDuration(180L)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                .start();
+        UiMotion.reveal(card, index);
     }
 
     private void schedule(TaskStore store) {
@@ -1888,6 +1893,7 @@ public final class DashboardActivity extends Activity {
 
     private void updateResults() {
         if (results == null) return;
+        resultMotionGeneration++;
         int previous = scroll.getScrollY();
         try (TaskStore store = new TaskStore(this)) {
             if (section == INBOX) renderInboxResults(store);
@@ -1897,6 +1903,7 @@ public final class DashboardActivity extends Activity {
             message(results, "暂时无法读取日程：" + exception.getMessage());
         }
         scroll.scrollTo(0, previous);
+        UiMotion.settleScroll(scroll, results);
         rememberRenderedPage();
     }
 

@@ -20,7 +20,8 @@ public final class CandidateMergeActivity extends Activity {
         int page;
     }
     private Session session;
-    @Override protected void onCreate(Bundle state){ThemeStore.apply(this);super.onCreate(state);Object retained=getLastNonConfigurationInstance();session=retained instanceof Session?(Session)retained:new Session();session.owner=this;draw();if(session.preview==null&&!session.busy&&session.message.isEmpty())scan();}
+    private boolean animatePresentation;
+    @Override protected void onCreate(Bundle state){ThemeStore.apply(this);super.onCreate(state);Object retained=getLastNonConfigurationInstance();animatePresentation=state==null&&retained==null;session=retained instanceof Session?(Session)retained:new Session();session.owner=this;draw();if(session.preview==null&&!session.busy&&session.message.isEmpty())scan();}
     @Override public Object onRetainNonConfigurationInstance(){return session;}
     @Override protected void onDestroy(){if(session.owner==this)session.owner=null;super.onDestroy();}
     private TextView text(String value,int size){TextView view=new TextView(this);view.setText(value);view.setTextSize(size);view.setTextColor(UiStyle.colors(this).text);return view;}
@@ -48,7 +49,8 @@ public final class CandidateMergeActivity extends Activity {
             }
             if(!preview.groups.isEmpty())UiStyle.addSpaced(root,button("确认合并 "+preview.removed()+" 份",true,this::merge),0,8);
         }
-        SettingsPageLayout.show(this,root);
+        SettingsPageLayout.show(this,root,animatePresentation);
+        animatePresentation=false;
     }
     private static String summary(EventCandidate candidate){
         ZoneId zone;

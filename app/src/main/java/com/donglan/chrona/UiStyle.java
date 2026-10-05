@@ -69,13 +69,18 @@ public final class UiStyle {
 
     /** Invalidates visible translucent surfaces when a parent scroll changes their backdrop. */
     private static final class AcrylicScrollWatcher
-            implements ViewTreeObserver.OnScrollChangedListener {
+            implements ViewTreeObserver.OnScrollChangedListener, Runnable,
+            View.OnAttachStateChangeListener {
         private final java.lang.ref.WeakReference<ViewTreeObserver> observer;
+        private final java.lang.ref.WeakReference<View> root;
+        private boolean queued;
         private final java.util.ArrayList<java.lang.ref.WeakReference<View>> hosts =
                 new java.util.ArrayList<>();
         private final android.graphics.Rect visible = new android.graphics.Rect();
-        AcrylicScrollWatcher(ViewTreeObserver observer) {
+        AcrylicScrollWatcher(View root, ViewTreeObserver observer) {
+            this.root = new java.lang.ref.WeakReference<>(root);
             this.observer = new java.lang.ref.WeakReference<>(observer);
+            root.addOnAttachStateChangeListener(this);
         }
         void addHost(View host) {
             java.util.Iterator<java.lang.ref.WeakReference<View>> iterator = hosts.iterator();
@@ -87,6 +92,13 @@ public final class UiStyle {
             hosts.add(new java.lang.ref.WeakReference<>(host));
         }
         @Override public void onScrollChanged() {
+            View view = root.get();
+            if (queued || view == null || !view.isAttachedToWindow()) return;
+            queued = true;
+            view.postOnAnimation(this);
+        }
+        @Override public void run() {
+            queued = false;
             java.util.Iterator<java.lang.ref.WeakReference<View>> iterator = hosts.iterator();
             while (iterator.hasNext()) {
                 View host = iterator.next().get();
@@ -97,6 +109,16 @@ public final class UiStyle {
                     host.invalidate();
                 }
             }
+        }
+        @Override public void onViewAttachedToWindow(View view) { }
+        @Override public void onViewDetachedFromWindow(View view) {
+            view.removeCallbacks(this);
+            queued = false;
+            ViewTreeObserver tree = observer.get();
+            if (tree != null && tree.isAlive()) tree.removeOnScrollChangedListener(this);
+            hosts.clear();
+            ACRYLIC_SCROLL_WATCHERS.remove(view);
+            view.removeOnAttachStateChangeListener(this);
         }
     }
 
@@ -155,11 +177,8 @@ public final class UiStyle {
         synchronized (ACRYLIC_SCROLL_WATCHERS) {
             AcrylicScrollWatcher watcher = ACRYLIC_SCROLL_WATCHERS.get(root);
             if (watcher == null || watcher.observer.get() != observer) {
-                if (watcher != null && watcher.observer.get() != null
-                        && watcher.observer.get().isAlive()) {
-                    watcher.observer.get().removeOnScrollChangedListener(watcher);
-                }
-                watcher = new AcrylicScrollWatcher(observer);
+                if (watcher != null) watcher.onViewDetachedFromWindow(root);
+                watcher = new AcrylicScrollWatcher(root, observer);
                 ACRYLIC_SCROLL_WATCHERS.put(root, watcher);
                 observer.addOnScrollChangedListener(watcher);
             }
@@ -333,8 +352,8 @@ public final class UiStyle {
         view.setMinimumHeight(dp(view, 52));
         StateListAnimator press = new StateListAnimator();
         press.addState(new int[]{android.R.attr.state_enabled, android.R.attr.state_pressed},
-                scale(view, 0.97f, 90));
-        press.addState(new int[]{}, scale(view, 1f, 160));
+                scale(view, 0.97f, UiMotion.PRESS));
+        press.addState(new int[]{}, scale(view, 1f, UiMotion.RELEASE));
         view.setStateListAnimator(press);
         rememberChildSurface(view, 2, primary, RADIUS_FIELD, primary);
     }
@@ -668,12 +687,7 @@ public final class UiStyle {
     }
 
     static void enter(View view, int index) {
-        if (!ValueAnimator.areAnimatorsEnabled()) return;
-        view.animate().cancel();
-        view.setAlpha(0f);
-        view.setTranslationY(dp(view, 8));
-        view.animate().alpha(1f).translationY(0f).setStartDelay(Math.min(index, 4) * 18L)
-                .setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE).start();
+        view.post(() -> UiMotion.reveal(view, index));
     }
 
     /**
@@ -706,38 +720,58 @@ public final class UiStyle {
      * ghost covers the whole visual, background included.
      */
     public static void swap(View snapshotOf, View container, Runnable rebuild) {
+        // Capture the currently composed frame, including an unfinished previous cross-fade.
+        Snapshot outgoing = UiMotion.isEnabled() && snapshotOf.getParent() instanceof FrameLayout candidate
+                && hostsSeveralChildren(candidate) ? snapshot(snapshotOf) : null;
         container.animate().cancel();
         container.setAlpha(1f);
         if (snapshotOf.getParent() instanceof FrameLayout previousHost
                 && hostsSeveralChildren(previousHost)) dropSwapGhosts(previousHost);
         if (!ValueAnimator.areAnimatorsEnabled()) {
+            if (outgoing != null) outgoing.bitmap.recycle();
             rebuild.run();
             return;
         }
         if (snapshotOf.getWidth() <= 0
                 || !(snapshotOf.getParent() instanceof FrameLayout host)
                 || !hostsSeveralChildren(host)) {
+            if (outgoing != null) outgoing.bitmap.recycle();
             rebuild.run();
             return;
         }
         dropSwapGhosts(host);
-        Bitmap outgoing = snapshot(snapshotOf);
         if (outgoing == null) {
             rebuild.run();
             return;
         }
         ImageView ghost = new ImageView(snapshotOf.getContext());
-        ghost.setImageBitmap(outgoing);
+        ghost.setImageBitmap(outgoing.bitmap);
         ghost.setScaleType(ImageView.ScaleType.FIT_XY);
         ghost.setTag(SWAP_GHOST);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                snapshotOf.getWidth(), snapshotOf.getHeight());
-        params.leftMargin = snapshotOf.getLeft();
-        params.topMargin = snapshotOf.getTop();
+                outgoing.bounds.width(), outgoing.bounds.height());
+        params.leftMargin = snapshotOf.getLeft() + outgoing.bounds.left;
+        params.topMargin = snapshotOf.getTop() + outgoing.bounds.top;
+        ghost.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View view) { }
+            @Override public void onViewDetachedFromWindow(View view) {
+                ghost.animate().cancel();
+                ghost.setImageDrawable(null);
+                outgoing.bitmap.recycle();
+                ghost.removeOnAttachStateChangeListener(this);
+                container.animate().cancel();
+                container.setAlpha(1f);
+            }
+        });
         // Added after the snapshot source so it draws on top of it.
         host.addView(ghost, params);
 
-        rebuild.run();
+        try {
+            rebuild.run();
+        } catch (RuntimeException | Error failure) {
+            host.removeView(ghost);
+            throw failure;
+        }
         container.animate().cancel();
         container.setAlpha(0f);
         container.animate().alpha(1f).setStartDelay(0).setDuration(SWAP_MILLIS)
@@ -758,19 +792,41 @@ public final class UiStyle {
                 && !(host instanceof android.widget.HorizontalScrollView);
     }
 
-    /** Half-scale copy of what the container shows now; null when it has nothing to copy yet. */
-    private static Bitmap snapshot(View container) {
-        int width = container.getWidth();
-        int height = container.getHeight();
-        if (width <= 0 || height <= 0) return null;
+    private static final int SNAPSHOT_MAX_EDGE = 1024;
+    private static final int SNAPSHOT_MAX_PIXELS = 524288;
+    private static final class Snapshot {
+        final Bitmap bitmap;
+        final android.graphics.Rect bounds;
+        Snapshot(Bitmap bitmap, android.graphics.Rect bounds) {
+            this.bitmap = bitmap;
+            this.bounds = bounds;
+        }
+    }
+
+    /** Only the visible viewport; bounded to 2 MiB even for very long settings pages. */
+    private static Snapshot snapshot(View container) {
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        if (!container.isAttachedToWindow() || !container.getLocalVisibleRect(bounds)) return null;
+        bounds.offset(-container.getScrollX(), -container.getScrollY());
+        if (!bounds.intersect(0, 0, container.getWidth(), container.getHeight())) return null;
+        int width = bounds.width(), height = bounds.height();
+        float scale = (float) Math.min(.5, Math.min(
+                (double) SNAPSHOT_MAX_EDGE / Math.max(width, height),
+                Math.sqrt((double) SNAPSHOT_MAX_PIXELS / ((double) width * height))));
+        Bitmap bitmap = null;
         try {
-            Bitmap bitmap = Bitmap.createBitmap(Math.max(1, width / 2), Math.max(1, height / 2),
+            bitmap = Bitmap.createBitmap(Math.max(1, (int) (width * scale)),
+                    Math.max(1, (int) (height * scale)),
                     Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
-            canvas.scale(0.5f, 0.5f);
-            container.draw(canvas);
-            return bitmap;
+            canvas.scale((float) bitmap.getWidth() / width, (float) bitmap.getHeight() / height);
+            ViewGroup parent = (ViewGroup) container.getParent();
+            canvas.translate(-container.getLeft() + parent.getScrollX() - bounds.left,
+                    -container.getTop() + parent.getScrollY() - bounds.top);
+            parent.draw(canvas);
+            return new Snapshot(bitmap, bounds);
         } catch (OutOfMemoryError error) {
+            if (bitmap != null) bitmap.recycle();
             return null;
         }
     }
@@ -786,10 +842,18 @@ public final class UiStyle {
     }
 
     public static void pop(View view) {
-        if (!ValueAnimator.areAnimatorsEnabled()) return;
-        view.setScaleX(0.94f);
-        view.setScaleY(0.94f);
-        view.animate().scaleX(1f).scaleY(1f).setDuration(230).start();
+        view.animate().cancel();
+        if (!UiMotion.isEnabled()) {
+            view.setScaleX(1f);
+            view.setScaleY(1f);
+            return;
+        }
+        if (view.getScaleX() == 1f && view.getScaleY() == 1f) {
+            view.setScaleX(0.97f);
+            view.setScaleY(0.97f);
+        }
+        view.animate().scaleX(1f).scaleY(1f).setStartDelay(0)
+                .setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE).start();
     }
 
     /** A quiet breathing cue for something that is still running; stops itself when detached. */
@@ -1325,6 +1389,7 @@ public final class UiStyle {
         pair.playTogether(ObjectAnimator.ofFloat(view, View.SCALE_X, value),
                 ObjectAnimator.ofFloat(view, View.SCALE_Y, value));
         pair.setDuration(duration);
+        pair.setInterpolator(UiMotion.SETTLE);
         return pair;
     }
     private static int dp(View view, int value) {

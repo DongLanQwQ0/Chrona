@@ -1,5 +1,13 @@
 # 历史验证记录
 
+## 0.14.6 — 2026-10-05
+
+- `checks/run_checks.py full`：34/34，通过日志 `build/motion-final-checks.log`；包含新增原生核心 28 项、详情折叠 13 项，Dock 49 场景与设置布局 72 次生产方法/平台替身执行。设置恢复明确静默，动画中新取得的无障碍焦点立即收敛。
+- 实际 Edge 加载生产网页与模拟手机接口：`lan_motion_check.cjs` 检查动画中间帧、Dock/弹窗/下拉/展开面板连续反向、运行中减少动效清理、滚动呈现不重播、实际十秒轮询静止、过期路由 revision、焦点及 390px 布局；`lan_feedback_check.cjs` 追加旧成功/失败请求不影响新弹窗；`lan_web_check.cjs` 37 组通过，pageErrors 为空。日志 `build/lan-{motion,feedback-motion,web-motion}-final.log`；截图 `build/lan-motion-checks/*.png`、`build/lan-feedback-checks/modal-error-mobile.png`。
+- 最终 `assembleRelease/lintRelease/assembleDebugAndroidTest` 成功，94 tasks / 29 秒，Lint 0 错误/82 警告。Android instrumentation 仅编译，未执行设备测试。
+- APK 0.14.6 / 113，1,945,118 字节，SHA256 `5be0578c083c2063bd10985ae06eeefcbb1579783e20280d67254fd31ac8c438`；原证书 SHA256 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`，不可调试，包内四项 LAN 资源逐字节匹配工作区。证据 `build/release-0.14.6-{build,signature,version}.log` 和 `release-0.14.6-artifact.json`。
+- 原生独立审查发现的设置恢复重播与中途无障碍焦点保护已修复并纳入回归，最终核对源码、签名和包内资源。未执行 Android 真机动画、帧率、系统返回手感、真实 WebDAV 多机、手机 LAN 或覆盖安装验收。
+
 ## 0.14.5 — 2026-10-05
 
 - `checks/sync_settings_check.py`：16 个离线场景通过，执行生产设置/完成回调/冲突选择方法，UI、存储、网络使用替身；覆盖测试不保存、不安排同步、密码保留/成功清空、忙碌反馈、处理后刷新及销毁保护。

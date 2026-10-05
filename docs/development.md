@@ -11,7 +11,7 @@
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.14.5`，versionCode `112` |
+| 当前版本 | `0.14.6`，versionCode `113` |
 | 最低 Android 版本 | API 26（Android 8.0） |
 | 编译 / 目标 SDK | 36 / 36 |
 | Java 源码级别 | 17 |
@@ -24,7 +24,7 @@
 新增或修改设置类页面必须遵守以下规则，禁止页面主体、顶栏或卡片外缘贴屏幕左右边缘。此规则具体化既有外观页、设置主页和更新页的实现；此前只有历史修复记录，没有集中写明容器与调用顺序。
 
 1. 层级为 `FrameLayout stage → GlassBackdropView + ScrollView viewport → 一个纵向 LinearLayout content → 顶栏/分组标题/卡片/操作控件`。背景可以铺满屏幕，内容容器左右必须各有 **20dp** 留白。全宽卡片、输入框和按钮的宽度仅填满内容区域，不能跨过这层留白。卡片内边距不替代页面留白。
-2. 跨设备同步、局域网访问及以后同类二级设置页使用 `SettingsPageLayout.content/header/show`，不要另写安全区容器。公共实现保留内容上下 8dp/28dp；设置主页已有 16dp/24dp、更新页已有 24dp/24dp 不在本轮改变。顶栏采用 48dp 返回触控区域、居中 Lucide 箭头和同一行标题；顶栏位于内容容器中，与卡片外缘对齐。
+2. 跨设备同步、局域网访问及以后同类二级设置页使用 `SettingsPageLayout.content/header/show`，不要另写安全区容器。`show(activity, root, animatePresentation)` 仅首次主动呈现传 true，旋转恢复和后台重绘传 false，避免重播。公共实现保留内容上下 8dp/28dp；设置主页已有 16dp/24dp、更新页已有 24dp/24dp 不在本轮改变。顶栏采用 48dp 返回触控区域、居中 Lucide 箭头和同一行标题；顶栏位于内容容器中，与卡片外缘对齐。
 3. `UiStyle.page(activity, content)` 会设置背景、系统栏配色并调用 **`content.setFitsSystemWindows(true)`**，因此正确顺序是 `page → content.setFitsSystemWindows(false) → content.setPadding(20dp, top, 20dp, bottom) → transparent background`。遗漏关闭会使 Android 的系统 inset 分发覆盖内容 padding；只在调用 page 前设置 padding 无法保证留白。
 4. 系统栏、屏幕挖孔和键盘安全区只由视口负责：`UiStyle.applyInsets(stage, viewport)`。API 35+ 会将初始视口 padding 与系统 inset 相加、底部取导航栏与键盘的较大值。不得把 content 作为安全区目标，或在 content 再开启 fitsSystemWindows；不得重复叠加 inset。背景仍可延伸到系统栏下面。API 26–34 保持系统默认窗口安全区。
 5. 控件复用 `UiStyle.colors/title/muted/input/button/toggle/glass`，图标采用 Lucide；主题及深色状态使用现有 ThemeStore。`input` 和 `fieldTrigger` 会把内部 padding 设置为 16dp/14dp，`button` 会设置为 18dp/10dp；确需局部覆盖时在样式调用之后设置，不能依赖调用之前的值。`glass` 保留容器 padding，`toggle` 调整颜色及最小高度。控件 margin 只负责卡片内部布局，不承担页面 20dp 留白。
@@ -119,4 +119,4 @@ Dock 点击与高光回归检查：设置现有 `JAVA_HOME` 后运行 `python ch
 
 修改已有数据库格式时追加顺序迁移；发布新版本时同步构建版本、项目首页、交接与更新记录。历史文档中的版本和结论属于当时状态，当前实现以代码和本轮验证为准。
 
-网页有限动效使用原生 Web Animations，统一 120–180ms、可取消和 `prefers-reduced-motion`；不得给每次数据刷新或每条列表添加入场重播。输入所在弹窗不随内容刷新重建；刷新搜索列表时保留焦点/选区/滚动。测试入口为 `node checks/lan_web_check.cjs`，使用真实 Edge 与模拟 API，不能替代手机端到端。图片附件删除图标执行 `python checks/attachment_remove_check.py`：真实构造器/Android 替身及 Pillow 光栅化，6 种密度 × 3 字体环境检查图标中心和触控回调；该结果不等于 Android 截图。
+网页有限动效使用原生 Web Animations：控件 120–180ms，页切换 240ms、卡片滚动呈现 260ms，反向从当前显示帧衔接；动态监听 `prefers-reduced-motion`，开启时完成正在进行的动画并清理。IntersectionObserver 只呈现尚未进入视口的卡片，十秒轮询不播放动画。输入所在弹窗不随内容刷新重建；dialogGeneration 隔离旧请求，sequence 保护路由内容与 revision，刷新搜索列表保留焦点/选区/滚动。浏览器检查单独运行 `node checks/lan_web_check.cjs`、`lan_feedback_check.cjs`、`lan_motion_check.cjs`，使用真实 Edge 与模拟 API，不能替代手机端到端。图片附件删除图标执行 `python checks/attachment_remove_check.py`：真实构造器/Android 替身及 Pillow 光栅化，6 种密度 × 3 字体环境检查图标中心和触控回调；该结果不等于 Android 截图。

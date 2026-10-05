@@ -48,7 +48,7 @@ public final class LanSettingsActivity extends Activity {
         rotate.setOnClickListener(v -> { LanAccessService.stop(this); enable(); }); UiStyle.addSpaced(root, rotate, 16, 0);
         TextView note = text("同一可信局域网内扫码即可连接，或输入地址和配对码。HTTP 仅适合可信网络；关闭或网络变化会撤销连接。", 13);
         UiStyle.muted(note); UiStyle.addSpaced(root, note, 18, 0);
-        SettingsPageLayout.show(this, root);
+        SettingsPageLayout.show(this, root, saved == null);
     }
     private void enable() {
         java.util.ArrayList<String> permissions = new java.util.ArrayList<>();

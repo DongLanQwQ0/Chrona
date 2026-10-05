@@ -83,7 +83,7 @@ async function checkModalSelect(page){
  const plus=await page.evaluate(()=>{const button=document.querySelector('#capture').getBoundingClientRect(),svg=document.querySelector('#capture svg').getBoundingClientRect(),bounds=document.querySelector('#capture svg').getBBox();return {dx:svg.x+svg.width/2-button.x-button.width/2,dy:svg.y+svg.height/2-button.y-button.height/2,bx:bounds.x+bounds.width/2,by:bounds.y+bounds.height/2};});
  assert(Math.abs(plus.dx)<.01&&Math.abs(plus.dy)<.01&&plus.bx===12&&plus.by===12,'actual plus strokes centered');console.log('PLUS '+JSON.stringify(plus));
  await page.evaluate(async()=>{await navigate('home');});
- const navMotion=await page.evaluate(async()=>{await navigate('schedule');return document.querySelector('#content').getAnimations().map(animation=>animation.effect.getTiming().duration);});assert.deepEqual(navMotion,[180],'route enter motion starts');
+ const navMotion=await page.evaluate(async()=>{await navigate('schedule');return document.querySelector('#content').getAnimations().map(animation=>animation.effect.getTiming().duration);});assert.deepEqual(navMotion,[240],'route enter motion starts');
  await page.evaluate(async()=>{await Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
  assert.equal(await page.evaluate(async()=>{await render();return document.querySelector('#content').getAnimations().length;}),0,'routine render does not replay motion');
  await page.evaluate(async()=>{await Promise.all([navigate('schedule'),navigate('inbox'),navigate('home')]);await Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{})));});assert(await page.getByRole('heading',{name:'今日安排'}).isHidden()===false,'latest rapid route wins');

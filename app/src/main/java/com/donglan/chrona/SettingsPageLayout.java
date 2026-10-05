@@ -39,7 +39,7 @@ final class SettingsPageLayout {
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(header, new LinearLayout.LayoutParams(-1, -2));
     }
-    static void show(Activity activity, LinearLayout root) {
+    static void show(Activity activity, LinearLayout root, boolean animatePresentation) {
         ScrollView viewport = new ScrollView(activity);
         viewport.setVerticalScrollBarEnabled(false);
         viewport.addView(root);
@@ -48,6 +48,8 @@ final class SettingsPageLayout {
         stage.addView(viewport, new FrameLayout.LayoutParams(-1, -1));
         UiStyle.applyInsets(stage, viewport);
         activity.setContentView(stage);
+        if (animatePresentation) UiMotion.observeScroll(viewport, root);
+        else UiMotion.settleScroll(viewport, root);
     }
     private static int dp(Activity activity, int value) {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);

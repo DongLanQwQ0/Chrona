@@ -125,7 +125,8 @@ final class DockNavigationLayout extends LinearLayout {
             cancelRecoil();
             if (!ValueAnimator.areAnimatorsEnabled()) { setVisualPosition(selectedIndex); return; }
             recoil = ValueAnimator.ofFloat(visualPosition, selectedIndex);
-            recoil.setDuration(180L);
+            recoil.setDuration(90L + Math.round(90f * Math.min(1f,
+                    Math.abs(selectedIndex - visualPosition))));
             recoil.setInterpolator(new DecelerateInterpolator(1.5f));
             recoil.addUpdateListener(animation -> setVisualPosition((float) animation.getAnimatedValue()));
             recoil.start();
@@ -181,6 +182,10 @@ final class DockNavigationLayout extends LinearLayout {
     private void advanceFingerFollow() {
         followPosted = false;
         if (!dragging) return;
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            setVisualPosition(fingerPosition);
+            return;
+        }
         long now = android.os.SystemClock.uptimeMillis();
         long elapsed = Math.max(0L, Math.min(64L, now - followFrameTime));
         followFrameTime = now;

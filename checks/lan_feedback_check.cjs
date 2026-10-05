@@ -55,6 +55,15 @@ async function until(check){for(let i=0;i<100;i++){if(await check())return;await
   assert(await page.evaluate(()=>![...document.querySelectorAll('#dialog button')].find(b=>b.textContent==='保存').disabled),'failed save is retryable');
   await page.evaluate(()=>{showDialog('新弹窗',body=>body.append(document.createTextNode('内容')));});
   assert.equal(await page.locator('#dialog-feedback').textContent(),'','dialog replacement clears stale feedback');
+  await page.evaluate(()=>{session.calendarAllowed=true;});await open();await clickPublish();await until(()=>requests===4);
+  await page.evaluate(()=>{closeDialog(true);showDialog('下一次编辑',body=>{const input=document.createElement('input');input.id='new-draft';input.value='保留未保存内容';body.append(input);input.focus();});});
+  release(true);await until(()=>page.evaluate(()=>pending===0));
+  assert(await page.locator('#dialog').evaluate(element=>element.open),'old successful request cannot close new dialog');
+  assert.equal(await page.locator('#new-draft').evaluate(element=>element.value),'保留未保存内容');
+  await page.evaluate(()=>{session.calendarAllowed=true;});await open();await clickPublish();await until(()=>requests===5);
+  await page.evaluate(()=>showDialog('新的编辑会话',body=>body.append(document.createTextNode('内容'))));
+  release();await until(()=>page.evaluate(()=>pending===0));
+  assert.equal(await page.locator('#dialog-feedback').textContent(),'','old failed request cannot write into new dialog');
   assert.deepEqual(errors,[]);
   console.log('PASS: required/range validation, slow duplicate submissions, visible accessible modal errors, successful retry, close/reopen cleanup, permission restoration; real Edge with mock phone responses.');
  }finally{if(browser)await browser.close();await new Promise(resolve=>source.close(resolve));}

@@ -18,6 +18,10 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,dialog::-webkit-scrollbar,textar
 @media(max-width:760px){.filters .select-control{width:auto;flex:1}}
 
 /* Finite interaction feedback; no animation on routine data refresh. */
+#workspace{overflow-x:clip}
+.bottom nav{position:relative;isolation:isolate}.bottom nav button{position:relative;z-index:1}.bottom nav button.active{background:transparent}.dock-highlight{position:absolute;left:0;top:6px;bottom:6px;z-index:0;border-radius:23px;background:color-mix(in srgb,var(--primary) 13%,transparent);pointer-events:none}.reveal-pending{opacity:0;transform:translateY(12px)}
+@media(max-width:760px){.dock-highlight{top:5px;bottom:5px}}
+@media(prefers-reduced-motion:reduce){.reveal-pending{opacity:1;transform:none}}
 .course:hover,.result-list .card:hover{border-color:color-mix(in srgb,var(--text) 24%,var(--outline));box-shadow:0 5px 18px #0000000c}
 .icon-button:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
 #settings svg,#theme svg{width:21px;height:21px}

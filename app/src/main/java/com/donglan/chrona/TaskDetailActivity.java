@@ -624,22 +624,9 @@ public final class TaskDetailActivity extends Activity {
                 taskScrollPositions.put(renderedTaskId, y));
         if (animateEntrances) {
             animateEntrances = false;
-            enterDetailChildren(content);
-        }
+            UiMotion.observeScroll(page, content);
+        } else UiMotion.settleScroll(page, content);
         if (saveInFlight) setSaving(true);
-    }
-
-    /** Fade detail cards in without translating them while their acrylic samples are drawn. */
-    private void enterDetailChildren(LinearLayout parent) {
-        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) return;
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            View child = parent.getChildAt(i);
-            child.animate().cancel();
-            child.setTranslationY(0f);
-            child.setAlpha(0f);
-            child.animate().alpha(1f).setStartDelay(Math.min(i, 6) * 28L)
-                    .setDuration(180L).start();
-        }
     }
 
     private void addTaskPagerIndicator(List<TaskRecord> tasks, String status) {
@@ -1125,6 +1112,11 @@ public final class TaskDetailActivity extends Activity {
         if (pageTransitionRunning) return;
         shell.animate().cancel();
         float width = Math.max(page.getWidth(), getResources().getDisplayMetrics().widthPixels);
+        if (!UiMotion.isEnabled()) {
+            shell.setTranslationX(0f);
+            invalidateVisibleAcrylicSurfaces();
+            return;
+        }
         shell.animate().translationX(0f)
                 .setDuration(SwipePagerLayout.recoilDuration(
                         Math.abs(shell.getTranslationX()), width))
@@ -1353,7 +1345,7 @@ public final class TaskDetailActivity extends Activity {
         }
         float remaining = Math.abs(currentTarget - shell.getTranslationX());
         long duration = commit
-                ? Math.max(140L, Math.min(280L, Math.round(280f * remaining / width)))
+                ? Math.max(120L, Math.min(UiMotion.ENTER, Math.round(UiMotion.ENTER * remaining / width)))
                 : SwipePagerLayout.recoilDuration(remaining, width);
         android.view.animation.Interpolator interpolator = commit
                 ? new DecelerateInterpolator(1.35f) : SwipePagerLayout.RECOIL_INTERPOLATOR;
@@ -1960,25 +1952,103 @@ public final class TaskDetailActivity extends Activity {
         return card;
     }
 
+    private final java.util.Map<View, SectionMotion> sectionMotions = new java.util.HashMap<>();
+
     private void animateSection(View view, boolean showing) {
-        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
+        SectionMotion motion = sectionMotions.get(view);
+        if (motion == null) {
+            motion = new SectionMotion(view);
+            sectionMotions.put(view, motion);
+            view.addOnAttachStateChangeListener(motion);
+        }
+        motion.moveTo(showing);
+    }
+
+    /** Own the height as well as opacity so reversing never snaps or runs an old completion. */
+    private final class SectionMotion implements View.OnAttachStateChangeListener {
+        final View view;
+        final int naturalHeight;
+        android.animation.ValueAnimator animator;
+        boolean showing;
+
+        SectionMotion(View view) {
+            this.view = view;
+            naturalHeight = view.getLayoutParams().height;
+        }
+
+        void cancel() {
+            if (animator == null) return;
+            android.animation.ValueAnimator previous = animator;
+            animator = null;
+            previous.removeAllUpdateListeners();
+            previous.removeAllListeners();
+            previous.cancel();
+        }
+
+        void finish() {
+            cancel();
+            view.getLayoutParams().height = naturalHeight;
             view.setAlpha(1f);
             view.setTranslationY(0f);
             view.setVisibility(showing ? View.VISIBLE : View.GONE);
-            return;
+            view.requestLayout();
         }
-        if (showing) {
+
+        int expandedHeight() {
+            if (naturalHeight >= 0) return naturalHeight;
+            ViewGroup parent = (ViewGroup) view.getParent();
+            if (parent == null) return view.getMeasuredHeight();
+            int width = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
+            if (view.getLayoutParams() instanceof ViewGroup.MarginLayoutParams margins)
+                width -= margins.leftMargin + margins.rightMargin;
+            view.measure(View.MeasureSpec.makeMeasureSpec(Math.max(0, width), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            return view.getMeasuredHeight();
+        }
+
+        void moveTo(boolean target) {
+            boolean reversing = animator != null;
+            int start = view.getVisibility() == View.GONE ? 0
+                    : reversing ? Math.max(0, view.getLayoutParams().height) : view.getHeight();
+            float alpha = view.getVisibility() == View.GONE ? 0f : view.getAlpha();
+            cancel();
+            showing = target;
+            int expanded = expandedHeight();
+            int end = showing ? expanded : 0;
+            if (!UiMotion.isEnabled() || !view.isAttachedToWindow() || start == end) {
+                finish();
+                return;
+            }
+            view.animate().cancel();
+            view.setTranslationY(0f);
+            view.setAlpha(alpha);
+            view.getLayoutParams().height = start;
             view.setVisibility(View.VISIBLE);
-            view.setAlpha(0f);
-            view.setTranslationY(dp(6));
-            view.animate().alpha(1f).translationY(0f).setDuration(180).start();
-        } else {
-            view.animate().alpha(0f).translationY(-dp(4)).setDuration(130)
-                    .withEndAction(() -> {
-                        view.setVisibility(View.GONE);
-                        view.setAlpha(1f);
-                        view.setTranslationY(0f);
-                    }).start();
+            view.requestLayout();
+            animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            animator.setDuration(Math.max(90L, Math.round((showing ? UiMotion.ENTER : UiMotion.EXIT)
+                    * Math.abs(end - start) / (float) Math.max(1, expanded))));
+            animator.setInterpolator(new DecelerateInterpolator(1.5f));
+            animator.addUpdateListener(animation -> {
+                if (!UiMotion.isEnabled()) { finish(); return; }
+                float fraction = (float) animation.getAnimatedValue();
+                view.getLayoutParams().height = Math.round(start + (end - start) * fraction);
+                view.setAlpha(alpha + ((showing ? 1f : 0f) - alpha) * fraction);
+                view.requestLayout();
+            });
+            animator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    if (animator == animation) finish();
+                }
+            });
+            animator.start();
+        }
+
+        @Override public void onViewAttachedToWindow(View view) { }
+        @Override public void onViewDetachedFromWindow(View view) {
+            finish();
+            view.removeOnAttachStateChangeListener(this);
+            sectionMotions.remove(view);
         }
     }
 

@@ -55,7 +55,7 @@ public final class SyncSettingsActivity extends Activity {
         UiStyle.muted(version);version.setPadding(dp(14),0,dp(14),dp(14));actions.addView(version);
         pending = group(root, "待确认记录");
         button(pending, "查看待确认记录", this::loadPending);
-        SettingsPageLayout.show(this, root);
+        SettingsPageLayout.show(this, root, saved == null);
     }
     @Override protected void onResume() { super.onResume(); refresh.post(poll); }
     @Override protected void onPause() { refresh.removeCallbacks(poll); super.onPause(); }

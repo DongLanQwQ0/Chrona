@@ -67,6 +67,9 @@ public final class TimetableActivity extends Activity {
     private Button importButton;
     private ScrollView vertical;
     private HorizontalScrollView horizontal;
+    private LinearLayout courseContent;
+    private String animatedSemester;
+    private int semesterDirection;
     private Dialog floating, nested;
     private boolean resumed;
     private int gridWidth;
@@ -325,6 +328,10 @@ public final class TimetableActivity extends Activity {
     }
 
     private void save(TimetableStore.Library library) {
+        save(library, false);
+    }
+
+    private void save(TimetableStore.Library library, boolean preserveScroll) {
         Session target = session;
         Context app = getApplicationContext();
         session.pending = null;
@@ -339,7 +346,7 @@ public final class TimetableActivity extends Activity {
                 target.error = failure;
                 if (failure == null) {
                     target.library = library;
-                    target.scrollX = target.scrollY = 0;
+                    if (!preserveScroll) target.scrollX = target.scrollY = 0;
                 }
                 notifyOwner(target);
             });
@@ -356,13 +363,18 @@ public final class TimetableActivity extends Activity {
 
     private void render() {
         if (isFinishing() || isDestroyed()) return;
+        settleSemesterContent();
         importButton.setEnabled(!session.busy);
         importButton.setText(session.busy ? "读取中…" : "导入 ICS");
         body.removeAllViews();
         vertical = null;
         horizontal = null;
+        courseContent = null;
         gridWidth = body.getWidth();
         TimetableStore.Semester term = currentTerm();
+        boolean animateSemester = !session.busy && session.error == null && term != null
+                && term.id().equals(animatedSemester) && resumed;
+        if (!session.busy) animatedSemester = null;
         if (term == null) {
             LinearLayout empty = new LinearLayout(this);
             empty.setOrientation(LinearLayout.VERTICAL);
@@ -391,6 +403,9 @@ public final class TimetableActivity extends Activity {
             LinearLayout content = new LinearLayout(this);
             content.setOrientation(LinearLayout.VERTICAL);
             addSemesterControls(content, term);
+            courseContent = new LinearLayout(this);
+            courseContent.setOrientation(LinearLayout.VERTICAL);
+            content.addView(courseContent, new LinearLayout.LayoutParams(-1, -2));
             horizontal = new HorizontalScrollView(this);
             horizontal.setHorizontalScrollBarEnabled(false);
             horizontal.setFillViewport(true);
@@ -405,20 +420,28 @@ public final class TimetableActivity extends Activity {
             if (!term.view.regular.blocks.isEmpty()) {
                 TimetableGrid grid = new TimetableGrid(this, term.view.regular, available, block -> showCourse(block, false));
                 horizontal.addView(grid);
-                UiStyle.addSpaced(content, horizontal, 0, 16);
+                UiStyle.addSpaced(courseContent, horizontal, 0, 16);
             } else {
                 TextView emptyGrid = label("本学期的安排均在下方展示", 14, false);
                 emptyGrid.setPadding(dp(16), dp(20), dp(16), dp(20));
                 UiStyle.glass(emptyGrid);
-                UiStyle.addSpaced(content, emptyGrid, 0, 16);
+                UiStyle.addSpaced(courseContent, emptyGrid, 0, 16);
             }
-            addSpecialArrangements(content, term);
+            addSpecialArrangements(courseContent, term);
             vertical.addView(content, new ScrollView.LayoutParams(-1, -2));
             body.addView(vertical, new FrameLayout.LayoutParams(-1, -1));
             ScrollView scroll = vertical;
             HorizontalScrollView sideways = horizontal;
             int x = session.scrollX, y = session.scrollY;
-            scroll.post(() -> { scroll.scrollTo(0, y); sideways.scrollTo(x, 0); });
+            LinearLayout renderedCourses = courseContent;
+            int direction = semesterDirection;
+            scroll.post(() -> {
+                if (vertical != scroll) return;
+                scroll.scrollTo(0, y);
+                sideways.scrollTo(x, 0);
+                if (animateSemester && resumed && UiMotion.isEnabled())
+                    enterSemesterContent(renderedCourses, direction);
+            });
             if (session.error != null && resumed) {
                 Feedback.showLong(this, session.error);
                 session.error = null;
@@ -488,7 +511,36 @@ public final class TimetableActivity extends Activity {
 
     private void selectSemester(String id) {
         if (session.busy || id.equals(session.library.selected)) return;
-        save(session.library.select(id));
+        TimetableStore.Semester current = currentTerm();
+        semesterDirection = current == null || id.compareTo(current.id()) > 0 ? 1 : -1;
+        animatedSemester = id;
+        save(session.library.select(id), true);
+    }
+
+    private void settleSemesterContent() {
+        if (courseContent == null) return;
+        courseContent.animate().setUpdateListener(null).cancel();
+        courseContent.setAlpha(1f);
+        courseContent.setTranslationX(0f);
+        UiStyle.invalidateAcrylicSurfaces(courseContent);
+    }
+
+    private void enterSemesterContent(LinearLayout courses, int direction) {
+        ArrayList<View> surfaces = new ArrayList<>();
+        UiStyle.collectAcrylicSurfaces(courses, surfaces);
+        courses.setAlpha(.65f);
+        courses.setTranslationX(direction * dp(10));
+        courses.animate().alpha(1f).translationX(0f).setDuration(UiMotion.ENTER)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f))
+                .setUpdateListener(animation -> {
+                    if (!UiMotion.isEnabled()) settleSemesterContent();
+                    else for (View surface : surfaces) surface.invalidate();
+                }).withEndAction(() -> {
+                    courses.animate().setUpdateListener(null);
+                    courses.setAlpha(1f);
+                    courses.setTranslationX(0f);
+                    for (View surface : surfaces) surface.invalidate();
+                }).start();
     }
 
     private static String duration(long minutes) {
@@ -760,7 +812,13 @@ public final class TimetableActivity extends Activity {
             session.error = null;
         }
     }
-    @Override protected void onPause() { resumed = false; rememberScroll(); super.onPause(); }
+    @Override protected void onPause() {
+        resumed = false;
+        animatedSemester = null;
+        settleSemesterContent();
+        rememberScroll();
+        super.onPause();
+    }
     @Override public Object onRetainNonConfigurationInstance() { rememberScroll(); return session; }
     @Override protected void onSaveInstanceState(Bundle state) {
         rememberScroll();

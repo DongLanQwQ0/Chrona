@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-05 · 0.14.6
+
+本轮完成原生与 LAN 页内动效优化：UiMotion/ScrollRevealObserver 缓存可见卡片并合帧，主动呈现与 settleScroll 静默重绘分开；设置页 show 的 animatePresentation 参数由调用者明确区分首次与恢复。输入与无障碍焦点保护覆盖动画过程。详情 SectionMotion 高度/透明度可反转，Dock 继续单帧跟手，课表主动选学期只过渡课程主体并保持双轴滚动。UiStyle 切换快照裁可见区域，上限 1024px/524288像素，释放旧图层；Activity 系统预测返回未覆盖。
+
+LAN 使用方向性页入场、连续 Dock 高光、IntersectionObserver 一次性呈现和动态 reduced-motion 收敛；dialogGeneration 隔离旧请求与旧关闭回调，sequence 同时保护页面内容与 revision。后台十秒轮询静止，编辑焦点和选区保留。没有新增依赖、数据库或同步协议变化。
+
+离线 full 34/34 通过；原生核心 28、详情折叠 13、Dock 49 场景和设置布局 72 次平台替身执行通过；实际 Edge 动效专项、反馈与完整交互检查通过。它们不等于 Android 真机视觉或帧率验收。收尾修复设置恢复重播及动画中途无障碍焦点保护。修改前备份位于 build/backups/20261005-003315-native-motion-pages、003323-native-motion-core、003446-web-motion-upgrade 和 20261005-main-motion-finish-075521。版本 0.14.6 / 113，最终构建与签名记录见验证历史。下文保留历史记录。
+
 # 本轮补充 · 2026-10-05 · 0.14.5
 
 本轮修复同步设置的测试/保存分离、冲突处理刷新与忙碌反馈，网页弹窗错误可见与提交防重，并将同步核心/设置检查纳入统一入口、校正当前开发信息。版本为 0.14.5 / versionCode 112，数据库仍为 v10；同步协议和数据模型未变。
