@@ -18,10 +18,10 @@ public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){
     "android/content/res/ColorStateList.java": "package android.content.res; public class ColorStateList { public static ColorStateList valueOf(int x){return new ColorStateList();} }",
     "android/graphics/Canvas.java": "package android.graphics; public class Canvas {}",
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
-public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight;public static int lastColor; int l,r,t,b;
+public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight,lastLeft,lastRight;public static int lastColor; int l,r,t,b;
 public void setCornerRadius(float x){} public void setColor(int c){lastColor=c;}
 public void setBounds(int l,int t,int r,int b){this.l=l;this.r=r;this.t=t;this.b=b;}
-public void draw(android.graphics.Canvas c){lastCenter=(l+r)/2f;lastWidth=r-l;lastHeight=b-t;} }""",
+public void draw(android.graphics.Canvas c){lastCenter=(l+r)/2f;lastWidth=r-l;lastHeight=b-t;lastLeft=l;lastRight=r;} }""",
     "android/os/SystemClock.java": "package android.os; public class SystemClock { public static long uptimeMillis(){return android.view.View.now;} }",
     "android/view/HapticFeedbackConstants.java": "package android.view; public class HapticFeedbackConstants { public static final int LONG_PRESS=0; }",
     "android/view/ViewConfiguration.java": """package android.view; public class ViewConfiguration {
@@ -137,19 +137,19 @@ public class DockNavigationCheck {
   init();dock.getChildAt(0).layout(10,0,90,60);touch(0,95,35);touch(1,95,35);View.advance(0);require(selected.equals(List.of(0)),"Gap tap selects nearest button");
   init();dock.getChildAt(0).layout(10,0,90,60);touch(0,95,35);touch(1,95,100);View.advance(0);require(selected.isEmpty(),"Gap tap released outside never selects");
   init();dock.getChildAt(0).layout(10,0,90,60);touch(0,95,35);touch(2,95,100);touch(2,95,35);touch(1,95,35);View.advance(0);require(selected.isEmpty(),"Gap tap leaving and reentering does not accidentally click");
-  init();touch(0,30,35);touch(2,245,35);touch(1,245,35);View.advance(0);require(selected.equals(List.of(2)),"Horizontal drag commits once without ghost child tap");
-  init();touch(0,140,35);View.advance(500);touch(2,245,35);touch(1,245,35);View.advance(0);require(selected.equals(List.of(2)),"Long press then drag commits once");
+  init();touch(0,30,35);touch(2,245,35);View.advance(600);touch(1,245,35);View.advance(1800);require(selected.equals(List.of(2)),"Slow horizontal drag commits once at physical landing");
+  init();touch(0,140,35);View.advance(500);touch(2,245,35);View.advance(600);touch(1,245,35);View.advance(1800);require(selected.equals(List.of(2)),"Long press then drag commits once");
   init();touch(0,30,35);touch(2,245,35);touch(3,245,35);View.advance(1000);require(selected.isEmpty(),"Cancel never selects");close(center(),50,"Cancel returns to actual selection");
   init();touch(0,30,35);touch(2,245,35);touch(5,245,35);touch(1,245,35);View.advance(0);require(selected.isEmpty(),"Multiple pointers cancel");
-  init();touch(0,30,35);touch(2,245,35);touch(1,245,100);View.advance(0);require(selected.equals(List.of(2)),"Release outside dock commits clamped horizontal target");
-  init();touch(0,30,35);touch(2,345,100);touch(1,345,150);View.advance(0);require(selected.equals(List.of(2)),"Release beyond horizontal edge commits endpoint");
+  init();touch(0,30,35);touch(2,245,35);View.advance(600);touch(1,245,100);View.advance(1800);require(selected.equals(List.of(2)),"Release outside dock commits physical landing");
+  init();touch(0,30,35);touch(2,345,100);View.advance(600);touch(1,345,150);View.advance(1800);require(selected.equals(List.of(2)),"Release beyond horizontal edge commits endpoint");
   init();dock.showPageProgress(0,1,.5f);close(center(),50,"Body retarget preserves current visual position");View.advance(80);require(center()>50&&center()<110,"Body highlight moves with inertia");
   float old=center();dock.beginPageSettle(1);dock.updatePageSettle(0);close(center(),old,"Settle starts without jump");dock.updatePageSettle(1);dock.finishPageSelection(1);View.advance(1000);close(center(),150,"Commit eventually arrives at destination");
   dock.removeAllViews();populate();dock.setSelectedIndex(1);close(center(),150,"Rebuilding labels does not reset visual position");
   dock.showPageProgress(1,0,.4f);View.advance(60);dock.beginPageSettle(1);dock.finishPageSelection(1);View.advance(1000);close(center(),150,"Cancelled body swipe springs back to source");
   init();dock.beginPageSettle(2);View.advance(50);require(center()>50&&center()<250,"Click moves through intermediate position");dock.finishPageSelection(2);View.advance(1000);close(center(),250,"Click reaches distant destination");
   init();touch(0,30,35);touch(2,235,35);float released=center();touch(1,235,35);dock.updatePageSettle(0);close(center(),released,"Dock release does not jump to old source");
-  dock.updatePageSettle(1);View.advance(50);require(center()>released&&center()<250,"Dock release settles from finger toward target");
+  dock.updatePageSettle(1);View.advance(50);require(selected.size()==1,"Stationary release commits actual position after coast");
   init();dock.beginPageSettle(1);dock.updatePageSettle(.6f);float interrupted=center();dock.beginBodyDrag();dock.showPageProgress(0,1,0);close(center(),interrupted,"New body gesture preserves interrupted highlight position");
   dock.showPageProgress(0,1,.5f);close(center(),interrupted,"Interrupted gesture retarget keeps current frame");View.advance(50);require(center()>interrupted,"Interrupted gesture moves toward target");
   init();touch(0,225,35);touch(2,245,35);close(center(),50,"Remote drag begins at existing highlight");
@@ -158,8 +158,8 @@ public class DockNavigationCheck {
   touch(2,150,35);close(center(),next,"Retargeting does not teleport during MOVE");
   View.advance(80);require(center()>first&&center()<200,"Direction reversal retains bounded inertia");
   float beforeUp=center();touch(1,245,35);close(center(),beforeUp,"Release preserves visual position");
-  require(selected.equals(List.of(2)),"Fast release selects finger target despite visual lag");
-  dock.finishPageSelection(2);View.advance(1000);close(center(),250,"Release spring ends at selected target");
+  require(selected.isEmpty(),"Release waits for physical coast landing instead of finger target");
+  View.advance(1800);close(center(),150,"Stationary release lands at actual visual position rather than remote finger position");
   init();touch(0,30,35);View.advance(800);center();close(GradientDrawable.lastWidth,150,"Held highlight scales to 1.5");close(GradientDrawable.lastHeight,90,"Held highlight height scales to 1.5");require(Math.abs(dock.scaleX-1.1f)<.002f,"Held dock scales to 1.1");
   touch(1,30,100);View.advance(1000);center();close(GradientDrawable.lastWidth,100,"Released highlight returns to base width");require(Math.abs(dock.scaleX-1f)<.002f,"Released dock returns to base size");
   DockSpring physics=new DockSpring();physics.target=2;float maxWidth=1,maxPosition=0;
@@ -170,9 +170,22 @@ public class DockNavigationCheck {
   require(fast.scale<1.04f&&fast.bar<1.01f,"Release contracts rapidly");center();require((GradientDrawable.lastColor>>>24)==0x52,"Native highlight has 32 percent alpha for background blending");
   init();android.view.VelocityTracker.velocity=2500;touch(0,25,35);touch(2,150,35);touch(1,150,100);
   var springField=DockNavigationLayout.class.getDeclaredField("spring");springField.setAccessible(true);DockSpring transferred=(DockSpring)springField.get(dock);
-  require(Math.abs(transferred.velocity-25f)<.001f,"Release transfers measured physical finger velocity at 1:1 scale");require(selected.equals(List.of(1)),"Velocity affects feedback without changing selected target");
+  require(Math.abs(transferred.velocity-25f)<.001f,"Release transfers measured physical finger velocity at 1:1 scale");require(selected.isEmpty(),"Selection remains pending during free coast");
+  View.advance(2500);require(selected.size()==1,"Free coast commits exactly once after damping");
   init();android.view.VelocityTracker.velocity=-1800;touch(0,240,35);touch(2,140,35);touch(1,140,100);
   require(Math.abs(((DockSpring)springField.get(dock)).velocity+18f)<.001f,"Reverse release keeps measured velocity sign");android.view.VelocityTracker.velocity=0;
+  DockSpring forward=new DockSpring();forward.position=1;forward.coast(4,4);
+  DockSpring reverse=new DockSpring();reverse.position=1;reverse.coast(-4,4);
+  for(int i=0;i<400;i++){forward.step(1f/120);reverse.step(1f/120);}
+  require(forward.target==2&&reverse.target==0,"Identical release position selects different final items from velocity");
+  DockSpring thrown=new DockSpring();thrown.position=2;thrown.coast(12,2);float farthest=2;
+  for(int i=0;i<500;i++){thrown.step(1f/120);farthest=Math.max(farthest,thrown.position);}
+  require(farthest>2.1f&&!thrown.coasting&&thrown.position<=2.01f,"Edge allows throw outside then damping pulls it back");
+  init();DockSpring edges=(DockSpring)springField.get(dock);var apply=DockNavigationLayout.class.getDeclaredMethod("applySpring");apply.setAccessible(true);
+  edges.position=3.5f;apply.invoke(dock);center();close(GradientDrawable.lastLeft,250,"Right throw pins inner end half a standard width inside");
+  require(GradientDrawable.lastRight>350,"Right outer end can stretch beyond half width");
+  edges.position=-1.5f;apply.invoke(dock);center();close(GradientDrawable.lastRight,50,"Left throw pins inner end half a standard width inside");
+  require(GradientDrawable.lastLeft<-50,"Left outer end can stretch beyond half width");
   init();touch(0,245,35);View.advance(500);close(center(),50,"Long press starts at existing highlight");
   View.advance(32);require(center()>50&&center()<245,"Long press smoothly approaches finger");
   touch(3,245,35);View.advance(400);close(center(),50,"Cancel stops finger loop and returns");

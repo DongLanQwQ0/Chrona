@@ -26,4 +26,5 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,dialog::-webkit-scrollbar,textar
 .icon-button:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
 #settings svg,#theme svg{width:21px;height:21px}
 summary{cursor:pointer;padding:8px 0;user-select:none}summary:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:6px}.disclosure-body{min-height:0}
+.bottom nav button.active{color:var(--primary)}
 @media(prefers-reduced-motion:reduce){button{transition:none!important}button:active{transform:none}dialog::backdrop{backdrop-filter:none}}

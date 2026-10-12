@@ -35,9 +35,15 @@ async function until(fn){for(let i=0;i<100;i++){if(await fn())return;await delay
   await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:points.end,y:points.y,button:'left',buttons:1});await delay(50);
   const stretched=await page.evaluate(()=>dockState.stretch);assert(stretched>1.01,'moving highlight width stretches');
   await page.screenshot({path:path.join(out,'dock-moving-mobile.png')});
-  await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:points.end,y:points.outside,button:'left',buttons:1});
+  await delay(600);await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:points.end,y:points.outside,button:'left',buttons:1});
   await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:points.end,y:points.outside,button:'left',buttons:0,clickCount:1});await until(()=>page.evaluate(()=>route==='inbox'));await delay(1000);
   assert(await page.evaluate(()=>Math.abs(dockState.s-1)<.002&&Math.abs(dockState.bar-1)<.002),'outside release commits and springs sizes back');
+  async function coast(speed){await page.evaluate(speed=>{const buttons=dockButtons(),gap=buttons[1].offsetLeft-buttons[0].offsetLeft;dockState.p=buttons[1].offsetLeft+buttons[1].offsetWidth/2;dockState.v=gap*speed;dockCoasting=true;animateDock();},speed);await until(()=>page.evaluate(()=>!dockCoasting));await delay(400);return page.evaluate(()=>route);}
+  assert.equal(await coast(4),'inbox','positive velocity selects damped forward landing');
+  assert.equal(await coast(-4),'home','same release position with reverse velocity selects backward landing');
+  evidence.edge=await page.evaluate(()=>{dockState.p=dockNav.offsetWidth+dockState.w;drawDock();const left=parseFloat(dockHighlight.style.transform.match(/translateX\(([-.\d]+)/)[1]),width=parseFloat(dockHighlight.style.width);const result={left,width,board:dockNav.offsetWidth,standard:dockState.w};updateDock();return result;});
+  assert(Math.abs(evidence.edge.left-(evidence.edge.board-evidence.edge.standard/2))<.1,'inner edge anchors half a standard width inside board');
+  assert(evidence.edge.left+evidence.edge.width>evidence.edge.board+evidence.edge.standard/2,'outer edge may extend beyond half the standard width');
   await page.evaluate(()=>navigate('schedule'));await delay(500);
   const reveal=await page.evaluate(async()=>{window.revealTarget=document.querySelector('.reveal-pending');revealTarget.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,60));return{revealed:!revealTarget.classList.contains('reveal-pending'),opacity:getComputedStyle(revealTarget).opacity};});
   assert(reveal.revealed&&Number(reveal.opacity)<1,'scroll starts a visible reveal animation');await delay(320);

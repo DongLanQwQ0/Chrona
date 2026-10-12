@@ -7,7 +7,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -62,8 +61,11 @@ public final class GlassBackdropView extends View {
     private final RectF blurDestination = new RectF();
     private final int[] backdropLocation = new int[2];
     private final int[] targetLocation = new int[2];
-    private final Path surfaceClip = new Path();
     private final RectF surfaceBounds = new RectF();
+    private Bitmap shaderBitmap;
+    private android.graphics.BitmapShader surfaceShader;
+    private final android.graphics.Matrix surfaceMatrix = new android.graphics.Matrix();
+    private final Paint surfacePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     public GlassBackdropView(Context context) {
         super(context);
@@ -669,27 +671,29 @@ public final class GlassBackdropView extends View {
         target.getLocationInWindow(targetLocation);
         int left = targetLocation[0] - backdropLocation[0];
         int top = targetLocation[1] - backdropLocation[1];
-        int save = canvas.save();
-        surfaceClip.rewind();
         surfaceBounds.set(destination);
-        surfaceClip.addRoundRect(surfaceBounds, cornerRadius, cornerRadius, Path.Direction.CW);
-        canvas.clipPath(surfaceClip);
-        canvas.drawColor(palette.background);
-        canvas.translate(-left, -top);
-        imagePaint.setAlpha(Math.round(255 * wallpaperOpacity));
-        canvas.drawBitmap(blurredWallpaper, null, blurDestination, imagePaint);
-        imagePaint.setAlpha(255);
-        canvas.restoreToCount(save);
-
-        save = canvas.save();
-        canvas.clipPath(surfaceClip);
-        if (ThemeStore.dark(getContext())) {
-            canvas.drawColor(Color.argb(Math.round(128 * wallpaperOpacity), 0, 0, 0));
-            canvas.drawColor(tint(palette.background, Math.round(76 * wallpaperOpacity)));
-        } else {
-            canvas.drawColor(tint(palette.background, Math.round(164 * wallpaperOpacity)));
+        surfacePaint.setShader(null); surfacePaint.setColor(palette.background);
+        canvas.drawRoundRect(surfaceBounds, cornerRadius, cornerRadius, surfacePaint);
+        if (shaderBitmap != blurredWallpaper) {
+            shaderBitmap = blurredWallpaper;
+            surfaceShader = new android.graphics.BitmapShader(shaderBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
         }
-        canvas.restoreToCount(save);
+        surfaceMatrix.setScale(blurDestination.width() / shaderBitmap.getWidth(),
+                blurDestination.height() / shaderBitmap.getHeight());
+        surfaceMatrix.postTranslate(blurDestination.left - left, blurDestination.top - top);
+        surfaceShader.setLocalMatrix(surfaceMatrix);
+        surfacePaint.setShader(surfaceShader); surfacePaint.setColor(Color.WHITE);
+        surfacePaint.setAlpha(Math.round(255 * wallpaperOpacity));
+        canvas.drawRoundRect(surfaceBounds, cornerRadius, cornerRadius, surfacePaint);
+        surfacePaint.setShader(null);
+        if (ThemeStore.dark(getContext())) {
+            surfacePaint.setColor(Color.argb(Math.round(128 * wallpaperOpacity), 0, 0, 0));
+            canvas.drawRoundRect(surfaceBounds, cornerRadius, cornerRadius, surfacePaint);
+            surfacePaint.setColor(tint(palette.background, Math.round(76 * wallpaperOpacity)));
+        } else {
+            surfacePaint.setColor(tint(palette.background, Math.round(164 * wallpaperOpacity)));
+        }
+        canvas.drawRoundRect(surfaceBounds, cornerRadius, cornerRadius, surfacePaint);
         return true;
     }
 

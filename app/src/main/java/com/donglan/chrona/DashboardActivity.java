@@ -496,14 +496,15 @@ public final class DashboardActivity extends Activity {
         android.view.animation.Interpolator interpolator = commit
                 ? new android.view.animation.DecelerateInterpolator(1.35f)
                 : SwipePagerLayout.RECOIL_INTERPOLATOR;
-        // Rasterize each page once during release, then move its layer on the compositor.
-        // Resample acrylic at completion instead of invalidating every card on every frame.
-        scroll.animate().withLayer().translationX(currentTarget).setDuration(duration)
+        // Live shader sampling follows the page in window coordinates throughout release.
+        // A frozen whole-page layer would preserve offscreen wallpaper samples.
+        scroll.animate().translationX(currentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
                 .setUpdateListener(animation -> {
                     if (mobileDock != null) mobileDock.updatePageSettle(animation.getAnimatedFraction());
+                    invalidateSectionSurfaces();
                 }).start();
-        adjacentPage.scroll.animate().withLayer().translationX(adjacentTarget).setDuration(duration)
+        adjacentPage.scroll.animate().translationX(adjacentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
                 .setUpdateListener(null)
                 .withEndAction(() -> completeSectionDrag(commit)).start();
@@ -521,12 +522,13 @@ public final class DashboardActivity extends Activity {
             switchToPendingSection();
             return;
         }
-        scroll.animate().withLayer().translationX(0f)
+        scroll.animate().translationX(0f)
                 .setDuration(SwipePagerLayout.recoilDuration(
                         Math.abs(scroll.getTranslationX()), sectionPageWidth()))
                 .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
                 .setUpdateListener(animation -> {
                     if (mobileDock != null) mobileDock.updatePageSettle(animation.getAnimatedFraction());
+                    invalidateSectionSurfaces();
                 })
                 .withEndAction(() -> {
                     if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
@@ -1003,7 +1005,7 @@ public final class DashboardActivity extends Activity {
             navigation.setElevation(dp(8));
             FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(-1,
                     dp(MOBILE_DOCK_HEIGHT_DP), Gravity.BOTTOM | Gravity.START);
-            dockParams.setMargins(dp(14), 0, dp(94), dp(8));
+            dockParams.setMargins(dp(36), 0, dp(104), dp(8));
             mobileBottomArea.addView(navigation, dockParams);
             ImageButton record = UiStyle.recordEntry(this, this::openCapture);
             FrameLayout.LayoutParams recordParams = new FrameLayout.LayoutParams(

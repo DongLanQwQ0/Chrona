@@ -58,6 +58,9 @@ public final class CalendarOverviewActivity extends Activity {
     private FrameLayout body;
     private FrameLayout bodyStage;
     private FrameLayout bodyViewport;
+    private FrameLayout outgoingBody;
+    private boolean pendingBodyRender;
+    private final Runnable renderAfterDock = this::renderBody;
     private ScrollView verticalViewport;
     private HorizontalScrollView horizontalViewport;
     private final java.util.LinkedHashMap<String, int[]> positions = new java.util.LinkedHashMap<>(16, .75f, true);
@@ -226,6 +229,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
     @Override protected void onPause() {
         resumed = false; handler.removeCallbacks(minuteTick); handler.removeCallbacks(calendarReload);
+        handler.removeCallbacks(renderAfterDock); pendingBodyRender = false;
         rememberPosition(); cancelRead(); swipe.cancel(); bodyTouchActive = false;
         if (allDayDialog != null) { allDayDialog.dismiss(); allDayDialog = null; }
         finishTabMotion(); finishBodyMotion(); animateNext = false;
@@ -341,8 +345,13 @@ public final class CalendarOverviewActivity extends Activity {
     }
 
     private void finishBodyMotion() {
-        presentationGeneration++; bodyTransitionRunning = false; UiStyle.finishSwap(body);
-        UiStyle.finishSwap(bodyViewport);
+        presentationGeneration++; bodyTransitionRunning = false;
+        body.animate().setListener(null).setUpdateListener(null).cancel();
+        body.setAlpha(1f); body.setTranslationX(0f);
+        if (outgoingBody != null) {
+            outgoingBody.animate().cancel(); bodyViewport.removeView(outgoingBody); outgoingBody = null;
+        }
+        if (pendingBodyRender) { pendingBodyRender = false; if (resumed) handler.post(renderAfterDock); }
     }
     private LocalDate windowStart() {
         if (mode == YEAR) return date.withDayOfYear(1);
@@ -461,6 +470,13 @@ public final class CalendarOverviewActivity extends Activity {
     }
     private void renderBody() {
         if (body == null || loading) return;
+        // View construction must not share frames with the tab's free coast or snap.
+        // Keep only the latest requested presentation while the independent dock settles.
+        if (resumed && UiMotion.isEnabled() && tabs != null && tabs.isAnimating()) {
+            handler.removeCallbacks(renderAfterDock); handler.postDelayed(renderAfterDock, 16); return;
+        }
+        handler.removeCallbacks(renderAfterDock);
+        if (bodyTransitionRunning) { pendingBodyRender = true; return; }
         rememberPosition();
         View focus = body.findFocus(); String focusTag = focus != null && focus.getTag() instanceof String ? (String) focus.getTag() : null;
         View accessible = accessibilityFocus(body);
@@ -474,9 +490,18 @@ public final class CalendarOverviewActivity extends Activity {
             buildBody(); restorePosition();
         };
         if (animated) {
-            UiStyle.swap(bodyViewport, body, rebuild);
-            bodyTransitionRunning = bodyStage.getChildCount() > 1;
-            if (bodyTransitionRunning) body.animate().translationX(0f).setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE)
+            // Keep the outgoing native subtree. No synchronous software screenshot or
+            // bitmap allocation on the release frame, and never stack interrupted pages.
+            outgoingBody = new FrameLayout(this);
+            while (body.getChildCount() > 0) {
+                View child = body.getChildAt(0); body.removeView(child);
+                outgoingBody.addView(child, new FrameLayout.LayoutParams(-1, -1));
+            }
+            outgoingBody.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            bodyViewport.addView(outgoingBody, 0, new FrameLayout.LayoutParams(-1, -1));
+            rebuild.run(); body.setAlpha(0f); bodyTransitionRunning = true;
+            outgoingBody.animate().withLayer().alpha(0f).setDuration(UiMotion.ENTER).start();
+            body.animate().withLayer().alpha(1f).translationX(0f).setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE)
                     .setUpdateListener(value -> { if (!UiMotion.isEnabled() || body.hasFocus()) finishBodyMotion(); })
                     .setListener(new android.animation.AnimatorListenerAdapter() {
                         @Override public void onAnimationEnd(android.animation.Animator animation) {
@@ -486,7 +511,6 @@ public final class CalendarOverviewActivity extends Activity {
                             if (presentation == presentationGeneration) finishBodyMotion();
                         }
                     }).start();
-            else body.setTranslationX(0f);
         } else { finishBodyMotion(); rebuild.run(); }
         View presented = body.getChildAt(0);
         if (focusTag != null || accessibleTag != null) body.post(() -> {

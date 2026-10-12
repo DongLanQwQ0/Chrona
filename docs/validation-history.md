@@ -1,5 +1,12 @@
 # 历史验证记录
 
+## 0.14.15 — 2026-10-12
+
+- 完整离线回归 39/39，通过日志 `build/inertial-landing-full-checks.log`。新增执行生产模糊绘制方法的 10 项检查，覆盖移动坐标、离屏边缘延拓、着色器复用/替换和未就绪路径。原生 Dock 70 项包含同一释放位置不同速度得到不同落点、越界回弹和延迟单次提交。Android 图形与队列均为替身。
+- 真实 Edge 动效检查通过：正反向惯性落点、标准半宽内端锚定、外端继续延伸、栏外释放、缩放及减少动态效果；网页完整交互检查通过，pageErrors 为空。网页证据 `build/lan-motion-checks/evidence.json`，完整交互日志 `build/inertial-landing-web-check.log`。
+- debug/release 与 lint 通过，0 errors / 84 warnings，`build/inertial-landing-final-build.log`。APK 0.14.15 / 122，1,986,222 字节，SHA256 `35f64478361722d90db1d018df4039b6f7a4212d6aeea3324574357f3cf84ea8`，保持原安装签名。
+- 备份 `build/backups/20261012-inertial-landing`。ADB 无设备；Android 真机帧率、动态模糊、边缘拉伸手感及覆盖安装尚未实测。
+
 ## 0.14.14 — 2026-10-12
 
 - 审查发现松手切页同步读取与重复导航构建、每帧玻璃采样。新增 DashboardSectionData 后台一致性事务读取；缓存页与导航按钮保留，动效期间延后刷新，松手页平移临时 withLayer 并结束恢复玻璃采样。首页宿主不裁剪且底部新增 12dp 放大余量。

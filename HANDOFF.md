@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-12 · 0.14.15
+
+用户真机报告上一版模糊和日历掉帧未解决，并明确要求惯性决定最终落点、主导航收窄居中、选中主题色，以及标准宽度的一半越界后内端停住、外端继续拉伸。取消 Dashboard 整页 withLayer 并恢复每帧重采样；GlassBackdropView 改用缓存 CLAMP BitmapShader 与移动坐标矩阵，避免离屏采样变实色。CalendarOverview 不再同步截图，保留旧原生子树过渡，合并过渡内请求并等待 Dock 运动结束后构建视图。
+
+DockSpring 原生与网页实现自由指数阻尼阶段，边界外弹簧回拉，随后按实际减速落点选择并吸附。保持速度 1∶1，不再以松手位置决定项目。绘制高光内端到半个标准宽度越界位置后固定，外端允许继续延伸；主 Dock 左/右留白 36/104dp，选中按钮主题色。
+
+完整离线 39/39、原生 Dock 70、生产采样方法 10、实际 Edge 动效及完整交互通过；debug/release/lint 成功，0 errors / 84 warnings。备份 build/backups/20261012-inertial-landing。0.14.15 / 122，SHA256 35f64478361722d90db1d018df4039b6f7a4212d6aeea3324574357f3cf84ea8。ADB 无设备，Android 真机 FPS、动态模糊及实际拉伸手感未验证，不能声称手机掉帧已经实测消失。
+
 # 本轮补充 · 2026-10-12 · 0.14.14
 
 用户报告松手切页掉帧、首页 Dock 底部裁切、放大响应慢，并要求高光半透明、松手速度 1∶1。首次 Dock 切页通过 DashboardSectionData 后台事务读取有界 Home/Inbox/Schedule 数据，主线程仅创建 View。cached buildAdjacentSection 不再检查数据库或刷新；页面完成后的版本/待处理刷新延至 Dock 和页面都静止，poll 和系统来源刷新也避开动效。相同注意数时 drawNavigation 保留按钮/包装/徽章并原位改选中语义。读失败保留旧页，pending 最后请求与 pause generation 隔离过期回调。
