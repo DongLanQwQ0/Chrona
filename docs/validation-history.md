@@ -1,5 +1,14 @@
 # 历史验证记录
 
+## 0.14.14 — 2026-10-12
+
+- 审查发现松手切页同步读取与重复导航构建、每帧玻璃采样。新增 DashboardSectionData 后台一致性事务读取；缓存页与导航按钮保留，动效期间延后刷新，松手页平移临时 withLayer 并结束恢复玻璃采样。首页宿主不裁剪且底部新增 12dp 放大余量。
+- 完整离线 38/38 通过，`build/dock-release-performance-full.log`。新增真实读取/切页控制器 12 项核对工作线程约束、分页/捕获输入、缓存无读取、快速反选、动画期间延后检查、失败保持旧页/事务释放、生命周期过期及系统源隔离，`dock-release-performance-switch-check.log`。
+- 后续 1∶1 松手速度补充通过 Dock 63 项检查：屏幕 VelocityTracker 速度转换、正反向保速、目标不改变、100ms 快缩放和约 32% alpha，加上既有栏外释放/多指/暂停逻辑。平台速度采样器为替身，真实设备手感待验收；日志 `dock-release-performance-dock-check.log`。
+- 实际 Edge 动效与速度函数验证通过，包含 1∶1 屏幕像素/秒计算及反向符号、快缩放、视口底边、栏外 UP、回缩、减少动态效果和已有页面/弹窗动作；日志 `dock-release-performance-web-motion.log`。Android 真机 FPS 与下半部裁切未实测，ADB 无设备。
+- 最终 debug/release 与 lint 通过，0 errors / 84 warnings，`build/dock-release-performance-final-build.log`。APK 0.14.14 / 121，1,984,898 字节，SHA256 `eb29d4172ebd93ad89e977a28cc9ab25936a88ded5d947e38958a0157b945cd8`，原安装签名、非调试。
+- 备份 `build/backups/20261012-dock-release-performance`；分发 `build/distributions/0.14.14/Chrona-0.14.14.apk`；发布核对 `build/release-0.14.14-artifact.json`、`build/dock-release-performance-public-verification.log`。尚未进行 Android 帧率、实际裁切/速度手感或覆盖安装验收。
+
 ## 0.14.13 — 2026-10-12
 
 - Chrona 本地日程与系统日程统一开启周/日/全天卡片边框。共享原生 Dock 和网页 Dock 的水平拖动支持栏外松手确认；阻尼弹簧保留重定向速度，按压目标高光 1.5、整栏 1.1，移动宽度拉伸回弹，释放/取消/多指/减少动态效果收尾。

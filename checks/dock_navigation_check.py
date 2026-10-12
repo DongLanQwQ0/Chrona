@@ -18,8 +18,8 @@ public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){
     "android/content/res/ColorStateList.java": "package android.content.res; public class ColorStateList { public static ColorStateList valueOf(int x){return new ColorStateList();} }",
     "android/graphics/Canvas.java": "package android.graphics; public class Canvas {}",
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
-public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight; int l,r,t,b;
-public void setCornerRadius(float x){} public void setColor(int c){}
+public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight;public static int lastColor; int l,r,t,b;
+public void setCornerRadius(float x){} public void setColor(int c){lastColor=c;}
 public void setBounds(int l,int t,int r,int b){this.l=l;this.r=r;this.t=t;this.b=b;}
 public void draw(android.graphics.Canvas c){lastCenter=(l+r)/2f;lastWidth=r-l;lastHeight=b-t;} }""",
     "android/os/SystemClock.java": "package android.os; public class SystemClock { public static long uptimeMillis(){return android.view.View.now;} }",
@@ -31,7 +31,12 @@ public int getScaledTouchSlop(){return 8;} public static int getLongPressTimeout
 public static final int ACTION_DOWN=0,ACTION_UP=1,ACTION_MOVE=2,ACTION_CANCEL=3,ACTION_POINTER_DOWN=5;
 int a;float x,y; public MotionEvent(int a,float x,float y){this.a=a;this.x=x;this.y=y;}
 public static MotionEvent obtain(long d,long t,int a,float x,float y,int m){return new MotionEvent(a,x,y);}
-public int getActionMasked(){return a;} public float getX(){return x;} public float getY(){return y;} public void recycle(){} }""",
+public static MotionEvent obtain(MotionEvent e){return new MotionEvent(e.a,e.x,e.y);}public void offsetLocation(float dx,float dy){x+=dx;y+=dy;}
+public int getActionMasked(){return a;} public float getX(){return x;} public float getY(){return y;} public float getRawX(){return x;}public float getRawY(){return y;}public long getDownTime(){return 0;}public long getEventTime(){return View.now;}public void recycle(){} }""",
+    "android/view/VelocityTracker.java": """package android.view;public class VelocityTracker {
+ public static float velocity;public static int recycled;public static VelocityTracker obtain(){return new VelocityTracker();}
+ public void addMovement(MotionEvent event){}public void computeCurrentVelocity(int units){}public float getXVelocity(){return velocity;}public void recycle(){recycled++;}}
+""",
     "android/view/View.java": """package android.view;
 import java.util.*; import android.content.Context;
 public class View {
@@ -61,7 +66,7 @@ public class View {
  public boolean postDelayed(Runnable action,long delay){jobs.add(new Job(this,action,now+delay,sequence++));return true;}
  public boolean removeCallbacks(Runnable action){return jobs.removeIf(j->j.owner==this&&j.action==action);}
  public void invalidate(){} public boolean performHapticFeedback(int x){return true;}
- public float scaleX=1,scaleY=1;public void setScaleX(float value){scaleX=value;}public void setScaleY(float value){scaleY=value;}
+ public float scaleX=1,scaleY=1;public void setScaleX(float value){scaleX=value;}public void setScaleY(float value){scaleY=value;}public float getScaleX(){return scaleX;}
  protected void onDetachedFromWindow(){jobs.removeIf(j->j.owner==this);pressed=false;}
  public void detach(){onDetachedFromWindow();parent=null;}
  protected void dispatchDraw(android.graphics.Canvas c){}
@@ -99,7 +104,7 @@ public class ValueAnimator { public interface AnimatorUpdateListener {void onAni
  public void start(){if(listener!=null)listener.onAnimationUpdate(this);} }""",
     "com/donglan/chrona/UiStyle.java": """package com.donglan.chrona; public class UiStyle {
 public static final int RADIUS_PANEL=20;
-public static class Palette {public int onPrimaryContainer,muted,primaryContainer;}
+public static class Palette {public int onPrimaryContainer,muted,primaryContainer,primary;}
 public static Palette colors(android.content.Context c){return new Palette();} }""",
 }
 
@@ -121,7 +126,7 @@ public class DockNavigationCheck {
  static void touch(int a,float x,float y){dock.dispatchTouchEvent(new MotionEvent(a,x,y));}
  static float center(){dock.dispatchDraw(new Canvas());return GradientDrawable.lastCenter;}
  static void close(float actual,float expected,String label){require(Math.abs(actual-expected)<=1f,label+" got "+actual);}
- public static void main(String[] args){
+ public static void main(String[] args)throws Exception{
   for(int i=0;i<3;i++){init();touch(0,i*100+25,35);View.advance(100);touch(1,i*100+25,35);
    require(rebuilds==0,"Do not rebuild during UP before queued child click");View.advance(0);
    require(selected.equals(List.of(i)),"Each ordinary button tap executes exactly once before detach: "+i);}
@@ -160,6 +165,14 @@ public class DockNavigationCheck {
   DockSpring physics=new DockSpring();physics.target=2;float maxWidth=1,maxPosition=0;
   for(int i=0;i<180;i++){physics.step(1f/120);maxWidth=Math.max(maxWidth,physics.width);maxPosition=Math.max(maxPosition,physics.position);}
   require(maxWidth>1.02f,"Moving highlight width stretches elastically");require(maxPosition>2f,"Position spring has bounded elastic overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.width-1)<.002f,"Spring settles rather than oscillating indefinitely");
+  DockSpring fast=new DockSpring();fast.press(true);for(int i=0;i<12;i++)fast.step(1f/120);
+  require(fast.scale>1.4f&&fast.bar>1.08f,"Press expansion responds within 100ms");fast.press(false);for(int i=0;i<18;i++)fast.step(1f/120);
+  require(fast.scale<1.04f&&fast.bar<1.01f,"Release contracts rapidly");center();require((GradientDrawable.lastColor>>>24)==0x52,"Native highlight has 32 percent alpha for background blending");
+  init();android.view.VelocityTracker.velocity=2500;touch(0,25,35);touch(2,150,35);touch(1,150,100);
+  var springField=DockNavigationLayout.class.getDeclaredField("spring");springField.setAccessible(true);DockSpring transferred=(DockSpring)springField.get(dock);
+  require(Math.abs(transferred.velocity-25f)<.001f,"Release transfers measured physical finger velocity at 1:1 scale");require(selected.equals(List.of(1)),"Velocity affects feedback without changing selected target");
+  init();android.view.VelocityTracker.velocity=-1800;touch(0,240,35);touch(2,140,35);touch(1,140,100);
+  require(Math.abs(((DockSpring)springField.get(dock)).velocity+18f)<.001f,"Reverse release keeps measured velocity sign");android.view.VelocityTracker.velocity=0;
   init();touch(0,245,35);View.advance(500);close(center(),50,"Long press starts at existing highlight");
   View.advance(32);require(center()>50&&center()<245,"Long press smoothly approaches finger");
   touch(3,245,35);View.advance(400);close(center(),50,"Cancel stops finger loop and returns");

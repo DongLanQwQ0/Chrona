@@ -8,6 +8,7 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.VelocityTracker;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -21,6 +22,8 @@ final class DockNavigationLayout extends LinearLayout {
     private final IntConsumer select;
     private final Runnable finished;
     private final DockSpring spring = new DockSpring();
+    private static final int HIGHLIGHT_ALPHA = 82;
+    private VelocityTracker fingerVelocity;
     private float downX, downY, fingerPosition;
     private long followFrameTime;
     private boolean followPosted;
@@ -55,6 +58,7 @@ final class DockNavigationLayout extends LinearLayout {
     }
 
     boolean isTrackingTouch() { return tracking; }
+    boolean isAnimating() { return followPosted; }
 
     void setSelectedIndex(int index) {
         selectedIndex = index;
@@ -219,7 +223,8 @@ final class DockNavigationLayout extends LinearLayout {
             float height = cell.getHeight() * spring.scale;
             highlight.setCornerRadius(UiStyle.RADIUS_PANEL * getResources().getDisplayMetrics().density * spring.scale);
             int left = Math.round(x - width / 2f), top = Math.round((cell.getTop() + cell.getBottom() - height) / 2f);
-            highlight.setColor(UiStyle.colors(getContext()).primaryContainer);
+            // Alpha blends the accent over the dock's existing sampled acrylic background.
+            highlight.setColor((UiStyle.colors(getContext()).primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
             highlight.setBounds(left, top, Math.round(left + width), Math.round(top + height));
             highlight.draw(canvas);
         }
@@ -241,7 +246,29 @@ final class DockNavigationLayout extends LinearLayout {
         moveHighlight(x);
     }
 
+    private void recordVelocity(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) { recycleVelocity(); return; }
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            recycleVelocity(); fingerVelocity = VelocityTracker.obtain();
+        }
+        if (fingerVelocity == null) return;
+        // Use physical screen samples; the dock's own 1.1x scaling must not attenuate velocity.
+        MotionEvent screen = MotionEvent.obtain(event.getDownTime(), event.getEventTime(),
+                event.getActionMasked(), event.getRawX(), event.getRawY(), 0);
+        fingerVelocity.addMovement(screen); screen.recycle();
+    }
+    private void recycleVelocity() {
+        if (fingerVelocity != null) { fingerVelocity.recycle(); fingerVelocity = null; }
+    }
+    private float releasedVelocity() {
+        if (fingerVelocity == null || getChildCount() < 2) return 0f;
+        fingerVelocity.computeCurrentVelocity(1000);
+        float pixelsPerSlot = (center(1) - center(0)) * getScaleX();
+        return Math.abs(pixelsPerSlot) < 1f ? 0f : fingerVelocity.getXVelocity() / pixelsPerSlot;
+    }
+
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        recordVelocity(event);
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             cancelFingerFollow();
@@ -256,6 +283,7 @@ final class DockNavigationLayout extends LinearLayout {
             getParent().requestDisallowInterceptTouchEvent(true);
             postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
         } else if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            recycleVelocity();
             cancelFingerFollow();
             removeCallbacks(longPress);
             if (!dragging) cancelChildTouch();
@@ -280,6 +308,7 @@ final class DockNavigationLayout extends LinearLayout {
             removeCallbacks(longPress);
             boolean commit = dragging && action == MotionEvent.ACTION_UP;
             int destination = nearest(event.getX());
+            float releaseSpeed = commit ? releasedVelocity() : 0f;
             cancelFingerFollow();
             tracking = false;
             dragging = false;
@@ -289,10 +318,12 @@ final class DockNavigationLayout extends LinearLayout {
                 if (pageSettling) resumeOrReturnHighlight();
                 select.accept(destination);
                 if (!pageSettling) resumeOrReturnHighlight();
+                if (ValueAnimator.areAnimatorsEnabled()) spring.velocity = releaseSpeed;
             } else if (owned) {
                 resumeOrReturnHighlight();
             }
             invalidate();
+            recycleVelocity();
             post(finishTouch);
         }
         return handled;
@@ -320,6 +351,7 @@ final class DockNavigationLayout extends LinearLayout {
     }
 
     @Override protected void onDetachedFromWindow() {
+        recycleVelocity();
         cancelFingerFollow();
         removeCallbacks(longPress);
         removeCallbacks(finishTouch);

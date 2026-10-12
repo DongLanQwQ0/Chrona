@@ -2,6 +2,7 @@ package com.donglan.chrona;
 
 /** Shared damped motion state; retargeting preserves velocity instead of restarting animations. */
 final class DockSpring {
+    private static final float PRESS_STIFFNESS = 900f, PRESS_DAMPING = 50f;
     float position, velocity, target;
     float scale = 1f, scaleVelocity, scaleTarget = 1f;
     float width = 1f, widthVelocity;
@@ -15,10 +16,10 @@ final class DockSpring {
         for (int i = 0; i < steps; i++) {
             velocity += (180f * (target - position) - 22f * velocity) * dt;
             position += velocity * dt;
-            scaleVelocity += (260f * (scaleTarget - scale) - 24f * scaleVelocity) * dt; scale += scaleVelocity * dt;
+            scaleVelocity += (PRESS_STIFFNESS * (scaleTarget - scale) - PRESS_DAMPING * scaleVelocity) * dt; scale += scaleVelocity * dt;
             float stretch = 1f + Math.min(.25f, Math.abs(velocity) * .025f);
             widthVelocity += (200f * (stretch - width) - 18f * widthVelocity) * dt; width += widthVelocity * dt;
-            barVelocity += (260f * (barTarget - bar) - 25f * barVelocity) * dt; bar += barVelocity * dt;
+            barVelocity += (PRESS_STIFFNESS * (barTarget - bar) - PRESS_DAMPING * barVelocity) * dt; bar += barVelocity * dt;
         }
         if (Math.abs(target - position) < .001f && Math.abs(velocity) < .01f
                 && Math.abs(scaleTarget - scale) < .001f && Math.abs(scaleVelocity) < .01f

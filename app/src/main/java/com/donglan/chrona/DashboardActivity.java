@@ -64,6 +64,7 @@ public final class DashboardActivity extends Activity {
     private static final long SYSTEM_CALENDAR_REFRESH_MILLIS = 5000L;
     private static final int MOBILE_DOCK_HEIGHT_DP = 64;
     private static final int MOBILE_BOTTOM_AREA_HEIGHT_DP = 88;
+    private static final int MOBILE_DOCK_PRESS_CLEARANCE_DP = 12;
     /** How far the page follows a drag towards a section that does not exist. */
     private static final float NO_NEIGHBOUR_RESISTANCE = 0.3f;
     private static final int RECORD_ENTRY_SIZE_DP = 52;
@@ -139,6 +140,13 @@ public final class DashboardActivity extends Activity {
     private final android.graphics.Rect sectionVisibleRect = new android.graphics.Rect();
     /** A neighbouring page is being rendered off-screen; the dock must not follow it. */
     private boolean previewRender;
+    private DashboardSectionData preparedSection;
+    private boolean sectionLoadRunning;
+    private boolean dockSectionSwitch;
+    private int sectionLoadGeneration, loadingSection;
+    private int navigationAttentionCount = -1;
+    private TextView navigationBadge;
+    private final Runnable deferredSectionRefresh = this::refreshSettledSection;
     /** Entries waiting for review or already failed; shown on the dock and on the inbox filters. */
     private int pendingReview;
     private int pendingFailed;
@@ -314,17 +322,6 @@ public final class DashboardActivity extends Activity {
         sectionPages.put(section, current);
         SectionPage cached = sectionPages.get(destination);
         if (cached != null) {
-            activateSectionPage(cached);
-            boolean previousPreview = previewRender;
-            previewRender = true;
-            try {
-                refreshActivePageIfNeeded();
-                cached = new SectionPage();
-                sectionPages.put(destination, cached);
-            } finally {
-                previewRender = previousPreview;
-                activateSectionPage(current);
-            }
             return cached;
         }
         ScrollView targetScroll = new ScrollView(this);
@@ -396,6 +393,7 @@ public final class DashboardActivity extends Activity {
 
     private final SwipePagerLayout.Listener sectionPagerListener = new SwipePagerLayout.Listener() {
         @Override public void onStart() {
+            sectionLoadGeneration++; sectionLoadRunning = false;
             scroll.animate().cancel();
             if (adjacentPage != null) {
                 adjacentPage.scroll.animate().cancel();
@@ -408,7 +406,7 @@ public final class DashboardActivity extends Activity {
             dragTargetLoaded = false;
             dragDirection = 0;
             scroll.setTranslationX(0f);
-            if (mobileDock != null) mobileDock.beginBodyDrag();
+            if (mobileDock != null && !dockSectionSwitch) mobileDock.beginBodyDrag();
             collectSectionSurfaces();
         }
 
@@ -498,13 +496,14 @@ public final class DashboardActivity extends Activity {
         android.view.animation.Interpolator interpolator = commit
                 ? new android.view.animation.DecelerateInterpolator(1.35f)
                 : SwipePagerLayout.RECOIL_INTERPOLATOR;
-        scroll.animate().translationX(currentTarget).setDuration(duration)
+        // Rasterize each page once during release, then move its layer on the compositor.
+        // Resample acrylic at completion instead of invalidating every card on every frame.
+        scroll.animate().withLayer().translationX(currentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
                 .setUpdateListener(animation -> {
                     if (mobileDock != null) mobileDock.updatePageSettle(animation.getAnimatedFraction());
-                    invalidateSectionSurfaces();
                 }).start();
-        adjacentPage.scroll.animate().translationX(adjacentTarget).setDuration(duration)
+        adjacentPage.scroll.animate().withLayer().translationX(adjacentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
                 .setUpdateListener(null)
                 .withEndAction(() -> completeSectionDrag(commit)).start();
@@ -522,13 +521,12 @@ public final class DashboardActivity extends Activity {
             switchToPendingSection();
             return;
         }
-        scroll.animate().translationX(0f)
+        scroll.animate().withLayer().translationX(0f)
                 .setDuration(SwipePagerLayout.recoilDuration(
                         Math.abs(scroll.getTranslationX()), sectionPageWidth()))
                 .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
                 .setUpdateListener(animation -> {
                     if (mobileDock != null) mobileDock.updatePageSettle(animation.getAnimatedFraction());
-                    invalidateSectionSurfaces();
                 })
                 .withEndAction(() -> {
                     if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
@@ -583,7 +581,7 @@ public final class DashboardActivity extends Activity {
             target.scroll.setTranslationX(0f);
             activateSectionPage(target);
             if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
-            refreshActivePageIfNeeded();
+            refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
             updateSelectionBack();
             drawNavigation();
         } else {
@@ -591,15 +589,11 @@ public final class DashboardActivity extends Activity {
             target.scroll.setTranslationX(0f);
             scroll.setTranslationX(0f);
             if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
-            if (homeRefreshPending) refreshHomeContent();
-            refreshActivePageIfNeeded();
-        }
-        if (scheduleRefreshPending && section == SCHEDULE) {
-            scheduleRefreshPending = false;
-            updateResults();
+            refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
         }
         invalidateSectionSurfaces();
-        snapshot = dataSnapshot();
+        // Revision checks and stale-page refresh wait until both page and dock motion finish.
+        refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
         if (section == HOME || (section == SCHEDULE && scheduleSource == 1))
             refresh.post(this::refreshSystemCalendar);
         switchToPendingSection();
@@ -674,6 +668,7 @@ public final class DashboardActivity extends Activity {
         refreshActivePageIfNeeded();
         snapshot = dataSnapshot();
         finishResume();
+        switchToPendingSection();
     }
 
     private void finishResume() {
@@ -743,6 +738,9 @@ public final class DashboardActivity extends Activity {
     }
 
     @Override protected void onPause() {
+        if (sectionLoadRunning && pendingSection < 0) pendingSection = loadingSection;
+        sectionLoadGeneration++; sectionLoadRunning = false;
+        refresh.removeCallbacks(deferredSectionRefresh);
         foreground = false;
         updateChecksReady = false;
         resumeGeneration++;
@@ -774,6 +772,10 @@ public final class DashboardActivity extends Activity {
     }
 
     private void pollChanges() {
+        if (sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
+                || (mobileDock != null && mobileDock.isAnimating())) {
+            refresh.postDelayed(poll, 500L); return;
+        }
         if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
         String current = dataSnapshot();
         if (!current.equals(snapshot)) {
@@ -859,7 +861,11 @@ public final class DashboardActivity extends Activity {
                     dirtySections.add(HOME);
                     dirtySections.add(SCHEDULE);
                     if (section == SCHEDULE && scheduleSource == 1) {
-                        if (pageTransitionRunning || dragTargetLoaded) scheduleRefreshPending = true;
+                        if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
+                                || (mobileDock != null && mobileDock.isAnimating())) {
+                            scheduleRefreshPending = true;
+                            refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
+                        }
                         else updateResults();
                     }
                     else refreshHomeContent();
@@ -871,8 +877,10 @@ public final class DashboardActivity extends Activity {
 
     private void refreshHomeContent() {
         if (section != HOME || previewRender) return;
-        if (pageTransitionRunning || dragTargetLoaded) {
+        if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
+                || (mobileDock != null && mobileDock.isAnimating())) {
             homeRefreshPending = true;
+            refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
             return;
         }
         homeRefreshPending = false;
@@ -929,6 +937,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private String dataSnapshot() {
+        if (preparedSection != null) return snapshotForRevision(preparedSection.revision);
         if (applyingStartupData) return snapshotForRevision(startupRevision);
         try (TaskStore store = new TaskStore(this)) {
             // Database triggers track edits too; time buckets move ended events between tabs.
@@ -949,6 +958,7 @@ public final class DashboardActivity extends Activity {
     private void buildShell() {
         wide = getResources().getConfiguration().screenWidthDp >= 600;
         FrameLayout stage = new FrameLayout(this);
+        stage.setClipChildren(false); stage.setClipToPadding(false);
         backdrop = new GlassBackdropView(this);
         stage.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
         LinearLayout shell = new LinearLayout(this);
@@ -1013,7 +1023,7 @@ public final class DashboardActivity extends Activity {
         } else {
             FrameLayout.LayoutParams dockOverlay = new FrameLayout.LayoutParams(-1,
                     dp(MOBILE_BOTTOM_AREA_HEIGHT_DP), Gravity.BOTTOM | Gravity.START);
-            dockOverlay.setMargins(0, 0, 0, dp(8));
+            dockOverlay.setMargins(0, 0, 0, dp(8 + MOBILE_DOCK_PRESS_CLEARANCE_DP));
             stage.addView(mobileBottomArea, dockOverlay);
             UiStyle.applyInsets(stage, shell, mobileBottomArea);
         }
@@ -1030,7 +1040,12 @@ public final class DashboardActivity extends Activity {
         elapsedLabels.clear();
         content.removeAllViews();
         addHeader();
-        if (section == HOME && startupHome != null) {
+        if (preparedSection != null) {
+            pendingReview = preparedSection.review; pendingFailed = preparedSection.failed;
+            if (section == HOME) home(preparedSection.home);
+            else if (section == INBOX) inbox(null);
+            else schedule(null);
+        } else if (section == HOME && startupHome != null) {
             pendingReview = startupHome.review;
             pendingFailed = startupHome.failed;
             home(startupHome);
@@ -1457,7 +1472,11 @@ public final class DashboardActivity extends Activity {
                 : EventCategory.VALUES[categoryIndex - 1];
         InboxQuery query = new InboxQuery(statusIndex, selectedCategory, inboxQuery);
         String key = statusIndex + ":" + categoryIndex + ":" + inboxOldestFirst + ":" + query.keyword;
-        long revision = store.dataRevision();
+        long revision = preparedSection == null ? store.dataRevision() : preparedSection.revision;
+        if (preparedSection != null) {
+            inboxIdCache = preparedSection.ids; inboxIdCacheKey = key; inboxIdCacheRevision = revision;
+            inboxPage = preparedSection.page;
+        }
         if (!key.equals(inboxIdCacheKey) || revision != inboxIdCacheRevision) {
             inboxIdCache = store.queryInboxIds(query, inboxOldestFirst);
             inboxIdCacheKey = key;
@@ -1466,7 +1485,7 @@ public final class DashboardActivity extends Activity {
         matchingInboxIds = inboxIdCache;
         int total = matchingInboxIds.size();
         inboxPage = Math.min(inboxPage, Math.max(0, (total - 1) / InboxQuery.PAGE_SIZE));
-        List<TaskRecord> visible = store.queryInboxPage(query, inboxOldestFirst, inboxPage, matchingInboxIds);
+        List<TaskRecord> visible = preparedSection == null ? store.queryInboxPage(query, inboxOldestFirst, inboxPage, matchingInboxIds) : preparedSection.tasks;
         selectedInboxIds.retainAll(matchingInboxIds);
         addInboxResultsHeading(total);
         updateSelectionUi();
@@ -1661,11 +1680,12 @@ public final class DashboardActivity extends Activity {
                 scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
                 schedulePublication, scheduleQuery, window[0], window[1], now, ZoneId.systemDefault());
         inboxRows.clear();
-        matchingInboxIds = store.queryScheduleIds(query);
+        matchingInboxIds = preparedSection == null ? store.queryScheduleIds(query) : preparedSection.ids;
         selectedScheduleIds.retainAll(matchingInboxIds);
         int total = matchingInboxIds.size();
         schedulePage = Math.min(schedulePage, Math.max(0, (total - 1) / ScheduleQuery.PAGE_SIZE));
-        List<EventCandidate> visible = store.querySchedulePage(query, scheduleOldestFirst, schedulePage);
+        if (preparedSection != null) schedulePage = preparedSection.page;
+        List<EventCandidate> visible = preparedSection == null ? store.querySchedulePage(query, scheduleOldestFirst, schedulePage) : preparedSection.candidates;
         addInboxResultsHeading(total);
         updateSelectionUi();
         if (visible.isEmpty()) {
@@ -1861,7 +1881,7 @@ public final class DashboardActivity extends Activity {
         long now = System.currentTimeMillis();
         List<CalendarOccurrence> visible = new ArrayList<>();
         Set<Long> linked = new HashSet<>();
-        for (long id : store.linkedCalendarIds()) linked.add(id);
+        for (long id : preparedSection == null ? store.linkedCalendarIds() : preparedSection.linked) linked.add(id);
         for (CalendarOccurrence event : CalendarOccurrence.unlinked(calendarEventsForWindow(window), linked)) {
             boolean future = event.displayEnd(zone) > now;
             if (event.displayStart(zone) >= end || event.displayEnd(zone) <= start
@@ -2516,6 +2536,21 @@ public final class DashboardActivity extends Activity {
     private void drawNavigation() {
         if (previewRender) return;
         if (mobileDock != null && (mobileDock.isTrackingTouch() || pageTransitionRunning)) return;
+        if (navigation.getChildCount() == 3 && navigationAttentionCount == attentionCount()) {
+            for (int i = 0; i < 3; i++) {
+                View cell = navigation.getChildAt(i);
+                if (cell instanceof FrameLayout wrapper) cell = wrapper.getChildAt(0);
+                TextView item = (TextView) cell; boolean active = section == SECTION_ORDER[i];
+                int color = active ? UiStyle.colors(this).onPrimaryContainer : UiStyle.colors(this).muted;
+                item.setTextColor(color); item.setCompoundDrawableTintList(ColorStateList.valueOf(color));
+                item.setContentDescription(item.getText() + (active ? "，当前页面" : ""));
+                if (wide) UiStyle.pill(item, active);
+            }
+            if (navigationBadge != null) navigationBadge.setContentDescription("待处理 " + attentionCount() + " 项：待确认 " + pendingReview + "，失败 " + pendingFailed);
+            if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(section));
+            return;
+        }
+        navigationAttentionCount = attentionCount(); navigationBadge = null;
         navigation.removeAllViews();
         String[] labels = {"首页", "日程", "收件箱"};
         int[] icons = {R.drawable.ic_nav_home, R.drawable.ic_nav_schedule,
@@ -2564,6 +2599,7 @@ public final class DashboardActivity extends Activity {
         wrapper.setElevation(itemElevation);
         wrapper.addView(item, new FrameLayout.LayoutParams(-1, -1));
         TextView badge = countBadge(count);
+        navigationBadge = badge;
         badge.setContentDescription("待处理 " + count + " 项：待确认 " + pendingReview
                 + "，失败 " + pendingFailed);
         badge.setOnClickListener(view -> switchTo(destination));
@@ -2600,12 +2636,19 @@ public final class DashboardActivity extends Activity {
             pendingSection = destination;
             return;
         }
-        if (pageTransitionRunning || dragTargetLoaded) {
+        if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning) {
             pendingSection = destination;
             return;
         }
-        if (destination == section) return;
-        sectionPagerListener.onStart();
+        if (destination == section) {
+            if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+            return;
+        }
+        if (!sectionPages.containsKey(destination) && preparedSection == null) {
+            prepareSectionSwitch(destination); return;
+        }
+        dockSectionSwitch = true;
+        try { sectionPagerListener.onStart(); } finally { dockSectionSwitch = false; }
         dragDirection = sectionPosition(destination) > sectionPosition(section) ? 1 : -1;
         adjacentPage = buildAdjacentSection(destination);
         float width = sectionPageWidth();
@@ -2614,6 +2657,49 @@ public final class DashboardActivity extends Activity {
         dragTargetLoaded = true;
         collectSectionSurfaces();
         finishSectionDrag(true, width);
+    }
+
+    private void prepareSectionSwitch(int destination) {
+        sectionLoadRunning = true; loadingSection = destination;
+        int token = ++sectionLoadGeneration;
+        if (mobileDock != null) mobileDock.beginPageSettle(sectionPosition(destination));
+        InboxQuery inbox = new InboxQuery(statusIndex, categoryIndex == 0 ? null : EventCategory.VALUES[categoryIndex - 1], inboxQuery);
+        LocalDate[] window = scheduleWindow(false);
+        ScheduleQuery schedule = new ScheduleQuery(scheduleTab, scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
+                schedulePublication, scheduleQuery, window[0], window[1], System.currentTimeMillis(), ZoneId.systemDefault());
+        boolean oldest = destination == INBOX ? inboxOldestFirst : scheduleOldestFirst;
+        int page = destination == INBOX ? inboxPage : schedulePage;
+        boolean system = scheduleSource == 1;
+        startupReader.execute(() -> {
+            DashboardSectionData data;
+            try { data = DashboardSectionData.load(getApplicationContext(), destination, inbox, schedule, oldest, page, system); }
+            catch (RuntimeException failure) {
+                refresh.post(() -> {
+                    if (token != sectionLoadGeneration || isDestroyed()) return;
+                    sectionLoadRunning = false;
+                    if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+                    Feedback.show(this, "暂时无法读取页面，请重试"); switchToPendingSection();
+                }); return;
+            }
+            refresh.post(() -> {
+                if (token != sectionLoadGeneration || isDestroyed() || isFinishing()) return;
+                sectionLoadRunning = false;
+                if (pendingSection >= 0 && pendingSection != destination) { switchToPendingSection(); return; }
+                pendingSection = -1; preparedSection = data;
+                try { switchTo(destination); } finally { preparedSection = null; }
+            });
+        });
+    }
+
+    private void refreshSettledSection() {
+        if (!foreground || isDestroyed()) return;
+        if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
+                || (mobileDock != null && (mobileDock.isAnimating() || mobileDock.isTrackingTouch()))) {
+            refresh.postDelayed(deferredSectionRefresh, 80L); return;
+        }
+        if (homeRefreshPending && section == HOME) refreshHomeContent();
+        if (scheduleRefreshPending && section == SCHEDULE) { scheduleRefreshPending = false; updateResults(); }
+        refreshActivePageIfNeeded(); snapshot = dataSnapshot();
     }
 
     private LinearLayout card() {

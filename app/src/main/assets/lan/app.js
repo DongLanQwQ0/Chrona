@@ -90,8 +90,8 @@ function drawDock(){const state=dockState;dockHighlight.style.width=state.w+'px'
 function snapDock(){const state=dockState;state.p=state.target;state.w=state.wt;state.s=state.st;state.bar=state.bt;state.stretch=1;state.v=state.wv=state.sv=state.bv=state.xv=0;drawDock();}
 function advanceDock(now){dockFrame=0;const state=dockState;if(reducedMotion.matches){snapDock();return;}const elapsed=Math.min(.064,Math.max(0,(now-dockTime)/1000)),steps=Math.max(1,Math.ceil(elapsed*120)),dt=elapsed/steps;dockTime=now;
  for(let i=0;i<steps;i++){state.v+=(180*(state.target-state.p)-22*state.v)*dt;state.p+=state.v*dt;state.wv+=(200*(state.wt-state.w)-22*state.wv)*dt;state.w+=state.wv*dt;
-  state.sv+=(260*(state.st-state.s)-24*state.sv)*dt;state.s+=state.sv*dt;const stretch=1+Math.min(.25,Math.abs(state.v)/Math.max(1,state.w)*.025);
-  state.xv+=(200*(stretch-state.stretch)-18*state.xv)*dt;state.stretch+=state.xv*dt;state.bv+=(260*(state.bt-state.bar)-25*state.bv)*dt;state.bar+=state.bv*dt;}
+  state.sv+=(900*(state.st-state.s)-50*state.sv)*dt;state.s+=state.sv*dt;const stretch=1+Math.min(.25,Math.abs(state.v)/Math.max(1,state.w)*.025);
+  state.xv+=(200*(stretch-state.stretch)-18*state.xv)*dt;state.stretch+=state.xv*dt;state.bv+=(900*(state.bt-state.bar)-50*state.bv)*dt;state.bar+=state.bv*dt;}
  drawDock();const moving=Math.abs(state.p-state.target)>.05||Math.abs(state.v)>.1||Math.abs(state.w-state.wt)>.05||Math.abs(state.wv)>.1||Math.abs(state.s-state.st)>.001||Math.abs(state.sv)>.01||Math.abs(state.bar-state.bt)>.001||Math.abs(state.bv)>.01||Math.abs(state.stretch-1)>.001||Math.abs(state.xv)>.01;
  if(moving)dockFrame=requestAnimationFrame(advanceDock);else snapDock();
 }
@@ -99,15 +99,21 @@ function animateDock(){if(reducedMotion.matches){if(dockFrame)cancelAnimationFra
 function pressDock(pressed){dockState.st=pressed?1.5:1;dockState.bt=pressed?1.1:1;animateDock();}
 function targetDock(button){if(!button)return;dockState.target=button.offsetLeft+button.offsetWidth/2;dockState.wt=button.offsetWidth;animateDock();}
 function updateDock(){const selected=dockNav.querySelector('button.active');if(!selected){dockHighlight.hidden=true;return;}const first=dockHighlight.hidden;dockHighlight.hidden=false;if(first){dockState.target=selected.offsetLeft+selected.offsetWidth/2;dockState.wt=selected.offsetWidth;snapDock();}else targetDock(selected);}
+function dockPointerVelocity(samples){const recent=samples.filter(sample=>sample.time>=samples.at(-1).time-100);if(recent.length<2)return 0;
+ const meanTime=recent.reduce((sum,sample)=>sum+sample.time,0)/recent.length,meanX=recent.reduce((sum,sample)=>sum+sample.x,0)/recent.length;
+ let numerator=0,denominator=0;for(const sample of recent){numerator+=(sample.time-meanTime)*(sample.x-meanX);denominator+=(sample.time-meanTime)**2;}return denominator>0?numerator/denominator*1000:0;}
+function recordDockPointer(touch,event){const samples=event.getCoalescedEvents?.()||[];for(const sample of samples.length?samples:[event])touch.samples.push({x:sample.clientX,time:sample.timeStamp});touch.samples=touch.samples.filter(sample=>sample.time>=event.timeStamp-150);}
 new ResizeObserver(()=>{if(dockTouch)dockTouch.cancelled=true;updateDock();}).observe(dockNav);
-dockNav.addEventListener('pointerdown',event=>{if(event.button!==0)return;if(dockTouch){dockTouch.cancelled=true;pressDock(false);return;}dockTouch={id:event.pointerId,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false};dockNav.setPointerCapture(event.pointerId);pressDock(true);});
+dockNav.addEventListener('pointerdown',event=>{if(event.button!==0)return;if(dockTouch){dockTouch.cancelled=true;pressDock(false);return;}dockTouch={id:event.pointerId,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false,samples:[]};recordDockPointer(dockTouch,event);dockNav.setPointerCapture(event.pointerId);pressDock(true);});
 dockNav.addEventListener('pointermove',event=>{const touch=dockTouch;if(!touch||touch.id!==event.pointerId||touch.cancelled)return;const dx=Math.abs(event.clientX-touch.x),dy=Math.abs(event.clientY-touch.y),rect=dockNav.getBoundingClientRect();
+ recordDockPointer(touch,event);
  touch.left ||= event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom;if(!touch.dragging&&dx>8&&dx>dy*1.25)touch.dragging=true;
  if(touch.dragging){const buttons=dockButtons(),ratio=dockNav.offsetWidth/rect.width,x=(event.clientX-rect.left)*ratio;dockState.target=Math.max(buttons[0].offsetLeft+buttons[0].offsetWidth/2,Math.min(buttons.at(-1).offsetLeft+buttons.at(-1).offsetWidth/2,x));dockState.wt=dockNearest(event.clientX).offsetWidth;animateDock();}
 });
 function finishDockPointer(event,cancelled=false){const touch=dockTouch;if(!touch||touch.id!==event.pointerId)return;dockTouch=null;pressDock(false);const button=dockNearest(event.clientX),rect=dockNav.getBoundingClientRect(),inside=event.clientX>=rect.left&&event.clientX<=rect.right&&event.clientY>=rect.top&&event.clientY<=rect.bottom;
+ recordDockPointer(touch,event);const releaseVelocity=dockPointerVelocity(touch.samples)*dockNav.offsetWidth/rect.width;
  dockSuppressClick=true;setTimeout(()=>{dockSuppressClick=false;},0);if(dockNav.hasPointerCapture(event.pointerId))dockNav.releasePointerCapture(event.pointerId);
- if(!cancelled&&!touch.cancelled&&button&&(touch.dragging||(!touch.left&&inside)))guard(()=>navigate(button.dataset.page));else updateDock();
+ if(!cancelled&&!touch.cancelled&&button&&(touch.dragging||(!touch.left&&inside))){guard(()=>navigate(button.dataset.page));if(touch.dragging&&!reducedMotion.matches)dockState.v=releaseVelocity;}else updateDock();
 }
 dockNav.addEventListener('pointerup',event=>finishDockPointer(event));dockNav.addEventListener('pointercancel',event=>finishDockPointer(event,true));
 dockNav.addEventListener('lostpointercapture',()=>{if(dockTouch){dockTouch=null;pressDock(false);updateDock();}});

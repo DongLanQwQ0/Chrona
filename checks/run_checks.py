@@ -32,6 +32,7 @@ GROUPS = {
         "widget_preferences_check.py",
         "agenda_features_check.py",
         "calendar_review_check.py",
+        "dashboard_switch_check.py",
     ),
     "cached_dependencies": (
         "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",

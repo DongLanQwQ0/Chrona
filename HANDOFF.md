@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-12 · 0.14.14
+
+用户报告松手切页掉帧、首页 Dock 底部裁切、放大响应慢，并要求高光半透明、松手速度 1∶1。首次 Dock 切页通过 DashboardSectionData 后台事务读取有界 Home/Inbox/Schedule 数据，主线程仅创建 View。cached buildAdjacentSection 不再检查数据库或刷新；页面完成后的版本/待处理刷新延至 Dock 和页面都静止，poll 和系统来源刷新也避开动效。相同注意数时 drawNavigation 保留按钮/包装/徽章并原位改选中语义。读失败保留旧页，pending 最后请求与 pause generation 隔离过期回调。
+
+松手页动画 withLayer 暂存页面，移除每帧模糊卡片采样，完成恢复采样；正文拖动仍保留实时采样。首页 stage 禁裁剪并增加 12dp 按压余量。DockSpring 仅缩放提高刚度/阻尼（900/50），保留位置/宽度弹性；native alpha 82/255、web 32%。VelocityTracker 使用屏幕坐标样本，实际速度除以屏幕槽位间距后 1∶1 传给 spring；Dock 发起切页避免 beginBodyDrag 清零。网页最近 100ms 屏幕样本线性拟合，同样无衰减转换，选择目标不因速度跳到其他页。
+
+备份 build/backups/20261012-dock-release-performance；完整离线 38/38，速度/快缩放补充 Dock 63 项、生产后台与切页控制器 12 项、实际 Edge 动效验证通过。0.14.14 / 121，数据库 v10；真实 Android 帧率、裁切与速度手感尚未验证。
+
 # 本轮补充 · 2026-10-12 · 0.14.13
 
 用户要求 Chrona 日程同样有边框，以及全部 Dock 栏外释放确认、惯性、宽度弹性和按压缩放。CalendarOverviewActivity.eventSurface 对本地/系统统一 outline=true。原生 DockNavigationLayout 使用单一帧循环和 DockSpring（位置/高光缩放/宽度/整栏缩放阻尼弹簧），重定向保留速度；放大目标 1.5/1.1，释放回 1。水平拖动不再以内栏 UP 限制提交，ACTION_CANCEL 与多指仍取消，普通 child queued click 顺序保留。日历父级允许扩展绘制；主导航原宿主已允许。
