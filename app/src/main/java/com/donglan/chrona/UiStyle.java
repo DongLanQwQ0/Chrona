@@ -713,6 +713,13 @@ public final class UiStyle {
         swap(container, container, rebuild);
     }
 
+    /** Explicit lifecycle/focus completion for a composed in-page transition. */
+    static void finishSwap(View container) {
+        container.animate().setListener(null).setUpdateListener(null).cancel();
+        if (container.getParent() instanceof FrameLayout host && hostsSeveralChildren(host)) dropSwapGhosts(host);
+        container.setAlpha(1f); container.setTranslationX(0f); container.setTranslationY(0f);
+    }
+
     /**
      * Cross-fades a rebuild where the outgoing look is taken from {@code snapshotOf} but
      * {@code container} is the view that fades back in. Use this when the rebuilt content sits on

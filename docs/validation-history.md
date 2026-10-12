@@ -1,5 +1,14 @@
 # 历史验证记录
 
+## 0.14.9 — 2026-10-12
+
+- 先完成九项问题审查，再实施修复，见 `docs/calendar-review-20261012.md`。修改前备份 `build/backups/20261012-calendar-review`；用户 AGENTS 与角色 TOML 未纳入版本提交。
+- 完整离线回归 37 项通过：普通沙箱 35/37，课表原子文件移动和同步本机回环连接受权限限制，使用现有工具链在允许的环境单独重跑两项通过。证据 `build/calendar-review-full.log`、`calendar-review-academic-retry.log`、`calendar-review-sync-retry.log`。
+- 新日历专项 110 项执行真实日期索引、提供器封装、取消/队列、滚动恢复和失败恢复方法；动效核心 30 项覆盖稳定视口连续合成与暂停释放。Android 提供器/UI 为替身，不能代替真机。证据 `build/calendar-review-core.log`、`calendar-review-motion.log`。
+- 最终 debug/release 构建与 lint 通过，0 errors / 84 warnings；新增警告涉及恢复用户原有无障碍焦点及列表状态文字拼接。证据 `build/calendar-review-final-build.log`、`app/build/reports/lint-results-debug.txt`。
+- release APK 0.14.9 / 116，1,976,630 字节，SHA256 `d2410ba73765b24a665fdc450a09de9ac64a9ed0b401948b198f7e103f72f8c6`；debug/release 原证书 SHA256 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`，release 无调试标记。分发 `build/distributions/0.14.9/Chrona-0.14.9.apk`。
+- ADB 无连接设备，未验收 Android 真机视觉、触控、帧率或覆盖安装。发布与公共下载核对证据保存在 `build/release-0.14.9-artifact.json`、`build/calendar-review-public-verification.log`。
+
 ## 0.14.8 — 2026-10-12
 
 - 定向检查通过：Dock 49 项、原生动效核心 28 项、生命周期动效、日历/提醒核心 37 项与实际 SQL/提供器扫描回归。检查使用 Android 平台替身，不能代替真机视觉或触摸验收。本轮不涉及数据逻辑，未重复执行整套 36 项检查。

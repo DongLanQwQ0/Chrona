@@ -24,10 +24,17 @@ final class AgendaRepository {
     static final class Snapshot {
         final List<AgendaEntry> entries = new ArrayList<>();
         boolean systemUnavailable, truncated;
-    }
-    static Snapshot load(Context context, long begin, long until, boolean system) {
-        Snapshot result = new Snapshot();
         ZoneId zone = ZoneId.systemDefault();
+        boolean sameContents(Snapshot other) {
+            return systemUnavailable == other.systemUnavailable && truncated == other.truncated
+                    && zone.equals(other.zone) && entries.equals(other.entries);
+        }
+    }
+    static Snapshot load(Context context, long begin, long until, boolean system, ZoneId zone,
+            android.os.CancellationSignal cancellation) {
+        Snapshot result = new Snapshot();
+        result.zone = zone;
+        cancellation.throwIfCanceled();
         LocalDate first = Instant.ofEpochMilli(begin).atZone(zone).toLocalDate();
         LocalDate last = Instant.ofEpochMilli(until).atZone(zone).toLocalDate().plusDays(1);
         try (TaskStore store = new TaskStore(context)) {
@@ -36,6 +43,7 @@ final class AgendaRepository {
                     last.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli());
             result.truncated = candidates.size() > LIMIT;
             for (EventCandidate candidate : candidates) {
+                cancellation.throwIfCanceled();
                 long start = candidate.startAtMillis;
                 long end = candidate.endAtMillis == null ? start : candidate.endAtMillis;
                 if (candidate.allDay) {
@@ -52,10 +60,11 @@ final class AgendaRepository {
                 if (!calendar.hasReadPermission()) result.systemUnavailable = true;
                 else try {
                     List<CalendarOccurrence> systemEntries = calendar.listInstances(begin - 86_400_000L,
-                            until + 86_400_000L, null, LIMIT + 1);
+                            until + 86_400_000L, cancellation, LIMIT + 1);
                     result.truncated |= systemEntries.size() > LIMIT;
                     for (CalendarOccurrence item : CalendarOccurrence.unlinked(systemEntries,
                             new HashSet<>(store.linkedCalendarIds()))) {
+                        cancellation.throwIfCanceled();
                         AgendaEntry entry = new AgendaEntry(item.eventId, 0, item.displayStart(zone),
                                 item.displayEnd(zone), item.title, item.location, "", item.calendarName,
                                 true, item.allDay, true);
@@ -63,9 +72,11 @@ final class AgendaRepository {
                         if (result.entries.size() == LIMIT) { result.truncated = true; break; }
                         result.entries.add(entry);
                     }
-                } catch (RuntimeException exception) { result.systemUnavailable = true; }
+                } catch (android.os.OperationCanceledException cancelled) { throw cancelled; }
+                catch (RuntimeException exception) { result.systemUnavailable = true; }
             }
         }
+        cancellation.throwIfCanceled();
         result.entries.sort(Comparator.comparingLong((AgendaEntry e) -> e.start).thenComparing(AgendaEntry::key));
         return result;
     }

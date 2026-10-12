@@ -31,8 +31,6 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /** Inbox's calendar destination, using the same local occurrences as schedule detail. */
 public final class CalendarOverviewActivity extends Activity {
@@ -42,24 +40,54 @@ public final class CalendarOverviewActivity extends Activity {
     private int mode = MONTH, generation;
     private boolean includeSystem;
     private String query = "";
-    private final ExecutorService reader = Executors.newSingleThreadExecutor();
+    private final java.util.concurrent.ThreadPoolExecutor reader = new java.util.concurrent.ThreadPoolExecutor(
+            1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, new java.util.concurrent.LinkedBlockingQueue<>());
+    private java.util.concurrent.Future<?> readFuture;
+    private android.os.CancellationSignal readCancellation;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AgendaRepository.Snapshot snapshot = new AgendaRepository.Snapshot();
     private LinearLayout root;
     private DockNavigationLayout tabs;
-    private android.animation.ValueAnimator tabMotion, bodyMotion;
-    private View outgoingLayer;
+    private android.animation.ValueAnimator tabMotion;
+    private int presentationGeneration;
+    private boolean bodyTransitionRunning, loadingStale, bodyTouchActive;
     private boolean animateNext;
     private int transitionDirection;
     private FrameLayout body;
-    private TextView dateTitle, sourceButton;
+    private FrameLayout bodyStage;
+    private FrameLayout bodyViewport;
+    private ScrollView verticalViewport;
+    private HorizontalScrollView horizontalViewport;
+    private final java.util.LinkedHashMap<String, int[]> positions = new java.util.LinkedHashMap<>(16, .75f, true);
+    private String renderedKey = "", renderedQuery = "";
+    private LocalDate renderedDate, renderedToday;
+    private int renderedMode;
+    private boolean renderedSystem;
+    private CalendarDayCounts dayCounts;
+    private long lastScrollAt;
+    private AgendaRepository.Snapshot deferredSnapshot;
+    private String deferredKey;
+    private int deferredToken;
+    private final Runnable deferredApply = this::applyDeferred;
+    private final List<EntryStatus> statuses = new ArrayList<>();
+    private static final class EntryStatus {
+        final AgendaEntry entry;
+        final TextView title, time;
+        EntryStatus(AgendaEntry entry, TextView title, TextView time) { this.entry = entry; this.title = title; this.time = time; }
+    }
+    private TextView dateTitle;
+    private android.widget.Switch sourceSwitch;
     private View timeLines;
+    private android.app.Dialog allDayDialog;
     private boolean resumed;
     private boolean loading;
     private final Runnable minuteTick = new Runnable() {
         @Override public void run() {
             if (timeLines != null) timeLines.invalidate();
-            if (resumed) handler.postDelayed(this, 60_000);
+            if (!LocalDate.now().equals(renderedToday) && !loading) renderBody();
+            else for (EntryStatus status : statuses) updateStatus(status);
+            handler.removeCallbacks(this);
+            if (resumed) handler.postDelayed(this, nextTickDelay());
         }
     };
     private android.database.ContentObserver calendarObserver;
@@ -72,6 +100,10 @@ public final class CalendarOverviewActivity extends Activity {
         if (state != null) {
             date = LocalDate.parse(state.getString("date", date.toString()));
             mode = state.getInt("mode", mode); query = state.getString("query", "");
+            String[] keys = state.getStringArray("position_keys");
+            int[] xs = state.getIntArray("position_x"), ys = state.getIntArray("position_y");
+            if (keys != null && xs != null && ys != null && keys.length == xs.length && keys.length == ys.length)
+                for (int i = 0; i < Math.min(12, keys.length); i++) positions.put(keys[i], new int[]{xs[i], ys[i]});
         }
         root = column(); root.setPadding(dp(20), dp(12), dp(20), 0); UiStyle.page(this, root);
         root.setFitsSystemWindows(false); root.setBackgroundColor(Color.TRANSPARENT);
@@ -87,6 +119,8 @@ public final class CalendarOverviewActivity extends Activity {
         dateTitle = text("", 22, true); dateTitle.setGravity(Gravity.CENTER);
         dateTitle.setTextColor(UiStyle.colors(this).primary); dateTitle.setOnClickListener(v -> pickDate());
         dateTitle.setContentDescription("选择日期");
+        dateTitle.setMaxLines(1); dateTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        dateTitle.setAutoSizeTextTypeUniformWithConfiguration(14, 22, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
         navigation.addView(dateTitle, new LinearLayout.LayoutParams(0, dp(48), 1));
         navigation.addView(icon(R.drawable.ic_chevron_right, "下一段日期", () -> shift(1)), size(40, 44));
         TextView today = action("今天", () -> navigateDate(LocalDate.now()));
@@ -101,6 +135,7 @@ public final class CalendarOverviewActivity extends Activity {
             tabs.addView(tab, new LinearLayout.LayoutParams(0, dp(42), 1));
         }
         tabs.setSelectedIndex(mode);
+        updateTabSemantics();
         UiStyle.addSpaced(root, tabs, 4, 10);
         LinearLayout filters = row();
         EditText search = new EditText(this); search.setSingleLine(); search.setHint("搜索日程");
@@ -113,9 +148,42 @@ public final class CalendarOverviewActivity extends Activity {
             public void afterTextChanged(Editable s) { query = s.toString(); renderBody(); }
         });
         filters.addView(search, new LinearLayout.LayoutParams(0, dp(40), 1));
-        sourceButton = action("", this::chooseSource); filters.addView(sourceButton, new LinearLayout.LayoutParams(-2, dp(44)));
-        UiStyle.addSpaced(root, filters, 0, 8);
-        body = new FrameLayout(this); root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
+        UiStyle.addSpaced(root, filters, 0, 2);
+        sourceSwitch = new android.widget.Switch(this);
+        sourceSwitch.setText("包含系统日程"); sourceSwitch.setTextSize(14); sourceSwitch.setChecked(includeSystem);
+        sourceSwitch.setPadding(dp(6), 0, dp(6), 0); sourceSwitch.setSwitchPadding(dp(12)); UiStyle.toggle(sourceSwitch);
+        sourceSwitch.setOnCheckedChangeListener((button, enabled) -> {
+            if (enabled == includeSystem) return;
+            if (enabled && !new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()) {
+                sourceSwitch.setChecked(false);
+                requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR}, 810); return;
+            }
+            includeSystem = enabled; getPreferences(MODE_PRIVATE).edit().putBoolean("system", enabled).apply(); load();
+        });
+        UiStyle.addSpaced(root, sourceSwitch, 0, 6);
+        bodyStage = new FrameLayout(this);
+        body = new FrameLayout(this) {
+            @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+                if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) bodyTouchActive = true;
+                boolean handled = super.dispatchTouchEvent(event);
+                if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP || event.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL) {
+                    bodyTouchActive = false; handler.removeCallbacks(deferredApply); handler.postDelayed(deferredApply, 120);
+                }
+                return handled;
+            }
+            @Override public boolean onInterceptTouchEvent(android.view.MotionEvent event) {
+                return loadingStale || bodyTransitionRunning || super.onInterceptTouchEvent(event);
+            }
+            // A temporary input gate exposes no click action; active child controls retain theirs.
+            @android.annotation.SuppressLint("ClickableViewAccessibility")
+            @Override public boolean onTouchEvent(android.view.MotionEvent event) {
+                return loadingStale || bodyTransitionRunning || super.onTouchEvent(event);
+            }
+        };
+        bodyViewport = new FrameLayout(this);
+        bodyViewport.addView(body, new FrameLayout.LayoutParams(-1, -1));
+        bodyStage.addView(bodyViewport, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(bodyStage, new LinearLayout.LayoutParams(-1, 0, 1));
         body.setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public boolean onRequestSendAccessibilityEvent(android.view.ViewGroup host, View child,
                     android.view.accessibility.AccessibilityEvent event) {
@@ -143,23 +211,21 @@ public final class CalendarOverviewActivity extends Activity {
     }
     @Override protected void onPause() {
         resumed = false; handler.removeCallbacks(minuteTick); handler.removeCallbacks(calendarReload);
+        rememberPosition(); cancelRead(); bodyTouchActive = false;
+        if (allDayDialog != null) { allDayDialog.dismiss(); allDayDialog = null; }
         finishTabMotion(); finishBodyMotion(); animateNext = false;
         if (calendarObserver != null) { getContentResolver().unregisterContentObserver(calendarObserver); calendarObserver = null; }
         super.onPause();
     }
-    @Override protected void onDestroy() { generation++; reader.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { cancelRead(); reader.shutdownNow(); super.onDestroy(); }
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state); state.putString("date", date.toString()); state.putInt("mode", mode); state.putString("query", query);
+        rememberPosition();
+        String[] keys = positions.keySet().toArray(new String[0]); int[] xs = new int[keys.length], ys = new int[keys.length];
+        for (int i = 0; i < keys.length; i++) { int[] position = positions.get(keys[i]); xs[i] = position[0]; ys[i] = position[1]; }
+        state.putStringArray("position_keys", keys); state.putIntArray("position_x", xs); state.putIntArray("position_y", ys);
     }
 
-    private void chooseSource() {
-        UiStyle.choiceDialog(this, "日历来源", new String[]{"仅拾时日程", "拾时与系统其他日程"}, includeSystem ? 1 : 0, choice -> {
-            if (choice == 1 && !new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()) {
-                requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR}, 810); return;
-            }
-            includeSystem = choice == 1; getPreferences(MODE_PRIVATE).edit().putBoolean("system", includeSystem).apply(); load();
-        });
-    }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request == 810) {
@@ -193,6 +259,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
 
     private void moveTabHighlight() {
+        updateTabSemantics();
         android.animation.ValueAnimator old = tabMotion; tabMotion = null;
         if (old != null) old.cancel();
         if (!resumed || !UiMotion.isEnabled()) { tabs.finishPageSelection(mode); return; }
@@ -215,6 +282,14 @@ public final class CalendarOverviewActivity extends Activity {
         android.animation.ValueAnimator old = tabMotion; tabMotion = null;
         if (old != null) old.cancel();
         tabs.finishPageSelection(mode);
+        updateTabSemantics();
+    }
+
+    private void updateTabSemantics() {
+        for (int i = 0; i < tabs.getChildCount(); i++) {
+            View tab = tabs.getChildAt(i); tab.setSelected(i == mode);
+            tab.setContentDescription(((TextView) tab).getText() + "视图" + (i == mode ? "，已选中" : ""));
+        }
     }
 
     private void animatedLoad(int direction) {
@@ -222,50 +297,8 @@ public final class CalendarOverviewActivity extends Activity {
     }
 
     private void finishBodyMotion() {
-        android.animation.ValueAnimator old = bodyMotion; bodyMotion = null;
-        if (old != null) old.cancel();
-        if (outgoingLayer != null) { body.removeView(outgoingLayer); outgoingLayer = null; }
-        if (body.getChildCount() > 0) {
-            View current = body.getChildAt(body.getChildCount() - 1);
-            current.setAlpha(1f); current.setTranslationX(0f); current.setTranslationY(0f);
-        }
-    }
-
-    private void presentBody(View previous, boolean animated) {
-        if (body.getChildCount() == 0) return;
-        View current = body.getChildAt(body.getChildCount() - 1);
-        if (!animated || previous == null || !resumed || !UiMotion.isEnabled() || previous.hasFocus()
-                || hasAccessibilityFocus(previous)) return;
-        FrameLayout outgoing = new FrameLayout(this) {
-            @Override public boolean onInterceptTouchEvent(android.view.MotionEvent event) { return true; }
-            @Override public boolean onTouchEvent(android.view.MotionEvent event) { return true; }
-        };
-        outgoing.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        outgoing.addView(previous, new FrameLayout.LayoutParams(-1, -1));
-        body.addView(outgoing, 0, new FrameLayout.LayoutParams(-1, -1)); outgoingLayer = outgoing;
-        float distance = dp(18) * transitionDirection;
-        current.setAlpha(0f); current.setTranslationX(distance);
-        android.animation.ValueAnimator motion = android.animation.ValueAnimator.ofFloat(0f, 1f);
-        bodyMotion = motion; motion.setDuration(UiMotion.ENTER); motion.setInterpolator(UiMotion.SETTLE);
-        motion.addUpdateListener(value -> {
-            if (!UiMotion.isEnabled() || current.hasFocus() || current.isAccessibilityFocused()) { finishBodyMotion(); return; }
-            float progress = (float) value.getAnimatedValue();
-            current.setAlpha(progress); current.setTranslationX(distance * (1f - progress));
-            outgoing.setAlpha(1f - progress); outgoing.setTranslationX(-distance * progress * .5f);
-        });
-        motion.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (bodyMotion == motion) finishBodyMotion();
-            }
-        });
-        motion.start();
-    }
-
-    private boolean hasAccessibilityFocus(View view) {
-        if (view.isAccessibilityFocused()) return true;
-        if (view instanceof android.view.ViewGroup group)
-            for (int i = 0; i < group.getChildCount(); i++) if (hasAccessibilityFocus(group.getChildAt(i))) return true;
-        return false;
+        presentationGeneration++; bodyTransitionRunning = false; UiStyle.finishSwap(body);
+        UiStyle.finishSwap(bodyViewport);
     }
     private LocalDate windowStart() {
         if (mode == YEAR) return date.withDayOfYear(1);
@@ -273,35 +306,107 @@ public final class CalendarOverviewActivity extends Activity {
         if (mode == DAY) return date;
         return date.withDayOfMonth(1).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
     }
+    private LocalDate windowEnd(LocalDate first) {
+        return mode == YEAR ? first.plusYears(1) : mode == WEEK ? first.plusWeeks(1)
+                : mode == DAY ? first.plusDays(1) : first.plusDays(42);
+    }
+    private String windowKey(ZoneId zone) { return mode + ":" + windowStart() + ":" + includeSystem + ":" + zone.getId(); }
+    private void rememberPosition() {
+        if (renderedKey.isEmpty()) return;
+        positions.put(renderedKey, new int[]{horizontalViewport == null ? 0 : horizontalViewport.getScrollX(),
+                verticalViewport == null ? 0 : verticalViewport.getScrollY()});
+        if (positions.size() > 12) positions.remove(positions.keySet().iterator().next());
+    }
+    private void restorePosition() {
+        ScrollView vertical = verticalViewport; HorizontalScrollView horizontal = horizontalViewport;
+        int[] position = positions.get(renderedKey);
+        if (position == null) return;
+        body.post(() -> {
+            if (vertical != verticalViewport || horizontal != horizontalViewport) return;
+            if (vertical != null) vertical.scrollTo(0, position[1]);
+            if (horizontal != null) horizontal.scrollTo(position[0], 0);
+        });
+    }
+    private void watchScroll(View viewport) {
+        viewport.setOnScrollChangeListener((view, x, y, oldX, oldY) -> lastScrollAt = android.os.SystemClock.uptimeMillis());
+    }
+    private void cancelRead() {
+        generation++;
+        if (readCancellation != null) readCancellation.cancel();
+        if (readFuture != null) readFuture.cancel(true);
+        reader.purge(); readCancellation = null; readFuture = null;
+        handler.removeCallbacks(deferredApply); deferredSnapshot = null;
+        loading = loadingStale = false;
+        if (body != null) body.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+    }
+    private void applyDeferred() {
+        if (deferredSnapshot == null || !resumed) return;
+        if (bodyTouchActive || (allDayDialog != null && allDayDialog.isShowing())) return;
+        if (android.os.SystemClock.uptimeMillis() - lastScrollAt < 120) {
+            handler.postDelayed(deferredApply, 120); return;
+        }
+        AgendaRepository.Snapshot loaded = deferredSnapshot; deferredSnapshot = null;
+        applyLoaded(loaded, deferredKey, deferredToken);
+    }
+    private void applyLoaded(AgendaRepository.Snapshot loaded, String key, int token) {
+        if (isDestroyed() || token != generation) return;
+        if (renderedKey.equals(key) && snapshot.sameContents(loaded) && query.equals(renderedQuery)
+                && date.equals(renderedDate) && LocalDate.now().equals(renderedToday)) {
+            snapshot = loaded; loading = loadingStale = false;
+            body.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO); return;
+        }
+        if (!loadingStale && (bodyTouchActive || (allDayDialog != null && allDayDialog.isShowing())
+                || android.os.SystemClock.uptimeMillis() - lastScrollAt < 120)) {
+            deferredSnapshot = loaded; deferredKey = key; deferredToken = token;
+            handler.removeCallbacks(deferredApply); handler.postDelayed(deferredApply, 120); return;
+        }
+        snapshot = loaded; loading = loadingStale = false;
+        body.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO); renderBody();
+    }
     private void load() {
         if (body == null || isDestroyed()) return;
-        int token = ++generation;
+        rememberPosition(); cancelRead();
+        int token = generation;
         loading = true;
         LocalDate first = windowStart();
-        LocalDate last = mode == YEAR ? first.plusYears(1) : mode == WEEK ? first.plusWeeks(1)
-                : mode == DAY ? first.plusDays(1) : first.plusDays(42);
+        LocalDate last = windowEnd(first);
         ZoneId zone = ZoneId.systemDefault();
+        String key = windowKey(zone);
+        loadingStale = !renderedKey.equals(key);
+        body.setImportantForAccessibility(loadingStale ? View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                : View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         boolean system = includeSystem;
-        dateTitle.setText(mode == YEAR ? date.getYear() + "" : date.format(DateTimeFormatter.ofPattern(mode == DAY ? "yyyy / M / d" : "yyyy / M")));
-        sourceButton.setText(system ? "全部来源" : "拾时");
+        updateHeader();
         if (tabMotion == null) tabs.finishPageSelection(mode);
         if (body.getChildCount() == 0) body.addView(text("正在读取日程…", 14, false));
-        reader.execute(() -> {
+        android.os.CancellationSignal cancellation = new android.os.CancellationSignal();
+        readCancellation = cancellation;
+        readFuture = reader.submit(() -> {
             try {
                 AgendaRepository.Snapshot loaded = AgendaRepository.load(getApplicationContext(),
-                        first.atStartOfDay(zone).toInstant().toEpochMilli(), last.atStartOfDay(zone).toInstant().toEpochMilli(), system);
-                handler.post(() -> {
-                    if (isDestroyed() || token != generation) return; loading = false; snapshot = loaded; renderBody();
-                });
-            } catch (RuntimeException exception) {
+                        first.atStartOfDay(zone).toInstant().toEpochMilli(), last.atStartOfDay(zone).toInstant().toEpochMilli(), system, zone, cancellation);
+                handler.post(() -> applyLoaded(loaded, key, token));
+            } catch (android.os.OperationCanceledException cancelled) { /* Superseded or paused request. */ }
+            catch (RuntimeException exception) {
                 handler.post(() -> {
                     if (isDestroyed() || token != generation) return;
-                    loading = false;
+                    loading = loadingStale = false;
+                    body.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
                     finishBodyMotion(); animateNext = false;
-                    body.removeAllViews(); body.addView(action("读取失败，点击重试", this::load));
+                    if (renderedKey.isEmpty()) { body.removeAllViews(); body.addView(action("读取失败，点击重试", this::load)); }
+                    else {
+                        mode = renderedMode; date = renderedDate; includeSystem = renderedSystem;
+                        getPreferences(MODE_PRIVATE).edit().putInt("mode", mode).putBoolean("system", includeSystem).apply();
+                        updateHeader(); moveTabHighlight();
+                        Feedback.show(this, "读取失败，已保留上次日历");
+                    }
                 });
             }
         });
+    }
+    private void updateHeader() {
+        dateTitle.setText(mode == YEAR ? date.getYear() + "" : date.format(DateTimeFormatter.ofPattern(mode == DAY ? "yyyy / M / d" : "yyyy / M")));
+        dateTitle.setContentDescription(date + "，选择日期"); sourceSwitch.setChecked(includeSystem);
     }
     private List<AgendaEntry> matching() {
         String needle = query.trim().toLowerCase(Locale.ROOT);
@@ -312,13 +417,60 @@ public final class CalendarOverviewActivity extends Activity {
     }
     private void renderBody() {
         if (body == null || loading) return;
-        finishBodyMotion();
-        View previous = body.getChildCount() == 0 ? null : body.getChildAt(body.getChildCount() - 1);
-        boolean animated = animateNext; animateNext = false;
-        body.removeAllViews(); timeLines = null;
+        rememberPosition();
+        View focus = body.findFocus(); String focusTag = focus != null && focus.getTag() instanceof String ? (String) focus.getTag() : null;
+        View accessible = accessibilityFocus(body);
+        String accessibleTag = accessible != null && accessible.getTag() instanceof String ? (String) accessible.getTag() : null;
+        boolean animated = animateNext && resumed && UiMotion.isEnabled() && body.getChildCount() > 0
+                && focus == null && accessible == null;
+        animateNext = false;
+        int presentation = ++presentationGeneration;
+        Runnable rebuild = () -> {
+            body.setTranslationX(animated ? dp(18) * transitionDirection : 0);
+            buildBody(); restorePosition();
+        };
+        if (animated) {
+            UiStyle.swap(bodyViewport, body, rebuild);
+            bodyTransitionRunning = bodyStage.getChildCount() > 1;
+            if (bodyTransitionRunning) body.animate().translationX(0f).setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE)
+                    .setUpdateListener(value -> { if (!UiMotion.isEnabled() || body.hasFocus()) finishBodyMotion(); })
+                    .setListener(new android.animation.AnimatorListenerAdapter() {
+                        @Override public void onAnimationEnd(android.animation.Animator animation) {
+                            if (presentation == presentationGeneration) finishBodyMotion();
+                        }
+                        @Override public void onAnimationCancel(android.animation.Animator animation) {
+                            if (presentation == presentationGeneration) finishBodyMotion();
+                        }
+                    }).start();
+            else body.setTranslationX(0f);
+        } else { finishBodyMotion(); rebuild.run(); }
+        View presented = body.getChildAt(0);
+        if (focusTag != null || accessibleTag != null) body.post(() -> {
+            if (presented != body.getChildAt(0)) return;
+            View target = body.findViewWithTag(accessibleTag == null ? focusTag : accessibleTag);
+            if (target == null || !resumed) return;
+            if (accessibleTag != null) target.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null);
+            else target.requestFocus();
+        });
+        handler.removeCallbacks(minuteTick);
+        if (resumed) handler.postDelayed(minuteTick, nextTickDelay());
+    }
+    private View accessibilityFocus(View view) {
+        if (view.isAccessibilityFocused()) return view;
+        if (view instanceof android.view.ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) {
+            View result = accessibilityFocus(group.getChildAt(i)); if (result != null) return result;
+        }
+        return null;
+    }
+    private void buildBody() {
+        body.removeAllViews(); timeLines = null; verticalViewport = null; horizontalViewport = null; statuses.clear();
+        renderedKey = windowKey(snapshot.zone); renderedQuery = query; renderedDate = date; renderedToday = LocalDate.now();
+        renderedMode = mode; renderedSystem = includeSystem; updateHeader();
         List<AgendaEntry> entries = matching();
-        if (mode == WEEK || mode == DAY) { timeline(entries); presentBody(previous, animated); return; }
+        LocalDate first = windowStart(); dayCounts = new CalendarDayCounts(entries, first, windowEnd(first), snapshot.zone);
+        if (mode == WEEK || mode == DAY) { timeline(entries); return; }
         ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false);
+        verticalViewport = scroll; watchScroll(scroll);
         LinearLayout content = column(); content.setPadding(0, 0, 0, dp(24)); scroll.addView(content);
         if (snapshot.systemUnavailable) notice(content, "系统日程暂时无法读取");
         if (snapshot.truncated) notice(content, "日程数量较多，请缩小日期范围");
@@ -352,7 +504,6 @@ public final class CalendarOverviewActivity extends Activity {
             if (shown == 0) notice(content, "本月暂无日程");
         }
         body.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        presentBody(previous, animated);
     }
     private View monthGrid(LocalDate month, List<AgendaEntry> entries, boolean mini) {
         LinearLayout grid = column();
@@ -365,48 +516,47 @@ public final class CalendarOverviewActivity extends Activity {
             for (int c = 0; c < 7; c++) {
                 LocalDate day = first.plusDays(r * 7L + c);
                 boolean ownMonth = day.getMonth() == month.getMonth();
-                int count = onDay(entries, day).size();
+                int count = dayCounts.on(day);
                 FrameLayout cell = new FrameLayout(this);
                 TextView number = text("" + day.getDayOfMonth(), mini ? 12 : 18, day.equals(LocalDate.now()));
                 number.setGravity(Gravity.CENTER);
                 number.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
                 if (!ownMonth) number.setTextColor(UiStyle.colors(this).muted);
                 else if (day.equals(date) || day.equals(LocalDate.now())) number.setTextColor(UiStyle.colors(this).primary);
+                int markerHeight = mini ? dp(4) : Math.round(android.util.TypedValue.applyDimension(
+                        android.util.TypedValue.COMPLEX_UNIT_SP, 10, getResources().getDisplayMetrics())) + dp(3);
                 FrameLayout.LayoutParams numberParams = new FrameLayout.LayoutParams(-1, -1);
-                numberParams.bottomMargin = dp(mini ? 3 : 9); cell.addView(number, numberParams);
+                numberParams.bottomMargin = markerHeight; cell.addView(number, numberParams);
                 if (!mini) {
                     UiStyle.acrylicChoice(cell, day.equals(date) && ownMonth, 15, day.equals(LocalDate.now()) && ownMonth);
                     cell.setAlpha(ownMonth ? 1f : .55f);
                 }
                 if (count > 0) {
-                    View marker = new View(this) {
-                        final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                        @Override protected void onDraw(Canvas canvas) {
-                            int color = count <= LIGHT_DAY_MAX ? UiStyle.colors(CalendarOverviewActivity.this).primary
-                                    : count <= MEDIUM_DAY_MAX ? (ThemeStore.dark(CalendarOverviewActivity.this) ? 0xFFE8BD79 : 0xFF9B742C)
-                                    : (ThemeStore.dark(CalendarOverviewActivity.this) ? 0xFFF2A69B : 0xFFAA6058);
-                            paint.setColor(color); paint.setAlpha(ownMonth ? 170 : 110);
-                            if (mini) canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, dp(1), paint);
-                            else {
-                                String label = count > 99 ? "99+" : "" + count;
-                                paint.setTextSize(dp(10)); float textWidth = paint.measureText(label);
-                                float left = (getWidth() - textWidth - dp(7)) / 2f;
-                                canvas.drawCircle(left + dp(1), getHeight() / 2f, dp(1), paint);
-                                canvas.drawText(label, left + dp(7), (getHeight() - paint.ascent() - paint.descent()) / 2f, paint);
-                            }
-                        }
-                    };
-                    marker.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-                    cell.addView(marker, new FrameLayout.LayoutParams(-1, dp(mini ? 4 : 13), Gravity.BOTTOM));
+                    int color = count <= LIGHT_DAY_MAX ? UiStyle.colors(this).primary
+                            : count <= MEDIUM_DAY_MAX ? (ThemeStore.dark(this) ? 0xFFE8BD79 : 0xFF9B742C)
+                            : (ThemeStore.dark(this) ? 0xFFF2A69B : 0xFFAA6058);
+                    LinearLayout marker = row(); marker.setGravity(Gravity.CENTER); marker.setAlpha(ownMonth ? .7f : .45f);
+                    View dot = new View(this); android.graphics.drawable.GradientDrawable dotShape = new android.graphics.drawable.GradientDrawable();
+                    dotShape.setShape(android.graphics.drawable.GradientDrawable.OVAL); dotShape.setColor(color); dot.setBackground(dotShape);
+                    marker.addView(dot, new LinearLayout.LayoutParams(dp(2), dp(2)));
+                    if (!mini) {
+                        TextView countLabel = text(count > 99 ? "99+" : "" + count, 10, false); countLabel.setTextColor(color);
+                        countLabel.setPadding(dp(5), 0, 0, 0); marker.addView(countLabel);
+                    }
+                    marker.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+                    cell.addView(marker, new FrameLayout.LayoutParams(-1, markerHeight, Gravity.BOTTOM));
                 }
-                cell.setContentDescription(day + "，" + count + "项日程");
+                cell.setTag("day:" + day); cell.setSelected(day.equals(date));
+                cell.setContentDescription(day + (day.equals(LocalDate.now()) ? "，今天" : "")
+                        + (day.equals(date) ? "，已选中" : "") + (ownMonth ? "，本月" : "，相邻月份") + "，" + count + "项日程");
                 cell.setFocusable(true);
                 cell.setOnClickListener(v -> {
                     if (mini) { date = day; changeMode(MONTH); }
                     else if (!ownMonth) navigateDate(day);
                     else { date = day; animateNext = resumed; transitionDirection = 0; renderBody(); }
                 });
-                LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, dp(mini ? 25 : 56), 1);
+                int cellHeight = Math.max(dp(mini ? 25 : 56), Math.round(number.getTextSize()) + markerHeight + dp(mini ? 4 : 16));
+                LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, cellHeight, 1);
                 if (!mini) cellParams.setMargins(dp(2), dp(2), dp(2), dp(2));
                 line.addView(cell, cellParams);
             }
@@ -415,7 +565,7 @@ public final class CalendarOverviewActivity extends Activity {
         return grid;
     }
     private List<AgendaEntry> onDay(List<AgendaEntry> entries, LocalDate day) {
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = snapshot.zone;
         long begin = day.atStartOfDay(zone).toInstant().toEpochMilli(), end = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
         List<AgendaEntry> matches = new ArrayList<>();
         for (AgendaEntry e : entries) if (e.overlaps(begin, end)) matches.add(e);
@@ -425,35 +575,51 @@ public final class CalendarOverviewActivity extends Activity {
         List<AgendaEntry> items = onDay(entries, day);
         if (items.isEmpty()) { notice(content, "当天暂无日程"); return; }
         LinearLayout group = column(); UiStyle.glass(group);
-        long now = System.currentTimeMillis();
         for (AgendaEntry e : items) {
             LinearLayout card = column(); card.setPadding(dp(16), dp(14), dp(16), dp(14));
             TextView title = text(e.title, 17, true); title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            if (e.finish() <= now) title.setTextColor(UiStyle.colors(this).muted); card.addView(title);
-            String status = e.finish() <= now ? "已结束" : e.start <= now ? "现在" : e.start - now <= 24 * 60 * 60_000L ? "" + Math.max(1, (e.start - now) / 60_000) + "分钟后开始" : "";
-            TextView time = text(time(e) + (status.isEmpty() ? "" : "  ·  " + status), 13, false);
-            time.setTextColor(e.start <= now && e.finish() > now ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
+            card.addView(title);
+            TextView time = text("", 13, false);
+            EntryStatus status = new EntryStatus(e, title, time); statuses.add(status); updateStatus(status);
             UiStyle.addSpaced(card, time, 6, 0);
             if (!e.location.trim().isEmpty()) { TextView place = text(e.location, 13, false); UiStyle.muted(place); UiStyle.addSpaced(card, place, 6, 0); }
             TextView source = text(e.source + (e.confirmed ? "" : " · 待确认"), 11, false); UiStyle.muted(source); UiStyle.addSpaced(card, source, 5, 0);
             card.setOnClickListener(v -> open(e)); UiStyle.pressable(card); group.addView(card);
+            card.setTag("entry:" + e.key() + ":" + day); card.setFocusable(true);
             if (e != items.get(items.size() - 1)) { View divider = new View(this); divider.setBackgroundColor(UiStyle.colors(this).outline); group.addView(divider, new LinearLayout.LayoutParams(-1, dp(1))); }
         }
         content.addView(group);
     }
+    private void updateStatus(EntryStatus status) {
+        long now = System.currentTimeMillis(); AgendaEntry e = status.entry;
+        String label = e.finish() <= now ? "已结束" : e.start <= now ? "现在" : e.start - now <= 24 * 60 * 60_000L
+                ? Math.max(1, (e.start - now + 59_999) / 60_000) + "分钟后开始" : "";
+        status.title.setTextColor(e.finish() <= now ? UiStyle.colors(this).muted : UiStyle.colors(this).text);
+        status.time.setText(time(e) + (label.isEmpty() ? "" : "  ·  " + label));
+        status.time.setTextColor(e.start <= now && e.finish() > now ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
+    }
+    private long nextTickDelay() {
+        long now = System.currentTimeMillis(), next = now + 60_000 - Math.floorMod(now, 60_000);
+        for (EntryStatus status : statuses) {
+            if (status.entry.start > now) next = Math.min(next, status.entry.start);
+            if (status.entry.finish() > now) next = Math.min(next, status.entry.finish());
+        }
+        return Math.max(100, next - now);
+    }
     private String time(AgendaEntry e) {
         if (e.allDay) return "全天";
-        ZoneId zone = ZoneId.systemDefault(); DateTimeFormatter clock = DateTimeFormatter.ofPattern("HH:mm");
+        ZoneId zone = snapshot.zone; DateTimeFormatter clock = DateTimeFormatter.ofPattern("HH:mm");
         boolean cross = !Instant.ofEpochMilli(e.start).atZone(zone).toLocalDate().equals(Instant.ofEpochMilli(e.end).atZone(zone).toLocalDate());
         return (cross ? DateTimeFormatter.ofPattern("M/d HH:mm") : clock).format(Instant.ofEpochMilli(e.start).atZone(zone))
                 + " — " + (cross ? DateTimeFormatter.ofPattern("M/d HH:mm") : clock).format(Instant.ofEpochMilli(e.end).atZone(zone));
     }
     private void timeline(List<AgendaEntry> entries) {
         int days = mode == WEEK ? 7 : 1;
-        LocalDate first = windowStart(); ZoneId zone = ZoneId.systemDefault();
+        LocalDate first = windowStart(); ZoneId zone = snapshot.zone;
         int viewport = Math.max(dp(240), body.getWidth() > 0 ? body.getWidth() : getResources().getDisplayMetrics().widthPixels - dp(40));
         int gutter = dp(40), width = Math.max(viewport, days == 7 ? dp(670) : viewport), dayWidth = (width - gutter) / days;
         HorizontalScrollView horizontal = new HorizontalScrollView(this); horizontal.setHorizontalScrollBarEnabled(false);
+        horizontalViewport = horizontal; watchScroll(horizontal);
         LinearLayout layout = column(); horizontal.addView(layout, new FrameLayout.LayoutParams(width, -1));
         LinearLayout dates = row(); View space = new View(this); dates.addView(space, new LinearLayout.LayoutParams(gutter, dp(60)));
         for (int d = 0; d < days; d++) {
@@ -461,6 +627,7 @@ public final class CalendarOverviewActivity extends Activity {
             TextView label = action(day.format(DateTimeFormatter.ofPattern("E\nd", Locale.CHINA)), () -> {
                 date = day; changeMode(DAY);
             });
+            label.setTag("day:" + day);
             if (day.equals(LocalDate.now())) UiStyle.acrylicChoice(label, true, 16, false);
             dates.addView(label, new LinearLayout.LayoutParams(dayWidth, dp(60)));
         }
@@ -470,14 +637,20 @@ public final class CalendarOverviewActivity extends Activity {
         boolean hasAllDay = false;
         for (int d = 0; d < days; d++) {
             LinearLayout column = column();
-            for (AgendaEntry e : onDay(entries, first.plusDays(d))) if (e.allDay) {
+            LocalDate day = first.plusDays(d); List<AgendaEntry> allDayItems = new ArrayList<>();
+            for (AgendaEntry e : onDay(entries, day)) if (e.allDay) allDayItems.add(e);
+            int visible = Math.min(3, allDayItems.size());
+            for (int i = 0; i < visible; i++) {
+                AgendaEntry e = allDayItems.get(i);
                 hasAllDay = true; TextView card = action(e.title, () -> open(e)); card.setTextSize(11); card.setMaxLines(2);
                 UiStyle.acrylicChoice(card, true, 8, false); column.addView(card, new LinearLayout.LayoutParams(-1, -2));
             }
+            if (allDayItems.size() > visible) column.addView(action("+" + (allDayItems.size() - visible), () -> showAllDay(day, allDayItems)));
             allDays.addView(column, new LinearLayout.LayoutParams(dayWidth, -2));
         }
         if (hasAllDay) layout.addView(allDays);
         ScrollView vertical = new ScrollView(this); vertical.setVerticalScrollBarEnabled(false);
+        verticalViewport = vertical; watchScroll(vertical);
         FrameLayout grid = new FrameLayout(this); int hourHeight = dp(72), height = hourHeight * 24;
         timeLines = new View(this) {
             final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -495,16 +668,21 @@ public final class CalendarOverviewActivity extends Activity {
         grid.addView(timeLines, new FrameLayout.LayoutParams(-1, -1));
         for (int d = 0; d < days; d++) for (CalendarTimelineLayout.Block block : CalendarTimelineLayout.day(entries, first.plusDays(d), zone)) {
             AgendaEntry e = block.entry;
-            TextView card = text(e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), days == 1 ? 14 : 12, true);
-            card.setPadding(dp(7), dp(4), dp(4), dp(3)); card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            int durationHeight = (int) ((block.endMinute - block.startMinute) / 60 * hourHeight) - dp(2);
+            boolean compact = durationHeight < dp(36);
+            TextView card = text(compact ? e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), compact ? 12 : days == 1 ? 14 : 12, true);
+            card.setPadding(dp(5), dp(compact ? 1 : 4), dp(4), dp(compact ? 1 : 3)); card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
             card.setTextColor(UiStyle.colors(this).text); UiStyle.acrylicChoice(card, true, 8, false);
             if (e.system) card.setAlpha(.78f);
-            int cardHeight = Math.max(dp(18), (int) ((block.endMinute - block.startMinute) / 60 * hourHeight) - dp(2));
-            card.setMaxLines(Math.max(1, cardHeight / dp(days == 1 ? 18 : 16)));
+            android.graphics.Paint.FontMetrics metrics = card.getPaint().getFontMetrics();
+            int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
+            int cardHeight = Math.max(lineHeight + dp(compact ? 4 : 8), durationHeight);
+            card.setMaxLines(compact ? 1 : Math.max(1, (cardHeight - dp(7)) / lineHeight));
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(Math.max(dp(12), dayWidth / block.lanes - dp(4)), cardHeight);
             params.leftMargin = gutter + d * dayWidth + block.lane * dayWidth / block.lanes + dp(2);
-            params.topMargin = (int) (block.startMinute / 60 * hourHeight) + dp(1);
+            params.topMargin = Math.max(0, Math.min(height - cardHeight, (int) (block.startMinute / 60 * hourHeight) + dp(1)));
             card.setContentDescription(e.title + "，" + time(e) + "，" + e.location + "，" + e.source);
+            card.setTag("entry:" + e.key() + ":" + first.plusDays(d)); card.setFocusable(true);
             card.setOnClickListener(v -> open(e)); grid.addView(card, params);
         }
         View nowLine = new View(this) {
@@ -524,10 +702,27 @@ public final class CalendarOverviewActivity extends Activity {
         layout.addView(vertical, new LinearLayout.LayoutParams(-1, 0, 1));
         body.addView(horizontal, new FrameLayout.LayoutParams(-1, -1));
         vertical.post(() -> {
-            int hour = first.isAfter(LocalDate.now()) || first.plusDays(days).isBefore(LocalDate.now()) ? 8
-                    : Math.max(0, Instant.now().atZone(zone).getHour() - 1);
+            if (vertical != verticalViewport || positions.containsKey(renderedKey)) return;
+            int hour = CalendarViewport.hour(first, days, LocalDate.now(), Instant.now().atZone(zone).toLocalTime());
             vertical.scrollTo(0, hour * hourHeight);
+            int focus = CalendarViewport.column(first, days, date);
+            horizontal.scrollTo(Math.max(0, gutter + focus * dayWidth + dayWidth / 2 - viewport / 2), 0);
         });
+    }
+    private void showAllDay(LocalDate day, List<AgendaEntry> items) {
+        if (allDayDialog != null) allDayDialog.dismiss();
+        android.app.Dialog dialog = new android.app.Dialog(this); allDayDialog = dialog;
+        LinearLayout content = column(); content.setPadding(dp(16), dp(16), dp(16), dp(16));
+        TextView title = text(day.format(DateTimeFormatter.ofPattern("M月d日 · 全天")), 20, true);
+        UiStyle.addSpaced(content, title, 0, 12);
+        int firstStatus = statuses.size(); dayList(content, items, day);
+        List<EntryStatus> dialogStatuses = new ArrayList<>(statuses.subList(firstStatus, statuses.size()));
+        ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false); scroll.addView(content);
+        dialog.setOnDismissListener(value -> {
+            statuses.removeAll(dialogStatuses); if (allDayDialog == dialog) allDayDialog = null;
+            handler.removeCallbacks(deferredApply); handler.post(deferredApply);
+        });
+        UiStyle.showFloatingDialog(dialog, scroll);
     }
     private void open(AgendaEntry entry) {
         try { startActivity(AgendaRepository.details(this, entry)); }

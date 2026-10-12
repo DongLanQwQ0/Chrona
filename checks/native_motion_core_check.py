@@ -32,6 +32,7 @@ snapshot_type = snapshot_type.replace('android.graphics.Rect', 'Rect')
 limits = '\n'.join(re.findall(r'    private static final int SNAPSHOT_MAX_.*;', style))
 swap = '\n'.join(method(style, marker) for marker in (
     'public static void swap(View snapshotOf, View container, Runnable rebuild)',
+    'static void finishSwap(View container)',
     'private static boolean hostsSeveralChildren(ViewGroup host)',
     'private static void dropSwapGhosts(ViewGroup host)')).replace('android.widget.HorizontalScrollView', 'HorizontalScrollView')
 
@@ -67,13 +68,14 @@ class Animator {
  Animator setStartDelay(long x){return this;} Animator setDuration(long x){return this;}
  Animator setInterpolator(Interpolator x){return this;} Animator withEndAction(Runnable x){end=x;return this;}
  Animator setUpdateListener(Consumer<ValueAnimator> x){update=x;return this;}
+ Animator setListener(Object x){return this;}
  void start(){starts++;} void cancel(){cancels++;end=null;}
  void finish(){view.alpha=alpha;view.y=y;Runnable done=end;end=null;if(done!=null)done.run();}
 }
 class View {
  interface OnAttachStateChangeListener{void onViewAttachedToWindow(View v);void onViewDetachedFromWindow(View v);}
  boolean attached=true,shown=true,visible=true,focused=false,accessibility=false;
- float alpha=1,y; int width=100,height=100,scrollX,scrollY,left,top; Object tag;
+ float alpha=1,y,x; int width=100,height=100,scrollX,scrollY,left,top; Object tag;
  Rect clip; ViewGroup parent; Animator animator=new Animator(this); Resources resources=new Resources();
  List<OnAttachStateChangeListener> listeners=new ArrayList<>(); List<Runnable> frames=new ArrayList<>();
  ViewTreeObserver tree=new ViewTreeObserver();
@@ -83,6 +85,7 @@ class View {
  boolean isFocused(){return focused;} boolean isAccessibilityFocused(){return accessibility;}
  boolean hasFocus(){return focused;} Animator animate(){return animator;}
  void setAlpha(float x){alpha=x;} void setTranslationY(float x){y=x;}
+ void setTranslationX(float value){x=value;}
  Resources getResources(){return resources;} ViewTreeObserver getViewTreeObserver(){return tree;}
  void addOnAttachStateChangeListener(OnAttachStateChangeListener x){listeners.add(x);}
  void removeOnAttachStateChangeListener(OnAttachStateChangeListener x){listeners.remove(x);}
@@ -167,6 +170,17 @@ public class NativeMotionCoreCheck {
   check(stage.getChildCount()==1&&body.alpha==1,"rebuild failure releases ghost");
   ScrollView single=new ScrollView();View nested=new View();single.add(nested);swap(nested,nested,()->{});
   check(single.getChildCount()==1&&nested.alpha==1,"single-child scroll host never receives ghost");
+  FrameLayout calendarHost=new FrameLayout(),calendarViewport=new FrameLayout();View calendarBody=new View();
+  calendarHost.add(calendarViewport);calendarViewport.add(calendarBody);swap(calendarViewport,calendarBody,()->{});
+  ImageView calendarGhost=(ImageView)calendarHost.getChildAt(1);Bitmap calendarBitmap=calendarGhost.bitmap;
+  calendarBody.alpha=.35f;calendarBody.x=9;calendarGhost.alpha=.65f;
+  swap(calendarViewport,calendarBody,()->{});
+  check(Canvas.drawnChildren==2&&calendarBitmap.recycled&&calendarHost.getChildCount()==2,
+      "calendar stable viewport captures composite without stacking live pages");
+  Bitmap finalCalendarBitmap=((ImageView)calendarHost.getChildAt(1)).bitmap;
+  finishSwap(calendarBody);finishSwap(calendarViewport);
+  check(calendarHost.getChildCount()==1&&finalCalendarBitmap.recycled&&calendarBody.alpha==1&&calendarBody.x==0,
+      "calendar pause/focus completion releases ghost and normalizes actual body");
   System.out.println("Native motion core checks passed: "+count+" (production methods, Android doubles)");
  }
 }
