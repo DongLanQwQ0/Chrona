@@ -1,5 +1,12 @@
 # 历史验证记录
 
+## 0.14.8 — 2026-10-12
+
+- 定向检查通过：Dock 49 项、原生动效核心 28 项、生命周期动效、日历/提醒核心 37 项与实际 SQL/提供器扫描回归。检查使用 Android 平台替身，不能代替真机视觉或触摸验收。本轮不涉及数据逻辑，未重复执行整套 36 项检查。
+- 最终 `assembleDebug/assembleRelease/lintDebug/lintRelease` 成功，日志 `build/calendar-polish-final-build.log`，lint 0 错误/83 警告。新增 ClickableViewAccessibility 提示对应主动吞掉旧页触摸的非交互转场层，该层隐藏无障碍树。
+- release APK 0.14.8 / 115，1,971,842 字节，SHA256 `0ebde9b651523c3268e0b19f9860826f03c32b339bc8dd294ace533755807df2`；debug/release 均为原证书 SHA256 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`，release 无调试标记。证据 `build/calendar-polish-{debug,release}-signature.log`、`build/calendar-polish-version.log`；分发 `build/distributions/0.14.8/Chrona-0.14.8.apk`。
+- 修改前备份 `build/backups/20261012-calendar-polish`。ADB 无连接设备，未验收 Android 日历玻璃效果、动画手感、帧率或覆盖安装；发布说明保留限制。
+
 ## 0.14.7 — 2026-10-12
 
 - `checks/run_checks.py full`：36/36，通过日志 `build/agenda-final-checks.log`。初轮沙箱阻止临时文件移动和本机回环连接，及新增提醒刷新需要补测试替身；修正适配后完整执行通过。

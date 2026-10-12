@@ -410,6 +410,7 @@ public final class TimetableActivity extends Activity {
             horizontal.setHorizontalScrollBarEnabled(false);
             horizontal.setFillViewport(true);
             UiStyle.glass(horizontal);
+            horizontal.setElevation(0f);
             horizontal.setOutlineProvider(new android.view.ViewOutlineProvider() {
                 @Override public void getOutline(View view, android.graphics.Outline outline) {
                     outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(UiStyle.RADIUS_PANEL));
@@ -425,6 +426,7 @@ public final class TimetableActivity extends Activity {
                 TextView emptyGrid = label("本学期的安排均在下方展示", 14, false);
                 emptyGrid.setPadding(dp(16), dp(20), dp(16), dp(20));
                 UiStyle.glass(emptyGrid);
+                emptyGrid.setElevation(0f);
                 UiStyle.addSpaced(courseContent, emptyGrid, 0, 16);
             }
             addSpecialArrangements(courseContent, term);
