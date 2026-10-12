@@ -18,10 +18,10 @@ public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){
     "android/content/res/ColorStateList.java": "package android.content.res; public class ColorStateList { public static ColorStateList valueOf(int x){return new ColorStateList();} }",
     "android/graphics/Canvas.java": "package android.graphics; public class Canvas {}",
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
-public class GradientDrawable { public static float lastCenter; int l,r;
+public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight; int l,r,t,b;
 public void setCornerRadius(float x){} public void setColor(int c){}
-public void setBounds(int l,int t,int r,int b){this.l=l;this.r=r;}
-public void draw(android.graphics.Canvas c){lastCenter=(l+r)/2f;} }""",
+public void setBounds(int l,int t,int r,int b){this.l=l;this.r=r;this.t=t;this.b=b;}
+public void draw(android.graphics.Canvas c){lastCenter=(l+r)/2f;lastWidth=r-l;lastHeight=b-t;} }""",
     "android/os/SystemClock.java": "package android.os; public class SystemClock { public static long uptimeMillis(){return android.view.View.now;} }",
     "android/view/HapticFeedbackConstants.java": "package android.view; public class HapticFeedbackConstants { public static final int LONG_PRESS=0; }",
     "android/view/ViewConfiguration.java": """package android.view; public class ViewConfiguration {
@@ -61,6 +61,7 @@ public class View {
  public boolean postDelayed(Runnable action,long delay){jobs.add(new Job(this,action,now+delay,sequence++));return true;}
  public boolean removeCallbacks(Runnable action){return jobs.removeIf(j->j.owner==this&&j.action==action);}
  public void invalidate(){} public boolean performHapticFeedback(int x){return true;}
+ public float scaleX=1,scaleY=1;public void setScaleX(float value){scaleX=value;}public void setScaleY(float value){scaleY=value;}
  protected void onDetachedFromWindow(){jobs.removeIf(j->j.owner==this);pressed=false;}
  public void detach(){onDetachedFromWindow();parent=null;}
  protected void dispatchDraw(android.graphics.Canvas c){}
@@ -69,6 +70,7 @@ public class View {
 import java.util.*; public class ViewGroup extends View {
  protected final List<View> children=new ArrayList<>(); private View target;
  public ViewGroup(android.content.Context c){super(c);}
+ public void setClipChildren(boolean value){}public void setClipToPadding(boolean value){}
  public void addView(View v){children.add(v);v.parent=this;} public int getChildCount(){return children.size();}
  public View getChildAt(int i){return i<0||i>=children.size()?null:children.get(i);}
  public void removeAllViews(){for(View v:new ArrayList<>(children))v.detach();children.clear();target=null;}
@@ -132,28 +134,32 @@ public class DockNavigationCheck {
   init();dock.getChildAt(0).layout(10,0,90,60);touch(0,95,35);touch(2,95,100);touch(2,95,35);touch(1,95,35);View.advance(0);require(selected.isEmpty(),"Gap tap leaving and reentering does not accidentally click");
   init();touch(0,30,35);touch(2,245,35);touch(1,245,35);View.advance(0);require(selected.equals(List.of(2)),"Horizontal drag commits once without ghost child tap");
   init();touch(0,140,35);View.advance(500);touch(2,245,35);touch(1,245,35);View.advance(0);require(selected.equals(List.of(2)),"Long press then drag commits once");
-  init();touch(0,30,35);touch(2,245,35);touch(3,245,35);View.advance(0);require(selected.isEmpty(),"Cancel never selects");close(center(),50,"Cancel returns to actual selection");
+  init();touch(0,30,35);touch(2,245,35);touch(3,245,35);View.advance(1000);require(selected.isEmpty(),"Cancel never selects");close(center(),50,"Cancel returns to actual selection");
   init();touch(0,30,35);touch(2,245,35);touch(5,245,35);touch(1,245,35);View.advance(0);require(selected.isEmpty(),"Multiple pointers cancel");
-  init();touch(0,30,35);touch(2,245,35);touch(1,245,100);View.advance(0);require(selected.isEmpty(),"Release outside dock cancels");
-  init();dock.showPageProgress(0,1,.25f);close(center(),75,"Body swipe drives partial highlight");dock.showPageProgress(0,1,.5f);close(center(),100,"Half swipe is between buttons");
-  dock.beginPageSettle(1);dock.updatePageSettle(0);close(center(),100,"Settle starts without jump");dock.updatePageSettle(.5f);close(center(),125,"Settle follows page fraction");
-  dock.removeAllViews();populate();dock.setSelectedIndex(0);close(center(),125,"Rebuilding labels does not reset visual position");
-  dock.updatePageSettle(1);dock.finishPageSelection(1);close(center(),150,"Commit arrives at destination");
-  dock.showPageProgress(1,0,.4f);dock.beginPageSettle(1);dock.updatePageSettle(.5f);close(center(),130,"Cancelled swipe smoothly returns");
-  dock.updatePageSettle(1);dock.finishPageSelection(1);close(center(),150,"Cancelled swipe finishes at source");
-  init();dock.beginPageSettle(2);dock.updatePageSettle(.25f);close(center(),100,"Click can animate through intermediate position");dock.updatePageSettle(1);close(center(),250,"Click reaches distant destination");
+  init();touch(0,30,35);touch(2,245,35);touch(1,245,100);View.advance(0);require(selected.equals(List.of(2)),"Release outside dock commits clamped horizontal target");
+  init();touch(0,30,35);touch(2,345,100);touch(1,345,150);View.advance(0);require(selected.equals(List.of(2)),"Release beyond horizontal edge commits endpoint");
+  init();dock.showPageProgress(0,1,.5f);close(center(),50,"Body retarget preserves current visual position");View.advance(80);require(center()>50&&center()<110,"Body highlight moves with inertia");
+  float old=center();dock.beginPageSettle(1);dock.updatePageSettle(0);close(center(),old,"Settle starts without jump");dock.updatePageSettle(1);dock.finishPageSelection(1);View.advance(1000);close(center(),150,"Commit eventually arrives at destination");
+  dock.removeAllViews();populate();dock.setSelectedIndex(1);close(center(),150,"Rebuilding labels does not reset visual position");
+  dock.showPageProgress(1,0,.4f);View.advance(60);dock.beginPageSettle(1);dock.finishPageSelection(1);View.advance(1000);close(center(),150,"Cancelled body swipe springs back to source");
+  init();dock.beginPageSettle(2);View.advance(50);require(center()>50&&center()<250,"Click moves through intermediate position");dock.finishPageSelection(2);View.advance(1000);close(center(),250,"Click reaches distant destination");
   init();touch(0,30,35);touch(2,235,35);float released=center();touch(1,235,35);dock.updatePageSettle(0);close(center(),released,"Dock release does not jump to old source");
-  dock.updatePageSettle(.5f);require(center()>released&&center()<250,"Dock release settles from finger toward target");
+  dock.updatePageSettle(1);View.advance(50);require(center()>released&&center()<250,"Dock release settles from finger toward target");
   init();dock.beginPageSettle(1);dock.updatePageSettle(.6f);float interrupted=center();dock.beginBodyDrag();dock.showPageProgress(0,1,0);close(center(),interrupted,"New body gesture preserves interrupted highlight position");
-  dock.showPageProgress(0,1,.5f);close(center(),130,"Interrupted gesture moves continuously toward target");
+  dock.showPageProgress(0,1,.5f);close(center(),interrupted,"Interrupted gesture retarget keeps current frame");View.advance(50);require(center()>interrupted,"Interrupted gesture moves toward target");
   init();touch(0,225,35);touch(2,245,35);close(center(),50,"Remote drag begins at existing highlight");
   View.advance(16);float first=center();require(first>50&&first<245,"First frame moves partway toward finger");
   View.advance(32);float next=center();require(next>first&&next<245,"Subsequent frames approach finger");
   touch(2,150,35);close(center(),next,"Retargeting does not teleport during MOVE");
-  View.advance(16);require(center()<next&&center()>150,"Frame follows changed finger direction");
+  View.advance(80);require(center()>first&&center()<200,"Direction reversal retains bounded inertia");
   float beforeUp=center();touch(1,245,35);close(center(),beforeUp,"Release preserves visual position");
   require(selected.equals(List.of(2)),"Fast release selects finger target despite visual lag");
-  dock.updatePageSettle(.5f);float settled=center();View.advance(80);close(center(),settled,"Finger loop stops when page animation takes over");
+  dock.finishPageSelection(2);View.advance(1000);close(center(),250,"Release spring ends at selected target");
+  init();touch(0,30,35);View.advance(800);center();close(GradientDrawable.lastWidth,150,"Held highlight scales to 1.5");close(GradientDrawable.lastHeight,90,"Held highlight height scales to 1.5");require(Math.abs(dock.scaleX-1.1f)<.002f,"Held dock scales to 1.1");
+  touch(1,30,100);View.advance(1000);center();close(GradientDrawable.lastWidth,100,"Released highlight returns to base width");require(Math.abs(dock.scaleX-1f)<.002f,"Released dock returns to base size");
+  DockSpring physics=new DockSpring();physics.target=2;float maxWidth=1,maxPosition=0;
+  for(int i=0;i<180;i++){physics.step(1f/120);maxWidth=Math.max(maxWidth,physics.width);maxPosition=Math.max(maxPosition,physics.position);}
+  require(maxWidth>1.02f,"Moving highlight width stretches elastically");require(maxPosition>2f,"Position spring has bounded elastic overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.width-1)<.002f,"Spring settles rather than oscillating indefinitely");
   init();touch(0,245,35);View.advance(500);close(center(),50,"Long press starts at existing highlight");
   View.advance(32);require(center()>50&&center()<245,"Long press smoothly approaches finger");
   touch(3,245,35);View.advance(400);close(center(),50,"Cancel stops finger loop and returns");
@@ -176,6 +182,6 @@ runner = OUT / "src/com/donglan/chrona/DockNavigationCheck.java"
 runner.write_text(RUNNER, encoding="utf-8")
 java_home = Path(os.environ["JAVA_HOME"])
 files = sorted(str(file) for file in (OUT / "src").rglob("*.java"))
-files.append(str(ROOT / "app/src/main/java/com/donglan/chrona/DockNavigationLayout.java"))
+files += [str(ROOT / "app/src/main/java/com/donglan/chrona" / name) for name in ("DockNavigationLayout.java", "DockSpring.java")]
 subprocess.run([str(java_home / "bin/javac.exe"), "-encoding", "UTF-8", "-d", str(OUT / "classes"), *files], check=True)
 subprocess.run([str(java_home / "bin/java.exe"), "-cp", str(OUT / "classes"), "com.donglan.chrona.DockNavigationCheck"], check=True)

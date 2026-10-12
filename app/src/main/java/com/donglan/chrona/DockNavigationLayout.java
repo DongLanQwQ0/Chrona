@@ -8,7 +8,6 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
-import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -21,7 +20,7 @@ final class DockNavigationLayout extends LinearLayout {
     private final int touchSlop;
     private final IntConsumer select;
     private final Runnable finished;
-    private static final float FOLLOW_TIME_CONSTANT_MILLIS = 45f;
+    private final DockSpring spring = new DockSpring();
     private float downX, downY, fingerPosition;
     private long followFrameTime;
     private boolean followPosted;
@@ -30,7 +29,6 @@ final class DockNavigationLayout extends LinearLayout {
     private float bodyDragFrom = Float.NaN;
     private float settleFrom, settleTo, settleFraction, settleBaseFraction;
     private boolean pageSettling;
-    private ValueAnimator recoil;
     private int selectedIndex, tapIndex, labelIndex = -1;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private final Runnable finishTouch = this::finishTouch;
@@ -52,6 +50,7 @@ final class DockNavigationLayout extends LinearLayout {
         this.select = select;
         this.finished = finished;
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        setClipChildren(false); setClipToPadding(false);
         highlight.setCornerRadius(UiStyle.RADIUS_PANEL * getResources().getDisplayMetrics().density);
     }
 
@@ -59,7 +58,7 @@ final class DockNavigationLayout extends LinearLayout {
 
     void setSelectedIndex(int index) {
         selectedIndex = index;
-        if (Float.isNaN(visualPosition)) visualPosition = index;
+        if (Float.isNaN(visualPosition)) { visualPosition = index; spring.position = spring.target = index; }
         labelIndex = -1;
         if (!dragging) updateLabels(Math.round(visualPosition));
         invalidate();
@@ -67,28 +66,28 @@ final class DockNavigationLayout extends LinearLayout {
 
     void showPageProgress(int from, int to, float progress) {
         if (dragging) return;
-        cancelRecoil();
         pageSettling = false;
         float start = Float.isNaN(bodyDragFrom) ? from : bodyDragFrom;
-        setVisualPosition(start + (to - start) * Math.max(0f, Math.min(1f, progress)));
+        animateTo(start + (to - start) * Math.max(0f, Math.min(1f, progress)));
     }
 
     void beginBodyDrag() {
         cancelFingerFollow();
-        cancelRecoil();
+        spring.velocity = 0f; spring.target = spring.position;
         pageSettling = false;
         bodyDragFrom = visualPosition;
+        press(false);
     }
 
     /** Use the page's animator, starting at the actual highlight position after a dock drag. */
     void beginPageSettle(int destination) {
         cancelFingerFollow();
-        cancelRecoil();
         settleFrom = Float.isNaN(visualPosition) ? selectedIndex : visualPosition;
         settleTo = destination;
         settleFraction = settleBaseFraction = 0f;
         bodyDragFrom = Float.NaN;
         pageSettling = true;
+        animateTo(destination);
     }
 
     void updatePageSettle(float fraction) {
@@ -96,14 +95,14 @@ final class DockNavigationLayout extends LinearLayout {
         if (dragging || !pageSettling) return;
         float progress = settleBaseFraction >= 1f ? 1f
                 : Math.max(0f, Math.min(1f, (fraction - settleBaseFraction) / (1f - settleBaseFraction)));
-        setVisualPosition(settleFrom + (settleTo - settleFrom) * progress);
+        animateTo(settleFrom + (settleTo - settleFrom) * progress);
     }
 
     void finishPageSelection(int index) {
         pageSettling = false;
         bodyDragFrom = Float.NaN;
         setSelectedIndex(index);
-        if (!dragging) setVisualPosition(index);
+        if (!dragging) animateTo(index);
     }
 
     private void setVisualPosition(float position) {
@@ -112,24 +111,13 @@ final class DockNavigationLayout extends LinearLayout {
         invalidate();
     }
 
-    private void cancelRecoil() {
-        if (recoil != null) { recoil.cancel(); recoil = null; }
-    }
-
     private void resumeOrReturnHighlight() {
         if (pageSettling) {
             // A dock drag may have moved it while the page was already animating.
             settleFrom = visualPosition;
             settleBaseFraction = settleFraction;
         } else {
-            cancelRecoil();
-            if (!ValueAnimator.areAnimatorsEnabled()) { setVisualPosition(selectedIndex); return; }
-            recoil = ValueAnimator.ofFloat(visualPosition, selectedIndex);
-            recoil.setDuration(90L + Math.round(90f * Math.min(1f,
-                    Math.abs(selectedIndex - visualPosition))));
-            recoil.setInterpolator(new DecelerateInterpolator(1.5f));
-            recoil.addUpdateListener(animation -> setVisualPosition((float) animation.getAnimatedValue()));
-            recoil.start();
+            animateTo(selectedIndex);
         }
     }
 
@@ -149,8 +137,9 @@ final class DockNavigationLayout extends LinearLayout {
     }
 
     private float centerAt(float position) {
-        int from = (int) Math.floor(position);
-        int to = Math.min(getChildCount() - 1, from + 1);
+        if (getChildCount() < 2) return center(0);
+        int from = Math.max(0, Math.min(getChildCount() - 2, (int) Math.floor(position)));
+        int to = from + 1;
         return center(from) + (center(to) - center(from)) * (position - from);
     }
 
@@ -169,9 +158,12 @@ final class DockNavigationLayout extends LinearLayout {
         float left = Math.min(center(0), center(getChildCount() - 1));
         float right = Math.max(center(0), center(getChildCount() - 1));
         fingerPosition = positionAt(Math.max(left, Math.min(right, x)));
+        animateTo(fingerPosition);
+    }
+    private void animateTo(float position) {
+        spring.target = position;
         if (!ValueAnimator.areAnimatorsEnabled()) {
-            cancelFingerFollow();
-            setVisualPosition(fingerPosition);
+            cancelFingerFollow(); spring.snap(); applySpring();
         } else if (!followPosted) {
             followFrameTime = android.os.SystemClock.uptimeMillis();
             followPosted = true;
@@ -181,25 +173,23 @@ final class DockNavigationLayout extends LinearLayout {
 
     private void advanceFingerFollow() {
         followPosted = false;
-        if (!dragging) return;
         if (!ValueAnimator.areAnimatorsEnabled()) {
-            setVisualPosition(fingerPosition);
+            spring.snap(); applySpring();
             return;
         }
         long now = android.os.SystemClock.uptimeMillis();
         long elapsed = Math.max(0L, Math.min(64L, now - followFrameTime));
         followFrameTime = now;
-        // Retarget a single frame loop instead of restarting an animator on every MOVE.
-        float fraction = 1f - (float) Math.exp(-elapsed / FOLLOW_TIME_CONSTANT_MILLIS);
-        float position = visualPosition + (fingerPosition - visualPosition) * fraction;
-        if (Math.abs(fingerPosition - position) < .001f) {
-            setVisualPosition(fingerPosition);
-        } else {
-            setVisualPosition(position);
+        boolean moving = spring.step(elapsed / 1000f); applySpring();
+        if (moving) {
             followPosted = true;
             postOnAnimation(followFinger);
         }
     }
+    private void applySpring() {
+        setVisualPosition(spring.position); setScaleX(spring.bar); setScaleY(spring.bar);
+    }
+    private void press(boolean pressed) { spring.press(pressed); animateTo(spring.target); }
 
     private void cancelFingerFollow() {
         removeCallbacks(followFinger);
@@ -225,9 +215,12 @@ final class DockNavigationLayout extends LinearLayout {
         View cell = getChildAt(selectedIndex);
         if (cell != null) {
             float x = centerAt(visualPosition);
-            int left = Math.round(x - cell.getWidth() / 2f);
+            float width = cell.getWidth() * spring.scale * spring.width;
+            float height = cell.getHeight() * spring.scale;
+            highlight.setCornerRadius(UiStyle.RADIUS_PANEL * getResources().getDisplayMetrics().density * spring.scale);
+            int left = Math.round(x - width / 2f), top = Math.round((cell.getTop() + cell.getBottom() - height) / 2f);
             highlight.setColor(UiStyle.colors(getContext()).primaryContainer);
-            highlight.setBounds(left, cell.getTop(), left + cell.getWidth(), cell.getBottom());
+            highlight.setBounds(left, top, Math.round(left + width), Math.round(top + height));
             highlight.draw(canvas);
         }
         super.dispatchDraw(canvas);
@@ -242,7 +235,6 @@ final class DockNavigationLayout extends LinearLayout {
 
     private void beginDrag(float x) {
         removeCallbacks(longPress);
-        cancelRecoil();
         cancelChildTouch();
         dragging = true;
         getParent().requestDisallowInterceptTouchEvent(true);
@@ -260,6 +252,8 @@ final class DockNavigationLayout extends LinearLayout {
             tapLeftBounds = false;
             downX = event.getX();
             downY = event.getY();
+            press(true);
+            getParent().requestDisallowInterceptTouchEvent(true);
             postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
         } else if (action == MotionEvent.ACTION_POINTER_DOWN) {
             cancelFingerFollow();
@@ -267,6 +261,7 @@ final class DockNavigationLayout extends LinearLayout {
             if (!dragging) cancelChildTouch();
             dragging = false;
             ignoreTouch = true;
+            press(false);
             resumeOrReturnHighlight();
         } else if (action == MotionEvent.ACTION_MOVE && tracking && !ignoreTouch) {
             if (!insideDock(event)) tapLeftBounds = true;
@@ -283,13 +278,13 @@ final class DockNavigationLayout extends LinearLayout {
         boolean handled = owned || super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             removeCallbacks(longPress);
-            boolean commit = dragging && action == MotionEvent.ACTION_UP
-                    && insideDock(event);
+            boolean commit = dragging && action == MotionEvent.ACTION_UP;
             int destination = nearest(event.getX());
             cancelFingerFollow();
             tracking = false;
             dragging = false;
             ignoreTouch = false;
+            press(false);
             if (commit) {
                 if (pageSettling) resumeOrReturnHighlight();
                 select.accept(destination);
@@ -328,7 +323,7 @@ final class DockNavigationLayout extends LinearLayout {
         cancelFingerFollow();
         removeCallbacks(longPress);
         removeCallbacks(finishTouch);
-        cancelRecoil();
+        spring.press(false); spring.target = spring.position; spring.snap(); applySpring();
         tracking = dragging = ignoreTouch = false;
         super.onDetachedFromWindow();
     }

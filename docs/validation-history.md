@@ -1,5 +1,13 @@
 # 历史验证记录
 
+## 0.14.13 — 2026-10-12
+
+- Chrona 本地日程与系统日程统一开启周/日/全天卡片边框。共享原生 Dock 和网页 Dock 的水平拖动支持栏外松手确认；阻尼弹簧保留重定向速度，按压目标高光 1.5、整栏 1.1，移动宽度拉伸回弹，释放/取消/多指/减少动态效果收尾。
+- 完整离线回归 37/37，通过日志 `build/dock-spring-full-checks.log`；原生 Dock 57 项覆盖普通 tap/badge、队列 click、栏外/越界 UP、取消、多指、惯性连续性、尺寸目标/回归、宽度弹性、脱离/页面手势接管和关闭动画。原生为 Android 队列替身，不能替代真机。
+- 实际 Edge 动效与指针捕获通过，验证栏外松手切换、移动惯性、宽度拉伸、按压比例、释放恢复、关闭动画和原有导航/弹窗/滚动呈现。网页完整交互检查也通过，pageErrors 为空。证据 `build/dock-spring-web-motion.log`、`dock-spring-web-check.log`、`build/lan-motion-checks/evidence.json` 及 `dock-{pressed,moving}-mobile.png`。截图发现底边裁切后改为向上放大锚点并复验通过。
+- 最终 debug/release 构建、lint 成功，0 errors / 84 warnings，日志 `build/dock-spring-final-build.log`；APK 0.14.13 / 120，1,981,514 字节，SHA256 `a1f2a1fe3c4c88b0798e4eed31afb302e6cdaed33a5470bd0f921b4ff9881604`；原安装签名，无调试标记。
+- 备份 `build/backups/20261012-dock-spring`；分发 `build/distributions/0.14.13/Chrona-0.14.13.apk`，发布核对 `build/release-0.14.13-artifact.json`、`build/dock-spring-public-verification.log`。ADB 无连接设备，Android 真机视觉、触控手感和覆盖安装仍未验收。
+
 ## 0.14.12 — 2026-10-12
 
 - 来源颜色使用 CALENDAR_COLOR，经生产 Instances 查询传递；实际查询方法的平台替身检查验证列投影、空值、黑色和全天项。日历专项 134 项验证颜色传递、仅源色改变时刷新、65/35 RGB 混色及主题改变。日志 `build/calendar-source-color-core.log`、`calendar-source-color-provider.log`。

@@ -82,8 +82,39 @@ function entry(item,click,source=''){const button=action('',click,'entry'),time=
 function dateISO(date){const year=date.getFullYear(),month=String(date.getMonth()+1).padStart(2,'0'),day=String(date.getDate()).padStart(2,'0');return `${year}-${month}-${day}`;}
 const pageOrder=['home','schedule','inbox','timetable','settings'];
 const dockHighlight=node('span','dock-highlight');dockHighlight.hidden=true;dockHighlight.setAttribute('aria-hidden','true');$('.bottom nav').prepend(dockHighlight);
-function updateDock(){const selected=$('.bottom nav button.active');if(!selected){dockHighlight.hidden=true;return;}const wasHidden=dockHighlight.hidden,from={transform:getComputedStyle(dockHighlight).transform,width:getComputedStyle(dockHighlight).width};dockHighlight.hidden=false;dockHighlight.style.width=selected.offsetWidth+'px';dockHighlight.style.transform=`translateX(${selected.offsetLeft}px)`;if(!wasHidden)motion(dockHighlight,[from,{transform:dockHighlight.style.transform,width:dockHighlight.style.width}],240);}
-new ResizeObserver(()=>{activeMotion.get(dockHighlight)?.cancel();updateDock();}).observe($('.bottom nav'));
+const dockNav=$('.bottom nav'),dockState={p:0,v:0,target:0,w:0,wv:0,wt:0,s:1,sv:0,st:1,bar:1,bv:0,bt:1,stretch:1,xv:0};
+let dockFrame=0,dockTime=0,dockTouch=null,dockSuppressClick=false;
+function dockButtons(){return [...dockNav.querySelectorAll('[data-page]')];}
+function dockNearest(clientX){return dockButtons().reduce((best,button)=>{const rect=button.getBoundingClientRect();return Math.abs(clientX-(rect.left+rect.right)/2)<best.distance?{button,distance:Math.abs(clientX-(rect.left+rect.right)/2)}:best;},{button:null,distance:Infinity}).button;}
+function drawDock(){const state=dockState;dockHighlight.style.width=state.w+'px';dockHighlight.style.transform=`translateX(${state.p-state.w/2}px) scale(${state.s*state.stretch},${state.s})`;dockNav.style.transform=`scale(${state.bar})`;}
+function snapDock(){const state=dockState;state.p=state.target;state.w=state.wt;state.s=state.st;state.bar=state.bt;state.stretch=1;state.v=state.wv=state.sv=state.bv=state.xv=0;drawDock();}
+function advanceDock(now){dockFrame=0;const state=dockState;if(reducedMotion.matches){snapDock();return;}const elapsed=Math.min(.064,Math.max(0,(now-dockTime)/1000)),steps=Math.max(1,Math.ceil(elapsed*120)),dt=elapsed/steps;dockTime=now;
+ for(let i=0;i<steps;i++){state.v+=(180*(state.target-state.p)-22*state.v)*dt;state.p+=state.v*dt;state.wv+=(200*(state.wt-state.w)-22*state.wv)*dt;state.w+=state.wv*dt;
+  state.sv+=(260*(state.st-state.s)-24*state.sv)*dt;state.s+=state.sv*dt;const stretch=1+Math.min(.25,Math.abs(state.v)/Math.max(1,state.w)*.025);
+  state.xv+=(200*(stretch-state.stretch)-18*state.xv)*dt;state.stretch+=state.xv*dt;state.bv+=(260*(state.bt-state.bar)-25*state.bv)*dt;state.bar+=state.bv*dt;}
+ drawDock();const moving=Math.abs(state.p-state.target)>.05||Math.abs(state.v)>.1||Math.abs(state.w-state.wt)>.05||Math.abs(state.wv)>.1||Math.abs(state.s-state.st)>.001||Math.abs(state.sv)>.01||Math.abs(state.bar-state.bt)>.001||Math.abs(state.bv)>.01||Math.abs(state.stretch-1)>.001||Math.abs(state.xv)>.01;
+ if(moving)dockFrame=requestAnimationFrame(advanceDock);else snapDock();
+}
+function animateDock(){if(reducedMotion.matches){if(dockFrame)cancelAnimationFrame(dockFrame);dockFrame=0;snapDock();}else if(!dockFrame){dockTime=performance.now();dockFrame=requestAnimationFrame(advanceDock);}}
+function pressDock(pressed){dockState.st=pressed?1.5:1;dockState.bt=pressed?1.1:1;animateDock();}
+function targetDock(button){if(!button)return;dockState.target=button.offsetLeft+button.offsetWidth/2;dockState.wt=button.offsetWidth;animateDock();}
+function updateDock(){const selected=dockNav.querySelector('button.active');if(!selected){dockHighlight.hidden=true;return;}const first=dockHighlight.hidden;dockHighlight.hidden=false;if(first){dockState.target=selected.offsetLeft+selected.offsetWidth/2;dockState.wt=selected.offsetWidth;snapDock();}else targetDock(selected);}
+new ResizeObserver(()=>{if(dockTouch)dockTouch.cancelled=true;updateDock();}).observe(dockNav);
+dockNav.addEventListener('pointerdown',event=>{if(event.button!==0)return;if(dockTouch){dockTouch.cancelled=true;pressDock(false);return;}dockTouch={id:event.pointerId,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false};dockNav.setPointerCapture(event.pointerId);pressDock(true);});
+dockNav.addEventListener('pointermove',event=>{const touch=dockTouch;if(!touch||touch.id!==event.pointerId||touch.cancelled)return;const dx=Math.abs(event.clientX-touch.x),dy=Math.abs(event.clientY-touch.y),rect=dockNav.getBoundingClientRect();
+ touch.left ||= event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom;if(!touch.dragging&&dx>8&&dx>dy*1.25)touch.dragging=true;
+ if(touch.dragging){const buttons=dockButtons(),ratio=dockNav.offsetWidth/rect.width,x=(event.clientX-rect.left)*ratio;dockState.target=Math.max(buttons[0].offsetLeft+buttons[0].offsetWidth/2,Math.min(buttons.at(-1).offsetLeft+buttons.at(-1).offsetWidth/2,x));dockState.wt=dockNearest(event.clientX).offsetWidth;animateDock();}
+});
+function finishDockPointer(event,cancelled=false){const touch=dockTouch;if(!touch||touch.id!==event.pointerId)return;dockTouch=null;pressDock(false);const button=dockNearest(event.clientX),rect=dockNav.getBoundingClientRect(),inside=event.clientX>=rect.left&&event.clientX<=rect.right&&event.clientY>=rect.top&&event.clientY<=rect.bottom;
+ dockSuppressClick=true;setTimeout(()=>{dockSuppressClick=false;},0);if(dockNav.hasPointerCapture(event.pointerId))dockNav.releasePointerCapture(event.pointerId);
+ if(!cancelled&&!touch.cancelled&&button&&(touch.dragging||(!touch.left&&inside)))guard(()=>navigate(button.dataset.page));else updateDock();
+}
+dockNav.addEventListener('pointerup',event=>finishDockPointer(event));dockNav.addEventListener('pointercancel',event=>finishDockPointer(event,true));
+dockNav.addEventListener('lostpointercapture',()=>{if(dockTouch){dockTouch=null;pressDock(false);updateDock();}});
+dockNav.addEventListener('click',event=>{if(dockSuppressClick&&event.detail!==0){event.preventDefault();event.stopImmediatePropagation();}},true);
+window.addEventListener('pointerdown',event=>{if(dockTouch&&event.pointerId!==dockTouch.id){dockTouch.cancelled=true;pressDock(false);}},true);
+window.addEventListener('blur',()=>{dockTouch=null;pressDock(false);updateDock();});
+reducedMotion.addEventListener('change',()=>{if(reducedMotion.matches){if(dockFrame)cancelAnimationFrame(dockFrame);dockFrame=0;snapDock();}});
 let revealObserver=null;
 function clearReveals(){revealObserver?.disconnect();revealObserver=null;document.querySelectorAll('.reveal-pending').forEach(element=>element.classList.remove('reveal-pending'));}
 function observeCards(host){

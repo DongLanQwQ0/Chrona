@@ -1,3 +1,9 @@
+# 本轮补充 · 2026-10-12 · 0.14.13
+
+用户要求 Chrona 日程同样有边框，以及全部 Dock 栏外释放确认、惯性、宽度弹性和按压缩放。CalendarOverviewActivity.eventSurface 对本地/系统统一 outline=true。原生 DockNavigationLayout 使用单一帧循环和 DockSpring（位置/高光缩放/宽度/整栏缩放阻尼弹簧），重定向保留速度；放大目标 1.5/1.1，释放回 1。水平拖动不再以内栏 UP 限制提交，ACTION_CANCEL 与多指仍取消，普通 child queued click 顺序保留。日历父级允许扩展绘制；主导航原宿主已允许。
+
+网页 Dock 使用 Pointer Capture，栏外释放以横向最近项目确定路由，阻止重复鼠标 click，键盘点击保留；同样采用单一 RAF 阻尼弹簧，支持宽度与缩放、减少动态效果、失焦/取消。Edge 实际指针与中间帧验收通过（含 requested scales 与外栏 UP），截图 build/lan-motion-checks/dock-{pressed,moving}-mobile.png。完整离线 37/37、原生 Dock 57 项通过；备份 build/backups/20261012-dock-spring。0.14.13 / 120，数据库 v10，Android 真机视觉/手感未验收。
+
 # 本轮补充 · 2026-10-12 · 0.14.12
 
 用户选择所属日历 CALENDAR_COLOR 并要求主题混色，同时要求搜索移到标题栏。CalendarStore.listInstances 追加颜色列，nullable Integer 经 CalendarOccurrence/AgendaRepository 传到 AgendaEntry；值相等与 hash 纳入颜色，保证源色变化更新。CalendarSourceColors 使用 65% 来源、35% 主题、不依赖平台的 RGB 混合，忽略源 alpha 输出不透明颜色；null 才视为缺失，0 黑色有效。

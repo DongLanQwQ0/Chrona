@@ -110,6 +110,7 @@ public final class CalendarOverviewActivity extends Activity {
                 for (int i = 0; i < Math.min(12, keys.length); i++) positions.put(keys[i], new int[]{xs[i], ys[i]});
         }
         root = column(); root.setPadding(dp(20), dp(12), dp(20), 0); UiStyle.page(this, root);
+        root.setClipChildren(false); root.setClipToPadding(false);
         root.setFitsSystemWindows(false); root.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout header = row();
         header.addView(icon(R.drawable.ic_arrow_left, "返回", this::finish), size(44, 44));
@@ -802,7 +803,7 @@ public final class CalendarOverviewActivity extends Activity {
         UiStyle.minimumAcrylicMix(view, ThemeStore.dark(this) ? 70 : 80);
     }
     private void eventSurface(View view, AgendaEntry entry) {
-        calendarSurface(view, true, 8, entry.system && entry.calendarColor != null);
+        calendarSurface(view, true, 8, true);
         if (entry.system) UiStyle.acrylicSourceColor(view, entry.calendarColor);
     }
     private void notice(LinearLayout container, String message) { TextView label = text(message, 13, false); UiStyle.muted(label); UiStyle.addSpaced(container, label, 12, 12); }
