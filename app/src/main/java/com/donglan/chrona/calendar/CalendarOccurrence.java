@@ -13,9 +13,14 @@ public final class CalendarOccurrence {
     public final long eventId, startMillis, endMillis;
     public final String title, location, calendarName;
     public final boolean allDay;
+    public final Integer calendarColor;
 
     public CalendarOccurrence(long eventId, long startMillis, long endMillis, String title,
             boolean allDay, String location, String calendarName) {
+        this(eventId, startMillis, endMillis, title, allDay, location, calendarName, null);
+    }
+    public CalendarOccurrence(long eventId, long startMillis, long endMillis, String title,
+            boolean allDay, String location, String calendarName, Integer calendarColor) {
         this.eventId = eventId;
         this.startMillis = startMillis;
         this.endMillis = endMillis;
@@ -23,6 +28,7 @@ public final class CalendarOccurrence {
         this.allDay = allDay;
         this.location = location == null ? "" : location;
         this.calendarName = calendarName == null ? "" : calendarName;
+        this.calendarColor = calendarColor;
     }
 
     public long displayStart(ZoneId zone) {
@@ -51,10 +57,10 @@ public final class CalendarOccurrence {
         CalendarOccurrence item = (CalendarOccurrence) other;
         return eventId == item.eventId && startMillis == item.startMillis && endMillis == item.endMillis
                 && allDay == item.allDay && title.equals(item.title) && location.equals(item.location)
-                && calendarName.equals(item.calendarName);
+                && calendarName.equals(item.calendarName) && Objects.equals(calendarColor, item.calendarColor);
     }
 
     @Override public int hashCode() {
-        return Objects.hash(eventId, startMillis, endMillis, title, allDay, location, calendarName);
+        return Objects.hash(eventId, startMillis, endMillis, title, allDay, location, calendarName, calendarColor);
     }
 }

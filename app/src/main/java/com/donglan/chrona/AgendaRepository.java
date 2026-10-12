@@ -67,7 +67,7 @@ final class AgendaRepository {
                         cancellation.throwIfCanceled();
                         AgendaEntry entry = new AgendaEntry(item.eventId, 0, item.displayStart(zone),
                                 item.displayEnd(zone), item.title, item.location, "", item.calendarName,
-                                true, item.allDay, true);
+                                true, item.allDay, true, item.calendarColor);
                         if (!entry.overlaps(begin, until)) continue;
                         if (result.entries.size() == LIMIT) { result.truncated = true; break; }
                         result.entries.add(entry);

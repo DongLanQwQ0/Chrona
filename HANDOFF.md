@@ -1,3 +1,9 @@
+# 本轮补充 · 2026-10-12 · 0.14.12
+
+用户选择所属日历 CALENDAR_COLOR 并要求主题混色，同时要求搜索移到标题栏。CalendarStore.listInstances 追加颜色列，nullable Integer 经 CalendarOccurrence/AgendaRepository 传到 AgendaEntry；值相等与 hash 纳入颜色，保证源色变化更新。CalendarSourceColors 使用 65% 来源、35% 主题、不依赖平台的 RGB 混合，忽略源 alpha 输出不透明颜色；null 才视为缺失，0 黑色有效。
+
+日历列表来源色点、周/日/全天 acrylic 卡片应用混色。UiStyle AcrylicSurfaceDrawable 保存原始 calendarColor，绘制时按当前主题计算强调颜色与底色，关闭 acrylic 的不透明底板也保留来源着色；文字保持主题文字色。搜索替代原「日历」标题，返回/新建保留。备份 build/backups/20261012-calendar-source-color；0.14.12 / 119，数据库 v10；验证见 docs/validation-history.md，真机观感尚未验收。
+
 # 本轮补充 · 2026-10-12 · 0.14.11
 
 用户要求月视图选择 day 不重建月历。monthDates 与 monthDetails 独立保存，navigateDate 首先尝试 selectMonthDay：当前渲染同月时更新旧/新日期颜色、描边、语义和当天列表，保留月历、日期格与双轴滚动宿主，不调用 load/renderBody。重复点同一天无操作，今天/日期选择器复用；跨月仍正常导航。后台同上下文读取时允许局部选择，结果相同不会重建。备份 build/backups/20261012-month-day-selection；专项真实选择控制器检查保留宿主身份、无读取/无重建，127 项通过。0.14.11 / 118，数据库 v10；真机呈现仍未验收。

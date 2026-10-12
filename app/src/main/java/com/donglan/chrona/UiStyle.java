@@ -491,6 +491,7 @@ public final class UiStyle {
         private boolean lastSelected;
         private int drawableAlpha = 255;
         private int minimumMix;
+        private Integer calendarColor;
         private final View host;
         private boolean selected;
         private boolean outline;
@@ -503,7 +504,7 @@ public final class UiStyle {
             this.radius = radius;
             this.selected = selected;
             this.outline = outline;
-            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface);
+            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface, calendarColor);
         }
 
         boolean belongsTo(View candidate, int candidateRadius) {
@@ -514,7 +515,7 @@ public final class UiStyle {
             if (this.selected == selected && this.outline == outline) return;
             this.selected = selected;
             this.outline = outline;
-            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface);
+            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface, calendarColor);
             invalidateSelf();
         }
 
@@ -551,7 +552,8 @@ public final class UiStyle {
             int mix = Math.max(minimumMix, ThemeStore.surfaceMix(host.getContext()));
             Palette palette = colors(host.getContext());
             boolean dark = ThemeStore.dark(host.getContext());
-            int outlineColor = selected ? palette.primary
+            int accent = CalendarSourceColors.mix(calendarColor, palette.primary);
+            int outlineColor = selected ? accent
                     : dark ? palette.outline : Color.WHITE;
             if (lastMix == mix && lastSurface == palette.surface && lastAlt == palette.surfaceAlt
                     && lastOutline == outlineColor && lastText == palette.text && lastDark == dark
@@ -571,12 +573,16 @@ public final class UiStyle {
             int mixedSurface = blendRgb(palette.surface, toneTarget, toneShift);
             int mixedAlt = blendRgb(palette.surfaceAlt, toneTarget, toneShift);
             if (selected) {
-                mixedSurface = blendRgb(mixedSurface, palette.primaryContainer, .34f);
-                mixedAlt = blendRgb(mixedAlt, palette.primaryContainer, .34f);
+                int selection = calendarColor == null ? palette.primaryContainer : accent;
+                mixedSurface = blendRgb(mixedSurface, selection, .34f);
+                mixedAlt = blendRgb(mixedAlt, selection, .34f);
             }
+            fallbackSurface.setColors(new int[]{
+                    alpha(calendarColor == null ? palette.surface : blendRgb(palette.surface, accent, .20f), dark ? 246 : 248),
+                    alpha(calendarColor == null ? palette.surfaceAlt : blendRgb(palette.surfaceAlt, accent, .20f), dark ? 238 : 242)});
             blurredSurface.setColors(new int[]{alpha(mixedSurface, mix * 255 / 100),
                     alpha(mixedAlt, mix * 225 / 100)});
-            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface);
+            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface, calendarColor);
         }
 
         @Override public void setAlpha(int alpha) {
@@ -592,11 +598,11 @@ public final class UiStyle {
     }
 
     private static void applyAcrylicStroke(View host, boolean selected, boolean outline,
-            GradientDrawable blurredSurface, GradientDrawable fallbackSurface) {
+            GradientDrawable blurredSurface, GradientDrawable fallbackSurface, Integer calendarColor) {
         Palette palette = colors(host.getContext());
         boolean dark = ThemeStore.dark(host.getContext());
         int width = outline ? dp(host, selected ? 2 : 1) : 0;
-        int strokeColor = selected ? palette.primary : dark ? palette.outline : Color.WHITE;
+        int strokeColor = selected ? CalendarSourceColors.mix(calendarColor, palette.primary) : dark ? palette.outline : Color.WHITE;
         int strokeAlpha = selected ? 240 : dark ? 210 : 225;
         int color = outline ? alpha(strokeColor, strokeAlpha) : Color.TRANSPARENT;
         blurredSurface.setStroke(width, color);
@@ -719,6 +725,11 @@ public final class UiStyle {
         if (view.getBackground() instanceof AcrylicSurfaceDrawable acrylic) {
             acrylic.minimumMix = Math.max(0, Math.min(100, percent));
             view.invalidate();
+        }
+    }
+    static void acrylicSourceColor(View view, Integer calendarColor) {
+        if (view.getBackground() instanceof AcrylicSurfaceDrawable acrylic) {
+            acrylic.calendarColor = calendarColor; acrylic.lastMix = -1; view.invalidate();
         }
     }
 

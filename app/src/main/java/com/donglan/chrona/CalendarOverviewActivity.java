@@ -113,9 +113,8 @@ public final class CalendarOverviewActivity extends Activity {
         root.setFitsSystemWindows(false); root.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout header = row();
         header.addView(icon(R.drawable.ic_arrow_left, "返回", this::finish), size(44, 44));
-        TextView name = text("日历", 24, true);
-        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1);
-        nameParams.setMargins(dp(12), 0, 0, 0); header.addView(name, nameParams);
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(44), 1);
+        searchParams.setMargins(dp(8), 0, dp(8), 0); header.addView(searchField(), searchParams);
         header.addView(icon(R.drawable.ic_add, "记录新日程", () -> startActivity(new Intent(this, MainActivity.class))), size(44, 44));
         root.addView(header);
         LinearLayout navigation = row();
@@ -141,18 +140,6 @@ public final class CalendarOverviewActivity extends Activity {
         tabs.setSelectedIndex(mode);
         updateTabSemantics();
         UiStyle.addSpaced(root, tabs, 4, 10);
-        LinearLayout filters = row();
-        EditText search = new EditText(this); search.setSingleLine(); search.setHint("搜索日程");
-        search.setTextSize(14); search.setTextColor(UiStyle.colors(this).text);
-        search.setHintTextColor(UiStyle.colors(this).muted); search.setPadding(dp(12), 0, dp(12), 0);
-        calendarSurface(search, false, UiStyle.RADIUS_PILL, false); search.setText(query);
-        search.addTextChangedListener(new TextWatcher() {
-            public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
-            public void onTextChanged(CharSequence s, int a, int b, int c) { }
-            public void afterTextChanged(Editable s) { query = s.toString(); renderBody(); }
-        });
-        filters.addView(search, new LinearLayout.LayoutParams(0, dp(40), 1));
-        UiStyle.addSpaced(root, filters, 0, 2);
         sourceSwitch = new android.widget.Switch(this);
         sourceSwitch.setText("包含系统日程"); sourceSwitch.setTextSize(14); sourceSwitch.setChecked(includeSystem);
         sourceSwitch.setPadding(dp(6), 0, dp(6), 0); sourceSwitch.setSwitchPadding(dp(12)); UiStyle.toggle(sourceSwitch);
@@ -634,7 +621,13 @@ public final class CalendarOverviewActivity extends Activity {
         for (AgendaEntry e : items) {
             LinearLayout card = column(); card.setPadding(dp(16), dp(14), dp(16), dp(14));
             TextView title = text(e.title, 17, true); title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            card.addView(title);
+            LinearLayout titleRow = row();
+            View sourceDot = new View(this); android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+            dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dot.setColor(CalendarSourceColors.mix(e.system ? e.calendarColor : null, UiStyle.colors(this).primary)); sourceDot.setBackground(dot);
+            sourceDot.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(7), dp(7)); dotParams.rightMargin = dp(9);
+            titleRow.addView(sourceDot, dotParams); titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1)); card.addView(titleRow);
             TextView time = text("", 13, false);
             EntryStatus status = new EntryStatus(e, title, time); statuses.add(status); updateStatus(status);
             UiStyle.addSpaced(card, time, 6, 0);
@@ -699,7 +692,7 @@ public final class CalendarOverviewActivity extends Activity {
             for (int i = 0; i < visible; i++) {
                 AgendaEntry e = allDayItems.get(i);
                 hasAllDay = true; TextView card = action(e.title, () -> open(e)); card.setTextSize(11); card.setMaxLines(2);
-                calendarSurface(card, true, 8, false); column.addView(card, new LinearLayout.LayoutParams(-1, -2));
+                eventSurface(card, e); card.setTextColor(UiStyle.colors(this).text); column.addView(card, new LinearLayout.LayoutParams(-1, -2));
             }
             if (allDayItems.size() > visible) column.addView(action("+" + (allDayItems.size() - visible), () -> showAllDay(day, allDayItems)));
             allDays.addView(column, new LinearLayout.LayoutParams(dayWidth, -2));
@@ -728,7 +721,7 @@ public final class CalendarOverviewActivity extends Activity {
             boolean compact = durationHeight < dp(36);
             TextView card = text(compact ? e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), compact ? 12 : days == 1 ? 14 : 12, true);
             card.setPadding(dp(5), dp(compact ? 1 : 4), dp(4), dp(compact ? 1 : 3)); card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            card.setTextColor(UiStyle.colors(this).text); calendarSurface(card, true, 8, false);
+            card.setTextColor(UiStyle.colors(this).text); eventSurface(card, e);
             android.graphics.Paint.FontMetrics metrics = card.getPaint().getFontMetrics();
             int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
             int cardHeight = Math.max(lineHeight + dp(compact ? 4 : 8), durationHeight);
@@ -787,6 +780,18 @@ public final class CalendarOverviewActivity extends Activity {
         TextView view = text(title, 14, true); view.setGravity(Gravity.CENTER); view.setMinHeight(dp(44)); view.setPadding(dp(10), 0, dp(10), 0);
         view.setTextColor(UiStyle.colors(this).primary); view.setOnClickListener(v -> click.run()); UiStyle.pressable(view); return view;
     }
+    private EditText searchField() {
+        EditText search = new EditText(this); search.setSingleLine(); search.setHint("搜索日程");
+        search.setContentDescription("日历，搜索日程"); search.setTextSize(14); search.setTextColor(UiStyle.colors(this).text);
+        search.setHintTextColor(UiStyle.colors(this).muted); search.setPadding(dp(12), 0, dp(12), 0);
+        calendarSurface(search, false, UiStyle.RADIUS_PILL, false); search.setText(query);
+        search.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            public void afterTextChanged(Editable s) { query = s.toString(); renderBody(); }
+        });
+        return search;
+    }
     private ImageButton icon(int resource, String description, Runnable click) {
         ImageButton button = new ImageButton(this); button.setImageResource(resource); button.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
         button.setPadding(dp(11), dp(11), dp(11), dp(11)); button.setContentDescription(description);
@@ -795,6 +800,10 @@ public final class CalendarOverviewActivity extends Activity {
     private void calendarSurface(View view, boolean selected, int radius, boolean outline) {
         UiStyle.acrylicChoice(view, selected, radius, outline);
         UiStyle.minimumAcrylicMix(view, ThemeStore.dark(this) ? 70 : 80);
+    }
+    private void eventSurface(View view, AgendaEntry entry) {
+        calendarSurface(view, true, 8, entry.system && entry.calendarColor != null);
+        if (entry.system) UiStyle.acrylicSourceColor(view, entry.calendarColor);
     }
     private void notice(LinearLayout container, String message) { TextView label = text(message, 13, false); UiStyle.muted(label); UiStyle.addSpaced(container, label, 12, 12); }
     private TextView text(String title, int sp, boolean bold) {

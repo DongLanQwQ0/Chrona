@@ -76,7 +76,7 @@ public final class CalendarStore {
         ContentUris.appendId(uri, end);
         String[] projection = {CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN,
                 CalendarContract.Instances.END, Events.TITLE, Events.ALL_DAY,
-                Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME};
+                Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR};
         List<CalendarOccurrence> result = new ArrayList<>();
         try (Cursor cursor = resolver.query(uri.build(), projection, Calendars.VISIBLE + "=1 AND ("
                 + Events.STATUS + " IS NULL OR " + Events.STATUS + "!=?)",
@@ -88,7 +88,8 @@ public final class CalendarStore {
                 long start = cursor.getLong(1), finish = cursor.getLong(2);
                 if (finish <= start) continue;
                 result.add(new CalendarOccurrence(cursor.getLong(0), start, finish,
-                        cursor.getString(3), cursor.getInt(4) != 0, cursor.getString(5), cursor.getString(6)));
+                        cursor.getString(3), cursor.getInt(4) != 0, cursor.getString(5), cursor.getString(6),
+                        cursor.isNull(7) ? null : cursor.getInt(7)));
             }
         }
         return result;

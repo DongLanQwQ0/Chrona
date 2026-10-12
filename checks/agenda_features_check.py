@@ -133,17 +133,19 @@ public class SqlCheck {
 calendar = (src / 'calendar/CalendarStore.java').read_text(encoding='utf-8')
 files['com/donglan/chrona/calendar/CalendarOccurrence.java'] = (src / 'calendar/CalendarOccurrence.java').read_text(encoding='utf-8')
 files['com/donglan/chrona/calendar/AllDayDates.java'] = (src / 'calendar/AllDayDates.java').read_text(encoding='utf-8')
+files['android/os/CancellationSignal.java'] = 'package android.os; public class CancellationSignal {}'
 files['com/donglan/chrona/calendar/ReminderProviderCheck.java'] = '''package com.donglan.chrona.calendar;
 import java.util.*;
 class Uri {static class Builder {String build(){return "instances";}}String buildUpon(){return "";}}
 class ContentUris {static void appendId(Uri.Builder builder,long value){}}
 class CalendarContract {static class Instances {static final String EVENT_ID="id",BEGIN="begin",END="end";static class CONTENT_URI {static Uri.Builder buildUpon(){return new Uri.Builder();}}}}
-class Calendars {static final String VISIBLE="visible",CALENDAR_DISPLAY_NAME="calendar";}
+class Calendars {static final String VISIBLE="visible",CALENDAR_DISPLAY_NAME="calendar",CALENDAR_COLOR="calendar_color";}
 class Events {static final String TITLE="title",ALL_DAY="all_day",EVENT_LOCATION="place",STATUS="status";static final int STATUS_CANCELED=2;}
 class Cursor implements AutoCloseable {
  List<Object[]>rows;int i=-1;Cursor(List<Object[]>r){rows=r;}boolean moveToNext(){return ++i<rows.size();}
  boolean isNull(int c){return rows.get(i)[c]==null;}long getLong(int c){return (long)rows.get(i)[c];}
  String getString(int c){return (String)rows.get(i)[c];}public void close(){}
+ int getInt(int c){return rows.get(i)[c]==null?0:((Number)rows.get(i)[c]).intValue();}
 }
 class Resolver {
  List<Object[]>rows=new ArrayList<>();
@@ -151,10 +153,15 @@ class Resolver {
   if(!selection.contains("all_day=0")||!selection.contains("visible=1"))throw new AssertionError("timed visible filter");
   return new Cursor(rows);
  }
+ Cursor query(String uri,String[]projection,String selection,String[]args,String sort,android.os.CancellationSignal cancellation){
+  if(projection.length!=8||!projection[7].equals("calendar_color")||!selection.contains("visible=1"))throw new AssertionError("calendar color projection");
+  return new Cursor(rows);
+ }
 }
 public class ReminderProviderCheck {
  final Resolver resolver=new Resolver();void requireRead(){}
  ''' + method(calendar, 'public List<CalendarOccurrence> reminderInstances(') + '''
+ ''' + method(calendar, 'public List<CalendarOccurrence> listInstances(long begin, long end,\n            android.os.CancellationSignal cancellation, int limit)') + '''
  static Object[]e(long id,long start,long end){return new Object[]{id,start,end,"event",null,"room","system"};}
  public static void main(String[]args){
   ReminderProviderCheck c=new ReminderProviderCheck();Set<Long>linked=new HashSet<>();
@@ -166,6 +173,12 @@ public class ReminderProviderCheck {
   result=c.reminderInstances(1000,4000,linked,Set.of("system:2002:800","system:2003:1100"));
   if(result.size()!=2||result.get(0).eventId!=2001||result.get(1).startMillis!=1200)throw new AssertionError("hidden recurrence");
   System.out.println("Production reminder provider scan passed: 1199 linked copies, ended, active/future, hidden recurrence");
+  c.resolver.rows.clear();c.resolver.rows.add(new Object[]{1L,100L,200L,"color",0,"","source",0xFFFF0000});
+  c.resolver.rows.add(new Object[]{2L,100L,200L,"missing",1,"","source",null});
+  c.resolver.rows.add(new Object[]{3L,100L,200L,"black",0,"","source",0});
+  result=c.listInstances(0,300,null,10);
+  if(result.size()!=3||result.get(0).calendarColor!=0xFFFF0000||result.get(1).calendarColor!=null||result.get(2).calendarColor!=0||!result.get(1).allDay)throw new AssertionError("provider source color/null/black/all-day");
+  System.out.println("Production instance query passed: CALENDAR_COLOR projection, null and black source colors");
  }
 }'''
 paths = []

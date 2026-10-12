@@ -159,8 +159,17 @@ public class CalendarReviewCheck extends Context {
   check(a.zone.equals(zone)&&a.entries.size()==1&&c.calendarReads.get()==0,"captured zone and isolated source");TimeZone.setDefault(prior);
   check(a.sameContents(load(c,midnight,midnight+86400000,zone,false,new CancellationSignal())),"identical snapshots keep native content");
   c.system.add(new CalendarOccurrence(8,midnight,midnight+3600000,"copy",false,"","system"));c.linked.add(8L);
-  c.system.add(new CalendarOccurrence(9,midnight,midnight+3600000,"external",false,"","system"));
+  c.system.add(new CalendarOccurrence(9,midnight,midnight+3600000,"external",false,"","system",0xFFFF0000));
   check(load(c,midnight,midnight+86400000,zone,true,new CancellationSignal()).entries.size()==2,"linked provider copy excluded");
+  AgendaRepository.Snapshot colored=load(c,midnight,midnight+86400000,zone,true,new CancellationSignal());
+  check(colored.entries.get(1).calendarColor==0xFFFF0000,"calendar color reaches display snapshot");
+  c.system.set(1,new CalendarOccurrence(9,midnight,midnight+3600000,"external",false,"","system",0xFF00FF00));
+  check(!colored.sameContents(load(c,midnight,midnight+86400000,zone,true,new CancellationSignal())),"source-only color changes trigger refresh");
+  check(CalendarSourceColors.mix(null,0xFF336699)==0xFF336699,"missing source uses theme");
+  check(CalendarSourceColors.mix(0xFFFF0000,0xFF0000FF)==0xFFA60059,"source 65/theme 35 RGB mix");
+  check(CalendarSourceColors.mix(0,0xFFFFFFFF)==0xFF595959,"black source is valid, output opaque");
+  check(CalendarSourceColors.mix(0x00FF0000,0xFF0000FF)==0xFFA60059,"RGB source without alpha supported");
+  check(CalendarSourceColors.mix(0xFFFF0000,0xFF00FF00)==0xFFA65900,"active theme changes mixed color");
   c.failCalendar=true;check(load(c,midnight,midnight+86400000,zone,true,new CancellationSignal()).systemUnavailable,"provider failure is visible");c.failCalendar=false;
   c.cancelCalendar=true;try{load(c,midnight,midnight+86400000,zone,true,new CancellationSignal());throw new AssertionError("provider cancellation swallowed");}catch(android.os.OperationCanceledException expected){}
   CalendarReviewCheck m=new CalendarReviewCheck();
@@ -204,7 +213,7 @@ for name, content in files.items():
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding='utf-8')
     paths.append(p)
-paths += [src / name for name in ['AgendaEntry.java','AgendaRepository.java','CalendarDayCounts.java','CalendarViewport.java','CalendarSwipe.java',
+paths += [src / name for name in ['AgendaEntry.java','AgendaRepository.java','CalendarDayCounts.java','CalendarViewport.java','CalendarSwipe.java','CalendarSourceColors.java',
     'calendar/CalendarOccurrence.java','calendar/AllDayDates.java','data/EventCandidate.java','data/EventCategory.java']]
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 subprocess.run([str(java / 'javac.exe'),'--release','17','-encoding','UTF-8','-d',str(out),*map(str,paths)],check=True)

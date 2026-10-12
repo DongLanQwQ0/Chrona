@@ -1,5 +1,12 @@
 # 历史验证记录
 
+## 0.14.12 — 2026-10-12
+
+- 来源颜色使用 CALENDAR_COLOR，经生产 Instances 查询传递；实际查询方法的平台替身检查验证列投影、空值、黑色和全天项。日历专项 134 项验证颜色传递、仅源色改变时刷新、65/35 RGB 混色及主题改变。日志 `build/calendar-source-color-core.log`、`calendar-source-color-provider.log`。
+- 提醒 37 项、实际 SQLite eligibility 扫描、组件来源失败/隔离、动效核心 30 项与自定义主题检查通过；日志 `build/calendar-source-color-{provider,widget,motion,theme}.log`。真实 Android 提供器与视觉未验收。
+- debug/release 与 lint 通过，0 errors / 84 warnings，日志 `build/calendar-source-color-build.log`。APK 0.14.12 / 119，1,978,986 字节，SHA256 `5ddeb77d48e82299efe52c59a455b1c2f3fdfe90096f279bdb0053c3dcd7636a`；原安装证书，无调试标记，分发 `build/distributions/0.14.12/Chrona-0.14.12.apk`。
+- 备份 `build/backups/20261012-calendar-source-color`；ADB 无连接设备。发布/公共下载核对证据 `build/release-0.14.12-artifact.json`、`build/calendar-source-color-public-verification.log`；尚未验收真实提供器颜色、原生视觉与覆盖安装。
+
 ## 0.14.11 — 2026-10-12
 
 - 月内选日采用原位更新，专项 127 项通过；新增检查执行真实 selectMonthDay/navigateDate，核对月历/列表宿主/滚动宿主身份保留、无整页重建或读取、只更新前后选中格与当天列表、重复选择无操作、后台刷新时局部选择及跨月导航。Android UI 为替身，未验收真机呈现。日志 `build/month-day-selection-check.log`。
