@@ -1,5 +1,12 @@
 # 历史验证记录
 
+## 0.14.10 — 2026-10-12
+
+- 根据用户实际 Android 截图检查透明度叠加与壁纸底板：数量取消二次 alpha，非本月整格仅弱化一次；日历局部底板提高混色下限，选中日期描边，系统/已结束标题恢复正常文字对比度。备份 `build/backups/20261012-calendar-contrast-gestures`。
+- 日历生产逻辑专项 121 项（新增左右滑动、抖动、纵向/嵌套滚动优先、短滑动、多指/加载取消等）、动效核心 30 项、Dock 49 项及自定义主题检查通过。证据 `build/calendar-contrast-{gesture,motion,dock,theme}-check.log`；手势状态机是真实代码，Android 事件派发与视觉仍需真机验收。
+- debug/release 构建与 lint 通过，0 errors / 84 warnings，日志 `build/calendar-contrast-build.log`。release APK 0.14.10 / 117，1,977,850 字节，SHA256 `5c77e29ca27c1e3cfe6fb3b3352cfdb7dc00f84107570c18d0eceabadf8eb93b`；原证书 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`，无调试标记。
+- ADB 无连接设备，真机视觉、手势手感及覆盖安装未验收。分发 `build/distributions/0.14.10/Chrona-0.14.10.apk`；发布与匿名下载/应用更新解析核对证据 `build/release-0.14.10-artifact.json`、`build/calendar-contrast-public-verification.log`。
+
 ## 0.14.9 — 2026-10-12
 
 - 先完成九项问题审查，再实施修复，见 `docs/calendar-review-20261012.md`。修改前备份 `build/backups/20261012-calendar-review`；用户 AGENTS 与角色 TOML 未纳入版本提交。

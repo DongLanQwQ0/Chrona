@@ -51,6 +51,8 @@ public final class CalendarOverviewActivity extends Activity {
     private android.animation.ValueAnimator tabMotion;
     private int presentationGeneration;
     private boolean bodyTransitionRunning, loadingStale, bodyTouchActive;
+    private final CalendarSwipe swipe = new CalendarSwipe();
+    private float swipeStartX;
     private boolean animateNext;
     private int transitionDirection;
     private FrameLayout body;
@@ -127,7 +129,7 @@ public final class CalendarOverviewActivity extends Activity {
         navigation.addView(today, new LinearLayout.LayoutParams(-2, dp(44))); root.addView(navigation);
         tabs = new DockNavigationLayout(this, this::changeMode, () -> { });
         tabs.setPadding(dp(3), dp(3), dp(3), dp(3));
-        UiStyle.acrylicChoice(tabs, false, UiStyle.RADIUS_PILL, false);
+        calendarSurface(tabs, false, UiStyle.RADIUS_PILL, false);
         String[] labels = {"年", "月", "周", "日", "日程"};
         for (int i = 0; i < labels.length; i++) {
             int target = i;
@@ -141,7 +143,7 @@ public final class CalendarOverviewActivity extends Activity {
         EditText search = new EditText(this); search.setSingleLine(); search.setHint("搜索日程");
         search.setTextSize(14); search.setTextColor(UiStyle.colors(this).text);
         search.setHintTextColor(UiStyle.colors(this).muted); search.setPadding(dp(12), 0, dp(12), 0);
-        UiStyle.acrylicChoice(search, false, UiStyle.RADIUS_PILL, false); search.setText(query);
+        calendarSurface(search, false, UiStyle.RADIUS_PILL, false); search.setText(query);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
             public void onTextChanged(CharSequence s, int a, int b, int c) { }
@@ -164,7 +166,30 @@ public final class CalendarOverviewActivity extends Activity {
         bodyStage = new FrameLayout(this);
         body = new FrameLayout(this) {
             @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
-                if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) bodyTouchActive = true;
+                int action = event.getActionMasked();
+                if (action == android.view.MotionEvent.ACTION_DOWN) {
+                    bodyTouchActive = true; swipeStartX = event.getX();
+                    swipe.begin(event.getX(), event.getY(), !loading && !bodyTransitionRunning);
+                }
+                if (action == android.view.MotionEvent.ACTION_POINTER_DOWN || action == android.view.MotionEvent.ACTION_CANCEL) swipe.cancel();
+                if (action == android.view.MotionEvent.ACTION_MOVE && !swipe.claimed()) {
+                    boolean childCanScroll = horizontalViewport != null
+                            && horizontalViewport.canScrollHorizontally(event.getX() < swipeStartX ? 1 : -1);
+                    if (swipe.move(event.getX(), event.getY(), android.view.ViewConfiguration.get(CalendarOverviewActivity.this).getScaledTouchSlop(), childCanScroll)) {
+                        android.view.MotionEvent cancel = android.view.MotionEvent.obtain(event);
+                        cancel.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                        super.dispatchTouchEvent(cancel); cancel.recycle();
+                    }
+                }
+                if (swipe.claimed()) {
+                    if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) {
+                        int direction = swipe.finish(event.getX(), event.getY(), Math.max(dp(48), getWidth() * .15f));
+                        bodyTouchActive = false;
+                        handler.removeCallbacks(deferredApply); handler.postDelayed(deferredApply, 120);
+                        if (direction != 0 && (horizontalViewport == null || !horizontalViewport.canScrollHorizontally(direction))) shift(direction);
+                    }
+                    return true;
+                }
                 boolean handled = super.dispatchTouchEvent(event);
                 if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP || event.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL) {
                     bodyTouchActive = false; handler.removeCallbacks(deferredApply); handler.postDelayed(deferredApply, 120);
@@ -211,7 +236,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
     @Override protected void onPause() {
         resumed = false; handler.removeCallbacks(minuteTick); handler.removeCallbacks(calendarReload);
-        rememberPosition(); cancelRead(); bodyTouchActive = false;
+        rememberPosition(); cancelRead(); swipe.cancel(); bodyTouchActive = false;
         if (allDayDialog != null) { allDayDialog.dismiss(); allDayDialog = null; }
         finishTabMotion(); finishBodyMotion(); animateNext = false;
         if (calendarObserver != null) { getContentResolver().unregisterContentObserver(calendarObserver); calendarObserver = null; }
@@ -479,7 +504,7 @@ public final class CalendarOverviewActivity extends Activity {
                 LinearLayout months = row(); months.setGravity(Gravity.TOP);
                 for (int offset = 0; offset < 2; offset++) {
                     LocalDate month = LocalDate.of(date.getYear(), pair * 2 + offset + 1, 1);
-                    LinearLayout tile = column(); tile.setPadding(dp(8), dp(10), dp(8), dp(10)); UiStyle.glass(tile);
+                    LinearLayout tile = column(); tile.setPadding(dp(8), dp(10), dp(8), dp(10)); calendarSurface(tile, false, UiStyle.RADIUS_PANEL, true);
                     TextView label = text(month.getMonthValue() + "月", 17, true); label.setTextColor(UiStyle.colors(this).primary); tile.addView(label);
                     tile.addView(monthGrid(month, entries, true));
                     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1); params.setMargins(0, 0, offset == 0 ? dp(8) : 0, 0);
@@ -524,23 +549,24 @@ public final class CalendarOverviewActivity extends Activity {
                 if (!ownMonth) number.setTextColor(UiStyle.colors(this).muted);
                 else if (day.equals(date) || day.equals(LocalDate.now())) number.setTextColor(UiStyle.colors(this).primary);
                 int markerHeight = mini ? dp(4) : Math.round(android.util.TypedValue.applyDimension(
-                        android.util.TypedValue.COMPLEX_UNIT_SP, 10, getResources().getDisplayMetrics())) + dp(3);
+                        android.util.TypedValue.COMPLEX_UNIT_SP, 11, getResources().getDisplayMetrics())) + dp(3);
                 FrameLayout.LayoutParams numberParams = new FrameLayout.LayoutParams(-1, -1);
                 numberParams.bottomMargin = markerHeight; cell.addView(number, numberParams);
                 if (!mini) {
-                    UiStyle.acrylicChoice(cell, day.equals(date) && ownMonth, 15, day.equals(LocalDate.now()) && ownMonth);
-                    cell.setAlpha(ownMonth ? 1f : .55f);
+                    calendarSurface(cell, day.equals(date) && ownMonth, 15,
+                            ownMonth && (day.equals(date) || day.equals(LocalDate.now())));
+                    cell.setAlpha(ownMonth ? 1f : .65f);
                 }
                 if (count > 0) {
                     int color = count <= LIGHT_DAY_MAX ? UiStyle.colors(this).primary
                             : count <= MEDIUM_DAY_MAX ? (ThemeStore.dark(this) ? 0xFFE8BD79 : 0xFF9B742C)
                             : (ThemeStore.dark(this) ? 0xFFF2A69B : 0xFFAA6058);
-                    LinearLayout marker = row(); marker.setGravity(Gravity.CENTER); marker.setAlpha(ownMonth ? .7f : .45f);
+                    LinearLayout marker = row(); marker.setGravity(Gravity.CENTER);
                     View dot = new View(this); android.graphics.drawable.GradientDrawable dotShape = new android.graphics.drawable.GradientDrawable();
                     dotShape.setShape(android.graphics.drawable.GradientDrawable.OVAL); dotShape.setColor(color); dot.setBackground(dotShape);
-                    marker.addView(dot, new LinearLayout.LayoutParams(dp(2), dp(2)));
+                    marker.addView(dot, new LinearLayout.LayoutParams(dp(3), dp(3)));
                     if (!mini) {
-                        TextView countLabel = text(count > 99 ? "99+" : "" + count, 10, false); countLabel.setTextColor(color);
+                        TextView countLabel = text(count > 99 ? "99+" : "" + count, 11, false); countLabel.setTextColor(color);
                         countLabel.setPadding(dp(5), 0, 0, 0); marker.addView(countLabel);
                     }
                     marker.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
@@ -574,7 +600,7 @@ public final class CalendarOverviewActivity extends Activity {
     private void dayList(LinearLayout content, List<AgendaEntry> entries, LocalDate day) {
         List<AgendaEntry> items = onDay(entries, day);
         if (items.isEmpty()) { notice(content, "当天暂无日程"); return; }
-        LinearLayout group = column(); UiStyle.glass(group);
+        LinearLayout group = column(); calendarSurface(group, false, UiStyle.RADIUS_PANEL, true);
         for (AgendaEntry e : items) {
             LinearLayout card = column(); card.setPadding(dp(16), dp(14), dp(16), dp(14));
             TextView title = text(e.title, 17, true); title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -594,7 +620,7 @@ public final class CalendarOverviewActivity extends Activity {
         long now = System.currentTimeMillis(); AgendaEntry e = status.entry;
         String label = e.finish() <= now ? "已结束" : e.start <= now ? "现在" : e.start - now <= 24 * 60 * 60_000L
                 ? Math.max(1, (e.start - now + 59_999) / 60_000) + "分钟后开始" : "";
-        status.title.setTextColor(e.finish() <= now ? UiStyle.colors(this).muted : UiStyle.colors(this).text);
+        status.title.setTextColor(UiStyle.colors(this).text);
         status.time.setText(time(e) + (label.isEmpty() ? "" : "  ·  " + label));
         status.time.setTextColor(e.start <= now && e.finish() > now ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
     }
@@ -628,7 +654,7 @@ public final class CalendarOverviewActivity extends Activity {
                 date = day; changeMode(DAY);
             });
             label.setTag("day:" + day);
-            if (day.equals(LocalDate.now())) UiStyle.acrylicChoice(label, true, 16, false);
+            if (day.equals(LocalDate.now())) calendarSurface(label, true, 16, true);
             dates.addView(label, new LinearLayout.LayoutParams(dayWidth, dp(60)));
         }
         layout.addView(dates);
@@ -643,7 +669,7 @@ public final class CalendarOverviewActivity extends Activity {
             for (int i = 0; i < visible; i++) {
                 AgendaEntry e = allDayItems.get(i);
                 hasAllDay = true; TextView card = action(e.title, () -> open(e)); card.setTextSize(11); card.setMaxLines(2);
-                UiStyle.acrylicChoice(card, true, 8, false); column.addView(card, new LinearLayout.LayoutParams(-1, -2));
+                calendarSurface(card, true, 8, false); column.addView(card, new LinearLayout.LayoutParams(-1, -2));
             }
             if (allDayItems.size() > visible) column.addView(action("+" + (allDayItems.size() - visible), () -> showAllDay(day, allDayItems)));
             allDays.addView(column, new LinearLayout.LayoutParams(dayWidth, -2));
@@ -672,8 +698,7 @@ public final class CalendarOverviewActivity extends Activity {
             boolean compact = durationHeight < dp(36);
             TextView card = text(compact ? e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), compact ? 12 : days == 1 ? 14 : 12, true);
             card.setPadding(dp(5), dp(compact ? 1 : 4), dp(4), dp(compact ? 1 : 3)); card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            card.setTextColor(UiStyle.colors(this).text); UiStyle.acrylicChoice(card, true, 8, false);
-            if (e.system) card.setAlpha(.78f);
+            card.setTextColor(UiStyle.colors(this).text); calendarSurface(card, true, 8, false);
             android.graphics.Paint.FontMetrics metrics = card.getPaint().getFontMetrics();
             int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
             int cardHeight = Math.max(lineHeight + dp(compact ? 4 : 8), durationHeight);
@@ -735,7 +760,11 @@ public final class CalendarOverviewActivity extends Activity {
     private ImageButton icon(int resource, String description, Runnable click) {
         ImageButton button = new ImageButton(this); button.setImageResource(resource); button.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
         button.setPadding(dp(11), dp(11), dp(11), dp(11)); button.setContentDescription(description);
-        UiStyle.acrylicChoice(button, false, UiStyle.RADIUS_PILL, false); button.setOnClickListener(v -> click.run()); return button;
+        calendarSurface(button, false, UiStyle.RADIUS_PILL, false); button.setOnClickListener(v -> click.run()); return button;
+    }
+    private void calendarSurface(View view, boolean selected, int radius, boolean outline) {
+        UiStyle.acrylicChoice(view, selected, radius, outline);
+        UiStyle.minimumAcrylicMix(view, ThemeStore.dark(this) ? 70 : 80);
     }
     private void notice(LinearLayout container, String message) { TextView label = text(message, 13, false); UiStyle.muted(label); UiStyle.addSpaced(container, label, 12, 12); }
     private TextView text(String title, int sp, boolean bold) {

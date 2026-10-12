@@ -490,6 +490,7 @@ public final class UiStyle {
         private boolean lastDark;
         private boolean lastSelected;
         private int drawableAlpha = 255;
+        private int minimumMix;
         private final View host;
         private boolean selected;
         private boolean outline;
@@ -547,7 +548,7 @@ public final class UiStyle {
         }
 
         private void updateBlurredSurface(View host) {
-            int mix = ThemeStore.surfaceMix(host.getContext());
+            int mix = Math.max(minimumMix, ThemeStore.surfaceMix(host.getContext()));
             Palette palette = colors(host.getContext());
             boolean dark = ThemeStore.dark(host.getContext());
             int outlineColor = selected ? palette.primary
@@ -711,6 +712,14 @@ public final class UiStyle {
      */
     public static void swap(View container, Runnable rebuild) {
         swap(container, container, rebuild);
+    }
+
+    /** Keep busy wallpaper from washing out a surface without dimming its children. */
+    static void minimumAcrylicMix(View view, int percent) {
+        if (view.getBackground() instanceof AcrylicSurfaceDrawable acrylic) {
+            acrylic.minimumMix = Math.max(0, Math.min(100, percent));
+            view.invalidate();
+        }
     }
 
     /** Explicit lifecycle/focus completion for a composed in-page transition. */

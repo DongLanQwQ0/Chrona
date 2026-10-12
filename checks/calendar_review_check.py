@@ -119,6 +119,16 @@ public class CalendarReviewCheck extends Context {
  static AgendaRepository.Snapshot load(Context c,long first,long last,ZoneId zone,boolean system,CancellationSignal signal){return AgendaRepository.load(c,first,last,system,zone,signal);}
  public static void main(String[]args)throws Exception {
   ZoneId zone=ZoneId.of("Asia/Shanghai");LocalDate day=LocalDate.of(2026,10,12);long midnight=day.atStartOfDay(zone).toInstant().toEpochMilli();
+  CalendarSwipe swipe=new CalendarSwipe();
+  swipe.begin(100,100,true);check(!swipe.move(96,102,8,false),"tap jitter does not take over");check(swipe.finish(96,102,48)==0,"tap does not navigate");
+  swipe.begin(200,100,true);check(swipe.move(180,102,8,false),"horizontal drag claimed");check(swipe.finish(100,105,48)==1,"left swipe goes forward");
+  swipe.begin(100,100,true);swipe.move(120,101,8,false);check(swipe.finish(200,105,48)==-1,"right swipe goes back");
+  swipe.begin(100,100,true);check(!swipe.move(103,130,8,false)&&!swipe.move(220,131,8,false),"vertical scroll stays with child");
+  swipe.begin(100,100,true);check(!swipe.move(130,102,8,true)&&!swipe.move(240,103,8,false),"nested horizontal scroll keeps whole gesture");
+  swipe.begin(100,100,true);swipe.move(130,102,8,false);check(swipe.finish(135,102,48)==0,"short swipe cancelled");
+  swipe.begin(100,100,true);swipe.move(130,102,8,false);swipe.cancel();check(swipe.claimed()&&swipe.finish(230,102,48)==0,"multitouch cancels navigation but keeps input ownership");
+  swipe.begin(100,100,false);check(!swipe.move(250,100,8,false)&&swipe.finish(250,100,48)==0,"loading/transition blocks gesture");
+  swipe.begin(100,100,true);swipe.move(130,102,8,false);check(swipe.finish(150,200,48)==0,"vertical ending cancels navigation");
   List<AgendaEntry>e=List.of(entry(1,midnight-3600000,midnight),entry(2,midnight-3600000,midnight+3600000),entry(3,midnight+86390000,midnight+86410000));
   CalendarDayCounts counts=new CalendarDayCounts(e,day,day.plusDays(3),zone);
   check(counts.on(day)==2&&counts.on(day.plusDays(1))==1&&counts.on(day.minusDays(1))==0,"exclusive ends, cross-midnight and bounds");
@@ -179,7 +189,7 @@ for name, content in files.items():
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding='utf-8')
     paths.append(p)
-paths += [src / name for name in ['AgendaEntry.java','AgendaRepository.java','CalendarDayCounts.java','CalendarViewport.java',
+paths += [src / name for name in ['AgendaEntry.java','AgendaRepository.java','CalendarDayCounts.java','CalendarViewport.java','CalendarSwipe.java',
     'calendar/CalendarOccurrence.java','calendar/AllDayDates.java','data/EventCandidate.java','data/EventCategory.java']]
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 subprocess.run([str(java / 'javac.exe'),'--release','17','-encoding','UTF-8','-d',str(out),*map(str,paths)],check=True)
