@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Android 14+: parsing runs as a user-initiated job so the system keeps it alive. -->
     <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
 
@@ -30,6 +31,18 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.Chrona.Starting"
         android:enableOnBackInvokedCallback="true">
+        <activity android:name=".CalendarOverviewActivity" android:exported="false" />
+        <service android:name=".AgendaReminderJobService" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver android:name=".AgendaReminderReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <activity android:name=".AppearanceActivity" android:exported="false" />
         <activity android:name=".GuideActivity" android:exported="false" />
         <activity android:name=".UpdateActivity" android:exported="false" />

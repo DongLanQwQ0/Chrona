@@ -219,6 +219,12 @@ public final class ChronaDataBackup {
             manifest.put("includeSystemCalendar", HomeTimelinePreferences.includesSystemCalendar(context));
             manifest.put("widgetPreviewMinutes", WidgetPreferences.previewMinutes(context));
             manifest.put("widgetDanmakuEnabled", WidgetPreferences.danmakuEnabled(context));
+            manifest.put("widgetSystemCalendar", WidgetPreferences.includesSystemCalendar(context));
+            manifest.put("agendaReminderEnabled", AgendaReminderPreferences.enabled(context));
+            manifest.put("agendaReminderSystemCalendar", AgendaReminderPreferences.includesSystemCalendar(context));
+            org.json.JSONArray scheduleOrders = new org.json.JSONArray();
+            for (int tab = 0; tab < 4; tab++) scheduleOrders.put(ScheduleOrderPreferences.oldestFirst(context, tab));
+            manifest.put("scheduleOrders", scheduleOrders);
             manifest.put("config", ConfigBackup.export(context, includeApiKey));
             manifest.put("wallpaperIncluded", true);
             manifest.put("wallpaperEnabled", ThemeStore.backgroundEnabled(context));
@@ -441,6 +447,11 @@ public final class ChronaDataBackup {
         boolean previousSystemCalendar = HomeTimelinePreferences.includesSystemCalendar(context);
         int previousWidgetPreviewMinutes = WidgetPreferences.previewMinutes(context);
         boolean previousWidgetDanmakuEnabled = WidgetPreferences.danmakuEnabled(context);
+        boolean previousWidgetSystem = WidgetPreferences.includesSystemCalendar(context);
+        boolean previousReminderEnabled = AgendaReminderPreferences.enabled(context);
+        boolean previousReminderSystem = AgendaReminderPreferences.includesSystemCalendar(context);
+        boolean[] previousOrders = new boolean[4];
+        for (int tab = 0; tab < 4; tab++) previousOrders[tab] = ScheduleOrderPreferences.oldestFirst(context, tab);
         String previousTimetable = new TimetableStore(context).snapshot();
         boolean timetableApplied = false;
         Map<Long, Long> calendarLinks = new HashMap<>();
@@ -553,6 +564,12 @@ public final class ChronaDataBackup {
                 prepared.manifest.optInt("homeTimelineLimit", HomeTimelinePreferences.DEFAULT_ITEM_LIMIT));
         HomeTimelinePreferences.setIncludesSystemCalendar(context,
                 prepared.manifest.optBoolean("includeSystemCalendar", false));
+        WidgetPreferences.setIncludesSystemCalendar(context, prepared.manifest.optBoolean("widgetSystemCalendar", false));
+        AgendaReminderPreferences.setEnabled(context, prepared.manifest.optBoolean("agendaReminderEnabled", true));
+        AgendaReminderPreferences.setIncludesSystemCalendar(context, prepared.manifest.optBoolean("agendaReminderSystemCalendar", false));
+        JSONArray restoredOrders = prepared.manifest.optJSONArray("scheduleOrders");
+        for (int tab = 0; tab < 4; tab++) ScheduleOrderPreferences.setOldestFirst(context, tab,
+                restoredOrders == null ? tab == 0 : restoredOrders.optBoolean(tab, tab == 0));
         if (prepared.manifest.has("widgetPreviewMinutes")) {
             WidgetPreferences.setPreviewMinutes(context,
                     prepared.manifest.optInt("widgetPreviewMinutes", previousWidgetPreviewMinutes));
@@ -568,6 +585,11 @@ public final class ChronaDataBackup {
         }
         if (installedPrevious != null) installedPrevious.delete();
         deleteTree(previousOutputs);
+        android.content.SharedPreferences.Editor reminderState = AgendaReminderPreferences.prefs(context).edit();
+        for (String key : AgendaReminderPreferences.prefs(context).getAll().keySet())
+            if (!key.equals("enabled") && !key.equals("include_system")) reminderState.remove(key);
+        reminderState.apply();
+        AgendaReminder.requestRefresh(context);
         return calendarLinks.containsValue(null)
                 ? "数据已恢复；部分日程因日历权限不可用已转为待确认。"
                 : "收件箱、日程与设置已恢复。";
@@ -591,6 +613,10 @@ public final class ChronaDataBackup {
             try {
                 WidgetPreferences.setPreviewMinutes(context, previousWidgetPreviewMinutes);
                 WidgetPreferences.setDanmakuEnabled(context, previousWidgetDanmakuEnabled);
+                WidgetPreferences.setIncludesSystemCalendar(context, previousWidgetSystem);
+                AgendaReminderPreferences.setEnabled(context, previousReminderEnabled);
+                AgendaReminderPreferences.setIncludesSystemCalendar(context, previousReminderSystem);
+                for (int tab = 0; tab < 4; tab++) ScheduleOrderPreferences.setOldestFirst(context, tab, previousOrders[tab]);
             } catch (Exception rollbackWidgetPreferenceFailure) {
                 failure.addSuppressed(rollbackWidgetPreferenceFailure);
             }

@@ -32,6 +32,7 @@ import android.content.Context; import java.time.*; import java.util.*;
 class CalendarLinkReconciler { static void reconcileNow(Context context) { } }
 class HomeTimelinePreferences { static boolean included;static boolean includesSystemCalendar(Context context) { return included; } }
 class WidgetPreferences { static final int DEFAULT_PREVIEW_MINUTES=1320;
+static boolean included;static boolean includesSystemCalendar(Context context) { return included; }
 static int previewMinutes(Context context) { return DEFAULT_PREVIEW_MINUTES; } }
 class CourseAgenda {
 static int calls;
@@ -48,6 +49,8 @@ require(CourseAgenda.calls==0,"imported timetable never loaded into widget");
 require(!agenda.failed && agenda.next!=null && agenda.next.id==1,"ordinary appointment retained");
 require(com.donglan.chrona.calendar.CalendarStore.reads==0,"disabled switch performs no system listing");
 HomeTimelinePreferences.included=true;agenda=WidgetAgenda.load(context);
+require(com.donglan.chrona.calendar.CalendarStore.reads==0,"home switch cannot change widget sources");
+WidgetPreferences.included=true;agenda=WidgetAgenda.load(context);
 require(CourseAgenda.calls==0&&!agenda.failed&&agenda.next!=null,"enabling system calendar still never imports courses");
 require(com.donglan.chrona.calendar.CalendarStore.reads==1,"enabled switch reads system instances");
 require(agenda.today.stream().filter(item->item.system&&item.title.equals("same external content")).count()==2,"system same content remains separate");

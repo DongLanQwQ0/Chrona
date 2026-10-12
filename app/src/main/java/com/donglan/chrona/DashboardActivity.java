@@ -204,7 +204,6 @@ public final class DashboardActivity extends Activity {
             calendarPermissionForSchedule = state.getBoolean("schedule_permission_pending");
             inboxQuery = state.getString("inbox_query", "");
             scheduleQuery = state.getString("schedule_query", "");
-            scheduleOldestFirst = state.getBoolean("schedule_oldest_first", true);
             inboxOldestFirst = state.getBoolean("inbox_oldest_first", false);
             long[] selected = state.getLongArray("selected_inbox_ids");
             if (selected != null) for (long id : selected) selectedInboxIds.add(id);
@@ -214,6 +213,7 @@ public final class DashboardActivity extends Activity {
         } else {
             section = getIntent().getIntExtra(EXTRA_SECTION, HOME);
         }
+        scheduleOldestFirst = ScheduleOrderPreferences.oldestFirst(this, scheduleTab);
         buildShell();
         // First draw contains working navigation; data preparation never blocks its frame.
         addHeader();
@@ -238,7 +238,6 @@ public final class DashboardActivity extends Activity {
         state.putBoolean("schedule_permission_pending", calendarPermissionForSchedule);
         state.putString("inbox_query", inboxQuery);
         state.putString("schedule_query", scheduleQuery);
-        state.putBoolean("schedule_oldest_first", scheduleOldestFirst);
         state.putBoolean("inbox_oldest_first", inboxOldestFirst);
         state.putInt("scroll_y", scroll.getScrollY());
         long[] selected = new long[selectedInboxIds.size()];
@@ -1089,7 +1088,8 @@ public final class DashboardActivity extends Activity {
             if (section == SCHEDULE) {
                 row.addView(underlinedTitle(title, "日程，点击打开课表对比", ScheduleCompareActivity.class),
                         new LinearLayout.LayoutParams(-2, -2));
-            } else row.addView(title, new LinearLayout.LayoutParams(-2, -2));
+            } else row.addView(underlinedTitle(title, "收件箱，点击打开日历", CalendarOverviewActivity.class),
+                    new LinearLayout.LayoutParams(-2, -2));
             LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(36), 1);
             searchParams.setMargins(dp(8), 0, dp(8), 0);
             row.addView(buildSearchField(), searchParams);
@@ -1176,6 +1176,7 @@ public final class DashboardActivity extends Activity {
             inboxPage = 0;
         } else {
             scheduleOldestFirst = !scheduleOldestFirst;
+            ScheduleOrderPreferences.setOldestFirst(this, scheduleTab, scheduleOldestFirst);
             schedulePage = 0;
         }
         refreshOrderToggle();
@@ -1612,6 +1613,8 @@ public final class DashboardActivity extends Activity {
             chip.setOnClickListener(view -> {
                 if (scheduleTab == tab) return;
                 scheduleTab = tab;
+                scheduleOldestFirst = ScheduleOrderPreferences.oldestFirst(this, scheduleTab);
+                refreshOrderToggle();
                 schedulePage = 0;
                 updateChipSelection(tab);
                 updateResultsWithEntrance();
@@ -1775,6 +1778,8 @@ public final class DashboardActivity extends Activity {
     }
 
     private void applyScheduleFilters() {
+        scheduleOldestFirst = ScheduleOrderPreferences.oldestFirst(this, scheduleTab);
+        refreshOrderToggle();
         schedulePage = 0;
         selectedScheduleIds.clear();
         lastCalendarFetch = 0;

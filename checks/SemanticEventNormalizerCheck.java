@@ -129,17 +129,22 @@ public final class SemanticEventNormalizerCheck {
                 "simultaneous tasks are not merged or marked as appointment conflict");
         List<EventCandidate> appointments = CandidateRules.apply(Arrays.asList(copy(task, "A", null, "event"),
                 copy(task, "B", null, "event")));
-        check(appointments.size() == 2 && appointments.get(0).needsConfirmation && appointments.get(1).needsConfirmation,
-                "appointment overlap retained and marked");
+        check(appointments.size() == 2 && !appointments.get(0).needsConfirmation && !appointments.get(1).needsConfirmation,
+                "explicit appointment overlap preserves certainty");
         EventCandidate inferredAppointment = parse(base("event").put("uncertainty_level", 1)
                 .put("needs_confirmation", true).put("start", time(null, "11:00", 1)));
         check(CandidateRules.apply(Arrays.asList(inferredAppointment, copy(inferredAppointment, "B", null, "event")))
-                .get(0).uncertaintyLevel == 2, "conflict escalates existing inference");
+                .get(0).uncertaintyLevel == 1, "overlap does not change model uncertainty");
+        JSONObject missingLevel = base("task").put("start", time(null, "11:00", 1)); missingLevel.remove("uncertainty_level");
+        check(parse(missingLevel).needsConfirmation && parse(missingLevel).uncertaintyLevel == 2, "missing certainty cannot auto-confirm");
+        EventCandidate fuzzy = parse(base("task").put("uncertainty_level", 2).put("needs_confirmation", true)
+                .put("start", time(null, "19:00", 1)));
+        check(fuzzy.startAtMillis != null && fuzzy.needsConfirmation && fuzzy.uncertaintyLevel == 2, "chosen fuzzy time retained for review");
         System.out.println("SemanticEventNormalizerCheck passed: " + checks + " checks");
     }
 
     private static JSONObject base(String category) throws Exception {
-        return new JSONObject().put("title", "事项").put("category", category).put("needs_confirmation", false)
+        return new JSONObject().put("title", "事项").put("category", category).put("needs_confirmation", false).put("uncertainty_level", 0)
                 .put("time_zone_id", JSONObject.NULL).put("all_day", false);
     }
 

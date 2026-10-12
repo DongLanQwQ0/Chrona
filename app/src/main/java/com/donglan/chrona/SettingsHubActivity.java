@@ -47,6 +47,32 @@ public final class SettingsHubActivity extends Activity {
         LinearLayout widgets = group(root, "桌面小组件");
         widgetPreview(widgets);
         widgetDanmaku(widgets);
+        widgetSystemCalendar = calendarToggle(widgets, "包含系统其他日程",
+                WidgetPreferences.includesSystemCalendar(this), 702,
+                enabled -> WidgetPreferences.setIncludesSystemCalendar(this, enabled));
+
+        LinearLayout reminders = group(root, "日程常驻提醒");
+        Switch reminderEnabled = toggle(reminders, "开始前 30 分钟提醒", AgendaReminderPreferences.enabled(this));
+        reminderEnabled.setOnCheckedChangeListener((button, enabled) -> {
+            AgendaReminderPreferences.setEnabled(this, enabled);
+            if (enabled && Build.VERSION.SDK_INT >= 33
+                    && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 704);
+        });
+        reminderSystemCalendar = calendarToggle(reminders, "包含系统其他日程",
+                AgendaReminderPreferences.includesSystemCalendar(this), 703,
+                enabled -> AgendaReminderPreferences.setIncludesSystemCalendar(this, enabled));
+        notificationStatus = row(reminders, "通知权限", "", () -> {
+            if (Build.VERSION.SDK_INT >= 33
+                    && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 704);
+            else openSystemSettings(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName()));
+        });
+        exactStatus = row(reminders, "准时提醒", "", () -> {
+            if (Build.VERSION.SDK_INT >= 31) openSystemSettings(new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    android.net.Uri.parse("package:" + getPackageName())));
+        });
 
         LinearLayout services = group(root, "服务与数据");
         destination(services, "AI 服务", SettingsActivity.class);
@@ -159,6 +185,44 @@ public final class SettingsHubActivity extends Activity {
         });
     }
     private Switch systemCalendar;
+    private Switch widgetSystemCalendar, reminderSystemCalendar;
+    private TextView notificationStatus, exactStatus;
+
+    private Switch toggle(LinearLayout group, String title, boolean checked) {
+        divider(group);
+        Switch control = new Switch(this);
+        control.setText(title); control.setTextSize(16); control.setChecked(checked);
+        control.setPadding(dp(16), dp(3), dp(16), dp(3)); control.setSwitchPadding(dp(12));
+        control.setMinHeight(dp(54)); UiStyle.toggle(control);
+        group.addView(control, new LinearLayout.LayoutParams(-1, -2));
+        return control;
+    }
+
+    private Switch calendarToggle(LinearLayout group, String title, boolean checked, int request,
+            java.util.function.Consumer<Boolean> save) {
+        Switch control = toggle(group, title, checked);
+        control.setOnCheckedChangeListener((button, enabled) -> {
+            if (enabled && !new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()) {
+                control.setChecked(false);
+                requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR}, request);
+                return;
+            }
+            save.accept(enabled);
+        });
+        return control;
+    }
+
+    private void openSystemSettings(Intent intent) {
+        try { startActivity(intent); }
+        catch (android.content.ActivityNotFoundException exception) { Feedback.show(this, "系统未提供此设置入口"); }
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (notificationStatus != null) notificationStatus.setText(getSystemService(android.app.NotificationManager.class)
+                .areNotificationsEnabled() ? "已允许" : "未允许");
+        if (exactStatus != null) exactStatus.setText(AgendaReminder.exactAllowed(this) ? "已允许" : "系统可能延迟");
+    }
     private void systemCalendarToggle(LinearLayout group) {
         systemCalendar=new Switch(this);systemCalendar.setText("包含系统其他日程");systemCalendar.setTextSize(16);
         systemCalendar.setPadding(dp(16),dp(3),dp(16),dp(3));systemCalendar.setSwitchPadding(dp(12));systemCalendar.setMinHeight(dp(54));UiStyle.toggle(systemCalendar);
@@ -173,6 +237,16 @@ public final class SettingsHubActivity extends Activity {
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
         super.onRequestPermissionsResult(request,permissions,results);
         if(request==REQUEST_SYSTEM_CALENDAR){boolean granted=results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED;systemCalendar.setChecked(granted);if(!granted)Feedback.show(this,"未获得读取日历权限");}
+        if (request == 702 || request == 703) {
+            boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+            (request == 702 ? widgetSystemCalendar : reminderSystemCalendar).setChecked(granted);
+            if (!granted) Feedback.show(this, "未获得读取日历权限");
+        }
+        if (request == 704) {
+            if (notificationStatus != null) notificationStatus.setText(getSystemService(android.app.NotificationManager.class)
+                    .areNotificationsEnabled() ? "已允许" : "未允许");
+            AgendaReminder.requestRefresh(this);
+        }
     }
 
     private void widgetPreview(LinearLayout group) {

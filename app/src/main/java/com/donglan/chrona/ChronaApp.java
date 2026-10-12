@@ -20,6 +20,7 @@ public final class ChronaApp extends Application {
             @Override public void onChange(boolean selfChange) {
                 CalendarLinkReconciler.request(ChronaApp.this);
                 AgendaWidgetProvider.requestRefresh(ChronaApp.this);
+                AgendaReminder.requestRefresh(ChronaApp.this);
             }
         };
         try {
@@ -34,6 +35,8 @@ public final class ChronaApp extends Application {
     @Override public void onCreate() {
         super.onCreate();
         SyncJobService.schedule(this);
+        AgendaReminderJobService.schedule(this);
+        AgendaReminder.requestRefresh(this);
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityCreated(Activity activity, Bundle state) {
                 ThemeStore.watch(activity);
@@ -46,6 +49,8 @@ public final class ChronaApp extends Application {
             @Override public void onActivityStarted(Activity activity) { }
 
             @Override public void onActivityResumed(Activity activity) {
+                AgendaReminderJobService.schedule(ChronaApp.this);
+                AgendaReminder.requestRefresh(ChronaApp.this);
                 AndroidSync.foreground(ChronaApp.this);
                 observeCalendar();
                 if (activity instanceof DashboardActivity || activity instanceof TaskDetailActivity)

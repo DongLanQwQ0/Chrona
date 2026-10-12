@@ -1,5 +1,13 @@
 # 历史验证记录
 
+## 0.14.7 — 2026-10-12
+
+- `checks/run_checks.py full`：36/36，通过日志 `build/agenda-final-checks.log`。初轮沙箱阻止临时文件移动和本机回环连接，及新增提醒刷新需要补测试替身；修正适配后完整执行通过。
+- `agenda_features_check.py` 执行 37 项生产 Java 提醒/布局/偏好场景、实际 TaskStore 构造的 SQL（真实 SQLite）、CalendarStore 提醒扫描方法（1199 个自身关联副本、进行中/下一项、隐藏周期实例）；`widget_preferences_check.py` 32 项，执行真实偏好及备份恢复/回滚语句。日历提供器、通知及 Android 存储使用替身。
+- `ai_auto_publish_check.py`：真实 AiRequestCheck 请求契约、54 项 SemanticEventNormalizer 时间语义、16 项 AutoCalendarPublisher 自动写入协调检查；覆盖混合批次、缺权限、重复调用、写入失败、关联失败补偿、取消补偿与清理失败提示。未调用真实模型。
+- 最终 `assembleDebug/assembleRelease/lintDebug/lintRelease` 成功（`build/agenda-final-build.log`），lint 0 错误/82 警告。APK 0.14.7 / 114，1,967,858 字节，SHA256 `22254f380c491114422f02d19430aacd572a0b40a0a2e841f1c0399d0747f570`；原证书 SHA256 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`，release 不可调试。签名和 manifest 证据 `build/agenda-{release,debug}-signature.log`、`build/agenda-apk-version.log`；分发产物 `build/distributions/0.14.7/Chrona-0.14.7.apk`。
+- ADB 无连接设备；未进行 Android 真机日历/通知呈现、精确闹钟与锁屏送达、后台电池策略、实际模型 Token 节省量或覆盖安装验收。修改前备份 `build/backups/20261012-agenda-features`。发布说明显式保留这些验收限制。
+
 ## 0.14.6 — 2026-10-05
 
 - `checks/run_checks.py full`：34/34，通过日志 `build/motion-final-checks.log`；包含新增原生核心 28 项、详情折叠 13 项，Dock 49 场景与设置布局 72 次生产方法/平台替身执行。设置恢复明确静默，动画中新取得的无障碍焦点立即收敛。

@@ -131,7 +131,7 @@ final class WidgetAgenda {
                         candidate.title, candidate.location, EventCategory.label(candidate.category),
                         "拾时", false, candidate.allDay));
             }
-            if (HomeTimelinePreferences.includesSystemCalendar(context)) {
+            if (WidgetPreferences.includesSystemCalendar(context)) {
                 CalendarStore calendar = new CalendarStore(context);
                 if (!calendar.hasReadPermission()) result.calendarUnavailable = true;
                 else {

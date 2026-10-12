@@ -8,6 +8,8 @@
 
 拾时是原生 Android Java 应用，使用用户配置的 AI 服务生成日程草稿，用户审核后写入应用专属的系统日历。
 
+0.14.7 起，完全明确且确定的日程由 `processing/AutoCalendarPublisher` 自动写入专属系统日历；推定或高存疑项等待用户确认。日历二级页使用 `AgendaRepository` 独立异步快照，`CalendarTimelineLayout` 计算跨日/重叠位置。`AgendaReminder` 维护一个常驻卡片和下一边界闹钟，`AgendaReminderJobService` 周期检查进程退出期间的来源变化；系统来源分别存于首页、小组件、提醒与日历页面偏好。`ScheduleOrderPreferences` 按四个预设持久保存方向。
+
 | 项目 | 配置 |
 | --- | --- |
 | 应用 ID | `com.donglan.chrona` |

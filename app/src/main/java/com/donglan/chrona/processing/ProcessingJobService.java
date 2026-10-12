@@ -331,12 +331,13 @@ public final class ProcessingJobService extends JobService {
             store.replaceCandidates(taskId, candidates);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
                     result.totalTokens, result.cachedTokens);
-            store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW,
+            AutoCalendarPublisher.Result publication = AutoCalendarPublisher.publish(this, taskId, control);
+            store.updateStatus(taskId, !candidates.isEmpty() && publication.pending == 0 ? TaskRecord.READY : TaskRecord.NEEDS_REVIEW,
                     candidates.isEmpty() ? (fetched.warning == null ? "未识别到日程，请检查原文或重试"
-                            : fetched.warning) : fetched.warning);
+                            : fetched.warning) : publication.warning == null ? fetched.warning : publication.warning);
             DiagLog.add(this, "response task=" + taskId + " ok in " + elapsed + "ms events="
                     + candidates.size() + " tokens=" + result.totalTokens);
-            notifyResult(taskId, candidates.isEmpty() ? "未识别到日程" : "日程草稿待确认");
+            notifyResult(taskId, publication.summary());
         } catch (ChatCompletionClient.RequestException exception) {
             if (wasStopped(control)) {
                 DiagLog.add(this, "request abandoned task=" + taskId + " HTTP "
@@ -493,8 +494,30 @@ public final class ProcessingJobService extends JobService {
     }
 
     private void notifyResult(long taskId, String text) {
+        StringBuilder details = new StringBuilder();
         try (TaskStore store = new TaskStore(this)) {
-            if (store.getTask(taskId) == null) return;
+            TaskRecord task = store.getTask(taskId);
+            if (task == null) return;
+            if (task.errorMessage != null && !task.errorMessage.trim().isEmpty()) details.append(task.errorMessage).append("\n\n");
+            List<com.donglan.chrona.data.EventCandidate> candidates = store.getCandidates(taskId);
+            int count = 0;
+            for (com.donglan.chrona.data.EventCandidate item : candidates) {
+                if (count++ == 12) { details.append("另有 ").append(candidates.size() - 12).append(" 项，点按查看全部"); break; }
+                details.append(item.calendarEventId == null ? "待处理 · " : "已确认 · ").append(item.title).append('\n');
+                if (item.startAtMillis == null || item.endAtMillis == null) details.append("时间待定");
+                else if (item.allDay) details.append(com.donglan.chrona.calendar.AllDayDates.displayStart(item.startAtMillis)).append(" · 全天");
+                else {
+                    java.time.ZoneId zone;
+                    try { zone = java.time.ZoneId.of(item.timeZoneId); } catch (RuntimeException ignored) { zone = java.time.ZoneId.systemDefault(); }
+                    java.time.format.DateTimeFormatter clock = java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm");
+                    details.append(clock.format(java.time.Instant.ofEpochMilli(item.startAtMillis).atZone(zone)))
+                            .append(" — ").append(clock.format(java.time.Instant.ofEpochMilli(item.endAtMillis).atZone(zone)));
+                }
+                if (item.location != null && !item.location.trim().isEmpty()) details.append('\n').append(item.location);
+                if (item.reminderMinutesBefore != null) details.append("\n提前 ").append(item.reminderMinutesBefore).append(" 分钟提醒");
+                if (item.description != null && !item.description.trim().isEmpty()) details.append('\n').append(item.description.substring(0, Math.min(240, item.description.length())));
+                details.append("\n\n");
+            }
         }
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) return;
@@ -512,13 +535,19 @@ public final class ProcessingJobService extends JobService {
         PendingIntent pending = PendingIntent.getActivity(this, (int) taskId, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = notificationBuilder(CHANNEL_ID)
-                .setContentTitle("拾时 · Chrona")
+                .setContentTitle(text)
                 .setContentText(text)
+                .setStyle(new Notification.BigTextStyle().setBigContentTitle(text).bigText(details.length() == 0 ? text : details.toString().trim()))
                 .setCategory(Notification.CATEGORY_REMINDER)
                 .setAutoCancel(true)
                 .setContentIntent(pending)
+                .addAction(new Notification.Action.Builder(null, "查看日程", pending).build())
                 .build();
-        manager.notify((int) taskId, notification);
+        try { manager.notify((int) taskId, notification); }
+        catch (RuntimeException exception) {
+            // A notification delivery failure must not relabel successfully written schedules as failed.
+            DiagLog.add(this, "result notification unavailable task=" + taskId + " " + exception.getClass().getSimpleName());
+        }
     }
 
     private Notification.Builder notificationBuilder(String channelId) {

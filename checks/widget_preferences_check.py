@@ -22,10 +22,11 @@ def statements(pattern, expected):
     assert len(matches) == expected, (pattern, len(matches))
     return '\n'.join(matches)
 
-export = statements(r'manifest\.put\("widget(?:PreviewMinutes|DanmakuEnabled)"[^;]+;', 2)
-capture = statements(r'(?:int|boolean) previousWidget\w+ = WidgetPreferences\.[^;]+;', 2)
+export = statements(r'manifest\.put\("widget(?:PreviewMinutes|DanmakuEnabled|SystemCalendar)"[^;]+;', 3)
+capture = statements(r'(?:int|boolean) previousWidget\w+ = WidgetPreferences\.[^;]+;', 3)
 restore = statements(r'if \(prepared\.manifest\.has\("widget(?:PreviewMinutes|DanmakuEnabled)"\)\) \{[^}]+\}', 2)
-rollback = statements(r'WidgetPreferences\.set\w+\(context, previousWidget\w+\);', 2)
+restore += '\n' + statements(r'WidgetPreferences\.setIncludesSystemCalendar\(context, prepared\.manifest\.optBoolean\("widgetSystemCalendar", false\)\);', 1)
+rollback = statements(r'WidgetPreferences\.set\w+\(context, previousWidget\w+\);', 3)
 
 harness = r'''
 package com.donglan.chrona;
@@ -92,16 +93,22 @@ public class WidgetPreferencesCheck {
   WidgetPreferences.setPreviewMinutes(c,2000);state(c,1439,true,"upper clamp");
   WidgetPreferences.setPreviewMinutes(c,73);WidgetPreferences.setDanmakuEnabled(c,false);
   JSONObject saved=export(c);
+  WidgetPreferences.setIncludesSystemCalendar(c,true);saved=export(c);
+  check(saved.optBoolean("widgetSystemCalendar",false),"export independent source");
   check(saved.optInt("widgetPreviewMinutes",-1)==73,"export preview");
   check(!saved.optBoolean("widgetDanmakuEnabled",true),"export disabled");
   Context target=new Context();restore(target,new Prepared(saved),false);
   state(target,73,false,"round trip");
+  check(WidgetPreferences.includesSystemCalendar(target),"source round trip");
   int before=AgendaWidgetProvider.refreshes;
   restore(target,new Prepared(new JSONObject()),false);
   state(target,73,false,"old backup keeps current settings");
-  check(before==AgendaWidgetProvider.refreshes,"absent fields cause no widget refresh");
+  check(before+1==AgendaWidgetProvider.refreshes,"source default restored with absent field");
+  check(!WidgetPreferences.includesSystemCalendar(target),"absent source defaults off");
   JSONObject changed=new JSONObject();changed.put("widgetPreviewMinutes",999);changed.put("widgetDanmakuEnabled",true);
+  changed.put("widgetSystemCalendar",true);
   restore(target,new Prepared(changed),true);state(target,73,false,"failed restore rolls back");
+  check(!WidgetPreferences.includesSystemCalendar(target),"source rollback");
   changed.put("widgetPreviewMinutes",-5);restore(target,new Prepared(changed),false);state(target,0,true,"restore lower clamp");
   changed.put("widgetPreviewMinutes",9000);restore(target,new Prepared(changed),false);state(target,1439,true,"restore upper clamp");
   JSONObject partial=new JSONObject();partial.put("widgetDanmakuEnabled",false);

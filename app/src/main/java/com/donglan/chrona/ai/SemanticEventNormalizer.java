@@ -50,7 +50,7 @@ public final class SemanticEventNormalizer {
         Context context = new Context();
         Object rawLevel = event.opt("uncertainty_level");
         int modelLevel = rawLevel instanceof Integer && (Integer) rawLevel >= 0 && (Integer) rawLevel <= 2
-                ? (Integer) rawLevel : EventCandidate.CERTAIN;
+                ? (Integer) rawLevel : EventCandidate.DOUBTFUL;
         Object confirmation = event.opt("needs_confirmation");
         context.uncertain = !(confirmation instanceof Boolean) || (Boolean) confirmation;
         // A reasonable inference is level 1; validation errors still escalate to level 2.

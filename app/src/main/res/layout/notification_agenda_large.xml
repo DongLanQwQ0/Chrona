@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingBottom="4dp">
+    <TextView android:id="@+id/agenda_source" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textAppearance="@android:style/TextAppearance.Material.Notification" android:textSize="12sp" android:maxLines="1" android:ellipsize="end" />
+    <TextView android:id="@+id/agenda_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:textAppearance="@android:style/TextAppearance.Material.Notification.Title"
+        android:textSize="20sp" android:textStyle="bold" android:maxLines="2" android:ellipsize="end" />
+    <Chronometer android:id="@+id/agenda_countdown" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:textAppearance="@android:style/TextAppearance.Material.Notification.Title" android:textSize="17sp" />
+    <TextView android:id="@+id/agenda_time" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:textAppearance="@android:style/TextAppearance.Material.Notification" android:maxLines="2" />
+    <TextView android:id="@+id/agenda_location" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="4dp" android:textAppearance="@android:style/TextAppearance.Material.Notification" android:maxLines="2" android:ellipsize="end" />
+    <TextView android:id="@+id/agenda_description" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:textAppearance="@android:style/TextAppearance.Material.Notification" android:maxLines="2" android:ellipsize="end" />
+</LinearLayout>

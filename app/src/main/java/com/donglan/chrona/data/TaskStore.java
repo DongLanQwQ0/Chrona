@@ -94,11 +94,45 @@ public final class TaskStore extends SQLiteOpenHelper {
         } finally {
             openedDatabase = null;
             super.close();
-            if (changed) com.donglan.chrona.AgendaWidgetProvider.requestRefresh(context);
+            if (changed) {
+                com.donglan.chrona.AgendaWidgetProvider.requestRefresh(context);
+                com.donglan.chrona.AgendaReminder.requestRefresh(context);
+            }
         }
     }
 
     /** Bounded widget window; avoids hydrating the full task/candidate history. */
+    public List<EventCandidate> calendarCandidates(long begin, long end, long allDayBegin, long allDayEnd) {
+        List<EventCandidate> result = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                "start_at_millis IS NOT NULL AND ((all_day=0 AND start_at_millis<? "
+                        + "AND CASE WHEN end_at_millis>start_at_millis THEN end_at_millis ELSE start_at_millis+60000 END>CAST(? AS INTEGER)) "
+                        + "OR (all_day=1 AND start_at_millis<? AND COALESCE(end_at_millis,start_at_millis)>=CAST(? AS INTEGER)))",
+                new String[]{Long.toString(end), Long.toString(begin), Long.toString(allDayEnd), Long.toString(allDayBegin)},
+                null, null, "start_at_millis ASC,id ASC", "5001")) {
+            while (cursor.moveToNext()) result.add(readCandidate(cursor));
+        }
+        return result;
+    }
+
+    /** Earliest confirmed timed occurrence, unaffected by widget limits or old history. */
+    public List<EventCandidate> nextReminderCandidates(long now, java.util.Set<String> hidden) {
+        List<EventCandidate> result = new ArrayList<>();
+        String exclusion = hidden.isEmpty() ? "" : " AND ('chrona:'||id||':'||start_at_millis) NOT IN ("
+                + String.join(",", java.util.Collections.nCopies(hidden.size(), "?")) + ")";
+        for (boolean future : new boolean[]{false, true}) {
+            List<String> args = new ArrayList<>(); args.add(Long.toString(now)); args.add(Long.toString(now)); args.addAll(hidden);
+            try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                    "all_day=0 AND needs_confirmation=0 AND start_at_millis IS NOT NULL "
+                            + "AND CASE WHEN end_at_millis>start_at_millis THEN end_at_millis ELSE start_at_millis+60000 END>CAST(? AS INTEGER) "
+                            + "AND start_at_millis" + (future ? ">" : "<=") + "CAST(? AS INTEGER)" + exclusion,
+                    args.toArray(new String[0]), null, null, "start_at_millis " + (future ? "ASC" : "DESC") + ",id ASC", "1")) {
+                if (cursor.moveToFirst()) result.add(readCandidate(cursor));
+            }
+        }
+        return result;
+    }
+
     public List<EventCandidate> widgetCandidates(long begin, long end) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,

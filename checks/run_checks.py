@@ -30,10 +30,12 @@ GROUPS = {
         "home_filter_reference_check.py", "sync_settings_check.py",
         "widget_source_failure_check.py",
         "widget_preferences_check.py",
+        "agenda_features_check.py",
     ),
     "cached_dependencies": (
         "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",
         "sync_core_check.py",
+        "ai_auto_publish_check.py",
     ),
 }
 SUITES = {"quick": ("python",), "full": tuple(GROUPS)}

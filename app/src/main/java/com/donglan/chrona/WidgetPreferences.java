@@ -8,6 +8,17 @@ final class WidgetPreferences {
     private static final String KEY = "widget_preview_minutes";
     private static final String KEY_DANMAKU_ENABLED = "widget_danmaku_enabled";
 
+    static boolean includesSystemCalendar(Context context) {
+        return context.getSharedPreferences("home_timeline", Context.MODE_PRIVATE)
+                .getBoolean("widget_include_system_calendar", false);
+    }
+
+    static void setIncludesSystemCalendar(Context context, boolean enabled) {
+        context.getSharedPreferences("home_timeline", Context.MODE_PRIVATE).edit()
+                .putBoolean("widget_include_system_calendar", enabled).apply();
+        AgendaWidgetProvider.requestRefresh(context);
+    }
+
     private WidgetPreferences() { }
 
     static boolean danmakuEnabled(Context context) {
