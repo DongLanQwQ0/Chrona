@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.16 — 2026-10-12
+
+- 完整回归 39/39，原生 Dock 77 项覆盖渐进上限、放大时间倍率、额外阻力、预测不修改显示状态、立即选页与惯性结束不重复选页；生产方法使用 Android 队列替身。日志 `build/dock-resistance-full-checks.log`。
+- 真实 Edge 动效与完整网页交互通过，验证预测路由在惯性仍进行时已启动，结束后路由不变、外端距离有上限，pageErrors 为空。日志 `build/dock-resistance-web-motion.log`、`build/dock-resistance-web-check.log`。
+- debug/release/lint 通过，0 errors / 84 warnings，构建日志 `build/dock-resistance-final-build.log`。0.14.16 / 123，1,986,526 字节，SHA256 `d831925a61b01f9fad6192e57c35f1dfb43153cbee8b2f9f6f8a9c487b7fdb49`，保持原安装签名。备份 `build/backups/20261012-dock-resistance`。ADB 无设备，Android 实际帧率、触控手感和覆盖安装未实测。
+
 ## 0.14.15 — 2026-10-12
 
 - 完整离线回归 39/39，通过日志 `build/inertial-landing-full-checks.log`。新增执行生产模糊绘制方法的 10 项检查，覆盖移动坐标、离屏边缘延拓、着色器复用/替换和未就绪路径。原生 Dock 70 项包含同一释放位置不同速度得到不同落点、越界回弹和延迟单次提交。Android 图形与队列均为替身。

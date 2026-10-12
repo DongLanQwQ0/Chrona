@@ -60,7 +60,7 @@ public final class CalendarOverviewActivity extends Activity {
     private FrameLayout bodyViewport;
     private FrameLayout outgoingBody;
     private boolean pendingBodyRender;
-    private final Runnable renderAfterDock = this::renderBody;
+    private final Runnable renderPendingBody = this::renderBody;
     private ScrollView verticalViewport;
     private HorizontalScrollView horizontalViewport;
     private final java.util.LinkedHashMap<String, int[]> positions = new java.util.LinkedHashMap<>(16, .75f, true);
@@ -229,7 +229,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
     @Override protected void onPause() {
         resumed = false; handler.removeCallbacks(minuteTick); handler.removeCallbacks(calendarReload);
-        handler.removeCallbacks(renderAfterDock); pendingBodyRender = false;
+        handler.removeCallbacks(renderPendingBody); pendingBodyRender = false;
         rememberPosition(); cancelRead(); swipe.cancel(); bodyTouchActive = false;
         if (allDayDialog != null) { allDayDialog.dismiss(); allDayDialog = null; }
         finishTabMotion(); finishBodyMotion(); animateNext = false;
@@ -351,7 +351,7 @@ public final class CalendarOverviewActivity extends Activity {
         if (outgoingBody != null) {
             outgoingBody.animate().cancel(); bodyViewport.removeView(outgoingBody); outgoingBody = null;
         }
-        if (pendingBodyRender) { pendingBodyRender = false; if (resumed) handler.post(renderAfterDock); }
+        if (pendingBodyRender) { pendingBodyRender = false; if (resumed) handler.post(renderPendingBody); }
     }
     private LocalDate windowStart() {
         if (mode == YEAR) return date.withDayOfYear(1);
@@ -470,12 +470,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
     private void renderBody() {
         if (body == null || loading) return;
-        // View construction must not share frames with the tab's free coast or snap.
-        // Keep only the latest requested presentation while the independent dock settles.
-        if (resumed && UiMotion.isEnabled() && tabs != null && tabs.isAnimating()) {
-            handler.removeCallbacks(renderAfterDock); handler.postDelayed(renderAfterDock, 16); return;
-        }
-        handler.removeCallbacks(renderAfterDock);
+        handler.removeCallbacks(renderPendingBody);
         if (bodyTransitionRunning) { pendingBodyRender = true; return; }
         rememberPosition();
         View focus = body.findFocus(); String focusTag = focus != null && focus.getTag() instanceof String ? (String) focus.getTag() : null;

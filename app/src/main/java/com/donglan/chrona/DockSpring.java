@@ -3,12 +3,21 @@ package com.donglan.chrona;
 /** Shared damped motion state; retargeting preserves velocity instead of restarting animations. */
 final class DockSpring {
     private static final float PRESS_STIFFNESS = 900f, PRESS_DAMPING = 50f;
+    private static final float PRESS_TIME_MULTIPLIER = 1.5f;
+    static final float MAX_OUTWARD_WIDTH = .75f;
     float position, velocity, target;
-    static final float COAST_DAMPING = 5f;
+    static final float COAST_DAMPING = 7.5f;
     boolean coasting;
     float lastSlot;
     void coast(float speed, float end) { velocity = speed; lastSlot = end; coasting = true; }
-    float landing() { return Math.max(0f, Math.min(lastSlot, position + velocity / COAST_DAMPING)); }
+    int predictLanding(float speed, float end) {
+        DockSpring prediction = new DockSpring(); prediction.position = position; prediction.coast(speed, end);
+        for (int frame = 0; frame < 2400 && prediction.coasting; frame++) prediction.step(1f / 120f);
+        return Math.round(Math.max(0f, Math.min(end, prediction.coasting ? prediction.position : prediction.target)));
+    }
+    static float outwardExtension(float distance, float maximum) {
+        return maximum <= 0f ? 0f : maximum * (float) Math.tanh(Math.max(0f, distance) / maximum);
+    }
     float scale = 1f, scaleVelocity, scaleTarget = 1f;
     float width = 1f, widthVelocity;
     float bar = 1f, barVelocity, barTarget = 1f;
@@ -34,10 +43,12 @@ final class DockSpring {
                 velocity += (180f * (target - position) - 22f * velocity) * dt;
                 position += velocity * dt;
             }
-            scaleVelocity += (PRESS_STIFFNESS * (scaleTarget - scale) - PRESS_DAMPING * scaleVelocity) * dt; scale += scaleVelocity * dt;
+            float pressTime = scaleTarget > 1f ? PRESS_TIME_MULTIPLIER : 1f;
+            float stiffness = PRESS_STIFFNESS / (pressTime * pressTime), damping = PRESS_DAMPING / pressTime;
+            scaleVelocity += (stiffness * (scaleTarget - scale) - damping * scaleVelocity) * dt; scale += scaleVelocity * dt;
             float stretch = 1f + Math.min(.25f, Math.abs(velocity) * .025f);
             widthVelocity += (200f * (stretch - width) - 18f * widthVelocity) * dt; width += widthVelocity * dt;
-            barVelocity += (PRESS_STIFFNESS * (barTarget - bar) - PRESS_DAMPING * barVelocity) * dt; bar += barVelocity * dt;
+            barVelocity += (stiffness * (barTarget - bar) - damping * barVelocity) * dt; bar += barVelocity * dt;
         }
         if (coasting && Math.abs(velocity) < .08f && position >= -.02f && position <= lastSlot + .02f) {
             coasting = false; target = Math.round(Math.max(0f, Math.min(lastSlot, position)));

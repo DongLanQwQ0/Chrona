@@ -158,7 +158,7 @@ public class DockNavigationCheck {
   touch(2,150,35);close(center(),next,"Retargeting does not teleport during MOVE");
   View.advance(80);require(center()>first&&center()<200,"Direction reversal retains bounded inertia");
   float beforeUp=center();touch(1,245,35);close(center(),beforeUp,"Release preserves visual position");
-  require(selected.isEmpty(),"Release waits for physical coast landing instead of finger target");
+  require(selected.equals(List.of(1)),"Release starts predicted page immediately while highlight keeps moving");
   View.advance(1800);close(center(),150,"Stationary release lands at actual visual position rather than remote finger position");
   init();touch(0,30,35);View.advance(800);center();close(GradientDrawable.lastWidth,150,"Held highlight scales to 1.5");close(GradientDrawable.lastHeight,90,"Held highlight height scales to 1.5");require(Math.abs(dock.scaleX-1.1f)<.002f,"Held dock scales to 1.1");
   touch(1,30,100);View.advance(1000);center();close(GradientDrawable.lastWidth,100,"Released highlight returns to base width");require(Math.abs(dock.scaleX-1f)<.002f,"Released dock returns to base size");
@@ -166,12 +166,13 @@ public class DockNavigationCheck {
   for(int i=0;i<180;i++){physics.step(1f/120);maxWidth=Math.max(maxWidth,physics.width);maxPosition=Math.max(maxPosition,physics.position);}
   require(maxWidth>1.02f,"Moving highlight width stretches elastically");require(maxPosition>2f,"Position spring has bounded elastic overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.width-1)<.002f,"Spring settles rather than oscillating indefinitely");
   DockSpring fast=new DockSpring();fast.press(true);for(int i=0;i<12;i++)fast.step(1f/120);
-  require(fast.scale>1.4f&&fast.bar>1.08f,"Press expansion responds within 100ms");fast.press(false);for(int i=0;i<18;i++)fast.step(1f/120);
+  require(fast.scale<1.4f&&fast.bar<1.08f,"Press expansion is slower than previous 100ms response");for(int i=0;i<6;i++)fast.step(1f/120);
+  require(fast.scale>1.4f&&fast.bar>1.08f,"Press reaches previous response at 1.5 times elapsed time");fast.press(false);for(int i=0;i<18;i++)fast.step(1f/120);
   require(fast.scale<1.04f&&fast.bar<1.01f,"Release contracts rapidly");center();require((GradientDrawable.lastColor>>>24)==0x52,"Native highlight has 32 percent alpha for background blending");
   init();android.view.VelocityTracker.velocity=2500;touch(0,25,35);touch(2,150,35);touch(1,150,100);
   var springField=DockNavigationLayout.class.getDeclaredField("spring");springField.setAccessible(true);DockSpring transferred=(DockSpring)springField.get(dock);
-  require(Math.abs(transferred.velocity-25f)<.001f,"Release transfers measured physical finger velocity at 1:1 scale");require(selected.isEmpty(),"Selection remains pending during free coast");
-  View.advance(2500);require(selected.size()==1,"Free coast commits exactly once after damping");
+  require(Math.abs(transferred.velocity-25f)<.001f,"Release transfers measured physical finger velocity at 1:1 scale");require(selected.size()==1&&transferred.coasting,"Predicted page begins during free coast");
+  View.advance(2500);require(selected.size()==1,"Coast completion never switches the page a second time");
   init();android.view.VelocityTracker.velocity=-1800;touch(0,240,35);touch(2,140,35);touch(1,140,100);
   require(Math.abs(((DockSpring)springField.get(dock)).velocity+18f)<.001f,"Reverse release keeps measured velocity sign");android.view.VelocityTracker.velocity=0;
   DockSpring forward=new DockSpring();forward.position=1;forward.coast(4,4);
@@ -186,6 +187,15 @@ public class DockNavigationCheck {
   require(GradientDrawable.lastRight>350,"Right outer end can stretch beyond half width");
   edges.position=-1.5f;apply.invoke(dock);center();close(GradientDrawable.lastRight,50,"Left throw pins inner end half a standard width inside");
   require(GradientDrawable.lastLeft<-50,"Left outer end can stretch beyond half width");
+  require(GradientDrawable.lastLeft>=-75,"Outer end cannot exceed configured standard-width limit");
+  float a=DockSpring.outwardExtension(20,75),b=DockSpring.outwardExtension(40,75),c=DockSpring.outwardExtension(60,75);
+  require(a<b&&b<c&&(c-b)<(b-a),"Resistance progressively increases toward the outward limit");
+  require(DockSpring.outwardExtension(10000,75)<=75,"Extreme fling remains bounded");
+  DockSpring prediction=new DockSpring();prediction.position=1;prediction.velocity=3;
+  require(prediction.predictLanding(4,4)==2&&prediction.predictLanding(-4,4)==0,"Prediction includes velocity-dependent landing");
+  require(prediction.position==1&&prediction.velocity==3,"Prediction does not mutate displayed state or velocity");
+  DockSpring resisted=new DockSpring();resisted.coast(1,10);for(int i=0;i<120;i++)resisted.step(1f/120);
+  require(resisted.position<.14f,"Increased ordinary resistance shortens coast distance");
   init();touch(0,245,35);View.advance(500);close(center(),50,"Long press starts at existing highlight");
   View.advance(32);require(center()>50&&center()<245,"Long press smoothly approaches finger");
   touch(3,245,35);View.advance(400);close(center(),50,"Cancel stops finger loop and returns");

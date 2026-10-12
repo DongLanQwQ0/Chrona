@@ -33,6 +33,7 @@ final class DockNavigationLayout extends LinearLayout {
     private float settleFrom, settleTo, settleFraction, settleBaseFraction;
     private boolean pageSettling;
     private boolean coastSelection;
+    private int coastDestination;
     private int selectedIndex, tapIndex, labelIndex = -1;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private final Runnable finishTouch = this::finishTouch;
@@ -87,6 +88,7 @@ final class DockNavigationLayout extends LinearLayout {
 
     /** Use the page's animator, starting at the actual highlight position after a dock drag. */
     void beginPageSettle(int destination) {
+        if (coastSelection) return;
         cancelFingerFollow();
         settleFrom = Float.isNaN(visualPosition) ? selectedIndex : visualPosition;
         settleTo = destination;
@@ -181,7 +183,7 @@ final class DockNavigationLayout extends LinearLayout {
     private void advanceFingerFollow() {
         followPosted = false;
         if (!ValueAnimator.areAnimatorsEnabled()) {
-            if (coastSelection) { spring.target = Math.round(spring.landing()); commitCoast(); }
+            if (coastSelection) commitCoast();
             spring.snap(); applySpring();
             return;
         }
@@ -197,9 +199,9 @@ final class DockNavigationLayout extends LinearLayout {
     }
     private void commitCoast() {
         coastSelection = false;
-        int destination = Math.max(0, Math.min(getChildCount() - 1, Math.round(spring.target)));
-        select.accept(destination);
-        if (!pageSettling) animateTo(destination);
+        spring.coasting = false;
+        spring.target = coastDestination;
+        animateTo(coastDestination);
         post(finishTouch);
     }
     private void applySpring() {
@@ -241,6 +243,9 @@ final class DockNavigationLayout extends LinearLayout {
             float standardWidth = cell.getWidth();
             left = Math.min(left, Math.round(getWidth() - standardWidth / 2f));
             right = Math.max(right, standardWidth / 2f);
+            float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
+            if (left < 0) left = -Math.round(DockSpring.outwardExtension(-left, maximum));
+            if (right > getWidth()) right = getWidth() + DockSpring.outwardExtension(right - getWidth(), maximum);
             // Alpha blends the accent over the dock's existing sampled acrylic background.
             highlight.setColor((UiStyle.colors(getContext()).primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
             highlight.setBounds(left, top, Math.round(right), Math.round(top + height));
@@ -334,10 +339,12 @@ final class DockNavigationLayout extends LinearLayout {
             press(false);
             if (commit) {
                 pageSettling = false;
+                coastDestination = spring.predictLanding(releaseSpeed, Math.max(0, getChildCount() - 1));
                 coastSelection = true;
                 spring.coast(releaseSpeed, Math.max(0, getChildCount() - 1));
+                select.accept(coastDestination);
                 if (!ValueAnimator.areAnimatorsEnabled()) {
-                    spring.target = Math.round(spring.landing()); commitCoast(); spring.snap(); applySpring();
+                    commitCoast(); spring.snap(); applySpring();
                 }
             } else if (owned) {
                 resumeOrReturnHighlight();

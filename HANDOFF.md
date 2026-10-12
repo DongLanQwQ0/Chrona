@@ -1,3 +1,9 @@
+# 本轮补充 · 2026-10-12 · 0.14.16
+
+用户追加最大伸出距离及渐进阻力、增大普通滑行阻力、放大动画延长至 1.5 倍，并明确要求提前计算落点、松手立即切页。DockSpring 新增 predictLanding，克隆当前位置后执行同一生产 step 预演自由滑行和边缘回弹，实际速度保持 1∶1；DockNavigationLayout 立即 select.accept，beginPageSettle 在惯性中不接管，惯性完成仅吸附，不二次选页。CalendarOverview 移除等待 Dock 稳定后的构建门槛。网页复用 coastDockStep 预测并立即路由。
+
+普通 COAST_DAMPING 5→7.5。放大阶段时间乘 1.5（刚度 900→400，阻尼 50→33.333），释放缩回仍 900/50。外端 tanh 映射上限为标准高光宽度 0.75，内端半宽锚定保留。原生 77 项、完整 39/39、真实 Edge 动效与完整交互、debug/release/lint 均通过。备份 build/backups/20261012-dock-resistance。0.14.16 / 123；ADB 无设备，Android 实际手感和帧率未验证。
+
 # 本轮补充 · 2026-10-12 · 0.14.15
 
 用户真机报告上一版模糊和日历掉帧未解决，并明确要求惯性决定最终落点、主导航收窄居中、选中主题色，以及标准宽度的一半越界后内端停住、外端继续拉伸。取消 Dashboard 整页 withLayer 并恢复每帧重采样；GlassBackdropView 改用缓存 CLAMP BitmapShader 与移动坐标矩阵，避免离屏采样变实色。CalendarOverview 不再同步截图，保留旧原生子树过渡，合并过渡内请求并等待 Dock 运动结束后构建视图。
