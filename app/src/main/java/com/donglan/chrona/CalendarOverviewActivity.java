@@ -66,6 +66,8 @@ public final class CalendarOverviewActivity extends Activity {
     private int renderedMode;
     private boolean renderedSystem;
     private CalendarDayCounts dayCounts;
+    private View monthDates;
+    private LinearLayout monthDetails;
     private long lastScrollAt;
     private AgendaRepository.Snapshot deferredSnapshot;
     private String deferredKey;
@@ -271,8 +273,37 @@ public final class CalendarOverviewActivity extends Activity {
     }
 
     private void navigateDate(LocalDate target) {
+        if (selectMonthDay(target)) return;
         int direction = target.compareTo(date);
         date = target; animatedLoad(Integer.signum(direction));
+    }
+
+    /** Keep the existing month grid, scroll host and focused date cells when only selection changes. */
+    private boolean selectMonthDay(LocalDate target) {
+        if (mode != MONTH || renderedMode != MONTH || loadingStale || monthDates == null || monthDetails == null
+                || !renderedKey.equals(windowKey(snapshot.zone))
+                || !java.time.YearMonth.from(target).equals(java.time.YearMonth.from(renderedDate))) return false;
+        if (date.equals(target)) return true;
+        rememberPosition();
+        LocalDate previous = date; date = target; renderedDate = target;
+        updateHeader(); updateMonthCell(previous); updateMonthCell(target);
+        updateMonthDetails(matching()); restorePosition();
+        handler.removeCallbacks(minuteTick);
+        if (resumed) handler.postDelayed(minuteTick, nextTickDelay());
+        return true;
+    }
+    private void updateMonthCell(LocalDate day) {
+        View cell = monthDates.findViewWithTag("day:" + day);
+        if (!(cell instanceof FrameLayout frame)) return;
+        boolean selected = day.equals(date), today = day.equals(LocalDate.now());
+        ((TextView) frame.getChildAt(0)).setTextColor(selected || today ? UiStyle.colors(this).primary : UiStyle.colors(this).text);
+        calendarSurface(frame, selected, 15, selected || today); frame.setSelected(selected);
+        frame.setContentDescription(day + (today ? "，今天" : "") + (selected ? "，已选中" : "") + "，本月，" + dayCounts.on(day) + "项日程");
+    }
+    private void updateMonthDetails(List<AgendaEntry> entries) {
+        monthDetails.removeAllViews(); statuses.clear();
+        TextView selected = text(date.format(DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)), 17, true);
+        UiStyle.addSpaced(monthDetails, selected, 16, 8); dayList(monthDetails, entries, date);
     }
 
     private void changeMode(int target) {
@@ -489,6 +520,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
     private void buildBody() {
         body.removeAllViews(); timeLines = null; verticalViewport = null; horizontalViewport = null; statuses.clear();
+        monthDates = null; monthDetails = null;
         renderedKey = windowKey(snapshot.zone); renderedQuery = query; renderedDate = date; renderedToday = LocalDate.now();
         renderedMode = mode; renderedSystem = includeSystem; updateHeader();
         List<AgendaEntry> entries = matching();
@@ -513,9 +545,8 @@ public final class CalendarOverviewActivity extends Activity {
                 UiStyle.addSpaced(content, months, 0, 8);
             }
         } else if (mode == MONTH) {
-            content.addView(monthGrid(date.withDayOfMonth(1), entries, false));
-            TextView selected = text(date.format(DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.CHINA)), 17, true);
-            UiStyle.addSpaced(content, selected, 16, 8); dayList(content, entries, date);
+            monthDates = monthGrid(date.withDayOfMonth(1), entries, false); content.addView(monthDates);
+            monthDetails = column(); content.addView(monthDetails); updateMonthDetails(entries);
         } else {
             LocalDate month = date.withDayOfMonth(1);
             int shown = 0;
@@ -578,8 +609,7 @@ public final class CalendarOverviewActivity extends Activity {
                 cell.setFocusable(true);
                 cell.setOnClickListener(v -> {
                     if (mini) { date = day; changeMode(MONTH); }
-                    else if (!ownMonth) navigateDate(day);
-                    else { date = day; animateNext = resumed; transitionDirection = 0; renderBody(); }
+                    else navigateDate(day);
                 });
                 int cellHeight = Math.max(dp(mini ? 25 : 56), Math.round(number.getTextSize()) + markerHeight + dp(mini ? 4 : 16));
                 LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, cellHeight, 1);

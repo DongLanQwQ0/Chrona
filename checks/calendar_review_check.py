@@ -24,7 +24,8 @@ def method(marker):
 
 controller = '\n'.join(method(marker) for marker in ('private LocalDate windowStart(', 'private LocalDate windowEnd(',
     'private String windowKey(', 'private void rememberPosition(', 'private void restorePosition(',
-    'private void cancelRead(', 'private void applyDeferred(', 'private void applyLoaded(', 'private void load(', 'private void updateHeader('))
+    'private void cancelRead(', 'private void applyDeferred(', 'private void applyLoaded(', 'private void load(', 'private void updateHeader(',
+    'private boolean selectMonthDay(', 'private void navigateDate('))
 
 files = {
  'android/os/OperationCanceledException.java': 'package android.os; public class OperationCanceledException extends RuntimeException {}',
@@ -83,6 +84,7 @@ class View {
  static final int IMPORTANT_FOR_ACCESSIBILITY_AUTO=0,IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS=4;
  int importance;void setImportantForAccessibility(int value){importance=value;}
 }
+class LinearLayout extends View {}
 class FrameLayout extends View {
  final Queue queue;View child=new View();FrameLayout(Queue q){queue=q;}int getChildCount(){return child==null?0:1;}
  void removeAllViews(){child=null;}void addView(View v){child=v;}void post(Runnable r){queue.post(r);}
@@ -104,6 +106,7 @@ public class CalendarReviewCheck extends Context {
  java.util.concurrent.Future<?> readFuture;CancellationSignal readCancellation;
  final Queue handler=new Queue();final FrameLayout body=new FrameLayout(handler);ScrollView verticalViewport;HorizontalScrollView horizontalViewport;
  String renderedKey="",renderedQuery="",query="",deferredKey;int deferredToken;long lastScrollAt;
+ View monthDates;LinearLayout monthDetails;int cellUpdates,detailsUpdates,navigationReads;LocalDate detailsDate;final Runnable minuteTick=()->{};
  final LinkedHashMap<String,int[]>positions=new LinkedHashMap<>(16,.75f,true);
  AgendaRepository.Snapshot snapshot=new AgendaRepository.Snapshot(),deferredSnapshot;final Runnable deferredApply=this::applyDeferred;
  final TextView dateTitle=new TextView();final Switch sourceSwitch=new Switch();final Tabs tabs=new Tabs();Object tabMotion;Dialog allDayDialog;final Preferences preferences=new Preferences();
@@ -111,6 +114,8 @@ public class CalendarReviewCheck extends Context {
  void finishTabMotion(){}void finishBodyMotion(){}void moveTabHighlight(){renderedHighlights++;}
  View action(String label,Runnable action){return new View();}
  View text(String label,int size,boolean bold){return new View();}
+ void updateMonthCell(LocalDate day){cellUpdates++;}void updateMonthDetails(List<AgendaEntry>entries){detailsUpdates++;detailsDate=date;}
+ List<AgendaEntry>matching(){return snapshot.entries;}long nextTickDelay(){return 60000;}void animatedLoad(int direction){navigationReads++;}
  void renderBody(){renderCalls++;renderedKey=windowKey(snapshot.zone);renderedDate=date;renderedToday=LocalDate.now();renderedQuery=query;renderedMode=mode;renderedSystem=includeSystem;}
  @@CONTROLLER@@
  static int checks;static void check(boolean ok,String why){checks++;if(!ok)throw new AssertionError(why);}
@@ -178,6 +183,16 @@ public class CalendarReviewCheck extends Context {
    m.load();check(m.loadingStale&&m.body.importance==4,"different window hides stale accessibility content");m.readFuture.get(3,TimeUnit.SECONDS);m.handler.drain();
    check(m.mode==MONTH&&m.date.equals(m.renderedDate)&&!m.loadingStale&&m.body.child==oldBody,"failed navigation restores successful context");
    int token=m.generation;m.cancelRead();m.applyLoaded(changed,"bad",token);check(m.mode==MONTH,"cancelled lifecycle result ignored");
+   m.monthDates=new View();m.monthDetails=new LinearLayout();m.renderedMode=MONTH;m.mode=MONTH;m.renderedDate=m.date;
+   m.renderedKey=m.windowKey(m.snapshot.zone);View grid=m.monthDates,details=m.monthDetails;ScrollView scroll=m.verticalViewport;
+   int bodyRenders=m.renderCalls,reads=m.reads.get();LocalDate target=m.date.plusDays(1);
+   m.navigateDate(target);m.handler.drain();
+   check(m.monthDates==grid&&m.monthDetails==details&&m.verticalViewport==scroll&&m.renderCalls==bodyRenders,"same-month selection preserves actual hosts and skips body rebuild");
+   check(m.date.equals(target)&&m.renderedDate.equals(target)&&m.detailsDate.equals(target)&&m.cellUpdates==2&&m.detailsUpdates==1,"selection updates old/new cells and only day details");
+   check(m.reads.get()==reads&&m.navigationReads==0,"same month does not schedule repository read");
+   m.navigateDate(target);check(m.detailsUpdates==1&&m.cellUpdates==2,"reselecting same day is a no-op");
+   m.loading=true;m.navigateDate(target.plusDays(1));check(m.navigationReads==0&&m.detailsUpdates==2,"same-month selection stays local during background refresh");
+   m.loading=false;m.navigateDate(target.plusMonths(1));check(m.navigationReads==1,"different month follows normal navigation");
   } finally {m.release.countDown();m.cancelRead();m.reader.shutdownNow();}
   System.out.println("Calendar review checks passed: "+checks+"; real counts/repository/read and scroll methods, Android transport stand-ins");
  }

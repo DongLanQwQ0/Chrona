@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.11 — 2026-10-12
+
+- 月内选日采用原位更新，专项 127 项通过；新增检查执行真实 selectMonthDay/navigateDate，核对月历/列表宿主/滚动宿主身份保留、无整页重建或读取、只更新前后选中格与当天列表、重复选择无操作、后台刷新时局部选择及跨月导航。Android UI 为替身，未验收真机呈现。日志 `build/month-day-selection-check.log`。
+- debug/release 与 lint 通过，0 errors / 84 warnings，日志 `build/month-day-selection-build.log`。APK 0.14.11 / 118，1,978,154 字节，SHA256 `df83b84c9d345c08e71a0f63f8723828bb78950e94111127433648ec4f80dbff`，原安装证书、无调试标记；分发 `build/distributions/0.14.11/Chrona-0.14.11.apk`。
+- 备份 `build/backups/20261012-month-day-selection`；公共发布核对 `build/release-0.14.11-artifact.json`、`build/month-day-selection-public-verification.log`。未进行 Android 真机视觉、手势或覆盖安装验收。
+
 ## 0.14.10 — 2026-10-12
 
 - 根据用户实际 Android 截图检查透明度叠加与壁纸底板：数量取消二次 alpha，非本月整格仅弱化一次；日历局部底板提高混色下限，选中日期描边，系统/已结束标题恢复正常文字对比度。备份 `build/backups/20261012-calendar-contrast-gestures`。
