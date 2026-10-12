@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.17 — 2026-10-13
+
+- 完整离线回归 40/40，`build/shared-dock-full-checks.log`。原生 Dock 83 项包含横竖手势、Y 速度、竖向栏外释放、渲染属性更新期间无整栏 invalidate 与无重复布局；采用 Android 队列/布局替身。
+- 新增生产日历分帧构建调度 12 项，验证工作预算让出帧、动态追加日期行、完成仅执行一次、取消回调并使不完整缓存失效。采用时钟/帧回调替身，不能替代 Android 帧率测量。最终 Dashboard 切页控制器 12 项复验通过。
+- debug/release/lint 通过，0 errors / 84 warnings，日志 `build/shared-dock-final-build.log`。0.14.17 / 124，1,987,778 字节，SHA256 `a5fe3f47405b13f10d8a541ee17b6b086d42996132d08a41565320ae6972cffd`，保持原安装签名；备份 `build/backups/20261013-shared-dock`。ADB 无设备，横屏视觉、真实 FPS 与覆盖安装未实测。
+
 ## 0.14.16 — 2026-10-12
 
 - 完整回归 39/39，原生 Dock 77 项覆盖渐进上限、放大时间倍率、额外阻力、预测不修改显示状态、立即选页与惯性结束不重复选页；生产方法使用 Android 队列替身。日志 `build/dock-resistance-full-checks.log`。

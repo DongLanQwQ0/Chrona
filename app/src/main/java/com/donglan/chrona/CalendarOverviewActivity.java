@@ -48,7 +48,6 @@ public final class CalendarOverviewActivity extends Activity {
     private AgendaRepository.Snapshot snapshot = new AgendaRepository.Snapshot();
     private LinearLayout root;
     private DockNavigationLayout tabs;
-    private android.animation.ValueAnimator tabMotion;
     private int presentationGeneration;
     private boolean bodyTransitionRunning, loadingStale, bodyTouchActive;
     private final CalendarSwipe swipe = new CalendarSwipe();
@@ -61,6 +60,28 @@ public final class CalendarOverviewActivity extends Activity {
     private FrameLayout outgoingBody;
     private boolean pendingBodyRender;
     private final Runnable renderPendingBody = this::renderBody;
+    private static final long BUILD_FRAME_BUDGET_NANOS = 4_000_000L;
+    private java.util.ArrayDeque<Runnable> calendarBuildSteps;
+    private Runnable calendarBuildDone;
+    private final Runnable calendarBuildFrame = this::buildCalendarFrame;
+    private void cancelCalendarBuild() {
+        if (calendarBuildSteps == null) return;
+        body.removeCallbacks(calendarBuildFrame); calendarBuildSteps = null; calendarBuildDone = null;
+        renderedKey = "";
+    }
+    private void enqueueCalendarBuild(Runnable step) {
+        if (calendarBuildSteps == null) step.run(); else calendarBuildSteps.add(step);
+    }
+    private void buildCalendarFrame() {
+        if (calendarBuildSteps == null) return;
+        long started = System.nanoTime();
+        do { calendarBuildSteps.removeFirst().run(); }
+        while (!calendarBuildSteps.isEmpty() && System.nanoTime() - started < BUILD_FRAME_BUDGET_NANOS);
+        if (!calendarBuildSteps.isEmpty()) { body.postOnAnimation(calendarBuildFrame); return; }
+        calendarBuildSteps = null;
+        Runnable done = calendarBuildDone; calendarBuildDone = null;
+        if (done != null) done.run();
+    }
     private ScrollView verticalViewport;
     private HorizontalScrollView horizontalViewport;
     private final java.util.LinkedHashMap<String, int[]> positions = new java.util.LinkedHashMap<>(16, .75f, true);
@@ -134,12 +155,12 @@ public final class CalendarOverviewActivity extends Activity {
         navigation.addView(today, new LinearLayout.LayoutParams(-2, dp(44))); root.addView(navigation);
         tabs = new DockNavigationLayout(this, this::changeMode, () -> { });
         tabs.setPadding(dp(3), dp(3), dp(3), dp(3));
-        calendarSurface(tabs, false, UiStyle.RADIUS_PILL, false);
         String[] labels = {"年", "月", "周", "日", "日程"};
         for (int i = 0; i < labels.length; i++) {
             int target = i;
-            TextView tab = action(labels[i], () -> changeMode(target));
-            tabs.addView(tab, new LinearLayout.LayoutParams(0, dp(42), 1));
+            TextView tab = text(labels[i], 14, true); tab.setGravity(Gravity.CENTER);
+            tab.setOnClickListener(v -> changeMode(target));
+            tabs.addItem(tab, new LinearLayout.LayoutParams(0, dp(42), 1));
         }
         tabs.setSelectedIndex(mode);
         updateTabSemantics();
@@ -308,34 +329,17 @@ public final class CalendarOverviewActivity extends Activity {
 
     private void moveTabHighlight() {
         updateTabSemantics();
-        android.animation.ValueAnimator old = tabMotion; tabMotion = null;
-        if (old != null) old.cancel();
-        if (!resumed || !UiMotion.isEnabled()) { tabs.finishPageSelection(mode); return; }
-        tabs.beginPageSettle(mode);
-        android.animation.ValueAnimator motion = android.animation.ValueAnimator.ofFloat(0f, 1f);
-        tabMotion = motion; motion.setDuration(UiMotion.ENTER); motion.setInterpolator(UiMotion.SETTLE);
-        motion.addUpdateListener(value -> {
-            if (!UiMotion.isEnabled()) { finishTabMotion(); return; }
-            tabs.updatePageSettle((float) value.getAnimatedValue());
-        });
-        motion.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (tabMotion != motion) return; tabMotion = null; tabs.finishPageSelection(mode);
-            }
-        });
-        motion.start();
+        tabs.finishPageSelection(mode);
     }
 
     private void finishTabMotion() {
-        android.animation.ValueAnimator old = tabMotion; tabMotion = null;
-        if (old != null) old.cancel();
         tabs.finishPageSelection(mode);
         updateTabSemantics();
     }
 
     private void updateTabSemantics() {
-        for (int i = 0; i < tabs.getChildCount(); i++) {
-            View tab = tabs.getChildAt(i); tab.setSelected(i == mode);
+        for (int i = 0; i < tabs.itemCount(); i++) {
+            View tab = tabs.itemAt(i); tab.setSelected(i == mode);
             tab.setContentDescription(((TextView) tab).getText() + "视图" + (i == mode ? "，已选中" : ""));
         }
     }
@@ -345,6 +349,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
 
     private void finishBodyMotion() {
+        cancelCalendarBuild();
         presentationGeneration++; bodyTransitionRunning = false;
         body.animate().setListener(null).setUpdateListener(null).cancel();
         body.setAlpha(1f); body.setTranslationX(0f);
@@ -430,7 +435,7 @@ public final class CalendarOverviewActivity extends Activity {
                 : View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         boolean system = includeSystem;
         updateHeader();
-        if (tabMotion == null) tabs.finishPageSelection(mode);
+        tabs.finishPageSelection(mode);
         if (body.getChildCount() == 0) body.addView(text("正在读取日程…", 14, false));
         android.os.CancellationSignal cancellation = new android.os.CancellationSignal();
         readCancellation = cancellation;
@@ -482,7 +487,7 @@ public final class CalendarOverviewActivity extends Activity {
         int presentation = ++presentationGeneration;
         Runnable rebuild = () -> {
             body.setTranslationX(animated ? dp(18) * transitionDirection : 0);
-            buildBody(); restorePosition();
+            buildBody();
         };
         if (animated) {
             // Keep the outgoing native subtree. No synchronous software screenshot or
@@ -494,19 +499,27 @@ public final class CalendarOverviewActivity extends Activity {
             }
             outgoingBody.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             bodyViewport.addView(outgoingBody, 0, new FrameLayout.LayoutParams(-1, -1));
-            rebuild.run(); body.setAlpha(0f); bodyTransitionRunning = true;
-            outgoingBody.animate().withLayer().alpha(0f).setDuration(UiMotion.ENTER).start();
-            body.animate().withLayer().alpha(1f).translationX(0f).setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE)
-                    .setUpdateListener(value -> { if (!UiMotion.isEnabled() || body.hasFocus()) finishBodyMotion(); })
-                    .setListener(new android.animation.AnimatorListenerAdapter() {
-                        @Override public void onAnimationEnd(android.animation.Animator animation) {
-                            if (presentation == presentationGeneration) finishBodyMotion();
-                        }
-                        @Override public void onAnimationCancel(android.animation.Animator animation) {
-                            if (presentation == presentationGeneration) finishBodyMotion();
-                        }
-                    }).start();
-        } else { finishBodyMotion(); rebuild.run(); }
+            body.setAlpha(0f); bodyTransitionRunning = true;
+            calendarBuildSteps = new java.util.ArrayDeque<>();
+            rebuild.run();
+            calendarBuildDone = () -> {
+                restorePosition();
+                outgoingBody.animate().withLayer().alpha(0f).setDuration(UiMotion.ENTER).start();
+                body.animate().withLayer().alpha(1f).translationX(0f).setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE)
+                        .setUpdateListener(value -> { if (!UiMotion.isEnabled() || body.hasFocus()) finishBodyMotion(); })
+                        .setListener(new android.animation.AnimatorListenerAdapter() {
+                            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                                if (presentation == presentationGeneration) finishBodyMotion();
+                            }
+                            @Override public void onAnimationCancel(android.animation.Animator animation) {
+                                if (presentation == presentationGeneration) finishBodyMotion();
+                            }
+                        }).start();
+                };
+            if (calendarBuildSteps.isEmpty()) {
+                calendarBuildSteps = null; Runnable done = calendarBuildDone; calendarBuildDone = null; done.run();
+            } else body.postOnAnimation(calendarBuildFrame);
+        } else { finishBodyMotion(); rebuild.run(); restorePosition(); }
         View presented = body.getChildAt(0);
         if (focusTag != null || accessibleTag != null) body.post(() -> {
             if (presented != body.getChildAt(0)) return;
@@ -540,9 +553,12 @@ public final class CalendarOverviewActivity extends Activity {
         if (snapshot.truncated) notice(content, "日程数量较多，请缩小日期范围");
         if (mode == YEAR) {
             for (int pair = 0; pair < 6; pair++) {
+                final int monthPair = pair;
+                final int year = date.getYear();
+                enqueueCalendarBuild(() -> {
                 LinearLayout months = row(); months.setGravity(Gravity.TOP);
                 for (int offset = 0; offset < 2; offset++) {
-                    LocalDate month = LocalDate.of(date.getYear(), pair * 2 + offset + 1, 1);
+                    LocalDate month = LocalDate.of(year, monthPair * 2 + offset + 1, 1);
                     LinearLayout tile = column(); tile.setPadding(dp(8), dp(10), dp(8), dp(10)); calendarSurface(tile, false, UiStyle.RADIUS_PANEL, true);
                     TextView label = text(month.getMonthValue() + "月", 17, true); label.setTextColor(UiStyle.colors(this).primary); tile.addView(label);
                     tile.addView(monthGrid(month, entries, true));
@@ -550,6 +566,7 @@ public final class CalendarOverviewActivity extends Activity {
                     months.addView(tile, params);
                 }
                 UiStyle.addSpaced(content, months, 0, 8);
+                });
             }
         } else if (mode == MONTH) {
             monthDates = monthGrid(date.withDayOfMonth(1), entries, false); content.addView(monthDates);
@@ -575,9 +592,11 @@ public final class CalendarOverviewActivity extends Activity {
         grid.addView(week);
         LocalDate first = month.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         for (int r = 0; r < 6; r++) {
+            final int weekRow = r;
+            enqueueCalendarBuild(() -> {
             LinearLayout line = row();
             for (int c = 0; c < 7; c++) {
-                LocalDate day = first.plusDays(r * 7L + c);
+                LocalDate day = first.plusDays(weekRow * 7L + c);
                 boolean ownMonth = day.getMonth() == month.getMonth();
                 int count = dayCounts.on(day);
                 FrameLayout cell = new FrameLayout(this);
@@ -624,6 +643,7 @@ public final class CalendarOverviewActivity extends Activity {
                 line.addView(cell, cellParams);
             }
             grid.addView(line);
+            });
         }
         return grid;
     }

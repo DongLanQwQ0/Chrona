@@ -2,7 +2,6 @@ package com.donglan.chrona;
 
 import android.content.Context;
 import android.animation.ValueAnimator;
-import android.graphics.Canvas;
 import android.graphics.drawable.GradientDrawable;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -15,9 +14,12 @@ import android.widget.TextView;
 
 import java.util.function.IntConsumer;
 
-/** A shared selection surface that follows a finger across the mobile dock. */
-final class DockNavigationLayout extends LinearLayout {
+/** Shared horizontal/vertical dock; glass, highlight and buttons have separate render nodes. */
+final class DockNavigationLayout extends FrameLayout {
     private final GradientDrawable highlight = new GradientDrawable();
+    private final View highlightView;
+    private final LinearLayout items;
+    private int orientation = LinearLayout.HORIZONTAL;
     private final int touchSlop;
     private final IntConsumer select;
     private final Runnable finished;
@@ -45,7 +47,7 @@ final class DockNavigationLayout extends LinearLayout {
     }
     private final Runnable longPress = () -> {
         if (tracking && !dragging && !ignoreTouch) {
-            beginDrag(downX);
+            beginDrag(axis(downX, downY));
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         }
     };
@@ -56,7 +58,28 @@ final class DockNavigationLayout extends LinearLayout {
         this.finished = finished;
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         setClipChildren(false); setClipToPadding(false);
+        highlightView = new View(context);
+        highlightView.setBackground(highlight);
+        highlightView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        highlightView.setPivotX(0f); highlightView.setPivotY(0f);
+        addView(highlightView, new FrameLayout.LayoutParams(1, 1));
+        items = new LinearLayout(context); items.setClipChildren(false); items.setClipToPadding(false);
+        addView(items, new FrameLayout.LayoutParams(-1, -1));
+        UiStyle.glass(this);
+        UiStyle.minimumAcrylicMix(this, 54);
         highlight.setCornerRadius(UiStyle.RADIUS_PANEL * getResources().getDisplayMetrics().density);
+        highlight.setColor((UiStyle.colors(context).primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
+    }
+    void setOrientation(int value) { orientation = value; items.setOrientation(value); }
+    int itemCount() { return items.getChildCount(); }
+    View itemAt(int index) { return items.getChildAt(index); }
+    void addItem(View view, LinearLayout.LayoutParams params) { items.addView(view, params); }
+    void addItem(View view) { items.addView(view); }
+    void clearItems() { items.removeAllViews(); }
+    private boolean vertical() { return orientation == LinearLayout.VERTICAL; }
+    private float axis(float x, float y) { return vertical() ? y : x; }
+    @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom); applySpring();
     }
 
     boolean isTrackingTouch() { return tracking; }
@@ -67,6 +90,7 @@ final class DockNavigationLayout extends LinearLayout {
         if (Float.isNaN(visualPosition)) { visualPosition = index; spring.position = spring.target = index; }
         labelIndex = -1;
         if (!dragging) updateLabels(Math.round(visualPosition));
+        updateHighlight();
         invalidate();
     }
 
@@ -115,8 +139,7 @@ final class DockNavigationLayout extends LinearLayout {
 
     private void setVisualPosition(float position) {
         visualPosition = position;
-        updateLabels(Math.max(0, Math.min(getChildCount() - 1, Math.round(position))));
-        invalidate();
+        updateLabels(Math.max(0, Math.min(itemCount() - 1, Math.round(position))));
     }
 
     private void resumeOrReturnHighlight() {
@@ -130,14 +153,15 @@ final class DockNavigationLayout extends LinearLayout {
     }
 
     private float center(int index) {
-        View child = getChildAt(index);
-        return child == null ? 0 : (child.getLeft() + child.getRight()) / 2f;
+        View child = itemAt(index);
+        return child == null ? 0 : vertical() ? items.getTop() + (child.getTop() + child.getBottom()) / 2f
+                : items.getLeft() + (child.getLeft() + child.getRight()) / 2f;
     }
 
     private int nearest(float x) {
         int result = 0;
         float distance = Float.MAX_VALUE;
-        for (int i = 0; i < getChildCount(); i++) {
+        for (int i = 0; i < itemCount(); i++) {
             float candidate = Math.abs(x - center(i));
             if (candidate < distance) { result = i; distance = candidate; }
         }
@@ -145,14 +169,14 @@ final class DockNavigationLayout extends LinearLayout {
     }
 
     private float centerAt(float position) {
-        if (getChildCount() < 2) return center(0);
-        int from = Math.max(0, Math.min(getChildCount() - 2, (int) Math.floor(position)));
+        if (itemCount() < 2) return center(0);
+        int from = Math.max(0, Math.min(itemCount() - 2, (int) Math.floor(position)));
         int to = from + 1;
         return center(from) + (center(to) - center(from)) * (position - from);
     }
 
     private float positionAt(float x) {
-        for (int i = 0; i < getChildCount() - 1; i++) {
+        for (int i = 0; i < itemCount() - 1; i++) {
             float a = center(i), b = center(i + 1);
             if (a != b && x >= Math.min(a, b) && x <= Math.max(a, b))
                 return i + (x - a) / (b - a);
@@ -161,10 +185,10 @@ final class DockNavigationLayout extends LinearLayout {
     }
 
     private void moveHighlight(float x) {
-        if (getChildCount() == 0) return;
+        if (itemCount() == 0) return;
         // Clamp using physical bounds, which also works with RTL child ordering.
-        float left = Math.min(center(0), center(getChildCount() - 1));
-        float right = Math.max(center(0), center(getChildCount() - 1));
+        float left = Math.min(center(0), center(itemCount() - 1));
+        float right = Math.max(center(0), center(itemCount() - 1));
         fingerPosition = positionAt(Math.max(left, Math.min(right, x)));
         animateTo(fingerPosition);
     }
@@ -206,6 +230,7 @@ final class DockNavigationLayout extends LinearLayout {
     }
     private void applySpring() {
         setVisualPosition(spring.position); setScaleX(spring.bar); setScaleY(spring.bar);
+        updateHighlight();
     }
     private void press(boolean pressed) { spring.press(pressed); animateTo(spring.target); }
 
@@ -218,8 +243,9 @@ final class DockNavigationLayout extends LinearLayout {
         if (labelIndex == active) return;
         labelIndex = active;
         UiStyle.Palette palette = UiStyle.colors(getContext());
-        for (int i = 0; i < getChildCount(); i++) {
-            View cell = getChildAt(i);
+        highlight.setColor((palette.primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
+        for (int i = 0; i < itemCount(); i++) {
+            View cell = itemAt(i);
             if (cell instanceof FrameLayout wrapper) cell = wrapper.getChildAt(0);
             if (cell instanceof TextView label) {
                 int color = i == active ? palette.primary : palette.muted;
@@ -229,29 +255,34 @@ final class DockNavigationLayout extends LinearLayout {
         }
     }
 
-    @Override protected void dispatchDraw(Canvas canvas) {
-        View cell = getChildAt(selectedIndex);
+    private void updateHighlight() {
+        View cell = itemAt(selectedIndex);
         if (cell != null) {
             float x = centerAt(visualPosition);
-            float width = cell.getWidth() * spring.scale * spring.width;
-            float height = cell.getHeight() * spring.scale;
-            highlight.setCornerRadius(UiStyle.RADIUS_PANEL * getResources().getDisplayMetrics().density * spring.scale);
-            int left = Math.round(x - width / 2f), top = Math.round((cell.getTop() + cell.getBottom() - height) / 2f);
+            float standardWidth = vertical() ? cell.getHeight() : cell.getWidth();
+            float width = standardWidth * spring.scale * spring.width;
+            float height = (vertical() ? cell.getWidth() : cell.getHeight()) * spring.scale;
+            float board = vertical() ? getHeight() : getWidth();
+            int left = Math.round(x - width / 2f);
+            float cross = vertical() ? items.getLeft() + (cell.getLeft() + cell.getRight()) / 2f
+                    : items.getTop() + (cell.getTop() + cell.getBottom()) / 2f;
+            int top = Math.round(cross - height / 2f);
             float right = x + width / 2f;
             // Pin the inner end once half the standard width crosses the board. The outer
             // end continues stretching with momentum; it is not capped at half the width.
-            float standardWidth = cell.getWidth();
-            left = Math.min(left, Math.round(getWidth() - standardWidth / 2f));
+            left = Math.min(left, Math.round(board - standardWidth / 2f));
             right = Math.max(right, standardWidth / 2f);
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
             if (left < 0) left = -Math.round(DockSpring.outwardExtension(-left, maximum));
-            if (right > getWidth()) right = getWidth() + DockSpring.outwardExtension(right - getWidth(), maximum);
-            // Alpha blends the accent over the dock's existing sampled acrylic background.
-            highlight.setColor((UiStyle.colors(getContext()).primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
-            highlight.setBounds(left, top, Math.round(right), Math.round(top + height));
-            highlight.draw(canvas);
+            if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
+            int baseWidth = Math.max(1, cell.getWidth()), baseHeight = Math.max(1, cell.getHeight());
+            if (highlightView.getWidth() != baseWidth || highlightView.getHeight() != baseHeight)
+                highlightView.layout(0, 0, baseWidth, baseHeight);
+            highlightView.setTranslationX(vertical() ? top : left);
+            highlightView.setTranslationY(vertical() ? left : top);
+            highlightView.setScaleX((vertical() ? height : right - left) / baseWidth);
+            highlightView.setScaleY((vertical() ? right - left : height) / baseHeight);
         }
-        super.dispatchDraw(canvas);
     }
 
     private void cancelChildTouch() {
@@ -284,10 +315,11 @@ final class DockNavigationLayout extends LinearLayout {
         if (fingerVelocity != null) { fingerVelocity.recycle(); fingerVelocity = null; }
     }
     private float releasedVelocity() {
-        if (fingerVelocity == null || getChildCount() < 2) return 0f;
+        if (fingerVelocity == null || itemCount() < 2) return 0f;
         fingerVelocity.computeCurrentVelocity(1000);
-        float pixelsPerSlot = (center(1) - center(0)) * getScaleX();
-        return Math.abs(pixelsPerSlot) < 1f ? 0f : fingerVelocity.getXVelocity() / pixelsPerSlot;
+        float pixelsPerSlot = (center(1) - center(0)) * (vertical() ? getScaleY() : getScaleX());
+        return Math.abs(pixelsPerSlot) < 1f ? 0f
+                : (vertical() ? fingerVelocity.getYVelocity() : fingerVelocity.getXVelocity()) / pixelsPerSlot;
     }
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
@@ -317,14 +349,14 @@ final class DockNavigationLayout extends LinearLayout {
             resumeOrReturnHighlight();
         } else if (action == MotionEvent.ACTION_MOVE && tracking && !ignoreTouch) {
             if (!insideDock(event)) tapLeftBounds = true;
-            float dx = Math.abs(event.getX() - downX);
-            float dy = Math.abs(event.getY() - downY);
+            float dx = Math.abs(axis(event.getX() - downX, event.getY() - downY));
+            float dy = Math.abs(axis(event.getY() - downY, event.getX() - downX));
             if (!dragging && (dx > touchSlop || dy > touchSlop)) {
                 removeCallbacks(longPress);
-                if (dx > dy * 1.25f) beginDrag(event.getX());
-                // Vertical movement within a button is still an ordinary Android tap.
+                if (dx > dy * 1.25f) beginDrag(axis(event.getX(), event.getY()));
+                // Cross-axis movement within a button is still an ordinary Android tap.
             }
-            if (dragging) moveHighlight(event.getX());
+            if (dragging) moveHighlight(axis(event.getX(), event.getY()));
         }
         boolean owned = dragging || ignoreTouch;
         boolean handled = owned || super.dispatchTouchEvent(event);
@@ -339,9 +371,9 @@ final class DockNavigationLayout extends LinearLayout {
             press(false);
             if (commit) {
                 pageSettling = false;
-                coastDestination = spring.predictLanding(releaseSpeed, Math.max(0, getChildCount() - 1));
+                coastDestination = spring.predictLanding(releaseSpeed, Math.max(0, itemCount() - 1));
                 coastSelection = true;
-                spring.coast(releaseSpeed, Math.max(0, getChildCount() - 1));
+                spring.coast(releaseSpeed, Math.max(0, itemCount() - 1));
                 select.accept(coastDestination);
                 if (!ValueAnimator.areAnimatorsEnabled()) {
                     commitCoast(); spring.snap(); applySpring();
@@ -360,7 +392,7 @@ final class DockNavigationLayout extends LinearLayout {
         // Padding and gaps are also valid starts for a dock gesture.
         if (event.getActionMasked() == MotionEvent.ACTION_UP && !dragging && !ignoreTouch
                 && !tapLeftBounds && insideDock(event)) {
-            tapIndex = nearest(event.getX());
+            tapIndex = nearest(axis(event.getX(), event.getY()));
             performClick();
         }
         return true;
@@ -373,7 +405,7 @@ final class DockNavigationLayout extends LinearLayout {
 
     @Override public boolean performClick() {
         super.performClick();
-        if (getChildCount() > 0) select.accept(tapIndex);
+        if (itemCount() > 0) select.accept(tapIndex);
         return true;
     }
 

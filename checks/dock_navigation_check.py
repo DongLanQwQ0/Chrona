@@ -35,7 +35,7 @@ public static MotionEvent obtain(MotionEvent e){return new MotionEvent(e.a,e.x,e
 public int getActionMasked(){return a;} public float getX(){return x;} public float getY(){return y;} public float getRawX(){return x;}public float getRawY(){return y;}public long getDownTime(){return 0;}public long getEventTime(){return View.now;}public void recycle(){} }""",
     "android/view/VelocityTracker.java": """package android.view;public class VelocityTracker {
  public static float velocity;public static int recycled;public static VelocityTracker obtain(){return new VelocityTracker();}
- public void addMovement(MotionEvent event){}public void computeCurrentVelocity(int units){}public float getXVelocity(){return velocity;}public void recycle(){recycled++;}}
+ public void addMovement(MotionEvent event){}public void computeCurrentVelocity(int units){}public float getXVelocity(){return velocity;}public float getYVelocity(){return velocity;}public void recycle(){recycled++;}}
 """,
     "android/view/View.java": """package android.view;
 import java.util.*; import android.content.Context;
@@ -53,7 +53,10 @@ public class View {
  public View getParent(){return parent;} public void requestDisallowInterceptTouchEvent(boolean x){}
  public int getLeft(){return l;} public int getRight(){return r;} public int getTop(){return t;} public int getBottom(){return b;}
  public int getWidth(){return r-l;} public int getHeight(){return b-t;}
- public void layout(int l,int t,int r,int b){this.l=l;this.t=t;this.r=r;this.b=b;}
+ public int layouts,invalidations;public void layout(int l,int t,int r,int b){this.l=l;this.t=t;this.r=r;this.b=b;layouts++;if(this instanceof ViewGroup group)group.onLayout(true,l,t,r,b);}
+ public static final int IMPORTANT_FOR_ACCESSIBILITY_NO=2;public void setImportantForAccessibility(int value){}
+ public void setBackground(Object background){}public void setPivotX(float x){}public void setPivotY(float y){}
+ public float translationX,translationY;public void setTranslationX(float x){translationX=x;}public void setTranslationY(float y){translationY=y;}public float getTranslationX(){return translationX;}public float getTranslationY(){return translationY;}
  public void setOnClickListener(OnClickListener c){click=c;} public boolean performClick(){if(click!=null)click.onClick(this);return click!=null;}
  public boolean dispatchTouchEvent(MotionEvent e){return onTouchEvent(e);}
  public boolean onTouchEvent(MotionEvent e){if(click==null)return false;
@@ -65,8 +68,8 @@ public class View {
  public void postOnAnimation(Runnable action){postDelayed(action,16);}
  public boolean postDelayed(Runnable action,long delay){jobs.add(new Job(this,action,now+delay,sequence++));return true;}
  public boolean removeCallbacks(Runnable action){return jobs.removeIf(j->j.owner==this&&j.action==action);}
- public void invalidate(){} public boolean performHapticFeedback(int x){return true;}
- public float scaleX=1,scaleY=1;public void setScaleX(float value){scaleX=value;}public void setScaleY(float value){scaleY=value;}public float getScaleX(){return scaleX;}
+ public void invalidate(){invalidations++;} public boolean performHapticFeedback(int x){return true;}
+ public float scaleX=1,scaleY=1;public void setScaleX(float value){scaleX=value;}public void setScaleY(float value){scaleY=value;}public float getScaleX(){return scaleX;}public float getScaleY(){return scaleY;}
  protected void onDetachedFromWindow(){jobs.removeIf(j->j.owner==this);pressed=false;}
  public void detach(){onDetachedFromWindow();parent=null;}
  protected void dispatchDraw(android.graphics.Canvas c){}
@@ -75,6 +78,9 @@ public class View {
 import java.util.*; public class ViewGroup extends View {
  protected final List<View> children=new ArrayList<>(); private View target;
  public ViewGroup(android.content.Context c){super(c);}
+ public static class LayoutParams {public int width,height;public LayoutParams(int w,int h){width=w;height=h;}}
+ public void addView(View view,LayoutParams params){addView(view);}
+ protected void onLayout(boolean changed,int l,int t,int r,int b){}
  public void setClipChildren(boolean value){}public void setClipToPadding(boolean value){}
  public void addView(View v){children.add(v);v.parent=this;} public int getChildCount(){return children.size();}
  public View getChildAt(int i){return i<0||i>=children.size()?null:children.get(i);}
@@ -88,8 +94,8 @@ import java.util.*; public class ViewGroup extends View {
   return onTouchEvent(e);
  }
 } """,
-    "android/widget/LinearLayout.java": "package android.widget; public class LinearLayout extends android.view.ViewGroup { public LinearLayout(android.content.Context c){super(c);} }",
-    "android/widget/FrameLayout.java": "package android.widget; public class FrameLayout extends android.view.ViewGroup { public FrameLayout(android.content.Context c){super(c);} }",
+    "android/widget/LinearLayout.java": "package android.widget; public class LinearLayout extends android.view.ViewGroup {public static final int HORIZONTAL=0,VERTICAL=1; public void setOrientation(int value){} public LinearLayout(android.content.Context c){super(c);} }",
+    "android/widget/FrameLayout.java": "package android.widget; public class FrameLayout extends android.view.ViewGroup { public FrameLayout(android.content.Context c){super(c);} protected void onLayout(boolean changed,int l,int t,int r,int b){for(android.view.View child:children)if(child instanceof android.widget.LinearLayout)child.layout(0,0,getWidth(),getHeight());} }",
     "android/widget/TextView.java": """package android.widget; public class TextView extends android.view.View {
 public TextView(android.content.Context c){super(c);} public void setTextColor(int c){}
 public void setCompoundDrawableTintList(android.content.res.ColorStateList c){} }""",
@@ -104,6 +110,7 @@ public class ValueAnimator { public interface AnimatorUpdateListener {void onAni
  public void start(){if(listener!=null)listener.onAnimationUpdate(this);} }""",
     "com/donglan/chrona/UiStyle.java": """package com.donglan.chrona; public class UiStyle {
 public static final int RADIUS_PANEL=20;
+public static void glass(android.view.View view){}public static void minimumAcrylicMix(android.view.View view,int percent){}
 public static class Palette {public int onPrimaryContainer,muted,primaryContainer,primary;}
 public static Palette colors(android.content.Context c){return new Palette();} }""",
 }
@@ -117,14 +124,15 @@ public class DockNavigationCheck {
  static Context c=new Context(); static DockNavigationLayout dock; static List<Integer> selected; static int rebuilds;
  static void populate(){for(int i=0;i<3;i++){final int n=i;TextView button=new TextView(c);button.setOnClickListener(v->selected.add(n));
   if(i==2){FrameLayout wrapper=new FrameLayout(c);wrapper.layout(200,0,300,60);button.layout(0,0,100,60);wrapper.addView(button);
-   TextView badge=new TextView(c);badge.layout(50,0,85,20);badge.setOnClickListener(v->selected.add(2));wrapper.addView(badge);dock.addView(wrapper);}
-  else{button.layout(i*100,0,(i+1)*100,60);dock.addView(button);}}
+   TextView badge=new TextView(c);badge.layout(50,0,85,20);badge.setOnClickListener(v->selected.add(2));wrapper.addView(badge);dock.addItem(wrapper);}
+  else{button.layout(i*100,0,(i+1)*100,60);dock.addItem(button);}}
  }
  static void init(){View.reset();selected=new ArrayList<>();rebuilds=0;
-  dock=new DockNavigationLayout(c,n->{selected.add(n);dock.beginPageSettle(n);},()->{rebuilds++;dock.removeAllViews();populate();dock.setSelectedIndex(0);});
+  dock=new DockNavigationLayout(c,n->{selected.add(n);dock.beginPageSettle(n);},()->{rebuilds++;dock.clearItems();populate();dock.setSelectedIndex(0);});
   dock.layout(0,0,300,60);new FrameLayout(c).addView(dock);populate();dock.setSelectedIndex(0);}
  static void touch(int a,float x,float y){dock.dispatchTouchEvent(new MotionEvent(a,x,y));}
- static float center(){dock.dispatchDraw(new Canvas());return GradientDrawable.lastCenter;}
+ static View highlight(){try{var field=DockNavigationLayout.class.getDeclaredField("highlightView");field.setAccessible(true);return (View)field.get(dock);}catch(Exception e){throw new RuntimeException(e);}}
+ static float center(){View h=highlight();GradientDrawable.lastLeft=h.getTranslationX();GradientDrawable.lastWidth=h.getWidth()*h.getScaleX();GradientDrawable.lastHeight=h.getHeight()*h.getScaleY();GradientDrawable.lastRight=GradientDrawable.lastLeft+GradientDrawable.lastWidth;GradientDrawable.lastCenter=(GradientDrawable.lastLeft+GradientDrawable.lastRight)/2;return GradientDrawable.lastCenter;}
  static void close(float actual,float expected,String label){require(Math.abs(actual-expected)<=1f,label+" got "+actual);}
  public static void main(String[] args)throws Exception{
   for(int i=0;i<3;i++){init();touch(0,i*100+25,35);View.advance(100);touch(1,i*100+25,35);
@@ -134,9 +142,9 @@ public class DockNavigationCheck {
   init();touch(0,130,35);View.advance(400);touch(1,130,35);View.advance(0);require(selected.equals(List.of(1)),"Tap held below long-press timeout remains a click");
   init();touch(0,25,35);touch(1,25,35);View.advance(0);touch(0,125,35);touch(1,125,35);View.advance(0);require(selected.equals(List.of(0,1)),"Consecutive ordinary taps each execute once");
   init();touch(0,130,25);touch(2,132,40);touch(1,132,40);View.advance(0);require(selected.equals(List.of(1)),"Vertical drift inside button retains click");
-  init();dock.getChildAt(0).layout(10,0,90,60);touch(0,95,35);touch(1,95,35);View.advance(0);require(selected.equals(List.of(0)),"Gap tap selects nearest button");
-  init();dock.getChildAt(0).layout(10,0,90,60);touch(0,95,35);touch(1,95,100);View.advance(0);require(selected.isEmpty(),"Gap tap released outside never selects");
-  init();dock.getChildAt(0).layout(10,0,90,60);touch(0,95,35);touch(2,95,100);touch(2,95,35);touch(1,95,35);View.advance(0);require(selected.isEmpty(),"Gap tap leaving and reentering does not accidentally click");
+  init();dock.itemAt(0).layout(10,0,90,60);touch(0,95,35);touch(1,95,35);View.advance(0);require(selected.equals(List.of(0)),"Gap tap selects nearest button");
+  init();dock.itemAt(0).layout(10,0,90,60);touch(0,95,35);touch(1,95,100);View.advance(0);require(selected.isEmpty(),"Gap tap released outside never selects");
+  init();dock.itemAt(0).layout(10,0,90,60);touch(0,95,35);touch(2,95,100);touch(2,95,35);touch(1,95,35);View.advance(0);require(selected.isEmpty(),"Gap tap leaving and reentering does not accidentally click");
   init();touch(0,30,35);touch(2,245,35);View.advance(600);touch(1,245,35);View.advance(1800);require(selected.equals(List.of(2)),"Slow horizontal drag commits once at physical landing");
   init();touch(0,140,35);View.advance(500);touch(2,245,35);View.advance(600);touch(1,245,35);View.advance(1800);require(selected.equals(List.of(2)),"Long press then drag commits once");
   init();touch(0,30,35);touch(2,245,35);touch(3,245,35);View.advance(1000);require(selected.isEmpty(),"Cancel never selects");close(center(),50,"Cancel returns to actual selection");
@@ -145,7 +153,7 @@ public class DockNavigationCheck {
   init();touch(0,30,35);touch(2,345,100);View.advance(600);touch(1,345,150);View.advance(1800);require(selected.equals(List.of(2)),"Release beyond horizontal edge commits endpoint");
   init();dock.showPageProgress(0,1,.5f);close(center(),50,"Body retarget preserves current visual position");View.advance(80);require(center()>50&&center()<110,"Body highlight moves with inertia");
   float old=center();dock.beginPageSettle(1);dock.updatePageSettle(0);close(center(),old,"Settle starts without jump");dock.updatePageSettle(1);dock.finishPageSelection(1);View.advance(1000);close(center(),150,"Commit eventually arrives at destination");
-  dock.removeAllViews();populate();dock.setSelectedIndex(1);close(center(),150,"Rebuilding labels does not reset visual position");
+  dock.clearItems();populate();dock.setSelectedIndex(1);close(center(),150,"Rebuilding labels does not reset visual position");
   dock.showPageProgress(1,0,.4f);View.advance(60);dock.beginPageSettle(1);dock.finishPageSelection(1);View.advance(1000);close(center(),150,"Cancelled body swipe springs back to source");
   init();dock.beginPageSettle(2);View.advance(50);require(center()>50&&center()<250,"Click moves through intermediate position");dock.finishPageSelection(2);View.advance(1000);close(center(),250,"Click reaches distant destination");
   init();touch(0,30,35);touch(2,235,35);float released=center();touch(1,235,35);dock.updatePageSettle(0);close(center(),released,"Dock release does not jump to old source");
@@ -196,6 +204,19 @@ public class DockNavigationCheck {
   require(prediction.position==1&&prediction.velocity==3,"Prediction does not mutate displayed state or velocity");
   DockSpring resisted=new DockSpring();resisted.coast(1,10);for(int i=0;i<120;i++)resisted.step(1f/120);
   require(resisted.position<.14f,"Increased ordinary resistance shortens coast distance");
+  init();dock.finishPageSelection(2);int redraws=dock.invalidations,layouts=highlight().layouts;View.advance(400);
+  require(dock.invalidations==redraws,"Motion does not invalidate entire glass dock each frame");
+  require(highlight().layouts==layouts,"Motion uses render properties without repeated layout");
+  init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
+  for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.setSelectedIndex(0);
+  touch(0,35,25);touch(2,35,150);View.advance(600);touch(1,35,150);View.advance(1800);
+  require(selected.equals(List.of(1)),"Shared vertical dock commits a vertical drag exactly once");
+  close(highlight().getTranslationY()+highlight().getHeight()*highlight().getScaleY()/2,150,"Vertical highlight settles on active row");
+  init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
+  for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.setSelectedIndex(0);
+  android.view.VelocityTracker.velocity=900;touch(0,35,25);touch(2,35,140);touch(1,100,140);
+  require(Math.abs(((DockSpring)springField.get(dock)).velocity-9)<.001f,"Vertical release transfers physical Y velocity");
+  require(selected.size()==1,"Vertical outside release starts predicted page immediately");android.view.VelocityTracker.velocity=0;
   init();touch(0,245,35);View.advance(500);close(center(),50,"Long press starts at existing highlight");
   View.advance(32);require(center()>50&&center()<245,"Long press smoothly approaches finger");
   touch(3,245,35);View.advance(400);close(center(),50,"Cancel stops finger loop and returns");

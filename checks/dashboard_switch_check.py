@@ -58,7 +58,7 @@ public class DashboardActivity extends android.content.Context {
  int statusIndex,categoryIndex,scheduleTab,scheduleCategory,schedulePublication,scheduleSource,inboxPage=999,schedulePage;
  String inboxQuery="original",scheduleQuery="",snapshot="",failure;boolean inboxOldestFirst,scheduleOldestFirst;
  final Map<Integer,Page>sectionPages=new HashMap<>();Page adjacentPage;DashboardSectionData preparedSection;
- final Queue refresh=new Queue();final Dock mobileDock=new Dock();final Pager pager=new Pager();final Listener sectionPagerListener=new Listener();
+ final Queue refresh=new Queue();final Dock navigation=new Dock();final Pager pager=new Pager();final Listener sectionPagerListener=new Listener();
  final ExecutorService startupReader=Executors.newSingleThreadExecutor();final Runnable deferredSectionRefresh=this::refreshSettledSection;
  int builds,commits,refreshes,snapshotReads;DashboardSectionData used;
  DashboardActivity(){sectionPages.put(HOME,new Page(HOME));}
@@ -78,9 +78,9 @@ public class DashboardActivity extends android.content.Context {
    check(d.section==INBOX&&d.commits==1&&d.used.tasks.size()==1&&d.used.page==2,"worker snapshot renders bounded clamped page");
    check(d.keyword.equals("original"),"request captures filter inputs");check(d.db.started==d.db.ended&&d.db.successful==1&&d.closed==1,"snapshot closes coherent read transaction");
    int reads=d.reads;d.switchTo(HOME);check(d.section==HOME&&d.reads==reads,"cached navigation does no database read");
-   d.switchTo(SCHEDULE);d.switchTo(HOME);d.await();check(d.section==HOME&&d.mobileDock.target==HOME,"newer pending request wins and restores highlight");
-   d.mobileDock.animating=true;d.refreshSettledSection();check(d.refreshes==0&&d.snapshotReads==0&&!d.refresh.tasks.isEmpty(),"revision checks wait for dock animation");
-   d.refresh.clear();d.mobileDock.animating=false;d.refreshSettledSection();check(d.refreshes==1&&d.snapshotReads==1,"idle refresh eventually runs");
+   d.switchTo(SCHEDULE);d.switchTo(HOME);d.await();check(d.section==HOME&&d.navigation.target==HOME,"newer pending request wins and restores highlight");
+   d.navigation.animating=true;d.refreshSettledSection();check(d.refreshes==0&&d.snapshotReads==0&&!d.refresh.tasks.isEmpty(),"revision checks wait for dock animation");
+   d.refresh.clear();d.navigation.animating=false;d.refreshSettledSection();check(d.refreshes==1&&d.snapshotReads==1,"idle refresh eventually runs");
   }finally{d.startupReader.shutdownNow();}
   DashboardActivity failure=new DashboardActivity();try{failure.fail=true;failure.switchTo(INBOX);failure.await();check(failure.section==HOME&&failure.builds==0&&failure.failure!=null,"failed read preserves page");check(failure.db.ended==1&&failure.closed==1,"failure releases read transaction");}finally{failure.startupReader.shutdownNow();}
   DashboardActivity paused=new DashboardActivity();try{paused.switchTo(INBOX);paused.startupReader.submit(()->{}).get(3,TimeUnit.SECONDS);paused.sectionLoadGeneration++;paused.sectionLoadRunning=false;paused.refresh.drain();check(paused.builds==0&&paused.section==HOME,"stale lifecycle callback cannot create page");}finally{paused.startupReader.shutdownNow();}

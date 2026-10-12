@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-13 · 0.14.17
+
+用户报告横屏首页仍旧样式、日历 Dock 掉帧，并要求严格统一控件框架。DockNavigationLayout 改为共享 FrameLayout 组合：玻璃底板、独立 highlightView、items LinearLayout。高光通过独立渲染节点的 translation/scale 更新，不再在 dispatchDraw 中绘制或每帧 invalidate 整栏；布局只在项目尺寸改变时更新。主题变化在选中语义更新时刷新高光色。显式 itemCount/itemAt/addItem/clearItems API 隔离内部结构。
+
+Dashboard 只保留 navigation 一个共享实例，横屏使用同一控件的 VERTICAL 布局、居中浮动玻璃栏；主轴位置、Y 速度、惯性预测、越界上限、缩放和栏外松手复用。移除旧宽屏 pill 样式。CalendarOverview 移除 tabMotion 和额外 tab 按压动画，复用同一控制器。月、年网格在旧内容仍显示时按帧构建，4ms 工作预算，每行七天，年视图先分批建立月份容器；完成后开始内容淡化。取消清理 frame callback/queue/done 并清空 renderedKey，避免恢复时把未完成内容当完整缓存。
+
+完整 40/40、原生 Dock 83 项、日历构建调度 12 项、Dashboard 生产切页控制器 12 项通过；debug/release/lint 通过。备份 build/backups/20261013-shared-dock。0.14.17 / 124。ADB 无设备，Android 横屏视觉、真实帧率及手感未实测。
+
 # 本轮补充 · 2026-10-12 · 0.14.16
 
 用户追加最大伸出距离及渐进阻力、增大普通滑行阻力、放大动画延长至 1.5 倍，并明确要求提前计算落点、松手立即切页。DockSpring 新增 predictLanding，克隆当前位置后执行同一生产 step 预演自由滑行和边缘回弹，实际速度保持 1∶1；DockNavigationLayout 立即 select.accept，beginPageSettle 在惯性中不接管，惯性完成仅吸附，不二次选页。CalendarOverview 移除等待 Dock 稳定后的构建门槛。网页复用 coastDockStep 预测并立即路由。

@@ -108,8 +108,7 @@ public final class DashboardActivity extends Activity {
     private boolean scheduleOldestFirst = true;
     private boolean inboxOldestFirst = false;
     private LinearLayout content;
-    private LinearLayout navigation;
-    private DockNavigationLayout mobileDock;
+    private DockNavigationLayout navigation;
     private LinearLayout results;
     private LinearLayout filterChips;
     private ImageButton categoryChip;
@@ -406,7 +405,7 @@ public final class DashboardActivity extends Activity {
             dragTargetLoaded = false;
             dragDirection = 0;
             scroll.setTranslationX(0f);
-            if (mobileDock != null && !dockSectionSwitch) mobileDock.beginBodyDrag();
+            if (navigation != null && !dockSectionSwitch) navigation.beginBodyDrag();
             collectSectionSurfaces();
         }
 
@@ -422,7 +421,7 @@ public final class DashboardActivity extends Activity {
                     // resample its acrylic cards every frame like a normal drag does — skipping
                     // that here left them showing the snapshot taken when the drag began.
                     scroll.setTranslationX(offset * NO_NEIGHBOUR_RESISTANCE);
-                    if (mobileDock != null) mobileDock.showPageProgress(
+                    if (navigation != null) navigation.showPageProgress(
                             sectionPosition(section), sectionPosition(section), 0f);
                     invalidateSectionSurfaces();
                     return;
@@ -444,7 +443,7 @@ public final class DashboardActivity extends Activity {
             } else {
                 scroll.setTranslationX(offset);
             }
-            if (mobileDock != null) mobileDock.showPageProgress(sectionPosition(section),
+            if (navigation != null) navigation.showPageProgress(sectionPosition(section),
                     adjacentPage == null ? sectionPosition(section) : sectionPosition(adjacentPage.section),
                     Math.abs(offset) / width);
             invalidateSectionSurfaces();
@@ -478,14 +477,14 @@ public final class DashboardActivity extends Activity {
         float currentTarget = commit ? direction * width : 0f;
         float adjacentTarget = commit ? 0f : -direction * width;
         pageTransitionRunning = true;
-        if (mobileDock != null) mobileDock.beginPageSettle(sectionPosition(
+        if (navigation != null) navigation.beginPageSettle(sectionPosition(
                 commit ? adjacentPage.section : section));
         scroll.animate().cancel();
         adjacentPage.scroll.animate().cancel();
         if (!android.animation.ValueAnimator.areAnimatorsEnabled() || width <= 0) {
             scroll.setTranslationX(currentTarget);
             adjacentPage.scroll.setTranslationX(adjacentTarget);
-            if (mobileDock != null) mobileDock.updatePageSettle(1f);
+            if (navigation != null) navigation.updatePageSettle(1f);
             completeSectionDrag(commit);
             return;
         }
@@ -501,7 +500,7 @@ public final class DashboardActivity extends Activity {
         scroll.animate().translationX(currentTarget).setDuration(duration)
                 .setInterpolator(interpolator)
                 .setUpdateListener(animation -> {
-                    if (mobileDock != null) mobileDock.updatePageSettle(animation.getAnimatedFraction());
+                    if (navigation != null) navigation.updatePageSettle(animation.getAnimatedFraction());
                     invalidateSectionSurfaces();
                 }).start();
         adjacentPage.scroll.animate().translationX(adjacentTarget).setDuration(duration)
@@ -513,10 +512,10 @@ public final class DashboardActivity extends Activity {
     private void settleCurrentSection() {
         if (pageTransitionRunning) return;
         scroll.animate().cancel();
-        if (mobileDock != null) mobileDock.beginPageSettle(sectionPosition(section));
+        if (navigation != null) navigation.beginPageSettle(sectionPosition(section));
         if (!UiMotion.isEnabled()) {
             scroll.setTranslationX(0f);
-            if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+            if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
             sectionAcrylicSurfaces.clear();
             invalidateSectionSurfaces();
             switchToPendingSection();
@@ -527,11 +526,11 @@ public final class DashboardActivity extends Activity {
                         Math.abs(scroll.getTranslationX()), sectionPageWidth()))
                 .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
                 .setUpdateListener(animation -> {
-                    if (mobileDock != null) mobileDock.updatePageSettle(animation.getAnimatedFraction());
+                    if (navigation != null) navigation.updatePageSettle(animation.getAnimatedFraction());
                     invalidateSectionSurfaces();
                 })
                 .withEndAction(() -> {
-                    if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+                    if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
                     sectionAcrylicSurfaces.clear();
                     invalidateSectionSurfaces();
                     switchToPendingSection();
@@ -582,7 +581,7 @@ public final class DashboardActivity extends Activity {
             pager.removeView(scroll);
             target.scroll.setTranslationX(0f);
             activateSectionPage(target);
-            if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+            if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
             refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
             updateSelectionBack();
             drawNavigation();
@@ -590,7 +589,7 @@ public final class DashboardActivity extends Activity {
             pager.removeView(target.scroll);
             target.scroll.setTranslationX(0f);
             scroll.setTranslationX(0f);
-            if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+            if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
             refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
         }
         invalidateSectionSurfaces();
@@ -775,7 +774,7 @@ public final class DashboardActivity extends Activity {
 
     private void pollChanges() {
         if (sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
-                || (mobileDock != null && mobileDock.isAnimating())) {
+                || (navigation != null && navigation.isAnimating())) {
             refresh.postDelayed(poll, 500L); return;
         }
         if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
@@ -864,7 +863,7 @@ public final class DashboardActivity extends Activity {
                     dirtySections.add(SCHEDULE);
                     if (section == SCHEDULE && scheduleSource == 1) {
                         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
-                                || (mobileDock != null && mobileDock.isAnimating())) {
+                                || (navigation != null && navigation.isAnimating())) {
                             scheduleRefreshPending = true;
                             refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
                         }
@@ -880,7 +879,7 @@ public final class DashboardActivity extends Activity {
     private void refreshHomeContent() {
         if (section != HOME || previewRender) return;
         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
-                || (mobileDock != null && mobileDock.isAnimating())) {
+                || (navigation != null && navigation.isAnimating())) {
             homeRefreshPending = true;
             refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
             return;
@@ -985,23 +984,23 @@ public final class DashboardActivity extends Activity {
         pager.setTaskPagingEnabled(false);
         pager.setFramePacingEnabled(true);
         pager.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        mobileDock = wide ? null : new DockNavigationLayout(this,
+        navigation = new DockNavigationLayout(this,
                 index -> switchTo(SECTION_ORDER[index]), this::drawNavigation);
-        navigation = wide ? new LinearLayout(this) : mobileDock;
         navigation.setOrientation(wide ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         navigation.setPadding(dp(wide ? 8 : 8), dp(wide ? 24 : 6),
                 dp(wide ? 8 : 8), dp(wide ? 10 : 6));
-        if (wide) UiStyle.glass(navigation);
         FrameLayout mobileBottomArea = null;
         if (wide) {
-            shell.addView(navigation, new LinearLayout.LayoutParams(dp(90), -1));
+            FrameLayout rail = new FrameLayout(this); rail.setClipChildren(false); rail.setClipToPadding(false);
+            FrameLayout.LayoutParams railDock = new FrameLayout.LayoutParams(dp(78), dp(290), Gravity.CENTER);
+            rail.addView(navigation, railDock);
+            shell.addView(rail, new LinearLayout.LayoutParams(dp(110), -1));
             shell.addView(pager, new LinearLayout.LayoutParams(0, -1, 1));
         } else {
             shell.addView(pager, new LinearLayout.LayoutParams(-1, 0, 1));
             mobileBottomArea = new FrameLayout(this);
             mobileBottomArea.setClipChildren(false);
             mobileBottomArea.setClipToPadding(false);
-            UiStyle.glass(navigation);
             navigation.setElevation(dp(8));
             FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(-1,
                     dp(MOBILE_DOCK_HEIGHT_DP), Gravity.BOTTOM | Gravity.START);
@@ -2537,23 +2536,22 @@ public final class DashboardActivity extends Activity {
 
     private void drawNavigation() {
         if (previewRender) return;
-        if (mobileDock != null && (mobileDock.isTrackingTouch() || pageTransitionRunning)) return;
-        if (navigation.getChildCount() == 3 && navigationAttentionCount == attentionCount()) {
+        if (navigation != null && (navigation.isTrackingTouch() || pageTransitionRunning)) return;
+        if (navigation.itemCount() == 3 && navigationAttentionCount == attentionCount()) {
             for (int i = 0; i < 3; i++) {
-                View cell = navigation.getChildAt(i);
+                View cell = navigation.itemAt(i);
                 if (cell instanceof FrameLayout wrapper) cell = wrapper.getChildAt(0);
                 TextView item = (TextView) cell; boolean active = section == SECTION_ORDER[i];
                 int color = active ? UiStyle.colors(this).onPrimaryContainer : UiStyle.colors(this).muted;
                 item.setTextColor(color); item.setCompoundDrawableTintList(ColorStateList.valueOf(color));
                 item.setContentDescription(item.getText() + (active ? "，当前页面" : ""));
-                if (wide) UiStyle.pill(item, active);
             }
             if (navigationBadge != null) navigationBadge.setContentDescription("待处理 " + attentionCount() + " 项：待确认 " + pendingReview + "，失败 " + pendingFailed);
-            if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(section));
+            if (navigation != null) navigation.setSelectedIndex(sectionPosition(section));
             return;
         }
         navigationAttentionCount = attentionCount(); navigationBadge = null;
-        navigation.removeAllViews();
+        navigation.clearItems();
         String[] labels = {"首页", "日程", "收件箱"};
         int[] icons = {R.drawable.ic_nav_home, R.drawable.ic_nav_schedule,
                 R.drawable.ic_nav_inbox};
@@ -2569,20 +2567,17 @@ public final class DashboardActivity extends Activity {
             item.setCompoundDrawableTintList(ColorStateList.valueOf(section == destination
                     ? UiStyle.colors(this).onPrimaryContainer : UiStyle.colors(this).muted));
             item.setContentDescription(labels[i] + (section == destination ? "，当前页面" : ""));
-            if (wide) UiStyle.pill(item, section == destination);
-            else {
-                item.setBackgroundColor(Color.TRANSPARENT);
-            }
+            item.setBackgroundColor(Color.TRANSPARENT);
             item.setOnClickListener(view -> switchTo(destination));
             LinearLayout.LayoutParams params = wide
                     ? new LinearLayout.LayoutParams(-1, dp(78))
                     : new LinearLayout.LayoutParams(0, -1, 1);
             params.setMargins(dp(wide ? 3 : 4), dp(wide ? 5 : 0),
                     dp(wide ? 3 : 4), 0);
-            navigation.addView(destination == INBOX && attentionCount() > 0
+            navigation.addItem(destination == INBOX && attentionCount() > 0
                     ? withInboxBadge(item, destination) : (View) item, params);
         }
-        if (mobileDock != null) mobileDock.setSelectedIndex(sectionPosition(section));
+        if (navigation != null) navigation.setSelectedIndex(sectionPosition(section));
     }
 
     /** Everything that still wants the user's attention, whichever way it is shown. */
@@ -2643,7 +2638,7 @@ public final class DashboardActivity extends Activity {
             return;
         }
         if (destination == section) {
-            if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+            if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
             return;
         }
         if (!sectionPages.containsKey(destination) && preparedSection == null) {
@@ -2664,7 +2659,7 @@ public final class DashboardActivity extends Activity {
     private void prepareSectionSwitch(int destination) {
         sectionLoadRunning = true; loadingSection = destination;
         int token = ++sectionLoadGeneration;
-        if (mobileDock != null) mobileDock.beginPageSettle(sectionPosition(destination));
+        if (navigation != null) navigation.beginPageSettle(sectionPosition(destination));
         InboxQuery inbox = new InboxQuery(statusIndex, categoryIndex == 0 ? null : EventCategory.VALUES[categoryIndex - 1], inboxQuery);
         LocalDate[] window = scheduleWindow(false);
         ScheduleQuery schedule = new ScheduleQuery(scheduleTab, scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
@@ -2679,7 +2674,7 @@ public final class DashboardActivity extends Activity {
                 refresh.post(() -> {
                     if (token != sectionLoadGeneration || isDestroyed()) return;
                     sectionLoadRunning = false;
-                    if (mobileDock != null) mobileDock.finishPageSelection(sectionPosition(section));
+                    if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
                     Feedback.show(this, "暂时无法读取页面，请重试"); switchToPendingSection();
                 }); return;
             }
@@ -2696,7 +2691,7 @@ public final class DashboardActivity extends Activity {
     private void refreshSettledSection() {
         if (!foreground || isDestroyed()) return;
         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
-                || (mobileDock != null && (mobileDock.isAnimating() || mobileDock.isTrackingTouch()))) {
+                || (navigation != null && (navigation.isAnimating() || navigation.isTrackingTouch()))) {
             refresh.postDelayed(deferredSectionRefresh, 80L); return;
         }
         if (homeRefreshPending && section == HOME) refreshHomeContent();
