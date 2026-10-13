@@ -12,7 +12,9 @@
 
 0.14.33 的提前提醒有独立总开关、Chrona原子通知开关、系统日程原子通知开关及系统来源开关。系统来源关闭时完全不提醒系统日程，优先于系统原子开关。原子开关关闭或场景不可用时，使用普通常驻提醒；更换形式先清理旧卡片。首页与日历显示开关统一入口位于设置中的“系统日程”，原页面开关保留，显示偏好不影响提前提醒。
 
-先安装对应版本 Chrona，连接已授权 ADB 的手机，再解压发布附件 `Chrona-vivo-setup-0.14.33.zip`。使用 PowerShell 7：
+0.14.34补齐主题配色的地点图标，收紧卡片留白与行间距，保持标题字号及两行显示。弹幕区域按字体高度适配，保留最小20dp高度。
+
+先安装对应版本 Chrona，连接已授权 ADB 的手机，再解压发布附件 `Chrona-vivo-setup-0.14.34.zip`。使用 PowerShell 7：
 
 ```powershell
 pwsh -File .\Configure-VivoAtomicScene.ps1 -Device '手机IP:连接端口' -Mode Enable -TestApk .\Chrona-device-checks.apk

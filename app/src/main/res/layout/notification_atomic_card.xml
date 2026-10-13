@@ -23,7 +23,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="12dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -33,15 +34,15 @@
 
             <ImageView
                 android:id="@+id/atomic_icon"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
                 android:scaleType="fitCenter" />
 
             <TextView
                 android:id="@+id/atomic_title"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
+                android:layout_marginStart="10dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="2"
@@ -52,10 +53,16 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="8dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:layout_marginEnd="8dp"
+                android:gravity="center_vertical" android:orientation="horizontal">
+            <ImageView android:id="@+id/atomic_location_icon" android:layout_width="16dp"
+                android:layout_height="16dp" android:layout_marginEnd="5dp"
+                android:scaleType="fitCenter" android:importantForAccessibility="no" />
             <TextView
                 android:id="@+id/atomic_location"
                 android:layout_width="0dp"
@@ -64,6 +71,7 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:textSize="12sp" />
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="56dp"
@@ -91,8 +99,8 @@
 
         <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="12dp"
-            android:layout_marginTop="12dp">
+            android:layout_height="10dp"
+            android:layout_marginTop="6dp">
 
             <ImageView
                 android:id="@+id/atomic_progress"
@@ -125,7 +133,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="4dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -140,7 +148,8 @@
             <ViewFlipper
                 android:id="@+id/atomic_ticker"
                 android:layout_width="0dp"
-                android:layout_height="22dp"
+                android:layout_height="wrap_content"
+                android:minHeight="20dp"
                 android:layout_weight="1"
                 android:animateFirstView="false"
                 android:autoStart="true"

@@ -35,6 +35,8 @@ final class AtomicAgendaCard {
         ZoneId zone = ZoneId.systemDefault();
         views.setTextViewText(R.id.atomic_title, entry.title);
         views.setTextViewText(R.id.atomic_location, entry.location);
+        views.setImageViewBitmap(R.id.atomic_location_icon, locationIcon(context, palette.muted));
+        views.setViewVisibility(R.id.atomic_location_icon, entry.location.isBlank() ? android.view.View.GONE : android.view.View.VISIBLE);
         views.setTextViewText(R.id.atomic_remaining_label, active ? "距结束" : "距开始");
         views.setChronometer(R.id.atomic_remaining, SystemClock.elapsedRealtime() + to - now, null, now < to);
         views.setChronometerCountDown(R.id.atomic_remaining, true);
@@ -121,6 +123,12 @@ final class AtomicAgendaCard {
         paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(5); paint.setStrokeCap(Paint.Cap.ROUND);
         canvas.drawCircle(36, 36, 27, paint);
         canvas.drawLine(36, 21, 36, 36, paint); canvas.drawLine(36, 36, 45, 42, paint);
+        return image;
+    }
+    private static Bitmap locationIcon(Context context, int color) {
+        Bitmap image = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888);
+        android.graphics.drawable.Drawable icon = context.getDrawable(R.drawable.ic_atomic_location).mutate();
+        icon.setTint(color); icon.setBounds(0, 0, 48, 48); icon.draw(new Canvas(image));
         return image;
     }
 
