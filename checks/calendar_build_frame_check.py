@@ -20,7 +20,8 @@ import java.util.*;
 public class CalendarBuildFrameCheck {
  static class Clock { static long now; }
  static class Body { ArrayDeque<Runnable> frames=new ArrayDeque<>();void postOnAnimation(Runnable job){frames.add(job);}void tick(){frames.removeFirst().run();}void removeCallbacks(Runnable job){frames.removeIf(item->item==job);} }
- private static final long BUILD_FRAME_BUDGET_NANOS=4_000_000L;
+ private static final long BUILD_FRAME_BUDGET_NANOS=2_000_000L;
+ private static final int BUILD_FRAME_MAX_STEPS=4;
  private ArrayDeque<Runnable> calendarBuildSteps;
  private Runnable calendarBuildDone;
  private final Runnable calendarBuildFrame=this::buildCalendarFrame;
@@ -43,6 +44,7 @@ public class CalendarBuildFrameCheck {
   c.enqueueCalendarBuild(()->Clock.now+=5_000_000L);c.enqueueCalendarBuild(()->{throw new AssertionError("Cancelled build executed");});
   c.buildCalendarFrame();c.cancelCalendarBuild();c.buildCalendarFrame();check(done[0]==2);check(c.body.frames.isEmpty());
   check(c.renderedKey.isEmpty()&&c.calendarBuildDone==null);c.cancelCalendarBuild();check(c.body.frames.isEmpty());
+  c.calendarBuildSteps=new ArrayDeque<>();int[] fast={0};for(int i=0;i<10;i++)c.enqueueCalendarBuild(()->fast[0]++);c.buildCalendarFrame();check(fast[0]==4);c.body.tick();check(fast[0]==8);c.body.tick();check(fast[0]==10&&c.calendarBuildSteps==null);
   System.out.println("Calendar build frame checks passed: "+checks+" (production methods, frame and clock doubles)");
  }
 }

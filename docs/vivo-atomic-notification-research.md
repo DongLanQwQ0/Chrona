@@ -1,25 +1,24 @@
-# vivo 原子通知调研 — 2026-10-13
+# vivo 原子通知实现与调研 — 2026-10-13
 
-## 已证实
+## 官方协议
 
-阿里云官方指南确认：应用进程活跃时可用 Android 本地通知 API 操作原子岛，operation 的 0/1/2 对应创建/更新/结束，示例通过通知 extras 传参。
+已通过公开页面加载的文档接口取得《原子通知技术规范》正文，来源doc896。确认本地Notification extras中operation为创建/更新/结束；template、baseInfos和infos是大卡数据，island是左右岛Bundle。会议日程scene为METTING（官方拼写），dismissWhenKill=false表示进程终止时不清除，此值也是文档默认值。
 
-但指南同时把申请 vivo 接入权限列为准备条件，并在创建失败排查中要求检查是否已向 vivo 申请权限。因此“本地发送”不等于“免接入授权”，目前没有可靠依据说明自用 APK 能绕过授权。是否必须上架、是否允许单设备测试，仍需 vivo 明确答复。
+## Chrona 0.14.26
 
-指南列出的会议日程场景拼写为 METTING；应按正式契约核对后用于日程，不能以打车或外卖场景代替。支持的触点取决于机型和系统，并非所有 vivo 手机都会显示原子岛。
+VivoAtomicNotification以Build.MANUFACTURER等于vivo（不区分大小写）限定适配范围；非vivo设备不添加厂商字段。AgendaReminder沿用原提醒通知ID和渠道，将标题、起止时间、地点及详情PendingIntent放入模板1和左右岛；左岛展示图标及开始时间，右岛展示标题并支持详情跳转。已有通知更新使用operation1；切换日程、隐藏、延后、关闭提醒或结束时，已有原子通知先发送operation2再取消。系统没有已有通知时使用创建。
 
-## 尚未证实
+保留原通知的普通内容、RemoteViews及查看/延后/隐藏动作，showNotify=true用于厂商不能展示时的普通通知呈现；没有重复发第二条通知。没有增加VPush SDK、网络推送或前台保活服务。原有提醒设置默认开启，日程开始前30分钟触发。
 
-vivo 文档 894/896 在本次浏览返回动态空页，未取得完整参数契约。notification.superx.island 的本地 Bundle 内部结构、dismissWhenKill 的默认值及进程退出保证、场景状态查询接口和最低系统版本暂不据此实现。
+## 限制与验证
 
-## Chrona 接入边界
+本地接口不等于免接入权限。vivo/阿里云指南仍要求申请场景接入权限；个人自用是否可测试需以设备实际接受及vivo答复为准，不能以代码绕过系统授权。不同系统/机型未必展示原子岛。
 
-仅在 vivo 制造商设备上考虑启用，并结合系统能力与场景授权状态判断。现有 AgendaReminder 的日程前30分钟卡片、详情/延后/忽略动作可以复用；当前请求只调研，本版未加入 vendor extras、SDK、前台保活服务或对外权限申请。若后续接入，通知同一事件只保留一个通知ID，正确区分创建、更新和结束。
+生产适配器26项离线验证覆盖厂商过滤、字段类型、必填图标和模板、创建/更新/结束、普通通知保留及结束异常仍取消。尚无本版真机原子岛截图，不能宣称出岛成功。子代理调研服务容量不足，正文取得及核验由主代理完成。
 
-## 来源
+## 官方来源
 
-- https://help.aliyun.com/zh/document_detail/3030718.html （本地示例、权限准备、场景及排错）
-- https://dev.vivo.com.cn/documentCenter/doc/894 （接入指导；本次正文不可读）
-- https://dev.vivo.com.cn/documentCenter/doc/896 （核心参数；本次正文不可读）
-
-调研子代理已启动并重试，但模型服务持续返回容量不足；以上由主代理直接核验。未发送邮件、未申请账号或权限。
+- https://dev.vivo.com.cn/documentCenter/doc/896
+- https://dev.vivo.com.cn/webapi/doc/info?id=896 （页面脚本实际使用的公开正文接口）
+- https://dev.vivo.com.cn/documentCenter/doc/894
+- https://help.aliyun.com/zh/document_detail/3030718.html

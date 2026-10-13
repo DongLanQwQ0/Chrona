@@ -300,6 +300,10 @@ public final class DashboardActivity extends Activity {
     }
 
     private void activateSectionPage(SectionPage page) {
+        if (results != null && results != page.results) {
+            resultMotionGeneration++;
+            UiMotion.resetList(results);
+        }
         if (scheduleResultLoading && page.results != results) cancelScheduleResults();
         section = page.section;
         scroll = page.scroll;
@@ -748,6 +752,8 @@ public final class DashboardActivity extends Activity {
     }
 
     @Override protected void onPause() {
+        resultMotionGeneration++;
+        if (results != null) UiMotion.resetList(results);
         cancelScheduleResults();
         if (sectionLoadRunning && pendingSection < 0) pendingSection = loadingSection;
         sectionLoadGeneration++; sectionLoadRunning = false;
@@ -1604,36 +1610,15 @@ public final class DashboardActivity extends Activity {
 
     /** User-driven filter/order changes animate cards, while polling remains still. */
     private void updateResultsWithEntrance() {
-        if (section == SCHEDULE) { requestScheduleResults(); return; }
-        updateResults();
-        animateResultRows();
-    }
-
-    private void animateResultRows() {
+        if (section == SCHEDULE) { requestScheduleResults(true); return; }
         if (results == null) return;
-        final LinearLayout renderedResults = results;
-        final int generation = resultMotionGeneration;
-        renderedResults.post(() -> {
-            if (results != renderedResults || generation != resultMotionGeneration
-                    || !renderedResults.isAttachedToWindow()) return;
-            int index = 0;
-            for (InboxRow row : inboxRows.values()) {
-                animateResultCard(row.card, index++);
-            }
-            if (inboxRows.isEmpty()) {
-                for (int i = 0; i < renderedResults.getChildCount(); i++) {
-                    View item = renderedResults.getChildAt(i);
-                    if (item.isClickable()) animateResultCard(item, index++);
-                }
-            }
-            // Empty-state cards enter too; keep the count and selection controls stationary.
-            if (index == 0 && renderedResults.getChildCount() > 1)
-                animateResultCard(renderedResults.getChildAt(1), 0);
+        LinearLayout target = results;
+        dirtySections.add(section);
+        int token = ++resultMotionGeneration;
+        UiMotion.exitList(target, () -> {
+            if (results != target || token != resultMotionGeneration || isDestroyed() || isFinishing()) return;
+            updateResults(); UiMotion.enterList(target);
         });
-    }
-
-    private void animateResultCard(View card, int index) {
-        UiMotion.reveal(card, index);
     }
 
     private void schedule(TaskStore store) {
@@ -1937,13 +1922,15 @@ public final class DashboardActivity extends Activity {
         if (scheduleResultLoading) dirtySections.add(SCHEDULE);
         scheduleResultLoading = false;
         if (scheduleBuildTarget != null) scheduleBuildTarget.removeCallbacks(scheduleBuildFrame);
+        if (scheduleBuildTarget != null) UiMotion.resetList(scheduleBuildTarget);
         scheduleBuildTarget = null;
         scheduleBuildSteps = null;
         scheduleBuildDone = null;
     }
 
     /** Query on the existing worker; keep the dock and current rows alive until data arrives. */
-    private void requestScheduleResults() {
+    private void requestScheduleResults() { requestScheduleResults(false); }
+    private void requestScheduleResults(boolean animate) {
         if (results == null || section != SCHEDULE) return;
         cancelScheduleResults();
         final int token = scheduleResultGeneration;
@@ -1975,6 +1962,9 @@ public final class DashboardActivity extends Activity {
             }
             refresh.post(() -> {
                 if (!scheduleResultCurrent(token, target)) return;
+                scheduleBuildTarget = target;
+                Runnable build = () -> {
+                if (!scheduleResultCurrent(token, target)) return;
                 final int previousY = targetScroll.getScrollY();
                 resultMotionGeneration++;
                 scheduleBuildTarget = target;
@@ -1999,6 +1989,9 @@ public final class DashboardActivity extends Activity {
                 } finally { preparedSection = previous; }
                 // One row now, then at most one row per display frame; avoid a large layout burst.
                 buildScheduleResultFrame();
+                if (animate) UiMotion.enterList(target);
+                };
+                if (animate) UiMotion.exitList(target, build); else build.run();
             });
         });
     }
@@ -2035,6 +2028,7 @@ public final class DashboardActivity extends Activity {
 
     private void updateResults() {
         if (results == null) return;
+        UiMotion.resetList(results);
         if (section == SCHEDULE) { requestScheduleResults(); return; }
         resultMotionGeneration++;
         int previous = scroll.getScrollY();

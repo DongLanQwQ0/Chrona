@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.26 — 2026-10-13
+
+- 完整47/47通过，build/calendar-list-vivo-checks.log。日历生产dayList/时间轴工厂631项验证创建延后，立即创建负例复现集中构建；scheduler15项验证2ms/4项上限及追加/取消。时间轴当前线最后入队保持在卡片上方。均为平台替身，不是FPS测量。
+- 日程controller306项含异步数据完成后退出旧列表、共享进入及过期出口拒绝；原生动效36项含取消复位、低动效立即替换；vivo生产适配器26项含字段、厂商、三阶段及结束异常取消。
+- debug/release/lint通过，0 errors /84 warnings。最终日志build/calendar-list-vivo-final-build.log，签名保持；0.14.26 /133，1,995,626字节，SHA256 `521ad70df9a41002bfa1b4219ecb2a122b2dcb6c79fee9bff3ed93791ef5849d`。备份build/backups/20261013-calendar-list-motion。设备离线，日历/列表视觉和原子岛均未真机验证。
+
 ## 0.14.25 — 2026-10-13
 
 - 录屏解码381帧，定位约50ms高光冻结后相邻8ms跳138px；结果55→31同时更新。用户以减少日程数消除卡顿补强列表规模相关性。尚无运行时各阶段耗时分解。

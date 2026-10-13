@@ -63,7 +63,8 @@ public final class CalendarOverviewActivity extends Activity {
     private android.view.ViewTreeObserver.OnPreDrawListener bodyPreDraw;
     private boolean pendingBodyRender;
     private final Runnable renderPendingBody = this::renderBody;
-    private static final long BUILD_FRAME_BUDGET_NANOS = 4_000_000L;
+    private static final long BUILD_FRAME_BUDGET_NANOS = 2_000_000L;
+    private static final int BUILD_FRAME_MAX_STEPS = 4;
     private java.util.ArrayDeque<Runnable> calendarBuildSteps;
     private Runnable calendarBuildDone;
     private final Runnable calendarBuildFrame = this::buildCalendarFrame;
@@ -78,8 +79,11 @@ public final class CalendarOverviewActivity extends Activity {
     private void buildCalendarFrame() {
         if (calendarBuildSteps == null) return;
         long started = System.nanoTime();
-        do { calendarBuildSteps.removeFirst().run(); }
-        while (!calendarBuildSteps.isEmpty() && System.nanoTime() - started < BUILD_FRAME_BUDGET_NANOS);
+        int steps = 0;
+        while (!calendarBuildSteps.isEmpty()) {
+            calendarBuildSteps.removeFirst().run(); steps++;
+            if (steps >= BUILD_FRAME_MAX_STEPS || System.nanoTime() - started >= BUILD_FRAME_BUDGET_NANOS) break;
+        }
         if (!calendarBuildSteps.isEmpty()) { body.postOnAnimation(calendarBuildFrame); return; }
         calendarBuildSteps = null;
         Runnable done = calendarBuildDone; calendarBuildDone = null;
@@ -648,10 +652,11 @@ public final class CalendarOverviewActivity extends Activity {
         LocalDate first = month.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         for (int r = 0; r < 6; r++) {
             final int weekRow = r;
-            enqueueCalendarBuild(() -> {
             LinearLayout line = row();
+            grid.addView(line);
             for (int c = 0; c < 7; c++) {
-                LocalDate day = first.plusDays(weekRow * 7L + c);
+                final LocalDate day = first.plusDays(weekRow * 7L + c);
+                enqueueCalendarBuild(() -> {
                 boolean ownMonth = day.getMonth() == month.getMonth();
                 int count = dayCounts.on(day);
                 FrameLayout cell = new FrameLayout(this);
@@ -696,9 +701,8 @@ public final class CalendarOverviewActivity extends Activity {
                 LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, cellHeight, 1);
                 if (!mini) cellParams.setMargins(dp(2), dp(2), dp(2), dp(2));
                 line.addView(cell, cellParams);
+                });
             }
-            grid.addView(line);
-            });
         }
         return grid;
     }
@@ -714,6 +718,7 @@ public final class CalendarOverviewActivity extends Activity {
         if (items.isEmpty()) { notice(content, "当天暂无日程"); return; }
         LinearLayout group = column(); calendarSurface(group, false, UiStyle.RADIUS_PANEL, true);
         for (AgendaEntry e : items) {
+            enqueueCalendarBuild(() -> {
             LinearLayout card = column(); card.setPadding(dp(16), dp(14), dp(16), dp(14));
             TextView title = text(e.title, 17, true); title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             LinearLayout titleRow = row();
@@ -731,9 +736,10 @@ public final class CalendarOverviewActivity extends Activity {
             card.setOnClickListener(v -> open(e)); UiStyle.pressable(card); group.addView(card);
             card.setTag("entry:" + e.key() + ":" + day); card.setFocusable(true);
             if (e != items.get(items.size() - 1)) { View divider = new View(this); divider.setBackgroundColor(UiStyle.colors(this).outline); group.addView(divider, new LinearLayout.LayoutParams(-1, dp(1))); }
+            if (items.size() == 1) PressFeedback.group(group, 1.05f);
+            });
         }
         // A single-row card owns one glass surface; scale that surface with its action.
-        if (items.size() == 1) PressFeedback.group(group, 1.05f);
         content.addView(group);
     }
     private void updateStatus(EntryStatus status) {
@@ -790,10 +796,14 @@ public final class CalendarOverviewActivity extends Activity {
             int visible = Math.min(3, allDayItems.size());
             for (int i = 0; i < visible; i++) {
                 AgendaEntry e = allDayItems.get(i);
-                hasAllDay = true; TextView card = action(e.title, () -> open(e)); card.setTextSize(11); card.setMaxLines(2);
+                hasAllDay = true;
+                enqueueCalendarBuild(() -> {
+                TextView card = action(e.title, () -> open(e)); card.setTextSize(11); card.setMaxLines(2);
                 eventSurface(card, e); card.setTextColor(UiStyle.colors(this).text); column.addView(card, new LinearLayout.LayoutParams(-1, -2));
+                });
             }
-            if (allDayItems.size() > visible) column.addView(action("+" + (allDayItems.size() - visible), () -> showAllDay(day, allDayItems)));
+            if (allDayItems.size() > visible) enqueueCalendarBuild(() ->
+                    column.addView(action("+" + (allDayItems.size() - visible), () -> showAllDay(day, allDayItems))));
             allDays.addView(column, new LinearLayout.LayoutParams(dayWidth, -2));
         }
         if (hasAllDay) layout.addView(allDays);
@@ -801,38 +811,46 @@ public final class CalendarOverviewActivity extends Activity {
         verticalViewport = vertical; watchScroll(vertical);
         FrameLayout grid = new FrameLayout(this); int hourHeight = dp(72), height = hourHeight * 24;
         int maxCardHeight = 0;
+        UiStyle.Palette gridColors = UiStyle.colors(this);
+        String[] hourLabels = new String[24];
+        for (int hour = 0; hour < 24; hour++) hourLabels[hour] = String.format(Locale.ROOT, "%02d", hour);
         timeLines = new View(this) {
             final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
             @Override protected void onDraw(Canvas canvas) {
                 paint.setStrokeWidth(dp(1)); paint.setTextSize(dp(11));
                 for (int hour = 0; hour <= 24; hour++) {
-                    float y = hour * hourHeight; paint.setColor(UiStyle.colors(CalendarOverviewActivity.this).outline);
+                    float y = hour * hourHeight; paint.setColor(gridColors.outline);
                     canvas.drawLine(gutter, y, width, y, paint);
-                    if (hour < 24) { paint.setColor(UiStyle.colors(CalendarOverviewActivity.this).muted); canvas.drawText(String.format(Locale.ROOT, "%02d", hour), dp(4), y + dp(13), paint); }
+                    if (hour < 24) { paint.setColor(gridColors.muted); canvas.drawText(hourLabels[hour], dp(4), y + dp(13), paint); }
                 }
-                paint.setColor(UiStyle.colors(CalendarOverviewActivity.this).outline);
+                paint.setColor(gridColors.outline);
                 for (int d = 0; d <= days; d++) canvas.drawLine(gutter + d * dayWidth, 0, gutter + d * dayWidth, height, paint);
             }
         };
         grid.addView(timeLines, new FrameLayout.LayoutParams(-1, -1));
+        android.graphics.Paint.FontMetrics smallMetrics = text("", 12, true).getPaint().getFontMetrics();
+        android.graphics.Paint.FontMetrics largeMetrics = text("", 14, true).getPaint().getFontMetrics();
         for (int d = 0; d < days; d++) for (CalendarTimelineLayout.Block block : CalendarTimelineLayout.day(entries, first.plusDays(d), zone)) {
+            final int dayIndex = d;
             AgendaEntry e = block.entry;
             int durationHeight = (int) ((block.endMinute - block.startMinute) / 60 * hourHeight) - dp(2);
             boolean compact = durationHeight < dp(36);
-            TextView card = text(compact ? e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), compact ? 12 : days == 1 ? 14 : 12, true);
-            card.setPadding(dp(5), dp(compact ? 1 : 4), dp(4), dp(compact ? 1 : 3)); card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            card.setTextColor(UiStyle.colors(this).text); eventSurface(card, e);
-            android.graphics.Paint.FontMetrics metrics = card.getPaint().getFontMetrics();
+            android.graphics.Paint.FontMetrics metrics = !compact && days == 1 ? largeMetrics : smallMetrics;
             int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
             int cardHeight = Math.max(lineHeight + dp(compact ? 4 : 8), durationHeight);
             maxCardHeight = Math.max(maxCardHeight, cardHeight);
+            enqueueCalendarBuild(() -> {
+            TextView card = text(compact ? e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), compact ? 12 : days == 1 ? 14 : 12, true);
+            card.setPadding(dp(5), dp(compact ? 1 : 4), dp(4), dp(compact ? 1 : 3)); card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            card.setTextColor(UiStyle.colors(this).text); eventSurface(card, e);
             card.setMaxLines(compact ? 1 : Math.max(1, (cardHeight - dp(7)) / lineHeight));
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(Math.max(dp(12), dayWidth / block.lanes - dp(4)), cardHeight);
-            params.leftMargin = gutter + d * dayWidth + block.lane * dayWidth / block.lanes + dp(2);
+            params.leftMargin = gutter + dayIndex * dayWidth + block.lane * dayWidth / block.lanes + dp(2);
             params.topMargin = Math.max(0, Math.min(height - cardHeight, (int) (block.startMinute / 60 * hourHeight) + dp(1)));
             card.setContentDescription(e.title + "，" + time(e) + "，" + e.location + "，" + e.source);
-            card.setTag("entry:" + e.key() + ":" + first.plusDays(d)); card.setFocusable(true);
+            card.setTag("entry:" + e.key() + ":" + first.plusDays(dayIndex)); card.setFocusable(true);
             card.setOnClickListener(v -> open(e)); grid.addView(card, params);
+            });
         }
         View nowLine = new View(this) {
             final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -846,7 +864,8 @@ public final class CalendarOverviewActivity extends Activity {
             }
         };
         nowLine.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        grid.addView(nowLine, new FrameLayout.LayoutParams(-1, -1)); timeLines = nowLine;
+        enqueueCalendarBuild(() -> grid.addView(nowLine, new FrameLayout.LayoutParams(-1, -1)));
+        timeLines = nowLine;
         FrameLayout gridContent = new FrameLayout(this);
         int verticalEdge = PressFeedback.edgeSpace(maxCardHeight);
         gridContent.setPadding(edge, verticalEdge, edge, verticalEdge);

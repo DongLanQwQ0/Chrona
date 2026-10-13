@@ -102,6 +102,24 @@ final class UiMotion {
     }
 
     static void remember(View view) { SCROLL_SEEN.put(view, true); }
+    /** One result-list transition shared by schedule and inbox; no bitmap ghost or per-row burst. */
+    static void resetList(View list) {
+        list.animate().cancel(); list.setAlpha(1f); list.setTranslationY(0f);
+    }
+    static void exitList(View list, Runnable replace) {
+        resetList(list);
+        if (!isEnabled() || protectsInteraction(list)) { replace.run(); return; }
+        list.animate().alpha(0f).translationY(-8f * list.getResources().getDisplayMetrics().density)
+                .setStartDelay(0).setDuration(EXIT).setInterpolator(SETTLE)
+                .withEndAction(() -> { resetList(list); replace.run(); }).start();
+    }
+    static void enterList(View list) {
+        resetList(list);
+        if (!isEnabled() || protectsInteraction(list)) return;
+        list.setAlpha(0f); list.setTranslationY(8f * list.getResources().getDisplayMetrics().density);
+        list.animate().alpha(1f).translationY(0f).setStartDelay(0).setDuration(ENTER)
+                .setInterpolator(SETTLE).start();
+    }
     static boolean wasRevealed(View view) { return SCROLL_SEEN.containsKey(view); }
 
     private static void collectInteractionTargets(View view, java.util.ArrayList<View> targets) {

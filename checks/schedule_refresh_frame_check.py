@@ -16,10 +16,10 @@ def method(signature):
     return source[start:end]
 
 methods = '\n'.join(method(x) for x in (
-    'private void cancelScheduleResults(', 'private void requestScheduleResults(',
+    'private void cancelScheduleResults(', 'private void requestScheduleResults()', 'private void requestScheduleResults(boolean',
     'private boolean scheduleResultCurrent(', 'private void enqueueScheduleResult(',
-    'private void buildScheduleResultFrame(', 'private void renderScheduleResults(')
-)
+    'private void buildScheduleResultFrame(', 'private void renderScheduleResults(', 'private void updateResultsWithEntrance('
+))
 java = r'''
 import java.util.*;
 import java.time.*;
@@ -42,7 +42,7 @@ class EventCandidate {Long startAtMillis=1L; boolean allDay;}
 class TaskStore {List<Long> queryScheduleIds(ScheduleQuery q){throw new AssertionError("SQL on UI");}List<EventCandidate> querySchedulePage(ScheduleQuery q,boolean o,int p){throw new AssertionError("SQL on UI");}}
 class AllDayDates {static String displayStart(long t){return "2026-10-13";}static String localDate(long t,ZoneId z){return "2026-10-13";}}
 class HomeTimelinePreferences {static boolean includesSystemCalendar(Object c){return true;}}
-class UiMotion {static int settled;static void settleScroll(ScrollView s,LinearLayout l){settled++;}}
+class UiMotion {static int settled,enters,exits;static Runnable replace;static void resetList(Object l){replace=null;}static void exitList(Object l,Runnable r){exits++;replace=r;}static void enterList(Object l){enters++;}static void settleScroll(ScrollView s,LinearLayout l){settled++;}}
 class Feedback {static int failures;static void show(Object c,String s){failures++;}}
 class DashboardSectionData {
  List<Long> ids=new ArrayList<>();List<EventCandidate> candidates=new ArrayList<>();int page;long revision=9;
@@ -58,7 +58,7 @@ public class DashboardRefreshCheck {
  static int checks,throwAt=-1;static void check(boolean v,String message){checks++;if(!v)throw new AssertionError(message);}
  static final int SCHEDULE=2,INBOX=1;
  int section=SCHEDULE,scheduleResultGeneration,resultMotionGeneration,scheduleSource,scheduleTab,scheduleCategory,schedulePublication,schedulePage,statusIndex,categoryIndex;
- boolean scheduleResultLoading,scheduleOldestFirst,destroyed,finishing;
+ boolean scheduleResultLoading,scheduleOldestFirst,destroyed,finishing;int updates;
  String scheduleQuery="original",inboxQuery="";
  LinearLayout results=new LinearLayout(),scheduleBuildTarget;
  ScrollView scroll=new ScrollView();
@@ -80,6 +80,7 @@ public class DashboardRefreshCheck {
  void candidateRow(LinearLayout target,EventCandidate item,int i){if(i==throwAt)throw new RuntimeException("view creation failed");target.rows++;}
  void scheduleDayHeading(String day){results.headings++;}
  void schedulePageControls(int total){results.footer++;}
+ void updateResults(){updates++;resultMotionGeneration++;results.rows=2;}
  __METHODS__
  void workerCommit(){startupReader.run();refresh.drain();}
  void complete(){int frames=0;while(!results.frames.isEmpty()){int before=results.rows;results.frame();check(results.rows-before<=1,"one row maximum per frame");if(++frames>1000)throw new AssertionError("endless build");}scroll.drain();}
@@ -100,6 +101,9 @@ public class DashboardRefreshCheck {
   for(boolean finished:new boolean[]{false,true}){DashboardRefreshCheck dead=new DashboardRefreshCheck();dead.requestScheduleResults();dead.destroyed=!finished;dead.finishing=finished;dead.workerCommit();check(dead.results.rows==0,"destroyed or finishing activity rejects callback");}
   DashboardRefreshCheck failure=new DashboardRefreshCheck();failure.results.rows=4;DashboardSectionData.fail=true;failure.requestScheduleResults();failure.workerCommit();check(failure.results.rows==4&&!failure.scheduleResultLoading&&Feedback.failures==1,"error retains rows and releases busy state");DashboardSectionData.fail=false;failure.requestScheduleResults();failure.workerCommit();failure.complete();check(failure.results.rows==55,"retry succeeds");
   DashboardRefreshCheck rowFailure=new DashboardRefreshCheck();throwAt=3;rowFailure.requestScheduleResults();rowFailure.workerCommit();rowFailure.complete();check(!rowFailure.scheduleResultLoading&&rowFailure.dirtySections.contains(SCHEDULE)&&rowFailure.results.rows==3,"frame creation failure cancels safely and leaves retryable cache");throwAt=-1;rowFailure.requestScheduleResults();rowFailure.workerCommit();rowFailure.complete();check(rowFailure.results.rows==55,"retry after frame creation failure succeeds");
+  DashboardRefreshCheck animated=new DashboardRefreshCheck();animated.results.rows=7;animated.requestScheduleResults(true);animated.workerCommit();check(animated.results.rows==7&&UiMotion.exits==1,"exit only after worker snapshot and old rows retained until exit completes");Runnable swap=UiMotion.replace;swap.run();check(animated.results.rows==1&&UiMotion.enters==1,"shared enter begins with bounded first row");animated.complete();
+  DashboardRefreshCheck obsolete=new DashboardRefreshCheck();obsolete.requestScheduleResults(true);obsolete.workerCommit();Runnable stale=UiMotion.replace;obsolete.cancelScheduleResults();stale.run();check(obsolete.results.rows==0,"superseded exit cannot rebuild results");
+  DashboardRefreshCheck inbox=new DashboardRefreshCheck();inbox.section=INBOX;inbox.results.rows=7;inbox.updateResultsWithEntrance();check(inbox.updates==0&&inbox.results.rows==7,"inbox uses shared exit before replacing");Runnable inboxSwap=UiMotion.replace;int entered=UiMotion.enters;inboxSwap.run();check(inbox.updates==1&&inbox.results.rows==2&&UiMotion.enters==entered+1,"inbox shares enter with schedule");inbox.updateResultsWithEntrance();Runnable ignored=UiMotion.replace;inbox.results=new LinearLayout();ignored.run();check(inbox.updates==1,"inbox stale exit does not rebuild replaced page");
   DashboardRefreshCheck sync=new DashboardRefreshCheck();DashboardSectionData.count=0;sync.requestScheduleResults();sync.workerCommit();check(sync.results.footer==1&&!sync.scheduleResultLoading,"empty list completes without an extra frame");
   System.out.println("Schedule refresh passed: "+checks+" checks (production controller/renderer, worker and frame doubles)");
  }

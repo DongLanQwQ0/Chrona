@@ -1,3 +1,12 @@
+# 本轮补充 · 2026-10-13 · 0.14.26
+
+用户确认日程大部分卡顿已解决，剩日历，并要求日程/收件箱统一进入、退出及切换；随后明确要求仅vivo原子岛实现。Calendar原队列遗漏dayList及timeline卡片，monthGrid还以七天整行为一个任务；现改逐日期/逐事件入队，预算2ms且每回调至多4项（单项可超过预算），全天事件也入队。时间轴提前按统一12/14sp度量保留边缘余量，缓存小时标签和网格Palette；nowLine最终入队，使其在所有事件上方。初始无动画构建仍同步，小月日选择仍保留原月网格，未做虚拟列表或改变Dock惯性。
+
+UiMotion新增resetList/exitList/enterList，列表容器退出180ms、进入240ms，位移±8dp，共享SETTLE；不截图、不复制旧卡片。日程worker快照完成后才退出旧列表，首条构建后开始进入，后续逐帧；收件箱同套出口/入口，原查询方式保持。generation、results identity、切页/暂停取消及dirty缓存保护防止旧动画重建或留下透明缓存。删旧的animateResultRows/animateResultCard。
+
+vivo官方doc896通过页面公开webapi/doc/info?id=896取得正文，验证island左右区具体字段、模板1infos必填图标及METTING。新VivoAtomicNotification仅MANUFACTURER=vivo生成大卡/左右岛Bundle；原AgendaReminder通知ID/渠道/RemoteViews/动作保留，operation012管理创建/更新/结束，结束异常仍cancel。已存在通知才更新，切换事件先结束旧通知。没有VPush/保活/后台网络，授权和机型仍决定是否出岛；不能保证自用免授权。调研子代理持续容量不足，主代理补查官方正文。
+
+完整47/47，build/calendar-list-vivo-checks.log。Calendar工厂631项及立即创建负例复现；scheduler15项、日程controller306项、原生motion36项、vivo26项。最终nowLine顺序与active异常处理后重跑相关检查；debug/release/lint通过，0 errors /84 warnings，build/calendar-list-vivo-final-build.log。备份build/backups/20261013-calendar-list-motion。0.14.26 /133，APK 1,995,626字节，SHA256 521ad70df9a41002bfa1b4219ecb2a122b2dcb6c79fee9bff3ed93791ef5849d，原签名保持。无ADB，日历FPS、统一列表视觉与vivo出岛均未真机复验。
 # 本轮补充 · 2026-10-13 · 0.14.25
 
 录屏逐原始帧定位：2.671756至2.721711秒高光中心约482.5px不动，2.729733秒跳至344.5px（相邻约8ms跳138px），同时55条变31条。用户进一步确认底部Dock与收件箱正常，日程减少数量后正常。源码松手select回调同步queryScheduleIds/querySchedulePage并创建全页卡片，与停顿后spring一次补算elapsed一致。录屏不是FrameMetrics，SQL/布局/玻璃的各自耗时仍未真机测量。

@@ -64,7 +64,7 @@ public final class AgendaReminder {
             }
         }
         if (!AgendaReminderPreferences.enabled(context)) {
-            manager.cancel(NOTIFICATION_ID); schedule(context, 0); return;
+            VivoAtomicNotification.end(context, manager, NOTIFICATION_ID); schedule(context, 0); return;
         }
         java.util.Set<String> hidden = new HashSet<>();
         SharedPreferences.Editor cleanup = prefs.edit();
@@ -94,11 +94,13 @@ public final class AgendaReminder {
         ReminderTimeline timeline = new ReminderTimeline(entries, now, hidden,
                 prefs.getString("snoozed", ""), prefs.getLong("snooze_until", 0));
         if (!timeline.visible || !manager.areNotificationsEnabled()) {
-            manager.cancel(NOTIFICATION_ID);
+            VivoAtomicNotification.end(context, manager, NOTIFICATION_ID);
             prefs.edit().remove("shown").apply();
         } else {
             String key = timeline.focus.key();
             boolean same = key.equals(prefs.getString("shown", ""));
+            if (!same && !prefs.getString("shown", "").isEmpty())
+                VivoAtomicNotification.end(context, manager, NOTIFICATION_ID);
             NotificationChannel channel = new NotificationChannel(CHANNEL, "即将开始的日程", NotificationManager.IMPORTANCE_HIGH);
             channel.setDescription("日程开始前 30 分钟展示详细卡片，持续至日程结束");
             manager.createNotificationChannel(channel);
@@ -155,6 +157,9 @@ public final class AgendaReminder {
                 .setStyle(new Notification.DecoratedCustomViewStyle()).setContentIntent(details)
                 .setOngoing(true).setOnlyAlertOnce(same).setWhen(e.start).setShowWhen(false)
                 .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PRIVATE)
+                .addExtras(VivoAtomicNotification.extras(context, e.title, status, range, e.location,
+                        DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(e.start).atZone(zone)),
+                        details, same && VivoAtomicNotification.active(context.getSystemService(NotificationManager.class), NOTIFICATION_ID)))
                 .setTimeoutAfter(Math.max(1000, e.finish() - now))
                 .addAction(new Notification.Action.Builder(null, "查看详情", details).build())
                 .addAction(new Notification.Action.Builder(null, "5 分钟后提醒", action(context, e, "snooze", 2)).build())
