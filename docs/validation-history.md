@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.19 — 2026-10-13
+
+- 截图指出真实布局错位。生产高光平移修正父布局原点重复计算；测试替身开始模拟实际内边距及高光布局原点，不再把 setPadding 当空操作。
+- Dock 104 项、完整回归 41/41 通过，`build/dock-padding-full-checks.log`。同一测试对修改前代码失败：期望中心 149、实际 157；`build/dock-padding-original-rejection.log`。覆盖主导航、四/五项筛选、竖向、修改 padding 与父布局重排；仍为 Android 布局/队列替身。
+- debug/release/lint 通过，0 errors / 84 warnings，`build/dock-padding-final-build.log`。0.14.19 / 126，1,988,310 字节，SHA256 `18388fdac757a5459e7c4e36acfbedca05deb34b1d40e430ddb4e2a2abef8b7c`，保持原安装签名；备份 `build/backups/20261013-dock-padding-regression`。ADB 无设备，实际手机视觉、手感和帧率尚未实测。
+
 ## 0.14.18 — 2026-10-13
 
 - 完整离线 41/41，`build/filter-dock-full-checks.log`。原生 Dock 与生产 filterDock 工厂补充 92 项：状态徽章、末项点击、四/五按钮复用、接近区提前减速及连续性、稳定的高光布局基准；采用 Android 队列和布局替身。

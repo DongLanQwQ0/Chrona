@@ -280,8 +280,10 @@ final class DockNavigationLayout extends FrameLayout {
                 highlightView.setLayoutParams(new FrameLayout.LayoutParams(baseWidth, baseHeight));
             if (highlightView.getWidth() != baseWidth || highlightView.getHeight() != baseHeight)
                 highlightView.layout(0, 0, baseWidth, baseHeight);
-            highlightView.setTranslationX(vertical() ? top : left);
-            highlightView.setTranslationY(vertical() ? left : top);
+            // Geometry is in dock coordinates. FrameLayout already positions this child
+            // at its padded layout origin; translation must only add the remaining offset.
+            highlightView.setTranslationX((vertical() ? top : left) - highlightView.getLeft());
+            highlightView.setTranslationY((vertical() ? left : top) - highlightView.getTop());
             highlightView.setScaleX((vertical() ? height : right - left) / baseWidth);
             highlightView.setScaleY((vertical() ? right - left : height) / baseHeight);
         }

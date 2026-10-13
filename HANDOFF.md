@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-13 · 0.14.19
+
+用户截图显示共享 Dock 高光下沉和横向错位。根因是 updateHighlight 已算出 Dock 坐标，而 FrameLayout 又按 padding 布置 highlightView；之前直接将 Dock 坐标赋给 translation，重复叠加了实际布局原点。改为 translationX/Y = 目标 Dock 坐标 - highlightView.getLeft()/getTop()。
+
+原测试替身 setPadding 是空方法且 FrameLayout 不布置高光原点，漏掉回归。替身现在保存四侧 padding 并布置所有子视图；测量使用 layout origin + translation + scaled size。新增底部导航、四/五项筛选、竖向导航、padding 变化及父重排案例。生产 Dock 104 项和完整 41/41 通过；用修改前源文件执行同一测试得到明确失败：期望中心 149，实际 157，原缺陷被拒绝。证据 build/dock-padding-original-rejection.log、build/dock-padding-full-checks.log。
+
+debug/release/lint 通过；备份 build/backups/20261013-dock-padding-regression。0.14.19 / 126。ADB 无设备，手机最终视觉和帧率仍未实测。
+
 # 本轮补充 · 2026-10-13 · 0.14.18
 
 用户要求日程与收件箱筛选栏共享高光 Dock、内端在触及锚点前减速，并报告日历松手残影/跳帧。Dashboard 的 filterChips 和缓存 SectionPage 使用 DockNavigationLayout；filterDock 工厂统一四/五按钮与角落计数，删除旧 chipRow/横向滚动布局及逐按钮亚克力选中背景，保留原有筛选、排序、分页回调。日程与收件箱使用一致的 48dp 栏及尾部筛选按钮间距。

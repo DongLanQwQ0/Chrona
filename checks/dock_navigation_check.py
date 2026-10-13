@@ -58,7 +58,7 @@ public class View {
  public static final int IMPORTANT_FOR_ACCESSIBILITY_NO=2;public void setImportantForAccessibility(int value){}
  public ViewGroup.LayoutParams layoutParams=new ViewGroup.LayoutParams(1,1);public ViewGroup.LayoutParams getLayoutParams(){return layoutParams;}public void setLayoutParams(ViewGroup.LayoutParams value){layoutParams=value;}
  public void setBackground(Object background){}public void setPivotX(float x){}public void setPivotY(float y){}
- public void setPadding(int a,int b,int c,int d){}
+ public int pl,pt,pr,pb;public void setPadding(int a,int b,int c,int d){pl=a;pt=b;pr=c;pb=d;}public int getPaddingLeft(){return pl;}public int getPaddingTop(){return pt;}public int getPaddingRight(){return pr;}public int getPaddingBottom(){return pb;}
  public float translationX,translationY;public void setTranslationX(float x){translationX=x;}public void setTranslationY(float y){translationY=y;}public float getTranslationX(){return translationX;}public float getTranslationY(){return translationY;}
  public void setOnClickListener(OnClickListener c){click=c;} public boolean performClick(){if(click!=null)click.onClick(this);return click!=null;}
  public boolean dispatchTouchEvent(MotionEvent e){return onTouchEvent(e);}
@@ -98,7 +98,7 @@ import java.util.*; public class ViewGroup extends View {
  }
 } """,
     "android/widget/LinearLayout.java": "package android.widget; public class LinearLayout extends android.view.ViewGroup {public static class LayoutParams extends android.view.ViewGroup.LayoutParams {public float weight;public LayoutParams(int w,int h,float value){super(w,h);weight=value;}}public static final int HORIZONTAL=0,VERTICAL=1; public void setOrientation(int value){} public LinearLayout(android.content.Context c){super(c);} }",
-    "android/widget/FrameLayout.java": "package android.widget; public class FrameLayout extends android.view.ViewGroup { public FrameLayout(android.content.Context c){super(c);} protected void onLayout(boolean changed,int l,int t,int r,int b){for(android.view.View child:children)if(child instanceof android.widget.LinearLayout)child.layout(0,0,getWidth(),getHeight());} }",
+    "android/widget/FrameLayout.java": "package android.widget; public class FrameLayout extends android.view.ViewGroup { public FrameLayout(android.content.Context c){super(c);} protected void onLayout(boolean changed,int l,int t,int r,int b){for(android.view.View child:children){var p=child.getLayoutParams();int w=p.width<0?getWidth()-pl-pr:p.width,h=p.height<0?getHeight()-pt-pb:p.height;child.layout(pl,pt,pl+w,pt+h);}} }",
     "android/widget/TextView.java": """package android.widget; public class TextView extends android.view.View {
 public TextView(android.content.Context c){super(c);} public void setTextColor(int c){}
 public void setGravity(int g){}public void setIncludeFontPadding(boolean b){}
@@ -138,7 +138,7 @@ public class DockNavigationCheck extends Context {
   dock.layout(0,0,300,60);new FrameLayout(c).addView(dock);populate();dock.setSelectedIndex(0);}
  static void touch(int a,float x,float y){dock.dispatchTouchEvent(new MotionEvent(a,x,y));}
  static View highlight(){try{var field=DockNavigationLayout.class.getDeclaredField("highlightView");field.setAccessible(true);return (View)field.get(dock);}catch(Exception e){throw new RuntimeException(e);}}
- static float center(){View h=highlight();GradientDrawable.lastLeft=h.getTranslationX();GradientDrawable.lastWidth=h.getWidth()*h.getScaleX();GradientDrawable.lastHeight=h.getHeight()*h.getScaleY();GradientDrawable.lastRight=GradientDrawable.lastLeft+GradientDrawable.lastWidth;GradientDrawable.lastCenter=(GradientDrawable.lastLeft+GradientDrawable.lastRight)/2;return GradientDrawable.lastCenter;}
+ static float center(){View h=highlight();GradientDrawable.lastLeft=h.getLeft()+h.getTranslationX();GradientDrawable.lastWidth=h.getWidth()*h.getScaleX();GradientDrawable.lastHeight=h.getHeight()*h.getScaleY();GradientDrawable.lastRight=GradientDrawable.lastLeft+GradientDrawable.lastWidth;GradientDrawable.lastCenter=(GradientDrawable.lastLeft+GradientDrawable.lastRight)/2;return GradientDrawable.lastCenter;}
  static void close(float actual,float expected,String label){require(Math.abs(actual-expected)<=1f,label+" got "+actual);}
  public static void main(String[] args)throws Exception{
   View.reset();List<Integer> filters=new ArrayList<>();DockNavigationLayout five=new DockNavigationCheck().filterDock(new String[]{"全部","待确认","处理中","失败","已写入"},0,filters::add,new int[]{0,3,0,2,0});
@@ -224,6 +224,30 @@ public class DockNavigationCheck extends Context {
   init();dock.finishPageSelection(2);int redraws=dock.invalidations,layouts=highlight().layouts;View.advance(400);
   require(dock.invalidations==redraws,"Motion does not invalidate entire glass dock each frame");
   require(highlight().layouts==layouts,"Motion uses render properties without repeated layout");
+  init();dock.setPadding(8,6,8,6);dock.layout(0,0,300,72);
+  for(int i=0;i<3;i++)dock.itemAt(i).layout(i*94,0,(i+1)*94,60);
+  android.animation.ValueAnimator.enabled=false;dock.finishPageSelection(1);dock.layout(0,0,300,72);
+  close(center(),149,"Padded horizontal dock centers highlight on button after parent relayout");
+  close(highlight().getTop()+highlight().getTranslationY()+highlight().getHeight()*highlight().getScaleY()/2,36,"Padded dock does not double its top inset");
+  close(highlight().getTop()+highlight().getTranslationY(),6,"Top spacing is preserved");
+  close(72-highlight().getTop()-highlight().getTranslationY()-highlight().getHeight()*highlight().getScaleY(),6,"Bottom spacing matches top spacing");
+  dock.setPadding(13,9,13,9);dock.layout(0,0,300,78);
+  close(center(),154,"Changed padding is applied exactly once");
+  close(highlight().getTop()+highlight().getTranslationY(),9,"Changed vertical inset is applied exactly once");
+  for(int count:new int[]{4,5}){
+   dock=new DockNavigationLayout(DockNavigationCheck.c,n->{},()->{});new FrameLayout(DockNavigationCheck.c).addView(dock);
+   dock.setPadding(4,2,4,2);for(int i=0;i<count;i++)dock.addItem(new TextView(DockNavigationCheck.c));dock.layout(0,0,320,48);
+   int cellWidth=312/count;for(int i=0;i<count;i++)dock.itemAt(i).layout(i*cellWidth,0,(i+1)*cellWidth,44);
+   dock.finishPageSelection(1);dock.layout(0,0,320,48);
+   close(center(),4+1.5f*cellWidth,"Filter dock stays centered with "+count+" items and padding");
+   close(highlight().getTop()+highlight().getTranslationY(),2,"Compact filter top inset is preserved");
+  }
+  dock=new DockNavigationLayout(DockNavigationCheck.c,n->{},()->{});new FrameLayout(DockNavigationCheck.c).addView(dock);
+  dock.setOrientation(LinearLayout.VERTICAL);dock.setPadding(8,12,8,12);for(int i=0;i<3;i++)dock.addItem(new TextView(DockNavigationCheck.c));dock.layout(0,0,76,324);
+  for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.finishPageSelection(1);dock.layout(0,0,76,324);
+  close(center(),38,"Vertical padded dock keeps highlight centered horizontally");
+  close(highlight().getTop()+highlight().getTranslationY()+highlight().getHeight()*highlight().getScaleY()/2,162,"Vertical padded dock applies top origin exactly once");
+  android.animation.ValueAnimator.enabled=true;
   init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
   for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.setSelectedIndex(0);
   touch(0,35,25);touch(2,35,150);View.advance(600);touch(1,35,150);View.advance(1800);
