@@ -24,14 +24,14 @@ __SOURCE__
 public class VivoAtomicCheck {
  static int checks;static void check(boolean ok){checks++;if(!ok)throw new AssertionError("vivo check "+checks);}
  public static void main(String[] args){
- Context c=new Context();PendingIntent details=new PendingIntent();RemoteViews card=new RemoteViews();String animations="{marquee:true}";
- for(String brand:new String[]{"google","samsung","OPPO",null}){Build.MANUFACTURER=brand;check(!VivoAtomicNotification.available(c));check(VivoAtomicNotification.sceneEnabled(c)==null);check(VivoAtomicNotification.extras(c,"课","开始","13:25–15:50","13:25","距开始 15分钟",details,false,card,animations).isEmpty());}
+ Context c=new Context();PendingIntent details=new PendingIntent();RemoteViews card=new RemoteViews(),islandCard=new RemoteViews();String animations="{marquee:true}";
+ for(String brand:new String[]{"google","samsung","OPPO",null}){Build.MANUFACTURER=brand;check(!VivoAtomicNotification.available(c));check(VivoAtomicNotification.sceneEnabled(c)==null);check(VivoAtomicNotification.extras(c,"课","开始","13:25–15:50","13:25","距开始 15分钟",details,false,card,islandCard,animations).isEmpty());}
  Build.MANUFACTURER="VIVO";
  check(VivoAtomicNotification.sceneEnabled(c).equals(true));check(VivoAtomicNotification.available(c));c.manager.scene=false;check(VivoAtomicNotification.sceneEnabled(c).equals(false));check(!VivoAtomicNotification.available(c));
  c.manager.scene=null;check(VivoAtomicNotification.sceneEnabled(c)==null&&!VivoAtomicNotification.available(c));
  c.manager.scene=true;c.manager.sceneFailure=true;check(VivoAtomicNotification.sceneEnabled(c)==null&&!VivoAtomicNotification.available(c));c.manager.sceneFailure=false;
  c.manager.allowed=false;check(!VivoAtomicNotification.available(c));c.manager.allowed=true;check(VivoAtomicNotification.available(c));
- Bundle b=VivoAtomicNotification.extras(c,"微积分","即将开始","10:00–12:25","10:00","距开始 15分钟",details,false,card,animations);
+ Bundle b=VivoAtomicNotification.extras(c,"微积分","即将开始","10:00–12:25","10:00","距开始 15分钟",details,false,card,islandCard,animations);
  check(b.get("notification.superx.operation").equals(0));check(b.get("notification.superx.template").equals(7));check(b.get("notification.superx.scene").equals("CHRONA_AGENDA"));check(b.get("notification.superx.dismissWhenKill").equals(false));check(b.get("notification.superx.showNotify").equals(true));check(b.get("notification.superx.clickResp")==details);
  Bundle base=(Bundle)b.get("notification.superx.baseInfos"), island=(Bundle)b.get("notification.superx.island");
  check(base.get("notification.superx.baseInfos.title").equals("微积分"));
@@ -39,11 +39,11 @@ public class VivoAtomicCheck {
  check(!b.containsKey("notification.superx.infos"));
  check(island.get("island.superx.leftTemplate").equals(1)&&island.get("island.superx.rightTemplate").equals(4));
  check(((Bundle)island.get("island.superx.leftInfo")).get("island.superx.leftInfo.content").equals("10:00"));check(((Bundle)island.get("island.superx.rightInfo")).get("island.superx.rightInfo.content").equals("微积分"));check(island.get("island.superx.clickResp")==details);
- check(island.get("island.superx.islandClick").equals(0));check(island.get("island.superx.template").equals(7));check(island.get("island.superx.customTemplate")==card);
+ check(island.get("island.superx.islandClick").equals(0));check(island.get("island.superx.template").equals(7));check(island.get("island.superx.customTemplate")==islandCard&&islandCard!=card);
  check(!((Bundle)island.get("island.superx.rightInfo")).containsKey("island.superx.rightInfo.clickResp"));
  check(base.get("notification.superx.baseInfos.content").equals("距开始 15分钟\n10:00–12:25"));
- check(VivoAtomicNotification.extras(c,"课","进行中","range","10:00","距结束 5分钟",details,true,card,animations).get("notification.superx.operation").equals(1));
- Bundle noLocation=VivoAtomicNotification.extras(c,"课","进行中","range","10:00","距结束 5分钟",details,true,card,animations);
+ check(VivoAtomicNotification.extras(c,"课","进行中","range","10:00","距结束 5分钟",details,true,card,islandCard,animations).get("notification.superx.operation").equals(1));
+ Bundle noLocation=VivoAtomicNotification.extras(c,"课","进行中","range","10:00","距结束 5分钟",details,true,card,islandCard,animations);
  check(((Bundle)noLocation.get("notification.superx.baseInfos")).get("notification.superx.baseInfos.content").equals("距结束 5分钟\nrange"));
  Bundle capsule=(Bundle)b.get("notification.superx.capsule");check(capsule.get("notification.superx.capsule.state").equals(1));check(capsule.get("notification.superx.capsule.icon") instanceof Icon);check(capsule.get("notification.superx.capsule.content").equals("10:00 微积分"));check(capsule.get("notification.superx.capsule.clickResp")==details);
  Bundle shortInfo=(Bundle)b.get("notification.superx.shortInfos");check(((Icon)shortInfo.get("notification.superx.shortInfos.image")).resource==R.drawable.ic_chrona_foreground);check(shortInfo.get("notification.superx.shortInfos.describeShort").equals("即将开始"));check(shortInfo.get("notification.superx.shortInfos.coreInfoShort").equals("距开始 15分钟"));

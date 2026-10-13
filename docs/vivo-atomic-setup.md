@@ -14,7 +14,9 @@
 
 0.14.34补齐主题配色的地点图标，收紧卡片留白与行间距，保持标题字号及两行显示。弹幕区域按字体高度适配，保留最小20dp高度。
 
-先安装对应版本 Chrona，连接已授权 ADB 的手机，再解压发布附件 `Chrona-vivo-setup-0.14.34.zip`。使用 PowerShell 7：
+0.14.35为展开原子岛提供独立布局：顶部两侧显示图标与剩余时间，中间留空，完整标题放到摄像头下方。读取设备顶部挖孔下缘，必要时补足4dp安全间距，普通通知保持原布局。最终避让仍需真机验证。
+
+先安装对应版本 Chrona，连接已授权 ADB 的手机，再解压发布附件 `Chrona-vivo-setup-0.14.35.zip`。使用 PowerShell 7：
 
 ```powershell
 pwsh -File .\Configure-VivoAtomicScene.ps1 -Device '手机IP:连接端口' -Mode Enable -TestApk .\Chrona-device-checks.apk

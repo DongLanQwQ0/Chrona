@@ -19,6 +19,8 @@ import java.time.format.DateTimeFormatter;
 final class AtomicAgendaCard {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
     private static final int BACKGROUND_WIDTH = 320, BACKGROUND_HEIGHT = 180;
+    private static final int ISLAND_HEADER_SAFE_BOTTOM_DP = 44;
+    private static final int CAMERA_CLEARANCE_DP = 4;
     private static int cachedBase, cachedAccent;
     private static Bitmap[] cachedBackgrounds;
     private static final int[] TICKER_IDS = {R.id.atomic_ticker_1, R.id.atomic_ticker_2,
@@ -26,6 +28,14 @@ final class AtomicAgendaCard {
 
     static RemoteViews create(Context context, AgendaEntry entry, long now, long notifiedAt,
             String nextTitle, PendingIntent details) {
+        return create(context, entry, now, notifiedAt, nextTitle, details, false);
+    }
+    static RemoteViews forIsland(Context context, AgendaEntry entry, long now, long notifiedAt,
+            String nextTitle, PendingIntent details) {
+        return create(context, entry, now, notifiedAt, nextTitle, details, true);
+    }
+    private static RemoteViews create(Context context, AgendaEntry entry, long now, long notifiedAt,
+            String nextTitle, PendingIntent details, boolean cameraSafe) {
         UiStyle.Palette palette = UiStyle.colors(context);
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.notification_atomic_card);
         boolean active = now >= entry.start && "event".equals(entry.category);
@@ -34,15 +44,30 @@ final class AtomicAgendaCard {
         double ratio = ReminderTimeline.elapsedRatio(entry, now, notifiedAt);
         ZoneId zone = ZoneId.systemDefault();
         views.setTextViewText(R.id.atomic_title, entry.title);
+        views.setTextViewText(R.id.atomic_island_title, entry.title);
+        views.setTextColor(R.id.atomic_island_title, palette.text);
+        views.setViewVisibility(R.id.atomic_title, cameraSafe ? android.view.View.GONE : android.view.View.VISIBLE);
+        views.setViewVisibility(R.id.atomic_island_title, cameraSafe ? android.view.View.VISIBLE : android.view.View.GONE);
+        views.setViewVisibility(R.id.atomic_camera_space, cameraSafe ? android.view.View.VISIBLE : android.view.View.GONE);
+        views.setViewVisibility(R.id.atomic_top_remaining, cameraSafe ? android.view.View.VISIBLE : android.view.View.GONE);
+        views.setViewVisibility(R.id.atomic_bottom_remaining, cameraSafe ? android.view.View.GONE : android.view.View.VISIBLE);
+        views.setViewPadding(R.id.atomic_header, 0, cameraSafe ? cameraTopPadding(context) : 0, 0, 0);
         views.setTextViewText(R.id.atomic_location, entry.location);
         views.setImageViewBitmap(R.id.atomic_location_icon, locationIcon(context, palette.muted));
         views.setViewVisibility(R.id.atomic_location_icon, entry.location.isBlank() ? android.view.View.GONE : android.view.View.VISIBLE);
         views.setTextViewText(R.id.atomic_remaining_label, active ? "距结束" : "距开始");
-        views.setChronometer(R.id.atomic_remaining, SystemClock.elapsedRealtime() + to - now, null, now < to);
+        views.setChronometer(R.id.atomic_remaining, SystemClock.elapsedRealtime() + to - now, null, !cameraSafe && now < to);
         views.setChronometerCountDown(R.id.atomic_remaining, true);
+        views.setTextViewText(R.id.atomic_top_remaining_label, active ? "距结束" : "距开始");
+        views.setTextColor(R.id.atomic_top_remaining_label, palette.muted);
+        views.setTextColor(R.id.atomic_top_countdown, palette.primary);
+        views.setChronometer(R.id.atomic_top_countdown, SystemClock.elapsedRealtime() + to - now, null, cameraSafe && now < to);
+        views.setChronometerCountDown(R.id.atomic_top_countdown, true);
+        views.setViewVisibility(R.id.atomic_top_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setViewVisibility(R.id.atomic_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
         if (now >= to) {
             views.setTextViewText(R.id.atomic_remaining, active ? "已结束" : "已开始");
+            views.setTextViewText(R.id.atomic_top_countdown, active ? "已结束" : "已开始");
         }
         views.setTextViewText(R.id.atomic_from, CLOCK.format(Instant.ofEpochMilli(from).atZone(zone)));
         views.setTextViewText(R.id.atomic_to, CLOCK.format(Instant.ofEpochMilli(to).atZone(zone)));
@@ -81,6 +106,27 @@ final class AtomicAgendaCard {
         views.setImageViewBitmap(R.id.atomic_background_second, backgrounds[1]);
         views.setInt(R.id.atomic_background, "setFlipInterval", motion ? 16000 : Integer.MAX_VALUE);
         return views;
+    }
+    private static int cameraTopPadding(Context context) {
+        if (android.os.Build.VERSION.SDK_INT < 30) return 0;
+        try {
+            android.view.WindowMetrics metrics = context.getSystemService(android.view.WindowManager.class).getCurrentWindowMetrics();
+            android.view.DisplayCutout cutout = metrics.getWindowInsets().getDisplayCutout();
+            if (cutout == null) return 0;
+            float density = context.getResources().getDisplayMetrics().density;
+            android.graphics.Rect rect = cutout.getBoundingRectTop();
+            int bottom = rect.isEmpty() ? 0 : Math.max(0, rect.bottom - metrics.getBounds().top);
+            // Content starts at 12dp; the 28dp header plus 4dp title margin
+            // already reserve 44dp. Add only what this device's cutout needs.
+            return cameraHeaderPaddingPixels(bottom, density);
+        } catch (RuntimeException failure) {
+            android.util.Log.w("ChronaAtomic", "Unable to read camera cutout", failure);
+            return 0;
+        }
+    }
+    static int cameraHeaderPaddingPixels(int cutoutBottom, float density) {
+        return Math.max(0, cutoutBottom + Math.round(CAMERA_CLEARANCE_DP * density)
+                - Math.round(ISLAND_HEADER_SAFE_BOTTOM_DP * density));
     }
 
     static String marqueeConfiguration() {

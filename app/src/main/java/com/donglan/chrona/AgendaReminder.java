@@ -191,7 +191,8 @@ public final class AgendaReminder {
                     DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(now < e.start ? e.start : e.finish()).atZone(zone)),
                     remainingText, details, same && VivoAtomicNotification.active(
                             context.getSystemService(NotificationManager.class), notificationId),
-                    card, AtomicAgendaCard.marqueeConfiguration()));
+                    card, AtomicAgendaCard.forIsland(context, e, now, notifiedAt, nextTitle, details),
+                    AtomicAgendaCard.marqueeConfiguration()));
             String detail = range + "\n" + (e.location.trim().isEmpty() ? "地点未填写" : e.location)
                     + "\n" + e.source + " · " + status
                     + (e.description.trim().isEmpty() ? "" : "\n" + e.description);

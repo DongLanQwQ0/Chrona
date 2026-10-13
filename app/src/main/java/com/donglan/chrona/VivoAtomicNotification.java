@@ -33,7 +33,7 @@ final class VivoAtomicNotification {
     }
     static Bundle extras(Context context, String title, String status, String range,
             String startTime, String remainingText, PendingIntent details, boolean same,
-            android.widget.RemoteViews card, String animations) {
+            android.widget.RemoteViews card, android.widget.RemoteViews islandCard, String animations) {
         Bundle data = new Bundle();
         if (!supportedManufacturer()) return data;
         Icon icon = Icon.createWithResource(context, R.drawable.ic_chrona_foreground);
@@ -69,7 +69,7 @@ final class VivoAtomicNotification {
         // First tap expands the OEM card; its blank area then opens details.
         island.putInt("island.superx.islandClick", 0);
         island.putInt("island.superx.template", 7);
-        island.putParcelable("island.superx.customTemplate", card);
+        island.putParcelable("island.superx.customTemplate", islandCard);
         island.putParcelable("island.superx.clickResp", details);
         data.putBundle(PREFIX + "island", island);
         Bundle capsule = new Bundle();
