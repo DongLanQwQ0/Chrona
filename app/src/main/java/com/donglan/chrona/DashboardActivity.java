@@ -1185,6 +1185,8 @@ public final class DashboardActivity extends Activity {
                 startActivity(new Intent(this, SettingsHubActivity.class)));
         UiStyle.pressable(settings);
         group.addView(settings, new LinearLayout.LayoutParams(dp(44), -1));
+        UiStyle.pressable(group);
+        PressFeedback.group(group, 1.10f);
         return group;
     }
 
@@ -1336,10 +1338,12 @@ public final class DashboardActivity extends Activity {
         strip.setHorizontalScrollBarEnabled(false);
         strip.setFillViewport(false);
         strip.setClipToPadding(false);
-        strip.setPadding(0, 0, dp(12), 0);
+        // Keep the first card aligned with page content, with room for its pressed scale.
+        strip.setPadding(dp(8), dp(6), dp(12), dp(6));
         strips.add(strip);
         LinearLayout cards = new LinearLayout(this);
         cards.setOrientation(LinearLayout.HORIZONTAL);
+        cards.setClipChildren(false); cards.setClipToPadding(false);
         if (upcoming.isEmpty()) {
             LinearLayout empty = card();
             empty.setPadding(dp(14), dp(12), dp(14), dp(12));
@@ -1366,7 +1370,9 @@ public final class DashboardActivity extends Activity {
             }
         }
         strip.addView(cards);
-        UiStyle.addSpaced(content, strip, 0, 10);
+        LinearLayout.LayoutParams stripParams = new LinearLayout.LayoutParams(-1, -2);
+        stripParams.setMargins(-dp(8), 0, 0, dp(10));
+        content.addView(strip, stripParams);
     }
 
     private boolean candidateIntersects(EventCandidate item, LocalDate today, LocalDate endDate,

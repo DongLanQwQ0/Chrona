@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.22 — 2026-10-13
+
+- PressFeedback+生产 pressable 27项：动态挂载后放开普通父级，滚动/切页/outline边界保留，Dock排除，设置父板接收子按压并防叠乘，1.20倍率不被全局扫描覆盖，已有波纹mask保留。View/动画替身，不能代替Android视觉验证。
+- 课表20场景，新增冲突列与大字体下四个11sp字的宽度余量；完整42/42，`build/press-overflow-full-checks.log`。子代理截图与集成审查通过。
+- debug/release/lint通过，0 errors / 84 warnings，`build/press-overflow-final-build.log`。0.14.22 /129，1,989,238字节，SHA256 `b67796280219ec3bd94319ada8ebbe3dc7cc2054e68741491973da69a7a7c0e2`，签名保持一致；备份 `build/backups/20261013-press-overflow`、`build/backups/20261013-output-spacing`。ADB无设备，最终按压视觉与滚动未实测。
+
 ## 0.14.21 — 2026-10-13
 
 - 日历 220 项，加入布局未稳定保持隐藏、滚动恢复触发第二轮布局仍不显示、稳定后才启动，以及旧页移除前先隐藏；禁止页面 setAlpha。生产方法配合布局/动画替身，不能证明真机残影已消失。

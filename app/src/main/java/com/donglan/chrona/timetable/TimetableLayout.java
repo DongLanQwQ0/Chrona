@@ -9,7 +9,8 @@ import java.util.TreeSet;
 /** Pure geometry: shared time boundaries, compressed empty gaps and disjoint conflict columns. */
 public final class TimetableLayout {
     public static final float MIN_BLOCK_HEIGHT = 52;
-    public static final float MIN_COLUMN_WIDTH = 38;
+    // Four 11sp Chinese glyphs plus the course gap and horizontal padding.
+    public static final float MIN_COLUMN_WIDTH = 56;
     public static final float TIME_GUTTER = 42;
     public static final float HEADER_HEIGHT = 44;
     public static final float ALL_DAY_HEIGHT = 48;

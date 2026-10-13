@@ -226,6 +226,17 @@ public class TimetableCheck {
         assertEquals(380L, view.minutes);
     }
 
+    public void readableColumnsAtLargeFontAndWithConflicts() throws Exception {
+        Timetable table = parse(event("a", course("20261005T080000", "20261005T093500")),
+                event("b", course("20261005T080000", "20261005T093500").replace("东2-204", "东6-328")));
+        TimetableLayout layout = new TimetableLayout(table.blocks);
+        int columns = java.util.Arrays.stream(layout.dayColumns).sum();
+        for (float scale : new float[]{1f, 1.3f, 1.8f}) {
+            float unit = (layout.minimumWidth(scale) - TimetableLayout.TIME_GUTTER) / columns;
+            assertTrue(unit - 12 >= 4 * 11 * scale);
+        }
+    }
+
     private static void assertTrue(boolean value) { if (!value) throw new AssertionError("Expected true"); }
     private static void assertFalse(boolean value) { assertTrue(!value); }
     private static void fail(String message) { throw new AssertionError(message); }

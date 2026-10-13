@@ -21,6 +21,7 @@ import java.util.function.Consumer;
 
 /** Real accessible course views over a shared compact time grid, in the active app palette. */
 final class TimetableGrid extends FrameLayout {
+    private static final int COURSE_RADIUS_DP = 6;
     static final String[] DAYS = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
     private final TimetableLayout geometry;
     private final UiStyle.Palette palette;
@@ -37,8 +38,12 @@ final class TimetableGrid extends FrameLayout {
         palette = UiStyle.colors(context);
         setWillNotDraw(false);
         setClipChildren(true);
-        int width = Math.max(widthPx, dp(geometry.minimumWidth(fontScale)));
         int columns = java.util.Arrays.stream(geometry.dayColumns).sum();
+        TextView typography = new TextView(context);
+        typography.setTextSize(11);
+        int readableColumn = (int) Math.ceil(typography.getPaint().measureText("课程安排")) + dp(12);
+        int width = Math.max(widthPx, Math.max(dp(geometry.minimumWidth(fontScale)),
+                dp(TimetableLayout.TIME_GUTTER) + columns * readableColumn));
         float unit = (width - dp(TimetableLayout.TIME_GUTTER)) / (float) columns;
         dayLeft[0] = dp(TimetableLayout.TIME_GUTTER);
         for (int day = 0; day < 7; day++) {
@@ -74,7 +79,8 @@ final class TimetableGrid extends FrameLayout {
             float height = dp(placement.height) - dp(4);
             course.setMaxLines(Math.max(1, (int) ((height - dp(12))
                     / (course.getPaint().getFontSpacing() + dp(1)))));
-            UiStyle.acrylicChoice(course, true, UiStyle.RADIUS_CHIP, false);
+            UiStyle.acrylicChoice(course, true, COURSE_RADIUS_DP, true);
+            UiStyle.minimumAcrylicMix(course, 54);
             course.setElevation(0);
             course.setPadding(dp(4), dp(6), dp(4), dp(6));
             course.setContentDescription(block.title + "，" + DAYS[block.day] + "，"

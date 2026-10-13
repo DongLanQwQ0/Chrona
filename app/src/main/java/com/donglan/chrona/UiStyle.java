@@ -418,6 +418,7 @@ public final class UiStyle {
         pressable(button);
         button.setContentDescription("记录一件事");
         button.setOnClickListener(view -> action.run());
+        PressFeedback.apply(button, 1.20f);
         return button;
     }
 
@@ -647,6 +648,8 @@ public final class UiStyle {
 
     static void pressable(View view) {
         PressFeedback.apply(view);
+        // Styled controls already carry a ripple mask matched to their own surface radius.
+        if (view.getForeground() instanceof RippleDrawable) return;
         view.setForeground(new RippleDrawable(ColorStateList.valueOf(
                 alpha(colors(view.getContext()).primary, 32)), null,
                 shape(view, Color.WHITE, RADIUS_CARD, Color.TRANSPARENT)));

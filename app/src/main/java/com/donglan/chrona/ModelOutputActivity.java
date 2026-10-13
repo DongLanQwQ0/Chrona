@@ -74,11 +74,16 @@ public final class ModelOutputActivity extends Activity {
         card.addView(scroll, body);
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setPadding(0, dp(8), 0, dp(8));
         previous = action("上一页", () -> { index--; showPage(); });
         next = action("下一页", () -> { index++; showPage(); });
         reload = action("刷新", this::showPage);
-        actions.addView(previous, new LinearLayout.LayoutParams(0, dp(50), 1));
-        actions.addView(next, new LinearLayout.LayoutParams(0, dp(50), 1));
+        LinearLayout.LayoutParams previousParams = new LinearLayout.LayoutParams(0, dp(50), 1);
+        previousParams.setMarginEnd(dp(8));
+        actions.addView(previous, previousParams);
+        LinearLayout.LayoutParams nextParams = new LinearLayout.LayoutParams(0, dp(50), 1);
+        nextParams.setMarginEnd(dp(8));
+        actions.addView(next, nextParams);
         actions.addView(reload, new LinearLayout.LayoutParams(0, dp(50), 1));
         card.addView(actions);
         root.addView(card, new LinearLayout.LayoutParams(-1, 0, 1));

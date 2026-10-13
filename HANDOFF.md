@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-13 · 0.14.22
+
+用户用五张截图指出普遍放大裁切，补充设置无明显放大、“+”应更明显、完整输出页按钮无间隔。上一版 PressFeedback 只装缩放，遗漏父级绘制边界。现在每次安装/布局复查都放开普通祖先的 clipChildren/clipToPadding，遇 ScrollView、HorizontalScrollView、SwipePagerLayout 或 clipToOutline 视口即停止；不取消滚动/切页/媒体边界。保留 Float 自定义倍率，NaN 表示动作子项只驱动父板、不重复缩放。设置底板 addStatesFromChildren + 1.10，子图标和排序保留点击但无独立缩放；记录按钮 1.20。
+
+carousel 首项左侧需 6dp 溢出余量：strip 左8dp、上下6dp padding及左margin -8dp，保持正文对齐，cards关闭裁剪。PressFeedback 覆盖标题与时间线中间层。ModelOutput 三按钮等权，前两项末端8dp间距，行上下8dp padding。课表 MIN_COLUMN_WIDTH 56，运行时根据四个中文字实际测宽+12dp间隙/内边距增大，已有横向滚动承接超出宽度；课程 radius6、outline和minimumMix54。UiStyle.pressable 保留已有 RippleDrawable，不覆写按具体表面半径构建的mask。
+
+子代理只读截图审查与集成审查通过，发现的波纹圆角问题已修正。PressFeedback+生产 pressable 27项，课表20场景，完整42/42；debug/release/lint通过，0 errors / 84 warnings。证据 build/press-overflow-full-checks.log、build/press-overflow-final-build.log。备份 build/backups/20261013-press-overflow、build/backups/20261013-output-spacing。0.14.22 /129，1,989,238字节，SHA256 b67796280219ec3bd94319ada8ebbe3dc7cc2054e68741491973da69a7a7c0e2，原签名保持。ADB无设备，实际截图复验/按压触控仍未实测。
+
 # 本轮补充 · 2026-10-13 · 0.14.21
 
 用户报告日历松手约一帧残影、要求移除首页课表重复入口、更新引导、所有交互控件按下放大，以及任务详情菜单横线分隔。本次日历页面不再 setAlpha：INVISIBLE 准备新树，预绘制时检查 layoutRequested，滚动恢复仅一次且恢复后仍有布局请求则继续等待；再定位新旧两页并 VISIBLE 开始共享进度的平移，旧页 INVISIBLE 后移除。并无实际设备逐帧证据能确认残影根因或最终消失；旧子树 reparent 仍保留，后续有设备证据再评估。
