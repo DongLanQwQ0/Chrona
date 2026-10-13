@@ -230,12 +230,17 @@ final class DeviceUiChecks {
         Method factory = AgendaReminder.class.getDeclaredMethod("notification", Context.class,
                 AgendaEntry.class, long.class, boolean.class, int.class);
         factory.setAccessible(true);
+        Method alarm = AgendaReminder.class.getDeclaredMethod("schedule", Context.class, long.class);
+        alarm.setAccessible(true);
         manager.createNotificationChannel(new NotificationChannel(AgendaReminder.CHANNEL,
                 "即将开始的日程", NotificationManager.IMPORTANCE_HIGH));
         long now = System.currentTimeMillis();
         AgendaEntry[] entries = new AgendaEntry[3];
         JSONObject report = new JSONObject();
         try {
+            // Pause the same alarm while the worker is occupied by UI measurements;
+            // otherwise its goAsync receiver could wait behind this test and time out.
+            alarm.invoke(null, context, 0L);
             for (int i = 0; i < 3; i++) {
                 int id = AgendaReminder.NOTIFICATION_ID + i;
                 VivoAtomicNotification.end(context, manager, id);
