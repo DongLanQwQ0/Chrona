@@ -115,6 +115,7 @@ public final class AgendaReminder {
         if (!timeline.entries.isEmpty() && manager.areNotificationsEnabled()) {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "即将开始的日程", NotificationManager.IMPORTANCE_HIGH);
             channel.setDescription("开始前 30 分钟展示；活动持续至结束，其它日程开始后 3 分钟关闭");
+            channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             manager.createNotificationChannel(channel);
         }
         SharedPreferences.Editor state = prefs.edit();
@@ -185,7 +186,7 @@ public final class AgendaReminder {
                 .setContentTitle(e.title).setContentText(status + " · " + range)
                 .setContentIntent(details)
                 .setOngoing(true).setOnlyAlertOnce(same).setWhen(e.start).setShowWhen(false)
-                .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PRIVATE)
+                .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setTimeoutAfter(Math.max(1000, ReminderTimeline.expiresAt(e) - now))
                 .addAction(new Notification.Action.Builder(null, "查看详情", details).build())
                 .addAction(new Notification.Action.Builder(null, "5 分钟后提醒", action(context, e, "snooze", 2)).build())

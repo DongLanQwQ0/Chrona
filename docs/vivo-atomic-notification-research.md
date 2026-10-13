@@ -1,5 +1,9 @@
 # vivo 原子通知实现与调研 — 2026-10-13
 
+## 锁屏展示：0.14.37
+
+固件 SuperXUtils.showOnTargetLocation（classes3.dex 0x231788）在缺少 notification.superx.displays 时，仅为模板 1–5 推导展示范围，模板 7 得到 0。showOnKeyguardForNewSuperX（0x231748）检查 0x10 位。自定义卡片显式传入 displays=0x111，启用通知、锁屏和通知栏展示，并将 Android 提醒及新建渠道的锁屏可见性设为 PUBLIC。已有渠道的用户锁屏设置及系统原子通知锁屏总开关仍由系统控制，不通过重建渠道绕过。未恢复真机连接，本版锁屏显示待设备验收。
+
 ## 胶囊秒级倒计时：0.14.36
 
 原子岛leftInfo.content支持TimerFormat JSON。固件SuperXChronometer.setContent（classes3.dex 0x3f638c/0x3f63b2）识别base并解析；base为elapsedRealtime毫秒，countDown=true、started=true、minUnit=M、elapsedFormatMS=%02d:%02d。每秒由View.postDelayed更新，updateText以base-elapsedRealtime计算秒数，负值归零并停止。普通文本更新调用stop，因而“已开始”不会继续运行上一阶段的计时器。

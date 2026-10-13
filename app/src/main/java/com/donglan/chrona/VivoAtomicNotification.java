@@ -12,6 +12,8 @@ import android.os.Bundle;
 final class VivoAtomicNotification {
     private static final String PREFIX = "notification.superx.";
     private static final String SCENE = "CHRONA_AGENDA";
+    // Firmware SuperXUtils display mask: notification, keyguard and notification shade.
+    private static final int REMINDER_DISPLAYS = 0x1 | 0x10 | 0x100;
     static boolean supportedManufacturer() { return "vivo".equalsIgnoreCase(Build.MANUFACTURER); }
     static boolean available(Context context) {
         return supportedManufacturer() && Boolean.TRUE.equals(sceneEnabled(context))
@@ -40,6 +42,8 @@ final class VivoAtomicNotification {
         data.putInt(PREFIX + "operation", same ? 1 : 0);
         // This device's CustomSuperXTemplate uses 7, not the public island enum 6.
         data.putInt(PREFIX + "template", 7);
+        // Custom template 7 has no default display locations in SuperXUtils.
+        data.putInt(PREFIX + "displays", REMINDER_DISPLAYS);
         data.putParcelable(PREFIX + "customTemplate", card);
         data.putBoolean(PREFIX + "disableInvertColor", true);
         data.putString(PREFIX + "animationsConfig", animations);

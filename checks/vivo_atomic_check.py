@@ -39,6 +39,7 @@ public class VivoAtomicCheck {
  check(base.get("notification.superx.baseInfos.title").equals("微积分"));
  check(b.get("notification.superx.customTemplate")==card);check(b.get("notification.superx.disableInvertColor").equals(true));check(b.get("notification.superx.animationsConfig").equals(animations));
  check(!b.containsKey("notification.superx.infos"));
+ check(b.get("notification.superx.displays").equals(0x111));
  check(island.get("island.superx.leftTemplate").equals(1)&&island.get("island.superx.rightTemplate").equals(4));
  check(((Bundle)island.get("island.superx.leftInfo")).get("island.superx.leftInfo.content").equals("10:00"));check(((Bundle)island.get("island.superx.rightInfo")).get("island.superx.rightInfo.content").equals("微积分"));check(island.get("island.superx.clickResp")==details);
  check(island.get("island.superx.islandClick").equals(0));check(island.get("island.superx.template").equals(7));check(island.get("island.superx.customTemplate")==islandCard&&islandCard!=card);

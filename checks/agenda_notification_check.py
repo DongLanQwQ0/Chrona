@@ -40,7 +40,7 @@ class SystemClock {static long elapsedRealtime(){return 300000;}}
 class R {static class drawable {static int ic_notifications=1;}static class layout{static int notification_agenda_small=1,notification_agenda_large=2;}static class id{static int agenda_title=1,agenda_time=2,agenda_location=3,agenda_source=4,agenda_description=5,agenda_countdown=6;}}
 class RemoteViews {Map<Integer,String> texts=new HashMap<>();boolean countdown;double progress;long notifiedAt;String nextTitle;PendingIntent details;RemoteViews(String pkg,int id){}void setTextViewText(int id,String text){texts.put(id,text);}void setViewVisibility(int id,int visibility){}void setChronometer(int id,long base,String format,boolean running){}void setChronometerCountDown(int id,boolean countdown){this.countdown=countdown;}}
 class Notification {
- static final String CATEGORY_EVENT="event";static final int VISIBILITY_PRIVATE=0;
+ static final String CATEGORY_EVENT="event";static final int VISIBILITY_PUBLIC=1;
  String title,text;long timeout,when;boolean ongoing,onlyAlertOnce,showWhen;int visibility;
  PendingIntent details;Bundle extras;Object style;RemoteViews small,big,heads;List<Action> actions=new ArrayList<>();
  static class DecoratedCustomViewStyle {}
@@ -75,7 +75,7 @@ public class AgendaNotificationCheck {
   String compactRange=n.text.substring(n.text.indexOf(" · ")+3);
   check(compactRange.indexOf("月")==compactRange.lastIndexOf("月"));
   check(compactRange.endsWith(DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(entry.end).atZone(ZoneId.systemDefault()))));
-  check(n.ongoing&&!n.showWhen&&n.visibility==Notification.VISIBILITY_PRIVATE&&n.timeout==3600000);
+  check(n.ongoing&&!n.showWhen&&n.visibility==Notification.VISIBILITY_PUBLIC&&n.timeout==3600000);
   check(n.actions.size()==3&&n.actions.get(0).intent==n.details);
   check(n.details.intent.data.value.equals("chrona://agenda/"+entry.key()));
   check(n.details.code==NOTIFICATION_ID);
