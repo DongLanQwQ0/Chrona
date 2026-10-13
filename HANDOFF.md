@@ -1,3 +1,9 @@
+# 本轮补充 · 2026-10-13 · 0.14.20
+
+用户截图显示日程与收件箱筛选 Dock 放大后被行容器截断，横向手势被页面切换抢走。初始及缓存页面的 content LinearLayout 和 contentHost FrameLayout 统一关闭中间层 clipChildren/clipToPadding，保留 ScrollView 页面视口裁剪；filterDock 工厂将共享控件加入 strips，由 SwipePagerLayout 优先保护。遗漏登记会使 pager 的 MOVE 主动解除 requestDisallowInterceptTouchEvent，进而取消 Dock 手势。
+
+生产 filterDock、溢出设置、SwipePagerLayout 和 Dock 共同纳入测试：111 项通过，包含嵌套事件链、栏外松手只提交一次、栏外横滑仍切页、移除登记复现父级抢夺与取消。完整 41/41，debug/release/lint 通过，0 errors / 84 warnings。日志 build/dock-container-full-checks.log、build/dock-container-final-build.log。备份 build/backups/20261013-dock-container-ownership。0.14.20 / 127，APK 1,988,490 字节，SHA256 b9b7f97771043ea9c4921c7e490a0fd6a8265370add560b6eba2dfeb4905785c；保留安装签名。ADB 无设备，真实 Android 裁剪效果和触控未实测。
+
 # 本轮补充 · 2026-10-13 · 0.14.19
 
 用户截图显示共享 Dock 高光下沉和横向错位。根因是 updateHighlight 已算出 Dock 坐标，而 FrameLayout 又按 padding 布置 highlightView；之前直接将 Dock 坐标赋给 translation，重复叠加了实际布局原点。改为 translationX/Y = 目标 Dock 坐标 - highlightView.getLeft()/getTop()。

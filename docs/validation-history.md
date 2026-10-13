@@ -1,5 +1,10 @@
 # 历史验证记录
 
+## 0.14.20 — 2026-10-13
+
+- Dock 111 项，完整 41/41；`build/dock-container-full-checks.log`。实际生产筛选工厂、页面切换容器、Dock 和溢出方法，配合 Android 父子布局/事件/队列替身，覆盖中间父级不裁剪、页面视口仍裁剪、栏内手势优先、栏外松手、栏外横滑及缺失登记的负例。
+- debug/release/lint 通过，0 errors / 84 warnings，`build/dock-container-final-build.log`。0.14.20 / 127，1,988,490 字节，SHA256 `b9b7f97771043ea9c4921c7e490a0fd6a8265370add560b6eba2dfeb4905785c`；签名保持一致。备份 `build/backups/20261013-dock-container-ownership`。ADB 无设备，实际手机裁剪和手势未验证。
+
 ## 0.14.19 — 2026-10-13
 
 - 截图指出真实布局错位。生产高光平移修正父布局原点重复计算；测试替身开始模拟实际内边距及高光布局原点，不再把 setPadding 当空操作。

@@ -333,6 +333,7 @@ public final class DashboardActivity extends Activity {
         targetContent.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
         FrameLayout targetHost = new FrameLayout(this);
+        allowSectionDockOverflow(targetContent, targetHost);
         targetHost.addView(targetContent, new FrameLayout.LayoutParams(-1, -2));
         targetScroll.addView(targetHost, new FrameLayout.LayoutParams(-1, -2));
 
@@ -978,6 +979,7 @@ public final class DashboardActivity extends Activity {
         // The cross-fade of a section switch drops a snapshot of the outgoing body next to it, so
         // the body needs a parent that accepts a second child; a ScrollView raises instead.
         FrameLayout contentHost = new FrameLayout(this);
+        allowSectionDockOverflow(content, contentHost);
         contentHost.addView(content, new FrameLayout.LayoutParams(-1, -2));
         scroll.addView(contentHost, new FrameLayout.LayoutParams(-1, -2));
         pager = new SwipePagerLayout(this, sectionPagerListener);
@@ -2705,9 +2707,18 @@ public final class DashboardActivity extends Activity {
         return card;
     }
 
+    private void allowSectionDockOverflow(LinearLayout pageContent, FrameLayout host) {
+        // Intermediate parents must not crop scaled controls to their ordinary row bounds.
+        // ScrollView still clips at the actual page viewport.
+        pageContent.setClipChildren(false); pageContent.setClipToPadding(false);
+        host.setClipChildren(false); host.setClipToPadding(false);
+    }
+
     private DockNavigationLayout filterDock(String[] labels, int selected,
             java.util.function.IntConsumer action, int[] counts) {
         DockNavigationLayout dock = new DockNavigationLayout(this, action, () -> {});
+        // SwipePagerLayout otherwise forcibly re-enables interception on horizontal MOVE.
+        strips.add(dock);
         dock.setPadding(dp(4), dp(2), dp(4), dp(2));
         for (int i = 0; i < labels.length; i++) {
             final int index = i;

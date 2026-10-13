@@ -34,6 +34,8 @@ int a;float x,y; public MotionEvent(int a,float x,float y){this.a=a;this.x=x;thi
 public static MotionEvent obtain(long d,long t,int a,float x,float y,int m){return new MotionEvent(a,x,y);}
 public static MotionEvent obtain(MotionEvent e){return new MotionEvent(e.a,e.x,e.y);}public void offsetLocation(float dx,float dy){x+=dx;y+=dy;}
 public int getActionMasked(){return a;} public float getX(){return x;} public float getY(){return y;} public float getRawX(){return x;}public float getRawY(){return y;}public long getDownTime(){return 0;}public long getEventTime(){return View.now;}public void recycle(){} }""",
+    "com/donglan/chrona/CandidatePagerScrollView.java": "package com.donglan.chrona;class CandidatePagerScrollView extends android.widget.FrameLayout {CandidatePagerScrollView(android.content.Context c){super(c);}boolean canYieldToTaskPager(float x){return false;}void prepareForTaskPagerHandoff(){}}",
+    "android/view/animation/Interpolator.java": "package android.view.animation;public interface Interpolator {}",
     "android/view/VelocityTracker.java": """package android.view;public class VelocityTracker {
  public static float velocity;public static int recycled;public static VelocityTracker obtain(){return new VelocityTracker();}
  public void addMovement(MotionEvent event){}public void computeCurrentVelocity(int units){}public float getXVelocity(){return velocity;}public float getYVelocity(){return velocity;}public void recycle(){recycled++;}}
@@ -51,7 +53,8 @@ public class View {
  protected Context context; protected View parent; public int l,t,r,b;
  public View(Context c){context=c;} public Context getContext(){return context;}
  public android.content.res.Resources getResources(){return context.getResources();}
- public View getParent(){return parent;} public void requestDisallowInterceptTouchEvent(boolean x){}
+ public View getParent(){return parent;} public void requestDisallowInterceptTouchEvent(boolean x){if(parent!=null)parent.requestDisallowInterceptTouchEvent(x);}
+ public boolean isShown(){return true;}public boolean isAttachedToWindow(){return parent!=null;}public void getLocationOnScreen(int[] xy){xy[0]=l;xy[1]=t;for(View p=parent;p!=null;p=p.parent){xy[0]+=p.l;xy[1]+=p.t;}}
  public int getLeft(){return l;} public int getRight(){return r;} public int getTop(){return t;} public int getBottom(){return b;}
  public int getWidth(){return r-l;} public int getHeight(){return b-t;}
  public int layouts,invalidations;public void layout(int l,int t,int r,int b){this.l=l;this.t=t;this.r=r;this.b=b;layouts++;if(this instanceof ViewGroup group)group.onLayout(true,l,t,r,b);}
@@ -80,17 +83,23 @@ public class View {
     "android/view/ViewGroup.java": """package android.view;
 import java.util.*; public class ViewGroup extends View {
  protected final List<View> children=new ArrayList<>(); private View target;
+ public boolean disallowed,clipChildren=true,clipPadding=true;
  public ViewGroup(android.content.Context c){super(c);}
  public static class LayoutParams {public int width,height;public LayoutParams(int w,int h){width=w;height=h;}public LayoutParams(int w,int h,int gravity){this(w,h);}public void setMargins(int a,int b,int c,int d){}}
  public void addView(View view,LayoutParams params){view.setLayoutParams(params);addView(view);}
  protected void onLayout(boolean changed,int l,int t,int r,int b){}
- public void setClipChildren(boolean value){}public void setClipToPadding(boolean value){}
+ public void setClipChildren(boolean value){clipChildren=value;}public void setClipToPadding(boolean value){clipPadding=value;}
+ @Override public void requestDisallowInterceptTouchEvent(boolean value){disallowed=value;super.requestDisallowInterceptTouchEvent(value);}
+ public boolean onInterceptTouchEvent(MotionEvent e){return false;}
  public void addView(View v){children.add(v);v.parent=this;} public int getChildCount(){return children.size();}
  public View getChildAt(int i){return i<0||i>=children.size()?null:children.get(i);}
  public void removeAllViews(){for(View v:new ArrayList<>(children))v.detach();children.clear();target=null;}
  @Override public void detach(){removeAllViews();super.detach();}
  private MotionEvent local(MotionEvent e,View v){return new MotionEvent(e.a,e.x-v.l,e.y-v.t);}
  @Override public boolean dispatchTouchEvent(MotionEvent e){
+  if(e.a==MotionEvent.ACTION_DOWN)disallowed=false;
+  boolean intercepted=!disallowed&&onInterceptTouchEvent(e);
+  if(intercepted){if(target!=null){View child=target;target=null;child.dispatchTouchEvent(local(new MotionEvent(MotionEvent.ACTION_CANCEL,e.x,e.y),child));}return onTouchEvent(e);}
   if(e.a==MotionEvent.ACTION_DOWN){target=null;for(int i=children.size()-1;i>=0;i--){View v=children.get(i);
    if(e.x>=v.l&&e.x<v.r&&e.y>=v.t&&e.y<v.b&&v.dispatchTouchEvent(local(e,v))){target=v;return true;}}}
   else if(target!=null){View v=target;boolean handled=v.dispatchTouchEvent(local(e,v));if(e.a==1||e.a==3)target=null;return handled;}
@@ -103,7 +112,7 @@ import java.util.*; public class ViewGroup extends View {
 public TextView(android.content.Context c){super(c);} public void setTextColor(int c){}
 public void setGravity(int g){}public void setIncludeFontPadding(boolean b){}
 public void setCompoundDrawableTintList(android.content.res.ColorStateList c){} }""",
-    "android/view/animation/DecelerateInterpolator.java": "package android.view.animation; public class DecelerateInterpolator {public DecelerateInterpolator(float x){} }",
+    "android/view/animation/DecelerateInterpolator.java": "package android.view.animation; public class DecelerateInterpolator implements Interpolator {public DecelerateInterpolator(float x){} }",
     "android/animation/ValueAnimator.java": """package android.animation;
 public class ValueAnimator { public interface AnimatorUpdateListener {void onAnimationUpdate(ValueAnimator a);}
  float from,to; AnimatorUpdateListener listener; public static boolean enabled=true;
@@ -124,8 +133,10 @@ import android.content.Context; import android.view.*; import android.widget.*;
 import android.graphics.Canvas; import android.graphics.drawable.GradientDrawable;
 import java.util.*;
 public class DockNavigationCheck extends Context {
+ final List<View> strips=new ArrayList<>();
  int dp(int value){return value;}TextView text(String title,int size,boolean bold){return new TextView(this);}TextView countBadge(int count){return new TextView(this);}
  __FILTER_DOCK__
+ __OVERFLOW__
  static int checks; static void require(boolean ok,String message){checks++;if(!ok)throw new AssertionError(message);}
  static Context c=new Context(); static DockNavigationLayout dock; static List<Integer> selected; static int rebuilds;
  static void populate(){for(int i=0;i<3;i++){final int n=i;TextView button=new TextView(c);button.setOnClickListener(v->selected.add(n));
@@ -141,7 +152,27 @@ public class DockNavigationCheck extends Context {
  static float center(){View h=highlight();GradientDrawable.lastLeft=h.getLeft()+h.getTranslationX();GradientDrawable.lastWidth=h.getWidth()*h.getScaleX();GradientDrawable.lastHeight=h.getHeight()*h.getScaleY();GradientDrawable.lastRight=GradientDrawable.lastLeft+GradientDrawable.lastWidth;GradientDrawable.lastCenter=(GradientDrawable.lastLeft+GradientDrawable.lastRight)/2;return GradientDrawable.lastCenter;}
  static void close(float actual,float expected,String label){require(Math.abs(actual-expected)<=1f,label+" got "+actual);}
  public static void main(String[] args)throws Exception{
-  View.reset();List<Integer> filters=new ArrayList<>();DockNavigationLayout five=new DockNavigationCheck().filterDock(new String[]{"全部","待确认","处理中","失败","已写入"},0,filters::add,new int[]{0,3,0,2,0});
+  View.reset();DockNavigationCheck builder=new DockNavigationCheck();List<Integer> filters=new ArrayList<>();DockNavigationLayout five=builder.filterDock(new String[]{"全部","待确认","处理中","失败","已写入"},0,filters::add,new int[]{0,3,0,2,0});
+  require(builder.strips.contains(five),"Filter dock is registered in page gesture priorities");
+  LinearLayout content=new LinearLayout(c);FrameLayout host=new FrameLayout(c),viewport=new FrameLayout(c);
+  builder.allowSectionDockOverflow(content,host);
+  require(!content.clipChildren&&!content.clipPadding&&!host.clipChildren&&!host.clipPadding,"Intermediate content parents permit Dock overflow");
+  require(viewport.clipChildren&&viewport.clipPadding,"Actual page viewport retains clipping");
+  init();int[] pageStarts={0};SwipePagerLayout pager=new SwipePagerLayout(c,new SwipePagerLayout.Listener(){
+   public void onStart(){pageStarts[0]++;}public void onDrag(float x){}public void onRelease(float x,float v){}public void onCancel(){}
+  });
+  pager.layout(0,0,400,600);FrameLayout scroll=new FrameLayout(c){@Override public boolean onTouchEvent(MotionEvent e){return true;}};
+  scroll.layout(0,0,400,600);pager.addView(scroll);FrameLayout row=new FrameLayout(c);row.layout(30,100,350,160);scroll.addView(row);
+  dock.layout(0,0,300,60);row.addView(dock);pager.setGesturePriorityChildren(List.of(dock));
+  pager.dispatchTouchEvent(new MotionEvent(0,90,125));pager.dispatchTouchEvent(new MotionEvent(2,270,125));
+  require(pageStarts[0]==0&&pager.disallowed,"Registered Dock retains ancestor gesture ownership");
+  View.advance(600);pager.dispatchTouchEvent(new MotionEvent(1,270,190));View.advance(1800);
+  require(selected.size()==1,"Nested Dock release outside row commits once without switching page");
+  pager.dispatchTouchEvent(new MotionEvent(0,90,230));pager.dispatchTouchEvent(new MotionEvent(2,250,230));pager.dispatchTouchEvent(new MotionEvent(1,250,230));
+  require(pageStarts[0]==1,"Horizontal gesture outside Dock still switches page");
+  int before=selected.size();pager.setGesturePriorityChildren(List.of());
+  pager.dispatchTouchEvent(new MotionEvent(0,90,125));pager.dispatchTouchEvent(new MotionEvent(2,270,125));pager.dispatchTouchEvent(new MotionEvent(1,270,125));View.advance(1800);
+  require(pageStarts[0]==2&&selected.size()==before,"Missing registration reproduces ancestor stealing and cancels Dock selection");
   require(five.itemCount()==5,"Inbox selection bar uses the shared five-item dock");
   require(five.itemAt(1) instanceof FrameLayout&&((FrameLayout)five.itemAt(1)).getChildCount()==2,"Review badge stays attached to its dock item");
   ((FrameLayout)five.itemAt(1)).getChildAt(0).performClick();require(filters.equals(List.of(1)),"Counted filter invokes original selection once");
@@ -276,6 +307,9 @@ dashboard = (ROOT / "app/src/main/java/com/donglan/chrona/DashboardActivity.java
 start = dashboard.index("    private DockNavigationLayout filterDock(")
 end = dashboard.index("    /** The one count marker:", start)
 RUNNER = RUNNER.replace("__FILTER_DOCK__", dashboard[start:end])
+start = dashboard.index("    private void allowSectionDockOverflow(")
+end = dashboard.index("    private DockNavigationLayout filterDock(", start)
+RUNNER = RUNNER.replace("__OVERFLOW__", dashboard[start:end])
 
 for name, source in STUBS.items():
     file = OUT / "src" / name
@@ -285,6 +319,6 @@ runner = OUT / "src/com/donglan/chrona/DockNavigationCheck.java"
 runner.write_text(RUNNER, encoding="utf-8")
 java_home = Path(os.environ["JAVA_HOME"])
 files = sorted(str(file) for file in (OUT / "src").rglob("*.java"))
-files += [str(ROOT / "app/src/main/java/com/donglan/chrona" / name) for name in ("DockNavigationLayout.java", "DockSpring.java")]
+files += [str(ROOT / "app/src/main/java/com/donglan/chrona" / name) for name in ("DockNavigationLayout.java", "DockSpring.java", "SwipePagerLayout.java")]
 subprocess.run([str(java_home / "bin/javac.exe"), "-encoding", "UTF-8", "-d", str(OUT / "classes"), *files], check=True)
 subprocess.run([str(java_home / "bin/java.exe"), "-cp", str(OUT / "classes"), "com.donglan.chrona.DockNavigationCheck"], check=True)
