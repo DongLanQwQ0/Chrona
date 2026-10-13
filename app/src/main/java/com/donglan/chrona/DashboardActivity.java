@@ -156,6 +156,12 @@ public final class DashboardActivity extends Activity {
     private final Set<Integer> motionSections = new HashSet<>();
     private boolean restoringMotion;
     private int resultMotionGeneration;
+    private int scheduleResultGeneration;
+    private boolean scheduleResultLoading;
+    private LinearLayout scheduleBuildTarget;
+    private java.util.ArrayDeque<Runnable> scheduleBuildSteps;
+    private Runnable scheduleBuildDone;
+    private final Runnable scheduleBuildFrame = this::buildScheduleResultFrame;
     private String snapshot = "";
     private int restoredScrollY;
     private List<ElapsedLabel> elapsedLabels = new ArrayList<>();
@@ -294,6 +300,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void activateSectionPage(SectionPage page) {
+        if (scheduleResultLoading && page.results != results) cancelScheduleResults();
         section = page.section;
         scroll = page.scroll;
         content = page.content;
@@ -375,6 +382,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void refreshActivePageIfNeeded() {
+        if (section == SCHEDULE && scheduleResultLoading) return;
         String version = dataSnapshot();
         if (dirtySections.contains(section) || !version.equals(sectionVersions.get(section))) {
             int y = scroll.getScrollY();
@@ -740,6 +748,7 @@ public final class DashboardActivity extends Activity {
     }
 
     @Override protected void onPause() {
+        cancelScheduleResults();
         if (sectionLoadRunning && pendingSection < 0) pendingSection = loadingSection;
         sectionLoadGeneration++; sectionLoadRunning = false;
         refresh.removeCallbacks(deferredSectionRefresh);
@@ -763,6 +772,7 @@ public final class DashboardActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        cancelScheduleResults();
         refresh.removeCallbacksAndMessages(null);
         sectionPages.clear();
         sectionAcrylicSurfaces.clear();
@@ -774,7 +784,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void pollChanges() {
-        if (sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
+        if (scheduleResultLoading || sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
                 || (navigation != null && navigation.isAnimating())) {
             refresh.postDelayed(poll, 500L); return;
         }
@@ -1034,6 +1044,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void render() {
+        cancelScheduleResults();
         results = null;
         scheduleControls = null;
         filterChips = null;
@@ -1593,6 +1604,7 @@ public final class DashboardActivity extends Activity {
 
     /** User-driven filter/order changes animate cards, while polling remains still. */
     private void updateResultsWithEntrance() {
+        if (section == SCHEDULE) { requestScheduleResults(); return; }
         updateResults();
         animateResultRows();
     }
@@ -1694,13 +1706,15 @@ public final class DashboardActivity extends Activity {
             String date = item.startAtMillis == null ? "未定" : item.allDay
                     ? AllDayDates.displayStart(item.startAtMillis)
                     : AllDayDates.localDate(item.startAtMillis, ZoneId.systemDefault());
-            if (!date.equals(previousDate)) {
-                scheduleDayHeading(date);
-                previousDate = date;
-            }
-            candidateRow(results, item, i);
+            boolean newDay = !date.equals(previousDate);
+            previousDate = date;
+            final int index = i;
+            enqueueScheduleResult(() -> {
+                if (newDay) scheduleDayHeading(date);
+                candidateRow(results, item, index);
+            });
         }
-        schedulePageControls(total);
+        enqueueScheduleResult(() -> schedulePageControls(total));
     }
 
     private LocalDate[] scheduleWindow(boolean system) {
@@ -1902,19 +1916,126 @@ public final class DashboardActivity extends Activity {
                 i < Math.min(total, (schedulePage + 1) * ScheduleQuery.PAGE_SIZE); i++) {
             CalendarOccurrence event = visible.get(i);
             String date = AllDayDates.localDate(event.displayStart(zone), zone);
-            if (!day.equals(date)) { scheduleDayHeading(date); day = date; }
-            LinearLayout item = card();
-            addScheduleCardContent(item, null, event, true, false, null);
-            item.setOnClickListener(view -> openHomeEntry(new HomeTimelineEntry(event)));
-            UiStyle.pressable(item);
-            UiStyle.addSpaced(results, item, 4, 7);
+            boolean newDay = !day.equals(date); day = date;
+            enqueueScheduleResult(() -> {
+                if (newDay) scheduleDayHeading(date);
+                LinearLayout item = card();
+                addScheduleCardContent(item, null, event, true, false, null);
+                item.setOnClickListener(view -> openHomeEntry(new HomeTimelineEntry(event)));
+                UiStyle.pressable(item);
+                UiStyle.addSpaced(results, item, 4, 7);
+            });
         }
-        message(results, "系统日程只读；每次最多读取 1000 项。按月份或日期缩小范围。");
-        schedulePageControls(total);
+        enqueueScheduleResult(() -> {
+            message(results, "系统日程只读；每次最多读取 1000 项。按月份或日期缩小范围。");
+            schedulePageControls(total);
+        });
+    }
+
+    private void cancelScheduleResults() {
+        scheduleResultGeneration++;
+        if (scheduleResultLoading) dirtySections.add(SCHEDULE);
+        scheduleResultLoading = false;
+        if (scheduleBuildTarget != null) scheduleBuildTarget.removeCallbacks(scheduleBuildFrame);
+        scheduleBuildTarget = null;
+        scheduleBuildSteps = null;
+        scheduleBuildDone = null;
+    }
+
+    /** Query on the existing worker; keep the dock and current rows alive until data arrives. */
+    private void requestScheduleResults() {
+        if (results == null || section != SCHEDULE) return;
+        cancelScheduleResults();
+        final int token = scheduleResultGeneration;
+        final LinearLayout target = results;
+        final ScrollView targetScroll = scroll;
+        LocalDate[] window = scheduleWindow(false);
+        ScheduleQuery query = new ScheduleQuery(scheduleTab,
+                scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
+                schedulePublication, scheduleQuery, window[0], window[1],
+                System.currentTimeMillis(), ZoneId.systemDefault());
+        InboxQuery inbox = new InboxQuery(statusIndex,
+                categoryIndex == 0 ? null : EventCategory.VALUES[categoryIndex - 1], inboxQuery);
+        boolean oldest = scheduleOldestFirst, system = scheduleSource == 1;
+        int requestedPage = schedulePage;
+        scheduleResultLoading = true;
+        dirtySections.add(SCHEDULE);
+        startupReader.execute(() -> {
+            DashboardSectionData data;
+            try {
+                data = DashboardSectionData.load(getApplicationContext(), SCHEDULE,
+                        inbox, query, oldest, requestedPage, system);
+            } catch (RuntimeException failure) {
+                refresh.post(() -> {
+                    if (!scheduleResultCurrent(token, target)) return;
+                    cancelScheduleResults();
+                    Feedback.show(this, "暂时无法读取日程，请重试");
+                });
+                return;
+            }
+            refresh.post(() -> {
+                if (!scheduleResultCurrent(token, target)) return;
+                final int previousY = targetScroll.getScrollY();
+                resultMotionGeneration++;
+                scheduleBuildTarget = target;
+                scheduleBuildSteps = new java.util.ArrayDeque<>();
+                scheduleBuildDone = () -> {
+                    scheduleResultLoading = false;
+                    UiMotion.settleScroll(targetScroll, target);
+                    sectionPages.put(SCHEDULE, new SectionPage());
+                    sectionVersions.put(SCHEDULE, snapshotForRevision(data.revision));
+                    dirtySections.remove(SCHEDULE);
+                    targetScroll.post(() -> {
+                        if (scheduleResultCurrent(token, target)) targetScroll.scrollTo(0, previousY);
+                    });
+                };
+                DashboardSectionData previous = preparedSection;
+                preparedSection = data;
+                try { renderScheduleResults(null); }
+                catch (RuntimeException failure) {
+                    cancelScheduleResults();
+                    Feedback.show(this, "暂时无法显示日程，请重试");
+                    return;
+                } finally { preparedSection = previous; }
+                // One row now, then at most one row per display frame; avoid a large layout burst.
+                buildScheduleResultFrame();
+            });
+        });
+    }
+
+    private boolean scheduleResultCurrent(int token, LinearLayout target) {
+        return token == scheduleResultGeneration && results == target && section == SCHEDULE
+                && !isDestroyed() && !isFinishing();
+    }
+
+    private void enqueueScheduleResult(Runnable step) {
+        if (scheduleBuildSteps == null) step.run(); else scheduleBuildSteps.add(step);
+    }
+
+    private void buildScheduleResultFrame() {
+        if (scheduleBuildSteps == null) return;
+        if (section != SCHEDULE || results != scheduleBuildTarget) { cancelScheduleResults(); return; }
+        try {
+            if (!scheduleBuildSteps.isEmpty()) scheduleBuildSteps.removeFirst().run();
+        } catch (RuntimeException failure) {
+            cancelScheduleResults();
+            Feedback.show(this, "暂时无法显示日程，请重试");
+            return;
+        }
+        if (!scheduleBuildSteps.isEmpty()) {
+            scheduleBuildTarget.postOnAnimation(scheduleBuildFrame);
+            return;
+        }
+        scheduleBuildSteps = null;
+        scheduleBuildTarget = null;
+        Runnable done = scheduleBuildDone;
+        scheduleBuildDone = null;
+        if (done != null) done.run();
     }
 
     private void updateResults() {
         if (results == null) return;
+        if (section == SCHEDULE) { requestScheduleResults(); return; }
         resultMotionGeneration++;
         int previous = scroll.getScrollY();
         try (TaskStore store = new TaskStore(this)) {

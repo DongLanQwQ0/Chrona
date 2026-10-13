@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.25 — 2026-10-13
+
+- 录屏解码381帧，定位约50ms高光冻结后相邻8ms跳138px；结果55→31同时更新。用户以减少日程数消除卡顿补强列表规模相关性。尚无运行时各阶段耗时分解。
+- 日程刷新生产控制器和renderer最终245项：worker查询、每回调单条构建、旧内容保留、过期请求丢弃、暂停/身份/销毁保护、末尾分页、revision缓存、滚动恢复、读取与行创建失败重试。替身不代替Android帧率或触控。完整45/45，build/schedule-refresh-checks.log；最后新增行创建失败案例单独复验通过。
+- debug/release/lint通过，0 errors /84 warnings，build/schedule-refresh-build.log；原签名保持。0.14.25 /132，1,992,758字节，SHA256 `81089865327c3941da84f74f6d71e114286eddf18bd934d18e89026770ee2c22`。备份build/backups/20261013-schedule-frame-refresh。本版未真机复验。
+
 完整44项通过：初跑42/44，学期持久化原子移动和同步回环连接受沙箱限制；正常权限单独复验两项通过。日志build/choice-output-checks.log、choice-output-terms-recheck.log、choice-output-sync-recheck.log。
 
 ## 0.14.24 — 2026-10-13

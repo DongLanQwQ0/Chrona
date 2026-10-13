@@ -1,3 +1,12 @@
+# 本轮补充 · 2026-10-13 · 0.14.25
+
+录屏逐原始帧定位：2.671756至2.721711秒高光中心约482.5px不动，2.729733秒跳至344.5px（相邻约8ms跳138px），同时55条变31条。用户进一步确认底部Dock与收件箱正常，日程减少数量后正常。源码松手select回调同步queryScheduleIds/querySchedulePage并创建全页卡片，与停顿后spring一次补算elapsed一致。录屏不是FrameMetrics，SQL/布局/玻璃的各自耗时仍未真机测量。
+
+修复仅限日程刷新：复用startupReader和DashboardSectionData读取事务快照；request token、目标results身份与Activity状态阻止过期回调；当前列表留到快照到达；每动画回调最多生成一个日程条目（日程日期标题随同条目），分页footer最后。系统日程同样逐条生成，已加载系统数据筛选仍在UI执行。连续筛选、切离、pause/destroy和行创建失败取消队列并标dirty；完成后用worker revision更新缓存、恢复当前滚动位置。初次整页准备与收件箱/底部导航逻辑不改，DockSpring/惯性未改。
+
+完整45/45通过，日志build/schedule-refresh-checks.log。新增生产控制器/renderer回归最终245项（末次新增行创建异常取消及重试通过）；worker/frame替身验证调度，不等于Android FPS。debug/release/lint通过，0 errors /84 warnings，build/schedule-refresh-build.log。备份build/backups/20261013-schedule-frame-refresh。0.14.25 /132，APK 1,992,758字节，SHA256 81089865327c3941da84f74f6d71e114286eddf18bd934d18e89026770ee2c22，保留原签名。设备离线，尚未真机复验。
+
+用户同时要求子代理调研仅vivo原子岛。子代理多次因服务模型容量不足未执行，主代理核验阿里云官方指南，记录docs/vivo-atomic-notification-research.md。本地通知路径得到证实，但接入授权仍是文档要求，自用免授权没有证据；vivo参数正文动态页不可读，dismissWhenKill/island完整契约未证实。本版仅调研，没有厂商SDK/extras/保活或对外邮件。
 # 本轮补充 · 2026-10-13 · 0.14.24
 
 完整44项通过：初跑42/44，学期持久化原子移动和同步回环连接受沙箱限制；正常权限单独复验两项通过。日志build/choice-output-checks.log、choice-output-terms-recheck.log、choice-output-sync-recheck.log。
