@@ -1,5 +1,12 @@
 # 历史验证记录
 
+## 0.14.23 — 2026-10-13
+
+- 已连接手机并以持续按住2秒、1秒截图测试。用户现场下一件事首卡长按的左边框裁切有直接证据；修复后同控件长按轮廓完整。日历右端Dock、首页标题、设置、记录“+”、课表学年按钮及课程块也有稳定长按截图，位于`build/device-ui-audit/`。
+- 实际carousel工厂108项；移回strip padding的错误变体9/9被拒绝。PressFeedback40项含自身clipBounds及尺寸更新；完整43/43，`build/device-ui-audit/full-checks.log`。源码集成审查通过，前次发现的日/周内层Scroll与长备注余量遗漏已补齐。
+- 最终版本debug/release/lint通过，0 errors /84 warnings，`build/device-ui-audit/final-build.log`。0.14.23 /130，1,989,554字节，SHA256 `278c5dec0d32ce3c3e9cb859d2437b75e53dd38f36bfba56652a40ba8db08dd7`，原签名保持；备份`build/backups/20261013-device-long-press`。
+- ADB在最后自身clipBounds修复覆盖安装时离线。用户明确继续离线审查，子代理独立复核clipBounds滚动语义、网格对齐及长备注布局通过。手机目前为中间测试包；最终包的视口边界、备注输入框与日/周边缘事件未真机复验，按授权发布并披露。已测个别控件不等于整个应用视觉验收或FPS测试。
+
 ## 0.14.22 — 2026-10-13
 
 - PressFeedback+生产 pressable 27项：动态挂载后放开普通父级，滚动/切页/outline边界保留，Dock排除，设置父板接收子按压并防叠乘，1.20倍率不被全局扫描覆盖，已有波纹mask保留。View/动画替身，不能代替Android视觉验证。

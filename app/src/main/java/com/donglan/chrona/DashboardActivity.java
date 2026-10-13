@@ -1339,11 +1339,13 @@ public final class DashboardActivity extends Activity {
         strip.setFillViewport(false);
         strip.setClipToPadding(false);
         // Keep the first card aligned with page content, with room for its pressed scale.
-        strip.setPadding(dp(8), dp(6), dp(12), dp(6));
+        strip.setPadding(0, 0, dp(12), 0);
         strips.add(strip);
         LinearLayout cards = new LinearLayout(this);
         cards.setOrientation(LinearLayout.HORIZONTAL);
         cards.setClipChildren(false); cards.setClipToPadding(false);
+        // The viewport clips its direct child: motion room belongs inside that child.
+        cards.setPadding(dp(8), dp(6), dp(8), dp(6));
         if (upcoming.isEmpty()) {
             LinearLayout empty = card();
             empty.setPadding(dp(14), dp(12), dp(14), dp(12));

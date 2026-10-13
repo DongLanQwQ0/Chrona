@@ -2917,7 +2917,16 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.input(editor);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
-        scroll.addView(editor, new ScrollView.LayoutParams(-1, -2));
+        FrameLayout editorContent = new FrameLayout(this);
+        int editorEdge = PressFeedback.edgeSpace(getResources().getDisplayMetrics().widthPixels);
+        editorContent.setPadding(editorEdge, dp(10), editorEdge, dp(10));
+        editorContent.addView(editor, new FrameLayout.LayoutParams(-1, -2));
+        editor.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            int verticalEdge = Math.max(dp(10), PressFeedback.edgeSpace(bottom - top));
+            if (editorContent.getPaddingTop() != verticalEdge)
+                editorContent.setPadding(editorEdge, verticalEdge, editorEdge, verticalEdge);
+        });
+        scroll.addView(editorContent, new ScrollView.LayoutParams(-1, -2));
         panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(280)));
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(android.view.Gravity.CENTER_VERTICAL);

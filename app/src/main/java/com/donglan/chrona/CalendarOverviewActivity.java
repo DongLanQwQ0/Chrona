@@ -167,7 +167,11 @@ public final class CalendarOverviewActivity extends Activity {
         }
         tabs.setSelectedIndex(mode);
         updateTabSemantics();
-        UiStyle.addSpaced(root, tabs, 4, 10);
+        // Leave room for a held edge highlight and the plate's scale, on narrow windows too.
+        int dockWidth = Math.min(dp(280), Math.round(getResources().getDisplayMetrics().widthPixels * .70f));
+        LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(dockWidth, -2);
+        tabParams.gravity = Gravity.CENTER_HORIZONTAL; tabParams.topMargin = dp(4); tabParams.bottomMargin = dp(10);
+        root.addView(tabs, tabParams);
         sourceSwitch = new android.widget.Switch(this);
         sourceSwitch.setText("包含系统日程"); sourceSwitch.setTextSize(14); sourceSwitch.setChecked(includeSystem);
         sourceSwitch.setPadding(dp(6), 0, dp(6), 0); sourceSwitch.setSwitchPadding(dp(12)); UiStyle.toggle(sourceSwitch);
@@ -223,6 +227,7 @@ public final class CalendarOverviewActivity extends Activity {
             }
         };
         bodyViewport = new FrameLayout(this);
+        PressFeedback.protectViewport(bodyViewport);
         bodyViewport.addView(body, new FrameLayout.LayoutParams(-1, -1));
         bodyStage.addView(bodyViewport, new FrameLayout.LayoutParams(-1, -1));
         root.addView(bodyStage, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -596,7 +601,9 @@ public final class CalendarOverviewActivity extends Activity {
         if (mode == WEEK || mode == DAY) { timeline(entries); return; }
         ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false);
         verticalViewport = scroll; watchScroll(scroll);
-        LinearLayout content = column(); content.setPadding(0, 0, 0, dp(24)); scroll.addView(content);
+        int edge = PressFeedback.edgeSpace(body.getWidth() > 0 ? body.getWidth()
+                : getResources().getDisplayMetrics().widthPixels);
+        LinearLayout content = column(); content.setPadding(edge, 0, edge, dp(24)); scroll.addView(content);
         if (snapshot.systemUnavailable) notice(content, "系统日程暂时无法读取");
         if (snapshot.truncated) notice(content, "日程数量较多，请缩小日期范围");
         if (mode == YEAR) {
@@ -725,6 +732,8 @@ public final class CalendarOverviewActivity extends Activity {
             card.setTag("entry:" + e.key() + ":" + day); card.setFocusable(true);
             if (e != items.get(items.size() - 1)) { View divider = new View(this); divider.setBackgroundColor(UiStyle.colors(this).outline); group.addView(divider, new LinearLayout.LayoutParams(-1, dp(1))); }
         }
+        // A single-row card owns one glass surface; scale that surface with its action.
+        if (items.size() == 1) PressFeedback.group(group, 1.05f);
         content.addView(group);
     }
     private void updateStatus(EntryStatus status) {
@@ -754,10 +763,12 @@ public final class CalendarOverviewActivity extends Activity {
         int days = mode == WEEK ? 7 : 1;
         LocalDate first = windowStart(); ZoneId zone = snapshot.zone;
         int viewport = Math.max(dp(240), body.getWidth() > 0 ? body.getWidth() : getResources().getDisplayMetrics().widthPixels - dp(40));
-        int gutter = dp(40), width = Math.max(viewport, days == 7 ? dp(670) : viewport), dayWidth = (width - gutter) / days;
+        int edge = PressFeedback.edgeSpace(viewport);
+        int gutter = dp(40), width = Math.max(viewport - 2 * edge, days == 7 ? dp(670) : viewport - 2 * edge), dayWidth = (width - gutter) / days;
         HorizontalScrollView horizontal = new HorizontalScrollView(this); horizontal.setHorizontalScrollBarEnabled(false);
         horizontalViewport = horizontal; watchScroll(horizontal);
-        LinearLayout layout = column(); horizontal.addView(layout, new FrameLayout.LayoutParams(width, -1));
+        LinearLayout layout = column(); layout.setPadding(edge, dp(4), edge, dp(4));
+        horizontal.addView(layout, new FrameLayout.LayoutParams(width + 2 * edge, -1));
         LinearLayout dates = row(); View space = new View(this); dates.addView(space, new LinearLayout.LayoutParams(gutter, dp(60)));
         for (int d = 0; d < days; d++) {
             LocalDate day = first.plusDays(d);
@@ -789,6 +800,7 @@ public final class CalendarOverviewActivity extends Activity {
         ScrollView vertical = new ScrollView(this); vertical.setVerticalScrollBarEnabled(false);
         verticalViewport = vertical; watchScroll(vertical);
         FrameLayout grid = new FrameLayout(this); int hourHeight = dp(72), height = hourHeight * 24;
+        int maxCardHeight = 0;
         timeLines = new View(this) {
             final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
             @Override protected void onDraw(Canvas canvas) {
@@ -813,6 +825,7 @@ public final class CalendarOverviewActivity extends Activity {
             android.graphics.Paint.FontMetrics metrics = card.getPaint().getFontMetrics();
             int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
             int cardHeight = Math.max(lineHeight + dp(compact ? 4 : 8), durationHeight);
+            maxCardHeight = Math.max(maxCardHeight, cardHeight);
             card.setMaxLines(compact ? 1 : Math.max(1, (cardHeight - dp(7)) / lineHeight));
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(Math.max(dp(12), dayWidth / block.lanes - dp(4)), cardHeight);
             params.leftMargin = gutter + d * dayWidth + block.lane * dayWidth / block.lanes + dp(2);
@@ -834,13 +847,19 @@ public final class CalendarOverviewActivity extends Activity {
         };
         nowLine.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         grid.addView(nowLine, new FrameLayout.LayoutParams(-1, -1)); timeLines = nowLine;
-        vertical.addView(grid, new ScrollView.LayoutParams(width, height));
-        layout.addView(vertical, new LinearLayout.LayoutParams(-1, 0, 1));
+        FrameLayout gridContent = new FrameLayout(this);
+        int verticalEdge = PressFeedback.edgeSpace(maxCardHeight);
+        gridContent.setPadding(edge, verticalEdge, edge, verticalEdge);
+        gridContent.addView(grid, new FrameLayout.LayoutParams(width, height));
+        vertical.addView(gridContent, new ScrollView.LayoutParams(width + 2 * edge, height + 2 * verticalEdge));
+        LinearLayout.LayoutParams gridViewportParams = new LinearLayout.LayoutParams(width + 2 * edge, 0, 1);
+        gridViewportParams.setMargins(-edge, 0, -edge, 0);
+        layout.addView(vertical, gridViewportParams);
         body.addView(horizontal, new FrameLayout.LayoutParams(-1, -1));
         vertical.post(() -> {
             if (vertical != verticalViewport || positions.containsKey(renderedKey)) return;
             int hour = CalendarViewport.hour(first, days, LocalDate.now(), Instant.now().atZone(zone).toLocalTime());
-            vertical.scrollTo(0, hour * hourHeight);
+            vertical.scrollTo(0, verticalEdge + hour * hourHeight);
             int focus = CalendarViewport.column(first, days, date);
             horizontal.scrollTo(Math.max(0, gutter + focus * dayWidth + dayWidth / 2 - viewport / 2), 0);
         });

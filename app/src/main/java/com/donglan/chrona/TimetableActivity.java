@@ -420,7 +420,13 @@ public final class TimetableActivity extends Activity {
             int available = gridWidth > 0 ? gridWidth : getResources().getDisplayMetrics().widthPixels - dp(40);
             if (!term.view.regular.blocks.isEmpty()) {
                 TimetableGrid grid = new TimetableGrid(this, term.view.regular, available, block -> showCourse(block, false));
-                horizontal.addView(grid);
+                // Keep the grid's coordinates unchanged; its outer content supplies motion room.
+                FrameLayout gridContent = new FrameLayout(this);
+                int edgeX = PressFeedback.edgeSpace(grid.getLayoutParams().width);
+                int edgeY = PressFeedback.edgeSpace(grid.getLayoutParams().height);
+                gridContent.setPadding(edgeX, edgeY, edgeX, edgeY);
+                gridContent.addView(grid);
+                horizontal.addView(gridContent);
                 UiStyle.addSpaced(courseContent, horizontal, 0, 16);
             } else {
                 TextView emptyGrid = label("本学期的安排均在下方展示", 14, false);
@@ -464,6 +470,7 @@ public final class TimetableActivity extends Activity {
         HorizontalScrollView groups = new HorizontalScrollView(this);
         groups.setHorizontalScrollBarEnabled(false);
         LinearLayout groupRow = new LinearLayout(this);
+        groupRow.setPadding(dp(6), dp(6), dp(6), dp(6));
         LinkedHashSet<String> seen = new LinkedHashSet<>();
         for (TimetableStore.Semester term : session.library.semesters) {
             AcademicTerms.Plan plan = term.document.plan;

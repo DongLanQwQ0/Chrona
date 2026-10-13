@@ -1,3 +1,15 @@
+# 本轮补充 · 2026-10-13 · 0.14.23（离线审查完成）
+
+用户连接 V2527A 后要求 UI 检测，强调持续长按，并现场按住首页“下一件事”指出左边框截断。真机原版本0.14.22：普通首页时间线按压完整；日历AGENDADock最右项长按高光越过屏幕；AGENDA单条卡片在Scroll视口边界被截；用户现场carousel稳定长按截图确实左边框缺一段。证据保存在build/device-ui-audit/，不发布用户页面截图。
+
+关键修复：carousel余量由strip迁入直接cards内容容器，保持负8dp左margin和正文对齐；card放大不再超出Scroll对子内容的边界。共享PressFeedback.edgeSpace按1.05峰值计算像素余量。Calendar列表左右内容留白，Dock居中限280dp/窗口70%；单项dayList采用group，让玻璃边框与动作子项一同缩放。Calendar日/周grid新增外包留白，保留绘图坐标，负margin补偿日期/网格横向对齐，初始scroll加verticalEdge。Timetable学年chip内容6dp余量、课程grid外包留白；备注editor外包并按实际高度动态设置上下余量。
+
+进一步真机检查发现：普通祖先clipChildren=false时Scroll自身clipToBounds失效，零paddingScroll的clipToPadding也不能保证自身窗口，日视图网格会盖到日期栏上。最终PressFeedback.protectViewport为所有Scroll/HScroll/SwipePager设置自身clipBounds，尺寸变化才更新；CalendarbodyViewport同样显式保护。最后这一修改构建通过，但ADB恰好离线，尚未覆盖安装/真机复验。用户明确要求停止等待ADB、继续离线审查。设备地址不存入项目文档。
+
+真机已通过2秒持续按压、1秒截图的案例：title-long-after、timetable-term-long-after、timetable-course-long-after、calendar-long-held-after（右端高光完整）、upcoming-long-final（用户指出的首卡整段左边框完整）、settings-long-final、plus-long-final。日历单项表面和最后clipBounds尚需最终包复验；备注长编辑框及边缘日/周事件也需实际检查。只代表已测控件，不宣称整个App无裁剪或已量测FPS。手机当前是0.14.23中间测试包；最终0.14.23 /130已构建，未覆盖安装；按用户授权发布。
+
+离线43/43通过：PressFeedback40项，实际carousel工厂108项，9/9错误padding变体被direct cards boundary clipping拒绝。debug/release/lint通过，0 errors /84 warnings。日志build/device-ui-audit/full-checks.log、final-build.log；备份build/backups/20261013-device-long-press。最终APK build/distributions/0.14.23/Chrona-0.14.23.apk，1,989,554字节，SHA256 278c5dec0d32ce3c3e9cb859d2437b75e53dd38f36bfba56652a40ba8db08dd7，原安装签名保持。子代理独立离线复审通过：自身clipBounds忽略滚动偏移，日期与网格横向坐标一致，备注动态余量布局稳定。用户AGENTS.md/toml未动。最终包真机边界与帧率复验仍未完成，发布说明明确这一限制。
+
 # 本轮补充 · 2026-10-13 · 0.14.22
 
 用户用五张截图指出普遍放大裁切，补充设置无明显放大、“+”应更明显、完整输出页按钮无间隔。上一版 PressFeedback 只装缩放，遗漏父级绘制边界。现在每次安装/布局复查都放开普通祖先的 clipChildren/clipToPadding，遇 ScrollView、HorizontalScrollView、SwipePagerLayout 或 clipToOutline 视口即停止；不取消滚动/切页/媒体边界。保留 Float 自定义倍率，NaN 表示动作子项只驱动父板、不重复缩放。设置底板 addStatesFromChildren + 1.10，子图标和排序保留点击但无独立缩放；记录按钮 1.20。

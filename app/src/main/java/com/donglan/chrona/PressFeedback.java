@@ -15,6 +15,31 @@ final class PressFeedback {
     private static final float PRESSED_SCALE = 1.05f;
     private static final WeakHashMap<View, Float> installed = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> roots = new WeakHashMap<>();
+    private static final WeakHashMap<ViewGroup, int[]> viewports = new WeakHashMap<>();
+
+    /** Pixels needed on either edge when the whole control reaches its held scale. */
+    static int edgeSpace(int extentPx) {
+        return (int) Math.ceil(Math.max(0, extentPx) * (PRESSED_SCALE - 1f) / 2f) + 1;
+    }
+
+    /** Keep a viewport's own bounds independent from its parent's child-clipping flags. */
+    static void protectViewport(ViewGroup viewport) {
+        if (!viewports.containsKey(viewport)) {
+            viewports.put(viewport, new int[]{-1, -1});
+            viewport.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                    updateViewportBounds(viewport));
+        }
+        updateViewportBounds(viewport);
+    }
+
+    private static void updateViewportBounds(ViewGroup viewport) {
+        int width = viewport.getWidth(), height = viewport.getHeight();
+        if (width <= 0 || height <= 0) return;
+        int[] previous = viewports.get(viewport);
+        if (previous[0] == width && previous[1] == height) return;
+        previous[0] = width; previous[1] = height;
+        viewport.setClipBounds(new android.graphics.Rect(0, 0, width, height));
+    }
 
     static void apply(View view) {
         if (!installed.containsKey(view)) apply(view, PRESSED_SCALE);
@@ -56,7 +81,8 @@ final class PressFeedback {
         for (android.view.ViewParent parent = view.getParent(); parent instanceof ViewGroup group;
                 parent = parent.getParent()) {
             if (group instanceof ScrollView || group instanceof HorizontalScrollView
-                    || group instanceof SwipePagerLayout || group.getClipToOutline()) break;
+                    || group instanceof SwipePagerLayout) { protectViewport(group); break; }
+            if (group.getClipToOutline()) break;
             group.setClipChildren(false); group.setClipToPadding(false);
         }
     }
@@ -71,6 +97,8 @@ final class PressFeedback {
     }
 
     private static void scan(View view) {
+        if (view instanceof ScrollView || view instanceof HorizontalScrollView || view instanceof SwipePagerLayout)
+            protectViewport((ViewGroup) view);
         // Dock owns the scale of its plate and highlight, including all of its buttons.
         if (view instanceof DockNavigationLayout) return;
         if (view.isClickable() || view.isLongClickable() || installed.containsKey(view)) apply(view);

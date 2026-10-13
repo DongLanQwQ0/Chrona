@@ -7,7 +7,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 source = (root / 'app/src/main/java/com/donglan/chrona/PressFeedback.java').read_text(encoding='utf-8')
 source = re.sub(r'^(package |import ).*;\s*', '', source, flags=re.M)
-source = source.replace('android.view.ViewParent', 'ViewParent').replace('android.R.attr.', 'Attr.')
+source = source.replace('android.view.ViewParent', 'ViewParent').replace('android.R.attr.', 'Attr.').replace('android.graphics.Rect', 'Rect')
 style = (root / 'app/src/main/java/com/donglan/chrona/UiStyle.java').read_text(encoding='utf-8')
 start = style.index('    static void pressable(View view) {')
 end = style.index('\n    }', start) + len('\n    }')
@@ -16,6 +16,7 @@ harness = r'''
 import java.util.*;
 interface ViewParent { ViewParent getParent(); }
 class Attr { static int state_enabled=1,state_pressed=2; }
+class Rect {int left,top,right,bottom;Rect(int l,int t,int r,int b){left=l;top=t;right=r;bottom=b;}}
 class ViewTreeObserver {
  interface OnGlobalLayoutListener { void onGlobalLayout(); }
  List<OnGlobalLayoutListener> listeners=new ArrayList<>();
@@ -26,6 +27,9 @@ class ViewTreeObserver {
 class View implements ViewParent {
  static int SCALE_X=1,SCALE_Y=2;ViewParent parent;boolean clickable,longClickable,clipOutline,pressed;float sx=1,sy=1;
  StateListAnimator states;Object foreground;int installs;ViewTreeObserver observer=new ViewTreeObserver();List<OnAttachStateChangeListener> attach=new ArrayList<>();
+ int width=320,height=600,clipUpdates;Rect clipBounds;List<OnLayoutChangeListener> layouts=new ArrayList<>();
+ interface OnLayoutChangeListener {void onLayoutChange(View v,int l,int t,int r,int b,int ol,int ot,int or,int ob);}
+ int getWidth(){return width;}int getHeight(){return height;}void setClipBounds(Rect r){clipBounds=r;clipUpdates++;}void addOnLayoutChangeListener(OnLayoutChangeListener l){layouts.add(l);}void layout(int w,int h){width=w;height=h;for(var l:new ArrayList<>(layouts))l.onLayoutChange(this,0,0,w,h,0,0,0,0);}
  interface OnAttachStateChangeListener {void onViewAttachedToWindow(View v);void onViewDetachedFromWindow(View v);}
  public ViewParent getParent(){return parent;}boolean isClickable(){return clickable;}boolean isLongClickable(){return longClickable;}
  void setStateListAnimator(StateListAnimator a){states=a;installs++;}ViewTreeObserver getViewTreeObserver(){return observer;}
@@ -74,6 +78,9 @@ public class PressFeedbackCheck {
   View add=new View();add.clickable=true;PressFeedback.apply(add);PressFeedback.apply(add,1.20f);root.add(add);root.observer.layout();check(add.states.animations.get(0).pair[0].value==1.20f);
   View course=new View();RippleDrawable courseRipple=new RippleDrawable(null,null,6);course.foreground=courseRipple;UiStyle.pressable(course);check(course.foreground==courseRipple&&course.states!=null);
   View plain=new View();UiStyle.pressable(plain);check(plain.foreground instanceof RippleDrawable);Object ripple=plain.foreground;UiStyle.pressable(plain);check(plain.foreground==ripple);
+  for(int extent:new int[]{128,320,640,1080,1440,2400,4000}){int edge=PressFeedback.edgeSpace(extent);double growth=(extent-2*edge)*.05/2;check(edge>=growth&&extent-edge+growth<=extent);}
+  check(viewport.clipBounds.right==320&&viewport.clipBounds.bottom==600);viewport.layout(640,360);check(viewport.clipBounds.right==640&&viewport.clipBounds.bottom==360);int updates=viewport.clipUpdates;PressFeedback.protectViewport(viewport);check(viewport.clipUpdates==updates&&viewport.layouts.size()==1);
+  ScrollView empty=new ScrollView();root.add(empty);root.observer.layout();check(empty.clipBounds!=null);ViewGroup pane=new ViewGroup();pane.width=pane.height=0;PressFeedback.protectViewport(pane);check(pane.clipBounds==null);pane.layout(250,400);check(pane.clipBounds.right==250&&pane.clipBounds.bottom==400);
   UiMotion.enabled=false;View reduced=new View();PressFeedback.apply(reduced);check(reduced.states.animations.get(0).duration==0&&reduced.states.animations.get(1).duration==0);
   System.out.println("Press feedback passed: "+checks+" (production controller with View/animator doubles)");
  }
