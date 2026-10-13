@@ -1,5 +1,13 @@
 # 历史验证记录
 
+完整44项通过：初跑42/44，学期持久化原子移动和同步回环连接受沙箱限制；正常权限单独复验两项通过。日志build/choice-output-checks.log、choice-output-terms-recheck.log、choice-output-sync-recheck.log。
+
+## 0.14.24 — 2026-10-13
+
+- 生产选择弹窗布局回归720项，覆盖密度1/2/3、窄宽窗口、短长列表和首尾持续放大；去掉内容padding的负例144次均复现裁剪。替身验证几何，不能代替Android绘制与触控。
+- 子代理核对现代AOSP硬件裁剪实现和0.14.23最终DEX，确认固定clipBounds不加滚动偏移且应用生命周期覆盖ModelOutput。手机最后已知安装的是中间包，无法离线确认截图实际安装内容。
+- debug/release/lint通过，0 errors /84 warnings；日志build/choice-output-build.log。0.14.24 /131，APK 1,989,530字节，SHA256 `ea4fa7ae6e599030c057c9ef01b584e351a82f2bc35a27ac32bc0351c1fb4f02`，签名保持；备份build/backups/20261013-choice-output。本版未真机复验。
+
 ## 0.14.23 — 2026-10-13
 
 - 已连接手机并以持续按住2秒、1秒截图测试。用户现场下一件事首卡长按的左边框裁切有直接证据；修复后同控件长按轮廓完整。日历右端Dock、首页标题、设置、记录“+”、课表学年按钮及课程块也有稳定长按截图，位于`build/device-ui-audit/`。

@@ -63,6 +63,7 @@ public final class ModelOutputActivity extends Activity {
         UiStyle.title(pageLabel);
         card.addView(pageLabel);
         scroll = new ScrollView(this);
+        PressFeedback.protectViewport(scroll);
         output = new TextView(this);
         output.setTextSize(12);
         output.setTextIsSelectable(true);

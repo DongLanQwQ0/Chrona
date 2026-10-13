@@ -943,6 +943,13 @@ public final class UiStyle {
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout choices = new LinearLayout(activity);
         choices.setOrientation(LinearLayout.VERTICAL);
+        int sheetWidth = Math.min(
+                (int) (activity.getResources().getDisplayMetrics().widthPixels * .72f),
+                dp(panel, CHOICE_SHEET_WIDTH_DP));
+        // The scroll clips its direct content. Keep the held row inside that content.
+        int rowEdge = PressFeedback.edgeSpace(Math.max(0, sheetWidth - 2 * dp(panel, 20)));
+        choices.setPadding(rowEdge, dp(panel, 3), rowEdge, dp(panel, 3));
+        PressFeedback.protectViewport(scroll);
         for (int i = 0; i < options.length; i++) {
             final int index = i;
             TextView item = new TextView(activity);
@@ -965,12 +972,10 @@ public final class UiStyle {
         scroll.addView(choices);
         int maxHeight = (int) (activity.getResources().getDisplayMetrics().heightPixels * .58f);
         panel.addView(scroll, new LinearLayout.LayoutParams(-1,
-                Math.min(maxHeight, options.length * dp(scroll, 60))));
+                Math.min(maxHeight, options.length * dp(scroll, 60) + 2 * dp(panel, 3))));
         // Narrower than the default sheet: these are one-word choices, and the full width left the
         // rows looking like empty bars.
-        showDialog(dialog, panel, Math.min(
-                (int) (activity.getResources().getDisplayMetrics().widthPixels * .72f),
-                dp(panel, CHOICE_SHEET_WIDTH_DP)));
+        showDialog(dialog, panel, sheetWidth);
     }
 
     public static void confirmDialog(Activity activity, String title, String message,

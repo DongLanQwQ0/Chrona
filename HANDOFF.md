@@ -1,3 +1,12 @@
+# 本轮补充 · 2026-10-13 · 0.14.24
+
+完整44项通过：初跑42/44，学期持久化原子移动和同步回环连接受沙箱限制；正常权限单独复验两项通过。日志build/choice-output-checks.log、choice-output-terms-recheck.log、choice-output-sync-recheck.log。
+
+用户新截图：日程类型首行稳定放大时左右边框被Scroll裁剪；模型完整输出长文字覆盖标题和底部。共享choiceDialog确实没有直接choices内容padding，现按sheetWidth-40dp计算edgeSpace并给上下3dp，Scroll高度加6dp，保护首尾行。ModelOutput和choiceDialog创建Scroll时显式protectViewport，不依赖全局注册顺序。未修改按压倍率或监听。
+
+设备离线前安装的是0.14.23中间包，最终clipBounds未覆盖安装；不能仅凭截图/版本号确认当前手机二进制。子代理核对现代AOSP Skia RenderNode与最终0.14.23 DEX，固定Rect不加scroll偏移正确；最终APK包含保护调用，应用创建/恢复回调和globalLayout覆盖ModelOutput。该解释仍未在设备验证。本版以0.14.24 /131区分旧中间包。
+
+构建debug/release/lint通过，0 errors /84 warnings；日志build/choice-output-build.log。备份build/backups/20261013-choice-output。最终APK 1,989,530字节，SHA256 ea4fa7ae6e599030c057c9ef01b584e351a82f2bc35a27ac32bc0351c1fb4f02，原签名保持。设备未连接，不宣称最终视觉/帧率通过。
 # 本轮补充 · 2026-10-13 · 0.14.23（离线审查完成）
 
 用户连接 V2527A 后要求 UI 检测，强调持续长按，并现场按住首页“下一件事”指出左边框截断。真机原版本0.14.22：普通首页时间线按压完整；日历AGENDADock最右项长按高光越过屏幕；AGENDA单条卡片在Scroll视口边界被截；用户现场carousel稳定长按截图确实左边框缺一段。证据保存在build/device-ui-audit/，不发布用户页面截图。
