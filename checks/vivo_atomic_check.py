@@ -21,17 +21,25 @@ public class VivoAtomicCheck {
  static int checks;static void check(boolean ok){checks++;if(!ok)throw new AssertionError("vivo check "+checks);}
  public static void main(String[] args){
  Context c=new Context();PendingIntent details=new PendingIntent();
- for(String brand:new String[]{"google","samsung","OPPO",null}){Build.MANUFACTURER=brand;check(VivoAtomicNotification.extras(c,"课","开始","13:25–15:50","教室","13:25",details,false).isEmpty());}
+ for(String brand:new String[]{"google","samsung","OPPO",null}){Build.MANUFACTURER=brand;check(VivoAtomicNotification.extras(c,"课","开始","13:25–15:50","教室","拾时","13:25",details,false).isEmpty());}
  Build.MANUFACTURER="VIVO";
  check(VivoAtomicNotification.sceneEnabled(c).equals(true));c.manager.scene=false;check(VivoAtomicNotification.sceneEnabled(c).equals(false));
- Bundle b=VivoAtomicNotification.extras(c,"微积分","即将开始","10:00–12:25","东2-204","10:00",details,false);
+ Bundle b=VivoAtomicNotification.extras(c,"微积分","即将开始","10:00–12:25","东2-204","拾时","10:00",details,false);
  check(b.get("notification.superx.operation").equals(0));check(b.get("notification.superx.template").equals(1));check(b.get("notification.superx.scene").equals("CHRONA_AGENDA"));check(b.get("notification.superx.dismissWhenKill").equals(false));check(b.get("notification.superx.showNotify").equals(true));check(b.get("notification.superx.clickResp")==details);
  Bundle base=(Bundle)b.get("notification.superx.baseInfos"), info=(Bundle)b.get("notification.superx.infos"), island=(Bundle)b.get("notification.superx.island");
  check(base.get("notification.superx.baseInfos.title").equals("微积分"));check(info.get("notification.superx.infos.describe").equals("东2-204"));check(info.get("notification.superx.infos.image") instanceof Icon);check(((Icon)info.get("notification.superx.infos.image")).resource==R.drawable.ic_chrona_foreground);
  check(island.get("island.superx.leftTemplate").equals(1)&&island.get("island.superx.rightTemplate").equals(4));
  check(((Bundle)island.get("island.superx.leftInfo")).get("island.superx.leftInfo.content").equals("10:00"));check(((Bundle)island.get("island.superx.rightInfo")).get("island.superx.rightInfo.content").equals("微积分"));check(island.get("island.superx.clickResp")==details);
- check(VivoAtomicNotification.extras(c,"课","进行中","range"," ","10:00",details,true).get("notification.superx.operation").equals(1));
- check(((Bundle)VivoAtomicNotification.extras(c,"课","进行中","range"," ","10:00",details,true).get("notification.superx.infos")).get("notification.superx.infos.describe").equals("range"));
+ check(island.get("island.superx.islandClick").equals(0));check(island.get("island.superx.template").equals(1));
+ check(!((Bundle)island.get("island.superx.rightInfo")).containsKey("island.superx.rightInfo.clickResp"));
+ check(base.get("notification.superx.baseInfos.content").equals("10:00–12:25"));
+ check(info.get("notification.superx.infos.coreInfo").equals("即将开始"));
+ check(info.get("notification.superx.infos.imageClickResp")==details);
+ check(VivoAtomicNotification.extras(c,"课","进行中","range"," ","系统课表","10:00",details,true).get("notification.superx.operation").equals(1));
+ Bundle noLocation=(Bundle)VivoAtomicNotification.extras(c,"课","进行中","range"," ","系统课表","10:00",details,true).get("notification.superx.infos");
+ check(noLocation.get("notification.superx.infos.describe").equals("系统课表"));
+ check(noLocation.get("notification.superx.infos.coreInfo").equals("进行中"));
+ check(((Bundle)VivoAtomicNotification.extras(c,"课","即将开始","range"," "," ","10:00",details,false).get("notification.superx.infos")).get("notification.superx.infos.describe").equals("日程提醒"));
  Bundle capsule=(Bundle)b.get("notification.superx.capsule");check(capsule.get("notification.superx.capsule.state").equals(1));check(capsule.get("notification.superx.capsule.icon") instanceof Icon);check(capsule.get("notification.superx.capsule.content").equals("10:00 微积分"));check(capsule.get("notification.superx.capsule.clickResp")==details);
  Bundle shortInfo=(Bundle)b.get("notification.superx.shortInfos");check(shortInfo.get("notification.superx.shortInfos.image")==info.get("notification.superx.infos.image"));check(shortInfo.get("notification.superx.shortInfos.describeShort").equals("即将开始"));check(shortInfo.get("notification.superx.shortInfos.coreInfoShort").equals("10:00"));
  Notification n=new Notification();n.extras=b;NotificationManager manager=new NotificationManager();manager.active=new StatusBarNotification[]{new StatusBarNotification(7,n)};

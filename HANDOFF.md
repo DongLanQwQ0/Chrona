@@ -1,3 +1,9 @@
+# 原子岛展示调整 · 2026-10-13 · 0.14.29 / 136
+
+用户18:12截图证明正式原子通知在锁屏和岛上实际显示，指出大卡重复时间和状态，并要求桌面首次点击展开、再次点击进应用。当前协议islandClick=1且未声明island.template；依据实时读取官方doc896，0为出卡、1为跳转，无template不支持大卡。改为islandClick=0、island.template=1，保留island.clickResp供卡片空白区域详情跳转，删除rightInfo.clickResp避免绕过展开。协议说明https://dev.vivo.com.cn/documentCenter/doc/896。
+
+baseInfos保留标题与一次时间范围；infos.describe显示地点，缺地点时显示来源，来源缺失时使用日程提醒；coreInfo只显示即将开始/进行中，不重复开始时间。同日范围仅首端有日期，跨日保留两端日期。原始日程标题未改写。44项适配器回归及25项生产提醒工厂回归通过，release/androidTest/lint成功；无手机连接，首次展开及最终视觉仍未真机复验。备份build/backups/20261013-atomic-presentation。用户AGENTS.md及角色toml不纳入提交。
+
 # 最终离线收尾 · 2026-10-13 · 0.14.28 / 135
 
 本段覆盖下方早期0.14.27实验结论。用户已离开，明确仅允许离线开发，后续不得操作或读取手机。0.14.27仅为中间测试包；最终0.14.28版本号135用于让已安装中间包也能收到更新。

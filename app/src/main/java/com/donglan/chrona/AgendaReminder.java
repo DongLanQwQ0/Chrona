@@ -132,8 +132,10 @@ public final class AgendaReminder {
         String status = now < e.start ? "即将开始" : "进行中";
         ZoneId zone = ZoneId.systemDefault();
         DateTimeFormatter time = DateTimeFormatter.ofPattern("M月d日 HH:mm");
-        String range = time.format(Instant.ofEpochMilli(e.start).atZone(zone)) + " — "
-                + time.format(Instant.ofEpochMilli(e.end).atZone(zone));
+        java.time.ZonedDateTime start = Instant.ofEpochMilli(e.start).atZone(zone);
+        java.time.ZonedDateTime end = Instant.ofEpochMilli(e.end).atZone(zone);
+        String range = time.format(start) + " — " + (start.toLocalDate().equals(end.toLocalDate())
+                ? DateTimeFormatter.ofPattern("HH:mm").format(end) : time.format(end));
         Intent open = AgendaRepository.details(context, e);
         if (!e.system) open.setData(android.net.Uri.parse("chrona://agenda/" + e.key()));
         PendingIntent details = PendingIntent.getActivity(context, 1, open,
@@ -143,7 +145,7 @@ public final class AgendaReminder {
                 .setContentIntent(details)
                 .setOngoing(true).setOnlyAlertOnce(same).setWhen(e.start).setShowWhen(false)
                 .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PRIVATE)
-                .addExtras(VivoAtomicNotification.extras(context, e.title, status, range, e.location,
+                .addExtras(VivoAtomicNotification.extras(context, e.title, status, range, e.location, e.source,
                         DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(e.start).atZone(zone)),
                         details, same && VivoAtomicNotification.active(context.getSystemService(NotificationManager.class), NOTIFICATION_ID)))
                 .setTimeoutAfter(Math.max(1000, e.finish() - now))

@@ -26,7 +26,7 @@ class Uri {String value;Uri(String v){value=v;}static Uri parse(String v){return
 class Intent {String action;Uri data;Map<String,String> extras=new HashMap<>();Intent(){}Intent(Context c,Class<?> type){}Intent setData(Uri d){data=d;return this;}Intent setAction(String a){action=a;return this;}Intent putExtra(String k,String v){extras.put(k,v);return this;}}
 class PendingIntent {static final int FLAG_UPDATE_CURRENT=1,FLAG_IMMUTABLE=2;Intent intent;int flags,code;boolean broadcast;static PendingIntent make(int code,Intent i,int flags,boolean broadcast){PendingIntent p=new PendingIntent();p.intent=i;p.flags=flags;p.code=code;p.broadcast=broadcast;return p;}static PendingIntent getActivity(Context c,int code,Intent i,int flags){return make(code,i,flags,false);}static PendingIntent getBroadcast(Context c,int code,Intent i,int flags){return make(code,i,flags,true);}}
 class Bundle {boolean update;}
-class VivoAtomicNotification {static boolean vivo;static boolean supportedManufacturer(){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static Bundle extras(Context c,String title,String status,String range,String location,String time,PendingIntent details,boolean same){Bundle b=new Bundle();b.update=same;return b;}}
+class VivoAtomicNotification {static boolean vivo;static boolean supportedManufacturer(){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static Bundle extras(Context c,String title,String status,String range,String location,String source,String time,PendingIntent details,boolean same){Bundle b=new Bundle();b.update=same;return b;}}
 class AgendaRepository {static Intent details(Context c,AgendaEntry e){return new Intent().setData(Uri.parse("content://calendar/events/"+e.id));}}
 class AgendaReminderReceiver {}
 class View {static final int GONE=8,VISIBLE=0;}
@@ -54,6 +54,9 @@ public class AgendaNotificationCheck {
   VivoAtomicNotification.vivo=true;Notification n=notification(c,entry,now,false);
   check(n.small==null&&n.big==null&&n.heads==null&&n.style instanceof Notification.BigTextStyle);
   String detail=((Notification.BigTextStyle)n.style).text;check(detail.contains("东2-204")&&detail.contains("带上讲义")&&detail.contains("拾时"));
+  String compactRange=n.text.substring(n.text.indexOf(" · ")+3);
+  check(compactRange.indexOf("月")==compactRange.lastIndexOf("月"));
+  check(compactRange.endsWith(DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(entry.end).atZone(ZoneId.systemDefault()))));
   check(n.ongoing&&!n.showWhen&&n.visibility==Notification.VISIBILITY_PRIVATE&&n.timeout==3600000);
   check(n.actions.size()==3&&n.actions.get(0).intent==n.details);
   check(n.details.intent.data.value.equals("chrona://agenda/"+entry.key()));
@@ -66,6 +69,8 @@ public class AgendaNotificationCheck {
   VivoAtomicNotification.vivo=false;n=notification(c,entry,now,false);check(n.small!=null&&n.big!=null&&n.heads==n.small&&n.style instanceof Notification.DecoratedCustomViewStyle);check(n.big.countdown&&n.big.texts.get(R.id.agenda_description).equals("带上讲义"));
   AgendaEntry system=new AgendaEntry(80,0,entry.start,entry.end,"系统课程",null,"","课表",true,false,true);VivoAtomicNotification.vivo=true;n=notification(c,system,now,false);
   check(n.details.intent.data.value.equals("content://calendar/events/80"));check(((Notification.BigTextStyle)n.style).text.contains("地点未填写"));
+  AgendaEntry overnight=new AgendaEntry(81,0,entry.start,entry.end+86400000,"跨天课程","","","课表",true,false,true);
+  n=notification(c,overnight,now,false);check(n.text.indexOf("月")!=n.text.lastIndexOf("月"));
   System.out.println("Reminder notification factory passed: "+checks+" checks; native vivo style, full details, immutable actions, occurrence identity, expiry and existing RemoteViews path");
  }
 }

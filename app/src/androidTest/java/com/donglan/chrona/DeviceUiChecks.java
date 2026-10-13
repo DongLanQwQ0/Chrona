@@ -229,7 +229,7 @@ final class DeviceUiChecks {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         Class<?> adapter = Class.forName("com.donglan.chrona.VivoAtomicNotification");
         Method payload = adapter.getDeclaredMethod("extras", Context.class, String.class, String.class, String.class,
-                String.class, String.class, PendingIntent.class, boolean.class); payload.setAccessible(true);
+                String.class, String.class, String.class, PendingIntent.class, boolean.class); payload.setAccessible(true);
         Method end = adapter.getDeclaredMethod("end", Context.class, NotificationManager.class, int.class); end.setAccessible(true);
         String channel = "chrona_atomic_validation"; int id = 0x434854;
         manager.createNotificationChannel(new NotificationChannel(channel, "原子岛验证", NotificationManager.IMPORTANCE_HIGH));
@@ -239,7 +239,7 @@ final class DeviceUiChecks {
                 .put("sceneEnabled", queryScene.invoke(manager, context.getPackageName(), scene));
         try {
             for (boolean update : new boolean[]{false, true}) {
-                Bundle data = (Bundle) payload.invoke(null, context, "Chrona原子岛验证", update ? "更新验证" : "创建验证", "10分钟后开始", "本机测试", "10分钟", details, update);
+                Bundle data = (Bundle) payload.invoke(null, context, "Chrona原子岛验证", update ? "更新验证" : "创建验证", "10分钟后开始", "本机测试", "拾时", "10分钟", details, update);
                 data.putString("notification.superx.scene", scene);
                 manager.notify(id, new Notification.Builder(context, channel).setSmallIcon(R.drawable.ic_notifications)
                         .setContentTitle("Chrona原子岛验证").setContentText(update ? "更新验证" : "创建验证")

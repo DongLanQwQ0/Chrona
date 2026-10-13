@@ -28,7 +28,7 @@ final class VivoAtomicNotification {
         }
     }
     static Bundle extras(Context context, String title, String status, String range,
-            String location, String startTime, PendingIntent details, boolean same) {
+            String location, String source, String startTime, PendingIntent details, boolean same) {
         Bundle data = new Bundle();
         if (!supportedManufacturer()) return data;
         Icon icon = Icon.createWithResource(context, R.drawable.ic_chrona_foreground);
@@ -45,8 +45,9 @@ final class VivoAtomicNotification {
         base.putCharSequence(PREFIX + "baseInfos.content", range);
         data.putBundle(PREFIX + "baseInfos", base);
         Bundle info = new Bundle();
-        info.putString(PREFIX + "infos.describe", location.trim().isEmpty() ? range : location);
-        info.putString(PREFIX + "infos.coreInfo", status + " · " + startTime);
+        String origin = source == null || source.trim().isEmpty() ? "日程提醒" : source.trim();
+        info.putString(PREFIX + "infos.describe", location.trim().isEmpty() ? origin : location);
+        info.putString(PREFIX + "infos.coreInfo", status);
         info.putParcelable(PREFIX + "infos.image", icon);
         info.putParcelable(PREFIX + "infos.imageClickResp", details);
         data.putBundle(PREFIX + "infos", info);
@@ -59,12 +60,13 @@ final class VivoAtomicNotification {
         left.putParcelable("island.superx.leftInfo.icon", icon);
         left.putCharSequence("island.superx.leftInfo.content", startTime);
         right.putCharSequence("island.superx.rightInfo.content", title);
-        right.putParcelable("island.superx.rightInfo.clickResp", details);
         island.putInt("island.superx.leftTemplate", 1);
         island.putInt("island.superx.rightTemplate", 4);
         island.putBundle("island.superx.leftInfo", left);
         island.putBundle("island.superx.rightInfo", right);
-        island.putInt("island.superx.islandClick", 1);
+        // First tap expands the OEM card; its blank area then opens details.
+        island.putInt("island.superx.islandClick", 0);
+        island.putInt("island.superx.template", 1);
         island.putParcelable("island.superx.clickResp", details);
         data.putBundle(PREFIX + "island", island);
         Bundle capsule = new Bundle();
