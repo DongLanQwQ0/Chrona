@@ -1,5 +1,6 @@
 """Run the production reminder notification factory with Android transport doubles."""
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -16,6 +17,7 @@ def method(marker):
     return source[start:end].replace('android.net.Uri', 'Uri').replace('android.view.View', 'View')
 
 entry = (root / 'app/src/main/java/com/donglan/chrona/AgendaEntry.java').read_text(encoding='utf-8').replace('package com.donglan.chrona;', '')
+timeline = (root / 'app/src/main/java/com/donglan/chrona/ReminderTimeline.java').read_text(encoding='utf-8').replace('package com.donglan.chrona;', '').replace('import java.util.*;', '')
 harness = r'''
 import java.util.*;
 import java.time.*;
@@ -25,8 +27,8 @@ class NotificationManager {boolean active;}
 class Uri {String value;Uri(String v){value=v;}static Uri parse(String v){return new Uri(v);}}
 class Intent {String action;Uri data;Map<String,String> extras=new HashMap<>();Intent(){}Intent(Context c,Class<?> type){}Intent setData(Uri d){data=d;return this;}Intent setAction(String a){action=a;return this;}Intent putExtra(String k,String v){extras.put(k,v);return this;}}
 class PendingIntent {static final int FLAG_UPDATE_CURRENT=1,FLAG_IMMUTABLE=2;Intent intent;int flags,code;boolean broadcast;static PendingIntent make(int code,Intent i,int flags,boolean broadcast){PendingIntent p=new PendingIntent();p.intent=i;p.flags=flags;p.code=code;p.broadcast=broadcast;return p;}static PendingIntent getActivity(Context c,int code,Intent i,int flags){return make(code,i,flags,false);}static PendingIntent getBroadcast(Context c,int code,Intent i,int flags){return make(code,i,flags,true);}}
-class Bundle {boolean update;}
-class VivoAtomicNotification {static boolean vivo;static boolean supportedManufacturer(){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static Bundle extras(Context c,String title,String status,String range,String location,String source,String time,PendingIntent details,boolean same){Bundle b=new Bundle();b.update=same;return b;}}
+class Bundle {boolean update;int progress;String remaining;}
+class VivoAtomicNotification {static boolean vivo;static boolean supportedManufacturer(){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static Bundle extras(Context c,String title,String status,String range,String location,String source,String time,int progress,String remaining,PendingIntent details,boolean same){Bundle b=new Bundle();b.update=same;b.progress=progress;b.remaining=remaining;return b;}}
 class AgendaRepository {static Intent details(Context c,AgendaEntry e){return new Intent().setData(Uri.parse("content://calendar/events/"+e.id));}}
 class AgendaReminderReceiver {}
 class View {static final int GONE=8,VISIBLE=0;}
@@ -43,6 +45,7 @@ class Notification {
  static class Builder {Notification n=new Notification();Builder(Context c,String channel){}Builder setSmallIcon(int r){return this;}Builder setContentTitle(String t){n.title=t;return this;}Builder setContentText(String t){n.text=t;return this;}Builder setContentIntent(PendingIntent p){n.details=p;return this;}Builder setOngoing(boolean b){n.ongoing=b;return this;}Builder setOnlyAlertOnce(boolean b){n.onlyAlertOnce=b;return this;}Builder setWhen(long t){n.when=t;return this;}Builder setShowWhen(boolean b){n.showWhen=b;return this;}Builder setCategory(String s){return this;}Builder setVisibility(int v){n.visibility=v;return this;}Builder addExtras(Bundle b){n.extras=b;return this;}Builder setTimeoutAfter(long t){n.timeout=t;return this;}Builder addAction(Action a){n.actions.add(a);return this;}Builder setStyle(Object s){n.style=s;return this;}Builder setCustomContentView(RemoteViews v){n.small=v;return this;}Builder setCustomBigContentView(RemoteViews v){n.big=v;return this;}Builder setCustomHeadsUpContentView(RemoteViews v){n.heads=v;return this;}Notification build(){return n;}}
 }
 __ENTRY__
+__TIMELINE__
 public class AgendaNotificationCheck {
  static final String CHANNEL="upcoming_agenda";static final int NOTIFICATION_ID=0x434852;
  __FACTORY__
@@ -53,6 +56,11 @@ public class AgendaNotificationCheck {
   AgendaEntry entry=new AgendaEntry(15,3,now+600000,now+3600000,"微积分", "东2-204","带上讲义","拾时",false,false,true);
   VivoAtomicNotification.vivo=true;Notification n=notification(c,entry,now,false);
   check(n.small==null&&n.big==null&&n.heads==null&&n.style instanceof Notification.BigTextStyle);
+  check(n.extras.progress==34&&n.extras.remaining.equals("10分钟后开始"));
+  check(notification(c,entry,entry.start-ReminderTimeline.LEAD,false).extras.progress==100);
+  check(notification(c,entry,entry.start,false).extras.progress==100);
+  check(notification(c,entry,entry.start+(entry.end-entry.start)/2,false).extras.progress==50);
+  check(notification(c,entry,entry.end,false).extras.progress==0);
   String detail=((Notification.BigTextStyle)n.style).text;check(detail.contains("东2-204")&&detail.contains("带上讲义")&&detail.contains("拾时"));
   String compactRange=n.text.substring(n.text.indexOf(" · ")+3);
   check(compactRange.indexOf("月")==compactRange.lastIndexOf("月"));
@@ -60,6 +68,11 @@ public class AgendaNotificationCheck {
   check(n.ongoing&&!n.showWhen&&n.visibility==Notification.VISIBILITY_PRIVATE&&n.timeout==3600000);
   check(n.actions.size()==3&&n.actions.get(0).intent==n.details);
   check(n.details.intent.data.value.equals("chrona://agenda/"+entry.key()));
+  check(n.details.code==NOTIFICATION_ID);
+  Notification second=notification(c,entry,now,false,NOTIFICATION_ID+1);check(second.details.code!=n.details.code);
+  check(notification(c,entry,entry.start-1,false,NOTIFICATION_ID).extras.remaining.equals("即将开始"));
+  check(notification(c,entry,entry.end-1,true,NOTIFICATION_ID).extras.remaining.equals("即将结束"));
+  check(notification(c,entry,entry.start,true,NOTIFICATION_ID).extras.remaining.equals("还剩50分钟"));
   for(Notification.Action action:n.actions)check((action.intent.flags&PendingIntent.FLAG_IMMUTABLE)!=0);
   for(int i=1;i<3;i++){PendingIntent action=n.actions.get(i).intent;check(action.broadcast);check(action.intent.extras.get("key").equals(entry.key()));check(action.intent.data.value.equals("chrona://reminder/"+entry.key()));}
   check(n.actions.get(1).intent.intent.action.equals("snooze")&&n.actions.get(2).intent.intent.action.equals("hide"));
@@ -74,7 +87,8 @@ public class AgendaNotificationCheck {
   System.out.println("Reminder notification factory passed: "+checks+" checks; native vivo style, full details, immutable actions, occurrence identity, expiry and existing RemoteViews path");
  }
 }
-'''.replace('__ENTRY__', entry).replace('__FACTORY__', method('    private static Notification notification(')).replace('__ACTION__', method('    private static PendingIntent action('))
+'''.replace('__ENTRY__', entry).replace('__TIMELINE__', timeline).replace('__FACTORY__', method('    private static Notification notification(')).replace('__ACTION__', method('    private static PendingIntent action('))
+harness = re.sub(r'notification\(c,([^;\n]*?),((?:false|true))\)', r'notification(c,\1,\2,NOTIFICATION_ID)', harness)
 out = root / 'build/agenda-notification-check'
 out.mkdir(parents=True, exist_ok=True)
 file = out / 'AgendaNotificationCheck.java'

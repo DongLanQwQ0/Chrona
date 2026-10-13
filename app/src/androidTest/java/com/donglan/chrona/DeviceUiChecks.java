@@ -28,6 +28,8 @@ import java.util.List;
 /** Device measurements only; no schedule insertion/deletion or server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("progress_cards".equals(arguments.getString("phase")))
+            return AgendaReminder.WORKER.submit(() -> progressCards(test)).get();
         if ("enable_registered_scene".equals(arguments.getString("phase"))) {
             boolean enabled;
             try { enabled = setAtomicScene(test, true); }
@@ -221,6 +223,50 @@ final class DeviceUiChecks {
     private static String atomic(Instrumentation test) throws Exception {
         return atomic(test, "CHRONA_AGENDA");
     }
+    /** Temporary cards use the three real slots, then restore the real reminders. No task data is written. */
+    private static String progressCards(Instrumentation test) throws Exception {
+        Context context = test.getTargetContext();
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        Method factory = AgendaReminder.class.getDeclaredMethod("notification", Context.class,
+                AgendaEntry.class, long.class, boolean.class, int.class);
+        factory.setAccessible(true);
+        manager.createNotificationChannel(new NotificationChannel(AgendaReminder.CHANNEL,
+                "即将开始的日程", NotificationManager.IMPORTANCE_HIGH));
+        long now = System.currentTimeMillis();
+        AgendaEntry[] entries = new AgendaEntry[3];
+        JSONObject report = new JSONObject();
+        try {
+            for (int i = 0; i < 3; i++) {
+                int id = AgendaReminder.NOTIFICATION_ID + i;
+                VivoAtomicNotification.end(context, manager, id);
+                long start = now + (i + 1) * 5 * 60_000L;
+                entries[i] = new AgendaEntry(-501 - i, 0, start, start + 20 * 60_000L,
+                        "进度测试 " + (i + 1), "", "", "测试", false, false, true);
+                manager.notify(id, (Notification)factory.invoke(null, context, entries[i], now, false, id));
+            }
+            SystemClock.sleep(1000);
+            report.put("created", testCardCount(manager));
+            Bundle first = new Bundle(); first.putString("stream", "progress cards=" + report + "\n"); test.sendStatus(0, first);
+            SystemClock.sleep(24000);
+            for (int i = 0; i < 3; i++) manager.notify(AgendaReminder.NOTIFICATION_ID + i,
+                    (Notification)factory.invoke(null, context, entries[i], now + 60_000L, true, AgendaReminder.NOTIFICATION_ID + i));
+            report.put("updated", testCardCount(manager));
+            Bundle second = new Bundle(); second.putString("stream", "progress updated=" + report + "\n"); test.sendStatus(0, second);
+            SystemClock.sleep(24000);
+        } finally {
+            for (int i = 0; i < 3; i++) VivoAtomicNotification.end(context, manager, AgendaReminder.NOTIFICATION_ID + i);
+            SystemClock.sleep(500);
+            report.put("afterEnd", testCardCount(manager));
+            AgendaReminder.refreshSafely(context, null);
+        }
+        if (report.optInt("created") != 3 || report.optInt("updated") != 3 || report.optInt("afterEnd") != 0)
+            throw new IllegalStateException("Progress card lifecycle failed: " + report);
+        return report.toString();
+    }
+    private static long testCardCount(NotificationManager manager) {
+        return java.util.Arrays.stream(manager.getActiveNotifications())
+                .filter(n -> n.getNotification().extras.getCharSequence(Notification.EXTRA_TITLE, "").toString().startsWith("进度测试 ")).count();
+    }
     private static String atomic(Instrumentation test, String scene) throws Exception {
         return atomic(test, scene, 12000);
     }
@@ -229,9 +275,9 @@ final class DeviceUiChecks {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         Class<?> adapter = Class.forName("com.donglan.chrona.VivoAtomicNotification");
         Method payload = adapter.getDeclaredMethod("extras", Context.class, String.class, String.class, String.class,
-                String.class, String.class, String.class, PendingIntent.class, boolean.class); payload.setAccessible(true);
+                String.class, String.class, String.class, int.class, String.class, PendingIntent.class, boolean.class); payload.setAccessible(true);
         Method end = adapter.getDeclaredMethod("end", Context.class, NotificationManager.class, int.class); end.setAccessible(true);
-        String channel = "chrona_atomic_validation"; int id = 0x434854;
+        String channel = "chrona_atomic_validation"; int id = 0x4348f0;
         manager.createNotificationChannel(new NotificationChannel(channel, "原子岛验证", NotificationManager.IMPORTANCE_HIGH));
         PendingIntent details = PendingIntent.getActivity(context, id, new Intent(context, DashboardActivity.class), PendingIntent.FLAG_IMMUTABLE);
         Method queryScene = NotificationManager.class.getDeclaredMethod("getSceneStatus", String.class, String.class);
@@ -239,7 +285,7 @@ final class DeviceUiChecks {
                 .put("sceneEnabled", queryScene.invoke(manager, context.getPackageName(), scene));
         try {
             for (boolean update : new boolean[]{false, true}) {
-                Bundle data = (Bundle) payload.invoke(null, context, "Chrona原子岛验证", update ? "更新验证" : "创建验证", "10分钟后开始", "本机测试", "拾时", "10分钟", details, update);
+                Bundle data = (Bundle) payload.invoke(null, context, "Chrona原子岛验证", update ? "更新验证" : "创建验证", "10分钟后开始", "本机测试", "拾时", "10分钟", update ? 25 : 75, update ? "距开始 8分钟" : "距开始 23分钟", details, update);
                 data.putString("notification.superx.scene", scene);
                 manager.notify(id, new Notification.Builder(context, channel).setSmallIcon(R.drawable.ic_notifications)
                         .setContentTitle("Chrona原子岛验证").setContentText(update ? "更新验证" : "创建验证")

@@ -12,6 +12,10 @@ import android.os.Bundle;
 final class VivoAtomicNotification {
     private static final String PREFIX = "notification.superx.";
     private static final String SCENE = "CHRONA_AGENDA";
+    // The OEM progress template requires two node icons. Empty nodes keep the
+    // bar clear instead of placing decorative glyphs over its endpoints.
+    private static final Icon PROGRESS_NODE = Icon.createWithBitmap(android.graphics.Bitmap.createBitmap(
+            1, 1, android.graphics.Bitmap.Config.ARGB_8888));
     static boolean supportedManufacturer() { return "vivo".equalsIgnoreCase(Build.MANUFACTURER); }
     /** OEM-documented optional API; null means the system cannot report this capability. */
     static Boolean sceneEnabled(Context context) {
@@ -28,12 +32,13 @@ final class VivoAtomicNotification {
         }
     }
     static Bundle extras(Context context, String title, String status, String range,
-            String location, String source, String startTime, PendingIntent details, boolean same) {
+            String location, String source, String startTime, int remainingPercent, String remainingText,
+            PendingIntent details, boolean same) {
         Bundle data = new Bundle();
         if (!supportedManufacturer()) return data;
         Icon icon = Icon.createWithResource(context, R.drawable.ic_chrona_foreground);
         data.putInt(PREFIX + "operation", same ? 1 : 0);
-        data.putInt(PREFIX + "template", 1);
+        data.putInt(PREFIX + "template", 2);
         data.putString(PREFIX + "scene", SCENE);
         android.util.Log.i("ChronaAtomic", "scene=" + SCENE + " enabled=" + sceneEnabled(context));
         data.putBoolean(PREFIX + "showNotify", true);
@@ -42,19 +47,21 @@ final class VivoAtomicNotification {
         Bundle base = new Bundle();
         base.putParcelable(PREFIX + "baseInfos.icon", icon);
         base.putCharSequence(PREFIX + "baseInfos.title", title);
-        base.putCharSequence(PREFIX + "baseInfos.content", range);
+        base.putCharSequence(PREFIX + "baseInfos.content", remainingText + "\n" + range);
         data.putBundle(PREFIX + "baseInfos", base);
         Bundle info = new Bundle();
-        String origin = source == null || source.trim().isEmpty() ? "日程提醒" : source.trim();
-        info.putString(PREFIX + "infos.describe", location.trim().isEmpty() ? origin : location);
-        info.putString(PREFIX + "infos.coreInfo", status);
-        info.putParcelable(PREFIX + "infos.image", icon);
-        info.putParcelable(PREFIX + "infos.imageClickResp", details);
+        java.util.ArrayList<Icon> nodes = new java.util.ArrayList<>();
+        nodes.add(PROGRESS_NODE); nodes.add(PROGRESS_NODE);
+        info.putParcelableArrayList(PREFIX + "infos.nodeIcon", nodes);
+        info.putInt(PREFIX + "infos.progress", Math.max(0, Math.min(100, remainingPercent)));
+        int accent = UiStyle.colors(context).primary;
+        info.putInt(PREFIX + "infos.progressColor", accent);
+        info.putInt(PREFIX + "infos.BgColor", (accent & 0x00ffffff) | 0x33000000);
         data.putBundle(PREFIX + "infos", info);
         Bundle shortInfo = new Bundle();
         shortInfo.putParcelable(PREFIX + "shortInfos.image", icon);
         shortInfo.putString(PREFIX + "shortInfos.describeShort", status);
-        shortInfo.putString(PREFIX + "shortInfos.coreInfoShort", startTime);
+        shortInfo.putString(PREFIX + "shortInfos.coreInfoShort", remainingText);
         data.putBundle(PREFIX + "shortInfos", shortInfo);
         Bundle island = new Bundle(), left = new Bundle(), right = new Bundle();
         left.putParcelable("island.superx.leftInfo.icon", icon);
@@ -66,7 +73,7 @@ final class VivoAtomicNotification {
         island.putBundle("island.superx.rightInfo", right);
         // First tap expands the OEM card; its blank area then opens details.
         island.putInt("island.superx.islandClick", 0);
-        island.putInt("island.superx.template", 1);
+        island.putInt("island.superx.template", 2);
         island.putParcelable("island.superx.clickResp", details);
         data.putBundle(PREFIX + "island", island);
         Bundle capsule = new Bundle();

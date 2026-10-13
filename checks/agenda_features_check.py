@@ -57,28 +57,52 @@ public class AgendaFeaturesCheck {
  static int checks;
  static void check(boolean ok,String reason){checks++;if(!ok)throw new AssertionError(reason);}
  static AgendaEntry e(long id,long start,long end){return new AgendaEntry(id,1,start,end,"event","room","note","拾时",false,false,true);}
- static ReminderTimeline t(List<AgendaEntry> e,long now){return new ReminderTimeline(e,now,Set.of(),"",0);}
+ static ReminderTimeline t(List<AgendaEntry> e,long now){return new ReminderTimeline(e,now,Set.of(),Map.of(),1);}
  public static void main(String[] args){
   long start=10_000_000L;AgendaEntry a=e(1,start,start+3_600_000);
-  check(!t(List.of(a),start-ReminderTimeline.LEAD-1).visible,"not before boundary");
-  check(t(List.of(a),start-ReminderTimeline.LEAD).visible,"visible at 30 minutes");
+  check(ReminderTimeline.remainingPercent(a,start-ReminderTimeline.LEAD)==100,"full lead window");
+  check(ReminderTimeline.remainingPercent(a,start-ReminderTimeline.LEAD/2)==50,"half lead window");
+  check(ReminderTimeline.remainingPercent(a,start)==100,"new active phase");
+  check(ReminderTimeline.remainingPercent(a,start+1_800_000)==50,"half active window");
+  check(ReminderTimeline.remainingPercent(a,a.end)==0,"finished progress");
+  check(ReminderTimeline.remainingPercent(e(9,start,start),start+30_000)==50,"point event uses bounded minute");
+  int previous=100;
+  for(long at=start-ReminderTimeline.LEAD;at<start;at+=10_000){int value=ReminderTimeline.remainingPercent(a,at);check(value<=previous&&value>0,"remaining lead decreases");previous=value;}
+  previous=100;
+  for(long at=start;at<=a.end;at+=10_000){int value=ReminderTimeline.remainingPercent(a,at);check(value<=previous&&value>=0,"remaining active decreases");previous=value;}
+  check(t(List.of(a),start-ReminderTimeline.LEAD-1).entries.isEmpty(),"not before boundary");
+  check(t(List.of(a),start-ReminderTimeline.LEAD).entries.size()==1,"visible at 30 minutes");
   check(t(List.of(a),start-1).wakeAt==start,"wake at start");
-  check(t(List.of(a),start).visible&&t(List.of(a),start).wakeAt==a.end,"ongoing after start");
-  check(t(List.of(a),a.end).focus==null,"removed at end");
+  check(t(List.of(a),start).entries.size()==1&&t(List.of(a),start).wakeAt==a.end,"ongoing after start");
+  check(t(List.of(a),a.end).entries.isEmpty(),"removed at end");
   check(t(List.of(e(2,start,start)),start).wakeAt==start+60_000,"point event bounded lifetime");
-  check(t(List.of(),start).focus==null,"empty agenda");
-  check(t(List.of(new AgendaEntry(3,1,start,start+1_000,"x","","","",false,true,true)),start).focus==null,"all day excluded");
-  check(t(List.of(new AgendaEntry(3,1,start,start+1_000,"x","","","",false,false,false)),start).focus==null,"unconfirmed excluded");
+  check(t(List.of(),start).entries.isEmpty(),"empty agenda");
+  check(t(List.of(new AgendaEntry(3,1,start,start+1_000,"x","","","",false,true,true)),start).entries.isEmpty(),"all day excluded");
+  check(t(List.of(new AgendaEntry(3,1,start,start+1_000,"x","","","",false,false,false)),start).entries.isEmpty(),"unconfirmed excluded");
   AgendaEntry b=e(2,start+600_000,start+4_000_000);
-  check(t(List.of(a,b),start).focus==b,"next due event replaces active card");
-  check(t(List.of(a,b),b.start).focus==b,"latest active remains focused");
+  check(t(List.of(a,b),start).entries.get(0)==b,"next due event replaces active card");
+  check(t(List.of(a,b),b.start).entries.get(0)==b,"latest active remains focused");
   AgendaEntry far=e(3,start+7_200_000,start+8_000_000);
-  check(t(List.of(a,far),start).focus==a,"keep active when future not due");
+  check(t(List.of(a,far),start).entries.get(0)==a,"keep active when future not due");
   check(t(List.of(a,far),start).wakeAt==Math.min(a.end,far.start-ReminderTimeline.LEAD),"next due boundary tracked");
-  check(new ReminderTimeline(List.of(a,b),start,Set.of(a.key(),b.key()),"",0).focus==null,"multiple hidden occurrences stay hidden");
-  check(new ReminderTimeline(List.of(a),start,Set.of(),a.key(),start+300_000).wakeAt==start+300_000,"snooze survives refresh");
-  check(!new ReminderTimeline(List.of(a),start,Set.of(),a.key(),start+300_000).visible,"snoozed hidden");
-  check(new ReminderTimeline(List.of(a),start+300_000,Set.of(),a.key(),start+300_000).visible,"snooze expires");
+  check(new ReminderTimeline(List.of(a,b),start,Set.of(a.key(),b.key()),Map.of(),3).entries.isEmpty(),"multiple hidden occurrences stay hidden");
+  check(new ReminderTimeline(List.of(a),start,Set.of(),Map.of(a.key(),start+300_000),3).wakeAt==start+300_000,"snooze survives refresh");
+  check(new ReminderTimeline(List.of(a),start,Set.of(),Map.of(a.key(),start+300_000),3).entries.isEmpty(),"snoozed hidden");
+  check(new ReminderTimeline(List.of(a),start+300_000,Set.of(),Map.of(a.key(),start+300_000),3).entries.size()==1,"snooze expires");
+  AgendaEntry next=e(10,start+100_000,start+4_000_000), later=e(11,start+200_000,start+4_000_000);
+  List<AgendaEntry> many=List.of(a,b,next,later,far);
+  ReminderTimeline three=new ReminderTimeline(many,start,Set.of(),Map.of(),3);
+  check(three.entries.equals(List.of(next,later,b)),"three cap prioritizes upcoming in ascending order");
+  check(new ReminderTimeline(many,start,Set.of(next.key()),Map.of(b.key(),start+300_000),3).entries.equals(List.of(later,a)),"independent hidden and deferred occurrences");
+  check(new ReminderTimeline(List.of(a),start,Set.of(),Map.of(b.key(),start+300_000),3).wakeAt==start+300_000,"excluded deferred occurrence still wakes");
+  AgendaEntry[] slots=ReminderSlots.assign(List.of(a,b,next),new String[]{"","",""});
+  String[] keys={slots[0].key(),slots[1].key(),slots[2].key()};
+  AgendaEntry[] reordered=ReminderSlots.assign(List.of(next,b,a),keys);
+  check(reordered[0]==a&&reordered[1]==b&&reordered[2]==next,"priority reordering keeps notification slots");
+  AgendaEntry[] replaced=ReminderSlots.assign(List.of(later,b,next),keys);
+  check(replaced[0]==later&&replaced[1]==b&&replaced[2]==next,"reuse only vacated slot");
+  check(ReminderSlots.find(new String[]{later.key(),b.key(),next.key()},a.key())==-1,"stale action key rejected");
+  check(ReminderSlots.find(keys,e(a.id,a.start+1,a.end).key())==-1,"edited occurrence action rejected");
   check(!a.key().equals(e(1,start+1,start+2).key()),"edited start has fresh identity");
   AgendaEntry recurring=new AgendaEntry(1,0,start,start+1000,"x","","","sys",true,false,true);
   check(!a.key().equals(recurring.key()),"system/local ID spaces differ");
@@ -100,6 +124,7 @@ public class AgendaFeaturesCheck {
   check(blocks.size()==3&&blocks.get(0).lanes==2&&blocks.get(1).lanes==2,"overlap lanes");
   check(blocks.get(0).lane!=blocks.get(1).lane&&blocks.get(2).lanes==1,"touching endpoints separate");
   AgendaEntry cross=e(4,midnight-3_600_000,midnight+3_600_000);
+  check(new ReminderTimeline(List.of(cross),midnight,Set.of(),Map.of(),3).entries.equals(List.of(cross)),"active notification crosses midnight");
   CalendarTimelineLayout.Block clipped=CalendarTimelineLayout.day(List.of(cross),day,zone).get(0);
   check(clipped.startMinute==0&&clipped.endMinute==60,"cross midnight clipped");
   check(CalendarTimelineLayout.day(List.of(e(5,midnight-2_000,midnight)),day,zone).isEmpty(),"exclusive day boundary");
@@ -113,7 +138,7 @@ public class AgendaFeaturesCheck {
  }
 }''',
 }
-for name in ('AgendaEntry', 'ReminderTimeline', 'CalendarTimelineLayout', 'WidgetPreferences', 'HomeTimelinePreferences', 'ScheduleOrderPreferences', 'AgendaReminderPreferences'):
+for name in ('AgendaEntry', 'ReminderTimeline', 'ReminderSlots', 'CalendarTimelineLayout', 'WidgetPreferences', 'HomeTimelinePreferences', 'ScheduleOrderPreferences', 'AgendaReminderPreferences'):
     files[f'com/donglan/chrona/{name}.java'] = (src / f'{name}.java').read_text(encoding='utf-8')
 store = (src / 'data/TaskStore.java').read_text(encoding='utf-8')
 sql_methods = '\n'.join(method(store, signature) for signature in ('public List<EventCandidate> calendarCandidates(', 'public List<EventCandidate> nextReminderCandidates('))
@@ -169,9 +194,14 @@ public class ReminderProviderCheck {
   c.resolver.rows.add(e(2000,600,900));c.resolver.rows.add(e(2001,700,2000));
   c.resolver.rows.add(e(2002,800,2000));c.resolver.rows.add(e(2003,1100,2200));c.resolver.rows.add(e(2003,1200,2300));
   List<CalendarOccurrence>result=c.reminderInstances(1000,4000,linked,Set.of());
-  if(result.size()!=2||result.get(0).eventId!=2002||result.get(1).startMillis!=1100)throw new AssertionError("cap/active/future");
+  if(result.size()!=4||result.get(0).eventId!=2002||result.get(1).eventId!=2001||result.get(2).startMillis!=1100||result.get(3).startMillis!=1200)throw new AssertionError("cap/active/future");
   result=c.reminderInstances(1000,4000,linked,Set.of("system:2002:800","system:2003:1100"));
   if(result.size()!=2||result.get(0).eventId!=2001||result.get(1).startMillis!=1200)throw new AssertionError("hidden recurrence");
+  c.resolver.rows.clear();
+  for(long i=1;i<=7;i++)c.resolver.rows.add(e(i,100*i,3000));
+  for(long i=11;i<=17;i++)c.resolver.rows.add(e(i,100*i,3000));
+  result=c.reminderInstances(1000,4000,Set.of(),Set.of());
+  if(result.size()!=6||result.get(0).eventId!=7||result.get(2).eventId!=5||result.get(3).eventId!=11||result.get(5).eventId!=13)throw new AssertionError("three each direction");
   System.out.println("Production reminder provider scan passed: 1199 linked copies, ended, active/future, hidden recurrence");
   c.resolver.rows.clear();c.resolver.rows.add(new Object[]{1L,100L,200L,"color",0,"","source",0xFFFF0000});
   c.resolver.rows.add(new Object[]{2L,100L,200L,"missing",1,"","source",null});
@@ -196,7 +226,8 @@ db = sqlite3.connect(':memory:')
 db.execute('CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,needs_confirmation INTEGER)')
 db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(1,8000000,12000000,0,0),(2,9000000,13000000,0,0),(3,11000000,12000000,0,0),(4,11500000,12000000,0,0),(5,10500000,12000000,0,1),(6,10500000,12000000,1,0),(7,None,None,0,0),(8,9999999,None,0,0)])
 db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(i,1,2,0,0) for i in range(100,6200)])
-expected = [[1,2,8,5,6,3,4], [8], [3], [2], [3]]
+db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(9,11600000,12000000,0,0),(10,11700000,12000000,0,0)])
+expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9], [2,1], [3,4,9]]
 for line, wanted in zip(queries.splitlines(), expected, strict=True):
     tag, selection, arguments, sort, limit = line.split('\t')
     rows = [r[0] for r in db.execute(f'SELECT id FROM event_candidates WHERE {selection} ORDER BY {sort} LIMIT {limit}', arguments.split('|'))]

@@ -1,3 +1,13 @@
+# 剩余进度、多提醒及手动追加 · 2026-10-13 · 0.14.31 / 138
+
+用户提供新ADB地址恢复测试，安装0.14.29成功，实际桌面展开图位于build/device-ui-audit/atomic-01429-expanded.png；用户明确确认交互已经完善，随后要求剩余时间进度条、新建第二个日程入口、进度图标与文字简化、最多3条原子岛。用户最后要求继续无人值守，并未限制仅离线。设备随后离线，同一地址连接超时、devices与mDNS均为空，最终整合包未覆盖安装，不再以中间0.14.30包视觉推断最终结果。
+
+VivoAtomicNotification改模板2原生进度条，开始前以30分钟为总时长、开始后以finish-start为总时长，剩余比例100→0。模板要求两个节点Icon，使用共享透明1px图像消除用户指出的黑色/重叠装饰；进度色为主题primary，轨道为其淡色。大卡仅剩余短文案与时间范围，不重复地点来源；完整信息仍在通知详情和日程详情。三通知用原ID+i稳定槽位，未确认/全天/隐藏/结束排除，每个key独立延期、旧动作拒绝；本地和系统各方向至多读3项，延期key先排除以填补空位。原子岛可见容量最终由系统决定，保存固件证实同scene不同ID独立，但没有三条并发真机显示证据。普通设备保持一条。
+
+TaskDetail新建按钮在删除左侧，使用已有compactActionButton；appendCandidate事务验证任务与输入并按MAX(position)+1追加，保留已有ID及calendar_event_id/合并关联。新ID驱动选中新页，render/snapshotDrafts保留草稿。真实SQLite80项和详情草稿检查通过。完整51/51通过，日志build/atomic-three-01430-checks.log；46项协议、35项通知工厂、592项日程特征、22项生产refresh状态机均有回归。最终版本号从中间测试137提升138，确保已安装0.14.30用户也能更新。
+
+新增DeviceUiChecks progress_cards用三个真实通知槽临时展示生产工厂卡片，串行Reminder WORKER防定时更新干扰；不写任务数据，finally结束测试卡并同步恢复真实提醒，created/updated=3和afterEnd=0为断言。最终手机离线未执行此phase；下轮需安装正式APK及匹配test APK，先测此phase和实际进度UI，再测日历帧率/残影/年视图速度及手动新增草稿。备份build/backups/20261013-atomic-remaining-progress、20261013-detail-add-schedule及three-agenda-20261013-184835。不提交用户AGENTS.md、角色toml、私有手机截图/固件或实际设备地址。
+
 # 原子岛展示调整 · 2026-10-13 · 0.14.29 / 136
 
 用户18:12截图证明正式原子通知在锁屏和岛上实际显示，指出大卡重复时间和状态，并要求桌面首次点击展开、再次点击进应用。当前协议islandClick=1且未声明island.template；依据实时读取官方doc896，0为出卡、1为跳转，无template不支持大卡。改为islandClick=0、island.template=1，保留island.clickResp供卡片空白区域详情跳转，删除rightInfo.clickResp避免绕过展开。协议说明https://dev.vivo.com.cn/documentCenter/doc/896。

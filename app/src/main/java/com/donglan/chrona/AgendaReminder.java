@@ -21,10 +21,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** One card and one next alarm. No foreground service or network work. */
+/** Stable notification slots and one next alarm. No foreground service or network work. */
 public final class AgendaReminder {
     static final String CHANNEL = "upcoming_agenda";
     static final int NOTIFICATION_ID = 0x434852;
@@ -54,28 +56,43 @@ public final class AgendaReminder {
         SharedPreferences prefs = AgendaReminderPreferences.prefs(context);
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         long now = System.currentTimeMillis();
+        String[] previous = new String[ReminderSlots.COUNT];
+        for (int i = 0; i < previous.length; i++) previous[i] = prefs.getString("slot_key:" + i, "");
         if (action != null) {
             String key = action.getStringExtra("key");
-            // Actions from a replaced card must never hide the new occurrence.
-            if (key != null && key.equals(prefs.getString("shown", ""))) {
-                if ("hide".equals(action.getAction())) prefs.edit().putLong("hidden:" + key, prefs.getLong("shown_end", now)).apply();
-                if ("snooze".equals(action.getAction())) prefs.edit().putString("snoozed", key)
-                        .putLong("snooze_until", now + ReminderTimeline.SNOOZE).apply();
+            int slot = ReminderSlots.find(previous, key);
+            // Replaced or expired occurrence actions cannot affect a current slot.
+            if (slot >= 0 && prefs.getLong("slot_end:" + slot, 0) > now) {
+                if ("hide".equals(action.getAction())) prefs.edit().putLong("hidden:" + key, prefs.getLong("slot_end:" + slot, now)).apply();
+                if ("snooze".equals(action.getAction())) prefs.edit()
+                        .putLong("snooze_until:" + key, now + ReminderTimeline.SNOOZE).apply();
             }
         }
         if (!AgendaReminderPreferences.enabled(context)) {
-            VivoAtomicNotification.end(context, manager, NOTIFICATION_ID); schedule(context, 0); return;
+            SharedPreferences.Editor clear = prefs.edit();
+            for (int i = 0; i < ReminderSlots.COUNT; i++) {
+                VivoAtomicNotification.end(context, manager, NOTIFICATION_ID + i);
+                clear.remove("slot_key:" + i).remove("slot_end:" + i);
+            }
+            clear.apply(); schedule(context, 0); return;
         }
         java.util.Set<String> hidden = new HashSet<>();
+        Map<String, Long> snoozeUntil = new HashMap<>();
         SharedPreferences.Editor cleanup = prefs.edit();
-        for (java.util.Map.Entry<String, ?> item : prefs.getAll().entrySet()) if (item.getKey().startsWith("hidden:")) {
-            if (item.getValue() instanceof Long && (Long) item.getValue() > now) hidden.add(item.getKey().substring(7));
-            else cleanup.remove(item.getKey());
+        for (java.util.Map.Entry<String, ?> item : prefs.getAll().entrySet()) {
+            String name = item.getKey();
+            if (!name.startsWith("hidden:") && !name.startsWith("snooze_until:")) continue;
+            if (item.getValue() instanceof Long && (Long) item.getValue() > now) {
+                if (name.startsWith("hidden:")) hidden.add(name.substring(7));
+                else snoozeUntil.put(name.substring(13), (Long) item.getValue());
+            } else cleanup.remove(name);
         }
         cleanup.apply();
+        java.util.Set<String> excluded = new HashSet<>(hidden);
+        excluded.addAll(snoozeUntil.keySet());
         List<AgendaEntry> entries = new ArrayList<>();
         try (TaskStore store = new TaskStore(context)) {
-            for (EventCandidate local : store.nextReminderCandidates(now, hidden)) entries.add(new AgendaEntry(local.id, local.taskId, local.startAtMillis,
+            for (EventCandidate local : store.nextReminderCandidates(now, excluded)) entries.add(new AgendaEntry(local.id, local.taskId, local.startAtMillis,
                     local.endAtMillis == null ? local.startAtMillis : local.endAtMillis, local.title,
                     local.location, local.description, "拾时", false, false, true));
             if (AgendaReminderPreferences.includesSystemCalendar(context)) {
@@ -84,30 +101,34 @@ public final class AgendaReminder {
                     ZoneId zone = ZoneId.systemDefault();
                     long horizon = Instant.ofEpochMilli(now).atZone(zone).plusYears(1).toInstant().toEpochMilli();
                     for (CalendarOccurrence e : calendar.reminderInstances(now, horizon,
-                            new HashSet<>(store.linkedCalendarIds()), hidden)) {
+                            new HashSet<>(store.linkedCalendarIds()), excluded)) {
                         if (!e.allDay) entries.add(new AgendaEntry(e.eventId, 0, e.startMillis, e.endMillis,
                                 e.title, e.location, "", e.calendarName, true, false, true));
                     }
                 }
             }
         }
-        ReminderTimeline timeline = new ReminderTimeline(entries, now, hidden,
-                prefs.getString("snoozed", ""), prefs.getLong("snooze_until", 0));
-        if (!timeline.visible || !manager.areNotificationsEnabled()) {
-            VivoAtomicNotification.end(context, manager, NOTIFICATION_ID);
-            prefs.edit().remove("shown").apply();
-        } else {
-            String key = timeline.focus.key();
-            boolean same = key.equals(prefs.getString("shown", ""));
-            if (!same && !prefs.getString("shown", "").isEmpty())
-                VivoAtomicNotification.end(context, manager, NOTIFICATION_ID);
+        boolean vivo = VivoAtomicNotification.supportedManufacturer();
+        ReminderTimeline timeline = new ReminderTimeline(entries, now, hidden, snoozeUntil, vivo ? ReminderSlots.COUNT : 1);
+        long refreshAt = timeline.wakeAt;
+        AgendaEntry[] slots = ReminderSlots.assign(manager.areNotificationsEnabled() ? timeline.entries : List.of(), previous);
+        if (!timeline.entries.isEmpty() && manager.areNotificationsEnabled()) {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "即将开始的日程", NotificationManager.IMPORTANCE_HIGH);
             channel.setDescription("日程开始前 30 分钟展示详细卡片，持续至日程结束");
             manager.createNotificationChannel(channel);
-            manager.notify(NOTIFICATION_ID, notification(context, timeline.focus, now, same));
-            prefs.edit().putString("shown", key).putLong("shown_end", timeline.focus.finish()).apply();
         }
-        schedule(context, Math.min(timeline.wakeAt, now + 24 * 60 * 60_000L));
+        SharedPreferences.Editor state = prefs.edit();
+        for (int i = 0; i < slots.length; i++) {
+            AgendaEntry entry = slots[i];
+            boolean same = entry != null && entry.key().equals(previous[i]);
+            if (!same) VivoAtomicNotification.end(context, manager, NOTIFICATION_ID + i);
+            if (entry == null) { state.remove("slot_key:" + i).remove("slot_end:" + i); continue; }
+            manager.notify(NOTIFICATION_ID + i, notification(context, entry, now, same, NOTIFICATION_ID + i));
+            state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, entry.finish());
+            if (vivo) refreshAt = Math.min(refreshAt, now + ReminderTimeline.PROGRESS_REFRESH);
+        }
+        state.apply();
+        schedule(context, Math.min(refreshAt, now + 24 * 60 * 60_000L));
     }
 
     static boolean exactAllowed(Context context) {
@@ -128,8 +149,12 @@ public final class AgendaReminder {
         alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarm);
     }
 
-    private static Notification notification(Context context, AgendaEntry e, long now, boolean same) {
+    private static Notification notification(Context context, AgendaEntry e, long now, boolean same, int notificationId) {
         String status = now < e.start ? "即将开始" : "进行中";
+        long remaining = ReminderTimeline.remainingMillis(e, now);
+        String remainingText = remaining < 60_000L ? (now < e.start ? "即将开始" : "即将结束")
+                : (now < e.start ? ((remaining + 59_999L) / 60_000L) + "分钟后开始"
+                        : "还剩" + ((remaining + 59_999L) / 60_000L) + "分钟");
         ZoneId zone = ZoneId.systemDefault();
         DateTimeFormatter time = DateTimeFormatter.ofPattern("M月d日 HH:mm");
         java.time.ZonedDateTime start = Instant.ofEpochMilli(e.start).atZone(zone);
@@ -138,7 +163,7 @@ public final class AgendaReminder {
                 ? DateTimeFormatter.ofPattern("HH:mm").format(end) : time.format(end));
         Intent open = AgendaRepository.details(context, e);
         if (!e.system) open.setData(android.net.Uri.parse("chrona://agenda/" + e.key()));
-        PendingIntent details = PendingIntent.getActivity(context, 1, open,
+        PendingIntent details = PendingIntent.getActivity(context, notificationId, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = new Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_notifications)
                 .setContentTitle(e.title).setContentText(status + " · " + range)
@@ -147,7 +172,8 @@ public final class AgendaReminder {
                 .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PRIVATE)
                 .addExtras(VivoAtomicNotification.extras(context, e.title, status, range, e.location, e.source,
                         DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(e.start).atZone(zone)),
-                        details, same && VivoAtomicNotification.active(context.getSystemService(NotificationManager.class), NOTIFICATION_ID)))
+                        ReminderTimeline.remainingPercent(e, now), remainingText,
+                        details, same && VivoAtomicNotification.active(context.getSystemService(NotificationManager.class), notificationId)))
                 .setTimeoutAfter(Math.max(1000, e.finish() - now))
                 .addAction(new Notification.Action.Builder(null, "查看详情", details).build())
                 .addAction(new Notification.Action.Builder(null, "5 分钟后提醒", action(context, e, "snooze", 2)).build())

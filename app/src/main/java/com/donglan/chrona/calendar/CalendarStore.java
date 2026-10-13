@@ -95,7 +95,7 @@ public final class CalendarStore {
         return result;
     }
 
-    /** Scans until the next unlinked timed occurrence, without a home/widget row cap. */
+    /** Retains up to three active and three future unlinked timed occurrences. */
     public List<CalendarOccurrence> reminderInstances(long now, long horizon,
             java.util.Set<Long> linked, java.util.Set<String> hidden) {
         requireRead();
@@ -104,7 +104,7 @@ public final class CalendarStore {
         String[] projection = {CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN,
                 CalendarContract.Instances.END, Events.TITLE, Events.ALL_DAY,
                 Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME};
-        CalendarOccurrence active = null, future = null;
+        List<CalendarOccurrence> active = new ArrayList<>(), future = new ArrayList<>();
         try (Cursor cursor = resolver.query(uri.build(), projection,
                 Calendars.VISIBLE + "=1 AND " + Events.ALL_DAY + "=0 AND (" + Events.STATUS
                         + " IS NULL OR " + Events.STATUS + "!=?)",
@@ -116,12 +116,21 @@ public final class CalendarStore {
                 if (linked.contains(id) || end <= now || end <= start || hidden.contains("system:" + id + ":" + start)) continue;
                 CalendarOccurrence entry = new CalendarOccurrence(id, start, end, cursor.getString(3), false,
                         cursor.getString(5), cursor.getString(6));
-                if (start > now) { future = entry; break; }
-                if (active == null || start > active.startMillis || (start == active.startMillis && id < active.eventId)) active = entry;
+                if (start > now) {
+                    future.add(entry);
+                    if (future.size() == 3) break;
+                } else {
+                    active.add(entry);
+                    active.sort((a, b) -> {
+                        int order = Long.compare(b.startMillis, a.startMillis);
+                        return order != 0 ? order : Long.compare(a.eventId, b.eventId);
+                    });
+                    if (active.size() > 3) active.remove(3);
+                }
             }
         }
         List<CalendarOccurrence> result = new ArrayList<>();
-        if (active != null) result.add(active); if (future != null) result.add(future);
+        result.addAll(active); result.addAll(future);
         return result;
     }
 

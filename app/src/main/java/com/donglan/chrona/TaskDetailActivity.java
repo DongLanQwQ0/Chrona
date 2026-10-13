@@ -2274,6 +2274,12 @@ public final class TaskDetailActivity extends Activity {
         cardTitle.setTextSize(17);
         UiStyle.title(cardTitle);
         cardHeader.addView(cardTitle, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button createCandidate = compactActionButton("新建", R.drawable.ic_add,
+                this::addManualCandidate);
+        createCandidate.setContentDescription("新建日程");
+        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(-2, dp(48));
+        createParams.setMarginEnd(dp(8));
+        cardHeader.addView(createCandidate, createParams);
         ImageButton removeCandidate = new ImageButton(this);
         removeCandidate.setContentDescription("删除日程 " + candidate.title);
         removeCandidate.setOnClickListener(view -> confirmRemoveCandidate(candidate, number));
@@ -2827,11 +2833,11 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void addManualCandidate() {
-        ArrayList<EventCandidate> entries = new ArrayList<>();
-        entries.add(new EventCandidate(0, taskId, "新日程", null, null,
-                ZoneId.systemDefault().getId(), "", "", null, true));
+        if (saveInFlight) return;
+        EventCandidate candidate = new EventCandidate(0, taskId, "新日程", null, null,
+                ZoneId.systemDefault().getId(), "", "", null, true);
         try (TaskStore store = new TaskStore(this)) {
-            store.replaceCandidates(taskId, entries);
+            initialCandidateId = store.appendCandidate(candidate);
             store.updateStatus(taskId, TaskRecord.NEEDS_REVIEW, null);
             render();
         } catch (Exception exception) {
