@@ -281,6 +281,7 @@ public final class CalendarOverviewActivity extends Activity {
         DatePickerDialog dialog = new DatePickerDialog(this, (picker, year, month, day) -> {
             navigateDate(LocalDate.of(year, month + 1, day));
         }, date.getYear(), date.getMonthValue() - 1, date.getDayOfMonth()); dialog.show();
+        if (dialog.getWindow() != null) PressFeedback.install(dialog.getWindow().getDecorView());
     }
     private void shift(int direction) {
         date = mode == YEAR ? date.plusYears(direction) : mode == WEEK ? date.plusWeeks(direction)
@@ -359,8 +360,9 @@ public final class CalendarOverviewActivity extends Activity {
         bodyPreDraw = null; bodyObserver = null;
         android.animation.ValueAnimator old = bodySlide; bodySlide = null;
         if (old != null) old.cancel();
-        body.setAlpha(1f); body.setTranslationX(0f);
+        body.setVisibility(View.VISIBLE); body.setTranslationX(0f);
         if (outgoingBody != null) {
+            outgoingBody.setVisibility(View.INVISIBLE);
             bodyViewport.removeView(outgoingBody); outgoingBody = null;
         }
         if (pendingBodyRender) { pendingBodyRender = false; if (resumed) handler.post(renderPendingBody); }
@@ -370,18 +372,24 @@ public final class CalendarOverviewActivity extends Activity {
         body.post(() -> {
             if (presentation != presentationGeneration || outgoingBody == null || !resumed) return;
             bodyObserver = body.getViewTreeObserver();
+            boolean[] restored = {false};
             bodyPreDraw = () -> {
                 if (presentation != presentationGeneration || bodyObserver == null || bodyPreDraw == null) return true;
-                if (bodyObserver.isAlive()) bodyObserver.removeOnPreDrawListener(bodyPreDraw);
-                bodyPreDraw = null; bodyObserver = null;
-                if (presentation == presentationGeneration) {
+                // Keep drawing the outgoing page until all queued layout work has settled.
+                if (body.isLayoutRequested()) return true;
+                if (!restored[0]) {
+                    restored[0] = true;
                     int[] position = positions.get(renderedKey);
                     if (position != null) {
                         if (verticalViewport != null) verticalViewport.scrollTo(0, position[1]);
                         if (horizontalViewport != null) horizontalViewport.scrollTo(position[0], 0);
                     }
-                    startBodySlide(presentation, direction);
                 }
+                // Restoring scroll may request another layout; do not expose that first frame.
+                if (body.isLayoutRequested()) return true;
+                if (bodyObserver.isAlive()) bodyObserver.removeOnPreDrawListener(bodyPreDraw);
+                bodyPreDraw = null; bodyObserver = null;
+                startBodySlide(presentation, direction);
                 return true;
             };
             bodyObserver.addOnPreDrawListener(bodyPreDraw); body.invalidate();
@@ -391,8 +399,10 @@ public final class CalendarOverviewActivity extends Activity {
         if (outgoingBody == null) return;
         float width = bodyViewport.getWidth();
         if (!UiMotion.isEnabled() || width <= 0 || body.hasFocus()) { finishBodyMotion(); return; }
-        body.setAlpha(1f); body.setTranslationX(CalendarSlideMotion.incoming(width, direction, 0f));
+        body.setTranslationX(CalendarSlideMotion.incoming(width, direction, 0f));
         outgoingBody.setTranslationX(0f);
+        // Visibility preserves measurement without allocating an alpha-composited page layer.
+        body.setVisibility(View.VISIBLE);
         android.animation.ValueAnimator motion = android.animation.ValueAnimator.ofFloat(0f, 1f);
         bodySlide = motion; motion.setDuration(UiMotion.ENTER); motion.setInterpolator(UiMotion.SETTLE);
         motion.addUpdateListener(value -> {
@@ -550,7 +560,7 @@ public final class CalendarOverviewActivity extends Activity {
             }
             outgoingBody.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             bodyViewport.addView(outgoingBody, 0, new FrameLayout.LayoutParams(-1, -1));
-            body.setAlpha(0f); bodyTransitionRunning = true;
+            body.setVisibility(View.INVISIBLE); bodyTransitionRunning = true;
             calendarBuildSteps = new java.util.ArrayDeque<>();
             rebuild.run();
             calendarBuildDone = () -> prepareBodySlide(presentation, direction);

@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.21 — 2026-10-13
+
+- 日历 220 项，加入布局未稳定保持隐藏、滚动恢复触发第二轮布局仍不显示、稳定后才启动，以及旧页移除前先隐藏；禁止页面 setAlpha。生产方法配合布局/动画替身，不能证明真机残影已消失。
+- PressFeedback 14 项覆盖按下放大/松手恢复、enabled+pressed 状态、动态控件、幂等安装、Dock 排除、滚动容器排除、detach 清理与关闭动效。完整 42/42，`build/calendar-feedback-full-checks.log`；子代理独立集成审查通过。
+- debug/release/lint 通过，0 errors / 84 warnings，`build/calendar-feedback-final-build.log`。0.14.21 / 128，1,988,834 字节，SHA256 `b872b7714790fff208f6fbd23e7c64630ab795156c1a087b633bba95aea42416`，保持原签名。备份 `build/backups/20261013-calendar-first-frame`、`build/backups/20261013-home-guide`。真机视觉、残影与触控未验证。
+
 ## 0.14.20 — 2026-10-13
 
 - Dock 111 项，完整 41/41；`build/dock-container-full-checks.log`。实际生产筛选工厂、页面切换容器、Dock 和溢出方法，配合 Android 父子布局/事件/队列替身，覆盖中间父级不裁剪、页面视口仍裁剪、栏内手势优先、栏外松手、栏外横滑及缺失登记的负例。

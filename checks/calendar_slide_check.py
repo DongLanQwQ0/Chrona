@@ -5,6 +5,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'app/src/main/java/com/donglan/chrona/CalendarOverviewActivity.java').read_text(encoding='utf-8')
+assert 'body.setAlpha(' not in source, 'Calendar page transitions must not use alpha compositing'
 def method(name):
     start = source.index('    private void ' + name + '(')
     end = source.index('{', start) + 1
@@ -22,7 +23,8 @@ public class CalendarSlideCheck {
  static final List<String> order=new ArrayList<>();static final ArrayDeque<Runnable> jobs=new ArrayDeque<>();
  interface PreDraw { boolean onPreDraw(); }
  static class Observer {List<PreDraw> listeners=new ArrayList<>();boolean isAlive(){return true;}void addOnPreDrawListener(PreDraw l){listeners.add(l);}void removeOnPreDrawListener(PreDraw l){listeners.remove(l);}void ready(){for(PreDraw l:new ArrayList<>(listeners))l.onPreDraw();}}
- static class View {float x,alpha=1;boolean focus;int scroll;Observer observer=new Observer();int getWidth(){return 300;}boolean hasFocus(){return focus;}void setTranslationX(float v){x=v;}void setAlpha(float v){alpha=v;}void post(Runnable r){jobs.add(r);}Observer getViewTreeObserver(){return observer;}void invalidate(){}void scrollTo(int x,int y){scroll=y;order.add("scroll");}void removeView(View view){}}
+ static class View {static final int VISIBLE=0,INVISIBLE=4;float x;boolean focus,layoutRequested,requestOnScroll;int scroll,visibility=INVISIBLE;Observer observer=new Observer();int getWidth(){return 300;}boolean hasFocus(){return focus;}boolean isLayoutRequested(){return layoutRequested;}void setTranslationX(float v){x=v;}void setVisibility(int v){visibility=v;}void post(Runnable r){jobs.add(r);}Observer getViewTreeObserver(){return observer;}void invalidate(){}void scrollTo(int x,int y){scroll=y;order.add("scroll");if(requestOnScroll)activeBody.layoutRequested=true;}void removeView(View view){check(view.visibility==INVISIBLE);}}
+ static View activeBody;
  static class Animator {}
  static class Adapter {public void onAnimationEnd(Animator a){}}
  static class ValueAnimator extends Animator {interface Update {void run(ValueAnimator v);}float value;Update update;Adapter end;void setDuration(long d){}void setInterpolator(Object o){}static ValueAnimator ofFloat(float a,float b){return new ValueAnimator();}void addUpdateListener(Update u){update=u;}void addListener(Adapter e){end=e;}Object getAnimatedValue(){return value;}void start(){order.add("start");tick(0);}void tick(float v){value=v;update.run(this);if(v==1&&end!=null)end.onAnimationEnd(this);}void cancel(){if(end!=null)end.onAnimationEnd(this);}}
@@ -41,7 +43,11 @@ public class CalendarSlideCheck {
   c.body.observer.ready();check(c.bodySlide!=null&&c.body.x==300&&c.outgoingBody.x==0);
   check(c.verticalViewport.scroll==90&&order.indexOf("scroll")<order.indexOf("start"));
   ValueAnimator moving=c.bodySlide;moving.tick(.35f);check(Math.abs(c.outgoingBody.x+300-c.body.x)<.001f);
-  check(c.body.alpha==1&&c.outgoingBody.alpha==1);moving.tick(1);check(c.body.x==0&&c.outgoingBody==null&&!c.bodyTransitionRunning);
+  check(c.body.visibility==View.VISIBLE);moving.tick(1);check(c.body.x==0&&c.outgoingBody==null&&!c.bodyTransitionRunning);
+  c=new CalendarSlideCheck();activeBody=c.body;c.positions.put("month",new int[]{21,90});c.body.layoutRequested=true;c.verticalViewport.requestOnScroll=true;c.prepareBodySlide(1,1);drain();
+  c.body.observer.ready();check(c.bodySlide==null&&c.body.visibility==View.INVISIBLE&&c.verticalViewport.scroll==0);
+  c.body.layoutRequested=false;c.body.observer.ready();check(c.bodySlide==null&&c.body.visibility==View.INVISIBLE&&c.verticalViewport.scroll==90);
+  c.body.layoutRequested=false;c.body.observer.ready();check(c.bodySlide!=null&&c.body.visibility==View.VISIBLE);c.finishBodyMotion();
   for(int direction:new int[]{-1,1})for(int i=0;i<=100;i++){float f=i/100f,inside=CalendarSlideMotion.incoming(300,direction,f),outside=CalendarSlideMotion.outgoing(300,direction,f);check(Math.abs((direction==1?outside+300-inside:inside+300-outside))<.001f);}
   c=new CalendarSlideCheck();c.prepareBodySlide(1,-1);drain();PreDraw late=c.bodyPreDraw;c.finishBodyMotion();late.onPreDraw();c.body.observer.ready();check(c.bodySlide==null&&c.body.observer.listeners.isEmpty());
   c=new CalendarSlideCheck();c.prepareBodySlide(1,1);c.finishBodyMotion();drain();check(c.body.observer.listeners.isEmpty());

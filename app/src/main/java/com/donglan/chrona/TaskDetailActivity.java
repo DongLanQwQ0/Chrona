@@ -929,7 +929,14 @@ public final class TaskDetailActivity extends Activity {
             dialog.dismiss();
             action.run();
         });
-        UiStyle.addSpaced(panel, row, 2, 2);
+        if (panel.getChildCount() > 0) {
+            View divider = new View(this);
+            divider.setBackgroundColor(UiStyle.colors(this).outline);
+            LinearLayout.LayoutParams separator = new LinearLayout.LayoutParams(-1, dp(1));
+            separator.setMargins(dp(12), 0, dp(12), 0);
+            panel.addView(divider, separator);
+        }
+        panel.addView(row, new LinearLayout.LayoutParams(-1, dp(48)));
     }
 
     private TextView headerMenuAction(String text, boolean destructive) {
@@ -941,7 +948,7 @@ public final class TaskDetailActivity extends Activity {
         action.setSingleLine(true);
         action.setMinHeight(dp(48));
         action.setTextColor(destructive ? UiStyle.danger(this) : UiStyle.colors(this).primary);
-        UiStyle.pill(action, false);
+        UiStyle.pressable(action);
         return action;
     }
 

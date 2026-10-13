@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-13 · 0.14.21
+
+用户报告日历松手约一帧残影、要求移除首页课表重复入口、更新引导、所有交互控件按下放大，以及任务详情菜单横线分隔。本次日历页面不再 setAlpha：INVISIBLE 准备新树，预绘制时检查 layoutRequested，滚动恢复仅一次且恢复后仍有布局请求则继续等待；再定位新旧两页并 VISIBLE 开始共享进度的平移，旧页 INVISIBLE 后移除。并无实际设备逐帧证据能确认残影根因或最终消失；旧子树 reparent 仍保留，后续有设备证据再评估。
+
+PressFeedback 统一 StateListAnimator：按下 1.05、90ms，松手 1、160ms；不设置触摸/点击监听。Activity decor、Dialog 内容与原生日期弹窗接入；全局布局覆盖新增控件，弱键与 detach 清理。Dock 子树保持自身动效，滚动容器不整体放大。UiStyle.button 由缩小改放大，pressable 接入同控制器。菜单删逐项 pill，行间插 1dp 横线，保留主题色与删除强调色。Dashboard 删除 courses 和专用 sources 行；Guide version 3 说明下划线标题三个入口。
+
+子代理独立源码集成审查通过。日历生产方法/布局动画替身 220 项，PressFeedback 生产控制器/View 动画替身 14 项，完整 42/42；debug/release/lint 通过，0 errors / 84 warnings。日志 build/calendar-feedback-full-checks.log、build/calendar-feedback-final-build.log。备份 build/backups/20261013-calendar-first-frame、build/backups/20261013-home-guide。0.14.21 / 128，APK 1,988,834 字节，SHA256 b872b7714790fff208f6fbd23e7c64630ab795156c1a087b633bba95aea42416；签名保持一致。真机残影、FPS 和全控件按压视觉未实测。
+
 # 本轮补充 · 2026-10-13 · 0.14.20
 
 用户截图显示日程与收件箱筛选 Dock 放大后被行容器截断，横向手势被页面切换抢走。初始及缓存页面的 content LinearLayout 和 contentHost FrameLayout 统一关闭中间层 clipChildren/clipToPadding，保留 ScrollView 页面视口裁剪；filterDock 工厂将共享控件加入 strips，由 SwipePagerLayout 优先保护。遗漏登记会使 pager 的 MOVE 主动解除 requestDisallowInterceptTouchEvent，进而取消 Dock 手势。

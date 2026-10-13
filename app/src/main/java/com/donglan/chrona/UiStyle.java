@@ -1,8 +1,6 @@
 package com.donglan.chrona;
 
-import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
-import android.animation.StateListAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.Dialog;
@@ -350,11 +348,7 @@ public final class UiStyle {
         acrylicChoice(view, primary, RADIUS_FIELD, false);
         view.setPadding(dp(view, 18), dp(view, 10), dp(view, 18), dp(view, 10));
         view.setMinimumHeight(dp(view, 52));
-        StateListAnimator press = new StateListAnimator();
-        press.addState(new int[]{android.R.attr.state_enabled, android.R.attr.state_pressed},
-                scale(view, 0.97f, UiMotion.PRESS));
-        press.addState(new int[]{}, scale(view, 1f, UiMotion.RELEASE));
-        view.setStateListAnimator(press);
+        PressFeedback.apply(view);
         rememberChildSurface(view, 2, primary, RADIUS_FIELD, primary);
     }
 
@@ -652,6 +646,7 @@ public final class UiStyle {
     }
 
     static void pressable(View view) {
+        PressFeedback.apply(view);
         view.setForeground(new RippleDrawable(ColorStateList.valueOf(
                 alpha(colors(view.getContext()).primary, 32)), null,
                 shape(view, Color.WHITE, RADIUS_CARD, Color.TRANSPARENT)));
@@ -1114,6 +1109,7 @@ public final class UiStyle {
             });
         }
         dialog.show();
+        PressFeedback.install(content);
         Window window = dialog.getWindow();
         if (window != null) window.setLayout(widthPx, -2);
         // The window owns both enter and exit, including outside-tap and system-back dismissals.
@@ -1410,14 +1406,6 @@ public final class UiStyle {
             current = parent instanceof View parentView ? parentView : null;
         }
         return false;
-    }
-    private static AnimatorSet scale(View view, float value, long duration) {
-        AnimatorSet pair = new AnimatorSet();
-        pair.playTogether(ObjectAnimator.ofFloat(view, View.SCALE_X, value),
-                ObjectAnimator.ofFloat(view, View.SCALE_Y, value));
-        pair.setDuration(duration);
-        pair.setInterpolator(UiMotion.SETTLE);
-        return pair;
     }
     private static int dp(View view, int value) {
         return (int) (value * view.getResources().getDisplayMetrics().density + 0.5f);

@@ -16,7 +16,7 @@ import android.widget.TextView;
 
 /** Concrete instructions with optional practice in the real app. */
 public final class GuideActivity extends Activity {
-    private static final int GUIDE_VERSION = 2;
+    private static final int GUIDE_VERSION = 3;
     private static final String PRACTICE_TEXT = "明天下午3点到4点，在图书馆学习，提前10分钟提醒我。";
 
     private static final class Step {
@@ -38,9 +38,9 @@ public final class GuideActivity extends Activity {
 
     private static final Step[] STEPS = {
         new Step("先认识拾时", "记下事情 → 明确日程自动写入 → 存疑日程由你确认。", new String[]{
-                "「首页」查看近期安排；点主界面的 + 开始记录。",
-                "「收件箱」保存你投入的原始内容，查看解析进度、待确认和失败记录。",
-                "「日程」查看识别出的事项，使用搜索与筛选找到需要的日程。"
+                "「首页」查看近期安排；点击带下划线的「今天的安排」进入课表，点主界面的 + 开始记录。",
+                "「收件箱」保存原始内容，查看解析进度、待确认和失败记录；点击带下划线的「收件箱」标题打开日历。",
+                "「日程」查看识别出的事项，使用搜索与筛选；点击带下划线的「日程」标题打开课表对比。"
         }, "知道去哪里记录、查看进度和浏览安排。", "明确且确定的日程自动写入并通过通知告知。模糊时间会给出建议，标为高存疑待确认。", null, null),
         new Step("配置 AI 服务", "先连接自己的 AI 服务，拾时才能理解文字和截图。", new String[]{
                 "打开「设置 → AI 服务」。",
