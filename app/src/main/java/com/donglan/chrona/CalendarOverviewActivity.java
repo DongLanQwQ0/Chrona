@@ -130,7 +130,7 @@ public final class CalendarOverviewActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this); super.onCreate(state);
-        includeSystem = getPreferences(MODE_PRIVATE).getBoolean("system", false);
+        includeSystem = CalendarSourcePreferences.includesSystem(this);
         mode = getPreferences(MODE_PRIVATE).getInt("mode", MONTH);
         if (state != null) {
             date = LocalDate.parse(state.getString("date", date.toString()));
@@ -185,7 +185,7 @@ public final class CalendarOverviewActivity extends Activity {
                 sourceSwitch.setChecked(false);
                 requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR}, 810); return;
             }
-            includeSystem = enabled; getPreferences(MODE_PRIVATE).edit().putBoolean("system", enabled).apply(); load();
+            includeSystem = enabled; CalendarSourcePreferences.setIncludesSystem(this, enabled); load();
         });
         UiStyle.addSpaced(root, sourceSwitch, 0, 6);
         bodyStage = new FrameLayout(this);
@@ -254,7 +254,10 @@ public final class CalendarOverviewActivity extends Activity {
     }
 
     @Override protected void onResume() {
-        super.onResume(); resumed = true; load(); handler.post(minuteTick);
+        super.onResume(); resumed = true;
+        includeSystem = CalendarSourcePreferences.includesSystem(this);
+        sourceSwitch.setChecked(includeSystem);
+        load(); handler.post(minuteTick);
         if (new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()) {
             calendarObserver = new android.database.ContentObserver(handler) {
                 @Override public void onChange(boolean selfChange) {
@@ -287,7 +290,7 @@ public final class CalendarOverviewActivity extends Activity {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request == 810) {
             includeSystem = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
-            getPreferences(MODE_PRIVATE).edit().putBoolean("system", includeSystem).apply(); load();
+            CalendarSourcePreferences.setIncludesSystem(this, includeSystem); load();
             if (!includeSystem) Feedback.show(this, "未获得读取日历权限");
         }
     }

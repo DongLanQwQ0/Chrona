@@ -30,7 +30,8 @@ class Uri {String value;Uri(String v){value=v;}static Uri parse(String v){return
 class Intent {String action;Uri data;Map<String,String> extras=new HashMap<>();Intent(){}Intent(Context c,Class<?> type){}Intent setData(Uri d){data=d;return this;}Intent setAction(String a){action=a;return this;}Intent putExtra(String k,String v){extras.put(k,v);return this;}}
 class PendingIntent {static final int FLAG_UPDATE_CURRENT=1,FLAG_IMMUTABLE=2;Intent intent;int flags,code;boolean broadcast;static PendingIntent make(int code,Intent i,int flags,boolean broadcast){PendingIntent p=new PendingIntent();p.intent=i;p.flags=flags;p.code=code;p.broadcast=broadcast;return p;}static PendingIntent getActivity(Context c,int code,Intent i,int flags){return make(code,i,flags,false);}static PendingIntent getBroadcast(Context c,int code,Intent i,int flags){return make(code,i,flags,true);}}
 class Bundle {boolean update;double progress;String remaining,animations;RemoteViews card;}
-class VivoAtomicNotification {static boolean vivo;static boolean supportedManufacturer(){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static Bundle extras(Context c,String title,String status,String range,String time,String remaining,PendingIntent details,boolean same,RemoteViews card,String animations){Bundle b=new Bundle();b.update=same;b.progress=card.progress;b.remaining=remaining;b.card=card;b.animations=animations;return b;}}
+class VivoAtomicNotification {static boolean vivo;static boolean available(Context c){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static Bundle extras(Context c,String title,String status,String range,String time,String remaining,PendingIntent details,boolean same,RemoteViews card,String animations){Bundle b=new Bundle();b.update=same;b.progress=card.progress;b.remaining=remaining;b.card=card;b.animations=animations;return b;}}
+class AgendaReminderPreferences {static boolean useAtomic(Context c,boolean system,boolean available){return available;}}
 class AtomicAgendaCard {static RemoteViews create(Context c,AgendaEntry e,long now,long notifiedAt,String nextTitle,PendingIntent details){RemoteViews v=new RemoteViews(c.getPackageName(),7);v.progress=ReminderTimeline.elapsedRatio(e,now,notifiedAt);v.notifiedAt=notifiedAt;v.nextTitle=nextTitle;v.details=details;return v;}static String marqueeConfiguration(){return "marquee-config";}}
 class AgendaRepository {static Intent details(Context c,AgendaEntry e){return new Intent().setData(Uri.parse("content://calendar/events/"+e.id));}}
 class AgendaReminderReceiver {}
@@ -61,7 +62,8 @@ public class AgendaNotificationCheck {
   check(n.small==null&&n.big==null&&n.heads==null&&n.style instanceof Notification.BigTextStyle);
   check(Math.abs(n.extras.progress-2d/3)<1e-9&&n.extras.remaining.equals("10分钟后开始"));
   check(n.extras.card.details==n.details&&n.extras.animations.equals("marquee-config"));
-  Notification custom=notification(c,entry,now,false,NOTIFICATION_ID,now-5000,"线性代数");check(custom.extras.card.notifiedAt==now-5000&&custom.extras.card.nextTitle.equals("线性代数"));
+  Notification custom=notification(c,entry,now,false,NOTIFICATION_ID,now-5000,"线性代数",true);check(custom.extras.card.notifiedAt==now-5000&&custom.extras.card.nextTitle.equals("线性代数"));
+  Notification ordinary=notification(c,entry,now,false,NOTIFICATION_ID,now-5000,"线性代数",false);check(ordinary.extras==null&&ordinary.small!=null&&ordinary.style instanceof Notification.DecoratedCustomViewStyle);
   check(n.extras.card.notifiedAt==entry.start-ReminderTimeline.LEAD&&n.extras.card.nextTitle.isEmpty());
   check(notification(c,entry,entry.start-ReminderTimeline.LEAD,false).extras.progress==0);
   check(notification(c,entry,entry.start,false).extras.progress==0);
@@ -96,7 +98,7 @@ public class AgendaNotificationCheck {
  }
 }
 '''.replace('__ENTRY__', entry).replace('__TIMELINE__', timeline).replace('__FACTORY__', method('    private static Notification notification(') + '\n' + method('    private static Notification notification(', 1)).replace('__ACTION__', method('    private static PendingIntent action('))
-harness = re.sub(r'notification\(c,([^;\n]*?),((?:false|true))\)', r'notification(c,\1,\2,NOTIFICATION_ID)', harness)
+harness = re.sub(r'notification\(c,([^,\n]+),([^,\n]+),(false|true)\)', r'notification(c,\1,\2,\3,NOTIFICATION_ID)', harness)
 out = root / 'build/agenda-notification-check'
 out.mkdir(parents=True, exist_ok=True)
 file = out / 'AgendaNotificationCheck.java'

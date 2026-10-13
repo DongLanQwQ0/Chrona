@@ -9,6 +9,7 @@ import android.widget.*;
 /** Settings gutters belong to content; system bars belong to the scroll viewport. */
 final class SettingsPageLayout {
     static final int GUTTER_DP = 20;
+    static final int HEADER_CONTENT_GAP_DP = 16;
     private SettingsPageLayout() { }
     static LinearLayout content(Activity activity) {
         LinearLayout root = new LinearLayout(activity);
@@ -37,7 +38,9 @@ final class SettingsPageLayout {
         title.setText(label); title.setTextSize(24); UiStyle.title(title);
         title.setPadding(dp(activity, 12), 0, 0, 0);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        root.addView(header, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(-1, -2);
+        headerParams.bottomMargin = dp(activity, HEADER_CONTENT_GAP_DP);
+        root.addView(header, headerParams);
     }
     static void show(Activity activity, LinearLayout root, boolean animatePresentation) {
         ScrollView viewport = new ScrollView(activity);

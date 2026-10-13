@@ -13,6 +13,10 @@ final class VivoAtomicNotification {
     private static final String PREFIX = "notification.superx.";
     private static final String SCENE = "CHRONA_AGENDA";
     static boolean supportedManufacturer() { return "vivo".equalsIgnoreCase(Build.MANUFACTURER); }
+    static boolean available(Context context) {
+        return supportedManufacturer() && Boolean.TRUE.equals(sceneEnabled(context))
+                && context.getSystemService(NotificationManager.class).areNotificationsEnabled();
+    }
     /** OEM-documented optional API; null means the system cannot report this capability. */
     static Boolean sceneEnabled(Context context) {
         if (!supportedManufacturer()) return null;
@@ -80,7 +84,7 @@ final class VivoAtomicNotification {
         if (!supportedManufacturer()) return false;
         try {
             for (android.service.notification.StatusBarNotification item : manager.getActiveNotifications())
-                if (item.getId() == id) return true;
+                if (item.getId() == id && item.getNotification().extras.containsKey(PREFIX + "operation")) return true;
         } catch (RuntimeException failure) {
             android.util.Log.w("Chrona", "Unable to inspect vivo atomic notification", failure);
         }

@@ -108,8 +108,8 @@ public final class AgendaReminder {
                 }
             }
         }
-        boolean vivo = VivoAtomicNotification.supportedManufacturer();
-        ReminderTimeline timeline = new ReminderTimeline(entries, now, hidden, snoozeUntil, vivo ? ReminderSlots.COUNT : 1);
+        boolean atomicAvailable = VivoAtomicNotification.available(context);
+        ReminderTimeline timeline = new ReminderTimeline(entries, now, hidden, snoozeUntil, atomicAvailable ? ReminderSlots.COUNT : 1);
         long refreshAt = timeline.wakeAt;
         AgendaEntry[] slots = ReminderSlots.assign(manager.areNotificationsEnabled() ? timeline.entries : List.of(), previous);
         if (!timeline.entries.isEmpty() && manager.areNotificationsEnabled()) {
@@ -121,14 +121,16 @@ public final class AgendaReminder {
         for (int i = 0; i < slots.length; i++) {
             AgendaEntry entry = slots[i];
             boolean same = entry != null && entry.key().equals(previous[i]);
-            if (!same) VivoAtomicNotification.end(context, manager, NOTIFICATION_ID + i);
+            boolean atomic = entry != null && AgendaReminderPreferences.useAtomic(context, entry.system, atomicAvailable);
+            if (!same || VivoAtomicNotification.active(manager, NOTIFICATION_ID + i) != atomic)
+                VivoAtomicNotification.end(context, manager, NOTIFICATION_ID + i);
             if (entry == null) { state.remove("slot_key:" + i).remove("slot_end:" + i).remove("slot_started:" + i); continue; }
             long notifiedAt = same ? prefs.getLong("slot_started:" + i, now) : now;
             manager.notify(NOTIFICATION_ID + i, notification(context, entry, now, same,
-                    NOTIFICATION_ID + i, notifiedAt, ReminderTimeline.nextTitle(entries, entry, now)));
+                    NOTIFICATION_ID + i, notifiedAt, ReminderTimeline.nextTitle(entries, entry, now), atomic));
             state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, entry.finish());
             state.putLong("slot_started:" + i, notifiedAt);
-            if (vivo) refreshAt = Math.min(refreshAt, now + ReminderTimeline.PROGRESS_REFRESH);
+            if (atomic) refreshAt = Math.min(refreshAt, now + ReminderTimeline.PROGRESS_REFRESH);
         }
         state.apply();
         schedule(context, Math.min(refreshAt, now + 24 * 60 * 60_000L));
@@ -153,11 +155,12 @@ public final class AgendaReminder {
     }
 
     private static Notification notification(Context context, AgendaEntry e, long now, boolean same, int notificationId) {
-        return notification(context, e, now, same, notificationId, e.start - ReminderTimeline.LEAD, "");
+        return notification(context, e, now, same, notificationId, e.start - ReminderTimeline.LEAD, "",
+                AgendaReminderPreferences.useAtomic(context, e.system, VivoAtomicNotification.available(context)));
     }
 
     private static Notification notification(Context context, AgendaEntry e, long now, boolean same,
-            int notificationId, long notifiedAt, String nextTitle) {
+            int notificationId, long notifiedAt, String nextTitle, boolean atomic) {
         String status = now < e.start ? "即将开始" : "event".equals(e.category) ? "进行中" : "已开始";
         long remaining = ReminderTimeline.remainingMillis(e, now);
         String remainingText = remaining < 60_000L ? (now < e.start ? "即将开始" : "即将结束")
@@ -182,7 +185,7 @@ public final class AgendaReminder {
                 .addAction(new Notification.Action.Builder(null, "查看详情", details).build())
                 .addAction(new Notification.Action.Builder(null, "5 分钟后提醒", action(context, e, "snooze", 2)).build())
                 .addAction(new Notification.Action.Builder(null, "隐藏本次", action(context, e, "hide", 3)).build());
-        if (VivoAtomicNotification.supportedManufacturer()) {
+        if (atomic) {
             RemoteViews card = AtomicAgendaCard.create(context, e, now, notifiedAt, nextTitle, details);
             builder.addExtras(VivoAtomicNotification.extras(context, e.title, status, range,
                     DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(now < e.start ? e.start : e.finish()).atZone(zone)),

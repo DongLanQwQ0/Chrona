@@ -22,10 +22,10 @@ class SharedPreferences {
  Map<String,Object> values=new HashMap<>();String getString(String k,String d){return (String)values.getOrDefault(k,d);}long getLong(String k,long d){return (Long)values.getOrDefault(k,d);}Map<String,?> getAll(){return new HashMap<>(values);}Editor edit(){return new Editor();}
  class Editor {Map<String,Object> additions=new HashMap<>();Set<String> removed=new HashSet<>();Editor putString(String k,String v){additions.put(k,v);return this;}Editor putLong(String k,long v){additions.put(k,v);return this;}Editor remove(String k){removed.add(k);return this;}void apply(){for(String k:removed)values.remove(k);values.putAll(additions);}}
 }
-class AgendaReminderPreferences {static boolean enabled=true;static SharedPreferences prefs(Context c){return c.prefs;}static boolean enabled(Context c){return enabled;}static boolean includesSystemCalendar(Context c){return false;}}
-class NotificationManager {static final int IMPORTANCE_HIGH=4;boolean allowed=true;Map<Integer,String> cards=new HashMap<>();boolean areNotificationsEnabled(){return allowed;}void createNotificationChannel(NotificationChannel c){}void notify(int id,String key){cards.put(id,key);}}
+class AgendaReminderPreferences {static boolean enabled=true,atomic=true;static SharedPreferences prefs(Context c){return c.prefs;}static boolean enabled(Context c){return enabled;}static boolean includesSystemCalendar(Context c){return false;}static boolean useAtomic(Context c,boolean system,boolean available){return enabled&&available&&atomic;}}
+class NotificationManager {static final int IMPORTANCE_HIGH=4;boolean allowed=true;Map<Integer,String> cards=new HashMap<>();Map<Integer,Boolean> atomic=new HashMap<>();List<String> events=new ArrayList<>();boolean areNotificationsEnabled(){return allowed;}void createNotificationChannel(NotificationChannel c){}void notify(int id,String key){events.add("notify:"+id);cards.put(id,key);}}
 class NotificationChannel {NotificationChannel(String id,String name,int importance){}void setDescription(String s){}}
-class VivoAtomicNotification {static boolean vivo=true;static List<Integer> ended=new ArrayList<>();static boolean supportedManufacturer(){return vivo;}static void end(Context c,NotificationManager m,int id){ended.add(id);m.cards.remove(id);}}
+class VivoAtomicNotification {static boolean vivo=true;static List<Integer> ended=new ArrayList<>();static boolean available(Context c){return vivo&&c.manager.allowed;}static boolean active(NotificationManager m,int id){return m.atomic.getOrDefault(id,false);}static void end(Context c,NotificationManager m,int id){ended.add(id);m.events.add("end:"+id);m.cards.remove(id);m.atomic.remove(id);}}
 class EventCandidate {long id,taskId,startAtMillis;Long endAtMillis;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+startAtMillis;}}
 class TaskStore implements AutoCloseable {static List<EventCandidate> rows=new ArrayList<>();TaskStore(Context c){}List<EventCandidate> nextReminderCandidates(long now,Set<String> hidden){List<EventCandidate> r=new ArrayList<>();for(EventCandidate e:rows)if(!hidden.contains(e.key()))r.add(e);return r;}List<Long> linkedCalendarIds(){return List.of();}public void close(){}}
 class CalendarOccurrence {long eventId,startMillis,endMillis;String title,location,calendarName;boolean allDay;}
@@ -35,7 +35,7 @@ public class AgendaSlotsCheck {
  static final String CHANNEL="upcoming_agenda";static final int NOTIFICATION_ID=0x434852;
  static long alarm;static int checks;
  static void schedule(Context c,long at){alarm=at;}
- static Map<Integer,Long> notified=new HashMap<>();static Map<Integer,String> nextTitles=new HashMap<>(),categories=new HashMap<>();static String notification(Context c,AgendaEntry e,long now,boolean same,int id,long notifiedAt,String nextTitle){notified.put(id,notifiedAt);nextTitles.put(id,nextTitle);categories.put(id,e.category);return e.key();}
+ static Map<Integer,Long> notified=new HashMap<>();static Map<Integer,String> nextTitles=new HashMap<>(),categories=new HashMap<>();static String notification(Context c,AgendaEntry e,long now,boolean same,int id,long notifiedAt,String nextTitle,boolean atomic){notified.put(id,notifiedAt);nextTitles.put(id,nextTitle);categories.put(id,e.category);c.manager.atomic.put(id,atomic);return e.key();}
  __REFRESH__
  static void check(boolean condition,String reason){checks++;if(!condition)throw new AssertionError(reason);}
  static String slot(Context c,int i){return c.prefs.getString("slot_key:"+i,"");}
@@ -56,6 +56,14 @@ public class AgendaSlotsCheck {
   check(nextTitles.get(NOTIFICATION_ID).equals("second")&&nextTitles.get(NOTIFICATION_ID+2).equals("fourth"),"refresh forwards next title including occurrence beyond card cap");
   check(c.manager.cards.size()==3,"vivo three-card cap");check(slot(c,0).equals(a.key())&&slot(c,1).equals(b.key())&&slot(c,2).equals(d.key()),"initial slot identities");
   check(alarm<=System.currentTimeMillis()+ReminderTimeline.PROGRESS_REFRESH,"vivo progress refresh");
+  AgendaReminderPreferences.atomic=false;VivoAtomicNotification.ended.clear();c.manager.events.clear();refresh(c,null);
+  check(c.manager.cards.size()==3&&!c.manager.atomic.containsValue(true),"available vivo retains three ordinary cards when source atomic disabled");
+  for(int i=0;i<3;i++)check(c.manager.events.indexOf("end:"+(NOTIFICATION_ID+i))<c.manager.events.indexOf("notify:"+(NOTIFICATION_ID+i)),"atomic to ordinary ends before notify");
+  check(VivoAtomicNotification.ended.size()==3&&alarm>System.currentTimeMillis()+ReminderTimeline.PROGRESS_REFRESH,"ordinary conversion clears each atomic card and progress alarm");
+  VivoAtomicNotification.ended.clear();refresh(c,null);check(VivoAtomicNotification.ended.isEmpty(),"same ordinary format needs no cancellation");
+  AgendaReminderPreferences.atomic=true;VivoAtomicNotification.ended.clear();c.manager.events.clear();refresh(c,null);
+  check(c.manager.atomic.size()==3&&!c.manager.atomic.containsValue(false)&&VivoAtomicNotification.ended.size()==3,"ordinary to atomic replaces each slot");
+  for(int i=0;i<3;i++)check(c.manager.events.indexOf("end:"+(NOTIFICATION_ID+i))<c.manager.events.indexOf("notify:"+(NOTIFICATION_ID+i)),"ordinary to atomic ends before notify");
   long originalStarted=c.prefs.getLong("slot_started:0",0);check(originalStarted>0&&notified.get(NOTIFICATION_ID)==originalStarted,"initial slot start passed to card");
   c.prefs.edit().putLong("slot_started:0",now-12345).apply();
   VivoAtomicNotification.ended.clear();Collections.reverse(TaskStore.rows);refresh(c,null);

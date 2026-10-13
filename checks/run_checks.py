@@ -30,7 +30,7 @@ GROUPS = {
         "home_filter_reference_check.py", "sync_settings_check.py",
         "widget_source_failure_check.py",
         "widget_preferences_check.py",
-        "agenda_features_check.py", "agenda_notification_check.py", "agenda_slots_check.py",
+        "agenda_features_check.py", "agenda_notification_check.py", "agenda_slots_check.py", "reminder_preferences_check.py",
         "calendar_review_check.py",
         "dashboard_switch_check.py", "schedule_refresh_frame_check.py", "vivo_atomic_check.py", "calendar_event_build_check.py",
     ),

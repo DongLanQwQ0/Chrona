@@ -23,7 +23,6 @@ import com.donglan.chrona.debug.DebugActivity;
 
 /** Compact grouped settings; details belong to their destination or dialog. */
 public final class SettingsHubActivity extends Activity {
-    private static final int REQUEST_SYSTEM_CALENDAR = 701;
     private ScrollView page;
     private Dialog aboutDialog;
 
@@ -42,7 +41,7 @@ public final class SettingsHubActivity extends Activity {
         LinearLayout display = group(root, "外观与显示");
         destination(display, "外观与配色", AppearanceActivity.class);
         timelineLimit(display);
-        systemCalendarToggle(display);
+        destination(display, "系统日程", SystemCalendarSettingsActivity.class);
 
         LinearLayout widgets = group(root, "桌面小组件");
         widgetPreview(widgets);
@@ -52,16 +51,25 @@ public final class SettingsHubActivity extends Activity {
                 enabled -> WidgetPreferences.setIncludesSystemCalendar(this, enabled));
 
         LinearLayout reminders = group(root, "日程常驻提醒");
-        Switch reminderEnabled = toggle(reminders, "开始前 30 分钟提醒", AgendaReminderPreferences.enabled(this));
+        reminderEnabled = toggle(reminders, "开始前 30 分钟提醒", AgendaReminderPreferences.enabled(this));
         reminderEnabled.setOnCheckedChangeListener((button, enabled) -> {
             AgendaReminderPreferences.setEnabled(this, enabled);
+            updateReminderControls();
             if (enabled && Build.VERSION.SDK_INT >= 33
                     && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                 requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 704);
         });
-        reminderSystemCalendar = calendarToggle(reminders, "包含系统其他日程",
+        atomicChrona = toggle(reminders, "Chrona 原子通知", AgendaReminderPreferences.atomicChrona(this));
+        atomicChrona.setOnCheckedChangeListener((button, enabled) -> AgendaReminderPreferences.setAtomicChrona(this, enabled));
+        atomicSystem = toggle(reminders, "系统日程原子通知", AgendaReminderPreferences.atomicSystem(this));
+        atomicSystem.setOnCheckedChangeListener((button, enabled) -> AgendaReminderPreferences.setAtomicSystem(this, enabled));
+        reminderSystemCalendar = calendarToggle(reminders, "提醒包含系统其他日程",
                 AgendaReminderPreferences.includesSystemCalendar(this), 703,
-                enabled -> AgendaReminderPreferences.setIncludesSystemCalendar(this, enabled));
+                enabled -> { AgendaReminderPreferences.setIncludesSystemCalendar(this, enabled); updateReminderControls(); });
+        atomicStatus = row(reminders, "原子通知", "正在检查", () ->
+                openSystemSettings(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName())));
+        updateReminderControls();
         notificationStatus = row(reminders, "通知权限", "", () -> {
             if (Build.VERSION.SDK_INT >= 33
                     && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
@@ -184,9 +192,18 @@ public final class SettingsHubActivity extends Activity {
             });
         });
     }
-    private Switch systemCalendar;
     private Switch widgetSystemCalendar, reminderSystemCalendar;
-    private TextView notificationStatus, exactStatus;
+    private Switch reminderEnabled, atomicChrona, atomicSystem;
+    private TextView notificationStatus, exactStatus, atomicStatus;
+    private boolean atomicAvailable;
+    private int atomicCheckGeneration;
+    private void updateReminderControls() {
+        if (atomicChrona == null || atomicSystem == null || reminderSystemCalendar == null) return;
+        boolean enabled = AgendaReminderPreferences.enabled(this);
+        reminderSystemCalendar.setEnabled(enabled);
+        atomicChrona.setEnabled(enabled && atomicAvailable);
+        atomicSystem.setEnabled(enabled && atomicAvailable && AgendaReminderPreferences.includesSystemCalendar(this));
+    }
 
     private Switch toggle(LinearLayout group, String title, boolean checked) {
         divider(group);
@@ -222,21 +239,22 @@ public final class SettingsHubActivity extends Activity {
         if (notificationStatus != null) notificationStatus.setText(getSystemService(android.app.NotificationManager.class)
                 .areNotificationsEnabled() ? "已允许" : "未允许");
         if (exactStatus != null) exactStatus.setText(AgendaReminder.exactAllowed(this) ? "已允许" : "系统可能延迟");
+        checkAtomicAvailability();
     }
-    private void systemCalendarToggle(LinearLayout group) {
-        systemCalendar=new Switch(this);systemCalendar.setText("包含系统其他日程");systemCalendar.setTextSize(16);
-        systemCalendar.setPadding(dp(16),dp(3),dp(16),dp(3));systemCalendar.setSwitchPadding(dp(12));systemCalendar.setMinHeight(dp(54));UiStyle.toggle(systemCalendar);
-        systemCalendar.setChecked(HomeTimelinePreferences.includesSystemCalendar(this));
-        systemCalendar.setOnCheckedChangeListener((button,enabled)->{
-            if(enabled&&!new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()){
-                systemCalendar.setChecked(false);requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR},REQUEST_SYSTEM_CALENDAR);return;
-            }
-            HomeTimelinePreferences.setIncludesSystemCalendar(this,enabled);
-        });group.addView(systemCalendar,new LinearLayout.LayoutParams(-1,-2));
+    private void checkAtomicAvailability() {
+        int generation = ++atomicCheckGeneration;
+        new Thread(() -> {
+            boolean available = VivoAtomicNotification.available(this);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || generation != atomicCheckGeneration) return;
+                atomicAvailable = available;
+                atomicStatus.setText(available ? "可用" : VivoAtomicNotification.supportedManufacturer() ? "当前不可用" : "仅 vivo 支持");
+                updateReminderControls();
+            });
+        }, "chrona-atomic-capability").start();
     }
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
         super.onRequestPermissionsResult(request,permissions,results);
-        if(request==REQUEST_SYSTEM_CALENDAR){boolean granted=results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED;systemCalendar.setChecked(granted);if(!granted)Feedback.show(this,"未获得读取日历权限");}
         if (request == 702 || request == 703) {
             boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
             (request == 702 ? widgetSystemCalendar : reminderSystemCalendar).setChecked(granted);
@@ -246,6 +264,7 @@ public final class SettingsHubActivity extends Activity {
             if (notificationStatus != null) notificationStatus.setText(getSystemService(android.app.NotificationManager.class)
                     .areNotificationsEnabled() ? "已允许" : "未允许");
             AgendaReminder.requestRefresh(this);
+            checkAtomicAvailability();
         }
     }
 
