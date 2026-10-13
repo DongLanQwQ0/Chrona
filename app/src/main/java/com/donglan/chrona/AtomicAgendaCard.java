@@ -52,9 +52,9 @@ final class AtomicAgendaCard {
         views.setViewVisibility(R.id.atomic_top_remaining, cameraSafe ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setViewVisibility(R.id.atomic_bottom_remaining, cameraSafe ? android.view.View.GONE : android.view.View.VISIBLE);
         views.setViewPadding(R.id.atomic_header, 0, cameraSafe ? cameraTopPadding(context) : 0, 0, 0);
-        views.setTextViewText(R.id.atomic_location, entry.location);
+        views.setTextViewText(R.id.atomic_location, locationText(entry.location));
         views.setImageViewBitmap(R.id.atomic_location_icon, locationIcon(context, palette.muted));
-        views.setViewVisibility(R.id.atomic_location_icon, entry.location.isBlank() ? android.view.View.GONE : android.view.View.VISIBLE);
+        views.setViewVisibility(R.id.atomic_location_icon, android.view.View.VISIBLE);
         views.setTextViewText(R.id.atomic_remaining_label, active ? "距结束" : "距开始");
         views.setChronometer(R.id.atomic_remaining, SystemClock.elapsedRealtime() + to - now, null, !cameraSafe && now < to);
         views.setChronometerCountDown(R.id.atomic_remaining, true);
@@ -106,6 +106,9 @@ final class AtomicAgendaCard {
         views.setImageViewBitmap(R.id.atomic_background_second, backgrounds[1]);
         views.setInt(R.id.atomic_background, "setFlipInterval", motion ? 16000 : Integer.MAX_VALUE);
         return views;
+    }
+    static String locationText(String location) {
+        return location == null || location.isBlank() ? "在你手里~" : location.trim();
     }
     private static int cameraTopPadding(Context context) {
         if (android.os.Build.VERSION.SDK_INT < 30) return 0;

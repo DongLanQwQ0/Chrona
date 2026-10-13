@@ -1,2 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<alpha xmlns:android="http://schemas.android.com/apk/res/android" android:fromAlpha="0" android:toAlpha="1" android:duration="16000" android:interpolator="@android:anim/accelerate_decelerate_interpolator" />
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fillAfter="true" android:shareInterpolator="true" android:interpolator="@android:anim/linear_interpolator">
+    <scale android:fromXScale="1.15" android:toXScale="1.18"
+        android:fromYScale="1.15" android:toYScale="1.18"
+        android:pivotX="50%" android:pivotY="50%" android:duration="16000" />
+    <translate android:fromXDelta="-4%" android:toXDelta="4%"
+        android:fromYDelta="-2%" android:toYDelta="2%" android:duration="16000" />
+    <alpha android:fromAlpha="0" android:toAlpha="1" android:duration="16000" />
+</set>

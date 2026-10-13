@@ -9,7 +9,7 @@
         android:id="@+id/atomic_background"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:animateFirstView="false"
+        android:animateFirstView="true"
         android:autoStart="true"
         android:clipChildren="true"
         android:flipInterval="16000"
@@ -164,6 +164,8 @@
                 android:autoStart="true"
                 android:clipChildren="true"
                 android:flipInterval="16000"
+                android:inAnimation="@anim/atomic_ticker_in"
+                android:outAnimation="@anim/atomic_ticker_out"
                 >
                 <TextView android:id="@+id/atomic_ticker_1" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:singleLine="true" android:ellipsize="end" android:textSize="11sp" android:paddingHorizontal="8dp" />
                 <TextView android:id="@+id/atomic_ticker_2" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:singleLine="true" android:ellipsize="end" android:textSize="11sp" android:paddingHorizontal="8dp" />

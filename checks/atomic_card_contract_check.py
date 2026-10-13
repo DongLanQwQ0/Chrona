@@ -12,6 +12,9 @@ array = re.search(r'private static final int\[\] TICKER_IDS = .*?;', source, re.
 start = source.index('    static String marqueeConfiguration()')
 end = source.index('\n    private static Bitmap progress', start)
 method = source[start:end]
+location_start = source.index('    static String locationText(')
+location_end = source.index('\n    private static int cameraTopPadding', location_start)
+location_method = source[location_start:location_end]
 symbols = root / 'app/build/intermediates/runtime_symbol_list/release/processReleaseResources/R.txt'
 ids = {}
 for line in symbols.read_text(encoding='utf-8').splitlines():
@@ -22,8 +25,12 @@ assert len(ids) == 6
 resources = ''.join(f'static int {name}={value};' for name, value in ids.items())
 harness = ('class ValueAnimator {static boolean enabled=true;static boolean areAnimatorsEnabled(){return enabled;}}'
            'class R {static class id {' + resources + '}}'
-           'public class AtomicCardContractCheck {' + array + method +
-           'public static void main(String[] args){System.out.println(marqueeConfiguration());'
+           'public class AtomicCardContractCheck {' + array + method + location_method +
+           'public static void main(String[] args){'
+           'for(String empty:new String[]{null,"","  ","\\t\\n"})'
+           'if(!locationText(empty).equals("在你手里~"))throw new AssertionError("empty location");'
+           'if(!locationText(" 教室 ").equals("教室"))throw new AssertionError("real location");'
+           'System.out.println(marqueeConfiguration());'
            'ValueAnimator.enabled=false;System.out.println(marqueeConfiguration());}}')
 out = root / 'build/atomic-card-contract-check'
 out.mkdir(parents=True, exist_ok=True)
@@ -49,4 +56,23 @@ for item in animations:
                           'widget_marquee_ellipsize_type': (1, 0)}
 assert 'removeAllViews' not in source, 'Reapply must retain animated child identity'
 assert 'setAutoStart' not in source, 'ViewFlipper.setAutoStart is not remotely callable'
-print('Atomic card contract passed: compiled TextView IDs, both hosts, reduced motion and stable children')
+# The outgoing background must begin at the incoming background's final geometry;
+# hold that geometry between flips so the enlarged image never snaps back to its base size.
+animations_dir = root / 'app/src/main/res/anim'
+incoming = ET.parse(animations_dir / 'atomic_background_in.xml').getroot()
+outgoing = ET.parse(animations_dir / 'atomic_background_out.xml').getroot()
+for animation in (incoming, outgoing):
+    assert animation.attrib[android + 'fillAfter'] == 'true'
+    assert all(int(node.attrib[android + 'duration']) == 16000 for node in animation)
+for tag, properties in [('scale', ('XScale', 'YScale')), ('translate', ('XDelta', 'YDelta'))]:
+    first, second = incoming.find(tag), outgoing.find(tag)
+    for prop in properties:
+        assert first.attrib[android + 'to' + prop] == second.attrib[android + 'from' + prop]
+        assert second.attrib[android + 'to' + prop] == first.attrib[android + 'from' + prop]
+flippers = {node.attrib[android + 'id']: node for node in layout.iter('ViewFlipper')}
+for suffix in ('in', 'out'):
+    assert flippers['@+id/atomic_ticker'].attrib[android + suffix + 'Animation'] == '@anim/atomic_ticker_' + suffix
+    transition = ET.parse(animations_dir / ('atomic_ticker_' + suffix + '.xml')).getroot()
+    assert transition.find('alpha') is not None and transition.find('translate') is not None
+    assert all(0 < int(node.attrib[android + 'duration']) <= 600 for node in transition)
+print('Atomic card contract passed: compiled IDs, both hosts, empty location, continuous background geometry and smooth ticker transitions')
