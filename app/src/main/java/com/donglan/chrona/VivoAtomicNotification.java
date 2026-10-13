@@ -11,15 +11,31 @@ import android.os.Bundle;
 /** Local vivo protocol: https://dev.vivo.com.cn/documentCenter/doc/896. */
 final class VivoAtomicNotification {
     private static final String PREFIX = "notification.superx.";
+    private static final String SCENE = "CHRONA_AGENDA";
     static boolean supportedManufacturer() { return "vivo".equalsIgnoreCase(Build.MANUFACTURER); }
+    /** OEM-documented optional API; null means the system cannot report this capability. */
+    static Boolean sceneEnabled(Context context) {
+        if (!supportedManufacturer()) return null;
+        try {
+            java.lang.reflect.Method method = NotificationManager.class.getDeclaredMethod(
+                    "getSceneStatus", String.class, String.class);
+            method.setAccessible(true);
+            return (Boolean) method.invoke(context.getSystemService(NotificationManager.class),
+                    context.getPackageName(), SCENE);
+        } catch (ReflectiveOperationException | SecurityException failure) {
+            android.util.Log.w("ChronaAtomic", "Unable to read atomic scene status", failure);
+            return null;
+        }
+    }
     static Bundle extras(Context context, String title, String status, String range,
             String location, String startTime, PendingIntent details, boolean same) {
         Bundle data = new Bundle();
         if (!supportedManufacturer()) return data;
-        Icon icon = Icon.createWithResource(context, R.drawable.ic_notifications);
+        Icon icon = Icon.createWithResource(context, R.drawable.ic_chrona_foreground);
         data.putInt(PREFIX + "operation", same ? 1 : 0);
         data.putInt(PREFIX + "template", 1);
-        data.putString(PREFIX + "scene", "METTING");
+        data.putString(PREFIX + "scene", SCENE);
+        android.util.Log.i("ChronaAtomic", "scene=" + SCENE + " enabled=" + sceneEnabled(context));
         data.putBoolean(PREFIX + "showNotify", true);
         data.putBoolean(PREFIX + "dismissWhenKill", false);
         data.putParcelable(PREFIX + "clickResp", details);
@@ -34,6 +50,11 @@ final class VivoAtomicNotification {
         info.putParcelable(PREFIX + "infos.image", icon);
         info.putParcelable(PREFIX + "infos.imageClickResp", details);
         data.putBundle(PREFIX + "infos", info);
+        Bundle shortInfo = new Bundle();
+        shortInfo.putParcelable(PREFIX + "shortInfos.image", icon);
+        shortInfo.putString(PREFIX + "shortInfos.describeShort", status);
+        shortInfo.putString(PREFIX + "shortInfos.coreInfoShort", startTime);
+        data.putBundle(PREFIX + "shortInfos", shortInfo);
         Bundle island = new Bundle(), left = new Bundle(), right = new Bundle();
         left.putParcelable("island.superx.leftInfo.icon", icon);
         left.putCharSequence("island.superx.leftInfo.content", startTime);
@@ -46,6 +67,12 @@ final class VivoAtomicNotification {
         island.putInt("island.superx.islandClick", 1);
         island.putParcelable("island.superx.clickResp", details);
         data.putBundle(PREFIX + "island", island);
+        Bundle capsule = new Bundle();
+        capsule.putInt(PREFIX + "capsule.state", 1);
+        capsule.putParcelable(PREFIX + "capsule.icon", icon);
+        capsule.putString(PREFIX + "capsule.content", startTime + " " + title);
+        capsule.putParcelable(PREFIX + "capsule.clickResp", details);
+        data.putBundle(PREFIX + "capsule", capsule);
         return data;
     }
     static boolean active(NotificationManager manager, int id) {

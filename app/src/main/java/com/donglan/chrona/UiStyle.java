@@ -245,7 +245,15 @@ public final class UiStyle {
                 primary, dark ? background : Color.WHITE, container, onContainer);
     }
 
-    private static Palette accentPalette(boolean dark, int seed) {
+    private static Palette lastAccentPalette;
+    private static boolean lastAccentDark;
+    private static int lastAccentSeed;
+
+    private static synchronized Palette accentPalette(boolean dark, int seed) {
+        // Every acrylic draw asks for this immutable palette. Reuse the pure
+        // (mode, seed) result instead of allocating HSV arrays for each cell.
+        if (lastAccentPalette != null && lastAccentDark == dark && lastAccentSeed == seed)
+            return lastAccentPalette;
         float[] hsv = new float[3];
         Color.colorToHSV(seed, hsv);
         float hue = hsv[0];
@@ -275,8 +283,10 @@ public final class UiStyle {
             container = Color.HSVToColor(new float[]{hue, saturation * .20f, .98f});
             onContainer = Color.HSVToColor(new float[]{hue, saturation * .55f, .23f});
         }
-        return new Palette(background, surface, surfaceAlt, text, muted, outline,
+        lastAccentDark = dark; lastAccentSeed = seed;
+        lastAccentPalette = new Palette(background, surface, surfaceAlt, text, muted, outline,
                 primary, onPrimary, container, onContainer);
+        return lastAccentPalette;
     }
 
     /** Destructive labels ("删除") read as red; the shade follows the theme's light/dark mode. */
@@ -516,6 +526,7 @@ public final class UiStyle {
 
         @Override public void draw(android.graphics.Canvas canvas) {
             boolean backdropReady = false;
+            Palette palette = colors(host.getContext());
             boolean acrylic = ThemeStore.acrylicEnabled(host.getContext());
             if (acrylic && (insideAcrylicSurface(host) || insideAcrylicDialog(host))) {
                 // The ancestor already drew a sampled surface or owns a blurred dialog window.
@@ -526,9 +537,9 @@ public final class UiStyle {
                     backdrop = GlassBackdropView.findFor(host);
                 }
                 backdropReady = backdrop != null && backdrop.drawBlurredWallpaper(canvas, host,
-                        getBounds(), dp(host, radius), colors(host.getContext()));
+                        getBounds(), dp(host, radius), palette);
             }
-            updateBlurredSurface(host);
+            updateBlurredSurface(host, palette);
             // A translucent mix is only safe when the matching blurred wallpaper was actually
             // drawn underneath. Until then, use the opaque fallback; cache completion invalidates
             // acrylic hosts so they switch to the mixed surface on their next frame.
@@ -543,9 +554,8 @@ public final class UiStyle {
             blurredSurface.draw(canvas);
         }
 
-        private void updateBlurredSurface(View host) {
+        private void updateBlurredSurface(View host, Palette palette) {
             int mix = Math.max(minimumMix, ThemeStore.surfaceMix(host.getContext()));
-            Palette palette = colors(host.getContext());
             boolean dark = ThemeStore.dark(host.getContext());
             int accent = CalendarSourceColors.mix(calendarColor, palette.primary);
             int outlineColor = selected ? accent

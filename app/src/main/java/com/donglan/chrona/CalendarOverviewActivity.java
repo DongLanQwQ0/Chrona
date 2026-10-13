@@ -64,7 +64,7 @@ public final class CalendarOverviewActivity extends Activity {
     private boolean pendingBodyRender;
     private final Runnable renderPendingBody = this::renderBody;
     private static final long BUILD_FRAME_BUDGET_NANOS = 2_000_000L;
-    private static final int BUILD_FRAME_MAX_STEPS = 4;
+    private static final int BUILD_FRAME_MAX_STEPS = 16;
     private java.util.ArrayDeque<Runnable> calendarBuildSteps;
     private Runnable calendarBuildDone;
     private final Runnable calendarBuildFrame = this::buildCalendarFrame;
@@ -189,7 +189,19 @@ public final class CalendarOverviewActivity extends Activity {
         });
         UiStyle.addSpaced(root, sourceSwitch, 0, 6);
         bodyStage = new FrameLayout(this);
-        body = new FrameLayout(this) {
+        body = createCalendarBody();
+        bodyViewport = new FrameLayout(this);
+        PressFeedback.protectViewport(bodyViewport);
+        bodyViewport.addView(body, new FrameLayout.LayoutParams(-1, -1));
+        bodyStage.addView(bodyViewport, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(bodyStage, new LinearLayout.LayoutParams(-1, 0, 1));
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
+        stage.addView(root, new FrameLayout.LayoutParams(-1, -1)); UiStyle.applyInsets(stage, root); setContentView(stage);
+    }
+
+    private FrameLayout createCalendarBody() {
+        FrameLayout page = new FrameLayout(this) {
             @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
                 int action = event.getActionMasked();
                 if (action == android.view.MotionEvent.ACTION_DOWN) {
@@ -230,12 +242,7 @@ public final class CalendarOverviewActivity extends Activity {
                 return loadingStale || bodyTransitionRunning || super.onTouchEvent(event);
             }
         };
-        bodyViewport = new FrameLayout(this);
-        PressFeedback.protectViewport(bodyViewport);
-        bodyViewport.addView(body, new FrameLayout.LayoutParams(-1, -1));
-        bodyStage.addView(bodyViewport, new FrameLayout.LayoutParams(-1, -1));
-        root.addView(bodyStage, new LinearLayout.LayoutParams(-1, 0, 1));
-        body.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+        page.setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public boolean onRequestSendAccessibilityEvent(android.view.ViewGroup host, View child,
                     android.view.accessibility.AccessibilityEvent event) {
                 if (event.getEventType() == android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED)
@@ -243,9 +250,7 @@ public final class CalendarOverviewActivity extends Activity {
                 return super.onRequestSendAccessibilityEvent(host, child, event);
             }
         });
-        FrameLayout stage = new FrameLayout(this);
-        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
-        stage.addView(root, new FrameLayout.LayoutParams(-1, -1)); UiStyle.applyInsets(stage, root); setContentView(stage);
+        return page;
     }
 
     @Override protected void onResume() {
@@ -385,7 +390,7 @@ public final class CalendarOverviewActivity extends Activity {
             bodyPreDraw = () -> {
                 if (presentation != presentationGeneration || bodyObserver == null || bodyPreDraw == null) return true;
                 // Keep drawing the outgoing page until all queued layout work has settled.
-                if (body.isLayoutRequested()) return true;
+                if (body.isLayoutRequested()) { bodyViewport.postInvalidateOnAnimation(); return true; }
                 if (!restored[0]) {
                     restored[0] = true;
                     int[] position = positions.get(renderedKey);
@@ -395,13 +400,15 @@ public final class CalendarOverviewActivity extends Activity {
                     }
                 }
                 // Restoring scroll may request another layout; do not expose that first frame.
-                if (body.isLayoutRequested()) return true;
+                if (body.isLayoutRequested()) { bodyViewport.postInvalidateOnAnimation(); return true; }
                 if (bodyObserver.isAlive()) bodyObserver.removeOnPreDrawListener(bodyPreDraw);
                 bodyPreDraw = null; bodyObserver = null;
                 startBodySlide(presentation, direction);
                 return true;
             };
-            bodyObserver.addOnPreDrawListener(bodyPreDraw); body.invalidate();
+            // The incoming body is INVISIBLE until the slide starts; invalidating it
+            // can be ignored once the Dock's animation has stopped drawing frames.
+            bodyObserver.addOnPreDrawListener(bodyPreDraw); bodyViewport.postInvalidateOnAnimation();
         });
     }
     private void startBodySlide(int presentation, int direction) {
@@ -562,13 +569,10 @@ public final class CalendarOverviewActivity extends Activity {
         if (animated) {
             // Keep the outgoing native subtree. No synchronous software screenshot or
             // bitmap allocation on the release frame, and never stack interrupted pages.
-            outgoingBody = new FrameLayout(this);
-            while (body.getChildCount() > 0) {
-                View child = body.getChildAt(0); body.removeView(child);
-                outgoingBody.addView(child, new FrameLayout.LayoutParams(-1, -1));
-            }
+            outgoingBody = body;
             outgoingBody.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-            bodyViewport.addView(outgoingBody, 0, new FrameLayout.LayoutParams(-1, -1));
+            body = createCalendarBody();
+            bodyViewport.addView(body, new FrameLayout.LayoutParams(-1, -1));
             body.setVisibility(View.INVISIBLE); bodyTransitionRunning = true;
             calendarBuildSteps = new java.util.ArrayDeque<>();
             rebuild.run();

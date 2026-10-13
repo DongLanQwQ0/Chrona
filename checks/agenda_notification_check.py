@@ -1,0 +1,79 @@
+"""Run the production reminder notification factory with Android transport doubles."""
+import os
+import subprocess
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[1]
+source = (root / 'app/src/main/java/com/donglan/chrona/AgendaReminder.java').read_text(encoding='utf-8')
+
+def method(marker):
+    start = source.index(marker)
+    end = source.index('{', start) + 1
+    depth = 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    return source[start:end].replace('android.net.Uri', 'Uri').replace('android.view.View', 'View')
+
+entry = (root / 'app/src/main/java/com/donglan/chrona/AgendaEntry.java').read_text(encoding='utf-8').replace('package com.donglan.chrona;', '')
+harness = r'''
+import java.util.*;
+import java.time.*;
+import java.time.format.*;
+class Context {NotificationManager manager=new NotificationManager();String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> type){return type.cast(manager);}}
+class NotificationManager {boolean active;}
+class Uri {String value;Uri(String v){value=v;}static Uri parse(String v){return new Uri(v);}}
+class Intent {String action;Uri data;Map<String,String> extras=new HashMap<>();Intent(){}Intent(Context c,Class<?> type){}Intent setData(Uri d){data=d;return this;}Intent setAction(String a){action=a;return this;}Intent putExtra(String k,String v){extras.put(k,v);return this;}}
+class PendingIntent {static final int FLAG_UPDATE_CURRENT=1,FLAG_IMMUTABLE=2;Intent intent;int flags,code;boolean broadcast;static PendingIntent make(int code,Intent i,int flags,boolean broadcast){PendingIntent p=new PendingIntent();p.intent=i;p.flags=flags;p.code=code;p.broadcast=broadcast;return p;}static PendingIntent getActivity(Context c,int code,Intent i,int flags){return make(code,i,flags,false);}static PendingIntent getBroadcast(Context c,int code,Intent i,int flags){return make(code,i,flags,true);}}
+class Bundle {boolean update;}
+class VivoAtomicNotification {static boolean vivo;static boolean supportedManufacturer(){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static Bundle extras(Context c,String title,String status,String range,String location,String time,PendingIntent details,boolean same){Bundle b=new Bundle();b.update=same;return b;}}
+class AgendaRepository {static Intent details(Context c,AgendaEntry e){return new Intent().setData(Uri.parse("content://calendar/events/"+e.id));}}
+class AgendaReminderReceiver {}
+class View {static final int GONE=8,VISIBLE=0;}
+class SystemClock {static long elapsedRealtime(){return 300000;}}
+class R {static class drawable {static int ic_notifications=1;}static class layout{static int notification_agenda_small=1,notification_agenda_large=2;}static class id{static int agenda_title=1,agenda_time=2,agenda_location=3,agenda_source=4,agenda_description=5,agenda_countdown=6;}}
+class RemoteViews {Map<Integer,String> texts=new HashMap<>();boolean countdown;RemoteViews(String pkg,int id){}void setTextViewText(int id,String text){texts.put(id,text);}void setViewVisibility(int id,int visibility){}void setChronometer(int id,long base,String format,boolean running){}void setChronometerCountDown(int id,boolean countdown){this.countdown=countdown;}}
+class Notification {
+ static final String CATEGORY_EVENT="event";static final int VISIBILITY_PRIVATE=0;
+ String title,text;long timeout,when;boolean ongoing,onlyAlertOnce,showWhen;int visibility;
+ PendingIntent details;Bundle extras;Object style;RemoteViews small,big,heads;List<Action> actions=new ArrayList<>();
+ static class DecoratedCustomViewStyle {}
+ static class BigTextStyle {String text;BigTextStyle bigText(String t){text=t;return this;}}
+ static class Action {String label;PendingIntent intent;static class Builder {Action a=new Action();Builder(Object icon,String label,PendingIntent intent){a.label=label;a.intent=intent;}Action build(){return a;}}}
+ static class Builder {Notification n=new Notification();Builder(Context c,String channel){}Builder setSmallIcon(int r){return this;}Builder setContentTitle(String t){n.title=t;return this;}Builder setContentText(String t){n.text=t;return this;}Builder setContentIntent(PendingIntent p){n.details=p;return this;}Builder setOngoing(boolean b){n.ongoing=b;return this;}Builder setOnlyAlertOnce(boolean b){n.onlyAlertOnce=b;return this;}Builder setWhen(long t){n.when=t;return this;}Builder setShowWhen(boolean b){n.showWhen=b;return this;}Builder setCategory(String s){return this;}Builder setVisibility(int v){n.visibility=v;return this;}Builder addExtras(Bundle b){n.extras=b;return this;}Builder setTimeoutAfter(long t){n.timeout=t;return this;}Builder addAction(Action a){n.actions.add(a);return this;}Builder setStyle(Object s){n.style=s;return this;}Builder setCustomContentView(RemoteViews v){n.small=v;return this;}Builder setCustomBigContentView(RemoteViews v){n.big=v;return this;}Builder setCustomHeadsUpContentView(RemoteViews v){n.heads=v;return this;}Notification build(){return n;}}
+}
+__ENTRY__
+public class AgendaNotificationCheck {
+ static final String CHANNEL="upcoming_agenda";static final int NOTIFICATION_ID=0x434852;
+ __FACTORY__
+ __ACTION__
+ static int checks;static void check(boolean ok){checks++;if(!ok)throw new AssertionError("reminder check "+checks);}
+ public static void main(String[] args){
+  Context c=new Context();long now=1000000;
+  AgendaEntry entry=new AgendaEntry(15,3,now+600000,now+3600000,"微积分", "东2-204","带上讲义","拾时",false,false,true);
+  VivoAtomicNotification.vivo=true;Notification n=notification(c,entry,now,false);
+  check(n.small==null&&n.big==null&&n.heads==null&&n.style instanceof Notification.BigTextStyle);
+  String detail=((Notification.BigTextStyle)n.style).text;check(detail.contains("东2-204")&&detail.contains("带上讲义")&&detail.contains("拾时"));
+  check(n.ongoing&&!n.showWhen&&n.visibility==Notification.VISIBILITY_PRIVATE&&n.timeout==3600000);
+  check(n.actions.size()==3&&n.actions.get(0).intent==n.details);
+  check(n.details.intent.data.value.equals("chrona://agenda/"+entry.key()));
+  for(Notification.Action action:n.actions)check((action.intent.flags&PendingIntent.FLAG_IMMUTABLE)!=0);
+  for(int i=1;i<3;i++){PendingIntent action=n.actions.get(i).intent;check(action.broadcast);check(action.intent.extras.get("key").equals(entry.key()));check(action.intent.data.value.equals("chrona://reminder/"+entry.key()));}
+  check(n.actions.get(1).intent.intent.action.equals("snooze")&&n.actions.get(2).intent.intent.action.equals("hide"));
+  c.manager.active=false;n=notification(c,entry,now,true);check(n.onlyAlertOnce&&!n.extras.update);
+  c.manager.active=true;n=notification(c,entry,now,true);check(n.extras.update);
+  n=notification(c,entry,entry.start+60000,true);check(n.text.startsWith("进行中")&&n.timeout==entry.finish()-entry.start-60000);
+  VivoAtomicNotification.vivo=false;n=notification(c,entry,now,false);check(n.small!=null&&n.big!=null&&n.heads==n.small&&n.style instanceof Notification.DecoratedCustomViewStyle);check(n.big.countdown&&n.big.texts.get(R.id.agenda_description).equals("带上讲义"));
+  AgendaEntry system=new AgendaEntry(80,0,entry.start,entry.end,"系统课程",null,"","课表",true,false,true);VivoAtomicNotification.vivo=true;n=notification(c,system,now,false);
+  check(n.details.intent.data.value.equals("content://calendar/events/80"));check(((Notification.BigTextStyle)n.style).text.contains("地点未填写"));
+  System.out.println("Reminder notification factory passed: "+checks+" checks; native vivo style, full details, immutable actions, occurrence identity, expiry and existing RemoteViews path");
+ }
+}
+'''.replace('__ENTRY__', entry).replace('__FACTORY__', method('    private static Notification notification(')).replace('__ACTION__', method('    private static PendingIntent action('))
+out = root / 'build/agenda-notification-check'
+out.mkdir(parents=True, exist_ok=True)
+file = out / 'AgendaNotificationCheck.java'
+file.write_text(harness, encoding='utf-8')
+java = Path(os.environ['JAVA_HOME']) / 'bin'
+subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file)], check=True)
+subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'AgendaNotificationCheck'], check=True)

@@ -138,23 +138,9 @@ public final class AgendaReminder {
         if (!e.system) open.setData(android.net.Uri.parse("chrona://agenda/" + e.key()));
         PendingIntent details = PendingIntent.getActivity(context, 1, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        RemoteViews small = new RemoteViews(context.getPackageName(), R.layout.notification_agenda_small);
-        small.setTextViewText(R.id.agenda_title, e.title);
-        small.setTextViewText(R.id.agenda_time, status + " · " + range);
-        RemoteViews large = new RemoteViews(context.getPackageName(), R.layout.notification_agenda_large);
-        large.setTextViewText(R.id.agenda_title, e.title);
-        large.setTextViewText(R.id.agenda_time, range);
-        large.setTextViewText(R.id.agenda_location, e.location.trim().isEmpty() ? "地点未填写" : e.location);
-        large.setTextViewText(R.id.agenda_source, e.source + " · " + status);
-        large.setTextViewText(R.id.agenda_description, e.description);
-        large.setViewVisibility(R.id.agenda_description, e.description.trim().isEmpty() ? android.view.View.GONE : android.view.View.VISIBLE);
-        large.setChronometer(R.id.agenda_countdown, SystemClock.elapsedRealtime() + e.start - now,
-                now < e.start ? "距开始 %s" : "已开始 %s", true);
-        large.setChronometerCountDown(R.id.agenda_countdown, now < e.start);
-        return new Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_notifications)
+        Notification.Builder builder = new Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_notifications)
                 .setContentTitle(e.title).setContentText(status + " · " + range)
-                .setCustomContentView(small).setCustomBigContentView(large).setCustomHeadsUpContentView(small)
-                .setStyle(new Notification.DecoratedCustomViewStyle()).setContentIntent(details)
+                .setContentIntent(details)
                 .setOngoing(true).setOnlyAlertOnce(same).setWhen(e.start).setShowWhen(false)
                 .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PRIVATE)
                 .addExtras(VivoAtomicNotification.extras(context, e.title, status, range, e.location,
@@ -163,8 +149,30 @@ public final class AgendaReminder {
                 .setTimeoutAfter(Math.max(1000, e.finish() - now))
                 .addAction(new Notification.Action.Builder(null, "查看详情", details).build())
                 .addAction(new Notification.Action.Builder(null, "5 分钟后提醒", action(context, e, "snooze", 2)).build())
-                .addAction(new Notification.Action.Builder(null, "隐藏本次", action(context, e, "hide", 3)).build())
-                .build();
+                .addAction(new Notification.Action.Builder(null, "隐藏本次", action(context, e, "hide", 3)).build());
+        if (VivoAtomicNotification.supportedManufacturer()) {
+            String detail = range + "\n" + (e.location.trim().isEmpty() ? "地点未填写" : e.location)
+                    + "\n" + e.source + " · " + status
+                    + (e.description.trim().isEmpty() ? "" : "\n" + e.description);
+            builder.setStyle(new Notification.BigTextStyle().bigText(detail));
+        } else {
+            RemoteViews small = new RemoteViews(context.getPackageName(), R.layout.notification_agenda_small);
+            small.setTextViewText(R.id.agenda_title, e.title);
+            small.setTextViewText(R.id.agenda_time, status + " · " + range);
+            RemoteViews large = new RemoteViews(context.getPackageName(), R.layout.notification_agenda_large);
+            large.setTextViewText(R.id.agenda_title, e.title);
+            large.setTextViewText(R.id.agenda_time, range);
+            large.setTextViewText(R.id.agenda_location, e.location.trim().isEmpty() ? "地点未填写" : e.location);
+            large.setTextViewText(R.id.agenda_source, e.source + " · " + status);
+            large.setTextViewText(R.id.agenda_description, e.description);
+            large.setViewVisibility(R.id.agenda_description, e.description.trim().isEmpty() ? android.view.View.GONE : android.view.View.VISIBLE);
+            large.setChronometer(R.id.agenda_countdown, SystemClock.elapsedRealtime() + e.start - now,
+                    now < e.start ? "距开始 %s" : "已开始 %s", true);
+            large.setChronometerCountDown(R.id.agenda_countdown, now < e.start);
+            builder.setCustomContentView(small).setCustomBigContentView(large).setCustomHeadsUpContentView(small)
+                    .setStyle(new Notification.DecoratedCustomViewStyle());
+        }
+        return builder.build();
     }
     private static PendingIntent action(Context context, AgendaEntry e, String action, int code) {
         return PendingIntent.getBroadcast(context, code,

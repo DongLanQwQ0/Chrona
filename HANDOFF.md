@@ -1,3 +1,21 @@
+# 最终离线收尾 · 2026-10-13 · 0.14.28 / 135
+
+本段覆盖下方早期0.14.27实验结论。用户已离开，明确仅允许离线开发，后续不得操作或读取手机。0.14.27仅为中间测试包；最终0.14.28版本号135用于让已安装中间包也能收到更新。
+
+日历切换改为保留旧body的原挂载并创建新body，消除整批子控件解绑/重挂。实际六次左右Dock滑动的最大帧耗时为14.89、27.95、26.53、22.90、22.27、24.69ms，六次均无超过32ms的帧，仍有少量超过本机帧截止时间的帧，不能宣称零掉帧。证据build/device-ui-audit/calendar-page-identity-metrics.txt。年视图队列仍有2ms预算，上限从4增为16是最后离线改动，尚未真机测量加载时间；相同模式和主题色的不可变色板缓存通过独立验证。
+
+经用户明确授权持久注册仅包含Chrona的CHRONA_AGENDA场景，成功后保留。补齐本机强制校验的shortInfos三字段后，普通应用身份发送的测试通知实际进入原子岛；截图atomic-short-status.png与atomic-short-template-device.txt为私有证据，不发布用户页面或厂商框架文件。生产APK不含注册和提权代码。最终生产提醒使用原生BigText样式、应用图标并保留三个动作；这些最后修改、动作实际交互、完整结束生命周期和重启后的场景保留尚未真机复验。
+
+完整离线50/50通过；debug、release、androidTest及lint构建成功，日志final-01428-checks.log和final-01428-build.log。发布附件仅正式APK与包含配置脚本/测试APK/说明的ZIP，避免自动更新误选测试APK。用户AGENTS.md及四个角色toml不得混入提交。工具说明docs/vivo-atomic-setup.md。目标仍active，真机待验项目不能以离线检查替代。
+
+# 本轮真机补充 · 2026-10-13 · 0.14.27 开发包，尚未发布
+
+用户重新授权手机自动测试并要求重新安装；应用包和instrumentation包均重新安装Success。新DeviceUiChecks测量真实Window.FrameMetrics，10次模式选择及4次松手在Dock外的滑动，保留原模式且不写日程。恢复测试后抓到切换停住：loading=false、transition=true、steps=null、preDraw仍存在、resumed=true、layout=false。根因是隐藏body.invalidate不再驱动绘制；prepareBodySlide改使可见bodyViewport.postInvalidateOnAnimation驱动预绘制，等待布局/滚动恢复时也请求下一帧。完成14项真机测试，未再发生25秒不收敛；calendar_slide_check 221项通过。原文件备份build/backups/20261013-device-goal-verification。
+
+私有真机证据build/device-ui-audit/calendar-0.14.25-baseline-2.txt及calendar-0.14.27-redraw.txt。新四次滑动maxMs为20.899/24.392/45.119/27.918，p95为12.311/11.595/13.766/12.123；旧四次为68.497/24.879/98.355/25.668。新仍有一次45ms长帧和年转月37.660ms，不能宣称零掉帧；最后测量时间附近运行过桌面离线编译检查，后续复测应避免竞争。原年度同步构建变逐帧后368事件视图完成需约2.9秒，应关注延迟体验。用户手机已经交还，后续操作需避免抢占用户。
+
+vivo生产适配器真机创建/更新/结束成功，sceneEnabled=false，ownNotificationActive=true只证明普通通知存在。补齐capsule与island同时发送及官方反射场景查询；离线32项通过。doc894公开正文明确正式路径需要上架及邮件申请权限；未代用户发邮件。尚未区分手机场景开关关闭和未准入；目标仍active，不能标完整接入完成。app/build.gradle暂为0.14.27/134，未提交发布；用户AGENTS.md与角色toml不可混入提交。
+
 # 本轮补充 · 2026-10-13 · 0.14.26
 
 用户确认日程大部分卡顿已解决，剩日历，并要求日程/收件箱统一进入、退出及切换；随后明确要求仅vivo原子岛实现。Calendar原队列遗漏dayList及timeline卡片，monthGrid还以七天整行为一个任务；现改逐日期/逐事件入队，预算2ms且每回调至多4项（单项可超过预算），全天事件也入队。时间轴提前按统一12/14sp度量保留边缘余量，缓存小时标签和网格Palette；nowLine最终入队，使其在所有事件上方。初始无动画构建仍同步，小月日选择仍保留原月网格，未做虚拟列表或改变Dock惯性。

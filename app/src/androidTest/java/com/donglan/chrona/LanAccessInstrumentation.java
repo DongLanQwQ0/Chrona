@@ -14,8 +14,18 @@ import java.util.UUID;
 
 /** Device-only integration check: real server + real Android SQLite, isolated from user data. */
 public final class LanAccessInstrumentation extends Instrumentation {
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private Bundle arguments;
+    @Override public void onCreate(Bundle arguments) {
+        this.arguments = arguments == null ? new Bundle() : new Bundle(arguments);
+        super.onCreate(arguments); start();
+    }
     @Override public void onStart() {
+        if ("ui".equals(arguments.getString("check"))) {
+            Bundle report = new Bundle();
+            try { report.putString("ui_report", DeviceUiChecks.run(this, arguments)); finish(-1, report); }
+            catch (Throwable failure) { report.putString("error", android.util.Log.getStackTraceString(failure)); finish(0, report); }
+            return;
+        }
         Bundle result = new Bundle();
         try { check(); result.putString("stream", "LAN integration: PASS (real Android SQLite and HTTP)\n"); finish(-1, result); }
         catch (Throwable error) { result.putString("stream", "LAN integration: FAIL " + error.getClass().getSimpleName() + ": " + error.getMessage()+"\n"); finish(0, result); }

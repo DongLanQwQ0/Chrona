@@ -1,5 +1,5 @@
 """Production calendar construction scheduler with frame/clock transport doubles."""
-import os
+import os, re
 from pathlib import Path
 import subprocess
 
@@ -20,8 +20,7 @@ import java.util.*;
 public class CalendarBuildFrameCheck {
  static class Clock { static long now; }
  static class Body { ArrayDeque<Runnable> frames=new ArrayDeque<>();void postOnAnimation(Runnable job){frames.add(job);}void tick(){frames.removeFirst().run();}void removeCallbacks(Runnable job){frames.removeIf(item->item==job);} }
- private static final long BUILD_FRAME_BUDGET_NANOS=2_000_000L;
- private static final int BUILD_FRAME_MAX_STEPS=4;
+ __CONSTANTS__
  private ArrayDeque<Runnable> calendarBuildSteps;
  private Runnable calendarBuildDone;
  private final Runnable calendarBuildFrame=this::buildCalendarFrame;
@@ -44,11 +43,12 @@ public class CalendarBuildFrameCheck {
   c.enqueueCalendarBuild(()->Clock.now+=5_000_000L);c.enqueueCalendarBuild(()->{throw new AssertionError("Cancelled build executed");});
   c.buildCalendarFrame();c.cancelCalendarBuild();c.buildCalendarFrame();check(done[0]==2);check(c.body.frames.isEmpty());
   check(c.renderedKey.isEmpty()&&c.calendarBuildDone==null);c.cancelCalendarBuild();check(c.body.frames.isEmpty());
-  c.calendarBuildSteps=new ArrayDeque<>();int[] fast={0};for(int i=0;i<10;i++)c.enqueueCalendarBuild(()->fast[0]++);c.buildCalendarFrame();check(fast[0]==4);c.body.tick();check(fast[0]==8);c.body.tick();check(fast[0]==10&&c.calendarBuildSteps==null);
+  c.calendarBuildSteps=new ArrayDeque<>();int[] fast={0};for(int i=0;i<34;i++)c.enqueueCalendarBuild(()->fast[0]++);c.buildCalendarFrame();check(fast[0]==16);c.body.tick();check(fast[0]==32);c.body.tick();check(fast[0]==34&&c.calendarBuildSteps==null);
+  c.calendarBuildSteps=new ArrayDeque<>();fast[0]=0;for(int i=0;i<20;i++)c.enqueueCalendarBuild(()->{fast[0]++;Clock.now+=500_000L;});c.buildCalendarFrame();check(fast[0]==4);c.cancelCalendarBuild();
   System.out.println("Calendar build frame checks passed: "+checks+" (production methods, frame and clock doubles)");
  }
 }
-'''.replace('__METHODS__', methods)
+'''.replace('__METHODS__', methods).replace('__CONSTANTS__', '\n'.join(re.findall(r'private static final (?:long|int) BUILD_FRAME_\w+ = [^;]+;', source)))
 out = root / 'build/calendar-build-frame-check'
 out.mkdir(parents=True, exist_ok=True)
 file = out / 'CalendarBuildFrameCheck.java'

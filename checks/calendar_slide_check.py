@@ -23,7 +23,7 @@ public class CalendarSlideCheck {
  static final List<String> order=new ArrayList<>();static final ArrayDeque<Runnable> jobs=new ArrayDeque<>();
  interface PreDraw { boolean onPreDraw(); }
  static class Observer {List<PreDraw> listeners=new ArrayList<>();boolean isAlive(){return true;}void addOnPreDrawListener(PreDraw l){listeners.add(l);}void removeOnPreDrawListener(PreDraw l){listeners.remove(l);}void ready(){for(PreDraw l:new ArrayList<>(listeners))l.onPreDraw();}}
- static class View {static final int VISIBLE=0,INVISIBLE=4;float x;boolean focus,layoutRequested,requestOnScroll;int scroll,visibility=INVISIBLE;Observer observer=new Observer();int getWidth(){return 300;}boolean hasFocus(){return focus;}boolean isLayoutRequested(){return layoutRequested;}void setTranslationX(float v){x=v;}void setVisibility(int v){visibility=v;}void post(Runnable r){jobs.add(r);}Observer getViewTreeObserver(){return observer;}void invalidate(){}void scrollTo(int x,int y){scroll=y;order.add("scroll");if(requestOnScroll)activeBody.layoutRequested=true;}void removeView(View view){check(view.visibility==INVISIBLE);}}
+ static class View {static final int VISIBLE=0,INVISIBLE=4;float x;boolean focus,layoutRequested,requestOnScroll;int scroll,visibility=INVISIBLE;Observer observer=new Observer();int getWidth(){return 300;}boolean hasFocus(){return focus;}boolean isLayoutRequested(){return layoutRequested;}void setTranslationX(float v){x=v;}void setVisibility(int v){visibility=v;}void post(Runnable r){jobs.add(r);}Observer getViewTreeObserver(){return observer;}void invalidate(){}void postInvalidateOnAnimation(){order.add("invalidate viewport");}void scrollTo(int x,int y){scroll=y;order.add("scroll");if(requestOnScroll)activeBody.layoutRequested=true;}void removeView(View view){check(view.visibility==INVISIBLE);}}
  static View activeBody;
  static class Animator {}
  static class Adapter {public void onAnimationEnd(Animator a){}}
@@ -39,7 +39,7 @@ public class CalendarSlideCheck {
  static void drain(){while(!jobs.isEmpty())jobs.removeFirst().run();}
  public static void main(String[] args){
   CalendarSlideCheck c=new CalendarSlideCheck();c.positions.put("month",new int[]{21,90});c.prepareBodySlide(1,1);
-  check(c.bodySlide==null);drain();check(c.bodySlide==null&&c.body.observer.listeners.size()==1);
+  check(c.bodySlide==null);drain();check(c.bodySlide==null&&c.body.observer.listeners.size()==1);check(order.contains("invalidate viewport"));
   c.body.observer.ready();check(c.bodySlide!=null&&c.body.x==300&&c.outgoingBody.x==0);
   check(c.verticalViewport.scroll==90&&order.indexOf("scroll")<order.indexOf("start"));
   ValueAnimator moving=c.bodySlide;moving.tick(.35f);check(Math.abs(c.outgoingBody.x+300-c.body.x)<.001f);

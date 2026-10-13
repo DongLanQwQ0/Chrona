@@ -1,4 +1,4 @@
-"""Explicit offline suites: quick needs Python only; full also needs existing Java/JARs.
+"""Explicit offline suites: quick needs Python only; full also needs existing Java/JARs and PowerShell 7.
 
 Run from any directory: python checks/run_checks.py [quick|full] [--list].
 No device operations, Gradle builds, downloads, or paid API requests are performed.
@@ -25,12 +25,12 @@ GROUPS = {
         "lan_security_check.py", "edit_conflict_check.py", "settings_layout_check.py", "attachment_remove_check.py",
         "lifecycle_motion_check.py", "native_motion_core_check.py", "section_motion_check.py",
         "automatic_update_check.py",
-        "background_preference_check.py", "custom_color_check.py",
+        "background_preference_check.py", "custom_color_check.py", "accent_palette_cache_check.py",
         "dialog_layers_check.py", "widget_danmaku_refresh_check.py",
         "home_filter_reference_check.py", "sync_settings_check.py",
         "widget_source_failure_check.py",
         "widget_preferences_check.py",
-        "agenda_features_check.py",
+        "agenda_features_check.py", "agenda_notification_check.py",
         "calendar_review_check.py",
         "dashboard_switch_check.py", "schedule_refresh_frame_check.py", "vivo_atomic_check.py", "calendar_event_build_check.py",
     ),
@@ -39,6 +39,7 @@ GROUPS = {
         "sync_core_check.py",
         "ai_auto_publish_check.py",
     ),
+    "powershell": ("vivo_provision_check.py",),
 }
 SUITES = {"quick": ("python",), "full": tuple(GROUPS)}
 
