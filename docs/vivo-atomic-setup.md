@@ -16,7 +16,9 @@
 
 0.14.35为展开原子岛提供独立布局：顶部两侧显示图标与剩余时间，中间留空，完整标题放到摄像头下方。读取设备顶部挖孔下缘，必要时补足4dp安全间距，普通通知保持原布局。最终避让仍需真机验证。
 
-先安装对应版本 Chrona，连接已授权 ADB 的手机，再解压发布附件 `Chrona-vivo-setup-0.14.35.zip`。使用 PowerShell 7：
+0.14.36在距离开始（或活动结束）剩余两分钟时，将收起胶囊的固定时刻切换为系统秒级倒计时。非活动日程开始后显示“已开始”，最多三分钟关闭；活动继续显示进度直至结束。通知超时、下一次闹钟和数据库候选查询共用同一期限，刷新不会延长这三分钟。
+
+先安装对应版本 Chrona，连接已授权 ADB 的手机，再解压发布附件 `Chrona-vivo-setup-0.14.36.zip`。使用 PowerShell 7：
 
 ```powershell
 pwsh -File .\Configure-VivoAtomicScene.ps1 -Device '手机IP:连接端口' -Mode Enable -TestApk .\Chrona-device-checks.apk

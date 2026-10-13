@@ -1,5 +1,13 @@
 # vivo 原子通知实现与调研 — 2026-10-13
 
+## 胶囊秒级倒计时：0.14.36
+
+原子岛leftInfo.content支持TimerFormat JSON。固件SuperXChronometer.setContent（classes3.dex 0x3f638c/0x3f63b2）识别base并解析；base为elapsedRealtime毫秒，countDown=true、started=true、minUnit=M、elapsedFormatMS=%02d:%02d。每秒由View.postDelayed更新，updateText以base-elapsedRealtime计算秒数，负值归零并停止。普通文本更新调用stop，因而“已开始”不会继续运行上一阶段的计时器。
+
+AtomMainIslandLeftTemplate取leftContent并交给IslandTextView，后者继承SuperXChronometer（classes.dex 0x401da8/0x401db0/0x414446）。已在应用中使用此原生协议，不增加每秒通知刷新。切换边界为剩余两分钟；活动开始后继续活动进度，非活动日程保留已开始三分钟后关闭。关键查询、通知超时、槽位截止和下一边界保持同一期限。
+
+上述协议来自已读取的用户固件；本版秒级显示和自动关闭仍需真机验收。私有研究片段位于build/device-ui-audit的SuperXChronometer-timer-disassembly.txt、TimerFormat-disassembly.txt及IslandTextView-timer-disassembly.txt，不随发行包发布。
+
 ## 自定义卡片：0.14.32
 
 用户确认HTML设计后接入自定义RemoteViews。此前已读取的手机固件给出了公开文档未列出的通知模板7：NMS的CUSTOM_TEMPLATE=7；SystemUI的SuperXTemplateUtils映射7到template_custom，岛映射到custom_island。CustomSuperXTemplate通过SuperXTemplateBase读取顶层notification.superx.customTemplate，岛分支读取island.superx.customTemplate，再apply/reapply。生产代码同时传递同一卡片，保留islandClick=0和展开卡片的详情PendingIntent。通知自定义编号7不可与doc896中岛模板枚举6混淆。

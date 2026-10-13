@@ -29,8 +29,8 @@ class NotificationManager {boolean active;}
 class Uri {String value;Uri(String v){value=v;}static Uri parse(String v){return new Uri(v);}}
 class Intent {String action;Uri data;Map<String,String> extras=new HashMap<>();Intent(){}Intent(Context c,Class<?> type){}Intent setData(Uri d){data=d;return this;}Intent setAction(String a){action=a;return this;}Intent putExtra(String k,String v){extras.put(k,v);return this;}}
 class PendingIntent {static final int FLAG_UPDATE_CURRENT=1,FLAG_IMMUTABLE=2;Intent intent;int flags,code;boolean broadcast;static PendingIntent make(int code,Intent i,int flags,boolean broadcast){PendingIntent p=new PendingIntent();p.intent=i;p.flags=flags;p.code=code;p.broadcast=broadcast;return p;}static PendingIntent getActivity(Context c,int code,Intent i,int flags){return make(code,i,flags,false);}static PendingIntent getBroadcast(Context c,int code,Intent i,int flags){return make(code,i,flags,true);}}
-class Bundle {boolean update;double progress;String remaining,animations;RemoteViews card,islandCard;}
-class VivoAtomicNotification {static boolean vivo;static boolean available(Context c){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static Bundle extras(Context c,String title,String status,String range,String time,String remaining,PendingIntent details,boolean same,RemoteViews card,RemoteViews islandCard,String animations){Bundle b=new Bundle();b.update=same;b.progress=card.progress;b.remaining=remaining;b.card=card;b.islandCard=islandCard;b.animations=animations;return b;}}
+class Bundle {boolean update;double progress;String remaining,animations,capsuleText,clock;RemoteViews card,islandCard;}
+class VivoAtomicNotification {static boolean vivo;static boolean available(Context c){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static String countdownText(long remaining){return "native-timer:"+remaining;}static Bundle extras(Context c,String title,String status,String range,String time,String remaining,PendingIntent details,boolean same,RemoteViews card,RemoteViews islandCard,String animations,String capsuleText){Bundle b=new Bundle();b.update=same;b.progress=card.progress;b.remaining=remaining;b.card=card;b.islandCard=islandCard;b.animations=animations;b.capsuleText=capsuleText;b.clock=time;return b;}}
 class AgendaReminderPreferences {static boolean useAtomic(Context c,boolean system,boolean available){return available;}}
 class AtomicAgendaCard {static RemoteViews create(Context c,AgendaEntry e,long now,long notifiedAt,String nextTitle,PendingIntent details){RemoteViews v=new RemoteViews(c.getPackageName(),7);v.progress=ReminderTimeline.elapsedRatio(e,now,notifiedAt);v.notifiedAt=notifiedAt;v.nextTitle=nextTitle;v.details=details;return v;}static RemoteViews forIsland(Context c,AgendaEntry e,long now,long notifiedAt,String nextTitle,PendingIntent details){return create(c,e,now,notifiedAt,nextTitle,details);}static String marqueeConfiguration(){return "marquee-config";}}
 class AgendaRepository {static Intent details(Context c,AgendaEntry e){return new Intent().setData(Uri.parse("content://calendar/events/"+e.id));}}
@@ -94,6 +94,22 @@ public class AgendaNotificationCheck {
   check(n.details.intent.data.value.equals("content://calendar/events/80"));check(((Notification.BigTextStyle)n.style).text.contains("地点未填写"));
   AgendaEntry overnight=new AgendaEntry(81,0,entry.start,entry.end+86400000,"跨天课程","","","课表",true,false,true);
   n=notification(c,overnight,now,false);check(n.text.indexOf("月")!=n.text.lastIndexOf("月"));
+  check(notification(c,entry,entry.start-120001,false).extras.capsuleText.equals(notification(c,entry,entry.start-120001,false).extras.clock));
+  check(notification(c,entry,entry.start-120000,false).extras.capsuleText.equals("native-timer:120000"));
+  check(notification(c,entry,entry.start-1,false).extras.capsuleText.equals("native-timer:1"));
+  check(notification(c,entry,entry.start,false).extras.capsuleText.equals(notification(c,entry,entry.start,false).extras.clock));
+  check(notification(c,entry,entry.end-120001,false).extras.capsuleText.equals(notification(c,entry,entry.end-120001,false).extras.clock));
+  check(notification(c,entry,entry.end-120000,false).extras.capsuleText.equals("native-timer:120000"));
+  check(notification(c,entry,entry.end-1,false).extras.capsuleText.equals("native-timer:1"));
+  for(String category:new String[]{"todo","reminder"}){
+   AgendaEntry notice=new AgendaEntry(90,3,entry.start,entry.end,category,"","","拾时",false,false,true,null,category);
+   check(notification(c,notice,notice.start-120000,false).extras.capsuleText.equals("native-timer:120000"));
+   Notification started=notification(c,notice,notice.start,false);
+   check(started.timeout==180000&&started.text.startsWith("已开始")&&started.extras.remaining.equals("已开始")&&started.extras.capsuleText.equals("已开始"));
+   check(notification(c,notice,notice.start+179000,false).timeout==1000);
+   Notification ordinaryNotice=notification(c,notice,notice.start+60000,false,NOTIFICATION_ID,now,"",false);
+   check(ordinaryNotice.timeout==120000&&ordinaryNotice.text.startsWith("已开始"));
+  }
   System.out.println("Reminder notification factory passed: "+checks+" checks; native vivo style, full details, immutable actions, occurrence identity, expiry and existing RemoteViews path");
  }
 }

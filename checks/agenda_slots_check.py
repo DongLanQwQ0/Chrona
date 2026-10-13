@@ -74,6 +74,8 @@ public class AgendaSlotsCheck {
   check(VivoAtomicNotification.ended.equals(List.of(NOTIFICATION_ID)),"operation2 only on replaced slot");
   check(c.prefs.getLong("slot_started:0",0)>=originalStarted&&c.prefs.getLong("slot_started:0",0)!=now-12345&&notified.get(NOTIFICATION_ID)==c.prefs.getLong("slot_started:0",0),"replacement resets animation origin");
   check(categories.get(NOTIFICATION_ID).equals("todo")&&categories.get(NOTIFICATION_ID+1).equals("event"),"local categories propagate into notification entries");
+  check(c.prefs.getLong("slot_end:0",0)==e.startAtMillis+180000,"todo slot expires three minutes after start");
+  check(c.prefs.getLong("slot_end:1",0)==b.endAtMillis,"event slot expiration remains its finish");
   check(c.prefs.getLong("snooze_until:"+a.key(),0)>now,"per-occurrence snooze saved");
   refresh(c,new Intent(b.key(),"snooze"));check(c.prefs.getLong("snooze_until:"+a.key(),0)>now&&c.prefs.getLong("snooze_until:"+b.key(),0)>now,"two independent snoozes survive");
   check(c.manager.cards.size()==2,"two deferred occurrences leave remaining cards");
@@ -92,9 +94,14 @@ public class AgendaSlotsCheck {
   check(c.manager.cards.size()==1&&alarm>System.currentTimeMillis()+ReminderTimeline.PROGRESS_REFRESH,"ordinary platform single card boundary refresh");
   c.prefs.edit().putLong("slot_end:0",now-1).apply();refresh(c,new Intent(a.key(),"hide"));
   check(!c.prefs.values.containsKey("hidden:"+a.key()),"expired card action rejected before refresh");
-  for(EventCandidate row:TaskStore.rows){row.startAtMillis=now-120000;row.endAtMillis=now-1;}refresh(c,null);
+  for(EventCandidate row:TaskStore.rows){row.startAtMillis=now-180000;row.endAtMillis=now-1;}refresh(c,null);
   check(c.manager.cards.isEmpty(),"ended occurrences end notifications");
   TaskStore.rows=List.of();refresh(c,null);check(c.manager.cards.isEmpty(),"empty agenda ends remaining notification");
+  long boundaryNow=System.currentTimeMillis();EventCandidate close=new EventCandidate(99,boundaryNow+150000,boundaryNow+3600000);
+  TaskStore.rows=List.of(close);VivoAtomicNotification.vivo=true;AgendaReminderPreferences.atomic=true;refresh(c,null);
+  check(alarm==close.startAtMillis-ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW,"atomic schedules exact two-minute mode boundary before normal refresh");
+  AgendaReminderPreferences.atomic=false;refresh(c,null);
+  check(alarm>close.startAtMillis-ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW,"ordinary notification does not schedule capsule mode boundary");
   System.out.println("Production reminder refresh passed: "+checks+" checks; stable slots, stale actions, independent snooze/hide, permission, disabled and platform limits");
  }
 }

@@ -114,7 +114,7 @@ public final class AgendaReminder {
         AgendaEntry[] slots = ReminderSlots.assign(manager.areNotificationsEnabled() ? timeline.entries : List.of(), previous);
         if (!timeline.entries.isEmpty() && manager.areNotificationsEnabled()) {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "即将开始的日程", NotificationManager.IMPORTANCE_HIGH);
-            channel.setDescription("日程开始前 30 分钟展示详细卡片，持续至日程结束");
+            channel.setDescription("开始前 30 分钟展示；活动持续至结束，其它日程开始后 3 分钟关闭");
             manager.createNotificationChannel(channel);
         }
         SharedPreferences.Editor state = prefs.edit();
@@ -128,9 +128,13 @@ public final class AgendaReminder {
             long notifiedAt = same ? prefs.getLong("slot_started:" + i, now) : now;
             manager.notify(NOTIFICATION_ID + i, notification(context, entry, now, same,
                     NOTIFICATION_ID + i, notifiedAt, ReminderTimeline.nextTitle(entries, entry, now), atomic));
-            state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, entry.finish());
+            state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, ReminderTimeline.expiresAt(entry));
             state.putLong("slot_started:" + i, notifiedAt);
-            if (atomic) refreshAt = Math.min(refreshAt, now + ReminderTimeline.PROGRESS_REFRESH);
+            if (atomic) {
+                refreshAt = Math.min(refreshAt, now + ReminderTimeline.PROGRESS_REFRESH);
+                long countdownAt = ReminderTimeline.capsuleDeadline(entry, now) - ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW;
+                if (countdownAt > now) refreshAt = Math.min(refreshAt, countdownAt);
+            }
         }
         state.apply();
         schedule(context, Math.min(refreshAt, now + 24 * 60 * 60_000L));
@@ -163,7 +167,8 @@ public final class AgendaReminder {
             int notificationId, long notifiedAt, String nextTitle, boolean atomic) {
         String status = now < e.start ? "即将开始" : "event".equals(e.category) ? "进行中" : "已开始";
         long remaining = ReminderTimeline.remainingMillis(e, now);
-        String remainingText = remaining < 60_000L ? (now < e.start ? "即将开始" : "即将结束")
+        boolean startedNotice = now >= e.start && !"event".equals(e.category);
+        String remainingText = startedNotice ? "已开始" : remaining < 60_000L ? (now < e.start ? "即将开始" : "即将结束")
                 : (now < e.start ? ((remaining + 59_999L) / 60_000L) + "分钟后开始"
                         : "还剩" + ((remaining + 59_999L) / 60_000L) + "分钟");
         ZoneId zone = ZoneId.systemDefault();
@@ -181,18 +186,22 @@ public final class AgendaReminder {
                 .setContentIntent(details)
                 .setOngoing(true).setOnlyAlertOnce(same).setWhen(e.start).setShowWhen(false)
                 .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PRIVATE)
-                .setTimeoutAfter(Math.max(1000, e.finish() - now))
+                .setTimeoutAfter(Math.max(1000, ReminderTimeline.expiresAt(e) - now))
                 .addAction(new Notification.Action.Builder(null, "查看详情", details).build())
                 .addAction(new Notification.Action.Builder(null, "5 分钟后提醒", action(context, e, "snooze", 2)).build())
                 .addAction(new Notification.Action.Builder(null, "隐藏本次", action(context, e, "hide", 3)).build());
         if (atomic) {
             RemoteViews card = AtomicAgendaCard.create(context, e, now, notifiedAt, nextTitle, details);
+            String clock = startedNotice ? "已开始" : DateTimeFormatter.ofPattern("HH:mm")
+                    .format(Instant.ofEpochMilli(now < e.start ? e.start : e.finish()).atZone(zone));
+            String capsuleText = ReminderTimeline.capsuleCountdown(e, now)
+                    ? VivoAtomicNotification.countdownText(ReminderTimeline.capsuleDeadline(e, now) - now) : clock;
             builder.addExtras(VivoAtomicNotification.extras(context, e.title, status, range,
-                    DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(now < e.start ? e.start : e.finish()).atZone(zone)),
+                    clock,
                     remainingText, details, same && VivoAtomicNotification.active(
                             context.getSystemService(NotificationManager.class), notificationId),
                     card, AtomicAgendaCard.forIsland(context, e, now, notifiedAt, nextTitle, details),
-                    AtomicAgendaCard.marqueeConfiguration()));
+                    AtomicAgendaCard.marqueeConfiguration(), capsuleText));
             String detail = range + "\n" + (e.location.trim().isEmpty() ? "地点未填写" : e.location)
                     + "\n" + e.source + " · " + status
                     + (e.description.trim().isEmpty() ? "" : "\n" + e.description);

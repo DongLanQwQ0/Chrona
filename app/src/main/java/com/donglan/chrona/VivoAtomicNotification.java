@@ -33,7 +33,7 @@ final class VivoAtomicNotification {
     }
     static Bundle extras(Context context, String title, String status, String range,
             String startTime, String remainingText, PendingIntent details, boolean same,
-            android.widget.RemoteViews card, android.widget.RemoteViews islandCard, String animations) {
+            android.widget.RemoteViews card, android.widget.RemoteViews islandCard, String animations, String capsuleText) {
         Bundle data = new Bundle();
         if (!supportedManufacturer()) return data;
         Icon icon = Icon.createWithResource(context, R.drawable.ic_chrona_foreground);
@@ -60,7 +60,7 @@ final class VivoAtomicNotification {
         data.putBundle(PREFIX + "shortInfos", shortInfo);
         Bundle island = new Bundle(), left = new Bundle(), right = new Bundle();
         left.putParcelable("island.superx.leftInfo.icon", icon);
-        left.putCharSequence("island.superx.leftInfo.content", startTime);
+        left.putCharSequence("island.superx.leftInfo.content", capsuleText);
         right.putCharSequence("island.superx.rightInfo.content", title);
         island.putInt("island.superx.leftTemplate", 1);
         island.putInt("island.superx.rightTemplate", 4);
@@ -79,6 +79,11 @@ final class VivoAtomicNotification {
         capsule.putParcelable(PREFIX + "capsule.clickResp", details);
         data.putBundle(PREFIX + "capsule", capsule);
         return data;
+    }
+    static String countdownText(long remainingMillis) {
+        long base = android.os.SystemClock.elapsedRealtime() + Math.max(0, remainingMillis);
+        // SystemUI SuperXChronometer consumes this JSON and ticks locally each second.
+        return "{\"base\":" + base + ",\"countDown\":true,\"started\":true,\"minUnit\":\"M\",\"elapsedFormatMS\":\"%02d:%02d\"}";
     }
     static boolean active(NotificationManager manager, int id) {
         if (!supportedManufacturer()) return false;

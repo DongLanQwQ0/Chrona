@@ -5,10 +5,12 @@ root=Path(__file__).resolve().parents[1]
 source=(root/'app/src/main/java/com/donglan/chrona/VivoAtomicNotification.java').read_text(encoding='utf-8')
 source=re.sub(r'^package .*;\s*|^import .*;\s*','',source,flags=re.M).replace('android.service.notification.StatusBarNotification','StatusBarNotification').replace('android.util.Log','Log')
 source=source.replace('android.graphics.Bitmap', 'Bitmap').replace('android.widget.RemoteViews', 'RemoteViews')
+source=source.replace('android.os.SystemClock', 'SystemClock')
 harness=r'''
 import java.util.*;
 class Bundle extends HashMap<String,Object> {void putInt(String k,int v){put(k,v);}void putString(String k,String v){put(k,v);}void putCharSequence(String k,CharSequence v){put(k,v);}void putBoolean(String k,boolean v){put(k,v);}void putParcelable(String k,Object v){put(k,v);}void putBundle(String k,Bundle v){put(k,v);}void putParcelableArrayList(String k,ArrayList<Icon> v){put(k,v);}}
 class Build {static String MANUFACTURER;}
+class SystemClock {static long elapsed=300000;static long elapsedRealtime(){return elapsed;}}
 class Context {NotificationManager manager=new NotificationManager();String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> c){return c.cast(manager);}}
 class PendingIntent {}
 class RemoteViews {}
@@ -57,6 +59,18 @@ public class VivoAtomicCheck {
  }
 }
 '''.replace('__SOURCE__',source)
+harness=harness.replace(',islandCard,animations)', ',islandCard,animations,"10:00")')
+harness=harness.replace(' System.out.println("Vivo atomic payload/lifecycle passed:', r'''
+ Build.MANUFACTURER="vivo";
+ String timer=VivoAtomicNotification.countdownText(120000);
+ check(timer.equals("{\"base\":420000,\"countDown\":true,\"started\":true,\"minUnit\":\"M\",\"elapsedFormatMS\":\"%02d:%02d\"}"));
+ check(VivoAtomicNotification.countdownText(-1).equals(VivoAtomicNotification.countdownText(0)));
+ SystemClock.elapsed=450000;check(VivoAtomicNotification.countdownText(1000).contains("\"base\":451000"));
+ Bundle ticking=VivoAtomicNotification.extras(c,"微积分","即将开始","10:00–12:25","10:00","即将开始",details,true,card,islandCard,animations,timer);
+ Bundle tickingIsland=(Bundle)ticking.get("notification.superx.island");
+ check(((Bundle)tickingIsland.get("island.superx.leftInfo")).get("island.superx.leftInfo.content").equals(timer));
+ check(((Bundle)ticking.get("notification.superx.capsule")).get("notification.superx.capsule.content").equals("10:00 微积分"));
+ System.out.println("Vivo atomic payload/lifecycle passed:''')
 out=root/'build/vivo-atomic-check';out.mkdir(parents=True,exist_ok=True)
 f=out/'VivoAtomicCheck.java';f.write_text(harness,encoding='utf-8')
 java=Path(os.environ['JAVA_HOME'])/'bin'

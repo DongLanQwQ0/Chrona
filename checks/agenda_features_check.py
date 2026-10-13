@@ -61,6 +61,15 @@ public class AgendaFeaturesCheck {
  public static void main(String[] args){
   long start=10_000_000L;AgendaEntry a=e(1,start,start+3_600_000);
   long notifiedAt=start-ReminderTimeline.LEAD;
+  check(!ReminderTimeline.capsuleCountdown(a,start-120_001),"capsule stays clock above two minutes");
+  check(ReminderTimeline.capsuleCountdown(a,start-120_000),"capsule switches exactly at two minutes");
+  check(ReminderTimeline.capsuleCountdown(a,start-1),"capsule remains countdown before start");
+  check(ReminderTimeline.capsuleDeadline(a,start-120_000)==start,"upcoming countdown targets start");
+  check(!ReminderTimeline.capsuleCountdown(a,start)&&ReminderTimeline.capsuleDeadline(a,start)==a.end,"long activity resets capsule target at start");
+  check(ReminderTimeline.capsuleCountdown(a,a.end-120_000),"active capsule countdown targets finish");
+  check(!ReminderTimeline.capsuleCountdown(a,a.end),"no countdown after finish");
+  AgendaEntry reminder=new AgendaEntry(88,1,start,start+60_000,"reminder","","","拾时",false,false,true,null,"reminder");
+  check(ReminderTimeline.capsuleCountdown(reminder,start-120_000)&&!ReminderTimeline.capsuleCountdown(reminder,start),"point reminder only counts down before start");
   check(ReminderTimeline.elapsedRatio(a,notifiedAt,notifiedAt)==0,"new lead phase empty");
   check(ReminderTimeline.elapsedRatio(a,start-ReminderTimeline.LEAD/2,notifiedAt)==0.5,"half lead elapsed");
   check(ReminderTimeline.elapsedRatio(a,start,notifiedAt)==0,"event starts new active phase");
@@ -78,6 +87,14 @@ public class AgendaFeaturesCheck {
   check(ReminderTimeline.elapsedRatio(nonEvent,start,delayed)==1,"non-event start keeps full progress");
   check(ReminderTimeline.elapsedRatio(nonEvent,start+1_800_000,delayed)==1,"non-event skips active phase");
   check(ReminderTimeline.elapsedRatio(nonEvent,start,start+1)==1,"delivery at or after non-event start remains full");
+  check(ReminderTimeline.expiresAt(a)==a.finish(),"activity expiration remains its finish");
+  for(AgendaEntry notice:List.of(nonEvent,reminder)){
+   check(ReminderTimeline.expiresAt(notice)==start+180000,"non-event expiration is three minutes after start regardless of end");
+   check(ReminderTimeline.capsuleDeadline(notice,start)==0,"non-event has no countdown deadline after start");
+   check(t(List.of(notice),start).entries.equals(List.of(notice))&&t(List.of(notice),start).wakeAt==start+180000,"started non-event wakes at three-minute expiration");
+   check(t(List.of(notice),start+179999).entries.equals(List.of(notice)),"non-event remains one millisecond before expiration");
+   check(t(List.of(notice),start+180000).entries.isEmpty(),"non-event removed exactly at three minutes");
+  }
   double previous=0;
   for(long at=notifiedAt;at<start;at+=10_000){double value=ReminderTimeline.elapsedRatio(a,at,notifiedAt);check(value>=previous&&value<1,"lead elapsed increases");previous=value;}
   previous=0;
@@ -165,7 +182,7 @@ class Database {
 public class SqlCheck {
  Database getReadableDatabase(){return new Database();}EventCandidate readCandidate(Cursor c){return null;}
  ''' + sql_methods + '''
- public static void main(String[]args){SqlCheck c=new SqlCheck();c.calendarCandidates(10000000,20000000,10000000,20000000);c.nextReminderCandidates(10000000,Set.of());c.nextReminderCandidates(10000000,Set.of("chrona:8:9999999"));}
+ public static void main(String[]args){SqlCheck c=new SqlCheck();c.calendarCandidates(10000000,20000000,10000000,20000000);c.nextReminderCandidates(10000000,Set.of());c.nextReminderCandidates(10000000,Set.of("chrona:8:9999999"));c.nextReminderCandidates(30000000,Set.of());}
 }'''
 calendar = (src / 'calendar/CalendarStore.java').read_text(encoding='utf-8')
 files['com/donglan/chrona/calendar/CalendarOccurrence.java'] = (src / 'calendar/CalendarOccurrence.java').read_text(encoding='utf-8')
@@ -235,11 +252,12 @@ subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.Age
 subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.calendar.ReminderProviderCheck'], check=True)
 queries = subprocess.check_output([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.SqlCheck'], text=True)
 db = sqlite3.connect(':memory:')
-db.execute('CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,needs_confirmation INTEGER)')
-db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(1,8000000,12000000,0,0),(2,9000000,13000000,0,0),(3,11000000,12000000,0,0),(4,11500000,12000000,0,0),(5,10500000,12000000,0,1),(6,10500000,12000000,1,0),(7,None,None,0,0),(8,9999999,None,0,0)])
-db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(i,1,2,0,0) for i in range(100,6200)])
-db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(9,11600000,12000000,0,0),(10,11700000,12000000,0,0)])
-expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9,10], [2,1], [3,4,9,10]]
+db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,needs_confirmation INTEGER,category TEXT NOT NULL DEFAULT 'event')")
+db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(1,8000000,12000000,0,0),(2,9000000,13000000,0,0),(3,11000000,12000000,0,0),(4,11500000,12000000,0,0),(5,10500000,12000000,0,1),(6,10500000,12000000,1,0),(7,None,None,0,0),(8,9999999,None,0,0)])
+db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(i,1,2,0,0) for i in range(100,6200)])
+db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(9,11600000,12000000,0,0),(10,11700000,12000000,0,0)])
+db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?,?)', [(20,29600000,33000000,0,0,'event'),(21,29820001,29820002,0,0,'todo'),(22,29820000,33000000,0,0,'reminder'),(23,29819999,33000000,0,0,'todo')])
+expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9,10], [2,1], [3,4,9,10], [21,20], []]
 for line, wanted in zip(queries.splitlines(), expected, strict=True):
     tag, selection, arguments, sort, limit = line.split('\t')
     rows = [r[0] for r in db.execute(f'SELECT id FROM event_candidates WHERE {selection} ORDER BY {sort} LIMIT {limit}', arguments.split('|'))]
