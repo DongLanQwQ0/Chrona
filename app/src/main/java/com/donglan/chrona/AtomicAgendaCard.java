@@ -23,6 +23,7 @@ final class AtomicAgendaCard {
     private static final int CAMERA_CLEARANCE_DP = 4;
     private static int cachedBase, cachedAccent;
     private static Bitmap[] cachedBackgrounds;
+    private static Bitmap cachedWallpaper;
     private static final int[] TICKER_IDS = {R.id.atomic_ticker_1, R.id.atomic_ticker_2,
             R.id.atomic_ticker_3, R.id.atomic_ticker_4, R.id.atomic_ticker_5, R.id.atomic_ticker_6};
 
@@ -78,7 +79,7 @@ final class AtomicAgendaCard {
         views.setImageViewBitmap(R.id.atomic_icon, icon(palette.primary));
         views.setImageViewBitmap(R.id.atomic_from_dot, dot(palette.primary, true));
         views.setImageViewBitmap(R.id.atomic_to_dot, dot(palette.primary, ratio >= 1));
-        views.setImageViewBitmap(R.id.atomic_progress, progress(palette.primary, ratio));
+        views.setImageViewBitmap(R.id.atomic_progress, progress(palette.primary, palette.surface, ratio));
         views.setContentDescription(R.id.atomic_progress, Math.round(ratio * 100) + "%");
         views.setInt(R.id.atomic_card, "setBackgroundColor", palette.surface);
         views.setOnClickPendingIntent(R.id.atomic_card, details);
@@ -100,7 +101,9 @@ final class AtomicAgendaCard {
         }
         int tickerInterval = (int)Math.min(Integer.MAX_VALUE, Math.max(16000, (longestDp / 30 + 6) * 1000));
         views.setInt(R.id.atomic_ticker, "setFlipInterval", motion ? tickerInterval : Integer.MAX_VALUE);
-        Bitmap[] backgrounds = backgrounds(palette.surface, palette.primary);
+        Bitmap wallpaper = AgendaReminderPreferences.atomicWallpaper(context)
+                ? GlassBackdropView.blurredForNotification(context, BACKGROUND_WIDTH, BACKGROUND_HEIGHT) : null;
+        Bitmap[] backgrounds = backgrounds(palette.surface, palette.primary, wallpaper);
         // Keep the same children during reapply: replacing animated children leaves ghosts.
         views.setImageViewBitmap(R.id.atomic_background_first, backgrounds[0]);
         views.setImageViewBitmap(R.id.atomic_background_second, backgrounds[1]);
@@ -148,11 +151,12 @@ final class AtomicAgendaCard {
         return json.append("]}").toString();
     }
 
-    private static Bitmap progress(int color, double ratio) {
+    private static Bitmap progress(int color, int base, double ratio) {
         Bitmap image = Bitmap.createBitmap(320, 4, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(image);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor((color & 0xffffff) | 0x33000000); canvas.drawRect(0, 0, 320, 4, paint);
+        // An opaque track remains visible against both wallpaper and aurora, joining the end dot.
+        paint.setColor(mix(base, color, .45f)); canvas.drawRect(0, 0, 320, 4, paint);
         paint.setColor(color); canvas.drawRect(0, 0, (float)(320 * ratio), 4, paint);
         return image;
     }
@@ -181,19 +185,31 @@ final class AtomicAgendaCard {
         return image;
     }
 
-    private static synchronized Bitmap[] backgrounds(int base, int accent) {
-        if (cachedBackgrounds != null && cachedBase == base && cachedAccent == accent) return cachedBackgrounds;
+    private static synchronized Bitmap[] backgrounds(int base, int accent, Bitmap wallpaper) {
+        if (cachedBackgrounds != null && cachedBase == base && cachedAccent == accent
+                && cachedWallpaper == wallpaper) return cachedBackgrounds;
         Bitmap[] result = new Bitmap[2];
         for (int i = 0; i < 2; i++) {
             result[i] = Bitmap.createBitmap(BACKGROUND_WIDTH, BACKGROUND_HEIGHT, Bitmap.Config.ARGB_8888);
             Paint paint = new Paint();
-            int tint = mix(base, accent, i == 0 ? .13f : .23f);
+            Canvas canvas = new Canvas(result[i]);
+            if (wallpaper != null) {
+                paint.setFilterBitmap(true);
+                canvas.drawBitmap(wallpaper, 0, 0, paint);
+                // Keep the photo readable as colour and texture without competing with text.
+                int washAlpha = Color.luminance(base) > .5 ? 205 : 165;
+                canvas.drawColor((base & 0xffffff) | (washAlpha << 24));
+            }
+            int tint = mix(base, accent, i == 0 ? .20f : .32f);
+            int[] colors = wallpaper == null ? new int[]{tint, base, mix(base, accent, .08f)}
+                    : new int[]{(accent & 0xffffff) | 0x24000000, Color.TRANSPARENT,
+                            (accent & 0xffffff) | 0x14000000};
             paint.setShader(new LinearGradient(i == 0 ? 0 : BACKGROUND_WIDTH, 0,
                     i == 0 ? BACKGROUND_WIDTH : 0, BACKGROUND_HEIGHT,
-                    new int[]{tint, base, mix(base, accent, .06f)}, null, Shader.TileMode.CLAMP));
-            new Canvas(result[i]).drawRect(0, 0, BACKGROUND_WIDTH, BACKGROUND_HEIGHT, paint);
+                    colors, null, Shader.TileMode.CLAMP));
+            canvas.drawRect(0, 0, BACKGROUND_WIDTH, BACKGROUND_HEIGHT, paint);
         }
-        cachedBase = base; cachedAccent = accent; cachedBackgrounds = result;
+        cachedBase = base; cachedAccent = accent; cachedWallpaper = wallpaper; cachedBackgrounds = result;
         return result;
     }
     private static int mix(int a, int b, float weight) {

@@ -15,6 +15,16 @@ method = source[start:end]
 location_start = source.index('    static String locationText(')
 location_end = source.index('\n    private static int cameraTopPadding', location_start)
 location_method = source[location_start:location_end]
+progress_start = source.index('    private static Bitmap progress(')
+progress_end = source.index('\n    private static Bitmap dot(', progress_start)
+mix_start = source.index('    private static int mix(')
+mix_end = source.index('\n    private AtomicAgendaCard()', mix_start)
+graphics = '''
+class Color {static int red(int c){return (c>>>16)&255;}static int green(int c){return (c>>>8)&255;}static int blue(int c){return c&255;}static int rgb(int r,int g,int b){return 0xff000000|(r<<16)|(g<<8)|b;}}
+class Paint {static final int ANTI_ALIAS_FLAG=1;int color;Paint(int flags){}void setColor(int c){color=c;}}
+class Bitmap {enum Config{ARGB_8888}java.util.List<float[]> rects=new java.util.ArrayList<>();java.util.List<Integer> colors=new java.util.ArrayList<>();static Bitmap createBitmap(int w,int h,Config c){return new Bitmap();}}
+class Canvas {Bitmap image;Canvas(Bitmap b){image=b;}void drawRect(float l,float t,float r,float b,Paint p){image.rects.add(new float[]{l,t,r,b});image.colors.add(p.color);}}
+'''
 symbols = root / 'app/build/intermediates/runtime_symbol_list/release/processReleaseResources/R.txt'
 ids = {}
 for line in symbols.read_text(encoding='utf-8').splitlines():
@@ -23,13 +33,16 @@ for line in symbols.read_text(encoding='utf-8').splitlines():
         ids[match[1]] = int(match[2], 16)
 assert len(ids) == 6
 resources = ''.join(f'static int {name}={value};' for name, value in ids.items())
-harness = ('class ValueAnimator {static boolean enabled=true;static boolean areAnimatorsEnabled(){return enabled;}}'
+harness = (graphics + 'class ValueAnimator {static boolean enabled=true;static boolean areAnimatorsEnabled(){return enabled;}}'
            'class R {static class id {' + resources + '}}'
-           'public class AtomicCardContractCheck {' + array + method + location_method +
+           'public class AtomicCardContractCheck {' + array + method + location_method + source[progress_start:progress_end] + source[mix_start:mix_end] +
            'public static void main(String[] args){'
            'for(String empty:new String[]{null,"","  ","\\t\\n"})'
            'if(!locationText(empty).equals("在你手里~"))throw new AssertionError("empty location");'
            'if(!locationText(" 教室 ").equals("教室"))throw new AssertionError("real location");'
+           'for(double ratio:new double[]{0,.1,.5,.95,1}){Bitmap p=progress(0xffff8800,0xff101015,ratio);'
+           'if((p.colors.get(0)>>>24)!=255||p.colors.get(0)==0xff101015)throw new AssertionError("invisible remaining track");'
+           'if(p.rects.get(0)[2]!=320||p.rects.get(1)[2]!=(float)(320*ratio))throw new AssertionError("progress endpoint");}'
            'System.out.println(marqueeConfiguration());'
            'ValueAnimator.enabled=false;System.out.println(marqueeConfiguration());}}')
 out = root / 'build/atomic-card-contract-check'
@@ -56,6 +69,13 @@ for item in animations:
                           'widget_marquee_ellipsize_type': (1, 0)}
 assert 'removeAllViews' not in source, 'Reapply must retain animated child identity'
 assert 'setAutoStart' not in source, 'ViewFlipper.setAutoStart is not remotely callable'
+# Endpoint centres and the track edges share the same inset.
+nodes = {node.get(android + 'id'): node for node in layout.iter()}
+track = nodes['@+id/atomic_progress']
+for side, dot_id in [('Left', 'atomic_from_dot'), ('Right', 'atomic_to_dot')]:
+    dot = nodes['@+id/' + dot_id]
+    value = lambda node, attr: float(node.get(android + attr).removesuffix('dp'))
+    assert value(track, 'layout_margin' + side) == value(dot, 'layout_margin' + side) + value(dot, 'layout_width') / 2
 # The outgoing background must begin at the incoming background's final geometry;
 # hold that geometry between flips so the enlarged image never snaps back to its base size.
 animations_dir = root / 'app/src/main/res/anim'

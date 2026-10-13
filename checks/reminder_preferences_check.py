@@ -32,6 +32,16 @@ public class ReminderPreferencesCheck {
   check(AgendaReminderPreferences.enabled(c),"master enabled default");
   check(!AgendaReminderPreferences.includesSystemCalendar(c),"system inclusion default disabled");
   check(AgendaReminderPreferences.atomicChrona(c)&&AgendaReminderPreferences.atomicSystem(c),"both atomic source defaults enabled");
+  check(AgendaReminderPreferences.atomicWallpaper(c),"wallpaper background enabled default");
+  for(boolean value:new boolean[]{false,true,false}){
+   int refreshes=AgendaReminder.refreshes,writes=p.writes;
+   Map<String,Object> previous=new HashMap<>(p.values);
+   AgendaReminderPreferences.setAtomicWallpaper(c,value);
+   check(AgendaReminderPreferences.atomicWallpaper(new Context())==value,"wallpaper preference persists");
+   check(AgendaReminder.refreshes==refreshes+1&&p.writes==writes+1,"wallpaper setter refreshes notification");
+   previous.put("atomic_wallpaper",value);
+   check(p.values.equals(previous),"wallpaper switch leaves reminder source and master preferences unchanged");
+  }
   for(int mask=0;mask<64;mask++){
    boolean enabled=(mask&1)!=0,include=(mask&2)!=0,chrona=(mask&4)!=0,systemAtomic=(mask&8)!=0,available=(mask&16)!=0,system=(mask&32)!=0;
    p.edit().putBoolean("enabled",enabled).putBoolean("include_system",include).putBoolean("atomic_chrona",chrona).putBoolean("atomic_system",systemAtomic).apply();

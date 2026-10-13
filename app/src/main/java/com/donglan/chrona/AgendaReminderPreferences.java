@@ -9,6 +9,10 @@ final class AgendaReminderPreferences {
     static boolean includesSystemCalendar(Context c) { return prefs(c).getBoolean("include_system", false); }
     static boolean atomicChrona(Context c) { return prefs(c).getBoolean("atomic_chrona", true); }
     static boolean atomicSystem(Context c) { return prefs(c).getBoolean("atomic_system", true); }
+    static boolean atomicWallpaper(Context c) { return prefs(c).getBoolean("atomic_wallpaper", true); }
+    static void setAtomicWallpaper(Context c, boolean enabled) {
+        prefs(c).edit().putBoolean("atomic_wallpaper", enabled).apply(); AgendaReminder.requestRefresh(c);
+    }
     static boolean useAtomic(Context c, boolean system, boolean available) {
         return enabled(c) && available && (!system || includesSystemCalendar(c))
                 && (system ? atomicSystem(c) : atomicChrona(c));

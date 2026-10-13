@@ -63,6 +63,8 @@ public final class SettingsHubActivity extends Activity {
         atomicChrona.setOnCheckedChangeListener((button, enabled) -> AgendaReminderPreferences.setAtomicChrona(this, enabled));
         atomicSystem = toggle(reminders, "系统日程原子通知", AgendaReminderPreferences.atomicSystem(this));
         atomicSystem.setOnCheckedChangeListener((button, enabled) -> AgendaReminderPreferences.setAtomicSystem(this, enabled));
+        Switch atomicWallpaper = toggle(reminders, "原子通知使用壁纸", AgendaReminderPreferences.atomicWallpaper(this));
+        atomicWallpaper.setOnCheckedChangeListener((button, enabled) -> AgendaReminderPreferences.setAtomicWallpaper(this, enabled));
         reminderSystemCalendar = calendarToggle(reminders, "提醒包含系统其他日程",
                 AgendaReminderPreferences.includesSystemCalendar(this), 703,
                 enabled -> { AgendaReminderPreferences.setIncludesSystemCalendar(this, enabled); updateReminderControls(); });

@@ -500,13 +500,20 @@ public final class GlassBackdropView extends View {
 
     /** Background worker only. Borrowed full-screen bitmap; callers must not recycle it. */
     static Bitmap blurredForWidget(Context context) {
-        String uri = ThemeStore.activeBackground(context);
-        if (uri == null) return null;
         android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         int width = Math.max(1, metrics.widthPixels);
         int height = Math.max(1, metrics.heightPixels);
-        boolean gaussian = ThemeStore.gaussianBlur(context);
-        int strength = ThemeStore.blurStrength(context);
+        return blurredForRemoteView(context, width, height, ThemeStore.gaussianBlur(context), ThemeStore.blurStrength(context));
+    }
+
+    /** Borrowed, small Gaussian wallpaper for notification hosts; background worker only. */
+    static Bitmap blurredForNotification(Context context, int width, int height) {
+        return blurredForRemoteView(context, width, height, true, 5);
+    }
+
+    private static Bitmap blurredForRemoteView(Context context, int width, int height, boolean gaussian, int strength) {
+        String uri = ThemeStore.activeBackground(context);
+        if (uri == null) return null;
         String key = uri + ":" + ThemeStore.revision(context) + ":" + width + ":" + height
                 + ":" + gaussian + ":" + strength;
         Bitmap cached = WIDGET_WALLPAPERS.get(key);
