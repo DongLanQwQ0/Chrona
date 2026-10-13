@@ -1,5 +1,11 @@
 # 历史验证记录
 
+## 0.14.18 — 2026-10-13
+
+- 完整离线 41/41，`build/filter-dock-full-checks.log`。原生 Dock 与生产 filterDock 工厂补充 92 项：状态徽章、末项点击、四/五按钮复用、接近区提前减速及连续性、稳定的高光布局基准；采用 Android 队列和布局替身。
+- 新增生产日历过渡方法 212 项：等待预绘制、测量后恢复滚动先于动画、两页共享进度且边缘无重叠、取消/过期代际/关闭动效收尾。日志对应 `checks/calendar_slide_check.py`，不能替代实际 Android GPU 和帧率测试。
+- 真实 Edge 动效与交互通过，pageErrors 为空；日志 `build/filter-dock-web-motion.log`、`build/filter-dock-web-check.log`。debug/release/lint 通过，0 errors / 84 warnings，`build/filter-dock-final-build.log`。0.14.18 / 125，1,988,166 字节，SHA256 `ef52fd87185eba6ce65044c877ee262c8adfdd2a48699ebae32cbff1e788ebe3`，保持原安装签名。备份 `build/backups/20261013-filter-dock-motion`。ADB 无设备，实际残影、FPS 和覆盖安装未实测。
+
 ## 0.14.17 — 2026-10-13
 
 - 完整离线回归 40/40，`build/shared-dock-full-checks.log`。原生 Dock 83 项包含横竖手势、Y 速度、竖向栏外释放、渲染属性更新期间无整栏 invalidate 与无重复布局；采用 Android 队列/布局替身。

@@ -110,7 +110,7 @@ public final class DashboardActivity extends Activity {
     private LinearLayout content;
     private DockNavigationLayout navigation;
     private LinearLayout results;
-    private LinearLayout filterChips;
+    private DockNavigationLayout filterChips;
     private ImageButton categoryChip;
     private TextView orderToggle;
     private LinearLayout selectionBar;
@@ -260,7 +260,7 @@ public final class DashboardActivity extends Activity {
         final ScrollView scroll;
         final LinearLayout content;
         final LinearLayout results;
-        final LinearLayout filterChips;
+        final DockNavigationLayout filterChips;
         final ImageButton categoryChip;
         final TextView orderToggle;
         final LinearLayout selectionBar;
@@ -1406,7 +1406,7 @@ public final class DashboardActivity extends Activity {
 
     private void inbox(TaskStore store) {
         message(content, "所有输入与处理进度。点开一条，可确认、编辑或重试。");
-        filterChips = chipRow(new String[]{"全部", "待确认", "处理中", "失败", "已写入"},
+        filterChips = filterDock(new String[]{"全部", "待确认", "处理中", "失败", "已写入"},
                 statusIndex, index -> {
                     if (statusIndex == index) return;
                     clearInboxSelection();
@@ -1414,8 +1414,14 @@ public final class DashboardActivity extends Activity {
                     inboxPage = 0;
                     updateChipSelection(statusIndex);
                     updateResultsWithEntrance();
-                }, inboxCategoryButton(),
+                },
                 new int[]{0, pendingReview, 0, pendingFailed, 0});
+        LinearLayout filters = new LinearLayout(this); filters.setGravity(Gravity.CENTER_VERTICAL);
+        filters.setClipChildren(false); filters.setClipToPadding(false);
+        filters.addView(filterChips, new LinearLayout.LayoutParams(0, dp(48), 1));
+        LinearLayout.LayoutParams category = new LinearLayout.LayoutParams(dp(48), dp(48));
+        category.setMargins(dp(8), 0, 0, 0); filters.addView(inboxCategoryButton(), category);
+        UiStyle.addSpaced(content, filters, 12, 16);
         buildSelectionBar();
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
@@ -1623,28 +1629,19 @@ public final class DashboardActivity extends Activity {
     private void schedule(TaskStore store) {
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        filterChips = new LinearLayout(this);
+        bar.setClipChildren(false); bar.setClipToPadding(false);
         String[] labels = {"未来", "未定", "以前", "全部"};
-        for (int i = 0; i < labels.length; i++) {
-            final int tab = i;
-            TextView chip = text(labels[i], 14, true);
-            chip.setGravity(Gravity.CENTER);
-            chip.setIncludeFontPadding(false);
-            chip.setOnClickListener(view -> {
-                if (scheduleTab == tab) return;
-                scheduleTab = tab;
-                scheduleOldestFirst = ScheduleOrderPreferences.oldestFirst(this, scheduleTab);
-                refreshOrderToggle();
-                schedulePage = 0;
-                updateChipSelection(tab);
-                updateResultsWithEntrance();
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(40), 1);
-            params.setMargins(0, 0, dp(5), 0);
-            filterChips.addView(chip, params);
-        }
+        filterChips = filterDock(labels, scheduleTab, tab -> {
+            if (scheduleTab == tab) return;
+            scheduleTab = tab;
+            scheduleOldestFirst = ScheduleOrderPreferences.oldestFirst(this, scheduleTab);
+            refreshOrderToggle();
+            schedulePage = 0;
+            updateChipSelection(tab);
+            updateResultsWithEntrance();
+        }, null);
         updateChipSelection(scheduleTab);
-        bar.addView(filterChips, new LinearLayout.LayoutParams(0, dp(40), 1));
+        bar.addView(filterChips, new LinearLayout.LayoutParams(0, dp(48), 1));
         ImageButton filters = new ImageButton(this);
         filters.setImageResource(R.drawable.ic_filter_alt);
         filters.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
@@ -1654,8 +1651,9 @@ public final class DashboardActivity extends Activity {
         filters.setContentDescription("筛选日程：日期、类型、写入状态和来源");
         filters.setOnClickListener(view -> showScheduleFilters());
         UiStyle.pressable(filters);
-        bar.addView(filters, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        UiStyle.addSpaced(content, bar, 6, 6);
+        LinearLayout.LayoutParams filterParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        filterParams.setMargins(dp(8), 0, 0, 0); bar.addView(filters, filterParams);
+        UiStyle.addSpaced(content, bar, 12, 16);
         scheduleControls = bar;
         buildSelectionBar();
         results = new LinearLayout(this);
@@ -1935,14 +1933,14 @@ public final class DashboardActivity extends Activity {
 
     private void updateChipSelection(int selected) {
         if (filterChips == null) return;
-        for (int i = 0; i < filterChips.getChildCount(); i++) {
-            View cell = filterChips.getChildAt(i);
+        filterChips.finishPageSelection(selected);
+        for (int i = 0; i < filterChips.itemCount(); i++) {
+            View cell = filterChips.itemAt(i);
             // A counted chip is wrapped so its badge can sit on the corner; the pill is inside.
             TextView chip = (TextView) (cell instanceof FrameLayout
                     ? ((FrameLayout) cell).getChildAt(0) : cell);
-            chip.setTextColor(i == selected ? UiStyle.colors(this).onPrimaryContainer
-                    : UiStyle.colors(this).primary);
-            applyThemeControlSurface(chip, i == selected, UiStyle.RADIUS_CHIP);
+            cell.setSelected(i == selected);
+            cell.setContentDescription(chip.getText() + (i == selected ? "，已选中" : ""));
         }
     }
 
@@ -2707,105 +2705,28 @@ public final class DashboardActivity extends Activity {
         return card;
     }
 
-    private LinearLayout chipRow(String[] labels, int selected, java.util.function.IntConsumer action) {
-        return chipRow(labels, selected, action, null, null);
-    }
-
-    private LinearLayout chipRow(String[] labels, int selected,
-            java.util.function.IntConsumer action, View trailingAction) {
-        return chipRow(labels, selected, action, trailingAction, null);
-    }
-
-    /**
-     * @param counts optional per-chip counts, appended to the label in a smaller run so a filter
-     *               can say how much is waiting behind it.
-     */
-    private LinearLayout chipRow(String[] labels, int selected,
-            java.util.function.IntConsumer action, View trailingAction, int[] counts) {
-        HorizontalScrollView strip = new HorizontalScrollView(this);
-        strip.setHorizontalScrollBarEnabled(false);
-        strip.setClipChildren(true);
-        strip.setClipToPadding(true);
-        strip.setFillViewport(false);
-        strips.add(strip);
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        // Keep the final chip fully inside the scroll viewport at maximum scroll. The filter
-        // button is a sibling in the bar below, so it never covers the scrolling chip content.
-        if (trailingAction != null) row.setPadding(0, 0, dp(28), 0);
-        int horizontalPadding = trailingAction == null ? 18 : 12;
-        List<TextView> chips = new ArrayList<>();
+    private DockNavigationLayout filterDock(String[] labels, int selected,
+            java.util.function.IntConsumer action, int[] counts) {
+        DockNavigationLayout dock = new DockNavigationLayout(this, action, () -> {});
+        dock.setPadding(dp(4), dp(2), dp(4), dp(2));
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
-            TextView chip = text(labels[i], 14, true);
-            chip.setGravity(Gravity.CENTER);
-            chip.setMinHeight(dp(48));
-            chip.setPadding(dp(horizontalPadding), 0, dp(horizontalPadding), 0);
-            chip.setTextColor(i == selected ? UiStyle.colors(this).onPrimaryContainer
-                    : UiStyle.colors(this).primary);
-            applyThemeControlSurface(chip, i == selected, UiStyle.RADIUS_CHIP);
-            chip.setOnClickListener(view -> action.accept(index));
-            chips.add(chip);
-        }
-        // Measure the widest label so every chip comes out the same width instead of hugging its
-        // own text; the count sits in a corner badge, so it never changes the pill's size.
-        if (!chips.isEmpty()) {
-            float widest = 0;
-            for (String label : labels) widest = Math.max(widest, chips.get(0).getPaint().measureText(label));
-            int chipWidth = Math.round(widest) + dp(horizontalPadding * 2);
-            for (TextView chip : chips) chip.setMinWidth(chipWidth);
-        }
-        for (int i = 0; i < chips.size(); i++) {
-            TextView chip = chips.get(i);
-            int count = counts != null && i < counts.length ? counts[i] : 0;
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
-            params.setMargins(0, 0, dp(8), 0);
+            TextView label = text(labels[i], 14, true);
+            label.setGravity(Gravity.CENTER); label.setIncludeFontPadding(false);
+            label.setOnClickListener(view -> { action.accept(index); dock.finishPageSelection(index); });
+            View item = label;
+            int count = counts == null ? 0 : counts[i];
             if (count > 0) {
-                FrameLayout cell = new FrameLayout(this);
-                cell.addView(chip, new FrameLayout.LayoutParams(-1, -1));
+                FrameLayout cell = new FrameLayout(this); cell.setClipChildren(false); cell.setClipToPadding(false);
+                cell.addView(label, new FrameLayout.LayoutParams(-1, -1));
                 TextView badge = countBadge(count);
-                FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(-2, dp(18),
-                        Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-                badgeParams.setMargins(0, dp(6), 0, 0);
-                cell.addView(badge, badgeParams);
-                // Sits on the label's top-right corner, inside the pill: pinned to the pill's own
-                // corner it was clipped by the chip row and the scrolling strip around it.
-                badge.setTranslationX(chip.getPaint().measureText(labels[i]) / 2f - dp(3));
-                row.addView(cell, params);
-            } else {
-                row.addView(chip, params);
+                FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(-2, dp(18), Gravity.TOP | Gravity.END);
+                badgeParams.setMargins(0, 0, dp(2), 0); cell.addView(badge, badgeParams); item = cell;
             }
+            dock.addItem(item, new LinearLayout.LayoutParams(0, dp(44), 1));
         }
-        strip.addView(row);
-        if (trailingAction == null) {
-            UiStyle.addSpaced(content, strip, 10, 12);
-        } else {
-            LinearLayout bar = new LinearLayout(this);
-            bar.setOrientation(LinearLayout.HORIZONTAL);
-            bar.setGravity(Gravity.CENTER_VERTICAL);
-            bar.setClipChildren(true);
-            bar.setClipToPadding(true);
-            bar.addView(strip, new LinearLayout.LayoutParams(0, -2, 1));
-            LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-            actionParams.setMargins(dp(8), 0, 0, 0);
-            bar.addView(trailingAction, actionParams);
-            UiStyle.addSpaced(content, bar, 8, 10);
-        }
-        strip.post(() -> {
-            if (selected >= row.getChildCount()) return;
-            View selectedChip = row.getChildAt(selected);            int viewportWidth = strip.getWidth() - strip.getPaddingLeft()
-                    - strip.getPaddingRight();
-            int currentX = strip.getScrollX();
-            int visibleRight = currentX + viewportWidth;
-            int targetX = currentX;
-            if (selectedChip.getLeft() < currentX) {
-                targetX = selectedChip.getLeft();
-            } else if (selectedChip.getRight() > visibleRight) {
-                targetX = selectedChip.getRight() - viewportWidth;
-            }
-            if (targetX != currentX) strip.scrollTo(Math.max(0, targetX), 0);
-        });
-        return row;
+        dock.setSelectedIndex(selected);
+        return dock;
     }
 
     /** The one count marker: a translucent, theme-tinted pill used by every corner badge. */

@@ -58,6 +58,9 @@ public final class CalendarOverviewActivity extends Activity {
     private FrameLayout bodyStage;
     private FrameLayout bodyViewport;
     private FrameLayout outgoingBody;
+    private android.animation.ValueAnimator bodySlide;
+    private android.view.ViewTreeObserver bodyObserver;
+    private android.view.ViewTreeObserver.OnPreDrawListener bodyPreDraw;
     private boolean pendingBodyRender;
     private final Runnable renderPendingBody = this::renderBody;
     private static final long BUILD_FRAME_BUDGET_NANOS = 4_000_000L;
@@ -351,12 +354,59 @@ public final class CalendarOverviewActivity extends Activity {
     private void finishBodyMotion() {
         cancelCalendarBuild();
         presentationGeneration++; bodyTransitionRunning = false;
-        body.animate().setListener(null).setUpdateListener(null).cancel();
+        if (bodyPreDraw != null && bodyObserver != null && bodyObserver.isAlive())
+            bodyObserver.removeOnPreDrawListener(bodyPreDraw);
+        bodyPreDraw = null; bodyObserver = null;
+        android.animation.ValueAnimator old = bodySlide; bodySlide = null;
+        if (old != null) old.cancel();
         body.setAlpha(1f); body.setTranslationX(0f);
         if (outgoingBody != null) {
-            outgoingBody.animate().cancel(); bodyViewport.removeView(outgoingBody); outgoingBody = null;
+            bodyViewport.removeView(outgoingBody); outgoingBody = null;
         }
         if (pendingBodyRender) { pendingBodyRender = false; if (resumed) handler.post(renderPendingBody); }
+    }
+    private void prepareBodySlide(int presentation, int direction) {
+        // Wait for measured scroll extents before restoring offsets and exposing either page.
+        body.post(() -> {
+            if (presentation != presentationGeneration || outgoingBody == null || !resumed) return;
+            bodyObserver = body.getViewTreeObserver();
+            bodyPreDraw = () -> {
+                if (presentation != presentationGeneration || bodyObserver == null || bodyPreDraw == null) return true;
+                if (bodyObserver.isAlive()) bodyObserver.removeOnPreDrawListener(bodyPreDraw);
+                bodyPreDraw = null; bodyObserver = null;
+                if (presentation == presentationGeneration) {
+                    int[] position = positions.get(renderedKey);
+                    if (position != null) {
+                        if (verticalViewport != null) verticalViewport.scrollTo(0, position[1]);
+                        if (horizontalViewport != null) horizontalViewport.scrollTo(position[0], 0);
+                    }
+                    startBodySlide(presentation, direction);
+                }
+                return true;
+            };
+            bodyObserver.addOnPreDrawListener(bodyPreDraw); body.invalidate();
+        });
+    }
+    private void startBodySlide(int presentation, int direction) {
+        if (outgoingBody == null) return;
+        float width = bodyViewport.getWidth();
+        if (!UiMotion.isEnabled() || width <= 0 || body.hasFocus()) { finishBodyMotion(); return; }
+        body.setAlpha(1f); body.setTranslationX(CalendarSlideMotion.incoming(width, direction, 0f));
+        outgoingBody.setTranslationX(0f);
+        android.animation.ValueAnimator motion = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        bodySlide = motion; motion.setDuration(UiMotion.ENTER); motion.setInterpolator(UiMotion.SETTLE);
+        motion.addUpdateListener(value -> {
+            if (!UiMotion.isEnabled() || body.hasFocus()) { finishBodyMotion(); return; }
+            float progress = (float) value.getAnimatedValue();
+            body.setTranslationX(CalendarSlideMotion.incoming(width, direction, progress));
+            outgoingBody.setTranslationX(CalendarSlideMotion.outgoing(width, direction, progress));
+        });
+        motion.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (bodySlide == motion && presentation == presentationGeneration) finishBodyMotion();
+            }
+        });
+        motion.start();
     }
     private LocalDate windowStart() {
         if (mode == YEAR) return date.withDayOfYear(1);
@@ -485,8 +535,9 @@ public final class CalendarOverviewActivity extends Activity {
                 && focus == null && accessible == null;
         animateNext = false;
         int presentation = ++presentationGeneration;
+        int direction = transitionDirection == 0 ? 1 : transitionDirection;
         Runnable rebuild = () -> {
-            body.setTranslationX(animated ? dp(18) * transitionDirection : 0);
+            body.setTranslationX(animated ? direction * Math.max(bodyViewport.getWidth(), getResources().getDisplayMetrics().widthPixels) : 0);
             buildBody();
         };
         if (animated) {
@@ -502,20 +553,7 @@ public final class CalendarOverviewActivity extends Activity {
             body.setAlpha(0f); bodyTransitionRunning = true;
             calendarBuildSteps = new java.util.ArrayDeque<>();
             rebuild.run();
-            calendarBuildDone = () -> {
-                restorePosition();
-                outgoingBody.animate().withLayer().alpha(0f).setDuration(UiMotion.ENTER).start();
-                body.animate().withLayer().alpha(1f).translationX(0f).setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE)
-                        .setUpdateListener(value -> { if (!UiMotion.isEnabled() || body.hasFocus()) finishBodyMotion(); })
-                        .setListener(new android.animation.AnimatorListenerAdapter() {
-                            @Override public void onAnimationEnd(android.animation.Animator animation) {
-                                if (presentation == presentationGeneration) finishBodyMotion();
-                            }
-                            @Override public void onAnimationCancel(android.animation.Animator animation) {
-                                if (presentation == presentationGeneration) finishBodyMotion();
-                            }
-                        }).start();
-                };
+            calendarBuildDone = () -> prepareBodySlide(presentation, direction);
             if (calendarBuildSteps.isEmpty()) {
                 calendarBuildSteps = null; Runnable done = calendarBuildDone; calendarBuildDone = null; done.run();
             } else body.postOnAnimation(calendarBuildFrame);

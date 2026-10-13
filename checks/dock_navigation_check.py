@@ -10,6 +10,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build/dock-navigation-check"
 STUBS = {
+    "android/view/Gravity.java": "package android.view;public class Gravity {public static final int CENTER=1,TOP=2,END=4;}",
     "android/content/Context.java": """package android.content;
 public class Context { public android.content.res.Resources getResources(){return new android.content.res.Resources();} }""",
     "android/content/res/Resources.java": """package android.content.res;
@@ -55,7 +56,9 @@ public class View {
  public int getWidth(){return r-l;} public int getHeight(){return b-t;}
  public int layouts,invalidations;public void layout(int l,int t,int r,int b){this.l=l;this.t=t;this.r=r;this.b=b;layouts++;if(this instanceof ViewGroup group)group.onLayout(true,l,t,r,b);}
  public static final int IMPORTANT_FOR_ACCESSIBILITY_NO=2;public void setImportantForAccessibility(int value){}
+ public ViewGroup.LayoutParams layoutParams=new ViewGroup.LayoutParams(1,1);public ViewGroup.LayoutParams getLayoutParams(){return layoutParams;}public void setLayoutParams(ViewGroup.LayoutParams value){layoutParams=value;}
  public void setBackground(Object background){}public void setPivotX(float x){}public void setPivotY(float y){}
+ public void setPadding(int a,int b,int c,int d){}
  public float translationX,translationY;public void setTranslationX(float x){translationX=x;}public void setTranslationY(float y){translationY=y;}public float getTranslationX(){return translationX;}public float getTranslationY(){return translationY;}
  public void setOnClickListener(OnClickListener c){click=c;} public boolean performClick(){if(click!=null)click.onClick(this);return click!=null;}
  public boolean dispatchTouchEvent(MotionEvent e){return onTouchEvent(e);}
@@ -78,8 +81,8 @@ public class View {
 import java.util.*; public class ViewGroup extends View {
  protected final List<View> children=new ArrayList<>(); private View target;
  public ViewGroup(android.content.Context c){super(c);}
- public static class LayoutParams {public int width,height;public LayoutParams(int w,int h){width=w;height=h;}}
- public void addView(View view,LayoutParams params){addView(view);}
+ public static class LayoutParams {public int width,height;public LayoutParams(int w,int h){width=w;height=h;}public LayoutParams(int w,int h,int gravity){this(w,h);}public void setMargins(int a,int b,int c,int d){}}
+ public void addView(View view,LayoutParams params){view.setLayoutParams(params);addView(view);}
  protected void onLayout(boolean changed,int l,int t,int r,int b){}
  public void setClipChildren(boolean value){}public void setClipToPadding(boolean value){}
  public void addView(View v){children.add(v);v.parent=this;} public int getChildCount(){return children.size();}
@@ -94,10 +97,11 @@ import java.util.*; public class ViewGroup extends View {
   return onTouchEvent(e);
  }
 } """,
-    "android/widget/LinearLayout.java": "package android.widget; public class LinearLayout extends android.view.ViewGroup {public static final int HORIZONTAL=0,VERTICAL=1; public void setOrientation(int value){} public LinearLayout(android.content.Context c){super(c);} }",
+    "android/widget/LinearLayout.java": "package android.widget; public class LinearLayout extends android.view.ViewGroup {public static class LayoutParams extends android.view.ViewGroup.LayoutParams {public float weight;public LayoutParams(int w,int h,float value){super(w,h);weight=value;}}public static final int HORIZONTAL=0,VERTICAL=1; public void setOrientation(int value){} public LinearLayout(android.content.Context c){super(c);} }",
     "android/widget/FrameLayout.java": "package android.widget; public class FrameLayout extends android.view.ViewGroup { public FrameLayout(android.content.Context c){super(c);} protected void onLayout(boolean changed,int l,int t,int r,int b){for(android.view.View child:children)if(child instanceof android.widget.LinearLayout)child.layout(0,0,getWidth(),getHeight());} }",
     "android/widget/TextView.java": """package android.widget; public class TextView extends android.view.View {
 public TextView(android.content.Context c){super(c);} public void setTextColor(int c){}
+public void setGravity(int g){}public void setIncludeFontPadding(boolean b){}
 public void setCompoundDrawableTintList(android.content.res.ColorStateList c){} }""",
     "android/view/animation/DecelerateInterpolator.java": "package android.view.animation; public class DecelerateInterpolator {public DecelerateInterpolator(float x){} }",
     "android/animation/ValueAnimator.java": """package android.animation;
@@ -119,7 +123,9 @@ RUNNER = """package com.donglan.chrona;
 import android.content.Context; import android.view.*; import android.widget.*;
 import android.graphics.Canvas; import android.graphics.drawable.GradientDrawable;
 import java.util.*;
-public class DockNavigationCheck {
+public class DockNavigationCheck extends Context {
+ int dp(int value){return value;}TextView text(String title,int size,boolean bold){return new TextView(this);}TextView countBadge(int count){return new TextView(this);}
+ __FILTER_DOCK__
  static int checks; static void require(boolean ok,String message){checks++;if(!ok)throw new AssertionError(message);}
  static Context c=new Context(); static DockNavigationLayout dock; static List<Integer> selected; static int rebuilds;
  static void populate(){for(int i=0;i<3;i++){final int n=i;TextView button=new TextView(c);button.setOnClickListener(v->selected.add(n));
@@ -135,6 +141,13 @@ public class DockNavigationCheck {
  static float center(){View h=highlight();GradientDrawable.lastLeft=h.getTranslationX();GradientDrawable.lastWidth=h.getWidth()*h.getScaleX();GradientDrawable.lastHeight=h.getHeight()*h.getScaleY();GradientDrawable.lastRight=GradientDrawable.lastLeft+GradientDrawable.lastWidth;GradientDrawable.lastCenter=(GradientDrawable.lastLeft+GradientDrawable.lastRight)/2;return GradientDrawable.lastCenter;}
  static void close(float actual,float expected,String label){require(Math.abs(actual-expected)<=1f,label+" got "+actual);}
  public static void main(String[] args)throws Exception{
+  View.reset();List<Integer> filters=new ArrayList<>();DockNavigationLayout five=new DockNavigationCheck().filterDock(new String[]{"全部","待确认","处理中","失败","已写入"},0,filters::add,new int[]{0,3,0,2,0});
+  require(five.itemCount()==5,"Inbox selection bar uses the shared five-item dock");
+  require(five.itemAt(1) instanceof FrameLayout&&((FrameLayout)five.itemAt(1)).getChildCount()==2,"Review badge stays attached to its dock item");
+  ((FrameLayout)five.itemAt(1)).getChildAt(0).performClick();require(filters.equals(List.of(1)),"Counted filter invokes original selection once");
+  five.itemAt(4).performClick();require(filters.equals(List.of(1,4)),"Final inbox filter remains directly selectable");
+  DockNavigationLayout four=new DockNavigationCheck().filterDock(new String[]{"未来","未定","以前","全部"},0,filters::add,null);
+  require(four.itemCount()==4,"Schedule presets use the same dock framework");four.itemAt(2).performClick();require(filters.get(filters.size()-1)==2,"Schedule preset selection is retained");
   for(int i=0;i<3;i++){init();touch(0,i*100+25,35);View.advance(100);touch(1,i*100+25,35);
    require(rebuilds==0,"Do not rebuild during UP before queued child click");View.advance(0);
    require(selected.equals(List.of(i)),"Each ordinary button tap executes exactly once before detach: "+i);}
@@ -199,6 +212,10 @@ public class DockNavigationCheck {
   float a=DockSpring.outwardExtension(20,75),b=DockSpring.outwardExtension(40,75),c=DockSpring.outwardExtension(60,75);
   require(a<b&&b<c&&(c-b)<(b-a),"Resistance progressively increases toward the outward limit");
   require(DockSpring.outwardExtension(10000,75)<=75,"Extreme fling remains bounded");
+  float slow1=DockSpring.softUpperBoundary(230,250,50),slow2=DockSpring.softUpperBoundary(240,250,50),slow3=DockSpring.softUpperBoundary(250,250,50);
+  require(slow1<230&&slow2<240&&slow3<250,"Inner end slows before reaching the anchor");
+  require(slow1<slow2&&slow2<slow3&&slow3-slow2<slow2-slow1,"Inner end decelerates smoothly instead of stopping abruptly");
+  require(Math.abs(DockSpring.softUpperBoundary(200.01f,250,50)-200.01f)<.001f,"Soft approach joins regular motion continuously");
   DockSpring prediction=new DockSpring();prediction.position=1;prediction.velocity=3;
   require(prediction.predictLanding(4,4)==2&&prediction.predictLanding(-4,4)==0,"Prediction includes velocity-dependent landing");
   require(prediction.position==1&&prediction.velocity==3,"Prediction does not mutate displayed state or velocity");
@@ -230,6 +247,11 @@ public class DockNavigationCheck {
  }
 }
 """
+
+dashboard = (ROOT / "app/src/main/java/com/donglan/chrona/DashboardActivity.java").read_text(encoding="utf-8")
+start = dashboard.index("    private DockNavigationLayout filterDock(")
+end = dashboard.index("    /** The one count marker:", start)
+RUNNER = RUNNER.replace("__FILTER_DOCK__", dashboard[start:end])
 
 for name, source in STUBS.items():
     file = OUT / "src" / name

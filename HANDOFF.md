@@ -1,3 +1,11 @@
+# 本轮补充 · 2026-10-13 · 0.14.18
+
+用户要求日程与收件箱筛选栏共享高光 Dock、内端在触及锚点前减速，并报告日历松手残影/跳帧。Dashboard 的 filterChips 和缓存 SectionPage 使用 DockNavigationLayout；filterDock 工厂统一四/五按钮与角落计数，删除旧 chipRow/横向滚动布局及逐按钮亚克力选中背景，保留原有筛选、排序、分页回调。日程与收件箱使用一致的 48dp 栏及尾部筛选按钮间距。
+
+DockSpring.softUpperBoundary 以 tanh 在半个标准宽度的接近区平滑减速，去掉内端硬 Math.min/max 截断，网页同步。highlightView 基准宽高写入 LayoutParams，避免父布局将基准重置为 1px。CalendarOverview 去除旧/新内容的 alpha 交叉淡化与 withLayer 双动画；等新网格完整构建，注册一次性 preDraw，完整测量后直接恢复实际滚动偏移，再用一个 ValueAnimator 与 CalendarSlideMotion 同步平移两页，保持文字不叠加。取消清理监听与动画，过期 generation 不启动。
+
+完整 41/41；原生 Dock 与实际 filterDock 工厂 92 项（Android 队列/布局替身），日历过渡 212 项（生产方法和测量/动画替身），真实 Edge 动效/交互通过。debug/release/lint 通过。备份 build/backups/20261013-filter-dock-motion。0.14.18 / 125。Android 实际残影、FPS、触控手感仍未真机实测；ADB 无设备。
+
 # 本轮补充 · 2026-10-13 · 0.14.17
 
 用户报告横屏首页仍旧样式、日历 Dock 掉帧，并要求严格统一控件框架。DockNavigationLayout 改为共享 FrameLayout 组合：玻璃底板、独立 highlightView、items LinearLayout。高光通过独立渲染节点的 translation/scale 更新，不再在 dispatchDraw 中绘制或每帧 invalidate 整栏；布局只在项目尺寸改变时更新。主题变化在选中语义更新时刷新高光色。显式 itemCount/itemAt/addItem/clearItems API 隔离内部结构。

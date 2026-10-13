@@ -42,7 +42,8 @@ async function until(fn){for(let i=0;i<100;i++){if(await fn())return;await delay
   assert.equal(await coast(4),'inbox','positive velocity selects damped forward landing');
   assert.equal(await coast(-4),'home','same release position with reverse velocity selects backward landing');
   evidence.edge=await page.evaluate(()=>{dockState.p=dockNav.offsetWidth+dockState.w;drawDock();const left=parseFloat(dockHighlight.style.transform.match(/translateX\(([-.\d]+)/)[1]),width=parseFloat(dockHighlight.style.width);const result={left,width,board:dockNav.offsetWidth,standard:dockState.w};updateDock();return result;});
-  assert(Math.abs(evidence.edge.left-(evidence.edge.board-evidence.edge.standard/2))<.1,'inner edge anchors half a standard width inside board');
+  assert(Math.abs(evidence.edge.left-(evidence.edge.board-evidence.edge.standard/2))<1,'inner edge smoothly approaches half-width anchor');
+  assert(await page.evaluate(()=>{const a=softDockUpper(230,250,50),b=softDockUpper(240,250,50),c=softDockUpper(250,250,50);return a<230&&a<b&&b<c&&c<250&&c-b<b-a;}),'inner end slows before the boundary with no abrupt clamp');
   assert(evidence.edge.left+evidence.edge.width>evidence.edge.board+evidence.edge.standard/2,'outer edge may extend beyond half the standard width');
   assert(evidence.edge.left+evidence.edge.width<=evidence.edge.board+evidence.edge.standard*.75+.1,'outer extension approaches bounded maximum');
   await page.evaluate(()=>navigate('schedule'));await delay(500);

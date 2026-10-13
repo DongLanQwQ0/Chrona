@@ -263,19 +263,21 @@ final class DockNavigationLayout extends FrameLayout {
             float width = standardWidth * spring.scale * spring.width;
             float height = (vertical() ? cell.getWidth() : cell.getHeight()) * spring.scale;
             float board = vertical() ? getHeight() : getWidth();
-            int left = Math.round(x - width / 2f);
+            float left = x - width / 2f;
             float cross = vertical() ? items.getLeft() + (cell.getLeft() + cell.getRight()) / 2f
                     : items.getTop() + (cell.getTop() + cell.getBottom()) / 2f;
             int top = Math.round(cross - height / 2f);
             float right = x + width / 2f;
-            // Pin the inner end once half the standard width crosses the board. The outer
-            // end continues stretching with momentum; it is not capped at half the width.
-            left = Math.min(left, Math.round(board - standardWidth / 2f));
-            right = Math.max(right, standardWidth / 2f);
+            // Reduce inner-end speed before its anchor; both approach and rebound are smooth.
+            left = DockSpring.softUpperBoundary(left, board - standardWidth / 2f, standardWidth / 2f);
+            right = -DockSpring.softUpperBoundary(-right, -standardWidth / 2f, standardWidth / 2f);
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
             if (left < 0) left = -Math.round(DockSpring.outwardExtension(-left, maximum));
             if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
             int baseWidth = Math.max(1, cell.getWidth()), baseHeight = Math.max(1, cell.getHeight());
+            android.view.ViewGroup.LayoutParams layout = highlightView.getLayoutParams();
+            if (layout.width != baseWidth || layout.height != baseHeight)
+                highlightView.setLayoutParams(new FrameLayout.LayoutParams(baseWidth, baseHeight));
             if (highlightView.getWidth() != baseWidth || highlightView.getHeight() != baseHeight)
                 highlightView.layout(0, 0, baseWidth, baseHeight);
             highlightView.setTranslationX(vertical() ? top : left);

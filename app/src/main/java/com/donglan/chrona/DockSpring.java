@@ -18,6 +18,11 @@ final class DockSpring {
     static float outwardExtension(float distance, float maximum) {
         return maximum <= 0f ? 0f : maximum * (float) Math.tanh(Math.max(0f, distance) / maximum);
     }
+    static float softUpperBoundary(float value, float limit, float approach) {
+        if (approach <= 0f) return Math.min(value, limit);
+        float start = limit - approach;
+        return value <= start ? value : start + approach * (float) Math.tanh((value - start) / approach);
+    }
     float scale = 1f, scaleVelocity, scaleTarget = 1f;
     float width = 1f, widthVelocity;
     float bar = 1f, barVelocity, barTarget = 1f;
