@@ -115,7 +115,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         return result;
     }
 
-    /** Up to three active and three future timed occurrences, independent of widget limits. */
+    /** Three active and four future: one extra occurrence supplies the final card's next title. */
     public List<EventCandidate> nextReminderCandidates(long now, java.util.Set<String> hidden) {
         List<EventCandidate> result = new ArrayList<>();
         String exclusion = hidden.isEmpty() ? "" : " AND ('chrona:'||id||':'||start_at_millis) NOT IN ("
@@ -126,7 +126,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                     "all_day=0 AND needs_confirmation=0 AND start_at_millis IS NOT NULL "
                             + "AND CASE WHEN end_at_millis>start_at_millis THEN end_at_millis ELSE start_at_millis+60000 END>CAST(? AS INTEGER) "
                             + "AND start_at_millis" + (future ? ">" : "<=") + "CAST(? AS INTEGER)" + exclusion,
-                    args.toArray(new String[0]), null, null, "start_at_millis " + (future ? "ASC" : "DESC") + ",id ASC", "3")) {
+                    args.toArray(new String[0]), null, null, "start_at_millis " + (future ? "ASC" : "DESC") + ",id ASC", future ? "4" : "3")) {
                 while (cursor.moveToNext()) result.add(readCandidate(cursor));
             }
         }

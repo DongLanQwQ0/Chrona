@@ -95,7 +95,7 @@ public final class CalendarStore {
         return result;
     }
 
-    /** Retains up to three active and three future unlinked timed occurrences. */
+    /** Three active, plus four future so the last visible card can name its next occurrence. */
     public List<CalendarOccurrence> reminderInstances(long now, long horizon,
             java.util.Set<Long> linked, java.util.Set<String> hidden) {
         requireRead();
@@ -118,7 +118,7 @@ public final class CalendarStore {
                         cursor.getString(5), cursor.getString(6));
                 if (start > now) {
                     future.add(entry);
-                    if (future.size() == 3) break;
+                    if (future.size() == 4) break;
                 } else {
                     active.add(entry);
                     active.sort((a, b) -> {

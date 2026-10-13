@@ -12,10 +12,6 @@ import android.os.Bundle;
 final class VivoAtomicNotification {
     private static final String PREFIX = "notification.superx.";
     private static final String SCENE = "CHRONA_AGENDA";
-    // The OEM progress template requires two node icons. Empty nodes keep the
-    // bar clear instead of placing decorative glyphs over its endpoints.
-    private static final Icon PROGRESS_NODE = Icon.createWithBitmap(android.graphics.Bitmap.createBitmap(
-            1, 1, android.graphics.Bitmap.Config.ARGB_8888));
     static boolean supportedManufacturer() { return "vivo".equalsIgnoreCase(Build.MANUFACTURER); }
     /** OEM-documented optional API; null means the system cannot report this capability. */
     static Boolean sceneEnabled(Context context) {
@@ -32,13 +28,17 @@ final class VivoAtomicNotification {
         }
     }
     static Bundle extras(Context context, String title, String status, String range,
-            String location, String source, String startTime, int remainingPercent, String remainingText,
-            PendingIntent details, boolean same) {
+            String startTime, String remainingText, PendingIntent details, boolean same,
+            android.widget.RemoteViews card, String animations) {
         Bundle data = new Bundle();
         if (!supportedManufacturer()) return data;
         Icon icon = Icon.createWithResource(context, R.drawable.ic_chrona_foreground);
         data.putInt(PREFIX + "operation", same ? 1 : 0);
-        data.putInt(PREFIX + "template", 2);
+        // This device's CustomSuperXTemplate uses 7, not the public island enum 6.
+        data.putInt(PREFIX + "template", 7);
+        data.putParcelable(PREFIX + "customTemplate", card);
+        data.putBoolean(PREFIX + "disableInvertColor", true);
+        data.putString(PREFIX + "animationsConfig", animations);
         data.putString(PREFIX + "scene", SCENE);
         android.util.Log.i("ChronaAtomic", "scene=" + SCENE + " enabled=" + sceneEnabled(context));
         data.putBoolean(PREFIX + "showNotify", true);
@@ -49,15 +49,6 @@ final class VivoAtomicNotification {
         base.putCharSequence(PREFIX + "baseInfos.title", title);
         base.putCharSequence(PREFIX + "baseInfos.content", remainingText + "\n" + range);
         data.putBundle(PREFIX + "baseInfos", base);
-        Bundle info = new Bundle();
-        java.util.ArrayList<Icon> nodes = new java.util.ArrayList<>();
-        nodes.add(PROGRESS_NODE); nodes.add(PROGRESS_NODE);
-        info.putParcelableArrayList(PREFIX + "infos.nodeIcon", nodes);
-        info.putInt(PREFIX + "infos.progress", Math.max(0, Math.min(100, remainingPercent)));
-        int accent = UiStyle.colors(context).primary;
-        info.putInt(PREFIX + "infos.progressColor", accent);
-        info.putInt(PREFIX + "infos.BgColor", (accent & 0x00ffffff) | 0x33000000);
-        data.putBundle(PREFIX + "infos", info);
         Bundle shortInfo = new Bundle();
         shortInfo.putParcelable(PREFIX + "shortInfos.image", icon);
         shortInfo.putString(PREFIX + "shortInfos.describeShort", status);
@@ -73,7 +64,8 @@ final class VivoAtomicNotification {
         island.putBundle("island.superx.rightInfo", right);
         // First tap expands the OEM card; its blank area then opens details.
         island.putInt("island.superx.islandClick", 0);
-        island.putInt("island.superx.template", 2);
+        island.putInt("island.superx.template", 7);
+        island.putParcelable("island.superx.customTemplate", card);
         island.putParcelable("island.superx.clickResp", details);
         data.putBundle(PREFIX + "island", island);
         Bundle capsule = new Bundle();

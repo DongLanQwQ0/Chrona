@@ -60,16 +60,28 @@ public class AgendaFeaturesCheck {
  static ReminderTimeline t(List<AgendaEntry> e,long now){return new ReminderTimeline(e,now,Set.of(),Map.of(),1);}
  public static void main(String[] args){
   long start=10_000_000L;AgendaEntry a=e(1,start,start+3_600_000);
-  check(ReminderTimeline.remainingPercent(a,start-ReminderTimeline.LEAD)==100,"full lead window");
-  check(ReminderTimeline.remainingPercent(a,start-ReminderTimeline.LEAD/2)==50,"half lead window");
-  check(ReminderTimeline.remainingPercent(a,start)==100,"new active phase");
-  check(ReminderTimeline.remainingPercent(a,start+1_800_000)==50,"half active window");
-  check(ReminderTimeline.remainingPercent(a,a.end)==0,"finished progress");
-  check(ReminderTimeline.remainingPercent(e(9,start,start),start+30_000)==50,"point event uses bounded minute");
-  int previous=100;
-  for(long at=start-ReminderTimeline.LEAD;at<start;at+=10_000){int value=ReminderTimeline.remainingPercent(a,at);check(value<=previous&&value>0,"remaining lead decreases");previous=value;}
-  previous=100;
-  for(long at=start;at<=a.end;at+=10_000){int value=ReminderTimeline.remainingPercent(a,at);check(value<=previous&&value>=0,"remaining active decreases");previous=value;}
+  long notifiedAt=start-ReminderTimeline.LEAD;
+  check(ReminderTimeline.elapsedRatio(a,notifiedAt,notifiedAt)==0,"new lead phase empty");
+  check(ReminderTimeline.elapsedRatio(a,start-ReminderTimeline.LEAD/2,notifiedAt)==0.5,"half lead elapsed");
+  check(ReminderTimeline.elapsedRatio(a,start,notifiedAt)==0,"event starts new active phase");
+  check(ReminderTimeline.elapsedRatio(a,start+1_800_000,notifiedAt)==0.5,"half active elapsed");
+  check(ReminderTimeline.elapsedRatio(a,a.end,notifiedAt)==1,"finished progress full");
+  check(ReminderTimeline.elapsedRatio(e(9,start,start),start+30_000,notifiedAt)==0.5,"point event uses bounded minute");
+  long delayed=start-600_000;
+  check(ReminderTimeline.elapsedRatio(a,delayed,delayed)==0,"actual late delivery starts empty");
+  check(ReminderTimeline.elapsedRatio(a,delayed+300_000,delayed)==0.5,"late delivery uses actual remaining lead window");
+  check(ReminderTimeline.elapsedRatio(a,delayed-1,delayed)==0,"before actual notification clamps zero");
+  check(ReminderTimeline.elapsedRatio(a,a.end+60_000,delayed)==1,"after finish clamps one");
+  check(ReminderTimeline.elapsedRatio(a,start+1_800_000,start+600_000)==0.5,"delivery during event keeps event start origin");
+  AgendaEntry nonEvent=new AgendaEntry(10,1,start,a.end,"todo","","","",false,false,true,null,"todo");
+  check(ReminderTimeline.elapsedRatio(nonEvent,start-300_000,delayed)==0.5,"non-event lead still accumulates");
+  check(ReminderTimeline.elapsedRatio(nonEvent,start,delayed)==1,"non-event start keeps full progress");
+  check(ReminderTimeline.elapsedRatio(nonEvent,start+1_800_000,delayed)==1,"non-event skips active phase");
+  check(ReminderTimeline.elapsedRatio(nonEvent,start,start+1)==1,"delivery at or after non-event start remains full");
+  double previous=0;
+  for(long at=notifiedAt;at<start;at+=10_000){double value=ReminderTimeline.elapsedRatio(a,at,notifiedAt);check(value>=previous&&value<1,"lead elapsed increases");previous=value;}
+  previous=0;
+  for(long at=start;at<=a.end;at+=10_000){double value=ReminderTimeline.elapsedRatio(a,at,notifiedAt);check(value>=previous&&value<=1,"active elapsed increases");previous=value;}
   check(t(List.of(a),start-ReminderTimeline.LEAD-1).entries.isEmpty(),"not before boundary");
   check(t(List.of(a),start-ReminderTimeline.LEAD).entries.size()==1,"visible at 30 minutes");
   check(t(List.of(a),start-1).wakeAt==start,"wake at start");
@@ -201,7 +213,7 @@ public class ReminderProviderCheck {
   for(long i=1;i<=7;i++)c.resolver.rows.add(e(i,100*i,3000));
   for(long i=11;i<=17;i++)c.resolver.rows.add(e(i,100*i,3000));
   result=c.reminderInstances(1000,4000,Set.of(),Set.of());
-  if(result.size()!=6||result.get(0).eventId!=7||result.get(2).eventId!=5||result.get(3).eventId!=11||result.get(5).eventId!=13)throw new AssertionError("three each direction");
+  if(result.size()!=7||result.get(0).eventId!=7||result.get(1).eventId!=6||result.get(2).eventId!=5||result.get(3).eventId!=11||result.get(4).eventId!=12||result.get(5).eventId!=13||result.get(6).eventId!=14)throw new AssertionError("three active and four future including next title beyond three cards");
   System.out.println("Production reminder provider scan passed: 1199 linked copies, ended, active/future, hidden recurrence");
   c.resolver.rows.clear();c.resolver.rows.add(new Object[]{1L,100L,200L,"color",0,"","source",0xFFFF0000});
   c.resolver.rows.add(new Object[]{2L,100L,200L,"missing",1,"","source",null});
@@ -227,7 +239,7 @@ db.execute('CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis
 db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(1,8000000,12000000,0,0),(2,9000000,13000000,0,0),(3,11000000,12000000,0,0),(4,11500000,12000000,0,0),(5,10500000,12000000,0,1),(6,10500000,12000000,1,0),(7,None,None,0,0),(8,9999999,None,0,0)])
 db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(i,1,2,0,0) for i in range(100,6200)])
 db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?)', [(9,11600000,12000000,0,0),(10,11700000,12000000,0,0)])
-expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9], [2,1], [3,4,9]]
+expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9,10], [2,1], [3,4,9,10]]
 for line, wanted in zip(queries.splitlines(), expected, strict=True):
     tag, selection, arguments, sort, limit = line.split('\t')
     rows = [r[0] for r in db.execute(f'SELECT id FROM event_candidates WHERE {selection} ORDER BY {sort} LIMIT {limit}', arguments.split('|'))]

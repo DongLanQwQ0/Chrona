@@ -26,7 +26,7 @@ class AgendaReminderPreferences {static boolean enabled=true;static SharedPrefer
 class NotificationManager {static final int IMPORTANCE_HIGH=4;boolean allowed=true;Map<Integer,String> cards=new HashMap<>();boolean areNotificationsEnabled(){return allowed;}void createNotificationChannel(NotificationChannel c){}void notify(int id,String key){cards.put(id,key);}}
 class NotificationChannel {NotificationChannel(String id,String name,int importance){}void setDescription(String s){}}
 class VivoAtomicNotification {static boolean vivo=true;static List<Integer> ended=new ArrayList<>();static boolean supportedManufacturer(){return vivo;}static void end(Context c,NotificationManager m,int id){ended.add(id);m.cards.remove(id);}}
-class EventCandidate {long id,taskId,startAtMillis;Long endAtMillis;String title="title",location="",description="";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+startAtMillis;}}
+class EventCandidate {long id,taskId,startAtMillis;Long endAtMillis;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+startAtMillis;}}
 class TaskStore implements AutoCloseable {static List<EventCandidate> rows=new ArrayList<>();TaskStore(Context c){}List<EventCandidate> nextReminderCandidates(long now,Set<String> hidden){List<EventCandidate> r=new ArrayList<>();for(EventCandidate e:rows)if(!hidden.contains(e.key()))r.add(e);return r;}List<Long> linkedCalendarIds(){return List.of();}public void close(){}}
 class CalendarOccurrence {long eventId,startMillis,endMillis;String title,location,calendarName;boolean allDay;}
 class CalendarStore {CalendarStore(Context c){}boolean hasReadPermission(){return false;}List<CalendarOccurrence> reminderInstances(long n,long h,Set<Long> linked,Set<String> hidden){return List.of();}}
@@ -35,21 +35,37 @@ public class AgendaSlotsCheck {
  static final String CHANNEL="upcoming_agenda";static final int NOTIFICATION_ID=0x434852;
  static long alarm;static int checks;
  static void schedule(Context c,long at){alarm=at;}
- static String notification(Context c,AgendaEntry e,long now,boolean same,int id){return e.key();}
+ static Map<Integer,Long> notified=new HashMap<>();static Map<Integer,String> nextTitles=new HashMap<>(),categories=new HashMap<>();static String notification(Context c,AgendaEntry e,long now,boolean same,int id,long notifiedAt,String nextTitle){notified.put(id,notifiedAt);nextTitles.put(id,nextTitle);categories.put(id,e.category);return e.key();}
  __REFRESH__
  static void check(boolean condition,String reason){checks++;if(!condition)throw new AssertionError(reason);}
  static String slot(Context c,int i){return c.prefs.getString("slot_key:"+i,"");}
  public static void main(String[] args){
   long now=System.currentTimeMillis();Context c=new Context();
+  AgendaEntry current=new AgendaEntry(90,1,now+1000,now+2000,"current","","","",false,false,true);
+  AgendaEntry early=new AgendaEntry(91,1,now+3000,now+4000,"early","","","",false,false,true);
+  AgendaEntry tie=new AgendaEntry(92,1,early.start,early.end,"tie","","","",false,false,true);
+  AgendaEntry later=new AgendaEntry(93,1,now+5000,now+6000,"later","","","",false,false,true);
+  AgendaEntry allDay=new AgendaEntry(94,1,now+2000,now+4000,"allDay","","","",false,true,true);
+  AgendaEntry unconfirmed=new AgendaEntry(95,1,now+2000,now+4000,"unconfirmed","","","",false,false,false);
+  check(ReminderTimeline.nextTitle(List.of(later,tie,allDay,current,unconfirmed,early),current,now).equals("early"),"next title earliest eligible and stable key tie");
+  check(ReminderTimeline.nextTitle(List.of(early,later,tie),current,early.start).equals("later"),"next title excludes already started items");
+  check(ReminderTimeline.nextTitle(List.of(current,allDay,unconfirmed),current,now).isEmpty(),"next title absent for ineligible or same occurrence");
   EventCandidate a=new EventCandidate(1,now+600000,now+3600000),b=new EventCandidate(2,now+700000,now+3600000),d=new EventCandidate(3,now+800000,now+3600000),e=new EventCandidate(4,now+900000,now+3600000);
+  a.title="first";b.title="second";d.title="third";e.title="fourth";e.category="todo";
   TaskStore.rows=new ArrayList<>(List.of(a,b,d,e));refresh(c,null);
+  check(nextTitles.get(NOTIFICATION_ID).equals("second")&&nextTitles.get(NOTIFICATION_ID+2).equals("fourth"),"refresh forwards next title including occurrence beyond card cap");
   check(c.manager.cards.size()==3,"vivo three-card cap");check(slot(c,0).equals(a.key())&&slot(c,1).equals(b.key())&&slot(c,2).equals(d.key()),"initial slot identities");
   check(alarm<=System.currentTimeMillis()+ReminderTimeline.PROGRESS_REFRESH,"vivo progress refresh");
+  long originalStarted=c.prefs.getLong("slot_started:0",0);check(originalStarted>0&&notified.get(NOTIFICATION_ID)==originalStarted,"initial slot start passed to card");
+  c.prefs.edit().putLong("slot_started:0",now-12345).apply();
   VivoAtomicNotification.ended.clear();Collections.reverse(TaskStore.rows);refresh(c,null);
+  check(c.prefs.getLong("slot_started:0",0)==now-12345&&notified.get(NOTIFICATION_ID)==now-12345,"retained slot preserves animation origin");
   check(VivoAtomicNotification.ended.isEmpty()&&slot(c,0).equals(a.key())&&slot(c,1).equals(b.key())&&slot(c,2).equals(d.key()),"reordering does not end retained cards");
   VivoAtomicNotification.ended.clear();refresh(c,new Intent(a.key(),"snooze"));
   check(slot(c,0).equals(e.key())&&slot(c,1).equals(b.key())&&slot(c,2).equals(d.key()),"deferred occurrence frees only its slot");
   check(VivoAtomicNotification.ended.equals(List.of(NOTIFICATION_ID)),"operation2 only on replaced slot");
+  check(c.prefs.getLong("slot_started:0",0)>=originalStarted&&c.prefs.getLong("slot_started:0",0)!=now-12345&&notified.get(NOTIFICATION_ID)==c.prefs.getLong("slot_started:0",0),"replacement resets animation origin");
+  check(categories.get(NOTIFICATION_ID).equals("todo")&&categories.get(NOTIFICATION_ID+1).equals("event"),"local categories propagate into notification entries");
   check(c.prefs.getLong("snooze_until:"+a.key(),0)>now,"per-occurrence snooze saved");
   refresh(c,new Intent(b.key(),"snooze"));check(c.prefs.getLong("snooze_until:"+a.key(),0)>now&&c.prefs.getLong("snooze_until:"+b.key(),0)>now,"two independent snoozes survive");
   check(c.manager.cards.size()==2,"two deferred occurrences leave remaining cards");
@@ -61,7 +77,7 @@ public class AgendaSlotsCheck {
   check(c.manager.cards.containsValue(changed.key()),"hidden previous key does not hide edited occurrence");
   c.manager.allowed=false;VivoAtomicNotification.ended.clear();refresh(c,null);
   check(c.manager.cards.isEmpty()&&VivoAtomicNotification.ended.size()==3,"permission disabled ends all slots");
-  for(int i=0;i<3;i++)check(slot(c,i).isEmpty(),"permission disabled clears slot key");
+  for(int i=0;i<3;i++)check(slot(c,i).isEmpty()&&!c.prefs.values.containsKey("slot_started:"+i),"permission disabled clears slot key and start");
   c.manager.allowed=true;refresh(c,null);AgendaReminderPreferences.enabled=false;VivoAtomicNotification.ended.clear();refresh(c,null);
   check(c.manager.cards.isEmpty()&&alarm==0&&VivoAtomicNotification.ended.size()==3,"disabled ends all slots and cancels alarm");
   AgendaReminderPreferences.enabled=true;VivoAtomicNotification.vivo=false;refresh(c,null);

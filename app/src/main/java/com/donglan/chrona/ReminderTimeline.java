@@ -10,9 +10,21 @@ final class ReminderTimeline {
     static long remainingMillis(AgendaEntry entry, long now) {
         return Math.max(0, (now < entry.start ? entry.start : entry.finish()) - now);
     }
-    static int remainingPercent(AgendaEntry entry, long now) {
-        long duration = now < entry.start ? LEAD : entry.finish() - entry.start;
-        return (int) Math.max(0, Math.min(100, Math.ceil(100d * remainingMillis(entry, now) / duration)));
+    static double elapsedRatio(AgendaEntry entry, long now, long notifiedAt) {
+        boolean active = now >= entry.start && "event".equals(entry.category);
+        long from = active ? entry.start : Math.min(entry.start, notifiedAt);
+        long to = active ? entry.finish() : entry.start;
+        return to <= from ? 1 : Math.max(0, Math.min(1, (double)(now - from) / (to - from)));
+    }
+    static String nextTitle(List<AgendaEntry> entries, AgendaEntry current, long now) {
+        AgendaEntry next = null;
+        for (AgendaEntry entry : entries) {
+            if (!entry.confirmed || entry.allDay || entry.start <= Math.max(now, current.start)
+                    || entry.key().equals(current.key())) continue;
+            if (next == null || entry.start < next.start
+                    || entry.start == next.start && entry.key().compareTo(next.key()) < 0) next = entry;
+        }
+        return next == null ? "" : next.title;
     }
     final List<AgendaEntry> entries;
     final long wakeAt;
