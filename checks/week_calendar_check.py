@@ -29,15 +29,14 @@ assert 'AgendaRepository.load' not in provider and 'TaskStore' not in provider, 
 assert 'onAppWidgetOptionsChanged' in provider and 'new RemoteViews(variants)' in provider
 assert provider.count('new int[]{64, 140}') == 2, 'Four adaptive size variants'
 assert 'narrow && !tall' in provider and 'widget_week_calendar_vertical' in provider
-shortcuts = ET.parse(root / 'app/src/main/res/xml/launcher_shortcuts.xml').getroot()
-assert {n.get(android+'shortcutId') for n in shortcuts} == {'capture','week','schedule','inbox'}
+shortcuts = (src / 'LauncherShortcuts.java').read_text(encoding='utf-8')
+assert '"quick_capture", "quick_week", "quick_schedule", "quick_inbox"' in shortcuts
+assert 'UiStyle.colors(context).primary' in shortcuts and 'drawable.setTint(color)' in shortcuts
+assert 'setDynamicShortcuts(shortcuts)' in shortcuts
 routes = (src / 'LauncherShortcutActivity.java').read_text(encoding='utf-8')
-for shortcut in shortcuts:
-    intent = shortcut.find('intent')
-    assert intent.get(android+'action') in routes
-    assert intent.get(android+'targetClass') == 'com.donglan.chrona.LauncherShortcutActivity'
-launcher = next(n for n in manifest.iter('activity') if n.get(android+'name') == '.DashboardActivity')
-assert any(n.get(android+'resource') == '@xml/launcher_shortcuts' for n in launcher.iter('meta-data'))
+for action in ('CAPTURE','WEEK','SCHEDULE','INBOX'):
+    assert 'com.donglan.chrona.shortcut.' + action in routes
+assert 'LauncherShortcutActivity.class' in shortcuts
 
 files = {
     'android/os/Bundle.java': 'package android.os;public class Bundle {}',

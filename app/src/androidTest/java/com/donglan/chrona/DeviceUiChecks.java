@@ -28,6 +28,15 @@ import java.util.List;
 /** Device measurements only; no schedule insertion/deletion or server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("reminder_state".equals(arguments.getString("phase")))
+            return AgendaReminder.WORKER.submit(() -> reminderState(test)).get();
+        if ("week_widget_render".equals(arguments.getString("phase"))) return weekWidgets(test);
+        if ("restore_occurrence".equals(arguments.getString("phase"))) {
+            String key = arguments.getString("key", "");
+            if (!key.matches("(system|chrona):[0-9]+:[0-9]+")) throw new IllegalArgumentException("Explicit occurrence key required");
+            AgendaReminderPreferences.prefs(test.getTargetContext()).edit().remove("hidden:" + key).commit();
+            return AgendaReminder.WORKER.submit(() -> reminderState(test)).get();
+        }
         if ("progress_cards".equals(arguments.getString("phase")))
             return AgendaReminder.WORKER.submit(() -> progressCards(test)).get();
         if ("enable_registered_scene".equals(arguments.getString("phase"))) {
@@ -64,7 +73,69 @@ final class DeviceUiChecks {
                 if (method.getName().toLowerCase(java.util.Locale.ROOT).matches(".*(scene|superx|island).*")) methods.put(method.toGenericString());
             return new JSONObject().put("methods", methods).toString();
         }
-        return "atomic".equals(arguments.getString("phase")) ? atomic(test) : calendar(test, arguments);
+        String phase = arguments.getString("phase");
+        if ("atomic".equals(phase)) return atomic(test);
+        if (phase == null || "calendar".equals(phase) || "gestures".equals(phase)) return calendar(test, arguments);
+        throw new IllegalArgumentException("Unknown device check phase: " + phase);
+    }
+    private static String reminderState(Instrumentation test) throws Exception {
+        Context context = test.getTargetContext(); long now = System.currentTimeMillis();
+        JSONObject report = new JSONObject().put("now", now)
+                .put("enabled", AgendaReminderPreferences.enabled(context))
+                .put("system", AgendaReminderPreferences.includesSystemCalendar(context))
+                .put("atomicChrona", AgendaReminderPreferences.atomicChrona(context))
+                .put("atomicSystem", AgendaReminderPreferences.atomicSystem(context))
+                .put("atomicAvailable", VivoAtomicNotification.available(context));
+        java.util.Set<String> hidden = new java.util.HashSet<>();
+        JSONObject state = new JSONObject();
+        for (java.util.Map.Entry<String, ?> item : AgendaReminderPreferences.prefs(context).getAll().entrySet()) {
+            state.put(item.getKey(), item.getValue());
+            if (item.getKey().startsWith("hidden:") && item.getValue() instanceof Long && (Long)item.getValue() > now)
+                hidden.add(item.getKey().substring(7));
+        }
+        report.put("state", state); JSONArray local = new JSONArray(), system = new JSONArray();
+        try (com.donglan.chrona.data.TaskStore store = new com.donglan.chrona.data.TaskStore(context)) {
+            for (com.donglan.chrona.data.EventCandidate e : store.nextReminderCandidates(now, hidden))
+                local.put(new JSONObject().put("id", e.id).put("title", e.title).put("start", e.startAtMillis)
+                        .put("end", e.endAtMillis).put("category", e.category));
+            com.donglan.chrona.calendar.CalendarStore calendars = new com.donglan.chrona.calendar.CalendarStore(context);
+            if (calendars.hasReadPermission())
+                for (com.donglan.chrona.calendar.CalendarOccurrence e : calendars.reminderInstances(now, now+86400000L,
+                        new java.util.HashSet<>(store.linkedCalendarIds()), hidden))
+                    system.put(new JSONObject().put("id", e.eventId).put("title", e.title).put("start", e.startMillis).put("end", e.endMillis));
+        }
+        report.put("local", local).put("systemCandidates", system);
+        AgendaReminder.refreshSafely(context, null); JSONArray notifications = new JSONArray();
+        for (android.service.notification.StatusBarNotification n : context.getSystemService(NotificationManager.class).getActiveNotifications())
+            notifications.put(new JSONObject().put("id", n.getId()).put("tag", n.getTag()).put("title", n.getNotification().extras.getCharSequence("android.title"))
+                    .put("operation", n.getNotification().extras.getInt("notification.superx.operation", -1)));
+        return report.put("notifications", notifications).toString();
+    }
+    private static String weekWidgets(Instrumentation test) throws Exception {
+        Context context = test.getTargetContext(); float density = context.getResources().getDisplayMetrics().density;
+        java.lang.reflect.Method render = WeekCalendarWidgetProvider.class.getDeclaredMethod("render", Context.class, int.class, int.class);
+        render.setAccessible(true); JSONObject report = new JSONObject();
+        test.runOnMainSync(() -> {
+            try {
+                android.graphics.Bitmap matrix = android.graphics.Bitmap.createBitmap(Math.round(310*density),Math.round(330*density),android.graphics.Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas canvas = new android.graphics.Canvas(matrix); canvas.drawColor(UiStyle.colors(context).background);
+                int index=0;
+                for (int width : new int[]{64,140}) for (int height : new int[]{64,140}) {
+                    android.widget.RemoteViews remote=(android.widget.RemoteViews)render.invoke(null,context,width,height);
+                    View view=remote.apply(context,new android.widget.FrameLayout(context));
+                    int w=Math.round(width*density),h=Math.round(height*density);
+                    view.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY));view.layout(0,0,w,h);
+                    View icon=view.findViewById(R.id.week_widget_icon),title=view.findViewById(R.id.week_widget_title);
+                    android.graphics.Rect bounds=new android.graphics.Rect();icon.getDrawingRect(bounds);((android.view.ViewGroup)view).offsetDescendantRectToMyCoords(icon,bounds);
+                    if(bounds.left<0||bounds.top<0||bounds.right>w||bounds.bottom>h)throw new AssertionError("Clipped widget icon "+width+"x"+height);
+                    if((title.getVisibility()==View.GONE)!=(width<100&&height<100))throw new AssertionError("Widget text visibility");
+                    int x=Math.round((index%2*155+8)*density),y=Math.round((index/2*165+8)*density);canvas.save();canvas.translate(x,y);view.draw(canvas);canvas.restore();index++;
+                }
+                java.io.File file=new java.io.File(context.getExternalFilesDir(null),"week-widget-matrix.png");
+                try(java.io.FileOutputStream output=new java.io.FileOutputStream(file)){matrix.compress(android.graphics.Bitmap.CompressFormat.PNG,100,output);}
+                report.put("layouts",4).put("iconClipping",false).put("image",file.getAbsolutePath());
+            }catch(Exception failure){throw new RuntimeException(failure);}
+        });return report.toString();
     }
     /** Explicitly user-approved device configuration; never part of the production APK. */
     private static boolean setAtomicScene(Instrumentation test, boolean enabled) throws Exception {

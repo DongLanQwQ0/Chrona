@@ -37,6 +37,7 @@ public final class ChronaApp extends Application {
         SyncJobService.schedule(this);
         AgendaReminderJobService.schedule(this);
         AgendaReminder.requestRefresh(this);
+        LauncherShortcuts.requestRefresh(this);
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityCreated(Activity activity, Bundle state) {
                 ThemeStore.watch(activity);
@@ -50,6 +51,7 @@ public final class ChronaApp extends Application {
             @Override public void onActivityStarted(Activity activity) { }
 
             @Override public void onActivityResumed(Activity activity) {
+                LauncherShortcuts.requestRefresh(activity);
                 PressFeedback.install(activity.getWindow().getDecorView());
                 AgendaReminderJobService.schedule(ChronaApp.this);
                 AgendaReminder.requestRefresh(ChronaApp.this);

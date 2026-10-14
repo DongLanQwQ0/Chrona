@@ -28,6 +28,7 @@ class BackgroundPreferenceCheck {
  static class AppearanceActivity extends Activity {int repaints;void refreshAppearance(){repaints++;}}
  static class AgendaWidgetProvider {static int updates;static void requestRefresh(Context c){updates++;}}
  static class WeekCalendarWidgetProvider {static int updates;static void requestRefresh(Context c){updates++;}}
+ static class LauncherShortcuts {static int updates;static void requestRefresh(Context c){updates++;}}
  static class AgendaReminder {static int updates;static void requestRefresh(Context c){updates++;}}
  static final Object LIVE=new Object();static final Map<Activity,Integer> SEEN=new HashMap<>();
  static class Prefs {
@@ -58,8 +59,9 @@ class BackgroundPreferenceCheck {
   setBackgroundEnabled(c,false);setBackground(c,"old");check(backgroundEnabled(c));
   setBackgroundEnabled(c,false);setBackground(c,"new");check(activeBackground(c).equals("new"));
   setBackground(c,null);check(background(c)==null&&!backgroundEnabled(c));
-  int reminders=AgendaReminder.updates,widgets=AgendaWidgetProvider.updates;
+  int reminders=AgendaReminder.updates,widgets=AgendaWidgetProvider.updates,shortcuts=LauncherShortcuts.updates;
   setColor(c,"purple");check(AgendaReminder.updates==reminders+1&&AgendaWidgetProvider.updates==widgets+1);
+  check(LauncherShortcuts.updates==shortcuts+1);
   setColor(c,"purple");check(AgendaReminder.updates==reminders+1);
   AppearanceActivity appearance=new AppearanceActivity();setColor(appearance,"blue");
   check(appearance.repaints==1&&appearance.recreates==0&&SEEN.get(appearance)==revision(appearance));

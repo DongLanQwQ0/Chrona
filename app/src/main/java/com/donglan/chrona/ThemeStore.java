@@ -103,6 +103,7 @@ public final class ThemeStore {
         preferences.edit().putInt(KEY_REVISION, preferences.getInt(KEY_REVISION, 0) + 1).apply();
         AgendaWidgetProvider.requestRefresh(context);
         WeekCalendarWidgetProvider.requestRefresh(context);
+        LauncherShortcuts.requestRefresh(context);
         AgendaReminder.requestRefresh(context);
         if (context instanceof AppearanceActivity appearance && !appearance.isFinishing()
                 && !appearance.isDestroyed()) {
