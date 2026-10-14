@@ -32,6 +32,10 @@
         android:theme="@style/Theme.Chrona.Starting"
         android:enableOnBackInvokedCallback="true">
         <activity android:name=".CalendarOverviewActivity" android:exported="false" />
+        <receiver android:name=".WeekCalendarWidgetProvider" android:exported="false" android:label="本周日历">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_week_calendar" />
+        </receiver>
         <activity android:name=".SystemAgendaDetailActivity" android:exported="false" />
         <service android:name=".AgendaReminderJobService" android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />

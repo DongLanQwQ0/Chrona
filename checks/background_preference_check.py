@@ -27,6 +27,7 @@ class BackgroundPreferenceCheck {
  static class Activity extends Context {int recreates;boolean isFinishing(){return false;}boolean isDestroyed(){return false;}void recreate(){recreates++;}}
  static class AppearanceActivity extends Activity {int repaints;void refreshAppearance(){repaints++;}}
  static class AgendaWidgetProvider {static int updates;static void requestRefresh(Context c){updates++;}}
+ static class WeekCalendarWidgetProvider {static int updates;static void requestRefresh(Context c){updates++;}}
  static class AgendaReminder {static int updates;static void requestRefresh(Context c){updates++;}}
  static final Object LIVE=new Object();static final Map<Activity,Integer> SEEN=new HashMap<>();
  static class Prefs {

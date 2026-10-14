@@ -126,12 +126,15 @@ public final class CalendarOverviewActivity extends Activity {
         }
     };
     private android.database.ContentObserver calendarObserver;
+    private volatile int providerRevision;
+    private final java.util.LinkedHashMap<String, AgendaRepository.Snapshot> snapshotCache = new java.util.LinkedHashMap<>(4, .75f, true);
     private final Runnable calendarReload = this::load;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this); super.onCreate(state);
         includeSystem = CalendarSourcePreferences.includesSystem(this);
         mode = getPreferences(MODE_PRIVATE).getInt("mode", MONTH);
+        if (getIntent().getBooleanExtra("open_week", false) && state == null) { mode = WEEK; date = LocalDate.now(); }
         if (state != null) {
             date = LocalDate.parse(state.getString("date", date.toString()));
             mode = state.getInt("mode", mode); query = state.getString("query", "");
@@ -206,7 +209,7 @@ public final class CalendarOverviewActivity extends Activity {
                 int action = event.getActionMasked();
                 if (action == android.view.MotionEvent.ACTION_DOWN) {
                     bodyTouchActive = true; swipeStartX = event.getX();
-                    swipe.begin(event.getX(), event.getY(), !loading && !bodyTransitionRunning);
+                    swipe.begin(event.getX(), event.getY(), mode != WEEK && !loading && !bodyTransitionRunning);
                 }
                 if (action == android.view.MotionEvent.ACTION_POINTER_DOWN || action == android.view.MotionEvent.ACTION_CANCEL) swipe.cancel();
                 if (action == android.view.MotionEvent.ACTION_MOVE && !swipe.claimed()) {
@@ -255,12 +258,14 @@ public final class CalendarOverviewActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume(); resumed = true;
+        if (includeSystem) { providerRevision++; synchronized (snapshotCache) { snapshotCache.clear(); } }
         includeSystem = CalendarSourcePreferences.includesSystem(this);
         sourceSwitch.setChecked(includeSystem);
         load(); handler.post(minuteTick);
         if (new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()) {
             calendarObserver = new android.database.ContentObserver(handler) {
                 @Override public void onChange(boolean selfChange) {
+                    providerRevision++; synchronized (snapshotCache) { snapshotCache.clear(); }
                     handler.removeCallbacks(calendarReload); handler.postDelayed(calendarReload, 400);
                 }
             };
@@ -520,9 +525,22 @@ public final class CalendarOverviewActivity extends Activity {
         readCancellation = cancellation;
         readFuture = reader.submit(() -> {
             try {
-                AgendaRepository.Snapshot loaded = AgendaRepository.load(getApplicationContext(),
-                        first.atStartOfDay(zone).toInstant().toEpochMilli(), last.atStartOfDay(zone).toInstant().toEpochMilli(), system, zone, cancellation);
-                handler.post(() -> applyLoaded(loaded, key, token));
+                long revision;
+                try (com.donglan.chrona.data.TaskStore store = new com.donglan.chrona.data.TaskStore(getApplicationContext())) { revision = store.dataRevision(); }
+                String cacheKey = key + ":" + revision + ":" + providerRevision;
+                AgendaRepository.Snapshot loaded;
+                synchronized (snapshotCache) { loaded = snapshotCache.get(cacheKey); }
+                if (loaded == null) {
+                    loaded = AgendaRepository.load(getApplicationContext(),
+                            first.atStartOfDay(zone).toInstant().toEpochMilli(), last.atStartOfDay(zone).toInstant().toEpochMilli(), system, zone, cancellation);
+                    cancellation.throwIfCanceled();
+                    if (!loaded.systemUnavailable) synchronized (snapshotCache) {
+                        snapshotCache.put(cacheKey, loaded);
+                        while (snapshotCache.size() > 4) snapshotCache.remove(snapshotCache.keySet().iterator().next());
+                    }
+                }
+                AgendaRepository.Snapshot result = loaded;
+                handler.post(() -> applyLoaded(result, key, token));
             } catch (android.os.OperationCanceledException cancelled) { /* Superseded or paused request. */ }
             catch (RuntimeException exception) {
                 handler.post(() -> {
@@ -627,7 +645,7 @@ public final class CalendarOverviewActivity extends Activity {
                     LocalDate month = LocalDate.of(year, monthPair * 2 + offset + 1, 1);
                     LinearLayout tile = column(); tile.setPadding(dp(8), dp(10), dp(8), dp(10)); calendarSurface(tile, false, UiStyle.RADIUS_PANEL, true);
                     TextView label = text(month.getMonthValue() + "月", 17, true); label.setTextColor(UiStyle.colors(this).primary); tile.addView(label);
-                    tile.addView(monthGrid(month, entries, true));
+                    tile.addView(new YearMonthGridView(this, month, date, dayCounts, day -> { date = day; changeMode(MONTH); }));
                     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1); params.setMargins(0, 0, offset == 0 ? dp(8) : 0, 0);
                     months.addView(tile, params);
                 }
@@ -778,7 +796,7 @@ public final class CalendarOverviewActivity extends Activity {
         int viewport = Math.max(dp(240), body.getWidth() > 0 ? body.getWidth() : getResources().getDisplayMetrics().widthPixels - dp(40));
         int edge = PressFeedback.edgeSpace(viewport);
         int gutter = dp(40), width = Math.max(viewport - 2 * edge, days == 7 ? dp(670) : viewport - 2 * edge), dayWidth = (width - gutter) / days;
-        HorizontalScrollView horizontal = new HorizontalScrollView(this); horizontal.setHorizontalScrollBarEnabled(false);
+        HorizontalScrollView horizontal = mode == WEEK ? new FreeCalendarScrollView(this) : new HorizontalScrollView(this); horizontal.setHorizontalScrollBarEnabled(false);
         horizontalViewport = horizontal; watchScroll(horizontal);
         LinearLayout layout = column(); layout.setPadding(edge, dp(4), edge, dp(4));
         horizontal.addView(layout, new FrameLayout.LayoutParams(width + 2 * edge, -1));
@@ -815,6 +833,7 @@ public final class CalendarOverviewActivity extends Activity {
         }
         if (hasAllDay) layout.addView(allDays);
         ScrollView vertical = new ScrollView(this); vertical.setVerticalScrollBarEnabled(false);
+        if (horizontal instanceof FreeCalendarScrollView free) free.vertical(vertical);
         verticalViewport = vertical; watchScroll(vertical);
         FrameLayout grid = new FrameLayout(this); int hourHeight = dp(72), height = hourHeight * 24;
         int maxCardHeight = 0;

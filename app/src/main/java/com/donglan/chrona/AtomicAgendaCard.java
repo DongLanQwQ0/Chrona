@@ -57,13 +57,19 @@ final class AtomicAgendaCard {
         views.setImageViewBitmap(R.id.atomic_location_icon, locationIcon(context, palette.muted));
         views.setViewVisibility(R.id.atomic_location_icon, android.view.View.VISIBLE);
         views.setTextViewText(R.id.atomic_remaining_label, active ? "距结束" : "距开始");
-        views.setChronometer(R.id.atomic_remaining, SystemClock.elapsedRealtime() + to - now, null, !cameraSafe && now < to);
+        views.setChronometer(R.id.atomic_remaining, SystemClock.elapsedRealtime() + Math.max(0, to - now), null, false);
         views.setChronometerCountDown(R.id.atomic_remaining, true);
         views.setTextViewText(R.id.atomic_top_remaining_label, active ? "距结束" : "距开始");
         views.setTextColor(R.id.atomic_top_remaining_label, palette.muted);
         views.setTextColor(R.id.atomic_top_countdown, palette.primary);
-        views.setChronometer(R.id.atomic_top_countdown, SystemClock.elapsedRealtime() + to - now, null, cameraSafe && now < to);
+        views.setChronometer(R.id.atomic_top_countdown, SystemClock.elapsedRealtime() + Math.max(0, to - now), null, false);
         views.setChronometerCountDown(R.id.atomic_top_countdown, true);
+        String remainingTime = remainingText(to - now);
+        views.setTextViewText(R.id.atomic_remaining, remainingTime);
+        views.setTextViewText(R.id.atomic_top_countdown, remainingTime);
+        float remainingSize = remainingTime.length() > 3 ? 14 : 17;
+        views.setTextViewTextSize(R.id.atomic_remaining, android.util.TypedValue.COMPLEX_UNIT_SP, remainingSize);
+        views.setTextViewTextSize(R.id.atomic_top_countdown, android.util.TypedValue.COMPLEX_UNIT_SP, remainingSize);
         views.setViewVisibility(R.id.atomic_top_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setViewVisibility(R.id.atomic_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
         if (now >= to) {
@@ -118,6 +124,11 @@ final class AtomicAgendaCard {
     }
     static String locationText(String location) {
         return location == null || location.isBlank() ? "在你手里~" : location.trim();
+    }
+    static String remainingText(long millis) {
+        long minutes = Math.max(0, millis + 59_999L) / 60_000L;
+        if (minutes >= 1440) return ((minutes + 1439) / 1440) + "天";
+        return minutes + "分";
     }
     private static int cameraTopPadding(Context context) {
         if (android.os.Build.VERSION.SDK_INT < 30) return 0;

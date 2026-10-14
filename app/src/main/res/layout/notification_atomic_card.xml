@@ -104,8 +104,9 @@
                     android:maxLines="1"
                     android:textSize="17sp" />
             </LinearLayout>
-            <ImageView android:id="@+id/atomic_complete" android:layout_width="40dp"
+            <ImageButton android:id="@+id/atomic_complete" android:layout_width="40dp"
                 android:layout_height="40dp" android:layout_marginStart="8dp"
+                android:clickable="true" android:focusable="true"
                 android:padding="8dp" android:scaleType="fitCenter" android:contentDescription="完成本次日程提醒"
                 android:background="?android:attr/selectableItemBackgroundBorderless" />
         </LinearLayout>

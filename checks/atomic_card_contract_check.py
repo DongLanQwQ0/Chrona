@@ -41,6 +41,7 @@ harness = (graphics + 'class ValueAnimator {static boolean enabled=true;static b
            'for(String empty:new String[]{null,"","  ","\\t\\n"})'
            'if(!locationText(empty).equals("在你手里~"))throw new AssertionError("empty location");'
            'if(!locationText(" 教室 ").equals("教室"))throw new AssertionError("real location");'
+           'if(!remainingText(-139000).equals("0分")||!remainingText(0).equals("0分")||!remainingText(61000).equals("2分")||!remainingText(3660000).equals("61分"))throw new AssertionError("nonnegative minute countdown");'
            'for(int color:new int[]{0xffff8800,0xff9068e8,0xff315ca7})if(!dot(color).solidDot)throw new AssertionError("endpoint must be opaque and filled");'
            'for(double ratio:new double[]{0,.1,.5,.95,1}){Bitmap p=progress(0xffff8800,0xff101015,ratio);'
            'if((p.colors.get(0)>>>24)!=255||p.colors.get(0)==0xff101015)throw new AssertionError("invisible remaining track");'
@@ -73,7 +74,7 @@ assert 'removeAllViews' not in source, 'Reapply must retain animated child ident
 assert 'setAutoStart' not in source, 'ViewFlipper.setAutoStart is not remotely callable'
 assert 'AgendaReminder.action(context, entry, "complete", 4)' in source
 assert 'setOnClickPendingIntent(R.id.atomic_complete' in source
-assert any(node.get(android+'id') == '@+id/atomic_complete' for node in layout.iter('ImageView'))
+assert any(node.get(android+'id') == '@+id/atomic_complete' and node.get(android+'clickable') == 'true' for node in layout.iter('ImageButton'))
 assert 'R.id.atomic_to_dot, dot(palette.primary)' in source, 'Right endpoint must not depend on progress'
 # Endpoint centres and the track edges share the same inset.
 nodes = {node.get(android + 'id'): node for node in layout.iter()}

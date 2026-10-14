@@ -42,7 +42,7 @@ public class Context {
  public Set<Long>linked=new HashSet<>();public boolean permitted=true,failLocal,failCalendar,cancelCalendar;
  public final AtomicInteger reads=new AtomicInteger(),calendarReads=new AtomicInteger();
  public final AtomicBoolean blockNextRead=new AtomicBoolean();public CountDownLatch started=new CountDownLatch(1),release=new CountDownLatch(1);
- public String feedback;public Context getApplicationContext(){return this;}
+ public long revision;public String feedback;public Context getApplicationContext(){return this;}
 }''',
  'android/net/Uri.java': 'package android.net;public class Uri {public String value;public Uri(String s){value=s;}}',
  'android/content/ContentUris.java': 'package android.content;public class ContentUris {public static android.net.Uri withAppendedId(android.net.Uri uri,long id){return new android.net.Uri(uri.value+id);}}',
@@ -55,7 +55,7 @@ public class Context {
  'com/donglan/chrona/data/TaskStore.java': '''package com.donglan.chrona.data;
 import java.util.*;import android.content.Context;
 public class TaskStore implements AutoCloseable {
- final Context c;public TaskStore(Context c){this.c=c;}public void close(){}
+ final Context c;public TaskStore(Context c){this.c=c;}public void close(){}public long dataRevision(){return c.revision;}
  public List<EventCandidate>calendarCandidates(long a,long b,long d,long e){
   c.reads.incrementAndGet();if(c.failLocal)throw new IllegalStateException("storage failure");
   if(c.blockNextRead.getAndSet(false)){c.started.countDown();boolean done=false;while(!done)try{done=c.release.await(2,java.util.concurrent.TimeUnit.SECONDS);}catch(InterruptedException ignored){}}
@@ -109,6 +109,7 @@ public class CalendarReviewCheck extends Context {
  String renderedKey="",renderedQuery="",query="",deferredKey;int deferredToken;long lastScrollAt;
  View monthDates;LinearLayout monthDetails;int cellUpdates,detailsUpdates,navigationReads;LocalDate detailsDate;final Runnable minuteTick=()->{};
  final LinkedHashMap<String,int[]>positions=new LinkedHashMap<>(16,.75f,true);
+ volatile int providerRevision;final LinkedHashMap<String,AgendaRepository.Snapshot>snapshotCache=new LinkedHashMap<>(4,.75f,true);
  AgendaRepository.Snapshot snapshot=new AgendaRepository.Snapshot(),deferredSnapshot;final Runnable deferredApply=this::applyDeferred;
  final TextView dateTitle=new TextView();final Switch sourceSwitch=new Switch();final Tabs tabs=new Tabs();Object tabMotion;Dialog allDayDialog;final Preferences preferences=new Preferences();
  boolean isDestroyed(){return destroyed;}Preferences getPreferences(int mode){return preferences;}
@@ -179,7 +180,14 @@ public class CalendarReviewCheck extends Context {
    m.mode=MONTH;for(int month=1;month<=4;month++){m.date=LocalDate.of(2026,month,12);m.load();check(m.reader.getQueue().size()<=1,"only latest queued read retained");}
    check(old.isCanceled(),"running obsolete provider signal cancelled");m.release.countDown();m.readFuture.get(3,TimeUnit.SECONDS);m.handler.drain();
    check(m.reads.get()==2&&m.renderCalls==1&&m.date.getMonthValue()==4,"obsolete reads cannot block or render over latest");
-   int rendered=m.renderCalls;m.load();m.readFuture.get(3,TimeUnit.SECONDS);m.handler.drain();check(m.renderCalls==rendered,"unchanged refresh preserves native content/focus");
+   int rendered=m.renderCalls,priorReads=m.reads.get();m.load();m.readFuture.get(3,TimeUnit.SECONDS);m.handler.drain();check(m.renderCalls==rendered,"unchanged refresh preserves native content/focus");
+   check(m.reads.get()==priorReads,"same window uses cached snapshot");
+   m.revision++;m.load();m.readFuture.get(3,TimeUnit.SECONDS);m.handler.drain();check(m.reads.get()==priorReads+1,"local data revision invalidates cache");
+   m.providerRevision++;m.load();m.readFuture.get(3,TimeUnit.SECONDS);m.handler.drain();check(m.reads.get()==priorReads+2,"provider revision invalidates cache");
+   m.includeSystem=true;m.failCalendar=true;m.load();m.readFuture.get(3,TimeUnit.SECONDS);m.handler.drain();
+   check(m.snapshot.systemUnavailable,"provider error is visible");int failedReads=m.reads.get();
+   m.failCalendar=false;m.load();m.readFuture.get(3,TimeUnit.SECONDS);m.handler.drain();
+   check(!m.snapshot.systemUnavailable&&m.reads.get()==failedReads+1,"failed source is retried, not cached");m.includeSystem=false;
    m.verticalViewport=new ScrollView();m.horizontalViewport=new HorizontalScrollView();m.verticalViewport.y=731;m.horizontalViewport.x=127;m.rememberPosition();
    m.verticalViewport=new ScrollView();m.horizontalViewport=new HorizontalScrollView();m.restorePosition();m.handler.drain();
    check(m.verticalViewport.y==731&&m.horizontalViewport.x==127,"both scroll axes restored");
