@@ -17,13 +17,14 @@ location_end = source.index('\n    private static int cameraTopPadding', locatio
 location_method = source[location_start:location_end]
 progress_start = source.index('    private static Bitmap progress(')
 progress_end = source.index('\n    private static Bitmap dot(', progress_start)
+dot_end = source.index('\n    private static Bitmap icon(', progress_end)
 mix_start = source.index('    private static int mix(')
 mix_end = source.index('\n    private AtomicAgendaCard()', mix_start)
 graphics = '''
 class Color {static int red(int c){return (c>>>16)&255;}static int green(int c){return (c>>>8)&255;}static int blue(int c){return c&255;}static int rgb(int r,int g,int b){return 0xff000000|(r<<16)|(g<<8)|b;}}
-class Paint {static final int ANTI_ALIAS_FLAG=1;int color;Paint(int flags){}void setColor(int c){color=c;}}
-class Bitmap {enum Config{ARGB_8888}java.util.List<float[]> rects=new java.util.ArrayList<>();java.util.List<Integer> colors=new java.util.ArrayList<>();static Bitmap createBitmap(int w,int h,Config c){return new Bitmap();}}
-class Canvas {Bitmap image;Canvas(Bitmap b){image=b;}void drawRect(float l,float t,float r,float b,Paint p){image.rects.add(new float[]{l,t,r,b});image.colors.add(p.color);}}
+class Paint {enum Style{FILL,STROKE}Style style=Style.FILL;static final int ANTI_ALIAS_FLAG=1;int color;Paint(int flags){}void setColor(int c){color=c;}void setStyle(Style s){style=s;}}
+class Bitmap {boolean solidDot;enum Config{ARGB_8888}java.util.List<float[]> rects=new java.util.ArrayList<>();java.util.List<Integer> colors=new java.util.ArrayList<>();static Bitmap createBitmap(int w,int h,Config c){return new Bitmap();}}
+class Canvas {Bitmap image;Canvas(Bitmap b){image=b;}void drawCircle(float x,float y,float r,Paint p){image.solidDot=p.style==Paint.Style.FILL&&(p.color>>>24)==255;}void drawRect(float l,float t,float r,float b,Paint p){image.rects.add(new float[]{l,t,r,b});image.colors.add(p.color);}}
 '''
 symbols = root / 'app/build/intermediates/runtime_symbol_list/release/processReleaseResources/R.txt'
 ids = {}
@@ -35,11 +36,12 @@ assert len(ids) == 6
 resources = ''.join(f'static int {name}={value};' for name, value in ids.items())
 harness = (graphics + 'class ValueAnimator {static boolean enabled=true;static boolean areAnimatorsEnabled(){return enabled;}}'
            'class R {static class id {' + resources + '}}'
-           'public class AtomicCardContractCheck {' + array + method + location_method + source[progress_start:progress_end] + source[mix_start:mix_end] +
+           'public class AtomicCardContractCheck {' + array + method + location_method + source[progress_start:dot_end] + source[mix_start:mix_end] +
            'public static void main(String[] args){'
            'for(String empty:new String[]{null,"","  ","\\t\\n"})'
            'if(!locationText(empty).equals("在你手里~"))throw new AssertionError("empty location");'
            'if(!locationText(" 教室 ").equals("教室"))throw new AssertionError("real location");'
+           'for(int color:new int[]{0xffff8800,0xff9068e8,0xff315ca7})if(!dot(color).solidDot)throw new AssertionError("endpoint must be opaque and filled");'
            'for(double ratio:new double[]{0,.1,.5,.95,1}){Bitmap p=progress(0xffff8800,0xff101015,ratio);'
            'if((p.colors.get(0)>>>24)!=255||p.colors.get(0)==0xff101015)throw new AssertionError("invisible remaining track");'
            'if(p.rects.get(0)[2]!=320||p.rects.get(1)[2]!=(float)(320*ratio))throw new AssertionError("progress endpoint");}'
@@ -69,6 +71,7 @@ for item in animations:
                           'widget_marquee_ellipsize_type': (1, 0)}
 assert 'removeAllViews' not in source, 'Reapply must retain animated child identity'
 assert 'setAutoStart' not in source, 'ViewFlipper.setAutoStart is not remotely callable'
+assert 'R.id.atomic_to_dot, dot(palette.primary)' in source, 'Right endpoint must not depend on progress'
 # Endpoint centres and the track edges share the same inset.
 nodes = {node.get(android + 'id'): node for node in layout.iter()}
 track = nodes['@+id/atomic_progress']

@@ -77,8 +77,8 @@ final class AtomicAgendaCard {
             views.setTextColor(id, palette.muted);
         views.setTextColor(R.id.atomic_remaining, palette.primary);
         views.setImageViewBitmap(R.id.atomic_icon, icon(palette.primary));
-        views.setImageViewBitmap(R.id.atomic_from_dot, dot(palette.primary, true));
-        views.setImageViewBitmap(R.id.atomic_to_dot, dot(palette.primary, ratio >= 1));
+        views.setImageViewBitmap(R.id.atomic_from_dot, dot(palette.primary));
+        views.setImageViewBitmap(R.id.atomic_to_dot, dot(palette.primary));
         views.setImageViewBitmap(R.id.atomic_progress, progress(palette.primary, palette.surface, ratio));
         views.setContentDescription(R.id.atomic_progress, Math.round(ratio * 100) + "%");
         views.setInt(R.id.atomic_card, "setBackgroundColor", palette.surface);
@@ -161,10 +161,10 @@ final class AtomicAgendaCard {
         return image;
     }
 
-    private static Bitmap dot(int color, boolean filled) {
+    private static Bitmap dot(int color) {
         Bitmap image = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); paint.setColor(color);
-        paint.setStyle(filled ? Paint.Style.FILL : Paint.Style.STROKE); paint.setStrokeWidth(3);
+        paint.setStyle(Paint.Style.FILL);
         new Canvas(image).drawCircle(12, 12, 9, paint);
         return image;
     }
