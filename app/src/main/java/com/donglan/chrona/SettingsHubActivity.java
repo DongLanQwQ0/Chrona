@@ -83,6 +83,12 @@ public final class SettingsHubActivity extends Activity {
             if (Build.VERSION.SDK_INT >= 31) openSystemSettings(new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                     android.net.Uri.parse("package:" + getPackageName())));
         });
+        row(reminders, "后台运行", "检查电池限制", () -> {
+            if ("vivo".equalsIgnoreCase(Build.MANUFACTURER))
+                Feedback.show(this, "电量 → 后台耗电管理 → 允许后台耗电");
+            openSystemSettings(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + getPackageName())));
+        });
 
         LinearLayout services = group(root, "服务与数据");
         destination(services, "AI 服务", SettingsActivity.class);

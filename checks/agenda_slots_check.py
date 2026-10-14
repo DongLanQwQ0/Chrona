@@ -23,6 +23,7 @@ class SharedPreferences {
  class Editor {Map<String,Object> additions=new HashMap<>();Set<String> removed=new HashSet<>();Editor putString(String k,String v){additions.put(k,v);return this;}Editor putLong(String k,long v){additions.put(k,v);return this;}Editor remove(String k){removed.add(k);return this;}void apply(){for(String k:removed)values.remove(k);values.putAll(additions);}}
 }
 class AgendaReminderPreferences {static boolean enabled=true,atomic=true;static SharedPreferences prefs(Context c){return c.prefs;}static boolean enabled(Context c){return enabled;}static boolean includesSystemCalendar(Context c){return false;}static boolean useAtomic(Context c,boolean system,boolean available){return enabled&&available&&atomic;}}
+class AgendaReminderLiveService {static boolean running;static long next;static void update(Context c,boolean needed,long at){running=needed;next=at;}}
 class NotificationManager {static final int IMPORTANCE_HIGH=4;boolean allowed=true;Map<Integer,String> cards=new HashMap<>();Map<Integer,Boolean> atomic=new HashMap<>();List<String> events=new ArrayList<>();boolean areNotificationsEnabled(){return allowed;}void createNotificationChannel(NotificationChannel c){}void notify(int id,String key){events.add("notify:"+id);cards.put(id,key);}}
 class Notification {static final int VISIBILITY_PUBLIC=1;}
 class NotificationChannel {NotificationChannel(String id,String name,int importance){}void setDescription(String s){}void setLockscreenVisibility(int visibility){if(visibility!=Notification.VISIBILITY_PUBLIC)throw new AssertionError("reminder channel must be lockscreen visible");}}
@@ -56,11 +57,13 @@ public class AgendaSlotsCheck {
   TaskStore.rows=new ArrayList<>(List.of(a,b,d,e));refresh(c,null);
   check(nextTitles.get(NOTIFICATION_ID).equals("second")&&nextTitles.get(NOTIFICATION_ID+2).equals("fourth"),"refresh forwards next title including occurrence beyond card cap");
   check(c.manager.cards.size()==3,"vivo three-card cap");check(slot(c,0).equals(a.key())&&slot(c,1).equals(b.key())&&slot(c,2).equals(d.key()),"initial slot identities");
+  check(AgendaReminderLiveService.running&&AgendaReminderLiveService.next==alarm,"active atomic cards keep scoped live updates");
   check(alarm<=System.currentTimeMillis()+ReminderTimeline.PROGRESS_REFRESH,"vivo progress refresh");
   AgendaReminderPreferences.atomic=false;VivoAtomicNotification.ended.clear();c.manager.events.clear();refresh(c,null);
   check(c.manager.cards.size()==3&&!c.manager.atomic.containsValue(true),"available vivo retains three ordinary cards when source atomic disabled");
   for(int i=0;i<3;i++)check(c.manager.events.indexOf("end:"+(NOTIFICATION_ID+i))<c.manager.events.indexOf("notify:"+(NOTIFICATION_ID+i)),"atomic to ordinary ends before notify");
   check(VivoAtomicNotification.ended.size()==3&&alarm>System.currentTimeMillis()+ReminderTimeline.PROGRESS_REFRESH,"ordinary conversion clears each atomic card and progress alarm");
+  check(!AgendaReminderLiveService.running,"ordinary cards do not keep foreground updater");
   VivoAtomicNotification.ended.clear();refresh(c,null);check(VivoAtomicNotification.ended.isEmpty(),"same ordinary format needs no cancellation");
   AgendaReminderPreferences.atomic=true;VivoAtomicNotification.ended.clear();c.manager.events.clear();refresh(c,null);
   check(c.manager.atomic.size()==3&&!c.manager.atomic.containsValue(false)&&VivoAtomicNotification.ended.size()==3,"ordinary to atomic replaces each slot");
@@ -92,6 +95,7 @@ public class AgendaSlotsCheck {
   for(int i=0;i<3;i++)check(slot(c,i).isEmpty()&&!c.prefs.values.containsKey("slot_started:"+i),"permission disabled clears slot key and start");
   c.manager.allowed=true;refresh(c,null);AgendaReminderPreferences.enabled=false;VivoAtomicNotification.ended.clear();refresh(c,null);
   check(c.manager.cards.isEmpty()&&alarm==0&&VivoAtomicNotification.ended.size()==3,"disabled ends all slots and cancels alarm");
+  check(!AgendaReminderLiveService.running,"disabled stops live service");
   AgendaReminderPreferences.enabled=true;VivoAtomicNotification.vivo=false;refresh(c,null);
   check(c.manager.cards.size()==1&&alarm>System.currentTimeMillis()+ReminderTimeline.PROGRESS_REFRESH,"ordinary platform single card boundary refresh");
   c.prefs.edit().putLong("slot_end:0",now-1).apply();refresh(c,new Intent(a.key(),"hide"));

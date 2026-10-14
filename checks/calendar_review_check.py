@@ -83,6 +83,7 @@ class Queue {
 }
 class View {
  static final int IMPORTANT_FOR_ACCESSIBILITY_AUTO=0,IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS=4;
+ static final int VISIBLE=0,GONE=8;void setVisibility(int v){}
  int importance;void setImportantForAccessibility(int value){importance=value;}
 }
 class LinearLayout extends View {}
@@ -112,6 +113,7 @@ public class CalendarReviewCheck extends Context {
  volatile int providerRevision;final LinkedHashMap<String,AgendaRepository.Snapshot>snapshotCache=new LinkedHashMap<>(4,.75f,true);
  AgendaRepository.Snapshot snapshot=new AgendaRepository.Snapshot(),deferredSnapshot;final Runnable deferredApply=this::applyDeferred;
  final TextView dateTitle=new TextView();final Switch sourceSwitch=new Switch();final Tabs tabs=new Tabs();Object tabMotion;Dialog allDayDialog;final Preferences preferences=new Preferences();
+ View weekExportButton=new View();
  boolean isDestroyed(){return destroyed;}Preferences getPreferences(int mode){return preferences;}
  void finishTabMotion(){}void finishBodyMotion(){}void moveTabHighlight(){renderedHighlights++;}
  View action(String label,Runnable action){return new View();}

@@ -111,6 +111,11 @@ public final class CalendarOverviewActivity extends Activity {
         EntryStatus(AgendaEntry entry, TextView title, TextView time) { this.entry = entry; this.title = title; this.time = time; }
     }
     private TextView dateTitle;
+    private ImageButton weekExportButton;
+    private static final int CREATE_WEEK_IMAGE = 811;
+    private static final java.util.concurrent.ExecutorService EXPORTS = java.util.concurrent.Executors.newSingleThreadExecutor();
+    private boolean exportingWeek;
+    private String weekExportName;
     private android.widget.Switch sourceSwitch;
     private View timeLines;
     private android.app.Dialog allDayDialog;
@@ -136,6 +141,7 @@ public final class CalendarOverviewActivity extends Activity {
         mode = getPreferences(MODE_PRIVATE).getInt("mode", MONTH);
         if (getIntent().getBooleanExtra("open_week", false) && state == null) { mode = WEEK; date = LocalDate.now(); }
         if (state != null) {
+            weekExportName = state.getString("week_export_name");
             date = LocalDate.parse(state.getString("date", date.toString()));
             mode = state.getInt("mode", mode); query = state.getString("query", "");
             String[] keys = state.getStringArray("position_keys");
@@ -150,6 +156,9 @@ public final class CalendarOverviewActivity extends Activity {
         header.addView(icon(R.drawable.ic_arrow_left, "返回", this::finish), size(44, 44));
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(44), 1);
         searchParams.setMargins(dp(8), 0, dp(8), 0); header.addView(searchField(), searchParams);
+        weekExportButton = icon(R.drawable.ic_week_export, "导出周日程为图片", this::exportWeek);
+        weekExportButton.setVisibility(mode == WEEK ? View.VISIBLE : View.GONE);
+        header.addView(weekExportButton, size(44, 44));
         header.addView(icon(R.drawable.ic_add, "记录新日程", () -> startActivity(new Intent(this, MainActivity.class))), size(44, 44));
         root.addView(header);
         LinearLayout navigation = row();
@@ -285,6 +294,7 @@ public final class CalendarOverviewActivity extends Activity {
     @Override protected void onDestroy() { cancelRead(); reader.shutdownNow(); super.onDestroy(); }
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state); state.putString("date", date.toString()); state.putInt("mode", mode); state.putString("query", query);
+        state.putString("week_export_name", weekExportName);
         rememberPosition();
         String[] keys = positions.keySet().toArray(new String[0]); int[] xs = new int[keys.length], ys = new int[keys.length];
         for (int i = 0; i < keys.length; i++) { int[] position = positions.get(keys[i]); xs[i] = position[0]; ys[i] = position[1]; }
@@ -562,6 +572,62 @@ public final class CalendarOverviewActivity extends Activity {
     private void updateHeader() {
         dateTitle.setText(mode == YEAR ? date.getYear() + "" : date.format(DateTimeFormatter.ofPattern(mode == DAY ? "yyyy / M / d" : "yyyy / M")));
         dateTitle.setContentDescription(date + "，选择日期"); sourceSwitch.setChecked(includeSystem);
+        if (weekExportButton != null) weekExportButton.setVisibility(mode == WEEK ? View.VISIBLE : View.GONE);
+    }
+    private void exportWeek() {
+        if (mode != WEEK || exportingWeek) return;
+        if (loading || !renderedKey.equals(windowKey(snapshot.zone))) { Feedback.show(this, "日程仍在读取，请稍候"); return; }
+        if (snapshot.truncated || includeSystem && snapshot.systemUnavailable) { Feedback.show(this, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
+        exportingWeek = true; weekExportButton.setEnabled(false);
+        LocalDate first = windowStart(); ZoneId zone = snapshot.zone; List<AgendaEntry> entries = List.copyOf(matching());
+        UiStyle.Palette palette = UiStyle.colors(this); String search = query; boolean system = includeSystem;
+        android.content.Context app = getApplicationContext(); Handler responses = handler;
+        java.lang.ref.WeakReference<CalendarOverviewActivity> owner = new java.lang.ref.WeakReference<>(this);
+        EXPORTS.execute(() -> {
+            try {
+                java.io.File image = WeekAgendaImage.write(app.getCacheDir(), first, zone, entries, palette, search, system);
+                responses.post(() -> {
+                    CalendarOverviewActivity screen = owner.get();
+                    if (screen == null || screen.isDestroyed() || screen.isFinishing()) { image.delete(); return; }
+                    screen.exportingWeek = false; screen.weekExportButton.setEnabled(true); screen.weekExportName = image.getName();
+                    Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/png")
+                            .putExtra(Intent.EXTRA_TITLE, "Chrona-周日程-" + first + ".png");
+                    try { screen.startActivityForResult(save, CREATE_WEEK_IMAGE); }
+                    catch (android.content.ActivityNotFoundException error) { image.delete(); screen.weekExportName = null; Feedback.show(screen, "未找到文件保存应用"); }
+                });
+            } catch (Exception | OutOfMemoryError error) {
+                responses.post(() -> {
+                    CalendarOverviewActivity screen = owner.get(); if (screen == null || screen.isDestroyed()) return;
+                    screen.exportingWeek = false; screen.weekExportButton.setEnabled(true);
+                    Feedback.showLong(screen, error instanceof OutOfMemoryError ? "图片过大，请缩小日程范围后导出" : "导出失败：" + error.getMessage());
+                });
+            }
+        });
+    }
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != CREATE_WEEK_IMAGE) return;
+        String name = weekExportName; weekExportName = null;
+        if (name == null || !name.matches("week-export-[A-Za-z0-9-]+\\.png")) return;
+        java.io.File image = new java.io.File(getCacheDir(), name);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) { image.delete(); return; }
+        android.net.Uri destination = data.getData(); android.content.Context app = getApplicationContext();
+        java.lang.ref.WeakReference<CalendarOverviewActivity> owner = new java.lang.ref.WeakReference<>(this);
+        EXPORTS.execute(() -> {
+            try (java.io.InputStream input = new java.io.FileInputStream(image);
+                    java.io.OutputStream output = app.getContentResolver().openOutputStream(destination, "wt")) {
+                if (output == null) throw new java.io.IOException("无法打开保存位置");
+                byte[] buffer = new byte[8192]; int count;
+                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                output.flush(); new Handler(Looper.getMainLooper()).post(() -> {
+                    CalendarOverviewActivity screen = owner.get(); if (screen != null && !screen.isDestroyed()) Feedback.show(screen, "周日程图片已保存");
+                });
+            } catch (Exception error) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    CalendarOverviewActivity screen = owner.get(); if (screen != null && !screen.isDestroyed()) Feedback.showLong(screen, "保存失败：" + error.getMessage());
+                });
+            } finally { image.delete(); }
+        });
     }
     private List<AgendaEntry> matching() {
         String needle = query.trim().toLowerCase(Locale.ROOT);

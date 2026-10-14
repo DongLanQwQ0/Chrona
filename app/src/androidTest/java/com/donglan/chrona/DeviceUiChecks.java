@@ -31,6 +31,7 @@ final class DeviceUiChecks {
         if ("reminder_state".equals(arguments.getString("phase")))
             return AgendaReminder.WORKER.submit(() -> reminderState(test)).get();
         if ("week_widget_render".equals(arguments.getString("phase"))) return weekWidgets(test);
+        if ("week_image".equals(arguments.getString("phase"))) return weekImage(test);
         if ("restore_occurrence".equals(arguments.getString("phase"))) {
             String key = arguments.getString("key", "");
             if (!key.matches("(system|chrona):[0-9]+:[0-9]+")) throw new IllegalArgumentException("Explicit occurrence key required");
@@ -77,6 +78,33 @@ final class DeviceUiChecks {
         if ("atomic".equals(phase)) return atomic(test);
         if (phase == null || "calendar".equals(phase) || "gestures".equals(phase)) return calendar(test, arguments);
         throw new IllegalArgumentException("Unknown device check phase: " + phase);
+    }
+    private static String weekImage(Instrumentation test) throws Exception {
+        Context context = test.getTargetContext();
+        java.time.LocalDate monday = java.time.LocalDate.of(2026, 10, 12);
+        java.time.ZoneId zone = java.time.ZoneId.of("Asia/Shanghai");
+        long base = monday.atStartOfDay(zone).toInstant().toEpochMilli();
+        List<AgendaEntry> entries = new ArrayList<>();
+        entries.add(new AgendaEntry(1, 0, base, base + 86400000L * 2, "跨日全天安排", "", "", "系统日历", true, true, true));
+        entries.add(new AgendaEntry(2, 0, base - 3600000L, base + 3600000L, "跨周活动", "教室", "", "拾时", false, false, true));
+        entries.add(new AgendaEntry(3, 0, base + 86400000L * 6 + 86340000L, base + 86400000L * 7, "最后一分钟截止", "", "", "拾时", false, false, true));
+        for (int i = 0; i < 3; i++) entries.add(new AgendaEntry(10+i, 0,
+                base + 3600000L * 10, base + 3600000L * 12, "并行日程 " + i + " · 长标题完整保存在索引中", "东二教学楼", "", "拾时", false, false, i != 2));
+        java.io.File image = WeekAgendaImage.write(context.getCacheDir(), monday, zone, entries, UiStyle.colors(context), "", true);
+        android.graphics.BitmapFactory.Options size = new android.graphics.BitmapFactory.Options(); size.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeFile(image.getPath(), size);
+        if (size.outWidth != WeekAgendaImage.WIDTH || size.outHeight <= 2400) throw new AssertionError("Full week bounds missing");
+        java.io.File output = new java.io.File(context.getExternalFilesDir(null), "week-export-edge-cases.png");
+        java.nio.file.Files.copy(image.toPath(), output.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING); image.delete();
+        java.io.File empty = WeekAgendaImage.write(context.getCacheDir(), monday, zone, List.of(), UiStyle.colors(context), "空筛选", false);
+        if (empty.length() == 0) throw new AssertionError("Empty week PNG missing"); empty.delete();
+        List<AgendaEntry> oversized = new ArrayList<>();
+        for (int i=0;i<1000;i++) oversized.add(new AgendaEntry(100+i,0,base+36000000,base+39600000,"密集日程 "+i,"","","拾时",false,false,true));
+        try { java.io.File bad = WeekAgendaImage.write(context.getCacheDir(),monday,zone,oversized,UiStyle.colors(context),"",false);
+            bad.delete(); throw new AssertionError("Oversized export must be rejected before bitmap allocation");
+        } catch (java.io.IOException expected) { }
+        return new JSONObject().put("width",size.outWidth).put("height",size.outHeight).put("image",output.getPath())
+                .put("emptyWeek",true).put("sizeLimit",true).toString();
     }
     private static String reminderState(Instrumentation test) throws Exception {
         Context context = test.getTargetContext(); long now = System.currentTimeMillis();

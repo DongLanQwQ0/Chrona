@@ -26,7 +26,7 @@ import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Stable notification slots and one next alarm. No foreground service or network work. */
+/** Stable notification slots, boundary alarms and scoped live atomic updates. No network work. */
 public final class AgendaReminder {
     static final String CHANNEL = "upcoming_agenda";
     static final int NOTIFICATION_ID = 0x434852;
@@ -75,7 +75,7 @@ public final class AgendaReminder {
                 VivoAtomicNotification.end(context, manager, NOTIFICATION_ID + i);
                 clear.remove("slot_key:" + i).remove("slot_end:" + i).remove("slot_started:" + i);
             }
-            clear.apply(); schedule(context, 0); return;
+            clear.apply(); schedule(context, 0); AgendaReminderLiveService.update(context, false, 0); return;
         }
         java.util.Set<String> hidden = new HashSet<>();
         Map<String, Long> snoozeUntil = new HashMap<>();
@@ -120,6 +120,7 @@ public final class AgendaReminder {
             manager.createNotificationChannel(channel);
         }
         SharedPreferences.Editor state = prefs.edit();
+        boolean liveUpdates = false;
         for (int i = 0; i < slots.length; i++) {
             AgendaEntry entry = slots[i];
             boolean same = entry != null && entry.key().equals(previous[i]);
@@ -136,6 +137,7 @@ public final class AgendaReminder {
             state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, ReminderTimeline.expiresAt(entry));
             state.putLong("slot_started:" + i, notifiedAt);
             if (atomic) {
+                liveUpdates = true;
                 refreshAt = Math.min(refreshAt, now + ReminderTimeline.PROGRESS_REFRESH);
                 long countdownAt = ReminderTimeline.capsuleDeadline(entry, now) - ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW;
                 if (countdownAt > now) refreshAt = Math.min(refreshAt, countdownAt);
@@ -143,6 +145,7 @@ public final class AgendaReminder {
         }
         state.apply();
         schedule(context, Math.min(refreshAt, now + 24 * 60 * 60_000L));
+        AgendaReminderLiveService.update(context, liveUpdates, refreshAt);
     }
 
     static boolean exactAllowed(Context context) {
