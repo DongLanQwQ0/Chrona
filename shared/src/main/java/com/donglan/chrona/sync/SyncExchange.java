@@ -38,11 +38,13 @@ public final class SyncExchange {
                         .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(downloaded.bytes)).toString();
                 SyncState remote = SyncState.fromJson(new JSONObject(text));
                 if (!filename.equals(remote.deviceId + ".json")) throw new IOException("云端设备身份不一致");
-                validate(remote, validated, sizes);
                 remoteBlobs.addAll(attachments(remote).keySet());
                 merged.merge(remote);
                 if (ownName.equals(filename)) ownEtag = downloaded.etag;
             }
+            // Validate the effective state: obsolete device heads must not block a newer
+            // already-converted version of the same record. Live conflicts still validate.
+            validate(merged, validated, sizes);
             Map<String, Long> needed = attachments(merged);
             for (Map.Entry<String, Long> item : needed.entrySet()) {
                 String sha = item.getKey();

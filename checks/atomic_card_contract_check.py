@@ -36,12 +36,13 @@ assert len(ids) == 6
 resources = ''.join(f'static int {name}={value};' for name, value in ids.items())
 harness = (graphics + 'class ValueAnimator {static boolean enabled=true;static boolean areAnimatorsEnabled(){return enabled;}}'
            'class R {static class id {' + resources + '}}'
-           'public class AtomicCardContractCheck {' + array + method + location_method + source[progress_start:dot_end] + source[mix_start:mix_end] +
+           'class ReminderTimeline {static long CAPSULE_COUNTDOWN_WINDOW=120000;}public class AtomicCardContractCheck {' + array + method + location_method + source[progress_start:dot_end] + source[mix_start:mix_end] +
            'public static void main(String[] args){'
            'for(String empty:new String[]{null,"","  ","\\t\\n"})'
            'if(!locationText(empty).equals("在你手里~"))throw new AssertionError("empty location");'
            'if(!locationText(" 教室 ").equals("教室"))throw new AssertionError("real location");'
            'if(!remainingText(-139000).equals("0分")||!remainingText(0).equals("0分")||!remainingText(61000).equals("2分")||!remainingText(3660000).equals("61分"))throw new AssertionError("nonnegative minute countdown");'
+           'if(!remainingText(120000,true).equals("120秒")||!remainingText(119001,true).equals("120秒")||!remainingText(119000,true).equals("119秒")||!remainingText(1000,true).equals("1秒")||!remainingText(120000,false).equals("2分"))throw new AssertionError("seconds countdown");'
            'for(int color:new int[]{0xffff8800,0xff9068e8,0xff315ca7})if(!dot(color).solidDot)throw new AssertionError("endpoint must be opaque and filled");'
            'for(double ratio:new double[]{0,.1,.5,.95,1}){Bitmap p=progress(0xffff8800,0xff101015,ratio);'
            'if((p.colors.get(0)>>>24)!=255||p.colors.get(0)==0xff101015)throw new AssertionError("invisible remaining track");'

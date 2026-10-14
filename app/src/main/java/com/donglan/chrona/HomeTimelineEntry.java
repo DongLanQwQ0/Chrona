@@ -14,9 +14,9 @@ final class HomeTimelineEntry {
 
     HomeTimelineEntry(EventCandidate candidate) {
         timestampMillis = candidate.allDay
-                ? LocalDate.parse(AllDayDates.displayStart(candidate.startAtMillis))
+                ? LocalDate.parse(AllDayDates.displayStart(candidate.calendarStart()))
                         .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                : candidate.startAtMillis;
+                : candidate.calendarStart();
         this.candidate = candidate;
         systemEvent = null;
     }

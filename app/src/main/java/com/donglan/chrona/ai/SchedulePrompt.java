@@ -8,9 +8,9 @@ import java.time.format.DateTimeFormatter;
 
 /** Stable instructions and an explicitly encoded, bounded data suffix. */
 public final class SchedulePrompt {
-    public static final String VERSION = "schedule-v4";
+    public static final String VERSION = "schedule-v5";
     public static final String SYSTEM = "Chrona schedule extraction " + VERSION + ". "
-            + "Extract calendar candidates. Return only JSON with an events array conforming to the schema below. "
+            + "Extract calendar candidates. Return only JSON with events and records arrays conforming to the schema below. "
             + "Make a quick first-pass interpretation and return it. A useful draft is enough; do not seek a perfect answer, "
             + "repeatedly doubt settled facts, compare many alternatives, or enumerate hypothetical edge cases. "
             + "The program handles date conversion, missing end durations, reminder defaults and validation. "
@@ -19,8 +19,8 @@ public final class SchedulePrompt {
             + "Combine actions done together; keep independent events separate, even when they overlap. "
             + "Use a short concrete title in the input language. Put physical venues/meeting platforms in location; "
             + "keep URLs, submission addresses and instructions in description. "
-            + "Use category event/task/reminder/deadline/note. Do not calculate Unix milliseconds or default durations/reminders. "
-            + "Use start/end for activities and due for deadlines. Preserve explicit duration_minutes. "
+            + "Use only category event (an appointment) or task (an action to complete). Reminder is a setting and due is a task deadline, never a separate category. Put informational notes without an action in records, not events. Do not calculate Unix milliseconds or default durations/reminders. "
+            + "Use start/end for event duration, optional start/end for a task execution slot, and optional due for its deadline. Tasks may have no times; do not invent a time or duration for an unscheduled task. Preserve explicit duration_minutes. "
             + "For each time use an explicit date if stated; otherwise encode day_offset relative to now_local, "
             + "offset_minutes relative to reference epoch, or weekday (Monday=1) and week_offset (this week=0). "
             + "Vague times such as later, someday, soon or evening are allowed: choose the first reasonable concrete date/time "
@@ -33,7 +33,7 @@ public final class SchedulePrompt {
             + "to freely choosing a time; level 2 also covers contradictory, conditional or missing facts. "
             + "needs_confirmation=true whenever uncertainty_level>0. Use HH:mm (or HH:mm:ss); "
             + "For a stated day's 24:00, use that same day's 23:59 so its deadline stays on that date; never use 24:01. "
-            + "Leave missing ends null for program duration defaults. "
+            + "Leave missing ends null; the program supplies activity durations only, never task durations. "
             + "reminder_specified=true only for an explicit reminder preference, including explicit no-reminder "
             + "(reminder_minutes_before=null). Otherwise reminder_specified=false and reminder_minutes_before=null. "
             + "Every property is required; unknown values are null. Return events=[] when no candidates. Schema: "
@@ -52,7 +52,7 @@ public final class SchedulePrompt {
             ep.put("uncertainty_level", new JSONObject().put("type", "integer").put("enum",
                     new org.json.JSONArray(new int[]{0, 1, 2})));
             ep.put("category", new JSONObject().put("type", "string").put("enum",
-                    new org.json.JSONArray(new String[]{"event", "task", "reminder", "deadline", "note"})));
+                    new org.json.JSONArray(new String[]{"event", "task"})));
             for (String key : new String[]{"location", "description", "time_zone_id"}) ep.put(key, nullable("string"));
             for (String key : new String[]{"all_day", "needs_confirmation", "reminder_specified"})
                 ep.put(key, new JSONObject().put("type", "boolean"));
@@ -61,9 +61,14 @@ public final class SchedulePrompt {
             for (String key : new String[]{"duration_minutes", "reminder_minutes_before"}) ep.put(key, nullable("integer"));
             JSONObject event = new JSONObject().put("type", "object").put("additionalProperties", false)
                     .put("properties", ep).put("required", ep.names());
+            JSONObject record = new JSONObject().put("type","object").put("additionalProperties",false)
+                    .put("properties",new JSONObject().put("title",new JSONObject().put("type","string"))
+                            .put("description",new JSONObject().put("type","string")))
+                    .put("required",new org.json.JSONArray().put("title").put("description"));
             return new JSONObject().put("type", "object").put("additionalProperties", false)
-                    .put("properties", new JSONObject().put("events", new JSONObject().put("type", "array").put("items", event)))
-                    .put("required", new org.json.JSONArray().put("events"));
+                    .put("properties", new JSONObject().put("events", new JSONObject().put("type", "array").put("items", event))
+                            .put("records",new JSONObject().put("type","array").put("items",record)))
+                    .put("required", new org.json.JSONArray().put("events").put("records"));
         } catch (JSONException e) { throw new IllegalStateException(e); }
     }
 

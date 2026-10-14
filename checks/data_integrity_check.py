@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     snap_path = Path(directory) / "snapshot.db"
     schema = """
     CREATE TABLE tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,status TEXT,error_message TEXT);
-    CREATE TABLE event_candidates(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id),start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,calendar_event_id INTEGER);
+    CREATE TABLE event_candidates(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id),start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,calendar_event_id INTEGER,is_record INTEGER DEFAULT 0,needs_confirmation INTEGER DEFAULT 1,due_at_millis INTEGER,completed_at_millis INTEGER);
     CREATE TABLE task_attachments(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id));
     CREATE TABLE task_files(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id));
     CREATE TABLE data_revision(id INTEGER PRIMARY KEY,revision INTEGER);
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     live.execute("INSERT INTO tasks VALUES(1,'ready',NULL)")
     live.execute("INSERT INTO tasks VALUES(99,'ready',NULL)")
     live.execute("DELETE FROM tasks WHERE id=99")
-    live.execute("INSERT INTO event_candidates VALUES(1,1,10,20,0,42)")
+    live.execute("INSERT INTO event_candidates(id,task_id,start_at_millis,end_at_millis,all_day,calendar_event_id) VALUES(1,1,10,20,0,42)")
     live.execute("INSERT INTO task_attachments VALUES(1,1)")
     live.execute("INSERT INTO task_files VALUES(1,1)")
     original_revision = live.execute("SELECT revision FROM data_revision").fetchone()[0]
@@ -102,11 +102,11 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
 method = store.split("public List<EventCandidate> widgetCandidates(long begin, long end,", 1)[1].split("@Override", 1)[0]
 selection = "".join(literals(method.split('query("event_candidates", null,', 1)[1].split('new String[]', 1)[0]))
 with sqlite3.connect(":memory:") as db:
-    db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER)")
-    db.executemany("INSERT INTO event_candidates VALUES(?,?,?,0)", [(i, 5, 9) for i in range(1, 201)])
-    db.execute("INSERT INTO event_candidates VALUES(201,30,40,0)")
+    db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,is_record INTEGER DEFAULT 0,due_at_millis INTEGER,completed_at_millis INTEGER)")
+    db.executemany("INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day) VALUES(?,?,?,0)", [(i, 5, 9) for i in range(1, 201)])
+    db.execute("INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day) VALUES(201,30,40,0)")
     query = f"SELECT id FROM event_candidates WHERE {selection} ORDER BY start_at_millis ASC,id ASC LIMIT 200"
     assert db.execute(query, ("100", "20", "20", "100", "20", "20")).fetchall() == [(201,)]
-    db.execute("INSERT INTO event_candidates VALUES(202,0,24,1)")
+    db.execute("INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day) VALUES(202,0,24,1)")
     assert db.execute(query, ("100", "20", "20", "48", "0", "0")).fetchall() == [(202,), (201,)]
 print("Data integrity checks passed: concurrent snapshot, attached triggers, revision, ID high water, foreign keys, restore status, widget history overflow and all-day bounds")

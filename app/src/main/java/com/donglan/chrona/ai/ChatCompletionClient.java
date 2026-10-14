@@ -324,6 +324,8 @@ public final class ChatCompletionClient {
                 JSONObject event = events.getJSONObject(i);
                 candidates.add(SemanticEventNormalizer.fromJson(taskId, event, nowMillis, timeZoneId));
             }
+            JSONArray records = parsed.optJSONArray("records");
+            if (records != null) for (int i=0;i<records.length();i++) candidates.add(SemanticEventNormalizer.recordFromJson(taskId,records.getJSONObject(i),timeZoneId));
             JSONObject usage = root.optJSONObject("usage");
             JSONObject promptDetails = usage == null ? null
                     : usage.optJSONObject("prompt_tokens_details");

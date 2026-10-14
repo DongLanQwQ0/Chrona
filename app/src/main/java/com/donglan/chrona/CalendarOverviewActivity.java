@@ -835,7 +835,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
     private void updateStatus(EntryStatus status) {
         long now = System.currentTimeMillis(); AgendaEntry e = status.entry;
-        String label = e.finish() <= now ? "已结束" : e.start <= now ? "现在" : e.start - now <= 24 * 60 * 60_000L
+        String label = "task".equals(e.category) ? e.dueAtMillis!=null&&e.dueAtMillis<now ? "已逾期" : "待完成" : e.finish() <= now ? "已结束" : e.start <= now ? "现在" : e.start - now <= 24 * 60 * 60_000L
                 ? Math.max(1, (e.start - now + 59_999) / 60_000) + "分钟后开始" : "";
         status.title.setTextColor(UiStyle.colors(this).text);
         status.time.setText(time(e) + (label.isEmpty() ? "" : "  ·  " + label));
@@ -852,6 +852,7 @@ public final class CalendarOverviewActivity extends Activity {
     private String time(AgendaEntry e) {
         if (e.allDay) return "全天";
         ZoneId zone = snapshot.zone; DateTimeFormatter clock = DateTimeFormatter.ofPattern("HH:mm");
+        if ("task".equals(e.category) && e.end==e.start) return (e.dueAtMillis!=null ? "截止 · " : "待办 · ") + clock.format(Instant.ofEpochMilli(e.start).atZone(zone));
         boolean cross = !Instant.ofEpochMilli(e.start).atZone(zone).toLocalDate().equals(Instant.ofEpochMilli(e.end).atZone(zone).toLocalDate());
         return (cross ? DateTimeFormatter.ofPattern("M/d HH:mm") : clock).format(Instant.ofEpochMilli(e.start).atZone(zone))
                 + " — " + (cross ? DateTimeFormatter.ofPattern("M/d HH:mm") : clock).format(Instant.ofEpochMilli(e.end).atZone(zone));
@@ -932,7 +933,7 @@ public final class CalendarOverviewActivity extends Activity {
             int cardHeight = Math.max(lineHeight + dp(compact ? 4 : 8), durationHeight);
             maxCardHeight = Math.max(maxCardHeight, cardHeight);
             enqueueCalendarBuild(() -> {
-            TextView card = text(compact ? e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), compact ? 12 : days == 1 ? 14 : 12, true);
+            TextView card = text(compact ? ("task".equals(e.category) && e.end==e.start ? "• " : "") + e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), compact ? 12 : days == 1 ? 14 : 12, true);
             card.setPadding(dp(5), dp(compact ? 1 : 4), dp(4), dp(compact ? 1 : 3)); card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
             card.setTextColor(UiStyle.colors(this).text); eventSurface(card, e);
             card.setMaxLines(compact ? 1 : Math.max(1, (cardHeight - dp(7)) / lineHeight));

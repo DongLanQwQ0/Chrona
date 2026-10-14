@@ -22,10 +22,11 @@ public final class InboxQuery {
         }
         if (category != null || status == 4) {
             String candidate = "EXISTS (SELECT 1 FROM event_candidates c WHERE c.task_id=tasks.id";
-            if (category != null) {
-                candidate += " AND c.category=?"; values.add(EventCategory.normalize(category));
+            if ("record".equals(category)) candidate += " AND c.is_record=1";
+            else if (category != null) {
+                candidate += " AND c.is_record=0 AND c.category=?"; values.add(EventCategory.normalize(category));
             }
-            if (status == 4) candidate += " AND c.calendar_event_id IS NOT NULL";
+            if (status == 4) candidate += " AND c.is_record=0 AND c.calendar_event_id IS NOT NULL";
             clauses.add(candidate + ")");
         }
         selection = clauses.isEmpty() ? "1" : String.join(" AND ", clauses);

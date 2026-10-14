@@ -45,9 +45,9 @@ public class HomeFilterReferenceCheck {
         ScheduleFilterState state=new ScheduleFilterState(0,0,0,0,0,today,today);
         require(ScheduleFilterSummary.describe(state,"",today).isEmpty(),"default has no redundant summary");
         state.range=ScheduleFilterState.CUSTOM;state.date=today.minusDays(1);state.until=today.plusDays(1);
-        state.category=4;state.publication=1;
+        state.category=1;state.publication=1;
         String summary=ScheduleFilterSummary.describe(state,"考核",today);
-        require(summary.contains("2026-10-02 至 2026-10-04") && summary.contains("截止")
+        require(summary.contains("2026-10-02 至 2026-10-04") && summary.contains("活动")
                 && summary.contains("待确认") && summary.contains("考核"),"all active conditions visible");
         state.reset(today);state.source=1;
         summary=ScheduleFilterSummary.describe(state,"",today);

@@ -22,9 +22,10 @@ files={
 'android/app/NotificationChannel.java':'package android.app;public class NotificationChannel {public NotificationChannel(String a,String b,int i){}public void setSound(Object a,Object b){}public void enableVibration(boolean b){}public void setShowBadge(boolean b){}}',
 'android/app/NotificationManager.java':'package android.app;public class NotificationManager {public static int IMPORTANCE_MIN=1;public void createNotificationChannel(NotificationChannel c){}}',
 'android/app/PendingIntent.java':'package android.app;public class PendingIntent {public static int FLAG_UPDATE_CURRENT=1,FLAG_IMMUTABLE=2;public static PendingIntent getActivity(android.content.Context c,int id,android.content.Intent i,int f){return new PendingIntent();}}',
-'com/donglan/chrona/AgendaReminder.java':'package com.donglan.chrona;class AgendaReminder {static int refreshes;static void requestRefresh(android.content.Context c){refreshes++;}}',
+'com/donglan/chrona/AgendaReminder.java':'package com.donglan.chrona;class AgendaReminder {static java.util.concurrent.Executor WORKER=Runnable::run;static int refreshes;static void requestRefresh(android.content.Context c){refreshes++;}}',
 'com/donglan/chrona/AgendaReminderPreferences.java':'package com.donglan.chrona;class AgendaReminderPreferences {static boolean enabled=true;static boolean enabled(android.content.Context c){return enabled;}}',
 'com/donglan/chrona/ReminderTimeline.java':'package com.donglan.chrona;class ReminderTimeline {static long PROGRESS_REFRESH=60000;}',
+'com/donglan/chrona/AtomicCountdownUpdates.java':'package com.donglan.chrona;class AtomicCountdownUpdates {static void tick(android.content.Context c){}static long nextDelay(android.content.Context c){return 1000;}}',
 'com/donglan/chrona/DashboardActivity.java':'package com.donglan.chrona;class DashboardActivity {}',
 'com/donglan/chrona/R.java':'package com.donglan.chrona;class R {static class drawable {static int ic_notifications=1;}}',
 'com/donglan/chrona/LiveReminderServiceCheck.java':'''package com.donglan.chrona;public class LiveReminderServiceCheck {
@@ -33,7 +34,7 @@ android.content.Context c=new android.content.Context();AgendaReminderLiveServic
 AgendaReminderLiveService s=new AgendaReminderLiveService();s.onCreate();int result=s.onStartCommand(new android.content.Intent(c,AgendaReminderLiveService.class).putExtra("next_at",System.currentTimeMillis()+5000),0,1);
 check(s.foreground&&result==android.app.Service.START_STICKY,"foreground lifecycle");check(android.os.Handler.delay>0&&android.os.Handler.delay<=5000,"nearest boundary, not always one minute");
 android.os.Handler.pending.run();check(AgendaReminder.refreshes==2,"background tick refreshes without Activity");
-AgendaReminderLiveService.update(c,true,System.currentTimeMillis()+3600000);check(c.starts==1&&android.os.Handler.delay==60000,"existing service reschedules with bounded minute interval");
+AgendaReminderLiveService.update(c,true,System.currentTimeMillis()+3600000);check(c.starts==1&&android.os.Handler.delay==1000,"existing service starts seconds boundary probe");
 AgendaReminderLiveService.update(c,false,0);check(c.stops==1,"no cards stops service");s.onDestroy();check(!s.foreground&&android.os.Handler.pending==null,"destroy releases callbacks and foreground notification");
 c.deny=true;AgendaReminderLiveService.update(c,true,0);check(c.starts==1,"OS denial does not crash reminder path");
 AgendaReminderPreferences.enabled=false;AgendaReminderLiveService disabled=new AgendaReminderLiveService();disabled.onCreate();disabled.onStartCommand(null,0,1);check(disabled.stopped&&!disabled.foreground,"disabled reminder cannot restart updater");disabled.onDestroy();

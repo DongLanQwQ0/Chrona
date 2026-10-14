@@ -21,6 +21,15 @@ public final class AgendaReminderLiveService extends Service {
     private static volatile AgendaReminderLiveService live;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable tick = () -> AgendaReminder.requestRefresh(this);
+    private final Runnable seconds = new Runnable() {
+        @Override public void run() {
+            AgendaReminder.WORKER.execute(() -> {
+                AtomicCountdownUpdates.tick(AgendaReminderLiveService.this);
+                long delay = AtomicCountdownUpdates.nextDelay(AgendaReminderLiveService.this);
+                handler.post(() -> { if (live == AgendaReminderLiveService.this) scheduleSeconds(delay); });
+            });
+        }
+    };
     private final BroadcastReceiver screen = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) { AgendaReminder.requestRefresh(AgendaReminderLiveService.this); }
     };
@@ -28,7 +37,7 @@ public final class AgendaReminderLiveService extends Service {
         if (!needed) { context.stopService(new Intent(context, AgendaReminderLiveService.class)); return; }
         AgendaReminderLiveService current = live;
         if (current != null) {
-            current.handler.post(() -> { if (live == current) current.scheduleTick(nextAt); });
+            current.handler.post(() -> { if (live == current) { current.scheduleTick(nextAt); current.scheduleSeconds(1000); } });
             return;
         }
         try { context.startForegroundService(new Intent(context, AgendaReminderLiveService.class).putExtra("next_at", nextAt)); }
@@ -38,6 +47,7 @@ public final class AgendaReminderLiveService extends Service {
     }
     @Override public void onCreate() {
         super.onCreate(); live = this;
+        handler.postDelayed(seconds, 1000);
         IntentFilter events = new IntentFilter(Intent.ACTION_SCREEN_ON); events.addAction(Intent.ACTION_USER_PRESENT);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(screen, events, Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(screen, events);
@@ -65,6 +75,9 @@ public final class AgendaReminderLiveService extends Service {
         handler.removeCallbacks(tick);
         long delay = Math.max(1000, Math.min(ReminderTimeline.PROGRESS_REFRESH, nextAt - System.currentTimeMillis()));
         handler.postDelayed(tick, delay);
+    }
+    private void scheduleSeconds(long delay) {
+        handler.removeCallbacks(seconds); handler.postDelayed(seconds, delay);
     }
     @Override public void onDestroy() {
         handler.removeCallbacksAndMessages(null); unregisterReceiver(screen);

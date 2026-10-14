@@ -13,17 +13,17 @@ import java.util.Collections;
 /** Writes each certain item once; external writes are compensated if its local link fails. */
 final class AutoCalendarPublisher {
     static final class Result {
-        int published, pending;
+        int published, pending, saved;
         String warning;
         String summary() {
-            if (published == 0) return pending == 0 ? "未识别到日程" : "日程草稿待确认";
-            return "已自动确认并写入 " + published + " 项日程" + (pending == 0 ? "" : "，" + pending + " 项待处理");
+            if (published == 0) return pending == 0 ? (saved>0 ? "已保存 " + saved + " 项待办或记录" : "未识别到日程") : "日程草稿待确认";
+            return "已自动确认并写入 " + published + " 项日程" + (saved>0?"，另保存 "+saved+" 项待办或记录":"") + (pending == 0 ? "" : "，" + pending + " 项待处理");
         }
     }
 
     static boolean eligible(EventCandidate item) {
-        if (item.calendarEventId != null || item.needsConfirmation || item.uncertaintyLevel != EventCandidate.CERTAIN
-                || item.startAtMillis == null || item.endAtMillis == null || item.endAtMillis <= item.startAtMillis) return false;
+        if ((item.startAtMillis!=null&&item.endAtMillis!=null&&item.endAtMillis<=item.startAtMillis) || (!item.isTask() && (item.startAtMillis==null||item.endAtMillis==null)) || item.isRecord || item.completed() || item.calendarEventId != null || item.needsConfirmation || item.uncertaintyLevel != EventCandidate.CERTAIN
+                || item.calendarStart() == null || item.calendarEnd() == null || item.calendarEnd() <= item.calendarStart()) return false;
         try { ZoneId.of(item.timeZoneId); }
         catch (RuntimeException exception) { return false; }
         return item.reminderMinutesBefore == null || item.reminderMinutesBefore >= 0;
@@ -50,7 +50,7 @@ final class AutoCalendarPublisher {
                             if (current == null || !eligible(current)) continue;
                             control.check();
                             created = calendar.insertEvent(new CalendarStore.EventInput(current.title,
-                                    current.startAtMillis, current.endAtMillis, current.timeZoneId, current.allDay,
+                                    current.calendarStart(), current.calendarEnd(), current.timeZoneId, current.allDay,
                                     current.description, current.location, current.reminderMinutesBefore == null
                                             ? Collections.emptyList() : Collections.singletonList(current.reminderMinutesBefore)));
                             control.check();
@@ -72,7 +72,7 @@ final class AutoCalendarPublisher {
                         android.util.Log.w("Chrona", "Automatic calendar write failed", exception);
                     }
                 }
-                for (EventCandidate item : store.getCandidates(taskId)) if (item.calendarEventId == null) result.pending++;
+                for (EventCandidate item : store.getCandidates(taskId)) { if (!item.settled()) result.pending++; else if(item.isRecord || item.isTask()) result.saved++; }
             }
         }
         return result;

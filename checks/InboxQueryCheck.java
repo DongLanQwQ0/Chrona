@@ -28,7 +28,7 @@ public final class InboxQueryCheck {
         plan("processing", 2, null, false);
         plan("failed", 3, null, false);
         plan("published_event", 4, "event", false);
-        plan("published_note", 4, "note", false);
-        plan("note", 0, "note", false);
+        plan("published_note", 4, "record", false);
+        plan("note", 0, "record", false);
     }
 }

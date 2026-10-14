@@ -33,6 +33,11 @@ public class ReminderPreferencesCheck {
   check(!AgendaReminderPreferences.includesSystemCalendar(c),"system inclusion default disabled");
   check(AgendaReminderPreferences.atomicChrona(c)&&AgendaReminderPreferences.atomicSystem(c),"both atomic source defaults enabled");
   check(AgendaReminderPreferences.atomicWallpaper(c),"wallpaper background enabled default");
+  check(AgendaReminderPreferences.capsuleCountdown(c)&&AgendaReminderPreferences.showSeconds(c),"countdown/seconds defaults");
+  for(boolean value:new boolean[]{false,true}){
+   AgendaReminderPreferences.setCapsuleCountdown(c,value);check(AgendaReminderPreferences.capsuleCountdown(new Context())==value,"capsule countdown persisted");
+   AgendaReminderPreferences.setShowSeconds(c,value);check(AgendaReminderPreferences.showSeconds(new Context())==value,"seconds persisted");
+  }
   for(boolean value:new boolean[]{false,true,false}){
    int refreshes=AgendaReminder.refreshes,writes=p.writes;
    Map<String,Object> previous=new HashMap<>(p.values);

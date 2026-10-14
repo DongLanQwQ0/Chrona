@@ -9,7 +9,6 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Shader;
-import android.os.SystemClock;
 import android.widget.RemoteViews;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -56,15 +55,11 @@ final class AtomicAgendaCard {
         views.setTextViewText(R.id.atomic_location, locationText(entry.location));
         views.setImageViewBitmap(R.id.atomic_location_icon, locationIcon(context, palette.muted));
         views.setViewVisibility(R.id.atomic_location_icon, android.view.View.VISIBLE);
-        views.setTextViewText(R.id.atomic_remaining_label, active ? "距结束" : "距开始");
-        views.setChronometer(R.id.atomic_remaining, SystemClock.elapsedRealtime() + Math.max(0, to - now), null, false);
-        views.setChronometerCountDown(R.id.atomic_remaining, true);
-        views.setTextViewText(R.id.atomic_top_remaining_label, active ? "距结束" : "距开始");
+        views.setTextViewText(R.id.atomic_remaining_label, active ? "距结束" : entry.dueAtMillis!=null ? "距截止" : "距开始");
+        views.setTextViewText(R.id.atomic_top_remaining_label, active ? "距结束" : entry.dueAtMillis!=null ? "距截止" : "距开始");
         views.setTextColor(R.id.atomic_top_remaining_label, palette.muted);
         views.setTextColor(R.id.atomic_top_countdown, palette.primary);
-        views.setChronometer(R.id.atomic_top_countdown, SystemClock.elapsedRealtime() + Math.max(0, to - now), null, false);
-        views.setChronometerCountDown(R.id.atomic_top_countdown, true);
-        String remainingTime = remainingText(to - now);
+        String remainingTime = remainingText(to - now, AgendaReminderPreferences.showSeconds(context));
         views.setTextViewText(R.id.atomic_remaining, remainingTime);
         views.setTextViewText(R.id.atomic_top_countdown, remainingTime);
         float remainingSize = remainingTime.length() > 3 ? 14 : 17;
@@ -73,8 +68,8 @@ final class AtomicAgendaCard {
         views.setViewVisibility(R.id.atomic_top_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setViewVisibility(R.id.atomic_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
         if (now >= to) {
-            views.setTextViewText(R.id.atomic_remaining, active ? "已结束" : "已开始");
-            views.setTextViewText(R.id.atomic_top_countdown, active ? "已结束" : "已开始");
+            views.setTextViewText(R.id.atomic_remaining, active ? "已结束" : entry.dueAtMillis!=null ? "已逾期" : "task".equals(entry.category) ? "待完成" : "已开始");
+            views.setTextViewText(R.id.atomic_top_countdown, active ? "已结束" : entry.dueAtMillis!=null ? "已逾期" : "task".equals(entry.category) ? "待完成" : "已开始");
         }
         views.setTextViewText(R.id.atomic_from, CLOCK.format(Instant.ofEpochMilli(from).atZone(zone)));
         views.setTextViewText(R.id.atomic_to, CLOCK.format(Instant.ofEpochMilli(to).atZone(zone)));
@@ -94,6 +89,7 @@ final class AtomicAgendaCard {
         Bitmap completeIcon = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888);
         complete.setBounds(0, 0, 48, 48); complete.draw(new Canvas(completeIcon));
         views.setImageViewBitmap(R.id.atomic_complete, completeIcon);
+        views.setContentDescription(R.id.atomic_complete,"task".equals(entry.category)?"标记待办完成":"结束本次提醒");
         views.setOnClickPendingIntent(R.id.atomic_complete, AgendaReminder.action(context, entry, "complete", 4));
 
         boolean motion = ValueAnimator.areAnimatorsEnabled();
@@ -129,6 +125,11 @@ final class AtomicAgendaCard {
         long minutes = Math.max(0, millis + 59_999L) / 60_000L;
         if (minutes >= 1440) return ((minutes + 1439) / 1440) + "天";
         return minutes + "分";
+    }
+    static String remainingText(long millis, boolean showSeconds) {
+        if (showSeconds && millis > 0 && millis <= ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW)
+            return ((millis + 999) / 1000) + "秒";
+        return remainingText(millis);
     }
     private static int cameraTopPadding(Context context) {
         if (android.os.Build.VERSION.SDK_INT < 30) return 0;

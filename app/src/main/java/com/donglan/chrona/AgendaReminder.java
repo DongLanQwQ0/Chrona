@@ -63,6 +63,13 @@ public final class AgendaReminder {
             int slot = ReminderSlots.find(previous, key);
             // Replaced or expired occurrence actions cannot affect a current slot.
             if (slot >= 0 && prefs.getLong("slot_end:" + slot, 0) > now) {
+                if ("complete".equals(action.getAction()) && key.startsWith("chrona:")) {
+                    synchronized(AndroidSync.LOCK) { try(TaskStore store=new TaskStore(context)) {
+                        long id=Long.parseLong(key.split(":")[1]);
+                        for(EventCandidate candidate:store.getCandidatesByIds(java.util.Collections.singletonList(id)))
+                            if(candidate.isTask() && candidate.reminderAnchor()!=null && key.equals("chrona:"+id+":"+candidate.reminderAnchor())) store.setCandidateCompleted(id,candidate.taskId,true);
+                    }}
+                }
                 if ("hide".equals(action.getAction()) || "complete".equals(action.getAction()))
                     prefs.edit().putLong("hidden:" + key, prefs.getLong("slot_end:" + slot, now)).apply();
                 if ("snooze".equals(action.getAction())) prefs.edit()
@@ -93,9 +100,9 @@ public final class AgendaReminder {
         excluded.addAll(snoozeUntil.keySet());
         List<AgendaEntry> entries = new ArrayList<>();
         try (TaskStore store = new TaskStore(context)) {
-            for (EventCandidate local : store.nextReminderCandidates(now, excluded)) entries.add(new AgendaEntry(local.id, local.taskId, local.startAtMillis,
-                    local.endAtMillis == null ? local.startAtMillis : local.endAtMillis, local.title,
-                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore));
+            for (EventCandidate local : store.nextReminderCandidates(now, excluded)) entries.add(new AgendaEntry(local.id, local.taskId, local.reminderAnchor(),
+                    local.isTask() ? local.reminderAnchor() : local.calendarEnd(), local.title,
+                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.dueAtMillis));
             if (AgendaReminderPreferences.includesSystemCalendar(context)) {
                 CalendarStore calendar = new CalendarStore(context);
                 if (calendar.hasReadPermission()) {
@@ -128,12 +135,15 @@ public final class AgendaReminder {
             boolean atomicActive = VivoAtomicNotification.active(manager, NOTIFICATION_ID + i);
             if (!same || atomicActive != atomic)
                 VivoAtomicNotification.end(context, manager, NOTIFICATION_ID + i);
-            if (entry == null) { state.remove("slot_key:" + i).remove("slot_end:" + i).remove("slot_started:" + i); continue; }
+            if (entry == null) { AtomicCountdownUpdates.clear(NOTIFICATION_ID + i); state.remove("slot_key:" + i).remove("slot_end:" + i).remove("slot_started:" + i); continue; }
             long notifiedAt = same ? prefs.getLong("slot_started:" + i, now) : now;
             // Persisted occurrence identity survives force-stop; the system notification may not.
             boolean update = same && (!atomic || atomicActive);
-            manager.notify(NOTIFICATION_ID + i, notification(context, entry, now, update,
-                    NOTIFICATION_ID + i, notifiedAt, ReminderTimeline.nextTitle(entries, entry, now), atomic));
+            Notification notice = notification(context, entry, now, update,
+                    NOTIFICATION_ID + i, notifiedAt, ReminderTimeline.nextTitle(entries, entry, now), atomic);
+            manager.notify(NOTIFICATION_ID + i, notice);
+            if (atomic) AtomicCountdownUpdates.remember(NOTIFICATION_ID + i, notice, entry, now);
+            else AtomicCountdownUpdates.clear(NOTIFICATION_ID + i);
             state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, ReminderTimeline.expiresAt(entry));
             state.putLong("slot_started:" + i, notifiedAt);
             if (atomic) {
@@ -173,17 +183,19 @@ public final class AgendaReminder {
 
     private static Notification notification(Context context, AgendaEntry e, long now, boolean same,
             int notificationId, long notifiedAt, String nextTitle, boolean atomic) {
-        String status = now < e.start ? "即将开始" : "event".equals(e.category) ? "进行中" : "已开始";
+        String status = "task".equals(e.category) ? now<e.start ? e.dueAtMillis!=null ? "即将截止" : "待办提醒" : e.dueAtMillis!=null ? "已逾期" : "待完成"
+                : now < e.start ? "即将开始" : "进行中";
         long remaining = ReminderTimeline.remainingMillis(e, now);
         boolean startedNotice = now >= e.start && !"event".equals(e.category);
-        String remainingText = startedNotice ? "已开始" : remaining < 60_000L ? (now < e.start ? "即将开始" : "即将结束")
-                : (now < e.start ? ((remaining + 59_999L) / 60_000L) + "分钟后开始"
+        String targetAction = "task".equals(e.category) ? e.dueAtMillis != null ? "截止" : "提醒" : "开始";
+        String remainingText = startedNotice ? status : remaining < 60_000L ? (now < e.start ? "即将" + targetAction : "即将结束")
+                : (now < e.start ? ((remaining + 59_999L) / 60_000L) + "分钟后" + targetAction
                         : "还剩" + ((remaining + 59_999L) / 60_000L) + "分钟");
         ZoneId zone = ZoneId.systemDefault();
         DateTimeFormatter time = DateTimeFormatter.ofPattern("M月d日 HH:mm");
         java.time.ZonedDateTime start = Instant.ofEpochMilli(e.start).atZone(zone);
         java.time.ZonedDateTime end = Instant.ofEpochMilli(e.end).atZone(zone);
-        String range = time.format(start) + " — " + (start.toLocalDate().equals(end.toLocalDate())
+        String range = "task".equals(e.category) ? time.format(start) : time.format(start) + " — " + (start.toLocalDate().equals(end.toLocalDate())
                 ? DateTimeFormatter.ofPattern("HH:mm").format(end) : time.format(end));
         Intent open = AgendaRepository.details(context, e);
         if (!e.system) open.setData(android.net.Uri.parse("chrona://agenda/" + e.key()));
@@ -200,10 +212,11 @@ public final class AgendaReminder {
                 .addAction(new Notification.Action.Builder(null, "隐藏本次", action(context, e, "hide", 3)).build());
         if (atomic) {
             RemoteViews card = AtomicAgendaCard.create(context, e, now, notifiedAt, nextTitle, details);
-            String clock = startedNotice ? "已开始" : DateTimeFormatter.ofPattern("HH:mm")
+            String clock = startedNotice ? status : DateTimeFormatter.ofPattern("HH:mm")
                     .format(Instant.ofEpochMilli(now < e.start ? e.start : e.finish()).atZone(zone));
-            String capsuleText = ReminderTimeline.capsuleCountdown(e, now)
-                    ? VivoAtomicNotification.countdownText(ReminderTimeline.capsuleDeadline(e, now) - now) : clock;
+            String capsuleText = startedNotice || !AgendaReminderPreferences.capsuleCountdown(context) ? clock
+                    : VivoAtomicNotification.countdownText(ReminderTimeline.capsuleDeadline(e, now) - now,
+                            AgendaReminderPreferences.showSeconds(context));
             builder.addExtras(VivoAtomicNotification.extras(context, e.title, status, range,
                     clock,
                     remainingText, details, same && VivoAtomicNotification.active(

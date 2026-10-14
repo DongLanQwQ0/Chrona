@@ -10,6 +10,14 @@ final class AgendaReminderPreferences {
     static boolean atomicChrona(Context c) { return prefs(c).getBoolean("atomic_chrona", true); }
     static boolean atomicSystem(Context c) { return prefs(c).getBoolean("atomic_system", true); }
     static boolean atomicWallpaper(Context c) { return prefs(c).getBoolean("atomic_wallpaper", true); }
+    static boolean capsuleCountdown(Context c) { return prefs(c).getBoolean("capsule_countdown", true); }
+    static boolean showSeconds(Context c) { return prefs(c).getBoolean("atomic_seconds", true); }
+    static void setCapsuleCountdown(Context c, boolean enabled) {
+        prefs(c).edit().putBoolean("capsule_countdown", enabled).apply(); AgendaReminder.requestRefresh(c);
+    }
+    static void setShowSeconds(Context c, boolean enabled) {
+        prefs(c).edit().putBoolean("atomic_seconds", enabled).apply(); AgendaReminder.requestRefresh(c);
+    }
     static void setAtomicWallpaper(Context c, boolean enabled) {
         prefs(c).edit().putBoolean("atomic_wallpaper", enabled).apply(); AgendaReminder.requestRefresh(c);
     }

@@ -135,7 +135,7 @@ sources.append(SRC / 'com/donglan/chrona/data/TaskFileStore.java')
 sources += list((ROOT / 'app/src/main/java/com/donglan/chrona/timetable').glob('*.java'))
 sources += [ROOT / 'app/src/main/java/com/donglan/chrona/CandidateMerges.java']
 sources += [shared / name for name in ('TaskCodec.java','MergeLedger.java','SyncState.java')]
-sources += [ROOT / 'checks/CandidateMergeCheck.java']
+sources += [ROOT / 'checks/CandidateMergeCheck.java',ROOT / 'checks/TwoScheduleTypesCheck.java']
 cache = Path(os.environ.get('GRADLE_USER_HOME','F:/Android/GradleCache')) / 'caches/modules-2/files-2.1'
 jars = [ROOT / 'build/ai-checks/json.jar']
 for group,module in [('net.sf.biweekly','biweekly'),('com.github.mangstadt','vinnie')]:
@@ -143,3 +143,5 @@ for group,module in [('net.sf.biweekly','biweekly'),('com.github.mangstadt','vin
 classpath = os.pathsep.join(map(str,jars))
 subprocess.run([str(JAVA / 'javac.exe'),'--release','17','-encoding','UTF-8','-cp',classpath,'-d',str(OUT),*map(str,sources)],check=True)
 subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.CandidateMergeCheck',str(OUT / 'databases')],check=True)
+
+subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.TwoScheduleTypesCheck',str(OUT / 'databases')],check=True)

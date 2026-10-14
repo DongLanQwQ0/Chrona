@@ -158,8 +158,8 @@ public final class ChronaDataBackup {
                     item.put("candidateId", candidate.id);
                     item.put("oldEventId", candidate.calendarEventId);
                     item.put("title", candidate.title);
-                    item.put("start", candidate.startAtMillis);
-                    item.put("end", candidate.endAtMillis);
+                    item.put("start", candidate.isRecord?candidate.startAtMillis:candidate.calendarStart());
+                    item.put("end", candidate.isRecord?candidate.endAtMillis:candidate.calendarEnd());
                     item.put("timeZone", candidate.timeZoneId == null ? "UTC" : candidate.timeZoneId);
                     item.put("allDay", candidate.allDay);
                     item.put("description", candidate.description == null ? JSONObject.NULL
@@ -390,7 +390,7 @@ public final class ChronaDataBackup {
                     throw new IOException("备份数据库完整性检查失败");
             }
             try (Cursor cursor = db.rawQuery("PRAGMA user_version", null)) {
-                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 10)
+                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 11)
                     throw new IOException("备份数据库版本与当前应用不兼容");
             }
             long tasks;
@@ -491,6 +491,7 @@ public final class ChronaDataBackup {
                 } finally { staged.endTransaction(); }
             }
             if(staged.getVersion()<10){staged.beginTransaction();try{TaskStore.addCandidateMerges(staged);staged.setVersion(10);staged.setTransactionSuccessful();}finally{staged.endTransaction();}}
+            if(staged.getVersion()<11){staged.beginTransaction();try{TaskStore.addTaskSemantics(staged);staged.setVersion(11);staged.setTransactionSuccessful();}finally{staged.endTransaction();}}
             for (Map.Entry<String, String> entry : imageNames.entrySet()) {
                 ContentValues values = new ContentValues();
                 values.put("image_path", entry.getValue());
@@ -526,7 +527,7 @@ public final class ChronaDataBackup {
                     new Object[]{"从备份恢复后需要重新解析；请手动重试"});
             staged.execSQL("UPDATE tasks SET status='needs_review',error_message=NULL WHERE status='ready' "
                     + "AND EXISTS(SELECT 1 FROM event_candidates WHERE task_id=tasks.id "
-                    + "AND calendar_event_id IS NULL)");
+                    + "AND is_record=0 AND needs_confirmation=1)");
             try (Cursor checkpoint = staged.rawQuery("PRAGMA wal_checkpoint(FULL)", null)) {
                 if (checkpoint.moveToFirst() && checkpoint.getInt(0) != 0)
                     throw new IOException("备份数据库仍在写入，无法完成恢复准备");

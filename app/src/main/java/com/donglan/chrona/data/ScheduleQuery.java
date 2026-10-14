@@ -13,28 +13,31 @@ public final class ScheduleQuery {
     public final String selection;
     public final String[] arguments;
     public static final String DAY_SQL = "CASE WHEN all_day=1 THEN "
-            + "strftime('%Y-%m-%d',start_at_millis/1000,'unixepoch') ELSE "
-            + "strftime('%Y-%m-%d',start_at_millis/1000,'unixepoch','localtime') END";
+            + "strftime('%Y-%m-%d',COALESCE(start_at_millis,due_at_millis)/1000,'unixepoch') ELSE "
+            + "strftime('%Y-%m-%d',COALESCE(start_at_millis,due_at_millis)/1000,'unixepoch','localtime') END";
 
     public ScheduleQuery(int tab, String category, int publication, String keyword,
             LocalDate from, LocalDate until, long now, ZoneId zone) {
         List<String> clauses = new ArrayList<>(), values = new ArrayList<>();
-        String complete = "(start_at_millis IS NOT NULL AND end_at_millis IS NOT NULL)";
-        String future = "((all_day=0 AND end_at_millis>?) OR (all_day=1 AND end_at_millis>?))";
-        if (tab == 1) clauses.add("NOT " + complete);
+        clauses.add("is_record=0");
+        String anchor = "COALESCE(start_at_millis,due_at_millis)";
+        String finish = "COALESCE(end_at_millis,due_at_millis,start_at_millis)";
+        String dated = "((category='task' AND " + anchor + " IS NOT NULL) OR (category='event' AND start_at_millis IS NOT NULL AND end_at_millis IS NOT NULL))";
+        String futureTime = "((all_day=0 AND " + finish + ">CAST(? AS INTEGER)) OR (all_day=1 AND " + finish + ">CAST(? AS INTEGER)))";
+        if (tab == 1) { clauses.add("NOT " + dated); clauses.add("completed_at_millis IS NULL"); }
         else if (tab == 0 || tab == 2) {
-            clauses.add(complete);
-            clauses.add(tab == 0 ? future : "NOT " + future);
+            if (tab == 0) { clauses.add(dated); clauses.add("completed_at_millis IS NULL AND (category='task' OR " + futureTime + ")"); }
+            else clauses.add("(completed_at_millis IS NOT NULL OR (category='event' AND " + dated + " AND NOT " + futureTime + "))");
             values.add(Long.toString(now));
             values.add(Long.toString(java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                     .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()));
         }
         if (category != null) { clauses.add("category=?"); values.add(category); }
-        if (publication == 1) clauses.add("calendar_event_id IS NULL");
+        if (publication == 1) clauses.add("(needs_confirmation=1 OR (category='event' AND calendar_event_id IS NULL))");
         else if (publication == 2) clauses.add("calendar_event_id IS NOT NULL");
         if (from != null && until != null) {
-            clauses.add("((all_day=0 AND start_at_millis<? AND COALESCE(end_at_millis,start_at_millis+1)>CAST(? AS INTEGER))"
-                    + " OR (all_day=1 AND start_at_millis<? AND COALESCE(end_at_millis,start_at_millis+1)>CAST(? AS INTEGER)))");
+            clauses.add("((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) AND COALESCE(end_at_millis,due_at_millis+1,start_at_millis+1)>CAST(? AS INTEGER))"
+                    + " OR (all_day=1 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) AND COALESCE(end_at_millis,due_at_millis+1,start_at_millis+1)>CAST(? AS INTEGER)))");
             values.add(Long.toString(until.atStartOfDay(zone).toInstant().toEpochMilli()));
             values.add(Long.toString(from.atStartOfDay(zone).toInstant().toEpochMilli()));
             values.add(Long.toString(until.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()));
@@ -61,7 +64,7 @@ public final class ScheduleQuery {
 
     public String orderBy(boolean oldestFirst) {
         String direction = oldestFirst ? " ASC" : " DESC";
-        return "start_at_millis IS NULL ASC, " + DAY_SQL + direction
-                + ", all_day DESC, start_at_millis" + direction + ", id" + direction;
+        return "COALESCE(start_at_millis,due_at_millis) IS NULL ASC, " + DAY_SQL + direction
+                + ", all_day DESC, COALESCE(start_at_millis,due_at_millis)" + direction + ", id" + direction;
     }
 }

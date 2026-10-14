@@ -1,3 +1,7 @@
+## 0.14.48：两类日程
+
+SQLite 版本提升至 11，新增 due_at_millis、completed_at_millis、is_record。数据库升级同时转换已归档的合并来源。活动使用起止时间，待办保留独立截止与完成状态，记录退出日历投影。TaskCodec 和网页端保存相同字段，旧同步客户端需更新。
+
 # 开发文档
 
 [项目首页](../README.md) · [用户使用指南](user-guide.md)

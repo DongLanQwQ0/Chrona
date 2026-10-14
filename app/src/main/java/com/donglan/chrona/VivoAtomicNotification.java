@@ -67,6 +67,7 @@ final class VivoAtomicNotification {
         left.putCharSequence("island.superx.leftInfo.content", capsuleText);
         right.putCharSequence("island.superx.rightInfo.content", title);
         island.putInt("island.superx.leftTemplate", 1);
+        // Template 4 uses the OEM IslandTextView overflow marquee; retain the full title.
         island.putInt("island.superx.rightTemplate", 4);
         island.putBundle("island.superx.leftInfo", left);
         island.putBundle("island.superx.rightInfo", right);
@@ -85,9 +86,15 @@ final class VivoAtomicNotification {
         return data;
     }
     static String countdownText(long remainingMillis) {
+        return countdownText(remainingMillis, true);
+    }
+    static String countdownText(long remainingMillis, boolean seconds) {
+        if (!seconds) return AtomicAgendaCard.remainingText(remainingMillis);
+        if (remainingMillis <= ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW)
+            return AtomicAgendaCard.remainingText(remainingMillis, true);
         long base = android.os.SystemClock.elapsedRealtime() + Math.max(0, remainingMillis);
         // SystemUI SuperXChronometer consumes this JSON and ticks locally each second.
-        return "{\"base\":" + base + ",\"countDown\":true,\"started\":true,\"minUnit\":\"M\",\"elapsedFormatMS\":\"%02d:%02d\"}";
+        return "{\"base\":" + base + ",\"countDown\":true,\"started\":true,\"minUnit\":\"M\",\"elapsedFormatMS\":\"%02d:%02d\",\"elapsedFormatHMS\":\"%d:%02d:%02d\"}";
     }
     static boolean active(NotificationManager manager, int id) {
         if (!supportedManufacturer()) return false;

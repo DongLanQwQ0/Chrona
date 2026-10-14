@@ -202,12 +202,12 @@ public final class DashboardActivity extends Activity {
         super.onCreate(state);
         if (state != null) {
             section = state.getInt(EXTRA_SECTION, HOME);
-            categoryIndex = state.getInt("category");
+            categoryIndex = Math.min(EventCategory.VALUES.length+1,state.getInt("category"));
             statusIndex = state.getInt("status");
             scheduleTab = state.getInt("schedule_tab");
             schedulePage = state.getInt("schedule_page");
             scheduleRange = state.getInt("schedule_range");
-            scheduleCategory = state.getInt("schedule_category");
+            scheduleCategory = Math.min(EventCategory.VALUES.length,state.getInt("schedule_category"));
             schedulePublication = state.getInt("schedule_publication");
             scheduleSource = state.getInt("schedule_source");
             scheduleDate = LocalDate.parse(state.getString("schedule_date", LocalDate.now().toString()));
@@ -1393,14 +1393,14 @@ public final class DashboardActivity extends Activity {
 
     private boolean candidateIntersects(EventCandidate item, LocalDate today, LocalDate endDate,
             long rangeStart, long rangeEnd, long now) {
-        if (item.startAtMillis == null || item.endAtMillis == null) return false;
+        if (item.isRecord || item.completed() || item.calendarStart()==null) return false;
         if (item.allDay) {
             LocalDate start = LocalDate.parse(AllDayDates.displayStart(item.startAtMillis));
             LocalDate inclusiveEnd = LocalDate.parse(AllDayDates.displayEnd(item.endAtMillis));
             return !inclusiveEnd.isBefore(today) && start.isBefore(endDate);
         }
-        return item.endAtMillis > now && item.endAtMillis > rangeStart
-                && item.startAtMillis < rangeEnd;
+        return item.calendarEnd() > rangeStart && item.calendarStart() < rangeEnd
+                && (item.isTask() || item.calendarEnd()>now);
     }
 
     private LocalDate timelineDate(HomeTimelineEntry entry, LocalDate today, ZoneId zone) {
@@ -1487,8 +1487,7 @@ public final class DashboardActivity extends Activity {
         results.removeAllViews();
         elapsedLabels.clear();
         inboxRows.clear();
-        String selectedCategory = categoryIndex == 0 ? null
-                : EventCategory.VALUES[categoryIndex - 1];
+        String selectedCategory = inboxCategory();
         InboxQuery query = new InboxQuery(statusIndex, selectedCategory, inboxQuery);
         String key = statusIndex + ":" + categoryIndex + ":" + inboxOldestFirst + ":" + query.keyword;
         long revision = preparedSection == null ? store.dataRevision() : preparedSection.revision;
@@ -1622,7 +1621,7 @@ public final class DashboardActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setClipChildren(false); bar.setClipToPadding(false);
-        String[] labels = {"未来", "未定", "以前", "全部"};
+        String[] labels = {"待处理", "待安排", "历史", "全部"};
         filterChips = filterDock(labels, scheduleTab, tab -> {
             if (scheduleTab == tab) return;
             scheduleTab = tab;
@@ -1685,9 +1684,9 @@ public final class DashboardActivity extends Activity {
         String previousDate = "";
         for (int i = 0; i < visible.size(); i++) {
             EventCandidate item = visible.get(i);
-            String date = item.startAtMillis == null ? "未定" : item.allDay
-                    ? AllDayDates.displayStart(item.startAtMillis)
-                    : AllDayDates.localDate(item.startAtMillis, ZoneId.systemDefault());
+            String date = item.anchor() == null ? "待安排" : item.allDay
+                    ? AllDayDates.displayStart(item.anchor())
+                    : AllDayDates.localDate(item.anchor(), ZoneId.systemDefault());
             boolean newDay = !date.equals(previousDate);
             previousDate = date;
             final int index = i;
@@ -1747,7 +1746,7 @@ public final class DashboardActivity extends Activity {
 
     private void scheduleDayHeading(String date) {
         String label = date;
-        if (!"未定".equals(date)) {
+        if (!"待安排".equals(date)) {
             LocalDate day = LocalDate.parse(date);
             LocalDate today = LocalDate.now();
             label = (day.equals(today) || day.equals(today.plusDays(1))
@@ -1939,7 +1938,7 @@ public final class DashboardActivity extends Activity {
                 schedulePublication, scheduleQuery, window[0], window[1],
                 System.currentTimeMillis(), ZoneId.systemDefault());
         InboxQuery inbox = new InboxQuery(statusIndex,
-                categoryIndex == 0 ? null : EventCategory.VALUES[categoryIndex - 1], inboxQuery);
+                inboxCategory(), inboxQuery);
         boolean oldest = scheduleOldestFirst, system = scheduleSource == 1;
         int requestedPage = schedulePage;
         scheduleResultLoading = true;
@@ -2137,7 +2136,7 @@ public final class DashboardActivity extends Activity {
                     "起始时间");
         } else if (showTime) {
             String when = candidate == null ? homeEntryWhen(new HomeTimelineEntry(systemEvent))
-                    : candidate.startAtMillis == null ? "时间待补全" : formatWhen(candidate);
+                    : candidate.anchor() == null ? "尚未安排时间" : formatWhen(candidate);
             UiStyle.addSpaced(body, scheduleAttribute(R.drawable.ic_schedule, when,
                     "时间", 14, 2, false), 6, 0);
         }
@@ -2145,7 +2144,7 @@ public final class DashboardActivity extends Activity {
             UiStyle.addSpaced(body, scheduleAttribute(R.drawable.ic_place, location.trim(),
                     "地点", 14, 2, false), home ? 8 : 6, 0);
         }
-        if (home) {
+        if (home && (candidate == null || !candidate.point())) {
             addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, true, showTime),
                     "终止时间");
         }
@@ -2168,21 +2167,32 @@ public final class DashboardActivity extends Activity {
         // A published item is settled even if its original AI uncertainty flag remains set.
         boolean written = candidate == null || candidate.calendarEventId != null;
         boolean confirmation = candidate != null && !written && candidate.needsConfirmation;
-        if (!home || confirmation) {
-            String status = written ? "已写入" : "未写入 · " + UiStyle.uncertaintyLabel(candidate.uncertaintyLevel);
+        if (!home || confirmation || (candidate!=null&&candidate.isTask())) {
+            String status = candidate != null && candidate.isTask() ? candidate.taskState(System.currentTimeMillis())
+                    : written ? "已写入" : "未写入 · " + UiStyle.uncertaintyLabel(candidate.uncertaintyLevel);
             LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
             statusParams.leftMargin = dp(8);
             footer.addView(scheduleAttribute(written ? R.drawable.ic_check
                     : UiStyle.uncertaintyIcon(candidate.uncertaintyLevel), status,
                     written ? "日历状态" : "解析存疑等级，仍需确认后写入日历", 12, 1, confirmation), statusParams);
         }
+        if(candidate!=null&&candidate.isTask()) {
+            ImageButton done=new ImageButton(this);done.setImageResource(R.drawable.ic_check);
+            done.setImageTintList(ColorStateList.valueOf(candidate.completed()?UiStyle.colors(this).primary:UiStyle.colors(this).muted));
+            done.setContentDescription(candidate.completed()?"恢复待办":"标记待办完成");
+            done.setPadding(dp(12),dp(12),dp(12),dp(12));UiStyle.acrylicChoice(done,candidate.completed(),UiStyle.RADIUS_PILL,false);
+            done.setOnClickListener(v->new Thread(()->{try{synchronized(AndroidSync.LOCK){try(TaskStore store=new TaskStore(this)) {
+                if(!store.setCandidateCompleted(candidate.id,candidate.taskId,!candidate.completed()))throw new IllegalStateException("待办已变化，请刷新后重试");
+            }}runOnUiThread(this::refreshActivePageIfNeeded);}catch(Exception error){runOnUiThread(()->Feedback.show(this,error.getMessage()));}},"chrona-task-complete").start());
+            footer.addView(done,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        }
         UiStyle.addSpaced(body, footer, home ? 12 : 8, 0);
     }
 
     private String homeCardBoundary(EventCandidate candidate, CalendarOccurrence systemEvent,
             boolean end, boolean includeDate) {
-        Long startMillis = candidate == null ? systemEvent.startMillis : candidate.startAtMillis;
-        Long endMillis = candidate == null ? systemEvent.endMillis : candidate.endAtMillis;
+        Long startMillis = candidate == null ? systemEvent.startMillis : candidate.calendarStart();
+        Long endMillis = candidate == null ? systemEvent.endMillis : candidate.calendarEnd();
         Long millis = end ? endMillis : startMillis;
         if (millis == null) return end ? "终止时间未定" : "起始时间未定";
         boolean allDay = candidate == null ? systemEvent.allDay : candidate.allDay;
@@ -2239,9 +2249,6 @@ public final class DashboardActivity extends Activity {
     private int categoryIcon(String category) {
         switch (category) {
             case EventCategory.TASK: return R.drawable.ic_content_paste;
-            case EventCategory.REMINDER: return R.drawable.ic_notifications;
-            case EventCategory.DEADLINE: return R.drawable.ic_schedule;
-            case EventCategory.NOTE: return R.drawable.ic_notes;
             default: return R.drawable.ic_event;
         }
     }
@@ -2635,10 +2642,12 @@ public final class DashboardActivity extends Activity {
         return (minutes / 60) + " 小时 " + (minutes % 60) + " 分";
     }
 
+    private String inboxCategory() { return categoryIndex==EventCategory.VALUES.length+1 ? "record" : categoryIndex==0 ? null : EventCategory.VALUES[categoryIndex-1]; }
     private String[] categoryOptions() {
-        String[] result = new String[EventCategory.LABELS.length + 1];
+        String[] result = new String[EventCategory.LABELS.length + 2];
         result[0] = "全部类型";
         System.arraycopy(EventCategory.LABELS, 0, result, 1, EventCategory.LABELS.length);
+        result[result.length-1]="记录";
         return result;
     }
 
@@ -2768,7 +2777,7 @@ public final class DashboardActivity extends Activity {
         sectionLoadRunning = true; loadingSection = destination;
         int token = ++sectionLoadGeneration;
         if (navigation != null) navigation.beginPageSettle(sectionPosition(destination));
-        InboxQuery inbox = new InboxQuery(statusIndex, categoryIndex == 0 ? null : EventCategory.VALUES[categoryIndex - 1], inboxQuery);
+        InboxQuery inbox = new InboxQuery(statusIndex, inboxCategory(), inboxQuery);
         LocalDate[] window = scheduleWindow(false);
         ScheduleQuery schedule = new ScheduleQuery(scheduleTab, scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
                 schedulePublication, scheduleQuery, window[0], window[1], System.currentTimeMillis(), ZoneId.systemDefault());
@@ -2880,18 +2889,19 @@ public final class DashboardActivity extends Activity {
             return start.equals(end) ? start + " · 全天"
                     : start + " 至 " + end + " · 全天";
         }
-        Date date = new Date(item.startAtMillis);
-        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
+        if (item.anchor()==null) return "尚未安排时间";
+        Date date = new Date(item.anchor());
+        return (item.startAtMillis==null && item.dueAtMillis!=null ? "截止 · " : "") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
                 DateFormat.SHORT).format(date);
     }
 
     private boolean isUpcoming(EventCandidate item, long now) {
-        if (item.startAtMillis == null || item.endAtMillis == null) return false;
+        if (item.isRecord || item.completed() || item.calendarStart()==null) return false;
         if (item.allDay) {
             return !LocalDate.parse(AllDayDates.displayEnd(item.endAtMillis))
                     .isBefore(LocalDate.now());
         }
-        return item.endAtMillis > now;
+        return item.isTask() || item.calendarEnd() > now;
     }
 
     private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries) {

@@ -21,7 +21,7 @@ class Paint {static class FontMetrics {float descent=3,ascent=-12;}FontMetrics g
 class GradientDrawable {static int OVAL=1;void setShape(int s){}void setColor(int c){}}
 class TextUtils {static class TruncateAt {static Object END=new Object();}}
 class Gravity {static int TOP=1;}
-class AgendaEntry {String title="课",location="教室",source="拾时";boolean system,confirmed=true;Integer calendarColor;String key(){return title;}}
+class AgendaEntry {String category="event";long start,end;String title="课",location="教室",source="拾时";boolean system,confirmed=true;Integer calendarColor;String key(){return title;}}
 class EntryStatus {EntryStatus(AgendaEntry e,TextView t,TextView time){}}
 class CalendarSourceColors {static int mix(Integer c,int p){return p;}}
 class PressFeedback {static void group(LinearLayout l,float f){}}

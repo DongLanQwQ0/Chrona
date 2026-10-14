@@ -40,6 +40,7 @@ final class WidgetAgenda {
             String date = day.equals(today) ? "" : DateTimeFormatter.ofPattern("M月d日 ")
                     .format(day);
             if (allDay) return date + "全天";
+            if(end==start) return date + "待办 · " + DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(start).atZone(zone));
             DateTimeFormatter clock = DateTimeFormatter.ofPattern("HH:mm");
             String finish = Instant.ofEpochMilli(end).atZone(zone).toLocalDate().equals(day)
                     ? clock.format(Instant.ofEpochMilli(end).atZone(zone))
@@ -119,8 +120,8 @@ final class WidgetAgenda {
             for (EventCandidate candidate : store.widgetCandidates(result.now, horizon, utcBegin, utcHorizon))
                 local.put(candidate.id, candidate);
             for (EventCandidate candidate : local.values()) {
-                long start = candidate.startAtMillis;
-                long end = candidate.endAtMillis == null ? start : candidate.endAtMillis;
+                long start = candidate.calendarStart();
+                long end = candidate.point() ? start : candidate.calendarEnd();
                 if (candidate.allDay) {
                     start = LocalDate.parse(AllDayDates.displayStart(start))
                             .atStartOfDay(result.zone).toInstant().toEpochMilli();

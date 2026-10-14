@@ -18,7 +18,7 @@ def method(signature):
 methods = '\n'.join(method(x) for x in (
     'private void cancelScheduleResults(', 'private void requestScheduleResults()', 'private void requestScheduleResults(boolean',
     'private boolean scheduleResultCurrent(', 'private void enqueueScheduleResult(',
-    'private void buildScheduleResultFrame(', 'private void renderScheduleResults(', 'private void updateResultsWithEntrance('
+    'private void buildScheduleResultFrame(', 'private void renderScheduleResults(', 'private void updateResultsWithEntrance(', 'private String inboxCategory('
 ))
 java = r'''
 import java.util.*;
@@ -38,7 +38,7 @@ class Handler {Queue<Runnable> tasks=new ArrayDeque<>();void post(Runnable r){ta
 class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int PAGE_SIZE=50;}
 class InboxQuery {InboxQuery(Object...a){}}
 class EventCategory {static String[] VALUES={"event"};}
-class EventCandidate {Long startAtMillis=1L; boolean allDay;}
+class EventCandidate {Long anchor(){return startAtMillis;}Long startAtMillis=1L; boolean allDay;}
 class TaskStore {List<Long> queryScheduleIds(ScheduleQuery q){throw new AssertionError("SQL on UI");}List<EventCandidate> querySchedulePage(ScheduleQuery q,boolean o,int p){throw new AssertionError("SQL on UI");}}
 class AllDayDates {static String displayStart(long t){return "2026-10-13";}static String localDate(long t,ZoneId z){return "2026-10-13";}}
 class HomeTimelinePreferences {static boolean includesSystemCalendar(Object c){return true;}}

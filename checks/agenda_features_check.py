@@ -262,6 +262,7 @@ db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,al
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(9,11600000,12000000,0,0),(10,11700000,12000000,0,0)])
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation,category) VALUES(?,?,?,?,?,?)', [(20,29600000,33000000,0,0,'event'),(21,29820001,29820002,0,0,'todo'),(22,29820000,33000000,0,0,'reminder'),(23,29819999,33000000,0,0,'todo')])
 db.execute("INSERT INTO event_candidates VALUES(30,40000000,41000000,0,0,'event',600)")
+for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
 expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9,10], [20,23,22,21], [2,1], [3,4,9,10], [20,23,22,21], [21,20], [30], [], [], [30], [20,23,22,21]]
 for line, wanted in zip(queries.splitlines(), expected, strict=True):
     tag, selection, arguments, sort, limit = line.split('\t')

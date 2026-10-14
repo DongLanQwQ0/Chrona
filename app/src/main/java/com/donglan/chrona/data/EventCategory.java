@@ -4,12 +4,9 @@ package com.donglan.chrona.data;
 public final class EventCategory {
     public static final String EVENT = "event";
     public static final String TASK = "task";
-    public static final String REMINDER = "reminder";
-    public static final String DEADLINE = "deadline";
-    public static final String NOTE = "note";
 
-    public static final String[] VALUES = {EVENT, TASK, REMINDER, DEADLINE, NOTE};
-    public static final String[] LABELS = {"活动", "待办", "提醒", "截止", "备忘"};
+    public static final String[] VALUES = {EVENT, TASK};
+    public static final String[] LABELS = {"活动", "待办"};
 
     private EventCategory() { }
 

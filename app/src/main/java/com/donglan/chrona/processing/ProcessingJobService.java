@@ -503,8 +503,11 @@ public final class ProcessingJobService extends JobService {
             int count = 0;
             for (com.donglan.chrona.data.EventCandidate item : candidates) {
                 if (count++ == 12) { details.append("另有 ").append(candidates.size() - 12).append(" 项，点按查看全部"); break; }
-                details.append(item.calendarEventId == null ? "待处理 · " : "已确认 · ").append(item.title).append('\n');
-                if (item.startAtMillis == null || item.endAtMillis == null) details.append("时间待定");
+                details.append(item.isRecord ? "记录 · " : !item.settled() ? "待处理 · " : "已保存 · ").append(item.title).append('\n');
+                if (item.isRecord) details.append("已保存在收件箱");
+                else if(item.isTask() && item.anchor()==null) details.append("待办 · 尚未安排时间");
+                else if(item.point()) details.append((item.dueAtMillis!=null?"截止 · ":"提醒 · ")+new java.text.SimpleDateFormat("M月d日 HH:mm",java.util.Locale.CHINA).format(new java.util.Date(item.anchor())));
+                else if (item.startAtMillis == null || item.endAtMillis == null) details.append("时间待定");
                 else if (item.allDay) details.append(com.donglan.chrona.calendar.AllDayDates.displayStart(item.startAtMillis)).append(" · 全天");
                 else {
                     java.time.ZoneId zone;

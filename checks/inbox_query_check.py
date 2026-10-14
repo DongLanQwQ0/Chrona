@@ -26,12 +26,14 @@ CREATE TABLE event_candidates(task_id INTEGER, category TEXT, calendar_event_id 
 INSERT INTO event_candidates VALUES(1,'event',101),(1,'event',102),(1,'note',NULL),
  (2,'event',103),(3,'note',104);
 """)
+db.execute("ALTER TABLE event_candidates ADD COLUMN is_record INTEGER NOT NULL DEFAULT 0")
+db.execute("UPDATE event_candidates SET is_record=1,category='event' WHERE category='note'")
 statuses = {1: "needs_review", 2: "queued", 3: "processing", 4: "failed", 5: "ready"}
 db.executemany("INSERT INTO tasks VALUES(?,?,?)",
                [(i, statuses.get(i, "needs_review"), i // 3) for i in range(1, 31)])
 expected = {"all": list(range(30, 0, -1)), "oldest": list(range(1, 31)),
             "pending": list(range(30, 5, -1)) + [1], "processing": [3, 2], "failed": [4],
-            "published_event": [2, 1], "published_note": [3], "note": [3, 1]}
+            "published_event": [2, 1], "published_note": [], "note": [3, 1]}
 for line in plans.splitlines():
     name, encoded_selection, encoded_args, encoded_order = line.split("\t")
     selection, order = decode(encoded_selection), decode(encoded_order)

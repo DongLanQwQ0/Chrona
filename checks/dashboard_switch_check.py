@@ -16,7 +16,7 @@ def method(marker):
         end += 1
     return activity[first:end]
 controller = '\n'.join(method(x) for x in ('private void switchTo(', 'private void prepareSectionSwitch(',
-    'private void switchToPendingSection(', 'private void refreshSettledSection('))
+    'private void switchToPendingSection(', 'private void refreshSettledSection(', 'private String inboxCategory('))
 files = {
 'android/content/Context.java': '''package android.content;public class Context {
  public volatile boolean fail;public volatile int reads,closed;public volatile String keyword;public final android.database.sqlite.SQLiteDatabase db=new android.database.sqlite.SQLiteDatabase();

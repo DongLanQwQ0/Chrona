@@ -22,7 +22,7 @@ import java.io.File;
 public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 10;
+    private static final int DATABASE_VERSION = 11;
 
     private final Context context;
     private SQLiteDatabase openedDatabase;
@@ -105,11 +105,11 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<EventCandidate> calendarCandidates(long begin, long end, long allDayBegin, long allDayEnd) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "start_at_millis IS NOT NULL AND ((all_day=0 AND start_at_millis<? "
-                        + "AND CASE WHEN end_at_millis>start_at_millis THEN end_at_millis ELSE start_at_millis+60000 END>CAST(? AS INTEGER)) "
-                        + "OR (all_day=1 AND start_at_millis<? AND COALESCE(end_at_millis,start_at_millis)>=CAST(? AS INTEGER)))",
+                "is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND ((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
+                        + "AND CASE WHEN end_at_millis>COALESCE(start_at_millis,due_at_millis) THEN end_at_millis ELSE COALESCE(start_at_millis,due_at_millis)+60000 END>CAST(? AS INTEGER)) "
+                        + "OR (all_day=1 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) AND COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>=CAST(? AS INTEGER)))",
                 new String[]{Long.toString(end), Long.toString(begin), Long.toString(allDayEnd), Long.toString(allDayBegin)},
-                null, null, "start_at_millis ASC,id ASC", "5001")) {
+                null, null, "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", "5001")) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
         return result;
@@ -119,10 +119,10 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<EventCandidate> nextReminderCandidates(long now, java.util.Set<String> hidden) {
         final long startedDisplayWindow = 3 * 60_000L;
         List<EventCandidate> result = new ArrayList<>();
-        String exclusion = hidden.isEmpty() ? "" : " AND ('chrona:'||id||':'||start_at_millis) NOT IN ("
+        String exclusion = hidden.isEmpty() ? "" : " AND ('chrona:'||id||':'||(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)) NOT IN ("
                 + String.join(",", java.util.Collections.nCopies(hidden.size(), "?")) + ")";
         final long defaultLead = 30 * 60_000L;
-        String appearsAt = "(start_at_millis-CASE WHEN category='event' THEN MAX(" + defaultLead
+        String appearsAt = "((CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)-CASE WHEN category='event' THEN MAX(" + defaultLead
                 + ",COALESCE(reminder_minutes_before,30)*60000) ELSE " + defaultLead + " END)";
         // Keep started entries, already-due upcoming entries and the next future boundary separately.
         // A far-away activity with an early reminder must not be lost behind four nearer entries.
@@ -132,13 +132,13 @@ public final class TaskStore extends SQLiteOpenHelper {
             if (!started) args.add(Long.toString(now));
             args.addAll(hidden);
             try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                    "all_day=0 AND needs_confirmation=0 AND start_at_millis IS NOT NULL "
-                            + "AND CASE WHEN category!='event' THEN start_at_millis+" + startedDisplayWindow
-                            + " WHEN end_at_millis>start_at_millis THEN end_at_millis ELSE start_at_millis+60000 END>CAST(? AS INTEGER) "
-                            + "AND start_at_millis" + (started ? "<=" : ">") + "CAST(? AS INTEGER)"
+                    "is_record=0 AND completed_at_millis IS NULL AND all_day=0 AND needs_confirmation=0 AND (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) IS NOT NULL "
+                            + "AND CASE WHEN category!='event' THEN (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)+" + startedDisplayWindow
+                            + " WHEN end_at_millis>(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) THEN end_at_millis ELSE (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)+60000 END>CAST(? AS INTEGER) "
+                            + "AND (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)" + (started ? "<=" : ">") + "CAST(? AS INTEGER)"
                             + (started ? "" : " AND " + appearsAt + (group == 1 ? "<=" : ">") + "CAST(? AS INTEGER)") + exclusion,
                     args.toArray(new String[0]), null, null,
-                    (started ? "start_at_millis DESC" : group == 1 ? "start_at_millis ASC" : appearsAt + " ASC")
+                    (started ? "(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) DESC" : group == 1 ? "(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) ASC" : appearsAt + " ASC")
                             + ",id ASC", started ? "3" : "4")) {
                 while (cursor.moveToNext()) result.add(readCandidate(cursor));
             }
@@ -149,10 +149,10 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<EventCandidate> widgetCandidates(long begin, long end) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "start_at_millis IS NOT NULL AND start_at_millis<? "
-                        + "AND COALESCE(end_at_millis,start_at_millis)>=CAST(? AS INTEGER)",
+                "is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
+                        + "AND COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>=CAST(? AS INTEGER)",
                 new String[]{Long.toString(end), Long.toString(begin)}, null, null,
-                "start_at_millis ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
+                "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
         return result;
@@ -163,16 +163,16 @@ public final class TaskStore extends SQLiteOpenHelper {
             long allDayBegin, long allDayEnd) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "start_at_millis IS NOT NULL AND ((all_day=0 AND start_at_millis<? "
-                        + "AND (COALESCE(end_at_millis,start_at_millis)>CAST(? AS INTEGER) "
-                        + "OR start_at_millis>=CAST(? AS INTEGER))) "
-                        + "OR (all_day=1 AND start_at_millis<? "
-                        + "AND (COALESCE(end_at_millis,start_at_millis)>CAST(? AS INTEGER) "
-                        + "OR start_at_millis>=CAST(? AS INTEGER))))",
+                "is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND ((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
+                        + "AND (COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>CAST(? AS INTEGER) "
+                        + "OR COALESCE(start_at_millis,due_at_millis)>=CAST(? AS INTEGER))) "
+                        + "OR (all_day=1 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
+                        + "AND (COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>CAST(? AS INTEGER) "
+                        + "OR COALESCE(start_at_millis,due_at_millis)>=CAST(? AS INTEGER))))",
                 new String[]{Long.toString(end), Long.toString(begin), Long.toString(begin),
                         Long.toString(allDayEnd), Long.toString(allDayBegin),
                         Long.toString(allDayBegin)}, null, null,
-                "start_at_millis ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
+                "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
         return result;
@@ -215,10 +215,12 @@ public final class TaskStore extends SQLiteOpenHelper {
                 + "category TEXT NOT NULL DEFAULT 'event', "
                 + "all_day INTEGER NOT NULL DEFAULT 0 CHECK(all_day IN (0,1)), "
                 + "end_auto_generated INTEGER NOT NULL DEFAULT 0 CHECK(end_auto_generated IN (0,1)), "
+                + "due_at_millis INTEGER, completed_at_millis INTEGER, is_record INTEGER NOT NULL DEFAULT 0 CHECK(is_record IN (0,1)), "
                 + "UNIQUE(task_id, position))");
         db.execSQL("CREATE INDEX candidates_by_task ON event_candidates(task_id, position)");
         addScheduleBrowsing(db);
         addCandidateMerges(db);
+        createTaskIndexes(db);
     }
 
     /**
@@ -252,7 +254,41 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 8) addScheduleBrowsing(db);
         if (oldVersion < 9) addUncertaintyLevel(db);
         if (oldVersion < 10) addCandidateMerges(db);
+        if (oldVersion < 11) addTaskSemantics(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
+    }
+
+    /** One-time conversion preserves source rows, IDs, calendar associations and explicit times. */
+    public static void addTaskSemantics(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE event_candidates ADD COLUMN due_at_millis INTEGER");
+        db.execSQL("ALTER TABLE event_candidates ADD COLUMN completed_at_millis INTEGER");
+        db.execSQL("ALTER TABLE event_candidates ADD COLUMN is_record INTEGER NOT NULL DEFAULT 0 CHECK(is_record IN (0,1))");
+        db.execSQL("UPDATE event_candidates SET is_record=1,category='event',needs_confirmation=0,uncertainty_level=0 WHERE category='note'");
+        db.execSQL("UPDATE event_candidates SET due_at_millis=COALESCE(end_at_millis,start_at_millis) WHERE category='deadline'");
+        db.execSQL("UPDATE event_candidates SET start_at_millis=NULL,end_at_millis=NULL,end_auto_generated=0 WHERE category='deadline' AND (start_at_millis IS NULL OR end_at_millis-start_at_millis<=60000)");
+        db.execSQL("UPDATE event_candidates SET end_at_millis=NULL,end_auto_generated=0 WHERE category IN ('task','reminder') AND end_auto_generated=1");
+        db.execSQL("UPDATE event_candidates SET category='task' WHERE category IN ('reminder','deadline')");
+        try (Cursor cursor=db.rawQuery("SELECT source_candidate,record FROM candidate_merges",null)) {
+            while(cursor.moveToNext()) {
+                try {
+                    org.json.JSONObject archived=new org.json.JSONObject(cursor.getString(1));
+                    org.json.JSONObject item=archived.getJSONObject("source").getJSONObject("candidate");
+                    String kind=item.getString("category");
+                    item.put("record","note".equals(kind)).put("completedAt",org.json.JSONObject.NULL)
+                            .put("dueAt","deadline".equals(kind)?item.opt("endAt")!=org.json.JSONObject.NULL?item.opt("endAt"):item.opt("startAt"):org.json.JSONObject.NULL);
+                    item.put("category","note".equals(kind)||"event".equals(kind)?"event":"task");
+                    ContentValues values=new ContentValues();values.put("record",archived.toString());
+                    db.update("candidate_merges",values,"source_candidate=?",new String[]{cursor.getString(0)});
+                } catch(org.json.JSONException invalid) { throw new IllegalStateException("合并来源记录无法转换，原数据保留",invalid); }
+            }
+        }
+        createTaskIndexes(db);
+        db.execSQL("UPDATE tasks SET status='ready',error_message=NULL WHERE status='needs_review' AND EXISTS(SELECT 1 FROM event_candidates WHERE task_id=tasks.id) AND NOT EXISTS(SELECT 1 FROM event_candidates WHERE task_id=tasks.id AND is_record=0 AND needs_confirmation=1)");
+    }
+
+    private static void createTaskIndexes(SQLiteDatabase db) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS candidates_by_due ON event_candidates(due_at_millis,id)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS candidates_by_anchor ON event_candidates(COALESCE(start_at_millis,due_at_millis),id)");
     }
 
     /** Shared with staged backup migration; old ambiguous records have no finer provenance. */
@@ -677,7 +713,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<TaskRecord> listTasksByCategory(String category) {
         List<TaskRecord> tasks = new ArrayList<>();
         String sql = "SELECT DISTINCT tasks.* FROM tasks JOIN event_candidates ON "
-                + "event_candidates.task_id = tasks.id WHERE event_candidates.category = ? "
+                + "event_candidates.task_id = tasks.id WHERE event_candidates.is_record=0 AND event_candidates.category = ? "
                 + "ORDER BY tasks.created_at_millis DESC, tasks.id DESC";
         try (Cursor cursor = getReadableDatabase().rawQuery(sql,
                 new String[]{EventCategory.normalize(category)})) {
@@ -691,7 +727,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         List<TaskRecord> tasks = new ArrayList<>();
         String sql = "SELECT DISTINCT tasks.* FROM tasks JOIN event_candidates ON "
                 + "event_candidates.task_id = tasks.id "
-                + "WHERE event_candidates.calendar_event_id IS NOT NULL"
+                + "WHERE event_candidates.is_record=0 AND event_candidates.calendar_event_id IS NOT NULL"
                 + (category == null ? "" : " AND event_candidates.category = ?")
                 + " ORDER BY tasks.created_at_millis DESC, tasks.id DESC";
         String[] args = category == null ? null
@@ -1003,6 +1039,9 @@ public final class TaskStore extends SQLiteOpenHelper {
                 values.put("category", candidate.category);
                 values.put("all_day", candidate.allDay ? 1 : 0);
                 values.put("end_auto_generated", candidate.endAutoGenerated ? 1 : 0);
+                values.put("due_at_millis", candidate.dueAtMillis);
+                values.put("completed_at_millis", candidate.completedAtMillis);
+                values.put("is_record", candidate.isRecord ? 1 : 0);
                 db.insertOrThrow("event_candidates", null, values);
             }
             db.setTransactionSuccessful();
@@ -1053,6 +1092,9 @@ public final class TaskStore extends SQLiteOpenHelper {
             values.put("category", candidate.category);
             values.put("all_day", candidate.allDay ? 1 : 0);
             values.put("end_auto_generated", candidate.endAutoGenerated ? 1 : 0);
+                values.put("due_at_millis", candidate.dueAtMillis);
+                values.put("completed_at_millis", candidate.completedAtMillis);
+                values.put("is_record", candidate.isRecord ? 1 : 0);
             long id = db.insertOrThrow("event_candidates", null, values);
             db.setTransactionSuccessful();
             return id;
@@ -1091,9 +1133,23 @@ public final class TaskStore extends SQLiteOpenHelper {
         values.put("category", candidate.category);
         values.put("all_day", candidate.allDay ? 1 : 0);
         values.put("end_auto_generated", candidate.endAutoGenerated ? 1 : 0);
+                values.put("due_at_millis", candidate.dueAtMillis);
+                values.put("completed_at_millis", candidate.completedAtMillis);
+                values.put("is_record", candidate.isRecord ? 1 : 0);
         return getWritableDatabase().update("event_candidates", values,
                 "id = ? AND task_id = ?", new String[] {
                         Long.toString(candidate.id), Long.toString(candidate.taskId) }) > 0;
+    }
+
+    public boolean setCandidateCompleted(long id, long taskId, boolean completed) {
+        SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
+        try {
+            ContentValues values=new ContentValues();
+            if(completed) values.put("completed_at_millis",System.currentTimeMillis()); else values.putNull("completed_at_millis");
+            boolean changed=db.update("event_candidates",values,"id=? AND task_id=? AND category='task' AND is_record=0 AND task_id IN (SELECT id FROM tasks WHERE status NOT IN ('queued','processing'))",new String[]{Long.toString(id),Long.toString(taskId)})==1;
+            if(changed) updateStatus(taskId,getCandidates(taskId).stream().allMatch(EventCandidate::settled)?TaskRecord.READY:TaskRecord.NEEDS_REVIEW,null);
+            db.setTransactionSuccessful();return changed;
+        } finally {db.endTransaction();}
     }
 
     public boolean setCalendarEventId(long candidateId, long taskId, long calendarEventId) {
@@ -1136,7 +1192,7 @@ public final class TaskStore extends SQLiteOpenHelper {
             }
             for (long id : tasks) {
                 ContentValues values = new ContentValues();
-                values.put("status", TaskRecord.NEEDS_REVIEW);
+                values.put("status",getCandidates(id).stream().allMatch(EventCandidate::settled)?TaskRecord.READY:TaskRecord.NEEDS_REVIEW);
                 values.putNull("error_message");
                 db.update("tasks", values, "id=? AND status=?",
                         new String[]{Long.toString(id), TaskRecord.READY});
@@ -1212,7 +1268,10 @@ public final class TaskStore extends SQLiteOpenHelper {
                 cursor.getString(cursor.getColumnIndexOrThrow("category")),
                 cursor.getInt(cursor.getColumnIndexOrThrow("all_day")) != 0,
                 cursor.getInt(cursor.getColumnIndexOrThrow("end_auto_generated")) != 0,
-                cursor.getInt(cursor.getColumnIndexOrThrow("uncertainty_level")));
+                cursor.getInt(cursor.getColumnIndexOrThrow("uncertainty_level")),
+                cursor.isNull(cursor.getColumnIndexOrThrow("due_at_millis")) ? null : cursor.getLong(cursor.getColumnIndexOrThrow("due_at_millis")),
+                cursor.isNull(cursor.getColumnIndexOrThrow("completed_at_millis")) ? null : cursor.getLong(cursor.getColumnIndexOrThrow("completed_at_millis")),
+                cursor.getInt(cursor.getColumnIndexOrThrow("is_record")) != 0);
     }
 
     private static void requireNonEmpty(String value, String name) {

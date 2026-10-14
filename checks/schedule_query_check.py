@@ -38,26 +38,27 @@ rows = [
     (4, '无日期', '', '', 'task', 0, None, None, None),
     (5, '跨日', '', '', 'event', 0, ms('2026-09-27T23:00+08:00'), ms('2026-09-28T02:00+08:00'), None),
     (6, '次日', '', '', 'event', 0, ms('2026-09-29T00:00+08:00'), ms('2026-09-29T01:00+08:00'), None),
-    (7, '%_确切文字', '', '', 'note', 0, None, None, None),
-    (8, '百分号匹配陷阱', '', '', 'note', 0, None, None, None),
+    (7, '%_确切文字', '', '', 'event', 0, None, None, None),
+    (8, '百分号匹配陷阱', '', '', 'event', 0, None, None, None),
 ]
 db.executemany(INSERT_SQL, rows)
+for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER","needs_confirmation INTEGER DEFAULT 1"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
 
 def ids(name):
     where, order, *args = queries[name]
     return [r[0] for r in db.execute('SELECT id FROM event_candidates WHERE ' + where + ' ORDER BY ' + order, args)]
 
-assert set(ids('upcoming')) == {1, 3, 6}
-assert set(ids('past')) == {2, 5}
+assert set(ids('upcoming')) == {1, 2, 3, 6}
+assert set(ids('past')) == {5}
 assert set(ids('incomplete')) == {4, 7, 8}
 assert set(ids('day')) == {1, 2, 3, 5}
 assert set(ids('combined')) == {2, 3}
 assert set(ids('literal')) == {7}
 assert set(ids('published')) == {1}
 assert set(ids('label')) == {2, 3, 4}
-# Current product has date tabs, not a completion-state column or a fifth tab.
+# Pending tasks remain pending after their deadline; event history still follows end time.
 # Passing an event's time changes its tab, never deletes it from searchable history.
-assert {2, 5}.issubset(ids('all')), 'Past items must remain searchable in all items'
+assert {5}.issubset(ids('all')), 'Past items must remain searchable in all items'
 
 # Identical timestamps must retain stable unique IDs across every page boundary.
 db.executemany(INSERT_SQL, [

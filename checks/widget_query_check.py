@@ -13,14 +13,15 @@ selection = "".join(json.loads(part) for part in re.findall(
 limit = int(re.search(r'WIDGET_ITEM_LIMIT\s*=\s*(\d+)', source)[1])
 db = sqlite3.connect(":memory:")
 db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY, start_at_millis INTEGER, end_at_millis INTEGER)")
-db.executemany("INSERT INTO event_candidates VALUES(?,?,?)", [
+db.executemany("INSERT INTO event_candidates(id,start_at_millis,end_at_millis) VALUES(?,?,?)", [
     (1, None, None), (2, 5, 9), (3, 5, 11), (4, 20, 22), (5, 10, None),
     (6, 15, 17), (7, 15, 18)])
+for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
 query = f"SELECT id FROM event_candidates WHERE {selection} ORDER BY start_at_millis ASC,id ASC LIMIT {limit}"
 # Android SQLiteDatabase.query binds selectionArgs as strings, not integers.
 arguments = ("20", "10")
 assert [row[0] for row in db.execute(query, arguments)] == [3, 5, 6, 7]
-db.executemany("INSERT INTO event_candidates VALUES(?,?,?)", [(i, 16, 18) for i in range(8, 300)])
+db.executemany("INSERT INTO event_candidates(id,start_at_millis,end_at_millis) VALUES(?,?,?)", [(i, 16, 18) for i in range(8, 300)])
 rows = list(db.execute(query, arguments))
 assert len(rows) == limit and rows[:4] == [(3,), (5,), (6,), (7,)]
 print("Widget SQL checks passed: window, null time, overlapping event, stable order, bounded limit")
