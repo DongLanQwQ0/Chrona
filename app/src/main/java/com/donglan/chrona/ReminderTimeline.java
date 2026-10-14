@@ -9,6 +9,11 @@ final class ReminderTimeline {
     static final long PROGRESS_REFRESH = 60_000L;
     static final long CAPSULE_COUNTDOWN_WINDOW = 2 * 60_000L;
     static final long STARTED_DISPLAY_WINDOW = 3 * 60_000L;
+    static long appearsAt(AgendaEntry entry) {
+        long lead = "event".equals(entry.category) && entry.reminderMinutesBefore != null
+                ? Math.max(LEAD, entry.reminderMinutesBefore.longValue() * 60_000L) : LEAD;
+        return entry.start - lead;
+    }
     static long expiresAt(AgendaEntry entry) {
         return "event".equals(entry.category) ? entry.finish() : entry.start + STARTED_DISPLAY_WINDOW;
     }
@@ -48,7 +53,7 @@ final class ReminderTimeline {
         Set<String> seen = new HashSet<>();
         for (AgendaEntry entry : candidates) {
             if (entry.allDay || !entry.confirmed || expiresAt(entry) <= now || hidden.contains(entry.key())) continue;
-            long due = entry.start - LEAD;
+            long due = appearsAt(entry);
             if (due > now) boundary = Math.min(boundary, due);
             if (entry.start > now) boundary = Math.min(boundary, entry.start);
             boundary = Math.min(boundary, expiresAt(entry));

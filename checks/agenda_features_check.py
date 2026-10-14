@@ -61,6 +61,10 @@ public class AgendaFeaturesCheck {
  public static void main(String[] args){
   long start=10_000_000L;AgendaEntry a=e(1,start,start+3_600_000);
   long notifiedAt=start-ReminderTimeline.LEAD;
+  AgendaEntry early=new AgendaEntry(99,1,start,start+3600000,"early","","","拾时",false,false,true,null,"event",120);
+  check(ReminderTimeline.appearsAt(early)==start-7200000,"explicit early reminder controls island appearance");
+  check(t(List.of(early),start-7200001).entries.isEmpty()&&t(List.of(early),start-7200001).wakeAt==start-7200000,"alarm targets early reminder boundary");
+  check(t(List.of(early),start-7200000).entries.size()==1,"island appears exactly at early reminder boundary");
   check(!ReminderTimeline.capsuleCountdown(a,start-120_001),"capsule stays clock above two minutes");
   check(ReminderTimeline.capsuleCountdown(a,start-120_000),"capsule switches exactly at two minutes");
   check(ReminderTimeline.capsuleCountdown(a,start-1),"capsule remains countdown before start");
@@ -182,7 +186,7 @@ class Database {
 public class SqlCheck {
  Database getReadableDatabase(){return new Database();}EventCandidate readCandidate(Cursor c){return null;}
  ''' + sql_methods + '''
- public static void main(String[]args){SqlCheck c=new SqlCheck();c.calendarCandidates(10000000,20000000,10000000,20000000);c.nextReminderCandidates(10000000,Set.of());c.nextReminderCandidates(10000000,Set.of("chrona:8:9999999"));c.nextReminderCandidates(30000000,Set.of());}
+ public static void main(String[]args){SqlCheck c=new SqlCheck();c.calendarCandidates(10000000,20000000,10000000,20000000);c.nextReminderCandidates(10000000,Set.of());c.nextReminderCandidates(10000000,Set.of("chrona:8:9999999"));c.nextReminderCandidates(30000000,Set.of());c.nextReminderCandidates(18000000,Set.of());}
 }'''
 calendar = (src / 'calendar/CalendarStore.java').read_text(encoding='utf-8')
 files['com/donglan/chrona/calendar/CalendarOccurrence.java'] = (src / 'calendar/CalendarOccurrence.java').read_text(encoding='utf-8')
@@ -252,12 +256,13 @@ subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.Age
 subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.calendar.ReminderProviderCheck'], check=True)
 queries = subprocess.check_output([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.SqlCheck'], text=True)
 db = sqlite3.connect(':memory:')
-db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,needs_confirmation INTEGER,category TEXT NOT NULL DEFAULT 'event')")
+db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,needs_confirmation INTEGER,category TEXT NOT NULL DEFAULT 'event',reminder_minutes_before INTEGER)")
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(1,8000000,12000000,0,0),(2,9000000,13000000,0,0),(3,11000000,12000000,0,0),(4,11500000,12000000,0,0),(5,10500000,12000000,0,1),(6,10500000,12000000,1,0),(7,None,None,0,0),(8,9999999,None,0,0)])
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(i,1,2,0,0) for i in range(100,6200)])
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(9,11600000,12000000,0,0),(10,11700000,12000000,0,0)])
-db.executemany('INSERT INTO event_candidates VALUES(?,?,?,?,?,?)', [(20,29600000,33000000,0,0,'event'),(21,29820001,29820002,0,0,'todo'),(22,29820000,33000000,0,0,'reminder'),(23,29819999,33000000,0,0,'todo')])
-expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9,10], [2,1], [3,4,9,10], [21,20], []]
+db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation,category) VALUES(?,?,?,?,?,?)', [(20,29600000,33000000,0,0,'event'),(21,29820001,29820002,0,0,'todo'),(22,29820000,33000000,0,0,'reminder'),(23,29819999,33000000,0,0,'todo')])
+db.execute("INSERT INTO event_candidates VALUES(30,40000000,41000000,0,0,'event',600)")
+expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9,10], [20,23,22,21], [2,1], [3,4,9,10], [20,23,22,21], [21,20], [30], [], [], [30], [20,23,22,21]]
 for line, wanted in zip(queries.splitlines(), expected, strict=True):
     tag, selection, arguments, sort, limit = line.split('\t')
     rows = [r[0] for r in db.execute(f'SELECT id FROM event_candidates WHERE {selection} ORDER BY {sort} LIMIT {limit}', arguments.split('|'))]

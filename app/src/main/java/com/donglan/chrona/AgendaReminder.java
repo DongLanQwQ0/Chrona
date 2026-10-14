@@ -95,7 +95,7 @@ public final class AgendaReminder {
         try (TaskStore store = new TaskStore(context)) {
             for (EventCandidate local : store.nextReminderCandidates(now, excluded)) entries.add(new AgendaEntry(local.id, local.taskId, local.startAtMillis,
                     local.endAtMillis == null ? local.startAtMillis : local.endAtMillis, local.title,
-                    local.location, local.description, "拾时", false, false, true, null, local.category));
+                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore));
             if (AgendaReminderPreferences.includesSystemCalendar(context)) {
                 CalendarStore calendar = new CalendarStore(context);
                 if (calendar.hasReadPermission()) {

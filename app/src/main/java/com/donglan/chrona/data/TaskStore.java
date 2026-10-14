@@ -121,14 +121,25 @@ public final class TaskStore extends SQLiteOpenHelper {
         List<EventCandidate> result = new ArrayList<>();
         String exclusion = hidden.isEmpty() ? "" : " AND ('chrona:'||id||':'||start_at_millis) NOT IN ("
                 + String.join(",", java.util.Collections.nCopies(hidden.size(), "?")) + ")";
-        for (boolean future : new boolean[]{false, true}) {
-            List<String> args = new ArrayList<>(); args.add(Long.toString(now)); args.add(Long.toString(now)); args.addAll(hidden);
+        final long defaultLead = 30 * 60_000L;
+        String appearsAt = "(start_at_millis-CASE WHEN category='event' THEN MAX(" + defaultLead
+                + ",COALESCE(reminder_minutes_before,30)*60000) ELSE " + defaultLead + " END)";
+        // Keep started entries, already-due upcoming entries and the next future boundary separately.
+        // A far-away activity with an early reminder must not be lost behind four nearer entries.
+        for (int group = 0; group < 3; group++) {
+            boolean started = group == 0;
+            List<String> args = new ArrayList<>(); args.add(Long.toString(now)); args.add(Long.toString(now));
+            if (!started) args.add(Long.toString(now));
+            args.addAll(hidden);
             try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
                     "all_day=0 AND needs_confirmation=0 AND start_at_millis IS NOT NULL "
                             + "AND CASE WHEN category!='event' THEN start_at_millis+" + startedDisplayWindow
                             + " WHEN end_at_millis>start_at_millis THEN end_at_millis ELSE start_at_millis+60000 END>CAST(? AS INTEGER) "
-                            + "AND start_at_millis" + (future ? ">" : "<=") + "CAST(? AS INTEGER)" + exclusion,
-                    args.toArray(new String[0]), null, null, "start_at_millis " + (future ? "ASC" : "DESC") + ",id ASC", future ? "4" : "3")) {
+                            + "AND start_at_millis" + (started ? "<=" : ">") + "CAST(? AS INTEGER)"
+                            + (started ? "" : " AND " + appearsAt + (group == 1 ? "<=" : ">") + "CAST(? AS INTEGER)") + exclusion,
+                    args.toArray(new String[0]), null, null,
+                    (started ? "start_at_millis DESC" : group == 1 ? "start_at_millis ASC" : appearsAt + " ASC")
+                            + ",id ASC", started ? "3" : "4")) {
                 while (cursor.moveToNext()) result.add(readCandidate(cursor));
             }
         }
