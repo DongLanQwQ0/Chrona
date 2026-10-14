@@ -32,6 +32,7 @@
         android:theme="@style/Theme.Chrona.Starting"
         android:enableOnBackInvokedCallback="true">
         <activity android:name=".CalendarOverviewActivity" android:exported="false" />
+        <activity android:name=".LauncherShortcutActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" />
         <receiver android:name=".WeekCalendarWidgetProvider" android:exported="false" android:label="本周日历">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_week_calendar" />
@@ -134,6 +135,7 @@
             android:name=".DashboardActivity"
             android:exported="true"
             android:launchMode="singleTop">
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/launcher_shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

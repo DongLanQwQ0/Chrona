@@ -124,11 +124,14 @@ public final class AgendaReminder {
             AgendaEntry entry = slots[i];
             boolean same = entry != null && entry.key().equals(previous[i]);
             boolean atomic = entry != null && AgendaReminderPreferences.useAtomic(context, entry.system, atomicAvailable);
-            if (!same || VivoAtomicNotification.active(manager, NOTIFICATION_ID + i) != atomic)
+            boolean atomicActive = VivoAtomicNotification.active(manager, NOTIFICATION_ID + i);
+            if (!same || atomicActive != atomic)
                 VivoAtomicNotification.end(context, manager, NOTIFICATION_ID + i);
             if (entry == null) { state.remove("slot_key:" + i).remove("slot_end:" + i).remove("slot_started:" + i); continue; }
             long notifiedAt = same ? prefs.getLong("slot_started:" + i, now) : now;
-            manager.notify(NOTIFICATION_ID + i, notification(context, entry, now, same,
+            // Persisted occurrence identity survives force-stop; the system notification may not.
+            boolean update = same && (!atomic || atomicActive);
+            manager.notify(NOTIFICATION_ID + i, notification(context, entry, now, update,
                     NOTIFICATION_ID + i, notifiedAt, ReminderTimeline.nextTitle(entries, entry, now), atomic));
             state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, ReminderTimeline.expiresAt(entry));
             state.putLong("slot_started:" + i, notifiedAt);

@@ -36,7 +36,7 @@ public class AgendaSlotsCheck {
  static final String CHANNEL="upcoming_agenda";static final int NOTIFICATION_ID=0x434852;
  static long alarm;static int checks;
  static void schedule(Context c,long at){alarm=at;}
- static Map<Integer,Long> notified=new HashMap<>();static Map<Integer,String> nextTitles=new HashMap<>(),categories=new HashMap<>();static String notification(Context c,AgendaEntry e,long now,boolean same,int id,long notifiedAt,String nextTitle,boolean atomic){notified.put(id,notifiedAt);nextTitles.put(id,nextTitle);categories.put(id,e.category);c.manager.atomic.put(id,atomic);return e.key();}
+ static Map<Integer,Boolean> updates=new HashMap<>();static Map<Integer,Long> notified=new HashMap<>();static Map<Integer,String> nextTitles=new HashMap<>(),categories=new HashMap<>();static String notification(Context c,AgendaEntry e,long now,boolean same,int id,long notifiedAt,String nextTitle,boolean atomic){updates.put(id,same);notified.put(id,notifiedAt);nextTitles.put(id,nextTitle);categories.put(id,e.category);c.manager.atomic.put(id,atomic);return e.key();}
  __REFRESH__
  static void check(boolean condition,String reason){checks++;if(!condition)throw new AssertionError(reason);}
  static String slot(Context c,int i){return c.prefs.getString("slot_key:"+i,"");}
@@ -104,7 +104,16 @@ public class AgendaSlotsCheck {
   check(alarm==close.startAtMillis-ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW,"atomic schedules exact two-minute mode boundary before normal refresh");
   AgendaReminderPreferences.atomic=false;refresh(c,null);
   check(alarm>close.startAtMillis-ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW,"ordinary notification does not schedule capsule mode boundary");
-  System.out.println("Production reminder refresh passed: "+checks+" checks; stable slots, stale actions, independent snooze/hide, permission, disabled and platform limits");
+  AgendaReminderPreferences.atomic=true;Context restarted=new Context();
+  EventCandidate running=new EventCandidate(100,boundaryNow-1200000,boundaryNow+3600000);TaskStore.rows=List.of(running);
+  refresh(restarted,null);check(restarted.manager.cards.containsValue(running.key())&&!updates.get(NOTIFICATION_ID),"ongoing event creates island on first launch");
+  long origin=restarted.prefs.getLong("slot_started:0",0);restarted.manager.cards.clear();restarted.manager.atomic.clear();refresh(restarted,null);
+  check(restarted.manager.cards.containsValue(running.key())&&!updates.get(NOTIFICATION_ID),"force-stop retained slot recreates missing island, not update");
+  check(restarted.prefs.getLong("slot_started:0",0)==origin,"restart preserves notification origin");
+  refresh(restarted,null);check(updates.get(NOTIFICATION_ID),"live island uses update");
+  refresh(restarted,new Intent(running.key(),"complete"));restarted.manager.cards.clear();restarted.manager.atomic.clear();refresh(restarted,null);
+  check(restarted.manager.cards.isEmpty(),"restart never restores completed occurrence");
+  System.out.println("Production reminder refresh passed: "+checks+" checks; stable slots, restart restoration, stale actions, independent snooze/hide, permission, disabled and platform limits");
  }
 }
 '''.replace('__PURE__', pure).replace('__REFRESH__', refresh)

@@ -1,5 +1,9 @@
 <resources>
     <string name="app_name">拾时 · Chrona</string>
+    <string name="shortcut_capture">记录一件事</string>
+    <string name="shortcut_week">本周日历</string>
+    <string name="shortcut_schedule">日程</string>
+    <string name="shortcut_inbox">收件箱</string>
     <string name="widget_today">今天的安排</string>
     <string name="widget_next">下一件事</string>
     <string name="widget_refresh">刷新日程</string>
