@@ -32,6 +32,7 @@
         android:theme="@style/Theme.Chrona.Starting"
         android:enableOnBackInvokedCallback="true">
         <activity android:name=".CalendarOverviewActivity" android:exported="false" />
+        <activity android:name=".SystemAgendaDetailActivity" android:exported="false" />
         <service android:name=".AgendaReminderJobService" android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver android:name=".AgendaReminderReceiver" android:exported="false">

@@ -71,6 +71,9 @@ for item in animations:
                           'widget_marquee_ellipsize_type': (1, 0)}
 assert 'removeAllViews' not in source, 'Reapply must retain animated child identity'
 assert 'setAutoStart' not in source, 'ViewFlipper.setAutoStart is not remotely callable'
+assert 'AgendaReminder.action(context, entry, "complete", 4)' in source
+assert 'setOnClickPendingIntent(R.id.atomic_complete' in source
+assert any(node.get(android+'id') == '@+id/atomic_complete' for node in layout.iter('ImageView'))
 assert 'R.id.atomic_to_dot, dot(palette.primary)' in source, 'Right endpoint must not depend on progress'
 # Endpoint centres and the track edges share the same inset.
 nodes = {node.get(android + 'id'): node for node in layout.iter()}

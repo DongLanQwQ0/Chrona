@@ -63,7 +63,8 @@ public final class AgendaReminder {
             int slot = ReminderSlots.find(previous, key);
             // Replaced or expired occurrence actions cannot affect a current slot.
             if (slot >= 0 && prefs.getLong("slot_end:" + slot, 0) > now) {
-                if ("hide".equals(action.getAction())) prefs.edit().putLong("hidden:" + key, prefs.getLong("slot_end:" + slot, now)).apply();
+                if ("hide".equals(action.getAction()) || "complete".equals(action.getAction()))
+                    prefs.edit().putLong("hidden:" + key, prefs.getLong("slot_end:" + slot, now)).apply();
                 if ("snooze".equals(action.getAction())) prefs.edit()
                         .putLong("snooze_until:" + key, now + ReminderTimeline.SNOOZE).apply();
             }
@@ -226,7 +227,7 @@ public final class AgendaReminder {
         }
         return builder.build();
     }
-    private static PendingIntent action(Context context, AgendaEntry e, String action, int code) {
+    static PendingIntent action(Context context, AgendaEntry e, String action, int code) {
         return PendingIntent.getBroadcast(context, code,
                 new Intent(context, AgendaReminderReceiver.class).setAction(action)
                         .setData(android.net.Uri.parse("chrona://reminder/" + e.key())).putExtra("key", e.key()),

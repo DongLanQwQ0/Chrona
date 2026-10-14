@@ -83,8 +83,14 @@ final class AgendaRepository {
     static Intent details(Context context, AgendaEntry entry) {
         if (!entry.system) return new Intent(context, TaskDetailActivity.class)
                 .putExtra("task_id", entry.taskId).putExtra("candidate_id", entry.id);
-        return new Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, entry.id))
-                .putExtra("beginTime", entry.start).putExtra("endTime", entry.end);
+        long start = entry.start, end = entry.end;
+        if (entry.allDay) {
+            ZoneId zone = ZoneId.systemDefault();
+            start = Instant.ofEpochMilli(start).atZone(zone).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
+            end = Instant.ofEpochMilli(end).atZone(zone).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
+        }
+        return SystemAgendaDetailActivity.intent(context, entry.id, start, end,
+                entry.allDay, entry.title, entry.location, entry.source);
     }
     private AgendaRepository() { }
 }

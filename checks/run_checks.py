@@ -37,7 +37,7 @@ GROUPS = {
     "cached_dependencies": (
         "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",
         "sync_core_check.py", "atomic_card_contract_check.py", "island_camera_check.py",
-        "ai_auto_publish_check.py",
+        "ai_auto_publish_check.py", "system_agenda_details_check.py",
     ),
     "powershell": ("vivo_provision_check.py",),
 }

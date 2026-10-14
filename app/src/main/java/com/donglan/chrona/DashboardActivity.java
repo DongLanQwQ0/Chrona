@@ -943,11 +943,8 @@ public final class DashboardActivity extends Activity {
             return;
         }
         CalendarOccurrence event = entry.systemEvent;
-        Intent intent = new Intent(Intent.ACTION_VIEW, android.content.ContentUris.withAppendedId(
-                android.provider.CalendarContract.Events.CONTENT_URI, event.eventId));
-        intent.putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.startMillis);
-        intent.putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, event.endMillis);
-        intent.putExtra(android.provider.CalendarContract.EXTRA_EVENT_ALL_DAY, event.allDay);
+        Intent intent = SystemAgendaDetailActivity.intent(this, event.eventId, event.startMillis,
+                event.endMillis, event.allDay, event.title, event.location, event.calendarName);
         try { startActivity(intent); }
         catch (android.content.ActivityNotFoundException exception) {
             Feedback.show(this, "未找到可打开日程的日历应用");

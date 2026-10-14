@@ -83,6 +83,12 @@ final class AtomicAgendaCard {
         views.setContentDescription(R.id.atomic_progress, Math.round(ratio * 100) + "%");
         views.setInt(R.id.atomic_card, "setBackgroundColor", palette.surface);
         views.setOnClickPendingIntent(R.id.atomic_card, details);
+        android.graphics.drawable.Drawable complete = context.getDrawable(R.drawable.ic_check).mutate();
+        complete.setTint(palette.primary);
+        Bitmap completeIcon = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888);
+        complete.setBounds(0, 0, 48, 48); complete.draw(new Canvas(completeIcon));
+        views.setImageViewBitmap(R.id.atomic_complete, completeIcon);
+        views.setOnClickPendingIntent(R.id.atomic_complete, AgendaReminder.action(context, entry, "complete", 4));
 
         boolean motion = ValueAnimator.areAnimatorsEnabled();
         String[] phrases = context.getResources().getStringArray(R.array.widget_encouragements);

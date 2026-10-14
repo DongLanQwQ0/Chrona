@@ -83,7 +83,8 @@ public class AgendaSlotsCheck {
   refresh(c,new Intent(a.key(),"hide"));check(!c.prefs.values.containsKey("hidden:"+a.key())&&!c.prefs.values.containsKey("hidden:"+e.key()),"stale action cannot hide old or replacement");
   c.prefs.edit().putLong("snooze_until:"+a.key(),now-1).apply();refresh(c,null);
   check(!c.prefs.values.containsKey("snooze_until:"+a.key())&&c.manager.cards.containsValue(a.key()),"expired snooze cleans up and returns occurrence");
-  refresh(c,new Intent(d.key(),"hide"));check(c.prefs.getLong("hidden:"+d.key(),0)==d.endAtMillis&&!c.manager.cards.containsValue(d.key()),"hide one occurrence only");
+  refresh(c,new Intent(d.key(),"complete"));check(c.prefs.getLong("hidden:"+d.key(),0)==d.endAtMillis&&!c.manager.cards.containsValue(d.key()),"completion ends one occurrence only");
+  refresh(c,null);check(!c.manager.cards.containsValue(d.key()),"completed occurrence is not re-pushed during refresh");
   EventCandidate changed=new EventCandidate(3,d.startAtMillis+1,d.endAtMillis);TaskStore.rows.add(changed);refresh(c,null);
   check(c.manager.cards.containsValue(changed.key()),"hidden previous key does not hide edited occurrence");
   c.manager.allowed=false;VivoAtomicNotification.ended.clear();refresh(c,null);

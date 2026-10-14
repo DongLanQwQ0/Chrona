@@ -113,7 +113,7 @@ public class AgendaNotificationCheck {
   System.out.println("Reminder notification factory passed: "+checks+" checks; native vivo style, full details, immutable actions, occurrence identity, expiry and existing RemoteViews path");
  }
 }
-'''.replace('__ENTRY__', entry).replace('__TIMELINE__', timeline).replace('__FACTORY__', method('    private static Notification notification(') + '\n' + method('    private static Notification notification(', 1)).replace('__ACTION__', method('    private static PendingIntent action('))
+'''.replace('__ENTRY__', entry).replace('__TIMELINE__', timeline).replace('__FACTORY__', method('    private static Notification notification(') + '\n' + method('    private static Notification notification(', 1)).replace('__ACTION__', method('    static PendingIntent action('))
 harness = re.sub(r'notification\(c,([^,\n]+),([^,\n]+),(false|true)\)', r'notification(c,\1,\2,\3,NOTIFICATION_ID)', harness)
 out = root / 'build/agenda-notification-check'
 out.mkdir(parents=True, exist_ok=True)
