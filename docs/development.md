@@ -1,3 +1,9 @@
+## 0.14.50：角标同步与周视图缩放
+
+局部刷新必须先应用最新 `review / failed` 计数，再记账 revision。`updatePendingCounts` 同时更新可见或缓存收件箱的原位角标和底部导航；角标节点即使为零也保留，仅切换可见性，避免从零新增时遗漏。异步日程刷新使用同一 worker 快照中的计数，过期请求不提交。
+
+周的双轴拖动、边缘切周及捏合集中由 `FreeCalendarScrollView` 仲裁。先消费周内滚动，仅边缘后未消费的外拖距离计入切周阈值；回撤、多指会取消切周，多指还取消点击和惯性。缩放只重排现有网格和卡片，按显示帧合并更新，不重查数据库。`weekZoom` 在页面状态中保存；日视图固定原比例。`WeekAgendaImage.write` 显式接收 `includeIndex`，关闭时不创建附录文本布局，也不受附录高度限制。
+
 ## 0.14.49：工作流与提醒闭环
 
 TaskCompletion 统一完成/恢复、锁内 revision 检查和关联系统提醒。恢复只安排未来提醒；失败保留本地状态、返回说明并持久保留待同步项。ReminderTimeline 将显式待办 snooze 与默认关闭窗口分开，活动不越过结束时间。NotificationDeliveryStatus 统一频道与权限的有效状态。HomeTodoSummary 是首页摘要，queryHomeUpcoming 仅使用执行时间，todoScope 是完整筛选状态。

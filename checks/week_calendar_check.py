@@ -52,9 +52,15 @@ public void startActivity(android.content.Intent i){opened=i;}public void finish
     'com/donglan/chrona/CalendarOverviewActivity.java': 'package com.donglan.chrona;public class CalendarOverviewActivity {}',
     'com/donglan/chrona/DashboardActivity.java': 'package com.donglan.chrona;public class DashboardActivity {static final String EXTRA_SECTION="section";static final int SCHEDULE=2,INBOX=1;}',
     'android/content/Context.java': 'package android.content; public class Context {}',
+    'android/content/res/Resources.java': 'package android.content.res;public class Resources {public static class Metrics{public float density=1;}public Metrics getDisplayMetrics(){return new Metrics();}}',
+    'android/view/ScaleGestureDetector.java': '''package android.view;public class ScaleGestureDetector {
+public static class SimpleOnScaleGestureListener {public boolean onScaleBegin(ScaleGestureDetector d){return true;}public boolean onScale(ScaleGestureDetector d){return true;}}
+SimpleOnScaleGestureListener listener;public ScaleGestureDetector(android.content.Context c,SimpleOnScaleGestureListener l){listener=l;}
+public void onTouchEvent(MotionEvent e){if(e.getActionMasked()==5)listener.onScaleBegin(this);if(e.multi&&e.getActionMasked()==2)listener.onScale(this);}
+public float getScaleFactor(){return .5f;}public float getFocusX(){return 100;}public float getFocusY(){return 80;}}''',
     'android/view/MotionEvent.java': '''package android.view; public class MotionEvent {
-public static final int ACTION_DOWN=0,ACTION_UP=1,ACTION_MOVE=2,ACTION_CANCEL=3;
-int action;float x,y;public MotionEvent(int a,float x,float y){action=a;this.x=x;this.y=y;}
+public static final int ACTION_DOWN=0,ACTION_UP=1,ACTION_MOVE=2,ACTION_CANCEL=3,ACTION_POINTER_DOWN=5;
+public boolean multi;int action;float x,y;public MotionEvent(int a,float x,float y){action=a;this.x=x;this.y=y;}
 public static MotionEvent obtain(MotionEvent e){return new MotionEvent(e.action,e.x,e.y);}
 public int getActionMasked(){return action;}public float getX(){return x;}public float getY(){return y;}
 public void setAction(int a){action=a;}public void recycle(){} }''',
@@ -70,6 +76,9 @@ public int x,y,flingVelocity,stops;public void scrollBy(int x,int y){this.x+=x;t
 public void fling(int v){flingVelocity=v;}public boolean onTouchEvent(android.view.MotionEvent e){if(e.getActionMasked()==0){stops++;flingVelocity=0;}return true;}}''',
     'android/widget/HorizontalScrollView.java': '''package android.widget;public class HorizontalScrollView extends ScrollView {
 public int cancels,dispatches;public HorizontalScrollView(android.content.Context c){}
+public int getWidth(){return 300;}public boolean canScrollHorizontally(int d){return d<0?x>0:x<500;}
+public int getScrollX(){return x;}@Override public void scrollBy(int dx,int dy){x=Math.max(0,Math.min(500,x+dx));}
+public android.content.res.Resources getResources(){return new android.content.res.Resources();}
 public static class Parent{public boolean disallowed;public void requestDisallowInterceptTouchEvent(boolean b){disallowed=b;}}
 final Parent parent=new Parent();public Parent getParent(){return parent;}
 public boolean onInterceptTouchEvent(android.view.MotionEvent e){return false;}
@@ -96,6 +105,18 @@ check(v.cancels==1&&!v.getParent().disallowed,"child cancelled once and ancestor
 send(v,0,90,90);check(v.flingVelocity==0&&vertical.flingVelocity==0,"new touch stops both flings");
 int before=v.dispatches;send(v,1,90,90);check(v.dispatches==before+1,"tap still reaches child");
 send(v,0,100,100);send(v,2,80,100);send(v,3,70,100);check(v.flingVelocity==0,"cancel does not fling");
+int[] direction={0};float[] scale={1};v.gestures(d->direction[0]=d,(f,x,y)->scale[0]*=f);
+v.x=0;send(v,0,100,100);send(v,2,170,100);send(v,1,170,100);check(direction[0]==-1,"outward swipe from left edge changes previous week");
+direction[0]=0;v.x=500;send(v,0,170,100);send(v,2,100,100);send(v,1,100,100);check(direction[0]==1,"outward swipe from right edge changes next week");
+direction[0]=0;v.x=450;send(v,0,170,100);send(v,2,120,100);send(v,1,120,100);check(direction[0]==0,"reaching edge itself cannot switch week");
+v.x=450;send(v,0,170,100);send(v,2,100,100);send(v,2,30,100);send(v,1,30,100);check(direction[0]==1,"same drag consumes content then sufficient outward distance switches week");
+direction[0]=0;v.x=50;send(v,0,100,100);send(v,2,170,100);send(v,2,240,100);send(v,1,240,100);check(direction[0]==-1,"same drag reaches left edge then continues outward");
+direction[0]=0;v.x=450;send(v,0,170,100);send(v,2,50,100);send(v,2,90,100);send(v,1,90,100);check(direction[0]==0&&v.x<500,"reversal back into content cancels outward drag");
+v.x=450;send(v,0,170,100);send(v,2,100,100);send(v,1,100,100);check(direction[0]==0,"only unconsumed edge distance counts, not prior scrolling");
+v.x=0;send(v,0,100,100);send(v,2,120,180);send(v,1,190,190);check(direction[0]==0,"vertical intent cannot switch week");
+v.x=0;send(v,0,100,100);send(v,2,140,100);send(v,1,140,100);check(direction[0]==0,"below threshold cannot switch week");
+v.x=0;send(v,0,100,100);send(v,5,100,100);MotionEvent pinch=new MotionEvent(2,170,100);pinch.multi=true;v.dispatchTouchEvent(pinch);send(v,1,190,100);
+check(scale[0]==.5f&&direction[0]==0&&v.flingVelocity==0&&vertical.flingVelocity==0,"pinch zoom cancels click, fling and edge navigation");
 v.onDetachedFromWindow();System.out.println("Week calendar checks passed: widget resources/routing and live production two-axis gesture with transport stand-ins");
 }}'''
 }
@@ -106,6 +127,7 @@ for name, content in files.items():
     path.write_text(content, encoding='utf-8')
     paths.append(path)
 paths.append(src / 'FreeCalendarScrollView.java')
+paths.append(src / 'CalendarSwipe.java')
 paths.append(src / 'LauncherShortcutActivity.java')
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 subprocess.run([str(java/'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str, paths)], check=True)

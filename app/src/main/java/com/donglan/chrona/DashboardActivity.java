@@ -1118,6 +1118,7 @@ public final class DashboardActivity extends Activity {
             titleSlot.addView(underlinedTitle(title, "今天的安排，点击查看课表", TimetableActivity.class),
                     new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL));
             row.addView(titleSlot, new LinearLayout.LayoutParams(0, -2, 1));
+            row.addView(homeSystemCalendarToggle(), new LinearLayout.LayoutParams(dp(44), dp(44)));
         } else {
             // The search field sits between the page title and the trailing control, so filtering
             // never moves the settings entry and the keyword stays reachable while scrolling.
@@ -1283,11 +1284,18 @@ public final class DashboardActivity extends Activity {
         return value != null && value.toLowerCase(Locale.ROOT).contains(query);
     }
 
-    private void home(HomeData data) {
+    private CheckBox homeSystemCalendarToggle() {
         CheckBox include = new CheckBox(this);
-        include.setText("包含系统其他日程");
-        include.setTextSize(13);
+        include.setButtonDrawable(R.drawable.ic_week_calendar);
+        include.setContentDescription("包含系统其他日程");
+        include.setTooltipText("包含系统其他日程");
+        include.setPadding(dp(10), 0, dp(10), 0);
+        include.setGravity(Gravity.CENTER_VERTICAL);
+        include.setBackgroundColor(Color.TRANSPARENT);
         UiStyle.toggle(include);
+        include.setMinHeight(dp(44));
+        include.setMinimumHeight(dp(44));
+        UiStyle.pressable(include);
         include.setChecked(HomeTimelinePreferences.includesSystemCalendar(this));
         include.setOnCheckedChangeListener((button, enabled) -> {
             if (enabled && !new CalendarStore(this).hasReadPermission()) {
@@ -1301,7 +1309,10 @@ public final class DashboardActivity extends Activity {
             if (!enabled) systemCalendarEvents = java.util.Collections.emptyList();
             refreshHomeContent();
         });
-        UiStyle.addSpaced(content, include, 0, 4);
+        return include;
+    }
+
+    private void home(HomeData data) {
         long now = data.now;
         ZoneId zone = data.zone;
         LocalDate today = data.today;
@@ -2301,6 +2312,7 @@ public final class DashboardActivity extends Activity {
                 scheduleBuildTarget = target;
                 Runnable build = () -> {
                 if (!scheduleResultCurrent(token, target)) return;
+                updatePendingCounts(data.review, data.failed);
                 final int previousY = targetScroll.getScrollY();
                 resultMotionGeneration++;
                 scheduleBuildTarget = target;
@@ -2369,6 +2381,8 @@ public final class DashboardActivity extends Activity {
         resultMotionGeneration++;
         int previous = scroll.getScrollY();
         try (TaskStore store = new TaskStore(this)) {
+            updatePendingCounts(store.taskCountByStatus(TaskRecord.NEEDS_REVIEW),
+                    store.taskCountByStatus(TaskRecord.FAILED));
             if (section == INBOX) renderInboxResults(store);
             else if (section == SCHEDULE) renderScheduleResults(store);
         } catch (Exception exception) {
@@ -2378,6 +2392,26 @@ public final class DashboardActivity extends Activity {
         scroll.scrollTo(0, previous);
         UiMotion.settleScroll(scroll, results);
         rememberRenderedPage();
+    }
+
+    private void updatePendingCounts(int review, int failed) {
+        pendingReview = review;
+        pendingFailed = failed;
+        SectionPage cachedInbox = sectionPages.get(INBOX);
+        DockNavigationLayout inboxChoices = section == INBOX ? filterChips
+                : cachedInbox == null ? null : cachedInbox.filterChips;
+        if (inboxChoices != null) {
+            updateFilterCount(inboxChoices, 1, review, "待确认");
+            updateFilterCount(inboxChoices, 3, failed, "失败");
+        }
+        if (navigation != null) drawNavigation();
+    }
+
+    private void updateFilterCount(DockNavigationLayout dock, int index, int count, String label) {
+        TextView badge = dock.itemAt(index).findViewWithTag("filter_count_badge");
+        badge.setText(count > 99 ? "99+" : Integer.toString(count));
+        badge.setContentDescription(label + " " + count + " 条收件");
+        badge.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
     }
 
     private void updateChipSelection(int selected) {
@@ -3222,10 +3256,12 @@ public final class DashboardActivity extends Activity {
             label.setOnClickListener(view -> { action.accept(index); dock.finishPageSelection(index); });
             View item = label;
             int count = counts == null ? 0 : counts[i];
-            if (count > 0) {
+            if (counts != null) {
                 FrameLayout cell = new FrameLayout(this); cell.setClipChildren(false); cell.setClipToPadding(false);
                 cell.addView(label, new FrameLayout.LayoutParams(-1, -1));
                 TextView badge = countBadge(count);
+                badge.setTag("filter_count_badge");
+                badge.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
                 FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(-2, dp(18), Gravity.TOP | Gravity.END);
                 badgeParams.setMargins(0, 0, dp(2), 0); cell.addView(badge, badgeParams); item = cell;
             }

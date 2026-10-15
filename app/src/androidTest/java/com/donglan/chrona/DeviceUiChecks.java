@@ -1,6 +1,8 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
+import android.widget.FrameLayout;
+import android.widget.ScrollView;
 import android.app.Application;
 import android.app.Instrumentation;
 import android.app.Notification;
@@ -100,21 +102,92 @@ final class DeviceUiChecks {
         entries.add(new AgendaEntry(3, 0, base + 86400000L * 6 + 86340000L, base + 86400000L * 7, "最后一分钟截止", "", "", "拾时", false, false, true));
         for (int i = 0; i < 3; i++) entries.add(new AgendaEntry(10+i, 0,
                 base + 3600000L * 10, base + 3600000L * 12, "并行日程 " + i + " · 长标题完整保存在索引中", "东二教学楼", "", "拾时", false, false, i != 2));
-        java.io.File image = WeekAgendaImage.write(context.getCacheDir(), monday, zone, entries, UiStyle.colors(context), "", true);
+        java.io.File image = WeekAgendaImage.write(context.getCacheDir(), monday, zone, entries, UiStyle.colors(context), "", true, true);
         android.graphics.BitmapFactory.Options size = new android.graphics.BitmapFactory.Options(); size.inJustDecodeBounds = true;
         android.graphics.BitmapFactory.decodeFile(image.getPath(), size);
         if (size.outWidth != WeekAgendaImage.WIDTH || size.outHeight <= 2400) throw new AssertionError("Full week bounds missing");
         java.io.File output = new java.io.File(context.getExternalFilesDir(null), "week-export-edge-cases.png");
         java.nio.file.Files.copy(image.toPath(), output.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING); image.delete();
-        java.io.File empty = WeekAgendaImage.write(context.getCacheDir(), monday, zone, List.of(), UiStyle.colors(context), "空筛选", false);
+        java.io.File table = WeekAgendaImage.write(context.getCacheDir(), monday, zone, entries, UiStyle.colors(context), "", true, false);
+        android.graphics.BitmapFactory.Options tableSize = new android.graphics.BitmapFactory.Options(); tableSize.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeFile(table.getPath(), tableSize);
+        require(tableSize.outWidth == size.outWidth && tableSize.outHeight < size.outHeight, "Table-only export retained the index height");
+        String tablePreview, indexPreview;
+        try { tablePreview = fixturePngPreview(table); indexPreview = fixturePngPreview(output); }
+        finally { table.delete(); }
+        java.io.File empty = WeekAgendaImage.write(context.getCacheDir(), monday, zone, List.of(), UiStyle.colors(context), "空筛选", false, false);
         if (empty.length() == 0) throw new AssertionError("Empty week PNG missing"); empty.delete();
         List<AgendaEntry> oversized = new ArrayList<>();
         for (int i=0;i<1000;i++) oversized.add(new AgendaEntry(100+i,0,base+36000000,base+39600000,"密集日程 "+i,"","","拾时",false,false,true));
-        try { java.io.File bad = WeekAgendaImage.write(context.getCacheDir(),monday,zone,oversized,UiStyle.colors(context),"",false);
+        try { java.io.File bad = WeekAgendaImage.write(context.getCacheDir(),monday,zone,oversized,UiStyle.colors(context),"",false,true);
             bad.delete(); throw new AssertionError("Oversized export must be rejected before bitmap allocation");
         } catch (java.io.IOException expected) { }
         return new JSONObject().put("width",size.outWidth).put("height",size.outHeight).put("image",output.getPath())
-                .put("emptyWeek",true).put("sizeLimit",true).toString();
+                .put("tableHeight",tableSize.outHeight).put("tablePreviewPngBase64",tablePreview).put("indexPreviewPngBase64",indexPreview)
+                .put("nativeGestures", nativeWeekGestures(test)).put("emptyWeek",true).put("sizeLimit",true).toString();
+    }
+    private static JSONObject nativeWeekGestures(Instrumentation test) throws Exception {
+        JSONObject result = new JSONObject(); Throwable[] error = {null};
+        test.runOnMainSync(() -> {
+            try {
+                Context context = test.getTargetContext();
+                FrameLayout parent = new FrameLayout(context), content = new FrameLayout(context);
+                FreeCalendarScrollView free = new FreeCalendarScrollView(context);
+                ScrollView vertical = new ScrollView(context);
+                vertical.addView(new View(context), new ScrollView.LayoutParams(1200, 2400));
+                content.addView(vertical, new FrameLayout.LayoutParams(1200, 400));
+                free.addView(content, new FrameLayout.LayoutParams(1200, 400));
+                parent.addView(free, new FrameLayout.LayoutParams(600, 400)); free.vertical(vertical);
+                int[] switched = {0}; float[] zoom = {1f};
+                free.gestures(direction -> switched[0] = direction, (factor, x, y) -> zoom[0] *= factor);
+                parent.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY)); parent.layout(0, 0, 600, 400);
+                long start = SystemClock.uptimeMillis();
+                dispatchFixtureTouch(free, start, start, MotionEvent.ACTION_DOWN, new float[]{220});
+                dispatchFixtureTouch(free, start, start+16, MotionEvent.ACTION_POINTER_DOWN | (1<<8), new float[]{220,380});
+                for (int i=1;i<=5;i++) dispatchFixtureTouch(free, start, start+16+i*24, MotionEvent.ACTION_MOVE,
+                        new float[]{220-i*30,380+i*30});
+                dispatchFixtureTouch(free, start, start+160, MotionEvent.ACTION_POINTER_UP | (1<<8), new float[]{70,530});
+                dispatchFixtureTouch(free, start, start+176, MotionEvent.ACTION_UP, new float[]{70});
+                require(zoom[0] > 1.1f && switched[0] == 0, "Native pinch did not zoom exclusively");
+                result.put("pinchFactor",zoom[0]).put("pinchDidNotChangeWeek",true);
+                free.scrollTo(300,0); start += 240;
+                dispatchFixtureTouch(free,start,start,MotionEvent.ACTION_DOWN,new float[]{100});
+                dispatchFixtureTouch(free,start,start+24,MotionEvent.ACTION_MOVE,new float[]{600});
+                dispatchFixtureTouch(free,start,start+48,MotionEvent.ACTION_UP,new float[]{600});
+                require(switched[0] == -1, "Native continuous outward drag did not select previous week");
+                result.put("continuousPreviousWeek",true); switched[0]=0;
+                free.scrollTo(600,0); start += 120;
+                dispatchFixtureTouch(free,start,start,MotionEvent.ACTION_DOWN,new float[]{400});
+                dispatchFixtureTouch(free,start,start+24,MotionEvent.ACTION_MOVE,new float[]{180});
+                dispatchFixtureTouch(free,start,start+48,MotionEvent.ACTION_UP,new float[]{180});
+                require(switched[0] == 1, "Native outward drag did not select next week");
+                result.put("nextWeek",true).put("scope","native widgets and ScaleGestureDetector in a local fixture, not a full Activity");
+            } catch (Throwable failure) { error[0] = failure; }
+        });
+        if (error[0] != null) throw new IllegalStateException("Native week gesture fixture failed",error[0]);
+        return result;
+    }
+    private static void dispatchFixtureTouch(View view, long down, long now, int action, float[] xs) {
+        MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[xs.length];
+        MotionEvent.PointerCoords[] coordinates = new MotionEvent.PointerCoords[xs.length];
+        for (int i=0;i<xs.length;i++) {
+            properties[i] = new MotionEvent.PointerProperties(); properties[i].id=i; properties[i].toolType=MotionEvent.TOOL_TYPE_FINGER;
+            coordinates[i] = new MotionEvent.PointerCoords(); coordinates[i].x=xs[i]; coordinates[i].y=200; coordinates[i].pressure=1; coordinates[i].size=1;
+        }
+        MotionEvent event = MotionEvent.obtain(down,now,action,xs.length,properties,coordinates,0,0,1,1,0,0,
+                android.view.InputDevice.SOURCE_TOUCHSCREEN,0);
+        try { view.dispatchTouchEvent(event); } finally { event.recycle(); }
+    }
+    private static String fixturePngPreview(java.io.File image) {
+        android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options(); options.inSampleSize = 4;
+        android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(image.getPath(), options);
+        require(bitmap != null, "Fixture PNG cannot be decoded");
+        try {
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            require(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bytes), "Fixture PNG preview cannot be encoded");
+            return android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP);
+        } finally { bitmap.recycle(); }
     }
     private static String reminderState(Instrumentation test) throws Exception {
         Context context = test.getTargetContext(); long now = System.currentTimeMillis();

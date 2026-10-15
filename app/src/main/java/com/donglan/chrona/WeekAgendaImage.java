@@ -24,7 +24,7 @@ final class WeekAgendaImage {
     private static final int LEFT = 112, RIGHT = 32, TOP = 240, HOUR_HEIGHT = 100;
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
     static File write(File directory, LocalDate first, ZoneId zone, List<AgendaEntry> input,
-            UiStyle.Palette colors, String filter, boolean system) throws java.io.IOException {
+            UiStyle.Palette colors, String filter, boolean system, boolean includeIndex) throws java.io.IOException {
         long begin=first.atStartOfDay(zone).toInstant().toEpochMilli(),until=first.plusDays(7).atStartOfDay(zone).toInstant().toEpochMilli();
         List<AgendaEntry> entries=new ArrayList<>();
         for(AgendaEntry e:input)if(e.overlaps(begin,until))entries.add(e);
@@ -37,15 +37,15 @@ final class WeekAgendaImage {
             for(AgendaEntry e:entries)if(e.allDay&&e.overlaps(a,b))count++;maxAllDay=Math.max(maxAllDay,count);
         }
         int allDayHeight=maxAllDay==0?0:40+maxAllDay*46,gridTop=TOP+allDayHeight,gridHeight=(lastHour-firstHour)*HOUR_HEIGHT;
-        List<StaticLayout> details=new ArrayList<>();int detailsHeight=entries.isEmpty()?64:0;
-        for(int i=0;i<entries.size();i++) {
+        List<StaticLayout> details=includeIndex?new ArrayList<>():List.of();int detailsHeight=includeIndex&&entries.isEmpty()?64:0;
+        if(includeIndex) for(int i=0;i<entries.size();i++) {
             AgendaEntry e=entries.get(i);String range="task".equals(e.category)&&e.end==e.start?(e.dueAtMillis!=null?"截止 · ":"待办 · ")+Instant.ofEpochMilli(e.start).atZone(zone).format(DateTimeFormatter.ofPattern("M/d HH:mm")):e.allDay?Instant.ofEpochMilli(e.start).atZone(zone).format(DateTimeFormatter.ofPattern("M/d"))+" — "+Instant.ofEpochMilli(e.finish()-1).atZone(zone).format(DateTimeFormatter.ofPattern("M/d"))+" · 全天":
                     Instant.ofEpochMilli(e.start).atZone(zone).format(DateTimeFormatter.ofPattern("M/d HH:mm"))+" — "+Instant.ofEpochMilli(e.finish()).atZone(zone).format(DateTimeFormatter.ofPattern("M/d HH:mm"));
             String value=(i+1)+"  "+e.title+"\n"+range+(e.location.isBlank()?"":" · "+e.location)+" · "+e.source+(e.confirmed?"":" · 待确认");
             StaticLayout layout=paragraph(value,WIDTH-96,28,colors.text,0,false);details.add(layout);detailsHeight+=layout.getHeight()+24;
             if((long)WIDTH*(gridTop+gridHeight+120+detailsHeight+64)>MAX_PIXELS)throw new java.io.IOException("本周日程过多，图片过长；请先用搜索缩小范围再导出");
         }
-        int height=gridTop+gridHeight+120+detailsHeight+64;
+        int height=gridTop+gridHeight+(includeIndex?120+detailsHeight:0)+64;
         if((long)WIDTH*height>MAX_PIXELS)throw new java.io.IOException("本周日程过多，图片过长；请先用搜索缩小范围再导出");
         Bitmap bitmap=Bitmap.createBitmap(WIDTH,height,Bitmap.Config.ARGB_8888);
         File file=null;
@@ -63,7 +63,7 @@ final class WeekAgendaImage {
                 if(maxAllDay>0) {
                     int row=0;long a=first.plusDays(d).atStartOfDay(zone).toInstant().toEpochMilli(),b=first.plusDays(d+1).atStartOfDay(zone).toInstant().toEpochMilli();
                     for(AgendaEntry e:entries)if(e.allDay&&e.overlaps(a,b)) {
-                        String text=(entries.indexOf(e)+1)+" · "+e.title;
+                        String text=(includeIndex?(entries.indexOf(e)+1)+" · ":"")+e.title;
                         drawText(canvas,text,x+10,TOP+row*46,Math.round(dayWidth-20),38,24,colors.text);row++;
                     }
                 }
@@ -83,15 +83,18 @@ final class WeekAgendaImage {
                 int accent=CalendarSourceColors.mix(block.entry.calendarColor,colors.primary);
                 paint.setStyle(Paint.Style.FILL);paint.setColor(mix(colors.surface,accent,.14f));canvas.drawRoundRect(rect,14,14,paint);
                 paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2);paint.setColor(accent);canvas.drawRoundRect(rect,14,14,paint);paint.setStyle(Paint.Style.FILL);
-                String text=(entries.indexOf(block.entry)+1)+" · "+block.entry.title+"\n"+CLOCK.format(Instant.ofEpochMilli(block.entry.start).atZone(zone))+" — "+CLOCK.format(Instant.ofEpochMilli(block.entry.finish()).atZone(zone));
+                String number=includeIndex?(entries.indexOf(block.entry)+1)+" · ":"";
+                String text=number+block.entry.title+"\n"+CLOCK.format(Instant.ofEpochMilli(block.entry.start).atZone(zone))+" — "+CLOCK.format(Instant.ofEpochMilli(block.entry.finish()).atZone(zone));
                 if(rect.height()<38) {
-                    drawText(canvas,(entries.indexOf(block.entry)+1)+" · "+block.entry.title,rect.left+4,
+                    drawText(canvas,number+block.entry.title,rect.left+4,
                             Math.max(gridTop,rect.top-29),Math.max(1,(int)rect.width()-8),27,22,colors.text);
                 } else drawText(canvas,text,rect.left+8,rect.top+6,Math.max(1,(int)rect.width()-16),Math.max(0,(int)rect.height()-12),26,colors.text);
             }
+            if(includeIndex) {
             int y=gridTop+gridHeight+64;label(canvas,paint,"日程索引",48,y,34,colors.primary);y+=32;
             if(entries.isEmpty())label(canvas,paint,"本周暂无日程",48,y+40,28,colors.muted);
             for(StaticLayout detail:details){canvas.save();canvas.translate(48,y);detail.draw(canvas);canvas.restore();y+=detail.getHeight()+24;}
+            }
             label(canvas,paint,"拾时 · Chrona",48,height-24,24,colors.muted);
             file=File.createTempFile("week-export-",".png",directory);
             try(FileOutputStream stream=new FileOutputStream(file)){if(!bitmap.compress(Bitmap.CompressFormat.PNG,100,stream))throw new java.io.IOException("无法生成图片");}

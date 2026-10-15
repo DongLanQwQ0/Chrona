@@ -118,6 +118,7 @@ final class DockNavigationLayout extends FrameLayout {
         return host;
     }
     private static void fitLabel(View view) {
+        if (view instanceof FrameLayout wrapper) view = wrapper.getChildAt(0);
         if (!(view instanceof TextView label)) return;
         android.util.DisplayMetrics metrics = label.getResources().getDisplayMetrics();
         // Android 14+ scales sp nonlinearly; retain the caller's original sp ceiling.

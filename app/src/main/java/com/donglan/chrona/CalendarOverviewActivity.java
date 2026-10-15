@@ -115,6 +115,7 @@ public final class CalendarOverviewActivity extends Activity {
     private static final int CREATE_WEEK_IMAGE = 811;
     private static final java.util.concurrent.ExecutorService EXPORTS = java.util.concurrent.Executors.newSingleThreadExecutor();
     private boolean exportingWeek;
+    private float weekZoom = 1f;
     private String weekExportName;
     private android.widget.Switch sourceSwitch;
     private View timeLines;
@@ -141,6 +142,7 @@ public final class CalendarOverviewActivity extends Activity {
         mode = getPreferences(MODE_PRIVATE).getInt("mode", MONTH);
         if (getIntent().getBooleanExtra("open_week", false) && state == null) { mode = WEEK; date = LocalDate.now(); }
         if (state != null) {
+            weekZoom = state.getFloat("week_zoom", 1f);
             weekExportName = state.getString("week_export_name");
             date = LocalDate.parse(state.getString("date", date.toString()));
             mode = state.getInt("mode", mode); query = state.getString("query", "");
@@ -295,6 +297,7 @@ public final class CalendarOverviewActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state); state.putString("date", date.toString()); state.putInt("mode", mode); state.putString("query", query);
         state.putString("week_export_name", weekExportName);
+        state.putFloat("week_zoom", weekZoom);
         rememberPosition();
         String[] keys = positions.keySet().toArray(new String[0]); int[] xs = new int[keys.length], ys = new int[keys.length];
         for (int i = 0; i < keys.length; i++) { int[] position = positions.get(keys[i]); xs[i] = position[0]; ys[i] = position[1]; }
@@ -578,6 +581,23 @@ public final class CalendarOverviewActivity extends Activity {
         if (mode != WEEK || exportingWeek) return;
         if (loading || !renderedKey.equals(windowKey(snapshot.zone))) { Feedback.show(this, "日程仍在读取，请稍候"); return; }
         if (snapshot.truncated || includeSystem && snapshot.systemUnavailable) { Feedback.show(this, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
+        android.app.Dialog dialog = new android.app.Dialog(this);
+        LinearLayout content = column(); content.setPadding(dp(20), dp(20), dp(20), dp(20));
+        UiStyle.addSpaced(content, text("导出周日程", 20, true), 0, 16);
+        android.widget.Switch index = new android.widget.Switch(this);
+        index.setText("附带日程索引"); index.setTextSize(15); index.setTextColor(UiStyle.colors(this).text);
+        index.setMinHeight(dp(48)); index.setChecked(getPreferences(MODE_PRIVATE).getBoolean("week_export_index", false));
+        index.setSwitchPadding(dp(16)); UiStyle.toggle(index); content.addView(index, new LinearLayout.LayoutParams(-1, -2));
+        UiStyle.addSpaced(content, action("保存图片", () -> {
+            boolean includeIndex = index.isChecked();
+            getPreferences(MODE_PRIVATE).edit().putBoolean("week_export_index", includeIndex).apply();
+            dialog.dismiss(); writeWeekImage(includeIndex);
+        }), 16, 0);
+        UiStyle.showFloatingDialog(dialog, content);
+    }
+    private void writeWeekImage(boolean includeIndex) {
+        if (mode != WEEK || exportingWeek || loading || !renderedKey.equals(windowKey(snapshot.zone))) return;
+        if (snapshot.truncated || includeSystem && snapshot.systemUnavailable) { Feedback.show(this, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
         exportingWeek = true; weekExportButton.setEnabled(false);
         LocalDate first = windowStart(); ZoneId zone = snapshot.zone; List<AgendaEntry> entries = List.copyOf(matching());
         UiStyle.Palette palette = UiStyle.colors(this); String search = query; boolean system = includeSystem;
@@ -585,7 +605,7 @@ public final class CalendarOverviewActivity extends Activity {
         java.lang.ref.WeakReference<CalendarOverviewActivity> owner = new java.lang.ref.WeakReference<>(this);
         EXPORTS.execute(() -> {
             try {
-                java.io.File image = WeekAgendaImage.write(app.getCacheDir(), first, zone, entries, palette, search, system);
+                java.io.File image = WeekAgendaImage.write(app.getCacheDir(), first, zone, entries, palette, search, system, includeIndex);
                 responses.post(() -> {
                     CalendarOverviewActivity screen = owner.get();
                     if (screen == null || screen.isDestroyed() || screen.isFinishing()) { image.delete(); return; }
@@ -862,11 +882,25 @@ public final class CalendarOverviewActivity extends Activity {
         LocalDate first = windowStart(); ZoneId zone = snapshot.zone;
         int viewport = Math.max(dp(240), body.getWidth() > 0 ? body.getWidth() : getResources().getDisplayMetrics().widthPixels - dp(40));
         int edge = PressFeedback.edgeSpace(viewport);
-        int gutter = dp(40), width = Math.max(viewport - 2 * edge, days == 7 ? dp(670) : viewport - 2 * edge), dayWidth = (width - gutter) / days;
+        int gutter = dp(40);
+        int baseWidth = Math.max(viewport - 2 * edge, days == 7 ? dp(670) : viewport - 2 * edge);
+        class Geometry {
+            int width, dayWidth, hourHeight, height;
+            void update(float scale) {
+                width = Math.round(gutter + (baseWidth - gutter) * scale);
+                dayWidth = (width - gutter) / days; width = gutter + days * dayWidth;
+                hourHeight = Math.max(1, Math.round(dp(72) * scale)); height = hourHeight * 24;
+            }
+        }
+        Geometry geometry = new Geometry();
+        float minimumZoom = Math.max(.1f, (viewport - 2f * edge - gutter) / (baseWidth - gutter));
+        if (days == 7) weekZoom = Math.max(minimumZoom, Math.min(2f, weekZoom));
+        geometry.update(days == 7 ? weekZoom : 1f);
+        List<Runnable> geometryBindings = new ArrayList<>();
         HorizontalScrollView horizontal = mode == WEEK ? new FreeCalendarScrollView(this) : new HorizontalScrollView(this); horizontal.setHorizontalScrollBarEnabled(false);
         horizontalViewport = horizontal; watchScroll(horizontal);
         LinearLayout layout = column(); layout.setPadding(edge, dp(4), edge, dp(4));
-        horizontal.addView(layout, new FrameLayout.LayoutParams(width + 2 * edge, -1));
+        horizontal.addView(layout, new FrameLayout.LayoutParams(geometry.width + 2 * edge, -1));
         LinearLayout dates = row(); View space = new View(this); dates.addView(space, new LinearLayout.LayoutParams(gutter, dp(60)));
         for (int d = 0; d < days; d++) {
             LocalDate day = first.plusDays(d);
@@ -875,7 +909,9 @@ public final class CalendarOverviewActivity extends Activity {
             });
             label.setTag("day:" + day);
             if (day.equals(LocalDate.now())) calendarSurface(label, true, 16, true);
-            dates.addView(label, new LinearLayout.LayoutParams(dayWidth, dp(60)));
+            dates.addView(label, new LinearLayout.LayoutParams(geometry.dayWidth, dp(60)));
+            geometryBindings.add(() -> { android.view.ViewGroup.LayoutParams p = label.getLayoutParams(); p.width = geometry.dayWidth; label.setLayoutParams(p); });
+            if (days == 7) { label.setPadding(dp(2), 0, dp(2), 0); label.setTextSize(12); }
         }
         layout.addView(dates);
         if (snapshot.systemUnavailable || snapshot.truncated) notice(layout, snapshot.systemUnavailable ? "系统日程暂时无法读取" : "请缩小日期范围");
@@ -896,13 +932,14 @@ public final class CalendarOverviewActivity extends Activity {
             }
             if (allDayItems.size() > visible) enqueueCalendarBuild(() ->
                     column.addView(action("+" + (allDayItems.size() - visible), () -> showAllDay(day, allDayItems))));
-            allDays.addView(column, new LinearLayout.LayoutParams(dayWidth, -2));
+            allDays.addView(column, new LinearLayout.LayoutParams(geometry.dayWidth, -2));
+            geometryBindings.add(() -> { android.view.ViewGroup.LayoutParams p = column.getLayoutParams(); p.width = geometry.dayWidth; column.setLayoutParams(p); });
         }
         if (hasAllDay) layout.addView(allDays);
         ScrollView vertical = new ScrollView(this); vertical.setVerticalScrollBarEnabled(false);
         if (horizontal instanceof FreeCalendarScrollView free) free.vertical(vertical);
         verticalViewport = vertical; watchScroll(vertical);
-        FrameLayout grid = new FrameLayout(this); int hourHeight = dp(72), height = hourHeight * 24;
+        FrameLayout grid = new FrameLayout(this);
         int maxCardHeight = 0;
         UiStyle.Palette gridColors = UiStyle.colors(this);
         String[] hourLabels = new String[24];
@@ -912,37 +949,59 @@ public final class CalendarOverviewActivity extends Activity {
             @Override protected void onDraw(Canvas canvas) {
                 paint.setStrokeWidth(dp(1)); paint.setTextSize(dp(11));
                 for (int hour = 0; hour <= 24; hour++) {
-                    float y = hour * hourHeight; paint.setColor(gridColors.outline);
-                    canvas.drawLine(gutter, y, width, y, paint);
+                    float y = hour * geometry.hourHeight; paint.setColor(gridColors.outline);
+                    canvas.drawLine(gutter, y, geometry.width, y, paint);
                     if (hour < 24) { paint.setColor(gridColors.muted); canvas.drawText(hourLabels[hour], dp(4), y + dp(13), paint); }
                 }
                 paint.setColor(gridColors.outline);
-                for (int d = 0; d <= days; d++) canvas.drawLine(gutter + d * dayWidth, 0, gutter + d * dayWidth, height, paint);
+                for (int d = 0; d <= days; d++) canvas.drawLine(gutter + d * geometry.dayWidth, 0, gutter + d * geometry.dayWidth, geometry.height, paint);
             }
         };
         grid.addView(timeLines, new FrameLayout.LayoutParams(-1, -1));
         android.graphics.Paint.FontMetrics smallMetrics = text("", 12, true).getPaint().getFontMetrics();
         android.graphics.Paint.FontMetrics largeMetrics = text("", 14, true).getPaint().getFontMetrics();
+        List<java.util.function.IntSupplier> cardHeights = new ArrayList<>();
         for (int d = 0; d < days; d++) for (CalendarTimelineLayout.Block block : CalendarTimelineLayout.day(entries, first.plusDays(d), zone)) {
             final int dayIndex = d;
             AgendaEntry e = block.entry;
-            int durationHeight = (int) ((block.endMinute - block.startMinute) / 60 * hourHeight) - dp(2);
-            boolean compact = durationHeight < dp(36);
-            android.graphics.Paint.FontMetrics metrics = !compact && days == 1 ? largeMetrics : smallMetrics;
-            int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
-            int cardHeight = Math.max(lineHeight + dp(compact ? 4 : 8), durationHeight);
-            maxCardHeight = Math.max(maxCardHeight, cardHeight);
+            // Keep view creation on the existing frame queue; zoom only relays out live views.
+            java.util.function.IntSupplier measureHeight = () -> {
+                int duration = (int) ((block.endMinute - block.startMinute) / 60 * geometry.hourHeight) - dp(2);
+                boolean compact = duration < dp(36);
+                android.graphics.Paint.FontMetrics metrics = !compact && days == 1 ? largeMetrics : smallMetrics;
+                int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
+                return Math.max(lineHeight + dp(compact ? 4 : 8), duration);
+            };
+            cardHeights.add(measureHeight); maxCardHeight = Math.max(maxCardHeight, measureHeight.getAsInt());
             enqueueCalendarBuild(() -> {
-            TextView card = text(compact ? ("task".equals(e.category) && e.end==e.start ? "• " : "") + e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location), compact ? 12 : days == 1 ? 14 : 12, true);
-            card.setPadding(dp(5), dp(compact ? 1 : 4), dp(4), dp(compact ? 1 : 3)); card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            TextView card = text("", days == 1 ? 14 : 12, true);
+            card.setGravity(Gravity.TOP); card.setEllipsize(android.text.TextUtils.TruncateAt.END);
             card.setTextColor(UiStyle.colors(this).text); eventSurface(card, e);
-            card.setMaxLines(compact ? 1 : Math.max(1, (cardHeight - dp(7)) / lineHeight));
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(Math.max(dp(12), dayWidth / block.lanes - dp(4)), cardHeight);
-            params.leftMargin = gutter + dayIndex * dayWidth + block.lane * dayWidth / block.lanes + dp(2);
-            params.topMargin = Math.max(0, Math.min(height - cardHeight, (int) (block.startMinute / 60 * hourHeight) + dp(1)));
+            int[] appearance = {-1, -1};
+            Runnable place = () -> {
+                int duration = (int) ((block.endMinute - block.startMinute) / 60 * geometry.hourHeight) - dp(2);
+                boolean compact = duration < dp(36);
+                android.graphics.Paint.FontMetrics metrics = !compact && days == 1 ? largeMetrics : smallMetrics;
+                int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
+                int cardHeight = measureHeight.getAsInt();
+                int shape = compact ? 1 : 0;
+                if (appearance[0] != shape) {
+                card.setText(compact ? ("task".equals(e.category) && e.end==e.start ? "• " : "") + e.title : e.title + "\n" + time(e) + (e.location.trim().isEmpty() ? "" : "\n" + e.location));
+                card.setTextSize(compact ? 12 : days == 1 ? 14 : 12);
+                card.setPadding(dp(5), dp(compact ? 1 : 4), dp(4), dp(compact ? 1 : 3));
+                appearance[0] = shape;
+                }
+                int lines = compact ? 1 : Math.max(1, (cardHeight - dp(7)) / lineHeight);
+                if (appearance[1] != lines) { card.setMaxLines(lines); appearance[1] = lines; }
+                FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(Math.max(days == 1 ? dp(12) : 1, geometry.dayWidth / block.lanes - dp(4)), cardHeight);
+                params.leftMargin = gutter + dayIndex * geometry.dayWidth + block.lane * geometry.dayWidth / block.lanes + dp(2);
+                params.topMargin = Math.max(0, Math.min(geometry.height - cardHeight, (int) (block.startMinute / 60 * geometry.hourHeight) + dp(1)));
+                card.setLayoutParams(params);
+            };
+            place.run(); geometryBindings.add(place);
             card.setContentDescription(e.title + "，" + time(e) + "，" + e.location + "，" + e.source);
             card.setTag("entry:" + e.key() + ":" + first.plusDays(dayIndex)); card.setFocusable(true);
-            card.setOnClickListener(v -> open(e)); grid.addView(card, params);
+            card.setOnClickListener(v -> open(e)); grid.addView(card);
             });
         }
         View nowLine = new View(this) {
@@ -950,10 +1009,10 @@ public final class CalendarOverviewActivity extends Activity {
             @Override protected void onDraw(Canvas canvas) {
                 LocalDate today = LocalDate.now(); long index = java.time.temporal.ChronoUnit.DAYS.between(first, today);
                 if (index < 0 || index >= days) return;
-                float y = (float) (CalendarTimelineLayout.minute(System.currentTimeMillis(), zone) / 60 * hourHeight);
+                float y = (float) (CalendarTimelineLayout.minute(System.currentTimeMillis(), zone) / 60 * geometry.hourHeight);
                 paint.setColor(UiStyle.colors(CalendarOverviewActivity.this).primary); paint.setStrokeWidth(dp(2));
-                float left = gutter + index * dayWidth;
-                canvas.drawLine(left, y, left + dayWidth, y, paint); canvas.drawCircle(left + dp(3), y, dp(3), paint);
+                float left = gutter + index * geometry.dayWidth;
+                canvas.drawLine(left, y, left + geometry.dayWidth, y, paint); canvas.drawCircle(left + dp(3), y, dp(3), paint);
             }
         };
         nowLine.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -962,18 +1021,63 @@ public final class CalendarOverviewActivity extends Activity {
         FrameLayout gridContent = new FrameLayout(this);
         int verticalEdge = PressFeedback.edgeSpace(maxCardHeight);
         gridContent.setPadding(edge, verticalEdge, edge, verticalEdge);
-        gridContent.addView(grid, new FrameLayout.LayoutParams(width, height));
-        vertical.addView(gridContent, new ScrollView.LayoutParams(width + 2 * edge, height + 2 * verticalEdge));
-        LinearLayout.LayoutParams gridViewportParams = new LinearLayout.LayoutParams(width + 2 * edge, 0, 1);
+        gridContent.addView(grid, new FrameLayout.LayoutParams(geometry.width, geometry.height));
+        vertical.addView(gridContent, new ScrollView.LayoutParams(geometry.width + 2 * edge, geometry.height + 2 * verticalEdge));
+        LinearLayout.LayoutParams gridViewportParams = new LinearLayout.LayoutParams(geometry.width + 2 * edge, 0, 1);
         gridViewportParams.setMargins(-edge, 0, -edge, 0);
         layout.addView(vertical, gridViewportParams);
         body.addView(horizontal, new FrameLayout.LayoutParams(-1, -1));
+        if (horizontal instanceof FreeCalendarScrollView free) {
+            final View gridLines = grid.getChildAt(0);
+            class ZoomLayout implements FreeCalendarScrollView.Zoom, Runnable {
+                float pending = weekZoom, focusX, focusY;
+                boolean scheduled;
+                @Override public void scale(float factor, float x, float y) {
+                    pending = Math.max(minimumZoom, Math.min(2f, pending * factor));
+                    focusX = x; focusY = y;
+                    if (!scheduled) { scheduled = true; horizontal.postOnAnimation(this); }
+                }
+                @Override public void run() {
+                    scheduled = false;
+                    if (horizontal != horizontalViewport || bodyTransitionRunning) return;
+                    float oldScale = weekZoom;
+                    if (Math.abs(pending - oldScale) < .0001f) return;
+                    // Express the focal point in day/hour coordinates before changing layout.
+                    float dayAtFocus = (horizontal.getScrollX() + focusX - edge - gutter) / geometry.dayWidth;
+                    float gridFocusY = focusY - vertical.getTop();
+                    float hourAtFocus = (vertical.getScrollY() + gridFocusY - gridContent.getPaddingTop()) / geometry.hourHeight;
+                    weekZoom = pending; geometry.update(weekZoom);
+                    int currentMaxCardHeight = 0;
+                    for (java.util.function.IntSupplier measure : cardHeights) currentMaxCardHeight = Math.max(currentMaxCardHeight, measure.getAsInt());
+                    int newVerticalEdge = PressFeedback.edgeSpace(currentMaxCardHeight);
+                    gridContent.setPadding(edge, newVerticalEdge, edge, newVerticalEdge);
+                    android.view.ViewGroup.LayoutParams p = layout.getLayoutParams(); p.width = geometry.width + 2 * edge; layout.setLayoutParams(p);
+                    p = grid.getLayoutParams(); p.width = geometry.width; p.height = geometry.height; grid.setLayoutParams(p);
+                    p = gridContent.getLayoutParams(); p.width = geometry.width + 2 * edge; p.height = geometry.height + 2 * newVerticalEdge; gridContent.setLayoutParams(p);
+                    p = vertical.getLayoutParams(); p.width = geometry.width + 2 * edge; vertical.setLayoutParams(p);
+                    for (Runnable binding : geometryBindings) binding.run();
+                    gridLines.invalidate(); nowLine.invalidate();
+                    int targetX = Math.round(edge + gutter + dayAtFocus * geometry.dayWidth - focusX);
+                    // Scroll only after the new dimensions have been measured.
+                    horizontal.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+                        @Override public boolean onPreDraw() {
+                            horizontal.getViewTreeObserver().removeOnPreDrawListener(this);
+                            int targetY = Math.round(newVerticalEdge + hourAtFocus * geometry.hourHeight - (focusY - vertical.getTop()));
+                            horizontal.scrollTo(Math.max(0, targetX), 0); vertical.scrollTo(0, Math.max(0, targetY));
+                            return true;
+                        }
+                    });
+                }
+            }
+            ZoomLayout zoom = new ZoomLayout();
+            free.gestures(direction -> { if (!loading && !bodyTransitionRunning) shift(direction); }, zoom);
+        }
         vertical.post(() -> {
             if (vertical != verticalViewport || positions.containsKey(renderedKey)) return;
             int hour = CalendarViewport.hour(first, days, LocalDate.now(), Instant.now().atZone(zone).toLocalTime());
-            vertical.scrollTo(0, verticalEdge + hour * hourHeight);
+            vertical.scrollTo(0, verticalEdge + hour * geometry.hourHeight);
             int focus = CalendarViewport.column(first, days, date);
-            horizontal.scrollTo(Math.max(0, gutter + focus * dayWidth + dayWidth / 2 - viewport / 2), 0);
+            horizontal.scrollTo(Math.max(0, gutter + focus * geometry.dayWidth + geometry.dayWidth / 2 - viewport / 2), 0);
         });
     }
     private void showAllDay(LocalDate day, List<AgendaEntry> items) {

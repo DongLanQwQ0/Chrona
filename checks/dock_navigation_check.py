@@ -51,6 +51,7 @@ public class View {
  public static void advance(long ms){long end=now+ms;while(!jobs.isEmpty()&&jobs.peek().time<=end){Job j=jobs.remove();now=j.time;j.action.run();}now=end;}
  public static void reset(){jobs.clear();now=sequence=0;}
  public interface OnClickListener {void onClick(View v);} private OnClickListener click;
+ public static final int VISIBLE=0,INVISIBLE=4,GONE=8;private Object tag;private int visibility=VISIBLE;public void setTag(Object value){tag=value;}public Object getTag(){return tag;}public void setVisibility(int value){visibility=value;}public int getVisibility(){return visibility;}
   private boolean pressed,enabled=true; private final Runnable perform=()->{if(pressed){pressed=false;performClick();}};
   public boolean isEnabled(){return enabled;}public void setEnabled(boolean value){enabled=value;}
  protected Context context; protected View parent; public int l,t,r,b;
@@ -190,8 +191,9 @@ public class DockNavigationCheck extends Context {
   require(direct.autoMin==8&&direct.autoMax==18&&direct.autoStep==1&&direct.autoUnit==android.util.TypedValue.COMPLEX_UNIT_SP,"Autosize retains caller's sp ceiling with 8sp minimum and 1sp steps");
   TextView weighted=new TextView(c);weighted.setTextSize(14);labels.addItem(weighted,new LinearLayout.LayoutParams(0,42,1));
   require(weighted.autoMin==8&&weighted.autoMax==14&&weighted.singleLine,"Weighted addItem follows the same label fitting path");
-  FrameLayout wrapped=new FrameLayout(c);TextView nestedLabel=new TextView(c);wrapped.addView(nestedLabel);labels.addItem(wrapped);
-  require(nestedLabel.autoMax==0&&nestedLabel.fontPadding,"Compound Dock items retain their caller-owned typography");
+  FrameLayout wrapped=new FrameLayout(c);TextView nestedLabel=new TextView(c);wrapped.addView(nestedLabel);TextView countLabel=new TextView(c);wrapped.addView(countLabel);labels.addItem(wrapped);
+  require(nestedLabel.autoMin==8&&nestedLabel.autoMax==14&&nestedLabel.singleLine&&!nestedLabel.fontPadding&&!nestedLabel.horizontalScrolling&&countLabel.autoMax==0,
+    "Badge wrapper fits its first label while retaining the count badge typography");
   View.reset();DockNavigationCheck builder=new DockNavigationCheck();List<Integer> filters=new ArrayList<>();DockNavigationLayout five=builder.filterDock(new String[]{"全部","待确认","处理中","失败","已写入"},0,filters::add,new int[]{0,3,0,2,0});
   require(builder.strips.contains(five),"Filter dock is registered in page gesture priorities");
   LinearLayout content=new LinearLayout(c);FrameLayout host=new FrameLayout(c),viewport=new FrameLayout(c);
@@ -242,7 +244,9 @@ public class DockNavigationCheck extends Context {
   require(five.itemCount()==5,"Inbox selection bar uses the shared five-item dock");
   require(five.itemAt(1) instanceof FrameLayout&&((FrameLayout)five.itemAt(1)).getChildCount()==2,"Review badge stays attached to its dock item");
   ((FrameLayout)five.itemAt(1)).getChildAt(0).performClick();require(filters.equals(List.of(1)),"Counted filter invokes original selection once");
-  five.itemAt(4).performClick();require(filters.equals(List.of(1,4)),"Final inbox filter remains directly selectable");
+  FrameLayout finalFilter=(FrameLayout)five.itemAt(4);finalFilter.getChildAt(0).performClick();
+  require(filters.equals(List.of(1,4))&&finalFilter.getChildAt(1).getVisibility()==View.GONE&&"filter_count_badge".equals(finalFilter.getChildAt(1).getTag()),
+    "Zero-count final inbox filter retains its selectable label and hidden tagged badge");
   DockNavigationLayout four=new DockNavigationCheck().filterDock(new String[]{"未来","未定","以前","全部"},0,filters::add,null);
   require(four.itemCount()==4,"Schedule presets use the same dock framework");four.itemAt(2).performClick();require(filters.get(filters.size()-1)==2,"Schedule preset selection is retained");
   for(int i=0;i<3;i++){init();touch(0,i*100+25,35);View.advance(100);touch(1,i*100+25,35);
