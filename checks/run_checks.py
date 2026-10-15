@@ -20,7 +20,7 @@ GROUPS = {
         "startup_metrics_check.py",
     ),
     "java": (
-        "inbox_query_check.py", "schedule_query_check.py", "detail_draft_check.py",
+        "inbox_query_check.py", "schedule_query_check.py", "detail_draft_check.py", "detail_editor_check.py",
         "job_execution_check.py", "dock_navigation_check.py", "acrylic_translation_check.py", "calendar_build_frame_check.py", "calendar_slide_check.py", "press_feedback_check.py", "carousel_motion_check.py", "choice_motion_check.py",
         "lan_security_check.py", "edit_conflict_check.py", "settings_layout_check.py", "attachment_remove_check.py",
         "lifecycle_motion_check.py", "native_motion_core_check.py", "section_motion_check.py",
@@ -30,7 +30,7 @@ GROUPS = {
         "home_filter_reference_check.py", "sync_settings_check.py",
         "widget_source_failure_check.py",
         "widget_preferences_check.py",
-        "agenda_features_check.py", "agenda_notification_check.py", "agenda_slots_check.py", "reminder_preferences_check.py", "live_reminder_service_check.py",
+        "agenda_features_check.py", "agenda_notification_check.py", "agenda_slots_check.py", "reminder_preferences_check.py", "live_reminder_service_check.py", "completion_alerts_check.py", "notification_delivery_status_check.py",
         "calendar_review_check.py", "week_calendar_check.py", "launcher_shortcuts_check.py",
         "dashboard_switch_check.py", "schedule_refresh_frame_check.py", "vivo_atomic_check.py", "calendar_event_build_check.py",
     ),

@@ -3,6 +3,8 @@ package com.donglan.chrona;
 import android.content.Context;
 import android.animation.ValueAnimator;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
+import android.util.TypedValue;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
@@ -25,6 +27,9 @@ final class DockNavigationLayout extends FrameLayout {
     private final Runnable finished;
     private final DockSpring spring = new DockSpring();
     private static final int HIGHLIGHT_ALPHA = 82;
+    private static final int MIN_LABEL_TEXT_SP = 8;
+    private static final float MOTION_PLATE_SCALE = 1.12f;
+    private static final float MOTION_HIGHLIGHT_SCALE = 1.53f;
     private VelocityTracker fingerVelocity;
     private float downX, downY, fingerPosition;
     private long followFrameTime;
@@ -63,7 +68,10 @@ final class DockNavigationLayout extends FrameLayout {
         highlightView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         highlightView.setPivotX(0f); highlightView.setPivotY(0f);
         addView(highlightView, new FrameLayout.LayoutParams(1, 1));
-        items = new LinearLayout(context); items.setClipChildren(false); items.setClipToPadding(false);
+        items = new LinearLayout(context);
+        // Auto-sized labels must share cell centers, not different text baselines.
+        items.setBaselineAligned(false);
+        items.setClipChildren(false); items.setClipToPadding(false);
         addView(items, new FrameLayout.LayoutParams(-1, -1));
         UiStyle.glass(this);
         UiStyle.minimumAcrylicMix(this, 54);
@@ -73,8 +81,56 @@ final class DockNavigationLayout extends FrameLayout {
     void setOrientation(int value) { orientation = value; items.setOrientation(value); }
     int itemCount() { return items.getChildCount(); }
     View itemAt(int index) { return items.getChildAt(index); }
-    void addItem(View view, LinearLayout.LayoutParams params) { items.addView(view, params); }
-    void addItem(View view) { items.addView(view); }
+    void addItem(View view, LinearLayout.LayoutParams params) { fitLabel(view); items.addView(view, params); }
+    void addItem(View view) { fitLabel(view); items.addView(view); }
+    /** Reserve the complete animated envelope inside a clipping scroll/dialog viewport. */
+    FrameLayout motionHost() {
+        DockNavigationLayout dock = this;
+        FrameLayout host = new FrameLayout(getContext()) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                int available = View.MeasureSpec.getSize(widthSpec);
+                // The outer cap extends at most .75 standard cells beyond the board.
+                // Include the plate's held scale plus spring/antialiasing clearance.
+                float plate = MOTION_PLATE_SCALE;
+                float weightSum = 0f, widestWeight = 0f;
+                for (int i = 0; i < dock.itemCount(); i++) {
+                    LinearLayout.LayoutParams cell = (LinearLayout.LayoutParams) dock.itemAt(i).getLayoutParams();
+                    weightSum += cell.weight;
+                    widestWeight = Math.max(widestWeight, cell.weight);
+                }
+                float widestFraction = weightSum > 0f ? widestWeight / weightSum : 1f / Math.max(1, dock.itemCount());
+                float ratio = (plate - 1f) / 2f + plate * DockSpring.MAX_OUTWARD_WIDTH * widestFraction;
+                int clearance = (int)Math.ceil(2f * getResources().getDisplayMetrics().density);
+                int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance;
+                if (getPaddingLeft() != edge || getPaddingRight() != edge)
+                    setPadding(edge, getPaddingTop(), edge, getPaddingBottom());
+                super.onMeasure(widthSpec, heightSpec);
+                int cross = (int)Math.ceil(dock.getMeasuredHeight() * (plate * MOTION_HIGHLIGHT_SCALE - 1f) / 2f) + clearance;
+                if (getPaddingTop() != cross || getPaddingBottom() != cross) {
+                    setPadding(edge, cross, edge, cross);
+                    super.onMeasure(widthSpec, heightSpec);
+                }
+            }
+        };
+        host.setClipChildren(false);
+        host.setClipToPadding(false);
+        host.addView(dock, new FrameLayout.LayoutParams(-1, -2));
+        return host;
+    }
+    private static void fitLabel(View view) {
+        if (!(view instanceof TextView label)) return;
+        android.util.DisplayMetrics metrics = label.getResources().getDisplayMetrics();
+        // Android 14+ scales sp nonlinearly; retain the caller's original sp ceiling.
+        float requestedSp = Build.VERSION.SDK_INT >= 34
+                ? TypedValue.deriveDimension(TypedValue.COMPLEX_UNIT_SP, label.getTextSize(), metrics)
+                : label.getTextSize() / metrics.scaledDensity;
+        int maximumSp = Math.max(MIN_LABEL_TEXT_SP, Math.round(requestedSp));
+        label.setSingleLine(true);
+        // Single-line text normally scrolls horizontally, which would bypass width fitting.
+        label.setHorizontallyScrolling(false);
+        label.setIncludeFontPadding(false);
+        label.setAutoSizeTextTypeUniformWithConfiguration(MIN_LABEL_TEXT_SP, maximumSp, 1, TypedValue.COMPLEX_UNIT_SP);
+    }
     void clearItems() { items.removeAllViews(); }
     private boolean vertical() { return orientation == LinearLayout.VERTICAL; }
     private float axis(float x, float y) { return vertical() ? y : x; }
@@ -175,6 +231,15 @@ final class DockNavigationLayout extends FrameLayout {
         return center(from) + (center(to) - center(from)) * (position - from);
     }
 
+    private float extentAt(float position) {
+        int from = Math.max(0, Math.min(itemCount() - 1, (int)Math.floor(position)));
+        int to = Math.min(itemCount() - 1, from + 1);
+        View a = itemAt(from), b = itemAt(to);
+        float first = vertical() ? a.getHeight() : a.getWidth();
+        float last = vertical() ? b.getHeight() : b.getWidth();
+        return first + (last - first) * Math.max(0f, Math.min(1f, position - from));
+    }
+
     private float positionAt(float x) {
         for (int i = 0; i < itemCount() - 1; i++) {
             float a = center(i), b = center(i + 1);
@@ -259,7 +324,7 @@ final class DockNavigationLayout extends FrameLayout {
         View cell = itemAt(selectedIndex);
         if (cell != null) {
             float x = centerAt(visualPosition);
-            float standardWidth = vertical() ? cell.getHeight() : cell.getWidth();
+            float standardWidth = extentAt(visualPosition);
             float width = standardWidth * spring.scale * spring.width;
             float height = (vertical() ? cell.getWidth() : cell.getHeight()) * spring.scale;
             float board = vertical() ? getHeight() : getWidth();
@@ -321,12 +386,27 @@ final class DockNavigationLayout extends FrameLayout {
     private float releasedVelocity() {
         if (fingerVelocity == null || itemCount() < 2) return 0f;
         fingerVelocity.computeCurrentVelocity(1000);
-        float pixelsPerSlot = (center(1) - center(0)) * (vertical() ? getScaleY() : getScaleX());
+        int from = Math.max(0, Math.min(itemCount() - 2, (int)Math.floor(visualPosition)));
+        float pixelsPerSlot = (center(from + 1) - center(from)) * (vertical() ? getScaleY() : getScaleX());
         return Math.abs(pixelsPerSlot) < 1f ? 0f
                 : (vertical() ? fingerVelocity.getYVelocity() : fingerVelocity.getXVelocity()) / pixelsPerSlot;
     }
 
+    @Override public void setEnabled(boolean enabled) {
+        if (!enabled && tracking) {
+            // Cancel while still enabled so the ordinary touch cleanup releases children,
+            // held scale, velocity tracking and the current drag without committing it.
+            MotionEvent cancel = MotionEvent.obtain(android.os.SystemClock.uptimeMillis(),
+                    android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_CANCEL, downX, downY, 0);
+            try { dispatchTouchEvent(cancel); } finally { cancel.recycle(); }
+            removeCallbacks(finishTouch);
+            if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
+        }
+        super.setEnabled(enabled);
+    }
+
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        if (!isEnabled()) return false;
         recordVelocity(event);
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {

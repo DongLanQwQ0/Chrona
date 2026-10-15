@@ -20,25 +20,34 @@ def method(marker, occurrence=0):
 
 entry = (root / 'app/src/main/java/com/donglan/chrona/AgendaEntry.java').read_text(encoding='utf-8').replace('package com.donglan.chrona;', '')
 timeline = (root / 'app/src/main/java/com/donglan/chrona/ReminderTimeline.java').read_text(encoding='utf-8').replace('package com.donglan.chrona;', '').replace('import java.util.*;', '')
+delivery = (root / 'app/src/main/java/com/donglan/chrona/NotificationDeliveryStatus.java').read_text(encoding='utf-8')
+delivery = re.sub(r'^package .*;\s*|^import .*;\s*', '', delivery, flags=re.M).replace('android.Manifest.', 'Manifest.')
 harness = r'''
 import java.util.*;
 import java.time.*;
 import java.time.format.*;
-class Context {NotificationManager manager=new NotificationManager();String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> type){return type.cast(manager);}}
-class NotificationManager {boolean active;}
+class Context {NotificationManager manager=new NotificationManager();SharedPreferences preferences=new SharedPreferences();int permission=PackageManager.PERMISSION_GRANTED;int checkSelfPermission(String p){return permission;}String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> type){return type.cast(manager);}}
+class NotificationManager {static final int IMPORTANCE_NONE=0;boolean active,allowed=true;NotificationChannel channel;boolean areNotificationsEnabled(){return allowed;}NotificationChannel getNotificationChannel(String id){if(!id.equals(AgendaReminder.CHANNEL))throw new AssertionError(id);return channel;}}
+class NotificationChannel {int importance;NotificationChannel(int importance){this.importance=importance;}int getImportance(){return importance;}}
+class AgendaReminder {static final String CHANNEL="upcoming_agenda";}
+class Build {static class VERSION {static int SDK_INT=36;}}
+class PackageManager {static final int PERMISSION_GRANTED=0;}
+class Manifest {static class permission {static final String POST_NOTIFICATIONS="notification";}}
+class Settings {static final String ACTION_APP_NOTIFICATION_SETTINGS="app",ACTION_CHANNEL_NOTIFICATION_SETTINGS="channel",EXTRA_APP_PACKAGE="package",EXTRA_CHANNEL_ID="channel_id";}
+class SharedPreferences {Map<String,Long> values=new HashMap<>();long getLong(String key,long fallback){return values.getOrDefault(key,fallback);}}
 class Uri {String value;Uri(String v){value=v;}static Uri parse(String v){return new Uri(v);}}
-class Intent {String action;Uri data;Map<String,String> extras=new HashMap<>();Intent(){}Intent(Context c,Class<?> type){}Intent setData(Uri d){data=d;return this;}Intent setAction(String a){action=a;return this;}Intent putExtra(String k,String v){extras.put(k,v);return this;}}
+class Intent {String action;Uri data;Map<String,String> extras=new HashMap<>();Intent(){}Intent(String action){this.action=action;}Intent(Context c,Class<?> type){}Intent setData(Uri d){data=d;return this;}Intent setAction(String a){action=a;return this;}Intent putExtra(String k,String v){extras.put(k,v);return this;}}
 class PendingIntent {static final int FLAG_UPDATE_CURRENT=1,FLAG_IMMUTABLE=2;Intent intent;int flags,code;boolean broadcast;static PendingIntent make(int code,Intent i,int flags,boolean broadcast){PendingIntent p=new PendingIntent();p.intent=i;p.flags=flags;p.code=code;p.broadcast=broadcast;return p;}static PendingIntent getActivity(Context c,int code,Intent i,int flags){return make(code,i,flags,false);}static PendingIntent getBroadcast(Context c,int code,Intent i,int flags){return make(code,i,flags,true);}}
 class Bundle {boolean update;double progress;String remaining,animations,capsuleText,clock;RemoteViews card,islandCard;}
-class VivoAtomicNotification {static boolean vivo;static boolean available(Context c){return vivo;}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static String countdownText(long remaining,boolean seconds){return "native-timer:"+remaining;}static Bundle extras(Context c,String title,String status,String range,String time,String remaining,PendingIntent details,boolean same,RemoteViews card,RemoteViews islandCard,String animations,String capsuleText){Bundle b=new Bundle();b.update=same;b.progress=card.progress;b.remaining=remaining;b.card=card;b.islandCard=islandCard;b.animations=animations;b.capsuleText=capsuleText;b.clock=time;return b;}}
-class AgendaReminderPreferences {static boolean capsule=true,seconds=true;static boolean capsuleCountdown(Context c){return capsule;}static boolean showSeconds(Context c){return seconds;}static boolean useAtomic(Context c,boolean system,boolean available){return available;}}
+class VivoAtomicNotification {static boolean vivo;static boolean available(Context c){return vivo&&NotificationDeliveryStatus.canPostReminders(c);}static boolean active(NotificationManager m,int id){return vivo&&m.active;}static String countdownText(long remaining,boolean seconds){return "native-timer:"+remaining;}static Bundle extras(Context c,String title,String status,String range,String time,String remaining,PendingIntent details,boolean same,RemoteViews card,RemoteViews islandCard,String animations,String capsuleText){Bundle b=new Bundle();b.update=same;b.progress=card.progress;b.remaining=remaining;b.card=card;b.islandCard=islandCard;b.animations=animations;b.capsuleText=capsuleText;b.clock=time;return b;}}
+class AgendaReminderPreferences {static boolean capsule=true,seconds=true;static SharedPreferences prefs(Context c){return c.preferences;}static boolean capsuleCountdown(Context c){return capsule;}static boolean showSeconds(Context c){return seconds;}static boolean useAtomic(Context c,boolean system,boolean available){return available;}}
 class AtomicAgendaCard {static RemoteViews create(Context c,AgendaEntry e,long now,long notifiedAt,String nextTitle,PendingIntent details){RemoteViews v=new RemoteViews(c.getPackageName(),7);v.progress=ReminderTimeline.elapsedRatio(e,now,notifiedAt);v.notifiedAt=notifiedAt;v.nextTitle=nextTitle;v.details=details;return v;}static RemoteViews forIsland(Context c,AgendaEntry e,long now,long notifiedAt,String nextTitle,PendingIntent details){return create(c,e,now,notifiedAt,nextTitle,details);}static String marqueeConfiguration(){return "marquee-config";}}
 class AgendaRepository {static Intent details(Context c,AgendaEntry e){return new Intent().setData(Uri.parse("content://calendar/events/"+e.id));}}
 class AgendaReminderReceiver {}
 class View {static final int GONE=8,VISIBLE=0;}
 class SystemClock {static long elapsedRealtime(){return 300000;}}
 class R {static class drawable {static int ic_notifications=1;}static class layout{static int notification_agenda_small=1,notification_agenda_large=2;}static class id{static int agenda_title=1,agenda_time=2,agenda_location=3,agenda_source=4,agenda_description=5,agenda_countdown=6;}}
-class RemoteViews {Map<Integer,String> texts=new HashMap<>();boolean countdown;double progress;long notifiedAt;String nextTitle;PendingIntent details;RemoteViews(String pkg,int id){}void setTextViewText(int id,String text){texts.put(id,text);}void setViewVisibility(int id,int visibility){}void setChronometer(int id,long base,String format,boolean running){}void setChronometerCountDown(int id,boolean countdown){this.countdown=countdown;}}
+class RemoteViews {Map<Integer,String> texts=new HashMap<>();boolean countdown,running;double progress;long notifiedAt,base;String nextTitle,format;PendingIntent details;RemoteViews(String pkg,int id){}void setTextViewText(int id,String text){texts.put(id,text);}void setViewVisibility(int id,int visibility){}void setChronometer(int id,long base,String format,boolean running){this.base=base;this.format=format;this.running=running;}void setChronometerCountDown(int id,boolean countdown){this.countdown=countdown;}}
 class Notification {
  static final String CATEGORY_EVENT="event";static final int VISIBILITY_PUBLIC=1;
  String title,text;long timeout,when;boolean ongoing,onlyAlertOnce,showWhen;int visibility;
@@ -50,6 +59,7 @@ class Notification {
 }
 __ENTRY__
 __TIMELINE__
+__DELIVERY__
 public class AgendaNotificationCheck {
  static final String CHANNEL="upcoming_agenda";static final int NOTIFICATION_ID=0x434852;
  __FACTORY__
@@ -90,6 +100,9 @@ public class AgendaNotificationCheck {
   c.manager.active=true;n=notification(c,entry,now,true);check(n.extras.update);
   n=notification(c,entry,entry.start+60000,true);check(n.text.startsWith("进行中")&&n.timeout==entry.finish()-entry.start-60000);
   VivoAtomicNotification.vivo=false;n=notification(c,entry,now,false);check(n.small!=null&&n.big!=null&&n.heads==n.small&&n.style instanceof Notification.DecoratedCustomViewStyle);check(n.big.countdown&&n.big.texts.get(R.id.agenda_description).equals("带上讲义"));
+  check(n.big.running&&n.big.format.equals("距开始 %s")&&n.big.base==SystemClock.elapsedRealtime()+entry.start-now);
+  Notification activeEvent=notification(c,entry,entry.start+60000,false);
+  check(activeEvent.big.running&&activeEvent.big.format.equals("距结束 %s")&&activeEvent.big.base==SystemClock.elapsedRealtime()+entry.end-entry.start-60000);
   AgendaEntry system=new AgendaEntry(80,0,entry.start,entry.end,"系统课程",null,"","课表",true,false,true);VivoAtomicNotification.vivo=true;n=notification(c,system,now,false);
   check(n.details.intent.data.value.equals("content://calendar/events/80"));check(((Notification.BigTextStyle)n.style).text.contains("地点未填写"));
   AgendaEntry overnight=new AgendaEntry(81,0,entry.start,entry.end+86400000,"跨天课程","","","课表",true,false,true);
@@ -101,19 +114,37 @@ public class AgendaNotificationCheck {
   check(notification(c,entry,entry.end-120001,false).extras.capsuleText.equals("native-timer:120001"));
   check(notification(c,entry,entry.end-120000,false).extras.capsuleText.equals("native-timer:120000"));
   check(notification(c,entry,entry.end-1,false).extras.capsuleText.equals("native-timer:1"));
-  for(String category:new String[]{"task"}){
-   AgendaEntry notice=new AgendaEntry(90,3,entry.start,entry.end,category,"","","拾时",false,false,true,null,category);
+  for(boolean hasDue:new boolean[]{false,true}){
+   AgendaEntry notice=new AgendaEntry(90,3,entry.start,entry.end,"待办","","","拾时",false,false,true,null,"task",null,hasDue?entry.start:null);
    check(notification(c,notice,notice.start-120000,false).extras.capsuleText.equals("native-timer:120000"));
+   String dueStatus=hasDue?"已逾期":"待完成",beforeStatus=hasDue?"即将截止":"待办提醒";
+   Notification before=notification(c,notice,notice.start-120000,false);
+   check(before.text.startsWith(beforeStatus)&&before.extras.remaining.equals("2分钟后"+(hasDue?"截止":"提醒")));
+   check(before.actions.size()==3&&before.actions.get(0).label.equals("完成")&&before.actions.get(0).intent.broadcast);
+   check(before.actions.get(0).intent.intent.action.equals("complete")&&before.actions.get(0).intent.intent.extras.get("key").equals(notice.key()));
+   check(before.actions.get(0).intent.intent.data.value.equals("chrona://reminder/"+notice.key())&&(before.actions.get(0).intent.flags&PendingIntent.FLAG_IMMUTABLE)!=0);
+   check(before.actions.get(1).label.equals("5 分钟后提醒")&&before.actions.get(1).intent.intent.action.equals("snooze"));
    Notification started=notification(c,notice,notice.start,false);
-   check(started.timeout==180000&&started.text.startsWith("待完成")&&started.extras.remaining.equals("待完成")&&started.extras.capsuleText.equals("待完成"));
+   check(started.timeout==180000&&started.text.startsWith(dueStatus)&&started.extras.remaining.equals(dueStatus)&&started.extras.capsuleText.equals(dueStatus));
    check(notification(c,notice,notice.start+179000,false).timeout==1000);
+   Notification ordinaryBefore=notification(c,notice,notice.start-120000,false,NOTIFICATION_ID,now,"",false);
+   check(ordinaryBefore.big.running&&ordinaryBefore.big.countdown&&ordinaryBefore.big.format.equals(hasDue?"距截止 %s":"距提醒 %s"));
+   check(ordinaryBefore.big.base==SystemClock.elapsedRealtime()+120000&&ordinaryBefore.actions.get(0).label.equals("完成"));
    Notification ordinaryNotice=notification(c,notice,notice.start+60000,false,NOTIFICATION_ID,now,"",false);
-   check(ordinaryNotice.timeout==120000&&ordinaryNotice.text.startsWith("待完成"));
+   check(ordinaryNotice.timeout==120000&&ordinaryNotice.text.startsWith(dueStatus));
+   check(!ordinaryNotice.big.running&&!ordinaryNotice.big.countdown&&ordinaryNotice.big.texts.get(R.id.agenda_countdown).equals(dueStatus));
+   long snoozedUntil=notice.start+5*60000;c.preferences.values.put("snooze_until:"+notice.key(),snoozedUntil);
+   Notification snoozed=notification(c,notice,snoozedUntil,false,NOTIFICATION_ID,now,"",false);
+   check(snoozed.timeout==180000&&!snoozed.big.running&&snoozed.big.texts.get(R.id.agenda_countdown).equals(dueStatus));
+   c.preferences.values.clear();
   }
+  c.manager.channel=new NotificationChannel(NotificationManager.IMPORTANCE_NONE);
+  check(notification(c,entry,now,false).extras==null);
+  c.manager.channel=new NotificationChannel(4);check(notification(c,entry,now,false).extras!=null);
   System.out.println("Reminder notification factory passed: "+checks+" checks; native vivo style, full details, immutable actions, occurrence identity, expiry and existing RemoteViews path");
  }
 }
-'''.replace('__ENTRY__', entry).replace('__TIMELINE__', timeline).replace('__FACTORY__', method('    private static Notification notification(') + '\n' + method('    private static Notification notification(', 1)).replace('__ACTION__', method('    static PendingIntent action('))
+'''.replace('__ENTRY__', entry).replace('__TIMELINE__', timeline).replace('__DELIVERY__', delivery).replace('__FACTORY__', method('    private static Notification notification(') + '\n' + method('    private static Notification notification(', 1)).replace('__ACTION__', method('    static PendingIntent action('))
 harness = re.sub(r'notification\(c,([^,\n]+),([^,\n]+),(false|true)\)', r'notification(c,\1,\2,\3,NOTIFICATION_ID)', harness)
 out = root / 'build/agenda-notification-check'
 out.mkdir(parents=True, exist_ok=True)

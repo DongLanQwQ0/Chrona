@@ -43,8 +43,8 @@ public final class Cursor implements AutoCloseable {
  public boolean moveToNext(){return ++index<rows.length();}
  private Object get(int column){return rows.getJSONArray(index).get(column);}
  public String getString(int column){Object value=get(column);return value==JSONObject.NULL?null:value.toString();}
- public long getLong(int column){return ((Number)get(column)).longValue();}
- public int getInt(int column){return ((Number)get(column)).intValue();}
+ public long getLong(int column){return isNull(column)?0:((Number)get(column)).longValue();}
+ public int getInt(int column){return isNull(column)?0:((Number)get(column)).intValue();}
  public boolean isNull(int column){return get(column)==JSONObject.NULL;}
  public int getColumnIndexOrThrow(String name){for(int i=0;i<columns.length();i++)if(columns.getString(i).equals(name))return i;throw new IllegalArgumentException(name);}
  public void close(){}
@@ -134,6 +134,8 @@ write('com/donglan/chrona/data/TaskFileStore.java', '''package com.donglan.chron
 sources.append(SRC / 'com/donglan/chrona/data/TaskFileStore.java')
 sources += list((ROOT / 'app/src/main/java/com/donglan/chrona/timetable').glob('*.java'))
 sources += [ROOT / 'app/src/main/java/com/donglan/chrona/CandidateMerges.java']
+sources += [ROOT / 'app/src/main/java/com/donglan/chrona' / name for name in (
+    'HomeTimelineEntry.java', 'calendar/AllDayDates.java', 'calendar/CalendarOccurrence.java')]
 sources += [shared / name for name in ('TaskCodec.java','MergeLedger.java','SyncState.java')]
 sources += [ROOT / 'checks/CandidateMergeCheck.java',ROOT / 'checks/TwoScheduleTypesCheck.java']
 cache = Path(os.environ.get('GRADLE_USER_HOME','F:/Android/GradleCache')) / 'caches/modules-2/files-2.1'

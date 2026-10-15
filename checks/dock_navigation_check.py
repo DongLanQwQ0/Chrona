@@ -15,7 +15,9 @@ STUBS = {
 public class Context { public android.content.res.Resources getResources(){return new android.content.res.Resources();} }""",
     "android/content/res/Resources.java": """package android.content.res;
 public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){return new android.util.DisplayMetrics();} }""",
-    "android/util/DisplayMetrics.java": "package android.util; public class DisplayMetrics { public float density=1; }",
+    "android/util/DisplayMetrics.java": "package android.util; public class DisplayMetrics { public float density=1,scaledDensity=1; }",
+    "android/util/TypedValue.java": "package android.util;public class TypedValue {public static final int COMPLEX_UNIT_SP=2;public static float deriveDimension(int unit,float value,DisplayMetrics metrics){return value/metrics.scaledDensity;}}",
+    "android/os/Build.java": "package android.os;public class Build {public static class VERSION {public static int SDK_INT=36;}}",
     "android/content/res/ColorStateList.java": "package android.content.res; public class ColorStateList { public static ColorStateList valueOf(int x){return new ColorStateList();} }",
     "android/graphics/Canvas.java": "package android.graphics; public class Canvas {}",
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
@@ -30,11 +32,11 @@ public static ViewConfiguration get(android.content.Context c){return new ViewCo
 public int getScaledTouchSlop(){return 8;} public static int getLongPressTimeout(){return 500;} }""",
     "android/view/MotionEvent.java": """package android.view; public class MotionEvent {
 public static final int ACTION_DOWN=0,ACTION_UP=1,ACTION_MOVE=2,ACTION_CANCEL=3,ACTION_POINTER_DOWN=5;
-int a;float x,y; public MotionEvent(int a,float x,float y){this.a=a;this.x=x;this.y=y;}
+ int a;float x,y,rawX,rawY; public MotionEvent(int a,float x,float y){this.a=a;this.x=x;this.y=y;rawX=x;rawY=y;}
 public static MotionEvent obtain(long d,long t,int a,float x,float y,int m){return new MotionEvent(a,x,y);}
-public static MotionEvent obtain(MotionEvent e){return new MotionEvent(e.a,e.x,e.y);}public void offsetLocation(float dx,float dy){x+=dx;y+=dy;}
-public int getActionMasked(){return a;} public float getX(){return x;} public float getY(){return y;} public float getRawX(){return x;}public float getRawY(){return y;}public long getDownTime(){return 0;}public long getEventTime(){return View.now;}public void recycle(){} }""",
-    "com/donglan/chrona/CandidatePagerScrollView.java": "package com.donglan.chrona;class CandidatePagerScrollView extends android.widget.FrameLayout {CandidatePagerScrollView(android.content.Context c){super(c);}boolean canYieldToTaskPager(float x){return false;}void prepareForTaskPagerHandoff(){}}",
+ public static MotionEvent obtain(MotionEvent e){MotionEvent copy=new MotionEvent(e.a,e.x,e.y);copy.rawX=e.rawX;copy.rawY=e.rawY;return copy;}public void offsetLocation(float dx,float dy){x+=dx;y+=dy;}public void setAction(int action){a=action;}
+ public int getActionMasked(){return a;} public float getX(){return x;} public float getY(){return y;} public float getRawX(){return rawX;}public float getRawY(){return rawY;}public long getDownTime(){return 0;}public long getEventTime(){return View.now;}public void recycle(){} }""",
+    "com/donglan/chrona/CandidatePagerScrollView.java": (ROOT / "app/src/main/java/com/donglan/chrona/CandidatePagerScrollView.java").read_text(encoding="utf-8"),
     "android/view/animation/Interpolator.java": "package android.view.animation;public interface Interpolator {}",
     "android/view/VelocityTracker.java": """package android.view;public class VelocityTracker {
  public static float velocity;public static int recycled;public static VelocityTracker obtain(){return new VelocityTracker();}
@@ -49,14 +51,18 @@ public class View {
  public static void advance(long ms){long end=now+ms;while(!jobs.isEmpty()&&jobs.peek().time<=end){Job j=jobs.remove();now=j.time;j.action.run();}now=end;}
  public static void reset(){jobs.clear();now=sequence=0;}
  public interface OnClickListener {void onClick(View v);} private OnClickListener click;
- private boolean pressed; private final Runnable perform=()->{if(pressed){pressed=false;performClick();}};
+  private boolean pressed,enabled=true; private final Runnable perform=()->{if(pressed){pressed=false;performClick();}};
+  public boolean isEnabled(){return enabled;}public void setEnabled(boolean value){enabled=value;}
  protected Context context; protected View parent; public int l,t,r,b;
  public View(Context c){context=c;} public Context getContext(){return context;}
  public android.content.res.Resources getResources(){return context.getResources();}
  public View getParent(){return parent;} public void requestDisallowInterceptTouchEvent(boolean x){if(parent!=null)parent.requestDisallowInterceptTouchEvent(x);}
- public boolean isShown(){return true;}public boolean isAttachedToWindow(){return parent!=null;}public void getLocationOnScreen(int[] xy){xy[0]=l;xy[1]=t;for(View p=parent;p!=null;p=p.parent){xy[0]+=p.l;xy[1]+=p.t;}}
+  public int getScrollX(){return 0;}public int getScrollY(){return 0;}
+  public boolean isShown(){return true;}public boolean isAttachedToWindow(){return parent!=null;}public void getLocationOnScreen(int[] xy){xy[0]=l;xy[1]=t;for(View p=parent;p!=null;p=p.parent){xy[0]+=p.l-p.getScrollX();xy[1]+=p.t-p.getScrollY();}}
  public int getLeft(){return l;} public int getRight(){return r;} public int getTop(){return t;} public int getBottom(){return b;}
  public int getWidth(){return r-l;} public int getHeight(){return b-t;}
+ public static class MeasureSpec {public static final int EXACTLY=1073741824,AT_MOST=-2147483648,UNSPECIFIED=0;public static int getSize(int spec){return spec&0x3fffffff;}public static int getMode(int spec){return spec&0xc0000000;}public static int makeMeasureSpec(int size,int mode){return size|mode;}}
+ private int measuredWidth,measuredHeight;public final void measure(int w,int h){onMeasure(w,h);}protected void onMeasure(int w,int h){setMeasuredDimension(MeasureSpec.getSize(w),MeasureSpec.getSize(h));}protected final void setMeasuredDimension(int w,int h){measuredWidth=w;measuredHeight=h;}public int getMeasuredWidth(){return measuredWidth;}public int getMeasuredHeight(){return measuredHeight;}
  public int layouts,invalidations;public void layout(int l,int t,int r,int b){this.l=l;this.t=t;this.r=r;this.b=b;layouts++;if(this instanceof ViewGroup group)group.onLayout(true,l,t,r,b);}
  public static final int IMPORTANT_FOR_ACCESSIBILITY_NO=2;public void setImportantForAccessibility(int value){}
  public ViewGroup.LayoutParams layoutParams=new ViewGroup.LayoutParams(1,1);public ViewGroup.LayoutParams getLayoutParams(){return layoutParams;}public void setLayoutParams(ViewGroup.LayoutParams value){layoutParams=value;}
@@ -95,32 +101,46 @@ import java.util.*; public class ViewGroup extends View {
  public View getChildAt(int i){return i<0||i>=children.size()?null:children.get(i);}
  public void removeAllViews(){for(View v:new ArrayList<>(children))v.detach();children.clear();target=null;}
  @Override public void detach(){removeAllViews();super.detach();}
- private MotionEvent local(MotionEvent e,View v){return new MotionEvent(e.a,e.x-v.l,e.y-v.t);}
+  private MotionEvent local(MotionEvent e,View v){MotionEvent child=MotionEvent.obtain(e);child.offsetLocation(-v.l,-v.t);return child;}
  @Override public boolean dispatchTouchEvent(MotionEvent e){
   if(e.a==MotionEvent.ACTION_DOWN)disallowed=false;
   boolean intercepted=!disallowed&&onInterceptTouchEvent(e);
-  if(intercepted){if(target!=null){View child=target;target=null;child.dispatchTouchEvent(local(new MotionEvent(MotionEvent.ACTION_CANCEL,e.x,e.y),child));}return onTouchEvent(e);}
+   if(intercepted){if(target!=null){View child=target;target=null;MotionEvent cancel=MotionEvent.obtain(e);cancel.setAction(MotionEvent.ACTION_CANCEL);child.dispatchTouchEvent(local(cancel,child));}return onTouchEvent(e);}
   if(e.a==MotionEvent.ACTION_DOWN){target=null;for(int i=children.size()-1;i>=0;i--){View v=children.get(i);
    if(e.x>=v.l&&e.x<v.r&&e.y>=v.t&&e.y<v.b&&v.dispatchTouchEvent(local(e,v))){target=v;return true;}}}
   else if(target!=null){View v=target;boolean handled=v.dispatchTouchEvent(local(e,v));if(e.a==1||e.a==3)target=null;return handled;}
   return onTouchEvent(e);
  }
 } """,
-    "android/widget/LinearLayout.java": "package android.widget; public class LinearLayout extends android.view.ViewGroup {public static class LayoutParams extends android.view.ViewGroup.LayoutParams {public float weight;public LayoutParams(int w,int h,float value){super(w,h);weight=value;}}public static final int HORIZONTAL=0,VERTICAL=1; public void setOrientation(int value){} public LinearLayout(android.content.Context c){super(c);} }",
+    "android/widget/LinearLayout.java": "package android.widget; public class LinearLayout extends android.view.ViewGroup {public static class LayoutParams extends android.view.ViewGroup.LayoutParams {public float weight;public LayoutParams(int w,int h,float value){super(w,h);weight=value;}}public static final int HORIZONTAL=0,VERTICAL=1; public void setOrientation(int value){} public void setBaselineAligned(boolean value){} public LinearLayout(android.content.Context c){super(c);} }",
     "android/widget/FrameLayout.java": "package android.widget; public class FrameLayout extends android.view.ViewGroup { public FrameLayout(android.content.Context c){super(c);} protected void onLayout(boolean changed,int l,int t,int r,int b){for(android.view.View child:children){var p=child.getLayoutParams();int w=p.width<0?getWidth()-pl-pr:p.width,h=p.height<0?getHeight()-pt-pb:p.height;child.layout(pl,pt,pl+w,pt+h);}} }",
+    "android/widget/HorizontalScrollView.java": """package android.widget; public class HorizontalScrollView extends FrameLayout {
+ public static final int OVER_SCROLL_NEVER=2;private int scrollX;
+ public HorizontalScrollView(android.content.Context c){super(c);}public void setHorizontalScrollBarEnabled(boolean value){}public void setFillViewport(boolean value){}public void setOverScrollMode(int value){}
+ @Override public int getScrollX(){return scrollX;}public void scrollTo(int x,int y){scrollX=x;}
+ @Override public boolean onTouchEvent(android.view.MotionEvent event){return true;}
+ }""",
     "android/widget/TextView.java": """package android.widget; public class TextView extends android.view.View {
 public TextView(android.content.Context c){super(c);} public void setTextColor(int c){}
-public void setGravity(int g){}public void setIncludeFontPadding(boolean b){}
+public float textSize=14;public boolean singleLine,fontPadding=true,horizontalScrolling;public int autoMin,autoMax,autoStep,autoUnit;
+public void setTextSize(float value){textSize=value;}public float getTextSize(){return textSize;}
+public void setSingleLine(boolean value){singleLine=value;horizontalScrolling=value;}public void setHorizontallyScrolling(boolean value){horizontalScrolling=value;}
+public void setGravity(int g){}public void setIncludeFontPadding(boolean b){fontPadding=b;}
+public void setAutoSizeTextTypeUniformWithConfiguration(int min,int max,int step,int unit){autoMin=min;autoMax=max;autoStep=step;autoUnit=unit;}
 public void setCompoundDrawableTintList(android.content.res.ColorStateList c){} }""",
     "android/view/animation/DecelerateInterpolator.java": "package android.view.animation; public class DecelerateInterpolator implements Interpolator {public DecelerateInterpolator(float x){} }",
+    "android/animation/Animator.java": "package android.animation;public class Animator {}",
+    "android/animation/AnimatorListenerAdapter.java": "package android.animation;public class AnimatorListenerAdapter {public void onAnimationEnd(Animator animator){}}",
     "android/animation/ValueAnimator.java": """package android.animation;
-public class ValueAnimator { public interface AnimatorUpdateListener {void onAnimationUpdate(ValueAnimator a);}
- float from,to; AnimatorUpdateListener listener; public static boolean enabled=true;
+ public class ValueAnimator extends Animator { public interface AnimatorUpdateListener {void onAnimationUpdate(ValueAnimator a);}
+  float from,to;boolean integer; AnimatorUpdateListener listener;AnimatorListenerAdapter end; public static boolean enabled=true;
  public static boolean areAnimatorsEnabled(){return enabled;}
  public static ValueAnimator ofFloat(float a,float b){ValueAnimator v=new ValueAnimator();v.from=a;v.to=b;return v;}
+  public static ValueAnimator ofInt(int a,int b){ValueAnimator v=ofFloat(a,b);v.integer=true;return v;}
  public void setDuration(long d){} public void setInterpolator(Object i){} public void cancel(){}
- public void addUpdateListener(AnimatorUpdateListener l){listener=l;} public Object getAnimatedValue(){return to;}
- public void start(){if(listener!=null)listener.onAnimationUpdate(this);} }""",
+  public void addUpdateListener(AnimatorUpdateListener l){listener=l;} public Object getAnimatedValue(){if(integer)return Integer.valueOf((int)to);return Float.valueOf(to);}
+  public void addListener(AnimatorListenerAdapter listener){end=listener;}
+  public void start(){if(listener!=null)listener.onAnimationUpdate(this);if(end!=null)end.onAnimationEnd(this);} }""",
     "com/donglan/chrona/UiStyle.java": """package com.donglan.chrona; public class UiStyle {
 public static final int RADIUS_PANEL=20;
 public static void glass(android.view.View view){}public static void minimumAcrylicMix(android.view.View view,int percent){}
@@ -151,7 +171,27 @@ public class DockNavigationCheck extends Context {
  static View highlight(){try{var field=DockNavigationLayout.class.getDeclaredField("highlightView");field.setAccessible(true);return (View)field.get(dock);}catch(Exception e){throw new RuntimeException(e);}}
  static float center(){View h=highlight();GradientDrawable.lastLeft=h.getLeft()+h.getTranslationX();GradientDrawable.lastWidth=h.getWidth()*h.getScaleX();GradientDrawable.lastHeight=h.getHeight()*h.getScaleY();GradientDrawable.lastRight=GradientDrawable.lastLeft+GradientDrawable.lastWidth;GradientDrawable.lastCenter=(GradientDrawable.lastLeft+GradientDrawable.lastRight)/2;return GradientDrawable.lastCenter;}
  static void close(float actual,float expected,String label){require(Math.abs(actual-expected)<=1f,label+" got "+actual);}
+  static final class NestedPager {
+   final int[] starts={0};final SwipePagerLayout outer;final CandidatePagerScrollView candidates;
+   NestedPager(boolean register){
+    init();outer=new SwipePagerLayout(c,new SwipePagerLayout.Listener(){
+     public void onStart(){starts[0]++;}public void onDrag(float x){}public void onRelease(float x,float v){}public void onCancel(){}
+    });
+    outer.layout(0,0,420,600);candidates=new CandidatePagerScrollView(c);candidates.layout(30,100,390,360);candidates.setPages(360,3);
+    FrameLayout pages=new FrameLayout(c);pages.layout(0,0,1080,260);candidates.addView(pages);outer.addView(candidates);
+    dock.layout(50,20,350,80);pages.addView(dock);outer.setGesturePriorityChildren(List.of(candidates,dock));
+    if(register)candidates.addGesturePriorityChild(dock);
+   }
+   void touch(int action,float x,float y){outer.dispatchTouchEvent(new MotionEvent(action,x,y));}
+  }
  public static void main(String[] args)throws Exception{
+  View.reset();DockNavigationLayout labels=new DockNavigationLayout(c,n->{},()->{});TextView direct=new TextView(c);direct.setTextSize(18);
+  labels.addItem(direct);require(direct.singleLine&&!direct.fontPadding&&!direct.horizontalScrolling,"Direct Dock labels fit one visible line without scrolling");
+  require(direct.autoMin==8&&direct.autoMax==18&&direct.autoStep==1&&direct.autoUnit==android.util.TypedValue.COMPLEX_UNIT_SP,"Autosize retains caller's sp ceiling with 8sp minimum and 1sp steps");
+  TextView weighted=new TextView(c);weighted.setTextSize(14);labels.addItem(weighted,new LinearLayout.LayoutParams(0,42,1));
+  require(weighted.autoMin==8&&weighted.autoMax==14&&weighted.singleLine,"Weighted addItem follows the same label fitting path");
+  FrameLayout wrapped=new FrameLayout(c);TextView nestedLabel=new TextView(c);wrapped.addView(nestedLabel);labels.addItem(wrapped);
+  require(nestedLabel.autoMax==0&&nestedLabel.fontPadding,"Compound Dock items retain their caller-owned typography");
   View.reset();DockNavigationCheck builder=new DockNavigationCheck();List<Integer> filters=new ArrayList<>();DockNavigationLayout five=builder.filterDock(new String[]{"全部","待确认","处理中","失败","已写入"},0,filters::add,new int[]{0,3,0,2,0});
   require(builder.strips.contains(five),"Filter dock is registered in page gesture priorities");
   LinearLayout content=new LinearLayout(c);FrameLayout host=new FrameLayout(c),viewport=new FrameLayout(c);
@@ -173,6 +213,32 @@ public class DockNavigationCheck extends Context {
   int before=selected.size();pager.setGesturePriorityChildren(List.of());
   pager.dispatchTouchEvent(new MotionEvent(0,90,125));pager.dispatchTouchEvent(new MotionEvent(2,270,125));pager.dispatchTouchEvent(new MotionEvent(1,270,125));View.advance(1800);
   require(pageStarts[0]==2&&selected.size()==before,"Missing registration reproduces ancestor stealing and cancels Dock selection");
+  NestedPager nested=new NestedPager(true);
+  require(nested.candidates.ownsPriorityGestureAt(110,145),"Candidate pager recognizes its explicitly registered inner selection bar");
+  nested.touch(0,110,145);nested.touch(2,320,145);View.advance(600);nested.touch(1,320,145);View.advance(1800);
+  require(selected.equals(List.of(2))&&nested.starts[0]==0&&nested.candidates.getScrollX()==0,
+    "Selection-bar drag at the candidate boundary selects once without candidate paging or task handoff");
+  nested.touch(0,280,250);nested.touch(2,100,250);nested.touch(2,50,250);nested.touch(1,50,250);View.advance(1800);
+  require(nested.starts[0]==0&&nested.candidates.getScrollX()==360,
+    "A drag outside the selection bar still advances the candidate pager");
+  nested.candidates.scrollTo(0,0);nested.touch(0,100,250);nested.touch(2,250,250);nested.touch(1,250,250);
+  require(nested.starts[0]==1&&nested.candidates.getScrollX()==0,
+    "Outside-bar outward drag retains the original candidate-boundary task handoff");
+  NestedPager missingNested=new NestedPager(false);
+  missingNested.touch(0,110,145);missingNested.touch(2,320,145);missingNested.touch(1,320,145);View.advance(1800);
+  require(missingNested.starts[0]==1&&selected.isEmpty(),
+    "Missing inner registration reproduces candidate-boundary theft and cancels the selection bar");
+  init();dock.setEnabled(false);
+  require(!dock.dispatchTouchEvent(new MotionEvent(0,30,35))&&!dock.dispatchTouchEvent(new MotionEvent(2,245,35))
+    &&!dock.dispatchTouchEvent(new MotionEvent(1,245,35)),"Disabled selection bar rejects down, move and release");
+  View.advance(1000);require(!dock.isTrackingTouch()&&selected.isEmpty()&&rebuilds==0&&Math.abs(dock.scaleX-1f)<.002f,
+    "Disabled selection bar cannot track, select, finish, or enlarge");
+  init();touch(0,30,35);touch(2,245,35);View.advance(32);dock.setEnabled(false);View.advance(1000);
+  require(!dock.isTrackingTouch()&&selected.isEmpty()&&rebuilds==0,"Disabling during a drag cancels its pending selection and finish");
+  close(center(),50,"Disabling during a drag returns the highlight to the original selection");
+  require(!dock.dispatchTouchEvent(new MotionEvent(1,245,35)),"Disabled drag release stays inert");
+  dock.setEnabled(true);touch(0,130,35);touch(1,130,35);View.advance(0);
+  require(selected.equals(List.of(1)),"Re-enabled selection bar accepts a fresh tap exactly once");
   require(five.itemCount()==5,"Inbox selection bar uses the shared five-item dock");
   require(five.itemAt(1) instanceof FrameLayout&&((FrameLayout)five.itemAt(1)).getChildCount()==2,"Review badge stays attached to its dock item");
   ((FrameLayout)five.itemAt(1)).getChildAt(0).performClick();require(filters.equals(List.of(1)),"Counted filter invokes original selection once");

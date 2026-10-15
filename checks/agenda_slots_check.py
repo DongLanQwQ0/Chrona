@@ -12,32 +12,36 @@ depth = 1
 while depth:
     depth += (source[end] == '{') - (source[end] == '}')
     end += 1
-refresh = source[start:end]
+refresh = source[start:end].replace("android.widget.Toast", "Toast")
 pure = '\n'.join((src / f'{name}.java').read_text(encoding='utf-8').replace('package com.donglan.chrona;', '').replace('import java.util.*;', '').replace('import java.util.List;', '') for name in ('AgendaEntry', 'ReminderTimeline', 'ReminderSlots'))
 harness = r'''
 import java.util.*;import java.time.*;
 class Context {SharedPreferences prefs=new SharedPreferences();NotificationManager manager=new NotificationManager();<T>T getSystemService(Class<T> type){return type.cast(manager);}}
+class Handler {void post(Runnable r){r.run();}}
+class Toast {static final int LENGTH_LONG=1;static Toast makeText(Context c,String t,int len){return new Toast();}void show(){}}
+class TaskCompletion {static void retryPending(Context c){}static String set(Context c,long id,long task,boolean complete){for(EventCandidate e:TaskStore.rows)if(e.id==id)e.done=complete;return null;}}
+class NotificationDeliveryStatus {static boolean canPostReminders(Context c){return c.manager.allowed;}}
 class Intent {String key,action;Intent(String key,String action){this.key=key;this.action=action;}String getStringExtra(String k){return key;}String getAction(){return action;}}
 class SharedPreferences {
- Map<String,Object> values=new HashMap<>();String getString(String k,String d){return (String)values.getOrDefault(k,d);}long getLong(String k,long d){return (Long)values.getOrDefault(k,d);}Map<String,?> getAll(){return new HashMap<>(values);}Editor edit(){return new Editor();}
- class Editor {Map<String,Object> additions=new HashMap<>();Set<String> removed=new HashSet<>();Editor putString(String k,String v){additions.put(k,v);return this;}Editor putLong(String k,long v){additions.put(k,v);return this;}Editor remove(String k){removed.add(k);return this;}void apply(){for(String k:removed)values.remove(k);values.putAll(additions);}}
+ Map<String,Object> values=new HashMap<>();String getString(String k,String d){return (String)values.getOrDefault(k,d);}long getLong(String k,long d){return (Long)values.getOrDefault(k,d);}boolean getBoolean(String k,boolean d){return (Boolean)values.getOrDefault(k,d);}Map<String,?> getAll(){return new HashMap<>(values);}Editor edit(){return new Editor();}
+ class Editor {Map<String,Object> additions=new HashMap<>();Set<String> removed=new HashSet<>();Editor putString(String k,String v){additions.put(k,v);return this;}Editor putBoolean(String k,boolean v){additions.put(k,v);return this;}Editor putLong(String k,long v){additions.put(k,v);return this;}Editor remove(String k){removed.add(k);return this;}void apply(){for(String k:removed)values.remove(k);values.putAll(additions);}}
 }
 class AgendaReminderPreferences {static boolean enabled=true,atomic=true;static SharedPreferences prefs(Context c){return c.prefs;}static boolean enabled(Context c){return enabled;}static boolean includesSystemCalendar(Context c){return false;}static boolean useAtomic(Context c,boolean system,boolean available){return enabled&&available&&atomic;}}
 class AgendaReminderLiveService {static boolean running;static long next;static void update(Context c,boolean needed,long at){running=needed;next=at;}}
 class NotificationManager {static final int IMPORTANCE_HIGH=4;boolean allowed=true;Map<Integer,String> cards=new HashMap<>();Map<Integer,Boolean> atomic=new HashMap<>();List<String> events=new ArrayList<>();boolean areNotificationsEnabled(){return allowed;}void createNotificationChannel(NotificationChannel c){}void notify(int id,Notification n){events.add("notify:"+id);cards.put(id,n.key);}}
 class Notification {static final int VISIBILITY_PUBLIC=1;String key;Notification(String key){this.key=key;}}
-class AtomicCountdownUpdates {static void clear(int id){}static void remember(int id,Notification n,AgendaEntry e,long now){}}
+class AtomicCountdownUpdates {static void clear(int id){}static void remember(int id,Notification n,AgendaEntry e,long now,long expires){}}
 class NotificationChannel {NotificationChannel(String id,String name,int importance){}void setDescription(String s){}void setLockscreenVisibility(int visibility){if(visibility!=Notification.VISIBILITY_PUBLIC)throw new AssertionError("reminder channel must be lockscreen visible");}}
 class VivoAtomicNotification {static boolean vivo=true;static List<Integer> ended=new ArrayList<>();static boolean available(Context c){return vivo&&c.manager.allowed;}static boolean active(NotificationManager m,int id){return m.atomic.getOrDefault(id,false);}static void end(Context c,NotificationManager m,int id){ended.add(id);m.events.add("end:"+id);m.cards.remove(id);m.atomic.remove(id);}}
 class AndroidSync {static final Object LOCK=new Object();}
-class EventCandidate {boolean isRecord;Long dueAtMillis;boolean isTask(){return "task".equals(category);}Long anchor(){return startAtMillis;}Long reminderAnchor(){return startAtMillis;}Long calendarStart(){return startAtMillis;}Long calendarEnd(){return endAtMillis;}boolean point(){return false;}long id,taskId,startAtMillis;Long endAtMillis;Integer reminderMinutesBefore;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+startAtMillis;}}
-class TaskStore implements AutoCloseable {static List<EventCandidate> rows=new ArrayList<>();TaskStore(Context c){}List<EventCandidate> nextReminderCandidates(long now,Set<String> hidden){List<EventCandidate> r=new ArrayList<>();for(EventCandidate e:rows)if(!hidden.contains(e.key()))r.add(e);return r;}List<Long> linkedCalendarIds(){return List.of();}List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids){return List.of();}boolean setCandidateCompleted(long id,long task,boolean done){return true;}public void close(){}}
+class EventCandidate {boolean isRecord,needsConfirmation,done;boolean completed(){return done;}Long dueAtMillis;boolean isTask(){return "task".equals(category);}Long anchor(){return startAtMillis;}Long reminderAnchor(){return startAtMillis;}Long calendarStart(){return startAtMillis;}Long calendarEnd(){return endAtMillis;}boolean point(){return false;}long id,taskId,startAtMillis;Long endAtMillis;Integer reminderMinutesBefore;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+startAtMillis;}}
+class TaskStore implements AutoCloseable {static List<EventCandidate> rows=new ArrayList<>();TaskStore(Context c){}List<EventCandidate> nextReminderCandidates(long now,Set<String> hidden){List<EventCandidate> r=new ArrayList<>();for(EventCandidate e:rows)if(!e.done&&!hidden.contains(e.key()))r.add(e);return r;}List<Long> linkedCalendarIds(){return List.of();}List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids){return rows.stream().filter(e->ids.contains(e.id)).toList();}boolean setCandidateCompleted(long id,long task,boolean done){return true;}public void close(){}}
 class CalendarOccurrence {long eventId,startMillis,endMillis;String title,location,calendarName;boolean allDay;}
 class CalendarStore {CalendarStore(Context c){}boolean hasReadPermission(){return false;}List<CalendarOccurrence> reminderInstances(long n,long h,Set<Long> linked,Set<String> hidden){return List.of();}}
 __PURE__
 public class AgendaSlotsCheck {
  static final String CHANNEL="upcoming_agenda";static final int NOTIFICATION_ID=0x434852;
- static long alarm;static int checks;
+ static Handler HANDLER=new Handler();static long alarm;static int checks;
  static void schedule(Context c,long at){alarm=at;}
  static Map<Integer,Boolean> updates=new HashMap<>();static Map<Integer,Long> notified=new HashMap<>();static Map<Integer,String> nextTitles=new HashMap<>(),categories=new HashMap<>();static Notification notification(Context c,AgendaEntry e,long now,boolean same,int id,long notifiedAt,String nextTitle,boolean atomic){updates.put(id,same);notified.put(id,notifiedAt);nextTitles.put(id,nextTitle);categories.put(id,e.category);c.manager.atomic.put(id,atomic);return new Notification(e.key());}
  __REFRESH__

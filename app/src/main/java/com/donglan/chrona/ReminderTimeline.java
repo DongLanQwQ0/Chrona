@@ -17,6 +17,14 @@ final class ReminderTimeline {
     static long expiresAt(AgendaEntry entry) {
         return "event".equals(entry.category) ? entry.finish() : entry.start + STARTED_DISPLAY_WINDOW;
     }
+    static long expiresAt(AgendaEntry entry, long snoozedUntil) {
+        return "task".equals(entry.category) && snoozedUntil > 0
+                ? Math.max(expiresAt(entry), snoozedUntil + STARTED_DISPLAY_WINDOW) : expiresAt(entry);
+    }
+    static long snoozeAt(AgendaEntry entry, long now) {
+        long target = "event".equals(entry.category) ? Math.min(now + SNOOZE, entry.finish() - 30_000L) : now + SNOOZE;
+        return target > now ? target : 0;
+    }
     static long capsuleDeadline(AgendaEntry entry, long now) {
         if (now < entry.start) return entry.start;
         return "event".equals(entry.category) && now < entry.finish() ? entry.finish() : 0;
@@ -52,12 +60,14 @@ final class ReminderTimeline {
         for (long until : snoozeUntil.values()) if (until > now) boundary = Math.min(boundary, until);
         Set<String> seen = new HashSet<>();
         for (AgendaEntry entry : candidates) {
-            if (entry.allDay || !entry.confirmed || expiresAt(entry) <= now || hidden.contains(entry.key())) continue;
+            long snooze = snoozeUntil.getOrDefault(entry.key(), 0L);
+            long expires = expiresAt(entry, snooze);
+            if (entry.allDay || !entry.confirmed || expires <= now || hidden.contains(entry.key())) continue;
             long due = appearsAt(entry);
             if (due > now) boundary = Math.min(boundary, due);
             if (entry.start > now) boundary = Math.min(boundary, entry.start);
-            boundary = Math.min(boundary, expiresAt(entry));
-            if (due <= now && snoozeUntil.getOrDefault(entry.key(), 0L) <= now && seen.add(entry.key())) eligible.add(entry);
+            boundary = Math.min(boundary, expires);
+            if (due <= now && snooze <= now && seen.add(entry.key())) eligible.add(entry);
         }
         eligible.sort((a, b) -> {
             boolean af = a.start > now, bf = b.start > now;

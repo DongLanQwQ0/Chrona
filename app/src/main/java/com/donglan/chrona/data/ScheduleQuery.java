@@ -10,14 +10,23 @@ import java.util.Locale;
 /** Parameterized schedule predicates, shared by page, count, and selection queries. */
 public final class ScheduleQuery {
     public static final int PAGE_SIZE = 24;
+    public static final int TODO_ANY = 0, TODO_TODAY_DUE = 1, TODO_OVERDUE = 2,
+            TODO_OPEN = 3;
     public final String selection;
     public final String[] arguments;
+    public final int todoScope;
     public static final String DAY_SQL = "CASE WHEN all_day=1 THEN "
             + "strftime('%Y-%m-%d',COALESCE(start_at_millis,due_at_millis)/1000,'unixepoch') ELSE "
             + "strftime('%Y-%m-%d',COALESCE(start_at_millis,due_at_millis)/1000,'unixepoch','localtime') END";
 
     public ScheduleQuery(int tab, String category, int publication, String keyword,
             LocalDate from, LocalDate until, long now, ZoneId zone) {
+        this(tab, category, publication, keyword, from, until, now, zone, TODO_ANY);
+    }
+
+    public ScheduleQuery(int tab, String category, int publication, String keyword,
+            LocalDate from, LocalDate until, long now, ZoneId zone, int todoScope) {
+        this.todoScope = todoScope;
         List<String> clauses = new ArrayList<>(), values = new ArrayList<>();
         clauses.add("is_record=0");
         String anchor = "COALESCE(start_at_millis,due_at_millis)";
@@ -33,6 +42,18 @@ public final class ScheduleQuery {
                     .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()));
         }
         if (category != null) { clauses.add("category=?"); values.add(category); }
+        if (todoScope != TODO_ANY) {
+            clauses.add("category='task' AND completed_at_millis IS NULL");
+            if (todoScope == TODO_TODAY_DUE) {
+                LocalDate today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
+                clauses.add("due_at_millis>=CAST(? AS INTEGER) AND due_at_millis<CAST(? AS INTEGER)");
+                values.add(Long.toString(today.atStartOfDay(zone).toInstant().toEpochMilli()));
+                values.add(Long.toString(today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()));
+            } else if (todoScope == TODO_OVERDUE) {
+                clauses.add("due_at_millis<CAST(? AS INTEGER)");
+                values.add(Long.toString(now));
+            }
+        }
         if (publication == 1) clauses.add("(needs_confirmation=1 OR (category='event' AND calendar_event_id IS NULL))");
         else if (publication == 2) clauses.add("calendar_event_id IS NOT NULL");
         if (from != null && until != null) {
@@ -64,6 +85,8 @@ public final class ScheduleQuery {
 
     public String orderBy(boolean oldestFirst) {
         String direction = oldestFirst ? " ASC" : " DESC";
+        if (todoScope == TODO_TODAY_DUE || todoScope == TODO_OVERDUE)
+            return "due_at_millis" + direction + ", id" + direction;
         return "COALESCE(start_at_millis,due_at_millis) IS NULL ASC, " + DAY_SQL + direction
                 + ", all_day DESC, COALESCE(start_at_millis,due_at_millis)" + direction + ", id" + direction;
     }

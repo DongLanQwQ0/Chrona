@@ -6,8 +6,8 @@ import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
-import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
 import android.os.Handler;
@@ -16,8 +16,9 @@ import android.os.OperationCanceledException;
 import android.provider.CalendarContract;
 import android.provider.CalendarContract.Calendars;
 import android.provider.Settings;
+import android.view.Gravity;
+import android.view.View;
 import android.widget.Button;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -26,35 +27,46 @@ import com.donglan.chrona.calendar.CalendarStore;
 
 import java.lang.ref.WeakReference;
 
-/** Read-only checks of Chrona's calendar; delivery still needs a real system-calendar test. */
+/** Read-only reminder prerequisites, with independent system-calendar checks. */
 public final class ReminderDiagnosticsActivity extends Activity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private CancellationSignal pendingRead;
     private ScrollView page;
     private TextView permissions;
     private TextView calendar;
+    private TextView reminderStatus, notificationStatus, channelStatus, exactStatus;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
-        page = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(20), dp(20), dp(28));
-        UiStyle.page(this, root);
-        root.setBackgroundColor(Color.TRANSPARENT);
-        UiStyle.back(this, root);
-        TextView title = text("提醒诊断", 26);
-        UiStyle.title(title);
-        UiStyle.addSpaced(root, title, 4, 16);
+        LinearLayout root = SettingsPageLayout.content(this);
+        SettingsPageLayout.header(this, root, "提醒诊断");
 
-        permissions = card(root, "拾时日历权限");
+        section(root, "Chrona 原生提醒");
+        LinearLayout nativeChecks = new LinearLayout(this);
+        nativeChecks.setOrientation(LinearLayout.VERTICAL);
+        UiStyle.glass(nativeChecks);
+        UiStyle.addSpaced(root, nativeChecks, 0, 10);
+        reminderStatus = row(nativeChecks, "提前 30 分钟提醒", () ->
+                startActivity(new Intent(this, NotificationSettingsActivity.class)));
+        notificationStatus = row(nativeChecks, "通知权限", () -> open(
+                NotificationDeliveryStatus.appSettings(this), "未找到可打开的通知设置"));
+        channelStatus = row(nativeChecks, "提醒频道", this::openReminderChannelSettings);
+        exactStatus = row(nativeChecks, "准时提醒", () -> {
+            if (Build.VERSION.SDK_INT >= 31) open(
+                    new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.fromParts("package", getPackageName(), null)),
+                    "未找到可打开的准时提醒设置");
+            else Feedback.show(this, "当前系统无需单独授权");
+        });
+        row(nativeChecks, "后台运行", this::openBackgroundSettings).setText("查看系统限制");
+
+        section(root, "系统日历提醒");
+        permissions = card(root, "日历权限");
         calendar = card(root, "拾时本地日历");
-        TextView reminder = card(root, "系统提醒核对");
-        reminder.setText("日程写入成功仅说明已保存到系统日历，提醒尚未实测。\n\n"
-                + "请在系统日历中核对该日程的提醒时间，并检查日历应用的通知和后台运行设置。"
-                + "拾时的通知权限无法代表系统日历的通知状态。\n\n"
-                + "可在系统日历设置一个临近的提醒，锁屏后确认是否按时收到。");
+        TextView reminder = card(root, "系统日历独立发送");
+        reminder.setText("请在系统日历核对日程的提醒时间，并允许日历应用的通知和后台运行。\n\n"
+                + "日程写入成功表示已保存。可设置一个临近提醒，锁屏确认实际送达。");
         button(root, "打开系统日历", true, () -> {
             Uri time = ContentUris.withAppendedId(
                     CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build(),
@@ -66,13 +78,8 @@ public final class ReminderDiagnosticsActivity extends Activity {
                         Uri.fromParts("package", getPackageName(), null)),
                 "未找到可打开的应用设置"));
 
-        page.addView(root);
-        FrameLayout stage = new FrameLayout(this);
-        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
-        stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
-        root.setFitsSystemWindows(false);
-        UiStyle.applyInsets(stage, page);
-        setContentView(stage);
+        SettingsPageLayout.show(this, root, state == null);
+        page = (ScrollView) root.getParent();
         if (state != null) {
             int scroll = state.getInt("scroll_y");
             page.post(() -> page.scrollTo(0, scroll));
@@ -81,6 +88,11 @@ public final class ReminderDiagnosticsActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        NotificationDeliveryStatus delivery = NotificationDeliveryStatus.read(this);
+        reminderStatus.setText(AgendaReminderPreferences.enabled(this) ? "已开启" : "未开启");
+        notificationStatus.setText(delivery.appAllowed ? "已允许" : "未允许");
+        channelStatus.setText(delivery.channelSummary());
+        exactStatus.setText(AgendaReminder.exactAllowed(this) ? "已允许" : "未允许，可能延迟");
         CalendarStore store = new CalendarStore(this);
         boolean read = store.hasReadPermission();
         permissions.setText("读取日历：" + (read ? "已允许" : "未允许")
@@ -171,7 +183,44 @@ public final class ReminderDiagnosticsActivity extends Activity {
         TextView view = new TextView(this);
         view.setText(value);
         view.setTextSize(size);
+        view.setTextColor(UiStyle.colors(this).text);
+        view.setIncludeFontPadding(false);
         return view;
+    }
+
+    private void section(LinearLayout root, String heading) {
+        TextView title = text(heading, 12);
+        UiStyle.muted(title);
+        UiStyle.addSpaced(root, title, root.getChildCount() == 1 ? 0 : 16, 7);
+    }
+
+    private TextView row(LinearLayout group, String label, Runnable action) {
+        if (group.getChildCount() > 0) {
+            View line = new View(this);
+            line.setBackgroundColor(UiStyle.colors(this).outline);
+            LinearLayout.LayoutParams divider = new LinearLayout.LayoutParams(-1, dp(1));
+            divider.setMargins(dp(16), 0, dp(16), 0);
+            group.addView(line, divider);
+        }
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(54));
+        row.setPadding(dp(16), dp(10), dp(16), dp(10));
+        row.addView(text(label, 16), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView status = text("", 13);
+        UiStyle.muted(status);
+        row.addView(status);
+        android.widget.ImageView chevron = new android.widget.ImageView(this);
+        chevron.setImageResource(R.drawable.ic_chevron_right_line);
+        chevron.setImageTintList(android.content.res.ColorStateList.valueOf(UiStyle.colors(this).muted));
+        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams arrow = new LinearLayout.LayoutParams(dp(16), dp(16));
+        arrow.leftMargin = dp(8);
+        row.addView(chevron, arrow);
+        row.setOnClickListener(view -> action.run());
+        UiStyle.pressable(row);
+        group.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        return status;
     }
 
     private void button(LinearLayout root, String label, boolean primary, Runnable action) {
@@ -189,6 +238,19 @@ public final class ReminderDiagnosticsActivity extends Activity {
         catch (ActivityNotFoundException | SecurityException exception) {
             Feedback.show(this, unavailable);
         }
+    }
+
+    private void openReminderChannelSettings() {
+        NotificationDeliveryStatus delivery = NotificationDeliveryStatus.read(this);
+        open(delivery.channelCreated ? NotificationDeliveryStatus.channelSettings(this)
+                : NotificationDeliveryStatus.appSettings(this), "未找到可打开的提醒频道设置");
+    }
+
+    private void openBackgroundSettings() {
+        if (VivoAtomicNotification.supportedManufacturer())
+            Feedback.show(this, "电量 → 后台耗电管理 → 允许后台耗电");
+        open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", getPackageName(), null)), "未找到可打开的应用设置");
     }
 
     private int dp(int value) {

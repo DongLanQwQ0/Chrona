@@ -236,7 +236,7 @@ final class SwipePagerLayout extends FrameLayout {
                 gesturePriorityChildren.remove(i);
             } else if (child instanceof CandidatePagerScrollView pager
                     && contains(child, rawX, rawY)) {
-                return pager;
+                return pager.ownsPriorityGestureAt(rawX, rawY) ? null : pager;
             }
         }
         return null;

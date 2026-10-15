@@ -32,6 +32,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
     }
     private String cookie, csrf;
     private int port;
+    private boolean providerCompletion;
     private void check() throws Exception {
         Context target = getTargetContext();
         File directory = new File(target.getCacheDir(), "lan-integration-" + UUID.randomUUID());
@@ -67,6 +68,51 @@ public final class LanAccessInstrumentation extends Instrumentation {
             detail=request("GET","/api/task?id="+id,null,null);revision=detail.body.getLong("revision");long candidateId=detail.body.getJSONArray("candidates").getJSONObject(0).getLong("id");candidate.put("candidateId",Long.toString(candidateId)).put("revision",revision).put("end",1);
             expect(request("POST","/api/candidate/save",candidate,origin()),400);
             try(TaskStore store=new TaskStore(isolated)){require(store.getCandidates(id).get(0).endAtMillis==1791075600000L,"invalid edit leaves row unchanged");}
+            long memoId, todoId;
+            try(TaskStore store=new TaskStore(isolated)){
+                memoId=store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,id,"原记录",null,null,"Asia/Shanghai","","原正文",null,false,null,"event",false,false,0,null,null,true));
+                todoId=store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,id,"未安排待办",null,null,"Asia/Shanghai","","",null,false,null,"task",false,false,0,null,null,false));
+            }
+            revision=request("GET","/api/task?id="+id,null,null).body.getLong("revision");
+            JSONObject memo=new JSONObject().put("id",Long.toString(id)).put("candidateId",Long.toString(memoId))
+                    .put("revision",revision).put("title","独立可见标题").put("description","修改后的正文").put("record",true);
+            expect(request("POST","/api/candidate/save",memo,origin()),200);
+            try(TaskStore store=new TaskStore(isolated)){
+                var row=store.getCandidatesByIds(java.util.List.of(memoId)).get(0);
+                require(row.isRecord&&row.title.equals("独立可见标题")&&row.description.equals("修改后的正文"),"record edit retains record identity");
+                require(store.getTask(id).rawText.equals("edited"),"record edit preserves independent original");
+                require(store.queryInboxIds(new com.donglan.chrona.data.InboxQuery(0,"record","独立可见标题"),false).equals(java.util.List.of(id)),"visible record title is searchable");
+                revision=store.dataRevision();
+            }
+            JSONObject completion=new JSONObject().put("id",Long.toString(id)).put("candidateId",Long.toString(todoId))
+                    .put("revision",revision).put("completed",true);
+            expect(request("POST","/api/candidate/complete",completion,origin()),200);
+            expect(request("POST","/api/candidate/complete",completion,origin()),409);
+            try(TaskStore store=new TaskStore(isolated)){
+                require(store.getCandidatesByIds(java.util.List.of(todoId)).get(0).completed(),"HTTP completion persisted");
+                revision=store.dataRevision();
+            }
+            completion.put("completed",false).put("revision",revision);
+            expect(request("POST","/api/candidate/complete",completion,origin()),200);
+            try(TaskStore store=new TaskStore(isolated)){require(!store.getCandidatesByIds(java.util.List.of(todoId)).get(0).completed(),"HTTP restore persisted");revision=store.dataRevision();}
+            com.donglan.chrona.calendar.CalendarStore calendar = new com.donglan.chrona.calendar.CalendarStore(isolated);
+            if (calendar.hasReadPermission() && calendar.hasWritePermission()) {
+                long start=System.currentTimeMillis()+7_200_000L;
+                long event=calendar.insertEvent(new com.donglan.chrona.calendar.CalendarStore.EventInput(
+                        "Chrona 回归检查 · 临时事项",start,start+60000,"Asia/Shanghai",false,"自动验收后移除","",java.util.List.of(15,30)));
+                try {
+                    long linked;
+                    try(TaskStore store=new TaskStore(isolated)){
+                        linked=store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,id,"临时待办",start,null,"Asia/Shanghai","","",15,false,event,"task",false,false,0,start,null,false));
+                    }
+                    require(TaskCompletion.set(isolated,linked,id,true)==null,"provider completion sync");
+                    require(calendar.getEvent(event)!=null&&calendar.getEvent(event).reminderMinutes.isEmpty(),"completed event history retained and alerts cleared");
+                    require(TaskCompletion.set(isolated,linked,id,false)==null,"provider restore sync");
+                    require(calendar.getEvent(event).reminderMinutes.equals(java.util.List.of(15,30)),"future original alerts restored");
+                    providerCompletion=true;
+                } finally { require(calendar.deleteEvent(event),"temporary provider fixture removed"); }
+                try(TaskStore store=new TaskStore(isolated)){revision=store.dataRevision();}
+            }
             expect(request("GET","/../chrona.db",null,null),404);
             expect(request("POST","/api/ics",new JSONObject(),origin()),405);
             expect(request("POST","/api/task/delete",new JSONObject().put("id",Long.toString(id)).put("revision",revision),origin()),200);

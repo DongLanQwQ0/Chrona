@@ -15,7 +15,10 @@ final class AtomicCountdownUpdates {
     private record Snapshot(Notification notice, long deadline, long expiresAt) { }
     private static final Map<Integer, Snapshot> snapshots = new HashMap<>();
     static void remember(int id, Notification notice, AgendaEntry entry, long now) {
-        snapshots.put(id, new Snapshot(notice, ReminderTimeline.capsuleDeadline(entry, now), ReminderTimeline.expiresAt(entry)));
+        remember(id,notice,entry,now,ReminderTimeline.expiresAt(entry));
+    }
+    static void remember(int id, Notification notice, AgendaEntry entry, long now, long expiresAt) {
+        snapshots.put(id, new Snapshot(notice, ReminderTimeline.capsuleDeadline(entry, now), expiresAt));
     }
     static void clear(int id) { snapshots.remove(id); }
     static long nextDelay(Context context) {

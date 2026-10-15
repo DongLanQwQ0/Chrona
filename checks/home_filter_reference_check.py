@@ -54,6 +54,19 @@ public class HomeFilterReferenceCheck {
         require(summary.contains("系统日历") && summary.contains("2026-10-01 至 2026-10-31"),"implicit system month visible");
         state.reset(today);
         require(ScheduleFilterSummary.describe(state,"",today).isEmpty(),"reset removes constraints");
+        state.category=EventCategory.indexOf(EventCategory.TASK)+1;
+        state.tab=3;state.todoScope=ScheduleQuery.TODO_TODAY_DUE;
+        summary=ScheduleFilterSummary.describe(state,"",today);
+        require(summary.contains("待办")&&summary.contains("今日截止"),"home deadline scope stays visible");
+        ScheduleFilterState draft=state.copy();draft.todoScope=ScheduleQuery.TODO_OVERDUE;
+        require(state.todoScope==ScheduleQuery.TODO_TODAY_DUE,"cancelled draft cannot change home scope");
+        require(draft.copy().todoScope==ScheduleQuery.TODO_OVERDUE,"copy retains edited scope");
+        require(ScheduleFilterSummary.describe(draft,"",today).contains("已逾期"),"overdue scope label is truthful");
+        draft.todoScope=ScheduleQuery.TODO_OPEN;
+        require(ScheduleFilterSummary.describe(draft,"",today).contains("未完成"),"all open tasks scope is visible");
+        draft.reset(today);
+        require(draft.todoScope==ScheduleQuery.TODO_ANY&&ScheduleFilterSummary.describe(draft,"",today).isEmpty(),
+                "reset clears task scope and all supporting filters");
         System.out.println("Home filter and actual retry reference checks passed");
     }
 }
@@ -90,7 +103,7 @@ check = out / "HomeFilterReferenceCheck.java"
 check.write_text(harness, encoding="utf-8")
 sources = [root / "app/src/main/java/com/donglan/chrona" / relative for relative in (
     "data/TaskRecord.java", "data/ScheduleFilterState.java", "data/ScheduleFilterSummary.java",
-    "data/ScheduleRangeStep.java", "data/EventCategory.java", "net/RequestControl.java")]
+    "data/ScheduleRangeStep.java", "data/ScheduleQuery.java", "data/EventCategory.java", "net/RequestControl.java")]
 subprocess.run([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out),
                 *map(str, sources), str(check)], check=True)
 subprocess.run([str(java / "java.exe"), "-cp", str(out), "HomeFilterReferenceCheck"], check=True)

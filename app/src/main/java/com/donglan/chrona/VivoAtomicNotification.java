@@ -17,7 +17,7 @@ final class VivoAtomicNotification {
     static boolean supportedManufacturer() { return "vivo".equalsIgnoreCase(Build.MANUFACTURER); }
     static boolean available(Context context) {
         return supportedManufacturer() && Boolean.TRUE.equals(sceneEnabled(context))
-                && context.getSystemService(NotificationManager.class).areNotificationsEnabled();
+                && NotificationDeliveryStatus.canPostReminders(context);
     }
     /** OEM-documented optional API; null means the system cannot report this capability. */
     static Boolean sceneEnabled(Context context) {

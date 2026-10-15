@@ -53,6 +53,7 @@ public final class AgendaReminder {
     }
 
     private static void refresh(Context context, Intent action) {
+        TaskCompletion.retryPending(context);
         SharedPreferences prefs = AgendaReminderPreferences.prefs(context);
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         long now = System.currentTimeMillis();
@@ -64,16 +65,25 @@ public final class AgendaReminder {
             // Replaced or expired occurrence actions cannot affect a current slot.
             if (slot >= 0 && prefs.getLong("slot_end:" + slot, 0) > now) {
                 if ("complete".equals(action.getAction()) && key.startsWith("chrona:")) {
-                    synchronized(AndroidSync.LOCK) { try(TaskStore store=new TaskStore(context)) {
+                    try(TaskStore store=new TaskStore(context)) {
                         long id=Long.parseLong(key.split(":")[1]);
                         for(EventCandidate candidate:store.getCandidatesByIds(java.util.Collections.singletonList(id)))
-                            if(candidate.isTask() && candidate.reminderAnchor()!=null && key.equals("chrona:"+id+":"+candidate.reminderAnchor())) store.setCandidateCompleted(id,candidate.taskId,true);
-                    }}
+                            if(candidate.isTask() && candidate.reminderAnchor()!=null && key.equals("chrona:"+id+":"+candidate.reminderAnchor())) {
+                                String warning = TaskCompletion.set(context,id,candidate.taskId,true);
+                                if (warning != null) HANDLER.post(() -> android.widget.Toast.makeText(context,warning,android.widget.Toast.LENGTH_LONG).show());
+                            }
+                    }
                 }
                 if ("hide".equals(action.getAction()) || "complete".equals(action.getAction()))
                     prefs.edit().putLong("hidden:" + key, prefs.getLong("slot_end:" + slot, now)).apply();
-                if ("snooze".equals(action.getAction())) prefs.edit()
-                        .putLong("snooze_until:" + key, now + ReminderTimeline.SNOOZE).apply();
+                if ("snooze".equals(action.getAction())) {
+                    long until = Math.min(now + ReminderTimeline.SNOOZE, prefs.getLong("slot_snooze_limit:" + slot, Long.MAX_VALUE));
+                    if (until > now) {
+                        SharedPreferences.Editor edit = prefs.edit().putLong("snooze_until:" + key, until);
+                        if (prefs.getBoolean("slot_task:" + slot, false)) edit.putLong("snooze_end:" + key, until + ReminderTimeline.STARTED_DISPLAY_WINDOW);
+                        edit.apply();
+                    }
+                }
             }
         }
         if (!AgendaReminderPreferences.enabled(context)) {
@@ -90,16 +100,27 @@ public final class AgendaReminder {
         for (java.util.Map.Entry<String, ?> item : prefs.getAll().entrySet()) {
             String name = item.getKey();
             if (!name.startsWith("hidden:") && !name.startsWith("snooze_until:")) continue;
-            if (item.getValue() instanceof Long && (Long) item.getValue() > now) {
+            long validUntil = name.startsWith("snooze_until:")
+                    ? prefs.getLong("snooze_end:" + name.substring(13), (Long)item.getValue()) : (Long)item.getValue();
+            if (validUntil > now) {
                 if (name.startsWith("hidden:")) hidden.add(name.substring(7));
                 else snoozeUntil.put(name.substring(13), (Long) item.getValue());
-            } else cleanup.remove(name);
+            } else { cleanup.remove(name); if(name.startsWith("snooze_until:"))cleanup.remove("snooze_end:"+name.substring(13)); }
         }
         cleanup.apply();
         java.util.Set<String> excluded = new HashSet<>(hidden);
         excluded.addAll(snoozeUntil.keySet());
         List<AgendaEntry> entries = new ArrayList<>();
         try (TaskStore store = new TaskStore(context)) {
+            // Explicitly deferred tasks outlive their original deadline window, not the task itself.
+            List<Long> deferred = new ArrayList<>();
+            for (String key : snoozeUntil.keySet()) if(key.startsWith("chrona:")) deferred.add(Long.parseLong(key.split(":")[1]));
+            for (EventCandidate local : store.getCandidatesByIds(deferred)) {
+                if (!local.isTask() || local.completed() || local.needsConfirmation || local.reminderAnchor()==null) continue;
+                String key="chrona:"+local.id+":"+local.reminderAnchor();
+                if (snoozeUntil.containsKey(key)) entries.add(new AgendaEntry(local.id,local.taskId,local.reminderAnchor(),local.reminderAnchor(),local.title,
+                        local.location,local.description,"拾时",false,false,true,null,local.category,local.reminderMinutesBefore,local.dueAtMillis));
+            }
             for (EventCandidate local : store.nextReminderCandidates(now, excluded)) entries.add(new AgendaEntry(local.id, local.taskId, local.reminderAnchor(),
                     local.isTask() ? local.reminderAnchor() : local.calendarEnd(), local.title,
                     local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.dueAtMillis));
@@ -119,13 +140,14 @@ public final class AgendaReminder {
         boolean atomicAvailable = VivoAtomicNotification.available(context);
         ReminderTimeline timeline = new ReminderTimeline(entries, now, hidden, snoozeUntil, atomicAvailable ? ReminderSlots.COUNT : 1);
         long refreshAt = timeline.wakeAt;
-        AgendaEntry[] slots = ReminderSlots.assign(manager.areNotificationsEnabled() ? timeline.entries : List.of(), previous);
-        if (!timeline.entries.isEmpty() && manager.areNotificationsEnabled()) {
+        if (!timeline.entries.isEmpty()) {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "即将开始的日程", NotificationManager.IMPORTANCE_HIGH);
-            channel.setDescription("开始前 30 分钟展示；活动持续至结束，其它日程开始后 3 分钟关闭");
+            channel.setDescription("活动持续至结束；待办到点后展示 3 分钟，稍后提醒从再次出现时计时");
             channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             manager.createNotificationChannel(channel);
         }
+        boolean deliverable = NotificationDeliveryStatus.canPostReminders(context);
+        AgendaEntry[] slots = ReminderSlots.assign(deliverable ? timeline.entries : List.of(), previous);
         SharedPreferences.Editor state = prefs.edit();
         boolean liveUpdates = false;
         for (int i = 0; i < slots.length; i++) {
@@ -135,16 +157,19 @@ public final class AgendaReminder {
             boolean atomicActive = VivoAtomicNotification.active(manager, NOTIFICATION_ID + i);
             if (!same || atomicActive != atomic)
                 VivoAtomicNotification.end(context, manager, NOTIFICATION_ID + i);
-            if (entry == null) { AtomicCountdownUpdates.clear(NOTIFICATION_ID + i); state.remove("slot_key:" + i).remove("slot_end:" + i).remove("slot_started:" + i); continue; }
+            if (entry == null) { AtomicCountdownUpdates.clear(NOTIFICATION_ID + i); state.remove("slot_key:" + i).remove("slot_end:" + i).remove("slot_started:" + i).remove("slot_task:"+i).remove("slot_snooze_limit:"+i); continue; }
             long notifiedAt = same ? prefs.getLong("slot_started:" + i, now) : now;
             // Persisted occurrence identity survives force-stop; the system notification may not.
             boolean update = same && (!atomic || atomicActive);
             Notification notice = notification(context, entry, now, update,
                     NOTIFICATION_ID + i, notifiedAt, ReminderTimeline.nextTitle(entries, entry, now), atomic);
             manager.notify(NOTIFICATION_ID + i, notice);
-            if (atomic) AtomicCountdownUpdates.remember(NOTIFICATION_ID + i, notice, entry, now);
+            long expires = ReminderTimeline.expiresAt(entry,snoozeUntil.getOrDefault(entry.key(),0L));
+            if (atomic) AtomicCountdownUpdates.remember(NOTIFICATION_ID + i, notice, entry, now, expires);
             else AtomicCountdownUpdates.clear(NOTIFICATION_ID + i);
-            state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, ReminderTimeline.expiresAt(entry));
+            state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, expires)
+                    .putBoolean("slot_task:"+i,"task".equals(entry.category))
+                    .putLong("slot_snooze_limit:"+i,"event".equals(entry.category)?entry.finish()-30_000L:Long.MAX_VALUE);
             state.putLong("slot_started:" + i, notifiedAt);
             if (atomic) {
                 liveUpdates = true;
@@ -206,10 +231,14 @@ public final class AgendaReminder {
                 .setContentIntent(details)
                 .setOngoing(true).setOnlyAlertOnce(same).setWhen(e.start).setShowWhen(false)
                 .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PUBLIC)
-                .setTimeoutAfter(Math.max(1000, ReminderTimeline.expiresAt(e) - now))
-                .addAction(new Notification.Action.Builder(null, "查看详情", details).build())
-                .addAction(new Notification.Action.Builder(null, "5 分钟后提醒", action(context, e, "snooze", 2)).build())
-                .addAction(new Notification.Action.Builder(null, "隐藏本次", action(context, e, "hide", 3)).build());
+                .setTimeoutAfter(Math.max(1000, ReminderTimeline.expiresAt(e,
+                        AgendaReminderPreferences.prefs(context).getLong("snooze_until:"+e.key(),0)) - now));
+        if ("task".equals(e.category) && !e.system)
+            builder.addAction(new Notification.Action.Builder(null,"完成",action(context,e,"complete",4)).build());
+        else builder.addAction(new Notification.Action.Builder(null,"查看详情",details).build());
+        if (ReminderTimeline.snoozeAt(e,now)>0)
+            builder.addAction(new Notification.Action.Builder(null,"event".equals(e.category)?"稍后提醒":"5 分钟后提醒",action(context,e,"snooze",2)).build());
+        builder.addAction(new Notification.Action.Builder(null,"隐藏本次",action(context,e,"hide",3)).build());
         if (atomic) {
             RemoteViews card = AtomicAgendaCard.create(context, e, now, notifiedAt, nextTitle, details);
             String clock = startedNotice ? status : DateTimeFormatter.ofPattern("HH:mm")
@@ -238,9 +267,16 @@ public final class AgendaReminder {
             large.setTextViewText(R.id.agenda_source, e.source + " · " + status);
             large.setTextViewText(R.id.agenda_description, e.description);
             large.setViewVisibility(R.id.agenda_description, e.description.trim().isEmpty() ? android.view.View.GONE : android.view.View.VISIBLE);
-            large.setChronometer(R.id.agenda_countdown, SystemClock.elapsedRealtime() + e.start - now,
-                    now < e.start ? "距开始 %s" : "已开始 %s", true);
-            large.setChronometerCountDown(R.id.agenda_countdown, now < e.start);
+            if (startedNotice) {
+                large.setChronometer(R.id.agenda_countdown,SystemClock.elapsedRealtime(),null,false);
+                large.setTextViewText(R.id.agenda_countdown,status);
+            } else {
+                long target = now < e.start ? e.start : e.finish();
+                String label = now >= e.start ? "距结束 %s" : "task".equals(e.category)
+                        ? e.dueAtMillis!=null ? "距截止 %s" : "距提醒 %s" : "距开始 %s";
+                large.setChronometer(R.id.agenda_countdown,SystemClock.elapsedRealtime()+target-now,label,true);
+                large.setChronometerCountDown(R.id.agenda_countdown,true);
+            }
             builder.setCustomContentView(small).setCustomBigContentView(large).setCustomHeadsUpContentView(small)
                     .setStyle(new Notification.DecoratedCustomViewStyle());
         }

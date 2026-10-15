@@ -277,6 +277,26 @@ public final class CalendarStore {
         return true;
     }
 
+    /** Changes only alerts on an event owned by Chrona; event content and history remain intact. */
+    public boolean replaceReminders(long eventId, List<Integer> minutes) {
+        requireReadWrite();
+        requireId(eventId);
+        Long calendarId = findCalendarId();
+        if (calendarId == null || getEvent(calendarId, eventId) == null) return false;
+        ArrayList<ContentProviderOperation> operations = new ArrayList<>();
+        operations.add(ContentProviderOperation.newAssertQuery(Events.CONTENT_URI)
+                .withSelection(Events._ID + "=? AND " + Events.CALENDAR_ID + "=?",
+                        new String[]{Long.toString(eventId), Long.toString(calendarId)})
+                .withExpectedCount(1).build());
+        operations.add(ContentProviderOperation.newDelete(syncUri(Reminders.CONTENT_URI))
+                .withSelection(Reminders.EVENT_ID + "=?", new String[]{Long.toString(eventId)}).build());
+        for (int minute : minutes) operations.add(ContentProviderOperation.newInsert(syncUri(Reminders.CONTENT_URI))
+                .withValue(Reminders.EVENT_ID, eventId).withValue(Reminders.MINUTES, minute)
+                .withValue(Reminders.METHOD, Reminders.METHOD_ALERT).build());
+        apply(operations);
+        return true;
+    }
+
     /** Returns false if the event ID is stale or belongs to another calendar. */
     public boolean deleteEvent(long eventId) {
         requireReadWrite();

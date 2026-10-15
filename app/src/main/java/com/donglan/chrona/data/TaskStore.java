@@ -21,6 +21,7 @@ import java.io.File;
 /** Local persistence for submitted inputs and the calendar entries proposed for each input. */
 public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
+    private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
     private static final int DATABASE_VERSION = 11;
 
@@ -406,6 +407,56 @@ public final class TaskStore extends SQLiteOpenHelper {
         return items;
     }
 
+    /** Execution times alone belong in the home agenda; a task deadline is not an appointment. */
+    public List<EventCandidate> queryHomeUpcoming(long now, java.time.ZoneId zone, int limit) {
+        long todayUtc = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+                .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
+        String selection = "is_record=0 AND completed_at_millis IS NULL AND start_at_millis IS NOT NULL"
+                + " AND (category='task' OR (category='event' AND end_at_millis>start_at_millis))"
+                + " AND ((all_day=0 AND (CASE WHEN end_at_millis>start_at_millis THEN end_at_millis>CAST(? AS INTEGER)"
+                + " ELSE start_at_millis>=CAST(? AS INTEGER) END))"
+                + " OR (all_day=1 AND (CASE WHEN end_at_millis>start_at_millis THEN end_at_millis"
+                + " ELSE start_at_millis+" + ALL_DAY_DURATION_MILLIS + " END)>CAST(? AS INTEGER)))";
+        String order = ScheduleQuery.DAY_SQL + " ASC, all_day DESC, start_at_millis ASC, id ASC";
+        List<EventCandidate> items = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null, selection,
+                new String[]{Long.toString(now), Long.toString(now), Long.toString(todayUtc)}, null, null, order,
+                Integer.toString(Math.max(1, limit)))) {
+            while (cursor.moveToNext()) items.add(readCandidate(cursor));
+        }
+        return items;
+    }
+
+    public HomeTodoSummary homeTodoSummary(long now, java.time.ZoneId zone, int focusLimit) {
+        java.time.LocalDate today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
+        long dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
+        long dayEnd = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
+        String open = "is_record=0 AND category='task' AND completed_at_millis IS NULL";
+        int total = 0, todayDue = 0, overdue = 0, unscheduled = 0;
+        try (Cursor cursor = getReadableDatabase().rawQuery("SELECT COUNT(*),"
+                + " SUM(CASE WHEN due_at_millis>=CAST(? AS INTEGER) AND due_at_millis<CAST(? AS INTEGER) THEN 1 ELSE 0 END),"
+                + " SUM(CASE WHEN due_at_millis<CAST(? AS INTEGER) THEN 1 ELSE 0 END),"
+                + " SUM(CASE WHEN start_at_millis IS NULL AND due_at_millis IS NULL THEN 1 ELSE 0 END)"
+                + " FROM event_candidates WHERE " + open,
+                new String[]{Long.toString(dayStart), Long.toString(dayEnd), Long.toString(now)})) {
+            if (cursor.moveToFirst()) {
+                total = cursor.getInt(0); todayDue = cursor.getInt(1);
+                overdue = cursor.getInt(2); unscheduled = cursor.getInt(3);
+            }
+        }
+        List<EventCandidate> focus = new ArrayList<>();
+        // Today's deadlines first, then overdue work, then the remaining dated and undated tasks.
+        String priority = "CASE WHEN due_at_millis>=" + dayStart + " AND due_at_millis<" + dayEnd
+                + " THEN 0 WHEN due_at_millis<" + now + " THEN 1 WHEN due_at_millis IS NOT NULL"
+                + " THEN 2 WHEN start_at_millis IS NOT NULL THEN 3 ELSE 4 END";
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null, open, null,
+                null, null, priority + ", COALESCE(due_at_millis,start_at_millis) ASC, id ASC",
+                Integer.toString(Math.max(1, focusLimit)))) {
+            while (cursor.moveToNext()) focus.add(readCandidate(cursor));
+        }
+        return new HomeTodoSummary(total, todayDue, overdue, unscheduled, focus);
+    }
+
     public List<Long> queryScheduleIds(ScheduleQuery query) {
         List<Long> ids = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", new String[]{"id"},
@@ -650,11 +701,14 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<Long> queryInboxIds(InboxQuery query, boolean oldestFirst) {
         List<Long> ids = new ArrayList<>();
         String[] columns = query.keyword.isEmpty() ? new String[]{"id"}
-                : new String[]{"id", "raw_text", "link_text"};
+                : new String[]{"id", "raw_text", "link_text",
+                    "(SELECT group_concat(title, char(10)) FROM event_candidates WHERE task_id=tasks.id)",
+                    "(SELECT group_concat(description, char(10)) FROM event_candidates WHERE task_id=tasks.id)"};
         try (Cursor cursor = getReadableDatabase().query("tasks", columns, query.selection,
                 query.arguments, null, null, query.orderBy(oldestFirst))) {
             while (cursor.moveToNext()) {
-                if (query.keyword.isEmpty() || query.matchesSearch(cursor.getString(1), cursor.getString(2)))
+                if (query.keyword.isEmpty() || query.matchesSearch(cursor.getString(1), cursor.getString(2),
+                        cursor.getString(3), cursor.getString(4)))
                     ids.add(cursor.getLong(0));
             }
         }

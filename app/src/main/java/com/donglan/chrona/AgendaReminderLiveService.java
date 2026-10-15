@@ -34,6 +34,7 @@ public final class AgendaReminderLiveService extends Service {
         @Override public void onReceive(Context c, Intent i) { AgendaReminder.requestRefresh(AgendaReminderLiveService.this); }
     };
     static void update(Context context, boolean needed, long nextAt) {
+        needed = needed && NotificationDeliveryStatus.canPostReminders(context);
         if (!needed) { context.stopService(new Intent(context, AgendaReminderLiveService.class)); return; }
         AgendaReminderLiveService current = live;
         if (current != null) {
@@ -53,7 +54,7 @@ public final class AgendaReminderLiveService extends Service {
         else registerReceiver(screen, events);
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (!AgendaReminderPreferences.enabled(this)) { stopSelf(); return START_NOT_STICKY; }
+        if (!AgendaReminderPreferences.enabled(this) || !NotificationDeliveryStatus.canPostReminders(this)) { stopSelf(); return START_NOT_STICKY; }
         NotificationManager manager = getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(CHANNEL, "日程后台更新", NotificationManager.IMPORTANCE_MIN);
         channel.setSound(null, null); channel.enableVibration(false); channel.setShowBadge(false);

@@ -7,13 +7,15 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 source = (root / 'app/src/main/java/com/donglan/chrona/AgendaReminderPreferences.java').read_text(encoding='utf-8')
 source = re.sub(r'^package .*;\s*|^import .*;\s*', '', source, flags=re.M)
-for name in ('CalendarSourcePreferences', 'HomeTimelinePreferences'):
+for name in ('CalendarSourcePreferences', 'HomeTimelinePreferences', 'NotificationDeliveryStatus'):
     extra = (root / f'app/src/main/java/com/donglan/chrona/{name}.java').read_text(encoding='utf-8')
-    source += '\n' + re.sub(r'^package .*;\s*|^import .*;\s*', '', extra, flags=re.M).replace('public final class', 'final class')
+    source += '\n' + re.sub(r'^package .*;\s*|^import .*;\s*', '', extra, flags=re.M).replace('public final class', 'final class').replace('android.Manifest.', 'Manifest.')
 harness = r'''
 import java.util.*;
 class Context {
  static final int MODE_PRIVATE=0;static Map<String,SharedPreferences> files=new HashMap<>();
+ NotificationManager manager=new NotificationManager();int permission=PackageManager.PERMISSION_GRANTED;
+ int checkSelfPermission(String p){return permission;}String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> c){return c.cast(manager);}
  Context getApplicationContext(){return this;}
  SharedPreferences getSharedPreferences(String name,int mode){if(mode!=MODE_PRIVATE)throw new AssertionError("preference mode");return files.computeIfAbsent(name,k->new SharedPreferences());}
 }
@@ -22,7 +24,14 @@ class SharedPreferences {
  boolean getBoolean(String key,boolean fallback){return (Boolean)values.getOrDefault(key,fallback);}int getInt(String key,int fallback){return (Integer)values.getOrDefault(key,fallback);}Editor edit(){return new Editor();}
  class Editor {Map<String,Object> changes=new HashMap<>();Editor putBoolean(String key,boolean value){changes.put(key,value);return this;}Editor putInt(String key,int value){changes.put(key,value);return this;}void apply(){values.putAll(changes);writes++;}}
 }
-class AgendaReminder {static int refreshes;static void requestRefresh(Context c){refreshes++;}}
+class NotificationManager {static final int IMPORTANCE_NONE=0;boolean allowed=true;NotificationChannel channel;boolean areNotificationsEnabled(){return allowed;}NotificationChannel getNotificationChannel(String id){if(!id.equals(AgendaReminder.CHANNEL))throw new AssertionError(id);return channel;}}
+class NotificationChannel {int importance;NotificationChannel(int importance){this.importance=importance;}int getImportance(){return importance;}}
+class Build {static class VERSION {static int SDK_INT=36;}}
+class PackageManager {static final int PERMISSION_GRANTED=0;}
+class Manifest {static class permission {static final String POST_NOTIFICATIONS="notification";}}
+class Settings {static final String ACTION_APP_NOTIFICATION_SETTINGS="app",ACTION_CHANNEL_NOTIFICATION_SETTINGS="channel",EXTRA_APP_PACKAGE="package",EXTRA_CHANNEL_ID="channel_id";}
+class Intent {Intent(String action){}Intent putExtra(String key,String value){return this;}}
+class AgendaReminder {static final String CHANNEL="upcoming_agenda";static int refreshes;static void requestRefresh(Context c){refreshes++;}}
 class AgendaReminderJobService {static int schedules;static void schedule(Context c){schedules++;}}
 __SOURCE__
 public class ReminderPreferencesCheck {
@@ -53,6 +62,18 @@ public class ReminderPreferencesCheck {
    check(AgendaReminderPreferences.enabled(c)==enabled&&AgendaReminderPreferences.includesSystemCalendar(c)==include&&AgendaReminderPreferences.atomicChrona(c)==chrona&&AgendaReminderPreferences.atomicSystem(c)==systemAtomic,"production getters mask "+mask);
    check(AgendaReminderPreferences.useAtomic(c,system,available)==(enabled&&available&&(!system||include)&&(system?systemAtomic:chrona)),"useAtomic truth table mask "+mask);
   }
+  p.edit().putBoolean("enabled",true).putBoolean("include_system",true).putBoolean("atomic_chrona",true).putBoolean("atomic_system",true).apply();
+  for(int mask=0;mask<16;mask++){
+   boolean scene=(mask&1)!=0,app=(mask&2)!=0,permission=(mask&4)!=0,channel=(mask&8)!=0;
+   c.manager.allowed=app;c.permission=permission?PackageManager.PERMISSION_GRANTED:-1;c.manager.channel=new NotificationChannel(channel?4:0);
+   Map<String,Object> previous=new HashMap<>(p.values);int writes=p.writes,refreshes=AgendaReminder.refreshes;
+   boolean available=scene&&NotificationDeliveryStatus.canPostReminders(c);
+   check(AgendaReminderPreferences.useAtomic(c,false,available)==(scene&&app&&permission&&channel),"Chrona atomic includes real delivery prerequisites "+mask);
+   check(AgendaReminderPreferences.useAtomic(c,true,available)==(scene&&app&&permission&&channel),"system atomic includes real delivery prerequisites "+mask);
+   check(p.values.equals(previous)&&p.writes==writes&&AgendaReminder.refreshes==refreshes,"reading delivery status leaves saved toggles unchanged "+mask);
+  }
+  c.manager.allowed=true;c.permission=PackageManager.PERMISSION_GRANTED;c.manager.channel=null;
+  check(AgendaReminderPreferences.useAtomic(c,false,NotificationDeliveryStatus.canPostReminders(c)),"first real reminder may create its channel without changing source preferences");
   for(boolean value:new boolean[]{false,true,false,true}){
    int refreshes=AgendaReminder.refreshes,schedules=AgendaReminderJobService.schedules,writes=p.writes;
    AgendaReminderPreferences.setAtomicChrona(c,value);
@@ -92,7 +113,7 @@ public class ReminderPreferencesCheck {
   }
   check(HomeTimelinePreferences.getItemLimit(c)==HomeTimelinePreferences.DEFAULT_ITEM_LIMIT,"home item limit default");
   for(int requested:new int[]{-1,5,20,50,100}){HomeTimelinePreferences.setItemLimit(c,requested);check(HomeTimelinePreferences.getItemLimit(new Context())==Math.max(5,Math.min(50,requested)),"home item limit persisted and bounded");}
-  System.out.println("Production reminder preferences passed: "+checks+" checks; all 64 boolean combinations, defaults, persistence and setter refresh/schedule");
+  System.out.println("Production reminder preferences passed: "+checks+" checks; boolean combinations, notification/channel prerequisites, persistence and independent display settings");
  }
 }
 '''.replace('__SOURCE__', source)

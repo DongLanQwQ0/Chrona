@@ -3,6 +3,7 @@ package com.donglan.chrona;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.HorizontalScrollView;
@@ -23,6 +24,8 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
     private boolean startedAtSystemEdge;
     private boolean startedAtBoundary;
     private boolean yieldingToTaskPager;
+    private boolean touchStartedInPriorityChild;
+    private final java.util.List<View> gesturePriorityChildren = new java.util.ArrayList<>();
     private ValueAnimator settleAnimator;
 
     CandidatePagerScrollView(Context context) {
@@ -40,9 +43,29 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
         this.pageCount = Math.max(1, pageCount);
     }
 
+    void addGesturePriorityChild(View child) {
+        if (child != null && !gesturePriorityChildren.contains(child)) gesturePriorityChildren.add(child);
+    }
+
+    boolean ownsPriorityGestureAt(float rawX, float rawY) {
+        for (View child : gesturePriorityChildren) {
+            if (!child.isShown()) continue;
+            int[] location = new int[2];
+            child.getLocationOnScreen(location);
+            if (rawX >= location[0] && rawX < location[0] + child.getWidth()
+                    && rawY >= location[1] && rawY < location[1] + child.getHeight()) return true;
+        }
+        return false;
+    }
+
+    @Override public boolean onInterceptTouchEvent(MotionEvent event) {
+        return !touchStartedInPriorityChild && super.onInterceptTouchEvent(event);
+    }
+
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
+            touchStartedInPriorityChild = ownsPriorityGestureAt(event.getRawX(), event.getRawY());
             if (settleAnimator != null) settleAnimator.cancel();
             downX = event.getX();
             downY = event.getY();
@@ -57,6 +80,12 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
             tracking = false;
             yieldingToTaskPager = false;
             return super.dispatchTouchEvent(event);
+        }
+        if (touchStartedInPriorityChild) {
+            boolean handled = super.dispatchTouchEvent(event);
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+                touchStartedInPriorityChild = false;
+            return handled;
         }
         if (yieldingToTaskPager) {
             if (action == MotionEvent.ACTION_CANCEL) {
@@ -141,7 +170,7 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
     }
 
     boolean canYieldToTaskPager(float fingerDistanceX) {
-        if (!startedAtBoundary || startedAtSystemEdge
+        if (touchStartedInPriorityChild || !startedAtBoundary || startedAtSystemEdge
                 || Math.abs(fingerDistanceX) <= touchSlop) return false;
         int maxScroll = Math.max(0, (pageCount - 1) * pageWidth);
         return fingerDistanceX > 0 && startScrollX <= touchSlop

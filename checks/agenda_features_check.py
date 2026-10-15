@@ -122,6 +122,14 @@ public class AgendaFeaturesCheck {
   check(new ReminderTimeline(List.of(a),start,Set.of(),Map.of(a.key(),start+300_000),3).wakeAt==start+300_000,"snooze survives refresh");
   check(new ReminderTimeline(List.of(a),start,Set.of(),Map.of(a.key(),start+300_000),3).entries.isEmpty(),"snoozed hidden");
   check(new ReminderTimeline(List.of(a),start+300_000,Set.of(),Map.of(a.key(),start+300_000),3).entries.size()==1,"snooze expires");
+  AgendaEntry deferredTask=new AgendaEntry(77,1,start,start,"task","","","",false,false,true,null,"task");
+  long resumed=start+180_000;
+  check(ReminderTimeline.snoozeAt(deferredTask,start-120_000)==resumed,"two minutes before deadline snoozes for full five minutes");
+  check(new ReminderTimeline(List.of(deferredTask),resumed,Set.of(),Map.of(deferredTask.key(),resumed),3).entries.equals(List.of(deferredTask)),"explicit task snooze survives original three-minute expiry");
+  check(ReminderTimeline.expiresAt(deferredTask,resumed)==resumed+180_000,"resumed task has full three-minute window");
+  check(new ReminderTimeline(List.of(deferredTask),resumed+180_000,Set.of(),Map.of(deferredTask.key(),resumed),3).entries.isEmpty(),"resumed task exits exactly at new expiry");
+  check(ReminderTimeline.snoozeAt(a,a.finish()-60_000)==a.finish()-30_000,"activity returns before end");
+  check(ReminderTimeline.snoozeAt(a,a.finish()-30_000)==0,"no postponement offered in final activity seconds");
   AgendaEntry next=e(10,start+100_000,start+4_000_000), later=e(11,start+200_000,start+4_000_000);
   List<AgendaEntry> many=List.of(a,b,next,later,far);
   ReminderTimeline three=new ReminderTimeline(many,start,Set.of(),Map.of(),3);

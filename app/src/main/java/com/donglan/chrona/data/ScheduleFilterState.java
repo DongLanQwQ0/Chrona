@@ -7,17 +7,23 @@ import java.time.temporal.TemporalAdjusters;
 /** A filter sheet edits its own copy; applying is the only write to the dashboard. */
 public final class ScheduleFilterState {
     public static final int ALL = 0, TODAY = 1, WEEK = 2, MONTH = 3, DATE = 4, CUSTOM = 5;
-    public int range, category, publication, source, tab;
+    public int range, category, publication, source, tab, todoScope;
     public LocalDate date, until;
 
     public ScheduleFilterState(int range, int category, int publication, int source,
             int tab, LocalDate date, LocalDate until) {
+        this(range, category, publication, source, tab, date, until, ScheduleQuery.TODO_ANY);
+    }
+
+    public ScheduleFilterState(int range, int category, int publication, int source,
+            int tab, LocalDate date, LocalDate until, int todoScope) {
         this.range = range; this.category = category; this.publication = publication;
         this.source = source; this.tab = tab; this.date = date; this.until = until;
+        this.todoScope = todoScope;
     }
 
     public ScheduleFilterState copy() {
-        return new ScheduleFilterState(range, category, publication, source, tab, date, until);
+        return new ScheduleFilterState(range, category, publication, source, tab, date, until, todoScope);
     }
 
     public LocalDate[] window(LocalDate today) {
@@ -54,6 +60,7 @@ public final class ScheduleFilterState {
 
     public void reset(LocalDate today) {
         range = category = publication = source = 0;
+        todoScope = ScheduleQuery.TODO_ANY;
         date = until = today;
     }
 }

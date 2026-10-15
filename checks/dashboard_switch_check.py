@@ -16,10 +16,12 @@ def method(marker):
         end += 1
     return activity[first:end]
 controller = '\n'.join(method(x) for x in ('private void switchTo(', 'private void prepareSectionSwitch(',
-    'private void switchToPendingSection(', 'private void refreshSettledSection(', 'private String inboxCategory('))
+    'private void switchToPendingSection(', 'private void refreshSettledSection(', 'private String inboxCategory(',
+    'private ScheduleQuery buildScheduleQuery(', 'private void openHomeTodos('))
 files = {
 'android/content/Context.java': '''package android.content;public class Context {
  public volatile boolean fail;public volatile int reads,closed;public volatile String keyword;public final android.database.sqlite.SQLiteDatabase db=new android.database.sqlite.SQLiteDatabase();
+ public com.donglan.chrona.data.ScheduleQuery lastSchedule;
  public Context getApplicationContext(){return this;}
 }''',
 'android/database/sqlite/SQLiteDatabase.java': '''package android.database.sqlite;public class SQLiteDatabase {
@@ -34,12 +36,15 @@ public class TaskStore implements AutoCloseable {
  public long dataRevision(){check();return 7;}public int taskCountByStatus(String status){check();return 2;}
  public List<Long>queryInboxIds(InboxQuery query,boolean oldest){check();c.keyword=query.keyword;if(c.fail)throw new IllegalStateException("read failure");return java.util.stream.LongStream.rangeClosed(1,30).boxed().toList();}
  public List<TaskRecord>queryInboxPage(InboxQuery query,boolean oldest,int page,List<Long>ids){check();return List.of(new TaskRecord(ids.get(page*12),"text","source",0,"ready",null));}
- public List<Long>queryScheduleIds(ScheduleQuery query){check();return List.of(1L,2L);}
+ public List<Long>queryScheduleIds(ScheduleQuery query){check();c.lastSchedule=query;return List.of(1L,2L);}
  public List<EventCandidate>querySchedulePage(ScheduleQuery query,boolean oldest,int page){check();return List.of(new EventCandidate());}
  public List<Long>linkedCalendarIds(){check();return List.of(55L);}
 }''',
 'com/donglan/chrona/HomeData.java': '''package com.donglan.chrona;class HomeData {
  final int review=2,failed=2;HomeData(android.content.Context c,com.donglan.chrona.data.TaskStore store){store.dataRevision();}}
+''',
+'com/donglan/chrona/ScheduleOrderPreferences.java': '''package com.donglan.chrona;final class ScheduleOrderPreferences {
+ static boolean oldestFirst(Object context,int tab){return true;}}
 ''',
 'com/donglan/chrona/DashboardActivity.java': '''package com.donglan.chrona;
 import java.time.*;import java.util.*;import java.util.concurrent.*;import com.donglan.chrona.data.*;
@@ -55,15 +60,17 @@ class Feedback {static void show(DashboardActivity owner,String message){owner.f
 public class DashboardActivity extends android.content.Context {
  static final int HOME=0,INBOX=1,SCHEDULE=2;int section=HOME,pendingSection=-1,loadingSection,sectionLoadGeneration,dragDirection;
  boolean initialDataReady=true,pageTransitionRunning,dragTargetLoaded,sectionLoadRunning,foreground=true,homeRefreshPending,scheduleRefreshPending,destroyed,dockSectionSwitch;
- int statusIndex,categoryIndex,scheduleTab,scheduleCategory,schedulePublication,scheduleSource,inboxPage=999,schedulePage;
+ int statusIndex,categoryIndex,scheduleTab,scheduleCategory,schedulePublication,scheduleSource,inboxPage=999,schedulePage,scheduleTodoScope,scheduleRange;
+ LocalDate scheduleDate=LocalDate.now(),scheduleUntil=scheduleDate;
  String inboxQuery="original",scheduleQuery="",snapshot="",failure;boolean inboxOldestFirst,scheduleOldestFirst;
  final Map<Integer,Page>sectionPages=new HashMap<>();Page adjacentPage;DashboardSectionData preparedSection;
+ final Map<Integer,String>sectionVersions=new HashMap<>();final Set<Integer>dirtySections=new HashSet<>();final Set<Long>selectedScheduleIds=new HashSet<>();
  final Queue refresh=new Queue();final Dock navigation=new Dock();final Pager pager=new Pager();final Listener sectionPagerListener=new Listener();
  final ExecutorService startupReader=Executors.newSingleThreadExecutor();final Runnable deferredSectionRefresh=this::refreshSettledSection;
  int builds,commits,refreshes,snapshotReads;DashboardSectionData used;
  DashboardActivity(){sectionPages.put(HOME,new Page(HOME));}
  boolean isDestroyed(){return destroyed;}boolean isFinishing(){return false;}int sectionPosition(int destination){return destination;}
- LocalDate[]scheduleWindow(boolean system){return new LocalDate[]{LocalDate.now(),LocalDate.now().plusDays(7)};}
+ LocalDate[]scheduleWindow(boolean system){return scheduleRange==0?new LocalDate[]{null,null}:new LocalDate[]{LocalDate.now(),LocalDate.now().plusDays(7)};}
  float sectionPageWidth(){return 300;}void collectSectionSurfaces(){}
  Page buildAdjacentSection(int destination){builds++;used=preparedSection;return new Page(destination);}
  void finishSectionDrag(boolean commit,float width){section=adjacentPage.section;sectionPages.put(section,adjacentPage);dragTargetLoaded=false;commits++;}
@@ -85,6 +92,18 @@ public class DashboardActivity extends android.content.Context {
   DashboardActivity failure=new DashboardActivity();try{failure.fail=true;failure.switchTo(INBOX);failure.await();check(failure.section==HOME&&failure.builds==0&&failure.failure!=null,"failed read preserves page");check(failure.db.ended==1&&failure.closed==1,"failure releases read transaction");}finally{failure.startupReader.shutdownNow();}
   DashboardActivity paused=new DashboardActivity();try{paused.switchTo(INBOX);paused.startupReader.submit(()->{}).get(3,TimeUnit.SECONDS);paused.sectionLoadGeneration++;paused.sectionLoadRunning=false;paused.refresh.drain();check(paused.builds==0&&paused.section==HOME,"stale lifecycle callback cannot create page");}finally{paused.startupReader.shutdownNow();}
   android.content.Context c=new android.content.Context();ExecutorService worker=Executors.newSingleThreadExecutor();try{DashboardSectionData system=worker.submit(()->DashboardSectionData.load(c,SCHEDULE,null,null,false,0,true)).get();check(system.linked.equals(List.of(55L))&&system.ids.isEmpty()&&system.candidates.isEmpty(),"system source uses linked snapshot without local schedule query");}finally{worker.shutdownNow();}
+  for(int scope:new int[]{ScheduleQuery.TODO_TODAY_DUE,ScheduleQuery.TODO_OVERDUE,ScheduleQuery.TODO_OPEN,ScheduleQuery.TODO_ANY}){
+   DashboardActivity route=new DashboardActivity();try{
+    route.sectionPages.put(SCHEDULE,new Page(SCHEDULE));route.sectionVersions.put(SCHEDULE,"stale");
+    route.scheduleQuery="stale search";route.scheduleRange=5;route.scheduleSource=1;route.schedulePublication=2;route.schedulePage=99;route.selectedScheduleIds.add(44L);
+    route.openHomeTodos(scope,scope==ScheduleQuery.TODO_ANY);
+    check(route.sectionLoadRunning&&route.section==HOME,"home summary invalidates stale schedule page and uses worker switch");
+    check(route.scheduleTodoScope==scope&&route.scheduleTab==(scope==ScheduleQuery.TODO_ANY?1:3),"home summary selects matching tab and task scope");
+    check(route.scheduleCategory==EventCategory.indexOf(EventCategory.TASK)+1&&route.scheduleRange==0&&route.schedulePublication==0&&route.scheduleSource==0&&route.schedulePage==0&&route.scheduleQuery.isEmpty()&&route.selectedScheduleIds.isEmpty(),"home summary clears unrelated filters and stale selection");
+    route.await();check(route.section==SCHEDULE&&route.lastSchedule.todoScope==scope,"scope reaches production ScheduleQuery in worker snapshot");
+    check(scope!=ScheduleQuery.TODO_ANY||route.lastSchedule.selection.contains("NOT"),"undated summary routes to unscheduled tab predicate");
+   }finally{route.startupReader.shutdownNow();}
+  }
   System.out.println("Dashboard switch checks passed: "+checks+"; production worker/controller methods, Android transport stand-ins");
  }
 }'''.replace('@@CONTROLLER@@', controller)

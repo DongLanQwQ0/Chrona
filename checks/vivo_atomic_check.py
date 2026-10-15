@@ -6,6 +6,8 @@ source=(root/'app/src/main/java/com/donglan/chrona/VivoAtomicNotification.java')
 source=re.sub(r'^package .*;\s*|^import .*;\s*','',source,flags=re.M).replace('android.service.notification.StatusBarNotification','StatusBarNotification').replace('android.util.Log','Log')
 source=source.replace('android.graphics.Bitmap', 'Bitmap').replace('android.widget.RemoteViews', 'RemoteViews')
 source=source.replace('android.os.SystemClock', 'SystemClock')
+delivery=(root/'app/src/main/java/com/donglan/chrona/NotificationDeliveryStatus.java').read_text(encoding='utf-8')
+source += '\n' + re.sub(r'^package .*;\s*|^import .*;\s*','',delivery,flags=re.M).replace('android.Manifest.','Manifest.')
 card_source=(root/'app/src/main/java/com/donglan/chrona/AtomicAgendaCard.java').read_text(encoding='utf-8')
 a=card_source.index('    static String remainingText(long millis)');b=card_source.index('    private static int cameraTopPadding',a)
 source += '\nclass ReminderTimeline {static long CAPSULE_COUNTDOWN_WINDOW=120000;static long capsuleDeadline(AgendaEntry e,long now){return e.deadline;}static long expiresAt(AgendaEntry e){return e.deadline;}}\nclass AtomicAgendaCard {' + card_source[a:b] + '}\n'
@@ -15,15 +17,20 @@ source += updates
 harness=r'''
 import java.util.*;
 class Bundle extends HashMap<String,Object> {Bundle(){}Bundle(Bundle b){putAll(b);}Bundle getBundle(String k){return (Bundle)get(k);}Object getParcelable(String k){return get(k);}void putInt(String k,int v){put(k,v);}void putString(String k,String v){put(k,v);}void putCharSequence(String k,CharSequence v){put(k,v);}void putBoolean(String k,boolean v){put(k,v);}void putParcelable(String k,Object v){put(k,v);}void putBundle(String k,Bundle v){put(k,v);}void putParcelableArrayList(String k,ArrayList<Icon> v){put(k,v);}}
-class Build {static String MANUFACTURER;}
+class Build {static String MANUFACTURER;static class VERSION {static int SDK_INT=36;}}
+class PackageManager {static final int PERMISSION_GRANTED=0;}
+class Manifest {static class permission {static final String POST_NOTIFICATIONS="notification";}}
+class Settings {static final String ACTION_APP_NOTIFICATION_SETTINGS="app",ACTION_CHANNEL_NOTIFICATION_SETTINGS="channel",EXTRA_APP_PACKAGE="package",EXTRA_CHANNEL_ID="channel_id";}
+class Intent {String action;Map<String,String> extras=new HashMap<>();Intent(String action){this.action=action;}Intent putExtra(String key,String value){extras.put(key,value);return this;}}
+class NotificationChannel {int importance;NotificationChannel(int importance){this.importance=importance;}int getImportance(){return importance;}}
 class SystemClock {static long elapsed=300000;static long elapsedRealtime(){return elapsed;}}
 class PowerManager {boolean interactive=true;boolean isInteractive(){return interactive;}}
-class Context {PowerManager power=new PowerManager();NotificationManager manager=new NotificationManager();String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> c){return c.cast(c==PowerManager.class?power:manager);}}
+class Context {PowerManager power=new PowerManager();NotificationManager manager=new NotificationManager();int permission=PackageManager.PERMISSION_GRANTED;int checkSelfPermission(String p){return permission;}String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> c){return c.cast(c==PowerManager.class?power:manager);}}
 class PendingIntent {}
 class RemoteViews {int actions;Map<Integer,String> texts=new HashMap<>();public RemoteViews clone(){RemoteViews v=new RemoteViews();v.actions=actions;v.texts.putAll(texts);return v;}void setTextViewText(int id,String text){actions++;texts.put(id,text);}void setTextViewTextSize(int id,int unit,float size){actions++;}}
 class AgendaEntry {long deadline;AgendaEntry(long deadline){this.deadline=deadline;}}
 class AgendaReminderPreferences {static boolean seconds=true,capsule=true,enabled=true;static boolean enabled(Context c){return enabled;}static boolean showSeconds(Context c){return seconds;}static boolean capsuleCountdown(Context c){return capsule;}}
-class AgendaReminder {static int refreshes;static void requestRefresh(Context c){refreshes++;}}
+class AgendaReminder {static final String CHANNEL="upcoming_agenda";static int refreshes;static void requestRefresh(Context c){refreshes++;}}
 class Bitmap {static class Config {static Object ARGB_8888=new Object();}static Bitmap createBitmap(int w,int h,Object config){if(w!=1||h!=1)throw new AssertionError();return new Bitmap();}}
 class Icon {int resource;Bitmap bitmap;static Icon createWithResource(Context c,int r){Icon icon=new Icon();icon.resource=r;return icon;}static Icon createWithBitmap(Bitmap bitmap){Icon icon=new Icon();icon.bitmap=bitmap;return icon;}}
 class R {static class id {static int atomic_remaining=10,atomic_top_countdown=11;}static class drawable {static int ic_chrona_foreground=2,ic_calendar_source=3,ic_check=4;}}
@@ -31,7 +38,7 @@ class UiStyle {static class Palette {int primary=0xff8855ee;}static Palette colo
 class Log {static void w(String a,String b,Exception c){}static void i(String a,String b){}}
 class Notification {long when,timeout;Bundle extras=new Bundle();static class Builder {Notification n;Builder(Notification n){this.n=n;}static Builder recoverBuilder(Context c,Notification n){Notification copy=new Notification();copy.when=n.when;copy.extras.putAll(n.extras);return new Builder(copy);}Builder addExtras(Bundle b){n.extras.putAll(b);return this;}Builder setTimeoutAfter(long millis){n.timeout=millis;return this;}Builder setOnlyAlertOnce(boolean b){return this;}Notification build(){return n;}}}
 class StatusBarNotification {int id;Notification n;StatusBarNotification(int id,Notification n){this.id=id;this.n=n;}int getId(){return id;}Notification getNotification(){return n;}}
-class NotificationManager {StatusBarNotification[] active=new StatusBarNotification[0];List<Integer> operations=new ArrayList<>();Map<Integer,Notification> posted=new HashMap<>();int cancels;boolean fail,sceneFailure,allowed=true;Boolean scene=true;boolean areNotificationsEnabled(){return allowed;}public Boolean getSceneStatus(String pkg,String name){if(sceneFailure)throw new IllegalStateException("unavailable API");if(!pkg.equals("com.donglan.chrona")||!name.equals("CHRONA_AGENDA"))throw new AssertionError();return scene;}StatusBarNotification[] getActiveNotifications(){return active;}void notify(int id,Notification n){if(fail)throw new RuntimeException();operations.add((Integer)n.extras.get("notification.superx.operation"));posted.put(id,n);}void cancel(int id){cancels++;}}
+class NotificationManager {static final int IMPORTANCE_NONE=0;NotificationChannel channel;StatusBarNotification[] active=new StatusBarNotification[0];List<Integer> operations=new ArrayList<>();Map<Integer,Notification> posted=new HashMap<>();int cancels;boolean fail,sceneFailure,allowed=true;Boolean scene=true;boolean areNotificationsEnabled(){return allowed;}NotificationChannel getNotificationChannel(String id){if(!id.equals(AgendaReminder.CHANNEL))throw new AssertionError(id);return channel;}public Boolean getSceneStatus(String pkg,String name){if(sceneFailure)throw new IllegalStateException("unavailable API");if(!pkg.equals("com.donglan.chrona")||!name.equals("CHRONA_AGENDA"))throw new AssertionError();return scene;}StatusBarNotification[] getActiveNotifications(){return active;}void notify(int id,Notification n){if(fail)throw new RuntimeException();operations.add((Integer)n.extras.get("notification.superx.operation"));posted.put(id,n);}void cancel(int id){cancels++;}}
 __SOURCE__
 public class VivoAtomicCheck {
  static int checks;static void check(boolean ok){checks++;if(!ok)throw new AssertionError("vivo check "+checks);}
@@ -43,6 +50,10 @@ public class VivoAtomicCheck {
  c.manager.scene=null;check(VivoAtomicNotification.sceneEnabled(c)==null&&!VivoAtomicNotification.available(c));
  c.manager.scene=true;c.manager.sceneFailure=true;check(VivoAtomicNotification.sceneEnabled(c)==null&&!VivoAtomicNotification.available(c));c.manager.sceneFailure=false;
  c.manager.allowed=false;check(!VivoAtomicNotification.available(c));c.manager.allowed=true;check(VivoAtomicNotification.available(c));
+ c.permission=-1;check(!VivoAtomicNotification.available(c));c.permission=PackageManager.PERMISSION_GRANTED;
+ c.manager.channel=new NotificationChannel(NotificationManager.IMPORTANCE_NONE);check(!VivoAtomicNotification.available(c));
+ c.manager.channel=new NotificationChannel(4);check(VivoAtomicNotification.available(c));
+ c.manager.scene=false;check(!VivoAtomicNotification.available(c));c.manager.scene=true;
  Bundle b=VivoAtomicNotification.extras(c,"微积分","即将开始","10:00–12:25","10:00","距开始 15分钟",details,false,card,islandCard,animations);
  check(b.get("notification.superx.operation").equals(0));check(b.get("notification.superx.template").equals(7));check(b.get("notification.superx.scene").equals("CHRONA_AGENDA"));check(b.get("notification.superx.dismissWhenKill").equals(false));check(b.get("notification.superx.showNotify").equals(true));check(b.get("notification.superx.clickResp")==details);
  Bundle base=(Bundle)b.get("notification.superx.baseInfos"), island=(Bundle)b.get("notification.superx.island");
@@ -86,6 +97,8 @@ public class VivoAtomicCheck {
  tickingContext.manager.active=new StatusBarNotification[0];AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());
  tickingContext.manager.active=new StatusBarNotification[]{new StatusBarNotification(99,baseline)};AtomicCountdownUpdates.clear(99);AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());
  AtomicCountdownUpdates.remember(99,baseline,new AgendaEntry(System.currentTimeMillis()-1),System.currentTimeMillis());AtomicCountdownUpdates.tick(tickingContext);check(AgendaReminder.refreshes==1&&tickingContext.manager.posted.isEmpty());AtomicCountdownUpdates.clear(99);
+ AtomicCountdownUpdates.remember(99,baseline,new AgendaEntry(0),System.currentTimeMillis(),System.currentTimeMillis()+180000);
+ AtomicCountdownUpdates.tick(tickingContext);check(AgendaReminder.refreshes==1&&tickingContext.manager.posted.isEmpty());check(AtomicCountdownUpdates.nextDelay(tickingContext)==60000);AtomicCountdownUpdates.clear(99);
  System.out.println("Vivo atomic payload/lifecycle passed: "+checks+" checks (production adapter, notification doubles)");
  }
 }

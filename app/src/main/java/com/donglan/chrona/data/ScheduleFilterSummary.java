@@ -18,6 +18,9 @@ public final class ScheduleFilterSummary {
         }
         if (state.category > 0 && state.category <= EventCategory.LABELS.length)
             parts.add(EventCategory.LABELS[state.category - 1]);
+        if (state.todoScope == ScheduleQuery.TODO_TODAY_DUE) parts.add("今日截止");
+        else if (state.todoScope == ScheduleQuery.TODO_OVERDUE) parts.add("已逾期");
+        else if (state.todoScope == ScheduleQuery.TODO_OPEN) parts.add("未完成");
         if (state.publication == 1) parts.add("待确认");
         else if (state.publication == 2) parts.add("已写入");
         if (query != null && !query.trim().isEmpty()) parts.add("搜索：" + query.trim());

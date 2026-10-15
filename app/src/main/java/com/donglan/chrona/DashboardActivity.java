@@ -33,6 +33,7 @@ import com.donglan.chrona.calendar.AllDayDates;
 import com.donglan.chrona.calendar.CalendarStore;
 import com.donglan.chrona.calendar.CalendarOccurrence;
 import com.donglan.chrona.data.EventCategory;
+import com.donglan.chrona.data.HomeTodoSummary;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.data.ScheduleQuery;
@@ -95,6 +96,7 @@ public final class DashboardActivity extends Activity {
     private int categoryIndex, statusIndex;
     private int scheduleTab;
     private int schedulePage, scheduleRange, scheduleCategory, schedulePublication, scheduleSource;
+    private int scheduleTodoScope = ScheduleQuery.TODO_ANY;
     private LocalDate scheduleDate = LocalDate.now(), scheduleUntil = LocalDate.now();
     private LinearLayout scheduleControls;
     private boolean calendarPermissionForSchedule;
@@ -210,6 +212,7 @@ public final class DashboardActivity extends Activity {
             scheduleCategory = Math.min(EventCategory.VALUES.length,state.getInt("schedule_category"));
             schedulePublication = state.getInt("schedule_publication");
             scheduleSource = state.getInt("schedule_source");
+            scheduleTodoScope = state.getInt("schedule_todo_scope", ScheduleQuery.TODO_ANY);
             scheduleDate = LocalDate.parse(state.getString("schedule_date", LocalDate.now().toString()));
             scheduleUntil = LocalDate.parse(state.getString("schedule_until", scheduleDate.toString()));
             inboxPage = Math.max(0, state.getInt("inbox_page",
@@ -245,6 +248,7 @@ public final class DashboardActivity extends Activity {
         state.putInt("schedule_category", scheduleCategory);
         state.putInt("schedule_publication", schedulePublication);
         state.putInt("schedule_source", scheduleSource);
+        state.putInt("schedule_todo_scope", scheduleTodoScope);
         state.putString("schedule_date", scheduleDate.toString());
         state.putString("schedule_until", scheduleUntil.toString());
         state.putInt("inbox_page", inboxPage);
@@ -1316,6 +1320,7 @@ public final class DashboardActivity extends Activity {
                     upcoming.add(new HomeTimelineEntry(event));
         }
         showUpcomingCarousel(upcoming);
+        showHomeTodos(data.todos, now, zone);
 
         long rangeStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
         long rangeEnd = endDate.atStartOfDay(zone).toInstant().toEpochMilli();
@@ -1343,6 +1348,195 @@ public final class DashboardActivity extends Activity {
         }
     }
 
+    private void showHomeTodos(HomeTodoSummary todos, long now, ZoneId zone) {
+        android.content.SharedPreferences preferences = getSharedPreferences("home_timeline", MODE_PRIVATE);
+        boolean[] expanded = {preferences.getBoolean("todos_expanded", false)};
+        android.animation.ValueAnimator[] expansion = {null};
+        LinearLayout summary = card();
+        summary.setPadding(dp(14), dp(8), dp(14), dp(8));
+        summary.setClipChildren(false);
+        summary.setClipToPadding(false);
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        heading.setMinimumHeight(dp(44));
+        TextView title = text("待办 · " + todos.total, 16, true);
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        title.setMinimumHeight(dp(44));
+        heading.addView(title, new LinearLayout.LayoutParams(0, -1, 1));
+        TextView all = text("全部待办", 13, true);
+        all.setTextColor(UiStyle.colors(this).primary);
+        all.setGravity(Gravity.CENTER);
+        all.setMinimumHeight(dp(44));
+        all.setPadding(dp(8), 0, dp(8), 0);
+        all.setContentDescription("查看全部未完成待办，共 " + todos.total + " 项");
+        all.setOnClickListener(view -> openHomeTodos(ScheduleQuery.TODO_OPEN, false));
+        UiStyle.pressable(all);
+        heading.addView(all);
+        ImageButton disclosure = new ImageButton(this);
+        disclosure.setImageResource(R.drawable.ic_chevron_down);
+        disclosure.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
+        disclosure.setPadding(dp(12), dp(12), dp(12), dp(12));
+        disclosure.setBackgroundColor(Color.TRANSPARENT);
+        UiStyle.pressable(disclosure);
+        heading.addView(disclosure, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        summary.addView(heading);
+
+        LinearLayout counts = new LinearLayout(this);
+        counts.setGravity(Gravity.CENTER_VERTICAL);
+        addHomeTodoCount(counts, "今日截止", todos.todayDue,
+                () -> openHomeTodos(ScheduleQuery.TODO_TODAY_DUE, false));
+        addHomeTodoCount(counts, "已逾期", todos.overdue,
+                () -> openHomeTodos(ScheduleQuery.TODO_OVERDUE, false));
+        addHomeTodoCount(counts, "待安排", todos.unscheduled,
+                () -> openHomeTodos(ScheduleQuery.TODO_ANY, true));
+        UiStyle.addSpaced(summary, counts, 0, 0);
+        LinearLayout details = new LinearLayout(this);
+        details.setOrientation(LinearLayout.VERTICAL);
+        details.setPadding(0, dp(6), 0, dp(4));
+        details.setClipChildren(false);
+        details.setClipToPadding(false);
+        for (EventCandidate candidate : todos.focus) {
+            View divider = new View(this);
+            divider.setBackgroundColor(UiStyle.colors(this).outline);
+            details.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight(dp(64));
+            LinearLayout labels = new LinearLayout(this);
+            labels.setOrientation(LinearLayout.VERTICAL);
+            labels.setGravity(Gravity.CENTER_VERTICAL);
+            labels.setMinimumHeight(dp(56));
+            TextView label = text(candidate.title, 14, true);
+            label.setMaxLines(1);
+            label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            labels.addView(label);
+            TextView when = text(homeTodoWhen(candidate, now, zone), 12, false);
+            when.setMaxLines(1);
+            when.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            UiStyle.addSpaced(labels, when, 3, 0);
+            labels.setOnClickListener(view -> openCandidate(candidate));
+            UiStyle.pressable(labels);
+            row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+            row.addView(taskCompletionButton(candidate), new LinearLayout.LayoutParams(dp(48), dp(48)));
+            details.addView(row);
+        }
+        summary.addView(details, new LinearLayout.LayoutParams(-1, -2));
+        details.setVisibility(expanded[0] && !todos.focus.isEmpty() ? View.VISIBLE : View.GONE);
+        disclosure.setRotation(expanded[0] ? 180f : 0f);
+        Runnable describeExpansion = () -> {
+            String action = expanded[0] ? "收起重点待办" : "展开重点待办";
+            title.setContentDescription("待办，共 " + todos.total + " 项，" + action);
+            disclosure.setContentDescription(action);
+        };
+        describeExpansion.run();
+        View.OnClickListener toggle = view -> {
+            expanded[0] = !expanded[0];
+            preferences.edit().putBoolean("todos_expanded", expanded[0]).apply();
+            describeExpansion.run();
+            android.animation.ValueAnimator previous = expansion[0];
+            expansion[0] = null;
+            if (previous != null) previous.cancel();
+            int detailsWidth = summary.getWidth() - summary.getPaddingLeft() - summary.getPaddingRight();
+            if (!UiMotion.isEnabled() || detailsWidth <= 0) {
+                details.setVisibility(expanded[0] ? View.VISIBLE : View.GONE);
+                details.getLayoutParams().height = -2;
+                details.setAlpha(1f);
+                details.setClipChildren(false);
+                disclosure.setRotation(expanded[0] ? 180f : 0f);
+                details.requestLayout();
+                return;
+            }
+            int initialHeight = details.getVisibility() == View.GONE ? 0 : details.getHeight();
+            float initialAlpha = initialHeight == 0 ? 0f : details.getAlpha();
+            float initialRotation = disclosure.getRotation();
+            details.setVisibility(View.VISIBLE);
+            details.measure(View.MeasureSpec.makeMeasureSpec(detailsWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int targetHeight = expanded[0] ? details.getMeasuredHeight() : 0;
+            float targetAlpha = expanded[0] ? 1f : 0f;
+            float targetRotation = expanded[0] ? 180f : 0f;
+            details.setClipChildren(true);
+            android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            expansion[0] = animator;
+            animator.setDuration(expanded[0] ? UiMotion.ENTER : UiMotion.EXIT);
+            animator.setInterpolator(UiMotion.SETTLE);
+            animator.addUpdateListener(value -> {
+                float fraction = (float) value.getAnimatedValue();
+                details.getLayoutParams().height = initialHeight + Math.round((targetHeight - initialHeight) * fraction);
+                details.setAlpha(initialAlpha + (targetAlpha - initialAlpha) * fraction);
+                disclosure.setRotation(initialRotation + (targetRotation - initialRotation) * fraction);
+                details.requestLayout();
+            });
+            animator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    if (expansion[0] != animator) return;
+                    expansion[0] = null;
+                    details.setVisibility(expanded[0] ? View.VISIBLE : View.GONE);
+                    details.getLayoutParams().height = -2;
+                    details.setAlpha(1f);
+                    details.setClipChildren(false);
+                    disclosure.setRotation(targetRotation);
+                    details.requestLayout();
+                }
+            });
+            animator.start();
+        };
+        if (todos.focus.isEmpty()) {
+            disclosure.setVisibility(View.GONE);
+            title.setContentDescription("待办，共 " + todos.total + " 项");
+        } else {
+            title.setOnClickListener(toggle);
+            disclosure.setOnClickListener(toggle);
+            UiStyle.pressable(title);
+        }
+        UiStyle.addSpaced(content, summary, 4, 14);
+    }
+
+    private void addHomeTodoCount(LinearLayout parent, String label, int count, Runnable action) {
+        LinearLayout cell = new LinearLayout(this);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setGravity(Gravity.CENTER);
+        cell.setPadding(dp(3), dp(7), dp(3), dp(7));
+        TextView number = text(Integer.toString(count), 21, true);
+        number.setIncludeFontPadding(false);
+        number.setTextColor(count > 0 ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
+        cell.addView(number);
+        TextView caption = text(label, 12, false);
+        caption.setIncludeFontPadding(false);
+        UiStyle.addSpaced(cell, caption, 5, 0);
+        cell.setContentDescription(label + "，" + count + " 项，点击查看");
+        cell.setOnClickListener(view -> action.run());
+        UiStyle.pressable(cell);
+        parent.addView(cell, new LinearLayout.LayoutParams(0, -2, 1));
+    }
+
+    private String homeTodoWhen(EventCandidate candidate, long now, ZoneId zone) {
+        if (candidate.dueAtMillis != null) {
+            LocalDate today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
+            LocalDate due = Instant.ofEpochMilli(candidate.dueAtMillis).atZone(zone).toLocalDate();
+            String prefix = today.equals(due) ? "今日截止 · " : "截止 · ";
+            String pattern = today.equals(due) ? "HH:mm"
+                    : due.getYear() == today.getYear() ? "M月d日 HH:mm" : "yyyy年M月d日 HH:mm";
+            return prefix + new SimpleDateFormat(pattern, Locale.CHINA).format(new Date(candidate.dueAtMillis));
+        }
+        return candidate.startAtMillis == null ? "待安排" : "执行 · " + formatWhen(candidate);
+    }
+
+    private void openHomeTodos(int scope, boolean unscheduled) {
+        scheduleTab = unscheduled ? 1 : 3;
+        scheduleTodoScope = scope;
+        scheduleRange = schedulePublication = scheduleSource = schedulePage = 0;
+        scheduleCategory = EventCategory.indexOf(EventCategory.TASK) + 1;
+        scheduleDate = scheduleUntil = LocalDate.now();
+        scheduleQuery = "";
+        scheduleOldestFirst = ScheduleOrderPreferences.oldestFirst(this, scheduleTab);
+        selectedScheduleIds.clear();
+        sectionPages.remove(SCHEDULE);
+        sectionVersions.remove(SCHEDULE);
+        dirtySections.add(SCHEDULE);
+        switchTo(SCHEDULE);
+    }
+
     private void showUpcomingCarousel(List<HomeTimelineEntry> upcoming) {
         TextView heading = text("下一件事", 15, true);
         UiStyle.addSpaced(content, heading, 0, 6);
@@ -1363,7 +1557,7 @@ public final class DashboardActivity extends Activity {
         if (upcoming.isEmpty()) {
             LinearLayout empty = card();
             empty.setPadding(dp(14), dp(12), dp(14), dp(12));
-            empty.addView(text("还没有即将到来的日程", 14, false));
+            empty.addView(text("暂无即将开始或进行中的安排", 14, false));
             cards.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
         } else {
             for (HomeTimelineEntry entry : upcoming) {
@@ -1393,14 +1587,13 @@ public final class DashboardActivity extends Activity {
 
     private boolean candidateIntersects(EventCandidate item, LocalDate today, LocalDate endDate,
             long rangeStart, long rangeEnd, long now) {
-        if (item.isRecord || item.completed() || item.calendarStart()==null) return false;
+        if (!HomeTimelineEntry.hasUpcomingExecution(item, now, ZoneId.systemDefault())) return false;
         if (item.allDay) {
             LocalDate start = LocalDate.parse(AllDayDates.displayStart(item.startAtMillis));
-            LocalDate inclusiveEnd = LocalDate.parse(AllDayDates.displayEnd(item.endAtMillis));
+            LocalDate inclusiveEnd = LocalDate.parse(AllDayDates.displayEnd(HomeTimelineEntry.executionEnd(item)));
             return !inclusiveEnd.isBefore(today) && start.isBefore(endDate);
         }
-        return item.calendarEnd() > rangeStart && item.calendarStart() < rangeEnd
-                && (item.isTask() || item.calendarEnd()>now);
+        return HomeTimelineEntry.executionEnd(item) >= rangeStart && item.startAtMillis < rangeEnd;
     }
 
     private LocalDate timelineDate(HomeTimelineEntry entry, LocalDate today, ZoneId zone) {
@@ -1623,8 +1816,9 @@ public final class DashboardActivity extends Activity {
         bar.setClipChildren(false); bar.setClipToPadding(false);
         String[] labels = {"待处理", "待安排", "历史", "全部"};
         filterChips = filterDock(labels, scheduleTab, tab -> {
-            if (scheduleTab == tab) return;
+            if (scheduleTab == tab && scheduleTodoScope == ScheduleQuery.TODO_ANY) return;
             scheduleTab = tab;
+            scheduleTodoScope = ScheduleQuery.TODO_ANY;
             scheduleOldestFirst = ScheduleOrderPreferences.oldestFirst(this, scheduleTab);
             refreshOrderToggle();
             schedulePage = 0;
@@ -1639,13 +1833,20 @@ public final class DashboardActivity extends Activity {
         filters.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
         filters.setPadding(dp(10), dp(10), dp(10), dp(10));
         applyThemeControlSurface(filters, false, UiStyle.RADIUS_CHIP);
-        filters.setContentDescription("筛选日程：日期、类型、写入状态和来源");
+        filters.setContentDescription("筛选日程：日期、类型、待办、写入状态和来源");
         filters.setOnClickListener(view -> showScheduleFilters());
         UiStyle.pressable(filters);
         LinearLayout.LayoutParams filterParams = new LinearLayout.LayoutParams(dp(48), dp(48));
         filterParams.setMargins(dp(8), 0, 0, 0); bar.addView(filters, filterParams);
-        UiStyle.addSpaced(content, bar, 12, 16);
-        scheduleControls = bar;
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setClipChildren(false); controls.setClipToPadding(false);
+        ScheduleFilterSummaryLayout filterState = new ScheduleFilterSummaryLayout();
+        filterState.setTag("schedule_filter_summary");
+        controls.addView(filterState, new LinearLayout.LayoutParams(-1, -2));
+        controls.addView(bar, new LinearLayout.LayoutParams(-1, -2));
+        UiStyle.addSpaced(content, controls, 12, 16);
+        scheduleControls = controls;
         buildSelectionBar();
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
@@ -1665,10 +1866,7 @@ public final class DashboardActivity extends Activity {
             return;
         }
         long now = System.currentTimeMillis();
-        LocalDate[] window = scheduleWindow(false);
-        ScheduleQuery query = new ScheduleQuery(scheduleTab,
-                scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
-                schedulePublication, scheduleQuery, window[0], window[1], now, ZoneId.systemDefault());
+        ScheduleQuery query = buildScheduleQuery(now, ZoneId.systemDefault());
         inboxRows.clear();
         matchingInboxIds = preparedSection == null ? store.queryScheduleIds(query) : preparedSection.ids;
         selectedScheduleIds.retainAll(matchingInboxIds);
@@ -1684,9 +1882,12 @@ public final class DashboardActivity extends Activity {
         String previousDate = "";
         for (int i = 0; i < visible.size(); i++) {
             EventCandidate item = visible.get(i);
-            String date = item.anchor() == null ? "待安排" : item.allDay
-                    ? AllDayDates.displayStart(item.anchor())
-                    : AllDayDates.localDate(item.anchor(), ZoneId.systemDefault());
+            boolean deadlineScope = scheduleTodoScope == ScheduleQuery.TODO_TODAY_DUE
+                    || scheduleTodoScope == ScheduleQuery.TODO_OVERDUE;
+            Long dateMillis = deadlineScope ? item.dueAtMillis : item.anchor();
+            String date = dateMillis == null ? "待安排" : item.allDay && !deadlineScope
+                    ? AllDayDates.displayStart(dateMillis)
+                    : AllDayDates.localDate(dateMillis, ZoneId.systemDefault());
             boolean newDay = !date.equals(previousDate);
             previousDate = date;
             final int index = i;
@@ -1701,38 +1902,82 @@ public final class DashboardActivity extends Activity {
     private LocalDate[] scheduleWindow(boolean system) {
         com.donglan.chrona.data.ScheduleFilterState state =
                 new com.donglan.chrona.data.ScheduleFilterState(scheduleRange, scheduleCategory,
-                        schedulePublication, system ? 1 : 0, scheduleTab, scheduleDate, scheduleUntil);
+                        schedulePublication, system ? 1 : 0, scheduleTab, scheduleDate, scheduleUntil,
+                        scheduleTodoScope);
         LocalDate[] window = state.window(LocalDate.now());
         if (system && window[0] != null && window[1].isAfter(window[0].plusYears(1)))
             window[1] = window[0].plusYears(1);
         return window;
     }
 
+    private ScheduleQuery buildScheduleQuery(long now, ZoneId zone) {
+        LocalDate[] window = scheduleWindow(false);
+        return new ScheduleQuery(scheduleTab,
+                scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
+                schedulePublication, scheduleQuery, window[0], window[1], now, zone, scheduleTodoScope);
+    }
+
     private void addScheduleFilterSummary() {
+        if (scheduleControls == null) return;
+        ScheduleFilterSummaryLayout host = scheduleControls.findViewWithTag("schedule_filter_summary");
+        if (host == null) return;
         com.donglan.chrona.data.ScheduleFilterState state =
                 new com.donglan.chrona.data.ScheduleFilterState(scheduleRange, scheduleCategory,
-                        schedulePublication, scheduleSource, scheduleTab, scheduleDate, scheduleUntil);
+                        schedulePublication, scheduleSource, scheduleTab, scheduleDate, scheduleUntil,
+                        scheduleTodoScope);
+        String taskFilter = scheduleTodoScope == ScheduleQuery.TODO_TODAY_DUE ? "今日截止的待办"
+                : scheduleTodoScope == ScheduleQuery.TODO_OVERDUE ? "已逾期的待办"
+                : scheduleTodoScope == ScheduleQuery.TODO_OPEN ? "未完成的待办"
+                : scheduleTab == 1 && scheduleCategory == EventCategory.indexOf(EventCategory.TASK) + 1
+                        ? "未安排的待办" : "";
+        if (!taskFilter.isEmpty()) {
+            state.category = 0;
+            state.todoScope = ScheduleQuery.TODO_ANY;
+        }
         String summary = com.donglan.chrona.data.ScheduleFilterSummary.describe(state, scheduleQuery, LocalDate.now());
-        if (summary.isEmpty()) return;
+        if (!taskFilter.isEmpty()) summary = taskFilter + (summary.isEmpty() ? "" : " · " + summary);
+        if (summary.equals(host.summary)) return;
+        if (summary.isEmpty()) {
+            host.showSummary(summary, null);
+            return;
+        }
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView active = text(summary, 12, false);
-        active.setTextColor(UiStyle.colors(this).primary);
-        active.setMaxLines(2);
+        row.setPadding(dp(10), 0, dp(2), 0);
+        row.setClipChildren(false); row.setClipToPadding(false);
+        UiStyle.acrylicChoice(row, true, UiStyle.RADIUS_CHIP, true);
+        LinearLayout open = new LinearLayout(this);
+        open.setGravity(Gravity.CENTER_VERTICAL);
+        open.setMinimumHeight(dp(48));
+        open.setPadding(0, dp(7), dp(6), dp(7));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_filter_alt);
+        icon.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(20), dp(20));
+        iconParams.rightMargin = dp(8);
+        open.addView(icon, iconParams);
+        TextView active = text(summary, 14, true);
+        active.setTextColor(UiStyle.colors(this).onPrimaryContainer);
+        active.setMaxLines(3);
         active.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        active.setContentDescription("当前筛选：" + summary + "，点击修改");
-        active.setMinimumHeight(dp(44));
-        active.setGravity(Gravity.CENTER_VERTICAL);
-        active.setOnClickListener(view -> showScheduleFilters());
-        row.addView(active, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView reset = text("重置", 13, true);
+        open.addView(active, new LinearLayout.LayoutParams(0, -2, 1));
+        open.setContentDescription("当前筛选：" + summary + "，点击修改");
+        open.setOnClickListener(view -> showScheduleFilters());
+        UiStyle.pressable(open);
+        row.addView(open, new LinearLayout.LayoutParams(0, -2, 1));
+        View divider = new View(this);
+        divider.setBackgroundColor(UiStyle.colors(this).outline);
+        row.addView(divider, new LinearLayout.LayoutParams(dp(1), dp(18)));
+        TextView reset = text("清除筛选", 13, true);
         reset.setTextColor(UiStyle.colors(this).primary);
-        reset.setPadding(dp(12), 0, dp(8), 0);
-        reset.setMinimumHeight(dp(44));
+        reset.setPadding(dp(10), 0, dp(10), 0);
+        reset.setMinimumHeight(dp(48));
         reset.setGravity(Gravity.CENTER);
         reset.setContentDescription("清除日期、类型、状态、来源和搜索条件");
         reset.setOnClickListener(view -> {
             scheduleRange = scheduleCategory = schedulePublication = scheduleSource = 0;
+            scheduleTodoScope = ScheduleQuery.TODO_ANY;
             scheduleDate = scheduleUntil = LocalDate.now();
             scheduleQuery = "";
             EditText search = content.findViewWithTag("schedule_search");
@@ -1741,7 +1986,103 @@ public final class DashboardActivity extends Activity {
         });
         UiStyle.pressable(reset);
         row.addView(reset, new LinearLayout.LayoutParams(-2, -2));
-        results.addView(row);
+        host.showSummary(summary, row);
+    }
+
+    /** Only this row changes height; the filter dock follows its normal layout position. */
+    private final class ScheduleFilterSummaryLayout extends LinearLayout {
+        private String summary;
+        private boolean expanded;
+        private android.animation.ValueAnimator expansion;
+
+        ScheduleFilterSummaryLayout() {
+            super(DashboardActivity.this);
+            setOrientation(VERTICAL);
+            setPadding(0, 0, 0, dp(8));
+            setVisibility(GONE);
+            setClipChildren(false);
+            setClipToPadding(false);
+        }
+
+        void showSummary(String value, View row) {
+            boolean first = summary == null;
+            boolean showing = !value.isEmpty();
+            boolean changingVisibility = expanded != showing || expansion != null;
+            int initialHeight = getVisibility() == GONE ? 0 : getHeight();
+            float initialAlpha = initialHeight == 0 ? 0f : getAlpha();
+            summary = value;
+            expanded = showing;
+            stopExpansion();
+            if (row != null) {
+                removeAllViews();
+                addView(row, new LinearLayout.LayoutParams(-1, -2));
+            }
+            ViewGroup parent = (ViewGroup) getParent();
+            int width = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
+            if (first || !changingVisibility || !UiMotion.isEnabled() || !isAttachedToWindow()
+                    || !parent.isLaidOut() || !parent.isShown() || width <= 0 || previewRender || restoringMotion) {
+                settleExpansion();
+                return;
+            }
+            setVisibility(VISIBLE);
+            View child = getChildAt(0);
+            child.getLayoutParams().height = -2;
+            measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int fullHeight = getMeasuredHeight();
+            int targetHeight = expanded ? fullHeight : 0;
+            float targetAlpha = expanded ? 1f : 0f;
+            // Keep the row's natural size while its host reveals or clips it.
+            child.getLayoutParams().height = fullHeight - getPaddingBottom();
+            getLayoutParams().height = initialHeight;
+            setAlpha(initialAlpha);
+            setClipChildren(true);
+            android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            expansion = animator;
+            animator.setDuration(expanded ? UiMotion.ENTER : UiMotion.EXIT);
+            animator.setInterpolator(UiMotion.SETTLE);
+            animator.addUpdateListener(animation -> {
+                if (!UiMotion.isEnabled()) {
+                    stopExpansion();
+                    settleExpansion();
+                    return;
+                }
+                float fraction = (float) animation.getAnimatedValue();
+                getLayoutParams().height = initialHeight + Math.round((targetHeight - initialHeight) * fraction);
+                setAlpha(initialAlpha + (targetAlpha - initialAlpha) * fraction);
+                requestLayout();
+            });
+            animator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    if (expansion != animator) return;
+                    expansion = null;
+                    settleExpansion();
+                }
+            });
+            animator.start();
+        }
+
+        private void stopExpansion() {
+            android.animation.ValueAnimator previous = expansion;
+            expansion = null;
+            if (previous != null) previous.cancel();
+        }
+
+        private void settleExpansion() {
+            setVisibility(expanded ? VISIBLE : GONE);
+            getLayoutParams().height = -2;
+            setAlpha(1f);
+            setClipChildren(false);
+            if (expanded && getChildCount() > 0) getChildAt(0).getLayoutParams().height = -2;
+            else if (!expanded) removeAllViews();
+            requestLayout();
+        }
+
+        @Override protected void onDetachedFromWindow() {
+            stopExpansion();
+            settleExpansion();
+            super.onDetachedFromWindow();
+        }
     }
 
     private void scheduleDayHeading(String date) {
@@ -1805,13 +2146,15 @@ public final class DashboardActivity extends Activity {
     private void showScheduleFilters() {
         com.donglan.chrona.data.ScheduleFilterState initial =
                 new com.donglan.chrona.data.ScheduleFilterState(scheduleRange, scheduleCategory,
-                        schedulePublication, scheduleSource, scheduleTab, scheduleDate, scheduleUntil);
+                        schedulePublication, scheduleSource, scheduleTab, scheduleDate, scheduleUntil,
+                        scheduleTodoScope);
         ScheduleFilterSheet.show(this, initial, this::pickScheduleDate, chosen -> {
             scheduleRange = chosen.range;
             scheduleCategory = chosen.category;
             schedulePublication = chosen.publication;
             scheduleSource = chosen.source;
             scheduleTab = chosen.tab;
+            scheduleTodoScope = chosen.todoScope;
             scheduleDate = chosen.date;
             scheduleUntil = chosen.until;
             if (scheduleSource == 1 && !new CalendarStore(this).hasReadPermission()) {
@@ -1928,15 +2271,12 @@ public final class DashboardActivity extends Activity {
     private void requestScheduleResults() { requestScheduleResults(false); }
     private void requestScheduleResults(boolean animate) {
         if (results == null || section != SCHEDULE) return;
+        addScheduleFilterSummary();
         cancelScheduleResults();
         final int token = scheduleResultGeneration;
         final LinearLayout target = results;
         final ScrollView targetScroll = scroll;
-        LocalDate[] window = scheduleWindow(false);
-        ScheduleQuery query = new ScheduleQuery(scheduleTab,
-                scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
-                schedulePublication, scheduleQuery, window[0], window[1],
-                System.currentTimeMillis(), ZoneId.systemDefault());
+        ScheduleQuery query = buildScheduleQuery(System.currentTimeMillis(), ZoneId.systemDefault());
         InboxQuery inbox = new InboxQuery(statusIndex,
                 inboxCategory(), inboxQuery);
         boolean oldest = scheduleOldestFirst, system = scheduleSource == 1;
@@ -2148,6 +2488,13 @@ public final class DashboardActivity extends Activity {
             addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, true, showTime),
                     "终止时间");
         }
+        if (candidate != null && candidate.isTask() && candidate.startAtMillis != null
+                && candidate.dueAtMillis != null) {
+            String deadline = "截止 · " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
+                    DateFormat.SHORT).format(new Date(candidate.dueAtMillis));
+            UiStyle.addSpaced(body, scheduleAttribute(R.drawable.ic_schedule, deadline,
+                    "截止时间", 14, 2, false), 8, 0);
+        }
 
         LinearLayout footer = new LinearLayout(this);
         footer.setGravity(Gravity.CENTER_VERTICAL);
@@ -2167,32 +2514,65 @@ public final class DashboardActivity extends Activity {
         // A published item is settled even if its original AI uncertainty flag remains set.
         boolean written = candidate == null || candidate.calendarEventId != null;
         boolean confirmation = candidate != null && !written && candidate.needsConfirmation;
-        if (!home || confirmation || (candidate!=null&&candidate.isTask())) {
-            String status = candidate != null && candidate.isTask() ? candidate.taskState(System.currentTimeMillis())
-                    : written ? "已写入" : "未写入 · " + UiStyle.uncertaintyLabel(candidate.uncertaintyLevel);
+        boolean calendarTime = candidate != null && candidate.calendarStart() != null
+                && (candidate.isTask() || candidate.endAtMillis != null);
+        if (candidate != null && !written && (confirmation || (calendarTime && !candidate.completed()))) {
+            String status = confirmation ? "待确认 · " + UiStyle.uncertaintyLabel(candidate.uncertaintyLevel)
+                    : "未写入";
             LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
             statusParams.leftMargin = dp(8);
-            footer.addView(scheduleAttribute(written ? R.drawable.ic_check
-                    : UiStyle.uncertaintyIcon(candidate.uncertaintyLevel), status,
-                    written ? "日历状态" : "解析存疑等级，仍需确认后写入日历", 12, 1, confirmation), statusParams);
+            footer.addView(scheduleAttribute(R.drawable.ic_x, status,
+                    confirmation ? "解析待确认" : "尚未写入系统日历", 12, 1, true), statusParams);
         }
         if(candidate!=null&&candidate.isTask()) {
-            ImageButton done=new ImageButton(this);done.setImageResource(R.drawable.ic_check);
-            done.setImageTintList(ColorStateList.valueOf(candidate.completed()?UiStyle.colors(this).primary:UiStyle.colors(this).muted));
-            done.setContentDescription(candidate.completed()?"恢复待办":"标记待办完成");
-            done.setPadding(dp(12),dp(12),dp(12),dp(12));UiStyle.acrylicChoice(done,candidate.completed(),UiStyle.RADIUS_PILL,false);
-            done.setOnClickListener(v->new Thread(()->{try{synchronized(AndroidSync.LOCK){try(TaskStore store=new TaskStore(this)) {
-                if(!store.setCandidateCompleted(candidate.id,candidate.taskId,!candidate.completed()))throw new IllegalStateException("待办已变化，请刷新后重试");
-            }}runOnUiThread(this::refreshActivePageIfNeeded);}catch(Exception error){runOnUiThread(()->Feedback.show(this,error.getMessage()));}},"chrona-task-complete").start());
-            footer.addView(done,new LinearLayout.LayoutParams(dp(48),dp(48)));
+            footer.addView(taskCompletionButton(candidate), new LinearLayout.LayoutParams(dp(48), dp(48)));
         }
         UiStyle.addSpaced(body, footer, home ? 12 : 8, 0);
     }
 
+    private ImageButton taskCompletionButton(EventCandidate candidate) {
+        ImageButton done = new ImageButton(this);
+        long now = System.currentTimeMillis();
+        boolean overdue = !candidate.completed() && candidate.dueAtMillis != null && candidate.dueAtMillis < now;
+        done.setImageResource(candidate.completed() ? R.drawable.ic_todo_check
+                : overdue ? R.drawable.ic_todo_alert : R.drawable.ic_todo_clock);
+        done.setImageTintList(ColorStateList.valueOf(candidate.completed() || overdue
+                ? UiStyle.colors(this).primary : UiStyle.colors(this).muted));
+        done.setContentDescription(candidate.taskState(now) + "，"
+                + (candidate.completed() ? "恢复待办" : "标记待办完成"));
+        done.setPadding(dp(12), dp(12), dp(12), dp(12));
+        UiStyle.acrylicChoice(done, candidate.completed(), UiStyle.RADIUS_PILL, false);
+        UiStyle.pressable(done);
+        done.setOnClickListener(view -> {
+            done.setEnabled(false);
+            new Thread(() -> {
+                try {
+                    String warning = TaskCompletion.set(getApplicationContext(), candidate.id,
+                            candidate.taskId, !candidate.completed());
+                    runOnUiThread(() -> {
+                        if (isDestroyed() || isFinishing()) return;
+                        dirtySections.add(HOME);
+                        dirtySections.add(SCHEDULE);
+                        refresh.removeCallbacks(deferredSectionRefresh);
+                        refresh.post(deferredSectionRefresh);
+                        if (warning != null) Feedback.show(this, warning);
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> {
+                        if (isDestroyed() || isFinishing()) return;
+                        done.setEnabled(true);
+                        Feedback.show(this, error.getMessage());
+                    });
+                }
+            }, "chrona-task-complete").start();
+        });
+        return done;
+    }
+
     private String homeCardBoundary(EventCandidate candidate, CalendarOccurrence systemEvent,
             boolean end, boolean includeDate) {
-        Long startMillis = candidate == null ? systemEvent.startMillis : candidate.calendarStart();
-        Long endMillis = candidate == null ? systemEvent.endMillis : candidate.calendarEnd();
+        Long startMillis = candidate == null ? systemEvent.startMillis : candidate.startAtMillis;
+        Long endMillis = candidate == null ? systemEvent.endMillis : HomeTimelineEntry.executionEnd(candidate);
         Long millis = end ? endMillis : startMillis;
         if (millis == null) return end ? "终止时间未定" : "起始时间未定";
         boolean allDay = candidate == null ? systemEvent.allDay : candidate.allDay;
@@ -2778,9 +3158,7 @@ public final class DashboardActivity extends Activity {
         int token = ++sectionLoadGeneration;
         if (navigation != null) navigation.beginPageSettle(sectionPosition(destination));
         InboxQuery inbox = new InboxQuery(statusIndex, inboxCategory(), inboxQuery);
-        LocalDate[] window = scheduleWindow(false);
-        ScheduleQuery schedule = new ScheduleQuery(scheduleTab, scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
-                schedulePublication, scheduleQuery, window[0], window[1], System.currentTimeMillis(), ZoneId.systemDefault());
+        ScheduleQuery schedule = buildScheduleQuery(System.currentTimeMillis(), ZoneId.systemDefault());
         boolean oldest = destination == INBOX ? inboxOldestFirst : scheduleOldestFirst;
         int page = destination == INBOX ? inboxPage : schedulePage;
         boolean system = scheduleSource == 1;
@@ -2893,15 +3271,6 @@ public final class DashboardActivity extends Activity {
         Date date = new Date(item.anchor());
         return (item.startAtMillis==null && item.dueAtMillis!=null ? "截止 · " : "") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
                 DateFormat.SHORT).format(date);
-    }
-
-    private boolean isUpcoming(EventCandidate item, long now) {
-        if (item.isRecord || item.completed() || item.calendarStart()==null) return false;
-        if (item.allDay) {
-            return !LocalDate.parse(AllDayDates.displayEnd(item.endAtMillis))
-                    .isBefore(LocalDate.now());
-        }
-        return item.isTask() || item.calendarEnd() > now;
     }
 
     private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries) {

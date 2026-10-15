@@ -18,7 +18,8 @@ def method(signature):
 methods = '\n'.join(method(x) for x in (
     'private void cancelScheduleResults(', 'private void requestScheduleResults()', 'private void requestScheduleResults(boolean',
     'private boolean scheduleResultCurrent(', 'private void enqueueScheduleResult(',
-    'private void buildScheduleResultFrame(', 'private void renderScheduleResults(', 'private void updateResultsWithEntrance(', 'private String inboxCategory('
+    'private void buildScheduleResultFrame(', 'private void renderScheduleResults(', 'private void updateResultsWithEntrance(', 'private String inboxCategory(',
+    'private ScheduleQuery buildScheduleQuery('
 ))
 java = r'''
 import java.util.*;
@@ -35,10 +36,10 @@ class LinearLayout {
 class ScrollView {int y; Queue<Runnable> posts=new ArrayDeque<>();int getScrollY(){return y;}void scrollTo(int x,int value){y=value;}void post(Runnable r){posts.add(r);}void drain(){while(!posts.isEmpty())posts.remove().run();}}
 class QueueExecutor {boolean worker;Queue<Runnable> tasks=new ArrayDeque<>();void execute(Runnable r){tasks.add(r);}void run(){worker=true;try{tasks.remove().run();}finally{worker=false;}}}
 class Handler {Queue<Runnable> tasks=new ArrayDeque<>();void post(Runnable r){tasks.add(r);}void drain(){while(!tasks.isEmpty())tasks.remove().run();}}
-class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int PAGE_SIZE=50;}
+class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int PAGE_SIZE=50,TODO_ANY=0,TODO_TODAY_DUE=1,TODO_OVERDUE=2,TODO_OPEN=3;}
 class InboxQuery {InboxQuery(Object...a){}}
 class EventCategory {static String[] VALUES={"event"};}
-class EventCandidate {Long anchor(){return startAtMillis;}Long startAtMillis=1L; boolean allDay;}
+class EventCandidate {Long anchor(){return startAtMillis;}Long startAtMillis=1L,dueAtMillis=2L; boolean allDay;}
 class TaskStore {List<Long> queryScheduleIds(ScheduleQuery q){throw new AssertionError("SQL on UI");}List<EventCandidate> querySchedulePage(ScheduleQuery q,boolean o,int p){throw new AssertionError("SQL on UI");}}
 class AllDayDates {static String displayStart(long t){return "2026-10-13";}static String localDate(long t,ZoneId z){return "2026-10-13";}}
 class HomeTimelinePreferences {static boolean includesSystemCalendar(Object c){return true;}}
@@ -57,7 +58,7 @@ class DashboardSectionData {
 public class DashboardRefreshCheck {
  static int checks,throwAt=-1;static void check(boolean v,String message){checks++;if(!v)throw new AssertionError(message);}
  static final int SCHEDULE=2,INBOX=1;
- int section=SCHEDULE,scheduleResultGeneration,resultMotionGeneration,scheduleSource,scheduleTab,scheduleCategory,schedulePublication,schedulePage,statusIndex,categoryIndex;
+ int section=SCHEDULE,scheduleResultGeneration,resultMotionGeneration,scheduleSource,scheduleTab,scheduleCategory,schedulePublication,schedulePage,statusIndex,categoryIndex,scheduleTodoScope;
  boolean scheduleResultLoading,scheduleOldestFirst,destroyed,finishing;int updates;
  String scheduleQuery="original",inboxQuery="";
  LinearLayout results=new LinearLayout(),scheduleBuildTarget;
@@ -85,9 +86,10 @@ public class DashboardRefreshCheck {
  void workerCommit(){startupReader.run();refresh.drain();}
  void complete(){int frames=0;while(!results.frames.isEmpty()){int before=results.rows;results.frame();check(results.rows-before<=1,"one row maximum per frame");if(++frames>1000)throw new AssertionError("endless build");}scroll.drain();}
  public static void main(String[] args){
-  DashboardRefreshCheck d=new DashboardRefreshCheck();d.results.rows=7;d.scroll.y=123;
+  DashboardRefreshCheck d=new DashboardRefreshCheck();d.results.rows=7;d.scroll.y=123;d.scheduleTodoScope=ScheduleQuery.TODO_TODAY_DUE;
   d.requestScheduleResults();check(d.results.rows==7&&!d.results.removed,"old content retained before load");check(DashboardSectionData.reads==0,"no synchronous query");
   d.scheduleQuery="changed without second request";d.workerCommit();check(DashboardSectionData.last.args[3].equals("original"),"capture filter state");
+  check(DashboardSectionData.last.args[8].equals(ScheduleQuery.TODO_TODAY_DUE),"worker query captures deadline scope alongside ordinary filters");
   check(d.results.rows==1&&d.results.footer==0&&d.scheduleResultLoading,"first callback bounded to one row");
   d.complete();check(d.results.rows==55&&d.results.headings==1&&d.results.footer==1,"complete ordered rows and footer");
   check(!d.scheduleResultLoading&&!d.dirtySections.contains(SCHEDULE)&&d.scroll.y==123,"completion restores scroll and marks cache coherent");

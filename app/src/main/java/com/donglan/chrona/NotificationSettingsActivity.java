@@ -16,7 +16,7 @@ public final class NotificationSettingsActivity extends Activity {
     private static final int CALENDAR_PERMISSION = 703, NOTIFICATION_PERMISSION = 704;
     private LinearLayout atomicSection;
     private Switch enabled, system, chronaAtomic, systemAtomic, wallpaper, countdown, seconds;
-    private TextView notificationStatus, exactStatus, atomicStatus;
+    private TextView notificationStatus, channelStatus, exactStatus, atomicStatus;
     private boolean atomicAvailable;
     private int generation;
     @Override protected void onCreate(Bundle state) {
@@ -44,9 +44,9 @@ public final class NotificationSettingsActivity extends Activity {
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED)
                 requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION);
-            else openSettings(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName()));
+            else openSettings(NotificationDeliveryStatus.appSettings(this));
         });
+        channelStatus = row(permissions, "提醒频道", () -> openReminderChannelSettings());
         exactStatus = row(permissions, "准时提醒", () -> {
             if (Build.VERSION.SDK_INT >= 31) openSettings(new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                     android.net.Uri.parse("package:" + getPackageName())));
@@ -67,8 +67,11 @@ public final class NotificationSettingsActivity extends Activity {
         wallpaper = toggle(group, "使用壁纸背景", AgendaReminderPreferences.atomicWallpaper(this), value -> AgendaReminderPreferences.setAtomicWallpaper(this, value));
         countdown = toggle(group, "胶囊显示倒计时", AgendaReminderPreferences.capsuleCountdown(this), value -> AgendaReminderPreferences.setCapsuleCountdown(this, value));
         seconds = toggle(group, "显示秒数", AgendaReminderPreferences.showSeconds(this), value -> AgendaReminderPreferences.setShowSeconds(this, value));
-        atomicStatus = row(group, "原子通知权限", () -> openSettings(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName())));
+        atomicStatus = row(group, "原子通知权限", () -> {
+            NotificationDeliveryStatus delivery = NotificationDeliveryStatus.read(this);
+            if (delivery.appAllowed && !delivery.channelAllowed) openReminderChannelSettings();
+            else openSettings(NotificationDeliveryStatus.appSettings(this));
+        });
     }
     private void updateControls() {
         if (system != null) system.setEnabled(AgendaReminderPreferences.enabled(this));
@@ -83,22 +86,34 @@ public final class NotificationSettingsActivity extends Activity {
         refreshStatus();
     }
     private void refreshStatus() {
-        notificationStatus.setText(getSystemService(android.app.NotificationManager.class).areNotificationsEnabled() ? "已允许" : "未允许");
+        NotificationDeliveryStatus delivery = NotificationDeliveryStatus.read(this);
+        notificationStatus.setText(delivery.appAllowed ? "已允许" : "未允许");
+        channelStatus.setText(delivery.channelSummary());
         exactStatus.setText(AgendaReminder.exactAllowed(this) ? "已允许" : "系统可能延迟");
+        atomicAvailable = false;
+        updateControls();
         if (!VivoAtomicNotification.supportedManufacturer()) return;
         int request = ++generation;
         new Thread(() -> {
             Boolean scene = VivoAtomicNotification.sceneEnabled(this);
-            boolean available = Boolean.TRUE.equals(scene) && getSystemService(android.app.NotificationManager.class).areNotificationsEnabled();
             runOnUiThread(() -> {
                 if (isDestroyed() || isFinishing() || request != generation) return;
                 atomicSection.setVisibility(scene == null ? View.GONE : View.VISIBLE);
                 if (scene != null) {
-                    createAtomicControls(); atomicAvailable = available;
-                    atomicStatus.setText(available ? "可用" : "未启用"); updateControls();
+                    NotificationDeliveryStatus current = NotificationDeliveryStatus.read(this);
+                    createAtomicControls();
+                    atomicAvailable = Boolean.TRUE.equals(scene) && current.canPostReminders();
+                    atomicStatus.setText(!current.appAllowed ? "通知权限未允许"
+                            : !current.channelAllowed ? "提醒频道已关闭"
+                            : Boolean.TRUE.equals(scene) ? "可用" : "未启用");
+                    updateControls();
                 }
             });
         }, "chrona-atomic-capability").start();
+    }
+    @Override protected void onPause() {
+        generation++;
+        super.onPause();
     }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
@@ -111,7 +126,12 @@ public final class NotificationSettingsActivity extends Activity {
     }
     private void openSettings(Intent intent) {
         try { startActivity(intent); }
-        catch (android.content.ActivityNotFoundException failure) { Feedback.show(this, "系统未提供此设置入口"); }
+        catch (android.content.ActivityNotFoundException | SecurityException failure) { Feedback.show(this, "系统未提供此设置入口"); }
+    }
+    private void openReminderChannelSettings() {
+        NotificationDeliveryStatus delivery = NotificationDeliveryStatus.read(this);
+        openSettings(delivery.channelCreated ? NotificationDeliveryStatus.channelSettings(this)
+                : NotificationDeliveryStatus.appSettings(this));
     }
     private LinearLayout group(LinearLayout root, String label) {
         TextView title = text(label, 12); UiStyle.muted(title); UiStyle.addSpaced(root, title, root.getChildCount() == 1 ? 0 : 16, 7);

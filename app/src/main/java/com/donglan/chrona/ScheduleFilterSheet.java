@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -15,6 +16,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.ScheduleFilterState;
+import com.donglan.chrona.data.ScheduleQuery;
 import java.time.LocalDate;
 import java.util.function.Consumer;
 
@@ -30,18 +32,11 @@ final class ScheduleFilterSheet {
     private final DatePicker picker;
     private final Consumer<ScheduleFilterState> apply;
     private final LinearLayout body;
-    private int expanded = -1;
     private int scrollY;
     private int renderGeneration;
     private TextView intervalLabel;
-    private final java.util.Map<Integer, Expansion> expansions = new java.util.HashMap<>();
-
-    private static final class Expansion {
-        final LinearLayout options;
-        final ImageView arrow;
-        android.animation.ValueAnimator animator;
-        Expansion(LinearLayout options, ImageView arrow) { this.options = options; this.arrow = arrow; }
-    }
+    private FrameLayout interval;
+    private ChoiceDock dates, category, todo, publication, source;
 
     static void show(Activity activity, ScheduleFilterState initial, DatePicker picker,
             Consumer<ScheduleFilterState> apply) {
@@ -55,6 +50,9 @@ final class ScheduleFilterSheet {
         dialog.setCanceledOnTouchOutside(true);
         body = new LinearLayout(activity);
         body.setOrientation(LinearLayout.VERTICAL);
+        body.setClipChildren(false);
+        body.setClipToPadding(false);
+        body.setPadding(dp(8), dp(6), dp(8), dp(6));
     }
 
     private void show() {
@@ -68,7 +66,7 @@ final class ScheduleFilterSheet {
         reset.setTextColor(UiStyle.colors(activity).primary);
         reset.setGravity(Gravity.CENTER);
         reset.setPadding(dp(10), 0, dp(10), 0);
-        reset.setOnClickListener(view -> { draft.reset(LocalDate.now()); expanded = -1; render(); });
+        reset.setOnClickListener(view -> { draft.reset(LocalDate.now()); render(); });
         header.addView(reset, new LinearLayout.LayoutParams(-2, dp(40)));
         panel.addView(header);
         Rect visible = new Rect();
@@ -105,188 +103,149 @@ final class ScheduleFilterSheet {
 
     private void render() {
         renderGeneration++;
-        for (Expansion item : expansions.values()) if (item.animator != null) item.animator.cancel();
-        expansions.clear();
-        intervalLabel = null;
-        body.removeAllViews();
-        TextView dates = label("日期", 13, true);
-        dates.setTextColor(UiStyle.colors(activity).muted);
-        body.addView(dates, new LinearLayout.LayoutParams(-1, dp(28)));
-        LinearLayout presets = row();
-        String[] names = {"全部", "今天", "本周", "本月", "自定义"};
-        int[] values = {0, 1, 2, 3, 5};
-        for (int i = 0; i < names.length; i++) {
-            final int range = values[i];
-            Button option = pill(names[i], () -> {
-                if (range == ScheduleFilterState.CUSTOM) pickCustomRange();
-                else {
-                    draft.range = range; draft.date = LocalDate.now();
-                    if (range != ScheduleFilterState.ALL) draft.tab = 3;
-                    render();
-                }
-            }, draft.range == range || (range == 5 && draft.range == 4));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1);
-            if (i != names.length - 1) params.rightMargin = dp(4);
-            presets.addView(option, params);
-        }
-        LinearLayout.LayoutParams presetsParams = new LinearLayout.LayoutParams(-1, -2);
-        presetsParams.bottomMargin = dp(12);
-        body.addView(presets, presetsParams);
+        if (dates == null) buildChoices();
+        int dateIndex = draft.range == ScheduleFilterState.DATE || draft.range == ScheduleFilterState.CUSTOM
+                ? 4 : draft.range;
+        dates.sync(dateIndex, true);
+        category.sync(draft.source == 1 ? EventCategory.indexOf(EventCategory.EVENT) + 1 : draft.category,
+                draft.source == 0);
+        todo.sync(draft.source == 1 ? ScheduleQuery.TODO_ANY : draft.todoScope, draft.source == 0);
+        publication.sync(draft.source == 1 ? 2 : draft.publication, draft.source == 0);
+        source.sync(draft.source, true);
         LocalDate[] window = draft.window(LocalDate.now());
-        if (window[0] != null) {
-            FrameLayout interval = new FrameLayout(activity);
-            interval.setClipChildren(true);
-            UiStyle.acrylicChoice(interval, false, UiStyle.RADIUS_PILL, true);
-            interval.setOnClickListener(view -> pickCustomRange());
-            FrameLayout labelHost = new FrameLayout(activity);
-            labelHost.setClipChildren(true);
-            FrameLayout.LayoutParams labelHostParams = new FrameLayout.LayoutParams(-1, -1);
-            labelHostParams.setMargins(dp(30), dp(4), dp(30), dp(4));
-            interval.addView(labelHost, labelHostParams);
-            TextView value = label(window[0] + " — " + window[1].minusDays(1), 13, false);
-            value.setGravity(Gravity.CENTER);
-            value.setMaxLines(2);
-            labelHost.addView(value, new FrameLayout.LayoutParams(-1, -1));
-            intervalLabel = value;
-            for (int side = 0; side < 2; side++) {
-                ImageView arrow = new ImageView(activity);
-                arrow.setImageResource(side == 0 ? R.drawable.ic_chevron_left : R.drawable.ic_chevron_right);
-                arrow.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));
-                FrameLayout.LayoutParams arrowParams = new FrameLayout.LayoutParams(dp(20), dp(20),
-                        Gravity.CENTER_VERTICAL | (side == 0 ? Gravity.LEFT : Gravity.RIGHT));
-                arrowParams.leftMargin = arrowParams.rightMargin = dp(8);
-                interval.addView(arrow, arrowParams);
-            }
-            installIntervalSwipe(interval, value);
-            LinearLayout.LayoutParams intervalParams = new LinearLayout.LayoutParams(-1, dp(48));
-            intervalParams.bottomMargin = dp(12);
-            body.addView(interval, intervalParams);
-        }
-        addSetting("类型", draft.source == 1 ? "系统活动" : categoryOptions()[draft.category],
-                R.drawable.ic_event, 0, categoryOptions(), draft.category, value -> draft.category = value,
-                draft.source == 0);
-        addSetting("日历状态", draft.source == 1 ? "已写入" : publicationOptions()[draft.publication],
-                R.drawable.ic_inbox_outline, 1, publicationOptions(), draft.publication, value -> draft.publication = value,
-                draft.source == 0);
-        addSetting("来源", draft.source == 0 ? "拾时" : "系统日程", R.drawable.ic_filter_alt,
-                2, new String[]{"拾时", "系统日程"}, draft.source, value -> {
-                    draft.source = value;
-                    if (value == 1) { draft.category = draft.publication = 0; }
-                }, true);
+        interval.setVisibility(window[0] == null ? View.GONE : View.VISIBLE);
+        intervalLabel.animate().cancel();
+        intervalLabel.setTranslationX(0f);
+        intervalLabel.setAlpha(1f);
+        if (window[0] != null) intervalLabel.setText(window[0] + " — " + window[1].minusDays(1));
         if (body.getParent() instanceof ScrollView scroll) {
             int previous = scrollY;
             scroll.post(() -> scroll.scrollTo(0, previous));
         }
     }
 
-    private void addSetting(String name, String value, int iconId, int field,
-            String[] choices, int selected, java.util.function.IntConsumer chosen, boolean enabled) {
-        View divider = new View(activity);
-        divider.setBackgroundColor(UiStyle.colors(activity).muted);
-        divider.setAlpha(.15f);
-        body.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
-        LinearLayout setting = row();
-        setting.setMinimumHeight(dp(48));
-        ImageView icon = new ImageView(activity);
-        icon.setImageResource(iconId);
-        icon.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));
-        setting.addView(icon, new LinearLayout.LayoutParams(dp(20), dp(20)));
-        TextView title = label(name, 14, false);
-        title.setPadding(dp(8), 0, 0, 0);
-        setting.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView current = label(value, 14, false);
-        current.setTextColor(UiStyle.colors(activity).muted);
-        setting.addView(current);
-        ImageView arrow = new ImageView(activity);
-        if (enabled) {
-            arrow.setImageResource(R.drawable.ic_chevron_down);
-            arrow.setRotation(expanded == field ? 180f : 0f);
+    private void buildChoices() {
+        String[] dateNames = {"全部", "今天", "本周", "本月", "自选"};
+        int[] dateValues = {0, 1, 2, 3, 5};
+        dates = new ChoiceDock("日期", R.drawable.ic_schedule, dateNames, index -> {
+            int range = dateValues[index];
+            if (range == ScheduleFilterState.CUSTOM) pickCustomRange();
+            else {
+                draft.range = range; draft.date = LocalDate.now();
+                if (range != ScheduleFilterState.ALL) draft.tab = 3;
+            }
+        });
+        interval = new FrameLayout(activity);
+        interval.setClipChildren(true);
+        UiStyle.acrylicChoice(interval, false, UiStyle.RADIUS_PILL, true);
+        interval.setOnClickListener(view -> pickCustomRange());
+        FrameLayout labelHost = new FrameLayout(activity);
+        labelHost.setClipChildren(true);
+        FrameLayout.LayoutParams labelHostParams = new FrameLayout.LayoutParams(-1, -1);
+        labelHostParams.setMargins(dp(44), dp(4), dp(44), dp(4));
+        interval.addView(labelHost, labelHostParams);
+        TextView rangeLabel = label("", 13, false);
+        rangeLabel.setGravity(Gravity.CENTER);
+        rangeLabel.setMaxLines(2);
+        labelHost.addView(rangeLabel, new FrameLayout.LayoutParams(-1, -1));
+        intervalLabel = rangeLabel;
+        for (int side = 0; side < 2; side++) {
+            final int direction = side == 0 ? -1 : 1;
+            ImageButton arrow = new ImageButton(activity);
+            arrow.setImageResource(side == 0 ? R.drawable.ic_chevron_left : R.drawable.ic_chevron_right);
             arrow.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));
-            LinearLayout.LayoutParams arrowParams = new LinearLayout.LayoutParams(dp(18), dp(18));
-            arrowParams.leftMargin = dp(6);
-            setting.addView(arrow, arrowParams);
-            setting.setContentDescription(name + "，" + value + "，展开选项");
-            setting.setOnClickListener(view -> toggleExpansion(field));
+            arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            arrow.setPadding(dp(12), dp(12), dp(12), dp(12));
+            arrow.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            arrow.setContentDescription(side == 0 ? "上一段日期范围" : "下一段日期范围");
+            arrow.setOnClickListener(view -> shiftInterval(rangeLabel, direction));
+            UiStyle.pressable(arrow);
+            FrameLayout.LayoutParams arrowParams = new FrameLayout.LayoutParams(dp(44), dp(44),
+                    Gravity.CENTER_VERTICAL | (side == 0 ? Gravity.LEFT : Gravity.RIGHT));
+            arrowParams.leftMargin = arrowParams.rightMargin = dp(2);
+            interval.addView(arrow, arrowParams);
         }
-        body.addView(setting);
-        if (enabled) {
-            LinearLayout choicesHost = column();
-            for (int i = 0; i < choices.length; i += 3) {
-                LinearLayout options = row();
-                for (int j = i; j < Math.min(i + 3, choices.length); j++) {
-                    final int index = j;
-                    Button option = pill(choices[j], () -> {
-                        chosen.accept(index);
-                        // Synchronize labels/selected styles now, independent of collapse completion.
-                        render();
-                        expanded = -1;
-                        animateExpansion(expansions.get(field), false);
-                    }, j == selected);
-                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1);
-                    params.setMargins(0, 0, dp(4), 0);
-                    options.addView(option, params);
-                }
-                UiStyle.addSpaced(choicesHost, options, 0, 5);
-            }
-            choicesHost.setVisibility(expanded == field ? View.VISIBLE : View.GONE);
-            body.addView(choicesHost, new LinearLayout.LayoutParams(-1, -2));
-            expansions.put(field, new Expansion(choicesHost, arrow));
-        }
-    }
-
-    private void toggleExpansion(int field) {
-        int previous = expanded;
-        expanded = previous == field ? -1 : field;
-        if (previous != -1) animateExpansion(expansions.get(previous), false);
-        if (expanded != -1) animateExpansion(expansions.get(expanded), true);
-    }
-
-    private void animateExpansion(Expansion item, boolean opening) {
-        if (item == null) return;
-        if (item.animator != null) item.animator.cancel();
-        LinearLayout options = item.options;
-        options.measure(View.MeasureSpec.makeMeasureSpec(body.getWidth(), View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        // A synchronous render creates a visible host before its first layout.
-        int initial = options.getVisibility() == View.GONE ? 0
-                : options.isLaidOut() ? options.getHeight() : options.getMeasuredHeight();
-        float initialAlpha = initial == 0 ? 0f : options.getAlpha();
-        int target = opening ? options.getMeasuredHeight() : 0;
-        item.arrow.animate().cancel();
-        item.arrow.animate().rotation(opening ? 180f : 0f).setDuration(220).start();
-        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            options.setVisibility(opening ? View.VISIBLE : View.GONE);
-            options.getLayoutParams().height = -2;
-            options.setAlpha(1f);
-            options.requestLayout();
-            return;
-        }
-        int generation = renderGeneration;
-        options.setVisibility(View.VISIBLE);
-        android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofInt(initial, target);
-        item.animator = animator;
-        animator.setDuration(220);
-        animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
-        animator.addUpdateListener(value -> {
-            int height = (int) value.getAnimatedValue();
-            options.getLayoutParams().height = height;
-            float targetAlpha = opening ? 1f : 0f;
-            options.setAlpha(initialAlpha + (targetAlpha - initialAlpha) * value.getAnimatedFraction());
-            options.requestLayout();
+        installIntervalSwipe(interval, rangeLabel);
+        LinearLayout.LayoutParams intervalParams = new LinearLayout.LayoutParams(-1, dp(48));
+        intervalParams.bottomMargin = dp(12);
+        body.addView(interval, intervalParams);
+        category = new ChoiceDock("类型", R.drawable.ic_event, categoryOptions(), value -> {
+            draft.category = value;
+            if (value != EventCategory.indexOf(EventCategory.TASK) + 1)
+                draft.todoScope = ScheduleQuery.TODO_ANY;
         });
-        animator.addListener(new android.animation.AnimatorListenerAdapter() {
-            boolean cancelled;
-            @Override public void onAnimationCancel(android.animation.Animator animation) { cancelled = true; }
-            @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (cancelled || generation != renderGeneration) return;
-                item.animator = null;
-                options.setVisibility(opening ? View.VISIBLE : View.GONE);
-                options.getLayoutParams().height = -2;
-                options.setAlpha(1f);
-                options.requestLayout();
+        String[] todoChoices = {"不限", "今日截止", "已逾期", "未完成"};
+        todo = new ChoiceDock("待办", R.drawable.ic_content_paste, todoChoices, value -> {
+            draft.todoScope = value;
+            if (value != ScheduleQuery.TODO_ANY) {
+                draft.category = EventCategory.indexOf(EventCategory.TASK) + 1;
+                draft.tab = 3;
             }
         });
-        animator.start();
+        publication = new ChoiceDock("日历状态", R.drawable.ic_inbox_outline, publicationOptions(),
+                value -> draft.publication = value);
+        source = new ChoiceDock("来源", R.drawable.ic_filter_alt, new String[]{"拾时", "系统日程"}, value -> {
+            draft.source = value;
+            if (value == 1) {
+                draft.category = draft.publication = 0;
+                draft.todoScope = ScheduleQuery.TODO_ANY;
+            }
+        });
+    }
+
+    private final class ChoiceDock {
+        final DockNavigationLayout dock;
+        final String name;
+        final String[] choices;
+        final java.util.function.IntConsumer changed;
+        int selected = -1;
+
+        ChoiceDock(String name, int iconId, String[] choices, java.util.function.IntConsumer changed) {
+            this.name = name; this.choices = choices; this.changed = changed;
+            LinearLayout heading = row();
+            ImageView icon = new ImageView(activity);
+            icon.setImageResource(iconId);
+            icon.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));
+            heading.addView(icon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+            TextView title = label(name, 13, true);
+            title.setPadding(dp(7), 0, 0, 0);
+            heading.addView(title);
+            UiStyle.addSpaced(body, heading, 4, 7);
+            dock = new DockNavigationLayout(activity, this::select, () -> { });
+            dock.setPadding(dp(2), dp(3), dp(2), dp(3));
+            dock.setOrientation(LinearLayout.HORIZONTAL);
+            for (int i = 0; i < choices.length; i++) {
+                final int index = i;
+                TextView option = label(choices[i], 14, true);
+                option.setGravity(Gravity.CENTER);
+                option.setPadding(0, 0, 0, 0);
+                option.setOnClickListener(view -> select(index));
+                dock.addItem(option, new LinearLayout.LayoutParams(0, dp(44), choices[i].length()));
+            }
+            UiStyle.addSpaced(body, dock.motionHost(), 0, 13);
+        }
+
+        void select(int index) {
+            if (!dock.isEnabled()) return;
+            changed.accept(index);
+            render();
+        }
+
+        void sync(int index, boolean enabled) {
+            if (selected < 0) dock.setSelectedIndex(index);
+            else dock.finishPageSelection(index);
+            selected = index;
+            dock.setEnabled(enabled);
+            dock.setAlpha(enabled ? 1f : .45f);
+            dock.setContentDescription(name + "选择栏，" + choices[index] + (enabled ? "" : "，当前来源不可修改"));
+            for (int i = 0; i < dock.itemCount(); i++) {
+                View option = dock.itemAt(i);
+                option.setEnabled(enabled);
+                option.setSelected(i == index);
+                option.setContentDescription(name + "，" + choices[i]
+                        + (i == index ? "，已选中" : "") + (enabled ? "" : "，不可修改"));
+            }
+        }
     }
 
     private void pickCustomRange() {
@@ -358,7 +317,11 @@ final class ScheduleFilterSheet {
     }
 
     private void finishIntervalSwipe(TextView value, float distance) {
-        int direction = distance < 0 ? 1 : -1;
+        shiftInterval(value, distance < 0 ? 1 : -1);
+    }
+
+    private void shiftInterval(TextView value, int direction) {
+        value.animate().cancel();
         LocalDate today = LocalDate.now();
         ScheduleFilterState next = draft.copy();
         if (!next.shift(direction, today)) {
@@ -366,7 +329,7 @@ final class ScheduleFilterSheet {
             settleInterval(value);
             return;
         }
-        int generation = renderGeneration;
+        int generation = ++renderGeneration;
         // Apply must see the released gesture immediately, even if the exit animation is interrupted.
         draft.shift(direction, today);
         if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {

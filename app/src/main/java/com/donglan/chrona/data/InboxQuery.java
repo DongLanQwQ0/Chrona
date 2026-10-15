@@ -35,8 +35,14 @@ public final class InboxQuery {
     }
 
     public boolean matchesSearch(String rawText, String linkText) {
+        return matchesSearch(rawText, linkText, null, null);
+    }
+
+    public boolean matchesSearch(String rawText, String linkText,
+            String candidateTitles, String candidateDescriptions) {
         // Keep Java Unicode case handling and literal %, _ and backslashes; SQLite LOWER/LIKE differ.
-        return keyword.isEmpty() || contains(rawText) || contains(linkText);
+        return keyword.isEmpty() || contains(rawText) || contains(linkText)
+                || contains(candidateTitles) || contains(candidateDescriptions);
     }
 
     private boolean contains(String value) {

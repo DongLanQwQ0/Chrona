@@ -1,6 +1,7 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
+import android.app.Application;
 import android.app.Instrumentation;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -8,6 +9,8 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -16,6 +19,7 @@ import android.os.SystemClock;
 import android.view.FrameMetrics;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -24,6 +28,10 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /** Device measurements only; no schedule insertion/deletion or server calls. */
 final class DeviceUiChecks {
@@ -32,6 +40,8 @@ final class DeviceUiChecks {
             return AgendaReminder.WORKER.submit(() -> reminderState(test)).get();
         if ("week_widget_render".equals(arguments.getString("phase"))) return weekWidgets(test);
         if ("week_image".equals(arguments.getString("phase"))) return weekImage(test);
+        if ("interaction_acceptance".equals(arguments.getString("phase"))) return interactionAcceptance(test);
+        if ("interaction_layout".equals(arguments.getString("phase"))) return interactionLayouts(test);
         if ("restore_occurrence".equals(arguments.getString("phase"))) {
             String key = arguments.getString("key", "");
             if (!key.matches("(system|chrona):[0-9]+:[0-9]+")) throw new IllegalArgumentException("Explicit occurrence key required");
@@ -209,6 +219,441 @@ final class DeviceUiChecks {
         });
         throw new IllegalStateException("Calendar did not settle within 25 seconds: " + state[0]);
     }
+    /** New Activity / empty instance cache, not a force-stopped or storage-cold process. */
+    private static String interactionAcceptance(Instrumentation test) throws Exception {
+        Context context = test.getTargetContext();
+        Application application = (Application) context.getApplicationContext();
+        HandlerThread thread = new HandlerThread("ChronaInteractionFrames"); thread.start();
+        Handler metricsHandler = new Handler(thread.getLooper());
+        List<long[]> frames = Collections.synchronizedList(new ArrayList<>());
+        Window.OnFrameMetricsAvailableListener listener = frameListener(frames);
+        Activity[] launched = {null}; int[] originalMode = {-1}; boolean[] emptyCache = {false};
+        Application.ActivityLifecycleCallbacks lifecycle = new Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(Activity activity, Bundle state) {
+                if (!(activity instanceof CalendarOverviewActivity)) return;
+                launched[0] = activity;
+                try {
+                    originalMode[0] = (int) field(activity, "mode");
+                    Map<?, ?> cache = (Map<?, ?>) field(activity, "snapshotCache");
+                    synchronized (cache) { emptyCache[0] = cache.isEmpty(); }
+                } catch (Exception failure) { throw new IllegalStateException(failure); }
+                // onResume starts the worker: this listener also sees the opening frames.
+                activity.getWindow().addOnFrameMetricsAvailableListener(listener, metricsHandler);
+            }
+            @Override public void onActivityStarted(Activity activity) { }
+            @Override public void onActivityResumed(Activity activity) { }
+            @Override public void onActivityPaused(Activity activity) { }
+            @Override public void onActivityStopped(Activity activity) { }
+            @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) { }
+            @Override public void onActivityDestroyed(Activity activity) { }
+        };
+        JSONArray cases = new JSONArray();
+        test.runOnMainSync(() -> application.registerActivityLifecycleCallbacks(lifecycle));
+        try {
+            long openedAt = SystemClock.uptimeMillis();
+            test.getUiAutomation().adoptShellPermissionIdentity("android.permission.START_ACTIVITIES_FROM_BACKGROUND");
+            Activity activity;
+            try { activity = test.startActivitySync(new Intent(context, CalendarOverviewActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+            finally { test.getUiAutomation().dropShellPermissionIdentity(); }
+            JSONObject first = observedLoad(test, activity, openedAt);
+            drain(metricsHandler);
+            first.put("case", "cold_activity_open").put("emptyInstanceCache", emptyCache[0])
+                    .put("processCold", false).put("timingOrigin", "Activity launch request").put("frameMetrics", stats(frames));
+            require(emptyCache[0], "Opening Activity did not have an empty instance cache");
+            cases.put(first); progress(test, first);
+
+            Object[] firstSnapshot = {null}; JSONObject[] initialCache = {null};
+            test.runOnMainSync(() -> {
+                try {
+                    firstSnapshot[0] = field(activity, "snapshot");
+                    initialCache[0] = cacheEvidence(activity, firstSnapshot[0]);
+                } catch (Exception failure) { throw new IllegalStateException(failure); }
+            });
+            int alternate = originalMode[0] == 1 ? 4 : 1;
+            for (int selected : new int[]{alternate, originalMode[0]}) {
+                drain(metricsHandler); frames.clear(); long started = SystemClock.uptimeMillis();
+                test.runOnMainSync(() -> { try { mode(activity, selected); } catch (Exception failure) { throw new IllegalStateException(failure); } });
+                JSONObject loaded = observedLoad(test, activity, started);
+                boolean[] reused = {false}; JSONObject[] currentCache = {null};
+                test.runOnMainSync(() -> { try {
+                    Object current = field(activity, "snapshot"); reused[0] = current == firstSnapshot[0];
+                    currentCache[0] = cacheEvidence(activity, current);
+                }
+                    catch (Exception failure) { throw new IllegalStateException(failure); } });
+                drain(metricsHandler);
+                boolean returning = selected == originalMode[0];
+                String originalKey = initialCache[0].getString("cacheKey");
+                String returnedKey = currentCache[0].getString("cacheKey");
+                boolean sameInputs = !originalKey.isEmpty() && originalKey.equals(returnedKey)
+                        && initialCache[0].getInt("providerRevision") == currentCache[0].getInt("providerRevision");
+                String sceneStatus = !returning ? "measured" : originalKey.isEmpty() ? "unmeasured_initial_snapshot_not_cached"
+                        : returnedKey.isEmpty() ? "unmeasured_returned_snapshot_not_cached"
+                        : !sameInputs ? "unmeasured_inputs_changed" : "verified";
+                loaded.put("case", selected == originalMode[0] ? "cached_mode_return" : "uncached_mode_switch")
+                        .put("timingOrigin", "mode change request")
+                        .put("mode", selected).put("sceneStatus",sceneStatus)
+                        .put("initialCache",initialCache[0]).put("returnedCache",currentCache[0])
+                        .put("snapshotObjectReused",reused[0]).put("cacheHitVerified",returning && sameInputs && reused[0])
+                        .put("frameMetrics", stats(frames));
+                if (returning && sameInputs) require(reused[0], "Same cache inputs did not reuse snapshot: " + loaded);
+                cases.put(loaded); progress(test, loaded);
+            }
+            drain(metricsHandler); frames.clear();
+            JSONObject press = heldPressAndDragOut(test, activity).put("case", "long_hold_and_drag_out");
+            drain(metricsHandler); press.put("frameMetrics", stats(frames)); cases.put(press); progress(test, press);
+            drain(metricsHandler); frames.clear();
+            JSONObject reverse = rapidDockReversals(test, activity).put("case", "rapid_reverse_dock");
+            drain(metricsHandler); reverse.put("frameMetrics", stats(frames)); cases.put(reverse); progress(test, reverse);
+            return new JSONObject().put("phase", "interaction_acceptance").put("version", context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0).versionName).put("manufacturer", Build.MANUFACTURER)
+                    .put("model", Build.MODEL).put("sdk", Build.VERSION.SDK_INT).put("animationsEnabled", UiMotion.isEnabled())
+                    .put("queryTiming", "worker Future completion observed at 10ms polling; includes revision/cache/repository work, not isolated SQL time")
+                    .put("frameTiming", "Window FrameMetrics; no FPS inferred from code or zero-frame intervals")
+                    .put("cases", cases).toString();
+        } finally {
+            test.runOnMainSync(() -> {
+                application.unregisterActivityLifecycleCallbacks(lifecycle);
+                if (launched[0] != null) {
+                    launched[0].getWindow().removeOnFrameMetricsAvailableListener(listener);
+                    if (originalMode[0] >= 0) launched[0].getPreferences(Context.MODE_PRIVATE).edit().putInt("mode", originalMode[0]).apply();
+                    launched[0].finish();
+                }
+            });
+            thread.quitSafely();
+        }
+    }
+    /** Main-thread capture; cache keys include both local dataRevision and providerRevision. */
+    private static JSONObject cacheEvidence(Activity activity, Object snapshot) throws Exception {
+        Map<?, ?> cache = (Map<?, ?>) field(activity,"snapshotCache"); String key = ""; JSONArray keys = new JSONArray();
+        synchronized (cache) {
+            for (Map.Entry<?, ?> entry : cache.entrySet()) {
+                keys.put(entry.getKey()); if (entry.getValue() == snapshot) key = entry.getKey().toString();
+            }
+        }
+        return new JSONObject().put("cacheKey",key).put("cacheKeys",keys)
+                .put("providerRevision",field(activity,"providerRevision")).put("includeSystem",field(activity,"includeSystem"))
+                .put("systemUnavailable",field(snapshot,"systemUnavailable")).put("resumed",field(activity,"resumed"))
+                .put("readCalendarGranted",new com.donglan.chrona.calendar.CalendarStore(activity).hasReadPermission())
+                .put("windowFocused",activity.hasWindowFocus());
+    }
+    /** Worker completion and UI completion are separate observations, both relative to the action. */
+    private static JSONObject observedLoad(Instrumentation test, Activity activity, long started) throws Exception {
+        long until = started + 25000, workerMs = -1, uiMs = -1; int stable = 0;
+        long observationStarted = SystemClock.uptimeMillis() - started; boolean firstObservation = true, workerAlreadyDone = false;
+        while (SystemClock.uptimeMillis() < until) {
+            boolean[] state = {false, false};
+            test.runOnMainSync(() -> {
+                try {
+                    Future<?> read = (Future<?>) field(activity, "readFuture");
+                    state[0] = read != null && read.isDone() && !read.isCancelled();
+                    state[1] = !(boolean) field(activity, "loading") && !(boolean) field(activity, "bodyTransitionRunning")
+                            && field(activity, "calendarBuildSteps") == null && !((DockNavigationLayout) field(activity, "tabs")).isAnimating();
+                } catch (Exception failure) { throw new IllegalStateException(failure); }
+            });
+            long elapsed = SystemClock.uptimeMillis() - started;
+            if (firstObservation) { workerAlreadyDone = state[0]; firstObservation = false; }
+            if (state[0] && workerMs < 0) workerMs = elapsed;
+            if (state[1]) { if (uiMs < 0) uiMs = elapsed; stable++; } else { uiMs = -1; stable = 0; }
+            if (workerMs >= 0 && stable >= 5) {
+                int[] count = {0}; String[] rendered = {""};
+                test.runOnMainSync(() -> { try {
+                    count[0] = ((List<?>) field(field(activity, "snapshot"), "entries")).size();
+                    rendered[0] = (String) field(activity, "renderedKey");
+                } catch (Exception failure) { throw new IllegalStateException(failure); } });
+                require(!rendered[0].isEmpty(), "Calendar settled without a rendered snapshot");
+                SystemClock.sleep(80);
+                return new JSONObject().put("workerCompleteObservedMs", workerMs).put("uiCompleteObservedMs", uiMs)
+                        .put("observationStartedMs", observationStarted).put("workerAlreadyDoneAtFirstObservation", workerAlreadyDone)
+                        .put("observationIntervalMs", 10).put("events", count[0]);
+            }
+            SystemClock.sleep(10);
+        }
+        throw new AssertionError("Interaction load did not complete in 25 seconds");
+    }
+    private static JSONObject heldPressAndDragOut(Instrumentation test, Activity activity) throws Exception {
+        foreground(test, activity); View[] control = {null}; Object[] before = {null};
+        test.runOnMainSync(() -> { try {
+            control[0] = description(activity.getWindow().getDecorView(), "上一段日期");
+            before[0] = field(activity, "date");
+        } catch (Exception failure) { throw new IllegalStateException(failure); } });
+        require(control[0] != null, "Calendar previous-date control missing");
+        float[] point = screenCenter(test, control[0]); long down = SystemClock.uptimeMillis();
+        try {
+            send(test, down, MotionEvent.ACTION_DOWN, point[0], point[1]);
+            SystemClock.sleep(android.view.ViewConfiguration.getLongPressTimeout() + 350L);
+            float first = heldScale(test, control[0]); SystemClock.sleep(350); float second = heldScale(test, control[0]);
+            float[] outside = new float[2];
+            test.runOnMainSync(() -> {
+                Rect bounds = new Rect(); control[0].getGlobalVisibleRect(bounds);
+                outside[0] = bounds.centerX(); outside[1] = bounds.bottom + 3 * android.view.ViewConfiguration.get(activity).getScaledTouchSlop();
+            });
+            foreground(test, activity);
+            send(test, down, MotionEvent.ACTION_MOVE, outside[0], outside[1]); SystemClock.sleep(80);
+            send(test, down, MotionEvent.ACTION_UP, outside[0], outside[1]);
+            waitReleased(test, control[0]);
+            boolean[] unchanged = {false}; test.runOnMainSync(() -> { try { unchanged[0] = before[0].equals(field(activity, "date")); }
+                catch (Exception failure) { throw new IllegalStateException(failure); } });
+            require(unchanged[0], "Dragging a held control out and releasing triggered its action");
+            // A subsequent normal tap must still reach the real listener.
+            point = screenCenter(test, control[0]); long tap = SystemClock.uptimeMillis();
+            send(test, tap, MotionEvent.ACTION_DOWN, point[0], point[1]); send(test, tap, MotionEvent.ACTION_UP, point[0], point[1]);
+            ready(test, activity);
+            boolean[] changed = {false}; test.runOnMainSync(() -> { try { changed[0] = !before[0].equals(field(activity, "date")); }
+                catch (Exception failure) { throw new IllegalStateException(failure); } });
+            require(changed[0], "Normal tap did not recover after drag-out release");
+            test.runOnMainSync(() -> { try {
+                Method restore = activity.getClass().getDeclaredMethod("navigateDate", java.time.LocalDate.class);
+                restore.setAccessible(true); restore.invoke(activity, before[0]);
+            } catch (Exception failure) { throw new IllegalStateException(failure); } }); ready(test, activity);
+            return new JSONObject().put("holdMs", android.view.ViewConfiguration.getLongPressTimeout() + 700)
+                    .put("heldScaleFirst", first).put("heldScaleSecond", second).put("dragOutDidNotClick", unchanged[0])
+                    .put("releaseReset", true).put("nextTapWorked", changed[0]);
+        } finally {
+            if (activity.hasWindowFocus()) send(test, down, MotionEvent.ACTION_CANCEL, point[0], point[1]);
+        }
+    }
+    private static float heldScale(Instrumentation test, View control) {
+        float[] scale = {0}; boolean[] pressed = {false};
+        test.runOnMainSync(() -> { pressed[0] = control.isPressed(); scale[0] = control.getScaleX();
+            require(Math.abs(control.getScaleX() - control.getScaleY()) < .005f, "Held scale is asymmetric"); });
+        require(pressed[0] && scale[0] >= 1.045f, "Long hold lost its pressed feedback"); return scale[0];
+    }
+    private static void waitReleased(Instrumentation test, View control) {
+        long until = SystemClock.uptimeMillis() + 5000;
+        while (SystemClock.uptimeMillis() < until) {
+            boolean[] released = {false}; test.runOnMainSync(() -> released[0] = !control.isPressed()
+                    && Math.abs(control.getScaleX() - 1f) < .005f && Math.abs(control.getScaleY() - 1f) < .005f);
+            if (released[0]) return; SystemClock.sleep(20);
+        }
+        throw new AssertionError("Released control retained pressed scale");
+    }
+    private static JSONObject rapidDockReversals(Instrumentation test, Activity activity) throws Exception {
+        DockNavigationLayout[] dock = {null};
+        test.runOnMainSync(() -> { try { dock[0] = (DockNavigationLayout) field(activity, "tabs"); }
+            catch (Exception failure) { throw new IllegalStateException(failure); } });
+        JSONArray acknowledged = new JSONArray(); long started = SystemClock.uptimeMillis();
+        for (int selected : new int[]{4, 0, 4, 0, 4, 0}) {
+            foreground(test, activity); float[] point = screenCenter(test, dock[0].itemAt(selected)); long down = SystemClock.uptimeMillis();
+            send(test, down, MotionEvent.ACTION_DOWN, point[0], point[1]); send(test, down, MotionEvent.ACTION_UP, point[0], point[1]);
+            // Intentionally reverse while the previous page/highlight is still settling.
+            SystemClock.sleep(45); int[] actual = {-1};
+            test.runOnMainSync(() -> { try { actual[0] = (int) field(activity, "mode"); }
+                catch (Exception failure) { throw new IllegalStateException(failure); } });
+            require(actual[0] == selected, "Dock lost a rapid reversal tap"); acknowledged.put(actual[0]);
+        }
+        JSONObject result = observedLoad(test, activity, started); long until = SystemClock.uptimeMillis() + 5000;
+        while (SystemClock.uptimeMillis() < until) {
+            boolean[] settled = {false}; test.runOnMainSync(() -> { try {
+                float visual = (float) field(dock[0], "visualPosition");
+                settled[0] = !dock[0].isTrackingTouch() && !dock[0].isAnimating()
+                        && (int) field(dock[0], "selectedIndex") == 0 && Math.abs(visual) < .03f
+                        && Math.abs(dock[0].getScaleX() - 1f) < .005f;
+            } catch (Exception failure) { throw new IllegalStateException(failure); } });
+            if (settled[0]) return result.put("timingOrigin", "first tap of six-tap burst").put("acknowledgedModes", acknowledged)
+                    .put("finalMode", 0).put("highlightSettled", true);
+            SystemClock.sleep(20);
+        }
+        throw new AssertionError("Dock failed to settle after rapid reversals");
+    }
+    private static View description(View view, String label) {
+        if (label.contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) return view;
+        if (view instanceof ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) {
+            View found = description(group.getChildAt(i), label); if (found != null) return found;
+        }
+        return null;
+    }
+    private static float[] screenCenter(Instrumentation test, View view) {
+        float[] point = new float[2]; test.runOnMainSync(() -> {
+            Rect bounds = new Rect(); require(view.getGlobalVisibleRect(bounds), "Interaction target is not visible");
+            point[0] = bounds.exactCenterX(); point[1] = bounds.exactCenterY();
+        }); return point;
+    }
+    private static void drain(Handler handler) throws Exception {
+        CountDownLatch delivered = new CountDownLatch(1); handler.post(delivered::countDown);
+        require(delivered.await(5, TimeUnit.SECONDS), "FrameMetrics callback queue did not drain");
+    }
+    private static void progress(Instrumentation test, JSONObject result) {
+        Bundle progress = new Bundle(); progress.putString("stream", "interaction: " + result + "\n"); test.sendStatus(0, progress);
+    }
+    private static void require(boolean result, String message) { if (!result) throw new AssertionError(message); }
+    /** Configuration-local Android rendering; never writes the device font/display settings. */
+    private static String interactionLayouts(Instrumentation test) throws Exception {
+        Context target = test.getTargetContext(); JSONArray cases = new JSONArray();
+        Throwable[] failure = {null};
+        String[] configuration = {"unconfigured"};
+        test.runOnMainSync(() -> {
+            try {
+                for (int[] size : new int[][]{{320, 568}, {360, 640}, {640, 360}}) for (float font : new float[]{1f, 1.5f, 2f}) for (int optionCount : new int[]{2, 3, 5}) {
+                    configuration[0] = size[0]+"x"+size[1]+" font="+font+" options="+optionCount;
+                    Configuration config = new Configuration(target.getResources().getConfiguration());
+                    config.fontScale = font; config.screenWidthDp = size[0]; config.screenHeightDp = size[1];
+                    config.orientation = size[0] > size[1] ? Configuration.ORIENTATION_LANDSCAPE : Configuration.ORIENTATION_PORTRAIT;
+                    Context context = target.createConfigurationContext(config); float density = context.getResources().getDisplayMetrics().density;
+                    int width = Math.round(size[0] * density), height = Math.round(Math.min(320,size[1]) * density), gutter = Math.round(20 * density);
+                    android.widget.ScrollView viewport = new android.widget.ScrollView(context);
+                    android.widget.LinearLayout content = new android.widget.LinearLayout(context);
+                    content.setOrientation(android.widget.LinearLayout.VERTICAL); content.setPadding(gutter, gutter, gutter, gutter);
+                    viewport.addView(content, new android.widget.ScrollView.LayoutParams(-1, -2));
+                    android.widget.Button button = new android.widget.Button(context); button.setText("完成日程");
+                    button.setOnClickListener(view -> { }); UiStyle.button(button, true);
+                    content.addView(button, new android.widget.LinearLayout.LayoutParams(-1, -2));
+                    DockNavigationLayout dock = new DockNavigationLayout(context, index -> { }, () -> { });
+                    dock.setPadding(Math.round(2*density), Math.round(3*density), Math.round(2*density), Math.round(3*density));
+                    for (String label : optionCount == 2 ? new String[]{"拾时", "系统日程"}
+                            : optionCount == 3 ? new String[]{"全部", "待确认", "已写入"} : new String[]{"全部", "今天", "本周", "本月", "自选"}) {
+                        android.widget.TextView tab = new android.widget.TextView(context); tab.setText(label); tab.setTextSize(14);
+                        tab.setIncludeFontPadding(false); tab.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
+                        tab.setGravity(android.view.Gravity.CENTER); tab.setOnClickListener(view -> { });
+                        tab.setPadding(0,0,0,0);
+                        dock.addItem(tab, new android.widget.LinearLayout.LayoutParams(0, Math.round(44*density), label.length()));
+                    }
+                    android.widget.FrameLayout host = dock.motionHost();
+                    android.widget.LinearLayout.LayoutParams dockParams = new android.widget.LinearLayout.LayoutParams(-1, -2);
+                    dockParams.gravity = android.view.Gravity.CENTER_HORIZONTAL; dockParams.topMargin = Math.round(24*density);
+                    content.addView(host, dockParams); dock.setSelectedIndex(0); PressFeedback.install(viewport);
+                    viewport.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)); viewport.layout(0, 0, width, height);
+                    View firstCell = dock.itemAt(0);
+                    for (int i=1;i<dock.itemCount();i++) {
+                        View cell=dock.itemAt(i);
+                        require(cell.getTop()==firstCell.getTop() && cell.getBottom()==firstCell.getBottom(),
+                                "Dock cells have different vertical bounds: first="+firstCell.getTop()+","+firstCell.getBottom()
+                                        +" cell="+i+":"+cell.getTop()+","+cell.getBottom());
+                    }
+                    button.setPressed(true);
+                    button.getStateListAnimator().jumpToCurrentState();
+                    require(button.getScaleX() >= 1.045f, "Configured button did not enter its held state");
+                    android.graphics.RectF buttonBounds = boundsIn(button, viewport); contained(buttonBounds, width, height, "Held button");
+                    require(!content.getClipChildren() && !content.getClipToPadding(), "Press overflow blocked by layout parent");
+                    Rect clip = viewport.getClipBounds(); require(clip != null && clip.equals(new Rect(0, 0, width, height)), "Viewport boundary not retained");
+                    require(button.getLayout() != null && button.getLayout().getHeight()
+                            <= button.getHeight()-button.getCompoundPaddingTop()-button.getCompoundPaddingBottom(), "Large-font button text clipped");
+                    JSONArray edges = new JSONArray();
+                    for (int edge : new int[]{0, optionCount - 1}) {
+                        dock.finishPageSelection(edge);
+                        View edgeItem = dock.itemAt(edge);
+                        android.graphics.RectF edgeBounds = boundsIn(edgeItem, dock);
+                        MotionEvent down = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, edgeBounds.centerX(), edgeBounds.centerY(), 0);
+                        try { dock.dispatchTouchEvent(down); } finally { down.recycle(); }
+                        ((Runnable) field(dock, "longPress")).run();
+                        DockSpring spring = (DockSpring) field(dock, "spring");
+                        Method apply = DockNavigationLayout.class.getDeclaredMethod("applySpring"); apply.setAccessible(true); apply.invoke(dock);
+                        // Sample the production physics deterministically; these are geometry checks, not frame timing.
+                        for (int frame = 0; frame < 240; frame++) {
+                            spring.step(1f/120); apply.invoke(dock); dockEnvelope(dock, host, viewport, "Long press edge " + edge+" frame="+frame);
+                        }
+                        android.graphics.RectF highlight = boundsIn((View) field(dock, "highlightView"), viewport);
+                        require(spring.scale > 1.49f && dock.getScaleX() > 1.09f, "Long press did not reach its expanded envelope");
+                        spring.coast(edge == 0 ? -100f : 100f, optionCount - 1);
+                        for (int frame = 0; frame < 480; frame++) {
+                            spring.step(1f/120); apply.invoke(dock); dockEnvelope(dock, host, viewport, "Fast outward fling edge " + edge+" frame="+frame);
+                        }
+                        // Exercise the limiting cap too, beyond the sampled fling's finite travel.
+                        spring.position = edge == 0 ? -10000f : 10000f; spring.scale = 1.53f; spring.bar = 1.12f; spring.width = 1.3f;
+                        apply.invoke(dock); dockEnvelope(dock, host, viewport, "Maximum outward cap edge " + edge);
+                        edges.put(new JSONObject().put("edge", edge).put("heldHighlightBounds", highlight.toShortString())
+                                .put("limitHighlightBounds",boundsIn((View) field(dock,"highlightView"),host).toShortString())
+                                .put("longPressFrames",240).put("flingFrames",480).put("limitingEnvelopeFits",true));
+                        MotionEvent cancel = MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0, 0, 0);
+                        try { dock.dispatchTouchEvent(cancel); } finally { cancel.recycle(); }
+                        spring.position = spring.target = edge; spring.press(false); spring.snap(); apply.invoke(dock);
+                    }
+                    JSONArray labels = new JSONArray();
+                    for (int i = 0; i < dock.itemCount(); i++) {
+                        android.widget.TextView label = (android.widget.TextView) dock.itemAt(i);
+                        int availableWidth = label.getWidth()-label.getCompoundPaddingLeft()-label.getCompoundPaddingRight();
+                        int availableHeight = label.getHeight()-label.getCompoundPaddingTop()-label.getCompoundPaddingBottom();
+                        float textWidth = label.getPaint().measureText(label.getText().toString());
+                        JSONObject measured = new JSONObject().put("label",label.getText()).put("widthPx",label.getWidth())
+                                .put("heightPx",label.getHeight()).put("textWidthPx",textWidth)
+                                .put("layoutHeightPx",label.getLayout()==null ? -1 : label.getLayout().getHeight())
+                                .put("textSizePx",label.getTextSize()).put("availableWidthPx",availableWidth).put("availableHeightPx",availableHeight);
+                        require(label.getLayout() != null && label.getLayout().getLineCount()==1
+                                && label.getLayout().getEllipsisCount(0)==0
+                                && label.getLayout().getHeight() <= availableHeight && textWidth <= availableWidth,
+                                "Configured Dock label clipped at "+size[0]+"x"+size[1]+" font="+font+": "+measured);
+                        labels.put(measured);
+                    }
+                    DockSpring renderedSpring = (DockSpring) field(dock,"spring"); renderedSpring.press(true);
+                    for (int frame=0;frame<240;frame++) renderedSpring.step(1f/120);
+                    Method renderSpring = DockNavigationLayout.class.getDeclaredMethod("applySpring"); renderSpring.setAccessible(true); renderSpring.invoke(dock);
+                    dockEnvelope(dock,host,viewport,"Rendered held last edge");
+                    android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
+                    try {
+                        android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap); canvas.drawColor(UiStyle.colors(context).background); viewport.draw(canvas);
+                        java.io.File output = new java.io.File(target.getExternalFilesDir(null), "interaction-layout-"+size[0]+"x"+size[1]+"-font"+font+"-options"+optionCount+".png");
+                        try (java.io.FileOutputStream stream = new java.io.FileOutputStream(output)) { require(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream), "Layout PNG write failed"); }
+                        JSONObject renderedCase = new JSONObject().put("widthDp",size[0]).put("heightDp",size[1]).put("fontScale",font).put("optionCount",optionCount)
+                                .put("buttonBounds",buttonBounds.toShortString()).put("edges",edges).put("labels",labels).put("viewportClipPreserved",true)
+                                .put("textFits",true).put("image",output.getAbsolutePath());
+                        if (size[0]==320 && font==2f && optionCount!=3) {
+                            android.graphics.Bitmap preview = width<=640 ? bitmap : android.graphics.Bitmap.createScaledBitmap(bitmap,640,Math.round(height*640f/width),true);
+                            try {
+                                java.io.ByteArrayOutputStream stream = new java.io.ByteArrayOutputStream();
+                                require(preview.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream),"Layout preview encoding failed");
+                                renderedCase.put("previewPngBase64",android.util.Base64.encodeToString(stream.toByteArray(),android.util.Base64.NO_WRAP));
+                            } finally { if (preview!=bitmap) preview.recycle(); }
+                        }
+                        cases.put(renderedCase);
+                    } finally { bitmap.recycle(); }
+                    button.setPressed(false); button.getStateListAnimator().jumpToCurrentState();
+                }
+            } catch (Throwable error) { failure[0] = new IllegalStateException(configuration[0],error); }
+        });
+        if (failure[0] != null) throw new IllegalStateException("Interaction configuration rendering failed", failure[0]);
+        return new JSONObject().put("phase","interaction_layout").put("scope","production Button/PressFeedback/Dock components in configuration-local Android renders")
+                .put("version",target.getPackageManager().getPackageInfo(target.getPackageName(),0).versionName)
+                .put("model",Build.MODEL).put("sdk",Build.VERSION.SDK_INT)
+                .put("systemSettingsChanged",false).put("fullActivityLayout",false).put("cases",cases).toString();
+    }
+    private static void dockEnvelope(DockNavigationLayout dock, android.widget.FrameLayout host,
+                                     android.widget.ScrollView viewport, String state) throws Exception {
+        try {
+        contained(boundsIn(host,viewport),viewport.getWidth(),viewport.getHeight(),state+" motion host");
+        View highlight = (View) field(dock,"highlightView");
+        for (View rendered : new View[]{dock,highlight}) {
+            contained(boundsIn(rendered,host),host.getWidth(),host.getHeight(),state+" inside host");
+            contained(boundsIn(rendered,viewport),viewport.getWidth(),viewport.getHeight(),state+" inside scroll viewport");
+        }
+        for (int i=0;i<dock.itemCount();i++) {
+            View label=dock.itemAt(i);
+            contained(boundsIn(label,host),host.getWidth(),host.getHeight(),state+" label "+i+" inside host");
+            contained(boundsIn(label,viewport),viewport.getWidth(),viewport.getHeight(),state+" label "+i+" inside viewport");
+        }
+        } catch (AssertionError failure) {
+            DockSpring spring=(DockSpring)field(dock,"spring");
+            View highlight=(View)field(dock,"highlightView");
+            StringBuilder cells=new StringBuilder();
+            for (int i=0;i<dock.itemCount();i++) {
+                View cell=dock.itemAt(i);
+                cells.append(i).append(':').append(cell.getLeft()).append(',').append(cell.getTop()).append(',')
+                        .append(cell.getRight()).append(',').append(cell.getBottom()).append(';');
+            }
+            throw new AssertionError(state+" host="+host.getWidth()+"x"+host.getHeight()+" measured="+host.getMeasuredWidth()+"x"+host.getMeasuredHeight()
+                    +" padding="+host.getPaddingLeft()+","+host.getPaddingTop()+","+host.getPaddingRight()+","+host.getPaddingBottom()
+                    +" dock="+dock.getWidth()+"x"+dock.getHeight()+" measured="+dock.getMeasuredWidth()+"x"+dock.getMeasuredHeight()
+                    +" dockBounds="+dock.getLeft()+","+dock.getTop()+","+dock.getRight()+","+dock.getBottom()
+                    +" dockPivot="+dock.getPivotX()+","+dock.getPivotY()+" scale="+dock.getScaleX()+","+dock.getScaleY()
+                    +" highlight="+boundsIn(highlight,host)+" measured="+highlight.getMeasuredWidth()+"x"+highlight.getMeasuredHeight()
+                    +" spring.position="+spring.position+" target="+spring.target+" velocity="+spring.velocity+" coasting="+spring.coasting
+                    +" spring.scale="+spring.scale+" bar="+spring.bar+" width="+spring.width
+                    +" selected="+field(dock,"selectedIndex")+" visual="+field(dock,"visualPosition")+" cells="+cells,failure);
+        }
+    }
+    private static android.graphics.RectF boundsIn(View view, ViewGroup ancestor) {
+        android.graphics.RectF bounds = new android.graphics.RectF(0,0,view.getWidth(),view.getHeight());
+        for (View child = view; child != ancestor;) {
+            require(child.getParent() instanceof ViewGroup, "Configured control lost its viewport");
+            ViewGroup parent = (ViewGroup) child.getParent(); child.getMatrix().mapRect(bounds);
+            bounds.offset(child.getLeft()-parent.getScrollX(), child.getTop()-parent.getScrollY()); child = parent;
+        }
+        return bounds;
+    }
+    private static void contained(android.graphics.RectF bounds, int width, int height, String label) {
+        require(Float.isFinite(bounds.left) && Float.isFinite(bounds.top) && Float.isFinite(bounds.right) && Float.isFinite(bounds.bottom)
+                && bounds.left >= -.5f && bounds.top >= -.5f && bounds.right <= width+.5f && bounds.bottom <= height+.5f,
+                label+" extends beyond configured viewport: "+bounds);
+    }
     private static String calendar(Instrumentation test, Bundle arguments) throws Exception {
         Context context = test.getTargetContext();
         Activity activity;
@@ -219,15 +664,7 @@ final class DeviceUiChecks {
         test.runOnMainSync(() -> { try { original[0] = (int) field(activity, "mode"); } catch (Exception e) { throw new IllegalStateException(e); } });
         HandlerThread thread = new HandlerThread("ChronaFrameMeasurements"); thread.start();
         List<long[]> frames = Collections.synchronizedList(new ArrayList<>());
-        Window.OnFrameMetricsAvailableListener listener = (window, metrics, dropped) -> {
-            long deadline = Build.VERSION.SDK_INT >= 31 ? metrics.getMetric(FrameMetrics.DEADLINE) : 16_666_667L;
-            frames.add(new long[]{metrics.getMetric(FrameMetrics.TOTAL_DURATION), metrics.getMetric(FrameMetrics.LAYOUT_MEASURE_DURATION),
-                    metrics.getMetric(FrameMetrics.DRAW_DURATION), metrics.getMetric(FrameMetrics.SYNC_DURATION), deadline, dropped,
-                    metrics.getMetric(FrameMetrics.UNKNOWN_DELAY_DURATION), metrics.getMetric(FrameMetrics.ANIMATION_DURATION),
-                    metrics.getMetric(FrameMetrics.INPUT_HANDLING_DURATION), metrics.getMetric(FrameMetrics.COMMAND_ISSUE_DURATION),
-                    metrics.getMetric(FrameMetrics.SWAP_BUFFERS_DURATION),
-                    Build.VERSION.SDK_INT >= 31 ? metrics.getMetric(FrameMetrics.GPU_DURATION) : -1});
-        };
+        Window.OnFrameMetricsAvailableListener listener = frameListener(frames);
         JSONArray cases = new JSONArray();
         try {
             ready(test, activity);
@@ -262,6 +699,17 @@ final class DeviceUiChecks {
             thread.quitSafely();
         }
     }
+    private static Window.OnFrameMetricsAvailableListener frameListener(List<long[]> frames) {
+        return (window, metrics, dropped) -> {
+            long deadline = Build.VERSION.SDK_INT >= 31 ? metrics.getMetric(FrameMetrics.DEADLINE) : 16_666_667L;
+            frames.add(new long[]{metrics.getMetric(FrameMetrics.TOTAL_DURATION), metrics.getMetric(FrameMetrics.LAYOUT_MEASURE_DURATION),
+                    metrics.getMetric(FrameMetrics.DRAW_DURATION), metrics.getMetric(FrameMetrics.SYNC_DURATION), deadline, dropped,
+                    metrics.getMetric(FrameMetrics.UNKNOWN_DELAY_DURATION), metrics.getMetric(FrameMetrics.ANIMATION_DURATION),
+                    metrics.getMetric(FrameMetrics.INPUT_HANDLING_DURATION), metrics.getMetric(FrameMetrics.COMMAND_ISSUE_DURATION),
+                    metrics.getMetric(FrameMetrics.SWAP_BUFFERS_DURATION),
+                    Build.VERSION.SDK_INT >= 31 ? metrics.getMetric(FrameMetrics.GPU_DURATION) : -1});
+        };
+    }
     private static JSONObject stats(List<long[]> frames) throws Exception {
         List<long[]> copy; synchronized (frames) { copy = new ArrayList<>(frames); }
         List<Long> times = new ArrayList<>(); long layout = 0, draw = 0, sync = 0, missed = 0, longFrames = 0, lostCallbacks = 0;
@@ -282,6 +730,7 @@ final class DeviceUiChecks {
                     .put("commandMs", f[9] / 1e6).put("swapMs", f[10] / 1e6).put("gpuMs", f[11] / 1e6));
         }
         return new JSONObject().put("frames", times.size()).put("p95Ms", percentile(times, .95)).put("maxMs", percentile(times, 1))
+                .put("measurementAvailable",!times.isEmpty()).put("deadlineSource",Build.VERSION.SDK_INT >= 31 ? "platform" : "60Hz_reference_only")
                 .put("maxLayoutMs", layout / 1e6).put("maxDrawMs", draw / 1e6).put("maxSyncMs", sync / 1e6)
                 .put("missedDeadline", missed).put("over32ms", longFrames).put("lostMetricCallbacks", lostCallbacks).put("longestFrames", details);
     }

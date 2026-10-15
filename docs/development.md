@@ -1,3 +1,9 @@
+## 0.14.49：工作流与提醒闭环
+
+TaskCompletion 统一完成/恢复、锁内 revision 检查和关联系统提醒。恢复只安排未来提醒；失败保留本地状态、返回说明并持久保留待同步项。ReminderTimeline 将显式待办 snooze 与默认关闭窗口分开，活动不越过结束时间。NotificationDeliveryStatus 统一频道与权限的有效状态。HomeTodoSummary 是首页摘要，queryHomeUpcoming 仅使用执行时间，todoScope 是完整筛选状态。
+
+设备集中验收：DeviceUiChecks 的 interaction_acceptance、interaction_layout；checks/interaction_acceptance_check.py 检查已保存报告，worker 时间是观察上界，非精确 SQL 耗时。
+
 ## 0.14.48：两类日程
 
 SQLite 版本提升至 11，新增 due_at_millis、completed_at_millis、is_record。数据库升级同时转换已归档的合并来源。活动使用起止时间，待办保留独立截止与完成状态，记录退出日历投影。TaskCodec 和网页端保存相同字段，旧同步客户端需更新。
