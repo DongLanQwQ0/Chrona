@@ -3,7 +3,7 @@
 - 角标生产方法回归 15 项通过，覆盖确认后 1→0 隐藏、0→1 原位重现、失败/导航同步、缓存页面及 revision 记账顺序。日程刷新生产控制器 374 项通过，包含旧 worker 与旧动画不能覆盖新计数。
 - 共享选择栏 126 项通过，新增角标 wrapper 的主标签自动字号回归；角标自己的字体不受影响。
 - 周手势生产控件回归通过，包含双轴滚动、同次拖到边缘后再外拖、仅抵边不切、回撤取消和捏合隔离；卡片构建/缩放 642 项与导出组合 7 项通过。导出替身核对关闭索引时不绘制附录、不保留编号、不受附录高度限制，不代替实际 PNG 视觉。
-- release / AndroidTest / lintRelease 构建通过，日志 `build/final-01450-build.log` 与 `final-01450-native-fixture-build.log`。实际安装被系统返回 `INSTALL_FAILED_ABORTED: User rejected permissions`；用户解锁允许后才能继续，未重试绕过。新 week_image 的两种原生图片和 ScaleGestureDetector fixture 已编译、尚未执行，整页捏合焦点及边缘切周手感待验。
+- release / AndroidTest / lintRelease 构建通过。用户重新提供连接并要求重推后，实际安装成功，设备版本157 / 0.14.50。原生week_image通过：仅周表2240×2790、附索引2240×3492，两种预览均已查看；原生ScaleGestureDetector累计缩放1.7143且未切周，连续外拖上一周与右边缘下一周通过。首次600px手势fixture指距不足，改为正常屏宽1200px后通过，生产实现未改。证据 `build/device-workflow-01449/week-image-01450.txt`；测试是局部原生控件，整页捏合焦点和手感仍待人工检查。
 
 ## 0.14.49 — 2026-10-15
 

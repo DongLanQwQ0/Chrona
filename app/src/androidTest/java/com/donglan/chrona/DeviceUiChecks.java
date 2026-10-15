@@ -134,30 +134,31 @@ final class DeviceUiChecks {
                 FrameLayout parent = new FrameLayout(context), content = new FrameLayout(context);
                 FreeCalendarScrollView free = new FreeCalendarScrollView(context);
                 ScrollView vertical = new ScrollView(context);
-                vertical.addView(new View(context), new ScrollView.LayoutParams(1200, 2400));
-                content.addView(vertical, new FrameLayout.LayoutParams(1200, 400));
-                free.addView(content, new FrameLayout.LayoutParams(1200, 400));
-                parent.addView(free, new FrameLayout.LayoutParams(600, 400)); free.vertical(vertical);
+                vertical.addView(new View(context), new ScrollView.LayoutParams(2400, 2400));
+                content.addView(vertical, new FrameLayout.LayoutParams(2400, 400));
+                free.addView(content, new FrameLayout.LayoutParams(2400, 400));
+                parent.addView(free, new FrameLayout.LayoutParams(1200, 400)); free.vertical(vertical);
                 int[] switched = {0}; float[] zoom = {1f};
                 free.gestures(direction -> switched[0] = direction, (factor, x, y) -> zoom[0] *= factor);
-                parent.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY),
-                        View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY)); parent.layout(0, 0, 600, 400);
+                parent.measure(View.MeasureSpec.makeMeasureSpec(1200, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY)); parent.layout(0, 0, 1200, 400);
                 long start = SystemClock.uptimeMillis();
-                dispatchFixtureTouch(free, start, start, MotionEvent.ACTION_DOWN, new float[]{220});
-                dispatchFixtureTouch(free, start, start+16, MotionEvent.ACTION_POINTER_DOWN | (1<<8), new float[]{220,380});
-                for (int i=1;i<=5;i++) dispatchFixtureTouch(free, start, start+16+i*24, MotionEvent.ACTION_MOVE,
-                        new float[]{220-i*30,380+i*30});
-                dispatchFixtureTouch(free, start, start+160, MotionEvent.ACTION_POINTER_UP | (1<<8), new float[]{70,530});
-                dispatchFixtureTouch(free, start, start+176, MotionEvent.ACTION_UP, new float[]{70});
-                require(zoom[0] > 1.1f && switched[0] == 0, "Native pinch did not zoom exclusively");
+                dispatchFixtureTouch(free, start, start, MotionEvent.ACTION_DOWN, new float[]{420});
+                dispatchFixtureTouch(free, start, start+16, MotionEvent.ACTION_POINTER_DOWN | (1<<8), new float[]{420,780});
+                for (int i=1;i<=6;i++) dispatchFixtureTouch(free, start, start+16+i*24, MotionEvent.ACTION_MOVE,
+                        new float[]{420-i*50,780+i*50});
+                dispatchFixtureTouch(free, start, start+200, MotionEvent.ACTION_POINTER_UP | (1<<8), new float[]{120,1080});
+                dispatchFixtureTouch(free, start, start+216, MotionEvent.ACTION_UP, new float[]{120});
+                require(zoom[0] > 1.1f && switched[0] == 0, "Native pinch did not zoom exclusively: factor="+zoom[0]
+                        +", week="+switched[0]+", minimumSpan="+android.view.ViewConfiguration.get(context).getScaledMinimumScalingSpan());
                 result.put("pinchFactor",zoom[0]).put("pinchDidNotChangeWeek",true);
-                free.scrollTo(300,0); start += 240;
+                free.scrollTo(300,0); start += 300;
                 dispatchFixtureTouch(free,start,start,MotionEvent.ACTION_DOWN,new float[]{100});
                 dispatchFixtureTouch(free,start,start+24,MotionEvent.ACTION_MOVE,new float[]{600});
                 dispatchFixtureTouch(free,start,start+48,MotionEvent.ACTION_UP,new float[]{600});
                 require(switched[0] == -1, "Native continuous outward drag did not select previous week");
                 result.put("continuousPreviousWeek",true); switched[0]=0;
-                free.scrollTo(600,0); start += 120;
+                free.scrollTo(1200,0); start += 120;
                 dispatchFixtureTouch(free,start,start,MotionEvent.ACTION_DOWN,new float[]{400});
                 dispatchFixtureTouch(free,start,start+24,MotionEvent.ACTION_MOVE,new float[]{180});
                 dispatchFixtureTouch(free,start,start+48,MotionEvent.ACTION_UP,new float[]{180});
