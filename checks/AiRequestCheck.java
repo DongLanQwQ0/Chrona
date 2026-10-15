@@ -13,6 +13,26 @@ public final class AiRequestCheck {
         check(data.getString("now_local").startsWith("1970-01-01T08:00:00+08:00"), "local ISO anchor");
         check(prefix.equals(SchedulePrompt.SYSTEM) && prefix.contains(SchedulePrompt.VERSION), "stable versioned prefix");
         check(prefix.endsWith(SchedulePrompt.schema().toString()), "schema matches prefix");
+        check(prefix.contains(SchedulePrompt.TIME_RULES) && !prefix.contains("e.g. tomorrow at 10:00"),
+                "single colloquial policy; bare twelve-hour example cannot auto-publish");
+        check(prefix.contains(SchedulePrompt.DECISION_RULES), "decision boundaries sent to model");
+        for (String rule : new String[]{"start=T，due=null", "reminder_minutes_before=0", "手算", "其他角色", "紧凑JSON", "选后不重开"})
+            check(SchedulePrompt.DECISION_RULES.contains(rule), "observed hesitation boundary: " + rule);
+        for (String word : new String[]{"明天早上", "明天2点", "差一刻", "周末", "月末", "饭后", "下班后", "DDL", "农历", "重复"})
+            check(SchedulePrompt.TIME_RULES.contains(word), "time policy covers " + word);
+        for (String[] example : new String[][] {
+                {"2026-10-15T00:00:00+08:00", "2026-10-15"},
+                {"2026-10-15T04:59:59+08:00", "2026-10-15"},
+                {"2026-10-15T05:00:00+08:00", "2026-10-16"},
+                {"2026-12-31T23:00:00+08:00", "2027-01-01"}
+        }) {
+            JSONObject anchored = SchedulePrompt.data("明天早上提醒我", null, null,
+                    java.time.Instant.parse(example[0]).toEpochMilli(), "Asia/Shanghai");
+            check(anchored.getString("colloquial_tomorrow_morning_date").equals(example[1]),
+                    "local early-morning boundary: " + example[0]);
+        }
+        check(SchedulePrompt.data("", null, null, java.time.Instant.parse("2026-10-14T18:00:00Z").toEpochMilli(),
+                "Asia/Shanghai").getInt("now_weekday") == 4, "weekday uses local day, not UTC day");
         check(SchedulePrompt.data("", "x".repeat(4001), "y".repeat(6001), 0, "UTC").getBoolean("link_text_truncated"), "truncation visible");
         try { SchedulePrompt.data("x".repeat(24001), null, null, 0, "UTC"); throw new AssertionError("raw budget"); }
         catch (IllegalArgumentException expected) { }

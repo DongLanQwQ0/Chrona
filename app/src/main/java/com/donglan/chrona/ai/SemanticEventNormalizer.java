@@ -175,6 +175,16 @@ public final class SemanticEventNormalizer {
                 if (allDay) context.uncertain = true;
                 return result;
             }
+            // Keep a usable draft if the model supplies only a clock despite the prompt's date rule.
+            // Do not reinterpret AM/PM here: the model has the original text and owns that inference.
+            if (clock != null && result.date == null && day == null && weekday == null && explicitDate == null) {
+                result.date = context.anchor.toLocalDate();
+                LocalTime nextClock = clock.equals("24:00") || clock.equals("24:00:00")
+                        ? LocalTime.of(23, 59) : LocalTime.parse(clock);
+                if (result.date.atTime(nextClock).isBefore(context.anchor.toLocalDateTime()))
+                    result.date = result.date.plusDays(1);
+                context.uncertain = true;
+            }
             if (allDay) {
                 if (clock != null || minutes != null) context.uncertain = true;
                 return result;

@@ -65,7 +65,12 @@ public final class SemanticEventNormalizerCheck {
         check(parse(base("event").put("start", time("2026-02-30", "11:00", null))).startAtMillis == null,
                 "invalid calendar date");
         EventCandidate missing = parse(base("event").put("start", time(null, "11:00", null)));
-        check(missing.startAtMillis == null && missing.needsConfirmation, "clock without date stays unresolved");
+        check(missing.startAtMillis == at("2026-09-28T03:00:00Z") && missing.uncertaintyLevel == 2
+                && missing.needsConfirmation, "clock without date keeps a concrete doubtful draft");
+        check(parse(base("task").put("start", time(null, "09:00", null))).startAtMillis
+                == at("2026-09-29T01:00:00Z"), "elapsed clock without date uses next occurrence");
+        check(parse(base("task").put("start", time("2026-09-28", "09:00", null))).startAtMillis
+                == at("2026-09-28T01:00:00Z"), "explicit elapsed date never silently rolls forward");
         EventCandidate dateOnly = parse(base("event").put("start", time("2026-09-29", null, null)));
         check(dateOnly.startAtMillis == null && dateOnly.needsConfirmation, "date without clock stays unresolved");
         EventCandidate contradictory = parse(base("task").put("start", time("2026-09-30", "11:00", 1)));
@@ -137,6 +142,26 @@ public final class SemanticEventNormalizerCheck {
         EventCandidate fuzzy = parse(base("task").put("uncertainty_level", 2).put("needs_confirmation", true)
                 .put("start", time(null, "19:00", 1)));
         check(fuzzy.startAtMillis != null && fuzzy.needsConfirmation && fuzzy.uncertaintyLevel == 2, "chosen fuzzy time retained for review");
+        EventCandidate atSix = parse(base("task").put("uncertainty_level", 2).put("needs_confirmation", true)
+                .put("start", time(null, "18:00", 0)).put("reminder_specified", true)
+                .put("reminder_minutes_before", 0));
+        check(atSix.startAtMillis == at("2026-09-28T10:00:00Z") && atSix.dueAtMillis == null
+                && atSix.endAtMillis == null && atSix.reminderMinutesBefore == 0 && atSix.needsConfirmation,
+                "at-time reminder is scheduled task, not invented deadline or duration");
+        // These are model-output contract fixtures, not claims of live-model interpretation accuracy.
+        for (String[] example : new String[][] {
+                {"2026-10-15T01:00:00+08:00", "0", "09:00", "2026-10-15T01:00:00Z"},
+                {"2026-10-15T13:00:00+08:00", "0", "14:00", "2026-10-15T06:00:00Z"},
+                {"2026-10-15T15:00:00+08:00", "1", "14:00", "2026-10-16T06:00:00Z"},
+                {"2026-10-15T23:00:00+08:00", "1", "01:00", "2026-10-15T17:00:00Z"}
+        }) {
+            EventCandidate draft = SemanticEventNormalizer.fromJson(7, base("task")
+                    .put("uncertainty_level", 2).put("needs_confirmation", true)
+                    .put("start", time(null, example[2], Integer.valueOf(example[1]))),
+                    at(example[0]), "Asia/Shanghai");
+            check(draft.startAtMillis == at(example[3]) && draft.uncertaintyLevel == 2
+                    && draft.needsConfirmation, "colloquial model choice retained: " + Arrays.toString(example));
+        }
         System.out.println("SemanticEventNormalizerCheck passed: " + checks + " checks");
     }
 
