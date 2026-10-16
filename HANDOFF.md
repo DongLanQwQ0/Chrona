@@ -1,4 +1,14 @@
-# 当前交付：0.14.53 / 160
+# 当前交付：0.14.54 / 161
+
+共用按压遮罩改ControlHighlightMask，跟随控件自身及最近父层亚克力圆角；选择栏保留1.5倍高光与1.1倍板，motionHost预留长按包络，中间父层不裁切。筛选按实际measureText加padding分配宽度，14sp单行、44dp高，不再等宽或强行换行。高光follow改连续900/60弹簧，普通移动720/40改180/20以延长两倍；放大时间乘数3，缩小4.5。跟随位移时trackingHeight平滑到.95，跟随到位恢复1；边缘.6槽距离内渐增阻力，保留越界回弹。
+
+UiStyle的亚克力观察器同时监听globalLayout，重录可见表面的壁纸采样，不重建卡片树；修复待办展开/折叠后下方卡片移动但模糊纹理留在旧位置。SectionHistory仅在真实页面提交时记录最多10条，返回请求原因贯穿异步加载/排队；返回成功才pop，多选优先，旋转保存恢复。
+
+原子岛发现vivo实际通知tag为VIVO_SUPERX_TAG，同时operation被剥离。active识别实际tag，end取消实际tag/id且不重发一个可能复活通知的未标记结束通知；动作key从immutable PendingIntent data URI读取，避免OEM剥离extras。原生系统卡片实际展开并点勾，临时本地待办completed=true、通知移除通过，测试创建项在finally清理，未完成原有用户待办。不能使用不在数据库中的旧synthetic probe判定真实完成（自动refresh会移走其槽位）。
+
+集中离线检查：Dock141、Press41、筛选12、切换38、历史27、vivo108、通知78项通过。release/lintRelease通过。真机检查了筛选文字单行、来源首项长按放大未裁切、待办展开后背景位置与日程→收件箱→返回日程。未完成窄屏/大字体/全部控件逐一真机覆盖；用户随后要求停止手机调试，已停止，后续只离线发布。证据仅在build/，不提交私人设备画面。备份build/backups/20261016-highlight-containment及子任务记录。
+
+# 上一轮交付：0.14.53 / 160
 
 横向本周日历小组件的标题改wrap_content，与图标整体居中；横竖版关闭includeFontPadding。首页系统日程CheckBox保留原生勾选语义，自绘24dp图标至控件正中心，checked=主题色+淡底、unchecked=muted；tooltip/stateDescription同步，权限未授予先恢复关闭。
 

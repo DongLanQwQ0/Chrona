@@ -35,7 +35,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-/** Device measurements only; no schedule insertion/deletion or server calls. */
+/** Device measurements; only the explicit atomic fixture phase creates and removes its own test task. No server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
         if ("reminder_state".equals(arguments.getString("phase")))
@@ -52,6 +52,87 @@ final class DeviceUiChecks {
         }
         if ("progress_cards".equals(arguments.getString("phase")))
             return AgendaReminder.WORKER.submit(() -> progressCards(test)).get();
+        if ("atomic_persistent_probe".equals(arguments.getString("phase"))) {
+            Context context = test.getTargetContext();
+            long[] ids = AgendaReminder.WORKER.submit(() -> {
+                try (var store = new com.donglan.chrona.data.TaskStore(context)) {
+                    long task = store.insertTask("原子岛点击回归测试（自动清理）", null, "device_check", System.currentTimeMillis());
+                    try {
+                        long start = System.currentTimeMillis() + 300000;
+                        long candidate = store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0, task,
+                                "原子岛点击回归测试", start, null, java.time.ZoneId.systemDefault().getId(), "", "", 30,
+                                false, null, "task", false));
+                        store.updateStatus(task, com.donglan.chrona.data.TaskRecord.READY, null);
+                        AgendaReminder.refreshSafely(context, null);
+                        return new long[]{task, candidate, start};
+                    } catch (Exception failure) { store.deleteTask(task); throw failure; }
+                }
+            }).get();
+            try {
+                Bundle progress = new Bundle(); progress.putString("stream", "Atomic persistent probe ready\n"); test.sendStatus(0, progress);
+                SystemClock.sleep(15000);
+                return AgendaReminder.WORKER.submit(() -> {
+                    try (var store = new com.donglan.chrona.data.TaskStore(context)) {
+                        boolean complete = store.getCandidatesByIds(java.util.List.of(ids[1])).get(0).completed();
+                        boolean visible = java.util.Arrays.stream(context.getSystemService(NotificationManager.class).getActiveNotifications())
+                                .anyMatch(n -> "原子岛点击回归测试".contentEquals(n.getNotification().extras.getCharSequence(Notification.EXTRA_TITLE, "")));
+                        if (!complete || visible) throw new IllegalStateException("Real click: completed=" + complete + ", visible=" + visible);
+                        return "{\"realClickCompleted\":true,\"notificationRemoved\":true,\"temporaryFixtureOnly\":true}";
+                    }
+                }).get();
+            } finally {
+                AgendaReminder.WORKER.submit(() -> {
+                    try (var store = new com.donglan.chrona.data.TaskStore(context)) { store.deleteTask(ids[0]); }
+                    AgendaReminderPreferences.prefs(context).edit().remove("hidden:chrona:" + ids[1] + ":" + ids[2]).commit();
+                    AgendaReminder.refreshSafely(context, null); return null;
+                }).get();
+            }
+        }
+        if ("atomic_click_probe".equals(arguments.getString("phase"))) {
+            Context context = test.getTargetContext();
+            NotificationManager manager = context.getSystemService(NotificationManager.class);
+            int id = AgendaReminder.NOTIFICATION_ID;
+            long now = System.currentTimeMillis();
+            AgendaEntry entry = new AgendaEntry(-99001, 0, now, now + 600000,
+                    "勾按钮测试（不修改日程）", "", "", "测试", true, false, true);
+            var prefs = AgendaReminderPreferences.prefs(context);
+            for (var notice : manager.getActiveNotifications())
+                if ("勾按钮测试（不修改日程）".contentEquals(notice.getNotification().extras.getCharSequence(Notification.EXTRA_TITLE, "")))
+                    VivoAtomicNotification.end(context, manager, notice.getId());
+            for (int attempt = 0; attempt < 20 && java.util.Arrays.stream(manager.getActiveNotifications())
+                    .anyMatch(n -> n.getId() == id && "勾按钮测试（不修改日程）".contentEquals(
+                            n.getNotification().extras.getCharSequence(Notification.EXTRA_TITLE, ""))); attempt++)
+                SystemClock.sleep(50);
+            if (!prefs.getString("slot_key:0", "").isEmpty()
+                    || java.util.Arrays.stream(manager.getActiveNotifications()).anyMatch(n -> n.getId() == id))
+                throw new IllegalStateException("Probe needs an unused reminder slot");
+            try {
+                Method factory = AgendaReminder.class.getDeclaredMethod("notification", Context.class,
+                        AgendaEntry.class, long.class, boolean.class, int.class, long.class, String.class, boolean.class);
+                factory.setAccessible(true);
+                AgendaReminder.WORKER.submit(() -> {
+                    prefs.edit().putString("slot_key:0", entry.key()).putLong("slot_end:0", entry.finish()).commit();
+                    manager.notify(id, (Notification) factory.invoke(null, context, entry, now, false, id, now, "", true));
+                    return null;
+                }).get();
+                Bundle progress = new Bundle(); progress.putString("stream", "Atomic click probe ready; temporary ID=" + id + "\n");
+                test.sendStatus(0, progress);
+                if ("true".equals(arguments.getString("send_action")))
+                    AgendaReminder.action(context, entry, "complete", 4).send();
+                SystemClock.sleep("true".equals(arguments.getString("send_action")) ? 2000 : 30000);
+                boolean hidden = prefs.contains("hidden:" + entry.key());
+                boolean active = java.util.Arrays.stream(manager.getActiveNotifications()).anyMatch(n -> n.getId() == id);
+                if (!hidden || active) throw new IllegalStateException("Completion not applied: hidden=" + hidden + ", active=" + active
+                        + ", slotStillMatches=" + entry.key().equals(prefs.getString("slot_key:0", "")));
+                return "{\"temporaryCard\":true,\"taskWrites\":false,\"completionReceived\":true,\"notificationRemoved\":true}";
+            } finally {
+                AgendaReminder.WORKER.submit(() -> {
+                    VivoAtomicNotification.end(context, manager, id);
+                    prefs.edit().remove("hidden:" + entry.key()).remove("slot_key:0").remove("slot_end:0").commit();
+                    AgendaReminder.refreshSafely(context, null);
+                }).get();
+            }
+        }
         if ("enable_registered_scene".equals(arguments.getString("phase"))) {
             boolean enabled;
             try { enabled = setAtomicScene(test, true); }

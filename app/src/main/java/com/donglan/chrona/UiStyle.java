@@ -67,7 +67,7 @@ public final class UiStyle {
 
     /** Invalidates visible translucent surfaces when a parent scroll changes their backdrop. */
     private static final class AcrylicScrollWatcher
-            implements ViewTreeObserver.OnScrollChangedListener, Runnable,
+            implements ViewTreeObserver.OnScrollChangedListener, ViewTreeObserver.OnGlobalLayoutListener, Runnable,
             View.OnAttachStateChangeListener {
         private final java.lang.ref.WeakReference<ViewTreeObserver> observer;
         private final java.lang.ref.WeakReference<View> root;
@@ -95,6 +95,15 @@ public final class UiStyle {
             queued = true;
             view.postOnAnimation(this);
         }
+        @Override public void onGlobalLayout() {
+            // A retained card can move without changing its own size (for example
+            // when the todo above it folds). Re-record its wallpaper sample now,
+            // before this layout's draw, rather than rebuilding the card hierarchy.
+            View view = root.get();
+            if (view == null || !view.isAttachedToWindow()) return;
+            view.removeCallbacks(this);
+            run();
+        }
         @Override public void run() {
             queued = false;
             java.util.Iterator<java.lang.ref.WeakReference<View>> iterator = hosts.iterator();
@@ -113,7 +122,10 @@ public final class UiStyle {
             view.removeCallbacks(this);
             queued = false;
             ViewTreeObserver tree = observer.get();
-            if (tree != null && tree.isAlive()) tree.removeOnScrollChangedListener(this);
+            if (tree != null && tree.isAlive()) {
+                tree.removeOnScrollChangedListener(this);
+                tree.removeOnGlobalLayoutListener(this);
+            }
             hosts.clear();
             ACRYLIC_SCROLL_WATCHERS.remove(view);
             view.removeOnAttachStateChangeListener(this);
@@ -179,6 +191,7 @@ public final class UiStyle {
                 watcher = new AcrylicScrollWatcher(root, observer);
                 ACRYLIC_SCROLL_WATCHERS.put(root, watcher);
                 observer.addOnScrollChangedListener(watcher);
+                observer.addOnGlobalLayoutListener(watcher);
             }
             watcher.addHost(host);
         }
@@ -662,7 +675,40 @@ public final class UiStyle {
         if (view.getForeground() instanceof RippleDrawable) return;
         view.setForeground(new RippleDrawable(ColorStateList.valueOf(
                 alpha(colors(view.getContext()).primary, 32)), null,
-                shape(view, Color.WHITE, RADIUS_CARD, Color.TRANSPARENT)));
+                new ControlHighlightMask(view)));
+    }
+
+    /** The mask follows the control's surface and the nearest enclosing plate. */
+    private static final class ControlHighlightMask extends Drawable {
+        private final View host;
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Path path = new android.graphics.Path();
+        private final android.graphics.RectF rect = new android.graphics.RectF();
+        private final int[] hostLocation = new int[2], parentLocation = new int[2];
+        ControlHighlightMask(View host) { this.host = host; paint.setColor(Color.WHITE); }
+        @Override public void draw(Canvas canvas) {
+            int save = canvas.save();
+            host.getLocationInWindow(hostLocation);
+            for (android.view.ViewParent ancestor = host.getParent(); ancestor instanceof View parent;
+                    ancestor = parent.getParent()) {
+                if (!(parent.getBackground() instanceof AcrylicSurfaceDrawable surface)) continue;
+                parent.getLocationInWindow(parentLocation);
+                float x = parentLocation[0] - hostLocation[0], y = parentLocation[1] - hostLocation[1];
+                rect.set(x, y, x + parent.getWidth(), y + parent.getHeight());
+                path.reset();
+                path.addRoundRect(rect, dp(parent, surface.radius), dp(parent, surface.radius), android.graphics.Path.Direction.CW);
+                canvas.clipPath(path);
+                break;
+            }
+            rect.set(getBounds());
+            float radius = host.getBackground() instanceof AcrylicSurfaceDrawable surface
+                    ? dp(host, surface.radius) : dp(host, 6);
+            canvas.drawRoundRect(rect, radius, radius, paint);
+            canvas.restoreToCount(save);
+        }
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) { paint.setColorFilter(filter); }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
 
     /** Selectable surface: chips use the pill radius, dialog rows the field radius. */

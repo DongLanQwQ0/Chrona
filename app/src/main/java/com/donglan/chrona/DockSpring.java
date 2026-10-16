@@ -3,7 +3,8 @@ package com.donglan.chrona;
 /** Shared damped motion state; retargeting preserves velocity instead of restarting animations. */
 final class DockSpring {
     private static final float PRESS_STIFFNESS = 900f, PRESS_DAMPING = 50f;
-    private static final float PRESS_TIME_MULTIPLIER = 1.5f;
+    private static final float PRESS_TIME_MULTIPLIER = 3f;
+    private static final float RELEASE_TIME_MULTIPLIER = PRESS_TIME_MULTIPLIER * 1.5f;
     static final float MAX_OUTWARD_WIDTH = .75f;
     static final float TAP_SCALE = 1.16f;
     private boolean following, tapPulse;
@@ -12,7 +13,7 @@ final class DockSpring {
     boolean coasting;
     float lastSlot;
     void coast(float speed, float end) { following = false; velocity = speed; lastSlot = end; coasting = true; }
-    void follow(float value, float speed) { following = true; coasting = false; position = target = value; velocity = speed; }
+    void follow(float value, float speed) { following = true; coasting = false; target = value; }
     int predictLanding(float speed, float end) {
         DockSpring prediction = new DockSpring(); prediction.position = position; prediction.coast(speed, end);
         for (int frame = 0; frame < 2400 && prediction.coasting; frame++) prediction.step(1f / 120f);
@@ -29,20 +30,22 @@ final class DockSpring {
     float scale = 1f, scaleVelocity, scaleTarget = 1f;
     float width = 1f, widthVelocity;
     float bar = 1f, barVelocity, barTarget = 1f;
+    float trackingHeight = 1f, trackingHeightVelocity;
     void press(boolean pressed) { tapPulse = false; if (!pressed) following = false; scaleTarget = pressed ? 1.5f : 1f; barTarget = pressed ? 1.1f : 1f; }
     void releaseWithPulse() {
         following = false; barTarget = 1f;
         tapPulse = scale < TAP_SCALE; scaleTarget = tapPulse ? TAP_SCALE : 1f;
     }
     void snap() { following = coasting = tapPulse = false; position = target; velocity = scaleVelocity = widthVelocity = barVelocity = 0f;
-        scale = scaleTarget; bar = barTarget; width = 1f; }
+        scale = scaleTarget; bar = barTarget; width = trackingHeight = 1f; trackingHeightVelocity = 0f; }
     boolean step(float seconds) {
         int steps = Math.max(1, (int) Math.ceil(Math.min(.064f, Math.max(0f, seconds)) * 120f));
         float dt = Math.min(.064f, Math.max(0f, seconds)) / steps;
         for (int i = 0; i < steps; i++) {
             if (following) {
-                position = target;
-                velocity *= (float) Math.exp(-24f * dt);
+                // Retarget the existing spring, never teleport to a new touch sample.
+                velocity += (900f * (target - position) - 60f * velocity) * dt;
+                position += velocity * dt;
             } else if (coasting) {
                 float edge = position < 0f ? 0f : position > lastSlot ? lastSlot : position;
                 float overflow = position - edge;
@@ -50,20 +53,26 @@ final class DockSpring {
                     velocity += (-180f * overflow - 18f * velocity) * dt;
                     position += velocity * dt;
                 } else {
-                    float decay = (float) Math.exp(-COAST_DAMPING * dt);
-                    position += velocity * (1f - decay) / COAST_DAMPING;
+                    float distance = velocity > 0f ? lastSlot - position : position;
+                    float edgeDrag = Math.max(0f, 1f - distance / .6f);
+                    float resistance = COAST_DAMPING + 18f * edgeDrag * edgeDrag;
+                    float decay = (float) Math.exp(-resistance * dt);
+                    position += velocity * (1f - decay) / resistance;
                     velocity *= decay;
                 }
             } else {
-                velocity += (720f * (target - position) - 40f * velocity) * dt;
+                velocity += (180f * (target - position) - 20f * velocity) * dt;
                 position += velocity * dt;
             }
-            float pressTime = scaleTarget > 1f ? PRESS_TIME_MULTIPLIER : 1f;
+            float pressTime = scaleTarget > 1f ? PRESS_TIME_MULTIPLIER : RELEASE_TIME_MULTIPLIER;
             float stiffness = PRESS_STIFFNESS / (pressTime * pressTime), damping = PRESS_DAMPING / pressTime;
             scaleVelocity += (stiffness * (scaleTarget - scale) - damping * scaleVelocity) * dt; scale += scaleVelocity * dt;
             float stretch = 1f + Math.min(.25f, Math.abs(velocity) * .025f);
             widthVelocity += (200f * (stretch - width) - 18f * widthVelocity) * dt; width += widthVelocity * dt;
             barVelocity += (stiffness * (barTarget - bar) - damping * barVelocity) * dt; bar += barVelocity * dt;
+            float heightTarget = following && (Math.abs(target - position) > .015f || Math.abs(velocity) > .15f) ? .95f : 1f;
+            trackingHeightVelocity += (500f * (heightTarget - trackingHeight) - 36f * trackingHeightVelocity) * dt;
+            trackingHeight += trackingHeightVelocity * dt;
             if (tapPulse && scale >= TAP_SCALE - .005f) { tapPulse = false; scaleTarget = 1f; }
         }
         if (coasting && Math.abs(velocity) < .08f && position >= -.02f && position <= lastSlot + .02f) {
@@ -72,6 +81,7 @@ final class DockSpring {
         if (!coasting && Math.abs(target - position) < .001f && Math.abs(velocity) < .01f
                 && Math.abs(scaleTarget - scale) < .001f && Math.abs(scaleVelocity) < .01f
                 && Math.abs(width - 1f) < .001f && Math.abs(widthVelocity) < .01f
+                && Math.abs(trackingHeight - 1f) < .001f && Math.abs(trackingHeightVelocity) < .01f
                 && Math.abs(barTarget - bar) < .001f && Math.abs(barVelocity) < .01f) { snap(); return false; }
         return true;
     }

@@ -45,7 +45,8 @@ class ObjectAnimator {float value;int property;static ObjectAnimator ofFloat(Vie
 class AnimatorSet {ObjectAnimator[] pair;long duration;void playTogether(ObjectAnimator... a){pair=a;}void setDuration(long d){duration=d;}void setInterpolator(Object o){}}
 class StateListAnimator {List<int[]> keys=new ArrayList<>();List<AnimatorSet> animations=new ArrayList<>();void addState(int[] k,AnimatorSet a){keys.add(k);animations.add(a);}}
 class UiMotion {static boolean enabled=true;static long PRESS=90,RELEASE=160;static Object SETTLE=new Object();static boolean isEnabled(){return enabled;}}
-class RippleDrawable {RippleDrawable(Object tint,Object content,Object mask){}}
+class RippleDrawable {Object mask;RippleDrawable(Object tint,Object content,Object mask){this.mask=mask;}}
+class ControlHighlightMask {final View host;ControlHighlightMask(View view){host=view;}}
 class ColorStateList {static Object valueOf(int value){return value;}}
 class Color {static int WHITE=1,TRANSPARENT=0;}
 class UiStyle {static int RADIUS_CARD=22;static class Palette {int primary=1;}static Palette colors(Object context){return new Palette();}static int alpha(int color,int value){return value;}static Object shape(View v,int color,int radius,int stroke){return radius;}
@@ -77,7 +78,7 @@ public class PressFeedbackCheck {
   gear.setPressed(true);check(plate.pressed);gear.setPressed(false);check(!plate.pressed);root.observer.layout();check(gear.states==null&&plate.states.animations.get(0).pair[0].value==1.10f);
   View add=new View();add.clickable=true;PressFeedback.apply(add);PressFeedback.apply(add,1.20f);root.add(add);root.observer.layout();check(add.states.animations.get(0).pair[0].value==1.20f);
   View course=new View();RippleDrawable courseRipple=new RippleDrawable(null,null,6);course.foreground=courseRipple;UiStyle.pressable(course);check(course.foreground==courseRipple&&course.states!=null);
-  View plain=new View();UiStyle.pressable(plain);check(plain.foreground instanceof RippleDrawable);Object ripple=plain.foreground;UiStyle.pressable(plain);check(plain.foreground==ripple);
+  View plain=new View();UiStyle.pressable(plain);check(plain.foreground instanceof RippleDrawable);check(((RippleDrawable)plain.foreground).mask instanceof ControlHighlightMask&&((ControlHighlightMask)((RippleDrawable)plain.foreground).mask).host==plain);Object ripple=plain.foreground;UiStyle.pressable(plain);check(plain.foreground==ripple);
   for(int extent:new int[]{128,320,640,1080,1440,2400,4000}){int edge=PressFeedback.edgeSpace(extent);double growth=(extent-2*edge)*.05/2;check(edge>=growth&&extent-edge+growth<=extent);}
   check(viewport.clipBounds.right==320&&viewport.clipBounds.bottom==600);viewport.layout(640,360);check(viewport.clipBounds.right==640&&viewport.clipBounds.bottom==360);int updates=viewport.clipUpdates;PressFeedback.protectViewport(viewport);check(viewport.clipUpdates==updates&&viewport.layouts.size()==1);
   ScrollView empty=new ScrollView();root.add(empty);root.observer.layout();check(empty.clipBounds!=null);ViewGroup pane=new ViewGroup();pane.width=pane.height=0;PressFeedback.protectViewport(pane);check(pane.clipBounds==null);pane.layout(250,400);check(pane.clipBounds.right==250&&pane.clipBounds.bottom==400);

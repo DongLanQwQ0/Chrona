@@ -57,6 +57,8 @@ final class ScheduleFilterSheet {
 
     private void show() {
         LinearLayout panel = column();
+        panel.setClipChildren(false);
+        panel.setClipToPadding(false);
         panel.setPadding(dp(16), dp(12), dp(16), dp(12));
         UiStyle.glass(panel);
         LinearLayout header = row();
@@ -167,7 +169,7 @@ final class ScheduleFilterSheet {
         }
         installIntervalSwipe(interval, rangeLabel);
         LinearLayout.LayoutParams intervalParams = new LinearLayout.LayoutParams(-1, dp(48));
-        intervalParams.bottomMargin = dp(12);
+        intervalParams.bottomMargin = dp(8);
         body.addView(interval, intervalParams);
         category = new ChoiceDock("类型", R.drawable.ic_event, categoryOptions(), value -> {
             draft.category = value;
@@ -210,7 +212,7 @@ final class ScheduleFilterSheet {
             TextView title = label(name, 13, true);
             title.setPadding(dp(7), 0, 0, 0);
             heading.addView(title);
-            UiStyle.addSpaced(body, heading, 4, 7);
+            UiStyle.addSpaced(body, heading, 4, 2);
             dock = new DockNavigationLayout(activity, this::select, () -> { });
             dock.setPadding(dp(2), dp(3), dp(2), dp(3));
             dock.setOrientation(LinearLayout.HORIZONTAL);
@@ -218,11 +220,18 @@ final class ScheduleFilterSheet {
                 final int index = i;
                 TextView option = label(choices[i], 14, true);
                 option.setGravity(Gravity.CENTER);
-                option.setPadding(0, 0, 0, 0);
+                option.setPadding(dp(4), dp(6), dp(4), dp(6));
+                option.setMinHeight(dp(44));
                 option.setOnClickListener(view -> select(index));
-                dock.addItem(option, new LinearLayout.LayoutParams(0, dp(44), choices[i].length()));
+                float labelWidth = option.getPaint().measureText(choices[i]) + option.getPaddingLeft() + option.getPaddingRight() + dp(8);
+                dock.addItem(option, new LinearLayout.LayoutParams(0, dp(44), labelWidth));
+                // Preserve the requested readable size and one-line labels; each cell's
+                // share includes its text and padding rather than enforcing equal widths.
+                option.setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_TYPE_NONE);
+                option.setSingleLine(true);
+                option.setHorizontallyScrolling(false);
             }
-            UiStyle.addSpaced(body, dock.motionHost(), 0, 13);
+            UiStyle.addSpaced(body, dock.motionHost(), 0, 4);
         }
 
         void select(int index) {

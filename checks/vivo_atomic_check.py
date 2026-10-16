@@ -127,6 +127,17 @@ harness=harness.replace(' System.out.println("Vivo atomic payload/lifecycle pass
  check(((Bundle)ticking.get("notification.superx.capsule")).get("notification.superx.capsule.content").equals("10:00 微积分"));
  System.out.println("Vivo atomic payload/lifecycle passed:''')
 harness=harness.replace('Bundle getBundle(String k)', 'CharSequence getCharSequence(String k){return (CharSequence)get(k);}Bundle getBundle(String k)')
+harness=harness.replace('int getId(){return id;}', 'String tag;int getId(){return id;}String getTag(){return tag;}')
+harness=harness.replace('List<Integer> operations=new ArrayList<>();', 'List<String>taggedCancels=new ArrayList<>();List<Integer> operations=new ArrayList<>();')
+harness=harness.replace('void cancel(int id){cancels++;}', 'void cancel(String tag,int id){taggedCancels.add(tag);}void cancel(int id){cancels++;}')
+harness=harness.replace(' System.out.println("Vivo atomic payload/lifecycle passed:', '''
+ Notification stripped=new Notification();StatusBarNotification rewritten=new StatusBarNotification(7,stripped);
+ rewritten.tag="VIVO_SUPERX_TAG";manager.active=new StatusBarNotification[]{rewritten};
+ check(VivoAtomicNotification.active(manager,7));int posts=manager.operations.size();
+ VivoAtomicNotification.end(c,manager,7);
+ check(manager.taggedCancels.equals(List.of("VIVO_SUPERX_TAG")));
+ check(manager.operations.size()==posts);
+ System.out.println("Vivo atomic payload/lifecycle passed:''')
 out=root/'build/vivo-atomic-check';out.mkdir(parents=True,exist_ok=True)
 f=out/'VivoAtomicCheck.java';f.write_text(harness,encoding='utf-8')
 java=Path(os.environ['JAVA_HOME'])/'bin'

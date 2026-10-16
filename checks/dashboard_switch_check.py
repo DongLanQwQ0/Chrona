@@ -15,7 +15,8 @@ def method(marker):
         depth += (activity[end] == '{') - (activity[end] == '}')
         end += 1
     return activity[first:end]
-controller = '\n'.join(method(x) for x in ('private void switchTo(', 'private void prepareSectionSwitch(',
+controller = '\n'.join(method(x) for x in ('private void switchTo(int destination)',
+    'private void switchTo(int destination, boolean fromHistory)', 'private void prepareSectionSwitch(',
     'private void switchToPendingSection(', 'private void refreshSettledSection(', 'private String inboxCategory(',
     'private ScheduleQuery buildScheduleQuery(', 'private void openHomeTodos('))
 files = {
@@ -60,6 +61,7 @@ class Feedback {static void show(DashboardActivity owner,String message){owner.f
 public class DashboardActivity extends android.content.Context {
  static final int HOME=0,INBOX=1,SCHEDULE=2;int section=HOME,pendingSection=-1,loadingSection,sectionLoadGeneration,dragDirection;
  boolean initialDataReady=true,pageTransitionRunning,dragTargetLoaded,sectionLoadRunning,foreground=true,homeRefreshPending,scheduleRefreshPending,destroyed,dockSectionSwitch;
+ boolean pendingSectionFromHistory,sectionSwitchFromHistory;
  int statusIndex,categoryIndex,scheduleTab,scheduleCategory,schedulePublication,scheduleSource,inboxPage=999,schedulePage,scheduleTodoScope,scheduleRange;
  LocalDate scheduleDate=LocalDate.now(),scheduleUntil=scheduleDate;
  String inboxQuery="original",scheduleQuery="",snapshot="",failure;boolean inboxOldestFirst,scheduleOldestFirst;
@@ -86,9 +88,17 @@ public class DashboardActivity extends android.content.Context {
    check(d.keyword.equals("original"),"request captures filter inputs");check(d.db.started==d.db.ended&&d.db.successful==1&&d.closed==1,"snapshot closes coherent read transaction");
    int reads=d.reads;d.switchTo(HOME);check(d.section==HOME&&d.reads==reads,"cached navigation does no database read");
    d.switchTo(SCHEDULE);d.switchTo(HOME);d.await();check(d.section==HOME&&d.navigation.target==HOME,"newer pending request wins and restores highlight");
+   d.switchTo(SCHEDULE,true);d.switchTo(SCHEDULE);d.await();check(!d.sectionSwitchFromHistory&&!d.pendingSectionFromHistory,"normal request replaces history reason for same loading destination");
+   d.switchTo(HOME);d.sectionPages.remove(INBOX);d.switchTo(INBOX,true);d.switchTo(HOME);d.await();check(d.section==HOME&&!d.pendingSectionFromHistory&&!d.sectionSwitchFromHistory,"new normal destination discards loading history request reason");
    d.navigation.animating=true;d.refreshSettledSection();check(d.refreshes==0&&d.snapshotReads==0&&!d.refresh.tasks.isEmpty(),"revision checks wait for dock animation");
    d.refresh.clear();d.navigation.animating=false;d.refreshSettledSection();check(d.refreshes==1&&d.snapshotReads==1,"idle refresh eventually runs");
   }finally{d.startupReader.shutdownNow();}
+  DashboardActivity returning=new DashboardActivity();try{
+   returning.switchTo(INBOX,true);returning.await();check(returning.section==INBOX&&returning.sectionSwitchFromHistory,"history reason follows asynchronous loaded destination");
+   returning.switchTo(HOME);check(!returning.sectionSwitchFromHistory,"next normal cached switch clears history reason");
+   returning.initialDataReady=false;returning.switchTo(INBOX,true);check(returning.pendingSectionFromHistory,"initial load defers destination and history reason together");
+   returning.initialDataReady=true;returning.switchToPendingSection();check(returning.section==INBOX&&returning.sectionSwitchFromHistory&&!returning.pendingSectionFromHistory,"deferred history request retains reason and clears pending pair");
+  }finally{returning.startupReader.shutdownNow();}
   DashboardActivity failure=new DashboardActivity();try{failure.fail=true;failure.switchTo(INBOX);failure.await();check(failure.section==HOME&&failure.builds==0&&failure.failure!=null,"failed read preserves page");check(failure.db.ended==1&&failure.closed==1,"failure releases read transaction");}finally{failure.startupReader.shutdownNow();}
   DashboardActivity paused=new DashboardActivity();try{paused.switchTo(INBOX);paused.startupReader.submit(()->{}).get(3,TimeUnit.SECONDS);paused.sectionLoadGeneration++;paused.sectionLoadRunning=false;paused.refresh.drain();check(paused.builds==0&&paused.section==HOME,"stale lifecycle callback cannot create page");}finally{paused.startupReader.shutdownNow();}
   android.content.Context c=new android.content.Context();ExecutorService worker=Executors.newSingleThreadExecutor();try{DashboardSectionData system=worker.submit(()->DashboardSectionData.load(c,SCHEDULE,null,null,false,0,true)).get();check(system.linked.equals(List.of(55L))&&system.ids.isEmpty()&&system.candidates.isEmpty(),"system source uses linked snapshot without local schedule query");}finally{worker.shutdownNow();}

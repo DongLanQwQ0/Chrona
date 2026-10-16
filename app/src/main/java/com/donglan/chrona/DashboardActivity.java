@@ -93,6 +93,7 @@ public final class DashboardActivity extends Activity {
     static final int HOME = 0, INBOX = 1, SCHEDULE = 2;
     private static final int[] SECTION_ORDER = {HOME, SCHEDULE, INBOX};
     private int section = HOME;
+    private final SectionHistory sectionHistory = new SectionHistory();
     private int categoryIndex, statusIndex;
     private int scheduleTab;
     private int schedulePage, scheduleRange, scheduleCategory, schedulePublication, scheduleSource;
@@ -137,6 +138,8 @@ public final class DashboardActivity extends Activity {
     private boolean dragTargetLoaded;
     private boolean pageTransitionRunning;
     private int pendingSection = -1;
+    private boolean pendingSectionFromHistory;
+    private boolean sectionSwitchFromHistory;
     private final List<View> sectionAcrylicSurfaces = new ArrayList<>();
     private final android.graphics.Rect sectionVisibleRect = new android.graphics.Rect();
     /** A neighbouring page is being rendered off-screen; the dock must not follow it. */
@@ -204,6 +207,7 @@ public final class DashboardActivity extends Activity {
         super.onCreate(state);
         if (state != null) {
             section = state.getInt(EXTRA_SECTION, HOME);
+            sectionHistory.restore(state.getIntArray("section_history"));
             categoryIndex = Math.min(EventCategory.VALUES.length+1,state.getInt("category"));
             statusIndex = state.getInt("status");
             scheduleTab = state.getInt("schedule_tab");
@@ -235,11 +239,13 @@ public final class DashboardActivity extends Activity {
         addHeader();
         message(content, "正在读取日程…");
         drawNavigation();
+        updateSelectionBack();
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
         state.putInt(EXTRA_SECTION, section);
+        state.putIntArray("section_history", sectionHistory.snapshot());
         state.putInt("category", categoryIndex);
         state.putInt("status", statusIndex);
         state.putInt("schedule_tab", scheduleTab);
@@ -419,6 +425,8 @@ public final class DashboardActivity extends Activity {
             pageTransitionRunning = false;
             // A new body gesture supersedes any older dock request waiting on that animation.
             pendingSection = -1;
+            pendingSectionFromHistory = false;
+            sectionSwitchFromHistory = false;
             dragTargetLoaded = false;
             dragDirection = 0;
             scroll.setTranslationX(0f);
@@ -577,11 +585,15 @@ public final class DashboardActivity extends Activity {
 
     private void switchToPendingSection() {
         int destination = pendingSection;
+        boolean fromHistory = pendingSectionFromHistory;
         pendingSection = -1;
-        if (destination >= 0) switchTo(destination);
+        pendingSectionFromHistory = false;
+        if (destination >= 0) switchTo(destination, fromHistory);
     }
 
     private void completeSectionDrag(boolean commit) {
+        boolean fromHistory = sectionSwitchFromHistory;
+        sectionSwitchFromHistory = false;
         SectionPage target = adjacentPage;
         adjacentPage = null;
         dragTargetLoaded = false;
@@ -593,11 +605,14 @@ public final class DashboardActivity extends Activity {
             return;
         }
         if (commit) {
+            int previousSection = section;
             clearCurrentSelection();
             sectionPages.put(section, new SectionPage());
             pager.removeView(scroll);
             target.scroll.setTranslationX(0f);
             activateSectionPage(target);
+            if (fromHistory) sectionHistory.commitBack(section);
+            else sectionHistory.record(previousSection, section);
             if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
             refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
             updateSelectionBack();
@@ -759,7 +774,11 @@ public final class DashboardActivity extends Activity {
         resultMotionGeneration++;
         if (results != null) UiMotion.resetList(results);
         cancelScheduleResults();
-        if (sectionLoadRunning && pendingSection < 0) pendingSection = loadingSection;
+        if (sectionLoadRunning && pendingSection < 0) {
+            pendingSection = loadingSection;
+            pendingSectionFromHistory = sectionSwitchFromHistory;
+        }
+        if (sectionLoadRunning) sectionSwitchFromHistory = false;
         sectionLoadGeneration++; sectionLoadRunning = false;
         refresh.removeCallbacks(deferredSectionRefresh);
         foreground = false;
@@ -2814,17 +2833,29 @@ public final class DashboardActivity extends Activity {
     // Legacy devices use this path; API 33+ gestures use selectionBack registered above.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed() {
-        if ((section == INBOX || section == SCHEDULE) && !currentSelection().isEmpty())
+        if (!handleDashboardBack()) super.onBackPressed();
+    }
+
+    private boolean handleDashboardBack() {
+        if ((section == INBOX || section == SCHEDULE) && !currentSelection().isEmpty()) {
             clearCurrentSelection();
-        else super.onBackPressed();
+            return true;
+        }
+        if (sectionHistory.previous() < 0) return false;
+        // One Back consumes one committed transition, never an in-flight preview or load.
+        if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning || !initialDataReady)
+            return true;
+        switchTo(sectionHistory.previous(), true);
+        return true;
     }
 
     private void updateSelectionBack() {
         if (android.os.Build.VERSION.SDK_INT < 33 || previewRender) return;
-        boolean active = (section == INBOX || section == SCHEDULE) && !currentSelection().isEmpty();
+        boolean active = ((section == INBOX || section == SCHEDULE) && !currentSelection().isEmpty())
+                || sectionHistory.previous() >= 0;
         if (active == selectionBackRegistered) return;
         if (active) {
-            if (selectionBack == null) selectionBack = this::clearCurrentSelection;
+            if (selectionBack == null) selectionBack = this::handleDashboardBack;
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, selectionBack);
         }
@@ -3195,13 +3226,19 @@ public final class DashboardActivity extends Activity {
     }
 
     private void switchTo(int destination) {
+        switchTo(destination, false);
+    }
+
+    private void switchTo(int destination, boolean fromHistory) {
         if (destination < HOME || destination > SCHEDULE) return;
         if (!initialDataReady) {
             pendingSection = destination;
+            pendingSectionFromHistory = fromHistory;
             return;
         }
         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning) {
             pendingSection = destination;
+            pendingSectionFromHistory = fromHistory;
             return;
         }
         if (destination == section) {
@@ -3209,10 +3246,12 @@ public final class DashboardActivity extends Activity {
             return;
         }
         if (!sectionPages.containsKey(destination) && preparedSection == null) {
+            sectionSwitchFromHistory = fromHistory;
             prepareSectionSwitch(destination); return;
         }
         dockSectionSwitch = true;
         try { sectionPagerListener.onStart(); } finally { dockSectionSwitch = false; }
+        sectionSwitchFromHistory = fromHistory;
         dragDirection = sectionPosition(destination) > sectionPosition(section) ? 1 : -1;
         adjacentPage = buildAdjacentSection(destination);
         float width = sectionPageWidth();
@@ -3224,6 +3263,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void prepareSectionSwitch(int destination) {
+        boolean fromHistory = sectionSwitchFromHistory;
         sectionLoadRunning = true; loadingSection = destination;
         int token = ++sectionLoadGeneration;
         if (navigation != null) navigation.beginPageSettle(sectionPosition(destination));
@@ -3239,6 +3279,7 @@ public final class DashboardActivity extends Activity {
                 refresh.post(() -> {
                     if (token != sectionLoadGeneration || isDestroyed()) return;
                     sectionLoadRunning = false;
+                    sectionSwitchFromHistory = false;
                     if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
                     Feedback.show(this, "暂时无法读取页面，请重试"); switchToPendingSection();
                 }); return;
@@ -3246,9 +3287,11 @@ public final class DashboardActivity extends Activity {
             refresh.post(() -> {
                 if (token != sectionLoadGeneration || isDestroyed() || isFinishing()) return;
                 sectionLoadRunning = false;
+                sectionSwitchFromHistory = false;
                 if (pendingSection >= 0 && pendingSection != destination) { switchToPendingSection(); return; }
-                pendingSection = -1; preparedSection = data;
-                try { switchTo(destination); } finally { preparedSection = null; }
+                boolean requestedFromHistory = pendingSection >= 0 ? pendingSectionFromHistory : fromHistory;
+                pendingSection = -1; pendingSectionFromHistory = false; preparedSection = data;
+                try { switchTo(destination, requestedFromHistory); } finally { preparedSection = null; }
             });
         });
     }

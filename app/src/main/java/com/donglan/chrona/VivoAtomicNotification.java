@@ -100,7 +100,8 @@ final class VivoAtomicNotification {
         if (!supportedManufacturer()) return false;
         try {
             for (android.service.notification.StatusBarNotification item : manager.getActiveNotifications())
-                if (item.getId() == id && item.getNotification().extras.containsKey(PREFIX + "operation")) return true;
+                if (item.getId() == id && ("VIVO_SUPERX_TAG".equals(item.getTag())
+                        || item.getNotification().extras.containsKey(PREFIX + "operation"))) return true;
         } catch (RuntimeException failure) {
             android.util.Log.w("Chrona", "Unable to inspect vivo atomic notification", failure);
         }
@@ -110,7 +111,11 @@ final class VivoAtomicNotification {
         if (supportedManufacturer()) {
             try {
                 for (android.service.notification.StatusBarNotification item : manager.getActiveNotifications()) {
-                    if (item.getId() != id || !item.getNotification().extras.containsKey(PREFIX + "operation")) continue;
+                    if (item.getId() != id) continue;
+                    // Cancel the identity actually owned by NMS. Reposting an untagged
+                    // "end" notice can race the tagged cancellation and recreate the island.
+                    if (item.getTag() != null) { manager.cancel(item.getTag(), id); continue; }
+                    if (!item.getNotification().extras.containsKey(PREFIX + "operation")) continue;
                     Bundle data = new Bundle(); data.putInt(PREFIX + "operation", 2);
                     manager.notify(id, Notification.Builder.recoverBuilder(context, item.getNotification())
                             .addExtras(data).setOnlyAlertOnce(true).build());

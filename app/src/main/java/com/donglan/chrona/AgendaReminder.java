@@ -60,7 +60,9 @@ public final class AgendaReminder {
         String[] previous = new String[ReminderSlots.COUNT];
         for (int i = 0; i < previous.length; i++) previous[i] = prefs.getString("slot_key:" + i, "");
         if (action != null) {
-            String key = action.getStringExtra("key");
+            // OEM RemoteViews dispatch may strip extras. The immutable PendingIntent URI
+            // is already the occurrence identity and survives that dispatch intact.
+            String key = action.getData() == null ? null : action.getData().getLastPathSegment();
             int slot = ReminderSlots.find(previous, key);
             // Replaced or expired occurrence actions cannot affect a current slot.
             if (slot >= 0 && prefs.getLong("slot_end:" + slot, 0) > now) {

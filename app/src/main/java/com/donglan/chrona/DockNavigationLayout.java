@@ -29,7 +29,6 @@ final class DockNavigationLayout extends FrameLayout {
     private static final int HIGHLIGHT_ALPHA = 82;
     private static final int MIN_LABEL_TEXT_SP = 8;
     private static final float MOTION_PLATE_SCALE = 1.12f;
-    private static final float MOTION_HIGHLIGHT_SCALE = 1.53f;
     private VelocityTracker fingerVelocity;
     private float downX, downY, fingerPosition;
     private long followFrameTime;
@@ -89,23 +88,22 @@ final class DockNavigationLayout extends FrameLayout {
         FrameLayout host = new FrameLayout(getContext()) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
                 int available = View.MeasureSpec.getSize(widthSpec);
-                // The outer cap extends at most .75 standard cells beyond the board.
-                // Include the plate's held scale plus spring/antialiasing clearance.
+                // Reserve the held 1.5x highlight and plate expansion. Fling overflow
+                // can draw through intermediate parents; only the viewport is a boundary.
                 float plate = MOTION_PLATE_SCALE;
-                float weightSum = 0f, widestWeight = 0f;
+                float totalWeight = 0f, widestWeight = 0f;
                 for (int i = 0; i < dock.itemCount(); i++) {
-                    LinearLayout.LayoutParams cell = (LinearLayout.LayoutParams) dock.itemAt(i).getLayoutParams();
-                    weightSum += cell.weight;
-                    widestWeight = Math.max(widestWeight, cell.weight);
+                    float weight = ((LinearLayout.LayoutParams)dock.itemAt(i).getLayoutParams()).weight;
+                    totalWeight += weight; widestWeight = Math.max(widestWeight, weight);
                 }
-                float widestFraction = weightSum > 0f ? widestWeight / weightSum : 1f / Math.max(1, dock.itemCount());
-                float ratio = (plate - 1f) / 2f + plate * DockSpring.MAX_OUTWARD_WIDTH * widestFraction;
+                float widest = totalWeight > 0f ? widestWeight / totalWeight : 1f / Math.max(1, dock.itemCount());
+                float ratio = (plate - 1f) / 2f + .25f * plate * widest;
                 int clearance = (int)Math.ceil(2f * getResources().getDisplayMetrics().density);
-                int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance;
+                int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance + Math.round(4 * getResources().getDisplayMetrics().density);
                 if (getPaddingLeft() != edge || getPaddingRight() != edge)
                     setPadding(edge, getPaddingTop(), edge, getPaddingBottom());
                 super.onMeasure(widthSpec, heightSpec);
-                int cross = (int)Math.ceil(dock.getMeasuredHeight() * (plate * MOTION_HIGHLIGHT_SCALE - 1f) / 2f) + clearance;
+                int cross = (int)Math.ceil(dock.getMeasuredHeight() * (plate * 1.53f - 1f) / 2f) + clearance;
                 if (getPaddingTop() != cross || getPaddingBottom() != cross) {
                     setPadding(edge, cross, edge, cross);
                     super.onMeasure(widthSpec, heightSpec);
@@ -321,8 +319,9 @@ final class DockNavigationLayout extends FrameLayout {
         if (cell != null) {
             float x = centerAt(visualPosition);
             float standardWidth = extentAt(visualPosition);
-            float width = standardWidth * spring.scale * spring.width;
-            float height = (vertical() ? cell.getWidth() : cell.getHeight()) * spring.scale;
+            float emphasis = spring.scale;
+            float width = standardWidth * emphasis * spring.width;
+            float height = (vertical() ? cell.getWidth() : cell.getHeight()) * emphasis * spring.trackingHeight;
             float board = vertical() ? getHeight() : getWidth();
             float left = x - width / 2f;
             float cross = vertical() ? items.getLeft() + (cell.getLeft() + cell.getRight()) / 2f
