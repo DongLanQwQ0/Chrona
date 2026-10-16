@@ -52,7 +52,7 @@ final class ZjuSync {
                 if(settings.timetable())new ZjuTimetableStore(context).save(account,snapshot.lessons,snapshot.completeTimetableTerms);
                 result="新增 "+applied.added+" · 更新 "+applied.updated+" · 完成 "+applied.completed;
                 int pendingCalendar=ZjuHomeworkCalendar.pendingCount(context);
-                if(pendingCalendar>0)result+="\n"+pendingCalendar+" 项关联日历待更新";
+                if(pendingCalendar>0)result+="\n"+pendingCalendar+" 项作业待写入或更新日历";
                 if(!snapshot.warnings.isEmpty())result+="\n"+String.join("\n",snapshot.warnings);
                 settings.prefs.edit().putLong("last_success",System.currentTimeMillis()).apply();
                 if(applied.actionableAdded>0||applied.actionableUpdated>0)notifyHomework(context,applied);

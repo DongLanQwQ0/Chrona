@@ -24,6 +24,8 @@ public final class ZjuHomeworkUpdateCheck {
         var initial=managed.apply("account",generation,List.of(a,b));check(initial.actionableAdded==2&&initial.actionableUpdated==0,"new unfinished actionable additions");
         List<EventCandidate> all;try(TaskStore store=new TaskStore(c)){all=store.getCandidates(managed.state().captureId);}
         long aid=all.get(0).id,bid=all.get(1).id;
+        check(row(c,aid).calendarEventId!=null&&row(c,bid).calendarEventId!=null&&CalendarStore.rows.size()==2,"unfinished deadline homework automatically published");
+        managed.apply("account",generation,List.of(a,b));check(CalendarStore.rows.size()==2,"unchanged refresh does not duplicate provider events");
         personal(c,aid,0,101);event(101,DUE,true);
         a=homework("a","A updated",DUE+100000,false);
         var changed=managed.apply("account",generation,List.of(a,b));
@@ -50,6 +52,14 @@ public final class ZjuHomeworkUpdateCheck {
         try(TaskStore store=new TaskStore(c)){check(!store.allowsReminder(aid),"completion retry cannot restore reminder on removed deadline");}
         int updates=CalendarStore.updates;personal(c,aid,0,103);event(103,DUE,false);a=homework("a","A foreign",DUE+600000,false);managed.apply("account",generation,List.of(a,b));
         check(CalendarStore.updates==updates&&CalendarStore.rows.get(103L).input.title.equals("old"),"non-Chrona event never overwritten");
+        CalendarStore.permission=false;
+        managed.apply("account",generation,List.of(homework("permission","Permission",DUE,false),homework("undated","Undated",0,false)));
+        check(ZjuHomeworkCalendar.pendingCount(c)==1,"new homework without permission is durably queued, undated homework is not");
+        int count=CalendarStore.rows.size();CalendarStore.permission=true;ZjuHomeworkCalendar.retryPending(c);
+        check(CalendarStore.rows.size()==count+1&&ZjuHomeworkCalendar.pendingCount(c)==0,"permission grant publishes cached homework without fetching again");
+        CalendarStore.permission=false;managed.apply("account",generation,List.of(homework("disabled","Disabled",DUE,false)));
+        managed.configure("account",false);CalendarStore.permission=true;count=CalendarStore.rows.size();ZjuHomeworkCalendar.retryPending(c);
+        check(CalendarStore.rows.size()==count,"disabled homework source cannot publish pending events");
         System.out.println("PASS: "+checks+" production homework upsert/actionable/calendar retry checks against real SQLite");
     }
 }

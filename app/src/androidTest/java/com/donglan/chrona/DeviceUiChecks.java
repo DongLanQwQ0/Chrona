@@ -40,6 +40,15 @@ final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
         if ("homework_detail".equals(arguments.getString("phase"))) return HomeworkDetailDeviceCheck.run(test);
         if ("source_read".equals(arguments.getString("phase"))) return HomeworkDetailDeviceCheck.sourceRead(test.getTargetContext());
+        if ("homework_calendar_state".equals(arguments.getString("phase"))) {
+            try (var store = new com.donglan.chrona.data.TaskStore(test.getTargetContext());
+                 var cursor = store.getReadableDatabase().rawQuery("SELECT COUNT(*),SUM(CASE WHEN e.calendar_event_id IS NOT NULL THEN 1 ELSE 0 END) "
+                         + "FROM event_candidates e JOIN managed_zju_state s ON s.capture_id=e.task_id "
+                         + "WHERE s.enabled=1 AND e.completed_at_millis IS NULL AND (e.start_at_millis IS NOT NULL OR e.due_at_millis IS NOT NULL)", null)) {
+                cursor.moveToFirst(); return new JSONObject().put("eligible", cursor.getInt(0)).put("linked", cursor.getInt(1))
+                        .put("pending", ZjuHomeworkCalendar.pendingCount(test.getTargetContext())).toString();
+            }
+        }
         if ("reminder_state".equals(arguments.getString("phase")))
             return AgendaReminder.WORKER.submit(() -> reminderState(test)).get();
         if ("week_widget_render".equals(arguments.getString("phase"))) return weekWidgets(test);
@@ -72,6 +81,18 @@ final class DeviceUiChecks {
             }).get();
             try {
                 Bundle progress = new Bundle(); progress.putString("stream", "Atomic persistent probe ready\n"); test.sendStatus(0, progress);
+                if ("true".equals(arguments.getString("auto_click"))) {
+                    test.getUiAutomation().executeShellCommand("cmd statusbar expand-notifications").close();
+                    SystemClock.sleep(3500);
+                    android.view.accessibility.AccessibilityNodeInfo button = completionButton(test.getUiAutomation().getRootInActiveWindow());
+                    if (button == null) throw new IllegalStateException("Temporary reminder completion button is not visible");
+                    Rect bounds = new Rect(); button.getBoundsInScreen(bounds);
+                    long down = SystemClock.uptimeMillis();
+                    MotionEvent press = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, bounds.centerX(), bounds.centerY(), 0);
+                    MotionEvent release = MotionEvent.obtain(down, down + 40, MotionEvent.ACTION_UP, bounds.centerX(), bounds.centerY(), 0);
+                    try { test.getUiAutomation().injectInputEvent(press, true); test.getUiAutomation().injectInputEvent(release, true); }
+                    finally { press.recycle(); release.recycle(); }
+                }
                 if ("true".equals(arguments.getString("inspect_seconds"))) {
                     JSONObject state = new JSONObject();
                     state.put("initial", AgendaReminder.WORKER.submit(() -> secondsState(context, ids[2])).get());
@@ -198,6 +219,14 @@ final class DeviceUiChecks {
                     .getCharSequence("island.superx.leftInfo.content", ""));
         }
         return state;
+    }
+    private static android.view.accessibility.AccessibilityNodeInfo completionButton(android.view.accessibility.AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if ("标记待办完成".equals(String.valueOf(node.getContentDescription())) && node.isVisibleToUser()) return node;
+        for (int index = 0; index < node.getChildCount(); index++) {
+            var found = completionButton(node.getChild(index)); if (found != null) return found;
+        }
+        return null;
     }
     private static String weekImage(Instrumentation test) throws Exception {
         Context context = test.getTargetContext();

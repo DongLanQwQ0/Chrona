@@ -40,9 +40,12 @@ public class CalendarStore {
  public static Map<Long,EventRecord> rows=new HashMap<>();public static boolean permission=true,fail;public static int updates;
  public CalendarStore(Context c){}public boolean hasReadPermission(){return permission;}public boolean hasWritePermission(){return permission;}
  public EventRecord getEvent(long id){if(fail)throw new IllegalStateException("provider down");EventRecord r=rows.get(id);return r!=null&&r.owned?r:null;}
+ public long insertEvent(EventInput input){if(fail)throw new IllegalStateException("provider down");long id=1000;while(rows.containsKey(id))id++;rows.put(id,new EventRecord(input,true));return id;}
+ public boolean deleteEvent(long id){return rows.remove(id)!=null;}
+ public List<Long> findMatchingEvents(EventInput input){if(fail)throw new IllegalStateException("provider down");List<Long> ids=new ArrayList<>();for(var e:rows.entrySet()){EventInput i=e.getValue().input;if(e.getValue().owned&&i.title.equals(input.title)&&i.startMillis==input.startMillis&&i.endMillis==input.endMillis&&i.allDay==input.allDay)ids.add(e.getKey());}return ids;}
  public boolean updateEvent(long id,EventInput input){if(fail)throw new IllegalStateException("provider down");EventRecord old=getEvent(id);if(old==null)return false;updates++;rows.put(id,new EventRecord(input,true));return true;}
  public boolean replaceReminders(long id,List<Integer> reminders){EventRecord old=getEvent(id);if(old==null)return false;old.reminderMinutes=new ArrayList<>(reminders);return true;}
- public static class EventRecord {public EventInput input;public boolean owned;public List<Integer> reminderMinutes;public EventRecord(EventInput input,boolean owned){this.input=input;this.owned=owned;this.reminderMinutes=input.reminderMinutes;}}
+ public static class EventRecord {public EventInput input;public boolean owned;public String description,location;public List<Integer> reminderMinutes;public EventRecord(EventInput input,boolean owned){this.input=input;this.owned=owned;this.reminderMinutes=input.reminderMinutes;description=input.description;location=input.location;}}
  public static class EventInput {public String title,description,location,timeZoneId;public long startMillis,endMillis;public boolean allDay;public List<Integer> reminderMinutes;
  public EventInput(String title,long start,long end,String zone,boolean day,String desc,String loc,List<Integer> reminders){if(end<=start)throw new IllegalArgumentException();this.title=title;startMillis=start;endMillis=end;timeZoneId=zone;allDay=day;description=desc;location=loc;reminderMinutes=new ArrayList<>(reminders);}}
 }''')

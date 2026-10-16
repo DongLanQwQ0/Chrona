@@ -17,7 +17,7 @@ public final class ZjuSettingsActivity extends Activity {
     private Switch enabled, homework, timetable;
     private EditText user,password;
     private TextView status;
-    private Button sync,save;
+    private Button sync,save,calendarPermission;
     private boolean binding,busy;
     @Override protected void onCreate(Bundle state){
         ThemeStore.apply(this);super.onCreate(state);settings=new ZjuSettingsStore(this);
@@ -30,6 +30,8 @@ public final class ZjuSettingsActivity extends Activity {
         password=field(account,settings.configured()?"密码（留空保留）":"密码",true);
         save=button(account,"保存账号",()->saveAccount());root.addView(account);
         homework=toggle(root,"作业同步与提醒");
+        calendarPermission=button(root,"允许写入系统日历",()->requestPermissions(new String[]{
+                android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR},73113));
         timetable=toggle(root,"课表同步");
         button(root,"校历",()->startActivity(new Intent(this,ZjuCalendarSettingsActivity.class)));
         button(root,"日程来源",()->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));
@@ -86,6 +88,8 @@ public final class ZjuSettingsActivity extends Activity {
     private void bind(){
         binding=true;enabled.setChecked(settings.enabled());timetable.setChecked(settings.prefs.getBoolean("timetable",false));binding=false;
         controls(!busy);homework.setEnabled(!busy&&settings.enabled());timetable.setEnabled(!busy&&settings.enabled());
+        com.donglan.chrona.calendar.CalendarStore calendar=new com.donglan.chrona.calendar.CalendarStore(this);
+        calendarPermission.setVisibility(calendar.hasReadPermission()&&calendar.hasWritePermission()?View.GONE:View.VISIBLE);
         sync.setEnabled(!busy&&settings.enabled()&&settings.configured());status.setText(settings.status());
         ZjuSync.WORKER.execute(()->{
             boolean on; synchronized(AndroidSync.LOCK){on=new ZjuHomeworkStore(this).state().enabled;}
@@ -93,6 +97,12 @@ public final class ZjuSettingsActivity extends Activity {
         });
     }
     @Override protected void onResume(){super.onResume();if(settings!=null&&status!=null)bind();}
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] grants){
+        super.onRequestPermissionsResult(request,permissions,grants);
+        if(request==73113){bind();ZjuSync.WORKER.execute(()->{
+            ZjuHomeworkCalendar.retryPending(this);AgendaReminder.requestRefresh(this);AgendaWidgetProvider.requestRefresh(this);
+        });}
+    }
     private Switch toggle(LinearLayout root,String title){Switch s=new Switch(this);s.setText(title);s.setTextSize(16);s.setMinHeight(dp(54));s.setPadding(dp(12),dp(5),dp(12),dp(5));UiStyle.toggle(s);UiStyle.addSpaced(root,s,4,8);return s;}
     private EditText field(LinearLayout root,String hint,boolean secret){EditText f=new EditText(this);f.setHint(hint);f.setSingleLine();f.setInputType(InputType.TYPE_CLASS_TEXT|(secret?InputType.TYPE_TEXT_VARIATION_PASSWORD:InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD));f.setSaveEnabled(false);f.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);UiStyle.input(f);UiStyle.addSpaced(root,f,0,10);return f;}
     private Button button(LinearLayout root,String title,Runnable run){Button b=new Button(this);b.setText(title);UiStyle.button(b,false);b.setOnClickListener(v->run.run());UiStyle.addSpaced(root,b,6,6);return b;}
