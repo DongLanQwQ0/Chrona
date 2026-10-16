@@ -128,18 +128,19 @@ public final class AgendaReminder {
                     local.isTask() ? local.reminderAnchor() : local.calendarEnd(), local.title,
                     local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.dueAtMillis));
             List<CalendarOccurrence> other = new ArrayList<>();
+            java.util.Set<Long> linkedIds = new HashSet<>(store.linkedCalendarIds());
             long horizon = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).plusYears(1).toInstant().toEpochMilli();
             if (AgendaReminderPreferences.includesSystemCalendar(context)) {
                 CalendarStore calendar = new CalendarStore(context);
                 if (calendar.hasReadPermission()) {
                     ZoneId zone = ZoneId.systemDefault();
                     for (CalendarOccurrence e : calendar.reminderInstances(now, horizon,
-                            new HashSet<>(store.linkedCalendarIds()), excluded)) {
+                            linkedIds, excluded)) {
                         other.add(e);
                     }
                 }
             }
-            for (CalendarOccurrence e : ExternalCourseAgenda.merge(context,other,now-86_400_000L,horizon)) {
+            for (CalendarOccurrence e : ExternalCourseAgenda.merge(context,other,now-86_400_000L,horizon,linkedIds)) {
                 if (!e.allDay) entries.add(new AgendaEntry(e.eventId,0,e.startMillis,e.endMillis,
                         e.title,e.location,"",e.calendarName,true,false,true));
             }

@@ -1,4 +1,12 @@
-# 当前开发：0.15.1 / 163 · 折姜星辰
+# 当前开发：0.15.2 / 164 · UI风格与来源内容
+
+强制先读docs/ui-style-contract.md及development.md原生布局章节。本轮修正ZjuHomeworkHistoryActivity的裸px/TextView胶囊/AlertDialog，历史变更用公共dialogPanel/dialogBody/showFloatingDialog，新增保持原值未知语义。课程关联改公共卡片+浮层，外部课程详情卡片化。来源页点击行打开ScheduleSourceContentsActivity（每周窗口），开关独立启停；zju详情 sourceIntent(Context,source,key,start,end)按稳定key读缓存，master开关前/后校验。CourseSourceProbe在master关时不读zju缓存，关联页过滤保存规则并在开关变化时重载。
+
+完全相同来源项自动只合并展示，CourseSourceMatching.exact不删标题元信息；主源/稳定zju-imported-system排序、拒绝端点保护。ExternalCourseAgenda.merge新linkedIds参数先排自有已关联副本再合并并后置过滤，Dashboard/AgendaRepository/WidgetAgenda/LAN/Reminder接入。不要让代表选中linked副本再被过滤吞掉全组。原始candidate实体合并仍需已有确认流程。备份build/backups/20261016-ui-style-contract、20261016-source-contents、20261016-exact-occurrence。
+
+集中检查与build/lint通过，详见validation-history 0.15.2。用户仍禁止手机调试，最新UI不宣称真机验收。用户AGENTS及角色toml不提交；仅docs/development链接新权威UI规范，未覆盖用户工作区规范。
+
+# 上轮开发：0.15.1 / 163 · 折姜星辰
 
 本轮完成校历设置页与注入、源关联设置/备份、历史分页及同账号本机身份复用。校历覆盖普通2026–2027四小学期及海宁连续秋冬，可维护未来学年/节次/停课/补课JSON；学校边界接口无授课截止和调课，未知配置提示维护，不猜。ZjuClient将absent映射false，只对实际发布作业判断未知，无作业跳过状态请求；坏非空截止跳过该项保留旧数据。真实状态取证已解释21项中的11 submitted+10 absent，先前未知结论属于0.15.0旧实现。
 

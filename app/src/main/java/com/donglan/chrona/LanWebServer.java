@@ -157,8 +157,7 @@ final class LanWebServer extends NanoHTTPD {
                 try { systemEntries=provider.listInstances(start,end,null); calendarState=""; }
                 catch(RuntimeException error){calendarState="系统日历暂时无法读取";}
             } else if(!HomeTimelinePreferences.includesSystemCalendar(context)) calendarState="手机已关闭系统日历时间线";
-            for(CalendarOccurrence item:CalendarOccurrence.unlinked(
-                    ExternalCourseAgenda.merge(context,systemEntries,start,end),new HashSet<>(store.linkedCalendarIds())))
+            for(CalendarOccurrence item:ExternalCourseAgenda.merge(context,systemEntries,start,end,new HashSet<>(store.linkedCalendarIds())))
                 calendar.put(new JSONObject().put("title",item.title).put("location",item.location)
                         .put("start",item.displayStart(zone)).put("end",item.displayEnd(zone)));
             return data(result.put("items",entries).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",store.taskCountByStatus(TaskRecord.NEEDS_REVIEW)).put("failed",store.taskCountByStatus(TaskRecord.FAILED)));

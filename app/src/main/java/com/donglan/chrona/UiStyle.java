@@ -1125,7 +1125,7 @@ public final class UiStyle {
         return dialog;
     }
 
-    private static LinearLayout dialogPanel(Activity activity, String title) {
+    static LinearLayout dialogPanel(Activity activity, String title) {
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(panel, 20), dp(panel, 20), dp(panel, 20), dp(panel, 20));
@@ -1136,6 +1136,21 @@ public final class UiStyle {
         title(heading);
         addSpaced(panel, heading, 0, 12);
         return panel;
+    }
+
+    /** Long modal content scrolls; actions remain outside the scrolling area. */
+    static void dialogBody(LinearLayout panel, View body) {
+        ScrollView scroll = new ScrollView(panel.getContext()) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                int limit = Math.round(getResources().getDisplayMetrics().heightPixels * .52f);
+                if (View.MeasureSpec.getMode(heightSpec) != View.MeasureSpec.UNSPECIFIED)
+                    limit = Math.min(limit, View.MeasureSpec.getSize(heightSpec));
+                super.onMeasure(widthSpec, View.MeasureSpec.makeMeasureSpec(limit, View.MeasureSpec.AT_MOST));
+            }
+        };
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(body);
+        addSpaced(panel, scroll, 0, 12);
     }
 
     private static void showDialog(Dialog dialog, View content) {

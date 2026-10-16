@@ -860,8 +860,9 @@ public final class DashboardActivity extends Activity {
             } catch (RuntimeException exception) {
                 failed = !cancellation.isCanceled();
             }
-            if (!cancellation.isCanceled()) try {
-                loaded = ExternalCourseAgenda.merge(getApplicationContext(), loaded, begin, end);
+            if (!cancellation.isCanceled()) try (TaskStore linkedStore = new TaskStore(getApplicationContext())) {
+                loaded = ExternalCourseAgenda.merge(getApplicationContext(), loaded, begin, end,
+                        new HashSet<>(linkedStore.linkedCalendarIds()));
             } catch (RuntimeException exception) { failed = true; }
             List<CalendarOccurrence> result = java.util.Collections.unmodifiableList(loaded);
             boolean error = failed;

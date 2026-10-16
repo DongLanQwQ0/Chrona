@@ -15,12 +15,15 @@ public final class CourseSourceMatchingActivity extends Activity {
     private List<CalendarOccurrence[]> suggestions=new ArrayList<>();
     private int generation;
     private boolean limited;
+    private boolean schoolEnabled;
     @Override protected void onCreate(Bundle state){
         ThemeStore.apply(this);super.onCreate(state);
         LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"课程关联");
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);root.addView(content);
+        schoolEnabled=new ZjuSettingsStore(this).enabled();
         SettingsPageLayout.show(this,root,state==null);load();
     }
+    @Override protected void onResume(){super.onResume();boolean enabled=new ZjuSettingsStore(this).enabled();if(schoolEnabled!=enabled){schoolEnabled=enabled;load();}}
     private void load(){
         int current=++generation;content.removeAllViews();text("正在比对最近两周与未来六周的课程…");
         new Thread(()->{
@@ -42,6 +45,11 @@ public final class CourseSourceMatchingActivity extends Activity {
                     peers.add(c);
                 }
                 runOnUiThread(()->{if(isFinishing()||isDestroyed()||generation!=current)return;
+                    if(!new ZjuSettingsStore(this).enabled()){
+                        data.rows.removeIf(c->c.calendarId==CourseSourceMatching.ZJU);
+                        unique.values().removeIf(c->c.calendarId==CourseSourceMatching.ZJU);
+                        candidates.removeIf(p->p[0].calendarId==CourseSourceMatching.ZJU||p[1].calendarId==CourseSourceMatching.ZJU);
+                    }
                     rows=data.rows;courses=new ArrayList<>(unique.values());suggestions=candidates;limited=data.limited;render();});
             }catch(Exception failure){android.util.Log.w("Chrona","Course source probe failed",failure);
                 runOnUiThread(()->{if(isFinishing()||isDestroyed()||generation!=current)return;
@@ -53,12 +61,13 @@ public final class CourseSourceMatchingActivity extends Activity {
         if(checkSelfPermission(android.Manifest.permission.READ_CALENDAR)!=android.content.pm.PackageManager.PERMISSION_GRANTED)
             text("系统日历未授权；可返回日程来源允许读取。");
         if(limited)text("实例较多，当前展示有界样本。未出现的课程可调整日程后重试。");
-        Map<String,String> rules=ScheduleSources.courseRules(this);
+        Map<String,String> rules=new HashMap<>(ScheduleSources.courseRules(this));
+        if(!new ZjuSettingsStore(this).enabled())rules.keySet().removeIf(pair->pair.startsWith("zju\n")||pair.contains("\u001fzju\n"));
         if(!rules.isEmpty()){
             text("已保存的关联与排除");
             for(Map.Entry<String,String> entry:new TreeMap<>(rules).entrySet()){
                 String pair=entry.getKey();String[] names=pair.split("\u001f",-1);
-                button(pretty(names[0])+"\n↔ "+pretty(names.length>1?names[1]:"")+"\n"+
+                entry(pretty(names[0])+"\n"+pretty(names.length>1?names[1]:""),
                     ("reject".equals(entry.getValue())?"保持独立":"主来源 · "+sourceName(entry.getValue())),()->{
                         UiStyle.choiceDialog(this,"课程关联",new String[]{"解除关联 / 撤销排除","取消"},-1,choice->{
                             if(choice==0){ScheduleSources.setCourseRule(this,pair,null);render();}});
@@ -71,8 +80,8 @@ public final class CourseSourceMatchingActivity extends Activity {
             CalendarOccurrence a=pair[0],b=pair[1];String key=CourseSourceMatching.pairKey(a,b);
             if(rules.containsKey(key))continue;
             boolean strong=CourseSourceMatching.strong(a,b);
-            button(a.title+" · "+a.calendarName+"\n↔ "+b.title+" · "+b.calendarName+
-                "\n"+(CourseSourceMatching.conflict(a,b)?"地点或分组存在差异":strong?"同名/同课号且时段一致":"名称近似 · 需要确认"),()->preview(a,b));
+            entry(a.title+"\n"+b.title,a.calendarName+" · "+b.calendarName+"\n"+
+                (CourseSourceMatching.conflict(a,b)?"地点或分组存在差异":strong?"同名/同课号且时段一致":"名称近似 · 需要确认"),()->preview(a,b));
             if(++count>=80){text("已展示前 80 对，可通过手动关联选择其余课程。");break;}
         }
         if(count==0)text("当前样本暂无新的关联建议");
@@ -90,14 +99,16 @@ public final class CourseSourceMatchingActivity extends Activity {
     }
     private void preview(CalendarOccurrence a,CalendarOccurrence b){
         String warning=CourseSourceMatching.conflict(a,b)?"\n地点或分组存在差异，请核对后选择。":"";
-        String message=label(a)+"\n"+times(a)+"\n\n"+label(b)+"\n"+times(b)+warning+
-            "\n\n选择主来源后，仅隐藏相同时段的另一来源实例；原始日程保留。之后各周同课程名字沿用此关联。";
-        new android.app.AlertDialog.Builder(this).setTitle("核对课程关联").setMessage(message)
-            .setPositiveButton("选择主来源",(dialog,which)->UiStyle.choiceDialog(this,"这门课程的主来源",
+        String message=label(a)+"\n"+times(a)+"\n\n"+label(b)+"\n"+times(b)+warning;
+        android.app.Dialog dialog=new android.app.Dialog(this);
+        LinearLayout panel=UiStyle.dialogPanel(this,"核对课程关联");
+        TextView details=new TextView(this);details.setText(message);details.setTextSize(15);details.setTextColor(UiStyle.colors(this).text);
+        details.setTextIsSelectable(true);UiStyle.dialogBody(panel,details);
+        modalAction(panel,"选择主来源",()->{dialog.dismiss();UiStyle.choiceDialog(this,"这门课程的主来源",
                 new String[]{a.calendarName+" · "+a.title,b.calendarName+" · "+b.title},-1,selected->{
-                    ScheduleSources.setCourseRule(this,CourseSourceMatching.pairKey(a,b),CourseSourceMatching.source(selected==0?a:b));render();}))
-            .setNeutralButton("保持独立",(dialog,which)->{ScheduleSources.setCourseRule(this,CourseSourceMatching.pairKey(a,b),"reject");render();})
-            .setNegativeButton("取消",null).show();
+                    ScheduleSources.setCourseRule(this,CourseSourceMatching.pairKey(a,b),CourseSourceMatching.source(selected==0?a:b));render();});});
+        modalAction(panel,"保持独立",()->{dialog.dismiss();ScheduleSources.setCourseRule(this,CourseSourceMatching.pairKey(a,b),"reject");render();});
+        modalAction(panel,"取消",dialog::dismiss);UiStyle.showFloatingDialog(dialog,panel);
     }
     private String times(CalendarOccurrence course){
         DateTimeFormatter format=DateTimeFormatter.ofPattern("M月d日 E HH:mm",Locale.CHINA).withZone(ZoneId.systemDefault());
@@ -114,5 +125,14 @@ public final class CourseSourceMatchingActivity extends Activity {
     private String pretty(String identity){int split=identity.indexOf('\n');return split<0?identity:sourceName(identity.substring(0,split))+" · "+identity.substring(split+1);}
     private void text(String value){TextView view=new TextView(this);view.setText(value);view.setTextSize(15);view.setTextColor(UiStyle.colors(this).text);UiStyle.addSpaced(content,view,0,12);}
     private void button(String value,Runnable click){Button button=new Button(this);button.setText(value);UiStyle.button(button,false);UiStyle.addSpaced(content,button,0,12);button.setOnClickListener(v->click.run());}
+    private void modalAction(LinearLayout parent,String label,Runnable run){Button button=new Button(this);button.setText(label);UiStyle.button(button,false);button.setOnClickListener(v->run.run());UiStyle.addSpaced(parent,button,0,8);}
+    private void entry(String title,String detail,Runnable run){
+        LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);UiStyle.card(card);
+        int density=Math.round(16*getResources().getDisplayMetrics().density);
+        card.setPadding(density,Math.round(12*getResources().getDisplayMetrics().density),density,Math.round(12*getResources().getDisplayMetrics().density));
+        TextView heading=new TextView(this);heading.setText(title);heading.setTextSize(16);heading.setMaxLines(2);heading.setEllipsize(android.text.TextUtils.TruncateAt.END);UiStyle.title(heading);card.addView(heading);
+        TextView meta=new TextView(this);meta.setText(detail);meta.setTextSize(13);UiStyle.muted(meta);UiStyle.addSpaced(card,meta,4,0);
+        card.setOnClickListener(v->run.run());UiStyle.pressable(card);UiStyle.addSpaced(content,card,0,8);
+    }
     @Override protected void onDestroy(){generation++;super.onDestroy();}
 }

@@ -11,6 +11,8 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.ImageView;
+import android.content.res.ColorStateList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -19,6 +21,7 @@ import java.util.Locale;
 public final class ScheduleSourceSettingsActivity extends Activity {
     private static final int READ_PERMISSION = 760;
     private LinearLayout calendars;
+    private LinearLayout builtins;
     private Button primary;
     private List<Source> sources = new ArrayList<>();
     private int loadGeneration;
@@ -27,10 +30,8 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         ThemeStore.apply(this); super.onCreate(state);
         LinearLayout root = SettingsPageLayout.content(this);
         SettingsPageLayout.header(this, root, "日程来源");
-        toggle(root, "导入课表", "", ScheduleSources.importedEnabled(this),
-                checked -> ScheduleSources.setImportedEnabled(this, checked));
-        toggle(root, "浙大课表服务", "", ScheduleSources.zjuEnabled(this),
-                checked -> ScheduleSources.setZjuEnabled(this, checked));
+        builtins = new LinearLayout(this); builtins.setOrientation(LinearLayout.VERTICAL);
+        root.addView(builtins, new LinearLayout.LayoutParams(-1, -2));
         primary = new Button(this); UiStyle.button(primary, false);
         UiStyle.addSpaced(root, primary, 0, 16);
         primary.setOnClickListener(view -> choosePrimary());
@@ -41,7 +42,16 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         root.addView(calendars, new LinearLayout.LayoutParams(-1, -2));
         SettingsPageLayout.show(this, root, state == null);
     }
-    @Override protected void onResume() { super.onResume(); loadCalendars(); }
+    @Override protected void onResume() {
+        super.onResume();
+        builtins.removeAllViews();
+        toggle(builtins, "导入课表", "", ScheduleSources.importedEnabled(this),
+                checked -> ScheduleSources.setImportedEnabled(this, checked), "imported");
+        if (new ZjuSettingsStore(this).enabled())
+            toggle(builtins, "浙大课表", "", ScheduleSources.zjuEnabled(this),
+                    checked -> ScheduleSources.setZjuEnabled(this, checked), "zju");
+        loadCalendars();
+    }
 
     private void loadCalendars() {
         int generation = ++loadGeneration;
@@ -90,7 +100,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
                         if(recurring>0)info+=" · "+recurring+" 组周重复日程";
                         else if (looksLikeCourses(source.name)) info += " · 名称含课表关键词";
                         toggle(calendars, source.name, info, ScheduleSources.allowsCalendar(this, source.id),
-                                checked -> ScheduleSources.setCalendarEnabled(this, source.id, checked));
+                                checked -> ScheduleSources.setCalendarEnabled(this, source.id, checked), "system:" + source.id);
                     }
                 });
             } catch (Exception failure) {
@@ -107,39 +117,47 @@ public final class ScheduleSourceSettingsActivity extends Activity {
     }
     private void choosePrimary() {
         List<String> keys = new ArrayList<>(), labels = new ArrayList<>();
-        keys.add("all"); labels.add("全部保留");
+        keys.add("all"); labels.add("自动合并相同项");
         keys.add("imported"); labels.add("导入课表优先");
-        keys.add("zju"); labels.add("浙大课表服务优先");
+        if (new ZjuSettingsStore(this).enabled()) { keys.add("zju"); labels.add("浙大课表优先"); }
         for (Source source : sources) { keys.add("system:" + source.id); labels.add(source.name + " · " + source.account + " · 优先"); }
-        UiStyle.choiceDialog(this, "重复日程优先来源", labels.toArray(new String[0]),
-                keys.indexOf(ScheduleSources.primary(this)), selected -> {
+        UiStyle.choiceDialog(this, "重复课表优先来源", labels.toArray(new String[0]),
+                keys.indexOf(effectivePrimary()), selected -> {
                     ScheduleSources.setPrimary(this, keys.get(selected)); updatePrimary();
                 });
     }
     private void updatePrimary() {
-        String key = ScheduleSources.primary(this);
+        String key = effectivePrimary();
         String name = switch (key) {
             case "imported" -> "导入课表";
-            case "zju" -> "浙大课表服务";
-            case "all" -> "全部保留";
+            case "zju" -> "浙大课表";
+            case "all" -> "自动合并";
             default -> "系统日历";
         };
         for (Source source : sources) if (key.equals("system:" + source.id)) name = source.name;
-        primary.setText("重复日程 · " + name);
+        primary.setText("重复课表 · " + name + ("all".equals(key) ? "" : "优先"));
+    }
+    private String effectivePrimary() {
+        String key = ScheduleSources.primary(this);
+        return "zju".equals(key) && !new ZjuSettingsStore(this).enabled() ? "all" : key;
     }
     private void toggle(LinearLayout parent, String name, String detail, boolean enabled,
-            java.util.function.Consumer<Boolean> save) {
+            java.util.function.Consumer<Boolean> save, String key) {
         LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), dp(12), dp(16), dp(12)); UiStyle.card(row);
         LinearLayout copy = new LinearLayout(this); copy.setOrientation(LinearLayout.VERTICAL);
-        label(copy, name);
+        TextView title = label(copy, name); title.setMaxLines(2);
         if (!detail.isEmpty()) { TextView meta = label(copy, detail); meta.setTextSize(13); meta.setTextColor(UiStyle.colors(this).muted); }
         row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+        ImageView arrow = new ImageView(this); arrow.setImageResource(R.drawable.ic_chevron_right);
+        arrow.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).muted));
+        LinearLayout.LayoutParams arrowParams = new LinearLayout.LayoutParams(dp(20), dp(20));
+        arrowParams.setMargins(dp(8), 0, dp(12), 0); row.addView(arrow, arrowParams);
         Switch control = new Switch(this); UiStyle.toggle(control); control.setChecked(enabled);
         control.setContentDescription(name); control.setMinHeight(dp(48));
         row.addView(control, new LinearLayout.LayoutParams(-2, -2));
         control.setOnCheckedChangeListener((button, checked) -> save.accept(checked));
-        row.setOnClickListener(view -> control.setChecked(!control.isChecked()));
+        row.setOnClickListener(view -> startActivity(ScheduleSourceContentsActivity.intent(this, key, name)));
         UiStyle.addSpaced(parent, row, 0, 12);
     }
     private TextView label(LinearLayout parent, String value) {
@@ -157,6 +175,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         if (result.length == 0 || result[0] != PackageManager.PERMISSION_GRANTED) Feedback.show(this, "未获得读取日历权限");
         loadCalendars();
     }
+    @Override protected void onDestroy() { loadGeneration++; super.onDestroy(); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private static final class Source {
         final long id;

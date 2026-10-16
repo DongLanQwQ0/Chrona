@@ -28,6 +28,18 @@ public final class CourseSourceMatching {
     public static boolean sameTime(CalendarOccurrence a, CalendarOccurrence b) {
         return a.startMillis == b.startMillis && a.endMillis == b.endMillis && a.allDay == b.allDay;
     }
+    /** Exact display identity keeps teacher, group, course level and all other title metadata. */
+    private static String exactText(String value) {
+        return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT).replaceAll("(?U)\\s+", "");
+    }
+    public static boolean exact(CalendarOccurrence a, CalendarOccurrence b) {
+        return sameTime(a,b) && exactText(a.title).equals(exactText(b.title))
+                && exactText(a.location).equals(exactText(b.location));
+    }
+    private static int sourceRank(CalendarOccurrence c) {
+        return c.calendarId == ZJU ? 0 : c.calendarId == IMPORTED ? 1 : 2;
+    }
     public static boolean conflict(CalendarOccurrence a, CalendarOccurrence b) {
         String al=normalize(a.location), bl=normalize(b.location);
         return (!al.isEmpty() && !bl.isEmpty() && !al.equals(bl)) || !group(a.title).equals(group(b.title));
@@ -58,24 +70,44 @@ public final class CourseSourceMatching {
         long week=7L*86400000L,delta=Math.abs(a.startMillis-b.startMillis);
         return similar && delta%week==0 && a.endMillis-a.startMillis==b.endMillis-b.startMillis;
     }
-    /** rules: pair identity -> chosen source, or "reject". Explicit links apply across weeks. */
+    /** Exact occurrences merge by default. Rules choose a source or "reject"; links apply across weeks. */
     public static List<CalendarOccurrence> filter(List<CalendarOccurrence> input,String primary,Map<String,String> rules) {
+        // Stable traversal makes both exact representatives and contradictory manual rules
+        // independent of provider/input order. A selected source wins only when present.
+        List<CalendarOccurrence> ordered=new ArrayList<>(input);
+        ordered.sort(Comparator.comparingInt((CalendarOccurrence c)->source(c).equals(primary)?0:1)
+                .thenComparingInt(CourseSourceMatching::sourceRank).thenComparingLong(c->c.calendarId)
+                .thenComparingLong(c->c.eventId).thenComparingLong(c->c.startMillis)
+                .thenComparingLong(c->c.endMillis).thenComparing(c->c.title)
+                .thenComparing(c->c.location).thenComparing(c->c.calendarName).thenComparing(c->c.accountName));
         Set<CalendarOccurrence> suppressed=Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<CalendarOccurrence> protectedItems=Collections.newSetFromMap(new IdentityHashMap<>());
         Map<CalendarOccurrence,CalendarOccurrence> preferredBy=new IdentityHashMap<>();
         Map<String,List<CalendarOccurrence>> slots=new HashMap<>();
-        for(CalendarOccurrence c:input)slots.computeIfAbsent(c.startMillis+":"+c.endMillis+":"+c.allDay,k->new ArrayList<>()).add(c);
+        for(CalendarOccurrence c:ordered)slots.computeIfAbsent(c.startMillis+":"+c.endMillis+":"+c.allDay,k->new ArrayList<>()).add(c);
+        // A third source must not indirectly swallow either side of an explicit rejection.
         for(List<CalendarOccurrence> slot:slots.values())for(int i=0;i<slot.size();i++)for(int j=i+1;j<slot.size();j++) {
             CalendarOccurrence a=slot.get(i),b=slot.get(j);
-            if(source(a).equals(source(b)) || !sameTime(a,b))continue;
+            if("reject".equals(rules.get(pairKey(a,b)))) {protectedItems.add(a);protectedItems.add(b);}
+        }
+        for(List<CalendarOccurrence> slot:slots.values())for(int i=0;i<slot.size();i++)for(int j=i+1;j<slot.size();j++) {
+            CalendarOccurrence a=slot.get(i),b=slot.get(j);
             String decision=rules.get(pairKey(a,b));
             if("reject".equals(decision))continue;
+            if(exact(a,b)) {
+                CalendarOccurrence keep=a,drop=b;
+                if(decision!=null && decision.equals(source(b)) && !decision.equals(source(a))) {keep=b;drop=a;}
+                if(!protectedItems.contains(drop)){suppressed.add(drop);preferredBy.put(drop,keep);}
+                continue;
+            }
+            if(source(a).equals(source(b)) || !sameTime(a,b))continue;
             String winner=decision;
             if(winner==null) {if(!strong(a,b)||"all".equals(primary))continue;winner=primary;}
-            if(winner.equals(source(a))){suppressed.add(b);preferredBy.put(b,a);}
-            else if(winner.equals(source(b))){suppressed.add(a);preferredBy.put(a,b);}
+            if(winner.equals(source(a))&&!protectedItems.contains(b)){suppressed.add(b);preferredBy.put(b,a);}
+            else if(winner.equals(source(b))&&!protectedItems.contains(a)){suppressed.add(a);preferredBy.put(a,b);}
         }
         // A cycle of contradictory pair choices still leaves a visible representative.
-        for(CalendarOccurrence c:input){
+        for(CalendarOccurrence c:ordered){
             Set<CalendarOccurrence> path=Collections.newSetFromMap(new IdentityHashMap<>());
             CalendarOccurrence current=c;
             while(suppressed.contains(current)){

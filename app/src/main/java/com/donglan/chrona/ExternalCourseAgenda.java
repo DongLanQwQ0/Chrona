@@ -11,14 +11,18 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** Shared read-only course feed; negative IDs cannot collide with CalendarProvider IDs. */
 public final class ExternalCourseAgenda {
     public static boolean isExternal(long id){return id<0;}
-    private static long id(String key){return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)).getMostSignificantBits()|Long.MIN_VALUE;}
+    static long id(String key){return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)).getMostSignificantBits()|Long.MIN_VALUE;}
     static String revision(Context context){ZjuSettingsStore settings=new ZjuSettingsStore(context);return ScheduleSources.revision(context)+":"+CourseAgenda.revision()+":"+ZjuTimetableStore.revision()+":"+settings.account()+":"+settings.enabled()+":"+settings.timetable();}
     static List<CalendarOccurrence> merge(Context context,List<CalendarOccurrence> system,long begin,long end){
+        return merge(context,system,begin,end,Set.of());
+    }
+    static List<CalendarOccurrence> merge(Context context,List<CalendarOccurrence> system,long begin,long end,Set<Long> linkedIds){
         List<CalendarOccurrence> courses=new ArrayList<>();
         if(ScheduleSources.importedEnabled(context))try{
             for(CourseAgenda.Item c:CourseAgenda.load(context,begin,end,ZoneId.systemDefault())){
@@ -31,8 +35,10 @@ public final class ExternalCourseAgenda {
             for(ZjuSnapshot.Lesson c:new ZjuTimetableStore(context).load(settings.account()))if(c.start<end&&c.end>begin)
                 courses.add(new CalendarOccurrence(id("zju:"+settings.account()+":"+c.key),c.start,c.end,c.title,false,c.location,"折姜星辰",null,CourseSourceMatching.ZJU,""));
         }catch(Exception e){throw new IllegalStateException("无法读取浙大课表",e);}
-        List<CalendarOccurrence> all=new ArrayList<>(system);all.addAll(courses);
+        // Linked Chrona-owned provider copies must not win and then disappear after merging.
+        List<CalendarOccurrence> all=new ArrayList<>(CalendarOccurrence.unlinked(system,linkedIds));all.addAll(courses);
         all=CourseSourceMatching.filter(all,ScheduleSources.primary(context),ScheduleSources.courseRules(context));
+        all=CalendarOccurrence.unlinked(all,linkedIds);
         all.sort(Comparator.comparingLong((CalendarOccurrence c)->c.startMillis).thenComparingLong(c->c.eventId));
         return all;
     }

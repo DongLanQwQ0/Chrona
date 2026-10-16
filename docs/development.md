@@ -43,6 +43,8 @@ SQLite 版本提升至 11，新增 due_at_millis、completed_at_millis、is_reco
 
 ## 原生设置页布局规范
 
+新增和修改 UI 必须先遵守 [原生 UI 强制约束](ui-style-contract.md)。该文档统一卡片、浮层、字号、行高、选择栏包络和验收门槛；下面保留安全区与布局调用顺序的详细说明。
+
 新增或修改设置类页面必须遵守以下规则，禁止页面主体、顶栏或卡片外缘贴屏幕左右边缘。此规则具体化既有外观页、设置主页和更新页的实现；此前只有历史修复记录，没有集中写明容器与调用顺序。
 
 1. 层级为 `FrameLayout stage → GlassBackdropView + ScrollView viewport → 一个纵向 LinearLayout content → 顶栏/分组标题/卡片/操作控件`。背景可以铺满屏幕，内容容器左右必须各有 **20dp** 留白。全宽卡片、输入框和按钮的宽度仅填满内容区域，不能跨过这层留白。卡片内边距不替代页面留白。

@@ -31,7 +31,7 @@ CalendarOccurrence otherRoom=c(12,"高等数学I","西2",0);
 check(!CourseSourceMatching.strong(a,otherRoom)&&CourseSourceMatching.suggested(a,otherRoom),"location conflict is review-only");
 check(filter(a,otherRoom,"imported",Map.of()).size()==2,"location conflict retains both");
 check(filter(a,otherRoom,"all",Map.of(CourseSourceMatching.pairKey(a,otherRoom),"imported")).size()==1,"explicit reviewed conflict can choose primary");
-check(filter(a,c(-1,a.title,"东1",0),"imported",Map.of()).size()==2,"same source is never merged");
+check(filter(a,c(-1,a.title,"东1",0),"imported",Map.of()).size()==1,"exact same-source duplicates merge");
 CalendarOccurrence alias=c(12,"高数导出名","东1",0);
 Map<String,String> rules=Map.of(CourseSourceMatching.pairKey(a,alias),"imported");
 check(filter(a,alias,"all",rules).size()==1,"manual alias link works");
@@ -40,6 +40,31 @@ check(filter(a,c(12,alias.title,"东1",3600000),"all",rules).size()==2,"link doe
 check(!CourseSourceMatching.strong(c(-1,"数学1班","",0),c(12,"数学2班","",0)),"different groups stay separate");
 check(CourseSourceMatching.source(a).equals("imported")&&CourseSourceMatching.source(b).equals("system:12"),"source keys ignore display names");
 check(filter(a,c(12,"另一个课程","",0),"imported",Map.of()).size()==2,"unrelated same-slot course retained");
+CalendarOccurrence exactImport=c(-1," 数学Ⅰ "," 东１ ",0),exactZju=c(-2,"数学I","东1",0),exactSystem=c(42,"数学i","东1",0);
+check(filter(exactImport,exactZju,"all",Map.of()).size()==1,"default merges exact normalized title and location");
+check(filter(exactImport,exactZju,"all",Map.of()).get(0)==exactZju,"default stable representative prefers ZJU");
+check(filter(exactZju,exactImport,"imported",Map.of()).get(0)==exactImport,"present primary wins exact pair");
+check(filter(exactSystem,exactImport,"zju",Map.of()).get(0)==exactImport,"absent primary uses stable fallback");
+CalendarOccurrence lowId=new CalendarOccurrence(1,0,3600000,"数学i",false,"东1","system",null,42,"");
+check(filter(exactSystem,lowId,"all",Map.of()).get(0)==lowId,"same calendar stable lowest event id");
+check(filter(c(10,"数学i","东1",0),exactSystem,"all",Map.of()).get(0).calendarId==10,"stable lowest system calendar id");
+check(filter(exactImport,exactZju,"all",Map.of(CourseSourceMatching.pairKey(exactImport,exactZju),"reject")).size()==2,"reject overrides exact default");
+for(List<CalendarOccurrence> order:List.of(List.of(exactImport,exactZju,exactSystem),List.of(exactSystem,exactImport,exactZju),List.of(exactZju,exactSystem,exactImport))){
+ List<CalendarOccurrence> merged=CourseSourceMatching.filter(order,"all",Map.of());
+ check(merged.size()==1&&merged.get(0)==exactZju,"three-source representative independent of order");
+ merged=CourseSourceMatching.filter(order,"all",Map.of(CourseSourceMatching.pairKey(exactImport,exactZju),"reject"));
+ check(merged.size()==2&&merged.contains(exactImport)&&merged.contains(exactZju),"third source cannot bypass rejected pair");
+}
+check(!CourseSourceMatching.exact(a,b),"exact title does not strip teacher suffix");
+check(filter(a,b,"all",Map.of()).size()==2,"near match stays separate without primary");
+check(filter(exactImport,c(42,"数学i","",0),"all",Map.of()).size()==2,"missing and nonempty location stay distinct");
+check(filter(c(-1,"数学1班","",0),c(-2,"数学2班","",0),"all",Map.of()).size()==2,"exact retains group differences");
+check(filter(c(-1,"数学甲","",0),c(-2,"数学乙","",0),"all",Map.of()).size()==2,"exact retains stage differences");
+check(filter(exactImport,c(42,"数学i","东1",1),"all",Map.of()).size()==2,"exact requires same start and end");
+CalendarOccurrence allDay=new CalendarOccurrence(71,0,3600000,"数学i",true,"东1","system",null,42,"");
+check(filter(exactImport,allDay,"all",Map.of()).size()==2,"all-day and timed stay distinct");
+CalendarOccurrence allDayTwin=new CalendarOccurrence(72,0,3600000,"数学i",true,"东1","system",null,43,"");
+check(filter(allDay,allDayTwin,"all",Map.of()).size()==1,"exact all-day occurrences merge");
 System.out.println("Course matching: "+count+" passed");
 }}
 ''', encoding='utf-8')

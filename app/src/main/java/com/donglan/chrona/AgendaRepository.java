@@ -66,9 +66,8 @@ final class AgendaRepository {
                 } catch (android.os.OperationCanceledException cancelled) { throw cancelled; }
                 catch (RuntimeException exception) { result.systemUnavailable = true; }
             }
-            for (CalendarOccurrence item : CalendarOccurrence.unlinked(
-                    ExternalCourseAgenda.merge(context, systemEntries, begin - 86_400_000L, until + 86_400_000L),
-                    new HashSet<>(store.linkedCalendarIds()))) {
+            for (CalendarOccurrence item : ExternalCourseAgenda.merge(context, systemEntries,
+                    begin - 86_400_000L, until + 86_400_000L, new HashSet<>(store.linkedCalendarIds()))) {
                 cancellation.throwIfCanceled();
                 AgendaEntry entry = new AgendaEntry(item.eventId, 0, item.displayStart(zone),
                         item.displayEnd(zone), item.title, item.location, "", item.calendarName,

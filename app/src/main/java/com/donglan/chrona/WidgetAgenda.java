@@ -142,9 +142,8 @@ final class WidgetAgenda {
                     } catch (RuntimeException exception) { result.calendarUnavailable = true; }
                 }
             }
-            for (CalendarOccurrence event : CalendarOccurrence.unlinked(
-                    ExternalCourseAgenda.merge(context, systemEntries, begin - 86400000L, horizon + 86400000L),
-                    new HashSet<>(store.linkedCalendarIds()))) {
+            for (CalendarOccurrence event : ExternalCourseAgenda.merge(context, systemEntries,
+                    begin - 86400000L, horizon + 86400000L, new HashSet<>(store.linkedCalendarIds()))) {
                 items.add(new Item(event.eventId, 0, event.displayStart(result.zone),
                         event.displayEnd(result.zone), event.title, event.location,
                         "活动", event.calendarName, true, event.allDay));

@@ -55,7 +55,7 @@ final class CourseSourceProbe {
         }
         ZjuSettingsStore settings=new ZjuSettingsStore(context);
         sourceCount=0;
-        for(com.donglan.chrona.zju.ZjuSnapshot.Lesson c:new ZjuTimetableStore(context).load(settings.account())){
+        if(settings.enabled())for(com.donglan.chrona.zju.ZjuSnapshot.Lesson c:new ZjuTimetableStore(context).load(settings.account())){
             if(c.start>=end||c.end<=begin)continue;
             if(sourceCount++>=LIMIT){result.limited=true;break;}
             result.rows.add(new CalendarOccurrence(-2,c.start,c.end,c.title,false,c.location,"折姜星辰",null,CourseSourceMatching.ZJU,""));
