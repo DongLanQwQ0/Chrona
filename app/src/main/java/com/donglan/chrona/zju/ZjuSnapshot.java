@@ -53,11 +53,15 @@ public final class ZjuSnapshot {
     }
 
     public static final class Lesson {
-        public final String key, title, location, term;
+        public final String key, title, location, term, notes;
         public final long start, end;
         public Lesson(String key, String title, String location, String term, long start, long end) {
+            this(key, title, location, term, start, end, "");
+        }
+        public Lesson(String key, String title, String location, String term, long start, long end, String notes) {
             this.key = key; this.title = title; this.location = location; this.term = term;
             this.start = start; this.end = end;
+            this.notes = notes == null ? "" : notes;
         }
     }
 }

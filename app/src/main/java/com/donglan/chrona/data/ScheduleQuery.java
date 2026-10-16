@@ -10,11 +10,13 @@ import java.util.Locale;
 /** Parameterized schedule predicates, shared by page, count, and selection queries. */
 public final class ScheduleQuery {
     public static final int PAGE_SIZE = 24;
+    public static final String CATEGORY_HOMEWORK = "homework";
     public static final int TODO_ANY = 0, TODO_TODAY_DUE = 1, TODO_OVERDUE = 2,
             TODO_OPEN = 3;
     public final String selection;
     public final String[] arguments;
     public final int todoScope;
+    private final boolean homeworkOnly;
     public static final String DAY_SQL = "CASE WHEN all_day=1 THEN "
             + "strftime('%Y-%m-%d',COALESCE(start_at_millis,due_at_millis)/1000,'unixepoch') ELSE "
             + "strftime('%Y-%m-%d',COALESCE(start_at_millis,due_at_millis)/1000,'unixepoch','localtime') END";
@@ -27,6 +29,7 @@ public final class ScheduleQuery {
     public ScheduleQuery(int tab, String category, int publication, String keyword,
             LocalDate from, LocalDate until, long now, ZoneId zone, int todoScope) {
         this.todoScope = todoScope;
+        this.homeworkOnly = CATEGORY_HOMEWORK.equals(category);
         List<String> clauses = new ArrayList<>(), values = new ArrayList<>();
         clauses.add("is_record=0");
         String anchor = "COALESCE(start_at_millis,due_at_millis)";
@@ -41,7 +44,9 @@ public final class ScheduleQuery {
             values.add(Long.toString(java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                     .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()));
         }
-        if (category != null) { clauses.add("category=?"); values.add(category); }
+        if (CATEGORY_HOMEWORK.equals(category)) {
+            clauses.add("category='task' AND EXISTS(SELECT 1 FROM managed_zju_state homework WHERE homework.capture_id=event_candidates.task_id)");
+        } else if (category != null) { clauses.add("category=?"); values.add(category); }
         if (todoScope != TODO_ANY) {
             clauses.add("category='task' AND completed_at_millis IS NULL");
             if (todoScope == TODO_TODAY_DUE) {
@@ -85,6 +90,8 @@ public final class ScheduleQuery {
 
     public String orderBy(boolean oldestFirst) {
         String direction = oldestFirst ? " ASC" : " DESC";
+        if (homeworkOnly)
+            return "due_at_millis IS NULL ASC, due_at_millis" + direction + ", id" + direction;
         if (todoScope == TODO_TODAY_DUE || todoScope == TODO_OVERDUE)
             return "due_at_millis" + direction + ", id" + direction;
         return "COALESCE(start_at_millis,due_at_millis) IS NULL ASC, " + DAY_SQL + direction

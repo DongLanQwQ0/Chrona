@@ -19,6 +19,9 @@ public final class ScheduleQueryCheck {
         emit("literal", new ScheduleQuery(3, null, 0, "%_", null, null, now, zone));
         emit("published", new ScheduleQuery(3, null, 2, "", null, null, now, zone));
         emit("label", new ScheduleQuery(3, null, 0, "待办", null, null, now, zone));
+        emit("homework", new ScheduleQuery(3, ScheduleQuery.CATEGORY_HOMEWORK, 0, "", null, null, now, zone));
+        emit("homeworkOpen", new ScheduleQuery(3, ScheduleQuery.CATEGORY_HOMEWORK, 0, "", null, null, now, zone, ScheduleQuery.TODO_OPEN));
+        emit("homeworkToday", new ScheduleQuery(3, ScheduleQuery.CATEGORY_HOMEWORK, 0, "", null, null, now, zone, ScheduleQuery.TODO_TODAY_DUE));
         ScheduleQuery all = new ScheduleQuery(3, null, 0, "", null, null, now, zone);
         emit("reverse", all, false);
         emit("dst", new ScheduleQuery(3, null, 0, "", LocalDate.of(2026, 3, 8),

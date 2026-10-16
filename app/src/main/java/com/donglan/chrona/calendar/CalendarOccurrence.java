@@ -15,7 +15,7 @@ public final class CalendarOccurrence {
     public final boolean allDay;
     public final Integer calendarColor;
     public final long calendarId;
-    public final String accountName;
+    public final String accountName, description;
 
     public CalendarOccurrence(long eventId, long startMillis, long endMillis, String title,
             boolean allDay, String location, String calendarName) {
@@ -30,6 +30,13 @@ public final class CalendarOccurrence {
     public CalendarOccurrence(long eventId, long startMillis, long endMillis, String title,
             boolean allDay, String location, String calendarName, Integer calendarColor,
             long calendarId, String accountName) {
+        this(eventId, startMillis, endMillis, title, allDay, location, calendarName,
+                calendarColor, calendarId, accountName, "");
+    }
+
+    public CalendarOccurrence(long eventId, long startMillis, long endMillis, String title,
+            boolean allDay, String location, String calendarName, Integer calendarColor,
+            long calendarId, String accountName, String description) {
         this.eventId = eventId;
         this.startMillis = startMillis;
         this.endMillis = endMillis;
@@ -40,6 +47,7 @@ public final class CalendarOccurrence {
         this.calendarColor = calendarColor;
         this.calendarId = calendarId;
         this.accountName = accountName == null ? "" : accountName;
+        this.description = description == null ? "" : description;
     }
 
     public long displayStart(ZoneId zone) {
@@ -69,11 +77,12 @@ public final class CalendarOccurrence {
         return eventId == item.eventId && startMillis == item.startMillis && endMillis == item.endMillis
                 && allDay == item.allDay && title.equals(item.title) && location.equals(item.location)
                 && calendarName.equals(item.calendarName) && Objects.equals(calendarColor, item.calendarColor)
-                && calendarId == item.calendarId && accountName.equals(item.accountName);
+                && calendarId == item.calendarId && accountName.equals(item.accountName)
+                && description.equals(item.description);
     }
 
     @Override public int hashCode() {
         return Objects.hash(eventId, startMillis, endMillis, title, allDay, location, calendarName,
-                calendarColor, calendarId, accountName);
+                calendarColor, calendarId, accountName, description);
     }
 }

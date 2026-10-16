@@ -36,7 +36,8 @@ class LinearLayout {
 class ScrollView {int y; Queue<Runnable> posts=new ArrayDeque<>();int getScrollY(){return y;}void scrollTo(int x,int value){y=value;}void post(Runnable r){posts.add(r);}void drain(){while(!posts.isEmpty())posts.remove().run();}}
 class QueueExecutor {boolean worker;Queue<Runnable> tasks=new ArrayDeque<>();void execute(Runnable r){tasks.add(r);}void run(){worker=true;try{tasks.remove().run();}finally{worker=false;}}}
 class Handler {Queue<Runnable> tasks=new ArrayDeque<>();void post(Runnable r){tasks.add(r);}void drain(){while(!tasks.isEmpty())tasks.remove().run();}}
-class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int PAGE_SIZE=50,TODO_ANY=0,TODO_TODAY_DUE=1,TODO_OVERDUE=2,TODO_OPEN=3;}
+class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int PAGE_SIZE=50,TODO_ANY=0,TODO_TODAY_DUE=1,TODO_OVERDUE=2,TODO_OPEN=3;static String CATEGORY_HOMEWORK="homework";}
+class ZjuSettingsStore {ZjuSettingsStore(Object context){}boolean enabled(){return true;}}
 class InboxQuery {InboxQuery(Object...a){}}
 class EventCategory {static String[] VALUES={"event"};}
 class EventCandidate {Long anchor(){return startAtMillis;}Long startAtMillis=1L,dueAtMillis=2L; boolean allDay;}
@@ -66,6 +67,7 @@ public class DashboardRefreshCheck {
  ArrayDeque<Runnable> scheduleBuildSteps;Runnable scheduleBuildDone;
  final Runnable scheduleBuildFrame=this::buildScheduleResultFrame;
  Set<Integer> dirtySections=new HashSet<>();Set<Long> selectedScheduleIds=new HashSet<>();
+ Set<Long> awaitingCompletionRows=new HashSet<>();
  Map<Long,Object> inboxRows=new HashMap<>();List<Long> matchingInboxIds=new ArrayList<>();
  Map<Integer,Object> sectionPages=new HashMap<>(),sectionVersions=new HashMap<>();
  DashboardSectionData preparedSection;
@@ -118,6 +120,9 @@ out = ROOT / 'build/schedule-refresh-check'
 out.mkdir(parents=True, exist_ok=True)
 file = out / 'DashboardRefreshCheck.java'
 file.write_text(java, encoding='utf-8')
+filter_state = out / 'com/donglan/chrona/data/ScheduleFilterState.java'
+filter_state.parent.mkdir(parents=True, exist_ok=True)
+filter_state.write_text('package com.donglan.chrona.data; public final class ScheduleFilterState { public static final int HOMEWORK_CATEGORY=3; }', encoding='utf-8')
 bin_dir = Path(os.environ['JAVA_HOME']) / 'bin'
-subprocess.run([str(bin_dir / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file)], check=True)
+subprocess.run([str(bin_dir / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file), str(filter_state)], check=True)
 subprocess.run([str(bin_dir / 'java.exe'), '-cp', str(out), 'DashboardRefreshCheck'], check=True)

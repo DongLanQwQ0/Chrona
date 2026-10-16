@@ -27,13 +27,13 @@ public final class ExternalCourseAgenda {
         if(ScheduleSources.importedEnabled(context))try{
             for(CourseAgenda.Item c:CourseAgenda.load(context,begin,end,ZoneId.systemDefault())){
                 long start=c.allDay?utcDate(c.start):c.start,endAt=c.allDay?utcDate(c.end):c.end;
-                courses.add(new CalendarOccurrence(id("imported:"+c.termId+":"+c.key),start,endAt,c.title,c.allDay,c.location,"导入课表",null,CourseSourceMatching.IMPORTED,""));
+                courses.add(new CalendarOccurrence(id("imported:"+c.termId+":"+c.key),start,endAt,c.title,c.allDay,c.location,"导入课表",null,CourseSourceMatching.IMPORTED,"",c.description));
             }
         }catch(Exception e){throw new IllegalStateException("无法读取导入课表",e);}
         ZjuSettingsStore settings=new ZjuSettingsStore(context);
         if(settings.timetable()&&ScheduleSources.zjuEnabled(context))try{
             for(ZjuSnapshot.Lesson c:new ZjuTimetableStore(context).load(settings.account()))if(c.start<end&&c.end>begin)
-                courses.add(new CalendarOccurrence(id("zju:"+settings.account()+":"+c.key),c.start,c.end,c.title,false,c.location,"折姜星辰",null,CourseSourceMatching.ZJU,""));
+                courses.add(new CalendarOccurrence(id("zju:"+settings.account()+":"+c.key),c.start,c.end,c.title,false,c.location,"折姜星辰",null,CourseSourceMatching.ZJU,"",c.notes));
         }catch(Exception e){throw new IllegalStateException("无法读取浙大课表",e);}
         // Linked Chrona-owned provider copies must not win and then disappear after merging.
         List<CalendarOccurrence> all=new ArrayList<>(CalendarOccurrence.unlinked(system,linkedIds));all.addAll(courses);

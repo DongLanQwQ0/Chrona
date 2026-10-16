@@ -41,6 +41,12 @@ public final class ZjuCalendarCheck {
         require(lessons.size() == 8, "eight Tuesdays including makeup");
         require(lessons.stream().anyMatch(x -> date(x).equals(LocalDate.of(2026, 9, 20))), "makeup actual date");
         require(lessons.stream().allMatch(x -> x.location.equals("RoomA")), "exam is not lecture location");
+        require(lessons.stream().allMatch(x -> x.notes.contains("教师：Teacher") && x.notes.contains("排课：秋冬{第1-8周|2节/周}") && x.notes.contains("节次：第1—2节")), "notes preserve teacher and scheduling facts");
+        require(!lessons.get(0).notes.contains("课程编号") && !lessons.get(0).notes.contains("选课课号"), "missing metadata omitted");
+        List<ZjuSnapshot.Lesson> metadata = ZjuAcademicCalendar.expand("2026-2027", "秋", new JSONArray().put(row(2, 0).put("jsxm", "Teacher B").put("kcdm", "001234").put("xkkh", "(2026)-001234-1")), new ArrayList<>());
+        require(metadata.get(0).notes.contains("教师：Teacher B") && !metadata.get(0).notes.contains("教师：Teacher\n"), "explicit teacher replaces display teacher");
+        require(metadata.get(0).notes.contains("课程编号：001234") && metadata.get(0).notes.contains("选课课号：(2026)-001234-1") && metadata.get(0).notes.contains("周次：单周"), "present metadata and parity retained");
+        require(new ZjuSnapshot.Lesson("legacy", "title", "", "term", 1, 2).notes.isEmpty(), "six argument lesson has empty notes");
         require(Instant.ofEpochMilli(lessons.get(0).end).atZone(ZONE).toLocalTime().equals(LocalTime.of(9, 35)), "last period end");
 
         lessons = ZjuAcademicCalendar.expand("2026-2027", "秋", new JSONArray().put(row(1, 0)), warnings);

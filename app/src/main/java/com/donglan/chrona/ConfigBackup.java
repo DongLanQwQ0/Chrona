@@ -107,6 +107,7 @@ public final class ConfigBackup {
         appearance.put("surfaceMix", ThemeStore.surfaceMix(context));
         appearance.put("blurStrength", ThemeStore.blurStrength(context));
         root.put("appearance", appearance);
+        root.put("features", FeaturePreferenceBackup.export(context));
         return root.toString(2);
     }
 
@@ -138,6 +139,7 @@ public final class ConfigBackup {
                 .append('\n');
         JSONObject root = parse(json);
         String exportedAt = root.optString("exportedAt", "");
+        if (root.has("features")) text.append("· 含通知、原子岛、主页待办与周日历导出开关\n");
         if (!exportedAt.isEmpty()) text.append("· 导出于 ").append(exportedAt).append('\n');
         return text.toString();
     }
@@ -177,6 +179,7 @@ public final class ConfigBackup {
                     imported.hasBlurStrength ? imported.blurStrength : null,
                     imported.hasCustomColor ? imported.customColor : null);
         }
+        FeaturePreferenceBackup.apply(context, root.optJSONObject("features"));
         return imported;
     }
 
@@ -196,6 +199,7 @@ public final class ConfigBackup {
     private static JSONObject parse(String json) throws JSONException {
         if (json == null || json.trim().isEmpty()) throw new JSONException("文件是空的");
         JSONObject root = new JSONObject(json);
+        FeaturePreferenceBackup.validate(root);
         if (!(root.opt("app") instanceof String) || !APP.equals(root.optString("app")))
             throw new JSONException("这不是拾时的配置文件");
         Object format = root.opt("format");

@@ -9,8 +9,8 @@ directory.mkdir(parents=True, exist_ok=True)
 fixtures = {
 'android/content/SharedPreferences.java': '''package android.content;
 public interface SharedPreferences {
- String getString(String key,String fallback); Editor edit();
- interface Editor { Editor putString(String key,String value); Editor clear(); void apply(); }
+ String getString(String key,String fallback); boolean getBoolean(String key,boolean fallback); Editor edit();
+ interface Editor { Editor putString(String key,String value); Editor putBoolean(String key,boolean value); Editor clear(); void apply(); }
 }''',
 'android/content/Context.java': '''package android.content;
 import java.util.*;
@@ -21,8 +21,10 @@ public class Context {
  private static final class Prefs implements SharedPreferences,SharedPreferences.Editor {
   final Map<String,String> values=new HashMap<>();
   public String getString(String key,String fallback) { return values.getOrDefault(key,fallback); }
+  public boolean getBoolean(String key,boolean fallback) { return values.containsKey(key)?Boolean.parseBoolean(values.get(key)):fallback; }
   public Editor edit() { return this; }
   public Editor putString(String key,String value) { values.put(key,value); return this; }
+  public Editor putBoolean(String key,boolean value) { values.put(key,Boolean.toString(value)); return this; }
   public Editor clear() { values.clear(); return this; } public void apply() { }
  }
 }''',
@@ -74,6 +76,17 @@ public final class ConfigBackupCheck {
   ai.put("model","new-model").put("apiKey","new-secret");
   ConfigBackup.apply(configured,root.toString());
   check(saved.load().apiKey.equals("new-secret"),"explicit key replacement");
+  configured.getSharedPreferences("agenda_reminder",0).edit().putBoolean("atomic_seconds",false).putBoolean("hidden:private",true).apply();
+  configured.getSharedPreferences("home_timeline",0).edit().putBoolean("todos_expanded",true).apply();
+  configured.getSharedPreferences("CalendarOverviewActivity",0).edit().putBoolean("week_export_index",true).apply();
+  String portable=ConfigBackup.export(configured,false);
+  check(!portable.contains("hidden:private")&&!portable.contains("new-secret"),"runtime and secrets excluded");
+  ConfigBackup.apply(empty,portable);
+  check(!empty.getSharedPreferences("agenda_reminder",0).getBoolean("atomic_seconds",true),"seconds restored");
+  check(empty.getSharedPreferences("home_timeline",0).getBoolean("todos_expanded",false),"expansion restored");
+  check(empty.getSharedPreferences("CalendarOverviewActivity",0).getBoolean("week_export_index",false),"export restored");
+  JSONObject broken=new JSONObject(portable); broken.getJSONObject("features").getJSONObject("agenda_reminder").put("atomic_seconds","yes");
+  try { ConfigBackup.apply(empty,broken.toString());throw new AssertionError("invalid switch accepted"); } catch(JSONException expected) { }
   System.out.println("ConfigBackupCheck passed: empty AI export on both devices, truthful summary, retained/replaced key, keyless pending configuration and incomplete configuration rejection");
  }
  static void check(boolean value,String label) { if(!value)throw new AssertionError(label); }
@@ -89,5 +102,6 @@ java=Path(os.environ.get('JAVA_HOME','D:/Minecraft/java21'))/'bin'
 jar=root/'build/ai-checks/json.jar'
 subprocess.run([str(java/'javac.exe'),'--release','17','-cp',str(jar),'-d',str(directory),
                *paths,str(root/'app/src/main/java/com/donglan/chrona/ConfigBackup.java'),
+               str(root/'app/src/main/java/com/donglan/chrona/FeaturePreferenceBackup.java'),
                str(root/'app/src/main/java/com/donglan/chrona/ai/AiSettings.java')],check=True)
 subprocess.run([str(java/'java.exe'),'-cp',str(directory)+os.pathsep+str(jar),'ConfigBackupCheck'],check=True)

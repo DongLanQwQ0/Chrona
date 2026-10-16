@@ -41,8 +41,13 @@ public final class SettingsHubActivity extends Activity {
         LinearLayout display = group(root, "外观与显示");
         destination(display, "外观与配色", AppearanceActivity.class);
         timelineLimit(display);
-        destination(display, "系统日程", SystemCalendarSettingsActivity.class);
-        destination(display, "日程来源", ScheduleSourceSettingsActivity.class);
+
+        LinearLayout scheduling = group(root, "日程处理");
+        destination(scheduling, "AI 服务", SettingsActivity.class);
+        destination(scheduling, "日程来源", ScheduleSourceSettingsActivity.class);
+        destination(scheduling, "系统日程", SystemCalendarSettingsActivity.class);
+        destination(scheduling, "合并完全相同日程", CandidateMergeActivity.class);
+        destination(scheduling, "折姜星辰", ZjuSettingsActivity.class);
 
         LinearLayout widgets = group(root, "桌面小组件");
         widgetPreview(widgets);
@@ -55,12 +60,9 @@ public final class SettingsHubActivity extends Activity {
         destination(reminders, "通知与提醒", NotificationSettingsActivity.class);
 
         LinearLayout services = group(root, "服务与数据");
-        destination(services, "折姜星辰", ZjuSettingsActivity.class);
-        destination(services, "AI 服务", SettingsActivity.class);
         destination(services, "跨设备同步", SyncSettingsActivity.class);
         destination(services, "局域网访问", LanSettingsActivity.class);
         destination(services, "备份与恢复", BackupRestoreActivity.class);
-        destination(services, "合并完全相同日程", CandidateMergeActivity.class);
 
         LinearLayout help = group(root, "帮助与关于");
         destination(help, "使用引导", GuideActivity.class);

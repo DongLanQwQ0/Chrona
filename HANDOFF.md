@@ -1,4 +1,18 @@
-# 当前开发：0.15.3 / 165 · 吉吉思考参数
+# 当前开发：0.15.4 / 166 · 作业打开、来源与首页交互
+
+TaskDetailActivity 原来为统一作业 capture 一次创建全部编辑表单，现仅创建当前页、首帧后预建相邻页，访问过的编辑器保留草稿和选择栏手势优先权。无合并记录时跳过逐候选来源查询，避免稳定 ID 的无效写入。真机 60 项合成收件（第 31 项）打开 1931ms/60 编辑器 → 781ms/3 编辑器，单次对照，不代表 P95。真实作业未删除或提交。
+
+ZjuClient 标题为课程名 · 作业名，保留远端 key；旧数据下一次正常同步更新。ZjuAcademicCalendar 从实际字段生成课程 notes，ZjuTimetableStore、CourseAgenda 和 CalendarOccurrence.description 传递；旧 CalendarOccurrence 最后一参仍是 accountName。外部课程详情读取本地独立线程，不排在 ZjuSync 网络队列后。
+
+DashboardCardReconciler 保留不变卡片，完成后 ChangeBounds/Fade 动画上移，ScrollView 和位置保留；写入失败不移除，期间门控轮询快照。展开箭头只改 RotateDrawable level，修复整按钮旋转破坏高光坐标。作业/系统日程/设置标题按钮独立 48dp、间距 8dp；master 关闭隐藏作业入口/分类并清理旧筛选。
+
+筛选栏 fullWidthMotionHost 延伸内容区域，板 X 不缩放，首尾高光向内增长，长按仍 1.5 倍，标签按字宽。来源内容默认全部、每页 50，可切周；系统全部按 Events 每系列一次、周按 Instances，keyset 分页；导入包含非当前学期，不能跳转当前课表时只读详情。空来源不显示。
+
+FeaturePreferenceBackup 为提醒外观/来源、首页展开、周图导出明确白名单，完整备份嵌入配置。SchoolDataBackup 保存匿名绑定、选项和课表缓存，不含凭据；恢复 master 关闭、失败恢复原设置与快照。详见 docs/backup-coverage.md。
+
+真机发现 CourseSourceMatching 的 (?U) 正则在 Android ICU 崩溃，已改为显式 whitespace/separator 匹配。修复后只读源测试 imported=16/merged=18/calendar=48，interaction_acceptance 通过。构建 debug/release/androidTest 与 lintRelease 通过。设备勾选临时任务已实点通过并移除通知。秒数冻结原因是 vivo 的 getActiveNotifications 副本去掉 operation 等字段；AtomicCountdownUpdates 认可实际 VIVO_SUPERX_TAG，仍核对 when 防串槽。新增去字段/非原子/替换提醒用例，111 项通过；真机截图 102→96 秒持续更新。通话占用胶囊，未测主胶囊/锁屏/长时后台，不能写全形态通过。私有截图和设备报告留在忽略的 build/device-0.15.4，不提交。用户 AGENTS.md、角色 toml、备份不得提交。
+
+# 上轮开发：0.15.3 / 165 · 吉吉思考参数
 
 已定位旧RequestOptions对host仅官方白名单且模型无gpt-6-luna导致medium完全不发送。修复精确三个jiji域名的gpt-6/6.1 luna/sol/astra分支，传reasoning_effort（auto→low、max→high，其它原样）与max_completion_tokens预算，不复制官方schema/cache选项。请求端未换模型或协议。全服务thinking/reasoning_effort被拒绝不再静默降级；其它命名格式/流选项仍一次降级。既有reasoning_content/reasoning文本解析有回归，服务不返回时不伪造。checks/AiRequestCheck.java覆盖域名、六档、误匹配、拒绝和SSE。未读密钥/手机/付费调用，服务实际执行与思考文本是否可见尚未验证。备份build/backups/20261016-jiji-reasoning。docs/ai-request-notes.md有接口依据。
 

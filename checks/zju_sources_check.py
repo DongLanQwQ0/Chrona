@@ -10,7 +10,7 @@ files = {
 'android/content/Context.java': '''package android.content;public class Context {final java.io.File dir;public Context(java.io.File d){dir=d;}public java.io.File getFilesDir(){return dir;}}''',
 'android/content/Intent.java': '''package android.content;public class Intent {public Intent(Context c,Class<?> x){}public Intent putExtra(String k,long v){return this;}}''',
 'android/util/AtomicFile.java': '''package android.util;import java.io.*;public class AtomicFile {final File file;public AtomicFile(File f){file=f;}public File getBaseFile(){return file;}public byte[] readFully()throws IOException{return java.nio.file.Files.readAllBytes(file.toPath());}public FileOutputStream startWrite()throws IOException{return new FileOutputStream(file);}public void finishWrite(FileOutputStream s)throws IOException{s.close();}public void failWrite(FileOutputStream s)throws IOException{s.close();}public void delete(){file.delete();}}''',
-'com/donglan/chrona/CourseAgenda.java': '''package com.donglan.chrona;import java.util.*;class CourseAgenda {static List<Item> rows=new ArrayList<>();static long revision(){return 0;}static List<Item> load(android.content.Context c,long b,long e,java.time.ZoneId z){return rows;}static class Item {String termId="term",key,title,location="";long start,end;boolean allDay;Item(String k,String t,long s,long e,boolean a){key=k;title=t;start=s;end=e;allDay=a;}}}''',
+'com/donglan/chrona/CourseAgenda.java': '''package com.donglan.chrona;import java.util.*;class CourseAgenda {static List<Item> rows=new ArrayList<>();static long revision(){return 0;}static List<Item> load(android.content.Context c,long b,long e,java.time.ZoneId z){return rows;}static class Item {String termId="term",key,title,location="",description="";long start,end;boolean allDay;Item(String k,String t,long s,long e,boolean a){key=k;title=t;start=s;end=e;allDay=a;}}}''',
 'com/donglan/chrona/ScheduleSources.java': '''package com.donglan.chrona;class ScheduleSources {static boolean imported=true,zju=true;static String preference="all";static long revision(android.content.Context c){return 0;}static boolean importedEnabled(android.content.Context c){return imported;}static boolean zjuEnabled(android.content.Context c){return zju;}static String primary(android.content.Context c){return preference;}static java.util.Map<String,String> courseRules(android.content.Context c){return java.util.Map.of();}}''',
 'com/donglan/chrona/ZjuSettingsStore.java': '''package com.donglan.chrona;class ZjuSettingsStore {static boolean on=true,table=true;ZjuSettingsStore(android.content.Context c){}boolean enabled(){return on;}boolean timetable(){return on&&table;}String account(){return "synthetic-account";}}''',
 'com/donglan/chrona/ExternalCourseDetailActivity.java': '''package com.donglan.chrona;class ExternalCourseDetailActivity {}''',
@@ -22,14 +22,22 @@ public static void main(String[]args)throws Exception{
 TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));Context c=new Context(java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(args[0]),"fixture-").toFile());
 long begin=LocalDate.of(2026,10,16).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(),end=begin+86400000L;
 ZjuTimetableStore store=new ZjuTimetableStore(c);
-ZjuSnapshot.Lesson a=new ZjuSnapshot.Lesson("a","Course","Room","autumn",begin+3600000,end-3600000);
+ZjuSnapshot.Lesson a=new ZjuSnapshot.Lesson("a","Course","Room","autumn",begin+3600000,end-3600000,"教师：Teacher\\n排课：第1-8周");
 ZjuSnapshot.Lesson b=new ZjuSnapshot.Lesson("b","Winter","Room","winter",end+3600000,end+7200000);
 store.save("synthetic-account",List.of(a,b),List.of("autumn","winter"));check(store.load("synthetic-account").size()==2,"initial cache");
 check(store.load("other-account").isEmpty(),"account isolation");
+check(store.load("synthetic-account").get(0).notes.equals(a.notes),"course notes survive cache round trip");
+org.json.JSONObject cached=store.snapshot();cached.getJSONArray("lessons").getJSONObject(0).remove("notes");store.restore(cached);
+check(store.load("synthetic-account").get(0).notes.isEmpty(),"old cache without notes remains readable");
+store.save("synthetic-account",List.of(a,b),List.of("autumn","winter"));
 store.save("synthetic-account",List.of(),List.of());check(store.load("synthetic-account").size()==2,"failed response preserves cache");
 store.save("synthetic-account",List.of(),List.of("winter"));check(store.load("synthetic-account").size()==1,"successful empty term removes old lessons");
 CourseAgenda.Item imported=new CourseAgenda.Item("imported","Course",a.start,a.end,false);imported.location="Room";CourseAgenda.rows.add(imported);
 List<CalendarOccurrence> rows=ExternalCourseAgenda.merge(c,List.of(),begin,end);check(rows.size()==1&&rows.get(0).calendarId==CourseSourceMatching.ZJU,"default exact merge prefers ZJU");
+check(rows.get(0).description.equals(a.notes),"course notes reach shared occurrence description");
+check(rows.get(0).accountName.isEmpty(),"notes do not replace calendar account name");
+CalendarOccurrence withNotes=rows.get(0);CalendarOccurrence differentNotes=new CalendarOccurrence(withNotes.eventId,withNotes.startMillis,withNotes.endMillis,withNotes.title,withNotes.allDay,withNotes.location,withNotes.calendarName,withNotes.calendarColor,withNotes.calendarId,withNotes.accountName,"changed notes");
+check(!withNotes.equals(differentNotes),"description changes invalidate occurrence equality");
 check(rows.stream().allMatch(x->x.eventId<0),"read only identity namespace");long stable=rows.get(0).eventId;
 check(ExternalCourseAgenda.merge(c,List.of(),begin,end).get(0).eventId==stable,"stable identities");
 ScheduleSources.preference="zju";rows=ExternalCourseAgenda.merge(c,List.of(),begin,end);check(rows.size()==1&&rows.get(0).calendarName.equals("折姜星辰"),"explicit primary suppresses exact duplicate");
@@ -43,7 +51,9 @@ CalendarOccurrence unrelated=new CalendarOccurrence(100,a.start,a.end,"Different
 rows=ExternalCourseAgenda.merge(c,List.of(system,unrelated),begin,end);check(rows.size()==2,"unrelated system item remains");
 ScheduleSources.imported=false;ScheduleSources.zju=false;rows=ExternalCourseAgenda.merge(c,List.of(unrelated),begin,end);check(rows.size()==1,"source switches intersect independently");
 ScheduleSources.imported=true;CourseAgenda.rows.clear();CourseAgenda.rows.add(new CourseAgenda.Item("all-day","All day",begin,end,true));
+CourseAgenda.rows.get(0).description="Imported notes";
 rows=ExternalCourseAgenda.merge(c,List.of(),begin,end);check(rows.size()==1&&rows.get(0).displayStart(ZoneId.systemDefault())==begin&&rows.get(0).displayEnd(ZoneId.systemDefault())==end,"all day local to UTC dates roundtrip");
+check(rows.get(0).description.equals("Imported notes"),"imported notes reach occurrence");
 ScheduleSources.imported=false;ScheduleSources.zju=true;ZjuSettingsStore.on=false;check(ExternalCourseAgenda.merge(c,List.of(),begin,end).isEmpty(),"master off hides cached API course");
 store.clear();check(store.load("synthetic-account").isEmpty(),"logout clears cache");
 System.out.println("ZJU source/cache checks: "+count+" passed (Android storage adapters; no device rendering)");

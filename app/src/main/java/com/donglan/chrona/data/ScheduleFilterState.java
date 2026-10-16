@@ -7,6 +7,8 @@ import java.time.temporal.TemporalAdjusters;
 /** A filter sheet edits its own copy; applying is the only write to the dashboard. */
 public final class ScheduleFilterState {
     public static final int ALL = 0, TODAY = 1, WEEK = 2, MONTH = 3, DATE = 4, CUSTOM = 5;
+    /** UI filter over managed homework tasks; never a persisted event category. */
+    public static final int HOMEWORK_CATEGORY = 3;
     public int range, category, publication, source, tab, todoScope;
     public LocalDate date, until;
 

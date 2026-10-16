@@ -23,9 +23,16 @@ assert "ScheduleSources." not in browser
 assert "CourseAgenda.load(this, begin, end, zone)" in browser
 assert 'if (!settings.enabled()) return result;' in browser
 assert browser.count("if (hiddenZju())") >= 3
-assert 'CalendarContract.Instances.CALENDAR_ID + " = ?"' in browser
+assert 'CalendarContract.Instances.CALENDAR_ID + " = ? AND "' in browser
 assert 'week.plusWeeks(1).atStartOfDay(zone)' in browser
-assert 'if (result.size() > LIMIT) break;' in browser
+assert 'if (result.size() > PAGE_SIZE) break;' in browser
+assert 'state == null || state.getBoolean("all", true)' in browser
+assert 'afterStart = last.start; afterId = last.providerId;' in browser
+assert 'startColumn + " ASC," + idColumn + " ASC"' in browser
+assert 'CourseAgenda.all(this, zone)' in browser
+assert 'result.removeIf(item -> counts.getOrDefault(item.id, 0) == 0)' in settings
+assert 'CalendarContract.Events.CONTENT_URI' in settings
+assert 'if (importedCount != 0)' in settings
 assert "generation != request" in browser
 assert 'SettingsPageLayout.content(this)' in browser
 assert 'SettingsPageLayout.header(this, root' in browser
@@ -67,4 +74,4 @@ path.write_text(source, encoding="utf-8")
 home = Path(os.environ.get("JAVA_HOME", "D:/Minecraft/java21"))
 subprocess.run([str(home / "bin/javac.exe"), "-encoding", "UTF-8", str(path)], check=True)
 subprocess.run([str(home / "bin/java.exe"), "-cp", str(work), "SourceContentsCheck"], check=True)
-print("source contents: row navigation, source isolation, gates and bounded-week contracts passed")
+print("source contents: row navigation, source isolation, gates, default-all paging and all-date empty-source contracts passed")

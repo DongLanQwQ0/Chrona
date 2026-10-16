@@ -52,7 +52,7 @@ final class ScheduleFilterSheet {
         body.setOrientation(LinearLayout.VERTICAL);
         body.setClipChildren(false);
         body.setClipToPadding(false);
-        body.setPadding(dp(4), dp(8), dp(4), dp(18));
+        body.setPadding(0, dp(8), 0, dp(18));
     }
 
     private void show() {
@@ -173,14 +173,15 @@ final class ScheduleFilterSheet {
         body.addView(interval, intervalParams);
         category = new ChoiceDock("类型", R.drawable.ic_event, categoryOptions(), value -> {
             draft.category = value;
-            if (value != EventCategory.indexOf(EventCategory.TASK) + 1)
+            if (value != EventCategory.indexOf(EventCategory.TASK) + 1 && value != ScheduleFilterState.HOMEWORK_CATEGORY)
                 draft.todoScope = ScheduleQuery.TODO_ANY;
         });
         String[] todoChoices = {"不限", "今日截止", "已逾期", "未完成"};
         todo = new ChoiceDock("待办", R.drawable.ic_content_paste, todoChoices, value -> {
             draft.todoScope = value;
             if (value != ScheduleQuery.TODO_ANY) {
-                draft.category = EventCategory.indexOf(EventCategory.TASK) + 1;
+                if (draft.category != ScheduleFilterState.HOMEWORK_CATEGORY)
+                    draft.category = EventCategory.indexOf(EventCategory.TASK) + 1;
                 draft.tab = 3;
             }
         });
@@ -231,7 +232,7 @@ final class ScheduleFilterSheet {
                 option.setSingleLine(true);
                 option.setHorizontallyScrolling(false);
             }
-            UiStyle.addSpaced(body, dock.motionHost(true, 2f / 3f), 0, 6);
+            UiStyle.addSpaced(body, dock.fullWidthMotionHost(), 0, 6);
         }
 
         void select(int index) {
@@ -371,9 +372,11 @@ final class ScheduleFilterSheet {
     }
 
     private String[] categoryOptions() {
-        String[] options = new String[EventCategory.LABELS.length + 1];
+        boolean homework = new ZjuSettingsStore(activity).enabled();
+        String[] options = new String[EventCategory.LABELS.length + 1 + (homework ? 1 : 0)];
         options[0] = "全部";
         System.arraycopy(EventCategory.LABELS, 0, options, 1, EventCategory.LABELS.length);
+        if (homework) options[ScheduleFilterState.HOMEWORK_CATEGORY] = "作业";
         return options;
     }
     private String[] publicationOptions() { return new String[]{"全部", "待确认", "已写入"}; }

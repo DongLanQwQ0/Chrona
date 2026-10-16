@@ -289,6 +289,14 @@ public class DockNavigationCheck extends Context {
   init();FrameLayout embeddedHost=dock.motionHost();dock.finishPageSelection(1);View.advance(1000);touch(0,150,35);View.advance(800);center();
   close(GradientDrawable.lastWidth,150,"Embedded held highlight retains full 1.5 width");close(GradientDrawable.lastHeight,90,"Embedded held highlight retains full 1.5 height");
   require(!embeddedHost.clipChildren&&!embeddedHost.clipPadding,"Embedded motion host preserves highlight overflow");
+  init();dock.fullWidthMotionHost();touch(0,50,30);View.advance(900);center();
+  close(GradientDrawable.lastWidth,150,"Full-width first highlight retains held growth");
+  require(GradientDrawable.lastLeft>=-.01f&&GradientDrawable.lastRight<=300.01f,"First highlight grows inward inside full-width rail");
+  close(dock.scaleX,1f,"Full-width rail retains full content width without side envelope");
+  touch(3,50,30);View.advance(1000);dock.finishPageSelection(2);View.advance(1000);touch(0,250,30);View.advance(900);center();
+  close(GradientDrawable.lastWidth,150,"Full-width last highlight retains held growth");
+  require(GradientDrawable.lastLeft>=-.01f&&GradientDrawable.lastRight<=300.01f,"Last highlight grows inward without clipping");
+  touch(3,250,30);View.advance(1000);
   DockSpring physics=new DockSpring();physics.target=2;float maxWidth=1,maxPosition=0;
   for(int i=0;i<180;i++){physics.step(1f/120);maxWidth=Math.max(maxWidth,physics.width);maxPosition=Math.max(maxPosition,physics.position);}
   require(maxWidth>1.02f,"Moving highlight width stretches elastically");require(maxPosition>2f,"Position spring has bounded elastic overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.width-1)<.002f,"Spring settles rather than oscillating indefinitely");

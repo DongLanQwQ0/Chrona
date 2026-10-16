@@ -60,6 +60,7 @@ public final class ZjuAcademicCalendar {
             String location = lines.length > 3 ? text(lines[3]) : "";
             int exam = location.indexOf("考试");
             if (exam >= 0) location = location.substring(0, exam).trim();
+            String notes = notes(row, lines, rule, period, count, parity);
             for (int w = from; w <= to; w++) {
                 if ((parity.equals("0") && w % 2 == 0) || (parity.equals("1") && w % 2 != 0)) continue;
                 LocalDate teachingDate = monday.plusWeeks(w - 1).plusDays(day - 1);
@@ -69,7 +70,7 @@ public final class ZjuAcademicCalendar {
                 long start = date.atTime(LocalTime.parse(config.starts.get(period - 1))).atZone(SCHOOL_ZONE).toInstant().toEpochMilli();
                 long end = date.atTime(LocalTime.parse(config.ends.get(period + count - 2))).atZone(SCHOOL_ZONE).toInstant().toEpochMilli();
                 String key = year + "/" + quarter + "/" + title + "/" + location + "/" + start;
-                if (keys.add(key)) result.add(new ZjuSnapshot.Lesson(key, title, location, year + " " + quarter, start, end));
+                if (keys.add(key)) result.add(new ZjuSnapshot.Lesson(key, title, location, year + " " + quarter, start, end, notes));
             }
         }
         if (invalid > 0) warnings.add("教务课表有 " + invalid + " 项排课缺少可识别的周次或节次，已跳过");
@@ -77,5 +78,20 @@ public final class ZjuAcademicCalendar {
     }
 
     static LocalDate actualDate(LocalDate teachingDate) { return ZjuCalendarConfig.ordinary().actualDate(teachingDate); }
+    private static String notes(JSONObject row, String[] lines, String rule, int period, int count, String parity) {
+        List<String> details = new ArrayList<>();
+        String teacher = row.isNull("jsxm") ? "" : text(row.optString("jsxm", ""));
+        if (teacher.isEmpty() && lines.length > 2) teacher = text(lines[2]);
+        add(details, "教师", teacher);
+        add(details, "课程编号", row.isNull("kcdm") ? "" : text(row.optString("kcdm", "")));
+        add(details, "选课课号", row.isNull("xkkh") ? "" : text(row.optString("xkkh", "")));
+        add(details, "排课", rule);
+        add(details, "节次", count == 1 ? "第" + period + "节" : "第" + period + "—" + (period + count - 1) + "节");
+        if (!parity.equals("2")) add(details, "周次", parity.equals("0") ? "单周" : "双周");
+        return String.join("\n", details);
+    }
+    private static void add(List<String> details, String label, String value) {
+        if (!value.isBlank()) details.add(label + "：" + value);
+    }
     private static String text(String html) { return Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString().trim(); }
 }

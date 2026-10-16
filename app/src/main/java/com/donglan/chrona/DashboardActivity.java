@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RotateDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -150,6 +151,11 @@ public final class DashboardActivity extends Activity {
     private int navigationAttentionCount = -1;
     private TextView navigationBadge;
     private final Runnable deferredSectionRefresh = this::refreshSettledSection;
+    private final DashboardCardReconciler completionRows = new DashboardCardReconciler();
+    private final Set<Long> completingCandidates = new HashSet<>();
+    private final Set<Long> awaitingCompletionRows = new HashSet<>();
+    private boolean completionRefreshRunning, completionRefreshPending;
+    private int completionMotionGeneration;
     private final Runnable homeCalendarToggleRefresh = this::refreshSystemCalendar;
     /** Entries waiting for review or already failed; shown on the dock and on the inbox filters. */
     private int pendingReview;
@@ -213,7 +219,8 @@ public final class DashboardActivity extends Activity {
             scheduleTab = state.getInt("schedule_tab");
             schedulePage = state.getInt("schedule_page");
             scheduleRange = state.getInt("schedule_range");
-            scheduleCategory = Math.min(EventCategory.VALUES.length,state.getInt("schedule_category"));
+            scheduleCategory = Math.max(0, Math.min(com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY,
+                    state.getInt("schedule_category")));
             schedulePublication = state.getInt("schedule_publication");
             scheduleSource = state.getInt("schedule_source");
             scheduleTodoScope = state.getInt("schedule_todo_scope", ScheduleQuery.TODO_ANY);
@@ -385,6 +392,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void rememberRenderedPage() {
+        awaitingCompletionRows.clear();
         sectionPages.put(section, new SectionPage());
         sectionVersions.put(section, dataSnapshot());
         dirtySections.remove(section);
@@ -394,6 +402,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void refreshActivePageIfNeeded() {
+        if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending) return;
         if (section == SCHEDULE && scheduleResultLoading) return;
         String version = dataSnapshot();
         if (dirtySections.contains(section) || !version.equals(sectionVersions.get(section))) {
@@ -640,6 +649,11 @@ public final class DashboardActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         foreground = true;
+        if (!new ZjuSettingsStore(this).enabled()
+                && scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY) {
+            scheduleCategory = 0; schedulePage = 0;
+            dirtySections.add(SCHEDULE);
+        }
         if (!initialDataReady) {
             loadInitialData();
             return;
@@ -810,7 +824,8 @@ public final class DashboardActivity extends Activity {
     }
 
     private void pollChanges() {
-        if (scheduleResultLoading || sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
+        if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending
+                || scheduleResultLoading || sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
                 || (navigation != null && navigation.isAnimating())) {
             refresh.postDelayed(poll, 500L); return;
         }
@@ -891,7 +906,8 @@ public final class DashboardActivity extends Activity {
                     dirtySections.add(HOME);
                     dirtySections.add(SCHEDULE);
                     if (section == SCHEDULE && scheduleSource == 1) {
-                        if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
+                        if (completionRefreshRunning || !completingCandidates.isEmpty()
+                                || pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
                                 || (navigation != null && navigation.isAnimating())) {
                             scheduleRefreshPending = true;
                             refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
@@ -907,6 +923,9 @@ public final class DashboardActivity extends Activity {
 
     private void refreshHomeContent() {
         if (section != HOME || previewRender) return;
+        if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending) {
+            homeRefreshPending = true; return;
+        }
         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
                 || (navigation != null && navigation.isAnimating())) {
             homeRefreshPending = true;
@@ -1121,7 +1140,7 @@ public final class DashboardActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = text(section == HOME ? "今天的安排"
                 : section == INBOX ? "收件箱" : "日程", section == HOME ? 25 : 28, true);
-        title.setMaxLines(1);
+        title.setMaxLines(section == HOME ? 2 : 1);
         // Without this the large CJK glyphs ride above the centre line and no longer match the
         // search field, the order arrow and the gear they share the row with.
         title.setIncludeFontPadding(false);
@@ -1131,7 +1150,22 @@ public final class DashboardActivity extends Activity {
             titleSlot.addView(underlinedTitle(title, "今天的安排，点击查看课表", TimetableActivity.class),
                     new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL));
             row.addView(titleSlot, new LinearLayout.LayoutParams(0, -2, 1));
-            row.addView(homeSystemCalendarToggle(), new LinearLayout.LayoutParams(dp(44), dp(44)));
+            if (new ZjuSettingsStore(this).enabled()) {
+                ImageButton homework = new ImageButton(this);
+                homework.setImageResource(R.drawable.ic_homework);
+                homework.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
+                homework.setPadding(dp(12), dp(12), dp(12), dp(12));
+                homework.setBackgroundColor(Color.TRANSPARENT);
+                homework.setContentDescription("最近作业");
+                homework.setOnClickListener(view -> openHomeHomework());
+                UiStyle.pressable(homework);
+                LinearLayout.LayoutParams homeworkParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                homeworkParams.leftMargin = dp(8);
+                row.addView(homework, homeworkParams);
+            }
+            LinearLayout.LayoutParams calendarParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            calendarParams.leftMargin = dp(8);
+            row.addView(homeSystemCalendarToggle(), calendarParams);
         } else {
             // The search field sits between the page title and the trailing control, so filtering
             // never moves the settings entry and the keyword stays reachable while scrolling.
@@ -1144,7 +1178,9 @@ public final class DashboardActivity extends Activity {
             searchParams.setMargins(dp(8), 0, dp(8), 0);
             row.addView(buildSearchField(), searchParams);
         }
-        row.addView(buildHeaderControls(), new LinearLayout.LayoutParams(-2, dp(44)));
+        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(-2, dp(section == HOME ? 48 : 44));
+        if (section == HOME) settingsParams.leftMargin = dp(8);
+        row.addView(buildHeaderControls(), settingsParams);
         UiStyle.addSpaced(content, row, 0, section == HOME ? 10 : 12);
     }
 
@@ -1216,7 +1252,7 @@ public final class DashboardActivity extends Activity {
         settings.setOnClickListener(view ->
                 startActivity(new Intent(this, SettingsHubActivity.class)));
         UiStyle.pressable(settings);
-        group.addView(settings, new LinearLayout.LayoutParams(dp(44), -1));
+        group.addView(settings, new LinearLayout.LayoutParams(dp(section == HOME ? 48 : 44), -1));
         UiStyle.pressable(group);
         PressFeedback.group(group, 1.10f);
         return group;
@@ -1384,6 +1420,7 @@ public final class DashboardActivity extends Activity {
         boolean[] expanded = {preferences.getBoolean("todos_expanded", false)};
         android.animation.ValueAnimator[] expansion = {null};
         LinearLayout summary = card();
+        completionRows.branch(summary, "home-todos");
         summary.setPadding(dp(14), dp(8), dp(14), dp(8));
         summary.setClipChildren(false);
         summary.setClipToPadding(false);
@@ -1404,7 +1441,11 @@ public final class DashboardActivity extends Activity {
         UiStyle.pressable(all);
         heading.addView(all);
         ImageButton disclosure = new ImageButton(this);
-        disclosure.setImageResource(R.drawable.ic_chevron_down);
+        RotateDrawable disclosureIcon = new RotateDrawable();
+        disclosureIcon.setDrawable(getDrawable(R.drawable.ic_chevron_down));
+        disclosureIcon.setFromDegrees(0f);
+        disclosureIcon.setToDegrees(180f);
+        disclosure.setImageDrawable(disclosureIcon);
         disclosure.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
         disclosure.setPadding(dp(12), dp(12), dp(12), dp(12));
         disclosure.setBackgroundColor(Color.TRANSPARENT);
@@ -1422,14 +1463,19 @@ public final class DashboardActivity extends Activity {
                 () -> openHomeTodos(ScheduleQuery.TODO_ANY, true));
         UiStyle.addSpaced(summary, counts, 0, 0);
         LinearLayout details = new LinearLayout(this);
+        completionRows.branch(details, "home-todo-details");
+        details.setTag("home-todo-details");
         details.setOrientation(LinearLayout.VERTICAL);
         details.setPadding(0, dp(6), 0, dp(4));
         details.setClipChildren(false);
         details.setClipToPadding(false);
         for (EventCandidate candidate : todos.focus) {
+            LinearLayout focusRow = new LinearLayout(this);
+            focusRow.setOrientation(LinearLayout.VERTICAL);
+            completionRows.row(focusRow, "focus:" + candidate.id, completionState(candidate, null));
             View divider = new View(this);
             divider.setBackgroundColor(UiStyle.colors(this).outline);
-            details.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
+            focusRow.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setMinimumHeight(dp(64));
@@ -1450,11 +1496,12 @@ public final class DashboardActivity extends Activity {
             row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
             row.addView(taskCompletionButton(candidate), new LinearLayout.LayoutParams(dp(48), dp(48)));
             PressFeedback.group(row, 1f);
-            details.addView(row);
+            focusRow.addView(row);
+            details.addView(focusRow);
         }
         summary.addView(details, new LinearLayout.LayoutParams(-1, -2));
         details.setVisibility(expanded[0] && !todos.focus.isEmpty() ? View.VISIBLE : View.GONE);
-        disclosure.setRotation(expanded[0] ? 180f : 0f);
+        disclosureIcon.setLevel(expanded[0] ? 10000 : 0);
         Runnable describeExpansion = () -> {
             String action = expanded[0] ? "收起重点待办" : "展开重点待办";
             title.setContentDescription("待办，共 " + todos.total + " 项，" + action);
@@ -1462,53 +1509,55 @@ public final class DashboardActivity extends Activity {
         };
         describeExpansion.run();
         View.OnClickListener toggle = view -> {
+            LinearLayout liveDetails = ((View) view.getParent().getParent()).findViewWithTag("home-todo-details");
             expanded[0] = !expanded[0];
             preferences.edit().putBoolean("todos_expanded", expanded[0]).apply();
             describeExpansion.run();
             android.animation.ValueAnimator previous = expansion[0];
             expansion[0] = null;
             if (previous != null) previous.cancel();
-            int detailsWidth = summary.getWidth() - summary.getPaddingLeft() - summary.getPaddingRight();
+            View actualSummary = (View) liveDetails.getParent();
+            int detailsWidth = actualSummary.getWidth() - actualSummary.getPaddingLeft() - actualSummary.getPaddingRight();
             if (!UiMotion.isEnabled() || detailsWidth <= 0) {
-                details.setVisibility(expanded[0] ? View.VISIBLE : View.GONE);
-                details.getLayoutParams().height = -2;
-                details.setAlpha(1f);
-                details.setClipChildren(false);
-                disclosure.setRotation(expanded[0] ? 180f : 0f);
-                details.requestLayout();
+                liveDetails.setVisibility(expanded[0] ? View.VISIBLE : View.GONE);
+                liveDetails.getLayoutParams().height = -2;
+                liveDetails.setAlpha(1f);
+                liveDetails.setClipChildren(false);
+                disclosureIcon.setLevel(expanded[0] ? 10000 : 0);
+                liveDetails.requestLayout();
                 return;
             }
-            int initialHeight = details.getVisibility() == View.GONE ? 0 : details.getHeight();
-            float initialAlpha = initialHeight == 0 ? 0f : details.getAlpha();
-            float initialRotation = disclosure.getRotation();
-            details.setVisibility(View.VISIBLE);
-            details.measure(View.MeasureSpec.makeMeasureSpec(detailsWidth, View.MeasureSpec.EXACTLY),
+            int initialHeight = liveDetails.getVisibility() == View.GONE ? 0 : liveDetails.getHeight();
+            float initialAlpha = initialHeight == 0 ? 0f : liveDetails.getAlpha();
+            float initialRotation = disclosureIcon.getLevel();
+            liveDetails.setVisibility(View.VISIBLE);
+            liveDetails.measure(View.MeasureSpec.makeMeasureSpec(detailsWidth, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-            int targetHeight = expanded[0] ? details.getMeasuredHeight() : 0;
+            int targetHeight = expanded[0] ? liveDetails.getMeasuredHeight() : 0;
             float targetAlpha = expanded[0] ? 1f : 0f;
-            float targetRotation = expanded[0] ? 180f : 0f;
-            details.setClipChildren(true);
+            float targetRotation = expanded[0] ? 10000f : 0f;
+            liveDetails.setClipChildren(true);
             android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
             expansion[0] = animator;
             animator.setDuration(expanded[0] ? UiMotion.ENTER : UiMotion.EXIT);
             animator.setInterpolator(UiMotion.SETTLE);
             animator.addUpdateListener(value -> {
                 float fraction = (float) value.getAnimatedValue();
-                details.getLayoutParams().height = initialHeight + Math.round((targetHeight - initialHeight) * fraction);
-                details.setAlpha(initialAlpha + (targetAlpha - initialAlpha) * fraction);
-                disclosure.setRotation(initialRotation + (targetRotation - initialRotation) * fraction);
-                details.requestLayout();
+                liveDetails.getLayoutParams().height = initialHeight + Math.round((targetHeight - initialHeight) * fraction);
+                liveDetails.setAlpha(initialAlpha + (targetAlpha - initialAlpha) * fraction);
+                disclosureIcon.setLevel(Math.round(initialRotation + (targetRotation - initialRotation) * fraction));
+                liveDetails.requestLayout();
             });
             animator.addListener(new android.animation.AnimatorListenerAdapter() {
                 @Override public void onAnimationEnd(android.animation.Animator animation) {
                     if (expansion[0] != animator) return;
                     expansion[0] = null;
-                    details.setVisibility(expanded[0] ? View.VISIBLE : View.GONE);
-                    details.getLayoutParams().height = -2;
-                    details.setAlpha(1f);
-                    details.setClipChildren(false);
-                    disclosure.setRotation(targetRotation);
-                    details.requestLayout();
+                    liveDetails.setVisibility(expanded[0] ? View.VISIBLE : View.GONE);
+                    liveDetails.getLayoutParams().height = -2;
+                    liveDetails.setAlpha(1f);
+                    liveDetails.setClipChildren(false);
+                    disclosureIcon.setLevel(Math.round(targetRotation));
+                    liveDetails.requestLayout();
                 }
             });
             animator.start();
@@ -1522,6 +1571,12 @@ public final class DashboardActivity extends Activity {
             UiStyle.pressable(title);
         }
         PressFeedback.group(heading, 1f);
+        heading.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View view) { }
+            @Override public void onViewDetachedFromWindow(View view) {
+                if (expansion[0] != null) expansion[0].cancel();
+            }
+        });
         PressFeedback.group(counts, 1f);
         details.setAddStatesFromChildren(true);
         PressFeedback.group(summary, 1.05f);
@@ -1581,12 +1636,25 @@ public final class DashboardActivity extends Activity {
         switchTo(SCHEDULE);
     }
 
+    private void openHomeHomework() {
+        if (!new ZjuSettingsStore(this).enabled()) return;
+        scheduleTab = 3; scheduleTodoScope = ScheduleQuery.TODO_OPEN;
+        scheduleCategory = com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
+        scheduleRange = schedulePublication = scheduleSource = schedulePage = 0;
+        scheduleDate = scheduleUntil = LocalDate.now(); scheduleQuery = "";
+        scheduleOldestFirst = true;
+        selectedScheduleIds.clear();
+        sectionPages.remove(SCHEDULE); sectionVersions.remove(SCHEDULE); dirtySections.add(SCHEDULE);
+        switchTo(SCHEDULE);
+    }
+
     private void showUpcomingCarousel(List<HomeTimelineEntry> upcoming) {
         TextView heading = text("下一件事", 15, true);
         UiStyle.addSpaced(content, heading, 0, 6);
         upcoming.sort(java.util.Comparator.comparingLong(item -> item.timestampMillis));
         if (upcoming.size() > 5) upcoming = new ArrayList<>(upcoming.subList(0, 5));
         HorizontalScrollView strip = new HorizontalScrollView(this);
+        completionRows.branch(strip, "upcoming-strip");
         strip.setHorizontalScrollBarEnabled(false);
         strip.setFillViewport(false);
         strip.setClipToPadding(false);
@@ -1594,6 +1662,7 @@ public final class DashboardActivity extends Activity {
         strip.setPadding(0, 0, dp(12), 0);
         strips.add(strip);
         LinearLayout cards = new LinearLayout(this);
+        completionRows.branch(cards, "upcoming-cards");
         cards.setOrientation(LinearLayout.HORIZONTAL);
         cards.setClipChildren(false); cards.setClipToPadding(false);
         // The viewport clips its direct child: motion room belongs inside that child.
@@ -1606,6 +1675,8 @@ public final class DashboardActivity extends Activity {
         } else {
             for (HomeTimelineEntry entry : upcoming) {
                 LinearLayout item = card();
+                completionRows.row(item, "upcoming:" + completionKey(entry.candidate, entry.systemEvent),
+                        completionState(entry.candidate, entry.systemEvent));
                 item.setPadding(dp(14), dp(12), dp(14), dp(12));
                 TextView title = text(entry.title(), 16, true);
                 title.setIncludeFontPadding(false);
@@ -1923,7 +1994,8 @@ public final class DashboardActivity extends Activity {
         for (int i = 0; i < visible.size(); i++) {
             EventCandidate item = visible.get(i);
             boolean deadlineScope = scheduleTodoScope == ScheduleQuery.TODO_TODAY_DUE
-                    || scheduleTodoScope == ScheduleQuery.TODO_OVERDUE;
+                    || scheduleTodoScope == ScheduleQuery.TODO_OVERDUE
+                    || scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
             Long dateMillis = deadlineScope ? item.dueAtMillis : item.anchor();
             String date = dateMillis == null ? "待安排" : item.allDay && !deadlineScope
                     ? AllDayDates.displayStart(dateMillis)
@@ -1951,9 +2023,14 @@ public final class DashboardActivity extends Activity {
     }
 
     private ScheduleQuery buildScheduleQuery(long now, ZoneId zone) {
+        if (!new ZjuSettingsStore(this).enabled()
+                && scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY)
+            scheduleCategory = 0;
         LocalDate[] window = scheduleWindow(false);
         return new ScheduleQuery(scheduleTab,
-                scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
+                scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY
+                        ? ScheduleQuery.CATEGORY_HOMEWORK
+                        : scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
                 schedulePublication, scheduleQuery, window[0], window[1], now, zone, scheduleTodoScope);
     }
 
@@ -1970,12 +2047,15 @@ public final class DashboardActivity extends Activity {
                 : scheduleTodoScope == ScheduleQuery.TODO_OPEN ? "未完成的待办"
                 : scheduleTab == 1 && scheduleCategory == EventCategory.indexOf(EventCategory.TASK) + 1
                         ? "未安排的待办" : "";
-        if (!taskFilter.isEmpty()) {
+        boolean homeworkFilter = scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
+        if (homeworkFilter) state.category = 0;
+        if (!taskFilter.isEmpty() && !homeworkFilter) {
             state.category = 0;
             state.todoScope = ScheduleQuery.TODO_ANY;
         }
         String summary = com.donglan.chrona.data.ScheduleFilterSummary.describe(state, scheduleQuery, LocalDate.now());
-        if (!taskFilter.isEmpty()) summary = taskFilter + (summary.isEmpty() ? "" : " · " + summary);
+        if (homeworkFilter) summary = "作业" + (summary.isEmpty() ? "" : " · " + summary);
+        if (!taskFilter.isEmpty() && !homeworkFilter) summary = taskFilter + (summary.isEmpty() ? "" : " · " + summary);
         if (summary.equals(host.summary)) return;
         if (summary.isEmpty()) {
             host.showSummary(summary, null);
@@ -2337,6 +2417,7 @@ public final class DashboardActivity extends Activity {
                 scheduleBuildSteps = new java.util.ArrayDeque<>();
                 scheduleBuildDone = () -> {
                     scheduleResultLoading = false;
+                    awaitingCompletionRows.clear();
                     UiMotion.settleScroll(targetScroll, target);
                     sectionPages.put(SCHEDULE, new SectionPage());
                     sectionVersions.put(SCHEDULE, snapshotForRevision(data.revision));
@@ -2451,8 +2532,11 @@ public final class DashboardActivity extends Activity {
 
     private void candidateRow(LinearLayout parent, EventCandidate item, int index) {
         LinearLayout card = card();
+        card.setTag(Long.valueOf(item.id));
+        completionRows.row(card, "schedule:" + item.id, completionState(item, null));
         boolean selectable = section == SCHEDULE && parent == results;
         TextView marker = text("○", 22, false);
+        marker.setTag("schedule-selection-marker");
         marker.setGravity(Gravity.CENTER);
         addScheduleCardContent(card, item, null, true, false, selectable ? marker : null);
         if (selectable) {
@@ -2608,6 +2692,8 @@ public final class DashboardActivity extends Activity {
         UiStyle.acrylicChoice(done, candidate.completed(), UiStyle.RADIUS_PILL, false);
         UiStyle.pressable(done);
         done.setOnClickListener(view -> {
+            if (awaitingCompletionRows.contains(candidate.id)) return;
+            if (!completingCandidates.add(candidate.id)) return;
             done.setEnabled(false);
             new Thread(() -> {
                 try {
@@ -2615,16 +2701,17 @@ public final class DashboardActivity extends Activity {
                             candidate.taskId, !candidate.completed());
                     runOnUiThread(() -> {
                         if (isDestroyed() || isFinishing()) return;
-                        dirtySections.add(HOME);
-                        dirtySections.add(SCHEDULE);
-                        refresh.removeCallbacks(deferredSectionRefresh);
-                        refresh.post(deferredSectionRefresh);
+                        awaitingCompletionRows.add(candidate.id);
+                        completingCandidates.remove(candidate.id);
+                        refreshCompletionRows();
                         if (warning != null) Feedback.show(this, warning);
                     });
                 } catch (Exception error) {
                     runOnUiThread(() -> {
                         if (isDestroyed() || isFinishing()) return;
+                        completingCandidates.remove(candidate.id);
                         done.setEnabled(true);
+                        if (completionRefreshPending) refreshCompletionRows();
                         Feedback.show(this, error.getMessage());
                     });
                 }
@@ -2651,10 +2738,159 @@ public final class DashboardActivity extends Activity {
         confirmed.setOnClickListener(view -> {
             AgendaAcknowledgement.set(this, key, until, !AgendaAcknowledgement.isAcknowledged(this, key));
             update.run();
-            dirtySections.add(HOME);
-            dirtySections.add(SCHEDULE);
+            refreshCompletionRows();
         });
         return confirmed;
+    }
+
+    private String completionKey(EventCandidate candidate, CalendarOccurrence event) {
+        return candidate != null ? "candidate:" + candidate.id
+                : "system:" + event.eventId + ":" + event.startMillis;
+    }
+
+    private String completionState(EventCandidate candidate, CalendarOccurrence event) {
+        if (candidate == null) return event.title + ":" + event.startMillis + ":" + event.endMillis
+                + ":" + event.location + ":" + event.calendarName + ":"
+                + AgendaAcknowledgement.isAcknowledged(this,
+                        AgendaAcknowledgement.key(event.eventId, event.displayStart(ZoneId.systemDefault())));
+        return candidate.title + ":" + candidate.startAtMillis + ":" + candidate.endAtMillis
+                + ":" + candidate.dueAtMillis + ":" + candidate.completedAtMillis + ":"
+                + candidate.location + ":" + candidate.category + ":" + candidate.calendarEventId
+                + ":" + candidate.needsConfirmation + ":" + candidate.uncertaintyLevel + ":"
+                + candidate.taskState(System.currentTimeMillis()) + ":"
+                + AgendaAcknowledgement.isAcknowledged(this, AgendaAcknowledgement.key(candidate));
+    }
+
+    /** Only successful writes request a new local snapshot. Other sections stay dirty until visited. */
+    private void refreshCompletionRows() {
+        dirtySections.add(HOME); dirtySections.add(SCHEDULE);
+        completionRefreshPending = true;
+        if (completionRefreshRunning || !completingCandidates.isEmpty()) return;
+        if (section != HOME && section != SCHEDULE) {
+            completionRefreshPending = false; return;
+        }
+        if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning || scheduleResultLoading
+                || (navigation != null && (navigation.isAnimating() || navigation.isTrackingTouch()))) {
+            refresh.removeCallbacks(deferredSectionRefresh);
+            refresh.postDelayed(deferredSectionRefresh, 80L); return;
+        }
+        completionRefreshPending = false;
+        completionRefreshRunning = true;
+        final int destination = section;
+        final LinearLayout target = destination == HOME ? content : results;
+        final ScrollView viewport = scroll;
+        final ScheduleQuery query = buildScheduleQuery(System.currentTimeMillis(), ZoneId.systemDefault());
+        final InboxQuery inbox = new InboxQuery(statusIndex, inboxCategory(), inboxQuery);
+        final boolean oldest = scheduleOldestFirst, system = scheduleSource == 1;
+        final int page = schedulePage;
+        final String filterKey = completionFilterKey();
+        startupReader.execute(() -> {
+            DashboardSectionData data;
+            try {
+                data = DashboardSectionData.load(getApplicationContext(), destination, inbox,
+                        query, oldest, page, system);
+            } catch (RuntimeException failure) {
+                refresh.post(() -> {
+                    completionRefreshRunning = false;
+                    if (!isDestroyed()) Feedback.show(this, "状态已保存，列表暂时无法刷新");
+                });
+                return;
+            }
+            refresh.post(() -> {
+                if (isDestroyed() || isFinishing()) return;
+                boolean filtersChanged = destination == SCHEDULE && !filterKey.equals(completionFilterKey());
+                if (section != destination || viewport != scroll || !completingCandidates.isEmpty()
+                        || pageTransitionRunning || dragTargetLoaded || scheduleResultLoading || filtersChanged) {
+                    completionRefreshRunning = false;
+                    refreshCompletionRows(); return;
+                }
+                applyCompletionRows(data, target, viewport, destination);
+            });
+        });
+    }
+
+    private void applyCompletionRows(DashboardSectionData data, LinearLayout target,
+            ScrollView viewport, int destination) {
+        int y = viewport.getScrollY();
+        int x = destination == HOME && !strips.isEmpty() ? strips.get(0).getScrollX() : 0;
+        LinearLayout incoming = new LinearLayout(this);
+        incoming.setOrientation(LinearLayout.VERTICAL);
+        DashboardSectionData oldPrepared = preparedSection;
+        LinearLayout oldContent = content, oldResults = results;
+        Map<Long, InboxRow> oldRows = inboxRows;
+        List<View> oldStrips = new ArrayList<>(strips);
+        preparedSection = data;
+        try {
+            if (destination == HOME) {
+                content = incoming; strips.clear(); home(data.home);
+            } else {
+                results = incoming; inboxRows = new LinkedHashMap<>(); renderScheduleResults(null);
+            }
+        } finally {
+            preparedSection = oldPrepared;
+            content = oldContent; results = oldResults;
+            inboxRows = oldRows;
+            strips.clear(); strips.addAll(oldStrips);
+        }
+        // Platform transitions retain actual Views and animate layout bounds; no page snapshot,
+        // full-page fade, network read, or forced scroll-to-top is involved.
+        if (UiMotion.isEnabled() && target.isLaidOut()) {
+            android.transition.TransitionSet motion = new android.transition.TransitionSet();
+            motion.setOrdering(android.transition.TransitionSet.ORDERING_TOGETHER);
+            motion.addTransition(new android.transition.Fade(android.transition.Fade.OUT));
+            motion.addTransition(new android.transition.ChangeBounds());
+            motion.addTransition(new android.transition.Fade(android.transition.Fade.IN));
+            motion.setDuration(UiMotion.ENTER);
+            motion.setInterpolator(UiMotion.SETTLE);
+            android.transition.TransitionManager.beginDelayedTransition(target, motion);
+        }
+        completionRows.apply(target, incoming, destination == HOME ? 2 : 0);
+        if (destination == HOME) {
+            strips.clear();
+            collectHomeStrips(content);
+            if (!strips.isEmpty()) strips.get(0).scrollTo(x, 0);
+            if (pager != null) pager.setGesturePriorityChildren(strips);
+            homeRefreshPending = false;
+        } else {
+            inboxRows.clear();
+            for (EventCandidate candidate : data.candidates) {
+                for (int i = 0; i < target.getChildCount(); i++) {
+                    View child = target.getChildAt(i);
+                    if (child instanceof LinearLayout card
+                            && Long.valueOf(candidate.id).equals(card.getTag())) {
+                        TextView marker = card.findViewWithTag("schedule-selection-marker");
+                        inboxRows.put(candidate.id, new InboxRow(card, marker)); break;
+                    }
+                }
+            }
+            updateSelectionUi(); scheduleRefreshPending = false;
+        }
+        updatePendingCounts(data.review, data.failed);
+        UiMotion.settleScroll(viewport, target);
+        sectionPages.put(destination, new SectionPage());
+        snapshot = snapshotForRevision(data.revision);
+        sectionVersions.put(destination, snapshot);
+        dirtySections.remove(destination);
+        awaitingCompletionRows.clear();
+        viewport.scrollTo(0, y);
+        int motion = ++completionMotionGeneration;
+        refresh.postDelayed(() -> {
+            if (motion != completionMotionGeneration || isDestroyed()) return;
+            completionRefreshRunning = false;
+            if (completionRefreshPending) refreshCompletionRows();
+        }, UiMotion.isEnabled() ? UiMotion.ENTER + 32L : 0L);
+    }
+
+    private void collectHomeStrips(View view) {
+        if (view instanceof HorizontalScrollView) strips.add(view);
+        else if (view instanceof ViewGroup group)
+            for (int i = 0; i < group.getChildCount(); i++) collectHomeStrips(group.getChildAt(i));
+    }
+
+    private String completionFilterKey() {
+        return scheduleTab + ":" + scheduleCategory + ":" + schedulePublication + ":" + scheduleSource
+                + ":" + scheduleRange + ":" + scheduleDate + ":" + scheduleUntil + ":" + scheduleTodoScope
+                + ":" + scheduleQuery + ":" + scheduleOldestFirst + ":" + schedulePage;
     }
 
     private String homeCardBoundary(EventCandidate candidate, CalendarOccurrence systemEvent,
@@ -3292,6 +3528,10 @@ public final class DashboardActivity extends Activity {
 
     private void refreshSettledSection() {
         if (!foreground || isDestroyed()) return;
+        if (completionRefreshPending) { refreshCompletionRows(); return; }
+        if (completionRefreshRunning || !completingCandidates.isEmpty()) {
+            refresh.postDelayed(deferredSectionRefresh, 80L); return;
+        }
         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
                 || (navigation != null && (navigation.isAnimating() || navigation.isTrackingTouch()))) {
             refresh.postDelayed(deferredSectionRefresh, 80L); return;
@@ -3384,8 +3624,6 @@ public final class DashboardActivity extends Activity {
 
     private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries) {
         if (entries.isEmpty()) return;
-        List<View> dayCards = new ArrayList<>();
-        View[] dateNode = new View[1];
         android.graphics.Paint railPaint = new android.graphics.Paint();
         railPaint.setColor(UiStyle.colors(this).outline);
         FrameLayout dayGroup = new FrameLayout(this) {
@@ -3394,12 +3632,17 @@ public final class DashboardActivity extends Activity {
                 // surfaces never receive a duplicate line underneath their own line.
                 android.graphics.Rect bounds = new android.graphics.Rect();
                 int previousBottom = 0;
-                if (dateNode[0] != null) {
-                    bounds.set(0, 0, dateNode[0].getWidth(), dateNode[0].getHeight());
-                    offsetDescendantRectToMyCoords(dateNode[0], bounds);
+                ViewGroup column = (ViewGroup) getChildAt(0);
+                if (column.getChildCount() < 2) { super.dispatchDraw(canvas); return; }
+                View heading = column.getChildAt(0);
+                ViewGroup rows = (ViewGroup) column.getChildAt(1);
+                if (heading != null) {
+                    bounds.set(0, 0, heading.getWidth(), heading.getHeight());
+                    offsetDescendantRectToMyCoords(heading, bounds);
                     previousBottom = bounds.centerY();
                 }
-                for (View item : dayCards) {
+                for (int i = 0; i < rows.getChildCount(); i++) {
+                    View item = rows.getChildAt(i);
                     bounds.set(0, 0, item.getWidth(), item.getHeight());
                     offsetDescendantRectToMyCoords(item, bounds);
                     canvas.drawRect(dp(HOME_CARD_RAIL_CENTER_DP - 1), previousBottom,
@@ -3409,7 +3652,9 @@ public final class DashboardActivity extends Activity {
                 super.dispatchDraw(canvas);
             }
         };
+        completionRows.branch(dayGroup, "timeline-day:" + date);
         LinearLayout dayContent = new LinearLayout(this);
+        completionRows.branch(dayContent, "timeline-content:" + date);
         dayContent.setOrientation(LinearLayout.VERTICAL);
         dayGroup.addView(dayContent, new FrameLayout.LayoutParams(-1, -2));
 
@@ -3421,7 +3666,6 @@ public final class DashboardActivity extends Activity {
         markerShape.setShape(GradientDrawable.OVAL);
         markerShape.setColor(UiStyle.colors(this).primary);
         marker.setBackground(markerShape);
-        dateNode[0] = marker;
         markerSlot.addView(marker, new FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER));
         heading.addView(markerSlot, new LinearLayout.LayoutParams(dp(48), dp(18)));
         TextView label = text(title, 17, true);
@@ -3440,17 +3684,19 @@ public final class DashboardActivity extends Activity {
         UiStyle.addSpaced(dayContent, heading, 7, 2);
 
         LinearLayout dayRows = new LinearLayout(this);
+        completionRows.branch(dayRows, "timeline-rows:" + date);
         dayRows.setOrientation(LinearLayout.VERTICAL);
         for (int i = 0; i < entries.size(); i++) {
             HomeTimelineEntry entry = entries.get(i);
             LinearLayout itemCard = card();
+            completionRows.row(itemCard, "timeline:" + completionKey(entry.candidate, entry.systemEvent),
+                    completionState(entry.candidate, entry.systemEvent));
             addScheduleCardContent(itemCard, entry.candidate, entry.systemEvent, false, true, null);
             itemCard.setOnClickListener(view -> openHomeEntry(entry));
             UiStyle.pressable(itemCard);
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
             cardParams.setMargins(0, dp(4), 0, dp(4));
             dayRows.addView(itemCard, cardParams);
-            dayCards.add(itemCard);
         }
         UiStyle.addSpaced(dayContent, dayRows, 2, 7);
         UiStyle.addSpaced(content, dayGroup, 0, 0);

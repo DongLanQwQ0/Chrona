@@ -228,6 +228,7 @@ public final class ChronaDataBackup {
             manifest.put("config", ConfigBackup.export(context, includeApiKey));
             manifest.put("zjuCalendar", new JSONObject(com.donglan.chrona.zju.ZjuCalendarStore.exportJson(context)));
             manifest.put("scheduleSources", new JSONObject(ScheduleSources.exportJson(context)));
+            manifest.put("schoolData", SchoolDataBackup.export(context));
             manifest.put("wallpaperIncluded", true);
             manifest.put("wallpaperEnabled", ThemeStore.backgroundEnabled(context));
             manifest.put("wallpaper", wallpaper == null ? JSONObject.NULL : wallpaper);
@@ -306,6 +307,7 @@ public final class ChronaDataBackup {
             ConfigBackup.inspect(config);
             if(manifest.has("zjuCalendar"))com.donglan.chrona.zju.ZjuCalendarConfig.parse(manifest.getJSONObject("zjuCalendar").toString());
             if(manifest.has("scheduleSources"))ScheduleSources.validateJson(manifest.getJSONObject("scheduleSources").toString());
+            if(manifest.has("schoolData"))SchoolDataBackup.validate(manifest.getJSONObject("schoolData"));
             if (manifest.has("timetable") && !manifest.isNull("timetable"))
                 TimetableStore.inspect(manifest.getJSONObject("timetable").toString());
             long[] databaseCounts = inspectDatabase(new File(directory, "chrona.db"));
@@ -453,6 +455,8 @@ public final class ChronaDataBackup {
         String previousConfig = ConfigBackup.export(context, true);
         String previousZjuCalendar = com.donglan.chrona.zju.ZjuCalendarStore.exportJson(context);
         String previousScheduleSources = ScheduleSources.exportJson(context);
+        JSONObject previousSchoolData = SchoolDataBackup.export(context);
+        boolean previousSchoolEnabled = new ZjuSettingsStore(context).enabled();
         int previousTimelineLimit = HomeTimelinePreferences.getItemLimit(context);
         boolean previousSystemCalendar = HomeTimelinePreferences.includesSystemCalendar(context);
         int previousWidgetPreviewMinutes = WidgetPreferences.previewMinutes(context);
@@ -567,6 +571,7 @@ public final class ChronaDataBackup {
         ConfigBackup.apply(context.getApplicationContext(), prepared.config);
         if(prepared.manifest.has("zjuCalendar"))com.donglan.chrona.zju.ZjuCalendarStore.importJson(context,prepared.manifest.getJSONObject("zjuCalendar").toString());
         if(prepared.manifest.has("scheduleSources"))ScheduleSources.importJson(context,prepared.manifest.getJSONObject("scheduleSources").toString());
+        if(prepared.manifest.has("schoolData"))SchoolDataBackup.apply(context,prepared.manifest.getJSONObject("schoolData"));
         if (prepared.manifest.optBoolean("wallpaperIncluded", false)) {
             wallpaperApplied = true;
             ThemeStore.setBackground(context.getApplicationContext(),
@@ -601,7 +606,7 @@ public final class ChronaDataBackup {
         deleteTree(previousOutputs);
         android.content.SharedPreferences.Editor reminderState = AgendaReminderPreferences.prefs(context).edit();
         for (String key : AgendaReminderPreferences.prefs(context).getAll().keySet())
-            if (!key.equals("enabled") && !key.equals("include_system")) reminderState.remove(key);
+            if (!FeaturePreferenceBackup.reminderSetting(key)) reminderState.remove(key);
         reminderState.apply();
         AgendaReminder.requestRefresh(context);
         return calendarLinks.containsValue(null)
@@ -617,6 +622,8 @@ public final class ChronaDataBackup {
                 ConfigBackup.apply(context.getApplicationContext(), previousConfig);
                 com.donglan.chrona.zju.ZjuCalendarStore.importJson(context,previousZjuCalendar);
                 ScheduleSources.importJson(context,previousScheduleSources);
+                SchoolDataBackup.apply(context,previousSchoolData);
+                new ZjuSettingsStore(context).options(previousSchoolEnabled, previousSchoolData.getBoolean("timetable"));
             } catch (Exception rollbackConfigFailure) {
                 failure.addSuppressed(rollbackConfigFailure);
             }

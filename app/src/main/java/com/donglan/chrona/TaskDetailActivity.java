@@ -693,10 +693,28 @@ public final class TaskDetailActivity extends Activity {
         int pageWidth = candidatePageWidth();
         carousel.setPages(pageWidth, candidates.size());
         Button[] saves = new Button[candidates.size()];
+        LinearLayout[] slots = new LinearLayout[candidates.size()];
         for (int i = 0; i < candidates.size(); i++) {
-            saves[i] = addCandidateEditor(candidates.get(i), i + 1, true, pages, pageWidth);
+            slots[i] = new LinearLayout(this);
+            slots[i].setOrientation(LinearLayout.VERTICAL);
+            slots[i].setClipChildren(false);
+            slots[i].setClipToPadding(false);
+            pages.addView(slots[i], new LinearLayout.LayoutParams(pageWidth, -2));
         }
+        // A managed homework capture can contain hundreds of items. Only the selected
+        // editor belongs on the opening frame; visited editors retain their unsaved fields.
+        java.util.function.IntConsumer ensurePage = index -> {
+            if (index < 0 || index >= candidates.size() || saves[index] != null) return;
+            int firstBar = editorSelectionBars.size();
+            saves[index] = addCandidateEditor(candidates.get(index), index + 1, true, slots[index], pageWidth);
+            for (int i = firstBar; i < editorSelectionBars.size(); i++)
+                carousel.addGesturePriorityChild(editorSelectionBars.get(i));
+        };
+        ensurePage.accept(candidatePageIndex);
         carousel.setOnScrollChangeListener((view, scrollX, scrollY, oldX, oldY) -> {
+            int firstVisible = Math.max(0, scrollX / pageWidth);
+            ensurePage.accept(firstVisible);
+            ensurePage.accept(firstVisible + 1);
             int index = Math.max(0, Math.min(candidates.size() - 1,
                     Math.round(scrollX / (float) pageWidth)));
             if (index != candidatePageIndex) {
@@ -713,7 +731,15 @@ public final class TaskDetailActivity extends Activity {
         setCompletionAction(() -> requestCandidateSave(
                 candidates.get(candidatePageIndex).id, saves[candidatePageIndex]),
                 candidates.get(candidatePageIndex), candidates);
-        carousel.post(() -> carousel.scrollTo(candidatePageIndex * pageWidth, 0));
+        carousel.post(() -> {
+            if (isDestroyed() || carousel.getParent() != content) return;
+            carousel.scrollTo(candidatePageIndex * pageWidth, 0);
+            carousel.postOnAnimation(() -> {
+                if (isDestroyed() || carousel.getParent() != content) return;
+                ensurePage.accept(candidatePageIndex - 1);
+                ensurePage.accept(candidatePageIndex + 1);
+            });
+        });
     }
 
     private int candidatePageWidth() {
@@ -2256,6 +2282,7 @@ public final class TaskDetailActivity extends Activity {
         return addCandidateEditor(candidate, number, dockSaveAction, content, -1);
     }
     private void addMergedSources(TaskStore store,List<EventCandidate> candidates)throws Exception{
+        if (store.mergeLedger().records().isEmpty()) return;
         for(EventCandidate candidate:candidates){org.json.JSONArray sources=CandidateMerges.sources(store,candidate.id);if(sources.length()==0)continue;
             label("合并来源 · "+candidate.title,17);
             for(int i=0;i<sources.length();i++){org.json.JSONObject source=sources.getJSONObject(i);long origin=source.getLong("taskId");

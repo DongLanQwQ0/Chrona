@@ -31,7 +31,7 @@ public final class CourseSourceMatching {
     /** Exact display identity keeps teacher, group, course level and all other title metadata. */
     private static String exactText(String value) {
         return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
-                .toLowerCase(Locale.ROOT).replaceAll("(?U)\\s+", "");
+                .toLowerCase(Locale.ROOT).replaceAll("[\\s\\p{Z}\\u0085]+", "");
     }
     public static boolean exact(CalendarOccurrence a, CalendarOccurrence b) {
         return sameTime(a,b) && exactText(a.title).equals(exactText(b.title))

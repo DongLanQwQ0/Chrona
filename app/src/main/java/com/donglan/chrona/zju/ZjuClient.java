@@ -183,13 +183,17 @@ public final class ZjuClient implements Closeable {
             }
             JSONObject detail = a.optJSONObject("data");
             String description = detail == null ? "" : plain(detail.optString("description", detail.optString("content", "")));
-            output.add(new ZjuSnapshot.Homework(id + "/homework/" + activityId, id, name,
+            output.add(new ZjuSnapshot.Homework(id + "/homework/" + activityId, id, homeworkTitle(title, name),
                     description, COURSES + "/course/" + segment(id) + "/learning-activity/full-screen#/?activityId=" + segment(activityId),
                     a.optString("updated_at", ""), deadline, submitted));
         }
         if (!complete) warnings.add(title + "：部分作业缺少必要字段，保留上次数据");
         if (!statusComplete) warnings.add(title + "：部分作业提交状态未知");
         courses.add(new ZjuSnapshot.Course(id, title, complete, statusComplete));
+    }
+
+    static String homeworkTitle(String course, String homework) {
+        return course == null || course.isBlank() ? homework : course.trim() + " · " + homework;
     }
 
     private void readTimetable(List<ZjuSnapshot.Lesson> lessons, List<String> warnings,

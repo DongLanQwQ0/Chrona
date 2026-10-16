@@ -75,6 +75,7 @@ public final class SystemAgendaDetailActivity extends Activity {
             refreshAcknowledgement();
         });
         refreshAcknowledgement();
+        if (input.getBooleanExtra("source_series", false)) acknowledgement.setVisibility(android.view.View.GONE);
         Button open = new Button(this); open.setText("跳转至系统日程"); UiStyle.button(open, true);
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(-1, -2);
         buttonParams.topMargin = padding; root.addView(open, buttonParams);

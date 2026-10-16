@@ -42,6 +42,7 @@ final class DockNavigationLayout extends FrameLayout {
     private int coastDestination;
     private int selectedIndex, tapIndex, labelIndex = -1;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
+    private boolean fullWidthMotion;
     private final Runnable finishTouch = this::finishTouch;
 
     private void finishTouch() {
@@ -88,10 +89,14 @@ final class DockNavigationLayout extends FrameLayout {
     }
     /** In dense forms the highlight may overlap adjacent rows, but never their labels' layout. */
     FrameLayout motionHost(boolean overlapRows) {
-        return motionHost(overlapRows, 0f);
+        return motionHostLayout(overlapRows, false);
     }
-    /** A shared widest-item fraction keeps grouped selector plates aligned. */
-    FrameLayout motionHost(boolean overlapRows, float sharedWidestFraction) {
+    /** Fill the content width; edge highlights grow inward instead of reserving empty gutters. */
+    FrameLayout fullWidthMotionHost() {
+        fullWidthMotion = true;
+        return motionHostLayout(true, true);
+    }
+    private FrameLayout motionHostLayout(boolean overlapRows, boolean fullWidth) {
         DockNavigationLayout dock = this;
         FrameLayout host = new FrameLayout(getContext()) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
@@ -105,10 +110,10 @@ final class DockNavigationLayout extends FrameLayout {
                     totalWeight += weight; widestWeight = Math.max(widestWeight, weight);
                 }
                 float widest = totalWeight > 0f ? widestWeight / totalWeight : 1f / Math.max(1, dock.itemCount());
-                  if (sharedWidestFraction > 0f) widest = sharedWidestFraction;
                 float ratio = (plate - 1f) / 2f + .25f * plate * widest;
                 int clearance = (int)Math.ceil(2f * getResources().getDisplayMetrics().density);
                 int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance + Math.round(4 * getResources().getDisplayMetrics().density);
+                if (fullWidth) edge = 0;
                 if (getPaddingLeft() != edge || getPaddingRight() != edge)
                     setPadding(edge, getPaddingTop(), edge, getPaddingBottom());
                 super.onMeasure(widthSpec, heightSpec);
@@ -298,7 +303,7 @@ final class DockNavigationLayout extends FrameLayout {
         post(finishTouch);
     }
     private void applySpring() {
-        setVisualPosition(spring.position); setScaleX(spring.bar); setScaleY(spring.bar);
+        setVisualPosition(spring.position); setScaleX(fullWidthMotion ? 1f : spring.bar); setScaleY(spring.bar);
         updateHighlight();
     }
     private void press(boolean pressed) { spring.press(pressed); animateTo(spring.target); }
@@ -344,6 +349,14 @@ final class DockNavigationLayout extends FrameLayout {
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
             if (left < 0) left = -Math.round(DockSpring.outwardExtension(-left, maximum));
             if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
+            if (fullWidthMotion && !vertical()) {
+                // Preserve the amplified highlight and its continuous spring motion. At the
+                // first/last item it expands inward, avoiding the clipping viewport boundary.
+                float inset = Math.min(getPaddingLeft(), getPaddingRight());
+                float span = Math.min(Math.max(0f, board - 2f * inset), right - left);
+                left = Math.max(inset, Math.min(board - inset - span, left));
+                right = left + span;
+            }
             int baseWidth = Math.max(1, cell.getWidth()), baseHeight = Math.max(1, cell.getHeight());
             android.view.ViewGroup.LayoutParams layout = highlightView.getLayoutParams();
             if (layout.width != baseWidth || layout.height != baseHeight)

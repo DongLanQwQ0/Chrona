@@ -14,6 +14,7 @@ public Intent(Context context,Class<?> target) { this.target=target; }
 public Intent putExtra(String key,String value) { extras.put(key,value); return this; }
 public String getStringExtra(String key) { return extras.get(key); } }''',
     'com/donglan/chrona/TimetableActivity.java': 'package com.donglan.chrona; public class TimetableActivity {}',
+    'com/donglan/chrona/AgendaReminder.java': 'package com.donglan.chrona; public class AgendaReminder { public static void requestRefresh(android.content.Context context) {} }',
     'com/donglan/chrona/AgendaWidgetProvider.java': '''package com.donglan.chrona;
 public class AgendaWidgetProvider { public static int refreshes;
 public static void requestRefresh(android.content.Context context) { refreshes++; } }''',

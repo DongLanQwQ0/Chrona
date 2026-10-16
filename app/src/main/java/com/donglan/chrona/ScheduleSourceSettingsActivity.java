@@ -44,14 +44,34 @@ public final class ScheduleSourceSettingsActivity extends Activity {
     }
     @Override protected void onResume() {
         super.onResume();
-        builtins.removeAllViews();
-        toggle(builtins, "导入课表", "", ScheduleSources.importedEnabled(this),
-                checked -> ScheduleSources.setImportedEnabled(this, checked), "imported");
-        if (new ZjuSettingsStore(this).enabled())
-            toggle(builtins, "浙大课表", "", ScheduleSources.zjuEnabled(this),
-                    checked -> ScheduleSources.setZjuEnabled(this, checked), "zju");
         loadCalendars();
+        loadBuiltins(loadGeneration);
     }
+
+    private void loadBuiltins(int generation) {
+        builtins.removeAllViews();
+        new Thread(() -> {
+            int imported = -1, school = -1;
+            try { imported = CourseAgenda.all(this, java.time.ZoneId.systemDefault()).size(); }
+            catch (Exception failure) { android.util.Log.w("Chrona", "Unable to count imported courses", failure); }
+            try {
+                ZjuSettingsStore settings = new ZjuSettingsStore(this);
+                if (settings.enabled()) school = new ZjuTimetableStore(this).load(settings.account()).size();
+            } catch (Exception failure) { android.util.Log.w("Chrona", "Unable to count school courses", failure); }
+            int importedCount = imported, schoolCount = school;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || generation != loadGeneration) return;
+                builtins.removeAllViews();
+                if (importedCount != 0) toggle(builtins, "导入课表", countLabel(importedCount), ScheduleSources.importedEnabled(this),
+                        checked -> ScheduleSources.setImportedEnabled(this, checked), "imported");
+                if (new ZjuSettingsStore(this).enabled() && schoolCount != 0)
+                    toggle(builtins, "浙大课表", countLabel(schoolCount), ScheduleSources.zjuEnabled(this),
+                            checked -> ScheduleSources.setZjuEnabled(this, checked), "zju");
+            });
+        }, "chrona-source-counts").start();
+    }
+
+    private static String countLabel(int count) { return count < 0 ? "数量读取失败，点击重试查看" : count + " 条日程"; }
 
     private void loadCalendars() {
         int generation = ++loadGeneration;
@@ -81,6 +101,18 @@ public final class ScheduleSourceSettingsActivity extends Activity {
                         result.add(new Source(cursor.getLong(0), cursor.getString(1), account));
                     }
                 }
+                // Count stored events across all dates, not just this week's instances.
+                try {
+                    java.util.Map<Long,Integer> counts = new java.util.HashMap<>();
+                    try (Cursor events = getContentResolver().query(CalendarContract.Events.CONTENT_URI,
+                            new String[]{CalendarContract.Events.CALENDAR_ID}, CalendarContract.Events.DELETED + "=0 AND ("
+                                    + CalendarContract.Events.STATUS + " IS NULL OR " + CalendarContract.Events.STATUS + "<>"
+                                    + CalendarContract.Events.STATUS_CANCELED + ")", null, null)) {
+                        if (events == null) throw new IllegalStateException("No event count cursor");
+                        while (events.moveToNext()) counts.merge(events.getLong(0), 1, Integer::sum);
+                    }
+                    result.removeIf(item -> counts.getOrDefault(item.id, 0) == 0);
+                } catch (Exception failure) { android.util.Log.w("Chrona", "Unable to count calendar sources; keeping unknown sources", failure); }
                 java.util.Map<String,Integer> groups=new java.util.HashMap<>();
                 String probeIssue="";
                 try{groups.putAll(CourseSourceProbe.weeklyGroups(CourseSourceProbe.load(this).rows));}
@@ -173,7 +205,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         super.onRequestPermissionsResult(request, permissions, result);
         if (request != READ_PERMISSION) return;
         if (result.length == 0 || result[0] != PackageManager.PERMISSION_GRANTED) Feedback.show(this, "未获得读取日历权限");
-        loadCalendars();
+        loadCalendars(); loadBuiltins(loadGeneration);
     }
     @Override protected void onDestroy() { loadGeneration++; super.onDestroy(); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }

@@ -16,15 +16,17 @@ final class CourseAgenda {
     static final String EXTRA_OCCURRENCE = "course_occurrence";
 
     static final class Item {
-        final String key, termId, title, location;
+        final String key, termId, title, location, description;
         final long start, end;
         final boolean allDay;
+        boolean activeTerm = true;
 
         Item(String termId, Timetable.Occurrence occurrence, ZoneId sourceZone, ZoneId displayZone) {
             key = occurrence.key();
             this.termId = termId;
             title = occurrence.title;
             location = occurrence.location;
+            description = occurrence.description;
             allDay = occurrence.allDay;
             start = (allDay ? occurrence.start.toLocalDate().atStartOfDay(displayZone)
                     : occurrence.start.atZone(sourceZone)).toInstant().toEpochMilli();
@@ -48,6 +50,25 @@ final class CourseAgenda {
             for (Timetable.Occurrence occurrence : term.view.all) {
                 Item item = new Item(term.id(), occurrence, term.document.table.zone, displayZone);
                 if (item.start < end && item.end > begin) unique.putIfAbsent(item.identity(), item);
+            }
+        }
+        List<Item> result = new ArrayList<>(unique.values());
+        result.sort(Comparator.comparingLong((Item item) -> item.start).thenComparing(item -> item.key));
+        return result;
+    }
+
+    /** Read every configured term without changing which terms contribute to the agenda. */
+    static List<Item> all(Context context, ZoneId displayZone) throws Exception {
+        Map<String, Item> unique = new LinkedHashMap<>();
+        TimetableStore.Library library = new TimetableStore(context).load();
+        if (library != null) for (TimetableStore.Document document : library.documents) {
+            for (int index = 0; index < document.plan.count(); index++) {
+                TimetableStore.Semester term = new TimetableStore.Semester(document, index);
+                for (Timetable.Occurrence occurrence : term.view.all) {
+                    Item item = new Item(term.id(), occurrence, document.table.zone, displayZone);
+                    item.activeTerm = document.enabled.contains(index);
+                    unique.putIfAbsent(item.identity(), item);
+                }
             }
         }
         List<Item> result = new ArrayList<>(unique.values());

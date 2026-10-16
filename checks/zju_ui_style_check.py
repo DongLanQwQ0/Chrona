@@ -26,6 +26,8 @@ detail = (src / 'ExternalCourseDetailActivity.java').read_text(encoding='utf-8')
 assert 'if(schoolSource&&!new ZjuSettingsStore(this).enabled()){finish();return;}' in detail
 assert 'sourceIntent(android.content.Context context,String source,String key,long start,long end)' in detail
 assert '.load(settings.account())' in detail
+assert 'ZjuSync.WORKER' not in detail and '"course-detail-local-reader").start()' in detail
+assert 'if(!item.description.isBlank())detail(card,item.description);' in detail
 style = (src / 'UiStyle.java').read_text(encoding='utf-8')
 assert 'static LinearLayout dialogPanel' in style and 'static void dialogBody' in style
 assert 'MeasureSpec.AT_MOST' in style and 'scroll.setVerticalScrollBarEnabled(false)' in style

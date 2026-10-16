@@ -37,6 +37,7 @@ public final class CourseAgendaCheck {
         List<CourseAgenda.Item> today = CourseAgenda.load(context, day("2026-10-03", SHANGHAI), day("2026-10-04", SHANGHAI), SHANGHAI);
         check(today.size() == 2, "all enabled terms independent of selected winter; description variants deduplicated");
         check(today.get(0).title.equals("跨日课") && today.get(0).end > day("2026-10-03", SHANGHAI), "midnight overlap included and chronological");
+        check(today.get(0).description.equals("说明一"), "imported description preserved in agenda item");
         check(CourseAgenda.load(context, day("2026-10-03", SHANGHAI), day("2026-10-03", SHANGHAI), SHANGHAI).isEmpty(), "empty half-open window");
         check(CourseAgenda.load(context, today.get(0).end, day("2026-10-04", SHANGHAI), SHANGHAI).size() == 1, "exclusive end boundary");
         CourseAgenda.Item allDay = CourseAgenda.load(context, day("2026-10-04", LA), day("2026-10-05", LA), LA).get(0);

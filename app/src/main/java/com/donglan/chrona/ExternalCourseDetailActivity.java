@@ -26,7 +26,7 @@ public final class ExternalCourseDetailActivity extends Activity {
         TextView content=new TextView(this);content.setText("正在读取");content.setTextSize(18);content.setTextColor(UiStyle.colors(this).text);root.addView(content);
         SettingsPageLayout.show(this,root,false);
         long id=getIntent().getLongExtra("event_id",0),start=getIntent().getLongExtra("begin",System.currentTimeMillis()),end=getIntent().getLongExtra("end",start+60_000L);
-        ZjuSync.WORKER.execute(()->{
+        new Thread(()->{
             CalendarOccurrence found=null;
             boolean failed=false;
             try{
@@ -34,7 +34,7 @@ public final class ExternalCourseDetailActivity extends Activity {
                     ZjuSettingsStore settings=new ZjuSettingsStore(this);
                     if(settings.enabled())for(com.donglan.chrona.zju.ZjuSnapshot.Lesson c:new ZjuTimetableStore(this).load(settings.account()))
                         if(c.key.equals(getIntent().getStringExtra("source_key"))){
-                            found=new CalendarOccurrence(ExternalCourseAgenda.id("zju:"+settings.account()+":"+c.key),c.start,c.end,c.title,false,c.location,"折姜星辰",null,CourseSourceMatching.ZJU,"");break;
+                            found=new CalendarOccurrence(ExternalCourseAgenda.id("zju:"+settings.account()+":"+c.key),c.start,c.end,c.title,false,c.location,"折姜星辰",null,CourseSourceMatching.ZJU,"",c.notes);break;
                         }
                 }else for(CalendarOccurrence c:ExternalCourseAgenda.merge(this,List.of(),start-86_400_000L,end+86_400_000L))if(c.eventId==id){found=c;break;}
             }
@@ -54,6 +54,7 @@ public final class ExternalCourseDetailActivity extends Activity {
                 detail(card,item.allDay?"全天":clock.format(Instant.ofEpochMilli(item.startMillis))+" — "+clock.format(Instant.ofEpochMilli(item.endMillis)));
                 if(!item.location.isBlank())detail(card,item.location);
                 detail(card,item.calendarName);
+                if(!item.description.isBlank())detail(card,item.description);
                 String key=AgendaAcknowledgement.key(item.eventId,item.startMillis);
                 Button confirm=new Button(this);UiStyle.button(confirm,false);
                 Runnable bind=()->{boolean done=AgendaAcknowledgement.isAcknowledged(this,key);confirm.setText(done?"取消确认":"确认活动");confirm.setEnabled(item.endMillis>System.currentTimeMillis());};
@@ -61,7 +62,7 @@ public final class ExternalCourseDetailActivity extends Activity {
                 Button source=new Button(this);source.setText("日程来源");UiStyle.button(source,false);source.setOnClickListener(v->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));UiStyle.addSpaced(root,source,20,8);
                 if("导入课表".equals(item.calendarName)){Button table=new Button(this);table.setText("查看课表");UiStyle.button(table,false);table.setOnClickListener(v->startActivity(new Intent(this,TimetableActivity.class)));root.addView(table);}
             });
-        });
+        },"course-detail-local-reader").start();
     }
     @Override protected void onResume(){super.onResume();if(schoolSource&&!new ZjuSettingsStore(this).enabled())finish();}
     private void detail(LinearLayout parent,String value){TextView label=new TextView(this);label.setText(value);label.setTextSize(14);UiStyle.muted(label);UiStyle.addSpaced(parent,label,8,0);}

@@ -38,6 +38,8 @@ import java.util.concurrent.TimeUnit;
 /** Device measurements; only the explicit atomic fixture phase creates and removes its own test task. No server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("homework_detail".equals(arguments.getString("phase"))) return HomeworkDetailDeviceCheck.run(test);
+        if ("source_read".equals(arguments.getString("phase"))) return HomeworkDetailDeviceCheck.sourceRead(test.getTargetContext());
         if ("reminder_state".equals(arguments.getString("phase")))
             return AgendaReminder.WORKER.submit(() -> reminderState(test)).get();
         if ("week_widget_render".equals(arguments.getString("phase"))) return weekWidgets(test);
@@ -58,7 +60,7 @@ final class DeviceUiChecks {
                 try (var store = new com.donglan.chrona.data.TaskStore(context)) {
                     long task = store.insertTask("原子岛点击回归测试（自动清理）", null, "device_check", System.currentTimeMillis());
                     try {
-                        long start = System.currentTimeMillis() + 300000;
+                        long start = System.currentTimeMillis() + Long.parseLong(arguments.getString("lead_ms", "300000"));
                         long candidate = store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0, task,
                                 "原子岛点击回归测试", start, null, java.time.ZoneId.systemDefault().getId(), "", "", 30,
                                 false, null, "task", false));
@@ -70,7 +72,17 @@ final class DeviceUiChecks {
             }).get();
             try {
                 Bundle progress = new Bundle(); progress.putString("stream", "Atomic persistent probe ready\n"); test.sendStatus(0, progress);
-                SystemClock.sleep(15000);
+                if ("true".equals(arguments.getString("inspect_seconds"))) {
+                    JSONObject state = new JSONObject();
+                    state.put("initial", AgendaReminder.WORKER.submit(() -> secondsState(context, ids[2])).get());
+                    SystemClock.sleep(2500);
+                    state.put("automatic", AgendaReminder.WORKER.submit(() -> secondsState(context, ids[2])).get());
+                    state.put("manual", AgendaReminder.WORKER.submit(() -> {
+                        AtomicCountdownUpdates.tick(context); return secondsState(context, ids[2]);
+                    }).get());
+                    return state.toString();
+                }
+                SystemClock.sleep(Long.parseLong(arguments.getString("hold_ms", "15000")));
                 return AgendaReminder.WORKER.submit(() -> {
                     try (var store = new com.donglan.chrona.data.TaskStore(context)) {
                         boolean complete = store.getCandidatesByIds(java.util.List.of(ids[1])).get(0).completed();
@@ -171,6 +183,21 @@ final class DeviceUiChecks {
         if ("atomic".equals(phase)) return atomic(test);
         if (phase == null || "calendar".equals(phase) || "gestures".equals(phase)) return calendar(test, arguments);
         throw new IllegalArgumentException("Unknown device check phase: " + phase);
+    }
+
+    private static JSONObject secondsState(Context context, long deadline) throws Exception {
+        JSONObject state = new JSONObject().put("deadline", deadline).put("now", System.currentTimeMillis())
+                .put("nextDelay", AtomicCountdownUpdates.nextDelay(context));
+        for (var item : context.getSystemService(NotificationManager.class).getActiveNotifications()) {
+            Notification notice = item.getNotification();
+            if (!"原子岛点击回归测试".contentEquals(notice.extras.getCharSequence(Notification.EXTRA_TITLE, ""))) continue;
+            state.put("when", notice.when);
+            state.put("tag", String.valueOf(item.getTag())).put("keys", notice.extras.keySet().toString());
+            Bundle island = notice.extras.getBundle("notification.superx.island");
+            state.put("left", island == null ? "" : island.getBundle("island.superx.leftInfo")
+                    .getCharSequence("island.superx.leftInfo.content", ""));
+        }
+        return state;
     }
     private static String weekImage(Instrumentation test) throws Exception {
         Context context = test.getTargetContext();

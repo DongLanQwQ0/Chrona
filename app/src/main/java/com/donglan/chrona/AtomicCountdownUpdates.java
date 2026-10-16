@@ -38,7 +38,15 @@ final class AtomicCountdownUpdates {
                 && s.deadline - now <= ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW)) return;
         try {
             Map<Integer, Notification> active = new HashMap<>();
-            for (var item : manager.getActiveNotifications()) active.put(item.getId(), item.getNotification());
+            java.util.Set<Integer> atomicIds = new java.util.HashSet<>();
+            for (var item : manager.getActiveNotifications()) {
+                active.put(item.getId(), item.getNotification());
+                // vivo strips protocol extras from the app-facing notification copy.
+                // Its tagged identity remains available even when operation is removed.
+                if ("VIVO_SUPERX_TAG".equals(item.getTag())
+                        || item.getNotification().extras.containsKey(PREFIX + "operation"))
+                    atomicIds.add(item.getId());
+            }
             for (var item : snapshots.entrySet()) {
                 Snapshot snapshot = item.getValue();
                 long remaining = snapshot.deadline - now;
@@ -46,7 +54,7 @@ final class AtomicCountdownUpdates {
                 if (remaining <= 0) { AgendaReminder.requestRefresh(context); continue; }
                 Notification current = active.get(item.getKey());
                 if (current == null || current.when != snapshot.notice.when
-                        || !current.extras.containsKey(PREFIX + "operation")) continue;
+                        || !atomicIds.contains(item.getKey())) continue;
                 Bundle data = new Bundle(snapshot.notice.extras);
                 data.putInt(PREFIX + "operation", 1);
                 String text = AtomicAgendaCard.remainingText(remaining, true);

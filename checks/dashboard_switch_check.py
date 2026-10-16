@@ -18,7 +18,7 @@ def method(marker):
 controller = '\n'.join(method(x) for x in ('private void switchTo(int destination)',
     'private void switchTo(int destination, boolean fromHistory)', 'private void prepareSectionSwitch(',
     'private void switchToPendingSection(', 'private void refreshSettledSection(', 'private String inboxCategory(',
-    'private ScheduleQuery buildScheduleQuery(', 'private void openHomeTodos('))
+    'private ScheduleQuery buildScheduleQuery(', 'private void openHomeTodos(', 'private void openHomeHomework('))
 files = {
 'android/content/Context.java': '''package android.content;public class Context {
  public volatile boolean fail;public volatile int reads,closed;public volatile String keyword;public final android.database.sqlite.SQLiteDatabase db=new android.database.sqlite.SQLiteDatabase();
@@ -47,6 +47,12 @@ public class TaskStore implements AutoCloseable {
 'com/donglan/chrona/ScheduleOrderPreferences.java': '''package com.donglan.chrona;final class ScheduleOrderPreferences {
  static boolean oldestFirst(Object context,int tab){return true;}}
 ''',
+'com/donglan/chrona/ZjuSettingsStore.java': '''package com.donglan.chrona;final class ZjuSettingsStore {
+ static boolean active=true;ZjuSettingsStore(Object context){}boolean enabled(){return active;}}
+''',
+'com/donglan/chrona/data/ScheduleFilterState.java': '''package com.donglan.chrona.data;public final class ScheduleFilterState {
+ public static final int HOMEWORK_CATEGORY=3;}
+''',
 'com/donglan/chrona/DashboardActivity.java': '''package com.donglan.chrona;
 import java.time.*;import java.util.*;import java.util.concurrent.*;import com.donglan.chrona.data.*;
 class Queue {final List<Runnable>tasks=new ArrayList<>();synchronized void post(Runnable r){tasks.add(r);}void postDelayed(Runnable r,long delay){post(r);}synchronized void clear(){tasks.clear();}
@@ -62,6 +68,8 @@ public class DashboardActivity extends android.content.Context {
  static final int HOME=0,INBOX=1,SCHEDULE=2;int section=HOME,pendingSection=-1,loadingSection,sectionLoadGeneration,dragDirection;
  boolean initialDataReady=true,pageTransitionRunning,dragTargetLoaded,sectionLoadRunning,foreground=true,homeRefreshPending,scheduleRefreshPending,destroyed,dockSectionSwitch;
  boolean pendingSectionFromHistory,sectionSwitchFromHistory;
+ boolean completionRefreshRunning,completionRefreshPending;final Set<Long>completingCandidates=new HashSet<>();
+ void refreshCompletionRows(){completionRefreshPending=false;}
  int statusIndex,categoryIndex,scheduleTab,scheduleCategory,schedulePublication,scheduleSource,inboxPage=999,schedulePage,scheduleTodoScope,scheduleRange;
  LocalDate scheduleDate=LocalDate.now(),scheduleUntil=scheduleDate;
  String inboxQuery="original",scheduleQuery="",snapshot="",failure;boolean inboxOldestFirst,scheduleOldestFirst;
@@ -114,6 +122,13 @@ public class DashboardActivity extends android.content.Context {
     check(scope!=ScheduleQuery.TODO_ANY||route.lastSchedule.selection.contains("NOT"),"undated summary routes to unscheduled tab predicate");
    }finally{route.startupReader.shutdownNow();}
   }
+  DashboardActivity homework=new DashboardActivity();try{
+   homework.sectionPages.put(SCHEDULE,new Page(SCHEDULE));homework.scheduleQuery="stale";homework.scheduleSource=1;
+   homework.openHomeHomework();check(homework.sectionLoadRunning&&homework.scheduleCategory==ScheduleFilterState.HOMEWORK_CATEGORY,"homework shortcut uses fresh worker and homework category");
+   homework.await();check(homework.lastSchedule.selection.contains("managed_zju_state")&&homework.lastSchedule.todoScope==ScheduleQuery.TODO_OPEN&&homework.scheduleOldestFirst,"homework shortcut selects open tasks and ascending deadlines");
+   check(homework.lastSchedule.orderBy(true).startsWith("due_at_millis IS NULL ASC, due_at_millis ASC"),"homework shortcut prioritizes nearest deadline");
+   ZjuSettingsStore.active=false;homework.buildScheduleQuery(System.currentTimeMillis(),ZoneId.systemDefault());check(homework.scheduleCategory==0,"disabled school feature clears stale homework category");
+  }finally{ZjuSettingsStore.active=true;homework.startupReader.shutdownNow();}
   System.out.println("Dashboard switch checks passed: "+checks+"; production worker/controller methods, Android transport stand-ins");
  }
 }'''.replace('@@CONTROLLER@@', controller)

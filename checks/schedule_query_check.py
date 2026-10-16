@@ -43,6 +43,9 @@ rows = [
 ]
 db.executemany(INSERT_SQL, rows)
 for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER","needs_confirmation INTEGER DEFAULT 1"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
+db.execute('ALTER TABLE event_candidates ADD COLUMN task_id INTEGER DEFAULT 0')
+db.execute('CREATE TABLE managed_zju_state(capture_id INTEGER)')
+db.execute('INSERT INTO managed_zju_state VALUES(42)')
 
 def ids(name):
     where, order, *args = queries[name]
@@ -59,6 +62,22 @@ assert set(ids('label')) == {2, 3, 4}
 # Pending tasks remain pending after their deadline; event history still follows end time.
 # Passing an event's time changes its tab, never deletes it from searchable history.
 assert {5}.issubset(ids('all')), 'Past items must remain searchable in all items'
+
+# Homework is a subset of TASK, identified by its managed capture, never its title.
+for item, start, due, completed, capture, record in [
+    (9001, 100, ms('2026-09-29T14:00+08:00'), None, 42, 0),
+    (9002, 900, ms('2026-09-28T14:00+08:00'), None, 42, 0),
+    (9003, 50, None, None, 42, 0),
+    (9004, 25, ms('2026-09-27T14:00+08:00'), 1, 42, 0),
+    (9005, 10, ms('2026-09-28T12:00+08:00'), None, 99, 0),
+    (9006, 1, ms('2026-09-28T13:00+08:00'), None, 42, 1),
+]:
+    db.execute('INSERT INTO event_candidates(id,title,category,start_at_millis,due_at_millis,completed_at_millis,task_id,is_record,all_day) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0)',
+               (item, '作业标题', 'task', start, due, completed, capture, record))
+assert ids('homework') == [9004, 9002, 9001, 9003]
+assert ids('homeworkOpen') == [9002, 9001, 9003]
+assert ids('homeworkToday') == [9002]
+db.execute('DELETE FROM event_candidates WHERE id>=9001')
 
 # Identical timestamps must retain stable unique IDs across every page boundary.
 db.executemany(INSERT_SQL, [

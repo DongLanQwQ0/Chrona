@@ -94,6 +94,13 @@ public class VivoAtomicCheck {
  Notification updated=tickingContext.manager.posted.get(99);RemoteViews rendered=(RemoteViews)updated.extras.get("notification.superx.customTemplate");
  check(rendered.actions==4&&card.actions==0&&islandCard.actions==0);
  check(updated.timeout>0&&updated.timeout<=119000);
+ Notification strippedCountdown=new Notification();strippedCountdown.when=baseline.when;
+ StatusBarNotification tagged=new StatusBarNotification(99,strippedCountdown);tagged.tag="VIVO_SUPERX_TAG";
+ tickingContext.manager.active=new StatusBarNotification[]{tagged};tickingContext.manager.posted.clear();
+ AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.containsKey(99));
+ tagged.tag=null;tickingContext.manager.posted.clear();AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());
+ tagged.tag="VIVO_SUPERX_TAG";strippedCountdown.when++;AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());
+ tickingContext.manager.active=new StatusBarNotification[]{new StatusBarNotification(99,baseline)};
  check(AtomicCountdownUpdates.nextDelay(tickingContext)==1000);
  check(rendered.texts.get(R.id.atomic_remaining).endsWith("秒"));
  Bundle updatedIsland=(Bundle)updated.extras.get("notification.superx.island");
