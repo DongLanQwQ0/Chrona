@@ -231,7 +231,7 @@ final class ScheduleFilterSheet {
                 option.setSingleLine(true);
                 option.setHorizontallyScrolling(false);
             }
-            UiStyle.addSpaced(body, dock.motionHost(true), 0, 6);
+            UiStyle.addSpaced(body, dock.motionHost(true, 2f / 3f), 0, 6);
         }
 
         void select(int index) {

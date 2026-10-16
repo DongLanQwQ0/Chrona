@@ -54,7 +54,7 @@ def executable(name):
 src = root / 'app/src/main/java/com/donglan/chrona/zju'
 subprocess.run([executable('javac'), '--release', '17', '-encoding', 'UTF-8',
                 '-cp', str(cached_json), '-d', str(out), str(stub),
-                str(src / 'ZjuSnapshot.java'), str(src / 'ZjuAcademicCalendar.java'),
+                str(src / 'ZjuSnapshot.java'), str(src / 'ZjuCalendarConfig.java'), str(src / 'ZjuAcademicCalendar.java'),
                 str(root / 'checks/ZjuCalendarCheck.java')], check=True)
 subprocess.run([executable('java'), '-cp', str(out) + os.pathsep + str(cached_json),
                 'com.donglan.chrona.zju.ZjuCalendarCheck'], check=True)

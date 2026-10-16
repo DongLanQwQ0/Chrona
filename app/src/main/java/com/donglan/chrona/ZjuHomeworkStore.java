@@ -42,10 +42,11 @@ public final class ZjuHomeworkStore {
     }
     public static final class History {
         public final String title, change, before, after, remoteUpdatedAt;
-        public final long at;
+        public final long at, id;
         History(Cursor cursor) {
             title = cursor.getString(0); change = cursor.getString(1); at = cursor.getLong(2);
             before = cursor.getString(3); after = cursor.getString(4); remoteUpdatedAt = cursor.getString(5);
+            id = cursor.getLong(6);
         }
     }
 
@@ -179,12 +180,13 @@ public final class ZjuHomeworkStore {
                     .put("submitted", item.submitted == null ? before == null ? JSONObject.NULL : new JSONObject(before).opt("submitted") : item.submitted).toString();
         } catch (org.json.JSONException exception) { throw new IllegalArgumentException("作业数据无效", exception); }
     }
-    public List<History> history(int limit) {
+    public List<History> history(int limit) { return history(limit, Long.MAX_VALUE); }
+    public List<History> history(int limit, long beforeId) {
         List<History> result = new ArrayList<>();
         try (TaskStore store = new TaskStore(context)) {
             SQLiteDatabase db = store.getReadableDatabase();
-            try (Cursor cursor = db.query("zju_homework_history", new String[]{"title", "change", "at_millis", "before_json", "after_json", "remote_updated_at"},
-                    "account=?", new String[]{state(db).account}, null, null, "id DESC", Integer.toString(Math.max(1, Math.min(1000, limit))))) {
+            try (Cursor cursor = db.query("zju_homework_history", new String[]{"title", "change", "at_millis", "before_json", "after_json", "remote_updated_at", "id"},
+                    "account=? AND id<?", new String[]{state(db).account,Long.toString(beforeId)}, null, null, "id DESC", Integer.toString(Math.max(1, Math.min(1000, limit))))) {
                 while (cursor.moveToNext()) result.add(new History(cursor));
             }
         }

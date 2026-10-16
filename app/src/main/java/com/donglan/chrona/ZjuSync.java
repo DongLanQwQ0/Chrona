@@ -41,7 +41,7 @@ final class ZjuSync {
             }
             settings.status("正在同步");
             String[] credentials=settings.credentials();
-            ZjuClient active=new ZjuClient(credentials[0],credentials[1]);
+            ZjuClient active=new ZjuClient(credentials[0],credentials[1],com.donglan.chrona.zju.ZjuCalendarStore.load(context));
             java.util.Arrays.fill(credentials,"");
             synchronized(ZjuSync.class){client=active;}
             ZjuSnapshot snapshot;

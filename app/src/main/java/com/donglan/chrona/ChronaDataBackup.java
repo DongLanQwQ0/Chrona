@@ -226,6 +226,8 @@ public final class ChronaDataBackup {
             for (int tab = 0; tab < 4; tab++) scheduleOrders.put(ScheduleOrderPreferences.oldestFirst(context, tab));
             manifest.put("scheduleOrders", scheduleOrders);
             manifest.put("config", ConfigBackup.export(context, includeApiKey));
+            manifest.put("zjuCalendar", new JSONObject(com.donglan.chrona.zju.ZjuCalendarStore.exportJson(context)));
+            manifest.put("scheduleSources", new JSONObject(ScheduleSources.exportJson(context)));
             manifest.put("wallpaperIncluded", true);
             manifest.put("wallpaperEnabled", ThemeStore.backgroundEnabled(context));
             manifest.put("wallpaper", wallpaper == null ? JSONObject.NULL : wallpaper);
@@ -302,6 +304,8 @@ public final class ChronaDataBackup {
                 throw new IOException("备份来源或版本不受支持");
             String config = manifest.getString("config");
             ConfigBackup.inspect(config);
+            if(manifest.has("zjuCalendar"))com.donglan.chrona.zju.ZjuCalendarConfig.parse(manifest.getJSONObject("zjuCalendar").toString());
+            if(manifest.has("scheduleSources"))ScheduleSources.validateJson(manifest.getJSONObject("scheduleSources").toString());
             if (manifest.has("timetable") && !manifest.isNull("timetable"))
                 TimetableStore.inspect(manifest.getJSONObject("timetable").toString());
             long[] databaseCounts = inspectDatabase(new File(directory, "chrona.db"));
@@ -447,6 +451,8 @@ public final class ChronaDataBackup {
         File outputDirectory = new File(context.getFilesDir(), "model-output");
         File previousOutputs = new File(context.getFilesDir(), "model-output.previous");
         String previousConfig = ConfigBackup.export(context, true);
+        String previousZjuCalendar = com.donglan.chrona.zju.ZjuCalendarStore.exportJson(context);
+        String previousScheduleSources = ScheduleSources.exportJson(context);
         int previousTimelineLimit = HomeTimelinePreferences.getItemLimit(context);
         boolean previousSystemCalendar = HomeTimelinePreferences.includesSystemCalendar(context);
         int previousWidgetPreviewMinutes = WidgetPreferences.previewMinutes(context);
@@ -559,6 +565,8 @@ public final class ChronaDataBackup {
         // call Activity.recreate() from this background restore thread. The Activity itself
         // recreates on the main thread after this method succeeds.
         ConfigBackup.apply(context.getApplicationContext(), prepared.config);
+        if(prepared.manifest.has("zjuCalendar"))com.donglan.chrona.zju.ZjuCalendarStore.importJson(context,prepared.manifest.getJSONObject("zjuCalendar").toString());
+        if(prepared.manifest.has("scheduleSources"))ScheduleSources.importJson(context,prepared.manifest.getJSONObject("scheduleSources").toString());
         if (prepared.manifest.optBoolean("wallpaperIncluded", false)) {
             wallpaperApplied = true;
             ThemeStore.setBackground(context.getApplicationContext(),
@@ -607,6 +615,8 @@ public final class ChronaDataBackup {
             }
             try {
                 ConfigBackup.apply(context.getApplicationContext(), previousConfig);
+                com.donglan.chrona.zju.ZjuCalendarStore.importJson(context,previousZjuCalendar);
+                ScheduleSources.importJson(context,previousScheduleSources);
             } catch (Exception rollbackConfigFailure) {
                 failure.addSuppressed(rollbackConfigFailure);
             }

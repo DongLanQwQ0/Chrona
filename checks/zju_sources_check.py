@@ -11,7 +11,7 @@ files = {
 'android/content/Intent.java': '''package android.content;public class Intent {public Intent(Context c,Class<?> x){}public Intent putExtra(String k,long v){return this;}}''',
 'android/util/AtomicFile.java': '''package android.util;import java.io.*;public class AtomicFile {final File file;public AtomicFile(File f){file=f;}public File getBaseFile(){return file;}public byte[] readFully()throws IOException{return java.nio.file.Files.readAllBytes(file.toPath());}public FileOutputStream startWrite()throws IOException{return new FileOutputStream(file);}public void finishWrite(FileOutputStream s)throws IOException{s.close();}public void failWrite(FileOutputStream s)throws IOException{s.close();}public void delete(){file.delete();}}''',
 'com/donglan/chrona/CourseAgenda.java': '''package com.donglan.chrona;import java.util.*;class CourseAgenda {static List<Item> rows=new ArrayList<>();static long revision(){return 0;}static List<Item> load(android.content.Context c,long b,long e,java.time.ZoneId z){return rows;}static class Item {String termId="term",key,title,location="";long start,end;boolean allDay;Item(String k,String t,long s,long e,boolean a){key=k;title=t;start=s;end=e;allDay=a;}}}''',
-'com/donglan/chrona/ScheduleSources.java': '''package com.donglan.chrona;class ScheduleSources {static boolean imported=true,zju=true;static String preference="all";static long revision(android.content.Context c){return 0;}static boolean importedEnabled(android.content.Context c){return imported;}static boolean zjuEnabled(android.content.Context c){return zju;}static String primary(android.content.Context c){return preference;}}''',
+'com/donglan/chrona/ScheduleSources.java': '''package com.donglan.chrona;class ScheduleSources {static boolean imported=true,zju=true;static String preference="all";static long revision(android.content.Context c){return 0;}static boolean importedEnabled(android.content.Context c){return imported;}static boolean zjuEnabled(android.content.Context c){return zju;}static String primary(android.content.Context c){return preference;}static java.util.Map<String,String> courseRules(android.content.Context c){return java.util.Map.of();}}''',
 'com/donglan/chrona/ZjuSettingsStore.java': '''package com.donglan.chrona;class ZjuSettingsStore {static boolean on=true,table=true;ZjuSettingsStore(android.content.Context c){}boolean enabled(){return on;}boolean timetable(){return on&&table;}String account(){return "synthetic-account";}}''',
 'com/donglan/chrona/ExternalCourseDetailActivity.java': '''package com.donglan.chrona;class ExternalCourseDetailActivity {}''',
 'com/donglan/chrona/SourceCheck.java': '''package com.donglan.chrona;
@@ -50,7 +50,7 @@ paths=[]
 for name,text in files.items():
     path=out/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text,encoding='utf-8');paths.append(path)
 src=root/'app/src/main/java/com/donglan/chrona'
-paths += [src/'ExternalCourseAgenda.java',src/'ZjuTimetableStore.java',src/'zju/ZjuSnapshot.java',src/'calendar/CalendarOccurrence.java',src/'calendar/AllDayDates.java']
+paths += [src/'ExternalCourseAgenda.java',src/'CourseSourceMatching.java',src/'ZjuTimetableStore.java',src/'zju/ZjuSnapshot.java',src/'calendar/CalendarOccurrence.java',src/'calendar/AllDayDates.java']
 java=Path(os.environ.get('JAVA_HOME','D:/Minecraft/java21'))/'bin'
 cp=str(root/'build/ai-checks/json.jar')
 subprocess.run([str(java/'javac.exe'),'--release','17','-encoding','UTF-8','-cp',cp,'-d',str(out),*map(str,paths)],check=True)

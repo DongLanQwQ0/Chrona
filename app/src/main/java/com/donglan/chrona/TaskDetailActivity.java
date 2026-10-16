@@ -2280,6 +2280,8 @@ public final class TaskDetailActivity extends Activity {
         boolean[] syncingRange = {false};
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
+        card.setClipChildren(false);
+        card.setClipToPadding(false);
         card.setPadding(dp(14), dp(14), dp(14), dp(14));
         UiStyle.glass(card);
         if (destination == content) {
@@ -2304,6 +2306,28 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(-2, dp(48));
         createParams.setMarginEnd(dp(8));
         cardHeader.addView(createCandidate, createParams);
+        ImageButton acknowledgement = null;
+        if (!candidate.isTask()) {
+            acknowledgement = new ImageButton(this);
+            acknowledgement.setTag(new AcknowledgementAction(candidate));
+            acknowledgement.setPadding(dp(12), dp(12), dp(12), dp(12));
+            acknowledgement.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            UiStyle.glass(acknowledgement);
+            UiStyle.pressable(acknowledgement);
+            acknowledgement.setOnClickListener(view -> {
+                if (saveInFlight) return;
+                if (dirtyCandidateIds.contains(candidate.id)) { Feedback.show(this, "请先保存当前修改"); return; }
+                String key = AgendaAcknowledgement.key(candidate);
+                long until = acknowledgementUntil(candidate);
+                if (!key.isEmpty() && until > System.currentTimeMillis())
+                    AgendaAcknowledgement.set(this, key, until, !AgendaAcknowledgement.isAcknowledged(this, key));
+                refreshAcknowledgementActions(content);
+            });
+            LinearLayout.LayoutParams acknowledgementParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            acknowledgementParams.setMarginEnd(dp(6));
+            cardHeader.addView(acknowledgement, acknowledgementParams);
+            refreshAcknowledgementActions(acknowledgement);
+        }
         ImageButton removeCandidate = new ImageButton(this);
         removeCandidate.setContentDescription("删除日程 " + candidate.title);
         removeCandidate.setOnClickListener(view -> confirmRemoveCandidate(candidate, number));
@@ -2374,7 +2398,9 @@ public final class TaskDetailActivity extends Activity {
             }
         };
         LinearLayout categoryRow = formRow(card, "类型", R.drawable.ic_event);
-        categoryRow.addView(category.motionHost(), new LinearLayout.LayoutParams(0, -2, 1f));
+        categoryRow.setPadding(0, 0, 0, 0);
+        categoryRow.setMinimumHeight(dp(54));
+        categoryRow.addView(category.motionHost(true), new LinearLayout.LayoutParams(0, -2, 1f));
         categoryRow.setClipChildren(false);
         categoryRow.setClipToPadding(false);
         editorSelectionBars.add(category);
@@ -2386,11 +2412,13 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.addSpaced(card, timeRows, 1, 1);
         LinearLayout startRow = new LinearLayout(this);
         startRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        startRow.setMinimumHeight(dp(54));
         startRow.setPadding(0, dp(3), 0, dp(3));
         startRow.addView(fieldLabel("时间", R.drawable.ic_schedule),
                 new LinearLayout.LayoutParams(dp(DETAIL_FIELD_LABEL_WIDTH_DP), -2));
         LinearLayout endRow = new LinearLayout(this);
         endRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        endRow.setMinimumHeight(dp(54));
         endRow.setPadding(0, dp(3), 0, dp(3));
         String startHint = candidate.allDay ? "开始日期：yyyy-MM-dd"
                 : candidate.isTask()
@@ -2534,25 +2562,6 @@ public final class TaskDetailActivity extends Activity {
         trackUnsavedChanges(due,candidate.id);
         updateType[0]=()->dueRow.setVisibility(EventCategory.TASK.equals(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
         if (candidate.isTask()) button(card,candidate.completed() ? "恢复待办" : "标记完成", () -> changeTaskCompletion(candidate));
-        else {
-            Button acknowledge = button(card, "确认活动", () -> { });
-            acknowledge.setTag(new AcknowledgementAction(candidate));
-            acknowledge.setOnClickListener(view -> {
-                if (saveInFlight) return;
-                if (dirtyCandidateIds.contains(candidate.id)) {
-                    Feedback.show(this, "请先保存当前修改"); return;
-                }
-                String key = AgendaAcknowledgement.key(candidate);
-                long until = acknowledgementUntil(candidate);
-                if (key.isEmpty() || until <= System.currentTimeMillis()) {
-                    refreshAcknowledgementActions(content); return;
-                }
-                AgendaAcknowledgement.set(this, key, until,
-                        !AgendaAcknowledgement.isAcknowledged(this, key));
-                refreshAcknowledgementActions(content);
-            });
-            refreshAcknowledgementActions(acknowledge);
-        }
         EditText location = inlineField(formRow(card, "地点", R.drawable.ic_place),
                 "不填写", candidate.location, 1f);
         String[] currentDescription = {candidate.description == null ? "" : candidate.description};
@@ -2814,13 +2823,19 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void refreshAcknowledgementActions(View view) {
-        if (view instanceof Button && view.getTag() instanceof AcknowledgementAction) {
-            Button action = (Button) view;
+        if (view instanceof ImageButton && view.getTag() instanceof AcknowledgementAction) {
+            ImageButton action = (ImageButton) view;
             EventCandidate candidate = ((AcknowledgementAction) action.getTag()).candidate;
             String key = AgendaAcknowledgement.key(candidate);
             action.setEnabled(!key.isEmpty() && !saveInFlight
                     && acknowledgementUntil(candidate) > System.currentTimeMillis());
-            action.setText(AgendaAcknowledgement.isAcknowledged(this, key) ? "取消确认" : "确认活动");
+            boolean confirmed = AgendaAcknowledgement.isAcknowledged(this, key);
+            action.setImageResource(confirmed ? R.drawable.ic_todo_check : R.drawable.ic_check);
+            action.setImageTintList(android.content.res.ColorStateList.valueOf(confirmed
+                    ? UiStyle.colors(this).primary : UiStyle.colors(this).muted));
+            action.setSelected(confirmed);
+            action.setContentDescription(confirmed ? "取消确认活动" : "确认活动");
+            action.setTooltipText(confirmed ? "取消确认活动" : "确认活动");
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -3130,6 +3145,7 @@ public final class TaskDetailActivity extends Activity {
     private LinearLayout formRow(LinearLayout card, String label, int iconResource) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(54));
         row.setPadding(0, dp(3), 0, dp(3));
         row.addView(fieldLabel(label, iconResource),
                 new LinearLayout.LayoutParams(dp(DETAIL_FIELD_LABEL_WIDTH_DP), -2));

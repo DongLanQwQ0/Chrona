@@ -88,6 +88,10 @@ final class DockNavigationLayout extends FrameLayout {
     }
     /** In dense forms the highlight may overlap adjacent rows, but never their labels' layout. */
     FrameLayout motionHost(boolean overlapRows) {
+        return motionHost(overlapRows, 0f);
+    }
+    /** A shared widest-item fraction keeps grouped selector plates aligned. */
+    FrameLayout motionHost(boolean overlapRows, float sharedWidestFraction) {
         DockNavigationLayout dock = this;
         FrameLayout host = new FrameLayout(getContext()) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
@@ -101,6 +105,7 @@ final class DockNavigationLayout extends FrameLayout {
                     totalWeight += weight; widestWeight = Math.max(widestWeight, weight);
                 }
                 float widest = totalWeight > 0f ? widestWeight / totalWeight : 1f / Math.max(1, dock.itemCount());
+                  if (sharedWidestFraction > 0f) widest = sharedWidestFraction;
                 float ratio = (plate - 1f) / 2f + .25f * plate * widest;
                 int clearance = (int)Math.ceil(2f * getResources().getDisplayMetrics().density);
                 int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance + Math.round(4 * getResources().getDisplayMetrics().density);

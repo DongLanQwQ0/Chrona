@@ -31,6 +31,7 @@ public final class ZjuSettingsActivity extends Activity {
         save=button(account,"保存账号",()->saveAccount());root.addView(account);
         homework=toggle(root,"作业同步与提醒");
         timetable=toggle(root,"课表同步");
+        button(root,"校历",()->startActivity(new Intent(this,ZjuCalendarSettingsActivity.class)));
         button(root,"日程来源",()->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));
         sync=button(root,"立即同步",()->{
             sync.setEnabled(false);status.setText("正在同步");

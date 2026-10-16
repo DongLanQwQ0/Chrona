@@ -35,13 +35,17 @@ public final class ZjuClient implements Closeable {
     private static final String ZDBK = "https://zdbk.zju.edu.cn/jwglxt";
     private static final int MAX_REDIRECTS = 16;
     private static final int PAGE_SIZE = 100;
+    private final ZjuCalendarConfig calendar;
     private final MemoryCookies cookies = new MemoryCookies();
     private final OkHttpClient http;
     private String user, password;
     private volatile boolean cancelled, closed;
     private boolean coursesLoggedIn, timetableLoggedIn;
 
-    public ZjuClient(String user, String password) {
+    public ZjuClient(String user, String password) { this(user, password, ZjuCalendarConfig.ordinary()); }
+
+    public ZjuClient(String user, String password, ZjuCalendarConfig calendar) {
+        calendar.validate(); this.calendar = ZjuCalendarConfig.parse(calendar.json().toString());
         if (user == null || user.trim().isEmpty() || password == null || password.isEmpty())
             throw new IllegalArgumentException("请填写学号和密码");
         this.user = user.trim(); this.password = password;
@@ -146,17 +150,18 @@ public final class ZjuClient implements Closeable {
             checkOpen(); courses.add(new ZjuSnapshot.Course(id, title, false, false));
             warnings.add(title + "：作业列表读取失败，保留上次数据"); return;
         }
+        boolean publishedHomework=false;
+        for(int i=0;i<activities.length();i++){JSONObject a=activities.getJSONObject(i);if("homework".equals(a.optString("type"))&&a.optBoolean("published"))publishedHomework=true;}
         Map<String, Boolean> status = new HashMap<>();
         boolean statusComplete = true;
         try {
-            JSONArray states = requiredArray(json(COURSES + "/api/course/" + segment(id) + "/homework/submission-status?no-intercept=true", null), "homework_activities");
+            JSONArray states = !publishedHomework ? new JSONArray() : requiredArray(json(COURSES + "/api/course/" + segment(id) + "/homework/submission-status?no-intercept=true", null), "homework_activities");
             for (int i = 0; i < states.length(); i++) {
                 JSONObject s = states.getJSONObject(i);
                 String code = s.optString("status_code", "");
                 Boolean value = "submitted".equals(code) || "graded".equals(code) ? Boolean.TRUE
-                        : "unsubmitted".equals(code) || "not_submitted".equals(code) ? Boolean.FALSE : null;
+                        : "unsubmitted".equals(code) || "not_submitted".equals(code) || "absent".equals(code) ? Boolean.FALSE : null;
                 status.put(required(s, "id"), value);
-                if (value == null) statusComplete = false;
             }
         } catch (AuthenticationException e) { throw e;
         } catch (IOException | JSONException e) { checkOpen(); statusComplete = false; }
@@ -174,7 +179,7 @@ public final class ZjuClient implements Closeable {
             String rawDeadline = a.isNull("deadline") ? "" : a.optString("deadline", "");
             if (!rawDeadline.isEmpty()) {
                 try { deadline = OffsetDateTime.parse(rawDeadline).toInstant().toEpochMilli(); }
-                catch (RuntimeException e) { warnings.add(title + "：有作业截止时间无法识别，已保留作业"); }
+                catch (RuntimeException e) { complete = false; warnings.add(title + "：有作业截止时间无法识别，已保留上次数据"); continue; }
             }
             JSONObject detail = a.optJSONObject("data");
             String description = detail == null ? "" : plain(detail.optString("description", detail.optString("content", "")));
@@ -195,19 +200,28 @@ public final class ZjuClient implements Closeable {
             follow(new Request.Builder().url(loginService(ZDBK + "/xtgl/login_ssologin.html")).get().build(), false);
             timetableLoggedIn = true;
         }
+        if(calendar.campus.equals("ordinary")) {
+            try {
+                String official=follow(new Request.Builder().url(ZDBK+"/xtgl/index_cxXiaoLi.html").get().build(),false);
+                Matcher boundaries=Pattern.compile("(\\d{4}-\\d{4})学年(秋|冬|春|夏|短|暑)学期\\((\\d{4}-\\d{2}-\\d{2})至(\\d{4}-\\d{2}-\\d{2})\\)").matcher(plain(official));
+                while(boundaries.find()){ZjuCalendarConfig.Term configured=calendar.term(boundaries.group(1),boundaries.group(2));
+                    if(configured==null)warnings.add(boundaries.group(1)+" "+boundaries.group(2)+"：学校起止 "+boundaries.group(3)+" 至 "+boundaries.group(4)+"，请在校历页补充授课截止与调课");
+                    else if(!configured.start.toString().equals(boundaries.group(3)))warnings.add("校历开始日期与教务系统不符，当前采用已保存设置，请核对校历");}
+            } catch(AuthenticationException e){throw e;} catch(Exception e){checkOpen();warnings.add("校历在线核对未完成，采用已保存配置");}
+        }
         JSONObject menu = json(ZDBK + "/xtgl/index_cxFilterGnmkdm.html", new FormBody.Builder().add("gnmkmc", "课表").build());
         JSONObject entry = findMenu(menu);
         if (entry == null) throw new SchoolException("教务系统未返回个人课表菜单");
         String code = entry.optString("gnmkdm", entry.optString("gnmkdmKey", ""));
         HttpUrl pageUrl = safeUrl(ZDBK + required(entry, "dyym")).newBuilder().addQueryParameter("gnmkdm", code).build();
         String page = follow(new Request.Builder().url(pageUrl).get().build(), false);
-        String year = selectedOption(page, "xnm");
+        String year = calendar.selectedYear.isEmpty() ? selectedOption(page, "xnm") : calendar.selectedYear;
         String term = selectedOption(page, "xqm");
         if (year.isEmpty() || term.isEmpty()) throw new SchoolException("教务课表缺少学年或学期信息");
-        List<String> terms = term.endsWith("|秋") || term.endsWith("|冬") ? quarterOptions(page) : new ArrayList<>();
+        List<String> terms = quarterOptions(page, year);
         if (terms.isEmpty()) terms.add(term);
         for (String queryTerm : terms) readQuarter(year, queryTerm, code, lessons, warnings, completeTerms);
-        warnings.add("课表采用普通本科校区校历；海宁国际校区需使用其独立校历");
+        if (year.equals("2026-2027") && calendar.campus.equals("ordinary")) warnings.add("2027年节假日调休待学校公布，请在校历页核对更新");
     }
 
     private void readQuarter(String year, String term, String code, List<ZjuSnapshot.Lesson> lessons,
@@ -217,7 +231,7 @@ public final class ZjuClient implements Closeable {
                 new FormBody.Builder().add("xnm", year).add("xqm", term).add("xqmmc", termName).add("xxqf", "0").add("xsfs", "0").build());
         JSONArray rows = requiredArray(data, "kbList");
         List<String> parsingWarnings = new ArrayList<>();
-        lessons.addAll(ZjuAcademicCalendar.expand(year, termName, rows, parsingWarnings));
+        lessons.addAll(ZjuAcademicCalendar.expand(calendar, year, termName, rows, parsingWarnings));
         warnings.addAll(parsingWarnings);
         if (parsingWarnings.isEmpty()) completeTerms.add(year + " " + termName);
         for (String key : new String[]{"sjkList", "jxkList", "xskList", "ywkList", "fKbList"}) {
@@ -226,14 +240,15 @@ public final class ZjuClient implements Closeable {
         }
     }
 
-    private static List<String> quarterOptions(String page) {
+    private List<String> quarterOptions(String page, String year) {
         List<String> values = new ArrayList<>();
         Matcher select = Pattern.compile("<select\\b[^>]*\\bid\\s*=\\s*['\"]xqm['\"][^>]*>([\\s\\S]*?)</select>", Pattern.CASE_INSENSITIVE).matcher(page);
         if (!select.find()) return values;
         Matcher options = Pattern.compile("<option\\b([^>]*)>([\\s\\S]*?)</option>", Pattern.CASE_INSENSITIVE).matcher(select.group(1));
         while (options.find()) {
             String value = attribute(options.group(1), "value");
-            if ((value.endsWith("|秋") || value.endsWith("|冬")) && !values.contains(value)) values.add(value);
+            String name = value.contains("|") ? value.substring(value.indexOf('|') + 1) : "";
+            if (calendar.term(year, name) != null && (calendar.selectedTerm.isEmpty() || calendar.selectedTerm.equals(name)) && !values.contains(value)) values.add(value);
         }
         return values;
     }

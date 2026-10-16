@@ -34,6 +34,9 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         primary = new Button(this); UiStyle.button(primary, false);
         UiStyle.addSpaced(root, primary, 0, 16);
         primary.setOnClickListener(view -> choosePrimary());
+        Button matching=new Button(this);matching.setText("课程关联");UiStyle.button(matching,false);
+        UiStyle.addSpaced(root,matching,0,16);
+        matching.setOnClickListener(view -> startActivity(new android.content.Intent(this,CourseSourceMatchingActivity.class)));
         calendars = new LinearLayout(this); calendars.setOrientation(LinearLayout.VERTICAL);
         root.addView(calendars, new LinearLayout.LayoutParams(-1, -2));
         SettingsPageLayout.show(this, root, state == null);
@@ -68,18 +71,29 @@ public final class ScheduleSourceSettingsActivity extends Activity {
                         result.add(new Source(cursor.getLong(0), cursor.getString(1), account));
                     }
                 }
+                java.util.Map<String,Integer> groups=new java.util.HashMap<>();
+                String probeIssue="";
+                try{groups.putAll(CourseSourceProbe.weeklyGroups(CourseSourceProbe.load(this).rows));}
+                catch(Exception failure){
+                    android.util.Log.w("Chrona","Unable to probe course structure",failure);
+                    probeIssue="课程结构探测失败，可在课程关联中重试";
+                }
+                String probeMessage=probeIssue;
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed() || generation != loadGeneration) return;
                     sources = result; calendars.removeAllViews(); updatePrimary();
+                    if(!probeMessage.isEmpty())label(calendars,probeMessage);
                     if (sources.isEmpty()) label(calendars, "系统中暂无其他日历");
                     else for (Source source : sources) {
                         String info = source.account + " · ID " + source.id;
-                        if (looksLikeCourses(source.name)) info += " · 可能包含课表";
+                        int recurring=groups.getOrDefault("system:"+source.id,0);
+                        if(recurring>0)info+=" · "+recurring+" 组周重复日程";
+                        else if (looksLikeCourses(source.name)) info += " · 名称含课表关键词";
                         toggle(calendars, source.name, info, ScheduleSources.allowsCalendar(this, source.id),
                                 checked -> ScheduleSources.setCalendarEnabled(this, source.id, checked));
                     }
                 });
-            } catch (RuntimeException failure) {
+            } catch (Exception failure) {
                 android.util.Log.w("Chrona", "Unable to enumerate schedule calendars", failure);
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed() || generation != loadGeneration) return;

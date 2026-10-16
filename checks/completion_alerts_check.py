@@ -73,7 +73,10 @@ begin = detail.index('    private static long acknowledgementUntil(')
 end = detail.index('\n    }', begin) + len('\n    }')
 sources['com/donglan/chrona/CompletionCheck.java'] = sources['com/donglan/chrona/CompletionCheck.java'].replace('__ACKNOWLEDGEMENT_UNTIL__', detail[begin:end])
 assert '&& acknowledgementUntil(candidate) > System.currentTimeMillis()' in detail
-assert 'if (key.isEmpty() || until <= System.currentTimeMillis())' in detail
+assert 'if (!key.isEmpty() && until > System.currentTimeMillis())' in detail
+assert detail.index('cardHeader.addView(acknowledgement, acknowledgementParams)') < detail.index('cardHeader.addView(removeCandidate,')
+assert 'action.setContentDescription(confirmed ? "取消确认活动" : "确认活动")' in detail
+assert 'candidate.isTask()) button(card,candidate.completed()' in detail
 system_detail = (root / 'app/src/main/java/com/donglan/chrona/SystemAgendaDetailActivity.java').read_text(encoding='utf-8')
 assert 'acknowledgement.setEnabled(occurrenceAvailable && acknowledgementUntil > System.currentTimeMillis())' in system_detail
 assert 'if (!occurrenceAvailable || acknowledgementUntil <= System.currentTimeMillis())' in system_detail

@@ -20,9 +20,6 @@ public final class ZjuAcademicCalendar {
     public static final String PDF_SOURCE = "https://ugrs.zju.edu.cn/_upload/article/files/28/cc/ce06b4d9483eb58be317e94a7749/eeeb30e1-336a-4d3f-8aca-5890d2cc2ac4.pdf";
     public static final String ENGLISH_SOURCE = "https://www.zju.edu.cn/english/19600/list.psp";
     private static final ZoneId SCHOOL_ZONE = ZoneId.of("Asia/Shanghai");
-    // Official xskbcx.js arrKbjcsj: thirteen teaching periods, not exam times in kcb.
-    private static final String[] START = {"08:00", "08:50", "10:00", "10:50", "11:40", "13:25", "14:15", "15:05", "16:15", "17:05", "18:50", "19:40", "20:30"};
-    private static final String[] END = {"08:45", "09:35", "10:45", "11:35", "12:25", "14:10", "15:00", "15:50", "17:00", "17:50", "19:35", "20:25", "21:15"};
     private static final Pattern WEEKS = Pattern.compile("第\\s*(\\d{1,2})\\s*[-—~至]\\s*(\\d{1,2})\\s*周");
     private static final Pattern SINGLE_WEEK = Pattern.compile("第\\s*(\\d{1,2})\\s*周");
 
@@ -30,8 +27,13 @@ public final class ZjuAcademicCalendar {
 
     public static List<ZjuSnapshot.Lesson> expand(String year, String quarter, JSONArray rows,
                                                   List<String> warnings) throws JSONException {
+        return expand(ZjuCalendarConfig.ordinary(), year, quarter, rows, warnings);
+    }
+
+    public static List<ZjuSnapshot.Lesson> expand(ZjuCalendarConfig config, String year, String quarter, JSONArray rows, List<String> warnings) throws JSONException {
         List<ZjuSnapshot.Lesson> result = new ArrayList<>();
-        LocalDate monday = firstMonday(year, quarter);
+        ZjuCalendarConfig.Term term = config.term(year, quarter);
+        LocalDate monday = term == null ? null : term.start;
         if (monday == null) {
             warnings.add("教务课表的 " + year + " " + quarter + " 学期尚无已核实校历，未写入日程");
             return result;
@@ -53,7 +55,7 @@ public final class ZjuAcademicCalendar {
             }
             int period = row.optInt("djj", -1), count = row.optInt("skcd", -1), day = row.optInt("xqj", -1);
             String parity = row.optString("dsz", "");
-            if (title.isEmpty() || from < 1 || to < from || to > 10 || period < 1 || count < 1 || period + count - 1 > START.length
+            if (title.isEmpty() || from < 1 || to < from || to > 53 || period < 1 || count < 1 || period + count - 1 > config.starts.size()
                     || day < 1 || day > 7 || !(parity.equals("0") || parity.equals("1") || parity.equals("2"))) { invalid++; continue; }
             String location = lines.length > 3 ? text(lines[3]) : "";
             int exam = location.indexOf("考试");
@@ -61,12 +63,11 @@ public final class ZjuAcademicCalendar {
             for (int w = from; w <= to; w++) {
                 if ((parity.equals("0") && w % 2 == 0) || (parity.equals("1") && w % 2 != 0)) continue;
                 LocalDate teachingDate = monday.plusWeeks(w - 1).plusDays(day - 1);
-                if (("秋".equals(quarter) && teachingDate.isAfter(LocalDate.of(2026, 11, 8)))
-                        || ("冬".equals(quarter) && teachingDate.isAfter(LocalDate.of(2027, 1, 5)))) continue;
-                LocalDate date = actualDate(teachingDate);
+                if (teachingDate.isAfter(term.teachingEnd)) continue;
+                LocalDate date = config.actualDate(teachingDate);
                 if (date == null) continue;
-                long start = date.atTime(LocalTime.parse(START[period - 1])).atZone(SCHOOL_ZONE).toInstant().toEpochMilli();
-                long end = date.atTime(LocalTime.parse(END[period + count - 2])).atZone(SCHOOL_ZONE).toInstant().toEpochMilli();
+                long start = date.atTime(LocalTime.parse(config.starts.get(period - 1))).atZone(SCHOOL_ZONE).toInstant().toEpochMilli();
+                long end = date.atTime(LocalTime.parse(config.ends.get(period + count - 2))).atZone(SCHOOL_ZONE).toInstant().toEpochMilli();
                 String key = year + "/" + quarter + "/" + title + "/" + location + "/" + start;
                 if (keys.add(key)) result.add(new ZjuSnapshot.Lesson(key, title, location, year + " " + quarter, start, end));
             }
@@ -75,27 +76,6 @@ public final class ZjuAcademicCalendar {
         return result;
     }
 
-    private static LocalDate firstMonday(String year, String quarter) {
-        if (!"2026-2027".equals(year)) return null;
-        if ("秋".equals(quarter)) return LocalDate.of(2026, 9, 14);
-        if ("冬".equals(quarter)) return LocalDate.of(2026, 11, 9);
-        return null;
-    }
-
-    /** Date swaps in the ordinary undergraduate campus calendar; Haining has its own calendar. */
-    static LocalDate actualDate(LocalDate teachingDate) {
-        if (teachingDate.equals(LocalDate.of(2026, 10, 6))) return LocalDate.of(2026, 9, 20);
-        if (teachingDate.equals(LocalDate.of(2026, 10, 7))) return LocalDate.of(2026, 10, 10);
-        if (teachingDate.equals(LocalDate.of(2026, 10, 2))) return LocalDate.of(2026, 10, 17);
-        if (teachingDate.equals(LocalDate.of(2026, 12, 31))) return LocalDate.of(2027, 1, 4);
-        if (teachingDate.equals(LocalDate.of(2026, 9, 20)) || teachingDate.equals(LocalDate.of(2026, 10, 10))
-                || teachingDate.equals(LocalDate.of(2026, 10, 17)) || teachingDate.equals(LocalDate.of(2027, 1, 4))) return null;
-        if (between(teachingDate, "2026-09-25", "2026-09-27") || between(teachingDate, "2026-10-01", "2026-10-07")
-                || between(teachingDate, "2026-10-24", "2026-10-25") || teachingDate.equals(LocalDate.of(2027, 1, 1))) return null;
-        return teachingDate;
-    }
-    private static boolean between(LocalDate date, String first, String last) {
-        return !date.isBefore(LocalDate.parse(first)) && !date.isAfter(LocalDate.parse(last));
-    }
+    static LocalDate actualDate(LocalDate teachingDate) { return ZjuCalendarConfig.ordinary().actualDate(teachingDate); }
     private static String text(String html) { return Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString().trim(); }
 }

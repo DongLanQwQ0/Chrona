@@ -10,18 +10,35 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 public final class ZjuHomeworkHistoryActivity extends Activity {
+    private static final int PAGE_SIZE=50;
+    private LinearLayout root;
+    private android.widget.Button more;
+    private long beforeId=Long.MAX_VALUE;
+    private boolean loading;
     @Override protected void onCreate(Bundle state){
-        ThemeStore.apply(this);super.onCreate(state);LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"作业更新记录");
-        TextView pending=new TextView(this);pending.setText("正在读取");UiStyle.muted(pending);root.addView(pending);SettingsPageLayout.show(this,root,false);
-        ZjuSync.WORKER.execute(()->{List<ZjuHomeworkStore.History> rows=new ZjuHomeworkStore(this).history(200);
-            runOnUiThread(()->{if(isDestroyed())return;root.removeView(pending);
-                if(rows.isEmpty()){pending.setText("暂无更新记录");root.addView(pending);}
+        ThemeStore.apply(this);super.onCreate(state);root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"作业更新记录");
+        more=new android.widget.Button(this);UiStyle.button(more,false);root.addView(more);more.setOnClickListener(v->loadMore());
+        SettingsPageLayout.show(this,root,false);loadMore();
+    }
+    private void loadMore(){
+        if(loading)return;loading=true;more.setEnabled(false);more.setText("正在读取");
+        long cursor=beforeId;
+        ZjuSync.WORKER.execute(()->{
+            List<ZjuHomeworkStore.History> result;
+            try{result=new ZjuHomeworkStore(this).history(PAGE_SIZE,cursor);}
+            catch(Exception e){runOnUiThread(()->{if(isDestroyed())return;loading=false;more.setEnabled(true);more.setText("读取失败，重试");});return;}
+            List<ZjuHomeworkStore.History> rows=result;
+            runOnUiThread(()->{if(isDestroyed())return;root.removeView(more);
+                if(rows.isEmpty()&&cursor==Long.MAX_VALUE){TextView empty=new TextView(this);empty.setText("暂无更新记录");UiStyle.muted(empty);root.addView(empty);}
                 DateTimeFormatter time=DateTimeFormatter.ofPattern("M月d日 HH:mm").withZone(ZoneId.systemDefault());
                 for(ZjuHomeworkStore.History row:rows){
                     TextView text=new TextView(this);text.setTextSize(16);text.setPadding(16,16,16,16);UiStyle.glass(text);
                     text.setText(row.title+"\n"+row.change+" · "+time.format(Instant.ofEpochMilli(row.at)));text.setTextColor(UiStyle.colors(this).text);UiStyle.addSpaced(root,text,0,10);
                     text.setOnClickListener(v->new android.app.AlertDialog.Builder(this).setTitle(row.title).setMessage(historyText(row)).setPositiveButton("关闭",null).show());
                 }
+                if(!rows.isEmpty())beforeId=rows.get(rows.size()-1).id;
+                loading=false;
+                if(rows.size()==PAGE_SIZE){more.setEnabled(true);more.setText("加载更多");root.addView(more);}
             });
         });
     }

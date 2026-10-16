@@ -49,14 +49,31 @@ final class ZjuSettingsStore {
         String[] previous=configured()?credentials():null;
         if(password.isEmpty()&&previous!=null&&previous[0].equals(user))password=previous[1];
         if(password.isEmpty())throw new java.io.IOException("请填写密码");
-        String account=previous!=null&&previous[0].equals(user)?account():UUID.randomUUID().toString();
+        String salt=prefs.getString("identity_salt",UUID.randomUUID().toString());
+        String identity=identityKey(salt,user);
+        String account=previous!=null&&previous[0].equals(user)?account():prefs.getString(identity,UUID.randomUUID().toString());
         Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key(true));
         byte[] encrypted=cipher.doFinal(new JSONObject().put("user",user).put("password",password).toString().getBytes(StandardCharsets.UTF_8));
         if(!prefs.edit().putString("credentials",Base64.encodeToString(encrypted,Base64.NO_WRAP))
-                .putString("iv",Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)).putString("account",account).commit())
+                .putString("iv",Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)).putString("account",account)
+                .putString("identity_salt",salt).putString(identity,account).commit())
             throw new java.io.IOException("无法保存账号");
         if(previous!=null)java.util.Arrays.fill(previous,"");
     }
     void options(boolean enabled,boolean timetable){prefs.edit().putBoolean("enabled",enabled).putBoolean("timetable",timetable).apply();}
-    void clear(){prefs.edit().clear().commit();}
+    static String identityKey(String salt,String user){return "identity:"+UUID.nameUUIDFromBytes((salt+"\0"+user.trim()).getBytes(StandardCharsets.UTF_8));}
+    void clear()throws Exception{
+        // Keep opaque local identity mappings so signing back into the same account
+        // reuses its capture and deletion markers. No username/password is retained here.
+        SharedPreferences.Editor edit=prefs.edit();
+        if(configured()){
+            String[] current=credentials();
+            String salt=prefs.getString("identity_salt",UUID.randomUUID().toString());
+            edit.putString("identity_salt",salt).putString(identityKey(salt,current[0]),account());
+            java.util.Arrays.fill(current,"");
+        }
+        edit.remove("credentials").remove("iv").remove("account").remove("enabled").remove("timetable")
+                .remove("homework").remove("last_success").remove("status");
+        if(!edit.commit())throw new java.io.IOException("无法清除登录信息");
+    }
 }

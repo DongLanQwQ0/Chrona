@@ -88,6 +88,8 @@
         <activity android:name=".SettingsHubActivity" android:exported="false" />
         <activity android:name=".ZjuSettingsActivity" android:exported="false" />
         <activity android:name=".ZjuHomeworkHistoryActivity" android:exported="false" />
+        <activity android:name=".ZjuCalendarSettingsActivity" android:exported="false" />
+        <activity android:name=".CourseSourceMatchingActivity" android:exported="false" />
         <activity android:name=".ScheduleSourceSettingsActivity" android:exported="false" />
         <activity android:name=".ExternalCourseDetailActivity" android:exported="false" />
         <service android:name=".ZjuSyncJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
