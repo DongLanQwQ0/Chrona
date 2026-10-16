@@ -76,7 +76,10 @@ assert '&& acknowledgementUntil(candidate) > System.currentTimeMillis()' in deta
 assert 'if (!key.isEmpty() && until > System.currentTimeMillis())' in detail
 assert detail.index('cardHeader.addView(acknowledgement, acknowledgementParams)') < detail.index('cardHeader.addView(removeCandidate,')
 assert 'action.setContentDescription(confirmed ? "取消确认活动" : "确认活动")' in detail
-assert 'candidate.isTask()) button(card,candidate.completed()' in detail
+assert 'complete.setOnClickListener(view -> changeTaskCompletion(candidate))' in detail
+assert detail.index('cardHeader.addView(createCandidate,') < detail.index('cardHeader.addView(complete,') < detail.index('cardHeader.addView(removeCandidate,')
+assert 'new LinearLayout.LayoutParams(dp(48), dp(48))' in detail
+assert 'candidate.isTask()) button(card,candidate.completed()' not in detail
 system_detail = (root / 'app/src/main/java/com/donglan/chrona/SystemAgendaDetailActivity.java').read_text(encoding='utf-8')
 assert 'acknowledgement.setEnabled(occurrenceAvailable && acknowledgementUntil > System.currentTimeMillis())' in system_detail
 assert 'if (!occurrenceAvailable || acknowledgementUntil <= System.currentTimeMillis())' in system_detail

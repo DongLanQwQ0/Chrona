@@ -197,6 +197,7 @@ final class LanWebServer extends NanoHTTPD {
             if(path.endsWith("delete")){if(old.calendarEventId!=null)calendar.deleteEvent(old.calendarEventId); if(!store.deleteCandidate(candidateId,id))throw new Conflict();}
             else {
                 EventCandidate edited=edited(body,old); boolean publish=path.endsWith("publish");
+                store.requireCandidateEditAllowed(edited);
                 if (publish && edited.isRecord) throw new IllegalArgumentException();
                 if(old.calendarEventId!=null&&edited.calendarStart()==null&&!edited.isRecord){calendar.deleteEvent(old.calendarEventId);store.clearMissingCalendarLinks(Collections.singletonList(old.calendarEventId));}
                 if((publish||old.calendarEventId!=null) && edited.calendarStart()!=null && !edited.isRecord){

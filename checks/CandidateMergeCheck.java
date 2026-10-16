@@ -110,12 +110,70 @@ public final class CandidateMergeCheck {
             }
         }
     }
+    static EventCandidate identity(String title,Long start,Long end,Long due,String location,
+            String description,Long completed,boolean record){
+        return new EventCandidate(0,99,title,start,end,"UTC",location,description,30,true,88L,
+                EventCategory.TASK,false,true,EventCandidate.INFERRED,due,completed,record);
+    }
+    static boolean same(EventCandidate first,EventCandidate second){
+        return DuplicateCandidates.key(first).equals(DuplicateCandidates.key(second));
+    }
+    static void identityChecks(){
+        List<EventCandidate> variants=new ArrayList<>();variants.add(candidate(1,0));variants.add(candidate(2,0));
+        Set<Integer> significant=new HashSet<>(Arrays.asList(1,2,3,5,10,11));
+        for(int i=1;i<=13;i++){
+            check(same(candidate(1,0),candidate(2,i))!=significant.contains(i),"business field classification "+i);
+            variants.add(candidate(3+i,i));
+        }
+        check(DuplicateCandidates.groups(variants).size()==1,"metadata variants share one business group");
+        EventCandidate dated=identity("Meeting",1000L,3000L,4000L,"Room","Notes",null,false);
+        check(same(dated,identity(" ｍＥＥＴ\u00a0ＩＮＧ \n",1000L,3000L,4000L," Ｒｏ Ｏｍ ","Other source notes",null,false)),
+                "NFKC, whitespace and root case normalization match across sources");
+        check(!same(dated,identity("Meeting",1001L,3000L,4000L,"Room","Notes",null,false)),"actual start stays exact");
+        check(!same(dated,identity("Meeting",1000L,3001L,4000L,"Room","Notes",null,false)),"actual end stays exact");
+        check(!same(dated,identity("Meeting",1000L,3000L,4001L,"Room","Notes",null,false)),"deadline stays exact");
+        check(!same(dated,identity("Meeting",1000L,3000L,4000L,"Other room","Notes",null,false)),"different location stays separate");
+        check(!same(dated,identity("Meeting",1000L,3000L,4000L,"Room","Notes",5000L,false)),"pending and completed stay separate");
+        check(same(identity("Meeting",1000L,3000L,4000L,"Room","Notes",5000L,false),
+                identity("Meeting",1000L,3000L,4000L,"Room","Notes",6000L,false)),"completion timestamp is metadata");
+        check(!same(dated,identity("Meeting",1000L,3000L,4000L,"Room","Notes",null,true)),"record and schedule stay separate");
+        check(!same(identity("Meeting",null,null,null,"Room","Notes",null,false),
+                identity("Meeting",null,null,null,"Room","Other notes",null,false)),"undated descriptions protect distinct items");
+        check(same(identity("Meeting",null,null,4000L,"Room","Notes",null,false),
+                identity("Meeting",null,null,4000L,"Room","Other notes",null,false)),"deadline gives dated business identity");
+        check(!same(identity("Meeting",1000L,3000L,null,"Room","Notes",null,true),
+                identity("Meeting",1000L,3000L,null,"Room","Other notes",null,true)),"record description remains significant");
+        check(same(identity("Meeting",1000L,3000L,null,null,"Notes",null,false),
+                identity("Meeting",1000L,3000L,null," \u3000 ","Notes",null,false)),"empty location normalization");
+    }
     public static void main(String[] args)throws Exception{
         File base=new File(args[0],UUID.randomUUID().toString());base.mkdirs();
         appendChecks(base);
-        List<EventCandidate> variants=new ArrayList<>();variants.add(candidate(1,0));variants.add(candidate(2,0));
-        for(int i=1;i<=13;i++){check(DuplicateCandidates.groups(Arrays.asList(candidate(1,0),candidate(2,i))).isEmpty(),"field "+i+" differs");variants.add(candidate(3+i,i));}
-        check(DuplicateCandidates.groups(variants).size()==1,"only exact pair grouped");
+        identityChecks();
+        try(TaskStore store=new TaskStore(new Context(new File(base,"metadata")))){
+            long first=task(store,"capture source",0),second=task(store,"calendar source",9);
+            EventCandidate source=store.getCandidates(second).get(0);
+            store.replaceCandidates(second,Collections.singletonList(new EventCandidate(0,second,source.title,
+                    source.startAtMillis,source.endAtMillis,"UTC",source.location,"Second source notes",30,true,
+                    8L,source.category,source.allDay,true,EventCandidate.INFERRED)));
+            check(CandidateMerges.scan(store).removed()==1,"different IDs and metadata appear in preview");
+            check(merge(store,store.dataRevision())==1,"cross-provider metadata duplicate merges");
+            JSONObject marker=store.mergeLedger().records().get(0);
+            EventCandidate archived=TaskCodec.event(marker.getJSONObject("source").getJSONObject("candidate"));
+            boolean secondArchived=marker.getString("sourceTask").equals(store.stableTaskId(second));
+            check(archived.description.equals(secondArchived?"Second source notes":"Notes")
+                    &&archived.uncertaintyLevel==(secondArchived?EventCandidate.INFERRED:EventCandidate.CERTAIN)
+                    &&archived.endAutoGenerated==secondArchived,
+                    "merge ledger preserves original notes and portable provenance");
+            check(archived.calendarEventId==null&&archived.reminderMinutesBefore==null,
+                    "portable ledger excludes device-local provider IDs and reminder settings");
+            check(store.linkedCalendarIds().containsAll(Arrays.asList(7L,8L)),"both local provider associations retained");
+            MergeLedger copied=new MergeLedger();copied.add(marker);
+            check(copied.records().get(0).getJSONObject("source").getJSONObject("candidate")
+                    .toString().equals(marker.getJSONObject("source").getJSONObject("candidate").toString()),
+                    "ledger validation retains metadata for sync");
+            check(store.getTask(first)!=null&&store.getTask(second)!=null,"both metadata source tasks retained");
+        }
         Context context=new Context(new File(base,"local"));
         try(TaskStore store=new TaskStore(context)){
             long first=task(store,"first original",0),second=task(store,"second original",0);

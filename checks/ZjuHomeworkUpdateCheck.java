@@ -60,6 +60,41 @@ public final class ZjuHomeworkUpdateCheck {
         CalendarStore.permission=false;managed.apply("account",generation,List.of(homework("disabled","Disabled",DUE,false)));
         managed.configure("account",false);CalendarStore.permission=true;count=CalendarStore.rows.size();ZjuHomeworkCalendar.retryPending(c);
         check(CalendarStore.rows.size()==count,"disabled homework source cannot publish pending events");
+        try (TaskStore store = new TaskStore(c)) {
+            EventCandidate current = row(c, bid);
+            EventCandidate personalEdit = new EventCandidate(current.id, current.taskId, current.title,
+                    DUE-7_200_000L, DUE-3_600_000L, current.timeZoneId, "自习室", current.description,
+                    20, current.needsConfirmation, current.calendarEventId, current.category,
+                    false, false, current.uncertaintyLevel, current.dueAtMillis, current.completedAtMillis, false);
+            check(store.updateCandidate(personalEdit), "managed homework allows personal execution/location/reminder edits");
+            for (int field = 0; field < 4; field++) {
+                EventCandidate forbidden = new EventCandidate(current.id, current.taskId,
+                        field==0 ? "renamed" : current.title, current.startAtMillis, current.endAtMillis,
+                        current.timeZoneId, current.location, field==1 ? "changed" : current.description,
+                        current.reminderMinutesBefore, current.needsConfirmation, current.calendarEventId,
+                        field==2 ? "event" : current.category, false, false, current.uncertaintyLevel,
+                        field==3 ? DUE+9 : current.dueAtMillis, current.completedAtMillis, false);
+                boolean rejected = false;
+                try { store.updateCandidate(forbidden); } catch (IllegalArgumentException expected) { rejected = true; }
+                check(rejected, "source-owned field cannot be modified: " + field);
+            }
+            boolean rejected = false;
+            try { store.updateCandidateDescription(current.id, current.taskId, "overwrite"); }
+            catch (IllegalArgumentException expected) { rejected = true; }
+            check(rejected, "notes-only route cannot bypass source ownership");
+            long submittedId = store.getCandidates(managed.state().captureId).stream()
+                    .filter(item -> item.title.equals("C")).findFirst().get().id;
+            rejected = false;
+            try { store.setCandidateCompleted(submittedId, managed.state().captureId, false); }
+            catch (IllegalArgumentException expected) { rejected = true; }
+            check(rejected, "platform submission cannot be reset by local completion");
+            check(store.setCandidateCompleted(bid, current.taskId, true)
+                    && store.setCandidateCompleted(bid, current.taskId, false), "local completion remains reversible for unsubmitted homework");
+            rejected = false;
+            try { store.replaceCandidates(current.taskId, List.of()); }
+            catch (IllegalArgumentException expected) { rejected = true; }
+            check(rejected && row(c, bid) != null, "reparse cannot wipe a managed homework capture");
+        }
         System.out.println("PASS: "+checks+" production homework upsert/actionable/calendar retry checks against real SQLite");
     }
 }

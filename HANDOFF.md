@@ -1,4 +1,12 @@
-# 当前开发：0.15.5 / 167 · 作业自动写入系统日历
+# 当前开发：0.15.6 / 168 · 作业编辑边界、课表导出与重复匹配
+
+作业源字段（标题/正文/due/category/record）由 TaskStore.requireCandidateEditAllowed 与 updateCandidateDescription 拦截，本地个人执行/地点/提醒保留；平台 submitted=true 不能恢复为未完成。LAN 在触碰 Provider 前先校验，作业 capture 禁止 replaceCandidates 重新解析。详情源字段只读、备注可复制；源网页双按钮位于卡片底部，master 关闭隐藏。待办完成/恢复移入标题行 48dp 圆形图标，顺序新建/完成/删除。
+
+ScheduleSourceSettingsActivity 手动课表导出使用 CourseCalendarExport，本地导入全部学期与当前学校账号缓存可分别选择，不进行联网。NFKC/空白规范化标题地点+实际起止+全天为重复身份；学校备注优先，每个有课程月份查询所有日历实例（不受可见/来源开关限制），相同跳过。写入无额外提醒，不更新/删除其他日历。部分失败保留已写入，重试去重；这是手动副本而非持续同步。无新持久开关，备份文档已补边界。
+
+DuplicateCandidates 不再匹配 calendar ID、reminder、zone 名称、置信度、自动生成标志；有日期条目按业务字段与完成布尔值合并，未知日期和记录仍按备注保护。MergeLedger 保留来源快照与本机 Provider 关联 ID，原始系统事件不删除。实体合并页明确只扫描 Chrona 候选，独立课表和系统日历仍走来源展示去重。
+
+# 上轮开发：0.15.5 / 167 · 作业自动写入系统日历
 
 ZjuHomeworkCalendar.retryPending 在现有本地事务数据上标记当前启用账号/收件的未完成、有时间、未关联作业，串行补写系统日历。新建后绑定 candidate，持久 pending 位处理权限/provider 故障；用 Chrona 日历内相同标题起止/全天及备注地点检查恢复重试的重复事件；关联失败补偿删除本次新建。已完成未关联和无时间不新建，关闭来源不投递，已有链接继续按老师变更更新、个人执行时段不变。权限入口在折姜星辰页，授权回调本地重试，不重新调用学校或 AI。真实 SQLite 21 项通过。新增 auto_click 验收按当前可见按钮节点注入触摸，0.15.4 正式 APK 已验证秒数修复后点击完成并移除通知。
 

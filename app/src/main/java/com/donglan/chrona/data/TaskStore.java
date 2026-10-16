@@ -1094,6 +1094,8 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     /** Atomically replaces all candidates for a task; list order is retained. */
     public void replaceCandidates(long taskId, List<EventCandidate> candidates) {
+        if (isHomeworkCapture(taskId))
+            throw new IllegalArgumentException("作业收件由同步管理，不能重新解析替换");
         if (candidates == null) {
             throw new IllegalArgumentException("candidates must not be null");
         }
@@ -1199,6 +1201,8 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     /** Updates a reviewed candidate without changing its calendar association. */
     public boolean updateCandidateDescription(long candidateId, long taskId, String description) {
+        if (isManagedHomework(candidateId, taskId))
+            throw new IllegalArgumentException("作业内容由学在浙大同步，请到原平台修改");
         ContentValues values = new ContentValues();
         values.put("description", description);
         return getWritableDatabase().update("event_candidates", values, "id=? AND task_id=?",
@@ -1211,6 +1215,7 @@ public final class TaskStore extends SQLiteOpenHelper {
             throw new IllegalArgumentException("Saved candidate is required");
         }
         requireNonEmpty(candidate.title, "candidate.title");
+        requireCandidateEditAllowed(candidate);
         if (candidate.reminderMinutesBefore != null && candidate.reminderMinutesBefore < 0) {
             throw new IllegalArgumentException("Reminder minutes must be nonnegative");
         }
@@ -1236,6 +1241,8 @@ public final class TaskStore extends SQLiteOpenHelper {
     }
 
     public boolean setCandidateCompleted(long id, long taskId, boolean completed) {
+        if (!completed && isSubmittedHomework(id, taskId))
+            throw new IllegalArgumentException("此作业已提交，提交状态由学在浙大管理");
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
         try {
             ContentValues values=new ContentValues();
@@ -1244,6 +1251,42 @@ public final class TaskStore extends SQLiteOpenHelper {
             if(changed) updateStatus(taskId,getCandidates(taskId).stream().allMatch(EventCandidate::settled)?TaskRecord.READY:TaskRecord.NEEDS_REVIEW,null);
             db.setTransactionSuccessful();return changed;
         } finally {db.endTransaction();}
+    }
+
+    /** Call before touching CalendarProvider; storage also enforces this at commit. */
+    public void requireCandidateEditAllowed(EventCandidate candidate) {
+        if (!isManagedHomework(candidate.id, candidate.taskId)) return;
+        EventCandidate current = getCandidatesByIds(java.util.List.of(candidate.id)).get(0);
+        if (!java.util.Objects.equals(current.title, candidate.title)
+                || !java.util.Objects.equals(current.description, candidate.description)
+                || !java.util.Objects.equals(current.dueAtMillis, candidate.dueAtMillis)
+                || !java.util.Objects.equals(current.category, candidate.category)
+                || current.isRecord != candidate.isRecord)
+            throw new IllegalArgumentException("作业标题、内容、截止时间和类型由学在浙大管理");
+        if (current.completed() && !candidate.completed() && isSubmittedHomework(candidate.id, candidate.taskId))
+            throw new IllegalArgumentException("此作业已提交，提交状态由学在浙大管理");
+    }
+
+    public boolean isManagedHomework(long id, long taskId) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT 1 FROM zju_homework_map WHERE candidate_id=? AND capture_id=? LIMIT 1",
+                new String[]{Long.toString(id), Long.toString(taskId)})) {
+            return cursor.moveToFirst();
+        }
+    }
+
+    public boolean isHomeworkCapture(long taskId) {
+        return scalar("SELECT 1 FROM zju_homework_captures WHERE capture_id=?", Long.toString(taskId)) != null;
+    }
+
+    public boolean isSubmittedHomework(long id, long taskId) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT snapshot FROM zju_homework_map WHERE candidate_id=? AND capture_id=? LIMIT 1",
+                new String[]{Long.toString(id), Long.toString(taskId)})) {
+            if (!cursor.moveToFirst()) return false;
+            try { return new org.json.JSONObject(cursor.getString(0)).optBoolean("submitted", false); }
+            catch (org.json.JSONException failure) { throw new IllegalStateException("作业状态无法读取", failure); }
+        }
     }
 
     public boolean setCalendarEventId(long candidateId, long taskId, long calendarEventId) {

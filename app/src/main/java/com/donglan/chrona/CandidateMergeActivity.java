@@ -33,7 +33,8 @@ public final class CandidateMergeActivity extends Activity {
         UiStyle.addSpaced(root,button("重新扫描",false,this::scan),0,16);
         CandidateMerges.Preview preview=session.preview;
         if(preview!=null){
-            UiStyle.addSpaced(root,text(preview.groups.isEmpty()?"没有完全相同的日程":preview.groups.size()+" 组 · 合并 "+preview.removed()+" 份重复日程",17),0,16);
+            UiStyle.addSpaced(root,text(preview.groups.isEmpty()?"没有需要合并的 Chrona 日程":preview.groups.size()+" 组 · 合并 "+preview.removed()+" 份重复日程",17),0,8);
+            UiStyle.addSpaced(root,text("此页扫描 Chrona 日程；课表与系统日历的重复项按日程来源规则合并展示。",13),0,16);
             int begin=session.page*PREVIEW_PAGE_SIZE,end=Math.min(preview.groups.size(),begin+PREVIEW_PAGE_SIZE);
             for(List<EventCandidate> group:preview.groups.subList(begin,end)){
                 EventCandidate value=group.get(0);LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);UiStyle.glass(card);card.setPadding(dp(16),dp(16),dp(16),dp(16));

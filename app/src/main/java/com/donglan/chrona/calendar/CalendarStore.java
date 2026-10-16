@@ -71,6 +71,16 @@ public final class CalendarStore {
 
     public List<CalendarOccurrence> listInstances(long begin, long end,
             android.os.CancellationSignal cancellation, int limit) {
+        return listInstances(begin, end, cancellation, limit, false);
+    }
+
+    /** Export duplicate detection must include hidden/disabled calendar sources too. */
+    public List<CalendarOccurrence> listAllInstances(long begin, long end) {
+        return listInstances(begin, end, null, Integer.MAX_VALUE, true);
+    }
+
+    private List<CalendarOccurrence> listInstances(long begin, long end,
+            android.os.CancellationSignal cancellation, int limit, boolean allSources) {
         requireRead();
         Uri.Builder uri = CalendarContract.Instances.CONTENT_URI.buildUpon();
         ContentUris.appendId(uri, begin);
@@ -80,14 +90,14 @@ public final class CalendarStore {
                 Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR,
                 Events.CALENDAR_ID, Calendars.ACCOUNT_NAME};
         List<CalendarOccurrence> result = new ArrayList<>();
-        try (Cursor cursor = resolver.query(uri.build(), projection, Calendars.VISIBLE + "=1 AND ("
+        try (Cursor cursor = resolver.query(uri.build(), projection, (allSources ? "(" : Calendars.VISIBLE + "=1 AND (")
                 + Events.STATUS + " IS NULL OR " + Events.STATUS + "!=?)",
                 new String[]{Integer.toString(Events.STATUS_CANCELED)},
                 CalendarContract.Instances.BEGIN + " ASC", cancellation)) {
             if (cursor == null) throw new IllegalStateException("Calendar provider returned no cursor");
             while (cursor.moveToNext() && result.size() < limit) {
                 if (cursor.isNull(0) || cursor.isNull(1) || cursor.isNull(2)) continue;
-                if (!ScheduleSources.allowsCalendar(context, cursor.getLong(8))) continue;
+                if (!allSources && !ScheduleSources.allowsCalendar(context, cursor.getLong(8))) continue;
                 long start = cursor.getLong(1), finish = cursor.getLong(2);
                 if (finish <= start) continue;
                 result.add(new CalendarOccurrence(cursor.getLong(0), start, finish,

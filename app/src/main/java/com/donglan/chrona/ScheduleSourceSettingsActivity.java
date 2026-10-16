@@ -20,6 +20,9 @@ import java.util.Locale;
 /** Global permissions for each schedule source. Provider enumeration runs off the UI thread. */
 public final class ScheduleSourceSettingsActivity extends Activity {
     private static final int READ_PERMISSION = 760;
+    private static final int EXPORT_PERMISSION = 761;
+    private boolean exporting;
+    private Button exportCourses;
     private LinearLayout calendars;
     private LinearLayout builtins;
     private Button primary;
@@ -38,6 +41,11 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         Button matching=new Button(this);matching.setText("课程关联");UiStyle.button(matching,false);
         UiStyle.addSpaced(root,matching,0,16);
         matching.setOnClickListener(view -> startActivity(new android.content.Intent(this,CourseSourceMatchingActivity.class)));
+        exportCourses = new Button(this);
+        exportCourses.setText("将课表写入系统日历");
+        UiStyle.button(exportCourses, false);
+        UiStyle.addSpaced(root, exportCourses, 0, 16);
+        exportCourses.setOnClickListener(view -> chooseCourseExport());
         calendars = new LinearLayout(this); calendars.setOrientation(LinearLayout.VERTICAL);
         root.addView(calendars, new LinearLayout.LayoutParams(-1, -2));
         SettingsPageLayout.show(this, root, state == null);
@@ -72,6 +80,68 @@ public final class ScheduleSourceSettingsActivity extends Activity {
     }
 
     private static String countLabel(int count) { return count < 0 ? "数量读取失败，点击重试查看" : count + " 条日程"; }
+
+    private void chooseCourseExport() {
+        if (exporting) return;
+        if (checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.WRITE_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR}, EXPORT_PERMISSION);
+            return;
+        }
+        boolean school = new ZjuSettingsStore(this).enabled();
+        String[] choices = school ? new String[]{"导入课表", "折姜星辰课表", "两种课表"} : new String[]{"导入课表"};
+        UiStyle.choiceDialog(this, "选择写入来源", choices, -1, index -> {
+            if (index < 0 || index >= choices.length || exporting) return;
+            loadCourseExport(index != 1, school && index != 0);
+        });
+    }
+
+    private void loadCourseExport(boolean imported, boolean school) {
+        exporting = true;
+        exportCourses.setEnabled(false);
+        android.content.Context context = getApplicationContext();
+        new Thread(() -> {
+            try {
+                List<com.donglan.chrona.calendar.CalendarOccurrence> lessons = CourseCalendarExport.load(context, imported, school);
+                runOnUiThread(() -> {
+                    exporting = false;
+                    if (isFinishing() || isDestroyed()) return;
+                    exportCourses.setEnabled(true);
+                    if (lessons.isEmpty()) { Feedback.show(this, "没有可写入的本地课表"); return; }
+                    UiStyle.confirmDialog(this, "写入 " + lessons.size() + " 节课程？",
+                            "包括所选来源已保存的全部学期；相同课程会跳过。此次写入为副本，后续课表改动不会自动更新副本。",
+                            "写入", () -> writeCourses(lessons));
+                });
+            } catch (Exception failure) {
+                runOnUiThread(() -> { exporting = false; if (!isFinishing() && !isDestroyed()) {
+                    exportCourses.setEnabled(true); Feedback.showLong(this, "读取课表失败：" + failure.getMessage());
+                }});
+            }
+        }, "chrona-course-export-preview").start();
+    }
+
+    private void writeCourses(List<com.donglan.chrona.calendar.CalendarOccurrence> lessons) {
+        if (exporting) return;
+        exporting = true;
+        exportCourses.setEnabled(false);
+        android.content.Context context = getApplicationContext();
+        new Thread(() -> {
+            String message;
+            try {
+                CourseCalendarExport.Result result = CourseCalendarExport.write(context, lessons);
+                message = "已写入 " + result.inserted + " 节，跳过 " + result.skipped + " 节相同课程";
+            } catch (Exception failure) { message = "写入失败：" + failure.getMessage(); }
+            AgendaWidgetProvider.requestRefresh(context);
+            String summary = message;
+            runOnUiThread(() -> {
+                exporting = false;
+                if (isFinishing() || isDestroyed()) return;
+                exportCourses.setEnabled(true);
+                Feedback.showLong(this, summary);
+                loadCalendars(); loadBuiltins(loadGeneration);
+            });
+        }, "chrona-course-export").start();
+    }
 
     private void loadCalendars() {
         int generation = ++loadGeneration;
@@ -203,6 +273,13 @@ public final class ScheduleSourceSettingsActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] result) {
         super.onRequestPermissionsResult(request, permissions, result);
+        if (request == EXPORT_PERMISSION) {
+            if (checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                    && checkSelfPermission(Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED)
+                chooseCourseExport();
+            else Feedback.show(this, "需要读取和写入日历权限");
+            return;
+        }
         if (request != READ_PERMISSION) return;
         if (result.length == 0 || result[0] != PackageManager.PERMISSION_GRANTED) Feedback.show(this, "未获得读取日历权限");
         loadCalendars(); loadBuiltins(loadGeneration);

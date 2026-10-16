@@ -40,6 +40,7 @@ GROUPS = {
         "sync_core_check.py", "atomic_card_contract_check.py", "island_camera_check.py",
         "ai_auto_publish_check.py", "system_agenda_details_check.py",
         "school_data_backup_check.py",
+        "zju_homework_update_check.py", "course_calendar_export_check.py",
     ),
     "powershell": ("vivo_provision_check.py",),
 }

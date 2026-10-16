@@ -502,3 +502,11 @@
 - 2026-09-26：真机实测（一台 Android 手机，Vivo）：文字输入的异步解析、草稿生成与 `needs_review` 状态正常（实测 token 4803，`今天晚上10点` 正确解析为 22:00）。**图片请求在该版本上因 30 秒读超时失败**，即 0.5.1 所修问题；`0.5.1`/`0.6.0` 的图片路径与其余功能仍待回归。
 - 2026-09-26：数据库 `v1 → v3` 迁移用 Python `sqlite3` 按真实 SQL 验证通过（版本 1 真实建表语句建库 + 插入数据 → 顺序执行三条 `ALTER TABLE` → 原有行、token 值与草稿全部保留，新列为 NULL，外键级联删除仍生效）。注意：这是对 SQL 本身的验证；Android `onUpgrade` 回调链路仍未经真机升级安装验证，因为手机上的旧版本已被卸载（签名不兼容）。
 - 安装包为 `app\build\outputs\apk\debug\app-debug.apk`。**升级安装验证仍未完成**：手机当前是新装而非从 0.1.0/0.2.0 升级而来。
+## 0.15.6 — 2026-10-17
+
+- 作业存储／同步／日历真实 SQLite 30 项通过：只读字段、个人安排、独立备注入口、平台提交不可撤销、本地完成可恢复、禁止重新解析，以及原有自动写入与重试路径。
+- 生产课表导出 16 项通过（来源与 Provider 替身）：两种本地来源、学校备注优先、总开关关闭、他源去重、重复写入、不同地点、权限拒绝、部分失败重试、全天和不额外添加提醒。未对真实课程执行批量写入；这是用户主动确认的操作。
+- 合并生产 Java／真实 SQLite 99 项、两类型 57 项通过。旧升级 fixture 原来在 v12 表已存在时重复调用 v10 升级，已恢复真实旧结构后验证升级。详情编辑器 17 + LAN 7、草稿保持检查通过；完成提醒编排 32、vivo 通知替身 111 通过。
+- release/debugAndroidTest 编译与 lintRelease 通过。手机正式版 0.15.6 更新成功，临时作业控件检查 newCompleteDeleteOrder=true、completionSquare=true（147px 对应 48dp）、sourceTitleReadOnly=true、schoolLinksVisible=true、openingCreatesDirtyDraft=false。实看暗色截图确认完成按钮位于新建与删除之间，双入口单行等宽。首次截图发现开启只读复制触发脏草稿标记，已移除源字段编辑监听并复验。报告与截图位于 build/device-0.15.6/。
+- 真机原子岛临时提醒实际触摸回归：realClickCompleted=true、notificationRemoved=true，完成后清理测试数据并返回首页。未干扰通话；锁屏、主胶囊、全套大字体与窄屏状态未重新验收。两个网页按钮只检查固定跳转 Intent 和布局，未代用户登录或提交作业。
+

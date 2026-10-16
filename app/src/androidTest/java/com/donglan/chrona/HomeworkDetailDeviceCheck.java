@@ -17,6 +17,84 @@ import org.json.JSONObject;
 
 /** Local multi-homework fixture. Never fetches school data or edits a user task. */
 final class HomeworkDetailDeviceCheck {
+    static String controls(Instrumentation test) throws Exception {
+        Context context = test.getTargetContext();
+        long task = 0, candidate = 0;
+        Activity activity = null;
+        String account = "ui-fixture-" + java.util.UUID.randomUUID();
+        try {
+            try (TaskStore store = new TaskStore(context)) {
+                task = store.insertTask("作业控件验收（自动清理）", null, "device_check", System.currentTimeMillis());
+                candidate = store.appendCandidate(new EventCandidate(0, task, "高等数学 · 课后练习",
+                        null, null, "Asia/Shanghai", "", "完成课本第 3 章习题。内容与截止时间由课程平台同步。", null,
+                        false, null, "task", false, false, 0, System.currentTimeMillis()+7*86_400_000L, null, false));
+                store.updateStatus(task, TaskRecord.READY, null);
+                store.getWritableDatabase().execSQL("INSERT INTO zju_homework_captures(capture_id,account) VALUES(?,?)",new Object[]{task,account});
+                store.getWritableDatabase().execSQL("INSERT INTO zju_homework_map(account,remote_key,capture_id,candidate_id,ignored,snapshot,pending_calendar) VALUES(?,?,?,?,0,?,0)",
+                        new Object[]{account,"ui-fixture",task,candidate,"{\"submitted\":false}"});
+            }
+            activity = test.startActivitySync(new Intent(context, TaskDetailActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("task_id", task)
+                    .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, candidate));
+            test.waitForIdleSync();
+            Activity screen = activity;
+            JSONObject report = new JSONObject();
+            test.runOnMainSync(() -> {
+                try {
+                    View root = screen.getWindow().getDecorView();
+                    View complete = described(root, "标记完成");
+                    if (!(complete instanceof android.widget.ImageButton)) throw new AssertionError("Completion must be an icon button");
+                    ViewGroup row = (ViewGroup) complete.getParent();
+                    int index = row.indexOfChild(complete);
+                    if (index != row.getChildCount()-2 || !(row.getChildAt(index-1) instanceof android.widget.Button)
+                            || !String.valueOf(row.getChildAt(index+1).getContentDescription()).startsWith("删除日程"))
+                        throw new AssertionError("Required order is new / completion / delete");
+                    if (complete.getWidth()!=complete.getHeight()) throw new AssertionError("Completion target must be square");
+                    EditText sourceTitle = title(root,"高等数学 · 课后练习");
+                    if (sourceTitle == null || sourceTitle.getKeyListener()!=null) throw new AssertionError("Source title editable");
+                    var dirty = TaskDetailActivity.class.getDeclaredField("dirtyCandidateIds");
+                    dirty.setAccessible(true);
+                    if (!((java.util.Set<?>)dirty.get(screen)).isEmpty()) throw new AssertionError("Opening read-only fields creates a dirty draft");
+                    boolean linksExpected = new ZjuSettingsStore(context).enabled();
+                    if (linksExpected && (text(root,"雪灾浙大M")==null || text(root,"雪灾浙大")==null))
+                        throw new AssertionError("Both homework site actions required");
+                    report.put("newCompleteDeleteOrder", true).put("completionSquare", true)
+                            .put("completionWidthPx", complete.getWidth()).put("sourceTitleReadOnly",true)
+                            .put("schoolLinksVisible",linksExpected).put("openingCreatesDirtyDraft",false);
+                } catch (org.json.JSONException | ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
+            });
+            android.graphics.Bitmap image = test.getUiAutomation().takeScreenshot();
+            java.io.File screenshot = new java.io.File(context.getExternalFilesDir(null),"homework-controls.png");
+            if (image == null) throw new AssertionError("Screenshot unavailable");
+            try (java.io.FileOutputStream stream = new java.io.FileOutputStream(screenshot)) {
+                image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream);
+            } finally { image.recycle(); }
+            report.put("screenshot",screenshot.getAbsolutePath()).put("temporaryFixtureOnly",true);
+            return report.toString();
+        } finally {
+            Activity screen=activity;
+            if(screen!=null)test.runOnMainSync(screen::finish);
+            if(task>0)try(TaskStore store=new TaskStore(context)) {
+                store.deleteTask(task);
+                store.getWritableDatabase().delete("zju_homework_map","account=?",new String[]{account});
+                store.getWritableDatabase().delete("zju_homework_captures","account=?",new String[]{account});
+            }
+        }
+    }
+    private static View described(View view,String description) {
+        if(description.contentEquals(String.valueOf(view.getContentDescription())))return view;
+        if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++) {
+            View found=described(group.getChildAt(i),description);if(found!=null)return found;
+        }
+        return null;
+    }
+    private static View text(View view,String value) {
+        if(view instanceof android.widget.TextView label && value.contentEquals(label.getText()))return view;
+        if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++) {
+            View found=text(group.getChildAt(i),value);if(found!=null)return found;
+        }
+        return null;
+    }
     static String sourceRead(Context context) throws Exception {
         JSONObject report = new JSONObject();
         java.time.ZoneId zone = java.time.ZoneId.systemDefault();
