@@ -37,7 +37,7 @@ final class DockNavigationLayout extends FrameLayout {
     private final Runnable followFinger = this::advanceFingerFollow;
     private float visualPosition = Float.NaN;
     private float bodyDragFrom = Float.NaN;
-    private float settleFrom, settleTo, settleFraction, settleBaseFraction;
+    private float settleTo;
     private boolean pageSettling;
     private boolean coastSelection;
     private int coastDestination;
@@ -167,24 +167,19 @@ final class DockNavigationLayout extends FrameLayout {
         press(false);
     }
 
-    /** Use the page's animator, starting at the actual highlight position after a dock drag. */
+    /** Move toward the known selection immediately, independently of expensive page transitions. */
     void beginPageSettle(int destination) {
         if (coastSelection) return;
         cancelFingerFollow();
-        settleFrom = Float.isNaN(visualPosition) ? selectedIndex : visualPosition;
         settleTo = destination;
-        settleFraction = settleBaseFraction = 0f;
         bodyDragFrom = Float.NaN;
         pageSettling = true;
         animateTo(destination);
     }
 
     void updatePageSettle(float fraction) {
-        settleFraction = fraction;
         if (dragging || coastSelection || !pageSettling) return;
-        float progress = settleBaseFraction >= 1f ? 1f
-                : Math.max(0f, Math.min(1f, (fraction - settleBaseFraction) / (1f - settleBaseFraction)));
-        animateTo(settleFrom + (settleTo - settleFrom) * progress);
+        animateTo(settleTo);
     }
 
     void finishPageSelection(int index) {
@@ -201,9 +196,7 @@ final class DockNavigationLayout extends FrameLayout {
 
     private void resumeOrReturnHighlight() {
         if (pageSettling) {
-            // A dock drag may have moved it while the page was already animating.
-            settleFrom = visualPosition;
-            settleBaseFraction = settleFraction;
+            animateTo(settleTo);
         } else {
             animateTo(selectedIndex);
         }
@@ -256,6 +249,8 @@ final class DockNavigationLayout extends FrameLayout {
         float left = Math.min(center(0), center(itemCount() - 1));
         float right = Math.max(center(0), center(itemCount() - 1));
         fingerPosition = positionAt(Math.max(left, Math.min(right, x)));
+        spring.follow(fingerPosition, releasedVelocity());
+        applySpring();
         animateTo(fingerPosition);
     }
     private void animateTo(float position) {
@@ -448,12 +443,17 @@ final class DockNavigationLayout extends FrameLayout {
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             removeCallbacks(longPress);
             boolean commit = dragging && action == MotionEvent.ACTION_UP;
+            boolean pulse = action == MotionEvent.ACTION_UP && !ignoreTouch && (commit || !tapLeftBounds);
             float releaseSpeed = commit ? releasedVelocity() : 0f;
             cancelFingerFollow();
             tracking = false;
             dragging = false;
             ignoreTouch = false;
             press(false);
+            if (pulse && ValueAnimator.areAnimatorsEnabled()) {
+                spring.releaseWithPulse();
+                animateTo(spring.target);
+            }
             if (commit) {
                 pageSettling = false;
                 coastDestination = spring.predictLanding(releaseSpeed, Math.max(0, itemCount() - 1));

@@ -10,6 +10,6 @@
             android:src="@drawable/ic_week_calendar" android:scaleType="fitCenter" android:importantForAccessibility="no" />
         <TextView android:id="@+id/week_widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="8dp" android:paddingStart="6dp" android:paddingEnd="6dp"
-            android:text="本周日历" android:textSize="14sp" android:gravity="center" android:maxLines="2" android:ellipsize="end" />
+            android:text="本周日历" android:textSize="14sp" android:gravity="center" android:includeFontPadding="false" android:maxLines="2" android:ellipsize="end" />
     </LinearLayout>
 </FrameLayout>

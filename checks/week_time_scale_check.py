@@ -13,7 +13,7 @@ public class WeekTimeScaleCheck {
  static int checks;
  static void check(boolean b){checks++;if(!b)throw new AssertionError("time scale "+checks);}
  public static void main(String[] args){
-  check(!WeekTimelineScale.occupiesQuietHours(0,60));
+  check(WeekTimelineScale.occupiesQuietHours(0,60));
   check(!WeekTimelineScale.occupiesQuietHours(480,500));
   for(double[] range:new double[][]{{59,61},{60,75},{479,480},{0,1440},{420,540}})
    check(WeekTimelineScale.occupiesQuietHours(range[0],range[1]));
@@ -24,9 +24,9 @@ public class WeekTimeScaleCheck {
     double y=scale.y(minute);check(y>previous);previous=y;
     check(Math.abs(scale.minuteAt(y)-minute)<.00001);
    }
-   check(scale.y(60)==hour);
+   check(scale.y(0)==0);
    check(Math.abs((scale.y(600)-scale.y(540))-hour)<.00001);
-   check(folded ? scale.y(480)-scale.y(60)<=72 : scale.y(1440)==24*hour);
+   check(folded ? scale.y(480)<=72 : scale.y(1440)==24*hour);
    if(folded)check(scale.y(1440)<24*hour);
   }
   System.out.println("Week time scale: "+checks+" checks passed");

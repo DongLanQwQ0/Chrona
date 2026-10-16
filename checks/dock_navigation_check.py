@@ -274,11 +274,11 @@ public class DockNavigationCheck extends Context {
   dock.updatePageSettle(1);View.advance(50);require(selected.size()==1,"Stationary release commits actual position after coast");
   init();dock.beginPageSettle(1);dock.updatePageSettle(.6f);float interrupted=center();dock.beginBodyDrag();dock.showPageProgress(0,1,0);close(center(),interrupted,"New body gesture preserves interrupted highlight position");
   dock.showPageProgress(0,1,.5f);close(center(),interrupted,"Interrupted gesture retarget keeps current frame");View.advance(50);require(center()>interrupted,"Interrupted gesture moves toward target");
-  init();touch(0,225,35);touch(2,245,35);close(center(),50,"Remote drag begins at existing highlight");
-  View.advance(16);float first=center();require(first>50&&first<245,"First frame moves partway toward finger");
-  View.advance(32);float next=center();require(next>first&&next<245,"Subsequent frames approach finger");
-  touch(2,150,35);close(center(),next,"Retargeting does not teleport during MOVE");
-  View.advance(80);require(center()>first&&center()<200,"Direction reversal retains bounded inertia");
+  init();touch(0,225,35);touch(2,245,35);close(center(),245,"Drag follows finger in the same input frame");
+  View.advance(16);close(center(),245,"Held position does not trail the finger");
+  View.advance(32);close(center(),245,"Scale animation does not move the held position");
+  touch(2,150,35);close(center(),150,"Direction reversal follows immediately");
+  View.advance(80);close(center(),150,"Stationary held position remains exact");
   float beforeUp=center();touch(1,245,35);close(center(),beforeUp,"Release preserves visual position");
   require(selected.equals(List.of(1)),"Release starts predicted page immediately while highlight keeps moving");
   View.advance(1800);close(center(),150,"Stationary release lands at actual visual position rather than remote finger position");
@@ -288,6 +288,10 @@ public class DockNavigationCheck extends Context {
   for(int i=0;i<180;i++){physics.step(1f/120);maxWidth=Math.max(maxWidth,physics.width);maxPosition=Math.max(maxPosition,physics.position);}
   require(maxWidth>1.02f,"Moving highlight width stretches elastically");require(maxPosition>2f,"Position spring has bounded elastic overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.width-1)<.002f,"Spring settles rather than oscillating indefinitely");
   DockSpring fast=new DockSpring();fast.press(true);for(int i=0;i<12;i++)fast.step(1f/120);
+  DockSpring tap=new DockSpring();tap.press(true);tap.step(.008f);tap.releaseWithPulse();float peak=1;
+  for(int i=0;i<180;i++){tap.step(1f/120);peak=Math.max(peak,tap.scale);}
+  require(peak>1.1f&&peak<1.3f,"Quick tap has a small visible pulse below held scale");
+  require(Math.abs(tap.scale-1)<.001f,"Tap pulse shrinks back without a held finger");
   require(fast.scale<1.4f&&fast.bar<1.08f,"Press expansion is slower than previous 100ms response");for(int i=0;i<6;i++)fast.step(1f/120);
   require(fast.scale>1.4f&&fast.bar>1.08f,"Press reaches previous response at 1.5 times elapsed time");fast.press(false);for(int i=0;i<18;i++)fast.step(1f/120);
   require(fast.scale<1.04f&&fast.bar<1.01f,"Release contracts rapidly");center();require((GradientDrawable.lastColor>>>24)==0x52,"Native highlight has 32 percent alpha for background blending");
@@ -359,8 +363,8 @@ public class DockNavigationCheck extends Context {
   android.view.VelocityTracker.velocity=900;touch(0,35,25);touch(2,35,140);touch(1,100,140);
   require(Math.abs(((DockSpring)springField.get(dock)).velocity-9)<.001f,"Vertical release transfers physical Y velocity");
   require(selected.size()==1,"Vertical outside release starts predicted page immediately");android.view.VelocityTracker.velocity=0;
-  init();touch(0,245,35);View.advance(500);close(center(),50,"Long press starts at existing highlight");
-  View.advance(32);require(center()>50&&center()<245,"Long press smoothly approaches finger");
+  init();touch(0,245,35);View.advance(500);close(center(),245,"Long press takes the held finger position");
+  View.advance(32);close(center(),245,"Long press scale animates around the finger position");
   touch(3,245,35);View.advance(400);close(center(),50,"Cancel stops finger loop and returns");
   init();touch(0,225,35);touch(2,245,35);View.advance(32);touch(5,245,35);View.advance(400);close(center(),50,"Multiple pointers stop follow");
   init();touch(0,225,35);touch(2,245,35);View.advance(32);float detached=center();dock.onDetachedFromWindow();View.advance(400);close(center(),detached,"Detach cancels scheduled follow");

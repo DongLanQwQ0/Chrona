@@ -1285,8 +1285,22 @@ public final class DashboardActivity extends Activity {
     }
 
     private CheckBox homeSystemCalendarToggle() {
-        CheckBox include = new CheckBox(this);
-        include.setButtonDrawable(R.drawable.ic_week_calendar);
+        CheckBox include = new CheckBox(this) {
+            final android.graphics.drawable.Drawable icon = getDrawable(R.drawable.ic_week_calendar).mutate();
+            final android.graphics.Paint fill = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(android.graphics.Canvas canvas) {
+                UiStyle.Palette palette = UiStyle.colors(getContext());
+                if (isChecked()) {
+                    fill.setColor((palette.primary & 0x00ffffff) | (32 << 24));
+                    canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, dp(20), fill);
+                }
+                icon.setTint(isChecked() ? palette.primary : palette.muted);
+                int size = dp(24), left = (getWidth() - size) / 2, top = (getHeight() - size) / 2;
+                icon.setBounds(left, top, left + size, top + size);
+                icon.draw(canvas);
+            }
+        };
+        include.setButtonDrawable((android.graphics.drawable.Drawable) null);
         include.setContentDescription("包含系统其他日程");
         include.setTooltipText("包含系统其他日程");
         include.setPadding(dp(10), 0, dp(10), 0);
@@ -1297,8 +1311,17 @@ public final class DashboardActivity extends Activity {
         include.setMinimumHeight(dp(44));
         UiStyle.pressable(include);
         include.setChecked(HomeTimelinePreferences.includesSystemCalendar(this));
+        Runnable describe = () -> {
+            String state = include.isChecked() ? "已开启" : "已关闭";
+            include.setTooltipText("包含系统其他日程：" + state);
+            if (android.os.Build.VERSION.SDK_INT >= 30) include.setStateDescription(state);
+            include.invalidate();
+        };
+        describe.run();
         include.setOnCheckedChangeListener((button, enabled) -> {
+            describe.run();
             if (enabled && !new CalendarStore(this).hasReadPermission()) {
+                include.setChecked(false);
                 requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR},
                         HOME_CALENDAR_PERMISSION_REQUEST);
                 return;

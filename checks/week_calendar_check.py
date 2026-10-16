@@ -19,6 +19,14 @@ layout = ET.parse(root / 'app/src/main/res/layout/widget_week_calendar.xml')
 ids = {n.get(android+'id') for n in layout.iter()}
 for name in ('root', 'title', 'icon', 'background'):
     assert '@+id/week_widget_' + name in ids
+title = next(n for n in layout.iter() if n.get(android+'id') == '@+id/week_widget_title')
+assert title.get(android+'layout_width') == 'wrap_content' and title.get(android+'layout_weight') is None
+assert title.get(android+'includeFontPadding') == 'false'
+home = (src / 'DashboardActivity.java').read_text(encoding='utf-8')
+toggle = home[home.index('private CheckBox homeSystemCalendarToggle()'):home.index('private void home(HomeData')]
+assert '(getWidth() - size) / 2' in toggle and '(getHeight() - size) / 2' in toggle
+assert 'isChecked() ? palette.primary : palette.muted' in toggle
+assert 'setStateDescription(state)' in toggle and 'include.setChecked(false)' in toggle
 provider = (src / 'WeekCalendarWidgetProvider.java').read_text(encoding='utf-8')
 activity = (src / 'CalendarOverviewActivity.java').read_text(encoding='utf-8')
 assert '.putExtra("open_week", true)' in provider and 'CalendarOverviewActivity.class' in provider

@@ -1,4 +1,12 @@
-# 当前交付：0.14.52 / 159
+# 当前交付：0.14.53 / 160
+
+横向本周日历小组件的标题改wrap_content，与图标整体居中；横竖版关闭includeFontPadding。首页系统日程CheckBox保留原生勾选语义，自绘24dp图标至控件正中心，checked=主题色+淡底、unchecked=muted；tooltip/stateDescription同步，权限未授予先恢复关闭。
+
+WeekTimelineScale压缩范围改00–08，正反坐标、绘制标签与边界测试同步。DockSpring直接follow手指位置，保留速度伸展/松手惯性；选中位置弹簧改720/40，页面settle不再把高光目标限制在页面动画的中间值。短按releaseWithPulse至少到1.16再缩回，长按1.5；动画关闭和取消不播放脉冲。128项选择栏、17320坐标断言和周手势/小组件契约通过。
+
+原子岛勾按钮仍未解决。真机短暂连接时读取了当前界面，尚未完成一次勾选及对应日志采集就断线；用户要求先发布，其后恢复调试再处理。不得把旧离线绑定检查当成本次点击已恢复的证据。不提交私人设备界面/原始固件。备份build/backups/20261016-icons-selection。
+
+# 上一轮交付：0.14.52 / 159
 
 最后两分钟的缓存更新覆盖card/island/baseInfos/shortInfos/capsule，沿用串行WORKER，不逐秒查数据库；不再按PowerManager.isInteractive跳过，屏幕唤醒立即探测。105项通知载荷检查含连续119→115秒、非交互状态及各表面一致；服务检查含连续一秒重排程和亮屏立即刷新。无唤醒锁，系统深度休眠仍受系统调度约束。
 

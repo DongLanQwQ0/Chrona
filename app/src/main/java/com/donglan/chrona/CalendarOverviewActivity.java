@@ -958,11 +958,11 @@ public final class CalendarOverviewActivity extends Activity {
             @Override protected void onDraw(Canvas canvas) {
                 paint.setStrokeWidth(dp(1)); paint.setTextSize(dp(11));
                 for (int hour = 0; hour <= 24; hour++) {
-                    if (compressMorning && hour > 1 && hour < 8) continue;
+                    if (compressMorning && hour > 0 && hour < 8) continue;
                     float y = geometry.y(hour * 60); paint.setColor(gridColors.outline);
                     canvas.drawLine(gutter, y, geometry.width, y, paint);
-                    if (hour < 24) { paint.setColor(gridColors.muted); canvas.drawText(compressMorning && hour == 1
-                            ? "01–08" : hourLabels[hour], dp(4), y + dp(13), paint); }
+                    if (hour < 24) { paint.setColor(gridColors.muted); canvas.drawText(compressMorning && hour == 0
+                            ? "00–08" : hourLabels[hour], dp(4), y + dp(13), paint); }
                 }
                 paint.setColor(gridColors.outline);
                 for (int d = 0; d <= days; d++) canvas.drawLine(gutter + d * geometry.dayWidth, 0, gutter + d * geometry.dayWidth, geometry.height, paint);
