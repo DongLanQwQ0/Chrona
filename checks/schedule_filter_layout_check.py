@@ -28,10 +28,16 @@ for setting in ('option.setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_
                 'option.setSingleLine(true)', 'option.setHorizontallyScrolling(false)'):
     require(setting in choice and choice.index(setting) > add_item,
             "Filter label policy must override shared addItem fitting: " + setting)
-require('UiStyle.addSpaced(body, dock.motionHost(), 0, 4)' in choice,
-        "Compact grouping retains the common motion envelope")
-require('UiStyle.addSpaced(body, heading, 4, 2)' in choice,
-        "Heading spacing does not duplicate the motion host clearance")
+require('UiStyle.addSpaced(body, dock.motionHost(true), 0, 6)' in choice,
+        "Dense filter rows allow animated highlights to overlap neighboring groups")
+require('UiStyle.addSpaced(body, heading, 6, 2)' in choice,
+        "Filter groups retain six-dp spacing without a full vertical motion envelope")
+require('body.setPadding(dp(4), dp(8), dp(4), dp(18))' in source,
+        "First and last filter groups retain viewport-edge safety padding")
+dock = (root / "app/src/main/java/com/donglan/chrona/DockNavigationLayout.java").read_text(encoding="utf-8")
+require('return motionHost(false);' in dock and 'int cross = overlapRows ? clearance' in dock
+        and 'plate * 1.53f' in dock,
+        "Overlap is opt-in while ordinary motion hosts retain their complete cross-axis envelope")
 require('category.sync(draft.source == 1' in source
         and 'draft.source == 0);' in source
         and 'option.setEnabled(enabled)' in source,

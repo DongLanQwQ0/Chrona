@@ -25,6 +25,10 @@ final class TaskCompletion {
             try (TaskStore store = new TaskStore(context)) {
                 if (expectedRevision >= 0 && store.dataRevision() != expectedRevision) throw new java.util.ConcurrentModificationException();
                 if (!store.setCandidateCompleted(id, taskId, completed)) throw new IllegalStateException("待办已不存在或正在处理");
+                if (!completed) {
+                    for (EventCandidate candidate : store.getCandidatesByIds(List.of(id)))
+                        AgendaAcknowledgement.set(context, AgendaAcknowledgement.key(candidate), 0L, false);
+                }
                 enqueue(context, id);
                 String warning = reconcile(context, store, id);
                 AgendaReminder.requestRefresh(context);
@@ -68,7 +72,7 @@ final class TaskCompletion {
                 CalendarStore.EventRecord event = calendar.getEvent(item.calendarEventId);
                 if (event != null) {
                     List<Integer> alerts = new ArrayList<>();
-                    if (item.completed()) {
+                    if (item.completed() || !store.allowsReminder(item.id)) {
                         if (!prefs.contains(savedKey) && !prefs.edit().putString(savedKey, new JSONArray(event.reminderMinutes).toString()).commit())
                             throw new IllegalStateException("无法保存系统提醒恢复信息");
                     } else {
@@ -89,7 +93,7 @@ final class TaskCompletion {
             Set<String> pending = new HashSet<>(prefs.getStringSet(PENDING, Set.of()));
             pending.remove(Long.toString(id));
             SharedPreferences.Editor edit = prefs.edit().putStringSet(PENDING, pending);
-            if (item == null || !item.completed()) edit.remove(savedKey);
+            if (item == null || (!item.completed() && store.allowsReminder(item.id))) edit.remove(savedKey);
             edit.apply();
             return null;
         } catch (Exception failure) {

@@ -17,6 +17,7 @@ import android.provider.CalendarContract;
 import android.provider.CalendarContract.Calendars;
 import android.provider.CalendarContract.Events;
 import android.provider.CalendarContract.Reminders;
+import com.donglan.chrona.ScheduleSources;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -76,7 +77,8 @@ public final class CalendarStore {
         ContentUris.appendId(uri, end);
         String[] projection = {CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN,
                 CalendarContract.Instances.END, Events.TITLE, Events.ALL_DAY,
-                Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR};
+                Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR,
+                Events.CALENDAR_ID, Calendars.ACCOUNT_NAME};
         List<CalendarOccurrence> result = new ArrayList<>();
         try (Cursor cursor = resolver.query(uri.build(), projection, Calendars.VISIBLE + "=1 AND ("
                 + Events.STATUS + " IS NULL OR " + Events.STATUS + "!=?)",
@@ -85,11 +87,12 @@ public final class CalendarStore {
             if (cursor == null) throw new IllegalStateException("Calendar provider returned no cursor");
             while (cursor.moveToNext() && result.size() < limit) {
                 if (cursor.isNull(0) || cursor.isNull(1) || cursor.isNull(2)) continue;
+                if (!ScheduleSources.allowsCalendar(context, cursor.getLong(8))) continue;
                 long start = cursor.getLong(1), finish = cursor.getLong(2);
                 if (finish <= start) continue;
                 result.add(new CalendarOccurrence(cursor.getLong(0), start, finish,
                         cursor.getString(3), cursor.getInt(4) != 0, cursor.getString(5), cursor.getString(6),
-                        cursor.isNull(7) ? null : cursor.getInt(7)));
+                        cursor.isNull(7) ? null : cursor.getInt(7), cursor.getLong(8), cursor.getString(9)));
             }
         }
         return result;
@@ -103,7 +106,8 @@ public final class CalendarStore {
         ContentUris.appendId(uri, now); ContentUris.appendId(uri, horizon);
         String[] projection = {CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN,
                 CalendarContract.Instances.END, Events.TITLE, Events.ALL_DAY,
-                Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME};
+                Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR,
+                Events.CALENDAR_ID, Calendars.ACCOUNT_NAME};
         List<CalendarOccurrence> active = new ArrayList<>(), future = new ArrayList<>();
         try (Cursor cursor = resolver.query(uri.build(), projection,
                 Calendars.VISIBLE + "=1 AND " + Events.ALL_DAY + "=0 AND (" + Events.STATUS
@@ -112,10 +116,12 @@ public final class CalendarStore {
             if (cursor == null) throw new IllegalStateException("Calendar provider returned no cursor");
             while (cursor.moveToNext()) {
                 if (cursor.isNull(0) || cursor.isNull(1) || cursor.isNull(2)) continue;
+                if (!ScheduleSources.allowsCalendar(context, cursor.getLong(8))) continue;
                 long id = cursor.getLong(0), start = cursor.getLong(1), end = cursor.getLong(2);
                 if (linked.contains(id) || end <= now || end <= start || hidden.contains("system:" + id + ":" + start)) continue;
                 CalendarOccurrence entry = new CalendarOccurrence(id, start, end, cursor.getString(3), false,
-                        cursor.getString(5), cursor.getString(6));
+                        cursor.getString(5), cursor.getString(6), cursor.isNull(7) ? null : cursor.getInt(7),
+                        cursor.getLong(8), cursor.getString(9));
                 if (start > now) {
                     future.add(entry);
                     if (future.size() == 4) break;

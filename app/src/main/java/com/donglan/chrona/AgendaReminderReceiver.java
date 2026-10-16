@@ -14,6 +14,8 @@ public final class AgendaReminderReceiver extends BroadcastReceiver {
                 && !android.app.AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED.equals(action)) return;
         PendingResult result = goAsync();
         AgendaReminderJobService.schedule(context);
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action))
+            ZjuSyncJobService.schedule(context);
         AgendaReminder.WORKER.execute(() -> {
             try { AgendaReminder.refreshSafely(context.getApplicationContext(), intent); }
             finally { result.finish(); }

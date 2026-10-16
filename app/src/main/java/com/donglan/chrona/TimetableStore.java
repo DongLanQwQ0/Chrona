@@ -262,6 +262,7 @@ final class TimetableStore {
     void save(Library library) throws Exception {
         write(encode(library));
         AgendaWidgetProvider.requestRefresh(context);
+        AgendaReminder.requestRefresh(context);
     }
 
     /** Used by full backup restore, including rollback to the previous saved document. */
@@ -269,6 +270,7 @@ final class TimetableStore {
         if (snapshot != null) inspect(snapshot);
         write(snapshot);
         AgendaWidgetProvider.requestRefresh(context);
+        AgendaReminder.requestRefresh(context);
     }
 
     /** Commit a sync result only if no import or selection changed the captured library. */
@@ -279,6 +281,7 @@ final class TimetableStore {
             write(replacement);
         }
         AgendaWidgetProvider.requestRefresh(context);
+        AgendaReminder.requestRefresh(context);
         return true;
     }
 

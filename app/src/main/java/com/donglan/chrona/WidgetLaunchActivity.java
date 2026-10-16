@@ -19,6 +19,8 @@ public final class WidgetLaunchActivity extends Activity {
                 : task > 0 ? new Intent(this, TaskDetailActivity.class).putExtra("task_id", task)
                 .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID,
                         getIntent().getLongExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, 0))
+                : event < 0 ? ExternalCourseAgenda.details(this, event,
+                        getIntent().getLongExtra("begin", 0), getIntent().getLongExtra("end", 0))
                 : event > 0 ? new Intent(Intent.ACTION_VIEW,
                         ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event))
                         .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME,

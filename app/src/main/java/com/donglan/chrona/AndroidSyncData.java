@@ -281,6 +281,7 @@ final class AndroidSyncData implements AutoCloseable {
         }finally{db.endTransaction();}
     }
     void applyTask(String id, SyncState.Version version) throws Exception {
+        if (!version.deleted && store.deletedZjuTask(id)) return;
         long local = localId(id); TaskRecord existing = local == 0 ? null : store.getTask(local);
         if (busy(existing)) return;
         if (!taskDifferent(id, version)) {
@@ -311,7 +312,7 @@ final class AndroidSyncData implements AutoCloseable {
         com.donglan.chrona.sync.MergeLedger ledger=store.mergeLedger();
         for (int i = 0; i < candidates.length(); i++) {
             JSONObject json = candidates.getJSONObject(i); String stable = json.getString("id");
-            if(ledger.removed(stable))continue;
+            if(ledger.removed(stable) || store.ignoredZjuCandidate(stable))continue;
             EventCandidate incoming = staged.candidates.get(i), prior = old.remove(stable);
             ContentValues values = new ContentValues(); values.put("task_id", local); values.put("position", i);
             values.put("title", incoming.title); values.put("start_at_millis", incoming.startAtMillis);

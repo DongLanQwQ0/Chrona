@@ -84,6 +84,10 @@ final class DockNavigationLayout extends FrameLayout {
     void addItem(View view) { fitLabel(view); items.addView(view); }
     /** Reserve the complete animated envelope inside a clipping scroll/dialog viewport. */
     FrameLayout motionHost() {
+        return motionHost(false);
+    }
+    /** In dense forms the highlight may overlap adjacent rows, but never their labels' layout. */
+    FrameLayout motionHost(boolean overlapRows) {
         DockNavigationLayout dock = this;
         FrameLayout host = new FrameLayout(getContext()) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
@@ -103,7 +107,8 @@ final class DockNavigationLayout extends FrameLayout {
                 if (getPaddingLeft() != edge || getPaddingRight() != edge)
                     setPadding(edge, getPaddingTop(), edge, getPaddingBottom());
                 super.onMeasure(widthSpec, heightSpec);
-                int cross = (int)Math.ceil(dock.getMeasuredHeight() * (plate * 1.53f - 1f) / 2f) + clearance;
+                int cross = overlapRows ? clearance
+                        : (int)Math.ceil(dock.getMeasuredHeight() * (plate * 1.53f - 1f) / 2f) + clearance;
                 if (getPaddingTop() != cross || getPaddingBottom() != cross) {
                     setPadding(edge, cross, edge, cross);
                     super.onMeasure(widthSpec, heightSpec);

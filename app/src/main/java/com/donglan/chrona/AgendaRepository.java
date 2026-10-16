@@ -55,25 +55,27 @@ final class AgendaRepository {
                         candidate.allDay, !candidate.needsConfirmation, null, candidate.category,candidate.reminderMinutesBefore,candidate.dueAtMillis);
                 if (entry.overlaps(begin, until) && result.entries.size() < LIMIT) result.entries.add(entry);
             }
+            List<CalendarOccurrence> systemEntries = new ArrayList<>();
             if (system) {
                 CalendarStore calendar = new CalendarStore(context);
                 if (!calendar.hasReadPermission()) result.systemUnavailable = true;
                 else try {
-                    List<CalendarOccurrence> systemEntries = calendar.listInstances(begin - 86_400_000L,
+                    systemEntries = calendar.listInstances(begin - 86_400_000L,
                             until + 86_400_000L, cancellation, LIMIT + 1);
                     result.truncated |= systemEntries.size() > LIMIT;
-                    for (CalendarOccurrence item : CalendarOccurrence.unlinked(systemEntries,
-                            new HashSet<>(store.linkedCalendarIds()))) {
-                        cancellation.throwIfCanceled();
-                        AgendaEntry entry = new AgendaEntry(item.eventId, 0, item.displayStart(zone),
-                                item.displayEnd(zone), item.title, item.location, "", item.calendarName,
-                                true, item.allDay, true, item.calendarColor);
-                        if (!entry.overlaps(begin, until)) continue;
-                        if (result.entries.size() == LIMIT) { result.truncated = true; break; }
-                        result.entries.add(entry);
-                    }
                 } catch (android.os.OperationCanceledException cancelled) { throw cancelled; }
                 catch (RuntimeException exception) { result.systemUnavailable = true; }
+            }
+            for (CalendarOccurrence item : CalendarOccurrence.unlinked(
+                    ExternalCourseAgenda.merge(context, systemEntries, begin - 86_400_000L, until + 86_400_000L),
+                    new HashSet<>(store.linkedCalendarIds()))) {
+                cancellation.throwIfCanceled();
+                AgendaEntry entry = new AgendaEntry(item.eventId, 0, item.displayStart(zone),
+                        item.displayEnd(zone), item.title, item.location, "", item.calendarName,
+                        true, item.allDay, true, item.calendarColor);
+                if (!entry.overlaps(begin, until)) continue;
+                if (result.entries.size() == LIMIT) { result.truncated = true; break; }
+                result.entries.add(entry);
             }
         }
         cancellation.throwIfCanceled();

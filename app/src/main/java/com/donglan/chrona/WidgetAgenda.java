@@ -132,21 +132,22 @@ final class WidgetAgenda {
                         candidate.title, candidate.location, EventCategory.label(candidate.category),
                         "拾时", false, candidate.allDay));
             }
+            List<CalendarOccurrence> systemEntries = new ArrayList<>();
             if (WidgetPreferences.includesSystemCalendar(context)) {
                 CalendarStore calendar = new CalendarStore(context);
                 if (!calendar.hasReadPermission()) result.calendarUnavailable = true;
                 else {
-                    Set<Long> linked = new HashSet<>(store.linkedCalendarIds());
                     try {
-                        for (CalendarOccurrence event : CalendarOccurrence.unlinked(
-                                calendar.listInstances(begin - 86400000L, horizon + 86400000L, null),
-                                linked)) {
-                            items.add(new Item(event.eventId, 0, event.displayStart(result.zone),
-                                    event.displayEnd(result.zone), event.title, event.location,
-                                    "活动", event.calendarName, true, event.allDay));
-                        }
+                        systemEntries = calendar.listInstances(begin - 86400000L, horizon + 86400000L, null);
                     } catch (RuntimeException exception) { result.calendarUnavailable = true; }
                 }
+            }
+            for (CalendarOccurrence event : CalendarOccurrence.unlinked(
+                    ExternalCourseAgenda.merge(context, systemEntries, begin - 86400000L, horizon + 86400000L),
+                    new HashSet<>(store.linkedCalendarIds()))) {
+                items.add(new Item(event.eventId, 0, event.displayStart(result.zone),
+                        event.displayEnd(result.zone), event.title, event.location,
+                        "活动", event.calendarName, true, event.allDay));
             }
             result.select(items, begin, tomorrow, horizon);
         } catch (RuntimeException exception) {

@@ -100,7 +100,6 @@ public final class DashboardActivity extends Activity {
     private int scheduleTodoScope = ScheduleQuery.TODO_ANY;
     private LocalDate scheduleDate = LocalDate.now(), scheduleUntil = LocalDate.now();
     private LinearLayout scheduleControls;
-    private boolean calendarPermissionForSchedule;
     private int inboxPage;
     private String inboxIdCacheKey = "";
     private long inboxIdCacheRevision = -1;
@@ -151,6 +150,7 @@ public final class DashboardActivity extends Activity {
     private int navigationAttentionCount = -1;
     private TextView navigationBadge;
     private final Runnable deferredSectionRefresh = this::refreshSettledSection;
+    private final Runnable homeCalendarToggleRefresh = this::refreshSystemCalendar;
     /** Entries waiting for review or already failed; shown on the dock and on the inbox filters. */
     private int pendingReview;
     private int pendingFailed;
@@ -221,7 +221,6 @@ public final class DashboardActivity extends Activity {
             scheduleUntil = LocalDate.parse(state.getString("schedule_until", scheduleDate.toString()));
             inboxPage = Math.max(0, state.getInt("inbox_page",
                     state.getInt("inbox_shown", 12) / InboxQuery.PAGE_SIZE - 1));
-            calendarPermissionForSchedule = state.getBoolean("schedule_permission_pending");
             inboxQuery = state.getString("inbox_query", "");
             scheduleQuery = state.getString("schedule_query", "");
             inboxOldestFirst = state.getBoolean("inbox_oldest_first", false);
@@ -258,7 +257,6 @@ public final class DashboardActivity extends Activity {
         state.putString("schedule_date", scheduleDate.toString());
         state.putString("schedule_until", scheduleUntil.toString());
         state.putInt("inbox_page", inboxPage);
-        state.putBoolean("schedule_permission_pending", calendarPermissionForSchedule);
         state.putString("inbox_query", inboxQuery);
         state.putString("schedule_query", scheduleQuery);
         state.putBoolean("inbox_oldest_first", inboxOldestFirst);
@@ -743,8 +741,7 @@ public final class DashboardActivity extends Activity {
     private void maybeReportStartup() {
         if (startupReported || startupReadFailed || !initialDataReady || calendarLoading
                 || pageTransitionRunning || dragTargetLoaded) return;
-        if (HomeTimelinePreferences.includesSystemCalendar(this)
-                && new CalendarStore(this).hasReadPermission() && !calendarErrorShown
+        if (!calendarErrorShown
                 && !calendarWindowKey(new LocalDate[]{LocalDate.now(), LocalDate.now().plusMonths(1)})
                         .equals(calendarResultWindow) && section == HOME) return;
         startupReported = true;
@@ -831,23 +828,15 @@ public final class DashboardActivity extends Activity {
     private void refreshSystemCalendar() {
         if (!foreground || isDestroyed() || calendarLoading) return;
         boolean systemSchedule = section == SCHEDULE && scheduleSource == 1;
-        if (!HomeTimelinePreferences.includesSystemCalendar(this)
-                || !new CalendarStore(this).hasReadPermission()) {
-            if (!systemCalendarEvents.isEmpty()) {
-                systemCalendarEvents = java.util.Collections.emptyList();
-                calendarResultWindow = "";
-                if (systemSchedule) updateResults();
-                else refreshHomeContent();
-            }
-            return;
-        }
+        boolean readSystem = HomeTimelinePreferences.includesSystemCalendar(this)
+                && new CalendarStore(this).hasReadPermission();
         ZoneId zone = ZoneId.systemDefault();
         LocalDate today = LocalDate.now(zone);
         LocalDate[] window = systemSchedule ? scheduleWindow(true)
                 : new LocalDate[]{today, today.plusMonths(1)};
         long begin = window[0].atStartOfDay(zone).toInstant().toEpochMilli();
         long end = window[1].atStartOfDay(zone).toInstant().toEpochMilli();
-        String windowKey = begin + ":" + end;
+        String windowKey = calendarWindowKey(window);
         long elapsed = android.os.SystemClock.elapsedRealtime();
         if (windowKey.equals(calendarWindow) && lastCalendarFetch != 0
                 && elapsed - lastCalendarFetch < SYSTEM_CALENDAR_REFRESH_MILLIS) return;
@@ -863,7 +852,7 @@ public final class DashboardActivity extends Activity {
             try {
                 // UTC all-day bounds may fall outside the local midnight window.
                 long padding = java.time.Duration.ofDays(1).toMillis();
-                for (CalendarOccurrence event : new CalendarStore(getApplicationContext())
+                if (readSystem) for (CalendarOccurrence event : new CalendarStore(getApplicationContext())
                         .listInstances(begin - padding, end + padding, cancellation)) {
                     if (event.displayEnd(zone) > begin && event.displayStart(zone) < end)
                         loaded.add(event);
@@ -871,6 +860,9 @@ public final class DashboardActivity extends Activity {
             } catch (RuntimeException exception) {
                 failed = !cancellation.isCanceled();
             }
+            if (!cancellation.isCanceled()) try {
+                loaded = ExternalCourseAgenda.merge(getApplicationContext(), loaded, begin, end);
+            } catch (RuntimeException exception) { failed = true; }
             List<CalendarOccurrence> result = java.util.Collections.unmodifiableList(loaded);
             boolean error = failed;
             refresh.post(() -> {
@@ -887,15 +879,11 @@ public final class DashboardActivity extends Activity {
                     refresh.post(this::refreshSystemCalendar);
                     return;
                 }
-                if (!new CalendarStore(this).hasReadPermission()) return;
                 if (error) {
-                    if (!calendarErrorShown) Feedback.show(this, "无法读取系统日程，请稍后重试");
+                    if (!calendarErrorShown) Feedback.show(this, "部分日程无法读取，请稍后重试");
                     calendarErrorShown = true;
                     lastCalendarFetch = 0;
-                    afterDraw(scroll, this::maybeReportStartup);
-                    return;
-                }
-                calendarErrorShown = false;
+                } else calendarErrorShown = false;
                 if (!systemCalendarEvents.equals(result) || !windowKey.equals(calendarResultWindow)) {
                     systemCalendarEvents = result;
                     calendarResultWindow = windowKey;
@@ -940,7 +928,10 @@ public final class DashboardActivity extends Activity {
     private String calendarWindowKey(LocalDate[] window) {
         ZoneId zone = ZoneId.systemDefault();
         return window[0].atStartOfDay(zone).toInstant().toEpochMilli() + ":"
-                + window[1].atStartOfDay(zone).toInstant().toEpochMilli();
+                + window[1].atStartOfDay(zone).toInstant().toEpochMilli()
+                + ":" + HomeTimelinePreferences.includesSystemCalendar(this)
+                + ":" + new CalendarStore(this).hasReadPermission()
+                + ":" + ExternalCourseAgenda.revision(this);
     }
 
     private List<CalendarOccurrence> calendarEventsForWindow(LocalDate[] window) {
@@ -989,6 +980,8 @@ public final class DashboardActivity extends Activity {
         return revision + ":" + (System.currentTimeMillis() / 60000L)
                 + ":" + HomeTimelinePreferences.getItemLimit(this)
                 + ":" + HomeTimelinePreferences.includesSystemCalendar(this)
+                + ":" + ExternalCourseAgenda.revision(this)
+                + ":" + AgendaReminderPreferences.prefs(this).getLong("acknowledgement_revision", 0L)
                 + ":" + ZoneId.systemDefault()
                 + ":" + new CalendarStore(this).hasReadPermission();
     }
@@ -1304,21 +1297,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private CheckBox homeSystemCalendarToggle() {
-        CheckBox include = new CheckBox(this) {
-            final android.graphics.drawable.Drawable icon = getDrawable(R.drawable.ic_week_calendar).mutate();
-            final android.graphics.Paint fill = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-            @Override protected void onDraw(android.graphics.Canvas canvas) {
-                UiStyle.Palette palette = UiStyle.colors(getContext());
-                if (isChecked()) {
-                    fill.setColor((palette.primary & 0x00ffffff) | (32 << 24));
-                    canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, dp(20), fill);
-                }
-                icon.setTint(isChecked() ? palette.primary : palette.muted);
-                int size = dp(24), left = (getWidth() - size) / 2, top = (getHeight() - size) / 2;
-                icon.setBounds(left, top, left + size, top + size);
-                icon.draw(canvas);
-            }
-        };
+        CheckBox include = new CalendarVisibilityToggle(this);
         include.setButtonDrawable((android.graphics.drawable.Drawable) null);
         include.setContentDescription("包含系统其他日程");
         include.setTooltipText("包含系统其他日程");
@@ -1348,8 +1327,11 @@ public final class DashboardActivity extends Activity {
             HomeTimelinePreferences.setIncludesSystemCalendar(this, enabled);
             calendarGeneration++;
             lastCalendarFetch = 0;
-            if (!enabled) systemCalendarEvents = java.util.Collections.emptyList();
-            refreshHomeContent();
+            systemCalendarEvents = java.util.Collections.emptyList();
+            calendarResultWindow = "";
+            // Keep the current header alive until its checked-state transition finishes.
+            refresh.removeCallbacks(homeCalendarToggleRefresh);
+            refresh.postDelayed(homeCalendarToggleRefresh, UiMotion.isEnabled() ? UiMotion.ENTER : 0L);
         });
         return include;
     }
@@ -1363,15 +1345,10 @@ public final class DashboardActivity extends Activity {
         List<EventCandidate> candidates = data.candidates;
         List<HomeTimelineEntry> upcoming = new ArrayList<>();
         for (EventCandidate candidate : data.upcoming) upcoming.add(new HomeTimelineEntry(candidate));
-        List<CalendarOccurrence> external = java.util.Collections.emptyList();
-        if (HomeTimelinePreferences.includesSystemCalendar(this)
-                && new CalendarStore(this).hasReadPermission()) {
-            Set<Long> linkedIds = new HashSet<>(data.linkedIds);
-            external = CalendarOccurrence.unlinked(calendarEventsForWindow(new LocalDate[]{today, endDate}), linkedIds);
-            for (CalendarOccurrence event : external)
-                if (event.displayEnd(ZoneId.systemDefault()) > now)
-                    upcoming.add(new HomeTimelineEntry(event));
-        }
+        List<CalendarOccurrence> external = CalendarOccurrence.unlinked(
+                calendarEventsForWindow(new LocalDate[]{today, endDate}), new HashSet<>(data.linkedIds));
+        for (CalendarOccurrence event : external)
+            if (event.displayEnd(zone) > now) upcoming.add(new HomeTimelineEntry(event));
         showUpcomingCarousel(upcoming);
         showHomeTodos(data.todos, now, zone);
 
@@ -1924,10 +1901,6 @@ public final class DashboardActivity extends Activity {
         results.removeAllViews();
         addScheduleFilterSummary();
         if (scheduleSource == 1) {
-            if (!HomeTimelinePreferences.includesSystemCalendar(this)) {
-                empty(results, "系统其他日程已隐藏");
-                return;
-            }
             renderSystemSchedule(store);
             return;
         }
@@ -2223,11 +2196,6 @@ public final class DashboardActivity extends Activity {
             scheduleTodoScope = chosen.todoScope;
             scheduleDate = chosen.date;
             scheduleUntil = chosen.until;
-            if (scheduleSource == 1 && !new CalendarStore(this).hasReadPermission()) {
-                calendarPermissionForSchedule = true;
-                requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR},
-                        HOME_CALENDAR_PERMISSION_REQUEST);
-            }
             applyScheduleFilters();
         });
     }
@@ -2269,12 +2237,6 @@ public final class DashboardActivity extends Activity {
 
     private void renderSystemSchedule(TaskStore store) {
         inboxRows.clear(); matchingInboxIds = new ArrayList<>(); selectedScheduleIds.clear();
-        if (!new CalendarStore(this).hasReadPermission()) {
-            addInboxResultsHeading(0);
-            updateSelectionUi();
-            empty(results, "需要读取日历权限");
-            return;
-        }
         LocalDate[] window = scheduleWindow(true);
         ZoneId zone = ZoneId.systemDefault();
         long start = window[0].atStartOfDay(zone).toInstant().toEpochMilli();
@@ -2317,7 +2279,7 @@ public final class DashboardActivity extends Activity {
             });
         }
         enqueueScheduleResult(() -> {
-            message(results, "系统日程只读；每次最多读取 1000 项。按月份或日期缩小范围。");
+            message(results, "其他来源日程只读；按月份或日期缩小范围。");
             schedulePageControls(total);
         });
     }
@@ -2615,6 +2577,18 @@ public final class DashboardActivity extends Activity {
         }
         if(candidate!=null&&candidate.isTask()) {
             footer.addView(taskCompletionButton(candidate), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        } else if ((candidate == null || !candidate.isRecord && !candidate.needsConfirmation)
+                && "event".equals(category)) {
+            Long anchor = candidate == null ? systemEvent.displayStart(ZoneId.systemDefault()) : candidate.reminderAnchor();
+            Long finish = candidate == null ? systemEvent.displayEnd(ZoneId.systemDefault()) : candidate.endAtMillis;
+            if (anchor != null) {
+                long until = finish != null && finish > anchor ? finish : anchor + 60000L;
+                if (until > System.currentTimeMillis()) {
+                    String key = candidate == null ? AgendaAcknowledgement.key(systemEvent.eventId, anchor)
+                            : AgendaAcknowledgement.key(candidate);
+                    footer.addView(activityAcknowledgementButton(key, until), new LinearLayout.LayoutParams(dp(48), dp(48)));
+                }
+            }
         }
         UiStyle.addSpaced(body, footer, home ? 12 : 8, 0);
     }
@@ -2656,6 +2630,30 @@ public final class DashboardActivity extends Activity {
             }, "chrona-task-complete").start();
         });
         return done;
+    }
+
+    private ImageButton activityAcknowledgementButton(String key, long until) {
+        ImageButton confirmed = new ImageButton(this);
+        confirmed.setPadding(dp(12), dp(12), dp(12), dp(12));
+        Runnable update = () -> {
+            boolean checked = AgendaAcknowledgement.isAcknowledged(this, key);
+            confirmed.setImageResource(checked ? R.drawable.ic_todo_check : R.drawable.ic_check);
+            confirmed.setImageTintList(ColorStateList.valueOf(checked
+                    ? UiStyle.colors(this).primary : UiStyle.colors(this).muted));
+            confirmed.setContentDescription(checked ? "活动已确认，点击取消确认并恢复原子岛提醒" : "确认活动并隐藏本次原子岛提醒");
+            confirmed.setSelected(checked);
+            if (android.os.Build.VERSION.SDK_INT >= 30) confirmed.setStateDescription(checked ? "已确认" : "未确认");
+            UiStyle.acrylicChoice(confirmed, checked, UiStyle.RADIUS_PILL, false);
+        };
+        update.run();
+        UiStyle.pressable(confirmed);
+        confirmed.setOnClickListener(view -> {
+            AgendaAcknowledgement.set(this, key, until, !AgendaAcknowledgement.isAcknowledged(this, key));
+            update.run();
+            dirtySections.add(HOME);
+            dirtySections.add(SCHEDULE);
+        });
+        return confirmed;
     }
 
     private String homeCardBoundary(EventCandidate candidate, CalendarOccurrence systemEvent,
@@ -3075,17 +3073,12 @@ public final class DashboardActivity extends Activity {
         if (requestCode == HOME_CALENDAR_PERMISSION_REQUEST) {
             boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-            if (calendarPermissionForSchedule) {
-                calendarPermissionForSchedule = false;
-                if (!granted) scheduleSource = 0;
-                applyScheduleFilters();
-                if (!granted) Feedback.show(this, "未获得读取日历权限");
-                return;
-            }
             HomeTimelinePreferences.setIncludesSystemCalendar(this, granted);
             calendarGeneration++;
             lastCalendarFetch = 0;
-            refreshHomeContent();
+            systemCalendarEvents = java.util.Collections.emptyList();
+            calendarResultWindow = "";
+            refreshSystemCalendar();
             if (!granted) Feedback.show(this, "未获得读取日历权限");
         }
         if (requestCode == CALENDAR_PERMISSION_REQUEST) {

@@ -86,7 +86,8 @@ public class AgendaNotificationCheck {
   check(compactRange.indexOf("月")==compactRange.lastIndexOf("月"));
   check(compactRange.endsWith(DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(entry.end).atZone(ZoneId.systemDefault()))));
   check(n.ongoing&&!n.showWhen&&n.visibility==Notification.VISIBILITY_PUBLIC&&n.timeout==3600000);
-  check(n.actions.size()==3&&n.actions.get(0).intent==n.details);
+  check(n.actions.size()==3&&n.actions.get(0).label.equals("确认活动")&&n.actions.get(0).intent.broadcast);
+  check(n.actions.get(0).intent.intent.action.equals("complete")&&n.actions.get(0).intent.intent.extras.get("key").equals(entry.key()));
   check(n.details.intent.data.value.equals("chrona://agenda/"+entry.key()));
   check(n.details.code==NOTIFICATION_ID);
   Notification second=notification(c,entry,now,false,NOTIFICATION_ID+1);check(second.details.code!=n.details.code);

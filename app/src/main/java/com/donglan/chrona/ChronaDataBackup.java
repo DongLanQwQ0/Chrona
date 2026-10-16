@@ -390,7 +390,7 @@ public final class ChronaDataBackup {
                     throw new IOException("备份数据库完整性检查失败");
             }
             try (Cursor cursor = db.rawQuery("PRAGMA user_version", null)) {
-                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 11)
+                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 12)
                     throw new IOException("备份数据库版本与当前应用不兼容");
             }
             long tasks;
@@ -412,7 +412,11 @@ public final class ChronaDataBackup {
     public static String restore(Context context, Prepared prepared) throws Exception {
         // A cloud apply must not retain an open handle to the database being replaced here.
         synchronized (AndroidSync.LOCK) {
+            ZjuSync.cancel();
             String result = restoreExclusive(context, prepared);
+            ZjuSettingsStore school = new ZjuSettingsStore(context);
+            school.options(false, school.prefs.getBoolean("timetable", false));
+            new ZjuHomeworkStore(context).configure(school.account(), false);
             AndroidSync.resetAfterRestore(context);
             return result + "\n自动同步已关闭。已有日程保留同步身份，与云端不同的版本可能待确认，请整理后再手动同步。";
         }
@@ -492,6 +496,7 @@ public final class ChronaDataBackup {
             }
             if(staged.getVersion()<10){staged.beginTransaction();try{TaskStore.addCandidateMerges(staged);staged.setVersion(10);staged.setTransactionSuccessful();}finally{staged.endTransaction();}}
             if(staged.getVersion()<11){staged.beginTransaction();try{TaskStore.addTaskSemantics(staged);staged.setVersion(11);staged.setTransactionSuccessful();}finally{staged.endTransaction();}}
+            if(staged.getVersion()<12){staged.beginTransaction();try{TaskStore.addZjuHomework(staged);staged.setVersion(12);staged.setTransactionSuccessful();}finally{staged.endTransaction();}}
             for (Map.Entry<String, String> entry : imageNames.entrySet()) {
                 ContentValues values = new ContentValues();
                 values.put("image_path", entry.getValue());

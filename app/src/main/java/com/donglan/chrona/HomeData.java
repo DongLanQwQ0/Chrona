@@ -31,7 +31,6 @@ final class HomeData {
         candidates = store.queryHomeUpcoming(now, zone, Math.max(5, limit));
         upcoming = candidates.subList(0, Math.min(5, candidates.size()));
         todos = store.homeTodoSummary(now, zone, 3);
-        linkedIds = HomeTimelinePreferences.includesSystemCalendar(context)
-                ? store.linkedCalendarIds() : java.util.Collections.emptyList();
+        linkedIds = store.linkedCalendarIds();
     }
 }

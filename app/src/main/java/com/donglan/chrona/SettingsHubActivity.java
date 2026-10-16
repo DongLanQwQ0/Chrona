@@ -42,6 +42,7 @@ public final class SettingsHubActivity extends Activity {
         destination(display, "外观与配色", AppearanceActivity.class);
         timelineLimit(display);
         destination(display, "系统日程", SystemCalendarSettingsActivity.class);
+        destination(display, "日程来源", ScheduleSourceSettingsActivity.class);
 
         LinearLayout widgets = group(root, "桌面小组件");
         widgetPreview(widgets);
@@ -54,6 +55,7 @@ public final class SettingsHubActivity extends Activity {
         destination(reminders, "通知与提醒", NotificationSettingsActivity.class);
 
         LinearLayout services = group(root, "服务与数据");
+        destination(services, "折姜星辰", ZjuSettingsActivity.class);
         destination(services, "AI 服务", SettingsActivity.class);
         destination(services, "跨设备同步", SyncSettingsActivity.class);
         destination(services, "局域网访问", LanSettingsActivity.class);

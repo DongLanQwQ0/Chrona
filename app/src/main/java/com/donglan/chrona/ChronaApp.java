@@ -35,6 +35,7 @@ public final class ChronaApp extends Application {
     @Override public void onCreate() {
         super.onCreate();
         SyncJobService.schedule(this);
+        ZjuSyncJobService.schedule(this);
         AgendaReminderJobService.schedule(this);
         AgendaReminder.requestRefresh(this);
         LauncherShortcuts.requestRefresh(this);
@@ -56,6 +57,7 @@ public final class ChronaApp extends Application {
                 AgendaReminderJobService.schedule(ChronaApp.this);
                 AgendaReminder.requestRefresh(ChronaApp.this);
                 AndroidSync.foreground(ChronaApp.this);
+                ZjuSync.foreground(ChronaApp.this);
                 observeCalendar();
                 if (activity instanceof DashboardActivity || activity instanceof TaskDetailActivity)
                     CalendarLinkReconciler.request(activity);

@@ -465,6 +465,7 @@ public final class TaskDetailActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (content.getChildCount() == 0 || !hasUnsavedEdits && !saveInFlight) render();
+        refreshAcknowledgementActions(content);
         saveSession.deliver();
         refreshHandler.postDelayed(refreshPoll, 1500L);
     }
@@ -506,6 +507,7 @@ public final class TaskDetailActivity extends Activity {
         updateDirtyState();
         if (completionAction != null) completionAction.setEnabled(!busy);
         setContentEnabled(content, !busy);
+        refreshAcknowledgementActions(content);
     }
 
     private static void setContentEnabled(View view, boolean enabled) {
@@ -2532,6 +2534,25 @@ public final class TaskDetailActivity extends Activity {
         trackUnsavedChanges(due,candidate.id);
         updateType[0]=()->dueRow.setVisibility(EventCategory.TASK.equals(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
         if (candidate.isTask()) button(card,candidate.completed() ? "恢复待办" : "标记完成", () -> changeTaskCompletion(candidate));
+        else {
+            Button acknowledge = button(card, "确认活动", () -> { });
+            acknowledge.setTag(new AcknowledgementAction(candidate));
+            acknowledge.setOnClickListener(view -> {
+                if (saveInFlight) return;
+                if (dirtyCandidateIds.contains(candidate.id)) {
+                    Feedback.show(this, "请先保存当前修改"); return;
+                }
+                String key = AgendaAcknowledgement.key(candidate);
+                long until = acknowledgementUntil(candidate);
+                if (key.isEmpty() || until <= System.currentTimeMillis()) {
+                    refreshAcknowledgementActions(content); return;
+                }
+                AgendaAcknowledgement.set(this, key, until,
+                        !AgendaAcknowledgement.isAcknowledged(this, key));
+                refreshAcknowledgementActions(content);
+            });
+            refreshAcknowledgementActions(acknowledge);
+        }
         EditText location = inlineField(formRow(card, "地点", R.drawable.ic_place),
                 "不填写", candidate.location, 1f);
         String[] currentDescription = {candidate.description == null ? "" : candidate.description};
@@ -2780,6 +2801,33 @@ public final class TaskDetailActivity extends Activity {
             }
         }, "chrona-record-convert").start();
     }
+    private static final class AcknowledgementAction {
+        final EventCandidate candidate;
+        AcknowledgementAction(EventCandidate candidate) { this.candidate = candidate; }
+    }
+
+    private static long acknowledgementUntil(EventCandidate candidate) {
+        Long anchor = candidate.reminderAnchor();
+        if (anchor == null) return 0L;
+        return candidate.endAtMillis != null && candidate.endAtMillis > anchor
+                ? candidate.endAtMillis : anchor + 60_000L;
+    }
+
+    private void refreshAcknowledgementActions(View view) {
+        if (view instanceof Button && view.getTag() instanceof AcknowledgementAction) {
+            Button action = (Button) view;
+            EventCandidate candidate = ((AcknowledgementAction) action.getTag()).candidate;
+            String key = AgendaAcknowledgement.key(candidate);
+            action.setEnabled(!key.isEmpty() && !saveInFlight
+                    && acknowledgementUntil(candidate) > System.currentTimeMillis());
+            action.setText(AgendaAcknowledgement.isAcknowledged(this, key) ? "取消确认" : "确认活动");
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) refreshAcknowledgementActions(group.getChildAt(i));
+        }
+    }
+
     private void changeTaskCompletion(EventCandidate candidate) {
         if (saveInFlight) return;
         if(dirtyCandidateIds.contains(candidate.id)){Feedback.show(this,"请先保存当前修改");return;}

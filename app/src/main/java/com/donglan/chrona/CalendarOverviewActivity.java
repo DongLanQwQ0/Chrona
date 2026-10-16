@@ -125,7 +125,8 @@ public final class CalendarOverviewActivity extends Activity {
     private final Runnable minuteTick = new Runnable() {
         @Override public void run() {
             if (timeLines != null) timeLines.invalidate();
-            if (!LocalDate.now().equals(renderedToday) && !loading) renderBody();
+            if (!loading && !renderedKey.equals(windowKey(ZoneId.systemDefault()))) load();
+            else if (!LocalDate.now().equals(renderedToday) && !loading) renderBody();
             else for (EntryStatus status : statuses) updateStatus(status);
             handler.removeCallbacks(this);
             if (resumed) handler.postDelayed(this, nextTickDelay());
@@ -465,7 +466,8 @@ public final class CalendarOverviewActivity extends Activity {
         return mode == YEAR ? first.plusYears(1) : mode == WEEK ? first.plusWeeks(1)
                 : mode == DAY ? first.plusDays(1) : first.plusDays(42);
     }
-    private String windowKey(ZoneId zone) { return mode + ":" + windowStart() + ":" + includeSystem + ":" + zone.getId(); }
+    private String windowKey(ZoneId zone) { return mode + ":" + windowStart() + ":" + includeSystem + ":" + zone.getId()
+            + ":" + ExternalCourseAgenda.revision(this); }
     private void rememberPosition() {
         if (renderedKey.isEmpty()) return;
         positions.put(renderedKey, new int[]{horizontalViewport == null ? 0 : horizontalViewport.getScrollX(),
@@ -505,6 +507,7 @@ public final class CalendarOverviewActivity extends Activity {
     }
     private void applyLoaded(AgendaRepository.Snapshot loaded, String key, int token) {
         if (isDestroyed() || token != generation) return;
+        if (!key.equals(windowKey(ZoneId.systemDefault()))) { load(); return; }
         if (renderedKey.equals(key) && snapshot.sameContents(loaded) && query.equals(renderedQuery)
                 && date.equals(renderedDate) && LocalDate.now().equals(renderedToday)) {
             snapshot = loaded; loading = loadingStale = false;
@@ -540,7 +543,8 @@ public final class CalendarOverviewActivity extends Activity {
             try {
                 long revision;
                 try (com.donglan.chrona.data.TaskStore store = new com.donglan.chrona.data.TaskStore(getApplicationContext())) { revision = store.dataRevision(); }
-                String cacheKey = key + ":" + revision + ":" + providerRevision;
+                String cacheKey = key + ":" + revision + ":" + providerRevision
+                        + ":" + ExternalCourseAgenda.revision(getApplicationContext());
                 AgendaRepository.Snapshot loaded;
                 synchronized (snapshotCache) { loaded = snapshotCache.get(cacheKey); }
                 if (loaded == null) {
@@ -580,7 +584,8 @@ public final class CalendarOverviewActivity extends Activity {
     private void exportWeek() {
         if (mode != WEEK || exportingWeek) return;
         if (loading || !renderedKey.equals(windowKey(snapshot.zone))) { Feedback.show(this, "日程仍在读取，请稍候"); return; }
-        if (snapshot.truncated || includeSystem && snapshot.systemUnavailable) { Feedback.show(this, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
+        if (snapshot.truncated || includeSystem && new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()
+                && snapshot.systemUnavailable) { Feedback.show(this, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
         android.app.Dialog dialog = new android.app.Dialog(this);
         LinearLayout content = column(); content.setPadding(dp(20), dp(20), dp(20), dp(20));
         UiStyle.addSpaced(content, text("导出周日程", 20, true), 0, 16);
@@ -597,7 +602,8 @@ public final class CalendarOverviewActivity extends Activity {
     }
     private void writeWeekImage(boolean includeIndex) {
         if (mode != WEEK || exportingWeek || loading || !renderedKey.equals(windowKey(snapshot.zone))) return;
-        if (snapshot.truncated || includeSystem && snapshot.systemUnavailable) { Feedback.show(this, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
+        if (snapshot.truncated || includeSystem && new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()
+                && snapshot.systemUnavailable) { Feedback.show(this, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
         exportingWeek = true; weekExportButton.setEnabled(false);
         LocalDate first = windowStart(); ZoneId zone = snapshot.zone; List<AgendaEntry> entries = List.copyOf(matching());
         UiStyle.Palette palette = UiStyle.colors(this); String search = query; boolean system = includeSystem;

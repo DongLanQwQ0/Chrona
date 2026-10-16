@@ -152,10 +152,15 @@ final class LanWebServer extends NanoHTTPD {
             JSONArray entries=new JSONArray(), calendar=new JSONArray();
             for(EventCandidate item:store.widgetCandidates(start,end,date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()))entries.put(candidate(item));
             String calendarState="系统日历需在手机授权"; CalendarStore provider=new CalendarStore(context);
+            List<CalendarOccurrence> systemEntries=java.util.Collections.emptyList();
             if(HomeTimelinePreferences.includesSystemCalendar(context)&&provider.hasReadPermission()) {
-                try { Set<Long> linked=new HashSet<>(store.linkedCalendarIds()); for(CalendarOccurrence item:provider.listInstances(start,end,null)) if(!linked.contains(item.eventId)) calendar.put(new JSONObject().put("title",item.title).put("location",item.location).put("start",item.displayStart(zone)).put("end",item.displayEnd(zone))); calendarState=""; }
+                try { systemEntries=provider.listInstances(start,end,null); calendarState=""; }
                 catch(RuntimeException error){calendarState="系统日历暂时无法读取";}
             } else if(!HomeTimelinePreferences.includesSystemCalendar(context)) calendarState="手机已关闭系统日历时间线";
+            for(CalendarOccurrence item:CalendarOccurrence.unlinked(
+                    ExternalCourseAgenda.merge(context,systemEntries,start,end),new HashSet<>(store.linkedCalendarIds())))
+                calendar.put(new JSONObject().put("title",item.title).put("location",item.location)
+                        .put("start",item.displayStart(zone)).put("end",item.displayEnd(zone)));
             return data(result.put("items",entries).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",store.taskCountByStatus(TaskRecord.NEEDS_REVIEW)).put("failed",store.taskCountByStatus(TaskRecord.FAILED)));
         }
         return json(Response.Status.NOT_FOUND,"页面不存在");

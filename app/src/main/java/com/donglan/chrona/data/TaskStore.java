@@ -23,7 +23,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 11;
+    private static final int DATABASE_VERSION = 12;
 
     private final Context context;
     private SQLiteDatabase openedDatabase;
@@ -57,7 +57,8 @@ public final class TaskStore extends SQLiteOpenHelper {
             try {
                 for (String table : new String[]{"tasks", "event_candidates", "task_attachments",
                         "task_files", "candidate_merges", "sync_task_map", "sync_candidate_map",
-                        "sync_meta", "data_revision", "sqlite_sequence"}) {
+                        "sync_meta", "managed_zju_state", "zju_homework_captures", "zju_homework_map",
+                        "zju_homework_history", "zju_homework_deleted_tasks", "data_revision", "sqlite_sequence"}) {
                     source.execSQL("DELETE FROM backup_snapshot." + table);
                     source.execSQL("INSERT INTO backup_snapshot." + table
                             + " SELECT * FROM main." + table);
@@ -133,7 +134,7 @@ public final class TaskStore extends SQLiteOpenHelper {
             if (!started) args.add(Long.toString(now));
             args.addAll(hidden);
             try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                    "is_record=0 AND completed_at_millis IS NULL AND all_day=0 AND needs_confirmation=0 AND (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) IS NOT NULL "
+                    "is_record=0 AND completed_at_millis IS NULL AND all_day=0 AND needs_confirmation=0 AND " + ZJU_REMINDER_ALLOWED + " AND (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) IS NOT NULL "
                             + "AND CASE WHEN category!='event' THEN (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)+" + startedDisplayWindow
                             + " WHEN end_at_millis>(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) THEN end_at_millis ELSE (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)+60000 END>CAST(? AS INTEGER) "
                             + "AND (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)" + (started ? "<=" : ">") + "CAST(? AS INTEGER)"
@@ -222,6 +223,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         addScheduleBrowsing(db);
         addCandidateMerges(db);
         createTaskIndexes(db);
+        addZjuHomework(db);
     }
 
     /**
@@ -256,8 +258,46 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 9) addUncertaintyLevel(db);
         if (oldVersion < 10) addCandidateMerges(db);
         if (oldVersion < 11) addTaskSemantics(db);
+        if (oldVersion < 12) addZjuHomework(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
+
+    /** Managed-source metadata remains local; portable task results use normal sync identities. */
+    public static void addZjuHomework(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE managed_zju_state(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,generation INTEGER NOT NULL DEFAULT 0,account TEXT NOT NULL DEFAULT '',capture_id INTEGER)");
+        db.execSQL("INSERT INTO managed_zju_state(id) VALUES(1)");
+        db.execSQL("CREATE TABLE zju_homework_captures(capture_id INTEGER PRIMARY KEY,account TEXT NOT NULL)");
+        db.execSQL("CREATE TABLE zju_homework_map(account TEXT NOT NULL,remote_key TEXT NOT NULL,capture_id INTEGER NOT NULL,candidate_id INTEGER,sync_id TEXT,ignored INTEGER NOT NULL DEFAULT 0,snapshot TEXT NOT NULL,pending_calendar INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(account,remote_key))");
+        db.execSQL("CREATE INDEX zju_homework_candidate ON zju_homework_map(candidate_id)");
+        db.execSQL("CREATE TABLE zju_homework_history(id INTEGER PRIMARY KEY AUTOINCREMENT,account TEXT NOT NULL,title TEXT NOT NULL,change TEXT NOT NULL,at_millis INTEGER NOT NULL,before_json TEXT,after_json TEXT,remote_updated_at TEXT)");
+        db.execSQL("CREATE TABLE zju_homework_deleted_tasks(sync_id TEXT PRIMARY KEY)");
+        // Triggers cover UI deletion, sync tombstones and direct SQL equally.
+        db.execSQL("CREATE TRIGGER zju_capture_deleted BEFORE DELETE ON tasks BEGIN "
+                + "INSERT OR IGNORE INTO zju_homework_deleted_tasks SELECT sync_id FROM sync_task_map WHERE local_id=OLD.id AND EXISTS(SELECT 1 FROM zju_homework_captures WHERE capture_id=OLD.id); "
+                + "UPDATE managed_zju_state SET enabled=0,generation=generation+1,capture_id=NULL WHERE capture_id=OLD.id; END");
+        db.execSQL("CREATE TRIGGER zju_candidate_deleted BEFORE DELETE ON event_candidates BEGIN "
+                + "UPDATE zju_homework_map SET ignored=1 WHERE candidate_id=OLD.id; END");
+        for (String table : new String[]{"managed_zju_state", "zju_homework_map", "zju_homework_history", "zju_homework_captures", "zju_homework_deleted_tasks"})
+            for (String operation : new String[]{"INSERT", "UPDATE", "DELETE"})
+                db.execSQL("CREATE TRIGGER revision_" + table + "_" + operation + " AFTER " + operation + " ON " + table + " BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END");
+    }
+
+    public boolean ignoredZjuCandidate(String stableId) {
+        return scalar("SELECT 1 FROM zju_homework_map WHERE sync_id=? AND ignored=1 LIMIT 1", stableId) != null;
+    }
+
+    public boolean deletedZjuTask(String stableId) {
+        return scalar("SELECT 1 FROM zju_homework_deleted_tasks WHERE sync_id=?", stableId) != null;
+    }
+
+    /** Disabling a source keeps its results visible while stopping its local reminders. */
+    public boolean allowsReminder(long candidateId) {
+        try (Cursor cursor = getReadableDatabase().rawQuery("SELECT 1 FROM event_candidates WHERE id=? AND " + ZJU_REMINDER_ALLOWED, new String[]{Long.toString(candidateId)})) {
+            return cursor.moveToFirst();
+        }
+    }
+
+    private static final String ZJU_REMINDER_ALLOWED = "(NOT EXISTS(SELECT 1 FROM zju_homework_captures z WHERE z.capture_id=task_id) OR EXISTS(SELECT 1 FROM managed_zju_state s WHERE s.enabled=1 AND s.capture_id=task_id)) AND (COALESCE(start_at_millis,due_at_millis) IS NOT NULL OR NOT EXISTS(SELECT 1 FROM zju_homework_map m WHERE m.candidate_id=event_candidates.id))";
 
     /** One-time conversion preserves source rows, IDs, calendar associations and explicit times. */
     public static void addTaskSemantics(SQLiteDatabase db) {
@@ -386,7 +426,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         org.json.JSONObject result=new org.json.JSONObject(payload.toString());
         org.json.JSONArray input=result.getJSONArray("candidates"),kept=new org.json.JSONArray();
         com.donglan.chrona.sync.MergeLedger ledger=mergeLedger();
-        for(int i=0;i<input.length();i++)if(!ledger.removed(input.getJSONObject(i).getString("id")))kept.put(input.getJSONObject(i));
+        for(int i=0;i<input.length();i++)if(!ledger.removed(input.getJSONObject(i).getString("id")) && !ignoredZjuCandidate(input.getJSONObject(i).getString("id")))kept.put(input.getJSONObject(i));
         return result.put("candidates",kept);
     }
 

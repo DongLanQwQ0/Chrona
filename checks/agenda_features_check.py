@@ -192,10 +192,14 @@ class Database {
   System.out.println("SQL\\t"+selection+"\\t"+String.join("|",args)+"\\t"+sort+"\\t"+limit);return new Cursor();}
 }
 public class SqlCheck {
+ __ZJU_REMINDER_ALLOWED__
  Database getReadableDatabase(){return new Database();}EventCandidate readCandidate(Cursor c){return null;}
  ''' + sql_methods + '''
  public static void main(String[]args){SqlCheck c=new SqlCheck();c.calendarCandidates(10000000,20000000,10000000,20000000);c.nextReminderCandidates(10000000,Set.of());c.nextReminderCandidates(10000000,Set.of("chrona:8:9999999"));c.nextReminderCandidates(30000000,Set.of());c.nextReminderCandidates(18000000,Set.of());}
 }'''
+allowed_begin = store.index('    private static final String ZJU_REMINDER_ALLOWED =')
+allowed_end = store.index(';', allowed_begin) + 1
+files['com/donglan/chrona/SqlCheck.java'] = files['com/donglan/chrona/SqlCheck.java'].replace('__ZJU_REMINDER_ALLOWED__', store[allowed_begin:allowed_end])
 calendar = (src / 'calendar/CalendarStore.java').read_text(encoding='utf-8')
 files['com/donglan/chrona/calendar/CalendarOccurrence.java'] = (src / 'calendar/CalendarOccurrence.java').read_text(encoding='utf-8')
 files['com/donglan/chrona/calendar/AllDayDates.java'] = (src / 'calendar/AllDayDates.java').read_text(encoding='utf-8')
@@ -205,8 +209,9 @@ import java.util.*;
 class Uri {static class Builder {String build(){return "instances";}}String buildUpon(){return "";}}
 class ContentUris {static void appendId(Uri.Builder builder,long value){}}
 class CalendarContract {static class Instances {static final String EVENT_ID="id",BEGIN="begin",END="end";static class CONTENT_URI {static Uri.Builder buildUpon(){return new Uri.Builder();}}}}
-class Calendars {static final String VISIBLE="visible",CALENDAR_DISPLAY_NAME="calendar",CALENDAR_COLOR="calendar_color";}
-class Events {static final String TITLE="title",ALL_DAY="all_day",EVENT_LOCATION="place",STATUS="status";static final int STATUS_CANCELED=2;}
+class Calendars {static final String VISIBLE="visible",CALENDAR_DISPLAY_NAME="calendar",CALENDAR_COLOR="calendar_color",ACCOUNT_NAME="account";}
+class Events {static final String TITLE="title",ALL_DAY="all_day",EVENT_LOCATION="place",STATUS="status",CALENDAR_ID="calendar_id";static final int STATUS_CANCELED=2;}
+class ScheduleSources {static Set<Long> blocked=new HashSet<>();static boolean allowsCalendar(Object context,long id){return !blocked.contains(id);}}
 class Cursor implements AutoCloseable {
  List<Object[]>rows;int i=-1;Cursor(List<Object[]>r){rows=r;}boolean moveToNext(){return ++i<rows.size();}
  boolean isNull(int c){return rows.get(i)[c]==null;}long getLong(int c){return (long)rows.get(i)[c];}
@@ -220,15 +225,16 @@ class Resolver {
   return new Cursor(rows);
  }
  Cursor query(String uri,String[]projection,String selection,String[]args,String sort,android.os.CancellationSignal cancellation){
-  if(projection.length!=8||!projection[7].equals("calendar_color")||!selection.contains("visible=1"))throw new AssertionError("calendar color projection");
+  if(projection.length!=10||!projection[7].equals("calendar_color")||!projection[8].equals("calendar_id")||!projection[9].equals("account")||!selection.contains("visible=1"))throw new AssertionError("calendar source projection");
   return new Cursor(rows);
  }
 }
 public class ReminderProviderCheck {
+ final Object context=new Object();
  final Resolver resolver=new Resolver();void requireRead(){}
  ''' + method(calendar, 'public List<CalendarOccurrence> reminderInstances(') + '''
  ''' + method(calendar, 'public List<CalendarOccurrence> listInstances(long begin, long end,\n            android.os.CancellationSignal cancellation, int limit)') + '''
- static Object[]e(long id,long start,long end){return new Object[]{id,start,end,"event",null,"room","system"};}
+ static Object[]e(long id,long start,long end){return new Object[]{id,start,end,"event",null,"room","system",null,42L,"account"};}
  public static void main(String[]args){
   ReminderProviderCheck c=new ReminderProviderCheck();Set<Long>linked=new HashSet<>();
   for(long i=1;i<1200;i++){linked.add(i);c.resolver.rows.add(e(i,500,3000));}
@@ -244,11 +250,16 @@ public class ReminderProviderCheck {
   result=c.reminderInstances(1000,4000,Set.of(),Set.of());
   if(result.size()!=7||result.get(0).eventId!=7||result.get(1).eventId!=6||result.get(2).eventId!=5||result.get(3).eventId!=11||result.get(4).eventId!=12||result.get(5).eventId!=13||result.get(6).eventId!=14)throw new AssertionError("three active and four future including next title beyond three cards");
   System.out.println("Production reminder provider scan passed: 1199 linked copies, ended, active/future, hidden recurrence");
-  c.resolver.rows.clear();c.resolver.rows.add(new Object[]{1L,100L,200L,"color",0,"","source",0xFFFF0000});
-  c.resolver.rows.add(new Object[]{2L,100L,200L,"missing",1,"","source",null});
-  c.resolver.rows.add(new Object[]{3L,100L,200L,"black",0,"","source",0});
+  c.resolver.rows.clear();c.resolver.rows.add(new Object[]{1L,100L,200L,"color",0,"","source",0xFFFF0000,42L,"account"});
+  c.resolver.rows.add(new Object[]{2L,100L,200L,"missing",1,"","source",null,43L,"account"});
+  c.resolver.rows.add(new Object[]{3L,100L,200L,"black",0,"","source",0,44L,"account"});
   result=c.listInstances(0,300,null,10);
   if(result.size()!=3||result.get(0).calendarColor!=0xFFFF0000||result.get(1).calendarColor!=null||result.get(2).calendarColor!=0||!result.get(1).allDay)throw new AssertionError("provider source color/null/black/all-day");
+  ScheduleSources.blocked.add(42L);result=c.listInstances(0,300,null,1);
+  if(result.size()!=1||result.get(0).calendarId!=43L)throw new AssertionError("source filter precedes limit");
+  c.resolver.rows.clear();Object[]blocked=e(8,1100,3000);Object[]allowed=e(9,1200,3000);allowed[8]=43L;c.resolver.rows.add(blocked);c.resolver.rows.add(allowed);
+  result=c.reminderInstances(1000,4000,Set.of(),Set.of());
+  if(result.size()!=1||result.get(0).eventId!=9)throw new AssertionError("reminder source filter");
   System.out.println("Production instance query passed: CALENDAR_COLOR projection, null and black source colors");
  }
 }'''
@@ -271,6 +282,10 @@ db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,al
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation,category) VALUES(?,?,?,?,?,?)', [(20,29600000,33000000,0,0,'event'),(21,29820001,29820002,0,0,'todo'),(22,29820000,33000000,0,0,'reminder'),(23,29819999,33000000,0,0,'todo')])
 db.execute("INSERT INTO event_candidates VALUES(30,40000000,41000000,0,0,'event',600)")
 for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
+db.execute("ALTER TABLE event_candidates ADD COLUMN task_id INTEGER NOT NULL DEFAULT 1")
+db.execute("CREATE TABLE zju_homework_captures(capture_id INTEGER,account TEXT)")
+db.execute("CREATE TABLE managed_zju_state(enabled INTEGER,capture_id INTEGER)")
+db.execute("CREATE TABLE zju_homework_map(candidate_id INTEGER,capture_id INTEGER,ignored INTEGER)")
 expected = [[1,2,8,5,6,3,4,9,10], [8,2,1], [3,4,9,10], [20,23,22,21], [2,1], [3,4,9,10], [20,23,22,21], [21,20], [30], [], [], [30], [20,23,22,21]]
 for line, wanted in zip(queries.splitlines(), expected, strict=True):
     tag, selection, arguments, sort, limit = line.split('\t')

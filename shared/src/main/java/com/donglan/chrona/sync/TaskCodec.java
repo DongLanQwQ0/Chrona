@@ -19,7 +19,8 @@ import java.util.UUID;
 /** Portable content only: credentials, calendar IDs, reminder settings and paths never cross devices. */
 public final class TaskCodec {
     public static final long MAX_ATTACHMENT_BYTES = 20L * 1024 * 1024;
-    public static final int MAX_TASK_BYTES = 8 * 1024 * 1024;
+    public static final int MAX_TASK_BYTES = 16 * 1024 * 1024;
+    public static final int MAX_CANDIDATES = 30_000;
     private static final long MIN_TIME = -62_135_596_800_000L, MAX_TIME = 253_402_300_799_999L;
 
     private TaskCodec() { }
@@ -65,7 +66,7 @@ public final class TaskCodec {
                 if (!java.util.Arrays.asList("ready", "needs_review", "failed").contains(status))
                     throw new IOException("不支持的同步记录状态");
                 JSONArray candidates = value.getJSONArray("candidates");
-                if (candidates.length() > 2000) throw new IOException("单条记录的日程数量过多");
+                if (candidates.length() > MAX_CANDIDATES) throw new IOException("单条记录的日程数量超过 30000，请整理后重试同步");
                 Set<String> ids = new HashSet<>();
                 for (int i = 0; i < candidates.length(); i++) {
                     JSONObject candidate = candidates.getJSONObject(i);

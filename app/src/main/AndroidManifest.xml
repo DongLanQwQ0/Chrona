@@ -86,6 +86,11 @@
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".AttachmentViewerActivity" android:exported="false" />
         <activity android:name=".SettingsHubActivity" android:exported="false" />
+        <activity android:name=".ZjuSettingsActivity" android:exported="false" />
+        <activity android:name=".ZjuHomeworkHistoryActivity" android:exported="false" />
+        <activity android:name=".ScheduleSourceSettingsActivity" android:exported="false" />
+        <activity android:name=".ExternalCourseDetailActivity" android:exported="false" />
+        <service android:name=".ZjuSyncJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
         <activity android:name=".NotificationSettingsActivity" android:exported="false" />
         <activity android:name=".SystemCalendarSettingsActivity" android:exported="false" />
         <activity android:name=".SyncSettingsActivity" android:exported="false" />

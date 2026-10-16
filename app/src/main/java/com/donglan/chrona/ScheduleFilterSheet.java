@@ -52,7 +52,7 @@ final class ScheduleFilterSheet {
         body.setOrientation(LinearLayout.VERTICAL);
         body.setClipChildren(false);
         body.setClipToPadding(false);
-        body.setPadding(dp(8), dp(6), dp(8), dp(6));
+        body.setPadding(dp(4), dp(8), dp(4), dp(18));
     }
 
     private void show() {
@@ -212,7 +212,7 @@ final class ScheduleFilterSheet {
             TextView title = label(name, 13, true);
             title.setPadding(dp(7), 0, 0, 0);
             heading.addView(title);
-            UiStyle.addSpaced(body, heading, 4, 2);
+            UiStyle.addSpaced(body, heading, 6, 2);
             dock = new DockNavigationLayout(activity, this::select, () -> { });
             dock.setPadding(dp(2), dp(3), dp(2), dp(3));
             dock.setOrientation(LinearLayout.HORIZONTAL);
@@ -231,7 +231,7 @@ final class ScheduleFilterSheet {
                 option.setSingleLine(true);
                 option.setHorizontallyScrolling(false);
             }
-            UiStyle.addSpaced(body, dock.motionHost(), 0, 4);
+            UiStyle.addSpaced(body, dock.motionHost(true), 0, 6);
         }
 
         void select(int index) {

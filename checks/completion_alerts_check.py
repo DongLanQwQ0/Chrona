@@ -11,10 +11,11 @@ sources = {
 public class Context {public static final int MODE_PRIVATE=0;public SharedPreferences prefs=new SharedPreferences();public SharedPreferences getSharedPreferences(String key,int mode){return prefs;}}''',
 'android/content/SharedPreferences.java': '''package android.content;
 import java.util.*;
-public class SharedPreferences {Map<String,Object> values=new HashMap<>();public Set<String> getStringSet(String k,Set<String> fallback){return (Set<String>)values.getOrDefault(k,fallback);}public boolean getBoolean(String k,boolean fallback){return (Boolean)values.getOrDefault(k,fallback);}public boolean contains(String k){return values.containsKey(k);}public String getString(String k,String fallback){return (String)values.getOrDefault(k,fallback);}public Editor edit(){return new Editor();}public class Editor {Map<String,Object> next=new HashMap<>();Set<String> gone=new HashSet<>();public Editor putStringSet(String k,Set<String> v){next.put(k,new HashSet<>(v));return this;}public Editor putBoolean(String k,boolean v){next.put(k,v);return this;}public Editor putString(String k,String v){next.put(k,v);return this;}public Editor remove(String k){gone.add(k);return this;}public void apply(){commit();}public boolean commit(){for(String k:gone)values.remove(k);values.putAll(next);return true;}}}''',
+public class SharedPreferences {Map<String,Object> values=new HashMap<>();public Set<String> getStringSet(String k,Set<String> fallback){return (Set<String>)values.getOrDefault(k,fallback);}public boolean getBoolean(String k,boolean fallback){return (Boolean)values.getOrDefault(k,fallback);}public boolean contains(String k){return values.containsKey(k);}public String getString(String k,String fallback){return (String)values.getOrDefault(k,fallback);}public long getLong(String k,long fallback){return (Long)values.getOrDefault(k,fallback);}public Editor edit(){return new Editor();}public class Editor {Map<String,Object> next=new HashMap<>();Set<String> gone=new HashSet<>();public Editor putLong(String k,long v){next.put(k,v);return this;}public Editor putStringSet(String k,Set<String> v){next.put(k,new HashSet<>(v));return this;}public Editor putBoolean(String k,boolean v){next.put(k,v);return this;}public Editor putString(String k,String v){next.put(k,v);return this;}public Editor remove(String k){gone.add(k);return this;}public void apply(){commit();}public boolean commit(){for(String k:gone)values.remove(k);values.putAll(next);return true;}}}''',
 'android/database/Cursor.java': '''package android.database;public class Cursor implements AutoCloseable {java.util.Iterator<Long> ids;long current;public Cursor(java.util.Collection<Long> values){ids=values.iterator();}public boolean moveToNext(){if(!ids.hasNext())return false;current=ids.next();return true;}public long getLong(int i){return current;}public void close(){}}''',
 'android/database/sqlite/SQLiteDatabase.java': '''package android.database.sqlite;public class SQLiteDatabase {public android.database.Cursor rawQuery(String sql,String[] args){java.util.List<Long> ids=new java.util.ArrayList<>();for(var e:com.donglan.chrona.data.TaskStore.rows.values())if(e.completed()&&e.calendarEventId!=null)ids.add(e.id);return new android.database.Cursor(ids);}}''',
 'android/util/Log.java': '''package android.util;public class Log {public static int w(String tag,String message,Throwable error){return 0;}}''',
+'com/donglan/chrona/AgendaReminderPreferences.java': '''package com.donglan.chrona;class AgendaReminderPreferences {static android.content.SharedPreferences prefs(android.content.Context c){return c.getSharedPreferences("agenda_reminder",0);}}''',
 'com/donglan/chrona/AndroidSync.java': '''package com.donglan.chrona;class AndroidSync {static final Object LOCK=new Object();}''',
 'com/donglan/chrona/AgendaReminder.java': '''package com.donglan.chrona;class AgendaReminder {static int refreshes;static void requestRefresh(android.content.Context c){refreshes++;}}''',
 'com/donglan/chrona/data/TaskStore.java': '''package com.donglan.chrona.data;
@@ -26,27 +27,75 @@ public class CalendarStore {public static boolean permission=true,fail=false;pub
 'com/donglan/chrona/CompletionCheck.java': '''package com.donglan.chrona;
 import android.content.Context;import com.donglan.chrona.data.*;import com.donglan.chrona.calendar.CalendarStore;import java.util.*;
 public class CompletionCheck {
+__ACKNOWLEDGEMENT_UNTIL__
 static int checks;static void check(boolean yes,String why){checks++;if(!yes)throw new AssertionError(why);}
 public static void main(String[] args){Context c=new Context();long future=System.currentTimeMillis()+3600000;
 EventCandidate item=new EventCandidate(1,2,"待办",future,null,"Asia/Shanghai","","",10,false,7L,"task",false,false,0,future,null,false);TaskStore.rows.put(1L,item);
 CalendarStore.events.put(7L,new CalendarStore.EventRecord(future,List.of(10,30)));CalendarStore.events.put(8L,new CalendarStore.EventRecord(future,List.of(5)));
 check(TaskCompletion.set(c,1,2,true)==null,"complete success");check(TaskStore.rows.get(1L).completed(),"local completed");check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"linked pending alerts disabled");check(CalendarStore.events.get(8L).reminderMinutes.equals(List.of(5)),"unrelated event untouched");
-check(TaskCompletion.set(c,1,2,false)==null,"restore success");check(CalendarStore.events.get(7L).reminderMinutes.equals(List.of(10,30)),"original future alerts restored");
+String key=AgendaAcknowledgement.key(item);AgendaAcknowledgement.set(c,key,future,true);
+c.prefs.edit().putLong("snooze_until:"+key,future).putLong("snooze_end:"+key,future+1000).apply();
+check(AgendaAcknowledgement.isAcknowledged(c,key),"hidden occurrence acknowledged");
+check(TaskCompletion.set(c,1,2,false)==null,"restore success");
+check(!AgendaAcknowledgement.isAcknowledged(c,key)&&!c.prefs.contains("snooze_until:"+key)&&!c.prefs.contains("snooze_end:"+key),"restore clears current occurrence hidden and snooze");check(CalendarStore.events.get(7L).reminderMinutes.equals(List.of(10,30)),"original future alerts restored");
 CalendarStore.permission=false;check(TaskCompletion.set(c,1,2,true)!=null,"permission warning");check(TaskStore.rows.get(1L).completed(),"completion not blocked by calendar permission");CalendarStore.permission=true;TaskCompletion.retryPending(c);check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"pending permission repair retried");
 CalendarStore.fail=true;check(TaskCompletion.set(c,1,2,false)!=null,"provider failure visible");check(!TaskStore.rows.get(1L).completed(),"restore local state kept");CalendarStore.fail=false;TaskCompletion.retryPending(c);check(CalendarStore.events.get(7L).reminderMinutes.equals(List.of(10,30)),"provider recovery retains original alerts");
 TaskCompletion.set(c,1,2,true);CalendarStore.events.get(7L).startMillis=System.currentTimeMillis()-60000;TaskCompletion.set(c,1,2,false);check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"expired alerts not replayed");
 long revision=TaskStore.revision;try{TaskCompletion.set(c,1,2,true,revision-1);throw new AssertionError("stale edit accepted");}catch(ConcurrentModificationException expected){check(TaskStore.revision==revision,"stale revision cannot mutate");}
+EventCandidate event=new EventCandidate(10,2,"活动",future,future+3600000,"Asia/Shanghai","","",10,true);
+check(acknowledgementUntil(event)==future+3600000,"explicit end retained");
+for(Long end:new Long[]{null,future,future-1000}) {
+EventCandidate point=new EventCandidate(11,2,"活动",future,end,"Asia/Shanghai","","",10,false);
+check(acknowledgementUntil(point)==future+60000,"missing or non-positive interval gets minute window");
+}
+EventCandidate noTime=new EventCandidate(12,2,"活动",null,null,"Asia/Shanghai","","",null,false);
+check(acknowledgementUntil(noTime)==0L,"missing anchor unavailable");
+EventCandidate expired=new EventCandidate(13,2,"活动",future-7200000,future-3600000,"Asia/Shanghai","","",10,false);
+check(acknowledgementUntil(expired)<=System.currentTimeMillis(),"expired activity unavailable");
+String eventKey=AgendaAcknowledgement.key(event),other=AgendaAcknowledgement.key(44,future+86400000);
+check(eventKey.equals("chrona:10:"+future),"candidate occurrence key");
+AgendaAcknowledgement.set(c,other,future+86400000,true);
+long rev=c.prefs.getLong("acknowledgement_revision",0);int refresh=AgendaReminder.refreshes;
+AgendaAcknowledgement.set(c,eventKey,future,true);
+check(AgendaAcknowledgement.isAcknowledged(c,eventKey)&&!event.completed()&&event.needsConfirmation,"ack separate from completion and review");
+check(c.prefs.getLong("acknowledgement_revision",0)==rev+1&&AgendaReminder.refreshes==refresh+1,"ack revision and refresh");
+AgendaAcknowledgement.set(c,eventKey,0,false);
+check(!AgendaAcknowledgement.isAcknowledged(c,eventKey)&&AgendaAcknowledgement.isAcknowledged(c,other),"cancel scopes one occurrence");
+AgendaAcknowledgement.set(c,eventKey,System.currentTimeMillis()-1,true);
+check(!AgendaAcknowledgement.isAcknowledged(c,eventKey),"expired hidden is unacknowledged");
+rev=c.prefs.getLong("acknowledgement_revision",0);AgendaAcknowledgement.set(c,"",future,true);
+check(!AgendaAcknowledgement.isAcknowledged(c,"")&&rev==c.prefs.getLong("acknowledgement_revision",0),"empty keys have no state");
 check(CalendarStore.events.size()==2,"event history not deleted");System.out.println("Completion alert orchestration: "+checks+" checks passed");}}
 '''
 }
+detail = (root / 'app/src/main/java/com/donglan/chrona/TaskDetailActivity.java').read_text(encoding='utf-8')
+begin = detail.index('    private static long acknowledgementUntil(')
+end = detail.index('\n    }', begin) + len('\n    }')
+sources['com/donglan/chrona/CompletionCheck.java'] = sources['com/donglan/chrona/CompletionCheck.java'].replace('__ACKNOWLEDGEMENT_UNTIL__', detail[begin:end])
+assert '&& acknowledgementUntil(candidate) > System.currentTimeMillis()' in detail
+assert 'if (key.isEmpty() || until <= System.currentTimeMillis())' in detail
+system_detail = (root / 'app/src/main/java/com/donglan/chrona/SystemAgendaDetailActivity.java').read_text(encoding='utf-8')
+assert 'acknowledgement.setEnabled(occurrenceAvailable && acknowledgementUntil > System.currentTimeMillis())' in system_detail
+assert 'if (!occurrenceAvailable || acknowledgementUntil <= System.currentTimeMillis())' in system_detail
 paths = []
+sources['com/donglan/chrona/data/TaskStore.java'] = sources['com/donglan/chrona/data/TaskStore.java'].replace(
+    'public static long revision;',
+    'public static long revision;public static boolean sourceEnabled=true;public boolean allowsReminder(long id){return sourceEnabled;}')
+sources['com/donglan/chrona/CompletionCheck.java'] = sources['com/donglan/chrona/CompletionCheck.java'].replace(
+    'check(CalendarStore.events.size()==2,"event history not deleted");',
+    '''CalendarStore.events.get(7L).startMillis=future;CalendarStore.events.get(7L).reminderMinutes=new ArrayList<>(List.of(5,10));TaskStore.sourceEnabled=false;TaskCompletion.set(c,1,2,false);
+check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"disabled school source suppresses linked alerts without completing item");
+check(!TaskStore.rows.get(1L).completed(),"source off keeps task unfinished");
+TaskStore.sourceEnabled=true;TaskCompletion.enqueue(c,1);TaskCompletion.retryPending(c);
+check(CalendarStore.events.get(7L).reminderMinutes.equals(List.of(5,10)),"source reenable restores original future reminders");
+check(CalendarStore.events.size()==2,"event history not deleted");''')
 for name, text in sources.items():
     path = out / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding='utf-8')
     paths.append(path)
 src = root / 'app/src/main/java/com/donglan/chrona'
-paths += [src / 'TaskCompletion.java', src / 'data/EventCandidate.java', src / 'data/EventCategory.java']
+paths += [src / 'TaskCompletion.java', src / 'AgendaAcknowledgement.java', src / 'data/EventCandidate.java', src / 'data/EventCategory.java']
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
 cp = str(root / 'build/ai-checks/json.jar')
 subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', cp, '-d', str(out), *map(str, paths)], check=True)

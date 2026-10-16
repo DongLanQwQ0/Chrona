@@ -1,4 +1,20 @@
-# 当前交付：0.14.54 / 161
+# 当前开发：0.15.0 / 162 · 折姜星辰
+
+已接原生CAS与学在浙大作业读取、教务秋冬课表。凭据仅由用户提供的本地文件经脚本消费，未展示内容，不写日志或版本库；不要读取account.txt、.env、Cookie或把私有响应提交。仅参考E:/Programs/ZJU-live-better，用户已撤销早期GitHub参考。
+
+入口和主开关严格叫「折姜星辰」。ZjuSettingsStore独立Keystore加密账号密码，Cookie仅内存；ZjuSync与JobService在后台拉取。作业一个capture，DB12五表保存绑定/代次/稳定远端映射/忽略墓碑/历史，删除trigger关闭capture推送，云apply防本机复活。个人执行安排和手动完成保留，官方提交可自动完成；截止变更通过pending_calendar持久重试同步Chrona自有系统事件。通知仅统计本次真正变化且仍未完成的作业。
+
+ZjuSync网络不持AndroidSync.LOCK，提交与恢复互斥；关闭、换号、恢复先递增epoch取消旧响应。设置成功后立即同步，并有约30分钟JobScheduler/前台过期刷新。恢复后关闭学校自动同步。ZjuTimetableStore以明确completeTimetableTerms替换，包括成功空学期，部分失败保留旧项；不要以warnings数量判断删除。
+
+ScheduleSources按系统calendarId过滤，原页面includeSystem保留；ExternalCourseAgenda负ID共享ICS和浙大缓存，不要求系统日历权限，详情只读且可确认/取消。首页/日历/周图/widget/LAN/reminder全部接入，cachekey包含来源revision；全天ICS转换回CalendarOccurrence约定的UTC日期。优先来源仅抑制确切标题/时间/全天重复，不删除原始数据。CalendarStore CRUD/链接恢复不受展示过滤。
+
+真实原生OkHttp只读验证10课程/21作业/277节秋冬课表，11已提交、10未知保留null。校历只核实2026–2027秋冬普通本科校区；春夏/未知学年/海宁独立校历未接，实践课无日期不造提醒。官方PDF已由主代理实际渲染检查，国庆/学生节调课已入代码。19校历、16作业更新、14来源缓存、32完成动作、629提醒/时间轴断言和真实SQLite迁移/Provider过滤检查通过；通知79及详情3时区通过，release/lintRelease通过。构建目录保留测试适配器，不能以其代替Android实际界面/后台投递证据。
+
+用户禁止继续手机调试，本轮未ADB/安装/截图。真机界面、系统后台投递及原子岛端到端仍待设备允许时验收。前轮活动确认/撤销、首页圆形动画、紧凑筛选已并入；其离线绘制32与布局14检查通过。不要提交用户AGENTS.md、角色toml或.backups目录。
+
+文档：docs/zju-services.md（使用/限制）、docs/zju-integration-research.md（来源证据）、docs/validation-history.md。备份build/backups/zju-root-start、zju-homework、zju-sources及.backups/course-feed-consumers-*。APK输出build/distribution/Chrona-0.15.0.apk。
+
+# 上一轮交付：0.14.54 / 161
 
 共用按压遮罩改ControlHighlightMask，跟随控件自身及最近父层亚克力圆角；选择栏保留1.5倍高光与1.1倍板，motionHost预留长按包络，中间父层不裁切。筛选按实际measureText加padding分配宽度，14sp单行、44dp高，不再等宽或强行换行。高光follow改连续900/60弹簧，普通移动720/40改180/20以延长两倍；放大时间乘数3，缩小4.5。跟随位移时trackingHeight平滑到.95，跟随到位恢复1；边缘.6槽距离内渐增阻力，保留越界回弹。
 
