@@ -1429,6 +1429,7 @@ public final class DashboardActivity extends Activity {
             UiStyle.pressable(labels);
             row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
             row.addView(taskCompletionButton(candidate), new LinearLayout.LayoutParams(dp(48), dp(48)));
+            PressFeedback.group(row, 1f);
             details.addView(row);
         }
         summary.addView(details, new LinearLayout.LayoutParams(-1, -2));
@@ -1500,7 +1501,19 @@ public final class DashboardActivity extends Activity {
             disclosure.setOnClickListener(toggle);
             UiStyle.pressable(title);
         }
+        PressFeedback.group(heading, 1f);
+        PressFeedback.group(counts, 1f);
+        details.setAddStatesFromChildren(true);
+        PressFeedback.group(summary, 1.05f);
         UiStyle.addSpaced(content, summary, 4, 14);
+        summary.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> {
+            int clearance = PressFeedback.edgeSpace(b - t);
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) summary.getLayoutParams();
+            int top = dp(4) + clearance, bottom = dp(14) + clearance;
+            if (params.topMargin != top || params.bottomMargin != bottom) {
+                params.topMargin = top; params.bottomMargin = bottom; summary.setLayoutParams(params);
+            }
+        });
     }
 
     private void addHomeTodoCount(LinearLayout parent, String label, int count, Runnable action) {

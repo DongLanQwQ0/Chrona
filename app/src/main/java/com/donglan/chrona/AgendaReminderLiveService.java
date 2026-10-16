@@ -31,7 +31,10 @@ public final class AgendaReminderLiveService extends Service {
         }
     };
     private final BroadcastReceiver screen = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent i) { AgendaReminder.requestRefresh(AgendaReminderLiveService.this); }
+        @Override public void onReceive(Context c, Intent i) {
+            scheduleSeconds(0);
+            AgendaReminder.requestRefresh(AgendaReminderLiveService.this);
+        }
     };
     static void update(Context context, boolean needed, long nextAt) {
         needed = needed && NotificationDeliveryStatus.canPostReminders(context);

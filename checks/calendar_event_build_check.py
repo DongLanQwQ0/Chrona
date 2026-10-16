@@ -9,7 +9,7 @@ def method(signature):
  return s[start:end]
 day=method('    private void dayList(')
 start=s.index('        android.graphics.Paint.FontMetrics smallMetrics =');end=s.index('        View nowLine =',start)
-timeline='void events(){int maxCardHeight=0;\n'+s[start:end]+'\nmeasuredMax=maxCardHeight;}'
+timeline='void events(){int maxCardHeight=0; List<List<CalendarTimelineLayout.Block>> dayBlocks=new ArrayList<>(); for(int d=0;d<days;d++)dayBlocks.add(CalendarTimelineLayout.day(entries,first.plusDays(d),zone));\n'+s[start:end]+'\nmeasuredMax=maxCardHeight;}'
 prod=(day+'\n'+timeline).replace('android.graphics.Paint','Paint').replace('android.graphics.drawable.GradientDrawable','GradientDrawable').replace('android.text.TextUtils','TextUtils')
 java=r'''
 import java.util.*;import java.time.*;
@@ -29,7 +29,7 @@ class UiStyle {static int RADIUS_PANEL=24;static class Palette {int primary,text
 class CalendarTimelineLayout {static class Block {AgendaEntry entry=new AgendaEntry();double startMinute=600,endMinute=650;int lane,lanes=1;}static List<Block> day(List<AgendaEntry> e,LocalDate d,ZoneId z){List<Block> r=new ArrayList<>();for(AgendaEntry a:e){Block b=new Block();b.entry=a;r.add(b);}return r;}}
 public class CalendarEventBuildCheck {
  Queue<Runnable> pending=new ArrayDeque<>();List<EntryStatus> statuses=new ArrayList<>();List<AgendaEntry> entries=new ArrayList<>();int days=7,hourHeight=72,dayWidth=80,gutter=40,height=1728,created;
- int measuredMax;static class Geometry {int hourHeight=72,dayWidth=80,height=1728;}Geometry geometry=new Geometry();List<Runnable> geometryBindings=new ArrayList<>();
+ int measuredMax;static class Geometry {int hourHeight=72,dayWidth=80,height=1728;float y(double minute){return (float)(minute/60*hourHeight);}}Geometry geometry=new Geometry();List<Runnable> geometryBindings=new ArrayList<>();
  LocalDate first=LocalDate.of(2026,10,13);ZoneId zone=ZoneId.systemDefault();FrameLayout grid=new FrameLayout();
  LinearLayout column(){return new LinearLayout();}LinearLayout row(){return new LinearLayout();}TextView text(String t,int n,boolean bold){created++;return new TextView();}int dp(int n){return n;}
  void calendarSurface(View v,boolean b,int r,boolean o){}void eventSurface(View v,AgendaEntry e){}void open(AgendaEntry e){}void updateStatus(EntryStatus s){}String time(AgendaEntry e){return "10:00";}

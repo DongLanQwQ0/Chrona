@@ -31,7 +31,7 @@ GROUPS = {
         "widget_source_failure_check.py",
         "widget_preferences_check.py",
         "agenda_features_check.py", "agenda_notification_check.py", "agenda_slots_check.py", "reminder_preferences_check.py", "live_reminder_service_check.py", "completion_alerts_check.py", "notification_delivery_status_check.py",
-        "calendar_review_check.py", "week_calendar_check.py", "week_export_check.py", "launcher_shortcuts_check.py",
+        "calendar_review_check.py", "week_calendar_check.py", "week_time_scale_check.py", "week_export_check.py", "launcher_shortcuts_check.py",
         "dashboard_switch_check.py", "schedule_refresh_frame_check.py", "review_badge_check.py", "vivo_atomic_check.py", "calendar_event_build_check.py",
     ),
     "cached_dependencies": (

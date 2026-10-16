@@ -28,11 +28,11 @@ files={
 'com/donglan/chrona/AgendaReminder.java':'package com.donglan.chrona;class AgendaReminder {static final String CHANNEL="upcoming_agenda";static java.util.concurrent.Executor WORKER=Runnable::run;static int refreshes;static void requestRefresh(android.content.Context c){refreshes++;}}',
 'com/donglan/chrona/AgendaReminderPreferences.java':'package com.donglan.chrona;class AgendaReminderPreferences {static boolean enabled=true;static boolean enabled(android.content.Context c){return enabled;}}',
 'com/donglan/chrona/ReminderTimeline.java':'package com.donglan.chrona;class ReminderTimeline {static long PROGRESS_REFRESH=60000;}',
-'com/donglan/chrona/AtomicCountdownUpdates.java':'package com.donglan.chrona;class AtomicCountdownUpdates {static void tick(android.content.Context c){}static long nextDelay(android.content.Context c){return 1000;}}',
+'com/donglan/chrona/AtomicCountdownUpdates.java':'package com.donglan.chrona;class AtomicCountdownUpdates {static int ticks;static long delay=1000;static void tick(android.content.Context c){ticks++;}static long nextDelay(android.content.Context c){return delay;}}',
 'com/donglan/chrona/DashboardActivity.java':'package com.donglan.chrona;class DashboardActivity {}',
 'com/donglan/chrona/R.java':'package com.donglan.chrona;class R {static class drawable {static int ic_notifications=1;}}',
 'com/donglan/chrona/LiveReminderServiceCheck.java':'''package com.donglan.chrona;public class LiveReminderServiceCheck {
-static void check(boolean b,String m){if(!b)throw new AssertionError(m);}public static void main(String[]args){
+static void check(boolean b,String m){if(!b)throw new AssertionError(m);}public static void main(String[]args)throws Exception{
 android.content.Context c=new android.content.Context();
 c.manager.allowed=false;AgendaReminderLiveService.update(c,true,0);check(c.starts==0&&c.stops==1,"app notifications blocked stops live updates");
 c.manager.allowed=true;c.permission=-1;AgendaReminderLiveService.update(c,true,0);check(c.starts==0&&c.stops==2,"runtime notification permission required");
@@ -42,6 +42,12 @@ AgendaReminderLiveService s=new AgendaReminderLiveService();s.onCreate();int res
 check(s.foreground&&result==android.app.Service.START_STICKY,"foreground lifecycle");check(android.os.Handler.delay>0&&android.os.Handler.delay<=5000,"nearest boundary, not always one minute");
 android.os.Handler.pending.run();check(AgendaReminder.refreshes==2,"background tick refreshes without Activity");
 AgendaReminderLiveService.update(c,true,System.currentTimeMillis()+3600000);check(c.starts==1&&android.os.Handler.delay==1000,"existing service starts seconds boundary probe");
+for(int frame=1;frame<=3;frame++){android.os.Handler.pending.run();check(AtomicCountdownUpdates.ticks==frame&&android.os.Handler.delay==1000,"seconds callback rearms at one second "+frame);}
+AtomicCountdownUpdates.delay=60000;android.os.Handler.pending.run();check(android.os.Handler.delay==60000,"idle countdown can wait a minute");
+var screenField=AgendaReminderLiveService.class.getDeclaredField("screen");screenField.setAccessible(true);
+((android.content.BroadcastReceiver)screenField.get(s)).onReceive(s,new android.content.Intent("screen"));
+check(android.os.Handler.delay==0,"waking display refreshes cached seconds immediately, not after minute probe");
+AtomicCountdownUpdates.delay=1000;
 int stops=c.stops;AgendaReminderLiveService.update(c,false,0);check(c.stops==stops+1,"no cards stops service");s.onDestroy();check(!s.foreground&&android.os.Handler.pending==null,"destroy releases callbacks and foreground notification");
 c.deny=true;AgendaReminderLiveService.update(c,true,0);check(c.starts==1,"OS denial does not crash reminder path");
 for(int blocked=0;blocked<3;blocked++){

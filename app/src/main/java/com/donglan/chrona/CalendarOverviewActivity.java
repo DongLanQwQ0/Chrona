@@ -880,16 +880,25 @@ public final class CalendarOverviewActivity extends Activity {
     private void timeline(List<AgendaEntry> entries) {
         int days = mode == WEEK ? 7 : 1;
         LocalDate first = windowStart(); ZoneId zone = snapshot.zone;
+        List<List<CalendarTimelineLayout.Block>> dayBlocks = new ArrayList<>();
+        for (int d = 0; d < days; d++) dayBlocks.add(CalendarTimelineLayout.day(entries, first.plusDays(d), zone));
+        boolean compressMorning = days == 7 && !snapshot.systemUnavailable && !snapshot.truncated
+                && dayBlocks.stream().flatMap(List::stream).noneMatch(block ->
+                        WeekTimelineScale.occupiesQuietHours(block.startMinute, block.endMinute));
         int viewport = Math.max(dp(240), body.getWidth() > 0 ? body.getWidth() : getResources().getDisplayMetrics().widthPixels - dp(40));
         int edge = PressFeedback.edgeSpace(viewport);
         int gutter = dp(40);
         int baseWidth = Math.max(viewport - 2 * edge, days == 7 ? dp(670) : viewport - 2 * edge);
         class Geometry {
             int width, dayWidth, hourHeight, height;
+            WeekTimelineScale timeScale;
+            float y(double minute) { return (float) timeScale.y(minute); }
             void update(float scale) {
                 width = Math.round(gutter + (baseWidth - gutter) * scale);
                 dayWidth = (width - gutter) / days; width = gutter + days * dayWidth;
-                hourHeight = Math.max(1, Math.round(dp(72) * scale)); height = hourHeight * 24;
+                hourHeight = Math.max(1, Math.round(dp(72) * scale));
+                timeScale = new WeekTimelineScale(compressMorning, hourHeight, dp(32));
+                height = (int) Math.ceil(timeScale.y(1440));
             }
         }
         Geometry geometry = new Geometry();
@@ -949,9 +958,11 @@ public final class CalendarOverviewActivity extends Activity {
             @Override protected void onDraw(Canvas canvas) {
                 paint.setStrokeWidth(dp(1)); paint.setTextSize(dp(11));
                 for (int hour = 0; hour <= 24; hour++) {
-                    float y = hour * geometry.hourHeight; paint.setColor(gridColors.outline);
+                    if (compressMorning && hour > 1 && hour < 8) continue;
+                    float y = geometry.y(hour * 60); paint.setColor(gridColors.outline);
                     canvas.drawLine(gutter, y, geometry.width, y, paint);
-                    if (hour < 24) { paint.setColor(gridColors.muted); canvas.drawText(hourLabels[hour], dp(4), y + dp(13), paint); }
+                    if (hour < 24) { paint.setColor(gridColors.muted); canvas.drawText(compressMorning && hour == 1
+                            ? "01–08" : hourLabels[hour], dp(4), y + dp(13), paint); }
                 }
                 paint.setColor(gridColors.outline);
                 for (int d = 0; d <= days; d++) canvas.drawLine(gutter + d * geometry.dayWidth, 0, gutter + d * geometry.dayWidth, geometry.height, paint);
@@ -961,12 +972,12 @@ public final class CalendarOverviewActivity extends Activity {
         android.graphics.Paint.FontMetrics smallMetrics = text("", 12, true).getPaint().getFontMetrics();
         android.graphics.Paint.FontMetrics largeMetrics = text("", 14, true).getPaint().getFontMetrics();
         List<java.util.function.IntSupplier> cardHeights = new ArrayList<>();
-        for (int d = 0; d < days; d++) for (CalendarTimelineLayout.Block block : CalendarTimelineLayout.day(entries, first.plusDays(d), zone)) {
+        for (int d = 0; d < days; d++) for (CalendarTimelineLayout.Block block : dayBlocks.get(d)) {
             final int dayIndex = d;
             AgendaEntry e = block.entry;
             // Keep view creation on the existing frame queue; zoom only relays out live views.
             java.util.function.IntSupplier measureHeight = () -> {
-                int duration = (int) ((block.endMinute - block.startMinute) / 60 * geometry.hourHeight) - dp(2);
+                int duration = (int) (geometry.y(block.endMinute) - geometry.y(block.startMinute)) - dp(2);
                 boolean compact = duration < dp(36);
                 android.graphics.Paint.FontMetrics metrics = !compact && days == 1 ? largeMetrics : smallMetrics;
                 int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
@@ -979,7 +990,7 @@ public final class CalendarOverviewActivity extends Activity {
             card.setTextColor(UiStyle.colors(this).text); eventSurface(card, e);
             int[] appearance = {-1, -1};
             Runnable place = () -> {
-                int duration = (int) ((block.endMinute - block.startMinute) / 60 * geometry.hourHeight) - dp(2);
+                int duration = (int) (geometry.y(block.endMinute) - geometry.y(block.startMinute)) - dp(2);
                 boolean compact = duration < dp(36);
                 android.graphics.Paint.FontMetrics metrics = !compact && days == 1 ? largeMetrics : smallMetrics;
                 int lineHeight = Math.max(1, (int) Math.ceil(metrics.descent - metrics.ascent));
@@ -995,7 +1006,7 @@ public final class CalendarOverviewActivity extends Activity {
                 if (appearance[1] != lines) { card.setMaxLines(lines); appearance[1] = lines; }
                 FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(Math.max(days == 1 ? dp(12) : 1, geometry.dayWidth / block.lanes - dp(4)), cardHeight);
                 params.leftMargin = gutter + dayIndex * geometry.dayWidth + block.lane * geometry.dayWidth / block.lanes + dp(2);
-                params.topMargin = Math.max(0, Math.min(geometry.height - cardHeight, (int) (block.startMinute / 60 * geometry.hourHeight) + dp(1)));
+                params.topMargin = Math.max(0, Math.min(geometry.height - cardHeight, (int) geometry.y(block.startMinute) + dp(1)));
                 card.setLayoutParams(params);
             };
             place.run(); geometryBindings.add(place);
@@ -1009,7 +1020,7 @@ public final class CalendarOverviewActivity extends Activity {
             @Override protected void onDraw(Canvas canvas) {
                 LocalDate today = LocalDate.now(); long index = java.time.temporal.ChronoUnit.DAYS.between(first, today);
                 if (index < 0 || index >= days) return;
-                float y = (float) (CalendarTimelineLayout.minute(System.currentTimeMillis(), zone) / 60 * geometry.hourHeight);
+                float y = geometry.y(CalendarTimelineLayout.minute(System.currentTimeMillis(), zone));
                 paint.setColor(UiStyle.colors(CalendarOverviewActivity.this).primary); paint.setStrokeWidth(dp(2));
                 float left = gutter + index * geometry.dayWidth;
                 canvas.drawLine(left, y, left + geometry.dayWidth, y, paint); canvas.drawCircle(left + dp(3), y, dp(3), paint);
@@ -1045,7 +1056,7 @@ public final class CalendarOverviewActivity extends Activity {
                     // Express the focal point in day/hour coordinates before changing layout.
                     float dayAtFocus = (horizontal.getScrollX() + focusX - edge - gutter) / geometry.dayWidth;
                     float gridFocusY = focusY - vertical.getTop();
-                    float hourAtFocus = (vertical.getScrollY() + gridFocusY - gridContent.getPaddingTop()) / geometry.hourHeight;
+                    double minuteAtFocus = geometry.timeScale.minuteAt(vertical.getScrollY() + gridFocusY - gridContent.getPaddingTop());
                     weekZoom = pending; geometry.update(weekZoom);
                     int currentMaxCardHeight = 0;
                     for (java.util.function.IntSupplier measure : cardHeights) currentMaxCardHeight = Math.max(currentMaxCardHeight, measure.getAsInt());
@@ -1062,7 +1073,7 @@ public final class CalendarOverviewActivity extends Activity {
                     horizontal.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
                         @Override public boolean onPreDraw() {
                             horizontal.getViewTreeObserver().removeOnPreDrawListener(this);
-                            int targetY = Math.round(newVerticalEdge + hourAtFocus * geometry.hourHeight - (focusY - vertical.getTop()));
+                            int targetY = Math.round(newVerticalEdge + geometry.y(minuteAtFocus) - (focusY - vertical.getTop()));
                             horizontal.scrollTo(Math.max(0, targetX), 0); vertical.scrollTo(0, Math.max(0, targetY));
                             return true;
                         }
@@ -1075,7 +1086,7 @@ public final class CalendarOverviewActivity extends Activity {
         vertical.post(() -> {
             if (vertical != verticalViewport || positions.containsKey(renderedKey)) return;
             int hour = CalendarViewport.hour(first, days, LocalDate.now(), Instant.now().atZone(zone).toLocalTime());
-            vertical.scrollTo(0, verticalEdge + hour * geometry.hourHeight);
+            vertical.scrollTo(0, verticalEdge + Math.round(geometry.y(hour * 60)));
             int focus = CalendarViewport.column(first, days, date);
             horizontal.scrollTo(Math.max(0, gutter + focus * geometry.dayWidth + geometry.dayWidth / 2 - viewport / 2), 0);
         });

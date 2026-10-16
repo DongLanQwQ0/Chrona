@@ -22,8 +22,7 @@ final class AtomicCountdownUpdates {
     }
     static void clear(int id) { snapshots.remove(id); }
     static long nextDelay(Context context) {
-        if (!AgendaReminderPreferences.showSeconds(context)
-                || !context.getSystemService(android.os.PowerManager.class).isInteractive()) return 60_000;
+        if (!AgendaReminderPreferences.showSeconds(context)) return 60_000;
         long now = System.currentTimeMillis(), delay = 60_000;
         for (Snapshot snapshot : snapshots.values()) {
             if (snapshot.deadline <= now) continue;
@@ -32,8 +31,7 @@ final class AtomicCountdownUpdates {
         return delay;
     }
     static void tick(Context context) {
-        if (!AgendaReminderPreferences.enabled(context) || !AgendaReminderPreferences.showSeconds(context)
-                || !context.getSystemService(android.os.PowerManager.class).isInteractive()) return;
+        if (!AgendaReminderPreferences.enabled(context) || !AgendaReminderPreferences.showSeconds(context)) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         long now = System.currentTimeMillis();
         if (snapshots.values().stream().noneMatch(s -> s.deadline > 0
@@ -52,6 +50,15 @@ final class AtomicCountdownUpdates {
                 Bundle data = new Bundle(snapshot.notice.extras);
                 data.putInt(PREFIX + "operation", 1);
                 String text = AtomicAgendaCard.remainingText(remaining, true);
+                Bundle base = new Bundle(snapshot.notice.extras.getBundle(PREFIX + "baseInfos"));
+                String originalContent = base.getCharSequence(PREFIX + "baseInfos.content").toString();
+                int rangeAt = originalContent.indexOf('\n');
+                base.putCharSequence(PREFIX + "baseInfos.content", text
+                        + (rangeAt < 0 ? "" : originalContent.substring(rangeAt)));
+                data.putBundle(PREFIX + "baseInfos", base);
+                Bundle shortInfo = new Bundle(snapshot.notice.extras.getBundle(PREFIX + "shortInfos"));
+                shortInfo.putString(PREFIX + "shortInfos.coreInfoShort", text);
+                data.putBundle(PREFIX + "shortInfos", shortInfo);
                 RemoteViews card = (RemoteViews) snapshot.notice.extras.getParcelable(PREFIX + "customTemplate");
                 if (card != null) data.putParcelable(PREFIX + "customTemplate", countdown(card, text));
                 Bundle originalIsland = snapshot.notice.extras.getBundle(PREFIX + "island");
@@ -65,6 +72,14 @@ final class AtomicCountdownUpdates {
                         island.putBundle("island.superx.leftInfo", left);
                     }
                     data.putBundle(PREFIX + "island", island);
+                }
+                // Some vivo surfaces render the compact capsule rather than island.leftInfo.
+                Bundle capsule = snapshot.notice.extras.getBundle(PREFIX + "capsule");
+                if (capsule != null && AgendaReminderPreferences.capsuleCountdown(context)) {
+                    Bundle updatedCapsule = new Bundle(capsule);
+                    updatedCapsule.putString(PREFIX + "capsule.content", text + " "
+                            + base.getCharSequence(PREFIX + "baseInfos.title"));
+                    data.putBundle(PREFIX + "capsule", updatedCapsule);
                 }
                 manager.notify(item.getKey(), Notification.Builder.recoverBuilder(context, snapshot.notice)
                         .addExtras(data).setTimeoutAfter(Math.max(1000, snapshot.expiresAt - now))

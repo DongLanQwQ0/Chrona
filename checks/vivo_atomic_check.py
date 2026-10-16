@@ -13,7 +13,7 @@ a=card_source.index('    static String remainingText(long millis)');b=card_sourc
 source += '\nclass ReminderTimeline {static long CAPSULE_COUNTDOWN_WINDOW=120000;static long capsuleDeadline(AgendaEntry e,long now){return e.deadline;}static long expiresAt(AgendaEntry e){return e.deadline;}}\nclass AtomicAgendaCard {' + card_source[a:b] + '}\n'
 updates=(root/'app/src/main/java/com/donglan/chrona/AtomicCountdownUpdates.java').read_text(encoding='utf-8')
 updates=re.sub(r'^package .*;\s*|^import .*;\s*','',updates,flags=re.M).replace('android.os.PowerManager','PowerManager').replace('android.util.Log','Log').replace('android.util.TypedValue.COMPLEX_UNIT_SP','1')
-source += updates
+source += updates.replace('System.currentTimeMillis()', 'TestClock.now')
 harness=r'''
 import java.util.*;
 class Bundle extends HashMap<String,Object> {Bundle(){}Bundle(Bundle b){putAll(b);}Bundle getBundle(String k){return (Bundle)get(k);}Object getParcelable(String k){return get(k);}void putInt(String k,int v){put(k,v);}void putString(String k,String v){put(k,v);}void putCharSequence(String k,CharSequence v){put(k,v);}void putBoolean(String k,boolean v){put(k,v);}void putParcelable(String k,Object v){put(k,v);}void putBundle(String k,Bundle v){put(k,v);}void putParcelableArrayList(String k,ArrayList<Icon> v){put(k,v);}}
@@ -24,6 +24,7 @@ class Settings {static final String ACTION_APP_NOTIFICATION_SETTINGS="app",ACTIO
 class Intent {String action;Map<String,String> extras=new HashMap<>();Intent(String action){this.action=action;}Intent putExtra(String key,String value){extras.put(key,value);return this;}}
 class NotificationChannel {int importance;NotificationChannel(int importance){this.importance=importance;}int getImportance(){return importance;}}
 class SystemClock {static long elapsed=300000;static long elapsedRealtime(){return elapsed;}}
+class TestClock {static long now=System.currentTimeMillis();}
 class PowerManager {boolean interactive=true;boolean isInteractive(){return interactive;}}
 class Context {PowerManager power=new PowerManager();NotificationManager manager=new NotificationManager();int permission=PackageManager.PERMISSION_GRANTED;int checkSelfPermission(String p){return permission;}String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> c){return c.cast(c==PowerManager.class?power:manager);}}
 class PendingIntent {}
@@ -81,7 +82,15 @@ public class VivoAtomicCheck {
  Notification baseline=new Notification();baseline.when=deadline;baseline.extras=VivoAtomicNotification.extras(tickingContext,"长标题","进行中","range","10:00","remaining",details,true,card,islandCard,animations,"21:15");
  tickingContext.manager.active=new StatusBarNotification[]{new StatusBarNotification(99,baseline)};
  AtomicCountdownUpdates.remember(99,baseline,new AgendaEntry(deadline),System.currentTimeMillis());
- for(int frame=0;frame<5;frame++)AtomicCountdownUpdates.tick(tickingContext);
+ TestClock.now=deadline-119000;
+ for(int frame=0;frame<5;frame++){
+  TestClock.now=deadline-119000+frame*1000;AtomicCountdownUpdates.tick(tickingContext);
+  Notification frameNotice=tickingContext.manager.posted.get(99);
+  check(((RemoteViews)frameNotice.extras.get("notification.superx.customTemplate")).texts.get(R.id.atomic_remaining).equals((119-frame)+"秒"));
+  check(((Bundle)frameNotice.extras.get("notification.superx.capsule")).get("notification.superx.capsule.content").toString().startsWith((119-frame)+"秒 "));
+  check(((Bundle)frameNotice.extras.get("notification.superx.baseInfos")).get("notification.superx.baseInfos.content").equals((119-frame)+"秒\nrange"));
+  check(((Bundle)frameNotice.extras.get("notification.superx.shortInfos")).get("notification.superx.shortInfos.coreInfoShort").equals((119-frame)+"秒"));
+ }
  Notification updated=tickingContext.manager.posted.get(99);RemoteViews rendered=(RemoteViews)updated.extras.get("notification.superx.customTemplate");
  check(rendered.actions==4&&card.actions==0&&islandCard.actions==0);
  check(updated.timeout>0&&updated.timeout<=119000);
@@ -93,7 +102,7 @@ public class VivoAtomicCheck {
  tickingContext.manager.posted.clear();AgendaReminderPreferences.capsule=false;AtomicCountdownUpdates.tick(tickingContext);
  check(((Bundle)((Bundle)tickingContext.manager.posted.get(99).extras.get("notification.superx.island")).get("island.superx.leftInfo")).get("island.superx.leftInfo.content").equals("21:15"));
  AgendaReminderPreferences.capsule=true;tickingContext.manager.posted.clear();AgendaReminderPreferences.seconds=false;AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());AgendaReminderPreferences.seconds=true;
- tickingContext.power.interactive=false;AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());tickingContext.power.interactive=true;
+ tickingContext.power.interactive=false;AtomicCountdownUpdates.tick(tickingContext);check(!tickingContext.manager.posted.isEmpty());check(AtomicCountdownUpdates.nextDelay(tickingContext)==1000);tickingContext.power.interactive=true;tickingContext.manager.posted.clear();
  tickingContext.manager.active=new StatusBarNotification[0];AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());
  tickingContext.manager.active=new StatusBarNotification[]{new StatusBarNotification(99,baseline)};AtomicCountdownUpdates.clear(99);AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());
  AtomicCountdownUpdates.remember(99,baseline,new AgendaEntry(System.currentTimeMillis()-1),System.currentTimeMillis());AtomicCountdownUpdates.tick(tickingContext);check(AgendaReminder.refreshes==1&&tickingContext.manager.posted.isEmpty());AtomicCountdownUpdates.clear(99);
@@ -117,6 +126,7 @@ harness=harness.replace(' System.out.println("Vivo atomic payload/lifecycle pass
  check(((Bundle)tickingIsland.get("island.superx.leftInfo")).get("island.superx.leftInfo.content").equals(timer));
  check(((Bundle)ticking.get("notification.superx.capsule")).get("notification.superx.capsule.content").equals("10:00 微积分"));
  System.out.println("Vivo atomic payload/lifecycle passed:''')
+harness=harness.replace('Bundle getBundle(String k)', 'CharSequence getCharSequence(String k){return (CharSequence)get(k);}Bundle getBundle(String k)')
 out=root/'build/vivo-atomic-check';out.mkdir(parents=True,exist_ok=True)
 f=out/'VivoAtomicCheck.java';f.write_text(harness,encoding='utf-8')
 java=Path(os.environ['JAVA_HOME'])/'bin'
