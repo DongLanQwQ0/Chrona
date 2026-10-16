@@ -1,4 +1,8 @@
-# 当前开发：0.15.2 / 164 · UI风格与来源内容
+# 当前开发：0.15.3 / 165 · 吉吉思考参数
+
+已定位旧RequestOptions对host仅官方白名单且模型无gpt-6-luna导致medium完全不发送。修复精确三个jiji域名的gpt-6/6.1 luna/sol/astra分支，传reasoning_effort（auto→low、max→high，其它原样）与max_completion_tokens预算，不复制官方schema/cache选项。请求端未换模型或协议。全服务thinking/reasoning_effort被拒绝不再静默降级；其它命名格式/流选项仍一次降级。既有reasoning_content/reasoning文本解析有回归，服务不返回时不伪造。checks/AiRequestCheck.java覆盖域名、六档、误匹配、拒绝和SSE。未读密钥/手机/付费调用，服务实际执行与思考文本是否可见尚未验证。备份build/backups/20261016-jiji-reasoning。docs/ai-request-notes.md有接口依据。
+
+# 上轮开发：0.15.2 / 164 · UI风格与来源内容
 
 强制先读docs/ui-style-contract.md及development.md原生布局章节。本轮修正ZjuHomeworkHistoryActivity的裸px/TextView胶囊/AlertDialog，历史变更用公共dialogPanel/dialogBody/showFloatingDialog，新增保持原值未知语义。课程关联改公共卡片+浮层，外部课程详情卡片化。来源页点击行打开ScheduleSourceContentsActivity（每周窗口），开关独立启停；zju详情 sourceIntent(Context,source,key,start,end)按稳定key读缓存，master开关前/后校验。CourseSourceProbe在master关时不读zju缓存，关联页过滤保存规则并在开关变化时重载。
 

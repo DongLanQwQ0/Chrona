@@ -47,6 +47,25 @@ public final class AiRequestCheck {
         check(options("https://api.openai.com/v1", "o3", "none").getInt("max_completion_tokens") == 16384, "non-disableable model keeps reasoning budget");
         JSONObject custom = options("https://example.com/v1", "gpt-5", "high");
         check(custom.length() == 1 && custom.getInt("max_tokens") == 8192, "unknown endpoint conservative");
+        for (String host : new String[]{"www.jiji.cc", "api.jiji.cc", "api-slb.jiji.cc"}) {
+            for (String effort : new String[]{"auto", "none", "low", "medium", "high", "max"}) {
+                JSONObject relay = options("https://" + host + "/v1", "gpt-6-luna", effort);
+                String expected = effort.equals("auto") ? "low" : effort.equals("max") ? "high" : effort;
+                check(relay.getString("reasoning_effort").equals(expected), "Jiji effort: " + host + "/" + effort);
+                int budget = effort.equals("none") ? 8192 : effort.equals("high") || effort.equals("max") ? 32768 : 16384;
+                check(relay.getInt("max_completion_tokens") == budget && !relay.has("max_tokens"), "Jiji reasoning budget");
+                check(!relay.has("thinking") && !relay.has("response_format") && !relay.has("prompt_cache_key"), "relay capabilities are independent");
+            }
+        }
+        check(options("https://api.jiji.cc/v1", "gpt-6.1-sol", "medium").getString("reasoning_effort").equals("medium"), "documented Jiji model");
+        check(!options("https://api.jiji.cc.attacker.example/v1", "gpt-6-luna", "medium").has("reasoning_effort"), "exact relay host only");
+        check(!options("https://api.jiji.cc/v1", "gpt-6-luna-audio", "medium").has("reasoning_effort"), "specialized relay model conservative");
+        JSONObject requested = options("https://api.jiji.cc/v1", "gpt-6-luna", "medium");
+        check(!RequestOptions.downgrade(requested, 400, "unsupported parameter reasoning_effort")
+                && requested.getString("reasoning_effort").equals("medium"), "never silently discard requested reasoning");
+        JSONObject requestedDeep = options("https://api.deepseek.com", "deepseek-flash", "medium");
+        check(!RequestOptions.downgrade(requestedDeep, 422, "unknown thinking parameter")
+                && requestedDeep.has("thinking"), "thinking rejection must surface");
         check(!RequestOptions.downgrade(open, 400, "invalid input") && open.has("response_format"), "unrelated error");
         check(RequestOptions.downgrade(open, 422, "unsupported parameter response_format") && !open.has("response_format"), "named downgrade");
         JSONObject streamOptions = new JSONObject().put("stream", true).put("stream_options", new JSONObject().put("include_usage", true));
@@ -65,6 +84,18 @@ public final class AiRequestCheck {
             public void appendReasoning(String chunk) { reasoning.append(chunk); }
         }, 0, "UTC");
         check(result.totalTokens == 52 && result.cachedTokens == null && reasoning.toString().equals("thinking"), "SSE usage and reasoning");
+        reasoning.setLength(0);
+        ChatCompletionClient.PreviewSink sink = new ChatCompletionClient.PreviewSink() {
+            public void append(String chunk) { }
+            public void appendReasoning(String chunk) { reasoning.append(chunk); }
+        };
+        ChatCompletionClient.parseStream(1, new ByteArrayInputStream(sse.replace("reasoning_content", "reasoning")
+                .getBytes(StandardCharsets.UTF_8)), sink, 0, "UTC");
+        check(reasoning.toString().equals("thinking"), "relay reasoning alias forwarded");
+        reasoning.setLength(0);
+        ChatCompletionClient.parseStream(1, new ByteArrayInputStream(sse.replace("\"reasoning_content\":\"thinking\",", "")
+                .getBytes(StandardCharsets.UTF_8)), sink, 0, "UTC");
+        check(reasoning.length() == 0, "no invented reasoning when relay omits text");
         check(ChatCompletionClient.parseStream(1, new ByteArrayInputStream(
                 sse.substring(0, sse.indexOf("\n\ndata:")).getBytes(StandardCharsets.UTF_8)), null, 0, "UTC")
                 .candidates.isEmpty(), "final frame without blank delimiter");

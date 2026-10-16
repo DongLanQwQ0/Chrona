@@ -1,3 +1,9 @@
+## 0.15.3 — 2026-10-16
+
+- 原生产RequestOptions离线复现吉吉三线路+gpt-6-luna+medium只有max_tokens:8192，没有reasoning_effort。修复后AiRequestCheck运行生产请求/流解析代码，覆盖三域名六档、token预算、特殊模型/伪造域名排除、思考参数不静默删除、reasoning别名与无思考文本不伪造。
+- 仅使用合成凭据和离线响应，不读取真实密钥、不发送服务请求、未使用手机。服务端执行及可见思考仍待实际调用。
+- assembleRelease/lintRelease通过，正式版本0.15.3/165，日志build/jiji-0.15.3-release.log。
+
 ## 0.15.2 — 2026-10-16
 
 - 依据用户两张实际截图修正历史页：裸px内距、同字号文本墙及原生AlertDialog；改用dp内距卡片、分组/两层字级、公共圆角亚克力浮层与有界滚动。
