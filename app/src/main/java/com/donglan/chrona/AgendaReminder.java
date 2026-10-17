@@ -134,15 +134,18 @@ public final class AgendaReminder {
                 CalendarStore calendar = new CalendarStore(context);
                 if (calendar.hasReadPermission()) {
                     ZoneId zone = ZoneId.systemDefault();
-                    for (CalendarOccurrence e : calendar.reminderInstances(now, horizon,
-                            linkedIds, excluded)) {
+                    for (CalendarOccurrence e : calendar.reminderInstances(now, horizon, linkedIds)) {
                         other.add(e);
                     }
                 }
             }
             for (CalendarOccurrence e : ExternalCourseAgenda.merge(context,other,now-86_400_000L,horizon,linkedIds)) {
-                if (!e.allDay) entries.add(new AgendaEntry(e.eventId,0,e.startMillis,e.endMillis,
-                        e.title,e.location,"",e.calendarName,true,false,true));
+                if (!e.allDay) {
+                    AgendaEntry entry = new AgendaEntry(e.eventId,0,e.startMillis,e.endMillis,
+                            e.title,e.location,e.description,e.calendarName,true,false,true);
+                    // Hidden/snoozed occurrence keys belong to the complete class block.
+                    if (!excluded.contains(entry.key())) entries.add(entry);
+                }
             }
         }
         boolean atomicAvailable = VivoAtomicNotification.available(context);

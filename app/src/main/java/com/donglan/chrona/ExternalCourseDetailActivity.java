@@ -14,6 +14,11 @@ import java.util.List;
 
 public final class ExternalCourseDetailActivity extends Activity {
     private boolean schoolSource;
+    private boolean resumed;
+    private long acknowledgementUntil;
+    private Runnable bindAcknowledgement;
+    private final android.os.Handler expiryHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable expiryRefresh = this::refreshAcknowledgement;
     static Intent sourceIntent(android.content.Context context,String source,String key,long start,long end){
         return new Intent(context,ExternalCourseDetailActivity.class).putExtra("source",source)
                 .putExtra("source_key",key).putExtra("begin",start).putExtra("end",end);
@@ -57,14 +62,23 @@ public final class ExternalCourseDetailActivity extends Activity {
                 if(!item.description.isBlank())detail(card,item.description);
                 String key=AgendaAcknowledgement.key(item.eventId,item.startMillis);
                 Button confirm=new Button(this);UiStyle.button(confirm,false);
-                Runnable bind=()->{boolean done=AgendaAcknowledgement.isAcknowledged(this,key);confirm.setText(done?"取消确认":"确认活动");confirm.setEnabled(item.endMillis>System.currentTimeMillis());};
-                bind.run();confirm.setOnClickListener(v->{if(item.endMillis<=System.currentTimeMillis()){bind.run();return;}AgendaAcknowledgement.set(this,key,item.endMillis,!AgendaAcknowledgement.isAcknowledged(this,key));bind.run();});UiStyle.addSpaced(root,confirm,16,8);
+                acknowledgementUntil=item.endMillis;
+                bindAcknowledgement=()->{boolean done=AgendaAcknowledgement.isAcknowledged(this,key);confirm.setText(done?"取消确认":"确认活动");confirm.setVisibility(item.endMillis>System.currentTimeMillis()?android.view.View.VISIBLE:android.view.View.GONE);confirm.setEnabled(item.endMillis>System.currentTimeMillis());};
+                refreshAcknowledgement();confirm.setOnClickListener(v->{if(item.endMillis<=System.currentTimeMillis()){refreshAcknowledgement();return;}AgendaAcknowledgement.set(this,key,item.endMillis,!AgendaAcknowledgement.isAcknowledged(this,key));refreshAcknowledgement();});UiStyle.addSpaced(root,confirm,16,8);
                 Button source=new Button(this);source.setText("日程来源");UiStyle.button(source,false);source.setOnClickListener(v->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));UiStyle.addSpaced(root,source,20,8);
                 if("导入课表".equals(item.calendarName)){Button table=new Button(this);table.setText("查看课表");UiStyle.button(table,false);table.setOnClickListener(v->startActivity(new Intent(this,TimetableActivity.class)));root.addView(table);}
             });
         },"course-detail-local-reader").start();
     }
-    @Override protected void onResume(){super.onResume();if(schoolSource&&!new ZjuSettingsStore(this).enabled())finish();}
+    @Override protected void onResume(){super.onResume();resumed=true;if(schoolSource&&!new ZjuSettingsStore(this).enabled())finish();refreshAcknowledgement();}
+    @Override protected void onPause(){resumed=false;expiryHandler.removeCallbacks(expiryRefresh);super.onPause();}
+    private void refreshAcknowledgement(){
+        expiryHandler.removeCallbacks(expiryRefresh);
+        if(bindAcknowledgement==null)return;
+        bindAcknowledgement.run();
+        long remaining=acknowledgementUntil-System.currentTimeMillis();
+        if(resumed&&remaining>0)expiryHandler.postDelayed(expiryRefresh,remaining);
+    }
     private void detail(LinearLayout parent,String value){TextView label=new TextView(this);label.setText(value);label.setTextSize(14);UiStyle.muted(label);UiStyle.addSpaced(parent,label,8,0);}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
 }

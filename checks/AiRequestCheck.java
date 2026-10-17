@@ -16,6 +16,23 @@ public final class AiRequestCheck {
         check(prefix.contains(SchedulePrompt.TIME_RULES) && !prefix.contains("e.g. tomorrow at 10:00"),
                 "single colloquial policy; bare twelve-hour example cannot auto-publish");
         check(prefix.contains(SchedulePrompt.DECISION_RULES), "decision boundaries sent to model");
+        check(SchedulePrompt.VERSION.equals("schedule-v9"), "three-category prompt revision");
+        for (String rule : new String[]{"作业讲评会", "课程项目", "课程名纳入简短标题", "不覆盖事项固有类别",
+                "event只用start/end，due=null", "只有截止时start/end=null", "all_day=false",
+                "报名task和活动event", "只用一个主锚", "显式日期优先", "缺少可选", "有用草稿并标2"})
+            check(SchedulePrompt.DECISION_RULES.contains(rule), "type/time contract: " + rule);
+        check(!SchedulePrompt.DECISION_RULES.contains("默认task"), "reminder cannot force task category");
+        check(prefix.contains("always event.due=null") && prefix.contains("absent optional fields alone do not raise uncertainty"),
+                "English guidance agrees with category and uncertainty contracts");
+        JSONObject categorySchema = SchedulePrompt.schema().getJSONObject("properties").getJSONObject("events")
+                .getJSONObject("items").getJSONObject("properties").getJSONObject("category");
+        org.json.JSONArray categories = categorySchema.getJSONArray("enum");
+        check(categories.length() == 3 && categories.getString(0).equals("event")
+                && categories.getString(1).equals("task") && categories.getString(2).equals("homework"),
+                "public schema retains exactly event/task/homework");
+        for (String example : new String[]{"明天上午10点提醒我开会", "明天上午10点做高数作业，周五交",
+                "2026-10-23周五交高数作业", "完成英语课程项目", "周五报名截止，下周一上午9点讲座"})
+            check(SchedulePrompt.DECISION_RULES.contains(example), "compact mapping example: " + example);
         for (String rule : new String[]{"start=T，due=null", "reminder_minutes_before=0", "手算", "其他角色", "紧凑JSON", "选后不重开"})
             check(SchedulePrompt.DECISION_RULES.contains(rule), "observed hesitation boundary: " + rule);
         for (String word : new String[]{"明天早上", "明天2点", "差一刻", "周末", "月末", "饭后", "下班后", "DDL", "农历", "重复"})

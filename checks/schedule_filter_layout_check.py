@@ -38,8 +38,8 @@ dock = (root / "app/src/main/java/com/donglan/chrona/DockNavigationLayout.java")
 require('if (fullWidth) edge = 0;' in dock and 'float span = Math.min' in dock,
         "Selectors fill the content width; enlarged edge highlights move inward without clipping")
 detail = (root / "app/src/main/java/com/donglan/chrona/TaskDetailActivity.java").read_text(encoding="utf-8")
-require('categoryRow.addView(category.motionHost(true)' in detail and 'categoryRow.setMinimumHeight(dp(54))' in detail,
-        "Detail type selector uses the standard field row height without vertical envelope gaps")
+require('categoryRow.addView(category.fullWidthMotionHost()' in detail and 'categoryRow.setMinimumHeight(dp(54))' in detail,
+        "Detail type selector fills the label's remaining width at the standard field row height")
 require('return motionHost(false);' in dock and 'int cross = overlapRows ? clearance' in dock
         and 'plate * 1.53f' in dock,
         "Overlap is opt-in while ordinary motion hosts retain their complete cross-axis envelope")

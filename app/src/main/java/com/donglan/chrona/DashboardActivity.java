@@ -976,7 +976,8 @@ public final class DashboardActivity extends Activity {
         }
         CalendarOccurrence event = entry.systemEvent;
         Intent intent = SystemAgendaDetailActivity.intent(this, event.eventId, event.startMillis,
-                event.endMillis, event.allDay, event.title, event.location, event.calendarName);
+                event.endMillis, event.allDay, event.title, event.location, event.calendarName)
+                .putExtra("description", event.description);
         try { startActivity(intent); }
         catch (android.content.ActivityNotFoundException exception) {
             Feedback.show(this, "未找到可打开日程的日历应用");
@@ -1486,6 +1487,13 @@ public final class DashboardActivity extends Activity {
             label.setEllipsize(android.text.TextUtils.TruncateAt.END);
             labels.addView(label);
             TextView when = text(homeTodoWhen(candidate, now, zone), 12, false);
+            if (candidate.isHomework()) {
+                android.graphics.drawable.Drawable homeworkIcon = getDrawable(R.drawable.ic_homework);
+                homeworkIcon.setBounds(0, 0, dp(16), dp(16));
+                when.setCompoundDrawablesRelative(homeworkIcon, null, null, null);
+                when.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(UiStyle.colors(this).primary));
+                when.setCompoundDrawablePadding(dp(4));
+            }
             when.setMaxLines(1);
             when.setEllipsize(android.text.TextUtils.TruncateAt.END);
             UiStyle.addSpaced(labels, when, 3, 0);
@@ -1611,7 +1619,7 @@ public final class DashboardActivity extends Activity {
         if (candidate.dueAtMillis != null) {
             LocalDate today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
             LocalDate due = Instant.ofEpochMilli(candidate.dueAtMillis).atZone(zone).toLocalDate();
-            String prefix = today.equals(due) ? "今日截止 · " : "截止 · ";
+            String prefix = (candidate.isHomework() ? "作业" : "") + (today.equals(due) ? "今日截止 · " : "截止 · ");
             String pattern = today.equals(due) ? "HH:mm"
                     : due.getYear() == today.getYear() ? "M月d日 HH:mm" : "yyyy年M月d日 HH:mm";
             return prefix + new SimpleDateFormat(pattern, Locale.CHINA).format(new Date(candidate.dueAtMillis));
@@ -1682,7 +1690,8 @@ public final class DashboardActivity extends Activity {
                 title.setMaxLines(2);
                 title.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 item.addView(title);
-                UiStyle.addSpaced(item, scheduleAttribute(R.drawable.ic_schedule,
+                UiStyle.addSpaced(item, scheduleAttribute(entry.candidate != null && entry.candidate.isHomework()
+                                ? R.drawable.ic_homework : R.drawable.ic_schedule,
                         homeCardBoundary(entry.candidate, entry.systemEvent, false, true),
                         "时间", 14, 1, false), 6, 0);
                 item.setOnClickListener(view -> openHomeEntry(entry));
@@ -1700,7 +1709,8 @@ public final class DashboardActivity extends Activity {
 
     private boolean candidateIntersects(EventCandidate item, LocalDate today, LocalDate endDate,
             long rangeStart, long rangeEnd, long now) {
-        if (!HomeTimelineEntry.hasUpcomingExecution(item, now, ZoneId.systemDefault())) return false;
+        if (!HomeTimelineEntry.hasUpcomingTime(item, now, ZoneId.systemDefault())) return false;
+        if (HomeTimelineEntry.deadlineOnly(item)) return item.dueAtMillis >= rangeStart && item.dueAtMillis < rangeEnd;
         if (item.allDay) {
             LocalDate start = LocalDate.parse(AllDayDates.displayStart(item.startAtMillis));
             LocalDate inclusiveEnd = LocalDate.parse(AllDayDates.displayEnd(HomeTimelineEntry.executionEnd(item)));
@@ -2327,7 +2337,7 @@ public final class DashboardActivity extends Activity {
             boolean future = event.displayEnd(zone) > now;
             if (event.displayStart(zone) >= end || event.displayEnd(zone) <= start
                     || scheduleTab == 1 || (scheduleTab == 0 && !future) || (scheduleTab == 2 && future)
-                    || schedulePublication == 1 || (scheduleCategory != 0 && scheduleCategory != 1)) continue;
+                    || schedulePublication == 1 || schedulePublication == 3 || (scheduleCategory != 0 && scheduleCategory != 1)) continue;
             String keyword = normalizedQuery(scheduleQuery);
             if (!keyword.isEmpty() && !containsQuery(event.title, keyword)
                     && !containsQuery(event.location, keyword)) continue;
@@ -2581,7 +2591,7 @@ public final class DashboardActivity extends Activity {
             };
             body = new LinearLayout(this);
             body.setOrientation(LinearLayout.VERTICAL);
-            body.setPadding(dp(48), dp(14), dp(14), dp(14));
+            body.setPadding(dp(48), dp(10), dp(14), dp(10));
             interval.addView(body, new FrameLayout.LayoutParams(-1, -2));
             card.addView(interval, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -2606,16 +2616,16 @@ public final class DashboardActivity extends Activity {
 
         if (home) {
             addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, false, showTime),
-                    "起始时间");
+                    candidate != null && HomeTimelineEntry.deadlineOnly(candidate) ? "作业截止时间" : "起始时间");
         } else if (showTime) {
             String when = candidate == null ? homeEntryWhen(new HomeTimelineEntry(systemEvent))
                     : candidate.anchor() == null ? "尚未安排时间" : formatWhen(candidate);
-            UiStyle.addSpaced(body, scheduleAttribute(R.drawable.ic_schedule, when,
+            UiStyle.addSpaced(body, scheduleAttribute(candidate != null && candidate.isHomework() ? R.drawable.ic_homework : R.drawable.ic_schedule, when,
                     "时间", 14, 2, false), 6, 0);
         }
         if (location != null && !location.trim().isEmpty()) {
             UiStyle.addSpaced(body, scheduleAttribute(R.drawable.ic_place, location.trim(),
-                    "地点", 14, 2, false), home ? 8 : 6, 0);
+                    "地点", 14, 2, false), home ? 5 : 6, 0);
         }
         if (home && (candidate == null || !candidate.point())) {
             addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, true, showTime),
@@ -2623,10 +2633,10 @@ public final class DashboardActivity extends Activity {
         }
         if (candidate != null && candidate.isTask() && candidate.startAtMillis != null
                 && candidate.dueAtMillis != null) {
-            String deadline = "截止 · " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
+            String deadline = (candidate.isHomework() ? "作业截止 · " : "截止 · ") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
                     DateFormat.SHORT).format(new Date(candidate.dueAtMillis));
-            UiStyle.addSpaced(body, scheduleAttribute(R.drawable.ic_schedule, deadline,
-                    "截止时间", 14, 2, false), 8, 0);
+            UiStyle.addSpaced(body, scheduleAttribute(candidate.isHomework() ? R.drawable.ic_homework : R.drawable.ic_schedule, deadline,
+                    "截止时间", 14, 2, false), home ? 5 : 8, 0);
         }
 
         LinearLayout footer = new LinearLayout(this);
@@ -2672,7 +2682,7 @@ public final class DashboardActivity extends Activity {
                 }
             }
         }
-        UiStyle.addSpaced(body, footer, home ? 12 : 8, 0);
+        UiStyle.addSpaced(body, footer, home ? 6 : 8, 0);
     }
 
     private ImageButton taskCompletionButton(EventCandidate candidate) {
@@ -2893,6 +2903,7 @@ public final class DashboardActivity extends Activity {
 
     private String homeCardBoundary(EventCandidate candidate, CalendarOccurrence systemEvent,
             boolean end, boolean includeDate) {
+        if (candidate != null && HomeTimelineEntry.deadlineOnly(candidate)) return formatWhen(candidate);
         Long startMillis = candidate == null ? systemEvent.startMillis : candidate.startAtMillis;
         Long endMillis = candidate == null ? systemEvent.endMillis : HomeTimelineEntry.executionEnd(candidate);
         Long millis = end ? endMillis : startMillis;
@@ -2919,10 +2930,10 @@ public final class DashboardActivity extends Activity {
     }
 
     private void addHomeTimeNode(LinearLayout body, FrameLayout interval, String value, String label) {
-        LinearLayout timeRow = scheduleAttribute("起始时间".equals(label)
-                ? R.drawable.ic_time_start : R.drawable.ic_time_end, value, label, 14, 2, false);
+        LinearLayout timeRow = scheduleAttribute("作业截止时间".equals(label) ? R.drawable.ic_homework
+                : "起始时间".equals(label) ? R.drawable.ic_time_start : R.drawable.ic_time_end, value, label, 14, 2, false);
         TextView caption = (TextView) timeRow.getChildAt(1);
-        UiStyle.addSpaced(body, timeRow, 8, 0);
+        UiStyle.addSpaced(body, timeRow, 5, 0);
         View dot = new View(this);
         dot.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         GradientDrawable circle = new GradientDrawable();
@@ -3132,7 +3143,7 @@ public final class DashboardActivity extends Activity {
         deleteSelectedButton.setText("删除");
         deleteSelectedButton.setContentDescription("删除已选 " + selected.size() + " 项");
         boolean canPublish = (section == INBOX && statusIndex == 1)
-                || (section == SCHEDULE && scheduleTab == 1 && scheduleSource != 1);
+                || (section == SCHEDULE && (scheduleTab == 1 || schedulePublication == 3) && scheduleSource != 1);
         publishSelectedButton.setVisibility(canPublish ? View.VISIBLE : View.GONE);
         publishSelectedButton.setEnabled(!bulkCalendarWriting);
         selectAllButton.setEnabled(!bulkCalendarWriting);
@@ -3662,7 +3673,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private String formatWhen(EventCandidate item) {
-        if (item.allDay) {
+        if (item.allDay && !HomeTimelineEntry.deadlineOnly(item)) {
             String start = AllDayDates.displayStart(item.startAtMillis);
             String end = AllDayDates.displayEnd(item.endAtMillis);
             return start.equals(end) ? start + " · 全天"
@@ -3670,7 +3681,7 @@ public final class DashboardActivity extends Activity {
         }
         if (item.anchor()==null) return "尚未安排时间";
         Date date = new Date(item.anchor());
-        return (item.startAtMillis==null && item.dueAtMillis!=null ? "截止 · " : "") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
+        return (item.startAtMillis==null && item.dueAtMillis!=null ? item.isHomework() ? "作业截止 · " : "截止 · " : "") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
                 DateFormat.SHORT).format(date);
     }
 

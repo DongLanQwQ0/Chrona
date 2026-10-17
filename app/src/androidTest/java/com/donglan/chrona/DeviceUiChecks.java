@@ -353,7 +353,7 @@ final class DeviceUiChecks {
             com.donglan.chrona.calendar.CalendarStore calendars = new com.donglan.chrona.calendar.CalendarStore(context);
             if (calendars.hasReadPermission())
                 for (com.donglan.chrona.calendar.CalendarOccurrence e : calendars.reminderInstances(now, now+86400000L,
-                        new java.util.HashSet<>(store.linkedCalendarIds()), hidden))
+                        new java.util.HashSet<>(store.linkedCalendarIds())))
                     system.put(new JSONObject().put("id", e.eventId).put("title", e.title).put("start", e.startMillis).put("end", e.endMillis));
         }
         report.put("local", local).put("systemCandidates", system);

@@ -61,6 +61,7 @@ public final class ScheduleQuery {
         }
         if (publication == 1) clauses.add("(needs_confirmation=1 OR (category='event' AND calendar_event_id IS NULL))");
         else if (publication == 2) clauses.add("calendar_event_id IS NOT NULL");
+        else if (publication == 3) clauses.add("calendar_event_id IS NULL");
         if (from != null && until != null) {
             clauses.add("((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) AND COALESCE(end_at_millis,due_at_millis+1,start_at_millis+1)>CAST(? AS INTEGER))"
                     + " OR (all_day=1 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) AND COALESCE(end_at_millis,due_at_millis+1,start_at_millis+1)>CAST(? AS INTEGER)))");

@@ -542,6 +542,7 @@ public final class TaskDetailActivity extends Activity {
 
     private void pollForResult() {
         if (deleting) return;
+        refreshAcknowledgementActions(content);
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
             int count = store.getCandidates(taskId).size();
@@ -2487,7 +2488,7 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout categoryRow = formRow(card, "类型", R.drawable.ic_event);
         categoryRow.setPadding(0, 0, 0, 0);
         categoryRow.setMinimumHeight(dp(54));
-        categoryRow.addView(category.motionHost(true), new LinearLayout.LayoutParams(0, -2, 1f));
+        categoryRow.addView(category.fullWidthMotionHost(), new LinearLayout.LayoutParams(0, -2, 1f));
         categoryRow.setClipChildren(false);
         categoryRow.setClipToPadding(false);
         if (!managedHomework) {
@@ -2543,8 +2544,9 @@ public final class TaskDetailActivity extends Activity {
             timeHint.setText(text);
             timeHint.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
         };
-        configureTimePicker(start, allDay, "开始时间");
-        configureTimePicker(end, allDay, "结束 / 截止时间");
+        configureTimePicker(start, allDay, candidate.isTask() ? "执行开始时间" : "开始时间", candidate.isTask(), null);
+        configureTimePicker(end, allDay, candidate.isTask() ? "执行结束时间" : "结束时间", candidate.isTask(),
+                candidate.isHomework() ? start : null);
         String[] timedRange = {start.getText().toString(), end.getText().toString()};
         trackUnsavedChanges(start, candidate.id);
         trackUnsavedChanges(end, candidate.id);
@@ -2553,7 +2555,12 @@ public final class TaskDetailActivity extends Activity {
             @Override public void onTextChanged(CharSequence s, int st, int before, int count) { }
                 @Override public void afterTextChanged(Editable editable) {
                 markCandidateDirty(candidate.id);
-                if (syncingRange[0] || allDay.isChecked()) return;
+                if (syncingRange[0]) return;
+                if (candidate.isTask() && editable.toString().trim().isEmpty()) {
+                    if (!end.getText().toString().isEmpty()) end.setText("");
+                    return;
+                }
+                if (allDay.isChecked()) return;
                 try {
                     Long startAt = parse(editable.toString(), ZoneId.systemDefault());
                     if (startAt == null) return;
@@ -2649,7 +2656,7 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout dueRow = formRow(card, "截止", R.drawable.ic_schedule);
         EditText due = inlineField(dueRow, "可选：yyyy-MM-dd HH:mm", format(candidate.dueAtMillis), 1f);
         dueRow.setVisibility(EventCategory.isTaskLike(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
-        configureTimePicker(due, new AllDayToggle(this,dp(DETAIL_FIELD_ICON_SIZE_DP),UiStyle.colors(this).primary,UiStyle.colors(this).onPrimaryContainer), "截止时间");
+        configureTimePicker(due, new AllDayToggle(this,dp(DETAIL_FIELD_ICON_SIZE_DP),UiStyle.colors(this).primary,UiStyle.colors(this).onPrimaryContainer), "截止时间", candidate.isHomework() && !managedHomework, null);
         if (!managedHomework) trackUnsavedChanges(due,candidate.id);
         updateType[0]=()->dueRow.setVisibility(EventCategory.isTaskLike(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
         EditText location = inlineField(formRow(card, "地点", R.drawable.ic_place),
@@ -2786,6 +2793,7 @@ public final class TaskDetailActivity extends Activity {
                         ? parseDayEnd(end.getText().toString())
                         : parse(end.getText().toString(), zone);
                 boolean taskKind = EventCategory.isTaskLike(EventCategory.VALUES[selectedCategory[0]]);
+                boolean effectiveAllDay = allDay.isChecked() && (!taskKind || startAt != null);
                 Long dueAt = managedHomework ? candidate.dueAtMillis : taskKind ? parse(due.getText().toString(),zone) : null;
                 if ((!taskKind && (startAt == null || endAt == null)) || (endAt != null && (startAt == null || endAt <= startAt))) {
                     throw new IllegalArgumentException("请填写有效的开始和结束日期，结束不能早于开始");
@@ -2794,11 +2802,11 @@ public final class TaskDetailActivity extends Activity {
                 Integer minutes = reminderText.isEmpty() ? null : Integer.parseInt(reminderText);
                 if (minutes != null && minutes < 0) throw new IllegalArgumentException("提醒分钟数不能为负数");
                 EventCandidate edited = new EventCandidate(candidate.id, candidate.taskId, titleText,
-                        startAt, endAt, allDay.isChecked() ? "UTC" : zone.getId(),
+                        startAt, endAt, effectiveAllDay ? "UTC" : zone.getId(),
                         location.getText().toString().trim(),
                         managedHomework ? candidate.description : currentDescription[0].trim(), minutes, false,
                         candidate.calendarEventId,
-                        EventCategory.VALUES[selectedCategory[0]], allDay.isChecked(), autoEnd[0], EventCandidate.CERTAIN,
+                        EventCategory.VALUES[selectedCategory[0]], effectiveAllDay, autoEnd[0], EventCandidate.CERTAIN,
                         dueAt,taskKind ? candidate.completedAtMillis : null,false);
                 if ((edited.calendarStart()!=null || candidate.calendarEventId!=null) && !requestCalendarPermission()) return;
                 snapshotDrafts();
@@ -2982,6 +2990,8 @@ public final class TaskDetailActivity extends Activity {
             ImageButton action = (ImageButton) view;
             EventCandidate candidate = ((AcknowledgementAction) action.getTag()).candidate;
             String key = AgendaAcknowledgement.key(candidate);
+            action.setVisibility(!key.isEmpty() && acknowledgementUntil(candidate) > System.currentTimeMillis()
+                    ? View.VISIBLE : View.GONE);
             action.setEnabled(!key.isEmpty() && !saveInFlight
                     && acknowledgementUntil(candidate) > System.currentTimeMillis());
             boolean confirmed = AgendaAcknowledgement.isAcknowledged(this, key);
@@ -3453,7 +3463,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     /** Date/time values are chosen atomically; cancelling either step leaves the field intact. */
-    private void configureTimePicker(EditText field, AllDayToggle allDay, String title) {
+    private void configureTimePicker(EditText field, AllDayToggle allDay, String title, boolean clearable, EditText fallback) {
         field.setKeyListener(null);
         field.setFocusable(false);
         field.setClickable(true);
@@ -3462,6 +3472,7 @@ public final class TaskDetailActivity extends Activity {
             LocalDateTime initial = LocalDateTime.now().withSecond(0).withNano(0);
             try {
                 String value = field.getText().toString().trim();
+                if (value.isEmpty() && fallback != null) value = fallback.getText().toString().trim();
                 if (!value.isEmpty()) initial = allDay.isChecked()
                         ? java.time.LocalDate.parse(value).atStartOfDay()
                         : LocalDateTime.parse(value, DATE_TIME);
@@ -3487,6 +3498,16 @@ public final class TaskDetailActivity extends Activity {
             int pickerHeight = Math.max(dp(64), Math.min(dp(240), availableHeight - dp(170)));
             panel.addView(picker, new LinearLayout.LayoutParams(-1, pickerHeight));
             LinearLayout actions = new LinearLayout(this);
+            if (clearable) {
+                Button clear = new Button(this);
+                clear.setText("清空");
+                clear.setContentDescription("清空" + title);
+                UiStyle.button(clear, false);
+                clear.setOnClickListener(v -> { field.setText(""); dialog.dismiss(); });
+                LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(0, dp(48), 1f);
+                clearParams.setMarginEnd(dp(8));
+                actions.addView(clear, clearParams);
+            }
             Button cancel = new Button(this);
             cancel.setText("取消");
             UiStyle.button(cancel, false);

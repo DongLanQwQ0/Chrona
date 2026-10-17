@@ -205,12 +205,12 @@ files['com/donglan/chrona/calendar/CalendarOccurrence.java'] = (src / 'calendar/
 files['com/donglan/chrona/calendar/AllDayDates.java'] = (src / 'calendar/AllDayDates.java').read_text(encoding='utf-8')
 files['android/os/CancellationSignal.java'] = 'package android.os; public class CancellationSignal {}'
 files['com/donglan/chrona/calendar/ReminderProviderCheck.java'] = '''package com.donglan.chrona.calendar;
-import java.util.*;
-class Uri {static class Builder {String build(){return "instances";}}String buildUpon(){return "";}}
-class ContentUris {static void appendId(Uri.Builder builder,long value){}}
+import java.util.*;import java.time.*;
+class Uri {static class Builder {List<Long> bounds=new ArrayList<>();String build(){return bounds.get(0)+":"+bounds.get(1);}}String buildUpon(){return "";}}
+class ContentUris {static void appendId(Uri.Builder builder,long value){builder.bounds.add(value);}}
 class CalendarContract {static class Instances {static final String EVENT_ID="id",BEGIN="begin",END="end";static class CONTENT_URI {static Uri.Builder buildUpon(){return new Uri.Builder();}}}}
 class Calendars {static final String VISIBLE="visible",CALENDAR_DISPLAY_NAME="calendar",CALENDAR_COLOR="calendar_color",ACCOUNT_NAME="account";}
-class Events {static final String TITLE="title",ALL_DAY="all_day",EVENT_LOCATION="place",STATUS="status",CALENDAR_ID="calendar_id";static final int STATUS_CANCELED=2;}
+class Events {static final String TITLE="title",ALL_DAY="all_day",EVENT_LOCATION="place",STATUS="status",CALENDAR_ID="calendar_id",DESCRIPTION="description";static final int STATUS_CANCELED=2;}
 class ScheduleSources {static Set<Long> blocked=new HashSet<>();static boolean allowsCalendar(Object context,long id){return !blocked.contains(id);}}
 class Cursor implements AutoCloseable {
  List<Object[]>rows;int i=-1;Cursor(List<Object[]>r){rows=r;}boolean moveToNext(){return ++i<rows.size();}
@@ -219,47 +219,67 @@ class Cursor implements AutoCloseable {
  int getInt(int c){return rows.get(i)[c]==null?0:((Number)rows.get(i)[c]).intValue();}
 }
 class Resolver {
- List<Object[]>rows=new ArrayList<>();
+ List<Object[]>rows=new ArrayList<>();String lastUri;
+ void projection(String[] p){if(p.length!=11||!p[7].equals("calendar_color")||!p[8].equals("calendar_id")||!p[9].equals("account")||!p[10].equals("description"))throw new AssertionError("calendar source and description projection");}
  Cursor query(String uri,String[]projection,String selection,String[]args,String sort){
   if(!selection.contains("all_day=0")||!selection.contains("visible=1"))throw new AssertionError("timed visible filter");
+  projection(projection);lastUri=uri;
   return new Cursor(rows);
  }
  Cursor query(String uri,String[]projection,String selection,String[]args,String sort,android.os.CancellationSignal cancellation){
-  if(projection.length!=10||!projection[7].equals("calendar_color")||!projection[8].equals("calendar_id")||!projection[9].equals("account")||!selection.contains("visible=1"))throw new AssertionError("calendar source projection");
+  projection(projection);if(!selection.contains("visible=1"))throw new AssertionError("visible calendar source");
   return new Cursor(rows);
  }
 }
 public class ReminderProviderCheck {
+ static final int MAX_REMINDER_FUTURE_DAYS=4;
  final Object context=new Object();
  final Resolver resolver=new Resolver();void requireRead(){}
  ''' + method(calendar, 'public List<CalendarOccurrence> reminderInstances(') + '''
  ''' + method(calendar, 'public List<CalendarOccurrence> listInstances(long begin, long end,\n            android.os.CancellationSignal cancellation, int limit)') + '''
  ''' + method(calendar, 'private List<CalendarOccurrence> listInstances(long begin, long end,\n            android.os.CancellationSignal cancellation, int limit, boolean allSources)') + '''
- static Object[]e(long id,long start,long end){return new Object[]{id,start,end,"event",null,"room","system",null,42L,"account"};}
+ static Object[]e(long id,long start,long end){return new Object[]{id,start,end,"event",0,"room","system",null,42L,"account","note "+id};}
  public static void main(String[]args){
   ReminderProviderCheck c=new ReminderProviderCheck();Set<Long>linked=new HashSet<>();
   for(long i=1;i<1200;i++){linked.add(i);c.resolver.rows.add(e(i,500,3000));}
   c.resolver.rows.add(e(2000,600,900));c.resolver.rows.add(e(2001,700,2000));
   c.resolver.rows.add(e(2002,800,2000));c.resolver.rows.add(e(2003,1100,2200));c.resolver.rows.add(e(2003,1200,2300));
-  List<CalendarOccurrence>result=c.reminderInstances(1000,4000,linked,Set.of());
-  if(result.size()!=4||result.get(0).eventId!=2002||result.get(1).eventId!=2001||result.get(2).startMillis!=1100||result.get(3).startMillis!=1200)throw new AssertionError("cap/active/future");
-  result=c.reminderInstances(1000,4000,linked,Set.of("system:2002:800","system:2003:1100"));
-  if(result.size()!=2||result.get(0).eventId!=2001||result.get(1).startMillis!=1200)throw new AssertionError("hidden recurrence");
+  List<CalendarOccurrence>result=c.reminderInstances(1000,4000,linked);
+  if(result.size()!=5||result.get(0).eventId!=2000||result.get(1).eventId!=2001||result.get(2).eventId!=2002||result.get(3).startMillis!=1100||result.get(4).startMillis!=1200)throw new AssertionError("ended, active and future context retained after linked filtering");
+  if(!result.get(0).description.equals("note 2000"))throw new AssertionError("reminder description passthrough");
   c.resolver.rows.clear();
   for(long i=1;i<=7;i++)c.resolver.rows.add(e(i,100*i,3000));
   for(long i=11;i<=17;i++)c.resolver.rows.add(e(i,100*i,3000));
-  result=c.reminderInstances(1000,4000,Set.of(),Set.of());
-  if(result.size()!=7||result.get(0).eventId!=7||result.get(1).eventId!=6||result.get(2).eventId!=5||result.get(3).eventId!=11||result.get(4).eventId!=12||result.get(5).eventId!=13||result.get(6).eventId!=14)throw new AssertionError("three active and four future including next title beyond three cards");
-  System.out.println("Production reminder provider scan passed: 1199 linked copies, ended, active/future, hidden recurrence");
-  c.resolver.rows.clear();c.resolver.rows.add(new Object[]{1L,100L,200L,"color",0,"","source",0xFFFF0000,42L,"account"});
-  c.resolver.rows.add(new Object[]{2L,100L,200L,"missing",1,"","source",null,43L,"account"});
-  c.resolver.rows.add(new Object[]{3L,100L,200L,"black",0,"","source",0,44L,"account"});
+  result=c.reminderInstances(1000,4000,Set.of());
+  if(result.size()!=14||result.get(0).eventId!=1||result.get(13).eventId!=17)throw new AssertionError("complete same-day context without active or future card caps");
+  ZoneId zone=ZoneId.systemDefault();LocalDate today=LocalDate.of(2026,10,17);
+  long now=today.atTime(14,10).atZone(zone).toInstant().toEpochMilli();
+  long midnight=today.atStartOfDay(zone).toInstant().toEpochMilli();
+  c.resolver.rows.clear();
+  c.resolver.rows.add(e(3000,midnight+13*3600000+25*60000,now));
+  c.resolver.rows.add(e(3001,now+5*60000,now+100*60000));
+  for(int d=1;d<=4;d++)for(int i=0;i<8;i++){
+   long at=today.plusDays(d).atTime(8+i,0).atZone(zone).toInstant().toEpochMilli();
+   c.resolver.rows.add(e(4000+d*10+i,at,at+1800000));
+  }
+  result=c.reminderInstances(now,now+7*86400000L,Set.of());
+  if(!c.resolver.lastUri.startsWith(midnight+":"))throw new AssertionError("query starts at current local midnight");
+  if(result.size()!=26||result.get(0).eventId!=3000||result.get(1).eventId!=3001||result.get(25).eventId!=4037)throw new AssertionError("ended course segment and complete four future dates including today; fifth date excluded");
+  c.resolver.rows.remove(1);result=c.reminderInstances(now,now+7*86400000L,Set.of());
+  if(result.size()!=33||result.get(32).eventId!=4047)throw new AssertionError("ended-only today does not consume a future date");
+  System.out.println("Production reminder provider scan passed: 1199 linked copies, ended course context, complete four-future-date boundaries and description");
+  c.resolver.rows.clear();c.resolver.rows.add(new Object[]{1L,100L,200L,"color",0,"","source",0xFFFF0000,42L,"account","first note"});
+  c.resolver.rows.add(new Object[]{2L,100L,200L,"missing",1,"","source",null,43L,"account",null});
+  c.resolver.rows.add(new Object[]{3L,100L,200L,"black",0,"","source",0,44L,"account","last note"});
   result=c.listInstances(0,300,null,10);
   if(result.size()!=3||result.get(0).calendarColor!=0xFFFF0000||result.get(1).calendarColor!=null||result.get(2).calendarColor!=0||!result.get(1).allDay)throw new AssertionError("provider source color/null/black/all-day");
+  if(!result.get(0).description.equals("first note")||!result.get(1).description.isEmpty()||!result.get(2).description.equals("last note"))throw new AssertionError("instance description passthrough");
   ScheduleSources.blocked.add(42L);result=c.listInstances(0,300,null,1);
   if(result.size()!=1||result.get(0).calendarId!=43L)throw new AssertionError("source filter precedes limit");
   c.resolver.rows.clear();Object[]blocked=e(8,1100,3000);Object[]allowed=e(9,1200,3000);allowed[8]=43L;c.resolver.rows.add(blocked);c.resolver.rows.add(allowed);
-  result=c.reminderInstances(1000,4000,Set.of(),Set.of());
+  Object[]allDay=e(10,1250,3000);allDay[4]=1;allDay[8]=43L;c.resolver.rows.add(allDay);
+  Object[]invalid=e(11,1300,1300);invalid[8]=43L;c.resolver.rows.add(invalid);
+  result=c.reminderInstances(1000,4000,Set.of());
   if(result.size()!=1||result.get(0).eventId!=9)throw new AssertionError("reminder source filter");
   System.out.println("Production instance query passed: CALENDAR_COLOR projection, null and black source colors");
  }

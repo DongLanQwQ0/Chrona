@@ -25,6 +25,9 @@ import java.util.List;
 import java.util.TimeZone;
 import java.text.Normalizer;
 import java.util.Locale;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 /** Direct access to Chrona's device-local system calendar. Call from a background thread. */
 public final class CalendarStore {
@@ -33,6 +36,7 @@ public final class CalendarStore {
     private static final int CALENDAR_COLOR = 0xFF486A85;
     private static final int MAX_REMINDERS = 5;
     private static final int MAX_HOME_INSTANCES = 1000;
+    private static final int MAX_REMINDER_FUTURE_DAYS = 4;
     private static final String[] CALENDAR_ID_PROJECTION = {Calendars._ID};
     private static final String[] EVENT_PROJECTION = {
             Events._ID, Events.CALENDAR_ID, Events.TITLE, Events.DTSTART, Events.DTEND,
@@ -88,7 +92,7 @@ public final class CalendarStore {
         String[] projection = {CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN,
                 CalendarContract.Instances.END, Events.TITLE, Events.ALL_DAY,
                 Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR,
-                Events.CALENDAR_ID, Calendars.ACCOUNT_NAME};
+                Events.CALENDAR_ID, Calendars.ACCOUNT_NAME, Events.DESCRIPTION};
         List<CalendarOccurrence> result = new ArrayList<>();
         try (Cursor cursor = resolver.query(uri.build(), projection, (allSources ? "(" : Calendars.VISIBLE + "=1 AND (")
                 + Events.STATUS + " IS NULL OR " + Events.STATUS + "!=?)",
@@ -102,23 +106,29 @@ public final class CalendarStore {
                 if (finish <= start) continue;
                 result.add(new CalendarOccurrence(cursor.getLong(0), start, finish,
                         cursor.getString(3), cursor.getInt(4) != 0, cursor.getString(5), cursor.getString(6),
-                        cursor.isNull(7) ? null : cursor.getInt(7), cursor.getLong(8), cursor.getString(9)));
+                        cursor.isNull(7) ? null : cursor.getInt(7), cursor.getLong(8), cursor.getString(9),
+                        cursor.getString(10)));
             }
         }
         return result;
     }
 
-    /** Three active, plus four future so the last visible card can name its next occurrence. */
+    /** Keeps complete local days so course segments can merge before reminder filtering. */
     public List<CalendarOccurrence> reminderInstances(long now, long horizon,
-            java.util.Set<Long> linked, java.util.Set<String> hidden) {
+            java.util.Set<Long> linked) {
         requireRead();
+        ZoneId zone = ZoneId.systemDefault();
+        long dayStart = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+                .atStartOfDay(zone).toInstant().toEpochMilli();
         Uri.Builder uri = CalendarContract.Instances.CONTENT_URI.buildUpon();
-        ContentUris.appendId(uri, now); ContentUris.appendId(uri, horizon);
+        ContentUris.appendId(uri, dayStart); ContentUris.appendId(uri, horizon);
         String[] projection = {CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN,
                 CalendarContract.Instances.END, Events.TITLE, Events.ALL_DAY,
                 Events.EVENT_LOCATION, Calendars.CALENDAR_DISPLAY_NAME, Calendars.CALENDAR_COLOR,
-                Events.CALENDAR_ID, Calendars.ACCOUNT_NAME};
-        List<CalendarOccurrence> active = new ArrayList<>(), future = new ArrayList<>();
+                Events.CALENDAR_ID, Calendars.ACCOUNT_NAME, Events.DESCRIPTION};
+        List<CalendarOccurrence> result = new ArrayList<>();
+        LocalDate lastFutureDay = null;
+        int futureDays = 0;
         try (Cursor cursor = resolver.query(uri.build(), projection,
                 Calendars.VISIBLE + "=1 AND " + Events.ALL_DAY + "=0 AND (" + Events.STATUS
                         + " IS NULL OR " + Events.STATUS + "!=?)",
@@ -128,25 +138,21 @@ public final class CalendarStore {
                 if (cursor.isNull(0) || cursor.isNull(1) || cursor.isNull(2)) continue;
                 if (!ScheduleSources.allowsCalendar(context, cursor.getLong(8))) continue;
                 long id = cursor.getLong(0), start = cursor.getLong(1), end = cursor.getLong(2);
-                if (linked.contains(id) || end <= now || end <= start || hidden.contains("system:" + id + ":" + start)) continue;
+                if (linked.contains(id) || cursor.getInt(4) != 0 || end <= start) continue;
+                if (start > now) {
+                    LocalDate day = Instant.ofEpochMilli(start).atZone(zone).toLocalDate();
+                    if (!day.equals(lastFutureDay)) {
+                        if (futureDays == MAX_REMINDER_FUTURE_DAYS) break;
+                        lastFutureDay = day;
+                        futureDays++;
+                    }
+                }
                 CalendarOccurrence entry = new CalendarOccurrence(id, start, end, cursor.getString(3), false,
                         cursor.getString(5), cursor.getString(6), cursor.isNull(7) ? null : cursor.getInt(7),
-                        cursor.getLong(8), cursor.getString(9));
-                if (start > now) {
-                    future.add(entry);
-                    if (future.size() == 4) break;
-                } else {
-                    active.add(entry);
-                    active.sort((a, b) -> {
-                        int order = Long.compare(b.startMillis, a.startMillis);
-                        return order != 0 ? order : Long.compare(a.eventId, b.eventId);
-                    });
-                    if (active.size() > 3) active.remove(3);
-                }
+                        cursor.getLong(8), cursor.getString(9), cursor.getString(10));
+                result.add(entry);
             }
         }
-        List<CalendarOccurrence> result = new ArrayList<>();
-        result.addAll(active); result.addAll(future);
         return result;
     }
 

@@ -112,7 +112,9 @@ final class ScheduleFilterSheet {
         category.sync(draft.source == 1 ? EventCategory.indexOf(EventCategory.EVENT) + 1 : draft.category,
                 draft.source == 0);
         todo.sync(draft.source == 1 ? ScheduleQuery.TODO_ANY : draft.todoScope, draft.source == 0);
-        publication.sync(draft.source == 1 ? 2 : draft.publication, draft.source == 0);
+        int publicationIndex = draft.source == 1 ? 3
+                : draft.publication == 3 ? 1 : draft.publication == 1 ? 2 : draft.publication == 2 ? 3 : 0;
+        publication.sync(publicationIndex, draft.source == 0);
         source.sync(draft.source, true);
         LocalDate[] window = draft.window(LocalDate.now());
         interval.setVisibility(window[0] == null ? View.GONE : View.VISIBLE);
@@ -186,7 +188,7 @@ final class ScheduleFilterSheet {
             }
         });
         publication = new ChoiceDock("日历状态", R.drawable.ic_inbox_outline, publicationOptions(),
-                value -> draft.publication = value);
+                value -> draft.publication = new int[]{0, 3, 1, 2}[value]);
         source = new ChoiceDock("来源", R.drawable.ic_filter_alt, new String[]{"拾时", "系统日程"}, value -> {
             draft.source = value;
             if (value == 1) {
@@ -377,7 +379,7 @@ final class ScheduleFilterSheet {
         System.arraycopy(EventCategory.LABELS, 0, options, 1, EventCategory.LABELS.length);
         return options;
     }
-    private String[] publicationOptions() { return new String[]{"全部", "待确认", "已写入"}; }
+    private String[] publicationOptions() { return new String[]{"全部", "未写入", "待确认", "已写入"}; }
     private int dp(int value) {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
     }

@@ -144,6 +144,27 @@ public final class TwoScheduleTypesCheck {
                     EventCategory.TASK,0,"",null,null,now,zone,ScheduleQuery.TODO_TODAY_DUE),true,0);
             check(ids(differingExecutionDates).equals(List.of(earlyDeadline,overdueToday,lateDeadline)),
                     "deadline filtering and sort remain due-based when execution dates disagree or run in reverse order");
+            long homework=add(store,source,"课程作业",EventCategory.HOMEWORK,null,null,time(today,12,30,zone),null,false,false);
+            long plannedHomework=add(store,source,"已安排作业",EventCategory.HOMEWORK,time(today,14,0,zone),time(today,15,0,zone),time(today,23,0,zone),null,false,false);
+            long undatedHomework=add(store,source,"无日期作业",EventCategory.HOMEWORK,null,null,null,null,false,false);
+            long overdueHomework=add(store,source,"过期作业",EventCategory.HOMEWORK,null,null,now-1,null,false,false);
+            List<Long> homeworkUpcoming=ids(store.queryHomeUpcoming(now,zone,30));
+            EventCandidate hw=store.getCandidatesByIds(List.of(homework)).get(0),plannedHw=store.getCandidatesByIds(List.of(plannedHomework)).get(0);
+            check(homeworkUpcoming.contains(homework)&&homeworkUpcoming.contains(plannedHomework),"dated homework appears in home query");
+            check(!homeworkUpcoming.contains(undatedHomework)&&!homeworkUpcoming.contains(overdueHomework),"undated and expired deadlines stay in task management");
+            check(new HomeTimelineEntry(hw).timestampMillis==hw.dueAtMillis&&HomeTimelineEntry.deadlineOnly(hw),"deadline milestone uses due timestamp without inventing execution");
+            check(HomeTimelineEntry.hasUpcomingTime(hw,now,zone)&&!HomeTimelineEntry.hasUpcomingExecution(hw,now,zone),"deadline milestone remains distinct from execution");
+            check(new HomeTimelineEntry(plannedHw).timestampMillis==plannedHw.startAtMillis&&!HomeTimelineEntry.deadlineOnly(plannedHw),"execution wins when homework has both times");
+            check(Collections.frequency(homeworkUpcoming,plannedHomework)==1&&hw.startAtMillis==null,"one entry per homework and no persisted execution mutation");
+            store.setCandidateCompleted(homework,source,true);
+            check(!ids(store.queryHomeUpcoming(now,zone,30)).contains(homework),"completed homework leaves home timeline");
+            Set<Long> unwritten=new HashSet<>(store.queryScheduleIds(new ScheduleQuery(3,null,3,"",null,null,now,zone)));
+            check(unwritten.contains(plannedHomework)&&unwritten.contains(futureDue)&&unwritten.contains(undatedHomework),
+                    "unwritten partition includes certain homework, dated and undated tasks without requiring AI confirmation");
+            store.setCalendarEventIdIfUnlinked(plannedHomework,source,9001L);
+            check(!store.queryScheduleIds(new ScheduleQuery(3,null,3,"",null,null,now,zone)).contains(plannedHomework)
+                    &&store.queryScheduleIds(new ScheduleQuery(3,null,2,"",null,null,now,zone)).contains(plannedHomework),
+                    "successful publication leaves unwritten and enters written partition");
         }
     }
 

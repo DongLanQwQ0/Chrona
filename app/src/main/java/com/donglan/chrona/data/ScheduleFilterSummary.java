@@ -23,6 +23,7 @@ public final class ScheduleFilterSummary {
         else if (state.todoScope == ScheduleQuery.TODO_OPEN) parts.add("未完成");
         if (state.publication == 1) parts.add("待确认");
         else if (state.publication == 2) parts.add("已写入");
+        else if (state.publication == 3) parts.add("未写入");
         if (query != null && !query.trim().isEmpty()) parts.add("搜索：" + query.trim());
         return String.join(" · ", parts);
     }

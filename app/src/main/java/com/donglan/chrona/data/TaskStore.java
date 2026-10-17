@@ -448,20 +448,21 @@ public final class TaskStore extends SQLiteOpenHelper {
         return items;
     }
 
-    /** Execution times alone belong in the home agenda; a task deadline is not an appointment. */
+    /** Homework deadlines are milestones; ordinary tasks still require execution time. */
     public List<EventCandidate> queryHomeUpcoming(long now, java.time.ZoneId zone, int limit) {
         long todayUtc = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                 .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
-        String selection = "is_record=0 AND completed_at_millis IS NULL AND start_at_millis IS NOT NULL"
+        String selection = "is_record=0 AND completed_at_millis IS NULL AND ((start_at_millis IS NOT NULL"
                 + " AND (category IN ('task','homework') OR (category='event' AND end_at_millis>start_at_millis))"
                 + " AND ((all_day=0 AND (CASE WHEN end_at_millis>start_at_millis THEN end_at_millis>CAST(? AS INTEGER)"
                 + " ELSE start_at_millis>=CAST(? AS INTEGER) END))"
                 + " OR (all_day=1 AND (CASE WHEN end_at_millis>start_at_millis THEN end_at_millis"
-                + " ELSE start_at_millis+" + ALL_DAY_DURATION_MILLIS + " END)>CAST(? AS INTEGER)))";
-        String order = ScheduleQuery.DAY_SQL + " ASC, all_day DESC, start_at_millis ASC, id ASC";
+                + " ELSE start_at_millis+" + ALL_DAY_DURATION_MILLIS + " END)>CAST(? AS INTEGER))))"
+                + " OR (category='homework' AND start_at_millis IS NULL AND due_at_millis>=CAST(? AS INTEGER)))";
+        String order = ScheduleQuery.DAY_SQL + " ASC, all_day DESC, COALESCE(start_at_millis,due_at_millis) ASC, id ASC";
         List<EventCandidate> items = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null, selection,
-                new String[]{Long.toString(now), Long.toString(now), Long.toString(todayUtc)}, null, null, order,
+                new String[]{Long.toString(now), Long.toString(now), Long.toString(todayUtc), Long.toString(now)}, null, null, order,
                 Integer.toString(Math.max(1, limit)))) {
             while (cursor.moveToNext()) items.add(readCandidate(cursor));
         }

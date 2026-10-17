@@ -14,12 +14,14 @@ final class HomeTimelineEntry {
     final CalendarOccurrence systemEvent;
 
     HomeTimelineEntry(EventCandidate candidate) {
-        if (candidate.startAtMillis == null)
+        Long start = candidate.startAtMillis != null ? candidate.startAtMillis
+                : deadlineOnly(candidate) ? candidate.dueAtMillis : null;
+        if (start == null)
             throw new IllegalArgumentException("首页时间轴需要明确的执行开始时间");
-        timestampMillis = candidate.allDay
-                ? LocalDate.parse(AllDayDates.displayStart(candidate.startAtMillis))
+        timestampMillis = candidate.allDay && !deadlineOnly(candidate)
+                ? LocalDate.parse(AllDayDates.displayStart(start))
                         .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                : candidate.startAtMillis;
+                : start;
         this.candidate = candidate;
         systemEvent = null;
     }
@@ -32,6 +34,15 @@ final class HomeTimelineEntry {
 
     String title() {
         return candidate != null ? candidate.title : systemEvent.title;
+    }
+
+    static boolean deadlineOnly(EventCandidate candidate) {
+        return candidate.isHomework() && candidate.startAtMillis == null && candidate.dueAtMillis != null;
+    }
+
+    static boolean hasUpcomingTime(EventCandidate candidate, long now, ZoneId zone) {
+        if (deadlineOnly(candidate)) return !candidate.isRecord && !candidate.completed() && candidate.dueAtMillis >= now;
+        return hasUpcomingExecution(candidate, now, zone);
     }
 
     static boolean hasUpcomingExecution(EventCandidate candidate, long now, ZoneId zone) {

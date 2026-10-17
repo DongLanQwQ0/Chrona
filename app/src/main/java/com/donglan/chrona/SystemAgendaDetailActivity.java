@@ -21,6 +21,9 @@ public final class SystemAgendaDetailActivity extends Activity {
     private String occurrenceKey;
     private long acknowledgementUntil;
     private boolean occurrenceAvailable = true;
+    private boolean resumed;
+    private final android.os.Handler expiryHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable expiryRefresh = this::refreshAcknowledgement;
     static Intent intent(Context context, long id, long start, long end, boolean allDay,
             String title, String location, String calendar) {
         return new Intent(context, SystemAgendaDetailActivity.class)
@@ -55,7 +58,9 @@ public final class SystemAgendaDetailActivity extends Activity {
         text(card, range + (allDay ? " · 全天" : ""), 16);
         TextView location = text(card, value(input.getStringExtra("location")), 16);
         text(card, value(input.getStringExtra("calendar")), 14);
-        TextView description = text(card, "", 16); description.setVisibility(android.view.View.GONE);
+        String snapshotDescription = value(input.getStringExtra("description"));
+        TextView description = text(card, snapshotDescription, 16);
+        description.setVisibility(snapshotDescription.isBlank() ? android.view.View.GONE : android.view.View.VISIBLE);
         long occurrenceStart = allDay ? Instant.ofEpochMilli(start).atZone(ZoneOffset.UTC).toLocalDate()
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() : start;
         long occurrenceEnd = allDay ? Instant.ofEpochMilli(end).atZone(ZoneOffset.UTC).toLocalDate()
@@ -102,7 +107,8 @@ public final class SystemAgendaDetailActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     title.setText(currentTitle); location.setText(currentLocation);
-                    description.setText(details); description.setVisibility(details.isBlank() ? android.view.View.GONE : android.view.View.VISIBLE);
+                    String displayedDetails = snapshotDescription.isBlank() ? details : snapshotDescription;
+                    description.setText(displayedDetails); description.setVisibility(displayedDetails.isBlank() ? android.view.View.GONE : android.view.View.VISIBLE);
                 });
             } catch (SecurityException failure) {
                 runOnUiThread(() -> { if (!isDestroyed()) Feedback.show(this, "未允许读取系统日历，显示进入页面时的内容"); });
@@ -114,13 +120,26 @@ public final class SystemAgendaDetailActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
         refreshAcknowledgement();
     }
 
+    @Override protected void onPause() {
+        resumed = false;
+        expiryHandler.removeCallbacks(expiryRefresh);
+        super.onPause();
+    }
+
     private void refreshAcknowledgement() {
+        expiryHandler.removeCallbacks(expiryRefresh);
         if (acknowledgement != null) {
-            acknowledgement.setEnabled(occurrenceAvailable && acknowledgementUntil > System.currentTimeMillis());
+            long remaining = acknowledgementUntil - System.currentTimeMillis();
+            boolean available = occurrenceAvailable && !getIntent().getBooleanExtra("source_series", false)
+                    && remaining > 0;
+            acknowledgement.setVisibility(available ? android.view.View.VISIBLE : android.view.View.GONE);
+            acknowledgement.setEnabled(available);
             acknowledgement.setText(AgendaAcknowledgement.isAcknowledged(this, occurrenceKey) ? "取消确认" : "确认活动");
+            if (resumed && available) expiryHandler.postDelayed(expiryRefresh, remaining);
         }
     }
 

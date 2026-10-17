@@ -70,7 +70,7 @@ final class AgendaRepository {
                     begin - 86_400_000L, until + 86_400_000L, new HashSet<>(store.linkedCalendarIds()))) {
                 cancellation.throwIfCanceled();
                 AgendaEntry entry = new AgendaEntry(item.eventId, 0, item.displayStart(zone),
-                        item.displayEnd(zone), item.title, item.location, "", item.calendarName,
+                        item.displayEnd(zone), item.title, item.location, item.description, item.calendarName,
                         true, item.allDay, true, item.calendarColor);
                 if (!entry.overlaps(begin, until)) continue;
                 if (result.entries.size() == LIMIT) { result.truncated = true; break; }
@@ -91,7 +91,7 @@ final class AgendaRepository {
             end = Instant.ofEpochMilli(end).atZone(zone).toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
         }
         return SystemAgendaDetailActivity.intent(context, entry.id, start, end,
-                entry.allDay, entry.title, entry.location, entry.source);
+                entry.allDay, entry.title, entry.location, entry.source).putExtra("description", entry.description);
     }
     private AgendaRepository() { }
 }

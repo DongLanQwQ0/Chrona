@@ -37,11 +37,30 @@ for expected in (
     "detailPager.addGesturePriorityChild(category)",
     "editorSelectionBars = saved.selectionBars",
     "CategoryTimeChange.from(",
+    "category.fullWidthMotionHost()",
 ):
     if expected not in source:
         raise AssertionError(f"Missing detail selection-bar integration: {expected}")
 if 'UiStyle.choiceDialog(this, "日程类型"' in source:
     raise AssertionError("Detail type must use the selection bar, not the previous picker")
+picker = block(source, "private void configureTimePicker(")
+assert '"截止时间", candidate.isHomework() && !managedHomework, null)' in source
+assert 'if (clearable)' in picker and 'clear.setText("清空")' in picker
+assert 'clear.setOnClickListener(v -> { field.setText(""); dialog.dismiss(); });' in picker
+assert 'if (value.isEmpty() && fallback != null) value = fallback.getText().toString().trim();' in picker
+# A fallback seeds the picker only; no field write happens just by opening it.
+assert 'field.setText' not in picker[:picker.index('LinearLayout actions =')]
+assert 'candidate.isHomework() ? start : null' in source
+assert 'due.setOnClickListener(null)' in source and 'due.setClickable(false)' in source
+poll = block(source, 'private void pollForResult()')
+assert 'refreshAcknowledgementActions(content)' in poll
+assert poll.index('refreshAcknowledgementActions(content)') < poll.index('!hasUnsavedEdits')
+ack_refresh = block(source, 'private void refreshAcknowledgementActions(')
+assert 'hasUnsavedEdits' not in ack_refresh and 'markCandidateDirty' not in ack_refresh
+save_click = source[source.index('publish[0] = button(card, "保存", () -> {'):]
+save_fields = save_click[save_click.index('ZoneId zone ='):save_click.index('if ((edited.calendarStart()')]
+day_start_method = block(source, 'private static Long parseDayStart(')
+day_end_method = block(source, 'private static Long parseDayEnd(')
 
 harness = r'''
 import java.time.*;
@@ -49,12 +68,14 @@ import java.time.format.*;
 import java.util.*;
 import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.EventTimeDefaults;
+import com.donglan.chrona.data.EventCandidate;
+import com.donglan.chrona.calendar.AllDayDates;
 
 public final class DetailEditorCheck {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final long SHIFTED_START_INTERVAL_MILLIS = __INTERVAL__;
     static int checks;
-    static final class Candidate { long id = 1; }
+    static final class Candidate { long id = 1; boolean task; boolean isTask() { return task; } }
     static final class Editable {
         final String text;
         Editable(String text) { this.text = text; }
@@ -92,6 +113,7 @@ public final class DetailEditorCheck {
     final AllDayToggle allDay;
     int dirty;
     DetailEditorCheck(boolean task, boolean generated, boolean dateOnly, String from, String until) {
+        candidate.task = task;
         autoEnd = new boolean[]{generated};
         selectedCategory = new int[]{EventCategory.indexOf(task ? EventCategory.TASK : EventCategory.EVENT)};
         start = new EditText(from); end = new EditText(until); allDay = new AllDayToggle(dateOnly);
@@ -101,6 +123,18 @@ public final class DetailEditorCheck {
     void markCandidateDirty(long id) { dirty++; }
     __FORMAT__
     __PARSE__
+    __DAY_START__
+    __DAY_END__
+    EventCandidate savedHomework(long sourceDue) {
+        boolean managedHomework = true;
+        EventCandidate candidate = new EventCandidate(1, 1, "作业", null, null, "Asia/Shanghai", "", "平台内容",
+                null, false, null, EventCategory.HOMEWORK, false, false, EventCandidate.CERTAIN, sourceDue, null, false);
+        String titleText = candidate.title;
+        EditText due = new EditText(""), reminder = new EditText(""), location = new EditText("");
+        String[] currentDescription = {""};
+        __SAVE_FIELDS__
+        return edited;
+    }
     static void check(boolean value, String label) { checks++; if (!value) throw new AssertionError(label); }
     static DetailEditorCheck timed(boolean task, boolean generated, String end) {
         return new DetailEditorCheck(task, generated, false, "2026-10-15 09:00", end);
@@ -147,11 +181,39 @@ public final class DetailEditorCheck {
         allDay.start.setText("2026-10-16");
         check(allDay.end.value.equals("2026-10-15") && allDay.end.writes == 0,
                 "all-day inclusive display/exclusive persistence stay outside minute correction");
+        for (boolean dateOnly : new boolean[]{false, true}) {
+            DetailEditorCheck clearStart = new DetailEditorCheck(true, false, dateOnly,
+                    dateOnly ? "2026-10-15" : "2026-10-15 09:00",
+                    dateOnly ? "2026-10-16" : "2026-10-15 10:00");
+            clearStart.start.setText("");
+            check(clearStart.start.value.isEmpty() && clearStart.end.value.isEmpty(),
+                    "clearing task start clears the whole range, including all-day");
+            DetailEditorCheck clearEnd = timed(true, false, "2026-10-15 10:00");
+            clearEnd.end.setText("");
+            check(clearEnd.start.value.equals("2026-10-15 09:00") && clearEnd.end.value.isEmpty(),
+                    "clearing task end retains start");
+        }
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+        long sourceDue = Instant.parse("2026-10-20T15:59:00Z").toEpochMilli();
+        DetailEditorCheck clearedAllDay = new DetailEditorCheck(true, false, true, "", "");
+        EventCandidate deadlineOnly = clearedAllDay.savedHomework(sourceDue);
+        check(!deadlineOnly.allDay && deadlineOnly.timeZoneId.equals("Asia/Shanghai")
+                && deadlineOnly.startAtMillis == null && deadlineOnly.endAtMillis == null
+                && deadlineOnly.dueAtMillis.equals(sourceDue),
+                "production save keeps source due timestamp and removes all-day semantics after clearing execution range");
+        DetailEditorCheck datedAllDay = new DetailEditorCheck(true, false, true, "2026-10-17", "2026-10-18");
+        EventCandidate scheduled = datedAllDay.savedHomework(sourceDue);
+        check(scheduled.allDay && scheduled.timeZoneId.equals("UTC")
+                && scheduled.startAtMillis.equals(Instant.parse("2026-10-17T00:00:00Z").toEpochMilli())
+                && scheduled.endAtMillis.equals(Instant.parse("2026-10-19T00:00:00Z").toEpochMilli())
+                && scheduled.dueAtMillis.equals(sourceDue),
+                "production save retains filled all-day execution dates and unchanged source due");
         System.out.println("Detail editor passed: " + checks + " production-watcher checks; selection-bar wiring present");
     }
 }
 '''.replace("__INTERVAL__", interval).replace("__START_WATCHER__", start_watcher).replace(
-    "__END_WATCHER__", end_watcher).replace("__FORMAT__", format_method).replace("__PARSE__", parse_method)
+    "__END_WATCHER__", end_watcher).replace("__FORMAT__", format_method).replace("__PARSE__", parse_method).replace(
+    "__DAY_START__", day_start_method).replace("__DAY_END__", day_end_method).replace("__SAVE_FIELDS__", save_fields)
 
 out = ROOT / "build/detail-editor-check"
 out.mkdir(parents=True, exist_ok=True)
@@ -160,6 +222,7 @@ java_file.write_text(harness, encoding="utf-8")
 java_home = Path(os.environ.get("JAVA_HOME", r"D:\Minecraft\java21"))
 data = ROOT / "app/src/main/java/com/donglan/chrona/data"
 subprocess.run([str(java_home / "bin/javac"), "-encoding", "UTF-8", "-d", str(out), str(java_file),
+                str(ROOT / "app/src/main/java/com/donglan/chrona/calendar/AllDayDates.java"),
                 *[str(data / name) for name in ("EventTimeDefaults.java", "EventCandidate.java", "EventCategory.java")]], check=True)
 subprocess.run([str(java_home / "bin/java"), "-cp", str(out), "DetailEditorCheck"], check=True)
 

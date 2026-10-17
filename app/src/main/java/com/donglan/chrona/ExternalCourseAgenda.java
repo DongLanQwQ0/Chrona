@@ -37,8 +37,12 @@ public final class ExternalCourseAgenda {
         }catch(Exception e){throw new IllegalStateException("无法读取浙大课表",e);}
         // Linked Chrona-owned provider copies must not win and then disappear after merging.
         List<CalendarOccurrence> all=new ArrayList<>(CalendarOccurrence.unlinked(system,linkedIds));all.addAll(courses);
-        all=CourseSourceMatching.filter(all,ScheduleSources.primary(context),ScheduleSources.courseRules(context));
+        String primary=ScheduleSources.primary(context);
+        List<CalendarOccurrence> knownCourses=new ArrayList<>(courses);
+        for(CalendarOccurrence item:all)if(CourseSourceMatching.source(item).equals(primary))knownCourses.add(item);
+        all=CourseSourceMatching.filter(all,primary,ScheduleSources.courseRules(context));
         all=CalendarOccurrence.unlinked(all,linkedIds);
+        all=CourseSourceMatching.mergeConsecutive(all,knownCourses,ZoneId.systemDefault());
         all.sort(Comparator.comparingLong((CalendarOccurrence c)->c.startMillis).thenComparingLong(c->c.eventId));
         return all;
     }

@@ -23,6 +23,55 @@ public final class CourseSourceMatching {
         return c.calendarId == IMPORTED ? "imported" : c.calendarId == ZJU ? "zju" : "system:" + c.calendarId;
     }
     public static String identity(CalendarOccurrence c) { return source(c) + "\n" + normalize(c.title); }
+    private static final long MAX_CLASS_BREAK_MILLIS = 30 * 60_000L;
+
+    /** Join class periods, never arbitrary appointments or records in different sources. */
+    public static List<CalendarOccurrence> mergeConsecutive(List<CalendarOccurrence> input,
+            List<CalendarOccurrence> knownCourses, java.time.ZoneId zone) {
+        Set<String> courseKeys = new HashSet<>();
+        Map<String,List<CalendarOccurrence>> knownSlots = new HashMap<>();
+        for (CalendarOccurrence course : knownCourses) {
+            courseKeys.add(identity(course));
+            knownSlots.computeIfAbsent(course.startMillis + ":" + course.endMillis, ignored -> new ArrayList<>()).add(course);
+        }
+        for (CalendarOccurrence item : input) {
+            if (item.calendarId == IMPORTED || item.calendarId == ZJU
+                    || item.calendarName.contains("课表") || item.calendarName.contains("课程")) courseKeys.add(identity(item));
+            for (CalendarOccurrence course : knownSlots.getOrDefault(item.startMillis + ":" + item.endMillis, List.of()))
+                if (exact(item, course) || strong(item, course)) courseKeys.add(identity(item));
+        }
+        Map<List<String>,List<CalendarOccurrence>> groups = new LinkedHashMap<>();
+        List<CalendarOccurrence> result = new ArrayList<>();
+        for (CalendarOccurrence item : input) {
+            if (item.allDay || !courseKeys.contains(identity(item)) || item.endMillis <= item.startMillis) {
+                result.add(item); continue;
+            }
+            String day = java.time.Instant.ofEpochMilli(item.startMillis).atZone(zone).toLocalDate().toString();
+            String endDay = java.time.Instant.ofEpochMilli(item.endMillis - 1).atZone(zone).toLocalDate().toString();
+            if (!day.equals(endDay)) { result.add(item); continue; }
+            List<String> key = List.of(source(item), item.accountName, exactText(item.title), exactText(item.location), day);
+            groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(item);
+        }
+        for (List<CalendarOccurrence> periods : groups.values()) {
+            periods.sort(Comparator.comparingLong((CalendarOccurrence item) -> item.startMillis).thenComparingLong(item -> item.eventId));
+            CalendarOccurrence block = null;
+            for (CalendarOccurrence next : periods) {
+                long gap = block == null ? Long.MAX_VALUE : next.startMillis - block.endMillis;
+                if (block != null && gap >= 0 && gap <= MAX_CLASS_BREAK_MILLIS) {
+                    String notes = block.description.equals(next.description) || next.description.isBlank()
+                            ? block.description : block.description.isBlank() ? next.description : block.description + "\n\n" + next.description;
+                    block = new CalendarOccurrence(block.eventId, block.startMillis, next.endMillis, block.title,
+                            false, block.location, block.calendarName, block.calendarColor, block.calendarId, block.accountName, notes);
+                } else {
+                    if (block != null) result.add(block);
+                    block = next;
+                }
+            }
+            if (block != null) result.add(block);
+        }
+        result.sort(Comparator.comparingLong((CalendarOccurrence item) -> item.startMillis).thenComparingLong(item -> item.eventId));
+        return result;
+    }
     public static String pairKey(CalendarOccurrence a, CalendarOccurrence b) { return pairKey(identity(a), identity(b)); }
     public static String pairKey(String a, String b) { return a.compareTo(b) < 0 ? a + "\u001f" + b : b + "\u001f" + a; }
     public static boolean sameTime(CalendarOccurrence a, CalendarOccurrence b) {

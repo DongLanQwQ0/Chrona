@@ -65,6 +65,28 @@ CalendarOccurrence allDay=new CalendarOccurrence(71,0,3600000,"数学i",true,"�
 check(filter(exactImport,allDay,"all",Map.of()).size()==2,"all-day and timed stay distinct");
 CalendarOccurrence allDayTwin=new CalendarOccurrence(72,0,3600000,"数学i",true,"东1","system",null,43,"");
 check(filter(allDay,allDayTwin,"all",Map.of()).size()==1,"exact all-day occurrences merge");
+java.time.ZoneId zone=java.time.ZoneId.of("Asia/Shanghai");
+long day=java.time.LocalDate.of(2026,10,19).atStartOfDay(zone).toInstant().toEpochMilli();
+CalendarOccurrence first=new CalendarOccurrence(-101,day+805*60000L,day+850*60000L,"线性代数（甲）",false,"东2-203","折姜星辰",null,-2,"","第6节");
+CalendarOccurrence second=new CalendarOccurrence(-102,day+855*60000L,day+950*60000L,first.title,false,first.location,first.calendarName,null,-2,"","第7-8节");
+List<CalendarOccurrence> blocks=CourseSourceMatching.mergeConsecutive(List.of(second,first),List.of(first,second),zone);
+check(blocks.size()==1&&blocks.get(0).startMillis==first.startMillis&&blocks.get(0).endMillis==second.endMillis,"13:25 to 15:50 forms one three-period course");
+check(blocks.get(0).eventId==first.eventId&&blocks.get(0).description.contains("第6节")&&blocks.get(0).description.contains("第7-8节"),"stable first identity and all notes preserved");
+check(first.endMillis==day+850*60000L&&second.startMillis==day+855*60000L,"raw source objects remain unchanged");
+CalendarOccurrence distant=new CalendarOccurrence(-103,second.endMillis+55*60000L,second.endMillis+100*60000L,first.title,false,first.location,first.calendarName,null,-2,"");
+check(CourseSourceMatching.mergeConsecutive(List.of(first,second,distant),List.of(),zone).size()==2,"missing period does not bridge");
+CalendarOccurrence differentRoom=new CalendarOccurrence(-104,second.startMillis,second.endMillis,first.title,false,"东2-204",first.calendarName,null,-2,"");
+check(CourseSourceMatching.mergeConsecutive(List.of(first,differentRoom),List.of(),zone).size()==2,"different rooms remain separate");
+CalendarOccurrence differentTitle=new CalendarOccurrence(-105,second.startMillis,second.endMillis,"线性代数（乙）",false,first.location,first.calendarName,null,-2,"");
+check(CourseSourceMatching.mergeConsecutive(List.of(first,differentTitle),List.of(),zone).size()==2,"different course stages remain separate");
+CalendarOccurrence otherSource=new CalendarOccurrence(-106,second.startMillis,second.endMillis,first.title,false,first.location,"导入课表",null,-1,"");
+check(CourseSourceMatching.mergeConsecutive(List.of(first,otherSource),List.of(),zone).size()==2,"source choice happens before joining, never splice sources");
+CalendarOccurrence meeting1=new CalendarOccurrence(301,first.startMillis,first.endMillis,"会议",false,"会议室","工作",null,10,"");
+CalendarOccurrence meeting2=new CalendarOccurrence(302,second.startMillis,second.endMillis,"会议",false,"会议室","工作",null,10,"");
+check(CourseSourceMatching.mergeConsecutive(List.of(meeting1,meeting2),List.of(),zone).size()==2,"ordinary appointments do not merge");
+CalendarOccurrence system1=new CalendarOccurrence(401,first.startMillis,first.endMillis,first.title,false,first.location,"学校",null,11,"");
+CalendarOccurrence system2=new CalendarOccurrence(402,second.startMillis,second.endMillis,first.title,false,first.location,"学校",null,11,"");
+check(CourseSourceMatching.mergeConsecutive(List.of(system1,system2),List.of(first,second),zone).size()==1,"recognized system course mirror also joins");
 System.out.println("Course matching: "+count+" passed");
 }}
 ''', encoding='utf-8')
