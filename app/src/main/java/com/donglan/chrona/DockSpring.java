@@ -7,7 +7,7 @@ final class DockSpring {
     private static final float RELEASE_TIME_MULTIPLIER = PRESS_TIME_MULTIPLIER * 1.5f;
     static final float MAX_OUTWARD_WIDTH = .75f;
     static final float TAP_SCALE = 1.16f;
-    private boolean following, tapPulse;
+    private boolean following, tapPulse, releasedMotion;
     float position, velocity, target;
     float movementSpeed = 1f;
     // The leading position responds first; the trailing position catches up independently.
@@ -17,7 +17,9 @@ final class DockSpring {
     static final float COAST_DAMPING = 7.5f;
     private static final float EDGE_APPROACH_SLOTS = .6f;
     private static final float EDGE_APPROACH_DAMPING = 18f;
-    private static final float CLICK_STIFFNESS = 180f, CLICK_DAMPING = 20f;
+    private static final float CLICK_FREQUENCY = (float)Math.sqrt(180f);
+    private static final float FOLLOW_FREQUENCY = (float)Math.sqrt(1800f);
+    private static final float TAIL_FREQUENCY = (float)Math.sqrt(300f);
     // Time-compress the previous rebound by 1.5, preserving its damping ratio.
     private static final float REBOUND_SPEED = 1.5f;
     private static final float EDGE_RETURN_STIFFNESS = 180f * REBOUND_SPEED * REBOUND_SPEED;
@@ -25,21 +27,16 @@ final class DockSpring {
     boolean coasting;
     float lastSlot;
     static float clickPeakSpeed(float distance) {
-        double decay = CLICK_DAMPING / 2d;
-        double frequency = Math.sqrt(CLICK_STIFFNESS - decay * decay);
-        double peakTime = Math.atan(frequency / decay) / frequency;
-        return Math.abs(distance) * (float)(CLICK_STIFFNESS / frequency
-                * Math.exp(-decay * peakTime) * Math.sin(frequency * peakTime));
+        return Math.abs(distance) * CLICK_FREQUENCY / (float)Math.E;
     }
     void coast(float speed, float end) {
-        following = false;
-        // Slots share the same movement time scale as click motion, so the visual
-        // speed ceiling matches a click across this rail, including half-speed bars.
+        following = false; releasedMotion = true;
+        // Released motion and its click-speed reference both use real time on every rail.
         float limit = clickPeakSpeed(end);
         velocity = Math.max(-limit, Math.min(limit, speed));
         lastSlot = end; coasting = true;
     }
-    void follow(float value, float speed) { following = true; coasting = false; target = value; }
+    void follow(float value, float speed) { following = true; coasting = releasedMotion = false; target = value; }
     int predictLanding(float speed, float end) {
         DockSpring prediction = new DockSpring(); prediction.movementSpeed = movementSpeed;
         prediction.position = position; prediction.coast(speed, end);
@@ -72,23 +69,21 @@ final class DockSpring {
         return t * t * (3f - 2f * t);
     }
     void releaseWithPulse() {
-        following = false; barTarget = 1f;
+        following = false; releasedMotion = true; barTarget = 1f;
         tapPulse = scale < TAP_SCALE; scaleTarget = tapPulse ? TAP_SCALE : 1f;
     }
-    void snap() { following = coasting = tapPulse = false; position = tailPosition = target;
+    void snap() { following = coasting = tapPulse = releasedMotion = false; position = tailPosition = target;
         velocity = tailVelocity = scaleVelocity = barVelocity = 0f;
         lean = leanTarget; crossLean = crossLeanTarget; leanVelocity = crossLeanVelocity = 0f;
         scale = scaleTarget; bar = barTarget; trackingHeight = 1f; trackingHeightVelocity = 0f; }
     boolean step(float seconds) {
         int steps = Math.max(1, (int) Math.ceil(Math.min(.064f, Math.max(0f, seconds)) * 120f));
         float dt = Math.min(.064f, Math.max(0f, seconds)) / steps;
-        float moveDt = dt * movementSpeed;
+        float moveDt = dt * (releasedMotion ? 1f : movementSpeed);
         for (int i = 0; i < steps; i++) {
             float trackingDt = following ? dt : moveDt;
             if (following) {
-                // Retarget the existing spring, never teleport to a new touch sample.
-                velocity += (1800f * (target - position) - 70f * velocity) * trackingDt;
-                position += velocity * trackingDt;
+                advancePosition(trackingDt, FOLLOW_FREQUENCY);
             } else if (coasting) {
                 float edge = position < 0f ? 0f : position > lastSlot ? lastSlot : position;
                 float overflow = position - edge;
@@ -104,11 +99,14 @@ final class DockSpring {
                     velocity *= decay;
                 }
             } else {
-                velocity += (CLICK_STIFFNESS * (target - position) - CLICK_DAMPING * velocity) * moveDt;
-                position += velocity * moveDt;
+                advancePosition(moveDt, CLICK_FREQUENCY);
             }
-            tailVelocity += (300f * (position - tailPosition) - 30f * tailVelocity) * trackingDt;
-            tailPosition += tailVelocity * trackingDt;
+            float tailOffset = tailPosition - position;
+            float tailSpeed = approachingVelocity(tailOffset, tailVelocity, TAIL_FREQUENCY);
+            float tailChange = (tailSpeed + TAIL_FREQUENCY * tailOffset) * trackingDt;
+            float tailDecay = (float)Math.exp(-TAIL_FREQUENCY * trackingDt);
+            tailPosition = position + (tailOffset + tailChange) * tailDecay;
+            tailVelocity = (tailSpeed - TAIL_FREQUENCY * tailChange) * tailDecay;
             float pressTime = scaleTarget > 1f ? PRESS_TIME_MULTIPLIER : RELEASE_TIME_MULTIPLIER;
             float stiffness = PRESS_STIFFNESS / (pressTime * pressTime), damping = PRESS_DAMPING / pressTime;
             scaleVelocity += (stiffness * (scaleTarget - scale) - damping * scaleVelocity) * dt; scale += scaleVelocity * dt;
@@ -132,5 +130,21 @@ final class DockSpring {
                 && Math.abs(trackingHeight - 1f) < .001f && Math.abs(trackingHeightVelocity) < .01f
                 && Math.abs(barTarget - bar) < .001f && Math.abs(barVelocity) < .01f) { snap(); return false; }
         return true;
+    }
+
+    private static float approachingVelocity(float offset, float speed, float frequency) {
+        // A fast follow can arrive with more momentum than the remaining click distance.
+        // Reduce approaching velocity, never jump position or erase the trailing shape.
+        return offset * speed <= 0f
+                ? Math.copySign(Math.min(Math.abs(speed), frequency * Math.abs(offset)), speed) : speed;
+    }
+
+    private void advancePosition(float seconds, float frequency) {
+        float offset = position - target;
+        float speed = approachingVelocity(offset, velocity, frequency);
+        float change = (speed + frequency * offset) * seconds;
+        float decay = (float)Math.exp(-frequency * seconds);
+        position = target + (offset + change) * decay;
+        velocity = (speed - frequency * change) * decay;
     }
 }

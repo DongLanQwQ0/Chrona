@@ -300,7 +300,7 @@ public class DockNavigationCheck extends Context {
   touch(3,250,30);View.advance(1000);
   DockSpring physics=new DockSpring();physics.target=2;float maxLag=0,maxPosition=0;
   for(int i=0;i<240;i++){physics.step(1f/120);maxLag=Math.max(maxLag,physics.position-physics.tailPosition);maxPosition=Math.max(maxPosition,physics.position);}
-  require(maxLag>.1f,"Leading end moves before trailing end, creating directional stretch");require(maxPosition>2f,"Position spring has bounded elastic overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.tailPosition-2)<.002f,"Both ends settle rather than leaving a long ribbon");
+  require(maxLag>.1f,"Leading end moves before trailing end, creating directional stretch");require(maxPosition<=2.002f,"Click converges without oscillating across its target");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.tailPosition-2)<.002f,"Both ends settle rather than leaving a long ribbon");
   DockSpring fast=new DockSpring();fast.press(true);for(int i=0;i<12;i++)fast.step(1f/120);
   DockSpring tap=new DockSpring();tap.press(true);tap.step(.008f);tap.releaseWithPulse();float peak=1;
   for(int i=0;i<180;i++){tap.step(1f/120);peak=Math.max(peak,tap.scale);}
@@ -342,6 +342,13 @@ public class DockNavigationCheck extends Context {
    require(overflow>.01f&&overflow<2f&&!hardThrow.coasting,"Extreme throw still converges: edge="+direction+" speed="+speed+" peak="+overflow+" coasting="+hardThrow.coasting);
   }
   System.out.println("Moderate edge throw peak excess: "+(farthest-2f)+" slots");
+  for(float pace:new float[]{.5f,1f})for(float distance:new float[]{1f,4f}){
+   DockSpring distant=new DockSpring();distant.movementSpeed=pace;distant.follow(distance,0f);distant.press(true);
+   for(int i=0;i<10;i++)distant.step(1f/120f);
+   distant.press(false);distant.releaseWithPulse();float peakPosition=distant.position;
+   for(int i=0;i<240;i++){distant.step(1f/120f);peakPosition=Math.max(peakPosition,distant.position);}
+   require(peakPosition<=distance+.002f,"Distant tap must not oscillate past its target: pace="+pace+" distance="+distance+" peak="+peakPosition);
+  }
   for(float span:new float[]{1f,2f,4f}){
    DockSpring clickReference=new DockSpring();clickReference.target=span;float measuredPeak=0f;
    for(int i=0;i<240;i++){clickReference.step(1f/240f);measuredPeak=Math.max(measuredPeak,clickReference.velocity);}
@@ -350,6 +357,17 @@ public class DockNavigationCheck extends Context {
   }
   DockSpring naturalRelease=new DockSpring();naturalRelease.coast(4f,2f);
   require(naturalRelease.velocity==4f,"Moderate release is no longer unconditionally halved");
+  DockSpring releasedNormal=new DockSpring(),releasedHalf=new DockSpring();releasedHalf.movementSpeed=.5f;
+  releasedNormal.position=releasedHalf.position=1f;releasedNormal.coast(4f,10f);releasedHalf.coast(4f,10f);
+  for(int i=0;i<240;i++){releasedNormal.step(1f/120f);releasedHalf.step(1f/120f);}
+  require(Math.abs(releasedNormal.position-releasedHalf.position)<.001f&&Math.abs(releasedNormal.tailPosition-releasedHalf.tailPosition)<.001f,
+    "Release coast, trailing end and final settling all use normal time on every selection bar");
+  releasedHalf.coast(100f,2f);
+  require(Math.abs(releasedHalf.velocity-DockSpring.clickPeakSpeed(2f))<.001f,"All rails share a normal-time release and click-speed ceiling");
+  DockSpring tapNormal=new DockSpring(),tapHalf=new DockSpring();tapHalf.movementSpeed=.5f;
+  tapNormal.target=tapHalf.target=3f;tapNormal.releaseWithPulse();tapHalf.releaseWithPulse();
+  for(int i=0;i<30;i++){tapNormal.step(1f/120f);tapHalf.step(1f/120f);}
+  require(Math.abs(tapNormal.position-tapHalf.position)<.001f,"Ordinary tap release also settles at normal speed on all rails");
   DockSpring quickRebound=new DockSpring();quickRebound.position=2.2f;quickRebound.coast(0f,2f);
   float oldOffset=.2f,oldVelocity=0f;int oldCross=0,newCross=0;
   for(int i=1;i<180;i++){
