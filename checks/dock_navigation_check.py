@@ -321,12 +321,12 @@ public class DockNavigationCheck extends Context {
   require(Math.abs(tracking.position-2f)<.002f&&Math.abs(tracking.trackingHeight-1f)<.002f,"Stopped follow restores full height");
   init();android.view.VelocityTracker.velocity=2500;touch(0,25,35);touch(2,150,35);touch(1,150,100);
   var springField=DockNavigationLayout.class.getDeclaredField("spring");springField.setAccessible(true);DockSpring transferred=(DockSpring)springField.get(dock);
-  require(Math.abs(transferred.velocity-12.5f)<.001f,"Release keeps half the measured physical finger momentum");require(selected.size()==1&&transferred.coasting,"Predicted page begins during free coast");
+  require(Math.abs(transferred.velocity-DockSpring.clickPeakSpeed(2))<.001f,"Fast release is capped at full-rail click peak speed");require(selected.size()==1&&transferred.coasting,"Predicted page begins during free coast");
   View.advance(2500);require(selected.size()==1,"Coast completion never switches the page a second time");
   init();android.view.VelocityTracker.velocity=-1800;touch(0,240,35);touch(2,140,35);touch(1,140,100);
-  require(Math.abs(((DockSpring)springField.get(dock)).velocity+9f)<.001f,"Reverse release keeps sign with half momentum");android.view.VelocityTracker.velocity=0;
-  DockSpring forward=new DockSpring();forward.position=1;forward.coast(8,4);
-  DockSpring reverse=new DockSpring();reverse.position=1;reverse.coast(-8,4);
+  require(Math.abs(((DockSpring)springField.get(dock)).velocity+DockSpring.clickPeakSpeed(2))<.001f,"Reverse release keeps sign at click speed cap");android.view.VelocityTracker.velocity=0;
+  DockSpring forward=new DockSpring();forward.position=1;forward.coast(4,4);
+  DockSpring reverse=new DockSpring();reverse.position=1;reverse.coast(-4,4);
   for(int i=0;i<400;i++){forward.step(1f/120);reverse.step(1f/120);}
   require(forward.target==2&&reverse.target==0,"Identical release position selects different final items from velocity");
   DockSpring nearEdge=new DockSpring(),farEdge=new DockSpring();nearEdge.position=1.8f;farEdge.position=1f;nearEdge.coast(1f,2f);farEdge.coast(1f,2f);
@@ -334,7 +334,7 @@ public class DockNavigationCheck extends Context {
   require(nearEdge.velocity<farEdge.velocity&&nearEdge.position<2f,"Coast resistance increases before reaching boundary");
   DockSpring thrown=new DockSpring();thrown.position=2;thrown.coast(12,2);float farthest=2;
   for(int i=0;i<500;i++){thrown.step(1f/120);farthest=Math.max(farthest,thrown.position);}
-  require(farthest>2.12f&&farthest<2.3f&&!thrown.coasting&&thrown.position<=2.01f,"Half-momentum edge throw retains a visible soft recoil");
+  require(farthest>2.12f&&farthest<2.3f&&!thrown.coasting&&thrown.position<=2.01f,"Faster release and rebound retain a restrained visible recoil");
   for(float direction:new float[]{-1f,1f})for(float speed:new float[]{1f,.5f}){
    DockSpring hardThrow=new DockSpring();hardThrow.position=direction>0?2f:0f;hardThrow.movementSpeed=speed;
    hardThrow.coast(direction*100f,2f);float overflow=0f;
@@ -342,6 +342,23 @@ public class DockNavigationCheck extends Context {
    require(overflow>.01f&&overflow<2f&&!hardThrow.coasting,"Extreme throw still converges: edge="+direction+" speed="+speed+" peak="+overflow+" coasting="+hardThrow.coasting);
   }
   System.out.println("Moderate edge throw peak excess: "+(farthest-2f)+" slots");
+  for(float span:new float[]{1f,2f,4f}){
+   DockSpring clickReference=new DockSpring();clickReference.target=span;float measuredPeak=0f;
+   for(int i=0;i<240;i++){clickReference.step(1f/240f);measuredPeak=Math.max(measuredPeak,clickReference.velocity);}
+   require(Math.abs(measuredPeak-DockSpring.clickPeakSpeed(span))/measuredPeak<.05f,
+     "Release ceiling derives from the actual click spring for span="+span);
+  }
+  DockSpring naturalRelease=new DockSpring();naturalRelease.coast(4f,2f);
+  require(naturalRelease.velocity==4f,"Moderate release is no longer unconditionally halved");
+  DockSpring quickRebound=new DockSpring();quickRebound.position=2.2f;quickRebound.coast(0f,2f);
+  float oldOffset=.2f,oldVelocity=0f;int oldCross=0,newCross=0;
+  for(int i=1;i<180;i++){
+   oldVelocity+=(-180f*oldOffset-18f*oldVelocity)/120f;oldOffset+=oldVelocity/120f;
+   quickRebound.step(1f/120f);
+   if(oldCross==0&&oldOffset<=0f)oldCross=i;
+   if(newCross==0&&quickRebound.position<=2f)newCross=i;
+  }
+  require(newCross>0&&oldCross>0&&newCross<oldCross*.8f,"Rebound returns at least 20 percent sooner without increasing its damping ratio");
   init();DockSpring edges=(DockSpring)springField.get(dock);var apply=DockNavigationLayout.class.getDeclaredMethod("applySpring");apply.setAccessible(true);
   edges.position=edges.tailPosition=3.5f;apply.invoke(dock);center();close(GradientDrawable.lastLeft,250,"Right throw pins inner end half a standard width inside");
   require(GradientDrawable.lastRight>350,"Right outer end can stretch beyond half width");
@@ -389,9 +406,9 @@ public class DockNavigationCheck extends Context {
   for(int i=0;i<12;i++){fingerFast.step(1f/120f);fingerHalf.step(1f/120f);}
   require(Math.abs(fingerFast.position-fingerHalf.position)<.001f&&Math.abs(fingerFast.tailPosition-fingerHalf.tailPosition)<.001f,
     "Physical finger tracking does not inherit the slower automatic selection timing");
-  init();touch(0,250,35);View.advance(180);
-  require(((DockSpring)springField.get(dock)).scale<1.18f&&highlight().getScaleX()<1.31f,
-    "Ordinary tap preview stays compact even when switching across the full dock");
+  init();touch(0,250,35);View.advance(16);
+  require(((DockSpring)springField.get(dock)).scaleTarget==1.5f&&((DockSpring)springField.get(dock)).scale>1f,
+    "All selection bars begin full expansion on the first pressed frame without waiting for long press");
   touch(3,250,35);View.advance(1600);
   var defaultDock=new DockNavigationLayout(c,n->{},()->{});
   require(((DockSpring)springField.get(defaultDock)).movementSpeed==.5f,"Non-home selection bars default to half-speed highlight movement");
@@ -403,7 +420,7 @@ public class DockNavigationCheck extends Context {
   require(slow1<slow2&&slow2<slow3&&slow3-slow2<slow2-slow1,"Inner end decelerates smoothly instead of stopping abruptly");
   require(Math.abs(DockSpring.softUpperBoundary(200.01f,250,50)-200.01f)<.001f,"Soft approach joins regular motion continuously");
   DockSpring prediction=new DockSpring();prediction.position=1;prediction.velocity=3;
-  require(prediction.predictLanding(8,4)==2&&prediction.predictLanding(-8,4)==0,"Prediction includes half-momentum landing");
+  require(prediction.predictLanding(4,4)==2&&prediction.predictLanding(-4,4)==0,"Prediction includes capped-momentum landing");
   require(prediction.position==1&&prediction.velocity==3,"Prediction does not mutate displayed state or velocity");
   DockSpring predictedThrow=new DockSpring();predictedThrow.position=1.9f;int predictedLanding=predictedThrow.predictLanding(12f,2f);predictedThrow.coast(12f,2f);
   for(int i=0;i<1000;i++)predictedThrow.step(1f/120);
@@ -445,7 +462,7 @@ public class DockNavigationCheck extends Context {
   init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});dock.setHighlightMovementSpeed(1f);new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
   for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.setSelectedIndex(0);
   android.view.VelocityTracker.velocity=900;touch(0,35,25);touch(2,35,140);touch(1,100,140);
-  require(Math.abs(((DockSpring)springField.get(dock)).velocity-4.5f)<.001f,"Vertical release transfers half physical Y momentum");
+  require(Math.abs(((DockSpring)springField.get(dock)).velocity-9f)<.001f,"Vertical release keeps measured momentum below the speed cap");
   require(selected.size()==1,"Vertical outside release starts predicted page immediately");android.view.VelocityTracker.velocity=0;
   init();touch(0,245,35);close(center(),50,"Press preview starts at current visual position");View.advance(32);
   require(center()>50&&center()<245&&selected.isEmpty(),"Press preview moves before long press without navigating");

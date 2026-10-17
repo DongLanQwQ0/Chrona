@@ -17,11 +17,28 @@ final class DockSpring {
     static final float COAST_DAMPING = 7.5f;
     private static final float EDGE_APPROACH_SLOTS = .6f;
     private static final float EDGE_APPROACH_DAMPING = 18f;
-    private static final float EDGE_RETURN_STIFFNESS = 180f, EDGE_RETURN_DAMPING = 18f;
-    private static final float RELEASE_MOMENTUM = .5f;
+    private static final float CLICK_STIFFNESS = 180f, CLICK_DAMPING = 20f;
+    // Time-compress the previous rebound by 1.5, preserving its damping ratio.
+    private static final float REBOUND_SPEED = 1.5f;
+    private static final float EDGE_RETURN_STIFFNESS = 180f * REBOUND_SPEED * REBOUND_SPEED;
+    private static final float EDGE_RETURN_DAMPING = 18f * REBOUND_SPEED;
     boolean coasting;
     float lastSlot;
-    void coast(float speed, float end) { following = false; velocity = speed * RELEASE_MOMENTUM; lastSlot = end; coasting = true; }
+    static float clickPeakSpeed(float distance) {
+        double decay = CLICK_DAMPING / 2d;
+        double frequency = Math.sqrt(CLICK_STIFFNESS - decay * decay);
+        double peakTime = Math.atan(frequency / decay) / frequency;
+        return Math.abs(distance) * (float)(CLICK_STIFFNESS / frequency
+                * Math.exp(-decay * peakTime) * Math.sin(frequency * peakTime));
+    }
+    void coast(float speed, float end) {
+        following = false;
+        // Slots share the same movement time scale as click motion, so the visual
+        // speed ceiling matches a click across this rail, including half-speed bars.
+        float limit = clickPeakSpeed(end);
+        velocity = Math.max(-limit, Math.min(limit, speed));
+        lastSlot = end; coasting = true;
+    }
     void follow(float value, float speed) { following = true; coasting = false; target = value; }
     int predictLanding(float speed, float end) {
         DockSpring prediction = new DockSpring(); prediction.movementSpeed = movementSpeed;
@@ -40,9 +57,6 @@ final class DockSpring {
     float scale = 1f, scaleVelocity, scaleTarget = 1f;
     float bar = 1f, barVelocity, barTarget = 1f;
     float trackingHeight = 1f, trackingHeightVelocity;
-    void previewPress() {
-        tapPulse = false; scaleTarget = TAP_SCALE; barTarget = 1.03f;
-    }
     void press(boolean pressed) {
         tapPulse = false;
         if (!pressed) { following = false; leanTarget = crossLeanTarget = 0f; }
@@ -90,7 +104,7 @@ final class DockSpring {
                     velocity *= decay;
                 }
             } else {
-                velocity += (180f * (target - position) - 20f * velocity) * moveDt;
+                velocity += (CLICK_STIFFNESS * (target - position) - CLICK_DAMPING * velocity) * moveDt;
                 position += velocity * moveDt;
             }
             tailVelocity += (300f * (position - tailPosition) - 30f * tailVelocity) * trackingDt;

@@ -483,7 +483,7 @@ final class DockNavigationLayout extends FrameLayout {
             // Waiting for Android's long-press timeout makes a pressed pill feel detached.
             spring.follow(nearest(axis(downX, downY)), 0f);
             leanToward(event);
-            spring.previewPress(); animateTo(spring.target);
+            press(true);
             getParent().requestDisallowInterceptTouchEvent(true);
             postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
         } else if (action == MotionEvent.ACTION_POINTER_DOWN) {
