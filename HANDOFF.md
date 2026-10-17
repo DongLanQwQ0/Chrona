@@ -1,4 +1,12 @@
-# 当前开发：0.15.18 / 180 · 取消松手限速，保留部分越界
+# 当前开发：0.15.19 / 181 · 已确认动效下的绘制性能优化
+
+用户同意只优化绘制性能，0.15.18动效基线冻结。只修改UiStyle.AcrylicSurfaceDrawable：嵌套亚克力面板/弹窗内的玻璃底板及关闭亚克力时的底板，在像素输入不变时复用已有软件纹理；独立实时采样壁纸的栏仍每次重绘。bounds、调色、混合度、selected/outline、alpha、colorFilter与亚克力开关会使缓存失效。高光/文字仍独立硬件节点。DockSpring、DockNavigationLayout、DashboardDockChrome未修改。
+
+新增只读原生acrylic_raster验收：RenderNode硬件Canvas录制触发生产背景路径，以Bitmap.getGenerationId统计实际纹理改写。安装前0.15.18相同100次重复绘制改写100次，CPU中位1.308334ms/P90=1.67901；0.15.19改写0次，中位0.006198ms/P90=0.007291。该量度仅包含背景软件栅格化及display-list录制，不含GPU显示、不是全应用帧率。首帧1280×168底板PNG逐像素完全一致，mix/alpha/bounds变化及退出嵌套恢复实时采样均通过。
+
+release/androidTest构建及lint通过，壁纸采样10项、Dock协调36项通过。USB已安装181，7秒筛选栏首尾持有、远点短按与双向120ms甩动录屏，未见白线，高光溢出与尾部保留。证据build/device-0.15.19/，未改真实日程；备份build/backups/20261017-acrylic-raster-cache/。其他全应用卡顿热点未归因，不能宣称稳定120fps。
+
+# 上轮开发：0.15.18 / 180 · 取消松手限速，保留部分越界
 
 按最新明确要求取消点击速度上限。DockSpring.coast直接velocity=speed，删除clickPeakSpeed；releasedMotion正常时间、前后沿、放大、点击无抖动和405/27边缘回弹均不变。绘制层原有tanh允许部分越过轨道、限制最大视觉伸出，不改成框内裁切；检查没有恢复fullWidth内移限幅。
 

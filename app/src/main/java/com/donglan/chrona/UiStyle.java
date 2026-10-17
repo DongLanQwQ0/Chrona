@@ -515,6 +515,7 @@ public final class UiStyle {
         private boolean outline;
         private Bitmap railSurface;
         private Canvas railCanvas;
+        private boolean railDirty = true, railStatic, railAcrylic;
         private final android.graphics.Rect railSource = new android.graphics.Rect();
         private static final int RAIL_RASTER_BLOCK_PX = 256;
 
@@ -537,14 +538,25 @@ public final class UiStyle {
             if (this.selected == selected && this.outline == outline) return;
             this.selected = selected;
             this.outline = outline;
+            railDirty = true;
             applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface, calendarColor);
             invalidateSelf();
         }
 
+        @Override protected void onBoundsChange(android.graphics.Rect bounds) {
+            railDirty = true;
+        }
+
         @Override public void draw(android.graphics.Canvas canvas) {
+            Palette palette = colors(host.getContext());
+            boolean acrylic = ThemeStore.acrylicEnabled(host.getContext());
+            updateBlurredSurface(host, palette);
             if (host instanceof DockNavigationLayout && canvas.isHardwareAccelerated()) {
                 android.graphics.Rect bounds = getBounds();
                 if (bounds.isEmpty()) return;
+                // Nested glass inherits its parent's backdrop: its plate pixels depend on
+                // style and bounds, not the moving highlight or screen position.
+                boolean staticRaster = !acrylic || insideAcrylicSurface(host) || insideAcrylicDialog(host);
                 if (railSurface == null || railSurface.getWidth() < bounds.width()
                         || railSurface.getHeight() < bounds.height()) {
                     // The dashboard dock changes width continuously. Reserve reusable blocks
@@ -554,12 +566,18 @@ public final class UiStyle {
                     int rasterHeight = railSurface == null ? bounds.height() : Math.max(bounds.height(), railSurface.getHeight());
                     railSurface = Bitmap.createBitmap(rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888);
                     railCanvas = new Canvas(railSurface);
+                    railDirty = true;
                 }
-                railSurface.eraseColor(Color.TRANSPARENT);
-                int save = railCanvas.save();
-                railCanvas.translate(-bounds.left, -bounds.top);
-                drawAcrylic(railCanvas);
-                railCanvas.restoreToCount(save);
+                if (!staticRaster || !railStatic || railAcrylic != acrylic || railDirty) {
+                    railSurface.eraseColor(Color.TRANSPARENT);
+                    int save = railCanvas.save();
+                    railCanvas.translate(-bounds.left, -bounds.top);
+                    drawAcrylic(railCanvas, palette, acrylic);
+                    railCanvas.restoreToCount(save);
+                    railDirty = false;
+                    railStatic = staticRaster;
+                    railAcrylic = acrylic;
+                }
                 // Rasterize only the static glass plate: GPU round-rect gradients can
                 // develop a centre seam while scaling. Text and the overflowing highlight
                 // remain independent hardware nodes; the dock itself has no bitmap layer.
@@ -567,13 +585,11 @@ public final class UiStyle {
                 canvas.drawBitmap(railSurface, railSource, bounds, null);
                 return;
             }
-            drawAcrylic(canvas);
+            drawAcrylic(canvas, palette, acrylic);
         }
 
-        private void drawAcrylic(android.graphics.Canvas canvas) {
+        private void drawAcrylic(android.graphics.Canvas canvas, Palette palette, boolean acrylic) {
             boolean backdropReady = false;
-            Palette palette = colors(host.getContext());
-            boolean acrylic = ThemeStore.acrylicEnabled(host.getContext());
             if (acrylic && (insideAcrylicSurface(host) || insideAcrylicDialog(host))) {
                 // The ancestor already drew a sampled surface or owns a blurred dialog window.
                 backdropReady = true;
@@ -585,7 +601,6 @@ public final class UiStyle {
                 backdropReady = backdrop != null && backdrop.drawBlurredWallpaper(canvas, host,
                         getBounds(), dp(host, radius), palette);
             }
-            updateBlurredSurface(host, palette);
             // A translucent mix is only safe when the matching blurred wallpaper was actually
             // drawn underneath. Until then, use the opaque fallback; cache completion invalidates
             // acrylic hosts so they switch to the mixed surface on their next frame.
@@ -617,6 +632,7 @@ public final class UiStyle {
             lastText = palette.text;
             lastDark = dark;
             lastSelected = selected;
+            railDirty = true;
             // A gentle theme-aware RGB shift makes the wallpaper blur read through the tint:
             // dark surfaces lift toward the text color; light surfaces settle toward black.
             float toneShift = dark ? .20f : .12f;
@@ -637,11 +653,13 @@ public final class UiStyle {
         }
 
         @Override public void setAlpha(int alpha) {
+            if (drawableAlpha != alpha) railDirty = true;
             drawableAlpha = alpha;
             blurredSurface.setAlpha(alpha);
             fallbackSurface.setAlpha(alpha);
         }
         @Override public void setColorFilter(android.graphics.ColorFilter filter) {
+            railDirty = true;
             blurredSurface.setColorFilter(filter);
             fallbackSurface.setColorFilter(filter);
         }
