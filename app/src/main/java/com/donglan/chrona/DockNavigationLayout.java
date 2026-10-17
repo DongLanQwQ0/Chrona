@@ -360,7 +360,9 @@ final class DockNavigationLayout extends FrameLayout {
             // The leading end follows the finger, while the tail catches up. Limit the
             // extra length in physical pixels so unequal labels cannot produce a ribbon.
             float lag = x - centerAt(spring.tailPosition);
-            float stretch = Math.copySign(DockSpring.outwardExtension(Math.abs(lag), standardWidth * MAX_TAIL_EXTENSION), lag);
+            float heldAmount = Math.max(0f, Math.min(1f, (emphasis - DockSpring.TAP_SCALE) / (1.5f - DockSpring.TAP_SCALE)));
+            float tailExtension = .12f + (MAX_TAIL_EXTENSION - .12f) * heldAmount;
+            float stretch = Math.copySign(DockSpring.outwardExtension(Math.abs(lag), standardWidth * tailExtension), lag);
             x -= stretch / 2f;
             float width = standardWidth * emphasis + Math.abs(stretch);
             float height = (vertical() ? cell.getWidth() : cell.getHeight()) * emphasis * spring.trackingHeight;
@@ -413,6 +415,7 @@ final class DockNavigationLayout extends FrameLayout {
         removeCallbacks(longPress);
         cancelChildTouch();
         dragging = true;
+        press(true);
         getParent().requestDisallowInterceptTouchEvent(true);
         moveHighlight(x);
     }
@@ -480,7 +483,7 @@ final class DockNavigationLayout extends FrameLayout {
             // Waiting for Android's long-press timeout makes a pressed pill feel detached.
             spring.follow(nearest(axis(downX, downY)), 0f);
             leanToward(event);
-            press(true);
+            spring.previewPress(); animateTo(spring.target);
             getParent().requestDisallowInterceptTouchEvent(true);
             postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
         } else if (action == MotionEvent.ACTION_POINTER_DOWN) {

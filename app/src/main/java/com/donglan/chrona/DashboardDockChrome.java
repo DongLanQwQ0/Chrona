@@ -16,6 +16,7 @@ final class DashboardDockChrome {
     private static final float CENTER_WIDTH_GAIN = .06f;
     private static final int MAX_WIDTH_GAIN_DP = 16, EXIT_BLUR_DP = 18;
     static final int BLUR_GUTTER_DP = EXIT_BLUR_DP * 2;
+    private static final long EXIT_DURATION_MS = 460L;
     private final DockNavigationLayout dock;
     private final FrameLayout mobileHost;
     private final View captureHost, captureButton;
@@ -41,6 +42,8 @@ final class DashboardDockChrome {
     }
 
     void setHome(boolean value) {
+        // A page may finish before its deliberately slower chrome exit.
+        if (animator != null && home == value && UiMotion.isEnabled()) return;
         cancel(); home = value; apply(value ? 1f : 0f);
     }
 
@@ -59,7 +62,8 @@ final class DashboardDockChrome {
             apply(target); return;
         }
         ValueAnimator motion = ValueAnimator.ofFloat(homeFraction, target);
-        animator = motion; motion.setDuration(duration); motion.setInterpolator(UiMotion.SETTLE);
+        animator = motion; motion.setDuration(value ? duration : Math.max(duration, EXIT_DURATION_MS));
+        motion.setInterpolator(value ? UiMotion.SETTLE : input -> input * input * (3f - 2f * input));
         motion.addUpdateListener(frame -> {
             if (!UiMotion.isEnabled()) { setHome(value); return; }
             apply((Float) frame.getAnimatedValue());

@@ -15,12 +15,13 @@ final class DockSpring {
     float tailPosition, tailVelocity;
     float lean, leanVelocity, leanTarget, crossLean, crossLeanVelocity, crossLeanTarget;
     static final float COAST_DAMPING = 7.5f;
-    private static final float EDGE_APPROACH_SLOTS = .25f;
-    private static final float EDGE_APPROACH_DAMPING = 70f, EDGE_SPEED_DRAG = 5f;
-    private static final float EDGE_RETURN_STIFFNESS = 600f, EDGE_RETURN_DAMPING = 80f;
+    private static final float EDGE_APPROACH_SLOTS = .6f;
+    private static final float EDGE_APPROACH_DAMPING = 18f;
+    private static final float EDGE_RETURN_STIFFNESS = 180f, EDGE_RETURN_DAMPING = 18f;
+    private static final float RELEASE_MOMENTUM = .5f;
     boolean coasting;
     float lastSlot;
-    void coast(float speed, float end) { following = false; velocity = speed; lastSlot = end; coasting = true; }
+    void coast(float speed, float end) { following = false; velocity = speed * RELEASE_MOMENTUM; lastSlot = end; coasting = true; }
     void follow(float value, float speed) { following = true; coasting = false; target = value; }
     int predictLanding(float speed, float end) {
         DockSpring prediction = new DockSpring(); prediction.movementSpeed = movementSpeed;
@@ -39,6 +40,9 @@ final class DockSpring {
     float scale = 1f, scaleVelocity, scaleTarget = 1f;
     float bar = 1f, barVelocity, barTarget = 1f;
     float trackingHeight = 1f, trackingHeightVelocity;
+    void previewPress() {
+        tapPulse = false; scaleTarget = TAP_SCALE; barTarget = 1.03f;
+    }
     void press(boolean pressed) {
         tapPulse = false;
         if (!pressed) { following = false; leanTarget = crossLeanTarget = 0f; }
@@ -66,10 +70,11 @@ final class DockSpring {
         float dt = Math.min(.064f, Math.max(0f, seconds)) / steps;
         float moveDt = dt * movementSpeed;
         for (int i = 0; i < steps; i++) {
+            float trackingDt = following ? dt : moveDt;
             if (following) {
                 // Retarget the existing spring, never teleport to a new touch sample.
-                velocity += (1800f * (target - position) - 70f * velocity) * moveDt;
-                position += velocity * moveDt;
+                velocity += (1800f * (target - position) - 70f * velocity) * trackingDt;
+                position += velocity * trackingDt;
             } else if (coasting) {
                 float edge = position < 0f ? 0f : position > lastSlot ? lastSlot : position;
                 float overflow = position - edge;
@@ -79,10 +84,7 @@ final class DockSpring {
                 } else {
                     float distance = velocity > 0f ? lastSlot - position : position;
                     float edgeDrag = Math.max(0f, 1f - distance / EDGE_APPROACH_SLOTS);
-                    // Dissipate fast throws before crossing the edge, rather than letting
-                    // them travel far outside and relying on a visibly large spring-back.
-                    float resistance = COAST_DAMPING
-                            + (EDGE_APPROACH_DAMPING + EDGE_SPEED_DRAG * Math.abs(velocity)) * edgeDrag * edgeDrag;
+                    float resistance = COAST_DAMPING + EDGE_APPROACH_DAMPING * edgeDrag * edgeDrag;
                     float decay = (float) Math.exp(-resistance * moveDt);
                     position += velocity * (1f - decay) / resistance;
                     velocity *= decay;
@@ -91,8 +93,8 @@ final class DockSpring {
                 velocity += (180f * (target - position) - 20f * velocity) * moveDt;
                 position += velocity * moveDt;
             }
-            tailVelocity += (300f * (position - tailPosition) - 30f * tailVelocity) * moveDt;
-            tailPosition += tailVelocity * moveDt;
+            tailVelocity += (300f * (position - tailPosition) - 30f * tailVelocity) * trackingDt;
+            tailPosition += tailVelocity * trackingDt;
             float pressTime = scaleTarget > 1f ? PRESS_TIME_MULTIPLIER : RELEASE_TIME_MULTIPLIER;
             float stiffness = PRESS_STIFFNESS / (pressTime * pressTime), damping = PRESS_DAMPING / pressTime;
             scaleVelocity += (stiffness * (scaleTarget - scale) - damping * scaleVelocity) * dt; scale += scaleVelocity * dt;

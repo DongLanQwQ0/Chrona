@@ -321,12 +321,12 @@ public class DockNavigationCheck extends Context {
   require(Math.abs(tracking.position-2f)<.002f&&Math.abs(tracking.trackingHeight-1f)<.002f,"Stopped follow restores full height");
   init();android.view.VelocityTracker.velocity=2500;touch(0,25,35);touch(2,150,35);touch(1,150,100);
   var springField=DockNavigationLayout.class.getDeclaredField("spring");springField.setAccessible(true);DockSpring transferred=(DockSpring)springField.get(dock);
-  require(Math.abs(transferred.velocity-25f)<.001f,"Release transfers measured physical finger velocity at 1:1 scale");require(selected.size()==1&&transferred.coasting,"Predicted page begins during free coast");
+  require(Math.abs(transferred.velocity-12.5f)<.001f,"Release keeps half the measured physical finger momentum");require(selected.size()==1&&transferred.coasting,"Predicted page begins during free coast");
   View.advance(2500);require(selected.size()==1,"Coast completion never switches the page a second time");
   init();android.view.VelocityTracker.velocity=-1800;touch(0,240,35);touch(2,140,35);touch(1,140,100);
-  require(Math.abs(((DockSpring)springField.get(dock)).velocity+18f)<.001f,"Reverse release keeps measured velocity sign");android.view.VelocityTracker.velocity=0;
-  DockSpring forward=new DockSpring();forward.position=1;forward.coast(4,4);
-  DockSpring reverse=new DockSpring();reverse.position=1;reverse.coast(-4,4);
+  require(Math.abs(((DockSpring)springField.get(dock)).velocity+9f)<.001f,"Reverse release keeps sign with half momentum");android.view.VelocityTracker.velocity=0;
+  DockSpring forward=new DockSpring();forward.position=1;forward.coast(8,4);
+  DockSpring reverse=new DockSpring();reverse.position=1;reverse.coast(-8,4);
   for(int i=0;i<400;i++){forward.step(1f/120);reverse.step(1f/120);}
   require(forward.target==2&&reverse.target==0,"Identical release position selects different final items from velocity");
   DockSpring nearEdge=new DockSpring(),farEdge=new DockSpring();nearEdge.position=1.8f;farEdge.position=1f;nearEdge.coast(1f,2f);farEdge.coast(1f,2f);
@@ -334,12 +334,12 @@ public class DockNavigationCheck extends Context {
   require(nearEdge.velocity<farEdge.velocity&&nearEdge.position<2f,"Coast resistance increases before reaching boundary");
   DockSpring thrown=new DockSpring();thrown.position=2;thrown.coast(12,2);float farthest=2;
   for(int i=0;i<500;i++){thrown.step(1f/120);farthest=Math.max(farthest,thrown.position);}
-  require(farthest>2.01f&&farthest<2.12f&&!thrown.coasting&&thrown.position<=2.01f,"Edge dissipates a throw early and returns without a large bounce");
+  require(farthest>2.12f&&farthest<2.3f&&!thrown.coasting&&thrown.position<=2.01f,"Half-momentum edge throw retains a visible soft recoil");
   for(float direction:new float[]{-1f,1f})for(float speed:new float[]{1f,.5f}){
    DockSpring hardThrow=new DockSpring();hardThrow.position=direction>0?2f:0f;hardThrow.movementSpeed=speed;
    hardThrow.coast(direction*100f,2f);float overflow=0f;
    for(int i=0;i<1500;i++){hardThrow.step(1f/120f);overflow=Math.max(overflow,direction>0?hardThrow.position-2f:-hardThrow.position);}
-   require(overflow>.01f&&overflow<.25f&&!hardThrow.coasting,"Fast outward throw stays below quarter-slot excess: edge="+direction+" speed="+speed+" peak="+overflow+" coasting="+hardThrow.coasting);
+   require(overflow>.01f&&overflow<2f&&!hardThrow.coasting,"Extreme throw still converges: edge="+direction+" speed="+speed+" peak="+overflow+" coasting="+hardThrow.coasting);
   }
   System.out.println("Moderate edge throw peak excess: "+(farthest-2f)+" slots");
   init();DockSpring edges=(DockSpring)springField.get(dock);var apply=DockNavigationLayout.class.getDeclaredMethod("applySpring");apply.setAccessible(true);
@@ -378,12 +378,21 @@ public class DockNavigationCheck extends Context {
   require(cover1>0f&&cover1<cover2&&cover2<cover3&&cover3<1f,"Coverage tint interpolates continuously across a highlight edge");
   require(DockSpring.coverage(50f,0f,100f,20f)==1f&&DockSpring.coverage(130f,0f,100f,20f)==0f,
     "Coverage resolves cleanly to active and inactive endpoints");
-  DockSpring normalSpeed=new DockSpring(),halfSpeed=new DockSpring();normalSpeed.follow(2f,0f);halfSpeed.follow(2f,0f);halfSpeed.movementSpeed=.5f;
+  DockSpring normalSpeed=new DockSpring(),halfSpeed=new DockSpring();normalSpeed.target=2f;halfSpeed.target=2f;halfSpeed.movementSpeed=.5f;
   for(int i=0;i<120;i++){normalSpeed.step(1f/240f);halfSpeed.step(1f/120f);}
   require(Math.abs(normalSpeed.position-halfSpeed.position)<.001f&&Math.abs(normalSpeed.tailPosition-halfSpeed.tailPosition)<.001f,
     "Half-speed movement reaches the same leading and trailing state in twice the wall time");
   normalSpeed.press(true);halfSpeed.press(true);normalSpeed.step(.032f);halfSpeed.step(.032f);
   require(Math.abs(normalSpeed.scale-halfSpeed.scale)<.001f,"Movement speed does not slow down press expansion");
+  DockSpring fingerFast=new DockSpring(),fingerHalf=new DockSpring();fingerHalf.movementSpeed=.5f;
+  fingerFast.follow(2f,0f);fingerHalf.follow(2f,0f);
+  for(int i=0;i<12;i++){fingerFast.step(1f/120f);fingerHalf.step(1f/120f);}
+  require(Math.abs(fingerFast.position-fingerHalf.position)<.001f&&Math.abs(fingerFast.tailPosition-fingerHalf.tailPosition)<.001f,
+    "Physical finger tracking does not inherit the slower automatic selection timing");
+  init();touch(0,250,35);View.advance(180);
+  require(((DockSpring)springField.get(dock)).scale<1.18f&&highlight().getScaleX()<1.31f,
+    "Ordinary tap preview stays compact even when switching across the full dock");
+  touch(3,250,35);View.advance(1600);
   var defaultDock=new DockNavigationLayout(c,n->{},()->{});
   require(((DockSpring)springField.get(defaultDock)).movementSpeed==.5f,"Non-home selection bars default to half-speed highlight movement");
   float a=DockSpring.outwardExtension(20,75),b=DockSpring.outwardExtension(40,75),c=DockSpring.outwardExtension(60,75);
@@ -394,7 +403,7 @@ public class DockNavigationCheck extends Context {
   require(slow1<slow2&&slow2<slow3&&slow3-slow2<slow2-slow1,"Inner end decelerates smoothly instead of stopping abruptly");
   require(Math.abs(DockSpring.softUpperBoundary(200.01f,250,50)-200.01f)<.001f,"Soft approach joins regular motion continuously");
   DockSpring prediction=new DockSpring();prediction.position=1;prediction.velocity=3;
-  require(prediction.predictLanding(4,4)==2&&prediction.predictLanding(-4,4)==0,"Prediction includes velocity-dependent landing");
+  require(prediction.predictLanding(8,4)==2&&prediction.predictLanding(-8,4)==0,"Prediction includes half-momentum landing");
   require(prediction.position==1&&prediction.velocity==3,"Prediction does not mutate displayed state or velocity");
   DockSpring predictedThrow=new DockSpring();predictedThrow.position=1.9f;int predictedLanding=predictedThrow.predictLanding(12f,2f);predictedThrow.coast(12f,2f);
   for(int i=0;i<1000;i++)predictedThrow.step(1f/120);
@@ -436,7 +445,7 @@ public class DockNavigationCheck extends Context {
   init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});dock.setHighlightMovementSpeed(1f);new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
   for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.setSelectedIndex(0);
   android.view.VelocityTracker.velocity=900;touch(0,35,25);touch(2,35,140);touch(1,100,140);
-  require(Math.abs(((DockSpring)springField.get(dock)).velocity-9)<.001f,"Vertical release transfers physical Y velocity");
+  require(Math.abs(((DockSpring)springField.get(dock)).velocity-4.5f)<.001f,"Vertical release transfers half physical Y momentum");
   require(selected.size()==1,"Vertical outside release starts predicted page immediately");android.view.VelocityTracker.velocity=0;
   init();touch(0,245,35);close(center(),50,"Press preview starts at current visual position");View.advance(32);
   require(center()>50&&center()<245&&selected.isEmpty(),"Press preview moves before long press without navigating");
