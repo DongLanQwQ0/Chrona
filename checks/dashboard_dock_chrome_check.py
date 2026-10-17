@@ -24,8 +24,8 @@ public class ValueAnimator extends Animator {
 }''',
     'android/view/animation/Interpolator.java': 'package android.view.animation;public interface Interpolator {}',
     'android/os/Build.java': 'package android.os;public class Build {public static class VERSION {public static int SDK_INT=36;}}',
-    'android/graphics/Shader.java': 'package android.graphics;public class Shader {public enum TileMode {CLAMP}}',
-    'android/graphics/RenderEffect.java': 'package android.graphics;public class RenderEffect {public float radius;public static RenderEffect createBlurEffect(float x,float y,Shader.TileMode mode){var effect=new RenderEffect();effect.radius=x;return effect;}}',
+    'android/graphics/Shader.java': 'package android.graphics;public class Shader {public enum TileMode {CLAMP,DECAL}}',
+    'android/graphics/RenderEffect.java': 'package android.graphics;public class RenderEffect {public float radius;public Shader.TileMode mode;public static RenderEffect createBlurEffect(float x,float y,Shader.TileMode mode){var effect=new RenderEffect();effect.radius=x;effect.mode=mode;return effect;}}',
     'android/view/View.java': '''package android.view;
 public class View {
  public static final int VISIBLE=0,INVISIBLE=4,IMPORTANT_FOR_ACCESSIBILITY_AUTO=0,IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS=4;
@@ -61,6 +61,7 @@ public class DockChromeCheck {
   near(button.sx,1f,"Pressed-state button retains independent scale");check(!button.enabled,"Transitioning plus cannot be tapped");
   check(dock.getWidth()==227&&dock.left==50&&dock.right==277,"Both Dock edges move while width grows only modestly");
   check(capture.effect!=null&&capture.effect.radius==9f,"Plus progressively blurs while fading out");
+  check(capture.effect.mode==android.graphics.Shader.TileMode.DECAL,"Blur samples transparent pixels outside its layer instead of repeating a bright border");
   chrome.animateHome(true,240);var returnHome=ValueAnimator.last;near(chrome.fraction(),.5f,"Reversal begins at current frame");leave.step(1f);near(chrome.fraction(),.5f,"Cancelled animator cannot force a stale endpoint");
   returnHome.step(.5f);near(chrome.fraction(),.75f,"Reverse animation continues from intermediate state");returnHome.step(1f);
   check(button.enabled&&capture.access==View.IMPORTANT_FOR_ACCESSIBILITY_AUTO,"Completed return restores click and accessibility");
@@ -84,6 +85,10 @@ public class DockChromeCheck {
   android.os.Build.VERSION.SDK_INT=30;capture.effect=null;chrome.drag(1f,false,.5f);
   check(capture.effect==null&&capture.alpha==.5f,"Pre-31 devices retain fade without calling unsupported blur APIs");
   android.os.Build.VERSION.SDK_INT=36;chrome.setHome(true);
+  for(int[] size:new int[][]{{52,14},{56,24}}){int gutter=DashboardDockChrome.BLUR_GUTTER_DP;
+   int outerSize=size[0]+2*gutter,outerRight=360-(size[1]-gutter),innerRight=outerRight-gutter;
+   check(innerRight==360-size[1]&&outerSize-2*gutter==size[0],"Blur gutter preserves original button size and screen position");
+   check(gutter>=36,"Transparent gutter surrounds all four sides of the blur input");}
   System.out.println("Dashboard Dock chrome checks passed: "+checks+" (production coordinator, UI doubles; no device rendering)");
  }
 }'''
@@ -104,6 +109,8 @@ assert 'dockChrome.drag(dockDragFrom,' in source
 assert 'dockChrome.animateHome((commit ? adjacentPage.section : section) == HOME,' in source
 assert 'dockChrome.setHome(section == HOME)' in source
 assert 'if (dockChrome != null) dockChrome.layoutMobile();' in source
+assert source.count('captureHost.setPadding(blurGutter, blurGutter, blurGutter, blurGutter)') == 2
+assert 'dp(14) - blurGutter' in source and 'dp(24) - blurGutter' in source
 style = (ROOT / 'app/src/main/java/com/donglan/chrona/UiStyle.java').read_text(encoding='utf-8')
 assert 'railSurface.getWidth() < bounds.width()' in style
 assert 'railSource.set(0, 0, bounds.width(), bounds.height())' in style

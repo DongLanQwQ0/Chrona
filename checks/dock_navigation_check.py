@@ -334,7 +334,14 @@ public class DockNavigationCheck extends Context {
   require(nearEdge.velocity<farEdge.velocity&&nearEdge.position<2f,"Coast resistance increases before reaching boundary");
   DockSpring thrown=new DockSpring();thrown.position=2;thrown.coast(12,2);float farthest=2;
   for(int i=0;i<500;i++){thrown.step(1f/120);farthest=Math.max(farthest,thrown.position);}
-  require(farthest>2.1f&&!thrown.coasting&&thrown.position<=2.01f,"Edge allows throw outside then damping pulls it back");
+  require(farthest>2.01f&&farthest<2.12f&&!thrown.coasting&&thrown.position<=2.01f,"Edge dissipates a throw early and returns without a large bounce");
+  for(float direction:new float[]{-1f,1f})for(float speed:new float[]{1f,.5f}){
+   DockSpring hardThrow=new DockSpring();hardThrow.position=direction>0?2f:0f;hardThrow.movementSpeed=speed;
+   hardThrow.coast(direction*100f,2f);float overflow=0f;
+   for(int i=0;i<1500;i++){hardThrow.step(1f/120f);overflow=Math.max(overflow,direction>0?hardThrow.position-2f:-hardThrow.position);}
+   require(overflow>.01f&&overflow<.25f&&!hardThrow.coasting,"Fast outward throw stays below quarter-slot excess: edge="+direction+" speed="+speed+" peak="+overflow+" coasting="+hardThrow.coasting);
+  }
+  System.out.println("Moderate edge throw peak excess: "+(farthest-2f)+" slots");
   init();DockSpring edges=(DockSpring)springField.get(dock);var apply=DockNavigationLayout.class.getDeclaredMethod("applySpring");apply.setAccessible(true);
   edges.position=edges.tailPosition=3.5f;apply.invoke(dock);center();close(GradientDrawable.lastLeft,250,"Right throw pins inner end half a standard width inside");
   require(GradientDrawable.lastRight>350,"Right outer end can stretch beyond half width");

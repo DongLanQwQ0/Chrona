@@ -15,6 +15,9 @@ final class DockSpring {
     float tailPosition, tailVelocity;
     float lean, leanVelocity, leanTarget, crossLean, crossLeanVelocity, crossLeanTarget;
     static final float COAST_DAMPING = 7.5f;
+    private static final float EDGE_APPROACH_SLOTS = .25f;
+    private static final float EDGE_APPROACH_DAMPING = 70f, EDGE_SPEED_DRAG = 5f;
+    private static final float EDGE_RETURN_STIFFNESS = 600f, EDGE_RETURN_DAMPING = 80f;
     boolean coasting;
     float lastSlot;
     void coast(float speed, float end) { following = false; velocity = speed; lastSlot = end; coasting = true; }
@@ -71,12 +74,15 @@ final class DockSpring {
                 float edge = position < 0f ? 0f : position > lastSlot ? lastSlot : position;
                 float overflow = position - edge;
                 if (overflow != 0f) {
-                    velocity += (-180f * overflow - 18f * velocity) * moveDt;
+                    velocity += (-EDGE_RETURN_STIFFNESS * overflow - EDGE_RETURN_DAMPING * velocity) * moveDt;
                     position += velocity * moveDt;
                 } else {
                     float distance = velocity > 0f ? lastSlot - position : position;
-                    float edgeDrag = Math.max(0f, 1f - distance / .6f);
-                    float resistance = COAST_DAMPING + 18f * edgeDrag * edgeDrag;
+                    float edgeDrag = Math.max(0f, 1f - distance / EDGE_APPROACH_SLOTS);
+                    // Dissipate fast throws before crossing the edge, rather than letting
+                    // them travel far outside and relying on a visibly large spring-back.
+                    float resistance = COAST_DAMPING
+                            + (EDGE_APPROACH_DAMPING + EDGE_SPEED_DRAG * Math.abs(velocity)) * edgeDrag * edgeDrag;
                     float decay = (float) Math.exp(-resistance * moveDt);
                     position += velocity * (1f - decay) / resistance;
                     velocity *= decay;

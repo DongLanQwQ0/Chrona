@@ -1078,12 +1078,14 @@ public final class DashboardActivity extends Activity {
             mobileBottomArea.addView(navigation, dockParams);
             ImageButton record = UiStyle.recordEntry(this, this::openCapture);
             FrameLayout captureHost = new FrameLayout(this);
+            int blurGutter = dp(DashboardDockChrome.BLUR_GUTTER_DP);
+            captureHost.setPadding(blurGutter, blurGutter, blurGutter, blurGutter);
             captureHost.setClipChildren(false); captureHost.setClipToPadding(false);
             captureHost.addView(record, new FrameLayout.LayoutParams(-1, -1));
             FrameLayout.LayoutParams recordParams = new FrameLayout.LayoutParams(
-                    dp(RECORD_ENTRY_SIZE_DP), dp(RECORD_ENTRY_SIZE_DP),
+                    dp(RECORD_ENTRY_SIZE_DP) + 2 * blurGutter, dp(RECORD_ENTRY_SIZE_DP) + 2 * blurGutter,
                     Gravity.BOTTOM | Gravity.END);
-            recordParams.setMargins(0, 0, dp(14), dp(14));
+            recordParams.setMargins(0, 0, dp(14) - blurGutter, dp(14) - blurGutter);
             mobileBottomArea.addView(captureHost, recordParams);
             dockChrome = new DashboardDockChrome(navigation, mobileBottomArea, captureHost, record,
                     MOBILE_DOCK_HEIGHT_DP, section == HOME);
@@ -1092,11 +1094,13 @@ public final class DashboardActivity extends Activity {
         if (wide) {
             ImageButton capture = UiStyle.recordEntry(this, this::openCapture);
             FrameLayout captureHost = new FrameLayout(this);
+            int blurGutter = dp(DashboardDockChrome.BLUR_GUTTER_DP);
+            captureHost.setPadding(blurGutter, blurGutter, blurGutter, blurGutter);
             captureHost.setClipChildren(false); captureHost.setClipToPadding(false);
             captureHost.addView(capture, new FrameLayout.LayoutParams(-1, -1));
-            FrameLayout.LayoutParams floating = new FrameLayout.LayoutParams(dp(56), dp(56),
+            FrameLayout.LayoutParams floating = new FrameLayout.LayoutParams(dp(56) + 2 * blurGutter, dp(56) + 2 * blurGutter,
                     Gravity.END | Gravity.BOTTOM);
-            floating.setMargins(0, 0, dp(24), dp(24));
+            floating.setMargins(0, 0, dp(24) - blurGutter, dp(24) - blurGutter);
             stage.addView(captureHost, floating);
             dockChrome = new DashboardDockChrome(navigation, null, captureHost, capture,
                     MOBILE_DOCK_HEIGHT_DP, section == HOME);

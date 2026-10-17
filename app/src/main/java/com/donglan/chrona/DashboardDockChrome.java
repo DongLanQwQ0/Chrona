@@ -15,6 +15,7 @@ final class DashboardDockChrome {
     private static final float HIDDEN_SCALE = .6f;
     private static final float CENTER_WIDTH_GAIN = .06f;
     private static final int MAX_WIDTH_GAIN_DP = 16, EXIT_BLUR_DP = 18;
+    static final int BLUR_GUTTER_DP = EXIT_BLUR_DP * 2;
     private final DockNavigationLayout dock;
     private final FrameLayout mobileHost;
     private final View captureHost, captureButton;
@@ -83,7 +84,7 @@ final class DashboardDockChrome {
         if (Build.VERSION.SDK_INT >= 31) {
             float blur = dp(EXIT_BLUR_DP) * (1f - presence);
             captureHost.setRenderEffect(homeFraction == 0f || blur < .01f ? null
-                    : RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP));
+                    : RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL));
         }
         boolean interactive = home && homeFraction == 1f && animator == null;
         captureButton.setEnabled(interactive);
