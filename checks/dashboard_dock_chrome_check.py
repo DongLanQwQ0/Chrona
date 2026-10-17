@@ -19,7 +19,7 @@ public class ValueAnimator extends Animator {
  public void addUpdateListener(Update update){updates.add(update);}public void addListener(AnimatorListenerAdapter end){ends.add(end);}
  public void removeAllUpdateListeners(){updates.clear();}public void removeAllListeners(){ends.clear();}
  public void cancel(){for(var end:List.copyOf(ends))end.onAnimationEnd(this);}public void start(){}
- public Object getAnimatedValue(){return value;}
+ public Object getAnimatedValue(){return value;}public long getCurrentPlayTime(){return Math.round(duration*(value-from)/(to-from));}
  public void step(float f){value=from+(to-from)*f;for(var update:List.copyOf(updates))update.onAnimationUpdate(this);if(f==1)for(var end:List.copyOf(ends))end.onAnimationEnd(this);}
 }''',
     'android/view/animation/Interpolator.java': 'package android.view.animation;public interface Interpolator {float getInterpolation(float input);}',
@@ -61,7 +61,7 @@ public class DockChromeCheck {
   chrome.setHome(false);near(chrome.fraction(),.5f,"Page completion cannot cut off the chrome exit");
   near(chrome.fraction(),.5f,"Hide advances continuously");near(capture.alpha,.5f,"Plus fades with frame progress");near(capture.sx,.8f,"Plus wrapper shrinks without modifying button scale");
   near(button.sx,1f,"Pressed-state button retains independent scale");check(!button.enabled,"Transitioning plus cannot be tapped");
-  check(dock.getWidth()==227&&dock.left==50&&dock.right==277,"Both Dock edges move while width grows only modestly");
+  check(dock.getWidth()==233&&Math.abs(dock.left+dock.right-360)<=1,"Dock is centered at half of the previous duration while capture exit is still running");
   check(capture.effect!=null&&capture.effect.radius==9f,"Plus progressively blurs while fading out");
   check(capture.effect.mode==android.graphics.Shader.TileMode.DECAL,"Blur samples transparent pixels outside its layer instead of repeating a bright border");
   chrome.animateHome(true,240);var returnHome=ValueAnimator.last;near(chrome.fraction(),.5f,"Reversal begins at current frame");leave.step(1f);near(chrome.fraction(),.5f,"Cancelled animator cannot force a stale endpoint");
@@ -71,7 +71,7 @@ public class DockChromeCheck {
   chrome.setHome(false);check(capture.visibility==View.INVISIBLE&&!button.enabled&&capture.access==View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS,"Other pages fully hide plus and its accessibility target");
   check(dock.getWidth()==233&&Math.abs(dock.left+dock.right-360)<=1,"Hidden plus centers a modestly wider Dock instead of filling all freed space");
   check(capture.effect==null,"Fully hidden action releases its blur effect");
-  chrome.setHome(true);chrome.drag(1f,false,.4f);near(chrome.fraction(),.6f,"Body swipe previews hide");chrome.drag(1f,false,.2f);near(chrome.fraction(),.8f,"Reversed swipe restores continuously");
+  chrome.setHome(true);chrome.beginDrag();chrome.drag(1f,false,.4f);near(chrome.fraction(),.6f,"Body swipe previews hide");chrome.drag(1f,false,.2f);near(chrome.fraction(),.8f,"Reversed swipe restores continuously");
   chrome.animateHome(true,180);ValueAnimator.last.step(1);check(button.enabled&&dock.right==256,"Cancelled swipe restores home state");
   chrome.setHome(false);host.layout(0,0,600,110);host.pl=12;host.pr=12;host.pb=20;chrome.layoutMobile();
   check(dock.left==74&&dock.right==526&&dock.bottom==82,"Resizing retains centered bounds with a capped width gain and correct insets");
@@ -91,6 +91,13 @@ public class DockChromeCheck {
    int outerSize=size[0]+2*gutter,outerRight=360-(size[1]-gutter),innerRight=outerRight-gutter;
    check(innerRight==360-size[1]&&outerSize-2*gutter==size[0],"Blur gutter preserves original button size and screen position");
    check(gutter>=36,"Transparent gutter surrounds all four sides of the blur input");}
+  UiMotion.enabled=true;chrome.setHome(true);chrome.animateHome(false,240);ValueAnimator.last.step(.5f);
+  chrome.beginDrag();float pausedCapture=chrome.fraction();int pausedLeft=dock.left,pausedRight=dock.right;
+  chrome.drag(pausedCapture,false,0f);
+  check(dock.left==pausedLeft&&dock.right==pausedRight,"A new gesture preserves the centered Dock independently of unfinished plus fade");
+  chrome.setHome(true);int homeLeft=dock.left;chrome.animateHome(false,240);ValueAnimator.last.step(.25f);int middleLeft=dock.left;
+  ValueAnimator.last.step(.5f);
+  check(middleLeft>homeLeft&&middleLeft<dock.left,"Centering passes through intermediate bounds before its half-duration endpoint");
   System.out.println("Dashboard Dock chrome checks passed: "+checks+" (production coordinator, UI doubles; no device rendering)");
  }
 }'''

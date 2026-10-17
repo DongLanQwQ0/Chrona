@@ -17,11 +17,12 @@ final class DashboardDockChrome {
     private static final int MAX_WIDTH_GAIN_DP = 16, EXIT_BLUR_DP = 18;
     static final int BLUR_GUTTER_DP = EXIT_BLUR_DP * 2;
     private static final long EXIT_DURATION_MS = 460L;
+    private static final float CENTER_DURATION_MULTIPLIER = .5f;
     private final DockNavigationLayout dock;
     private final FrameLayout mobileHost;
     private final View captureHost, captureButton;
     private final int dockHeight;
-    private float homeFraction;
+    private float homeFraction, dockHomeFraction, dragDockFrom;
     private boolean home;
     private ValueAnimator animator;
 
@@ -34,6 +35,8 @@ final class DashboardDockChrome {
     }
 
     float fraction() { return homeFraction; }
+
+    void beginDrag() { cancel(); dragDockFrom = dockHomeFraction; }
 
     void cancel() {
         if (animator == null) return;
@@ -51,7 +54,8 @@ final class DashboardDockChrome {
     void drag(float from, boolean destinationHome, float progress) {
         cancel(); home = false;
         float t = Math.max(0f, Math.min(1f, progress));
-        apply(from + ((destinationHome ? 1f : 0f) - from) * t);
+        float target = destinationHome ? 1f : 0f;
+        apply(from + (target - from) * t, dragDockFrom + (target - dragDockFrom) * t);
     }
 
     void animateHome(boolean value, long duration) {
@@ -62,11 +66,15 @@ final class DashboardDockChrome {
             apply(target); return;
         }
         ValueAnimator motion = ValueAnimator.ofFloat(homeFraction, target);
-        animator = motion; motion.setDuration(value ? duration : Math.max(duration, EXIT_DURATION_MS));
-        motion.setInterpolator(value ? UiMotion.SETTLE : input -> input * input * (3f - 2f * input));
+        long chromeDuration = value ? duration : Math.max(duration, EXIT_DURATION_MS);
+        long dockDuration = value ? chromeDuration : Math.max(1L, Math.round(chromeDuration * CENTER_DURATION_MULTIPLIER));
+        float dockFrom = dockHomeFraction;
+        android.view.animation.Interpolator curve = value ? UiMotion.SETTLE : input -> input * input * (3f - 2f * input);
+        animator = motion; motion.setDuration(chromeDuration); motion.setInterpolator(curve);
         motion.addUpdateListener(frame -> {
             if (!UiMotion.isEnabled()) { setHome(value); return; }
-            apply((Float) frame.getAnimatedValue());
+            float progress = Math.min(1f, frame.getCurrentPlayTime() / (float) dockDuration);
+            apply((Float) frame.getAnimatedValue(), dockFrom + (target - dockFrom) * curve.getInterpolation(progress));
         });
         motion.addListener(new AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(Animator ignored) {
@@ -78,7 +86,12 @@ final class DashboardDockChrome {
     }
 
     private void apply(float fraction) {
+        apply(fraction, fraction);
+    }
+
+    private void apply(float fraction, float dockFraction) {
         homeFraction = Math.max(0f, Math.min(1f, fraction));
+        dockHomeFraction = Math.max(0f, Math.min(1f, dockFraction));
         float presence = homeFraction * homeFraction * (3f - 2f * homeFraction);
         captureHost.setVisibility(homeFraction > 0f ? View.VISIBLE : View.INVISIBLE);
         captureHost.setAlpha(presence);
@@ -107,8 +120,8 @@ final class DashboardDockChrome {
         float centeredWidth = homeWidth + Math.min(dp(MAX_WIDTH_GAIN_DP), homeWidth * CENTER_WIDTH_GAIN);
         float homeCenter = mobileHost.getPaddingLeft() + dp(START_DP) + homeWidth / 2f;
         float centeredAt = mobileHost.getPaddingLeft() + available / 2f;
-        float center = centeredAt + (homeCenter - centeredAt) * homeFraction;
-        int width = Math.round(centeredWidth + (homeWidth - centeredWidth) * homeFraction);
+        float center = centeredAt + (homeCenter - centeredAt) * dockHomeFraction;
+        int width = Math.round(centeredWidth + (homeWidth - centeredWidth) * dockHomeFraction);
         int left = Math.round(center - width / 2f);
         int right = left + width;
         int bottom = mobileHost.getHeight() - mobileHost.getPaddingBottom() - dp(BOTTOM_DP);

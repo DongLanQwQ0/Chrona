@@ -435,7 +435,7 @@ public final class DashboardActivity extends Activity {
 
     private final SwipePagerLayout.Listener sectionPagerListener = new SwipePagerLayout.Listener() {
         @Override public void onStart() {
-            if (dockChrome != null) { dockChrome.cancel(); dockDragFrom = dockChrome.fraction(); }
+            if (dockChrome != null) { dockChrome.beginDrag(); dockDragFrom = dockChrome.fraction(); }
             sectionLoadGeneration++; sectionLoadRunning = false;
             scroll.animate().cancel();
             if (adjacentPage != null) {
