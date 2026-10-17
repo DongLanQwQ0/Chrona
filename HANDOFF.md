@@ -1,4 +1,12 @@
-# 当前开发：0.15.6 / 168 · 作业编辑边界、课表导出与重复匹配
+# 当前开发：0.15.7 / 169 · 详情返回空白
+
+TaskDetailActivity.addCandidateCarousel 的 post 回调原来引用可变 Activity.content/candidatePageIndex。buildAdjacentPage 会暂时切换这些字段再恢复，导致相邻页在稍后执行时误判 parent、跳过 scrollTo；按需构建的第二条存在，但实际偏移仍为零，显示空 slot。现在捕获 ownerContent/ownerTaskId/initialPageIndex；一次恢复等待实际页宽，在 onLayoutChange 和 post 共用入口。滚动监听和相邻预建仅在该 owner 当前激活时修改 Activity 状态，保留按需编辑器与草稿。
+
+新增 detail_carousel_restore 原生验收，构建有两条日程、记住第二条的相邻页，先让 post 在原任务激活时运行，再提交页面，连续往返三次检查真实横向偏移和标题可见，不以额外触摸激活绘制。修复前真机复现 scrollX=0、应为1093；失败断言最初在主线程终止进程，已改为测试线程报告并仅清理本验收命名的临时数据。
+
+离线生产恢复回调/所有权9项（含旧全局容器负例）、详情编辑器17+LAN7、草稿保持与release/androidTest构建、lint通过。设备拒绝修复包和测试工具安装，已异步询问是否允许重试，未绕过拒绝。当前手机仍旧代码，不能记为修复真机通过；获准后安装 app-release.apk 和 app-debug-androidTest.apk，运行 check=ui phase=detail_carousel_restore，再返回首页。该专属验收会清理此前断言终止遗留的 device_check/详情横滑验收0或1记录，绝不能泛删其他测试或真实任务。
+
+# 上轮开发：0.15.6 / 168 · 作业编辑边界、课表导出与重复匹配
 
 作业源字段（标题/正文/due/category/record）由 TaskStore.requireCandidateEditAllowed 与 updateCandidateDescription 拦截，本地个人执行/地点/提醒保留；平台 submitted=true 不能恢复为未完成。LAN 在触碰 Provider 前先校验，作业 capture 禁止 replaceCandidates 重新解析。详情源字段只读、备注可复制；源网页双按钮位于卡片底部，master 关闭隐藏。待办完成/恢复移入标题行 48dp 圆形图标，顺序新建/完成/删除。
 

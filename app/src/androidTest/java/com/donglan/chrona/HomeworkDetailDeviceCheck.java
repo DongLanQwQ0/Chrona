@@ -17,6 +17,79 @@ import org.json.JSONObject;
 
 /** Local multi-homework fixture. Never fetches school data or edits a user task. */
 final class HomeworkDetailDeviceCheck {
+    static String carouselRestore(Instrumentation test) throws Exception {
+        Context context = test.getTargetContext();
+        long[] tasks = new long[2];
+        Activity activity = null;
+        try {
+            try (TaskStore store = new TaskStore(context)) {
+                // Remove only this harness's leftovers if an earlier assertion killed instrumentation.
+                java.util.ArrayList<Long> leftovers = new java.util.ArrayList<>();
+                try(var cursor=store.getReadableDatabase().rawQuery(
+                        "SELECT id FROM tasks WHERE source=? AND raw_text IN (?,?)",
+                        new String[]{"device_check","详情横滑验收 0","详情横滑验收 1"})) {
+                    while(cursor.moveToNext())leftovers.add(cursor.getLong(0));
+                }
+                for(long leftover:leftovers)store.deleteTask(leftover);
+                for (int t = 0; t < 2; t++) {
+                    tasks[t] = store.insertTask("详情横滑验收 " + t, null, "device_check", System.currentTimeMillis());
+                    for (int i = 0; i < t + 1; i++) store.appendCandidate(new EventCandidate(0, tasks[t],
+                            "横滑测试 " + t + "/" + i, null, null, "Asia/Shanghai", "", "临时验收，自动清理", null,
+                            false, null, "task", false));
+                    store.updateStatus(tasks[t],TaskRecord.READY,null);
+                }
+            }
+            activity = test.startActivitySync(new Intent(context,TaskDetailActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("task_id",tasks[0]));
+            Activity screen = activity;
+            JSONObject report = new JSONObject();
+            for (int pass = 0; pass < 3; pass++) {
+                Object[] adjacent = new Object[1];
+                test.runOnMainSync(() -> {
+                    try {
+                        var positions = TaskDetailActivity.class.getDeclaredField("taskCandidatePagePositions"); positions.setAccessible(true);
+                        @SuppressWarnings("unchecked") Map<Long,Integer> values = (Map<Long,Integer>)positions.get(screen);
+                        values.put(tasks[1],1);
+                        var build = TaskDetailActivity.class.getDeclaredMethod("buildAdjacentPage",long.class); build.setAccessible(true);
+                        adjacent[0] = build.invoke(screen,tasks[1]);
+                        var adjacentField = TaskDetailActivity.class.getDeclaredField("adjacentPage"); adjacentField.setAccessible(true); adjacentField.set(screen,adjacent[0]);
+                        var shell = adjacent[0].getClass().getDeclaredField("shell"); shell.setAccessible(true);
+                        var pager = TaskDetailActivity.class.getDeclaredField("detailPager"); pager.setAccessible(true);
+                        ((android.widget.FrameLayout)pager.get(screen)).addView((View)shell.get(adjacent[0]),new android.widget.FrameLayout.LayoutParams(-1,-1));
+                    } catch (ReflectiveOperationException failure) {throw new IllegalStateException(failure);}
+                });
+                // Let the adjacent page's posted work run while the original task is still active.
+                SystemClock.sleep(350); test.waitForIdleSync();
+                test.runOnMainSync(() -> {
+                    try {
+                        var commit = TaskDetailActivity.class.getDeclaredMethod("completeAdjacentPageGesture",boolean.class); commit.setAccessible(true);commit.invoke(screen,true);
+                    } catch(ReflectiveOperationException failure){throw new IllegalStateException(failure);}
+                });
+                test.waitForIdleSync();
+                String[] layoutFailure = {null};
+                test.runOnMainSync(() -> {
+                    CandidatePagerScrollView carousel = pager(screen.getWindow().getDecorView());
+                    int width = carousel.getChildAt(0).getWidth()/2;
+                    if (carousel.getScrollX()!=width) {layoutFailure[0]="Restored second page is blank: scrollX="+carousel.getScrollX()+", expected="+width;return;}
+                    EditText title = title(screen.getWindow().getDecorView(),"横滑测试 1/1");
+                    android.graphics.Rect rect = new android.graphics.Rect();
+                    if(title==null || !title.getGlobalVisibleRect(rect)) layoutFailure[0]="Restored candidate not visible without a horizontal nudge";
+                });
+                if(layoutFailure[0]!=null)throw new AssertionError(layoutFailure[0]);
+                test.runOnMainSync(() -> {
+                    try {var render=TaskDetailActivity.class.getDeclaredMethod("renderTaskPage",long.class);render.setAccessible(true);render.invoke(screen,tasks[0]);}
+                    catch(ReflectiveOperationException failure){throw new IllegalStateException(failure);}
+                });
+                test.waitForIdleSync();
+            }
+            return report.put("adjacentReturnPasses",3).put("secondCandidateVisibleWithoutTouch",true)
+                    .put("temporaryFixtureOnly",true).toString();
+        } finally {
+            Activity screen = activity;
+            if(screen!=null)test.runOnMainSync(screen::finish);
+            try(TaskStore store=new TaskStore(context)){for(long task:tasks)if(task>0)store.deleteTask(task);}
+        }
+    }
     static String controls(Instrumentation test) throws Exception {
         Context context = test.getTargetContext();
         long task = 0, candidate = 0;

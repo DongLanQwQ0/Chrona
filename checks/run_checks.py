@@ -20,7 +20,7 @@ GROUPS = {
         "startup_metrics_check.py",
     ),
     "java": (
-        "inbox_query_check.py", "schedule_query_check.py", "detail_draft_check.py", "detail_editor_check.py",
+        "inbox_query_check.py", "schedule_query_check.py", "detail_draft_check.py", "detail_editor_check.py", "detail_carousel_restore_check.py",
         "job_execution_check.py", "dock_navigation_check.py", "acrylic_translation_check.py", "calendar_build_frame_check.py", "calendar_slide_check.py", "press_feedback_check.py", "carousel_motion_check.py", "choice_motion_check.py",
         "lan_security_check.py", "edit_conflict_check.py", "settings_layout_check.py", "attachment_remove_check.py",
         "lifecycle_motion_check.py", "native_motion_core_check.py", "section_motion_check.py",

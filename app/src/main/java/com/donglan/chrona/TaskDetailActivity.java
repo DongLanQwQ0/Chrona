@@ -676,6 +676,10 @@ public final class TaskDetailActivity extends Activity {
     private void addCandidateCarousel(List<EventCandidate> candidates) {
         candidatePageIndex = Math.max(0, Math.min(candidatePageIndex, candidates.size() - 1));
         taskCandidatePagePositions.put(taskId, candidatePageIndex);
+        final long ownerTaskId = taskId;
+        final LinearLayout ownerContent = content;
+        final int initialPageIndex = candidatePageIndex;
+        final boolean[] positionRestored = {false};
         TextView indicator = new TextView(this);
         indicator.setText("日程 " + (candidatePageIndex + 1) + " / " + candidates.size());
         indicator.setContentDescription("第" + (candidatePageIndex + 1) + "项日程，共"
@@ -712,6 +716,9 @@ public final class TaskDetailActivity extends Activity {
         };
         ensurePage.accept(candidatePageIndex);
         carousel.setOnScrollChangeListener((view, scrollX, scrollY, oldX, oldY) -> {
+            // Adjacent task pages are laid out while another task owns the Activity fields.
+            if (!positionRestored[0] || content != ownerContent || taskId != ownerTaskId
+                    || carousel.getParent() != ownerContent) return;
             int firstVisible = Math.max(0, scrollX / pageWidth);
             ensurePage.accept(firstVisible);
             ensurePage.accept(firstVisible + 1);
@@ -719,7 +726,7 @@ public final class TaskDetailActivity extends Activity {
                     Math.round(scrollX / (float) pageWidth)));
             if (index != candidatePageIndex) {
                 candidatePageIndex = index;
-                taskCandidatePagePositions.put(taskId, index);
+                taskCandidatePagePositions.put(ownerTaskId, index);
                 indicator.setText("日程 " + (index + 1) + " / " + candidates.size());
                 indicator.setContentDescription("第" + (index + 1) + "项日程，共"
                         + candidates.size() + "项，可左右滑动切换");
@@ -731,11 +738,20 @@ public final class TaskDetailActivity extends Activity {
         setCompletionAction(() -> requestCandidateSave(
                 candidates.get(candidatePageIndex).id, saves[candidatePageIndex]),
                 candidates.get(candidatePageIndex), candidates);
+        Runnable restorePosition = () -> {
+            if (positionRestored[0] || isDestroyed() || carousel.getParent() != ownerContent
+                    || pages.getWidth() < (initialPageIndex + 1) * pageWidth) return;
+            positionRestored[0] = true;
+            carousel.scrollTo(initialPageIndex * pageWidth, 0);
+        };
+        // A posted scroll can run before an adjacent page is attached/measured; restore after layout too.
+        carousel.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                restorePosition.run());
         carousel.post(() -> {
-            if (isDestroyed() || carousel.getParent() != content) return;
-            carousel.scrollTo(candidatePageIndex * pageWidth, 0);
+            restorePosition.run();
             carousel.postOnAnimation(() -> {
-                if (isDestroyed() || carousel.getParent() != content) return;
+                if (isDestroyed() || content != ownerContent || taskId != ownerTaskId
+                        || carousel.getParent() != ownerContent) return;
                 ensurePage.accept(candidatePageIndex - 1);
                 ensurePage.accept(candidatePageIndex + 1);
             });
