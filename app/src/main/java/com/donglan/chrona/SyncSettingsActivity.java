@@ -105,7 +105,12 @@ public final class SyncSettingsActivity extends Activity {
                     return;
                 }
                 activity.pending.removeViews(1, activity.pending.getChildCount() - 1);
-                if (result.isEmpty()) activity.pending.addView(activity.text("暂无待确认记录", 14));
+                if (result.isEmpty()) {
+                    TextView empty = activity.text("暂无待确认记录", 14);
+                    UiStyle.muted(empty);
+                    empty.setPadding(activity.dp(16), activity.dp(12), activity.dp(16), activity.dp(16));
+                    activity.pending.addView(empty, new LinearLayout.LayoutParams(-1, -2));
+                }
                 else for (AndroidSync.Pending record : result) activity.button(activity.pending, record.title, () -> activity.choose(record));
                 activity.updatePendingButtons();
             }); reader.shutdown();

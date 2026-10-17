@@ -6,12 +6,14 @@
 
 ## 当前版本
 
-- **0.15.21 / versionCode 183**，数据库版本 **13**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
+- **0.15.22 / versionCode 184**，数据库版本 **13**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
 - 源码与安装包：[GitHub Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
-- 最近修复 WebDAV 列表及 GET 缺少有效强 ETag 时的同步失败；只更新本设备串行单写者 head，有强标签时继续条件写入。合并标记通过交换层校验，HTTP 错误与网络故障返回固定安全提示。
+- 最近仅修复同步页“暂无待确认记录”的内容留白与次要文字颜色；不更改 WebDAV 协议或同步状态。此前 0.15.21 已完成实际 WebDAV 同步。
 - 0.15.18 的选择栏手感已获用户确认，见[已确认交互基线](docs/ui-interaction-baseline.md)。后续修复和性能优化保持该效果。
 
 ## 最近证据与实际限制
+
+0.15.22 release 构建、lintRelease 成功，USB 覆盖安装 184。尝试导航复查时手机随后断开，未获得修复后空状态截图；该项视觉复查仍待设备可用。构建日志 `build/0.15.22-build.log`。下列同步证据属于 0.15.21，本轮未重复执行真实同步。
 
 0.15.21 release / androidTest 构建与 lintRelease 通过；USB 安装 183。真机通过应用已有 Keystore 配置检查 WebDAV：本地 46 个寄存器有效；服务器列表和 GET 的版本标签不符合原强 ETag 要求。修复后实际运行完整 AndroidSync，返回“上次同步：2026/10/17 18:23 · 成功”。本轮测试未显示、导出或修改凭据，未清空本地或云端，未替用户处理冲突／删除日历。
 
