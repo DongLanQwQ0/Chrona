@@ -21,7 +21,10 @@ class Handler {void post(Runnable r){r.run();}}
 class Toast {static final int LENGTH_LONG=1;static Toast makeText(Context c,String t,int len){return new Toast();}void show(){}}
 class TaskCompletion {static void retryPending(Context c){}static String set(Context c,long id,long task,boolean complete){for(EventCandidate e:TaskStore.rows)if(e.id==id)e.done=complete;return null;}}
 class NotificationDeliveryStatus {static boolean canPostReminders(Context c){return c.manager.allowed;}}
-class Intent {String key,action;Intent(String key,String action){this.key=key;this.action=action;}String getStringExtra(String k){return key;}String getAction(){return action;}}
+class Uri {final String key;Uri(String key){this.key=key;}String getLastPathSegment(){return key;}}
+class Intent {String key,action;Intent(String key,String action){this.key=key;this.action=action;}String getStringExtra(String k){return key;}Uri getData(){return new Uri(key);}String getAction(){return action;}}
+class ZjuHomeworkCalendar {static void retryPending(Context c){}}
+class AgendaAcknowledgement {static void set(Context c,String key,long until,boolean confirmed){SharedPreferences.Editor edit=c.prefs.edit();if(confirmed)edit.putLong("hidden:"+key,until);else edit.remove("hidden:"+key).remove("snooze_until:"+key).remove("snooze_end:"+key);edit.putLong("acknowledgement_revision",c.prefs.getLong("acknowledgement_revision",0)+1).apply();}}
 class SharedPreferences {
  Map<String,Object> values=new HashMap<>();String getString(String k,String d){return (String)values.getOrDefault(k,d);}long getLong(String k,long d){return (Long)values.getOrDefault(k,d);}boolean getBoolean(String k,boolean d){return (Boolean)values.getOrDefault(k,d);}Map<String,?> getAll(){return new HashMap<>(values);}Editor edit(){return new Editor();}
  class Editor {Map<String,Object> additions=new HashMap<>();Set<String> removed=new HashSet<>();Editor putString(String k,String v){additions.put(k,v);return this;}Editor putBoolean(String k,boolean v){additions.put(k,v);return this;}Editor putLong(String k,long v){additions.put(k,v);return this;}Editor remove(String k){removed.add(k);return this;}void apply(){for(String k:removed)values.remove(k);values.putAll(additions);}}
@@ -34,9 +37,10 @@ class AtomicCountdownUpdates {static void clear(int id){}static void remember(in
 class NotificationChannel {NotificationChannel(String id,String name,int importance){}void setDescription(String s){}void setLockscreenVisibility(int visibility){if(visibility!=Notification.VISIBILITY_PUBLIC)throw new AssertionError("reminder channel must be lockscreen visible");}}
 class VivoAtomicNotification {static boolean vivo=true;static List<Integer> ended=new ArrayList<>();static boolean available(Context c){return vivo&&c.manager.allowed;}static boolean active(NotificationManager m,int id){return m.atomic.getOrDefault(id,false);}static void end(Context c,NotificationManager m,int id){ended.add(id);m.events.add("end:"+id);m.cards.remove(id);m.atomic.remove(id);}}
 class AndroidSync {static final Object LOCK=new Object();}
-class EventCandidate {boolean isRecord,needsConfirmation,done;boolean completed(){return done;}Long dueAtMillis;boolean isTask(){return "task".equals(category);}Long anchor(){return startAtMillis;}Long reminderAnchor(){return startAtMillis;}Long calendarStart(){return startAtMillis;}Long calendarEnd(){return endAtMillis;}boolean point(){return false;}long id,taskId,startAtMillis;Long endAtMillis;Integer reminderMinutesBefore;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+startAtMillis;}}
-class TaskStore implements AutoCloseable {static List<EventCandidate> rows=new ArrayList<>();TaskStore(Context c){}List<EventCandidate> nextReminderCandidates(long now,Set<String> hidden){List<EventCandidate> r=new ArrayList<>();for(EventCandidate e:rows)if(!e.done&&!hidden.contains(e.key()))r.add(e);return r;}List<Long> linkedCalendarIds(){return List.of();}List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids){return rows.stream().filter(e->ids.contains(e.id)).toList();}boolean setCandidateCompleted(long id,long task,boolean done){return true;}public void close(){}}
+class EventCandidate {boolean isRecord,needsConfirmation,done;boolean completed(){return isTask()&&done;}Long dueAtMillis;boolean isTask(){return !isRecord&&com.donglan.chrona.data.EventCategory.isTaskLike(category);}Long anchor(){return startAtMillis;}Long reminderAnchor(){return isTask()&&dueAtMillis!=null?dueAtMillis:anchor();}Long calendarStart(){return startAtMillis;}Long calendarEnd(){return endAtMillis;}boolean point(){return false;}long id,taskId,startAtMillis;Long endAtMillis;Integer reminderMinutesBefore;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+reminderAnchor();}}
+class TaskStore implements AutoCloseable {static List<EventCandidate> rows=new ArrayList<>();static Set<Long> blockedReminders=new HashSet<>();TaskStore(Context c){}boolean allowsReminder(long id){return !blockedReminders.contains(id);}List<EventCandidate> nextReminderCandidates(long now,Set<String> hidden){List<EventCandidate> r=new ArrayList<>();for(EventCandidate e:rows)if(!e.completed()&&!hidden.contains(e.key())&&allowsReminder(e.id))r.add(e);return r;}List<Long> linkedCalendarIds(){return List.of();}List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids){return rows.stream().filter(e->ids.contains(e.id)).toList();}boolean setCandidateCompleted(long id,long task,boolean done){return true;}public void close(){}}
 class CalendarOccurrence {long eventId,startMillis,endMillis;String title,location,calendarName;boolean allDay;}
+class ExternalCourseAgenda {static boolean isExternal(long id){return id<0;}static List<CalendarOccurrence> merge(Context c,List<CalendarOccurrence> system,long begin,long end,Set<Long> linked){return system.stream().filter(e->!linked.contains(e.eventId)).toList();}}
 class CalendarStore {CalendarStore(Context c){}boolean hasReadPermission(){return false;}List<CalendarOccurrence> reminderInstances(long n,long h,Set<Long> linked,Set<String> hidden){return List.of();}}
 __PURE__
 public class AgendaSlotsCheck {
@@ -123,6 +127,16 @@ public class AgendaSlotsCheck {
   refresh(restarted,null);check(updates.get(NOTIFICATION_ID),"live island uses update");
   refresh(restarted,new Intent(running.key(),"complete"));restarted.manager.cards.clear();restarted.manager.atomic.clear();refresh(restarted,null);
   check(restarted.manager.cards.isEmpty(),"restart never restores completed occurrence");
+  for(String category:List.of("task","homework")){
+   Context taskContext=new Context();long taskNow=System.currentTimeMillis();EventCandidate task=new EventCandidate(200,taskNow-600000,taskNow+3600000);task.category=category;task.dueAtMillis=taskNow+60000;TaskStore.rows=List.of(task);
+   refresh(taskContext,null);check(taskContext.manager.cards.containsValue(task.key())&&taskContext.prefs.getBoolean("slot_task:0",false),category+" uses task reminder identity and actions");
+   check(taskContext.prefs.getLong("slot_end:0",0)==task.dueAtMillis+ReminderTimeline.STARTED_DISPLAY_WINDOW,category+" reminder expires three minutes after deadline");
+   refresh(taskContext,new Intent(task.key(),"snooze"));long until=taskContext.prefs.getLong("snooze_until:"+task.key(),0);
+   check(until>taskNow&&taskContext.prefs.getLong("snooze_end:"+task.key(),0)==until+ReminderTimeline.STARTED_DISPLAY_WINDOW,category+" snooze extends display window");
+   taskContext.prefs.edit().putLong("snooze_until:"+task.key(),System.currentTimeMillis()-1).apply();refresh(taskContext,null);
+   check(taskContext.manager.cards.containsValue(task.key()),category+" deferred reminder returns");
+   refresh(taskContext,new Intent(task.key(),"complete"));check(task.completed()&&taskContext.manager.cards.isEmpty(),category+" completion persists and removes reminder");
+  }
   System.out.println("Production reminder refresh passed: "+checks+" checks; stable slots, restart restoration, stale actions, independent snooze/hide, permission, disabled and platform limits");
  }
 }
@@ -132,5 +146,5 @@ out.mkdir(parents=True, exist_ok=True)
 file = out / 'AgendaSlotsCheck.java'
 file.write_text(harness, encoding='utf-8')
 java = Path(os.environ['JAVA_HOME']) / 'bin'
-subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file)], check=True)
+subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file), str(src / 'data/EventCategory.java')], check=True)
 subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'AgendaSlotsCheck'], check=True)

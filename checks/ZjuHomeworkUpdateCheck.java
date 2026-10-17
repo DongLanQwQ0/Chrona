@@ -24,6 +24,26 @@ public final class ZjuHomeworkUpdateCheck {
         var initial=managed.apply("account",generation,List.of(a,b));check(initial.actionableAdded==2&&initial.actionableUpdated==0,"new unfinished actionable additions");
         List<EventCandidate> all;try(TaskStore store=new TaskStore(c)){all=store.getCandidates(managed.state().captureId);}
         long aid=all.get(0).id,bid=all.get(1).id;
+        check(row(c,aid).isHomework() && row(c,aid).isTask(), "homework is distinct but keeps task behavior");
+        try(TaskStore store=new TaskStore(c)) {
+            long now=DUE-86_400_000L;
+            check(store.queryScheduleIds(new com.donglan.chrona.data.ScheduleQuery(3,"homework",0,"",null,null,now,java.time.ZoneId.of("Asia/Shanghai"))).size()==2,
+                    "homework filter selects the distinct persisted category");
+            check(store.queryScheduleIds(new com.donglan.chrona.data.ScheduleQuery(3,"task",0,"",null,null,now,java.time.ZoneId.of("Asia/Shanghai"))).isEmpty(),
+                    "ordinary task category remains separate from homework");
+            check(store.homeTodoSummary(now,java.time.ZoneId.of("Asia/Shanghai"),5).total==2,
+                    "home todo summary includes homework");
+            check(com.donglan.chrona.sync.TaskCodec.event(com.donglan.chrona.sync.TaskCodec.candidate(row(c,aid))).isHomework(),
+                    "homework category and deadline survive sync codec");
+        }
+        try(TaskStore store=new TaskStore(c)) {
+            long ordinaryCapture=store.insertTask("personal",null,"text",DUE);
+            long ordinary=store.appendCandidate(new EventCandidate(0,ordinaryCapture,"personal",null,null,"Asia/Shanghai","","",null,false,null,"task",false));
+            store.getWritableDatabase().execSQL("UPDATE event_candidates SET category='task' WHERE id=?",new Object[]{aid});
+            store.onUpgrade(store.getWritableDatabase(),12,13);
+            check(row(c,aid).isHomework() && !row(c,ordinary).isHomework(), "existing managed homework upgrades without reclassifying ordinary tasks");
+            check(row(c,aid).dueAtMillis.equals(DUE), "category upgrade preserves original deadline");
+        }
         check(row(c,aid).calendarEventId!=null&&row(c,bid).calendarEventId!=null&&CalendarStore.rows.size()==2,"unfinished deadline homework automatically published");
         managed.apply("account",generation,List.of(a,b));check(CalendarStore.rows.size()==2,"unchanged refresh does not duplicate provider events");
         personal(c,aid,0,101);event(101,DUE,true);

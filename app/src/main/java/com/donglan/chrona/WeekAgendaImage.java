@@ -39,7 +39,7 @@ final class WeekAgendaImage {
         int allDayHeight=maxAllDay==0?0:40+maxAllDay*46,gridTop=TOP+allDayHeight,gridHeight=(lastHour-firstHour)*HOUR_HEIGHT;
         List<StaticLayout> details=includeIndex?new ArrayList<>():List.of();int detailsHeight=includeIndex&&entries.isEmpty()?64:0;
         if(includeIndex) for(int i=0;i<entries.size();i++) {
-            AgendaEntry e=entries.get(i);String range="task".equals(e.category)&&e.end==e.start?(e.dueAtMillis!=null?"截止 · ":"待办 · ")+Instant.ofEpochMilli(e.start).atZone(zone).format(DateTimeFormatter.ofPattern("M/d HH:mm")):e.allDay?Instant.ofEpochMilli(e.start).atZone(zone).format(DateTimeFormatter.ofPattern("M/d"))+" — "+Instant.ofEpochMilli(e.finish()-1).atZone(zone).format(DateTimeFormatter.ofPattern("M/d"))+" · 全天":
+            AgendaEntry e=entries.get(i);String range=e.isTask()&&e.end==e.start?(e.dueAtMillis!=null?"截止 · ":"homework".equals(e.category)?"作业 · ":"待办 · ")+Instant.ofEpochMilli(e.start).atZone(zone).format(DateTimeFormatter.ofPattern("M/d HH:mm")):e.allDay?Instant.ofEpochMilli(e.start).atZone(zone).format(DateTimeFormatter.ofPattern("M/d"))+" — "+Instant.ofEpochMilli(e.finish()-1).atZone(zone).format(DateTimeFormatter.ofPattern("M/d"))+" · 全天":
                     Instant.ofEpochMilli(e.start).atZone(zone).format(DateTimeFormatter.ofPattern("M/d HH:mm"))+" — "+Instant.ofEpochMilli(e.finish()).atZone(zone).format(DateTimeFormatter.ofPattern("M/d HH:mm"));
             String value=(i+1)+"  "+e.title+"\n"+range+(e.location.isBlank()?"":" · "+e.location)+" · "+e.source+(e.confirmed?"":" · 待确认");
             StaticLayout layout=paragraph(value,WIDTH-96,28,colors.text,0,false);details.add(layout);detailsHeight+=layout.getHeight()+24;

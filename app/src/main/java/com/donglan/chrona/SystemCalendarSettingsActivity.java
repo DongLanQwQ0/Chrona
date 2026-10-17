@@ -17,6 +17,11 @@ public final class SystemCalendarSettingsActivity extends Activity {
         SettingsPageLayout.header(this, root, "系统日程");
         home = toggle(root, "首页包含系统其他日程", HOME_PERMISSION);
         calendar = toggle(root, "日历包含系统日程", CALENDAR_PERMISSION);
+        android.widget.Button merge = new android.widget.Button(this);
+        merge.setText("合并完全相同日程");
+        UiStyle.button(merge, false);
+        merge.setOnClickListener(view -> startActivity(new android.content.Intent(this, CandidateMergeActivity.class)));
+        UiStyle.addSpaced(root, merge, 0, 12);
         SettingsPageLayout.show(this, root, state == null);
     }
     private Switch toggle(LinearLayout root, String label, int permission) {

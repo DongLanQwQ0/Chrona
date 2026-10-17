@@ -8,7 +8,7 @@ public final class EventTimeDefaults {
 
     public static long durationMillis(String category) {
         String normalized = EventCategory.normalize(category);
-        if (EventCategory.TASK.equals(normalized)) return 0;
+        if (EventCategory.isTaskLike(normalized)) return 0;
         return 60 * MINUTE_MILLIS;
     }
 

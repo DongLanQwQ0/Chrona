@@ -1,4 +1,16 @@
-# 当前开发：0.15.7 / 169 · 详情返回空白
+# 当前开发：0.15.8 / 170 · 作业分类、批量写入与局部动画
+
+作业使用持久化 category=homework，沿用 isTask()/isTaskLike() 的截止、完成、提醒、日历和网页编辑行为。SQLite v13 将作业映射及 zju-homework 收件下的旧 task 转为 homework，ID、关联、截止、完成及历史不变；备份支持 v13，TaskCodec 接受该类型，同步设备一并升级。筛选直接按分类查询，首页待办统计同时包含 task/homework。
+
+HomeworkLinks 从受信课程 URL 和 courseId 构造当前作业移动/桌面地址；缺少标识禁用，禁止退回首页或猜测 ID。按钮仍受折姜星辰总开关控制。批量写入只在收件箱待确认和日程待安排多选中提供，工作线程逐条重新读取/验证/提交，跳过不可写项，复用相同事件，仅清理本次新建但关联失败的事件。
+
+卡片处理继续使用 DashboardCardReconciler 保留节点并 ChangeBounds 上移；补齐首页轮询和日历回调的局部更新路径。UiStyle 只将 Dock 背景板绘入复用位图再合成，高光及文字保持独立硬件节点。真机系统录屏证实原白线；改圆角 API、轮廓环和去掉描边均无效，整栏软件层消线但会限制溢出，因此未采用。最终仅背景软件画布在同手势录屏 252 帧中未见中线，高光放大/拖动保留。证据 build/device-white-line/。
+
+设备 10.195.63.197:37889 已成功更新修复包及测试工具。详情页三次往返、临时作业按钮布局、原子岛临时提醒真实点击完成并消失均通过，fixture 均清理；不涉及真实日程完成或远程作业提交。
+
+completion_card_motion 原生验收通过：两张下方卡片同一View各上移514px，同一ScrollView且scroll1145不变，完成已落库、无Provider关联；三条临时task均清理。检查入口在 DeviceUiChecks，新测试类只管理自己的fixture。
+
+# 上轮开发：0.15.7 / 169 · 详情返回空白
 
 TaskDetailActivity.addCandidateCarousel 的 post 回调原来引用可变 Activity.content/candidatePageIndex。buildAdjacentPage 会暂时切换这些字段再恢复，导致相邻页在稍后执行时误判 parent、跳过 scrollTo；按需构建的第二条存在，但实际偏移仍为零，显示空 slot。现在捕获 ownerContent/ownerTaskId/initialPageIndex；一次恢复等待实际页宽，在 onLayoutChange 和 post 共用入口。滚动监听和相邻预建仅在该 owner 当前激活时修改 Activity 状态，保留按需编辑器与草稿。
 

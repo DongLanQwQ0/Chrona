@@ -513,6 +513,8 @@ public final class UiStyle {
         private final View host;
         private boolean selected;
         private boolean outline;
+        private Bitmap railSurface;
+        private Canvas railCanvas;
 
         AcrylicSurfaceDrawable(View host, GradientDrawable blurredSurface,
                 GradientDrawable fallbackSurface, int radius, boolean selected, boolean outline) {
@@ -538,6 +540,29 @@ public final class UiStyle {
         }
 
         @Override public void draw(android.graphics.Canvas canvas) {
+            if (host instanceof DockNavigationLayout && canvas.isHardwareAccelerated()) {
+                android.graphics.Rect bounds = getBounds();
+                if (bounds.isEmpty()) return;
+                if (railSurface == null || railSurface.getWidth() != bounds.width()
+                        || railSurface.getHeight() != bounds.height()) {
+                    railSurface = Bitmap.createBitmap(bounds.width(), bounds.height(), Bitmap.Config.ARGB_8888);
+                    railCanvas = new Canvas(railSurface);
+                }
+                railSurface.eraseColor(Color.TRANSPARENT);
+                int save = railCanvas.save();
+                railCanvas.translate(-bounds.left, -bounds.top);
+                drawAcrylic(railCanvas);
+                railCanvas.restoreToCount(save);
+                // Rasterize only the static glass plate: GPU round-rect gradients can
+                // develop a centre seam while scaling. Text and the overflowing highlight
+                // remain independent hardware nodes; the dock itself has no bitmap layer.
+                canvas.drawBitmap(railSurface, bounds.left, bounds.top, null);
+                return;
+            }
+            drawAcrylic(canvas);
+        }
+
+        private void drawAcrylic(android.graphics.Canvas canvas) {
             boolean backdropReady = false;
             Palette palette = colors(host.getContext());
             boolean acrylic = ThemeStore.acrylicEnabled(host.getContext());

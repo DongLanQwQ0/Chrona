@@ -598,6 +598,7 @@ public final class TaskDetailActivity extends Activity {
                     : Math.max(0, Math.min(candidatePageIndex, candidates.size() - 1));
             taskCandidatePagePositions.put(taskId, candidatePageIndex);
             addTaskPagerIndicator(store.listTasks(), task.status);
+            if (!candidates.isEmpty()) updateDetailItemTitle(candidates.get(candidatePageIndex));
             observedStatus = task.status;
             observedCandidates = savedEntries.size();
             observedDataRevision = store.dataRevision();
@@ -681,9 +682,8 @@ public final class TaskDetailActivity extends Activity {
         final int initialPageIndex = candidatePageIndex;
         final boolean[] positionRestored = {false};
         TextView indicator = new TextView(this);
-        indicator.setText("日程 " + (candidatePageIndex + 1) + " / " + candidates.size());
-        indicator.setContentDescription("第" + (candidatePageIndex + 1) + "项日程，共"
-                + candidates.size() + "项，可左右滑动切换");
+        indicator.setText(candidatePosition(candidates, candidatePageIndex));
+        indicator.setContentDescription(candidatePosition(candidates, candidatePageIndex) + "，可左右滑动切换");
         indicator.setTextSize(14);
         UiStyle.muted(indicator);
         UiStyle.addSpaced(content, indicator, 2, 5);
@@ -710,7 +710,7 @@ public final class TaskDetailActivity extends Activity {
         java.util.function.IntConsumer ensurePage = index -> {
             if (index < 0 || index >= candidates.size() || saves[index] != null) return;
             int firstBar = editorSelectionBars.size();
-            saves[index] = addCandidateEditor(candidates.get(index), index + 1, true, slots[index], pageWidth);
+            saves[index] = addCandidateEditor(candidates.get(index), candidateNumber(candidates, index), true, slots[index], pageWidth);
             for (int i = firstBar; i < editorSelectionBars.size(); i++)
                 carousel.addGesturePriorityChild(editorSelectionBars.get(i));
         };
@@ -727,9 +727,9 @@ public final class TaskDetailActivity extends Activity {
             if (index != candidatePageIndex) {
                 candidatePageIndex = index;
                 taskCandidatePagePositions.put(ownerTaskId, index);
-                indicator.setText("日程 " + (index + 1) + " / " + candidates.size());
-                indicator.setContentDescription("第" + (index + 1) + "项日程，共"
-                        + candidates.size() + "项，可左右滑动切换");
+                indicator.setText(candidatePosition(candidates, index));
+                updateDetailItemTitle(candidates.get(index));
+                indicator.setContentDescription(candidatePosition(candidates, index) + "，可左右滑动切换");
                 setCompletionAction(() -> requestCandidateSave(candidates.get(index).id,
                         saves[index]), candidates.get(index), candidates);
             }
@@ -762,6 +762,24 @@ public final class TaskDetailActivity extends Activity {
         int width = content.getWidth() - content.getPaddingLeft() - content.getPaddingRight();
         if (width <= 0) width = getResources().getDisplayMetrics().widthPixels - dp(40);
         return Math.max(dp(280), width);
+    }
+
+    private static int candidateNumber(List<EventCandidate> candidates, int index) {
+        boolean homework = candidates.get(index).isHomework();
+        int number = 0;
+        for (int i = 0; i <= index; i++) if (candidates.get(i).isHomework() == homework) number++;
+        return number;
+    }
+
+    private static String candidatePosition(List<EventCandidate> candidates, int index) {
+        EventCandidate selected = candidates.get(index);
+        long total = candidates.stream().filter(item -> item.isHomework() == selected.isHomework()).count();
+        return selected.itemLabel() + " " + candidateNumber(candidates, index) + " / " + total;
+    }
+
+    private void updateDetailItemTitle(EventCandidate candidate) {
+        View heading = content.findViewWithTag("detail_item_title");
+        if (heading instanceof TextView label) label.setText(candidate.isHomework() ? "作业详情" : "任务详情");
     }
 
     private void showCompletionAction(Button action, EventCandidate candidate) {
@@ -814,6 +832,7 @@ public final class TaskDetailActivity extends Activity {
         row.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView title = new TextView(this);
         title.setText("任务详情");
+        title.setTag("detail_item_title");
         title.setTextSize(20);
         UiStyle.title(title);
         title.setPadding(dp(8), 0, 0, 0);
@@ -2263,7 +2282,7 @@ public final class TaskDetailActivity extends Activity {
     private void confirmRemoveCandidate(EventCandidate candidate, int number) {
         boolean published = candidate.calendarEventId != null;
         if (published && !requestCalendarPermission()) return;
-        UiStyle.confirmDialog(this, "删除日程 " + number + "？", published
+        UiStyle.confirmDialog(this, "删除" + candidate.itemLabel() + " " + number + "？", published
                         ? "将从系统日历中删除这条日程，并移除对应草稿。此操作无法撤销。"
                         : "将移除这条日程草稿。此操作无法撤销。", "删除",
                 () -> removeCandidate(candidate, published));
@@ -2272,7 +2291,7 @@ public final class TaskDetailActivity extends Activity {
     private void removeCandidate(EventCandidate candidate, boolean published) {
         deleting = true;
         content.removeAllViews();
-        label("正在删除日程…", 18);
+        label("正在删除" + candidate.itemLabel() + "…", 18);
         new Thread(() -> {
             try (TaskStore store = new TaskStore(this)) {
                 if (published) {
@@ -2347,13 +2366,13 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout cardHeader = new LinearLayout(this);
         cardHeader.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView cardTitle = new TextView(this);
-        cardTitle.setText("日程 " + number);
+        cardTitle.setText(candidate.itemLabel() + " " + number);
         cardTitle.setTextSize(17);
         UiStyle.title(cardTitle);
         cardHeader.addView(cardTitle, new LinearLayout.LayoutParams(0, -2, 1f));
         Button createCandidate = compactActionButton("新建", R.drawable.ic_add,
                 this::addManualCandidate);
-        createCandidate.setContentDescription("新建日程");
+        createCandidate.setContentDescription("新建事项");
         LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(-2, dp(48));
         createParams.setMarginEnd(dp(8));
         cardHeader.addView(createCandidate, createParams);
@@ -2365,8 +2384,10 @@ public final class TaskDetailActivity extends Activity {
             complete.setImageResource(candidate.completed() ? R.drawable.ic_todo_check : R.drawable.ic_check);
             complete.setImageTintList(android.content.res.ColorStateList.valueOf(candidate.completed()
                     ? UiStyle.colors(this).primary : UiStyle.colors(this).muted));
-            complete.setContentDescription(candidate.completed() ? "恢复待办" : "标记完成");
-            complete.setTooltipText(candidate.completed() ? "恢复待办" : "标记完成");
+            String completeLabel = candidate.completed() ? candidate.isHomework() ? "恢复作业" : "恢复待办"
+                    : candidate.isHomework() ? "标记作业完成" : "标记完成";
+            complete.setContentDescription(completeLabel);
+            complete.setTooltipText(completeLabel);
             UiStyle.glass(complete);
             UiStyle.pressable(complete);
             complete.setOnClickListener(view -> changeTaskCompletion(candidate));
@@ -2395,7 +2416,7 @@ public final class TaskDetailActivity extends Activity {
             refreshAcknowledgementActions(acknowledgement);
         }
         ImageButton removeCandidate = new ImageButton(this);
-        removeCandidate.setContentDescription("删除日程 " + candidate.title);
+        removeCandidate.setContentDescription("删除" + candidate.itemLabel() + " " + candidate.title);
         removeCandidate.setOnClickListener(view -> confirmRemoveCandidate(candidate, number));
         removeCandidate.setPadding(0, 0, 0, 0);
         Drawable deleteIcon = getDrawable(R.drawable.ic_delete);
@@ -2541,7 +2562,7 @@ public final class TaskDetailActivity extends Activity {
                     if (endAt != null && endAt <= startAt) {
                         nextEnd = startAt + SHIFTED_START_INTERVAL_MILLIS;
                         autoEnd[0] = false;
-                    } else if (autoEnd[0] && !EventCategory.TASK.equals(
+                    } else if (autoEnd[0] && !EventCategory.isTaskLike(
                             EventCategory.VALUES[selectedCategory[0]])) {
                         nextEnd = startAt + EventTimeDefaults.durationMillis(
                                 EventCategory.VALUES[selectedCategory[0]]);
@@ -2572,7 +2593,7 @@ public final class TaskDetailActivity extends Activity {
                     selectedCategory[0] = index;
                     refreshCategorySelection.run();
                     updateType[0].run();
-                    boolean deadline = EventCategory.TASK.equals(
+                    boolean deadline = EventCategory.isTaskLike(
                             EventCategory.VALUES[index]);
                     start.setHint(allDay.isChecked() ? "开始日期：yyyy-MM-dd" : deadline ? "执行开始（可选）：yyyy-MM-dd HH:mm"
                             : "开始：yyyy-MM-dd HH:mm");
@@ -2599,7 +2620,7 @@ public final class TaskDetailActivity extends Activity {
         allDay.setOnCheckedChangeListener((view, checked) -> {
             markCandidateDirty(candidate.id);
             refreshPublication.run();
-            boolean deadline = EventCategory.TASK.equals(
+            boolean deadline = EventCategory.isTaskLike(
                     EventCategory.VALUES[selectedCategory[0]]);
             start.setHint(checked ? "开始日期：yyyy-MM-dd" : deadline
                     ? "执行开始（可选）：yyyy-MM-dd HH:mm" : "开始：yyyy-MM-dd HH:mm");
@@ -2627,10 +2648,10 @@ public final class TaskDetailActivity extends Activity {
         });
         LinearLayout dueRow = formRow(card, "截止", R.drawable.ic_schedule);
         EditText due = inlineField(dueRow, "可选：yyyy-MM-dd HH:mm", format(candidate.dueAtMillis), 1f);
-        dueRow.setVisibility(EventCategory.TASK.equals(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
+        dueRow.setVisibility(EventCategory.isTaskLike(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
         configureTimePicker(due, new AllDayToggle(this,dp(DETAIL_FIELD_ICON_SIZE_DP),UiStyle.colors(this).primary,UiStyle.colors(this).onPrimaryContainer), "截止时间");
         if (!managedHomework) trackUnsavedChanges(due,candidate.id);
-        updateType[0]=()->dueRow.setVisibility(EventCategory.TASK.equals(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
+        updateType[0]=()->dueRow.setVisibility(EventCategory.isTaskLike(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
         EditText location = inlineField(formRow(card, "地点", R.drawable.ic_place),
                 "不填写", candidate.location, 1f);
         String[] currentDescription = {candidate.description == null ? "" : candidate.description};
@@ -2706,7 +2727,7 @@ public final class TaskDetailActivity extends Activity {
             }
             autoEnd[0] = draft.getBoolean("auto_end");
             syncingRange[0] = false;
-            boolean deadline = EventCategory.TASK.equals(EventCategory.VALUES[selectedCategory[0]]);
+            boolean deadline = EventCategory.isTaskLike(EventCategory.VALUES[selectedCategory[0]]);
             start.setHint(allDay.isChecked() ? "开始日期：yyyy-MM-dd" : deadline
                     ? "执行开始（可选）：yyyy-MM-dd HH:mm" : "开始：yyyy-MM-dd HH:mm");
             end.setHint(allDay.isChecked() ? "结束日期（含当天）：yyyy-MM-dd" : deadline
@@ -2764,7 +2785,7 @@ public final class TaskDetailActivity extends Activity {
                 Long endAt = allDay.isChecked()
                         ? parseDayEnd(end.getText().toString())
                         : parse(end.getText().toString(), zone);
-                boolean taskKind = EventCategory.TASK.equals(EventCategory.VALUES[selectedCategory[0]]);
+                boolean taskKind = EventCategory.isTaskLike(EventCategory.VALUES[selectedCategory[0]]);
                 Long dueAt = managedHomework ? candidate.dueAtMillis : taskKind ? parse(due.getText().toString(),zone) : null;
                 if ((!taskKind && (startAt == null || endAt == null)) || (endAt != null && (startAt == null || endAt <= startAt))) {
                     throw new IllegalArgumentException("请填写有效的开始和结束日期，结束不能早于开始");
@@ -2795,12 +2816,17 @@ public final class TaskDetailActivity extends Activity {
             ViewGroup parent = (ViewGroup) publish[0].getParent();
             if (parent != null) parent.removeView(publish[0]);
         }
-        if (managedHomework && new ZjuSettingsStore(this).enabled()) {
+        if (candidate.isHomework() && new ZjuSettingsStore(this).enabled()) {
+            HomeworkLinks destinations = new ZjuHomeworkStore(this).links(candidate);
             LinearLayout links = new LinearLayout(this);
             Button mobile = compactActionButton("雪灾浙大M", R.drawable.ic_open_external,
-                    () -> openHomeworkSite("https://mcourses.zju.edu.cn/"));
+                    () -> openHomeworkSite(destinations.mobile));
             Button desktop = compactActionButton("雪灾浙大", R.drawable.ic_open_external,
-                    () -> openHomeworkSite("https://courses.zju.edu.cn/user/"));
+                    () -> openHomeworkSite(destinations.desktop));
+            mobile.setEnabled(destinations.mobile != null);
+            desktop.setEnabled(destinations.desktop != null);
+            if (destinations.mobile == null) mobile.setTooltipText("当前作业缺少平台链接");
+            if (destinations.desktop == null) desktop.setTooltipText("当前作业缺少平台链接");
             LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(48), 1f);
             left.setMarginEnd(dp(8));
             links.addView(mobile, left);
@@ -2811,7 +2837,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void openHomeworkSite(String url) {
-        if (!new ZjuSettingsStore(this).enabled()) return;
+        if (url == null || !new ZjuSettingsStore(this).enabled()) return;
         try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
         catch (android.content.ActivityNotFoundException failure) { Feedback.show(this, "请先安装可打开网页的浏览器"); }
     }
@@ -3234,10 +3260,10 @@ public final class TaskDetailActivity extends Activity {
 
     private void addManualCandidate() {
         if (saveInFlight) return;
-        UiStyle.choiceDialog(this,"新建日程",EventCategory.LABELS,-1,index -> appendManualCandidate(EventCategory.VALUES[index]));
+        UiStyle.choiceDialog(this,"新建事项",EventCategory.LABELS,-1,index -> appendManualCandidate(EventCategory.VALUES[index]));
     }
     private void appendManualCandidate(String kind) {
-        EventCandidate candidate = new EventCandidate(0, taskId,EventCategory.TASK.equals(kind)?"新待办":"新活动",null,null,
+        EventCandidate candidate = new EventCandidate(0, taskId,EventCategory.HOMEWORK.equals(kind)?"新作业":EventCategory.isTaskLike(kind)?"新待办":"新活动",null,null,
                 ZoneId.systemDefault().getId(),"","",null,true,null,kind,false);
         try (TaskStore store = new TaskStore(this)) {
             initialCandidateId = store.appendCandidate(candidate);

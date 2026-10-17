@@ -72,5 +72,9 @@ assert 'UiMotion.isEnabled() && target.isLaidOut()' in activity
 assert 'completionRows.apply(target, incoming, destination == HOME ? 2 : 0)' in activity
 assert 'viewport.scrollTo(0, y)' in activity
 assert 'new LinearLayout.LayoutParams(dp(48), dp(48))' in activity
-assert 'ScheduleQuery.CATEGORY_HOMEWORK' in activity
-print('Dashboard source contracts passed: icon-only rotation, write lock, refresh gate, reduced motion, scroll retention, homework route')
+assert 'EventCategory.VALUES[scheduleCategory - 1]' in activity
+home_refresh = activity.split('private void refreshHomeContent()', 1)[1].split('private String calendarWindowKey', 1)[0]
+assert 'refreshCompletionRows();' in home_refresh and 'render();' not in home_refresh
+active_refresh = activity.split('private void refreshActivePageIfNeeded()', 1)[1].split('private ', 1)[0]
+assert 'if (section == HOME) {\n                refreshCompletionRows();\n                return;' in active_refresh
+print('Dashboard source contracts passed: icon-only rotation, write lock, refresh gate, reduced motion, scroll retention, homework route, home poll/calendar reconciliation')

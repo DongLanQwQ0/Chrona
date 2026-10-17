@@ -152,5 +152,6 @@ out.mkdir(parents=True, exist_ok=True)
 file = out / 'AgendaNotificationCheck.java'
 file.write_text(harness, encoding='utf-8')
 java = Path(os.environ['JAVA_HOME']) / 'bin'
-subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file)], check=True)
+subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file),
+                str(root / 'app/src/main/java/com/donglan/chrona/data/EventCategory.java')], check=True)
 subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'AgendaNotificationCheck'], check=True)

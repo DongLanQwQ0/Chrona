@@ -18,7 +18,7 @@ final class ReminderTimeline {
         return "event".equals(entry.category) ? entry.finish() : entry.start + STARTED_DISPLAY_WINDOW;
     }
     static long expiresAt(AgendaEntry entry, long snoozedUntil) {
-        return "task".equals(entry.category) && snoozedUntil > 0
+        return entry.isTask() && snoozedUntil > 0
                 ? Math.max(expiresAt(entry), snoozedUntil + STARTED_DISPLAY_WINDOW) : expiresAt(entry);
     }
     static long snoozeAt(AgendaEntry entry, long now) {

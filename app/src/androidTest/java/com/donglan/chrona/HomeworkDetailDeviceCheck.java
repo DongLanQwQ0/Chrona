@@ -70,7 +70,8 @@ final class HomeworkDetailDeviceCheck {
                 test.runOnMainSync(() -> {
                     CandidatePagerScrollView carousel = pager(screen.getWindow().getDecorView());
                     int width = carousel.getChildAt(0).getWidth()/2;
-                    if (carousel.getScrollX()!=width) {layoutFailure[0]="Restored second page is blank: scrollX="+carousel.getScrollX()+", expected="+width;return;}
+                    // Density rounding can clamp the final page one physical pixel short.
+                    if (Math.abs(carousel.getScrollX()-width)>1) {layoutFailure[0]="Restored second page is blank: scrollX="+carousel.getScrollX()+", expected="+width;return;}
                     EditText title = title(screen.getWindow().getDecorView(),"横滑测试 1/1");
                     android.graphics.Rect rect = new android.graphics.Rect();
                     if(title==null || !title.getGlobalVisibleRect(rect)) layoutFailure[0]="Restored candidate not visible without a horizontal nudge";
@@ -100,7 +101,7 @@ final class HomeworkDetailDeviceCheck {
                 task = store.insertTask("作业控件验收（自动清理）", null, "device_check", System.currentTimeMillis());
                 candidate = store.appendCandidate(new EventCandidate(0, task, "高等数学 · 课后练习",
                         null, null, "Asia/Shanghai", "", "完成课本第 3 章习题。内容与截止时间由课程平台同步。", null,
-                        false, null, "task", false, false, 0, System.currentTimeMillis()+7*86_400_000L, null, false));
+                        false, null, "homework", false, false, 0, System.currentTimeMillis()+7*86_400_000L, null, false));
                 store.updateStatus(task, TaskRecord.READY, null);
                 store.getWritableDatabase().execSQL("INSERT INTO zju_homework_captures(capture_id,account) VALUES(?,?)",new Object[]{task,account});
                 store.getWritableDatabase().execSQL("INSERT INTO zju_homework_map(account,remote_key,capture_id,candidate_id,ignored,snapshot,pending_calendar) VALUES(?,?,?,?,0,?,0)",
@@ -115,12 +116,12 @@ final class HomeworkDetailDeviceCheck {
             test.runOnMainSync(() -> {
                 try {
                     View root = screen.getWindow().getDecorView();
-                    View complete = described(root, "标记完成");
+                    View complete = described(root, "标记作业完成");
                     if (!(complete instanceof android.widget.ImageButton)) throw new AssertionError("Completion must be an icon button");
                     ViewGroup row = (ViewGroup) complete.getParent();
                     int index = row.indexOfChild(complete);
                     if (index != row.getChildCount()-2 || !(row.getChildAt(index-1) instanceof android.widget.Button)
-                            || !String.valueOf(row.getChildAt(index+1).getContentDescription()).startsWith("删除日程"))
+                            || !String.valueOf(row.getChildAt(index+1).getContentDescription()).startsWith("删除作业"))
                         throw new AssertionError("Required order is new / completion / delete");
                     if (complete.getWidth()!=complete.getHeight()) throw new AssertionError("Completion target must be square");
                     EditText sourceTitle = title(root,"高等数学 · 课后练习");

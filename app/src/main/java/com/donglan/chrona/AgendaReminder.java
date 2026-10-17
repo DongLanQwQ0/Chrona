@@ -177,7 +177,7 @@ public final class AgendaReminder {
             if (atomic) AtomicCountdownUpdates.remember(NOTIFICATION_ID + i, notice, entry, now, expires);
             else AtomicCountdownUpdates.clear(NOTIFICATION_ID + i);
             state.putString("slot_key:" + i, entry.key()).putLong("slot_end:" + i, expires)
-                    .putBoolean("slot_task:"+i,"task".equals(entry.category))
+                    .putBoolean("slot_task:"+i,entry.isTask())
                     .putLong("slot_snooze_limit:"+i,"event".equals(entry.category)?entry.finish()-30_000L:Long.MAX_VALUE);
             state.putLong("slot_started:" + i, notifiedAt);
             if (atomic) {
@@ -217,11 +217,11 @@ public final class AgendaReminder {
 
     private static Notification notification(Context context, AgendaEntry e, long now, boolean same,
             int notificationId, long notifiedAt, String nextTitle, boolean atomic) {
-        String status = "task".equals(e.category) ? now<e.start ? e.dueAtMillis!=null ? "即将截止" : "待办提醒" : e.dueAtMillis!=null ? "已逾期" : "待完成"
+        String status = e.isTask() ? now<e.start ? e.dueAtMillis!=null ? "即将截止" : "homework".equals(e.category) ? "作业提醒" : "待办提醒" : e.dueAtMillis!=null ? "已逾期" : "待完成"
                 : now < e.start ? "即将开始" : "进行中";
         long remaining = ReminderTimeline.remainingMillis(e, now);
         boolean startedNotice = now >= e.start && !"event".equals(e.category);
-        String targetAction = "task".equals(e.category) ? e.dueAtMillis != null ? "截止" : "提醒" : "开始";
+        String targetAction = e.isTask() ? e.dueAtMillis != null ? "截止" : "提醒" : "开始";
         String remainingText = startedNotice ? status : remaining < 60_000L ? (now < e.start ? "即将" + targetAction : "即将结束")
                 : (now < e.start ? ((remaining + 59_999L) / 60_000L) + "分钟后" + targetAction
                         : "还剩" + ((remaining + 59_999L) / 60_000L) + "分钟");
@@ -229,7 +229,7 @@ public final class AgendaReminder {
         DateTimeFormatter time = DateTimeFormatter.ofPattern("M月d日 HH:mm");
         java.time.ZonedDateTime start = Instant.ofEpochMilli(e.start).atZone(zone);
         java.time.ZonedDateTime end = Instant.ofEpochMilli(e.end).atZone(zone);
-        String range = "task".equals(e.category) ? time.format(start) : time.format(start) + " — " + (start.toLocalDate().equals(end.toLocalDate())
+        String range = e.isTask() ? time.format(start) : time.format(start) + " — " + (start.toLocalDate().equals(end.toLocalDate())
                 ? DateTimeFormatter.ofPattern("HH:mm").format(end) : time.format(end));
         Intent open = AgendaRepository.details(context, e);
         if (!e.system) open.setData(android.net.Uri.parse("chrona://agenda/" + e.key()));
@@ -242,7 +242,7 @@ public final class AgendaReminder {
                 .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setTimeoutAfter(Math.max(1000, ReminderTimeline.expiresAt(e,
                         AgendaReminderPreferences.prefs(context).getLong("snooze_until:"+e.key(),0)) - now));
-        if ("task".equals(e.category) && !e.system)
+        if (e.isTask() && !e.system)
             builder.addAction(new Notification.Action.Builder(null,"完成",action(context,e,"complete",4)).build());
         else builder.addAction(new Notification.Action.Builder(null,"确认活动",action(context,e,"complete",4)).build());
         if (ReminderTimeline.snoozeAt(e,now)>0)
@@ -281,7 +281,7 @@ public final class AgendaReminder {
                 large.setTextViewText(R.id.agenda_countdown,status);
             } else {
                 long target = now < e.start ? e.start : e.finish();
-                String label = now >= e.start ? "距结束 %s" : "task".equals(e.category)
+                String label = now >= e.start ? "距结束 %s" : e.isTask()
                         ? e.dueAtMillis!=null ? "距截止 %s" : "距提醒 %s" : "距开始 %s";
                 large.setChronometer(R.id.agenda_countdown,SystemClock.elapsedRealtime()+target-now,label,true);
                 large.setChronometerCountDown(R.id.agenda_countdown,true);

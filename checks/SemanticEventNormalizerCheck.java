@@ -98,6 +98,9 @@ public final class SemanticEventNormalizerCheck {
                 && allDay.endAtMillis == at("2026-10-01T00:00:00Z") && "UTC".equals(allDay.timeZoneId),
                 "inclusive all-day dates become exclusive UTC boundary");
         EventCandidate due = parse(base("task").put("due", time("2026-09-28", "10:30", null)));
+        EventCandidate homework = parse(base("homework").put("due", time("2026-09-28", "10:30", null)));
+        check(homework.isHomework() && homework.isTask() && homework.dueAtMillis != null
+                && homework.startAtMillis == null, "homework retains its category and task deadline behavior");
         check("task".equals(due.category)&&due.dueAtMillis!=null&&due.startAtMillis==null&&due.endAtMillis==null,"deadline is task property, not an execution slot");
         check(due.reminderMinutesBefore == 10 && !due.title.contains("2026-09-28 10:30"), "urgent deadline reminder and title");
         check(parse(base("task").put("due", time("2026-09-28", "20:00", null))).reminderMinutesBefore == 30,

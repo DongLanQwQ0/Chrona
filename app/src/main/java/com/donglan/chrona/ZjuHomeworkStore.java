@@ -60,6 +60,21 @@ public final class ZjuHomeworkStore {
         try (TaskStore store = new TaskStore(context)) { return state(store.getReadableDatabase()); }
     }
 
+    HomeworkLinks links(EventCandidate candidate) {
+        try (TaskStore store = new TaskStore(context);
+             Cursor cursor = store.getReadableDatabase().rawQuery(
+                     "SELECT snapshot FROM zju_homework_map WHERE candidate_id=? AND capture_id=? LIMIT 1",
+                     new String[]{Long.toString(candidate.id), Long.toString(candidate.taskId)})) {
+            if (cursor.moveToFirst()) {
+                try {
+                    JSONObject snapshot = new JSONObject(cursor.getString(0));
+                    return HomeworkLinks.fromUrl(snapshot.optString("url", ""), snapshot.optString("courseId", ""));
+                } catch (org.json.JSONException invalid) { return HomeworkLinks.NONE; }
+            }
+        }
+        return HomeworkLinks.fromText(candidate.description);
+    }
+
     /** Only an explicit settings action may create/rebind the managed capture. */
     public void configure(String account, boolean enabled) {
         account = account == null ? "" : account.trim();
@@ -127,17 +142,18 @@ public final class ZjuHomeworkStore {
                     String description = description(item);
                     boolean sourceChanged = !Objects.equals(before, after);
                     boolean contentChanged = prior == null || !Objects.equals(prior.title, item.title) || !Objects.equals(prior.description, description)
-                            || !Objects.equals(prior.dueAtMillis, item.deadline);
+                            || !Objects.equals(prior.dueAtMillis, item.deadline) || !prior.isHomework();
                     boolean changed = contentChanged || !Objects.equals(prior.completedAtMillis, done);
                     if (!changed && Objects.equals(before, after)) continue;
                     if (prior == null) {
                         candidateId = store.appendCandidate(new EventCandidate(0, current.captureId, item.title, null, null,
-                                "Asia/Shanghai", "", description, null, false, null, "task", false, false, 0, item.deadline, done, false));
+                                "Asia/Shanghai", "", description, null, false, null, "homework", false, false, 0, item.deadline, done, false));
                         added++;
                         if (done == null) actionableAdded++;
                     } else if (changed) {
                         ContentValues values = new ContentValues();
                         values.put("title", item.title); values.put("description", description);
+                        values.put("category", "homework");
                         values.put("due_at_millis", item.deadline); values.put("completed_at_millis", done);
                         db.update("event_candidates", values, "id=? AND task_id=?", new String[]{Long.toString(candidateId), Long.toString(current.captureId)});
                         if (prior.calendarEventId != null && !Objects.equals(prior.completedAtMillis, done)) alerts.add(candidateId);

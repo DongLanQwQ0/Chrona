@@ -120,6 +120,9 @@ public final class DashboardActivity extends Activity {
     private TextView selectionCount;
     private Button selectAllButton;
     private Button deleteSelectedButton;
+    private Button publishSelectedButton;
+    private boolean bulkCalendarWriting;
+    private static final int BULK_CALENDAR_PERMISSION_REQUEST = 14;
     private final Set<Long> selectedInboxIds = new LinkedHashSet<>();
     private final Set<Long> selectedScheduleIds = new LinkedHashSet<>();
     private boolean selectionBackRegistered;
@@ -214,7 +217,7 @@ public final class DashboardActivity extends Activity {
         if (state != null) {
             section = state.getInt(EXTRA_SECTION, HOME);
             sectionHistory.restore(state.getIntArray("section_history"));
-            categoryIndex = Math.min(EventCategory.VALUES.length+1,state.getInt("category"));
+            categoryIndex = Math.max(0, Math.min(EventCategory.VALUES.length+1,state.getInt("category")));
             statusIndex = state.getInt("status");
             scheduleTab = state.getInt("schedule_tab");
             schedulePage = state.getInt("schedule_page");
@@ -288,6 +291,7 @@ public final class DashboardActivity extends Activity {
         final TextView selectionCount;
         final Button selectAllButton;
         final Button deleteSelectedButton;
+        final Button publishSelectedButton;
         final Map<Long, InboxRow> inboxRows;
         final List<Long> matchingInboxIds;
         final List<ElapsedLabel> elapsedLabels;
@@ -306,6 +310,7 @@ public final class DashboardActivity extends Activity {
             this.selectionCount = DashboardActivity.this.selectionCount;
             this.selectAllButton = DashboardActivity.this.selectAllButton;
             this.deleteSelectedButton = DashboardActivity.this.deleteSelectedButton;
+            this.publishSelectedButton = DashboardActivity.this.publishSelectedButton;
             this.inboxRows = DashboardActivity.this.inboxRows;
             this.matchingInboxIds = DashboardActivity.this.matchingInboxIds;
             this.elapsedLabels = DashboardActivity.this.elapsedLabels;
@@ -331,6 +336,7 @@ public final class DashboardActivity extends Activity {
         selectionCount = page.selectionCount;
         selectAllButton = page.selectAllButton;
         deleteSelectedButton = page.deleteSelectedButton;
+        publishSelectedButton = page.publishSelectedButton;
         inboxRows = page.inboxRows;
         matchingInboxIds = page.matchingInboxIds;
         elapsedLabels = page.elapsedLabels;
@@ -374,6 +380,7 @@ public final class DashboardActivity extends Activity {
         selectionCount = null;
         selectAllButton = null;
         deleteSelectedButton = null;
+        publishSelectedButton = null;
         inboxRows = new LinkedHashMap<>();
         matchingInboxIds = new ArrayList<>();
         elapsedLabels = new ArrayList<>();
@@ -406,6 +413,10 @@ public final class DashboardActivity extends Activity {
         if (section == SCHEDULE && scheduleResultLoading) return;
         String version = dataSnapshot();
         if (dirtySections.contains(section) || !version.equals(sectionVersions.get(section))) {
+            if (section == HOME) {
+                refreshCompletionRows();
+                return;
+            }
             int y = scroll.getScrollY();
             int x = section == HOME && !strips.isEmpty() ? strips.get(0).getScrollX() : 0;
             if (section != HOME && results != null) updateResults();
@@ -649,11 +660,6 @@ public final class DashboardActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         foreground = true;
-        if (!new ZjuSettingsStore(this).enabled()
-                && scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY) {
-            scheduleCategory = 0; schedulePage = 0;
-            dirtySections.add(SCHEDULE);
-        }
         if (!initialDataReady) {
             loadInitialData();
             return;
@@ -933,15 +939,7 @@ public final class DashboardActivity extends Activity {
             return;
         }
         homeRefreshPending = false;
-        int y = scroll.getScrollY();
-        int x = strips.isEmpty() ? 0 : strips.get(0).getScrollX();
-        render();
-        ScrollView refreshed = scroll;
-        View strip = strips.isEmpty() ? null : strips.get(0);
-        refreshed.post(() -> {
-            refreshed.scrollTo(0, y);
-            if (strip != null) strip.scrollTo(x, 0);
-        });
+        refreshCompletionRows();
     }
 
 
@@ -1623,9 +1621,9 @@ public final class DashboardActivity extends Activity {
 
     private void openHomeTodos(int scope, boolean unscheduled) {
         scheduleTab = unscheduled ? 1 : 3;
-        scheduleTodoScope = scope;
+        scheduleTodoScope = unscheduled ? ScheduleQuery.TODO_OPEN : scope;
         scheduleRange = schedulePublication = scheduleSource = schedulePage = 0;
-        scheduleCategory = EventCategory.indexOf(EventCategory.TASK) + 1;
+        scheduleCategory = 0;
         scheduleDate = scheduleUntil = LocalDate.now();
         scheduleQuery = "";
         scheduleOldestFirst = ScheduleOrderPreferences.oldestFirst(this, scheduleTab);
@@ -1757,8 +1755,10 @@ public final class DashboardActivity extends Activity {
         selectionCount.setSingleLine(true);
         selectionBar.addView(selectionCount);
         selectAllButton = inboxSelectionAction("全选", this::toggleSelectAll);
+        publishSelectedButton = inboxSelectionAction("写入日历", this::publishSelected);
         deleteSelectedButton = inboxSelectionAction("删除", this::confirmDeleteSelected);
         selectionBar.addView(selectAllButton);
+        selectionBar.addView(publishSelectedButton);
         selectionBar.addView(deleteSelectedButton);
         selectionBar.setVisibility(View.GONE);
     }
@@ -1894,7 +1894,9 @@ public final class DashboardActivity extends Activity {
     private void addInboxResultsHeading(int count) {
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text("共 " + count + (section == SCHEDULE ? " 条日程" : " 条收件"), 19, true);
+        TextView title = text("共 " + count + (section == SCHEDULE
+                ? scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY ? " 条作业" : " 条日程"
+                : " 条收件"), 19, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -2023,14 +2025,9 @@ public final class DashboardActivity extends Activity {
     }
 
     private ScheduleQuery buildScheduleQuery(long now, ZoneId zone) {
-        if (!new ZjuSettingsStore(this).enabled()
-                && scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY)
-            scheduleCategory = 0;
         LocalDate[] window = scheduleWindow(false);
         return new ScheduleQuery(scheduleTab,
-                scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY
-                        ? ScheduleQuery.CATEGORY_HOMEWORK
-                        : scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
+                scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
                 schedulePublication, scheduleQuery, window[0], window[1], now, zone, scheduleTodoScope);
     }
 
@@ -2044,7 +2041,7 @@ public final class DashboardActivity extends Activity {
                         scheduleTodoScope);
         String taskFilter = scheduleTodoScope == ScheduleQuery.TODO_TODAY_DUE ? "今日截止的待办"
                 : scheduleTodoScope == ScheduleQuery.TODO_OVERDUE ? "已逾期的待办"
-                : scheduleTodoScope == ScheduleQuery.TODO_OPEN ? "未完成的待办"
+                : scheduleTodoScope == ScheduleQuery.TODO_OPEN ? (scheduleTab == 1 ? "未安排的待办" : "未完成的待办")
                 : scheduleTab == 1 && scheduleCategory == EventCategory.indexOf(EventCategory.TASK) + 1
                         ? "未安排的待办" : "";
         boolean homeworkFilter = scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
@@ -2687,7 +2684,8 @@ public final class DashboardActivity extends Activity {
         done.setImageTintList(ColorStateList.valueOf(candidate.completed() || overdue
                 ? UiStyle.colors(this).primary : UiStyle.colors(this).muted));
         done.setContentDescription(candidate.taskState(now) + "，"
-                + (candidate.completed() ? "恢复待办" : "标记待办完成"));
+                + (candidate.completed() ? "恢复" + (candidate.isHomework() ? "作业" : "待办")
+                : "标记" + (candidate.isHomework() ? "作业" : "待办") + "完成"));
         done.setPadding(dp(12), dp(12), dp(12), dp(12));
         UiStyle.acrylicChoice(done, candidate.completed(), UiStyle.RADIUS_PILL, false);
         UiStyle.pressable(done);
@@ -2953,6 +2951,7 @@ public final class DashboardActivity extends Activity {
     private int categoryIcon(String category) {
         switch (category) {
             case EventCategory.TASK: return R.drawable.ic_content_paste;
+            case EventCategory.HOMEWORK: return R.drawable.ic_homework;
             default: return R.drawable.ic_event;
         }
     }
@@ -3132,6 +3131,12 @@ public final class DashboardActivity extends Activity {
         selectAllButton.setContentDescription(all ? "取消全选" : "选中本筛选的全部事项");
         deleteSelectedButton.setText("删除");
         deleteSelectedButton.setContentDescription("删除已选 " + selected.size() + " 项");
+        boolean canPublish = (section == INBOX && statusIndex == 1)
+                || (section == SCHEDULE && scheduleTab == 1 && scheduleSource != 1);
+        publishSelectedButton.setVisibility(canPublish ? View.VISIBLE : View.GONE);
+        publishSelectedButton.setEnabled(!bulkCalendarWriting);
+        selectAllButton.setEnabled(!bulkCalendarWriting);
+        deleteSelectedButton.setEnabled(!bulkCalendarWriting);
         for (Map.Entry<Long, InboxRow> entry : inboxRows.entrySet())
             applyInboxRowSelection(entry.getKey());
     }
@@ -3146,6 +3151,46 @@ public final class DashboardActivity extends Activity {
                 : UiStyle.colors(this).muted);
         // Keep the acrylic card background; selection is already shown by the marker and toolbar.
         UiStyle.pressable(row.card);
+    }
+
+    private void publishSelected() {
+        if (bulkCalendarWriting || currentSelection().isEmpty()) return;
+        if (!new CalendarStore(this).hasReadPermission() || !new CalendarStore(this).hasWritePermission()) {
+            requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR,
+                    android.Manifest.permission.WRITE_CALENDAR}, BULK_CALENDAR_PERMISSION_REQUEST);
+            return;
+        }
+        final boolean inbox = section == INBOX;
+        final List<Long> selected = new ArrayList<>(currentSelection());
+        bulkCalendarWriting = true;
+        updateSelectionUi();
+        new Thread(() -> {
+            com.donglan.chrona.processing.BulkCalendarPublisher.Result result = null;
+            String error = null;
+            try { result = com.donglan.chrona.processing.BulkCalendarPublisher.publish(
+                    getApplicationContext(), selected, inbox); }
+            catch (Exception failure) {
+                android.util.Log.w("Chrona", "Could not read selected calendar drafts", failure);
+                error = "无法完成批量写入，请刷新后重试";
+            }
+            final com.donglan.chrona.processing.BulkCalendarPublisher.Result written = result;
+            final String problem = error;
+            runOnUiThread(() -> {
+                bulkCalendarWriting = false;
+                if (isFinishing() || isDestroyed()) return;
+                if (inbox) selectedInboxIds.removeAll(selected);
+                else selectedScheduleIds.removeAll(selected);
+                dirtySections.add(HOME); dirtySections.add(INBOX); dirtySections.add(SCHEDULE);
+                if (written != null) updatePendingCounts(written.review, written.failedTasks);
+                lastCalendarFetch = 0;
+                updateResults();
+                updateSelectionUi();
+                AgendaWidgetProvider.requestRefresh(this);
+                AgendaReminder.requestRefresh(this);
+                Feedback.showLong(this, written == null ? problem : written.summary());
+                snapshot = dataSnapshot();
+            });
+        }, "chrona-calendar-bulk-write").start();
     }
 
     private void confirmDeleteSelected() {
@@ -3301,6 +3346,13 @@ public final class DashboardActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions,
             int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == BULK_CALENDAR_PERMISSION_REQUEST) {
+            boolean granted = new CalendarStore(this).hasReadPermission()
+                    && new CalendarStore(this).hasWritePermission();
+            Feedback.show(this, granted ? "日历权限已授权，请再次点击写入日历"
+                    : "未获得日历权限，所选日程已保留");
+            return;
+        }
         if (requestCode == StartupPermissions.REQUEST_CODE) {
             lastCalendarFetch = 0;
             refreshSystemCalendar();

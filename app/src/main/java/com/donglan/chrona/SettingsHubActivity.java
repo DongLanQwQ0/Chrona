@@ -46,7 +46,6 @@ public final class SettingsHubActivity extends Activity {
         destination(scheduling, "AI 服务", SettingsActivity.class);
         destination(scheduling, "日程来源", ScheduleSourceSettingsActivity.class);
         destination(scheduling, "系统日程", SystemCalendarSettingsActivity.class);
-        destination(scheduling, "合并完全相同日程", CandidateMergeActivity.class);
         destination(scheduling, "折姜星辰", ZjuSettingsActivity.class);
 
         LinearLayout widgets = group(root, "桌面小组件");

@@ -49,7 +49,7 @@ final class TaskCompletion {
                 if (!prefs.getBoolean("existing_completed_checked",false)) {
                     Set<String> initial = new HashSet<>(prefs.getStringSet(PENDING,Set.of()));
                     try (android.database.Cursor cursor=store.getReadableDatabase().rawQuery(
-                            "SELECT id FROM event_candidates WHERE category='task' AND completed_at_millis IS NOT NULL AND calendar_event_id IS NOT NULL",null)) {
+                            "SELECT id FROM event_candidates WHERE category IN ('task','homework') AND completed_at_millis IS NOT NULL AND calendar_event_id IS NOT NULL",null)) {
                         while(cursor.moveToNext())initial.add(Long.toString(cursor.getLong(0)));
                     }
                     prefs.edit().putStringSet(PENDING,initial).putBoolean("existing_completed_checked",true).apply();

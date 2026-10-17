@@ -18,7 +18,7 @@ final class CategoryTimeChange {
         Long anchor = start;
         if (anchor == null) return null;
         long duration = EventTimeDefaults.durationMillis(next);
-        if (EventCategory.TASK.equals(next)) return new CategoryTimeChange(anchor, null, false);
+        if (EventCategory.isTaskLike(next)) return new CategoryTimeChange(anchor, null, false);
         return new CategoryTimeChange(anchor, anchor + duration, true);
     }
 }

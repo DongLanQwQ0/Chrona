@@ -236,7 +236,7 @@ final class LanWebServer extends NanoHTTPD {
         Integer reminder=body.isNull("reminder")?null:(int)whole(body,"reminder",0,525600);
         Long due=body.has("due")?nullableLong(body,"due"):old.dueAtMillis;
         boolean needs=!record&&((EventCategory.EVENT.equals(category)&&(start==null||end==null))||bool(body,"needsConfirmation"));
-        return new EventCandidate(old.id,old.taskId,title,start,end,zone,string(body,"location",2000,false),string(body,"description",100000,false),reminder,needs,old.calendarEventId,category,allDay,false,needs?EventCandidate.DOUBTFUL:EventCandidate.CERTAIN,due,EventCategory.TASK.equals(category)&&!record?old.completedAtMillis:null,record);
+        return new EventCandidate(old.id,old.taskId,title,start,end,zone,string(body,"location",2000,false),string(body,"description",100000,false),reminder,needs,old.calendarEventId,category,allDay,false,needs?EventCandidate.DOUBTFUL:EventCandidate.CERTAIN,due,EventCategory.isTaskLike(category)&&!record?old.completedAtMillis:null,record);
     }
     private static CalendarStore.EventInput input(EventCandidate item){if(item.isRecord||item.calendarStart()==null||item.calendarEnd()==null||item.needsConfirmation)throw new IllegalArgumentException();return new CalendarStore.EventInput(item.title,item.calendarStart(),item.calendarEnd(),item.timeZoneId,item.allDay,item.description,item.location,item.completed()||item.reminderMinutesBefore==null?Collections.emptyList():Collections.singletonList(item.reminderMinutesBefore));}
     private Response timetable(IHTTPSession request)throws Exception {

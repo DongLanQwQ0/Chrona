@@ -65,6 +65,7 @@ for name, content in files.items():
     path.write_text(content, encoding='utf-8')
     paths.append(path)
 paths += [src / (name + '.java') for name in ('WeekAgendaImage', 'AgendaEntry', 'CalendarTimelineLayout', 'CalendarSourceColors')]
+paths.append(src / 'data/EventCategory.java')
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str, paths)], check=True)
 subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.WeekExportCheck', str(out)], check=True)

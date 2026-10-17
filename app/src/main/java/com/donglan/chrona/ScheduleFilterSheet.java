@@ -372,11 +372,9 @@ final class ScheduleFilterSheet {
     }
 
     private String[] categoryOptions() {
-        boolean homework = new ZjuSettingsStore(activity).enabled();
-        String[] options = new String[EventCategory.LABELS.length + 1 + (homework ? 1 : 0)];
+        String[] options = new String[EventCategory.LABELS.length + 1];
         options[0] = "全部";
         System.arraycopy(EventCategory.LABELS, 0, options, 1, EventCategory.LABELS.length);
-        if (homework) options[ScheduleFilterState.HOMEWORK_CATEGORY] = "作业";
         return options;
     }
     private String[] publicationOptions() { return new String[]{"全部", "待确认", "已写入"}; }

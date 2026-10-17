@@ -184,7 +184,7 @@ public final class ZjuClient implements Closeable {
             JSONObject detail = a.optJSONObject("data");
             String description = detail == null ? "" : plain(detail.optString("description", detail.optString("content", "")));
             output.add(new ZjuSnapshot.Homework(id + "/homework/" + activityId, id, homeworkTitle(title, name),
-                    description, COURSES + "/course/" + segment(id) + "/learning-activity/full-screen#/?activityId=" + segment(activityId),
+                    description, COURSES + "/course/" + segment(id) + "/learning-activity#/" + segment(activityId),
                     a.optString("updated_at", ""), deadline, submitted));
         }
         if (!complete) warnings.add(title + "：部分作业缺少必要字段，保留上次数据");

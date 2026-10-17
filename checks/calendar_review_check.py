@@ -51,6 +51,12 @@ public class Context {
  public Intent putExtra(String key,long value){return this;}}''',
  'android/provider/CalendarContract.java': 'package android.provider;public class CalendarContract {public static class Events {public static final android.net.Uri CONTENT_URI=new android.net.Uri("events/");}}',
  'com/donglan/chrona/TaskDetailActivity.java': 'package com.donglan.chrona;public class TaskDetailActivity {}',
+ 'com/donglan/chrona/ExternalCourseAgenda.java': '''package com.donglan.chrona;
+import java.util.*;import android.content.Context;import com.donglan.chrona.calendar.CalendarOccurrence;
+final class ExternalCourseAgenda {
+ static String revision(Context c){return "fixture-courses:0";}
+ static List<CalendarOccurrence>merge(Context c,List<CalendarOccurrence>system,long begin,long end,Set<Long>linked){return CalendarOccurrence.unlinked(system,linked);}
+}''',
  'com/donglan/chrona/SystemAgendaDetailActivity.java': 'package com.donglan.chrona;public class SystemAgendaDetailActivity {static android.content.Intent intent(android.content.Context c,long id,long start,long end,boolean allDay,String title,String location,String calendar){return new android.content.Intent(c,SystemAgendaDetailActivity.class);}}',
  'com/donglan/chrona/data/TaskStore.java': '''package com.donglan.chrona.data;
 import java.util.*;import android.content.Context;

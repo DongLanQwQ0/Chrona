@@ -23,7 +23,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 12;
+    private static final int DATABASE_VERSION = 13;
 
     private final Context context;
     private SQLiteDatabase openedDatabase;
@@ -121,10 +121,10 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<EventCandidate> nextReminderCandidates(long now, java.util.Set<String> hidden) {
         final long startedDisplayWindow = 3 * 60_000L;
         List<EventCandidate> result = new ArrayList<>();
-        String exclusion = hidden.isEmpty() ? "" : " AND ('chrona:'||id||':'||(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)) NOT IN ("
+        String exclusion = hidden.isEmpty() ? "" : " AND ('chrona:'||id||':'||(CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)) NOT IN ("
                 + String.join(",", java.util.Collections.nCopies(hidden.size(), "?")) + ")";
         final long defaultLead = 30 * 60_000L;
-        String appearsAt = "((CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)-CASE WHEN category='event' THEN MAX(" + defaultLead
+        String appearsAt = "((CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)-CASE WHEN category='event' THEN MAX(" + defaultLead
                 + ",COALESCE(reminder_minutes_before,30)*60000) ELSE " + defaultLead + " END)";
         // Keep started entries, already-due upcoming entries and the next future boundary separately.
         // A far-away activity with an early reminder must not be lost behind four nearer entries.
@@ -134,13 +134,13 @@ public final class TaskStore extends SQLiteOpenHelper {
             if (!started) args.add(Long.toString(now));
             args.addAll(hidden);
             try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                    "is_record=0 AND completed_at_millis IS NULL AND all_day=0 AND needs_confirmation=0 AND " + ZJU_REMINDER_ALLOWED + " AND (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) IS NOT NULL "
-                            + "AND CASE WHEN category!='event' THEN (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)+" + startedDisplayWindow
-                            + " WHEN end_at_millis>(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) THEN end_at_millis ELSE (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)+60000 END>CAST(? AS INTEGER) "
-                            + "AND (CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)" + (started ? "<=" : ">") + "CAST(? AS INTEGER)"
+                    "is_record=0 AND completed_at_millis IS NULL AND all_day=0 AND needs_confirmation=0 AND " + ZJU_REMINDER_ALLOWED + " AND (CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) IS NOT NULL "
+                            + "AND CASE WHEN category!='event' THEN (CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)+" + startedDisplayWindow
+                            + " WHEN end_at_millis>(CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) THEN end_at_millis ELSE (CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)+60000 END>CAST(? AS INTEGER) "
+                            + "AND (CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END)" + (started ? "<=" : ">") + "CAST(? AS INTEGER)"
                             + (started ? "" : " AND " + appearsAt + (group == 1 ? "<=" : ">") + "CAST(? AS INTEGER)") + exclusion,
                     args.toArray(new String[0]), null, null,
-                    (started ? "(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) DESC" : group == 1 ? "(CASE WHEN category='task' THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) ASC" : appearsAt + " ASC")
+                    (started ? "(CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) DESC" : group == 1 ? "(CASE WHEN category IN ('task','homework') THEN COALESCE(due_at_millis,start_at_millis) ELSE start_at_millis END) ASC" : appearsAt + " ASC")
                             + ",id ASC", started ? "3" : "4")) {
                 while (cursor.moveToNext()) result.add(readCandidate(cursor));
             }
@@ -259,6 +259,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 10) addCandidateMerges(db);
         if (oldVersion < 11) addTaskSemantics(db);
         if (oldVersion < 12) addZjuHomework(db);
+        if (oldVersion < 13) db.execSQL("UPDATE event_candidates SET category='homework' WHERE category='task' AND (id IN (SELECT candidate_id FROM zju_homework_map) OR task_id IN (SELECT id FROM tasks WHERE source='zju-homework'))");
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
 
@@ -452,7 +453,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         long todayUtc = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                 .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
         String selection = "is_record=0 AND completed_at_millis IS NULL AND start_at_millis IS NOT NULL"
-                + " AND (category='task' OR (category='event' AND end_at_millis>start_at_millis))"
+                + " AND (category IN ('task','homework') OR (category='event' AND end_at_millis>start_at_millis))"
                 + " AND ((all_day=0 AND (CASE WHEN end_at_millis>start_at_millis THEN end_at_millis>CAST(? AS INTEGER)"
                 + " ELSE start_at_millis>=CAST(? AS INTEGER) END))"
                 + " OR (all_day=1 AND (CASE WHEN end_at_millis>start_at_millis THEN end_at_millis"
@@ -471,7 +472,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         java.time.LocalDate today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
         long dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
         long dayEnd = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
-        String open = "is_record=0 AND category='task' AND completed_at_millis IS NULL";
+        String open = "is_record=0 AND category IN ('task','homework') AND completed_at_millis IS NULL";
         int total = 0, todayDue = 0, overdue = 0, unscheduled = 0;
         try (Cursor cursor = getReadableDatabase().rawQuery("SELECT COUNT(*),"
                 + " SUM(CASE WHEN due_at_millis>=CAST(? AS INTEGER) AND due_at_millis<CAST(? AS INTEGER) THEN 1 ELSE 0 END),"
@@ -1247,7 +1248,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         try {
             ContentValues values=new ContentValues();
             if(completed) values.put("completed_at_millis",System.currentTimeMillis()); else values.putNull("completed_at_millis");
-            boolean changed=db.update("event_candidates",values,"id=? AND task_id=? AND category='task' AND is_record=0 AND task_id IN (SELECT id FROM tasks WHERE status NOT IN ('queued','processing'))",new String[]{Long.toString(id),Long.toString(taskId)})==1;
+            boolean changed=db.update("event_candidates",values,"id=? AND task_id=? AND category IN ('task','homework') AND is_record=0 AND task_id IN (SELECT id FROM tasks WHERE status NOT IN ('queued','processing'))",new String[]{Long.toString(id),Long.toString(taskId)})==1;
             if(changed) updateStatus(taskId,getCandidates(taskId).stream().allMatch(EventCandidate::settled)?TaskRecord.READY:TaskRecord.NEEDS_REVIEW,null);
             db.setTransactionSuccessful();return changed;
         } finally {db.endTransaction();}

@@ -90,7 +90,9 @@ public final class EventCandidate {
         this.completedAtMillis = completedAtMillis;
         this.isRecord = isRecord;
     }
-    public boolean isTask() { return !isRecord && EventCategory.TASK.equals(category); }
+    public boolean isTask() { return !isRecord && EventCategory.isTaskLike(category); }
+    public boolean isHomework() { return !isRecord && EventCategory.HOMEWORK.equals(category); }
+    public String itemLabel() { return isHomework() ? "作业" : "日程"; }
     public boolean completed() { return isTask() && completedAtMillis != null; }
     public Long anchor() { return startAtMillis != null ? startAtMillis : dueAtMillis; }
     public Long reminderAnchor() { return isTask() && dueAtMillis!=null ? dueAtMillis : anchor(); }

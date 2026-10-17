@@ -396,7 +396,7 @@ public final class ChronaDataBackup {
                     throw new IOException("备份数据库完整性检查失败");
             }
             try (Cursor cursor = db.rawQuery("PRAGMA user_version", null)) {
-                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 12)
+                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 13)
                     throw new IOException("备份数据库版本与当前应用不兼容");
             }
             long tasks;

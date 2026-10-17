@@ -38,7 +38,8 @@ final class AgendaEntry {
         this.reminderMinutesBefore = reminderMinutesBefore;
     }
     String key() { return (system ? "system:" : "chrona:") + id + ":" + start; }
-    long finish() { return end > start ? end : start + ("task".equals(category) ? 1L : 60_000L); }
+    boolean isTask() { return com.donglan.chrona.data.EventCategory.isTaskLike(category); }
+    long finish() { return end > start ? end : start + (isTask() ? 1L : 60_000L); }
     boolean overlaps(long begin, long until) { return start < until && finish() > begin; }
     @Override public boolean equals(Object other) {
         if (!(other instanceof AgendaEntry e)) return false;

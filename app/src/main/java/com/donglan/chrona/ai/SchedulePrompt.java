@@ -8,8 +8,9 @@ import java.time.format.DateTimeFormatter;
 
 /** Stable instructions and an explicitly encoded, bounded data suffix. */
 public final class SchedulePrompt {
-    public static final String VERSION = "schedule-v7";
+    public static final String VERSION = "schedule-v8";
     public static final String DECISION_RULES = "判断边界（按以下规则直接落字段，不再比较）："
+            + "课程作业、习题、课程实验报告使用homework，行为同task；普通个人事项用task，不把课堂活动或考试归为作业。"
             + "‘在T提醒我做X/提醒我T做X’默认task，start=T，due=null，end=null，reminder_specified=true，reminder_minutes_before=0。"
             + "‘T开会/上课/考试/赴约’是event，start=T；‘T前/截至T/最晚T完成X’才给task.due=T。"
             + "待办有时间不因此变活动；‘提醒’不是类别，也不意味着截止。明确‘提前N分钟提醒’用N，明确不提醒用null。"
@@ -60,7 +61,7 @@ public final class SchedulePrompt {
             + "Combine actions done together; keep independent events separate, even when they overlap. "
             + "Use a short concrete title in the input language. Put physical venues/meeting platforms in location; "
             + "keep URLs, submission addresses and instructions in description. "
-            + "Use only category event (an appointment) or task (an action to complete). Reminder is a setting and due is a task deadline, never a separate category. Put informational notes without an action in records, not events. Do not calculate Unix milliseconds or default durations/reminders. "
+            + "Use category event (an appointment), task (a personal action to complete), or homework (a course assignment/exercise/lab report). Homework shares task timing/completion rules but is a distinct category. Reminder is a setting and due is a deadline, never a separate category. Put informational notes without an action in records, not events. Do not calculate Unix milliseconds or default durations/reminders. "
             + "Use start/end for event duration, optional start/end for a task execution slot, and optional due for its deadline. Tasks may have no times; do not invent a time or duration for an unscheduled task. Preserve explicit duration_minutes. "
             + "For each time use an explicit date if stated; otherwise encode day_offset relative to now_local, "
             + "offset_minutes relative to reference epoch, or weekday (Monday=1) and week_offset (this week=0). "
@@ -94,7 +95,7 @@ public final class SchedulePrompt {
             ep.put("uncertainty_level", new JSONObject().put("type", "integer").put("enum",
                     new org.json.JSONArray(new int[]{0, 1, 2})));
             ep.put("category", new JSONObject().put("type", "string").put("enum",
-                    new org.json.JSONArray(new String[]{"event", "task"})));
+                    new org.json.JSONArray(new String[]{"event", "task", "homework"})));
             for (String key : new String[]{"location", "description", "time_zone_id"}) ep.put(key, nullable("string"));
             for (String key : new String[]{"all_day", "needs_confirmation", "reminder_specified"})
                 ep.put(key, new JSONObject().put("type", "boolean"));

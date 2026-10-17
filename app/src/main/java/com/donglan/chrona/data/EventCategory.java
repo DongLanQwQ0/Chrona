@@ -4,9 +4,12 @@ package com.donglan.chrona.data;
 public final class EventCategory {
     public static final String EVENT = "event";
     public static final String TASK = "task";
+    public static final String HOMEWORK = "homework";
 
-    public static final String[] VALUES = {EVENT, TASK};
-    public static final String[] LABELS = {"活动", "待办"};
+    public static final String[] VALUES = {EVENT, TASK, HOMEWORK};
+    public static final String[] LABELS = {"活动", "待办", "作业"};
+
+    public static boolean isTaskLike(String category) { return TASK.equals(category) || HOMEWORK.equals(category); }
 
     private EventCategory() { }
 

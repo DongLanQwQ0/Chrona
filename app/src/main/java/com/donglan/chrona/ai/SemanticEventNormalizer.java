@@ -90,7 +90,7 @@ public final class SemanticEventNormalizer {
             TimeValue last = resolve(event, "end", context, first.date, allDay);
             TimeValue deadline = resolve(event, "due", context, null, allDay);
             if (!event.isNull("due")) {
-                category = EventCategory.TASK;
+                if (!EventCategory.HOMEWORK.equals(category)) category = EventCategory.TASK;
                 due = deadline.millis;
                 if (allDay && deadline.date != null) {
                     due = deadline.date.atTime(23,59).atZone(context.zone).toInstant().toEpochMilli();

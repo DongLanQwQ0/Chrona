@@ -68,8 +68,8 @@ final class AtomicAgendaCard {
         views.setViewVisibility(R.id.atomic_top_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setViewVisibility(R.id.atomic_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
         if (now >= to) {
-            views.setTextViewText(R.id.atomic_remaining, active ? "已结束" : entry.dueAtMillis!=null ? "已逾期" : "task".equals(entry.category) ? "待完成" : "已开始");
-            views.setTextViewText(R.id.atomic_top_countdown, active ? "已结束" : entry.dueAtMillis!=null ? "已逾期" : "task".equals(entry.category) ? "待完成" : "已开始");
+            views.setTextViewText(R.id.atomic_remaining, active ? "已结束" : entry.dueAtMillis!=null ? "已逾期" : entry.isTask() ? "待完成" : "已开始");
+            views.setTextViewText(R.id.atomic_top_countdown, active ? "已结束" : entry.dueAtMillis!=null ? "已逾期" : entry.isTask() ? "待完成" : "已开始");
         }
         views.setTextViewText(R.id.atomic_from, CLOCK.format(Instant.ofEpochMilli(from).atZone(zone)));
         views.setTextViewText(R.id.atomic_to, CLOCK.format(Instant.ofEpochMilli(to).atZone(zone)));
@@ -89,7 +89,7 @@ final class AtomicAgendaCard {
         Bitmap completeIcon = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888);
         complete.setBounds(0, 0, 48, 48); complete.draw(new Canvas(completeIcon));
         views.setImageViewBitmap(R.id.atomic_complete, completeIcon);
-        views.setContentDescription(R.id.atomic_complete,"task".equals(entry.category)?"标记待办完成":"结束本次提醒");
+        views.setContentDescription(R.id.atomic_complete,entry.isTask()?"homework".equals(entry.category)?"标记作业完成":"标记待办完成":"结束本次提醒");
         views.setOnClickPendingIntent(R.id.atomic_complete, AgendaReminder.action(context, entry, "complete", 4));
 
         boolean motion = ValueAnimator.areAnimatorsEnabled();

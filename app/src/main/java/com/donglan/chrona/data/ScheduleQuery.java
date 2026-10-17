@@ -34,21 +34,21 @@ public final class ScheduleQuery {
         clauses.add("is_record=0");
         String anchor = "COALESCE(start_at_millis,due_at_millis)";
         String finish = "COALESCE(end_at_millis,due_at_millis,start_at_millis)";
-        String dated = "((category='task' AND " + anchor + " IS NOT NULL) OR (category='event' AND start_at_millis IS NOT NULL AND end_at_millis IS NOT NULL))";
+        String dated = "((category IN ('task','homework') AND " + anchor + " IS NOT NULL) OR (category='event' AND start_at_millis IS NOT NULL AND end_at_millis IS NOT NULL))";
         String futureTime = "((all_day=0 AND " + finish + ">CAST(? AS INTEGER)) OR (all_day=1 AND " + finish + ">CAST(? AS INTEGER)))";
         if (tab == 1) { clauses.add("NOT " + dated); clauses.add("completed_at_millis IS NULL"); }
         else if (tab == 0 || tab == 2) {
-            if (tab == 0) { clauses.add(dated); clauses.add("completed_at_millis IS NULL AND (category='task' OR " + futureTime + ")"); }
+            if (tab == 0) { clauses.add(dated); clauses.add("completed_at_millis IS NULL AND (category IN ('task','homework') OR " + futureTime + ")"); }
             else clauses.add("(completed_at_millis IS NOT NULL OR (category='event' AND " + dated + " AND NOT " + futureTime + "))");
             values.add(Long.toString(now));
             values.add(Long.toString(java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                     .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()));
         }
         if (CATEGORY_HOMEWORK.equals(category)) {
-            clauses.add("category='task' AND EXISTS(SELECT 1 FROM managed_zju_state homework WHERE homework.capture_id=event_candidates.task_id)");
+            clauses.add("category='homework'");
         } else if (category != null) { clauses.add("category=?"); values.add(category); }
         if (todoScope != TODO_ANY) {
-            clauses.add("category='task' AND completed_at_millis IS NULL");
+            clauses.add("category IN ('task','homework') AND completed_at_millis IS NULL");
             if (todoScope == TODO_TODAY_DUE) {
                 LocalDate today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
                 clauses.add("due_at_millis>=CAST(? AS INTEGER) AND due_at_millis<CAST(? AS INTEGER)");

@@ -234,6 +234,7 @@ public class ReminderProviderCheck {
  final Resolver resolver=new Resolver();void requireRead(){}
  ''' + method(calendar, 'public List<CalendarOccurrence> reminderInstances(') + '''
  ''' + method(calendar, 'public List<CalendarOccurrence> listInstances(long begin, long end,\n            android.os.CancellationSignal cancellation, int limit)') + '''
+ ''' + method(calendar, 'private List<CalendarOccurrence> listInstances(long begin, long end,\n            android.os.CancellationSignal cancellation, int limit, boolean allSources)') + '''
  static Object[]e(long id,long start,long end){return new Object[]{id,start,end,"event",null,"room","system",null,42L,"account"};}
  public static void main(String[]args){
   ReminderProviderCheck c=new ReminderProviderCheck();Set<Long>linked=new HashSet<>();
@@ -269,6 +270,7 @@ for name, content in files.items():
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding='utf-8')
     paths.append(path)
+paths.append(src / 'data/EventCategory.java')
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str, paths)], check=True)
 subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.AgendaFeaturesCheck'], check=True)
