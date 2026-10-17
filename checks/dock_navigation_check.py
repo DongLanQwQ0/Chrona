@@ -321,10 +321,10 @@ public class DockNavigationCheck extends Context {
   require(Math.abs(tracking.position-2f)<.002f&&Math.abs(tracking.trackingHeight-1f)<.002f,"Stopped follow restores full height");
   init();android.view.VelocityTracker.velocity=2500;touch(0,25,35);touch(2,150,35);touch(1,150,100);
   var springField=DockNavigationLayout.class.getDeclaredField("spring");springField.setAccessible(true);DockSpring transferred=(DockSpring)springField.get(dock);
-  require(Math.abs(transferred.velocity-DockSpring.clickPeakSpeed(2))<.001f,"Fast release is capped at full-rail click peak speed");require(selected.size()==1&&transferred.coasting,"Predicted page begins during free coast");
+  require(Math.abs(transferred.velocity-25f)<.001f,"Fast release inherits the measured finger speed without a click-speed cap");require(selected.size()==1&&transferred.coasting,"Predicted page begins during free coast");
   View.advance(2500);require(selected.size()==1,"Coast completion never switches the page a second time");
   init();android.view.VelocityTracker.velocity=-1800;touch(0,240,35);touch(2,140,35);touch(1,140,100);
-  require(Math.abs(((DockSpring)springField.get(dock)).velocity+DockSpring.clickPeakSpeed(2))<.001f,"Reverse release keeps sign at click speed cap");android.view.VelocityTracker.velocity=0;
+  require(Math.abs(((DockSpring)springField.get(dock)).velocity+18f)<.001f,"Reverse release inherits measured speed and direction");android.view.VelocityTracker.velocity=0;
   DockSpring forward=new DockSpring();forward.position=1;forward.coast(4,4);
   DockSpring reverse=new DockSpring();reverse.position=1;reverse.coast(-4,4);
   for(int i=0;i<400;i++){forward.step(1f/120);reverse.step(1f/120);}
@@ -339,7 +339,8 @@ public class DockNavigationCheck extends Context {
    DockSpring hardThrow=new DockSpring();hardThrow.position=direction>0?2f:0f;hardThrow.movementSpeed=speed;
    hardThrow.coast(direction*100f,2f);float overflow=0f;
    for(int i=0;i<1500;i++){hardThrow.step(1f/120f);overflow=Math.max(overflow,direction>0?hardThrow.position-2f:-hardThrow.position);}
-   require(overflow>.01f&&overflow<2f&&!hardThrow.coasting,"Extreme throw still converges: edge="+direction+" speed="+speed+" peak="+overflow+" coasting="+hardThrow.coasting);
+   require(overflow>.01f&&Float.isFinite(overflow)&&!hardThrow.coasting
+     &&DockSpring.outwardExtension(overflow*100f,75f)<=75f,"Uncapped throw converges while visual overflow remains partial: edge="+direction+" speed="+speed+" peak="+overflow+" coasting="+hardThrow.coasting);
   }
   System.out.println("Moderate edge throw peak excess: "+(farthest-2f)+" slots");
   for(float pace:new float[]{.5f,1f})for(float distance:new float[]{1f,4f}){
@@ -349,11 +350,9 @@ public class DockNavigationCheck extends Context {
    for(int i=0;i<240;i++){distant.step(1f/120f);peakPosition=Math.max(peakPosition,distant.position);}
    require(peakPosition<=distance+.002f,"Distant tap must not oscillate past its target: pace="+pace+" distance="+distance+" peak="+peakPosition);
   }
-  for(float span:new float[]{1f,2f,4f}){
-   DockSpring clickReference=new DockSpring();clickReference.target=span;float measuredPeak=0f;
-   for(int i=0;i<240;i++){clickReference.step(1f/240f);measuredPeak=Math.max(measuredPeak,clickReference.velocity);}
-   require(Math.abs(measuredPeak-DockSpring.clickPeakSpeed(span))/measuredPeak<.05f,
-     "Release ceiling derives from the actual click spring for span="+span);
+  for(float speed:new float[]{-100f,25f,100f}){
+   DockSpring uncapped=new DockSpring();uncapped.coast(speed,2f);
+   require(uncapped.velocity==speed,"Release speed is unchanged, including fast throws: "+speed);
   }
   DockSpring naturalRelease=new DockSpring();naturalRelease.coast(4f,2f);
   require(naturalRelease.velocity==4f,"Moderate release is no longer unconditionally halved");
@@ -363,7 +362,7 @@ public class DockNavigationCheck extends Context {
   require(Math.abs(releasedNormal.position-releasedHalf.position)<.001f&&Math.abs(releasedNormal.tailPosition-releasedHalf.tailPosition)<.001f,
     "Release coast, trailing end and final settling all use normal time on every selection bar");
   releasedHalf.coast(100f,2f);
-  require(Math.abs(releasedHalf.velocity-DockSpring.clickPeakSpeed(2f))<.001f,"All rails share a normal-time release and click-speed ceiling");
+  require(releasedHalf.velocity==100f,"Even formerly half-speed rails keep the full measured release speed");
   DockSpring tapNormal=new DockSpring(),tapHalf=new DockSpring();tapHalf.movementSpeed=.5f;
   tapNormal.target=tapHalf.target=3f;tapNormal.releaseWithPulse();tapHalf.releaseWithPulse();
   for(int i=0;i<30;i++){tapNormal.step(1f/120f);tapHalf.step(1f/120f);}
@@ -438,7 +437,7 @@ public class DockNavigationCheck extends Context {
   require(slow1<slow2&&slow2<slow3&&slow3-slow2<slow2-slow1,"Inner end decelerates smoothly instead of stopping abruptly");
   require(Math.abs(DockSpring.softUpperBoundary(200.01f,250,50)-200.01f)<.001f,"Soft approach joins regular motion continuously");
   DockSpring prediction=new DockSpring();prediction.position=1;prediction.velocity=3;
-  require(prediction.predictLanding(4,4)==2&&prediction.predictLanding(-4,4)==0,"Prediction includes capped-momentum landing");
+  require(prediction.predictLanding(4,4)==2&&prediction.predictLanding(-4,4)==0,"Prediction includes measured-momentum landing");
   require(prediction.position==1&&prediction.velocity==3,"Prediction does not mutate displayed state or velocity");
   DockSpring predictedThrow=new DockSpring();predictedThrow.position=1.9f;int predictedLanding=predictedThrow.predictLanding(12f,2f);predictedThrow.coast(12f,2f);
   for(int i=0;i<1000;i++)predictedThrow.step(1f/120);
@@ -480,7 +479,7 @@ public class DockNavigationCheck extends Context {
   init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});dock.setHighlightMovementSpeed(1f);new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
   for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.setSelectedIndex(0);
   android.view.VelocityTracker.velocity=900;touch(0,35,25);touch(2,35,140);touch(1,100,140);
-  require(Math.abs(((DockSpring)springField.get(dock)).velocity-9f)<.001f,"Vertical release keeps measured momentum below the speed cap");
+  require(Math.abs(((DockSpring)springField.get(dock)).velocity-9f)<.001f,"Vertical release keeps measured finger momentum");
   require(selected.size()==1,"Vertical outside release starts predicted page immediately");android.view.VelocityTracker.velocity=0;
   init();touch(0,245,35);close(center(),50,"Press preview starts at current visual position");View.advance(32);
   require(center()>50&&center()<245&&selected.isEmpty(),"Press preview moves before long press without navigating");

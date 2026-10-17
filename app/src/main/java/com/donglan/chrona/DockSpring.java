@@ -26,14 +26,9 @@ final class DockSpring {
     private static final float EDGE_RETURN_DAMPING = 18f * REBOUND_SPEED;
     boolean coasting;
     float lastSlot;
-    static float clickPeakSpeed(float distance) {
-        return Math.abs(distance) * CLICK_FREQUENCY / (float)Math.E;
-    }
     void coast(float speed, float end) {
         following = false; releasedMotion = true;
-        // Released motion and its click-speed reference both use real time on every rail.
-        float limit = clickPeakSpeed(end);
-        velocity = Math.max(-limit, Math.min(limit, speed));
+        velocity = speed;
         lastSlot = end; coasting = true;
     }
     void follow(float value, float speed) { following = true; coasting = releasedMotion = false; target = value; }
