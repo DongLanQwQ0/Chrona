@@ -19,6 +19,7 @@ import java.util.function.IntConsumer;
 /** Shared horizontal/vertical dock; glass, highlight and buttons have separate render nodes. */
 final class DockNavigationLayout extends FrameLayout {
     private final GradientDrawable highlight = new GradientDrawable();
+    private final float[] highlightRadii = new float[8];
     private final View highlightView;
     private final LinearLayout items;
     private int orientation = LinearLayout.HORIZONTAL;
@@ -29,6 +30,8 @@ final class DockNavigationLayout extends FrameLayout {
     private static final int HIGHLIGHT_ALPHA = 82;
     private static final int MIN_LABEL_TEXT_SP = 8;
     private static final float MOTION_PLATE_SCALE = 1.12f;
+    private static final float PLATE_LEAN_DP = 6f, CROSS_LEAN_DP = 4f;
+    private static final float MAX_TAIL_EXTENSION = .75f, LABEL_FEATHER = .28f;
     private VelocityTracker fingerVelocity;
     private float downX, downY, fingerPosition;
     private long followFrameTime;
@@ -40,7 +43,7 @@ final class DockNavigationLayout extends FrameLayout {
     private boolean pageSettling;
     private boolean coastSelection;
     private int coastDestination;
-    private int selectedIndex, tapIndex, labelIndex = -1;
+    private int selectedIndex, tapIndex;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private boolean fullWidthMotion;
     private final Runnable finishTouch = this::finishTouch;
@@ -101,8 +104,8 @@ final class DockNavigationLayout extends FrameLayout {
         FrameLayout host = new FrameLayout(getContext()) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
                 int available = View.MeasureSpec.getSize(widthSpec);
-                // Reserve the held 1.5x highlight and plate expansion. Fling overflow
-                // can draw through intermediate parents; only the viewport is a boundary.
+                // A standalone host contains the entire resisted outward cap and plate
+                // lean. Full-width forms instead grow the edge highlight inward below.
                 float plate = MOTION_PLATE_SCALE;
                 float totalWeight = 0f, widestWeight = 0f;
                 for (int i = 0; i < dock.itemCount(); i++) {
@@ -110,15 +113,15 @@ final class DockNavigationLayout extends FrameLayout {
                     totalWeight += weight; widestWeight = Math.max(widestWeight, weight);
                 }
                 float widest = totalWeight > 0f ? widestWeight / totalWeight : 1f / Math.max(1, dock.itemCount());
-                float ratio = (plate - 1f) / 2f + .25f * plate * widest;
+                float ratio = (plate - 1f) / 2f + DockSpring.MAX_OUTWARD_WIDTH * plate * widest;
                 int clearance = (int)Math.ceil(2f * getResources().getDisplayMetrics().density);
-                int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance + Math.round(4 * getResources().getDisplayMetrics().density);
+                int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance + Math.round(dp(PLATE_LEAN_DP));
                 if (fullWidth) edge = 0;
                 if (getPaddingLeft() != edge || getPaddingRight() != edge)
                     setPadding(edge, getPaddingTop(), edge, getPaddingBottom());
                 super.onMeasure(widthSpec, heightSpec);
                 int cross = overlapRows ? clearance
-                        : (int)Math.ceil(dock.getMeasuredHeight() * (plate * 1.53f - 1f) / 2f) + clearance;
+                        : (int)Math.ceil(dock.getMeasuredHeight() * (plate * 1.53f - 1f) / 2f) + clearance + Math.round(dp(CROSS_LEAN_DP));
                 if (getPaddingTop() != cross || getPaddingBottom() != cross) {
                     setPadding(edge, cross, edge, cross);
                     super.onMeasure(widthSpec, heightSpec);
@@ -157,9 +160,7 @@ final class DockNavigationLayout extends FrameLayout {
 
     void setSelectedIndex(int index) {
         selectedIndex = index;
-        if (Float.isNaN(visualPosition)) { visualPosition = index; spring.position = spring.target = index; }
-        labelIndex = -1;
-        if (!dragging) updateLabels(Math.round(visualPosition));
+        if (Float.isNaN(visualPosition)) { visualPosition = index; spring.tailPosition = spring.position = spring.target = index; }
         updateHighlight();
         invalidate();
     }
@@ -204,7 +205,6 @@ final class DockNavigationLayout extends FrameLayout {
 
     private void setVisualPosition(float position) {
         visualPosition = position;
-        updateLabels(Math.max(0, Math.min(itemCount() - 1, Math.round(position))));
     }
 
     private void resumeOrReturnHighlight() {
@@ -303,7 +303,17 @@ final class DockNavigationLayout extends FrameLayout {
         post(finishTouch);
     }
     private void applySpring() {
-        setVisualPosition(spring.position); setScaleX(fullWidthMotion ? 1f : spring.bar); setScaleY(spring.bar);
+        float scaleX = fullWidthMotion ? 1f : spring.bar;
+        float along = fullWidthMotion ? 0f : spring.lean * dp(PLATE_LEAN_DP);
+        float across = spring.crossLean * dp(CROSS_LEAN_DP);
+        float x = vertical() ? across : along, y = vertical() ? along : across;
+        boolean plateMoved = Math.abs(getScaleX() - scaleX) > .001f || Math.abs(getScaleY() - spring.bar) > .001f
+                || Math.abs(getTranslationX() - x) > .001f || Math.abs(getTranslationY() - y) > .001f;
+        setVisualPosition(spring.position); setScaleX(scaleX); setScaleY(spring.bar);
+        setTranslationX(x); setTranslationY(y);
+        // The acrylic must sample its new location instead of translating an old sample.
+        // Highlight-only motion still leaves the plate's display list untouched.
+        if (plateMoved) invalidate();
         updateHighlight();
     }
     private void press(boolean pressed) { spring.press(pressed); animateTo(spring.target); }
@@ -313,21 +323,31 @@ final class DockNavigationLayout extends FrameLayout {
         followPosted = false;
     }
 
-    private void updateLabels(int active) {
-        if (labelIndex == active) return;
-        labelIndex = active;
+    private void updateLabels(float left, float right, float feather) {
         UiStyle.Palette palette = UiStyle.colors(getContext());
         highlight.setColor((palette.primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
         for (int i = 0; i < itemCount(); i++) {
             View cell = itemAt(i);
             if (cell instanceof FrameLayout wrapper) cell = wrapper.getChildAt(0);
             if (cell instanceof TextView label) {
-                int color = i == active ? palette.primary : palette.muted;
-                label.setTextColor(color);
-                label.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(color));
+                float amount = DockSpring.coverage(center(i), left, right, feather);
+                int color = blend(palette.muted, palette.primary, amount);
+                if (label.getCurrentTextColor() != color) {
+                    label.setTextColor(color);
+                    label.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(color));
+                }
             }
         }
     }
+    private static int blend(int from, int to, float amount) {
+        int result = 0;
+        for (int shift = 0; shift <= 24; shift += 8) {
+            int a = (from >>> shift) & 255, b = (to >>> shift) & 255;
+            result |= Math.round(a + (b - a) * amount) << shift;
+        }
+        return result;
+    }
+    private float dp(float value) { return value * getResources().getDisplayMetrics().density; }
 
     private void updateHighlight() {
         View cell = itemAt(selectedIndex);
@@ -335,19 +355,24 @@ final class DockNavigationLayout extends FrameLayout {
             float x = centerAt(visualPosition);
             float standardWidth = extentAt(visualPosition);
             float emphasis = spring.scale;
-            float width = standardWidth * emphasis * spring.width;
+            // The leading end follows the finger, while the tail catches up. Limit the
+            // extra length in physical pixels so unequal labels cannot produce a ribbon.
+            float lag = x - centerAt(spring.tailPosition);
+            float stretch = Math.copySign(DockSpring.outwardExtension(Math.abs(lag), standardWidth * MAX_TAIL_EXTENSION), lag);
+            x -= stretch / 2f;
+            float width = standardWidth * emphasis + Math.abs(stretch);
             float height = (vertical() ? cell.getWidth() : cell.getHeight()) * emphasis * spring.trackingHeight;
             float board = vertical() ? getHeight() : getWidth();
             float left = x - width / 2f;
             float cross = vertical() ? items.getLeft() + (cell.getLeft() + cell.getRight()) / 2f
                     : items.getTop() + (cell.getTop() + cell.getBottom()) / 2f;
-            int top = Math.round(cross - height / 2f);
+            float top = cross - height / 2f;
             float right = x + width / 2f;
             // Reduce inner-end speed before its anchor; both approach and rebound are smooth.
             left = DockSpring.softUpperBoundary(left, board - standardWidth / 2f, standardWidth / 2f);
             right = -DockSpring.softUpperBoundary(-right, -standardWidth / 2f, standardWidth / 2f);
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
-            if (left < 0) left = -Math.round(DockSpring.outwardExtension(-left, maximum));
+            if (left < 0) left = -DockSpring.outwardExtension(-left, maximum);
             if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
             if (fullWidthMotion && !vertical()) {
                 // Preserve the amplified highlight and its continuous spring motion. At the
@@ -363,12 +388,23 @@ final class DockNavigationLayout extends FrameLayout {
                 highlightView.setLayoutParams(new FrameLayout.LayoutParams(baseWidth, baseHeight));
             if (highlightView.getWidth() != baseWidth || highlightView.getHeight() != baseHeight)
                 highlightView.layout(0, 0, baseWidth, baseHeight);
+            float scaleX = (vertical() ? height : right - left) / baseWidth;
+            float scaleY = (vertical() ? right - left : height) / baseHeight;
+            float radius = Math.min(baseWidth * scaleX * getScaleX(), baseHeight * scaleY * getScaleY()) / 2f;
+            // Counter the render-node stretch: physical end caps stay circular at every
+            // width, including during reversal and when changing between unequal labels.
+            for (int i = 0; i < highlightRadii.length; i += 2) {
+                highlightRadii[i] = radius / (scaleX * getScaleX());
+                highlightRadii[i + 1] = radius / (scaleY * getScaleY());
+            }
+            highlight.setCornerRadii(highlightRadii);
             // Geometry is in dock coordinates. FrameLayout already positions this child
             // at its padded layout origin; translation must only add the remaining offset.
             highlightView.setTranslationX((vertical() ? top : left) - highlightView.getLeft());
             highlightView.setTranslationY((vertical() ? left : top) - highlightView.getTop());
-            highlightView.setScaleX((vertical() ? height : right - left) / baseWidth);
-            highlightView.setScaleY((vertical() ? right - left : height) / baseHeight);
+            highlightView.setScaleX(scaleX);
+            highlightView.setScaleY(scaleY);
+            updateLabels(left, right, standardWidth * LABEL_FEATHER);
         }
     }
 
@@ -410,6 +446,15 @@ final class DockNavigationLayout extends FrameLayout {
                 : (vertical() ? fingerVelocity.getYVelocity() : fingerVelocity.getXVelocity()) / pixelsPerSlot;
     }
 
+    private void leanToward(MotionEvent event) {
+        float alongSize = vertical() ? getHeight() : getWidth();
+        float crossSize = vertical() ? getWidth() : getHeight();
+        if (alongSize <= 0 || crossSize <= 0) return;
+        spring.leanToward(fullWidthMotion ? 0f : (axis(event.getX(), event.getY()) - alongSize / 2f) / (alongSize / 2f),
+                (axis(event.getY(), event.getX()) - crossSize / 2f) / (crossSize / 2f));
+        animateTo(spring.target);
+    }
+
     @Override public void setEnabled(boolean enabled) {
         if (!enabled && tracking) {
             // Cancel while still enabled so the ordinary touch cleanup releases children,
@@ -437,6 +482,10 @@ final class DockNavigationLayout extends FrameLayout {
             tapLeftBounds = false;
             downX = event.getX();
             downY = event.getY();
+            // Preview immediately, but keep navigation owned by the eventual click/drag.
+            // Waiting for Android's long-press timeout makes a pressed pill feel detached.
+            spring.follow(nearest(axis(downX, downY)), 0f);
+            leanToward(event);
             press(true);
             getParent().requestDisallowInterceptTouchEvent(true);
             postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
@@ -450,6 +499,7 @@ final class DockNavigationLayout extends FrameLayout {
             press(false);
             resumeOrReturnHighlight();
         } else if (action == MotionEvent.ACTION_MOVE && tracking && !ignoreTouch) {
+            leanToward(event);
             if (!insideDock(event)) tapLeftBounds = true;
             float dx = Math.abs(axis(event.getX() - downX, event.getY() - downY));
             float dy = Math.abs(axis(event.getY() - downY, event.getX() - downX));
@@ -485,7 +535,7 @@ final class DockNavigationLayout extends FrameLayout {
                 if (!ValueAnimator.areAnimatorsEnabled()) {
                     commitCoast(); spring.snap(); applySpring();
                 }
-            } else if (owned) {
+            } else if (owned || action == MotionEvent.ACTION_CANCEL || tapLeftBounds) {
                 resumeOrReturnHighlight();
             }
             invalidate();

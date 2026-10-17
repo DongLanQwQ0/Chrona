@@ -763,7 +763,8 @@ final class DeviceUiChecks {
                             spring.step(1f/120); apply.invoke(dock); dockEnvelope(dock, host, viewport, "Fast outward fling edge " + edge+" frame="+frame);
                         }
                         // Exercise the limiting cap too, beyond the sampled fling's finite travel.
-                        spring.position = edge == 0 ? -10000f : 10000f; spring.scale = 1.53f; spring.bar = 1.12f; spring.width = 1.3f;
+                        spring.position = edge == 0 ? -10000f : 10000f;
+                        spring.tailPosition = edge; spring.scale = 1.53f; spring.bar = 1.12f;
                         apply.invoke(dock); dockEnvelope(dock, host, viewport, "Maximum outward cap edge " + edge);
                         edges.put(new JSONObject().put("edge", edge).put("heldHighlightBounds", highlight.toShortString())
                                 .put("limitHighlightBounds",boundsIn((View) field(dock,"highlightView"),host).toShortString())
@@ -850,7 +851,7 @@ final class DeviceUiChecks {
                     +" dockPivot="+dock.getPivotX()+","+dock.getPivotY()+" scale="+dock.getScaleX()+","+dock.getScaleY()
                     +" highlight="+boundsIn(highlight,host)+" measured="+highlight.getMeasuredWidth()+"x"+highlight.getMeasuredHeight()
                     +" spring.position="+spring.position+" target="+spring.target+" velocity="+spring.velocity+" coasting="+spring.coasting
-                    +" spring.scale="+spring.scale+" bar="+spring.bar+" width="+spring.width
+                    +" spring.scale="+spring.scale+" bar="+spring.bar+" tail="+spring.tailPosition
                     +" selected="+field(dock,"selectedIndex")+" visual="+field(dock,"visualPosition")+" cells="+cells,failure);
         }
     }

@@ -2,13 +2,17 @@ package com.donglan.chrona;
 
 /** Shared damped motion state; retargeting preserves velocity instead of restarting animations. */
 final class DockSpring {
-    private static final float PRESS_STIFFNESS = 900f, PRESS_DAMPING = 50f;
-    private static final float PRESS_TIME_MULTIPLIER = 3f;
+    private static final float PRESS_STIFFNESS = 1000f, PRESS_DAMPING = 48f;
+    private static final float PRESS_TIME_MULTIPLIER = 1f;
     private static final float RELEASE_TIME_MULTIPLIER = PRESS_TIME_MULTIPLIER * 1.5f;
     static final float MAX_OUTWARD_WIDTH = .75f;
     static final float TAP_SCALE = 1.16f;
     private boolean following, tapPulse;
     float position, velocity, target;
+    // The leading position responds first; the trailing position catches up independently.
+    // Rendering stretches between them, rather than multiplying two uniform scale factors.
+    float tailPosition, tailVelocity;
+    float lean, leanVelocity, leanTarget, crossLean, crossLeanVelocity, crossLeanTarget;
     static final float COAST_DAMPING = 7.5f;
     boolean coasting;
     float lastSlot;
@@ -28,23 +32,37 @@ final class DockSpring {
         return value <= start ? value : start + approach * (float) Math.tanh((value - start) / approach);
     }
     float scale = 1f, scaleVelocity, scaleTarget = 1f;
-    float width = 1f, widthVelocity;
     float bar = 1f, barVelocity, barTarget = 1f;
     float trackingHeight = 1f, trackingHeightVelocity;
-    void press(boolean pressed) { tapPulse = false; if (!pressed) following = false; scaleTarget = pressed ? 1.5f : 1f; barTarget = pressed ? 1.1f : 1f; }
+    void press(boolean pressed) {
+        tapPulse = false;
+        if (!pressed) { following = false; leanTarget = crossLeanTarget = 0f; }
+        scaleTarget = pressed ? 1.5f : 1f; barTarget = pressed ? 1.1f : 1f;
+    }
+    void leanToward(float along, float across) {
+        leanTarget = (float)Math.tanh(along); crossLeanTarget = (float)Math.tanh(across);
+    }
+    static float coverage(float center, float left, float right, float feather) {
+        if (feather <= 0f) return center >= left && center <= right ? 1f : 0f;
+        float distance = Math.min(center - left, right - center);
+        float t = Math.max(0f, Math.min(1f, .5f + distance / (2f * feather)));
+        return t * t * (3f - 2f * t);
+    }
     void releaseWithPulse() {
         following = false; barTarget = 1f;
         tapPulse = scale < TAP_SCALE; scaleTarget = tapPulse ? TAP_SCALE : 1f;
     }
-    void snap() { following = coasting = tapPulse = false; position = target; velocity = scaleVelocity = widthVelocity = barVelocity = 0f;
-        scale = scaleTarget; bar = barTarget; width = trackingHeight = 1f; trackingHeightVelocity = 0f; }
+    void snap() { following = coasting = tapPulse = false; position = tailPosition = target;
+        velocity = tailVelocity = scaleVelocity = barVelocity = 0f;
+        lean = leanTarget; crossLean = crossLeanTarget; leanVelocity = crossLeanVelocity = 0f;
+        scale = scaleTarget; bar = barTarget; trackingHeight = 1f; trackingHeightVelocity = 0f; }
     boolean step(float seconds) {
         int steps = Math.max(1, (int) Math.ceil(Math.min(.064f, Math.max(0f, seconds)) * 120f));
         float dt = Math.min(.064f, Math.max(0f, seconds)) / steps;
         for (int i = 0; i < steps; i++) {
             if (following) {
                 // Retarget the existing spring, never teleport to a new touch sample.
-                velocity += (900f * (target - position) - 60f * velocity) * dt;
+                velocity += (1800f * (target - position) - 70f * velocity) * dt;
                 position += velocity * dt;
             } else if (coasting) {
                 float edge = position < 0f ? 0f : position > lastSlot ? lastSlot : position;
@@ -64,12 +82,15 @@ final class DockSpring {
                 velocity += (180f * (target - position) - 20f * velocity) * dt;
                 position += velocity * dt;
             }
+            tailVelocity += (300f * (position - tailPosition) - 30f * tailVelocity) * dt;
+            tailPosition += tailVelocity * dt;
             float pressTime = scaleTarget > 1f ? PRESS_TIME_MULTIPLIER : RELEASE_TIME_MULTIPLIER;
             float stiffness = PRESS_STIFFNESS / (pressTime * pressTime), damping = PRESS_DAMPING / pressTime;
             scaleVelocity += (stiffness * (scaleTarget - scale) - damping * scaleVelocity) * dt; scale += scaleVelocity * dt;
-            float stretch = 1f + Math.min(.25f, Math.abs(velocity) * .025f);
-            widthVelocity += (200f * (stretch - width) - 18f * widthVelocity) * dt; width += widthVelocity * dt;
             barVelocity += (stiffness * (barTarget - bar) - damping * barVelocity) * dt; bar += barVelocity * dt;
+            leanVelocity += (500f * (leanTarget - lean) - 34f * leanVelocity) * dt; lean += leanVelocity * dt;
+            crossLeanVelocity += (500f * (crossLeanTarget - crossLean) - 34f * crossLeanVelocity) * dt;
+            crossLean += crossLeanVelocity * dt;
             float heightTarget = following && (Math.abs(target - position) > .015f || Math.abs(velocity) > .15f) ? .95f : 1f;
             trackingHeightVelocity += (500f * (heightTarget - trackingHeight) - 36f * trackingHeightVelocity) * dt;
             trackingHeight += trackingHeightVelocity * dt;
@@ -80,7 +101,9 @@ final class DockSpring {
         }
         if (!coasting && Math.abs(target - position) < .001f && Math.abs(velocity) < .01f
                 && Math.abs(scaleTarget - scale) < .001f && Math.abs(scaleVelocity) < .01f
-                && Math.abs(width - 1f) < .001f && Math.abs(widthVelocity) < .01f
+                && Math.abs(tailPosition - position) < .001f && Math.abs(tailVelocity) < .01f
+                && Math.abs(leanTarget - lean) < .001f && Math.abs(leanVelocity) < .01f
+                && Math.abs(crossLeanTarget - crossLean) < .001f && Math.abs(crossLeanVelocity) < .01f
                 && Math.abs(trackingHeight - 1f) < .001f && Math.abs(trackingHeightVelocity) < .01f
                 && Math.abs(barTarget - bar) < .001f && Math.abs(barVelocity) < .01f) { snap(); return false; }
         return true;

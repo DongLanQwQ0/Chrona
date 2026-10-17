@@ -22,7 +22,7 @@ public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){
     "android/graphics/Canvas.java": "package android.graphics; public class Canvas {}",
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
 public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight,lastLeft,lastRight;public static int lastColor; int l,r,t,b;
-public void setCornerRadius(float x){} public void setColor(int c){lastColor=c;}
+public static float[] radii;public void setCornerRadius(float x){}public void setCornerRadii(float[] x){radii=x.clone();} public void setColor(int c){lastColor=c;}
 public void setBounds(int l,int t,int r,int b){this.l=l;this.r=r;this.t=t;this.b=b;}
 public void draw(android.graphics.Canvas c){lastCenter=(l+r)/2f;lastWidth=r-l;lastHeight=b-t;lastLeft=l;lastRight=r;} }""",
     "android/os/SystemClock.java": "package android.os; public class SystemClock { public static long uptimeMillis(){return android.view.View.now;} }",
@@ -122,7 +122,7 @@ import java.util.*; public class ViewGroup extends View {
  @Override public boolean onTouchEvent(android.view.MotionEvent event){return true;}
  }""",
     "android/widget/TextView.java": """package android.widget; public class TextView extends android.view.View {
-public TextView(android.content.Context c){super(c);} public void setTextColor(int c){}
+public TextView(android.content.Context c){super(c);}private int color; public void setTextColor(int c){color=c;}public int getCurrentTextColor(){return color;}
 public float textSize=14;public boolean singleLine,fontPadding=true,horizontalScrolling;public int autoMin,autoMax,autoStep,autoUnit;
 public void setTextSize(float value){textSize=value;}public float getTextSize(){return textSize;}
 public void setSingleLine(boolean value){singleLine=value;horizontalScrolling=value;}public void setHorizontallyScrolling(boolean value){horizontalScrolling=value;}
@@ -145,7 +145,7 @@ public void setCompoundDrawableTintList(android.content.res.ColorStateList c){} 
     "com/donglan/chrona/UiStyle.java": """package com.donglan.chrona; public class UiStyle {
 public static final int RADIUS_PANEL=20;
 public static void glass(android.view.View view){}public static void minimumAcrylicMix(android.view.View view,int percent){}
-public static class Palette {public int onPrimaryContainer,muted,primaryContainer,primary;}
+public static class Palette {public int onPrimaryContainer,muted=0xff668080,primaryContainer,primary=0xff00b8a6;}
 public static Palette colors(android.content.Context c){return new Palette();} }""",
 }
 
@@ -297,17 +297,17 @@ public class DockNavigationCheck extends Context {
   close(GradientDrawable.lastWidth,150,"Full-width last highlight retains held growth");
   require(GradientDrawable.lastLeft>=-.01f&&GradientDrawable.lastRight<=300.01f,"Last highlight grows inward without clipping");
   touch(3,250,30);View.advance(1000);
-  DockSpring physics=new DockSpring();physics.target=2;float maxWidth=1,maxPosition=0;
-  for(int i=0;i<180;i++){physics.step(1f/120);maxWidth=Math.max(maxWidth,physics.width);maxPosition=Math.max(maxPosition,physics.position);}
-  require(maxWidth>1.02f,"Moving highlight width stretches elastically");require(maxPosition>2f,"Position spring has bounded elastic overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.width-1)<.002f,"Spring settles rather than oscillating indefinitely");
+  DockSpring physics=new DockSpring();physics.target=2;float maxLag=0,maxPosition=0;
+  for(int i=0;i<240;i++){physics.step(1f/120);maxLag=Math.max(maxLag,physics.position-physics.tailPosition);maxPosition=Math.max(maxPosition,physics.position);}
+  require(maxLag>.1f,"Leading end moves before trailing end, creating directional stretch");require(maxPosition>2f,"Position spring has bounded elastic overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.tailPosition-2)<.002f,"Both ends settle rather than leaving a long ribbon");
   DockSpring fast=new DockSpring();fast.press(true);for(int i=0;i<12;i++)fast.step(1f/120);
   DockSpring tap=new DockSpring();tap.press(true);tap.step(.008f);tap.releaseWithPulse();float peak=1;
   for(int i=0;i<180;i++){tap.step(1f/120);peak=Math.max(peak,tap.scale);}
   require(peak>1.1f&&peak<1.3f,"Quick tap has a small visible pulse below held scale");
   require(Math.abs(tap.scale-1)<.001f,"Tap pulse shrinks back without a held finger");
-  require(fast.scale<1.4f&&fast.bar<1.08f,"Press expansion is slower than previous 100ms response");for(int i=0;i<24;i++)fast.step(1f/120);
-  require(fast.scale>1.4f&&fast.bar>1.08f,"Press reaches previous response at three times elapsed time");fast.press(false);float releasedScale=fast.scale;for(int i=0;i<18;i++)fast.step(1f/120);
-  require(fast.scale>1.1f&&fast.scale<releasedScale,"Release contracts continuously rather than snapping back in 150ms");for(int i=0;i<180;i++)fast.step(1f/120);
+  require(fast.scale>1.4f&&fast.scale<1.53f&&fast.bar>1.08f,"Reference press visibly swells within about 100ms without excessive overshoot");for(int i=0;i<24;i++)fast.step(1f/120);
+  require(fast.scale>1.49f&&fast.bar>1.09f,"Held press settles at full size");fast.press(false);float releasedScale=fast.scale;for(int i=0;i<8;i++)fast.step(1f/120);
+  require(fast.scale>1.1f&&fast.scale<releasedScale,"Release contracts through intermediate frames");for(int i=0;i<180;i++)fast.step(1f/120);
   require(fast.scale<1.002f&&fast.bar<1.001f,"Slower release ultimately returns to rest");center();require((GradientDrawable.lastColor>>>24)==0x52,"Native highlight has 32 percent alpha for background blending");
   DockSpring pressTiming=new DockSpring(),releaseTiming=new DockSpring();pressTiming.press(true);releaseTiming.scale=1.5f;releaseTiming.bar=1.1f;releaseTiming.press(false);
   for(int i=0;i<300;i++){pressTiming.step(.001f);releaseTiming.step(.0015f);}
@@ -335,11 +335,41 @@ public class DockNavigationCheck extends Context {
   for(int i=0;i<500;i++){thrown.step(1f/120);farthest=Math.max(farthest,thrown.position);}
   require(farthest>2.1f&&!thrown.coasting&&thrown.position<=2.01f,"Edge allows throw outside then damping pulls it back");
   init();DockSpring edges=(DockSpring)springField.get(dock);var apply=DockNavigationLayout.class.getDeclaredMethod("applySpring");apply.setAccessible(true);
-  edges.position=3.5f;apply.invoke(dock);center();close(GradientDrawable.lastLeft,250,"Right throw pins inner end half a standard width inside");
+  edges.position=edges.tailPosition=3.5f;apply.invoke(dock);center();close(GradientDrawable.lastLeft,250,"Right throw pins inner end half a standard width inside");
   require(GradientDrawable.lastRight>350,"Right outer end can stretch beyond half width");
-  edges.position=-1.5f;apply.invoke(dock);center();close(GradientDrawable.lastRight,50,"Left throw pins inner end half a standard width inside");
+  edges.position=edges.tailPosition=-1.5f;apply.invoke(dock);center();close(GradientDrawable.lastRight,50,"Left throw pins inner end half a standard width inside");
   require(GradientDrawable.lastLeft<-50,"Left outer end can stretch beyond half width");
   require(GradientDrawable.lastLeft>=-75,"Outer end cannot exceed configured standard-width limit");
+  init();DockSpring shape=(DockSpring)springField.get(dock);
+  shape.position=shape.tailPosition=.5f;shape.scale=1.5f;apply.invoke(dock);center();
+  int muted=UiStyle.colors(c).muted;
+  require(((TextView)dock.itemAt(0)).getCurrentTextColor()!=muted
+    &&((TextView)dock.itemAt(1)).getCurrentTextColor()!=muted,
+    "Highlight coverage lights both labels while crossing instead of switching at midpoint");
+  require(((TextView)((FrameLayout)dock.itemAt(2)).getChildAt(0)).getCurrentTextColor()==muted,"Uncovered label keeps its normal tint");
+  float capX=GradientDrawable.radii[0]*highlight().getScaleX(),capY=GradientDrawable.radii[1]*highlight().getScaleY();
+  require(Math.abs(capX-capY)<.01f&&Math.abs(capY-GradientDrawable.lastHeight/2f)<.01f,
+    "Physical end caps remain circular after render-node stretching");
+  shape.position=1.2f;shape.tailPosition=.4f;apply.invoke(dock);center();float stretchedWidth=GradientDrawable.lastWidth;
+  require(stretchedWidth>150f&&stretchedWidth<225f,"Tail separation adds bounded length instead of multiplying held scale");
+  float beforeTail=shape.tailPosition,beforeLeading=shape.position;shape.follow(0f,0f);
+  require(shape.tailPosition==beforeTail&&shape.position==beforeLeading,"Reversal preserves both end positions in the input frame");
+  for(int i=0;i<240;i++)shape.step(1f/120f);
+  require(Math.abs(shape.position)<.002f&&Math.abs(shape.tailPosition)<.002f,"Reversed tail converges without a stuck trail");
+  init();touch(0,250,45);View.advance(160);require(dock.getTranslationX()>0f&&dock.getTranslationX()<6f
+    &&dock.getTranslationY()>0f&&dock.getTranslationY()<4f,"Floating plate leans toward the contact within bounded dp travel");
+  touch(3,250,45);View.advance(1600);require(Math.abs(dock.getTranslationX())<.01f&&Math.abs(dock.getTranslationY())<.01f,
+    "Cancelled contact restores plate translation and actual selection");
+  init();dock.fullWidthMotionHost();touch(0,250,45);View.advance(160);
+  require(dock.getTranslationX()==0f,"Full-width form track never drifts into the viewport's horizontal clipping edge");
+  require(Math.abs(GradientDrawable.radii[0]*highlight().getScaleX()*dock.getScaleX()
+    -GradientDrawable.radii[1]*highlight().getScaleY()*dock.getScaleY())<.01f,
+    "Full-width plate's nonuniform scale also preserves physical circular caps");
+  touch(3,250,45);View.advance(1600);
+  float cover1=DockSpring.coverage(-5f,0f,100f,20f),cover2=DockSpring.coverage(0f,0f,100f,20f),cover3=DockSpring.coverage(5f,0f,100f,20f);
+  require(cover1>0f&&cover1<cover2&&cover2<cover3&&cover3<1f,"Coverage tint interpolates continuously across a highlight edge");
+  require(DockSpring.coverage(50f,0f,100f,20f)==1f&&DockSpring.coverage(130f,0f,100f,20f)==0f,
+    "Coverage resolves cleanly to active and inactive endpoints");
   float a=DockSpring.outwardExtension(20,75),b=DockSpring.outwardExtension(40,75),c=DockSpring.outwardExtension(60,75);
   require(a<b&&b<c&&(c-b)<(b-a),"Resistance progressively increases toward the outward limit");
   require(DockSpring.outwardExtension(10000,75)<=75,"Extreme fling remains bounded");
@@ -392,12 +422,14 @@ public class DockNavigationCheck extends Context {
   android.view.VelocityTracker.velocity=900;touch(0,35,25);touch(2,35,140);touch(1,100,140);
   require(Math.abs(((DockSpring)springField.get(dock)).velocity-9)<.001f,"Vertical release transfers physical Y velocity");
   require(selected.size()==1,"Vertical outside release starts predicted page immediately");android.view.VelocityTracker.velocity=0;
-  init();touch(0,245,35);View.advance(500);close(center(),50,"Long press retarget starts from current visual position");
-  View.advance(32);require(center()>50&&center()<245,"Long press follows through intermediate frames");View.advance(600);close(center(),245,"Long press converges to held finger position");
+  init();touch(0,245,35);close(center(),50,"Press preview starts at current visual position");View.advance(32);
+  require(center()>50&&center()<245&&selected.isEmpty(),"Press preview moves before long press without navigating");
+  View.advance(500);View.advance(600);close(center(),245,"Long press converges to held finger position");
   touch(3,245,35);View.advance(1000);close(center(),50,"Cancel stops finger loop and returns");
   init();touch(0,225,35);touch(2,245,35);View.advance(32);touch(5,245,35);View.advance(1000);close(center(),50,"Multiple pointers stop follow");
-  init();touch(0,225,35);touch(2,245,35);View.advance(32);float detached=center();dock.onDetachedFromWindow();View.advance(400);close(center(),detached,"Detach cancels scheduled follow");
-  init();touch(0,225,35);touch(2,245,35);View.advance(32);float bodyStart=center();dock.beginBodyDrag();View.advance(400);close(center(),bodyStart,"Body gesture cancels scheduled follow");
+  init();touch(0,225,35);touch(2,245,35);View.advance(32);dock.onDetachedFromWindow();float detached=center();View.advance(400);close(center(),detached,"Detach cancels scheduled follow");
+  init();touch(0,225,35);touch(2,245,35);View.advance(32);float bodyStart=center();dock.beginBodyDrag();close(center(),bodyStart,"Body takeover preserves the current visual frame");View.advance(1000);
+  require(!dock.isAnimating(),"Body takeover stops the old finger loop after the trailing end settles");
   init();android.animation.ValueAnimator.enabled=false;touch(0,225,35);touch(2,245,35);close(center(),245,"Disabled animations follow immediately");android.animation.ValueAnimator.enabled=true;
   init();touch(0,225,35);touch(2,245,35);View.advance(16);android.animation.ValueAnimator.enabled=false;
   View.advance(16);close(center(),245,"Disabling during follow settles on next frame");android.animation.ValueAnimator.enabled=true;
