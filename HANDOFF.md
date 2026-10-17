@@ -1,4 +1,12 @@
-# 当前开发：0.15.11 / 173 · 首页快捷操作与 Dock 联动
+# 当前开发：0.15.12 / 174 · 撤销框内限制，调整速度、模糊与居中
+
+用户明确纠正：高光可溢出轨道，不能擅自改成向内挪、框内限幅。删除 DockNavigationLayout.updateHighlight 中 fullWidthMotion 分支的 span/left clamp，保留用户之前要求的惯性边界阻力。筛选 ScrollView 扩至原面板的侧边留白、内部padding抵消布局变化，关闭中间子裁切，保留真实视口边界。没有缩窄选择栏、改字号或增加字段占位。
+
+DockSpring movementSpeed 只缩放位移与tail的积分时间，按压和收回仍用真实时间；公共选择栏默认0.5，主页 navigation 明确1.0，预测落点沿用该速度。DashboardDockChrome 的开合统一 UiMotion.SETTLE，按钮以平滑非线性alpha/scale配合Android31+ RenderEffect模糊，隐藏/完整恢复清除效果。Dock 中心和宽度分别连续过渡：非首页居中，仅增宽6%且最多16dp，不再固定左端拉长。
+
+ui-style-contract 新增第0节，明确禁止未经授权的交互与视觉限制，并撤销此前「首尾向内扩展」规范。离线Dock162、筛选17、协调器28项通过；构建/lint记录见验证历史。本轮无在线设备，实际溢出、模糊与速度观感待真机验收。
+
+# 上轮开发：0.15.11 / 173 · 首页快捷操作与 Dock 联动
 
 用户明确「首页显示」：仅 HOME 显示底部记录＋，SCHEDULE/INBOX 隐藏。DashboardDockChrome 使用一个 homeFraction 协调捕获按钮包装层的缩放、透明度、可点击性及无障碍入口，独立于按钮自身的按压反馈。隐藏为 INVISIBLE，位置由 Dock 的真实宽度占用；不缩放导航文字。
 

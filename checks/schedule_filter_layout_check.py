@@ -35,8 +35,12 @@ require('UiStyle.addSpaced(body, heading, 6, 2)' in choice,
 require('body.setPadding(0, dp(8), 0, dp(18))' in source,
         "First and last filter groups retain viewport-edge safety padding")
 dock = (root / "app/src/main/java/com/donglan/chrona/DockNavigationLayout.java").read_text(encoding="utf-8")
-require('if (fullWidth) edge = 0;' in dock and 'float span = Math.min' in dock,
-        "Selectors fill the content width; enlarged edge highlights move inward without clipping")
+require('if (fullWidth) edge = 0;' in dock and 'float span = Math.min' not in dock,
+        "Selectors fill the content width without clamping or relocating highlight overflow")
+require('scroll.setClipChildren(false)' in source and 'scroll.setClipToPadding(false)' in source
+        and 'scrollParams.setMargins(-dp(16), 0, -dp(16), 0)' in source
+        and 'PressFeedback.protectViewport(scroll)' in source,
+        "Filter viewport includes existing panel side padding while preserving its real outer boundary")
 detail = (root / "app/src/main/java/com/donglan/chrona/TaskDetailActivity.java").read_text(encoding="utf-8")
 require('categoryRow.addView(category.fullWidthMotionHost()' in detail and 'categoryRow.setMinimumHeight(dp(54))' in detail,
         "Detail type selector fills the label's remaining width at the standard field row height")

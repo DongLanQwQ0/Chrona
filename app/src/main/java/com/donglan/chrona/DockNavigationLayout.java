@@ -64,6 +64,7 @@ final class DockNavigationLayout extends FrameLayout {
         super(context);
         this.select = select;
         this.finished = finished;
+        spring.movementSpeed = .5f;
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         setClipChildren(false); setClipToPadding(false);
         highlightView = new View(context);
@@ -82,6 +83,7 @@ final class DockNavigationLayout extends FrameLayout {
         highlight.setColor((UiStyle.colors(context).primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
     }
     void setOrientation(int value) { orientation = value; items.setOrientation(value); }
+    void setHighlightMovementSpeed(float speed) { spring.movementSpeed = speed; }
     int itemCount() { return items.getChildCount(); }
     View itemAt(int index) { return items.getChildAt(index); }
     void addItem(View view, LinearLayout.LayoutParams params) { fitLabel(view); items.addView(view, params); }
@@ -94,7 +96,7 @@ final class DockNavigationLayout extends FrameLayout {
     FrameLayout motionHost(boolean overlapRows) {
         return motionHostLayout(overlapRows, false);
     }
-    /** Fill the content width; edge highlights grow inward instead of reserving empty gutters. */
+    /** Fill the content width without altering the highlight's motion or overflow geometry. */
     FrameLayout fullWidthMotionHost() {
         fullWidthMotion = true;
         return motionHostLayout(true, true);
@@ -104,8 +106,8 @@ final class DockNavigationLayout extends FrameLayout {
         FrameLayout host = new FrameLayout(getContext()) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
                 int available = View.MeasureSpec.getSize(widthSpec);
-                // A standalone host contains the entire resisted outward cap and plate
-                // lean. Full-width forms instead grow the edge highlight inward below.
+                // A standalone host reserves the outward cap and plate lean. A full-width
+                // host keeps the rail width; its ancestors must allow highlight overflow.
                 float plate = MOTION_PLATE_SCALE;
                 float totalWeight = 0f, widestWeight = 0f;
                 for (int i = 0; i < dock.itemCount(); i++) {
@@ -374,14 +376,6 @@ final class DockNavigationLayout extends FrameLayout {
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
             if (left < 0) left = -DockSpring.outwardExtension(-left, maximum);
             if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
-            if (fullWidthMotion && !vertical()) {
-                // Preserve the amplified highlight and its continuous spring motion. At the
-                // first/last item it expands inward, avoiding the clipping viewport boundary.
-                float inset = Math.min(getPaddingLeft(), getPaddingRight());
-                float span = Math.min(Math.max(0f, board - 2f * inset), right - left);
-                left = Math.max(inset, Math.min(board - inset - span, left));
-                right = left + span;
-            }
             int baseWidth = Math.max(1, cell.getWidth()), baseHeight = Math.max(1, cell.getHeight());
             android.view.ViewGroup.LayoutParams layout = highlightView.getLayoutParams();
             if (layout.width != baseWidth || layout.height != baseHeight)

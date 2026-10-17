@@ -545,7 +545,7 @@ public final class DashboardActivity extends Activity {
                 ? new android.view.animation.DecelerateInterpolator(1.35f)
                 : SwipePagerLayout.RECOIL_INTERPOLATOR;
         if (dockChrome != null) dockChrome.animateHome((commit ? adjacentPage.section : section) == HOME,
-                duration, interpolator);
+                duration);
         // Live shader sampling follows the page in window coordinates throughout release.
         // A frozen whole-page layer would preserve offscreen wallpaper samples.
         scroll.animate().translationX(currentTarget).setDuration(duration)
@@ -574,7 +574,7 @@ public final class DashboardActivity extends Activity {
             return;
         }
         long duration = SwipePagerLayout.recoilDuration(Math.abs(scroll.getTranslationX()), sectionPageWidth());
-        if (dockChrome != null) dockChrome.animateHome(section == HOME, duration, SwipePagerLayout.RECOIL_INTERPOLATOR);
+        if (dockChrome != null) dockChrome.animateHome(section == HOME, duration);
         scroll.animate().translationX(0f)
                 .setDuration(duration)
                 .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
@@ -1049,6 +1049,7 @@ public final class DashboardActivity extends Activity {
         pager.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         navigation = new DockNavigationLayout(this,
                 index -> switchTo(SECTION_ORDER[index]), this::drawNavigation);
+        navigation.setHighlightMovementSpeed(1f);
         navigation.setOrientation(wide ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         navigation.setPadding(dp(wide ? 8 : 8), dp(wide ? 24 : 6),
                 dp(wide ? 8 : 8), dp(wide ? 10 : 6));

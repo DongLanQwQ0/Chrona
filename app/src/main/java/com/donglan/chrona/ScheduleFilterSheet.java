@@ -84,10 +84,18 @@ final class ScheduleFilterSheet {
             }
         };
         scroll.setFillViewport(false);
+        // Keep the rail aligned with the controls while drawing into the panel's existing
+        // side padding. Do not contain the highlight by moving it inward.
+        scroll.setPadding(dp(16), 0, dp(16), 0);
+        scroll.setClipChildren(false);
+        scroll.setClipToPadding(false);
+        PressFeedback.protectViewport(scroll);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(body);
         scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> scrollY = y);
-        panel.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, -2);
+        scrollParams.setMargins(-dp(16), 0, -dp(16), 0);
+        panel.addView(scroll, scrollParams);
         Button save = pill("应用筛选", () -> {
             if (!draft.validSystemRange(LocalDate.now())) {
                 Feedback.show(activity, "系统日历每次最多查询一年，请调整日期范围");

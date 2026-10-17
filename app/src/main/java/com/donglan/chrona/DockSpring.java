@@ -9,6 +9,7 @@ final class DockSpring {
     static final float TAP_SCALE = 1.16f;
     private boolean following, tapPulse;
     float position, velocity, target;
+    float movementSpeed = 1f;
     // The leading position responds first; the trailing position catches up independently.
     // Rendering stretches between them, rather than multiplying two uniform scale factors.
     float tailPosition, tailVelocity;
@@ -19,7 +20,8 @@ final class DockSpring {
     void coast(float speed, float end) { following = false; velocity = speed; lastSlot = end; coasting = true; }
     void follow(float value, float speed) { following = true; coasting = false; target = value; }
     int predictLanding(float speed, float end) {
-        DockSpring prediction = new DockSpring(); prediction.position = position; prediction.coast(speed, end);
+        DockSpring prediction = new DockSpring(); prediction.movementSpeed = movementSpeed;
+        prediction.position = position; prediction.coast(speed, end);
         for (int frame = 0; frame < 2400 && prediction.coasting; frame++) prediction.step(1f / 120f);
         return Math.round(Math.max(0f, Math.min(end, prediction.coasting ? prediction.position : prediction.target)));
     }
@@ -59,31 +61,32 @@ final class DockSpring {
     boolean step(float seconds) {
         int steps = Math.max(1, (int) Math.ceil(Math.min(.064f, Math.max(0f, seconds)) * 120f));
         float dt = Math.min(.064f, Math.max(0f, seconds)) / steps;
+        float moveDt = dt * movementSpeed;
         for (int i = 0; i < steps; i++) {
             if (following) {
                 // Retarget the existing spring, never teleport to a new touch sample.
-                velocity += (1800f * (target - position) - 70f * velocity) * dt;
-                position += velocity * dt;
+                velocity += (1800f * (target - position) - 70f * velocity) * moveDt;
+                position += velocity * moveDt;
             } else if (coasting) {
                 float edge = position < 0f ? 0f : position > lastSlot ? lastSlot : position;
                 float overflow = position - edge;
                 if (overflow != 0f) {
-                    velocity += (-180f * overflow - 18f * velocity) * dt;
-                    position += velocity * dt;
+                    velocity += (-180f * overflow - 18f * velocity) * moveDt;
+                    position += velocity * moveDt;
                 } else {
                     float distance = velocity > 0f ? lastSlot - position : position;
                     float edgeDrag = Math.max(0f, 1f - distance / .6f);
                     float resistance = COAST_DAMPING + 18f * edgeDrag * edgeDrag;
-                    float decay = (float) Math.exp(-resistance * dt);
+                    float decay = (float) Math.exp(-resistance * moveDt);
                     position += velocity * (1f - decay) / resistance;
                     velocity *= decay;
                 }
             } else {
-                velocity += (180f * (target - position) - 20f * velocity) * dt;
-                position += velocity * dt;
+                velocity += (180f * (target - position) - 20f * velocity) * moveDt;
+                position += velocity * moveDt;
             }
-            tailVelocity += (300f * (position - tailPosition) - 30f * tailVelocity) * dt;
-            tailPosition += tailVelocity * dt;
+            tailVelocity += (300f * (position - tailPosition) - 30f * tailVelocity) * moveDt;
+            tailPosition += tailVelocity * moveDt;
             float pressTime = scaleTarget > 1f ? PRESS_TIME_MULTIPLIER : RELEASE_TIME_MULTIPLIER;
             float stiffness = PRESS_STIFFNESS / (pressTime * pressTime), damping = PRESS_DAMPING / pressTime;
             scaleVelocity += (stiffness * (scaleTarget - scale) - damping * scaleVelocity) * dt; scale += scaleVelocity * dt;

@@ -167,6 +167,7 @@ public class DockNavigationCheck extends Context {
  }
  static void init(){View.reset();selected=new ArrayList<>();rebuilds=0;
   dock=new DockNavigationLayout(c,n->{selected.add(n);dock.beginPageSettle(n);},()->{rebuilds++;dock.clearItems();populate();dock.setSelectedIndex(0);});
+  dock.setHighlightMovementSpeed(1f);
   dock.layout(0,0,300,60);new FrameLayout(c).addView(dock);populate();dock.setSelectedIndex(0);}
  static void touch(int a,float x,float y){dock.dispatchTouchEvent(new MotionEvent(a,x,y));}
  static View highlight(){try{var field=DockNavigationLayout.class.getDeclaredField("highlightView");field.setAccessible(true);return (View)field.get(dock);}catch(Exception e){throw new RuntimeException(e);}}
@@ -291,11 +292,11 @@ public class DockNavigationCheck extends Context {
   require(!embeddedHost.clipChildren&&!embeddedHost.clipPadding,"Embedded motion host preserves highlight overflow");
   init();dock.fullWidthMotionHost();touch(0,50,30);View.advance(900);center();
   close(GradientDrawable.lastWidth,150,"Full-width first highlight retains held growth");
-  require(GradientDrawable.lastLeft>=-.01f&&GradientDrawable.lastRight<=300.01f,"First highlight grows inward inside full-width rail");
+  require(GradientDrawable.lastLeft<0f,"First held highlight may naturally overflow the full-width rail");
   close(dock.scaleX,1f,"Full-width rail retains full content width without side envelope");
   touch(3,50,30);View.advance(1000);dock.finishPageSelection(2);View.advance(1000);touch(0,250,30);View.advance(900);center();
   close(GradientDrawable.lastWidth,150,"Full-width last highlight retains held growth");
-  require(GradientDrawable.lastLeft>=-.01f&&GradientDrawable.lastRight<=300.01f,"Last highlight grows inward without clipping");
+  require(GradientDrawable.lastRight>300f,"Last held highlight may naturally overflow without inward relocation");
   touch(3,250,30);View.advance(1000);
   DockSpring physics=new DockSpring();physics.target=2;float maxLag=0,maxPosition=0;
   for(int i=0;i<240;i++){physics.step(1f/120);maxLag=Math.max(maxLag,physics.position-physics.tailPosition);maxPosition=Math.max(maxPosition,physics.position);}
@@ -370,6 +371,14 @@ public class DockNavigationCheck extends Context {
   require(cover1>0f&&cover1<cover2&&cover2<cover3&&cover3<1f,"Coverage tint interpolates continuously across a highlight edge");
   require(DockSpring.coverage(50f,0f,100f,20f)==1f&&DockSpring.coverage(130f,0f,100f,20f)==0f,
     "Coverage resolves cleanly to active and inactive endpoints");
+  DockSpring normalSpeed=new DockSpring(),halfSpeed=new DockSpring();normalSpeed.follow(2f,0f);halfSpeed.follow(2f,0f);halfSpeed.movementSpeed=.5f;
+  for(int i=0;i<120;i++){normalSpeed.step(1f/240f);halfSpeed.step(1f/120f);}
+  require(Math.abs(normalSpeed.position-halfSpeed.position)<.001f&&Math.abs(normalSpeed.tailPosition-halfSpeed.tailPosition)<.001f,
+    "Half-speed movement reaches the same leading and trailing state in twice the wall time");
+  normalSpeed.press(true);halfSpeed.press(true);normalSpeed.step(.032f);halfSpeed.step(.032f);
+  require(Math.abs(normalSpeed.scale-halfSpeed.scale)<.001f,"Movement speed does not slow down press expansion");
+  var defaultDock=new DockNavigationLayout(c,n->{},()->{});
+  require(((DockSpring)springField.get(defaultDock)).movementSpeed==.5f,"Non-home selection bars default to half-speed highlight movement");
   float a=DockSpring.outwardExtension(20,75),b=DockSpring.outwardExtension(40,75),c=DockSpring.outwardExtension(60,75);
   require(a<b&&b<c&&(c-b)<(b-a),"Resistance progressively increases toward the outward limit");
   require(DockSpring.outwardExtension(10000,75)<=75,"Extreme fling remains bounded");
@@ -412,12 +421,12 @@ public class DockNavigationCheck extends Context {
   close(center(),38,"Vertical padded dock keeps highlight centered horizontally");
   close(highlight().getTop()+highlight().getTranslationY()+highlight().getHeight()*highlight().getScaleY()/2,162,"Vertical padded dock applies top origin exactly once");
   android.animation.ValueAnimator.enabled=true;
-  init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
+  init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});dock.setHighlightMovementSpeed(1f);new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
   for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.setSelectedIndex(0);
   touch(0,35,25);touch(2,35,150);View.advance(600);touch(1,35,150);View.advance(1800);
   require(selected.equals(List.of(1)),"Shared vertical dock commits a vertical drag exactly once");
   close(highlight().getTranslationY()+highlight().getHeight()*highlight().getScaleY()/2,150,"Vertical highlight settles on active row");
-  init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
+  init();dock=new DockNavigationLayout(DockNavigationCheck.c,n->selected.add(n),()->{});dock.setHighlightMovementSpeed(1f);new FrameLayout(DockNavigationCheck.c).addView(dock);populate();dock.setOrientation(LinearLayout.VERTICAL);dock.layout(0,0,60,300);
   for(int i=0;i<3;i++)dock.itemAt(i).layout(0,i*100,60,(i+1)*100);dock.setSelectedIndex(0);
   android.view.VelocityTracker.velocity=900;touch(0,35,25);touch(2,35,140);touch(1,100,140);
   require(Math.abs(((DockSpring)springField.get(dock)).velocity-9)<.001f,"Vertical release transfers physical Y velocity");
