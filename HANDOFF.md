@@ -6,16 +6,16 @@
 
 ## 当前版本
 
-- **0.15.19 / versionCode 181**，数据库版本 **13**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
+- **0.15.20 / versionCode 182**，数据库版本 **13**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
 - 源码与安装包：[GitHub Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
-- 最近改动仅复用未变化的嵌套亚克力底板，未改变高光、文字、几何或物理参数。独立壁纸采样仍实时更新。
+- 最近改动精简六步使用引导，删除重复结果说明，补齐作业、批量写入及圆形状态操作说明；提供通知设置直达。保留示例、跳过及步骤恢复，不强制旧用户重看。选择栏动效和业务处理不变。
 - 0.15.18 的选择栏手感已获用户确认，见[已确认交互基线](docs/ui-interaction-baseline.md)。后续修复和性能优化保持该效果。
 
 ## 最近证据与实际限制
 
-0.15.19 已完成 release/androidTest 构建、lintRelease、壁纸采样和 Dock 协调检查，并已通过 USB 覆盖安装。筛选栏实录覆盖首尾按压、远距离点击与双向甩动，未见白线；未处理真实日程。
+0.15.20 已完成 release 构建与 lintRelease，并以 USB 覆盖安装。六步均已实际打开并检查截图；AI 设置、通知设置、备份入口已逐一点击，返回保留原步骤，最后跳过退出。未提交记录、未调用 AI、未修改真实日程。截图与跳转结果位于本机 `build/device-0.15.20/`，构建日志 `build/0.15.20-build.log`。
 
-同样 100 次底板绘制，位图改写由 100 次降到 0 次，CPU 中位耗时由 1.308334ms 降至 0.006198ms；两版底板像素一致。该数据仅涵盖底板栅格化与录制，不含 GPU 显示，不能换算成整体帧率。原始证据位于本机 `build/device-0.15.19/`。
+此前的底板缓存与帧率证据保留在[验证记录](docs/validation-history.md)及其版本归档。本轮只修改引导，不扩大为全应用 UI 或生命周期验收。
 
 仍需区分以下限制：
 

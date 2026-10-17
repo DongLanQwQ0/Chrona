@@ -20,16 +20,15 @@ public final class GuideActivity extends Activity {
     private static final String PRACTICE_TEXT = "明天下午3点到4点，在图书馆学习，提前10分钟提醒我。";
 
     private static final class Step {
-        final String title, introduction, outcome, tip, action;
+        final String title, introduction, tip, action;
         final String[] instructions;
         final Class<? extends Activity> target;
 
-        Step(String title, String introduction, String[] instructions, String outcome,
+        Step(String title, String introduction, String[] instructions,
                 String tip, String action, Class<? extends Activity> target) {
             this.title = title;
             this.introduction = introduction;
             this.instructions = instructions;
-            this.outcome = outcome;
             this.tip = tip;
             this.action = action;
             this.target = target;
@@ -37,39 +36,34 @@ public final class GuideActivity extends Activity {
     }
 
     private static final Step[] STEPS = {
-        new Step("先认识拾时", "记下事情 → 明确日程自动写入 → 存疑日程由你确认。", new String[]{
-                "「首页」查看近期安排；点击带下划线的「今天的安排」进入课表，点主界面的 + 开始记录。",
-                "「收件箱」保存原始内容，查看解析进度、待确认和失败记录；点击带下划线的「收件箱」标题打开日历。",
-                "「日程」查看识别出的事项，使用搜索与筛选；点击带下划线的「日程」标题打开课表对比。"
-        }, "知道去哪里记录、查看进度和浏览安排。", "明确且确定的日程自动写入并通过通知告知。模糊时间会给出建议，标为高存疑待确认。", null, null),
-        new Step("配置 AI 服务", "先连接自己的 AI 服务，拾时才能理解文字和截图。", new String[]{
-                "打开「设置 → AI 服务」。",
-                "填写服务地址、模型名称和 API 密钥；也可以先选常用模型预设，再填写密钥。",
-                "点「保存设置」，然后返回拾时。"
-        }, "保存好配置，就可以提交第一条记录。", "图片需要支持视觉的模型。API 密钥在本机加密保存，请使用服务商提供的准确地址和模型名称。", "打开 AI 服务", SettingsActivity.class),
-        new Step("记录第一件事", "尽量说清楚做什么、什么时候、在哪里，以及提前多久提醒。", new String[]{
-                "点主界面的 +，在「记录一件事」中输入或粘贴内容。",
-                "需要时点标题旁的剪贴板、图片或文件图标；也可以从其他应用的分享菜单选择拾时。",
-                "检查内容后点右上角 ✓。保存后自动解析，你可以继续记录下一件事。"
-        }, "看到「已存入收件箱」，说明记录已保存。接下来去收件箱等待结果。", "复制下方示例后，可以去记录页点剪贴板图标粘贴。只有你点 ✓ 才会提交给 AI；普通文件只提供名称等信息，内容不会发送。", "去记录一件事", MainActivity.class),
-        new Step("查看结果与存疑事项", "通知列出已自动写入的日程，以及仍需处理的草稿。", new String[]{
-                "进入「收件箱」，点击刚才的记录，查看排队、解析中或待确认状态。",
-                "活动填写开始、结束和地点；待办可填写截止时间或执行时间，也可以暂不安排时间。",
-                "信息和备忘保留为收件箱记录，可直接转为待办或活动。",
-                "如果一条记录生成多个日程，在日程区域左右滑动，按「日程 1 / N」逐项检查。"
-        }, "每项日程的内容与原始记录一致；不确定的时间已补全。", "解析失败时先检查网络和 AI 配置，再重试。尚未写入日历的记录也可以编辑原始内容后重新解析。", null, null),
-        new Step("确认存疑项并开启提醒", "核对存疑草稿后，把当前这项日程写入系统日历。", new String[]{
-                "在详情中检查「提醒」：数字表示提前多少分钟；留空表示不提醒。",
-                "点右上角 ✓ 保存当前项；活动和已安排时间的待办可写入日历，无时间待办直接保存。",
-                "待办做完后点「标记完成」；需要继续处理时点「恢复待办」。",
-                "按系统提示允许日历权限，并检查系统日历的通知和提醒开关。"
-        }, "确认成功后，日程显示已写入日历；到设定时间由系统日历提醒。", "在「设置 → 通知与提醒」中可开启开始前 30 分钟的常驻卡片，查看详情、延后提醒或隐藏本次。", null, null),
-        new Step("日常查看与维护", "完成一次「记录 → 审核 → 确认」，就掌握了基本用法。", new String[]{
-                "点底部按钮或左右滑动页面切页；也可在底部 Dock 上滑动，或长按拖动高光，松手打开落点页面。",
-                "在首页查看近期安排；在「日程」中搜索标题或关键词，按类型与时间筛选。",
-                "点击日程打开对应的一项，修改后点 ✓ 更新；删除日程时，已关联的系统日历条目也会删除。",
-                "在设置里调整外观、备份与恢复、检查更新；桌面可添加拾时小组件查看安排。"
-        }, "现在可以用拾时记录真实任务，并从设置里的「使用引导」随时重看步骤。", "换手机或进行重要操作前，先通过「设置 → 备份与恢复」导出完整备份。", "打开备份与恢复", BackupRestoreActivity.class)
+        new Step("三处入口", "首页看安排，日程找事项，收件箱看原文。", new String[]{
+                "首页：查看近期安排和待办，点 ＋ 记录。",
+                "日程：搜索事项，按日期、类型和状态筛选。",
+                "收件箱：查看解析进度，处理待确认或失败记录。"
+        }, null, null, null),
+        new Step("连接 AI", "填写你自己的 AI 服务。", new String[]{
+                "填写服务地址、模型名称和 API 密钥。",
+                "点「保存设置」，然后返回。"
+        }, "识别截图需要支持图片的模型。", "配置 AI 服务", SettingsActivity.class),
+        new Step("记下第一件事", "说清做什么、时间和地点。", new String[]{
+                "点首页 ＋，输入文字或添加截图。也可从其他应用分享给拾时。",
+                "点右上角 ✓ 保存并开始解析，结果在收件箱查看。"
+        }, "文字和截图会发送给你配置的 AI 服务。", "打开记录页", MainActivity.class),
+        new Step("核对识别结果", "时间明确的自动写入，存疑的由你确认。", new String[]{
+                "在收件箱打开记录，核对标题和时间；有多项时左右滑动逐项查看。",
+                "活动有起止时间；待办和作业可设截止时间，也可暂不安排。",
+                "改好后点右上角 ✓ 保存。长按列表卡片可多选，再点「写入日历」。"
+        }, "解析失败时，检查网络和 AI 配置后重试。", null, null),
+        new Step("设置提醒", "允许权限，提醒才能正常送达。", new String[]{
+                "在事项详情设置提前几分钟提醒；留空表示不提醒。",
+                "打开「通知与提醒」，允许通知、日历和准时提醒所需权限。",
+                "系统日历中也需开启通知；常驻卡片可在提醒设置中开启。"
+        }, null, "打开通知与提醒", NotificationSettingsActivity.class),
+        new Step("查看与处理", "日常用这几个入口就够了。", new String[]{
+                "点「今天的安排」打开课表，点「收件箱」标题打开日历。",
+                "详情中，新建与删除之间的圆形勾按钮用于完成或恢复待办；未来或进行中的活动可确认或撤销。",
+                "换手机前，到「备份与恢复」导出完整备份。"
+        }, "需要重看时，打开「设置 → 使用引导」。", "打开备份与恢复", BackupRestoreActivity.class)
     };
 
     private ScrollView page;
@@ -94,14 +88,15 @@ public final class GuideActivity extends Activity {
         if (state != null) currentStep = Math.max(0, Math.min(STEPS.length - 1, state.getInt("step")));
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
-        shell.setPadding(dp(20), dp(16), dp(20), dp(16));
         UiStyle.page(this, shell);
+        shell.setFitsSystemWindows(false);
+        shell.setPadding(dp(20), dp(16), dp(20), dp(16));
         shell.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(this);
         title.setText("使用引导");
-        title.setTextSize(26);
+        title.setTextSize(24);
         UiStyle.title(title);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
         Button skip = new Button(this);
@@ -161,21 +156,18 @@ public final class GuideActivity extends Activity {
         Step step = STEPS[currentStep];
         content.removeAllViews();
         progress.setText("第 " + (currentStep + 1) + " / " + STEPS.length + " 步");
-        text(content, step.title, 25, true);
+        text(content, step.title, 24, true);
         text(content, step.introduction, 16, false);
         LinearLayout instructions = card();
-        text(instructions, "操作步骤", 18, true);
         for (int i = 0; i < step.instructions.length; i++)
             text(instructions, (i + 1) + ". " + step.instructions[i], 16, false);
         UiStyle.addSpaced(content, instructions, 8, 12);
-        text(content, "完成后", 17, true);
-        text(content, step.outcome, 15, false);
         if (currentStep == 2) {
             LinearLayout sample = card();
-            text(sample, "可以试试这样说", 17, true);
+            text(sample, "试一句", 16, true);
             text(sample, PRACTICE_TEXT, 16, false);
             Button copy = new Button(this);
-            copy.setText("复制练习示例");
+            copy.setText("复制示例");
             UiStyle.button(copy, false);
             copy.setOnClickListener(view -> {
                 ClipboardManager clipboard = getSystemService(ClipboardManager.class);
@@ -194,7 +186,7 @@ public final class GuideActivity extends Activity {
             practice.setOnClickListener(view -> startActivity(new Intent(this, step.target)));
             UiStyle.addSpaced(content, practice, 4, 12);
         }
-        text(content, step.tip, 14, false);
+        if (step.tip != null) text(content, step.tip, 15, false);
         previous.setEnabled(currentStep > 0);
         next.setText(currentStep == STEPS.length - 1 ? "开始使用" : "下一步");
         page.scrollTo(0, 0);
@@ -203,8 +195,8 @@ public final class GuideActivity extends Activity {
     private LinearLayout card() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(16), dp(18), dp(8));
-        UiStyle.glass(card);
+        card.setPadding(dp(16), dp(12), dp(16), 0);
+        UiStyle.card(card);
         return card;
     }
 
@@ -213,7 +205,7 @@ public final class GuideActivity extends Activity {
         text.setText(value);
         text.setTextSize(size);
         text.setLineSpacing(dp(4), 1f);
-        if (heading) UiStyle.title(text); else UiStyle.muted(text);
+        if (heading) UiStyle.title(text); else text.setTextColor(UiStyle.colors(this).text);
         UiStyle.addSpaced(parent, text, 0, 12);
     }
 
