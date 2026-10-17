@@ -25,7 +25,8 @@ public final class SyncExchange {
             SyncState merged = local.copy();
             client.ensureRoot();
             Map<String, String> heads = client.listHeads();
-            String ownName = local.deviceId + ".json", ownEtag = null;
+            String ownName = local.deviceId + ".json";
+            WebDavClient.Head ownHead = null;
             Set<String> remoteBlobs = new HashSet<>(), validated = new HashSet<>();
             Map<String, Long> sizes = new HashMap<>();
             long total = 0;
@@ -40,7 +41,7 @@ public final class SyncExchange {
                 if (!filename.equals(remote.deviceId + ".json")) throw new IOException("云端设备身份不一致");
                 remoteBlobs.addAll(attachments(remote).keySet());
                 merged.merge(remote);
-                if (ownName.equals(filename)) ownEtag = downloaded.etag;
+                if (ownName.equals(filename)) ownHead = downloaded;
             }
             // Validate the effective state: obsolete device heads must not block a newer
             // already-converted version of the same record. Live conflicts still validate.
@@ -61,7 +62,7 @@ public final class SyncExchange {
             }
             byte[] body = merged.toJson().toString().getBytes(StandardCharsets.UTF_8);
             if (body.length > WebDavClient.HEAD_LIMIT) throw new IOException("同步索引超过 32 MB，请减少记录或附件元数据");
-            client.writeHead(ownName, body, ownEtag);
+            client.writeHead(ownName, body, ownHead);
             return merged;
         } catch (IOException exception) { throw exception; }
         catch (Exception exception) { throw new IOException("同步内容无效，原有数据已保留", exception); }
@@ -70,7 +71,7 @@ public final class SyncExchange {
     private static void validate(SyncState state, Set<String> validated, Map<String, Long> sizes) throws IOException {
         try {
             for (Map.Entry<String, List<SyncState.Version>> entry : state.records().entrySet()) {
-                if (!entry.getKey().matches("task_[0-9a-fA-F-]{36}|term_[0-9]{4}_[0-3]"))
+                if (!entry.getKey().matches("task_[0-9a-fA-F-]{36}|term_[0-9]{4}_[0-3]|merge_[0-9a-fA-F-]{36}"))
                     throw new IOException("云端记录身份不受支持");
                 for (SyncState.Version version : entry.getValue()) if (!version.deleted) {
                     String fingerprint = SyncState.sha256(SyncState.canonical(version.payload).getBytes(StandardCharsets.UTF_8));

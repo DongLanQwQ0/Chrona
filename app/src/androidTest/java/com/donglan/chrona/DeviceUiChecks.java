@@ -1,6 +1,8 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
+import java.io.File;
+import com.donglan.chrona.data.TaskStore;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.app.Application;
@@ -38,6 +40,87 @@ import java.util.concurrent.TimeUnit;
 /** Device measurements; only the explicit atomic fixture phase creates and removes its own test task. No server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("sync_roundtrip".equals(arguments.getString("phase"))) {
+            Context context = test.getTargetContext();
+            File recovery = new File(context.getFilesDir(), "sync-recovery-" + System.currentTimeMillis());
+            synchronized (AndroidSync.LOCK) {
+                if (!recovery.mkdirs()) throw new java.io.IOException("Cannot create private recovery directory");
+                try (TaskStore store = new TaskStore(context)) {
+                    android.database.sqlite.SQLiteDatabase database = store.getWritableDatabase();
+                    database.beginTransaction();
+                    try {
+                        // Preserve the actual legacy schema and rows. The write transaction keeps
+                        // the database and its WAL stable while taking this private recovery copy.
+                        File source = new File(database.getPath());
+                        java.nio.file.Files.copy(source.toPath(), new File(recovery, source.getName()).toPath());
+                        File wal = new File(source.getPath() + "-wal");
+                        if (wal.isFile()) java.nio.file.Files.copy(wal.toPath(), new File(recovery, source.getName() + "-wal").toPath());
+                    } finally { database.endTransaction(); }
+                }
+                for (String name : new String[]{"sync-state.json", "course-timetable.json"}) {
+                    File source = new File(context.getFilesDir(), name);
+                    if (source.isFile()) java.nio.file.Files.copy(source.toPath(), new File(recovery, name).toPath());
+                }
+            }
+            CountDownLatch done = new CountDownLatch(1);
+            String[] message = new String[1];
+            if (!AndroidSync.request(context, value -> { message[0] = value; done.countDown(); }))
+                return new JSONObject().put("recoveryCreated", true).put("busy", true).toString();
+            if (!done.await(180, TimeUnit.SECONDS)) throw new java.io.IOException("Sync wait timed out; request was not cancelled");
+            return new JSONObject().put("recoveryCreated", true).put("result", message[0])
+                    .put("success", message[0] != null && message[0].startsWith("上次同步：")).toString();
+        }
+        if ("sync_preflight".equals(arguments.getString("phase"))) {
+            synchronized (AndroidSync.LOCK) {
+                com.donglan.chrona.sync.SyncState state = AndroidSync.read(test.getTargetContext());
+                int merges = 0;
+                for (String id : state.records().keySet()) if (id.startsWith("merge_")) merges++;
+                JSONObject result = new JSONObject().put("records", state.records().size()).put("mergeRecords", merges);
+                Method validate = com.donglan.chrona.sync.SyncExchange.class.getDeclaredMethod("validate",
+                        com.donglan.chrona.sync.SyncState.class, java.util.Set.class, Map.class);
+                validate.setAccessible(true);
+                try {
+                    validate.invoke(null, state, new java.util.HashSet<String>(), new java.util.HashMap<String, Long>());
+                    result.put("valid", true);
+                } catch (java.lang.reflect.InvocationTargetException failed) {
+                    // Return only known validation categories, never payload, IDs, paths or credentials.
+                    Throwable cause = failed.getCause();
+                    result.put("valid", false).put("errorType", cause.getClass().getSimpleName())
+                            .put("unsupportedRecordIdentity", "云端记录身份不受支持".equals(cause.getMessage()));
+                }
+                if ("true".equals(arguments.getString("remote"))) {
+                    String stage = "connect";
+                    try {
+                        WebDavSettingsStore settings = new WebDavSettingsStore(test.getTargetContext());
+                        try (com.donglan.chrona.sync.WebDavClient client = new com.donglan.chrona.sync.WebDavClient(
+                                settings.url(), settings.user(), settings.password())) {
+                            client.testConnection(); stage = "list";
+                            Map<String,String> heads = client.listHeads();
+                            result.put("remoteHeads", heads.size());
+                            for (String name : heads.keySet()) {
+                                stage = "readHead";
+                                com.donglan.chrona.sync.WebDavClient.Head head = client.readHead(name);
+                                stage = "validateHead";
+                                com.donglan.chrona.sync.SyncState remote = com.donglan.chrona.sync.SyncState.fromJson(
+                                        new JSONObject(new String(head.bytes, java.nio.charset.StandardCharsets.UTF_8)));
+                                validate.invoke(null, remote, new java.util.HashSet<String>(), new java.util.HashMap<String, Long>());
+                            }
+                            result.put("remoteValid", true);
+                        }
+                    } catch (Exception failure) {
+                        Throwable cause = failure instanceof java.lang.reflect.InvocationTargetException ? failure.getCause() : failure;
+                        String message = cause.getMessage();
+                        result.put("remoteValid", false).put("remoteStage", stage).put("remoteErrorType", cause.getClass().getSimpleName())
+                                .put("remoteUnsupportedIdentity", "云端记录身份不受支持".equals(message));
+                        if (cause instanceof com.donglan.chrona.sync.WebDavClient.Failure) result.put("remoteFailure", message);
+                        if (message != null && message.matches("WebDAV request failed \\(HTTP [0-9]{3}\\)"))
+                            result.put("remoteHttpError", message);
+                        if (message != null && message.startsWith("WebDAV server did not provide")) result.put("remoteMissingEtag", true);
+                    }
+                }
+                return result.toString();
+            }
+        }
         if ("acrylic_raster".equals(arguments.getString("phase"))) return AcrylicRasterDeviceCheck.run(test, arguments);
         if ("completion_card_motion".equals(arguments.getString("phase"))) return CompletionMotionDeviceCheck.run(test);
         if ("detail_carousel_restore".equals(arguments.getString("phase"))) return HomeworkDetailDeviceCheck.carouselRestore(test);

@@ -75,12 +75,14 @@ public final class AndroidSync {
             try { synchronized (LOCK) { result = work.run(app); } }
             catch (Exception e) {
                 // Never include server bodies, URLs or credentials in persisted/UI diagnostics.
-                if (e instanceof AndroidSyncData.AttachmentException) result = e.getMessage();
+                if (e instanceof WebDavClient.Failure) result = e.getMessage();
+                else if (e instanceof AndroidSyncData.AttachmentException) result = e.getMessage();
                 else if (e instanceof SecurityException) result = "操作失败，请授予日历或附件访问权限后重试";
                 else if (Arrays.asList("记录已变化，请重新选择", "记录正在处理", "日历旧事件未能全部移除，请重试",
                         "需要确认移除本机日历旧事件", "课表正在修改，请重新同步", "请输入账号和应用密码",
                         "记录正在修改，请稍后重新同步",
                         "同步格式不受支持，请将所有同步设备升级到最新版本后重试",
+                        "云端记录身份不受支持", "同步记录校验失败", "同步内容无效，原有数据已保留",
                         "同步记录超过 32 MiB，请减少记录或附件后重试",
                         "请输入有效的 HTTPS WebDAV 地址", "请重新输入应用密码").contains(e.getMessage())) result = e.getMessage();
                 else result = "操作失败，请检查网络、应用密码和附件权限后重试（" + e.getClass().getSimpleName() + "）";

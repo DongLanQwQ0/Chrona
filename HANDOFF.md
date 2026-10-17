@@ -6,16 +6,18 @@
 
 ## 当前版本
 
-- **0.15.20 / versionCode 182**，数据库版本 **13**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
+- **0.15.21 / versionCode 183**，数据库版本 **13**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
 - 源码与安装包：[GitHub Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
-- 最近改动精简六步使用引导，删除重复结果说明，补齐作业、批量写入及圆形状态操作说明；提供通知设置直达。保留示例、跳过及步骤恢复，不强制旧用户重看。选择栏动效和业务处理不变。
+- 最近修复 WebDAV 列表及 GET 缺少有效强 ETag 时的同步失败；只更新本设备串行单写者 head，有强标签时继续条件写入。合并标记通过交换层校验，HTTP 错误与网络故障返回固定安全提示。
 - 0.15.18 的选择栏手感已获用户确认，见[已确认交互基线](docs/ui-interaction-baseline.md)。后续修复和性能优化保持该效果。
 
 ## 最近证据与实际限制
 
-0.15.20 已完成 release 构建与 lintRelease，并以 USB 覆盖安装。六步均已实际打开并检查截图；AI 设置、通知设置、备份入口已逐一点击，返回保留原步骤，最后跳过退出。未提交记录、未调用 AI、未修改真实日程。截图与跳转结果位于本机 `build/device-0.15.20/`，构建日志 `build/0.15.20-build.log`。
+0.15.21 release / androidTest 构建与 lintRelease 通过；USB 安装 183。真机通过应用已有 Keystore 配置检查 WebDAV：本地 46 个寄存器有效；服务器列表和 GET 的版本标签不符合原强 ETag 要求。修复后实际运行完整 AndroidSync，返回“上次同步：2026/10/17 18:23 · 成功”。本轮测试未显示、导出或修改凭据，未清空本地或云端，未替用户处理冲突／删除日历。
 
-此前的底板缓存与帧率证据保留在[验证记录](docs/validation-history.md)及其版本归档。本轮只修改引导，不扩大为全应用 UI 或生命周期验收。
+传输回归通过；新增真实 HTTP 交换 16 项通过，覆盖无强 ETag／强 ETag、重复同步、双设备、永久合并标记、拒绝未知记录及不覆盖其他设备 head；合并 99、类型与 SQLite 66 项通过。证据位于 `build/device-0.15.21/`，构建与检查日志在 `build/0.15.21-*.log`、`build/webdav-*-check.log`。
+
+实际同步前已在应用私有 files/sync-recovery-<时间戳>/ 中保留数据库及 WAL、同步状态和课表文件。准备标准快照时发现历史升级库 `createSnapshot` 复制失败（uncertainty_level CHECK）；`INSERT ... SELECT *` 未显式列名，旧库与新建表列序可能不同。此独立备份问题尚待核对并修复，禁止通过修改真实行或关闭约束掩盖。原失败快照未用于恢复；本次使用写事务内的原库与 WAL 恢复副本完成同步前保护。
 
 仍需区分以下限制：
 

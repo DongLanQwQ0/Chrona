@@ -51,7 +51,8 @@ public final class SyncCoreCheck {
         byte[] listing=xml(response(collection.getPath()+NAME,"&quot;one&quot;")+response("https://evil.test/"+NAME,"&quot;two&quot;")+response("../"+NAME,"&quot;three&quot;")+response("%2e%2e/"+NAME,"&quot;four&quot;"));
         check(WebDavClient.parseHeads(listing,collection).size()==1,"unsafe listing href accepted");
         fails(()->WebDavClient.parseHeads("<!DOCTYPE x [<!ENTITY e SYSTEM 'file:///secret'>]><d:multistatus xmlns:d='DAV:'>&e;</d:multistatus>".getBytes(StandardCharsets.UTF_8),collection),"external entity accepted");
-        fails(()->WebDavClient.parseHeads(xml(response(NAME,"")),collection),"missing ETag accepted");
+        check(WebDavClient.parseHeads(xml(response(NAME,"")),collection).containsKey(NAME),"missing listing ETag must not hide head");
+        check(WebDavClient.parseHeads(xml(response(NAME,"W/&quot;one&quot;")),collection).containsKey(NAME),"weak listing ETag must not hide head");
         fails(()->new WebDavClient("http://example.com","u","p"),"HTTP accepted");
         fails(()->new WebDavClient("https://u:p@example.com","u","p"),"URL credentials accepted");
         fails(()->new WebDavClient("https://example.com/?token=x","u","p"),"URL query accepted");
@@ -62,11 +63,17 @@ public final class SyncCoreCheck {
             String method=exchange.getRequestMethod(),path=exchange.getRequestURI().getPath();
             byte[] result=new byte[0]; int code=200;
             if (mode.get().equals("redirect")) { code=302; exchange.getResponseHeaders().add("Location","http://127.0.0.1:1/leak"); }
+            else if(mode.get().equals("auth")) {code=401;result="secret account or server body".getBytes(StandardCharsets.UTF_8);}
+            else if(mode.get().equals("limited")) code=429;
             else if(method.equals("MKCOL")) code=201;
             else if(method.equals("PROPFIND")) { code=207; result=xml(response("/ChronaSync/v1/heads/"+NAME,"&quot;one&quot;")); }
             else if(method.equals("PUT")) { match.set(exchange.getRequestHeaders().getFirst("If-Match")+"|"+exchange.getRequestHeaders().getFirst("If-None-Match")); code=mode.get().equals("conflict")?412:201; }
             else if(path.contains("/blobs/")) result=mode.get().equals("corrupt")?"bad".getBytes(StandardCharsets.UTF_8):blob;
-            else { result="{}".getBytes(StandardCharsets.UTF_8); if(!mode.get().equals("noetag")) exchange.getResponseHeaders().add("ETag","\"one\""); }
+            else {
+                result="{}".getBytes(StandardCharsets.UTF_8);
+                if(!mode.get().equals("noetag")) exchange.getResponseHeaders().add("ETag",
+                        mode.get().equals("rawetag")?"one":mode.get().equals("weaketag")?"W/\"one\"":"\"one\"");
+            }
             if(mode.get().equals("oversize")) { exchange.sendResponseHeaders(200,WebDavClient.HEAD_LIMIT+1L); exchange.close(); return; }
             exchange.sendResponseHeaders(code,result.length==0?-1:result.length);
             if(result.length>0) exchange.getResponseBody().write(result); exchange.close();
@@ -76,13 +83,30 @@ public final class SyncCoreCheck {
             client.testConnection(); check(client.listHeads().containsKey(NAME),"DAV listing failed");
             check(client.readHead(NAME).etag.equals("\"one\""),"head ETag");
             client.writeHead(NAME,new byte[0],null); check("null|*".equals(match.get()),"create is unconditional");
-            client.writeHead(NAME,new byte[0],"\"one\""); check("\"one\"|null".equals(match.get()),"update is unconditional");
-            mode.set("conflict"); fails(()->client.writeHead(NAME,new byte[0],"\"one\""),"412 ignored");
+            client.writeHead(NAME,new byte[0],new WebDavClient.Head(new byte[0],"\"one\"")); check("\"one\"|null".equals(match.get()),"strong ETag condition lost");
+            mode.set("conflict"); fails(()->client.writeHead(NAME,new byte[0],new WebDavClient.Head(new byte[0],"\"one\"")),"412 ignored");
             Path source=dir.resolve("source"),target=dir.resolve("target"); Files.write(source,blob);
             client.putBlob(sha,source.toFile()); // Existing content-addressed blob: 412 is success.
             mode.set("normal"); client.getBlob(sha,target.toFile()); check(Arrays.equals(blob,Files.readAllBytes(target)),"blob download");
             mode.set("corrupt"); fails(()->client.getBlob(sha,target.toFile()),"bad blob accepted"); check(Arrays.equals(blob,Files.readAllBytes(target)),"bad blob overwrote target");
-            mode.set("noetag"); fails(()->client.readHead(NAME),"missing head ETag accepted");
+            mode.set("noetag"); WebDavClient.Head untagged=client.readHead(NAME);
+            check(untagged.etag==null,"missing GET ETag must remain absent");
+            client.writeHead(NAME,new byte[0],untagged);
+            check("null|null".equals(match.get()),"existing untagged own head must not be treated as new");
+            for(String format:new String[]{"rawetag","weaketag"}) {
+                mode.set(format);
+                WebDavClient.Head unsupported=client.readHead(NAME);
+                check(unsupported.etag==null,"non-strong ETag must not become If-Match");
+                client.writeHead(NAME,new byte[0],unsupported);
+                check("null|null".equals(match.get()),"non-strong ETag must preserve own-head update");
+            }
+            mode.set("auth");
+            try {client.readHead(NAME);throw new AssertionError("authentication error accepted");}
+            catch(WebDavClient.Failure expected){check(expected.getMessage().contains("HTTP 401")
+                    && !expected.getMessage().contains("secret"),"authentication message must be useful and private");}
+            mode.set("limited");
+            try {client.readHead(NAME);throw new AssertionError("rate limit accepted");}
+            catch(WebDavClient.Failure expected){check(expected.getMessage().contains("HTTP 429"),"rate limit message lost");}
             mode.set("redirect"); fails(()->client.readHead(NAME),"redirect accepted");
             mode.set("oversize"); fails(()->client.readHead(NAME),"oversize accepted");
             fails(()->client.writeHead(NAME,new byte[WebDavClient.HEAD_LIMIT+1],null),"oversize upload accepted");

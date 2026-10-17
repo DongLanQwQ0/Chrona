@@ -18,6 +18,10 @@ import java.util.concurrent.TimeUnit;
 
 /** Small HTTPS WebDAV transport. A client is cancellable and must not be reused after close. */
 public final class WebDavClient implements AutoCloseable {
+    /** Safe to show: messages contain no server text, account, URL or credentials. */
+    public static final class Failure extends IOException {
+        public Failure(String message) { super(message); }
+    }
     public static final int HEAD_LIMIT = 32 * 1024 * 1024, BLOB_LIMIT = 20 * 1024 * 1024;
     private final URI base, heads, blobs;
     private final String authorization;
@@ -49,8 +53,16 @@ public final class WebDavClient implements AutoCloseable {
     }
     private static void status(int status, int... allowed) throws IOException {
         for (int candidate : allowed) if (status == candidate) return;
-        if (status == 409 || status == 412) throw new IOException("WebDAV sync contention (HTTP " + status + ")");
-        throw new IOException("WebDAV request failed (HTTP " + status + ")");
+        String reason;
+        if (status == 401) reason = "WebDAV 认证失败，请检查账号和应用密码";
+        else if (status == 403) reason = "WebDAV 拒绝访问，请检查目录读写权限";
+        else if (status == 404) reason = "WebDAV 目录不存在，请检查服务地址";
+        else if (status == 409 || status == 412) reason = "云端记录已变化，请重新同步";
+        else if (status == 429) reason = "WebDAV 请求过于频繁，请稍后重试";
+        else if (status >= 300 && status < 400) reason = "WebDAV 地址发生跳转，请填写最终服务地址";
+        else if (status >= 500) reason = "WebDAV 服务暂时不可用，请稍后重试";
+        else reason = "WebDAV 请求失败";
+        throw new Failure(reason + "（HTTP " + status + "）");
     }
     private static void filename(String name) {
         if (name == null || !name.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.json"))
@@ -60,7 +72,8 @@ public final class WebDavClient implements AutoCloseable {
         if (sha == null || !sha.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("Invalid blob hash");
     }
     private static String etag(String tag) throws IOException {
-        if (tag == null || !tag.matches("\"[^\"\\r\\n]+\"")) throw new IOException("WebDAV server did not provide a usable strong ETag");
+        if (tag == null || !tag.matches("\"[^\"\\r\\n]+\""))
+            throw new Failure("WebDAV 文件缺少有效版本标识，无法安全同步；请检查服务是否支持强 ETag");
         return tag;
     }
     private static byte[] read(InputStream input, long length, int limit) throws IOException {
@@ -130,8 +143,10 @@ public final class WebDavClient implements AutoCloseable {
                         if (tags.getLength()==1) tag=tags.item(0).getTextContent().trim();
                     }
                 }
-                tag=etag(tag);
-                if (out.containsKey(name) && !out.get(name).equals(tag)) throw new IOException("Inconsistent WebDAV listing");
+                // A listing discovers names only. The authoritative strong ETag comes from
+                // readHead's GET, together with the exact bytes protected by If-Match.
+                if (tag == null || tag.isEmpty()) tag = null;
+                if (out.containsKey(name) && !Objects.equals(out.get(name), tag)) throw new IOException("Inconsistent WebDAV listing");
                 out.put(name,tag);
             }
             return out;
@@ -145,12 +160,20 @@ public final class WebDavClient implements AutoCloseable {
     }
     public Head readHead(String name) throws IOException {
         filename(name); Response r=request(heads.resolve(name),"GET",null,Collections.emptyMap(),HEAD_LIMIT);
-        status(r.code,200); return new Head(r.body,etag(r.etag));
+        status(r.code,200);
+        // Some WebDAV services omit ETag or return a weak validator. Those remain readable;
+        // only a strong validator can be used for a conditional overwrite.
+        String tag = r.etag != null && r.etag.matches("\"[^\"\\r\\n]+\"") ? r.etag : null;
+        return new Head(r.body, tag);
     }
-    public void writeHead(String name, byte[] body, String expectedEtag) throws IOException {
+    /** Only the owning device may publish this head; its coordinator serializes writers. */
+    public void writeHead(String name, byte[] body, Head previous) throws IOException {
         filename(name); if (body == null || body.length > HEAD_LIMIT) throw new IOException("Sync head exceeds size limit");
         Map<String,String> h=new HashMap<>(); h.put("Content-Type","application/json; charset=utf-8");
-        h.put(expectedEtag==null ? "If-None-Match" : "If-Match",expectedEtag==null ? "*" : etag(expectedEtag));
+        if (previous == null) h.put("If-None-Match", "*");
+        else if (previous.etag != null) h.put("If-Match", etag(previous.etag));
+        // Without ETag this updates only our own single-writer head, never another device's.
+        // Distinguish an existing untagged head from a missing head: If-None-Match:* would fail.
         Response r=request(heads.resolve(name),"PUT",body,h,0); status(r.code,200,201,204);
     }
     public void putBlob(String sha, File source) throws IOException {
@@ -190,7 +213,13 @@ public final class WebDavClient implements AutoCloseable {
                     bytes=read(responseBody.byteStream(),responseBody.contentLength(),limit);
                 return new Response(code,bytes,response.header("ETag"));
             }
-        } catch (IOException e) { throw new IOException(closed ? "Sync cancelled" : "WebDAV network request failed"); }
+        } catch (IOException e) {
+            if (closed) throw new Failure("同步已取消");
+            if (e instanceof java.net.SocketTimeoutException) throw new Failure("WebDAV 连接超时，请稍后重试");
+            if (e instanceof java.net.UnknownHostException) throw new Failure("无法解析 WebDAV 服务地址，请检查网络或服务地址");
+            if (e instanceof javax.net.ssl.SSLException) throw new Failure("WebDAV 安全连接失败，请检查证书与设备时间");
+            throw new Failure("WebDAV 网络连接失败，请检查网络后重试");
+        }
         finally { active.remove(call); }
     }
     @Override public void close() {

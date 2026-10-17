@@ -136,14 +136,18 @@ sources += list((ROOT / 'app/src/main/java/com/donglan/chrona/timetable').glob('
 sources += [ROOT / 'app/src/main/java/com/donglan/chrona/CandidateMerges.java']
 sources += [ROOT / 'app/src/main/java/com/donglan/chrona' / name for name in (
     'HomeTimelineEntry.java', 'calendar/AllDayDates.java', 'calendar/CalendarOccurrence.java')]
-sources += [shared / name for name in ('TaskCodec.java','MergeLedger.java','SyncState.java')]
-sources += [ROOT / 'checks/CandidateMergeCheck.java',ROOT / 'checks/TwoScheduleTypesCheck.java']
+sources += [shared / name for name in ('TaskCodec.java','MergeLedger.java','SyncState.java','SyncExchange.java','WebDavClient.java')]
+sources += [ROOT / 'checks/CandidateMergeCheck.java',ROOT / 'checks/TwoScheduleTypesCheck.java',ROOT / 'checks/SyncExchangeCheck.java']
 cache = Path(os.environ.get('GRADLE_USER_HOME','F:/Android/GradleCache')) / 'caches/modules-2/files-2.1'
 jars = [ROOT / 'build/ai-checks/json.jar']
-for group,module in [('net.sf.biweekly','biweekly'),('com.github.mangstadt','vinnie')]:
-    jars += sorted((cache / group / module).glob('*/*/*.jar'))[-1:]
+for group,module in [('net.sf.biweekly','biweekly'),('com.github.mangstadt','vinnie'),
+                     ('com.squareup.okhttp3','okhttp'),('com.squareup.okio','okio-jvm'),
+                     ('org.jetbrains.kotlin','kotlin-stdlib')]:
+    jars += sorted(path for path in (cache / group / module).glob('*/*/*.jar')
+                   if not path.name.endswith(('-sources.jar', '-javadoc.jar')))[-1:]
 classpath = os.pathsep.join(map(str,jars))
 subprocess.run([str(JAVA / 'javac.exe'),'--release','17','-encoding','UTF-8','-cp',classpath,'-d',str(OUT),*map(str,sources)],check=True)
+subprocess.run([str(JAVA / 'java.exe'),'-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.SyncExchangeCheck'],check=True)
 subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.CandidateMergeCheck',str(OUT / 'databases')],check=True)
 
 subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.TwoScheduleTypesCheck',str(OUT / 'databases')],check=True)
