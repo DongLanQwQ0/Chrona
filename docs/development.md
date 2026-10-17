@@ -1,84 +1,40 @@
-## AI 口语时间提取
+# 开发指南
 
-完整规则及示例见 [AI 时间提取约定](ai-time-extraction.md)。`SchedulePrompt` v7 统一凌晨“明天早上”、12小时钟点、模糊日期与相对时间的快速取值策略，并明确准点提醒使用待办起始、截止仅用于期限、其他角色事务边界和程序日期校验职责；猜测时间一律高存疑，明确换算保持自动写入。新增时间表达时同步该清单和提示词，勿在转换器再解析整段原文。
+[文档索引](README.md) · [项目基本要求](project-requirements.md) · [UI 设计规范](ui-style-contract.md) · [当前状态](../HANDOFF.md)
 
-## 0.14.50：角标同步与周视图缩放
+按功能选择文档与代码入口，再阅读相关公共组件。本文只保留构建环境、结构和工作流，功能契约由对应文档维护。
 
-局部刷新必须先应用最新 `review / failed` 计数，再记账 revision。`updatePendingCounts` 同时更新可见或缓存收件箱的原位角标和底部导航；角标节点即使为零也保留，仅切换可见性，避免从零新增时遗漏。异步日程刷新使用同一 worker 快照中的计数，过期请求不提交。
+## 技术基线
 
-周的双轴拖动、边缘切周及捏合集中由 `FreeCalendarScrollView` 仲裁。先消费周内滚动，仅边缘后未消费的外拖距离计入切周阈值；回撤、多指会取消切周，多指还取消点击和惯性。缩放只重排现有网格和卡片，按显示帧合并更新，不重查数据库。`weekZoom` 在页面状态中保存；日视图固定原比例。`WeekAgendaImage.write` 显式接收 `includeIndex`，关闭时不创建附录文本布局，也不受附录高度限制。
-
-## 0.14.49：工作流与提醒闭环
-
-TaskCompletion 统一完成/恢复、锁内 revision 检查和关联系统提醒。恢复只安排未来提醒；失败保留本地状态、返回说明并持久保留待同步项。ReminderTimeline 将显式待办 snooze 与默认关闭窗口分开，活动不越过结束时间。NotificationDeliveryStatus 统一频道与权限的有效状态。HomeTodoSummary 是首页摘要，queryHomeUpcoming 仅使用执行时间，todoScope 是完整筛选状态。
-
-设备集中验收：DeviceUiChecks 的 interaction_acceptance、interaction_layout；checks/interaction_acceptance_check.py 检查已保存报告，worker 时间是观察上界，非精确 SQL 耗时。
-
-## 0.14.48：两类日程
-
-SQLite 版本提升至 11，新增 due_at_millis、completed_at_millis、is_record。数据库升级同时转换已归档的合并来源。活动使用起止时间，待办保留独立截止与完成状态，记录退出日历投影。TaskCodec 和网页端保存相同字段，旧同步客户端需更新。
-
-# 开发文档
-
-[项目首页](../README.md) · [用户使用指南](user-guide.md)
-
-本文面向构建与维护代码的开发者。下载安装和日常操作请看使用指南。
-
-## 项目概况
-
-拾时是原生 Android Java 应用，使用用户配置的 AI 服务生成日程草稿，用户审核后写入应用专属的系统日历。
-
-0.14.7 起，完全明确且确定的日程由 `processing/AutoCalendarPublisher` 自动写入专属系统日历；推定或高存疑项等待用户确认。日历二级页使用 `AgendaRepository` 独立异步快照，`CalendarTimelineLayout` 计算跨日/重叠位置。`AgendaReminder` 维护一个常驻卡片和下一边界闹钟，`AgendaReminderJobService` 周期检查进程退出期间的来源变化；系统来源分别存于首页、小组件、提醒与日历页面偏好。`ScheduleOrderPreferences` 按四个预设持久保存方向。
-
-| 项目 | 配置 |
+| 项目 | 配置来源与当前值 |
 | --- | --- |
-| 应用 ID | `com.donglan.chrona` |
-| 当前版本 | `0.14.6`，versionCode `113` |
-| 最低 Android 版本 | API 26（Android 8.0） |
-| 编译 / 目标 SDK | 36 / 36 |
-| Java 源码级别 | 17 |
-| 数据库版本 | 10；升级必须保留已有记录 |
+| 应用 | 原生 Android Java，`com.donglan.chrona` |
+| 版本 | `app/build.gradle`：0.15.19 / 181 |
+| Android | minSdk 26，compileSdk / targetSdk 36 |
+| 语言与构建 | Java 源码 17，AGP 9.4.1，Gradle Wrapper 9.6.0 |
+| 数据库 | `TaskStore.DATABASE_VERSION`：13 |
 
-网页滚动条用 `scrollbar-width:none` 与 `::-webkit-scrollbar` 隐藏轨道，禁止通过 `overflow:hidden` 禁止滚动。统一下拉保留原 select 的 name/value/input/change，触发按钮使用 combobox、选项使用 listbox/option，顶层 popover 避免 dialog 裁切；键盘方向/Home/End/Enter/Space/Escape/Tab 与焦点回归必须验证。课表按浏览周只读调用 `library.select("").current(day)`，沿用手机学期边界和最近规则，不持久化网页选择。
+版本和数据库格式以源码为准，发布后更新本表和交接页；历史文档的旧值不作为配置依据。
 
-## 原生设置页布局规范
+## 按功能进入代码
 
-新增和修改 UI 必须先遵守 [原生 UI 强制约束](ui-style-contract.md)。该文档统一卡片、浮层、字号、行高、选择栏包络和验收门槛；下面保留安全区与布局调用顺序的详细说明。
+源码根为 `app/src/main/java/com/donglan/chrona/`，共享同步源码在 `shared/src/main/java/`，网页资源在 `app/src/main/assets/lan/`。
 
-新增或修改设置类页面必须遵守以下规则，禁止页面主体、顶栏或卡片外缘贴屏幕左右边缘。此规则具体化既有外观页、设置主页和更新页的实现；此前只有历史修复记录，没有集中写明容器与调用顺序。
+| 功能 | 主要入口 | 文档 |
+| --- | --- | --- |
+| 记录、首页与详情 | `MainActivity`、`DashboardActivity`、`TaskDetailActivity` | [日程与浏览](features/schedules/schedule-browser.md) |
+| AI 提取与处理 | `ai/`、`processing/` | [解析链路](features/ai/ai-pipeline.md)、[时间规则](features/ai/ai-time-extraction.md)、[请求协议](features/ai/ai-request-notes.md) |
+| 日历、课表与来源 | `calendar/`、`AgendaRepository`、`CalendarTimelineLayout` | [本地课表](features/calendar/course-timetable.md)、[来源](features/calendar/system-calendar-home.md)、[候选合并](features/schedules/candidate-merge.md) |
+| 提醒与原子岛 | `AgendaReminder`、`AgendaReminderJobService` | [提醒](features/reminders/agenda-reminder-settings.md)、[vivo 配置](features/reminders/vivo-atomic-setup.md) |
+| 学校作业与课表 | `ZjuClient`、`ZjuSync`、`ZjuHomeworkCalendar` | [折姜星辰](features/zju/zju-services.md) |
+| 数据、附件与备份 | `data/`、`image/`、`ConfigBackup`、`SchoolDataBackup` | [备份范围](features/data/backup-coverage.md)、[附件与链接](features/schedules/selection-and-link-fetch.md) |
+| 局域网与同步 | `LanAccessService`、`LanSecurity`、`LanWebServer`、`AndroidSync`、`shared/` | [局域网](features/connectivity/lan-access.md)、[WebDAV 同步](features/connectivity/sync-contract.md) |
+| UI 与动效 | `UiStyle`、`SettingsPageLayout`、`DockNavigationLayout`、`DockSpring` | [UI 规范](ui-style-contract.md)、[交互基线](ui-interaction-baseline.md)、[性能测量](motion-startup.md) |
+| 小组件与更新 | `AgendaWidgetProvider`、`ReleaseUpdates`、`GitHubRelease` | [小组件](features/widgets/desktop-widgets.md)、[发布](github-releases.md) |
 
-1. 层级为 `FrameLayout stage → GlassBackdropView + ScrollView viewport → 一个纵向 LinearLayout content → 顶栏/分组标题/卡片/操作控件`。背景可以铺满屏幕，内容容器左右必须各有 **20dp** 留白。全宽卡片、输入框和按钮的宽度仅填满内容区域，不能跨过这层留白。卡片内边距不替代页面留白。
-2. 跨设备同步、局域网访问及以后同类二级设置页使用 `SettingsPageLayout.content/header/show`，不要另写安全区容器。`show(activity, root, animatePresentation)` 仅首次主动呈现传 true，旋转恢复和后台重绘传 false，避免重播。公共实现保留内容上下 8dp/28dp；设置主页已有 16dp/24dp、更新页已有 24dp/24dp 不在本轮改变。顶栏采用 48dp 返回触控区域、居中 Lucide 箭头和同一行标题；顶栏位于内容容器中，与卡片外缘对齐。
-3. 标题栏与下一个内容或操作控件之间至少保留 **16dp** 垂直间距。统一由 `SettingsPageLayout.header` 的 `HEADER_CONTENT_GAP_DP` 底部 margin 提供，页面不得用负 margin 或其它布局抵消；正在处理、扫描结果等临时内容也必须位于这段间距之后。
-4. `UiStyle.page(activity, content)` 会设置背景、系统栏配色并调用 **`content.setFitsSystemWindows(true)`**，因此正确顺序是 `page → content.setFitsSystemWindows(false) → content.setPadding(20dp, top, 20dp, bottom) → transparent background`。遗漏关闭会使 Android 的系统 inset 分发覆盖内容 padding；只在调用 page 前设置 padding 无法保证留白。
-5. 系统栏、屏幕挖孔和键盘安全区只由视口负责：`UiStyle.applyInsets(stage, viewport)`。API 35+ 会将初始视口 padding 与系统 inset 相加、底部取导航栏与键盘的较大值。不得把 content 作为安全区目标，或在 content 再开启 fitsSystemWindows；不得重复叠加 inset。背景仍可延伸到系统栏下面。API 26–34 保持系统默认窗口安全区。
-6. 控件复用 `UiStyle.colors/title/muted/input/button/toggle/glass`，图标采用 Lucide；主题及深色状态使用现有 ThemeStore。`input` 和 `fieldTrigger` 会把内部 padding 设置为 16dp/14dp，`button` 会设置为 18dp/10dp；确需局部覆盖时在样式调用之后设置，不能依赖调用之前的值。`glass` 保留容器 padding，`toggle` 调整颜色及最小高度。控件 margin 只负责卡片内部布局，不承担页面 20dp 留白。
-7. 不增加无必要的说明文字。布局改动保持原有分组间距、滚动能力、触控区域和功能。二维码承载 172dp、8dp 内距、主题描边和 RADIUS_FIELD 圆角；码图为不透明白底黑码、四模块静区，布局在已有内容区域内居中，不能撑破卡片。
+## 本机构建
 
-发布前检查：运行 `python checks/settings_layout_check.py`，执行真实内容构建及 inset 方法，在多 SDK/密度与侧边挖孔/键盘变化下检查层级、左右像素值和不累加安全区；同时运行完整离线检查与 Android 构建/lint。该 JVM 检查使用 Android 平台替身，不构成 Android 渲染验收。具备设备时，在两页分别检查浅色/深色、纵横屏、首屏/滚动底部、打开键盘、大字体，截图确认顶栏/卡片外缘/全宽控件始终留有左右 20dp 内容留白（系统侧边安全区另加），安全区不遮挡；没有设备必须在验证记录中写明，不能用网页截图代替原生页面验收。
-
-## 本地构建与签名
-
-电脑通过手机内置的局域网网页访问，不设独立客户端或构建模块。离线资源位于 `app/src/main/assets/lan/`；二维码在本地由 [ZXing core 3.5.3](https://github.com/zxing/zxing) 编码，带临时配对 fragment 的二维码启停/变址/变码/到期与实际解码检查为 `python checks/lan_qr_check.py`；HTTP 使用 NanoHTTPD 2.3.1，服务/权限、认证与真实存储适配分别由 `LanAccessService`、`LanSecurity`、`LanWebServer` 管理，协议和验收边界见 [局域网访问](lan-access.md)。
-
-同步核心保留在 `shared/src/main/java/` 并由 Android 源集直接编译。运行 `python checks/sync_core_check.py` 使用既有 Gradle 缓存中的 OkHttp/Okio/Kotlin 及 `build/ai-checks/json.jar`；可通过 `CHRONA_SYNC_CLASSPATH` 指定现有检查依赖。同步协议见 [sync-contract.md](sync-contract.md)。
-
-以下是项目已经验证的 Windows 环境。盘符路径属于本机配置，其他环境请替换成实际路径。私钥、本机配置与构建产物不应提交到仓库。
-
-| 项目 | 当前配置 |
-| --- | --- |
-| Android Studio | `F:\Android\AndroidStudio` |
-| Android SDK | `F:\Android\Sdk`，Android API 36 |
-| Java | `D:\Minecraft\java21`，实际为 Java 22.0.2 |
-| Gradle | Wrapper 9.6.0；缓存 `F:\Android\GradleCache` |
-| Android Gradle Plugin | 9.4.1 |
-| 应用 | Java 源码级别 17，`minSdk 26`，`targetSdk 36` |
-
-维护本工作区时，新增或更换工具链须先经用户确认。项目路径含中文，`gradle.properties` 中的 `android.overridePathCheck=true` 已在当前环境中通过构建。
-
-Debug 构建明确使用 `gradle.properties` 的 `chronaDebugKeystore=F\:/Android/user-home/debug.keystore`（属性文件内需转义盘符后的冒号）。这份密钥对应旧版签名证书 SHA-256 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`；私钥不在仓库中。其他环境构建时须将该 Gradle 属性指向同一份密钥，否则构建会停止，避免静默生成无法覆盖安装的 APK。
-
-在 PowerShell 7 中构建：
+本机使用 PowerShell 7。SDK、用户数据和 Gradle 缓存在 F 盘；新增或更换工具链先经用户确认，不修改全局 Java 配置。
 
 ```powershell
 $ErrorActionPreference = 'Stop'
@@ -86,62 +42,24 @@ $env:JAVA_HOME = 'D:\Minecraft\java21'
 $env:ANDROID_HOME = 'F:\Android\Sdk'
 $env:ANDROID_USER_HOME = 'F:\Android\user-home'
 $env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
-.\gradlew.bat :app:assembleDebug --no-daemon --console=plain
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+.\gradlew.bat :app:assembleRelease :app:lintRelease --console=plain
+if ($LASTEXITCODE -ne 0) { throw 'Build or lint failed' }
 ```
 
-产物位于 `app\build\outputs\apk\debug\app-debug.apk`，构建产物和本机配置已被 `.gitignore` 排除。Android Studio 可直接打开本目录。源码与分发仓库为 https://github.com/DongLanQwQ0/Chrona，正式版 APK 见 [Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
+目录名含中文，保留 `android.overridePathCheck=true`。debug / release 都沿用 `chronaDebugKeystore` 指向的既有签名，不能生成另一份密钥替代。正式 APK 为 `app/build/outputs/apk/release/app-release.apk`；debug 和 androidTest 按任务需要构建。签名与发布验证见[发布指南](github-releases.md)。
 
-提交应用代码前至少执行一次构建；需要 Android 静态检查时运行：
+## 原生布局接入
 
-```powershell
-.\gradlew.bat :app:assembleDebug :app:lintDebug --no-daemon --console=plain
-```
+通用视觉要求统一见 UI 规范。设置页采用 `SettingsPageLayout.content/header/show`，首次主动展示才播放呈现，恢复与数据更新保留稳定内容。
 
-纯文档修改检查内容、链接和 diff 即可，不需要重新打包 APK。开发验证要区分编译、静态检查、离线测试与真机操作，不能将构建通过写成真机验证通过。
+确需维护公共布局时，注意 `UiStyle.page` 会设置 fitsSystemWindows：内容容器随后关闭该标志并设置自己的留白，安全区只由 `UiStyle.applyInsets(stage, viewport)` 管理，避免重复 inset 或覆盖 padding。样式函数可能写入内部 padding，局部覆盖应在样式调用后。中间父容器与滚动视口的绘制职责分别处理，选择栏采用公共 motion host，保持完整动画和内容对齐。
 
-## 代码入口
+## 开发、验证与交付
 
-源码位于 `app/src/main/java/com/donglan/chrona/`。
+1. 检查当前变更，读目标功能文档与直接依赖，备份将修改的文件。
+2. 完成同一功能涉及的状态、数据、入口及恢复路径；保持用户授权范围和已确认交互。
+3. 开发后集中执行相关检查、构建及必要的实际交互验证。`checks/` 中各脚本说明自身依赖；`python checks/run_checks.py full --list` 可列出统一离线集合，`full` 执行该集合。浏览器、设备和真实服务验证单独进行。
+4. 实际结果写[验证记录](validation-history.md)，产品改动写对应功能文档及 `CHANGELOG.md`，当前限制写 `HANDOFF.md`。正式发布按发布指南核对有效 APK 和升级路径。
 
-| 范围 | 主要入口 |
-| --- | --- |
-| 主界面与记录 | `DashboardActivity`、`MainActivity` |
-| 日程审核与使用引导 | `TaskDetailActivity`、`GuideActivity` |
-| AI 与后台处理 | `ai/`、`processing/` |
-| 本地数据与附件 | `data/`、`image/` |
-| 日历与链接正文 | `calendar/`、`web/` |
-| 外观与界面样式 | `ThemeStore`、`UiStyle` |
-| 更新与桌面小组件 | `GitHubRelease`、`ReleaseUpdates`、`AgendaWidgetProvider` |
-| 局域网访问 | `LanSettingsActivity`、`LanAccessService`、`LanSecurity`、`LanWebServer`、`assets/lan/` |
-| 多设备同步 | `SyncSettingsActivity`、`AndroidSync`、`AndroidSyncData`、`SyncJobService`、`shared/` |
-
-独立检查位于 `checks/`。不同检查的依赖与运行方式并不相同，应按修改范围选择，并阅读对应检查文件。
-
-Dock 点击与高光回归检查：设置现有 `JAVA_HOME` 后运行 `python checks/dock_navigation_check.py`。它编译并执行真实 `DockNavigationLayout`，用最小 UI 队列替身模拟子 View 的点击入队、detach 取消回调和布局几何，检查点击、长按、取消及连续动画的绘制位置。无需新增依赖，生成文件位于忽略的 `build/`；这不等同于 Android 运行时或真机触摸验证。
-
-## 技术文档
-
-动效和启动优化见 [统一动效与启动测量](motion-startup.md)。`checks/lifecycle_motion_check.py` 使用替身运行实际返回保护和中断恢复方法；`checks/startup_metrics_check.py` 只校验测量数据解析。连接设备后使用 `checks/measure_startup.py` 测 TTID/TTFD，不能用离线检查代替 1 秒验收。
-
-当前整合：[首页、课程与可信反馈](home-course-integration.md)。历史问题审查与修复记录：[软件审查与完善清单](quality-audit.md)。当前数据库版本为 v10；备份使用 SQLite ATTACH 事务复制快照，避免使用旧 Android SQLite 不支持的 VACUUM INTO。
-
-统一离线验证使用 `python checks/run_checks.py full`，其中包含同步核心检查 `sync_core_check.py`；可用 `python checks/run_checks.py full --list` 查看清单。浏览器交互检查仍需单独运行，未纳入该离线清单。环境与正式构建、APK 验签说明见 [分发文档](github-releases.md)。设备流程单独按 [验收清单](device-acceptance.md) 记录。正式包使用 `:app:assembleRelease`，关闭调试并沿用既有签名；开发包仍使用 debug。
-
-本轮离线回归：`python checks/detail_draft_check.py`、`python checks/job_execution_check.py`、`python checks/data_integrity_check.py`、`python checks/config_backup_check.py`。前三项分别执行实际 retained session/协调方法与真实 SQLite SQL；配置检查用内存偏好和密钥存储替身执行实际 ConfigBackup。Java 客户端检查 `checks/NetworkSafetyCheck.java` 使用离线 HTTPS 假连接，需要现有 org.json 检查运行库，不访问真实模型。检查生成物均在 `build/`，这些检查不能替代 Android 生命周期与设备测试。
-
-- [AI 处理链路](ai-pipeline.md)、[请求说明](ai-request-notes.md)、[输出与设置](ai-settings-output-notes.md)、[日程规范化](ai-normalization-notes.md)
-- [日程浏览与筛选](schedule-browser.md)、[首页系统日历](system-calendar-home.md)
-- [日期时间选择器](date-time-picker.md)、[列表动画](list-entry-animation.md)、[紧凑选择菜单](compact-selection-menu.md)
-- [附件选择与链接读取](selection-and-link-fetch.md)、[桌面小组件](desktop-widgets.md)
-- [GitHub Release 分发](github-releases.md)
-
-## 维护与历史记录
-
-- [交接与需求](../HANDOFF.md)：产品边界、历史决策和继续开发的注意事项。
-- [更新记录](../CHANGELOG.md)：各版本改动。
-- [历史实现笔记](implementation-notes.md)：从旧 README 迁出的详细实现描述。
-- [历史验证记录](validation-history.md)：各版本实际执行过的构建、安装与设备验证。
-
-修改已有数据库格式时追加顺序迁移；发布新版本时同步构建版本、项目首页、交接与更新记录。历史文档中的版本和结论属于当时状态，当前实现以代码和本轮验证为准。
-
-网页有限动效使用原生 Web Animations：控件 120–180ms，页切换 240ms、卡片滚动呈现 260ms，反向从当前显示帧衔接；动态监听 `prefers-reduced-motion`，开启时完成正在进行的动画并清理。IntersectionObserver 只呈现尚未进入视口的卡片，十秒轮询不播放动画。输入所在弹窗不随内容刷新重建；dialogGeneration 隔离旧请求，sequence 保护路由内容与 revision，刷新搜索列表保留焦点/选区/滚动。浏览器检查单独运行 `node checks/lan_web_check.cjs`、`lan_feedback_check.cjs`、`lan_motion_check.cjs`，使用真实 Edge 与模拟 API，不能替代手机端到端。图片附件删除图标执行 `python checks/attachment_remove_check.py`：真实构造器/Android 替身及 Pillow 光栅化，6 种密度 × 3 字体环境检查图标中心和触控回调；该结果不等于 Android 截图。
+纯文档修改检查事实、链接和差异，无需重新打包 APK。仅相关输入或候选变化时补充验证，已有有效证据无需反复执行。归档保留历史证据，不当作当前要求或待办。

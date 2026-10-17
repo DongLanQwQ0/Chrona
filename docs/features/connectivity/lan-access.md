@@ -1,0 +1,65 @@
+# 局域网浏览器访问
+
+0.14.4：今日/日程不再混入导入课程，课表 API 与课表页保留。网页设置的「包含系统其他日程」共用手机偏好；无手机读取权限时拒绝开启。新增完全相同日程扫描预览/确认， revision 过期须重扫，合并结果可打开原来源记录及附件，详见 [合并日程](../schedules/candidate-merge.md)。
+
+## 结构与数据边界
+
+手机是数据和行为的权威。`LanSettingsActivity` 由用户开启会话，`LanAccessService` 使用 Android `connectedDevice` 前台服务监听当前非 VPN Wi-Fi/以太网的私有 IPv4，固定端口 8765；监听失败会如实显示。服务默认关闭，未持久化开启状态，不接收开机启动，也不使用粘性重启。网络地址变化自动关闭，需再次手动开启。
+
+NanoHTTPD 2.3.1 负责 HTTP 解析与 Socket 生命周期，最多 8 个连接，读取超时 10 秒。`LanWebServer` 提供随 APK 打包的 HTML/CSS/JavaScript 和接口。网页复用手机主题色、玻璃卡片、中文页面层级与 Lucide 图标，宽屏呈两栏，移动宽度保留底部导航。网页只有临时界面状态，数据来自所连接手机。
+
+记录/日程经 `TaskStore` 读写，SQLite 事务和 revision 检查拒绝旧页面覆盖；日历通过 `CalendarStore` 操作，课表通过 `TimetableStore` 和 `compareAndRestore` 更新。ICS 先预览会被替换的学期，由用户确认后导入。普通附件按真实记录关联的文件 ID 读取，图片通过 `ImageStore` 校验的存储名称读取，输入文件路径无法访问任意文件。普通文件作为下载返回，图片以 JPEG 显示。
+
+已开启自动 WebDAV 同步时，浏览器写入请求 `AndroidSync` 和 `SyncJobService`；SQLite 关闭及课表提交刷新小组件。手机后台收到的 AI 请求使用普通持久化任务，避免从后台申请仅限前台用户发起的 UIDT；后台限制仍由 Android 决定。正在处理的记录禁止编辑，已写入日历的记录禁止直接重解析。
+
+权限、通知、后台限制、AI/WebDAV 账号和同步冲突在手机设置管理。系统日历授权无法通过浏览器授予；API 不返回密钥或 WebDAV 凭据。
+
+## 访问保护
+
+- 每次开启生成安全随机六位十进制配对码（保留前导零、10 分钟有效）及独立 256 位会话/写入凭证，保存在内存；配对码通过 POST JSON 提交，会话使用 HttpOnly、SameSite=Strict 的会话 Cookie，写入凭证使用请求头。凭证不放 URL、日志或持久化网页存储。
+- Host 必须等于正在监听的 IP:端口，Origin 必须同源；存在 Sec-Fetch-Site 时只允许 same-origin/none。所有非公开接口及附件在读取存储前验证会话。所有修改仅允许 POST，并要求 Origin 与写入凭证，拒绝跨站请求与域名重绑定。
+- 配对每个来源一分钟最多 5 次、全局一分钟最多 20 次，最多 16 个会话；会话 12 小时后失效，配对码过期不影响已建立会话；新浏览器配对需在手机重新配对。关闭服务清空所有凭证、关闭 Socket。
+- JSON 请求最大 1 MiB，配对请求最大 256 字节；拒绝未知方法、分块请求体、错误 MIME、无效 UTF-8、超范围/非整数数值和缺失必需字段。静态文件白名单、内容类型限制及 CSP 阻止用户文本成为可执行 HTML。
+
+HTTP 仅适合可信局域网。Android 16/target36 默认允许 INTERNET 应用访问局域网，本实现同时声明/请求附近设备权限以覆盖 Android 16 可选限制。未来提升到 target37 时应按新的 ACCESS_LOCAL_NETWORK 规则调整；当前 target36 不声明该权限。官方说明：[本地网络权限](https://developer.android.com/privacy-and-security/local-network-permission)、[前台服务类型](https://developer.android.com/develop/background-work/services/fgs/service-types)、[NanoHTTPD](https://github.com/NanoHttpd/nanohttpd)。
+
+二维码由本地 ZXing core 3.5.3 生成，访问 URL 的 **fragment** 携带当前六位配对码（形如 `/#pair=000007`，此处为测试码）。扫码打开后网页最先读取并立即用 `history.replaceState` 清除 fragment，再仅尝试一次现有 `/api/pair` POST；片段不会随 HTTP 请求或 Referer 发送。成功仍取得独立高熵会话，错误/过期/无效二维码回到手动入口，不自动重试、不写持久存储。普通可复制地址不带配对码。二维码须视作临时配对凭据，仅向可信设备展示；10 分钟过期、关闭/重新配对/网络变化的既有撤销机制保留。地址或码变化重绘，过期/关闭清除图像。
+
+二维码承载为 172dp 主题描边圆角白底，8dp 内距，实际码图 156dp；保持黑白对比与四模块静区，不裁切有效码。真实解码、前导零 fragment、码/地址变化、过期及停服通过 `python checks/lan_qr_check.py`；浏览器自动配对、URL 先清理、失败/过期回退、刷新不重用、手动配对通过 `node checks/lan_web_check.cjs`。
+
+网页图标使用标准 Lucide 设置齿轮，与主题图标同尺寸/笔画。主要路由切换、弹窗进出、链接正文展开收起和反馈使用 120–180ms 可取消动画；列表/按钮保留轻量交互反馈。普通刷新不重播页面动画，快速重复操作以最后一次为准；`prefers-reduced-motion` 关闭这些动画。浏览器检查覆盖触发/结束、快速路由/弹窗/展开切换、输入焦点和草稿保持、桌面/移动与浅/深主题。
+
+## 验证与复现
+
+使用现有工具链，无需安装新运行时：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$env:JAVA_HOME = 'D:\Minecraft\java21'
+$env:ANDROID_HOME = 'F:\Android\Sdk'
+$env:ANDROID_USER_HOME = 'F:\Android\user-home'
+$env:GRADLE_USER_HOME = 'F:\Android\GradleCache'
+python checks/run_checks.py full
+python checks/sync_core_check.py
+node checks/lan_web_check.cjs
+.\gradlew.bat :app:assembleRelease :app:lintRelease :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+```
+
+`edit_conflict_check.py` 检查真实候选编辑基线与网络身份逻辑，以及手机保存的后台线程、事务/锁、Calendar 副作用前检查、提交后回调和草稿保留接线；`detail_draft_check.py` 检查旋转恢复后的已提交备注与基线。两者属于离线检查，真实手机/电脑并发仍须设备验证。
+
+`lan_security_check.py` 执行真实生产认证类的 25 项离线检查，已纳入完整回归。`lan_web_check.cjs` 使用已安装 Edge、Node 原生 WebSocket 和 CDP，独立后台配置及模拟手机 API；检查配对、导航、原文/日程修改、XSS、手机时区、全天 UTC、手动建日程、ICS、退出、深浅色与移动溢出。结果与截图位于 `build/lan-web-checks/`。这些结果只证明浏览器界面与请求行为。
+
+`app/src/androidTest/…/LanAccessInstrumentation.java` 使用隔离的临时 Context/SQLite 文件，运行真实 `LanWebServer` 与 `TaskStore`，覆盖未授权/跨站/CSRF、旧 revision、真实记录与候选保存/删除、无效时间不改变数据、退出/关闭；不读取用户数据库或发送真实 AI/WebDAV 请求。连接设备后执行：
+
+```powershell
+& "$env:ANDROID_HOME\platform-tools\adb.exe" install -r app/build/outputs/apk/debug/app-debug.apk
+& "$env:ANDROID_HOME\platform-tools\adb.exe" install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell am instrument -w com.donglan.chrona.test/com.donglan.chrona.LanAccessInstrumentation
+```
+
+检查成功必须返回 `LAN integration: PASS (real Android SQLite and HTTP)`。无在线设备时只确认该检查包编译通过，不能声称运行成功。仍须在手机/电脑真实局域网验证设置视觉、权限拒绝、前台通知、切后台/锁屏、网络变化、关闭撤销、日历权限/写入、附件读取、真实 WebDAV 多机同步、覆盖安装和提醒送达。
+## 网页课表与控件
+
+页面、弹窗、备注输入框和课表横向区域隐藏原生滚动条，仍可用滚轮、触摸或键盘滚动；长表单底部保存按钮保留。状态筛选和日程类型统一主题下拉，方向键选择，Enter/Space 确认，Escape 关闭，支持外点关闭和减少动态偏好。
+
+课表不显示文件名列表框；按浏览周日期自动命中手机已有春夏秋冬学期边界，无当期时沿用最近学期规则，多源同距沿用 ID 倒序，不改变手机手动选择。上一周、本周、下一周可自然跨学期；标题显示所选实际学期。导入建议仍来自已有 AcademicTerms，网页不另按月份划分。

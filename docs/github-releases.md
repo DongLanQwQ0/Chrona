@@ -5,7 +5,7 @@
 
 ## 发布约定
 
-1. 同步 `app/build.gradle`、README、HANDOFF 和 CHANGELOG。每次递增 `versionCode`，`versionName` 使用三个数字段，如 `0.13.71`。
+1. 同步 `app/build.gradle`、README、开发指南的技术基线、HANDOFF 和 CHANGELOG。每次递增 `versionCode`，`versionName` 使用三个数字段，如 `0.13.71`。
 2. 使用已批准的工具链运行 `:app:assembleDebug :app:assembleRelease :app:lintDebug :app:lintRelease --no-daemon --console=plain`，再执行下述离线检查。正式分发使用 release 构建；它关闭调试、保持不混淆，并复用 `chronaDebugKeystore` 指向的原有密钥。保留 debug 构建用于开发。现有用户必须能覆盖升级，不生成或更换密钥，也不卸载或清除用户数据。
 3. 使用现有 Android SDK 的 `apksigner verify --verbose --print-certs` 分别检查新 debug、release 和可取得的上一版 APK。证书 SHA-256 均须为 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`。正式产物为 `app/build/outputs/apk/release/app-release.apk`。使用 SDK 的 `apkanalyzer manifest debuggable` 检查 release 必须输出 `false`；或使用 `aapt dump badging` 确认无 `application-debuggable`，并核对包名、versionCode 与 versionName。只查看 Gradle 配置不算 APK 验证。
 4. 将审核后的源码提交推送到上述仓库，为对应构建源码创建 `v0.13.71` 形式的标签。首次仓库不能为空，需要先推送源码再发布。
@@ -32,4 +32,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Build or lint failed' }
 
 检查使用 GitHub 官方 `GET /repos/DongLanQwQ0/Chrona/releases/latest`，不会上传收件箱、图片或 API 密钥。只接受三个数字段的正式版本标签，按数字逐段比较。下载链接必须属于同一仓库的 HTTPS Release 资产，且 APK 已上传完成；缺少 APK 时显示发布页入口。
 
-发布可使用 GitHub 网页或官方 REST API。凭据只用于 GitHub 认证，不写入脚本、仓库或日志。先创建 Draft、上传并核对 APK 的大小与 SHA-256，再正式发布并核对 `/releases/latest`。
+发布可使用 GitHub 网页或官方 REST API。凭据只用于 GitHub 认证，不写入脚本、仓库或日志。先创建 Draft、上传并核对 APK 的名称、大小及版本，再正式发布并核对 `/releases/latest`。
