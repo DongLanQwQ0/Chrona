@@ -112,6 +112,8 @@ public final class DashboardActivity extends Activity {
     private boolean inboxOldestFirst = false;
     private LinearLayout content;
     private DockNavigationLayout navigation;
+    private DashboardDockChrome dockChrome;
+    private float dockDragFrom;
     private LinearLayout results;
     private DockNavigationLayout filterChips;
     private ImageButton categoryChip;
@@ -433,6 +435,7 @@ public final class DashboardActivity extends Activity {
 
     private final SwipePagerLayout.Listener sectionPagerListener = new SwipePagerLayout.Listener() {
         @Override public void onStart() {
+            if (dockChrome != null) { dockChrome.cancel(); dockDragFrom = dockChrome.fraction(); }
             sectionLoadGeneration++; sectionLoadRunning = false;
             scroll.animate().cancel();
             if (adjacentPage != null) {
@@ -489,6 +492,8 @@ public final class DashboardActivity extends Activity {
             if (navigation != null) navigation.showPageProgress(sectionPosition(section),
                     adjacentPage == null ? sectionPosition(section) : sectionPosition(adjacentPage.section),
                     Math.abs(offset) / width);
+            if (dockChrome != null) dockChrome.drag(dockDragFrom,
+                    (adjacentPage == null ? section : adjacentPage.section) == HOME, Math.abs(offset) / width);
             invalidateSectionSurfaces();
         }
 
@@ -525,6 +530,7 @@ public final class DashboardActivity extends Activity {
         scroll.animate().cancel();
         adjacentPage.scroll.animate().cancel();
         if (!android.animation.ValueAnimator.areAnimatorsEnabled() || width <= 0) {
+            if (dockChrome != null) dockChrome.setHome((commit ? adjacentPage.section : section) == HOME);
             scroll.setTranslationX(currentTarget);
             adjacentPage.scroll.setTranslationX(adjacentTarget);
             if (navigation != null) navigation.updatePageSettle(1f);
@@ -538,6 +544,8 @@ public final class DashboardActivity extends Activity {
         android.view.animation.Interpolator interpolator = commit
                 ? new android.view.animation.DecelerateInterpolator(1.35f)
                 : SwipePagerLayout.RECOIL_INTERPOLATOR;
+        if (dockChrome != null) dockChrome.animateHome((commit ? adjacentPage.section : section) == HOME,
+                duration, interpolator);
         // Live shader sampling follows the page in window coordinates throughout release.
         // A frozen whole-page layer would preserve offscreen wallpaper samples.
         scroll.animate().translationX(currentTarget).setDuration(duration)
@@ -557,6 +565,7 @@ public final class DashboardActivity extends Activity {
         scroll.animate().cancel();
         if (navigation != null) navigation.beginPageSettle(sectionPosition(section));
         if (!UiMotion.isEnabled()) {
+            if (dockChrome != null) dockChrome.setHome(section == HOME);
             scroll.setTranslationX(0f);
             if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
             sectionAcrylicSurfaces.clear();
@@ -564,9 +573,10 @@ public final class DashboardActivity extends Activity {
             switchToPendingSection();
             return;
         }
+        long duration = SwipePagerLayout.recoilDuration(Math.abs(scroll.getTranslationX()), sectionPageWidth());
+        if (dockChrome != null) dockChrome.animateHome(section == HOME, duration, SwipePagerLayout.RECOIL_INTERPOLATOR);
         scroll.animate().translationX(0f)
-                .setDuration(SwipePagerLayout.recoilDuration(
-                        Math.abs(scroll.getTranslationX()), sectionPageWidth()))
+                .setDuration(duration)
                 .setInterpolator(SwipePagerLayout.RECOIL_INTERPOLATOR)
                 .setUpdateListener(animation -> {
                     if (navigation != null) navigation.updatePageSettle(animation.getAnimatedFraction());
@@ -620,6 +630,7 @@ public final class DashboardActivity extends Activity {
         sectionAcrylicSurfaces.clear();
         if (target == null) {
             scroll.setTranslationX(0f);
+            if (dockChrome != null) dockChrome.setHome(section == HOME);
             return;
         }
         if (commit) {
@@ -642,6 +653,7 @@ public final class DashboardActivity extends Activity {
             if (navigation != null) navigation.finishPageSelection(sectionPosition(section));
             refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
         }
+        if (dockChrome != null) dockChrome.setHome(section == HOME);
         invalidateSectionSurfaces();
         // Revision checks and stale-page refresh wait until both page and dock motion finish.
         refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
@@ -818,6 +830,7 @@ public final class DashboardActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (dockChrome != null) dockChrome.cancel();
         cancelScheduleResults();
         refresh.removeCallbacksAndMessages(null);
         sectionPages.clear();
@@ -1048,29 +1061,45 @@ public final class DashboardActivity extends Activity {
             shell.addView(pager, new LinearLayout.LayoutParams(0, -1, 1));
         } else {
             shell.addView(pager, new LinearLayout.LayoutParams(-1, 0, 1));
-            mobileBottomArea = new FrameLayout(this);
+            mobileBottomArea = new FrameLayout(this) {
+                @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+                    super.onLayout(changed, left, top, right, bottom);
+                    if (dockChrome != null) dockChrome.layoutMobile();
+                }
+            };
             mobileBottomArea.setClipChildren(false);
             mobileBottomArea.setClipToPadding(false);
             navigation.setElevation(dp(8));
             FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(-1,
                     dp(MOBILE_DOCK_HEIGHT_DP), Gravity.BOTTOM | Gravity.START);
-            dockParams.setMargins(dp(36), 0, dp(104), dp(8));
+            dockParams.setMargins(dp(DashboardDockChrome.START_DP), 0, dp(DashboardDockChrome.HOME_END_DP),
+                    dp(DashboardDockChrome.BOTTOM_DP));
             mobileBottomArea.addView(navigation, dockParams);
             ImageButton record = UiStyle.recordEntry(this, this::openCapture);
+            FrameLayout captureHost = new FrameLayout(this);
+            captureHost.setClipChildren(false); captureHost.setClipToPadding(false);
+            captureHost.addView(record, new FrameLayout.LayoutParams(-1, -1));
             FrameLayout.LayoutParams recordParams = new FrameLayout.LayoutParams(
                     dp(RECORD_ENTRY_SIZE_DP), dp(RECORD_ENTRY_SIZE_DP),
                     Gravity.BOTTOM | Gravity.END);
             recordParams.setMargins(0, 0, dp(14), dp(14));
-            mobileBottomArea.addView(record, recordParams);
+            mobileBottomArea.addView(captureHost, recordParams);
+            dockChrome = new DashboardDockChrome(navigation, mobileBottomArea, captureHost, record,
+                    MOBILE_DOCK_HEIGHT_DP, section == HOME);
         }
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
         if (wide) {
             ImageButton capture = UiStyle.recordEntry(this, this::openCapture);
+            FrameLayout captureHost = new FrameLayout(this);
+            captureHost.setClipChildren(false); captureHost.setClipToPadding(false);
+            captureHost.addView(capture, new FrameLayout.LayoutParams(-1, -1));
             FrameLayout.LayoutParams floating = new FrameLayout.LayoutParams(dp(56), dp(56),
                     Gravity.END | Gravity.BOTTOM);
             floating.setMargins(0, 0, dp(24), dp(24));
-            stage.addView(capture, floating);
-            UiStyle.applyInsets(stage, shell, capture);
+            stage.addView(captureHost, floating);
+            dockChrome = new DashboardDockChrome(navigation, null, captureHost, capture,
+                    MOBILE_DOCK_HEIGHT_DP, section == HOME);
+            UiStyle.applyInsets(stage, shell, captureHost);
         } else {
             FrameLayout.LayoutParams dockOverlay = new FrameLayout.LayoutParams(-1,
                     dp(MOBILE_BOTTOM_AREA_HEIGHT_DP), Gravity.BOTTOM | Gravity.START);

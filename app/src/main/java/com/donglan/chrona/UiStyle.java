@@ -515,6 +515,8 @@ public final class UiStyle {
         private boolean outline;
         private Bitmap railSurface;
         private Canvas railCanvas;
+        private final android.graphics.Rect railSource = new android.graphics.Rect();
+        private static final int RAIL_RASTER_BLOCK_PX = 256;
 
         AcrylicSurfaceDrawable(View host, GradientDrawable blurredSurface,
                 GradientDrawable fallbackSurface, int radius, boolean selected, boolean outline) {
@@ -543,9 +545,14 @@ public final class UiStyle {
             if (host instanceof DockNavigationLayout && canvas.isHardwareAccelerated()) {
                 android.graphics.Rect bounds = getBounds();
                 if (bounds.isEmpty()) return;
-                if (railSurface == null || railSurface.getWidth() != bounds.width()
-                        || railSurface.getHeight() != bounds.height()) {
-                    railSurface = Bitmap.createBitmap(bounds.width(), bounds.height(), Bitmap.Config.ARGB_8888);
+                if (railSurface == null || railSurface.getWidth() < bounds.width()
+                        || railSurface.getHeight() < bounds.height()) {
+                    // The dashboard dock changes width continuously. Reserve reusable blocks
+                    // rather than allocating a new bitmap for each animation frame.
+                    int capacity = ((bounds.width() + RAIL_RASTER_BLOCK_PX - 1) / RAIL_RASTER_BLOCK_PX) * RAIL_RASTER_BLOCK_PX;
+                    int rasterWidth = railSurface == null ? capacity : Math.max(capacity, railSurface.getWidth());
+                    int rasterHeight = railSurface == null ? bounds.height() : Math.max(bounds.height(), railSurface.getHeight());
+                    railSurface = Bitmap.createBitmap(rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888);
                     railCanvas = new Canvas(railSurface);
                 }
                 railSurface.eraseColor(Color.TRANSPARENT);
@@ -556,7 +563,8 @@ public final class UiStyle {
                 // Rasterize only the static glass plate: GPU round-rect gradients can
                 // develop a centre seam while scaling. Text and the overflowing highlight
                 // remain independent hardware nodes; the dock itself has no bitmap layer.
-                canvas.drawBitmap(railSurface, bounds.left, bounds.top, null);
+                railSource.set(0, 0, bounds.width(), bounds.height());
+                canvas.drawBitmap(railSurface, railSource, bounds, null);
                 return;
             }
             drawAcrylic(canvas);

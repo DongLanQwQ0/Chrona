@@ -32,6 +32,7 @@ public class DashboardActivity {
  class SectionPage {int section;final Scroll scroll=new Scroll();SectionPage(){section=DashboardActivity.this.section;}SectionPage(int value){section=value;}}
  static class Pager {void removeView(Scroll scroll){}}
  static class Dock {void finishPageSelection(int position){}}
+ static class Chrome {void setHome(boolean home){}} Chrome dockChrome=new Chrome();
  static class Queue {void removeCallbacks(Runnable action){}void post(Runnable action){}}
  Scroll scroll=new Scroll();SectionPage adjacentPage;final Pager pager=new Pager();final Dock navigation=new Dock();final Queue refresh=new Queue();
  final Runnable deferredSectionRefresh=()->{};
