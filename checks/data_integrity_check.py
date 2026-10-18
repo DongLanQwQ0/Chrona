@@ -16,10 +16,10 @@ def literals(text):
 
 snapshot = store.split("public void createSnapshot", 1)[1].split("@Override", 1)[0]
 tables = literals(snapshot.split("new String[]{", 1)[1].split("}", 1)[0])
-delete_prefix = literals(snapshot.split("source.execSQL(", 3)[2])[0]
+delete_prefix = "DELETE FROM backup_snapshot."
 # Extract the actual INSERT concatenation rather than maintaining a duplicate query.
 insert_expression = re.search(r'source.execSQL\(("INSERT INTO.*?SELECT.*?);', snapshot, re.S)[1]
-insert_parts = literals(insert_expression)
+insert_tokens = re.findall(r'"(?:[^"\\]|\\.)*"|\btable\b|\bcolumnNames\b', insert_expression)
 
 with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "build") as directory, ExitStack() as opened:
     live_path = Path(directory) / "live.db"
@@ -36,12 +36,20 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     CREATE TABLE sync_meta(id INTEGER PRIMARY KEY,identity TEXT);
     INSERT INTO data_revision VALUES(1,0);
     """
-    trigger_expression = re.search(r'db.execSQL\(("CREATE TRIGGER.*?)\);', store, re.S)[1]
+    # Include the production managed-homework tables now covered by complete snapshots.
+    managed = store.split('public static void addZjuHomework(SQLiteDatabase db) {', 1)[1].split('public boolean ignoredZjuCandidate', 1)[0]
+    managed_sql = []
+    for expression in re.findall(r'db\.execSQL\(((?:"(?:\\.|[^"\\])*"|[^"])*?)\);', managed, re.S):
+        if not re.search(r'[A-Za-z_]', re.sub(r'"(?:[^"\\]|\\.)*"', '', expression)):
+            managed_sql.append(''.join(literals(expression)))
+    trigger_expression = re.search(r'db.execSQL\(("CREATE TRIGGER IF NOT EXISTS revision_".*?)\);', store, re.S)[1]
     def create(path):
         db = sqlite3.connect(path, isolation_level=None)
         opened.callback(db.close)
         db.execute("PRAGMA foreign_keys=ON")
         db.executescript(schema)
+        for statement in managed_sql:
+            db.execute(statement)
         for table in tables[:4]:
             for operation in ("INSERT", "UPDATE", "DELETE"):
                 tokens = re.findall(r'"(?:[^"\\]|\\.)*"|\btable\b|\boperation\b', trigger_expression)
@@ -76,8 +84,11 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     worker.start()
     assert writer_started.wait(1)
     for table in tables:
+        column_names = ','.join('"' + row[1].replace('"', '""') + '"'
+                                for row in live.execute(f'PRAGMA main.table_info({table})'))
         live.execute(delete_prefix + table)
-        live.execute(insert_parts[0] + table + insert_parts[1] + table)
+        live.execute(''.join(table if token == 'table' else column_names if token == 'columnNames'
+                             else json.loads(token) for token in insert_tokens))
     assert not writer_finished.is_set(), "writer must wait for the snapshot transaction"
     live.execute("COMMIT")
     live.execute("DETACH DATABASE backup_snapshot")

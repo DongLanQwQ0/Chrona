@@ -54,7 +54,7 @@ public final class ZjuClient implements Closeable {
                 .readTimeout(30, TimeUnit.SECONDS).callTimeout(45, TimeUnit.SECONDS).build();
     }
 
-    public synchronized ZjuSnapshot fetch(boolean homework, boolean timetable) throws IOException {
+    public synchronized ZjuSnapshot fetch(boolean homework, boolean timetable, Set<String> trackedCourses) throws IOException {
         checkOpen();
         List<ZjuSnapshot.Homework> work = new ArrayList<>();
         List<ZjuSnapshot.Course> courses = new ArrayList<>();
@@ -62,11 +62,14 @@ public final class ZjuClient implements Closeable {
         List<String> warnings = new ArrayList<>();
         List<String> completeTerms = new ArrayList<>();
         boolean domainSuccess = false;
+        AuthenticationException authenticationFailure = null;
         if (homework) {
             try {
-                readHomework(work, courses, warnings);
+                readHomework(work, courses, warnings, trackedCourses);
                 domainSuccess = true;
-            } catch (AuthenticationException e) { throw e;
+            } catch (AuthenticationException e) {
+                checkOpen(); authenticationFailure = e;
+                warnings.add("作业认证失败，请检查学号、密码或完成学校登录验证，已保留上次数据");
             } catch (Exception e) {
                 checkOpen();
                 warnings.add("作业同步失败，已保留上次数据");
@@ -76,7 +79,10 @@ public final class ZjuClient implements Closeable {
             try {
                 readTimetable(lessons, warnings, completeTerms);
                 domainSuccess = true;
-            } catch (AuthenticationException e) { throw e;
+            } catch (AuthenticationException e) {
+                checkOpen(); authenticationFailure = e;
+                warnings.add("课表认证失败，请检查学号、密码或完成学校登录验证，已保留未读学期的上次数据");
+                if (!completeTerms.isEmpty() || !lessons.isEmpty()) domainSuccess = true;
             } catch (Exception e) {
                 checkOpen();
                 warnings.add("课表同步未完整完成，已保留未读学期的上次数据");
@@ -84,8 +90,11 @@ public final class ZjuClient implements Closeable {
                 if (!completeTerms.isEmpty() || !lessons.isEmpty()) domainSuccess = true;
             }
         }
-        if ((homework || timetable) && !domainSuccess)
+        checkOpen();
+        if ((homework || timetable) && !domainSuccess) {
+            if (authenticationFailure != null) throw authenticationFailure;
             throw new SchoolException("本次同步未能读取学校数据，请检查网络后重试");
+        }
         return new ZjuSnapshot(work, courses, lessons, warnings, completeTerms);
     }
 
@@ -101,7 +110,7 @@ public final class ZjuClient implements Closeable {
     }
 
     private void readHomework(List<ZjuSnapshot.Homework> output, List<ZjuSnapshot.Course> courses,
-                              List<String> warnings) throws IOException, JSONException {
+                              List<String> warnings, Set<String> trackedCourses) throws IOException, JSONException {
         if (!coursesLoggedIn) {
             follow(new Request.Builder().url(COURSES + "/user/index").get().build(), true);
             coursesLoggedIn = true;
@@ -112,7 +121,10 @@ public final class ZjuClient implements Closeable {
             JSONObject s = semesters.getJSONObject(i);
             if (s.optBoolean("is_active")) active.add(required(s, "id"));
         }
-        if (active.isEmpty()) throw new SchoolException("学在浙大未返回当前学期，未更新作业");
+        if (active.isEmpty()) {
+            if (trackedCourses.isEmpty()) throw new SchoolException("学在浙大未返回当前学期，未更新作业");
+            warnings.add("学在浙大未返回当前学期，仅更新已追踪课程的作业");
+        }
         Set<String> seenCourses = new HashSet<>();
         int page = 1, loaded = 0;
         while (true) {
@@ -130,13 +142,18 @@ public final class ZjuClient implements Closeable {
                 String id = required(c, "id");
                 if (!seenCourses.add(id)) continue;
                 newCount++; loaded++;
-                if (active.contains(required(c, "semester_id"))) readCourse(c, output, courses, warnings);
+                if (trackedCourses.contains(id) || active.contains(required(c, "semester_id"))) readCourse(c, output, courses, warnings);
             }
             int pages = data.optInt("pages", -1), total = data.optInt("total", -1);
             if ((pages >= 0 && page >= pages) || (total >= 0 && loaded >= total)) break;
             if (rows.length() < PAGE_SIZE && pages < 0 && total < 0) break;
             if (newCount == 0 || page >= 200) throw new SchoolException("学在浙大课程分页不完整，未覆盖全部课程");
             page++;
+        }
+        for (String id : trackedCourses) {
+            if (seenCourses.contains(id)) continue;
+            warnings.add("学校课程列表未返回部分已追踪课程，已保留这些课程的上次作业数据");
+            break;
         }
     }
 

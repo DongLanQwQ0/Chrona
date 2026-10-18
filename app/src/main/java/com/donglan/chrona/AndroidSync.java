@@ -24,6 +24,8 @@ public final class AndroidSync {
     private static final AtomicBoolean RUNNING = new AtomicBoolean();
     private static volatile long lastForeground;
     private static volatile WebDavClient activeClient;
+    // Guarded by LOCK; restored databases must never receive an older HTTP result.
+    private static long restoreEpoch;
     private static final long FOREGROUND_INTERVAL = 5 * 60_000L;
     interface Completion { void done(String message); }
     interface Work { String run(Context context) throws Exception; }
@@ -48,6 +50,7 @@ public final class AndroidSync {
     /** Backup restoration must hold LOCK during its replacement and this reset. */
     public static void resetAfterRestore(Context context) {
         synchronized (LOCK) {
+            restoreEpoch++;
             file(context).delete();
             try (com.donglan.chrona.data.TaskStore tasks = new com.donglan.chrona.data.TaskStore(context)) {
                 android.database.sqlite.SQLiteDatabase db = tasks.getWritableDatabase();
@@ -69,68 +72,93 @@ public final class AndroidSync {
     static void cancelNetwork() { WebDavClient client = activeClient; if (client != null) client.close(); }
     static boolean work(Context context, Completion completion, Work work) {
         Context app = context.getApplicationContext();
-        if (!RUNNING.compareAndSet(false, true)) return false;
+        final long epoch;
+        synchronized (LOCK) {
+            if (!RUNNING.compareAndSet(false, true)) return false;
+            epoch = restoreEpoch;
+        }
         WORKER.execute(() -> {
             String result;
-            try { synchronized (LOCK) { result = work.run(app); } }
-            catch (Exception e) {
-                // Never include server bodies, URLs or credentials in persisted/UI diagnostics.
-                if (e instanceof WebDavClient.Failure) result = e.getMessage();
-                else if (e instanceof AndroidSyncData.AttachmentException) result = e.getMessage();
-                else if (e instanceof SecurityException) result = "操作失败，请授予日历或附件访问权限后重试";
-                else if (Arrays.asList("记录已变化，请重新选择", "记录正在处理", "日历旧事件未能全部移除，请重试",
-                        "需要确认移除本机日历旧事件", "课表正在修改，请重新同步", "请输入账号和应用密码",
-                        "记录正在修改，请稍后重新同步",
-                        "同步格式不受支持，请将所有同步设备升级到最新版本后重试",
-                        "云端记录身份不受支持", "同步记录校验失败", "同步内容无效，原有数据已保留",
-                        "同步记录超过 32 MiB，请减少记录或附件后重试",
-                        "请输入有效的 HTTPS WebDAV 地址", "请重新输入应用密码").contains(e.getMessage())) result = e.getMessage();
-                else result = "操作失败，请检查网络、应用密码和附件权限后重试（" + e.getClass().getSimpleName() + "）";
+            try {
+                try { result = work.run(app); }
+                catch (Exception e) {
+                    // Never include server bodies, URLs or credentials in persisted/UI diagnostics.
+                    if (e instanceof WebDavClient.Failure) result = e.getMessage();
+                    else if (e instanceof AndroidSyncData.AttachmentException) result = e.getMessage();
+                    else if (e instanceof SecurityException) result = "操作失败，请授予日历或附件访问权限后重试";
+                    else if (Arrays.asList("记录已变化，请重新选择", "记录正在处理", "日历旧事件未能全部移除，请重试",
+                            "需要确认移除本机日历旧事件", "课表正在修改，请重新同步", "请输入账号和应用密码",
+                            "记录正在修改，请稍后重新同步",
+                            "同步格式不受支持，请将所有同步设备升级到最新版本后重试",
+                            "云端记录身份不受支持", "同步记录校验失败", "同步内容无效，原有数据已保留",
+                            "同步记录超过 32 MiB，请减少记录或附件后重试",
+                            "请输入有效的 HTTPS WebDAV 地址", "请重新输入应用密码").contains(e.getMessage())) result = e.getMessage();
+                    else result = "操作失败，请检查网络、应用密码和附件权限后重试（" + e.getClass().getSimpleName() + "）";
+                }
+                synchronized (LOCK) {
+                    WebDavSettingsStore settings = new WebDavSettingsStore(app);
+                    if (epoch == restoreEpoch) settings.status(result);
+                    else result = settings.status();
+                }
             } finally { RUNNING.set(false); }
-            new WebDavSettingsStore(app).status(result);
             if (completion != null) { String text = result; new Handler(Looper.getMainLooper()).post(() -> completion.done(text)); }
         });
         return true;
     }
     static boolean request(Context context, Completion completion) {
-        return work(context, completion, app -> {
-            WebDavSettingsStore settings = new WebDavSettingsStore(app);
-            if (!settings.configured()) return "请先保存 WebDAV 账号与应用密码";
-            SyncState local = read(app);
-            try (AndroidSyncData data = new AndroidSyncData(app)) {
-                capture(app, data, local);
+        synchronized (LOCK) {
+            final long epoch = restoreEpoch;
+            return work(context, completion, app -> {
+                WebDavSettingsStore settings = new WebDavSettingsStore(app);
+                if (!settings.configured()) return "请先保存 WebDAV 账号与应用密码";
+                SyncState local;
+                File blobs;
+                synchronized (LOCK) {
+                    if (epoch != restoreEpoch) return settings.status();
+                    local = read(app);
+                    try (AndroidSyncData data = new AndroidSyncData(app)) {
+                        capture(app, data, local);
+                        blobs = data.blobs;
+                    }
+                }
+                // HTTP retains only immutable blob files and an in-memory state, never a DB handle.
                 SyncState merged;
                 try (WebDavClient client = new WebDavClient(settings.url(), settings.user(), settings.password())) {
                     activeClient = client;
-                    merged = SyncExchange.exchange(local, data.blobs, client);
+                    merged = SyncExchange.exchange(local, blobs, client);
                 } finally { activeClient = null; }
-                // Edits made while HTTP was in flight branch from the pre-network local knowledge.
-                SyncState latest = read(app);
-                AndroidSyncData.Snapshot snapshot = data.prepareCapture();
-                data.db.beginTransaction();
-                try {
-                    data.captureTasks(latest, snapshot); data.captureTerms(latest, snapshot);
-                    save(app, latest); merged.merge(latest); save(app, merged);
-                    data.db.setTransactionSuccessful();
-                } finally { data.db.endTransaction(); }
-                data.applyMergeRecords(merged);
-                snapshot=data.prepareCapture();
-                data.prepareTaskApply(merged, snapshot, null);
-                data.db.beginTransaction();
-                try {
-                    data.requireRevision(snapshot);
-                    for (Map.Entry<String, List<SyncState.Version>> entry : merged.records().entrySet())
-                        if (entry.getKey().startsWith("task_") && entry.getValue().size() == 1)
-                            data.applyTask(entry.getKey(), entry.getValue().get(0));
-                    data.db.setTransactionSuccessful();
-                } finally { data.db.endTransaction(); }
-                data.appliedResourcesCommitted();
-                data.applyTerms(merged, snapshot.terms);
-            }
-            int pending = pending(app).size();
-            return "上次同步：" + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(new Date())
-                    + (pending == 0 ? " · 成功" : " · " + pending + " 项待确认");
-        });
+                synchronized (LOCK) {
+                    if (epoch != restoreEpoch) return settings.status();
+                    try (AndroidSyncData data = new AndroidSyncData(app)) {
+                        // Edits made while HTTP was in flight branch from the pre-network local knowledge.
+                        SyncState latest = read(app);
+                        AndroidSyncData.Snapshot snapshot = data.prepareCapture();
+                        data.db.beginTransaction();
+                        try {
+                            data.captureTasks(latest, snapshot); data.captureTerms(latest, snapshot);
+                            save(app, latest); merged.merge(latest); save(app, merged);
+                            data.db.setTransactionSuccessful();
+                        } finally { data.db.endTransaction(); }
+                        data.applyMergeRecords(merged);
+                        snapshot=data.prepareCapture();
+                        data.prepareTaskApply(merged, snapshot, null);
+                        data.db.beginTransaction();
+                        try {
+                            data.requireRevision(snapshot);
+                            for (Map.Entry<String, List<SyncState.Version>> entry : merged.records().entrySet())
+                                if (entry.getKey().startsWith("task_") && entry.getValue().size() == 1)
+                                    data.applyTask(entry.getKey(), entry.getValue().get(0));
+                            data.db.setTransactionSuccessful();
+                        } finally { data.db.endTransaction(); }
+                        data.appliedResourcesCommitted();
+                        data.applyTerms(merged, snapshot.terms);
+                    }
+                    int pending = pending(app).size();
+                    return "上次同步：" + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(new Date())
+                            + (pending == 0 ? " · 成功" : " · " + pending + " 项待确认");
+                }
+            });
+        }
     }
     private static void capture(Context app, AndroidSyncData data, SyncState state) throws Exception {
         AndroidSyncData.Snapshot snapshot = data.prepareCapture();
@@ -187,50 +215,52 @@ public final class AndroidSync {
     }
     static boolean resolve(Context context, Pending choice, int index, boolean removeCalendar, Completion completion) {
         return work(context, completion, app -> {
-            SyncState state = read(app);
-            try (AndroidSyncData data = new AndroidSyncData(app)) {
-                AndroidSyncData.Snapshot snapshot = data.prepareCapture();
-                capture(app, data, state, snapshot);
-                List<SyncState.Version> versions = state.records().get(choice.id);
-                if (versions == null || !choice.signature.equals(signature(versions))) throw new IOException("记录已变化，请重新选择");
-                long local = data.localId(choice.id);
-                if (index < 0) {
-                    if (choice.id.startsWith("task_")) {
-                        TaskRecord task = data.store.getTask(local);
-                        if (AndroidSyncData.busy(task)) throw new IOException("记录正在处理");
-                        if (task == null) state.delete(choice.id); else state.put(choice.id, snapshot.payloads.get(local));
-                    } else {
-                        JSONObject term = snapshot.termPayloads.get(choice.id);
-                        if (term == null) state.delete(choice.id); else state.put(choice.id, term);
-                    }
-                } else state.resolve(choice.id, versions.get(index));
-                data.applyMergeRecords(state);
-                snapshot=data.prepareCapture();
-                boolean clearCalendar = index >= 0 && data.linked(local);
-                if (clearCalendar && !removeCalendar) throw new IOException("需要确认移除本机日历旧事件");
-                data.prepareTaskApply(state, snapshot, clearCalendar ? choice.id : null, choice.id);
-                data.requireRevision(snapshot);
-                // Provider work runs before the short SQLite commit. If any deletion fails,
-                // all local associations remain available for an explicit retry.
-                if (clearCalendar) {
-                    CalendarStore calendar = new CalendarStore(app);
-                    for (EventCandidate candidate : data.store.getCandidates(local)) if (candidate.calendarEventId != null) {
-                        if (!calendar.deleteEvent(candidate.calendarEventId) && calendar.getEvent(candidate.calendarEventId) != null)
-                            throw new IOException("日历旧事件未能全部移除，请重试");
-                    }
-                }
-                data.db.beginTransaction();
-                try {
+            synchronized (LOCK) {
+                SyncState state = read(app);
+                try (AndroidSyncData data = new AndroidSyncData(app)) {
+                    AndroidSyncData.Snapshot snapshot = data.prepareCapture();
+                    capture(app, data, state, snapshot);
+                    List<SyncState.Version> versions = state.records().get(choice.id);
+                    if (versions == null || !choice.signature.equals(signature(versions))) throw new IOException("记录已变化，请重新选择");
+                    long local = data.localId(choice.id);
+                    if (index < 0) {
+                        if (choice.id.startsWith("task_")) {
+                            TaskRecord task = data.store.getTask(local);
+                            if (AndroidSyncData.busy(task)) throw new IOException("记录正在处理");
+                            if (task == null) state.delete(choice.id); else state.put(choice.id, snapshot.payloads.get(local));
+                        } else {
+                            JSONObject term = snapshot.termPayloads.get(choice.id);
+                            if (term == null) state.delete(choice.id); else state.put(choice.id, term);
+                        }
+                    } else state.resolve(choice.id, versions.get(index));
+                    data.applyMergeRecords(state);
+                    snapshot=data.prepareCapture();
+                    boolean clearCalendar = index >= 0 && data.linked(local);
+                    if (clearCalendar && !removeCalendar) throw new IOException("需要确认移除本机日历旧事件");
+                    data.prepareTaskApply(state, snapshot, clearCalendar ? choice.id : null, choice.id);
                     data.requireRevision(snapshot);
-                    if (clearCalendar) data.db.execSQL("UPDATE event_candidates SET calendar_event_id=NULL WHERE task_id=?", new Object[]{local});
-                    save(app, state);
-                    if (choice.id.startsWith("task_")) data.applyTask(choice.id, state.records().get(choice.id).get(0));
-                    data.db.setTransactionSuccessful();
-                } finally { data.db.endTransaction(); }
-                data.appliedResourcesCommitted();
-                if (choice.id.startsWith("term_")) data.applyTerms(state, snapshot.terms);
+                    // Provider work runs before the short SQLite commit. If any deletion fails,
+                    // all local associations remain available for an explicit retry.
+                    if (clearCalendar) {
+                        CalendarStore calendar = new CalendarStore(app);
+                        for (EventCandidate candidate : data.store.getCandidates(local)) if (candidate.calendarEventId != null) {
+                            if (!calendar.deleteEvent(candidate.calendarEventId) && calendar.getEvent(candidate.calendarEventId) != null)
+                                throw new IOException("日历旧事件未能全部移除，请重试");
+                        }
+                    }
+                    data.db.beginTransaction();
+                    try {
+                        data.requireRevision(snapshot);
+                        if (clearCalendar) data.db.execSQL("UPDATE event_candidates SET calendar_event_id=NULL WHERE task_id=?", new Object[]{local});
+                        save(app, state);
+                        if (choice.id.startsWith("task_")) data.applyTask(choice.id, state.records().get(choice.id).get(0));
+                        data.db.setTransactionSuccessful();
+                    } finally { data.db.endTransaction(); }
+                    data.appliedResourcesCommitted();
+                    if (choice.id.startsWith("term_")) data.applyTerms(state, snapshot.terms);
+                }
+                return "已确认，点击立即同步上传选择";
             }
-            return "已确认，点击立即同步上传选择";
         });
     }
 }

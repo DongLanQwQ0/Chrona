@@ -79,11 +79,7 @@ public final class BulkCalendarPublisher {
                             if (linked == null) { created = calendar.insertEvent(input); linked = created; }
                             if (!store.setCalendarEventIdIfUnlinked(current.id, current.taskId, linked))
                                 throw new IllegalStateException("日程关联已变化");
-                            boolean pending = false;
-                            for (EventCandidate remaining : store.getCandidates(current.taskId))
-                                if (!remaining.settled()) pending = true;
-                            if (!store.updateStatus(current.taskId,
-                                    pending ? TaskRecord.NEEDS_REVIEW : TaskRecord.READY, null))
+                            if (!store.updateReviewStatus(current.taskId))
                                 throw new IllegalStateException("收件已变化");
                             store.getWritableDatabase().setTransactionSuccessful();
                         } finally { store.getWritableDatabase().endTransaction(); }

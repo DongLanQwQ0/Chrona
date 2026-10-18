@@ -185,6 +185,7 @@ store = (src / 'data/TaskStore.java').read_text(encoding='utf-8')
 sql_methods = '\n'.join(method(store, signature) for signature in ('public List<EventCandidate> calendarCandidates(', 'public List<EventCandidate> nextReminderCandidates('))
 files['com/donglan/chrona/SqlCheck.java'] = '''package com.donglan.chrona;
 import java.util.*;
+import com.donglan.chrona.data.ScheduleQuery;
 class EventCandidate {}
 class Cursor implements AutoCloseable {public boolean moveToNext(){return false;}public boolean moveToFirst(){return false;}public void close(){}}
 class Database {
@@ -291,6 +292,7 @@ for name, content in files.items():
     path.write_text(content, encoding='utf-8')
     paths.append(path)
 paths.append(src / 'data/EventCategory.java')
+paths.append(src / 'data/ScheduleQuery.java')
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str, paths)], check=True)
 subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.AgendaFeaturesCheck'], check=True)

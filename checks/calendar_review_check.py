@@ -48,7 +48,7 @@ public class Context {
  'android/content/ContentUris.java': 'package android.content;public class ContentUris {public static android.net.Uri withAppendedId(android.net.Uri uri,long id){return new android.net.Uri(uri.value+id);}}',
  'android/content/Intent.java': '''package android.content;public class Intent {
  public static final String ACTION_VIEW="view";public Intent(Context c,Class<?> target){}public Intent(String action,android.net.Uri uri){}
- public Intent putExtra(String key,long value){return this;}}''',
+ public Intent putExtra(String key,long value){return this;}public Intent putExtra(String key,String value){return this;}}''',
  'android/provider/CalendarContract.java': 'package android.provider;public class CalendarContract {public static class Events {public static final android.net.Uri CONTENT_URI=new android.net.Uri("events/");}}',
  'com/donglan/chrona/TaskDetailActivity.java': 'package com.donglan.chrona;public class TaskDetailActivity {}',
  'com/donglan/chrona/ExternalCourseAgenda.java': '''package com.donglan.chrona;

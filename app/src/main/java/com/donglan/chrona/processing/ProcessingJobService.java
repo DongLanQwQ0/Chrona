@@ -505,8 +505,8 @@ public final class ProcessingJobService extends JobService {
                 if (count++ == 12) { details.append("另有 ").append(candidates.size() - 12).append(" 项，点按查看全部"); break; }
                 details.append(item.isRecord ? "记录 · " : !item.settled() ? "待处理 · " : "已保存 · ").append(item.title).append('\n');
                 if (item.isRecord) details.append("已保存在收件箱");
-                else if(item.isTask() && item.anchor()==null) details.append("待办 · 尚未安排时间");
-                else if(item.point()) details.append((item.dueAtMillis!=null?"截止 · ":"提醒 · ")+new java.text.SimpleDateFormat("M月d日 HH:mm",java.util.Locale.CHINA).format(new java.util.Date(item.anchor())));
+                else if(item.isTask() && item.effectiveDueAtMillis()==null) details.append("待办 · 尚未安排时间");
+                else if(item.point()) details.append((item.effectiveDueAtMillis()!=null?"截止 · ":"提醒 · ")+new java.text.SimpleDateFormat("M月d日 HH:mm",java.util.Locale.CHINA).format(new java.util.Date(item.isTask() ? item.effectiveDueAtMillis() : item.anchor())));
                 else if (item.startAtMillis == null || item.endAtMillis == null) details.append("时间待定");
                 else if (item.allDay) details.append(com.donglan.chrona.calendar.AllDayDates.displayStart(item.startAtMillis)).append(" · 全天");
                 else {
@@ -516,6 +516,8 @@ public final class ProcessingJobService extends JobService {
                     details.append(clock.format(java.time.Instant.ofEpochMilli(item.startAtMillis).atZone(zone)))
                             .append(" — ").append(clock.format(java.time.Instant.ofEpochMilli(item.endAtMillis).atZone(zone)));
                 }
+                if (!item.point() && item.effectiveDueAtMillis() != null) details.append("\n截止 · ")
+                        .append(new java.text.SimpleDateFormat("M月d日 HH:mm",java.util.Locale.CHINA).format(new java.util.Date(item.effectiveDueAtMillis())));
                 if (item.location != null && !item.location.trim().isEmpty()) details.append('\n').append(item.location);
                 if (item.reminderMinutesBefore != null) details.append("\n提前 ").append(item.reminderMinutesBefore).append(" 分钟提醒");
                 if (item.description != null && !item.description.trim().isEmpty()) details.append('\n').append(item.description.substring(0, Math.min(240, item.description.length())));

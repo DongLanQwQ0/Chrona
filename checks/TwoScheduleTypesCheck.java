@@ -106,16 +106,16 @@ public final class TwoScheduleTypesCheck {
                     "all-day UTC storage maps to the displayed local day");
 
             HomeTodoSummary summary=store.homeTodoSummary(now,zone,3);
-            check(summary.total==12&&summary.todayDue==2&&summary.overdue==6&&summary.unscheduled==1,
+            check(summary.total==12&&summary.todayDue==4&&summary.overdue==6&&summary.unscheduled==1,
                     "summary counts all unfinished tasks, today's deadlines, overdue work and completely undated tasks");
-            check(ids(summary.focus).equals(List.of(overdueToday,dueToday,old.get(0))),
+            check(ids(summary.focus).equals(List.of(overdueToday,planned,point)),
                     "focus is bounded and prioritizes today's deadlines before older overdue work");
             HomeTodoSummary smaller=store.homeTodoSummary(now,zone,1);
             check(smaller.total==12&&smaller.focus.size()==1&&smaller.unscheduled==1,
                     "focus limit never truncates aggregate counts or the undated entry");
             check(new HashSet<>(store.queryScheduleIds(new ScheduleQuery(3,EventCategory.TASK,0,"",
-                    null,null,now,zone,ScheduleQuery.TODO_TODAY_DUE))).equals(Set.of(dueToday,overdueToday)),
-                    "today scope filters by due time, excluding completed tasks and unrelated execution starts");
+                    null,null,now,zone,ScheduleQuery.TODO_TODAY_DUE))).equals(Set.of(dueToday,overdueToday,planned,point)),
+                    "today scope uses explicit deadlines before execution end or start, excluding completed tasks");
             List<Long> overdue=store.queryScheduleIds(new ScheduleQuery(3,EventCategory.TASK,0,"",
                     null,null,now,zone,ScheduleQuery.TODO_OVERDUE));
             Set<Long> expectedOverdue=new HashSet<>(old);expectedOverdue.add(overdueToday);
@@ -129,10 +129,10 @@ public final class TwoScheduleTypesCheck {
                     "all unfinished task route includes undated work and excludes history and records");
             List<EventCandidate> deadlinePage=store.querySchedulePage(new ScheduleQuery(3,EventCategory.TASK,0,"",
                     null,null,now,zone,ScheduleQuery.TODO_TODAY_DUE),true,0);
-            check(ids(deadlinePage).equals(List.of(overdueToday,dueToday)),"deadline scope sorts by deadline rather than execution start");
+            check(ids(deadlinePage).equals(List.of(overdueToday,planned,point,dueToday)),"deadline scope sorts by effective deadline rather than execution start");
             check(store.setCandidateCompleted(dueToday,source,true),"complete task from summary");
             HomeTodoSummary after=store.homeTodoSummary(now,zone,3);
-            check(after.total==11&&after.todayDue==1&&after.overdue==6&&after.unscheduled==1,
+            check(after.total==11&&after.todayDue==3&&after.overdue==6&&after.unscheduled==1,
                     "completion removes only the finished task from the relevant aggregate counts");
             long earlyDeadline=add(store,source,"明日执行但今日早截止",EventCategory.TASK,
                     time(today.plusDays(1),9,0,zone),time(today.plusDays(1),10,0,zone),
@@ -142,7 +142,7 @@ public final class TwoScheduleTypesCheck {
                     time(today,20,0,zone),null,false,false);
             List<EventCandidate> differingExecutionDates=store.querySchedulePage(new ScheduleQuery(3,
                     EventCategory.TASK,0,"",null,null,now,zone,ScheduleQuery.TODO_TODAY_DUE),true,0);
-            check(ids(differingExecutionDates).equals(List.of(earlyDeadline,overdueToday,lateDeadline)),
+            check(ids(differingExecutionDates).equals(List.of(earlyDeadline,overdueToday,planned,point,lateDeadline)),
                     "deadline filtering and sort remain due-based when execution dates disagree or run in reverse order");
             long homework=add(store,source,"课程作业",EventCategory.HOMEWORK,null,null,time(today,12,30,zone),null,false,false);
             long plannedHomework=add(store,source,"已安排作业",EventCategory.HOMEWORK,time(today,14,0,zone),time(today,15,0,zone),time(today,23,0,zone),null,false,false);
@@ -221,8 +221,56 @@ public final class TwoScheduleTypesCheck {
         }
     }
 
+    static void effectiveDeadlineChecks(File base) throws Exception {
+        ZoneId zone=ZoneId.of("Asia/Shanghai");
+        LocalDate today=LocalDate.of(2026,10,18);
+        long now=time(today,12,0,zone), start=now-3_600_000L, end=now+600_000L, due=now+1_200_000L;
+        for(String category:List.of(EventCategory.TASK,EventCategory.HOMEWORK)) {
+            for(Long[] times:new Long[][]{{start,end,due},{start,end,null},{start,null,null},{null,null,null}}) {
+                EventCandidate item=new EventCandidate(0,1,"截止优先级",times[0],times[1],"Asia/Shanghai","","",0,false,
+                        null,category,false,false,0,times[2],null,false);
+                Long expected=times[2]!=null?times[2]:times[1]!=null?times[1]:times[0];
+                check(Objects.equals(item.effectiveDueAtMillis(),expected)&&Objects.equals(item.reminderAnchor(),expected),"task/homework deadline and reminder priorities agree");
+                check(item.taskState(now).equals(expected!=null&&expected<now?"已逾期":"待完成"),"derived deadline determines pending state");
+                check(Objects.equals(item.dueAtMillis,times[2])&&Objects.equals(item.anchor(),times[0]!=null?times[0]:times[2]),"derived deadline never mutates official due or execution anchor");
+            }
+        }
+        EventCandidate event=new EventCandidate(0,1,"活动",start,end,"Asia/Shanghai","","",0,false,
+                null,EventCategory.EVENT,false,false,0,due,null,false);
+        check(event.effectiveDueAtMillis()==null&&event.reminderAnchor().equals(start)&&event.calendarStart().equals(start),"event execution and reminder anchors remain unchanged");
+        check(value(1,start,end,null,now,false).taskState(now).equals("已完成"),"completion wins over derived deadline");
+        Context context=new Context(new File(base,"effective-deadline-"+System.nanoTime()));
+        try(TaskStore store=new TaskStore(context)) {
+            long source=store.insertTask("学校截止留空",null,"source",now);
+            store.updateStatus(source,TaskRecord.READY,null);
+            long official=add(store,source,"官方截止",EventCategory.HOMEWORK,start,end,due,null,false,false);
+            long fallbackEnd=add(store,source,"个人安排结束",EventCategory.HOMEWORK,start,end,null,null,false,false);
+            long fallbackStart=add(store,source,"个人安排时点",EventCategory.HOMEWORK,now+300_000L,null,null,null,false,false);
+            long expired=add(store,source,"已过安排结束",EventCategory.TASK,start,now-600_000L,null,null,false,false);
+            long undated=add(store,source,"无日期",EventCategory.HOMEWORK,null,null,null,null,false,false);
+            long done=add(store,source,"已完成",EventCategory.HOMEWORK,start,end,null,now,false,false);
+            long activity=add(store,source,"活动不算待办",EventCategory.EVENT,start,end,null,null,false,false);
+            check(ids(store.querySchedulePage(new ScheduleQuery(3,EventCategory.HOMEWORK,0,"",null,null,now,zone,ScheduleQuery.TODO_TODAY_DUE),true,0))
+                    .equals(List.of(fallbackStart,fallbackEnd,official)),"SQLite today filter and order use all three deadline priorities");
+            check(store.queryScheduleIds(new ScheduleQuery(3,null,0,"",null,null,now,zone,ScheduleQuery.TODO_OVERDUE)).equals(List.of(expired)),"SQLite overdue filter excludes completed, undated and event rows");
+            check(ids(store.querySchedulePage(new ScheduleQuery(3,EventCategory.HOMEWORK,0,"",null,null,now,zone),true,0))
+                    .equals(List.of(fallbackStart,fallbackEnd,done,official,undated)),"homework sorting uses effective deadline, stable IDs and undated last");
+            HomeTodoSummary summary=store.homeTodoSummary(now,zone,10);
+            check(summary.total==5&&summary.todayDue==4&&summary.overdue==1&&summary.unscheduled==1,"summary counts fallback dates without counting events or completed tasks");
+            check(ids(summary.focus).equals(List.of(expired,fallbackStart,fallbackEnd,official,undated)),"summary focus follows effective deadlines");
+            List<Long> reminders=ids(store.nextReminderCandidates(now,Set.of()));
+            check(reminders.containsAll(List.of(fallbackStart,fallbackEnd,official,activity))&&!reminders.contains(done)&&!reminders.contains(undated)&&!reminders.contains(expired),"reminder SQL selects fallback anchors without resurrecting expired execution starts");
+            String hidden="chrona:"+fallbackEnd+":"+end;
+            check(!ids(store.nextReminderCandidates(now,Set.of(hidden))).contains(fallbackEnd),"hidden reminder keys use effective deadline");
+            EventCandidate saved=store.getCandidatesByIds(List.of(fallbackEnd)).get(0);
+            check(saved.dueAtMillis==null&&saved.effectiveDueAtMillis().equals(end),"official absent deadline remains null in persistence");
+            check(TaskCodec.event(TaskCodec.candidate(saved)).dueAtMillis==null,"sync keeps official absent deadline null");
+        }
+    }
+
     public static void main(String[] args)throws Exception{
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+        effectiveDeadlineChecks(new File(args[0]));
         homeTaskChecks(new File(args[0]));
         recordSearchChecks(new File(args[0]));
         Context context=new Context(new File(args[0],"types-"+System.nanoTime()));long now=System.currentTimeMillis();

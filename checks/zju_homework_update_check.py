@@ -55,7 +55,7 @@ classpath = os.pathsep.join(map(str, (json_jar, classes)))
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
 production = root / 'app/src/main/java/com/donglan/chrona'
 sources = list(src.rglob('*.java')) + [production / name for name in
-    ('data/TaskStore.java', 'data/EventCandidate.java', 'data/EventCategory.java', 'data/TaskRecord.java',
+    ('data/TaskStore.java', 'data/EventCandidate.java', 'data/EventCategory.java', 'data/TaskRecord.java', 'data/ScheduleQuery.java',
      'zju/ZjuSnapshot.java', 'ZjuHomeworkStore.java', 'ZjuHomeworkCalendar.java', 'HomeworkLinks.java')]
 sources += [root / 'checks/ZjuHomeworkUpdateCheck.java']
 subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', classpath, '-d', str(out), *map(str, sources)], check=True)

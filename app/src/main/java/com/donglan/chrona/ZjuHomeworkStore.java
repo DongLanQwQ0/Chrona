@@ -60,6 +60,26 @@ public final class ZjuHomeworkStore {
         try (TaskStore store = new TaskStore(context)) { return state(store.getReadableDatabase()); }
     }
 
+    /** Courses belonging to this exact active binding, including completed historical work. */
+    public Set<String> trackedCourses(String account, long generation) {
+        Set<String> result = new HashSet<>();
+        try (TaskStore store = new TaskStore(context)) {
+            SQLiteDatabase db = store.getReadableDatabase();
+            State current = state(db);
+            if (!current.enabled || current.generation != generation || !Objects.equals(current.account, account)) return result;
+            try (Cursor cursor = db.rawQuery("SELECT snapshot FROM zju_homework_map WHERE account=? AND capture_id=? AND ignored=0",
+                    new String[]{account, Long.toString(current.captureId)})) {
+                while (cursor.moveToNext()) {
+                    try {
+                        String id = new JSONObject(cursor.getString(0)).optString("courseId", "");
+                        if (!id.isEmpty()) result.add(id);
+                    } catch (org.json.JSONException invalid) { throw new IllegalStateException("已有作业数据无效", invalid); }
+                }
+            }
+        }
+        return result;
+    }
+
     HomeworkLinks links(EventCandidate candidate) {
         try (TaskStore store = new TaskStore(context);
              Cursor cursor = store.getReadableDatabase().rawQuery(

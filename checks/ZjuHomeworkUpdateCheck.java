@@ -22,6 +22,9 @@ public final class ZjuHomeworkUpdateCheck {
         ZjuHomeworkStore managed=new ZjuHomeworkStore(c);managed.configure("account",true);long generation=managed.state().generation;
         Homework a=homework("a","A",DUE,false),b=homework("b","B",DUE,false);
         var initial=managed.apply("account",generation,List.of(a,b));check(initial.actionableAdded==2&&initial.actionableUpdated==0,"new unfinished actionable additions");
+        check(managed.trackedCourses("account",generation).equals(java.util.Set.of("course")),"existing course is tracked for later terms");
+        check(managed.trackedCourses("other-account",generation).isEmpty(),"other account course IDs never enter fetch");
+        check(managed.trackedCourses("account",generation+1).isEmpty(),"stale generation cannot supply course IDs");
         List<EventCandidate> all;try(TaskStore store=new TaskStore(c)){all=store.getCandidates(managed.state().captureId);}
         long aid=all.get(0).id,bid=all.get(1).id;
         check(row(c,aid).isHomework() && row(c,aid).isTask(), "homework is distinct but keeps task behavior");
@@ -79,6 +82,7 @@ public final class ZjuHomeworkUpdateCheck {
         check(CalendarStore.rows.size()==count+1&&ZjuHomeworkCalendar.pendingCount(c)==0,"permission grant publishes cached homework without fetching again");
         CalendarStore.permission=false;managed.apply("account",generation,List.of(homework("disabled","Disabled",DUE,false)));
         managed.configure("account",false);CalendarStore.permission=true;count=CalendarStore.rows.size();ZjuHomeworkCalendar.retryPending(c);
+        check(managed.trackedCourses("account",managed.state().generation).isEmpty(),"disabled source supplies no tracked courses");
         check(CalendarStore.rows.size()==count,"disabled homework source cannot publish pending events");
         try (TaskStore store = new TaskStore(c)) {
             EventCandidate current = row(c, bid);

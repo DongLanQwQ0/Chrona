@@ -37,10 +37,11 @@ GROUPS = {
     ),
     "cached_dependencies": (
         "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",
-        "sync_core_check.py", "atomic_card_contract_check.py", "island_camera_check.py",
+        "sync_core_check.py", "sync_lock_check.py", "lan_sync_api_check.py", "lan_sources_check.py", "lan_attachment_upload_check.py",
+        "atomic_card_contract_check.py", "island_camera_check.py",
         "ai_auto_publish_check.py", "system_agenda_details_check.py",
         "school_data_backup_check.py",
-        "zju_homework_update_check.py", "course_calendar_export_check.py", "homework_links_check.py", "bulk_calendar_publish_check.py",
+        "zju_homework_update_check.py", "zju_sync_recovery_check.py", "course_calendar_export_check.py", "homework_links_check.py", "bulk_calendar_publish_check.py",
     ),
     "powershell": ("vivo_provision_check.py",),
 }

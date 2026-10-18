@@ -81,7 +81,11 @@ assert detail.index('cardHeader.addView(createCandidate,') < detail.index('cardH
 assert 'new LinearLayout.LayoutParams(dp(48), dp(48))' in detail
 assert 'candidate.isTask()) button(card,candidate.completed()' not in detail
 system_detail = (root / 'app/src/main/java/com/donglan/chrona/SystemAgendaDetailActivity.java').read_text(encoding='utf-8')
-assert 'acknowledgement.setEnabled(occurrenceAvailable && acknowledgementUntil > System.currentTimeMillis())' in system_detail
+assert 'long remaining = acknowledgementUntil - System.currentTimeMillis();' in system_detail
+assert 'boolean available = occurrenceAvailable && !getIntent().getBooleanExtra("source_series", false)\n                    && remaining > 0;' in system_detail
+assert 'acknowledgement.setEnabled(available)' in system_detail
+assert 'acknowledgement.setVisibility(available ? android.view.View.VISIBLE : android.view.View.GONE)' in system_detail
+assert 'if (resumed && available) expiryHandler.postDelayed(expiryRefresh, remaining)' in system_detail
 assert 'if (!occurrenceAvailable || acknowledgementUntil <= System.currentTimeMillis())' in system_detail
 paths = []
 sources['com/donglan/chrona/data/TaskStore.java'] = sources['com/donglan/chrona/data/TaskStore.java'].replace(

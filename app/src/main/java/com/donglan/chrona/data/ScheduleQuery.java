@@ -11,6 +11,7 @@ import java.util.Locale;
 public final class ScheduleQuery {
     public static final int PAGE_SIZE = 24;
     public static final String CATEGORY_HOMEWORK = "homework";
+    public static final String TASK_DUE_SQL = "COALESCE(due_at_millis,end_at_millis,start_at_millis)";
     public static final int TODO_ANY = 0, TODO_TODAY_DUE = 1, TODO_OVERDUE = 2,
             TODO_OPEN = 3;
     public final String selection;
@@ -51,11 +52,11 @@ public final class ScheduleQuery {
             clauses.add("category IN ('task','homework') AND completed_at_millis IS NULL");
             if (todoScope == TODO_TODAY_DUE) {
                 LocalDate today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
-                clauses.add("due_at_millis>=CAST(? AS INTEGER) AND due_at_millis<CAST(? AS INTEGER)");
+                clauses.add(TASK_DUE_SQL + ">=CAST(? AS INTEGER) AND " + TASK_DUE_SQL + "<CAST(? AS INTEGER)");
                 values.add(Long.toString(today.atStartOfDay(zone).toInstant().toEpochMilli()));
                 values.add(Long.toString(today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()));
             } else if (todoScope == TODO_OVERDUE) {
-                clauses.add("due_at_millis<CAST(? AS INTEGER)");
+                clauses.add(TASK_DUE_SQL + "<CAST(? AS INTEGER)");
                 values.add(Long.toString(now));
             }
         }
@@ -92,9 +93,9 @@ public final class ScheduleQuery {
     public String orderBy(boolean oldestFirst) {
         String direction = oldestFirst ? " ASC" : " DESC";
         if (homeworkOnly)
-            return "due_at_millis IS NULL ASC, due_at_millis" + direction + ", id" + direction;
+            return TASK_DUE_SQL + " IS NULL ASC, " + TASK_DUE_SQL + direction + ", id" + direction;
         if (todoScope == TODO_TODAY_DUE || todoScope == TODO_OVERDUE)
-            return "due_at_millis" + direction + ", id" + direction;
+            return TASK_DUE_SQL + direction + ", id" + direction;
         return "COALESCE(start_at_millis,due_at_millis) IS NULL ASC, " + DAY_SQL + direction
                 + ", all_day DESC, COALESCE(start_at_millis,due_at_millis)" + direction + ", id" + direction;
     }

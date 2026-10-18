@@ -95,7 +95,12 @@ public final class EventCandidate {
     public String itemLabel() { return isHomework() ? "作业" : "日程"; }
     public boolean completed() { return isTask() && completedAtMillis != null; }
     public Long anchor() { return startAtMillis != null ? startAtMillis : dueAtMillis; }
-    public Long reminderAnchor() { return isTask() && dueAtMillis!=null ? dueAtMillis : anchor(); }
+    /** Derived deadline; never replaces an explicit (including absent) source deadline. */
+    public Long effectiveDueAtMillis() {
+        return !isTask() ? null : dueAtMillis != null ? dueAtMillis
+                : endAtMillis != null ? endAtMillis : startAtMillis;
+    }
+    public Long reminderAnchor() { return isTask() ? effectiveDueAtMillis() : anchor(); }
     public boolean point() { return isTask() && (startAtMillis == null || endAtMillis == null); }
     public Long calendarStart() { return isRecord ? null : anchor(); }
     public Long calendarEnd() {
@@ -104,7 +109,8 @@ public final class EventCandidate {
     }
     public String taskState(long now) {
         if (completed()) return "已完成";
-        return dueAtMillis != null && dueAtMillis < now ? "已逾期" : "待完成";
+        Long due = effectiveDueAtMillis();
+        return due != null && due < now ? "已逾期" : "待完成";
     }
     public boolean settled() {
         return isRecord || completed() || (!needsConfirmation && (isTask() || calendarEventId != null));

@@ -31,6 +31,11 @@ public class CarouselMotionCheck {
  final int density;
  final LinearLayout content;
  final List<HorizontalScrollView> strips = new ArrayList<>();
+ // Completion tracking is transport outside this geometry check.
+ final CompletionRows completionRows = new CompletionRows();
+ static class CompletionRows {void branch(View view,String key){}void row(View view,String key,String state){}}
+ String completionKey(Object candidate,Object event){return "fixture";}
+ String completionState(Object candidate,Object event){return "open";}
  CarouselMotionCheck(int density) { this.density=density; content=new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); }
  int dp(int n){return n*density;}
  static class Params {
@@ -93,9 +98,10 @@ public class CarouselMotionCheck {
   @Override void measure(int available){super.measure(available);h=context.dp((size+4)*Math.min(minLines,maxLines));}
  }
  static class TextUtils {static class TruncateAt {static final Object END=new Object();}}
- static class R {static class drawable {static final int ic_schedule=1;}}
+ static class R {static class drawable {static final int ic_schedule=1,ic_homework=2;}}
+ static class Candidate {boolean isHomework(){return false;}}
  static class HomeTimelineEntry {
-  long timestampMillis; Object candidate=new Object(),systemEvent; String name;
+  long timestampMillis; Candidate candidate=new Candidate();Object systemEvent; String name;
   HomeTimelineEntry(String n,long t){name=n;timestampMillis=t;} String title(){return name;}
  }
  static class UiStyle {

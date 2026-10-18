@@ -37,7 +37,7 @@ class AtomicCountdownUpdates {static void clear(int id){}static void remember(in
 class NotificationChannel {NotificationChannel(String id,String name,int importance){}void setDescription(String s){}void setLockscreenVisibility(int visibility){if(visibility!=Notification.VISIBILITY_PUBLIC)throw new AssertionError("reminder channel must be lockscreen visible");}}
 class VivoAtomicNotification {static boolean vivo=true;static List<Integer> ended=new ArrayList<>();static boolean available(Context c){return vivo&&c.manager.allowed;}static boolean active(NotificationManager m,int id){return m.atomic.getOrDefault(id,false);}static void end(Context c,NotificationManager m,int id){ended.add(id);m.events.add("end:"+id);m.cards.remove(id);m.atomic.remove(id);}}
 class AndroidSync {static final Object LOCK=new Object();}
-class EventCandidate {boolean isRecord,needsConfirmation,done;boolean completed(){return isTask()&&done;}Long dueAtMillis;boolean isTask(){return !isRecord&&com.donglan.chrona.data.EventCategory.isTaskLike(category);}Long anchor(){return startAtMillis;}Long reminderAnchor(){return isTask()&&dueAtMillis!=null?dueAtMillis:anchor();}Long calendarStart(){return startAtMillis;}Long calendarEnd(){return endAtMillis;}boolean point(){return false;}long id,taskId,startAtMillis;Long endAtMillis;Integer reminderMinutesBefore;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+reminderAnchor();}}
+class EventCandidate {boolean isRecord,needsConfirmation,done;boolean completed(){return isTask()&&done;}Long dueAtMillis;boolean isTask(){return !isRecord&&com.donglan.chrona.data.EventCategory.isTaskLike(category);}Long anchor(){return startAtMillis;}Long effectiveDueAtMillis(){return !isTask()?null:dueAtMillis!=null?dueAtMillis:endAtMillis!=null?endAtMillis:startAtMillis;}Long reminderAnchor(){return isTask()?effectiveDueAtMillis():anchor();}Long calendarStart(){return startAtMillis;}Long calendarEnd(){return endAtMillis;}boolean point(){return false;}long id,taskId,startAtMillis;Long endAtMillis;Integer reminderMinutesBefore;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+reminderAnchor();}}
 class TaskStore implements AutoCloseable {static List<EventCandidate> rows=new ArrayList<>();static Set<Long> blockedReminders=new HashSet<>();TaskStore(Context c){}boolean allowsReminder(long id){return !blockedReminders.contains(id);}List<EventCandidate> nextReminderCandidates(long now,Set<String> hidden){List<EventCandidate> r=new ArrayList<>();for(EventCandidate e:rows)if(!e.completed()&&!hidden.contains(e.key())&&allowsReminder(e.id))r.add(e);return r;}List<Long> linkedCalendarIds(){return List.of();}List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids){return rows.stream().filter(e->ids.contains(e.id)).toList();}boolean setCandidateCompleted(long id,long task,boolean done){return true;}public void close(){}}
 class CalendarOccurrence {long eventId,startMillis,endMillis;String title,location,calendarName,description;boolean allDay;}
 class ExternalCourseAgenda {static boolean isExternal(long id){return id<0;}static List<CalendarOccurrence> merge(Context c,List<CalendarOccurrence> system,long begin,long end,Set<Long> linked){return system.stream().filter(e->!linked.contains(e.eventId)).toList();}}
@@ -63,7 +63,7 @@ public class AgendaSlotsCheck {
   check(ReminderTimeline.nextTitle(List.of(early,later,tie),current,early.start).equals("later"),"next title excludes already started items");
   check(ReminderTimeline.nextTitle(List.of(current,allDay,unconfirmed),current,now).isEmpty(),"next title absent for ineligible or same occurrence");
   EventCandidate a=new EventCandidate(1,now+600000,now+3600000),b=new EventCandidate(2,now+700000,now+3600000),d=new EventCandidate(3,now+800000,now+3600000),e=new EventCandidate(4,now+900000,now+3600000);
-  a.title="first";b.title="second";d.title="third";e.title="fourth";e.category="todo";
+  a.title="first";b.title="second";d.title="third";e.title="fourth";e.category="task";e.dueAtMillis=e.startAtMillis;
   TaskStore.rows=new ArrayList<>(List.of(a,b,d,e));refresh(c,null);
   check(nextTitles.get(NOTIFICATION_ID).equals("second")&&nextTitles.get(NOTIFICATION_ID+2).equals("fourth"),"refresh forwards next title including occurrence beyond card cap");
   check(c.manager.cards.size()==3,"vivo three-card cap");check(slot(c,0).equals(a.key())&&slot(c,1).equals(b.key())&&slot(c,2).equals(d.key()),"initial slot identities");
@@ -87,8 +87,8 @@ public class AgendaSlotsCheck {
   check(slot(c,0).equals(e.key())&&slot(c,1).equals(b.key())&&slot(c,2).equals(d.key()),"deferred occurrence frees only its slot");
   check(VivoAtomicNotification.ended.equals(List.of(NOTIFICATION_ID)),"operation2 only on replaced slot");
   check(c.prefs.getLong("slot_started:0",0)>=originalStarted&&c.prefs.getLong("slot_started:0",0)!=now-12345&&notified.get(NOTIFICATION_ID)==c.prefs.getLong("slot_started:0",0),"replacement resets animation origin");
-  check(categories.get(NOTIFICATION_ID).equals("todo")&&categories.get(NOTIFICATION_ID+1).equals("event"),"local categories propagate into notification entries");
-  check(c.prefs.getLong("slot_end:0",0)==e.startAtMillis+180000,"todo slot expires three minutes after start");
+  check(categories.get(NOTIFICATION_ID).equals("task")&&categories.get(NOTIFICATION_ID+1).equals("event"),"local categories propagate into notification entries");
+  check(c.prefs.getLong("slot_end:0",0)==e.dueAtMillis+180000,"task slot expires three minutes after explicit deadline");
   check(c.prefs.getLong("slot_end:1",0)==b.endAtMillis,"event slot expiration remains its finish");
   check(c.prefs.getLong("snooze_until:"+a.key(),0)>now,"per-occurrence snooze saved");
   refresh(c,new Intent(b.key(),"snooze"));check(c.prefs.getLong("snooze_until:"+a.key(),0)>now&&c.prefs.getLong("snooze_until:"+b.key(),0)>now,"two independent snoozes survive");
@@ -110,7 +110,7 @@ public class AgendaSlotsCheck {
   check(c.manager.cards.size()==1&&alarm>System.currentTimeMillis()+ReminderTimeline.PROGRESS_REFRESH,"ordinary platform single card boundary refresh");
   c.prefs.edit().putLong("slot_end:0",now-1).apply();refresh(c,new Intent(a.key(),"hide"));
   check(!c.prefs.values.containsKey("hidden:"+a.key()),"expired card action rejected before refresh");
-  for(EventCandidate row:TaskStore.rows){row.startAtMillis=now-180000;row.endAtMillis=now-1;}refresh(c,null);
+  for(EventCandidate row:TaskStore.rows){row.startAtMillis=now-180000;row.endAtMillis=now-1;if(row.isTask())row.dueAtMillis=row.startAtMillis;}refresh(c,null);
   check(c.manager.cards.isEmpty(),"ended occurrences end notifications");
   TaskStore.rows=List.of();refresh(c,null);check(c.manager.cards.isEmpty(),"empty agenda ends remaining notification");
   long boundaryNow=System.currentTimeMillis();EventCandidate close=new EventCandidate(99,boundaryNow+150000,boundaryNow+3600000);

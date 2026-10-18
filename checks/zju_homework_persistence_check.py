@@ -11,7 +11,7 @@ db = sqlite3.connect(':memory:')
 db.execute('PRAGMA foreign_keys=ON')
 db.executescript('''
 CREATE TABLE tasks(id INTEGER PRIMARY KEY);
-CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,start_at_millis INTEGER,due_at_millis INTEGER);
+CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,start_at_millis INTEGER,end_at_millis INTEGER,due_at_millis INTEGER);
 CREATE TABLE sync_task_map(local_id INTEGER,sync_id TEXT);
 CREATE TABLE data_revision(id INTEGER PRIMARY KEY,revision INTEGER);
 INSERT INTO data_revision VALUES(1,0);
@@ -25,13 +25,17 @@ for expression in re.findall(r'db\.execSQL\(((?:"(?:\\.|[^"\\])*"|[^"])*?)\);', 
     db.execute(''.join(json.loads(value) for value in strings))
 db.executescript('''
 INSERT INTO tasks VALUES(10);
-INSERT INTO event_candidates VALUES(20,10,NULL,10000);
+INSERT INTO event_candidates VALUES(20,10,NULL,NULL,10000);
 INSERT INTO sync_task_map VALUES(10,'task_test');
 INSERT INTO zju_homework_captures VALUES(10,'account-a');
 UPDATE managed_zju_state SET enabled=1,account='account-a',generation=7,capture_id=10;
 INSERT INTO zju_homework_map(account,remote_key,capture_id,candidate_id,sync_id,ignored,snapshot) VALUES('account-a','opaque-key',10,20,'candidate_test',0,'{}');
 ''')
-allowed = re.search(r'private static final String ZJU_REMINDER_ALLOWED = "([^"]+)";', source).group(1)
+due_source = (root / 'app/src/main/java/com/donglan/chrona/data/ScheduleQuery.java').read_text(encoding='utf-8')
+due_sql = re.search(r'TASK_DUE_SQL = "([^"]+)";', due_source).group(1)
+allowed_expression = re.search(r'private static final String ZJU_REMINDER_ALLOWED = (.*?);', source).group(1)
+allowed = ''.join(json.loads(part.strip()) if part.strip().startswith('"') else due_sql
+                  for part in allowed_expression.split(' + '))
 assert db.execute('SELECT 1 FROM event_candidates WHERE id=20 AND ' + allowed).fetchone()
 db.execute('UPDATE managed_zju_state SET enabled=0')
 assert not db.execute('SELECT 1 FROM event_candidates WHERE id=20 AND ' + allowed).fetchone()
@@ -42,6 +46,9 @@ db.execute('UPDATE event_candidates SET due_at_millis=NULL')
 assert not db.execute('SELECT 1 FROM event_candidates WHERE id=20 AND ' + allowed).fetchone()
 db.execute('UPDATE event_candidates SET start_at_millis=20000')
 assert db.execute('SELECT 1 FROM event_candidates WHERE id=20 AND ' + allowed).fetchone()
+db.execute('UPDATE event_candidates SET start_at_millis=NULL,end_at_millis=30000')
+assert db.execute('SELECT 1 FROM event_candidates WHERE id=20 AND ' + allowed).fetchone(), 'end-only personal schedule permits reminders without inventing official due'
+assert db.execute('SELECT due_at_millis FROM event_candidates WHERE id=20').fetchone() == (None,)
 db.commit()
 db.execute('BEGIN')
 db.execute('DELETE FROM tasks WHERE id=10')

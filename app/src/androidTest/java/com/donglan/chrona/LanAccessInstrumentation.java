@@ -95,6 +95,27 @@ public final class LanAccessInstrumentation extends Instrumentation {
             completion.put("completed",false).put("revision",revision);
             expect(request("POST","/api/candidate/complete",completion,origin()),200);
             try(TaskStore store=new TaskStore(isolated)){require(!store.getCandidatesByIds(java.util.List.of(todoId)).get(0).completed(),"HTTP restore persisted");revision=store.dataRevision();}
+            JSONObject extra=new JSONObject(candidate.toString()).put("revision",revision).put("title","Another event")
+                    .put("start",System.currentTimeMillis()+3_600_000L).put("end",System.currentTimeMillis()+7_200_000L);
+            expect(request("POST","/api/candidate/create",extra,origin()),200);
+            detail=request("GET","/api/task?id="+id,null,null);revision=detail.body.getLong("revision");
+            require(detail.body.getJSONArray("candidates").length()==4,"append retains all existing results");
+            long extraId=detail.body.getJSONArray("candidates").getJSONObject(3).getLong("id");
+            JSONObject acknowledgement=new JSONObject().put("id",Long.toString(id)).put("candidateId",Long.toString(extraId))
+                    .put("revision",revision).put("acknowledged",true);
+            expect(request("POST","/api/candidate/acknowledge",acknowledgement,origin()),200);
+            detail=request("GET","/api/task?id="+id,null,null);
+            require(detail.body.getJSONArray("candidates").getJSONObject(3).getBoolean("acknowledged"),"event acknowledgement visible through HTTP");
+            expect(request("POST","/api/candidate/acknowledge",acknowledgement.put("acknowledged",false),origin()),200);
+            expect(request("GET","/api/schedule?tab=1&category=task&publication=3&todo=3",null,null),200);
+            Reply unscheduled=request("GET","/api/schedule?tab=1&category=task&publication=3&todo=3",null,null);
+            require(unscheduled.body.getJSONArray("items").length()==1&&unscheduled.body.getJSONArray("items").getJSONObject(0).getLong("id")==todoId,"shared pending task filters");
+            expect(request("GET","/api/schedule?tab=3&from=2026-10-02&until=2026-10-01",null,null),400);
+            expect(request("GET","/api/inbox?category=record",null,null),200);
+            expect(request("GET","/api/agenda?from=2026-10-01&until=2026-11-01",null,null),200);
+            expect(request("GET","/api/agenda?from=2026-10-01&until=2028-11-01",null,null),400);
+            expect(request("POST","/api/calendar/publish-selected",new JSONObject().put("revision",revision-1)
+                    .put("ids",new org.json.JSONArray().put(Long.toString(todoId))).put("inbox",false),origin()),409);
             com.donglan.chrona.calendar.CalendarStore calendar = new com.donglan.chrona.calendar.CalendarStore(isolated);
             if (calendar.hasReadPermission() && calendar.hasWritePermission()) {
                 long start=System.currentTimeMillis()+7_200_000L;

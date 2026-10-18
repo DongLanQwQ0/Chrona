@@ -63,7 +63,7 @@ assert set(ids('label')) == {2, 3, 4}
 # Passing an event's time changes its tab, never deletes it from searchable history.
 assert {5}.issubset(ids('all')), 'Past items must remain searchable in all items'
 
-# Homework is a subset of TASK, identified by its managed capture, never its title.
+# Homework has its own category; unrelated tasks with the same title stay excluded.
 for item, start, due, completed, capture, record in [
     (9001, 100, ms('2026-09-29T14:00+08:00'), None, 42, 0),
     (9002, 900, ms('2026-09-28T14:00+08:00'), None, 42, 0),
@@ -73,9 +73,9 @@ for item, start, due, completed, capture, record in [
     (9006, 1, ms('2026-09-28T13:00+08:00'), None, 42, 1),
 ]:
     db.execute('INSERT INTO event_candidates(id,title,category,start_at_millis,due_at_millis,completed_at_millis,task_id,is_record,all_day) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0)',
-               (item, '作业标题', 'task', start, due, completed, capture, record))
-assert ids('homework') == [9004, 9002, 9001, 9003]
-assert ids('homeworkOpen') == [9002, 9001, 9003]
+               (item, '作业标题', 'homework' if capture == 42 else 'task', start, due, completed, capture, record))
+assert ids('homework') == [9003, 9004, 9002, 9001]
+assert ids('homeworkOpen') == [9003, 9002, 9001]
 assert ids('homeworkToday') == [9002]
 db.execute('DELETE FROM event_candidates WHERE id>=9001')
 

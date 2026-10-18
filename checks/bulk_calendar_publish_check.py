@@ -34,6 +34,7 @@ public class TaskStore implements AutoCloseable {
   return false;
  }
  public boolean updateStatus(long id,String status,String error){statuses.put(id,status);return true;}
+ public boolean updateReviewStatus(long id){List<EventCandidate> candidates=getCandidates(id);return updateStatus(id,candidates.isEmpty()||candidates.stream().anyMatch(e->!e.settled())?TaskRecord.NEEDS_REVIEW:TaskRecord.READY,null);}
  public int taskCountByStatus(String status){return (int)statuses.values().stream().filter(status::equals).count();}
 }''',
     'com/donglan/chrona/calendar/CalendarStore.java': '''package com.donglan.chrona.calendar;

@@ -77,12 +77,14 @@ public final class SyncSettingsActivity extends Activity {
         String base = url.getText().toString().trim(), account = user.getText().toString().trim(), secret = password.getText().toString();
         if (!AndroidSync.work(this, completion(test ? null : secret), app -> {
             WebDavSettingsStore settings = new WebDavSettingsStore(app);
-            String actual = secret.isEmpty() && settings.configured() ? settings.password() : secret;
+            String actual;
+            synchronized (AndroidSync.LOCK) {
+                actual = secret.isEmpty() && settings.configured() ? settings.password() : secret;
+                if (!test) { settings.save(base, account, actual); SyncJobService.schedule(app); }
+            }
             if (test) {
                 if (account.isEmpty() || actual.isEmpty()) throw new java.io.IOException("请输入账号和应用密码");
                 try (WebDavClient client = new WebDavClient(base, account, actual)) { client.testConnection(); }
-            } else {
-                settings.save(base, account, actual); SyncJobService.schedule(app);
             }
             return test ? "连接成功" : "同步设置已保存";
         })) status.setText(test ? "同步正在进行，请稍后测试" : "同步正在进行，请稍后保存");

@@ -9,7 +9,7 @@
 | 项目 | 配置来源与当前值 |
 | --- | --- |
 | 应用 | 原生 Android Java，`com.donglan.chrona` |
-| 版本 | `app/build.gradle`：0.15.22 / 184 |
+| 版本 | `app/build.gradle`：0.15.23 / 185 |
 | Android | minSdk 26，compileSdk / targetSdk 36 |
 | 语言与构建 | Java 源码 17，AGP 9.4.1，Gradle Wrapper 9.6.0 |
 | 数据库 | `TaskStore.DATABASE_VERSION`：13 |
@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | 记录、首页与详情 | `MainActivity`、`DashboardActivity`、`TaskDetailActivity` | [日程与浏览](features/schedules/schedule-browser.md) |
 | AI 提取与处理 | `ai/`、`processing/` | [解析链路](features/ai/ai-pipeline.md)、[时间规则](features/ai/ai-time-extraction.md)、[请求协议](features/ai/ai-request-notes.md) |
-| 日历、课表与来源 | `calendar/`、`AgendaRepository`、`CalendarTimelineLayout` | [本地课表](features/calendar/course-timetable.md)、[来源](features/calendar/system-calendar-home.md)、[候选合并](features/schedules/candidate-merge.md) |
+| 日历、课表与来源 | `calendar/`、`AgendaRepository`、`ScheduleSourceRepository`、`CalendarTimelineLayout` | [本地课表](features/calendar/course-timetable.md)、[来源](features/calendar/system-calendar-home.md)、[候选合并](features/schedules/candidate-merge.md) |
 | 提醒与原子岛 | `AgendaReminder`、`AgendaReminderJobService` | [提醒](features/reminders/agenda-reminder-settings.md)、[vivo 配置](features/reminders/vivo-atomic-setup.md) |
 | 学校作业与课表 | `ZjuClient`、`ZjuSync`、`ZjuHomeworkCalendar` | [折姜星辰](features/zju/zju-services.md) |
 | 数据、附件与备份 | `data/`、`image/`、`ConfigBackup`、`SchoolDataBackup` | [备份范围](features/data/backup-coverage.md)、[附件与链接](features/schedules/selection-and-link-fetch.md) |

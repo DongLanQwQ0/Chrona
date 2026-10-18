@@ -7,6 +7,7 @@ import com.donglan.chrona.data.*;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
 import com.donglan.chrona.processing.StreamingOutputStore;
+import com.donglan.chrona.processing.BulkCalendarPublisher;
 import com.donglan.chrona.timetable.Timetable;
 import fi.iki.elonen.NanoHTTPD;
 import org.json.*;
@@ -30,7 +31,7 @@ final class LanWebServer extends NanoHTTPD {
     @Override public Response serve(IHTTPSession request) {
         Response response;
         try { response = dispatch(request); }
-        catch (Conflict error) { response = json(Response.Status.CONFLICT, "数据已变化，请刷新后重试"); }
+        catch (Conflict | ConcurrentModificationException error) { response = json(Response.Status.CONFLICT, "数据已变化或操作正在进行，请刷新后重试"); }
         catch (IllegalArgumentException | JSONException | java.time.DateTimeException | java.nio.charset.CharacterCodingException error) { response = json(Response.Status.BAD_REQUEST, "输入格式或范围无效"); }
         catch (SecurityException error) { response = json(Response.Status.FORBIDDEN, "请先在手机授予日历或附件权限"); }
         catch (Exception error) { response = json(Response.Status.INTERNAL_ERROR, "操作未完成，请检查手机状态后重试"); }
@@ -65,6 +66,24 @@ final class LanWebServer extends NanoHTTPD {
         }
         if (!security.authenticated(headers.get("cookie"))) return json(Response.Status.UNAUTHORIZED, "请在手机开启局域网访问并配对");
         if (method == Method.POST && !security.write(origin, headers.get("x-chrona-csrf"))) return json(Response.Status.FORBIDDEN, "连接验证失败，请重新配对");
+        if (method == Method.GET && path.equals("/api/sync"))
+            return data(LanSyncApi.read(context, integer(request.getParms().get("page"), 0, 0, 100000)));
+        if (method == Method.POST && path.equals("/api/sync/preferences"))
+            return data(LanSyncApi.preferences(context, body(request, 256)));
+        if (method == Method.POST && path.equals("/api/sync/run")) {
+            body(request, 256);
+            return data(LanSyncApi.run(context));
+        }
+        if (method == Method.POST && path.equals("/api/sync/resolve"))
+            return data(LanSyncApi.resolve(context, body(request, MAX_BODY)));
+        if (method == Method.POST && path.equals("/api/attachment-upload")) {
+            JSONObject result = LanAttachmentUpload.receive(context, request);
+            AgendaWidgetProvider.requestRefresh(context);
+            if (new WebDavSettingsStore(context).automatic()) {
+                SyncJobService.schedule(context); AndroidSync.request(context, null);
+            }
+            return data(result);
+        }
         if (method == Method.GET && path.equals("/api/session")) {
             UiStyle.Palette colors = UiStyle.colors(context);
             return data(new JSONObject().put("csrf", security.csrf()).put("zone", ZoneId.systemDefault().getId())
@@ -90,6 +109,40 @@ final class LanWebServer extends NanoHTTPD {
         // Sync apply and browser mutations must not interleave their database/file snapshots.
         synchronized (AndroidSync.LOCK) {
             if (closed) return json(Response.Status.SERVICE_UNAVAILABLE, "局域网访问已关闭");
+            if (path.equals("/api/sources")) return data(method == Method.GET
+                    ? LanSourcesApi.read(context, request.getParms())
+                    : LanSourcesApi.update(context, body(request, 4096)));
+            if (method == Method.POST && path.equals("/api/calendar/publish-selected")) {
+                JSONObject body = body(request, MAX_BODY);
+                List<Long> ids = new ArrayList<>();
+                JSONArray selected = body.getJSONArray("ids");
+                if (selected.length() == 0 || selected.length() > 500) throw new IllegalArgumentException();
+                for (int i = 0; i < selected.length(); i++) ids.add(positive(selected.getString(i)));
+                try (TaskStore store = new TaskStore(context)) {
+                    if (whole(body,"revision",0,Long.MAX_VALUE) != store.dataRevision()) throw new Conflict();
+                }
+                if (!new CalendarStore(context).hasWritePermission()) throw new SecurityException();
+                BulkCalendarPublisher.Result published = BulkCalendarPublisher.publish(context, ids, bool(body,"inbox"));
+                if (new WebDavSettingsStore(context).automatic()) { SyncJobService.schedule(context); AndroidSync.request(context,null); }
+                try (TaskStore store = new TaskStore(context)) {
+                    return data(new JSONObject().put("summary",published.summary()).put("published",published.published)
+                            .put("skipped",published.skipped).put("failed",published.failed).put("revision",store.dataRevision()));
+                }
+            }
+            if (method == Method.POST && path.equals("/api/candidate/acknowledge")) {
+                JSONObject body = body(request, MAX_BODY);
+                try (TaskStore store = new TaskStore(context)) {
+                    if (whole(body,"revision",0,Long.MAX_VALUE) != store.dataRevision()) throw new Conflict();
+                    long id = positive(body.getString("candidateId")), taskId = positive(body.getString("id"));
+                    EventCandidate item = store.getCandidatesByIds(Collections.singleton(id)).stream()
+                            .filter(value -> value.taskId == taskId).findFirst().orElseThrow(Conflict::new);
+                    Long anchor = item.reminderAnchor();
+                    long until = anchor == null ? 0 : item.endAtMillis != null && item.endAtMillis > anchor ? item.endAtMillis : anchor + 60_000L;
+                    if (item.isRecord || item.isTask() || until <= System.currentTimeMillis()) throw new IllegalArgumentException();
+                    AgendaAcknowledgement.set(context,AgendaAcknowledgement.key(item),until,bool(body,"acknowledged"));
+                    return data(new JSONObject().put("ok",true).put("revision",store.dataRevision()));
+                }
+            }
             if(method==Method.POST&&path.equals("/api/preferences")){
                 JSONObject body=body(request,256);boolean included=bool(body,"systemCalendarIncluded");
                 if(included&&!new CalendarStore(context).hasReadPermission())return json(Response.Status.FORBIDDEN,"系统日历读取权限需在手机授予");
@@ -128,24 +181,54 @@ final class LanWebServer extends NanoHTTPD {
             long id = positive(request.getParms().get("id")); TaskRecord record = store.getTask(id);
             if (record == null) return json(Response.Status.NOT_FOUND,"记录已不存在");
             JSONArray candidates = new JSONArray(), images = new JSONArray(), files = new JSONArray();
-            for (EventCandidate item : store.getCandidates(id)) candidates.put(candidate(item).put("mergedSources",CandidateMerges.sources(store,item.id)));
+            for (EventCandidate item : store.getCandidates(id)) {
+                JSONObject value = candidate(item).put("managed",store.isManagedHomework(item.id,item.taskId))
+                        .put("submitted",store.isSubmittedHomework(item.id,item.taskId))
+                        .put("mergedSources",CandidateMerges.sources(store,item.id));
+                if (item.isHomework() && new ZjuSettingsStore(context).enabled()) {
+                    HomeworkLinks links = new ZjuHomeworkStore(context).links(item);
+                    value.put("mobileUrl",links.mobile == null ? JSONObject.NULL : links.mobile)
+                            .put("desktopUrl",links.desktop == null ? JSONObject.NULL : links.desktop);
+                }
+                candidates.put(value);
+            }
             List<String> paths = store.getImagePaths(id); for (int i=0;i<paths.size();i++) images.put(new JSONObject().put("index",i));
             for (TaskFileAttachment item : store.getFileAttachments(id)) files.put(new JSONObject().put("id",item.id).put("name",item.displayName).put("size",item.sizeBytes));
-            return data(result.put("task", task(record)).put("candidates",candidates).put("images",images).put("files",files).put("mergedTargets",CandidateMerges.targets(store,id)));
+            return data(result.put("task", task(record)).put("candidates",candidates).put("images",images).put("files",files)
+                    .put("managedHomeworkCapture",store.isHomeworkCapture(id)).put("mergedTargets",CandidateMerges.targets(store,id)));
         }
         if (path.equals("/api/inbox")) {
             int page = integer(request.getParms().get("page"), 0, 0, 100000), status = integer(request.getParms().get("status"),0,0,4);
             String search = request.getParms().getOrDefault("search",""); if (search.length()>256) throw new IllegalArgumentException();
-            InboxQuery query = new InboxQuery(status,null,search); List<Long> ids=store.queryInboxIds(query,false); JSONArray tasks=new JSONArray();
+            String category = request.getParms().get("category");
+            if(category!=null&&!Arrays.asList(EventCategory.VALUES).contains(category)&&!"record".equals(category))throw new IllegalArgumentException();
+            InboxQuery query = new InboxQuery(status,category,search); List<Long> ids=store.queryInboxIds(query,false); JSONArray tasks=new JSONArray();
             for(TaskRecord item:store.queryInboxPage(query,false,page,ids)) tasks.put(task(item));
             return data(result.put("items",tasks).put("total",ids.size()).put("page",page).put("pageSize",InboxQuery.PAGE_SIZE));
         }
         if (path.equals("/api/schedule")) {
             int page=integer(request.getParms().get("page"),0,0,100000); String search=request.getParms().getOrDefault("search",""); if(search.length()>256) throw new IllegalArgumentException();
             String category=request.getParms().get("category"); if(category!=null&&!Arrays.asList(EventCategory.VALUES).contains(category))throw new IllegalArgumentException();
-            ScheduleQuery query=new ScheduleQuery(0,category,0,search,null,null,System.currentTimeMillis(),ZoneId.systemDefault());
+            int tab=integer(request.getParms().get("tab"),0,0,3), publication=integer(request.getParms().get("publication"),0,0,3), todo=integer(request.getParms().get("todo"),0,0,3);
+            LocalDate from=request.getParms().containsKey("from")?LocalDate.parse(request.getParms().get("from")):null;
+            LocalDate until=request.getParms().containsKey("until")?LocalDate.parse(request.getParms().get("until")):null;
+            if((from==null)!=(until==null)||from!=null&&!until.isAfter(from))throw new IllegalArgumentException();
+            ScheduleQuery query=new ScheduleQuery(tab,category,publication,search,from,until,System.currentTimeMillis(),ZoneId.systemDefault(),todo);
             JSONArray entries=new JSONArray(); for(EventCandidate item:store.querySchedulePage(query,false,page))entries.put(candidate(item));
             return data(result.put("items",entries).put("total",store.queryScheduleIds(query).size()).put("page",page).put("pageSize",ScheduleQuery.PAGE_SIZE));
+        }
+        if (path.equals("/api/agenda")) {
+            ZoneId zone=ZoneId.systemDefault();
+            LocalDate from=LocalDate.parse(request.getParms().get("from")),until=LocalDate.parse(request.getParms().get("until"));
+            if(!until.isAfter(from)||java.time.temporal.ChronoUnit.DAYS.between(from,until)>366)throw new IllegalArgumentException();
+            AgendaRepository.Snapshot snapshot=AgendaRepository.load(context,from.atStartOfDay(zone).toInstant().toEpochMilli(),
+                    until.atStartOfDay(zone).toInstant().toEpochMilli(),HomeTimelinePreferences.includesSystemCalendar(context),zone,new android.os.CancellationSignal());
+            JSONArray entries=new JSONArray();
+            for(AgendaEntry item:snapshot.entries)entries.put(new JSONObject().put("id",item.id).put("taskId",item.taskId)
+                    .put("title",item.title).put("start",item.start).put("end",item.end).put("allDay",item.allDay)
+                    .put("location",item.location).put("description",item.description).put("source",item.source)
+                    .put("category",item.category).put("system",item.system).put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis));
+            return data(result.put("items",entries).put("truncated",snapshot.truncated).put("systemUnavailable",snapshot.systemUnavailable));
         }
         if (path.equals("/api/home")) {
             ZoneId zone=ZoneId.systemDefault(); LocalDate date=LocalDate.now(zone); long start=date.atStartOfDay(zone).toInstant().toEpochMilli(),end=date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
@@ -158,9 +241,13 @@ final class LanWebServer extends NanoHTTPD {
                 catch(RuntimeException error){calendarState="系统日历暂时无法读取";}
             } else if(!HomeTimelinePreferences.includesSystemCalendar(context)) calendarState="手机已关闭系统日历时间线";
             for(CalendarOccurrence item:ExternalCourseAgenda.merge(context,systemEntries,start,end,new HashSet<>(store.linkedCalendarIds())))
-                calendar.put(new JSONObject().put("title",item.title).put("location",item.location)
+                calendar.put(new JSONObject().put("id",item.eventId).put("title",item.title).put("location",item.location)
+                        .put("source",item.calendarName).put("description",item.description).put("allDay",item.allDay)
                         .put("start",item.displayStart(zone)).put("end",item.displayEnd(zone)));
-            return data(result.put("items",entries).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",store.taskCountByStatus(TaskRecord.NEEDS_REVIEW)).put("failed",store.taskCountByStatus(TaskRecord.FAILED)));
+            HomeTodoSummary todos=store.homeTodoSummary(System.currentTimeMillis(),zone,6);
+            JSONArray focus=new JSONArray();for(EventCandidate item:todos.focus)focus.put(candidate(item));
+            return data(result.put("items",entries).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",store.taskCountByStatus(TaskRecord.NEEDS_REVIEW)).put("failed",store.taskCountByStatus(TaskRecord.FAILED))
+                    .put("todos",new JSONObject().put("total",todos.total).put("todayDue",todos.todayDue).put("overdue",todos.overdue).put("unscheduled",todos.unscheduled).put("items",focus)));
         }
         return json(Response.Status.NOT_FOUND,"页面不存在");
     }
@@ -187,9 +274,10 @@ final class LanWebServer extends NanoHTTPD {
                 ProcessingJobService.enqueueRemote(context,id); store.getWritableDatabase().setTransactionSuccessful();
             } finally { store.getWritableDatabase().endTransaction(); }
         } else if(path.equals("/api/candidate/create")) {
-            editable(record); if(!store.getCandidates(id).isEmpty())throw new Conflict();
+            editable(record); if(store.isHomeworkCapture(id))throw new IllegalArgumentException();
             EventCandidate initial=new EventCandidate(0,id,"",null,null,ZoneId.systemDefault().getId(),"","",null,true);
-            EventCandidate entry=edited(body,initial);store.replaceCandidates(id,Collections.singletonList(entry));store.updateStatus(id,entry.needsConfirmation?TaskRecord.NEEDS_REVIEW:TaskRecord.READY,null);
+            EventCandidate entry=edited(body,initial);store.appendCandidate(entry);
+            store.updateReviewStatus(id);
         } else if(path.equals("/api/candidate/save")||path.equals("/api/candidate/publish")||path.equals("/api/candidate/delete")) {
             editable(record); long candidateId=positive(body.getString("candidateId")); EventCandidate old=null;
             for(EventCandidate item:store.getCandidates(id))if(item.id==candidateId)old=item;
@@ -207,7 +295,7 @@ final class LanWebServer extends NanoHTTPD {
                 }
                 if(!store.updateCandidate(edited))throw new Conflict();
             }
-            boolean review=false; for(EventCandidate item:store.getCandidates(id))review|=item.needsConfirmation; store.updateStatus(id,review?TaskRecord.NEEDS_REVIEW:TaskRecord.READY,null);
+            store.updateReviewStatus(id);
         } else throw new IllegalArgumentException();
         return new JSONObject().put("ok",true).put("id",id);
     }
@@ -277,7 +365,13 @@ final class LanWebServer extends NanoHTTPD {
         }
     }
     private static JSONObject task(TaskRecord item)throws JSONException{return new JSONObject().put("id",item.id).put("text",item.rawText).put("linkText",item.linkText==null?"":item.linkText).put("status",item.status).put("error",item.errorMessage==null?"":item.errorMessage).put("created",item.createdAtMillis).put("source",item.source);}
-    private static JSONObject candidate(EventCandidate item)throws JSONException{return new JSONObject().put("id",item.id).put("taskId",item.taskId).put("title",item.title).put("start",item.startAtMillis==null?JSONObject.NULL:item.startAtMillis).put("end",item.endAtMillis==null?JSONObject.NULL:item.endAtMillis).put("zone",item.timeZoneId==null?ZoneId.systemDefault().getId():item.timeZoneId).put("location",item.location==null?"":item.location).put("description",item.description==null?"":item.description).put("category",item.category).put("allDay",item.allDay).put("reminder",item.reminderMinutesBefore==null?JSONObject.NULL:item.reminderMinutesBefore).put("needsConfirmation",item.needsConfirmation).put("calendarLinked",item.calendarEventId!=null).put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis).put("completed",item.completed()).put("record",item.isRecord);}
+    private static JSONObject candidateBase(EventCandidate item)throws JSONException{return new JSONObject().put("id",item.id).put("taskId",item.taskId).put("title",item.title).put("start",item.startAtMillis==null?JSONObject.NULL:item.startAtMillis).put("end",item.endAtMillis==null?JSONObject.NULL:item.endAtMillis).put("zone",item.timeZoneId==null?ZoneId.systemDefault().getId():item.timeZoneId).put("location",item.location==null?"":item.location).put("description",item.description==null?"":item.description).put("category",item.category).put("allDay",item.allDay).put("reminder",item.reminderMinutesBefore==null?JSONObject.NULL:item.reminderMinutesBefore).put("needsConfirmation",item.needsConfirmation).put("calendarLinked",item.calendarEventId!=null).put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis).put("effectiveDue",item.effectiveDueAtMillis()==null?JSONObject.NULL:item.effectiveDueAtMillis()).put("completed",item.completed()).put("record",item.isRecord);}
+    private JSONObject candidate(EventCandidate item) throws JSONException {
+        Long anchor=item.reminderAnchor();
+        long until=anchor==null?0:item.endAtMillis!=null&&item.endAtMillis>anchor?item.endAtMillis:anchor+60_000L;
+        return candidateBase(item).put("canAcknowledge",!item.isRecord&&!item.isTask()&&until>System.currentTimeMillis())
+                .put("acknowledged",AgendaAcknowledgement.isAcknowledged(context,AgendaAcknowledgement.key(item)));
+    }
     private static JSONObject body(IHTTPSession request,int limit)throws Exception {
         if(request.getHeaders().containsKey("transfer-encoding")||!request.getHeaders().getOrDefault("content-type","").split(";",2)[0].trim().equalsIgnoreCase("application/json"))throw new IllegalArgumentException();
         int length=integer(request.getHeaders().get("content-length"),-1,1,limit);byte[] bytes=new byte[length];int offset=0;

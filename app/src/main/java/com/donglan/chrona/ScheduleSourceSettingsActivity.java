@@ -3,9 +3,7 @@ package com.donglan.chrona;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.os.Bundle;
-import android.provider.CalendarContract;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -16,6 +14,7 @@ import android.content.res.ColorStateList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import com.donglan.chrona.ScheduleSourceRepository.Source;
 
 /** Global permissions for each schedule source. Provider enumeration runs off the UI thread. */
 public final class ScheduleSourceSettingsActivity extends Activity {
@@ -60,11 +59,11 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         builtins.removeAllViews();
         new Thread(() -> {
             int imported = -1, school = -1;
-            try { imported = CourseAgenda.all(this, java.time.ZoneId.systemDefault()).size(); }
+            try { imported = ScheduleSourceRepository.importedCount(this); }
             catch (Exception failure) { android.util.Log.w("Chrona", "Unable to count imported courses", failure); }
             try {
                 ZjuSettingsStore settings = new ZjuSettingsStore(this);
-                if (settings.enabled()) school = new ZjuTimetableStore(this).load(settings.account()).size();
+                if (settings.enabled()) school = ScheduleSourceRepository.zjuCount(this);
             } catch (Exception failure) { android.util.Log.w("Chrona", "Unable to count school courses", failure); }
             int importedCount = imported, schoolCount = school;
             runOnUiThread(() -> {
@@ -156,33 +155,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         label(calendars, "正在读取系统日历…");
         new Thread(() -> {
             try {
-                List<Source> result = new ArrayList<>();
-                String[] projection = {CalendarContract.Calendars._ID,
-                        CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, CalendarContract.Calendars.ACCOUNT_NAME,
-                        CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.Calendars.NAME};
-                try (Cursor cursor = getContentResolver().query(CalendarContract.Calendars.CONTENT_URI,
-                        projection, null, null, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " ASC")) {
-                    if (cursor == null) throw new IllegalStateException("Calendar provider returned no cursor");
-                    while (cursor.moveToNext()) {
-                        String account = cursor.getString(2);
-                        if ((getPackageName() + ".calendar").equals(account)
-                                && CalendarContract.ACCOUNT_TYPE_LOCAL.equals(cursor.getString(3))
-                                && com.donglan.chrona.calendar.CalendarStore.CALENDAR_NAME.equals(cursor.getString(4))) continue;
-                        result.add(new Source(cursor.getLong(0), cursor.getString(1), account));
-                    }
-                }
-                // Count stored events across all dates, not just this week's instances.
-                try {
-                    java.util.Map<Long,Integer> counts = new java.util.HashMap<>();
-                    try (Cursor events = getContentResolver().query(CalendarContract.Events.CONTENT_URI,
-                            new String[]{CalendarContract.Events.CALENDAR_ID}, CalendarContract.Events.DELETED + "=0 AND ("
-                                    + CalendarContract.Events.STATUS + " IS NULL OR " + CalendarContract.Events.STATUS + "<>"
-                                    + CalendarContract.Events.STATUS_CANCELED + ")", null, null)) {
-                        if (events == null) throw new IllegalStateException("No event count cursor");
-                        while (events.moveToNext()) counts.merge(events.getLong(0), 1, Integer::sum);
-                    }
-                    result.removeIf(item -> counts.getOrDefault(item.id, 0) == 0);
-                } catch (Exception failure) { android.util.Log.w("Chrona", "Unable to count calendar sources; keeping unknown sources", failure); }
+                List<Source> result = ScheduleSourceRepository.calendars(this);
                 java.util.Map<String,Integer> groups=new java.util.HashMap<>();
                 String probeIssue="";
                 try{groups.putAll(CourseSourceProbe.weeklyGroups(CourseSourceProbe.load(this).rows));}
@@ -286,12 +259,4 @@ public final class ScheduleSourceSettingsActivity extends Activity {
     }
     @Override protected void onDestroy() { loadGeneration++; super.onDestroy(); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-    private static final class Source {
-        final long id;
-        final String name, account;
-        Source(long id, String name, String account) {
-            this.id = id; this.name = name == null || name.isBlank() ? "未命名日历" : name;
-            this.account = account == null || account.isBlank() ? "本地账户" : account;
-        }
-    }
 }

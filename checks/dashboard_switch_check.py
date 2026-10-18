@@ -116,18 +116,21 @@ public class DashboardActivity extends android.content.Context {
     route.scheduleQuery="stale search";route.scheduleRange=5;route.scheduleSource=1;route.schedulePublication=2;route.schedulePage=99;route.selectedScheduleIds.add(44L);
     route.openHomeTodos(scope,scope==ScheduleQuery.TODO_ANY);
     check(route.sectionLoadRunning&&route.section==HOME,"home summary invalidates stale schedule page and uses worker switch");
-    check(route.scheduleTodoScope==scope&&route.scheduleTab==(scope==ScheduleQuery.TODO_ANY?1:3),"home summary selects matching tab and task scope");
-    check(route.scheduleCategory==EventCategory.indexOf(EventCategory.TASK)+1&&route.scheduleRange==0&&route.schedulePublication==0&&route.scheduleSource==0&&route.schedulePage==0&&route.scheduleQuery.isEmpty()&&route.selectedScheduleIds.isEmpty(),"home summary clears unrelated filters and stale selection");
-    route.await();check(route.section==SCHEDULE&&route.lastSchedule.todoScope==scope,"scope reaches production ScheduleQuery in worker snapshot");
+    int expectedScope=scope==ScheduleQuery.TODO_ANY?ScheduleQuery.TODO_OPEN:scope;
+    check(route.scheduleTodoScope==expectedScope&&route.scheduleTab==(scope==ScheduleQuery.TODO_ANY?1:3),"home summary selects matching tab and task scope");
+    check(route.scheduleCategory==0&&route.scheduleRange==0&&route.schedulePublication==0&&route.scheduleSource==0&&route.schedulePage==0&&route.scheduleQuery.isEmpty()&&route.selectedScheduleIds.isEmpty(),"home summary includes both task categories and clears unrelated filters and stale selection");
+    route.await();check(route.section==SCHEDULE&&route.lastSchedule.todoScope==expectedScope,"scope reaches production ScheduleQuery in worker snapshot");
+    check(route.lastSchedule.selection.contains("category IN ('task','homework') AND completed_at_millis IS NULL")&&!route.lastSchedule.selection.contains("category=?"),"home summary includes uncompleted todos and homework without a single-category restriction");
     check(scope!=ScheduleQuery.TODO_ANY||route.lastSchedule.selection.contains("NOT"),"undated summary routes to unscheduled tab predicate");
    }finally{route.startupReader.shutdownNow();}
   }
   DashboardActivity homework=new DashboardActivity();try{
    homework.sectionPages.put(SCHEDULE,new Page(SCHEDULE));homework.scheduleQuery="stale";homework.scheduleSource=1;
    homework.openHomeHomework();check(homework.sectionLoadRunning&&homework.scheduleCategory==ScheduleFilterState.HOMEWORK_CATEGORY,"homework shortcut uses fresh worker and homework category");
-   homework.await();check(homework.lastSchedule.selection.contains("managed_zju_state")&&homework.lastSchedule.todoScope==ScheduleQuery.TODO_OPEN&&homework.scheduleOldestFirst,"homework shortcut selects open tasks and ascending deadlines");
-   check(homework.lastSchedule.orderBy(true).startsWith("due_at_millis IS NULL ASC, due_at_millis ASC"),"homework shortcut prioritizes nearest deadline");
-   ZjuSettingsStore.active=false;homework.buildScheduleQuery(System.currentTimeMillis(),ZoneId.systemDefault());check(homework.scheduleCategory==0,"disabled school feature clears stale homework category");
+   homework.await();check(homework.lastSchedule.selection.contains("category='homework'")&&homework.lastSchedule.todoScope==ScheduleQuery.TODO_OPEN&&homework.scheduleOldestFirst,"homework shortcut selects open homework and ascending deadlines");
+   check(homework.lastSchedule.orderBy(true).startsWith("COALESCE(due_at_millis,end_at_millis,start_at_millis) IS NULL ASC, COALESCE(due_at_millis,end_at_millis,start_at_millis) ASC"),"homework shortcut prioritizes nearest effective deadline in due/end/start order");
+   ZjuSettingsStore.active=false;ScheduleQuery retainedHomework=homework.buildScheduleQuery(System.currentTimeMillis(),ZoneId.systemDefault());
+   check(homework.scheduleCategory==ScheduleFilterState.HOMEWORK_CATEGORY&&retainedHomework.selection.contains("category='homework'")&&retainedHomework.todoScope==ScheduleQuery.TODO_OPEN,"disabling school source retains the independent homework category and open-task scope");
   }finally{ZjuSettingsStore.active=true;homework.startupReader.shutdownNow();}
   System.out.println("Dashboard switch checks passed: "+checks+"; production worker/controller methods, Android transport stand-ins");
  }

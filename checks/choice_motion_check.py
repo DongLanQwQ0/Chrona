@@ -31,7 +31,7 @@ negative = re.sub(r'choices\.setPadding\([^;]+;', 'choices.setPadding(0, 0, 0, 0
 negative = negative.replace('void choiceDialog(', 'void choiceDialogWithoutPadding(')
 style_methods = '\n'.join([
     choice, negative,
-    method(STYLE, '    private static LinearLayout dialogPanel('),
+    method(STYLE, '    static LinearLayout dialogPanel('),
     method(STYLE, '    public static void addSpaced('),
     method(STYLE, '    private static int dp('),
 ])

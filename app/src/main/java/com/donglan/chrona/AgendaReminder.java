@@ -122,11 +122,11 @@ public final class AgendaReminder {
                 if (!local.isTask() || local.completed() || local.needsConfirmation || local.reminderAnchor()==null || !store.allowsReminder(local.id)) continue;
                 String key="chrona:"+local.id+":"+local.reminderAnchor();
                 if (snoozeUntil.containsKey(key)) entries.add(new AgendaEntry(local.id,local.taskId,local.reminderAnchor(),local.reminderAnchor(),local.title,
-                        local.location,local.description,"拾时",false,false,true,null,local.category,local.reminderMinutesBefore,local.dueAtMillis));
+                        local.location,local.description,"拾时",false,false,true,null,local.category,local.reminderMinutesBefore,local.effectiveDueAtMillis()));
             }
             for (EventCandidate local : store.nextReminderCandidates(now, excluded)) entries.add(new AgendaEntry(local.id, local.taskId, local.reminderAnchor(),
                     local.isTask() ? local.reminderAnchor() : local.calendarEnd(), local.title,
-                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.dueAtMillis));
+                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.effectiveDueAtMillis()));
             List<CalendarOccurrence> other = new ArrayList<>();
             java.util.Set<Long> linkedIds = new HashSet<>(store.linkedCalendarIds());
             long horizon = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).plusYears(1).toInstant().toEpochMilli();

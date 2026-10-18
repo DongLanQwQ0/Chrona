@@ -52,7 +52,7 @@ final class AgendaRepository {
                 }
                 AgendaEntry entry = new AgendaEntry(candidate.id, candidate.taskId, start, end,
                         candidate.title, candidate.location, candidate.description, "拾时", false,
-                        candidate.allDay, !candidate.needsConfirmation, null, candidate.category,candidate.reminderMinutesBefore,candidate.dueAtMillis);
+                        candidate.allDay, !candidate.needsConfirmation, null, candidate.category,candidate.reminderMinutesBefore,candidate.effectiveDueAtMillis());
                 if (entry.overlaps(begin, until) && result.entries.size() < LIMIT) result.entries.add(entry);
             }
             List<CalendarOccurrence> systemEntries = new ArrayList<>();

@@ -3,19 +3,15 @@ package com.donglan.chrona;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
-import android.content.ContentUris;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
-import android.database.Cursor;
 import android.os.Bundle;
-import android.provider.CalendarContract;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import com.donglan.chrona.zju.ZjuSnapshot;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
@@ -145,58 +141,26 @@ public final class ScheduleSourceContentsActivity extends Activity {
     }
 
     private List<Entry> read(long begin, long end, ZoneId zone, boolean entireSource) throws Exception {
-        List<Entry> result = new ArrayList<>();
-        if ("imported".equals(source)) {
-            for (CourseAgenda.Item item : entireSource ? CourseAgenda.all(this, zone) : CourseAgenda.load(this, begin, end, zone)) {
-                result.add(new Entry(item.title, item.location, item.start, item.end, item.allDay, false,
-                        item.activeTerm ? CourseAgenda.intent(this, item) : null));
-            }
-        } else if ("zju".equals(source)) {
-            ZjuSettingsStore settings = new ZjuSettingsStore(this);
-            if (!settings.enabled()) return result;
-            for (ZjuSnapshot.Lesson item : new ZjuTimetableStore(this).load(settings.account())) {
-                if (!entireSource && (item.start >= end || item.end <= begin)) continue;
-                result.add(new Entry(item.title, item.location, item.start, item.end, false, false,
-                        ExternalCourseDetailActivity.sourceIntent(this, "zju", item.key, item.start, item.end)));
-            }
-        } else throw new IllegalArgumentException("Unknown source");
-        result.sort(Comparator.comparingLong(item -> item.start));
-        return result;
+        return entries(ScheduleSourceRepository.local(this, source, begin, end, zone, entireSource));
     }
-
-    /** All mode lists stored series once; week mode lists their actual occurrences. */
     private List<Entry> readSystem(long begin, long end, boolean entireSource, long after, long idAfter) {
-            List<Entry> result = new ArrayList<>();
-            android.net.Uri.Builder uri = CalendarContract.Instances.CONTENT_URI.buildUpon();
-            ContentUris.appendId(uri, begin); ContentUris.appendId(uri, end);
-            String startColumn = entireSource ? CalendarContract.Events.DTSTART : CalendarContract.Instances.BEGIN;
-            String idColumn = entireSource ? CalendarContract.Events._ID : CalendarContract.Instances.EVENT_ID;
-            String[] projection = {idColumn, startColumn,
-                    entireSource ? CalendarContract.Events.DTEND : CalendarContract.Instances.END, CalendarContract.Instances.TITLE,
-                    CalendarContract.Instances.ALL_DAY, CalendarContract.Instances.EVENT_LOCATION,
-                    CalendarContract.Instances.CALENDAR_DISPLAY_NAME, CalendarContract.Events.RRULE};
-            String selection = CalendarContract.Instances.CALENDAR_ID + " = ? AND " + CalendarContract.Events.DELETED
-                    + "=0 AND (" + CalendarContract.Events.STATUS + " IS NULL OR " + CalendarContract.Events.STATUS + "<>" + CalendarContract.Events.STATUS_CANCELED + ")";
-            List<String> args = new ArrayList<>(); args.add(source.substring(7));
-            if (after != Long.MIN_VALUE) {
-                selection += " AND (" + startColumn + ">? OR (" + startColumn + "=? AND " + idColumn + ">?))";
-                args.add(Long.toString(after)); args.add(Long.toString(after)); args.add(Long.toString(idAfter));
+        return entries(ScheduleSourceRepository.system(this, source, begin, end, entireSource, after, idAfter, 0));
+    }
+    private List<Entry> entries(List<ScheduleSourceRepository.Item> items) {
+        List<Entry> result = new ArrayList<>();
+        for (ScheduleSourceRepository.Item item : items) {
+            Intent details;
+            if (item.utcDate) {
+                details = SystemAgendaDetailActivity.intent(this, item.providerId, item.start, item.end, item.allDay,
+                        item.title, item.location, item.sourceName).putExtra("source_series", item.series);
+            } else if (item.imported != null) {
+                details = item.imported.activeTerm ? CourseAgenda.intent(this, item.imported) : null;
+            } else {
+                details = ExternalCourseDetailActivity.sourceIntent(this, "zju", item.key, item.start, item.end);
             }
-            try (Cursor cursor = getContentResolver().query(entireSource ? CalendarContract.Events.CONTENT_URI : uri.build(), projection,
-                    selection, args.toArray(new String[0]), startColumn + " ASC," + idColumn + " ASC")) {
-                if (cursor == null) throw new IllegalStateException("No calendar cursor");
-                while (cursor.moveToNext()) {
-                    long event = cursor.getLong(0), start = cursor.getLong(1), finish = cursor.isNull(2) ? start : cursor.getLong(2);
-                    String title = cursor.getString(3), location = cursor.getString(5);
-                    boolean allDay = cursor.getInt(4) != 0;
-                    boolean series = entireSource && cursor.getString(7) != null && !cursor.getString(7).isBlank();
-                    Entry entry = new Entry(title, location, start, finish, allDay, true,
-                            SystemAgendaDetailActivity.intent(this, event, start, finish, allDay,
-                                    title, location, cursor.getString(6)).putExtra("source_series", series));
-                    entry.providerId = event; entry.series = series; result.add(entry);
-                    if (result.size() > PAGE_SIZE) break;
-                }
-            }
+            Entry entry = new Entry(item.title, item.location, item.start, item.end, item.allDay, item.utcDate, details);
+            entry.providerId = item.providerId; entry.series = item.series; result.add(entry);
+        }
         return result;
     }
 

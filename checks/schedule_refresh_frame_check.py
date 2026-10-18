@@ -40,7 +40,7 @@ class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int 
 class ZjuSettingsStore {ZjuSettingsStore(Object context){}boolean enabled(){return true;}}
 class InboxQuery {InboxQuery(Object...a){}}
 class EventCategory {static String[] VALUES={"event"};}
-class EventCandidate {Long anchor(){return startAtMillis;}Long startAtMillis=1L,dueAtMillis=2L; boolean allDay;}
+class EventCandidate {Long anchor(){return startAtMillis;}Long effectiveDueAtMillis(){return dueAtMillis!=null?dueAtMillis:endAtMillis!=null?endAtMillis:startAtMillis;}Long startAtMillis=1L,endAtMillis,dueAtMillis=2L; boolean allDay;}
 class TaskStore {List<Long> queryScheduleIds(ScheduleQuery q){throw new AssertionError("SQL on UI");}List<EventCandidate> querySchedulePage(ScheduleQuery q,boolean o,int p){throw new AssertionError("SQL on UI");}}
 class AllDayDates {static String displayStart(long t){return "2026-10-13";}static String localDate(long t,ZoneId z){return "2026-10-13";}}
 class HomeTimelinePreferences {static boolean includesSystemCalendar(Object c){return true;}}

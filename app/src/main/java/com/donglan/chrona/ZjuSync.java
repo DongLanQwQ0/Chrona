@@ -35,9 +35,11 @@ final class ZjuSync {
         String account=settings.account(), result;
         try{
             ZjuHomeworkStore.State before;
+            java.util.Set<String> trackedCourses;
             synchronized(AndroidSync.LOCK){
                 if(token!=epoch)throw new java.io.IOException("本次同步已停止");
                 before=store.state();
+                trackedCourses=store.trackedCourses(account,before.generation);
             }
             settings.status("正在同步");
             String[] credentials=settings.credentials();
@@ -45,7 +47,7 @@ final class ZjuSync {
             java.util.Arrays.fill(credentials,"");
             synchronized(ZjuSync.class){client=active;}
             ZjuSnapshot snapshot;
-            try(active){snapshot=active.fetch(before.enabled,settings.timetable());}
+            try(active){snapshot=active.fetch(before.enabled,settings.timetable(),trackedCourses);}
             synchronized(AndroidSync.LOCK){
                 if(token!=epoch||!settings.enabled()||!account.equals(settings.account()))throw new java.io.IOException("设置已更改，本次同步已停止");
                 ZjuHomeworkStore.Result applied=store.apply(account,before.generation,snapshot.homework);

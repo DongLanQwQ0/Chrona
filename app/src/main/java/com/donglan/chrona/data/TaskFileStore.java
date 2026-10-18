@@ -38,6 +38,23 @@ public final class TaskFileStore {
         }
         if (mimeType == null || mimeType.trim().isEmpty()) mimeType = "application/octet-stream";
 
+        return importPreparedFile(source, displayName, mimeType);
+    }
+
+    /** Imports local bytes using caller-validated metadata, without querying a browser name as a URI. */
+    public TaskFileAttachment importFile(Uri source, String displayName, String mimeType) throws IOException {
+        if (source == null) throw new IllegalArgumentException("source is required");
+        if (displayName == null || displayName.trim().isEmpty() || displayName.length() > 160
+                || Pattern.compile("[\\p{Cntrl}/\\\\]").matcher(displayName).find())
+            throw new IllegalArgumentException("附件名称无效");
+        if (mimeType == null || !mimeType.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+"))
+            throw new IllegalArgumentException("附件类型无效");
+        return importPreparedFile(source, displayName, mimeType);
+    }
+
+    private TaskFileAttachment importPreparedFile(Uri source, String displayName, String mimeType) throws IOException {
+        ContentResolver resolver = context.getContentResolver();
+
         if (Build.VERSION.SDK_INT < 29) {
             if (context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
                     != android.content.pm.PackageManager.PERMISSION_GRANTED)
@@ -49,8 +66,8 @@ public final class TaskFileStore {
                 throw new IOException("无法创建公共 Downloads/Chrona");
             File target = uniqueFile(directory, displayName);
             long size;
-            try {
-                size = copy(resolver.openInputStream(source), new FileOutputStream(target));
+            try (InputStream input = resolver.openInputStream(source)) {
+                size = copy(input, new FileOutputStream(target));
             } catch (IOException | RuntimeException exception) {
                 target.delete();
                 throw exception;
@@ -60,8 +77,14 @@ public final class TaskFileStore {
             indexed.put(MediaStore.MediaColumns.DISPLAY_NAME, target.getName());
             indexed.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
             indexed.put(MediaStore.MediaColumns.SIZE, size);
-            Uri uri = resolver.insert(MediaStore.Files.getContentUri("external"), indexed);
-            if (uri == null) throw new IOException("文件已保存，但无法登记到公共媒体索引");
+            Uri uri;
+            try {
+                uri = resolver.insert(MediaStore.Files.getContentUri("external"), indexed);
+                if (uri == null) throw new IOException("无法登记到公共媒体索引");
+            } catch (IOException | RuntimeException exception) {
+                target.delete();
+                throw exception;
+            }
             return new TaskFileAttachment(0, 0, uri.toString(), target.getName(), mimeType, size);
         }
         ContentValues values = new ContentValues();
@@ -73,8 +96,8 @@ public final class TaskFileStore {
         Uri destination = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
         if (destination == null) throw new IOException("无法在 Downloads/Chrona 创建文件");
         long size;
-        try {
-            size = copy(resolver.openInputStream(source), resolver.openOutputStream(destination, "w"));
+        try (InputStream input = resolver.openInputStream(source)) {
+            size = copy(input, resolver.openOutputStream(destination, "w"));
             ContentValues ready = new ContentValues();
             ready.put(MediaStore.Downloads.IS_PENDING, 0);
             resolver.update(destination, ready, null, null);

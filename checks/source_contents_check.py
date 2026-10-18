@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "app/src/main/java/com/donglan/chrona"
 settings = (JAVA / "ScheduleSourceSettingsActivity.java").read_text(encoding="utf-8")
 browser = (JAVA / "ScheduleSourceContentsActivity.java").read_text(encoding="utf-8")
+repository = (JAVA / "ScheduleSourceRepository.java").read_text(encoding="utf-8")
 
 assert "control.setChecked(!control.isChecked())" not in settings
 assert "row.setOnClickListener(view -> startActivity(ScheduleSourceContentsActivity.intent" in settings
@@ -20,18 +21,18 @@ assert 'ScheduleSources.setPrimary(this, "all")' not in settings
 
 # A disabled inclusion switch never filters read-only contents, while the Zju master switch does.
 assert "ScheduleSources." not in browser
-assert "CourseAgenda.load(this, begin, end, zone)" in browser
-assert 'if (!settings.enabled()) return result;' in browser
+assert "CourseAgenda.load(context,begin,end,zone)" in repository
+assert 'if(!settings.enabled())throw new IllegalArgumentException' in repository
 assert browser.count("if (hiddenZju())") >= 3
-assert 'CalendarContract.Instances.CALENDAR_ID + " = ? AND "' in browser
+assert 'CalendarContract.Instances.CALENDAR_ID+" = ? AND "' in repository
 assert 'week.plusWeeks(1).atStartOfDay(zone)' in browser
-assert 'if (result.size() > PAGE_SIZE) break;' in browser
+assert 'if(result.size()>PAGE_SIZE)break;' in repository
 assert 'state == null || state.getBoolean("all", true)' in browser
 assert 'afterStart = last.start; afterId = last.providerId;' in browser
-assert 'startColumn + " ASC," + idColumn + " ASC"' in browser
-assert 'CourseAgenda.all(this, zone)' in browser
-assert 'result.removeIf(item -> counts.getOrDefault(item.id, 0) == 0)' in settings
-assert 'CalendarContract.Events.CONTENT_URI' in settings
+assert 'startColumn+" ASC,"+idColumn+" ASC"' in repository
+assert 'CourseAgenda.all(context,zone)' in repository
+assert 'result.removeIf(source->source.count==0)' in repository
+assert 'CalendarContract.Events.CONTENT_URI' in repository
 assert 'if (importedCount != 0)' in settings
 assert "generation != request" in browser
 assert 'SettingsPageLayout.content(this)' in browser

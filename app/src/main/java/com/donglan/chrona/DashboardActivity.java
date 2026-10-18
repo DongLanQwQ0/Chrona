@@ -1650,13 +1650,14 @@ public final class DashboardActivity extends Activity {
     }
 
     private String homeTodoWhen(EventCandidate candidate, long now, ZoneId zone) {
-        if (candidate.dueAtMillis != null) {
+        Long deadline = candidate.effectiveDueAtMillis();
+        if (deadline != null) {
             LocalDate today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
-            LocalDate due = Instant.ofEpochMilli(candidate.dueAtMillis).atZone(zone).toLocalDate();
+            LocalDate due = Instant.ofEpochMilli(deadline).atZone(zone).toLocalDate();
             String prefix = (candidate.isHomework() ? "作业" : "") + (today.equals(due) ? "今日截止 · " : "截止 · ");
             String pattern = today.equals(due) ? "HH:mm"
                     : due.getYear() == today.getYear() ? "M月d日 HH:mm" : "yyyy年M月d日 HH:mm";
-            return prefix + new SimpleDateFormat(pattern, Locale.CHINA).format(new Date(candidate.dueAtMillis));
+            return prefix + new SimpleDateFormat(pattern, Locale.CHINA).format(new Date(deadline));
         }
         return candidate.startAtMillis == null ? "待安排" : "执行 · " + formatWhen(candidate);
     }
@@ -2042,7 +2043,7 @@ public final class DashboardActivity extends Activity {
             boolean deadlineScope = scheduleTodoScope == ScheduleQuery.TODO_TODAY_DUE
                     || scheduleTodoScope == ScheduleQuery.TODO_OVERDUE
                     || scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
-            Long dateMillis = deadlineScope ? item.dueAtMillis : item.anchor();
+            Long dateMillis = deadlineScope ? item.effectiveDueAtMillis() : item.anchor();
             String date = dateMillis == null ? "待安排" : item.allDay && !deadlineScope
                     ? AllDayDates.displayStart(dateMillis)
                     : AllDayDates.localDate(dateMillis, ZoneId.systemDefault());
@@ -2666,9 +2667,9 @@ public final class DashboardActivity extends Activity {
                     "终止时间");
         }
         if (candidate != null && candidate.isTask() && candidate.startAtMillis != null
-                && candidate.dueAtMillis != null) {
+                && candidate.effectiveDueAtMillis() != null) {
             String deadline = (candidate.isHomework() ? "作业截止 · " : "截止 · ") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
-                    DateFormat.SHORT).format(new Date(candidate.dueAtMillis));
+                    DateFormat.SHORT).format(new Date(candidate.effectiveDueAtMillis()));
             UiStyle.addSpaced(body, scheduleAttribute(candidate.isHomework() ? R.drawable.ic_homework : R.drawable.ic_schedule, deadline,
                     "截止时间", 14, 2, false), home ? 5 : 8, 0);
         }
@@ -2722,7 +2723,8 @@ public final class DashboardActivity extends Activity {
     private ImageButton taskCompletionButton(EventCandidate candidate) {
         ImageButton done = new ImageButton(this);
         long now = System.currentTimeMillis();
-        boolean overdue = !candidate.completed() && candidate.dueAtMillis != null && candidate.dueAtMillis < now;
+        Long deadline = candidate.effectiveDueAtMillis();
+        boolean overdue = !candidate.completed() && deadline != null && deadline < now;
         done.setImageResource(candidate.completed() ? R.drawable.ic_todo_check
                 : overdue ? R.drawable.ic_todo_alert : R.drawable.ic_todo_clock);
         done.setImageTintList(ColorStateList.valueOf(candidate.completed() || overdue
@@ -3707,6 +3709,11 @@ public final class DashboardActivity extends Activity {
     }
 
     private String formatWhen(EventCandidate item) {
+        if (item.isTask() && item.startAtMillis == null && item.effectiveDueAtMillis() != null) {
+            return (item.isHomework() ? "作业截止 · " : "截止 · ")
+                    + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                            .format(new Date(item.effectiveDueAtMillis()));
+        }
         if (item.allDay && !HomeTimelineEntry.deadlineOnly(item)) {
             String start = AllDayDates.displayStart(item.startAtMillis);
             String end = AllDayDates.displayEnd(item.endAtMillis);
@@ -3715,7 +3722,7 @@ public final class DashboardActivity extends Activity {
         }
         if (item.anchor()==null) return "尚未安排时间";
         Date date = new Date(item.anchor());
-        return (item.startAtMillis==null && item.dueAtMillis!=null ? item.isHomework() ? "作业截止 · " : "截止 · " : "") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
+        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
                 DateFormat.SHORT).format(date);
     }
 

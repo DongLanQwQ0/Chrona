@@ -78,6 +78,7 @@ class SyncSettingsActivity {
 }
 class Field { String value; Field(String s){value=s;} Object getText(){return value;} void setText(String s){value=s;} }
 class AndroidSync {
+    static final Object LOCK = new Object();
     interface Completion { void done(String result); } interface Work { String run(Object app) throws Exception; }
     static class Pending {} static boolean busy,calendar; static int index; static Work next; static Completion callback;
     static boolean work(Object owner,Completion completion,Work work) { if(busy)return false;busy=true;next=work;callback=completion;return true; }
@@ -86,11 +87,11 @@ class AndroidSync {
 }
 class WebDavSettingsStore {
     static int saves; static boolean fail; WebDavSettingsStore(Object app){} boolean configured(){return true;} String password(){return "old-secret";}
-    void save(String b,String u,String s)throws Exception {if(fail)throw new Exception("保存失败");saves++;}
+    void save(String b,String u,String s)throws Exception {if(!Thread.holdsLock(AndroidSync.LOCK))throw new AssertionError("settings save outside LOCK");if(fail)throw new Exception("保存失败");saves++;}
 }
 class WebDavClient implements AutoCloseable {
     static boolean fail;static int tests; static String secret; WebDavClient(String b,String u,String s){secret=s;}
-    void testConnection()throws Exception {tests++;if(fail)throw new Exception("测试失败");}public void close(){}
+    void testConnection()throws Exception {if(Thread.holdsLock(AndroidSync.LOCK))throw new AssertionError("connection test holds LOCK");tests++;if(fail)throw new Exception("测试失败");}public void close(){}
 }
 class SyncJobService {static int schedules;static void schedule(Object app){schedules++;}}
 class Toast {static final int LENGTH_SHORT=0;static int shown;static Toast makeText(Object a,String s,int d){return new Toast();}void show(){shown++;}}
