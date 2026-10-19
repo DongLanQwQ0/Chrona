@@ -1,6 +1,6 @@
 # 验证记录
 
-当前版本为 **0.15.25 / 187**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前版本为 **0.15.26 / 188**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)
@@ -8,6 +8,24 @@
 - [设备验收模板](device-acceptance.md)
 
 构建、离线检查、实际设备操作分别记录。旧版本某项通过，只支持对应候选和条件。
+
+## 0.15.26 — 发布验证 — 2026-10-20
+
+- 正式包 Debug／Release 构建与两套 lint 通过，日志 `build/0.15.26-release-build.log`；quick 7/7 通过，日志 `build/0.15.26-quick.log`。本轮布局、手势与权限回退证据见下节。
+- APK 包名 `com.donglan.chrona`，版本 188 / 0.15.26，无 debuggable 标志；新 debug、release 与旧 0.15.25 证书一致。分发产物 `build/distributions/0.15.26/Chrona-0.15.26.apk`。
+- Android 36 模拟器从正式 0.15.25 覆盖升级成功并启动首页，未卸载或清数据。升级前首页无日程／待办，实体手机非空数据升级与本版本长时后台未验收；真实账号验证应用未被覆盖。
+- 发布准备恢复点 `.local-backups/release-0.15.26/`，原 UI 源码备份保留在 `.local-backups/compact-layout-20261019/`。
+
+## 0.15.26 — 紧凑布局与全局标题栏 — 2026-10-19 至 2026-10-20
+
+- 公共标题栏与 Lucide 返回／确认资源已统一。Android 36 独立验证包中测量 20 个原生页面，420dpi／默认字体与 480dpi／1.3 倍字体两组均测得返回按钮距系统安全区下沿 16dp、左侧 20dp，点击区域 48dp。记录页仍走草稿退出，详情页仍走原保存入口；日志 `build/compact-ui.log`、`build/compact-ui-narrow.log`。
+- 首页操作胶囊包含作业、系统日程与设置；学校开关仅在同步构建测试标题栏时临时启用，随后还原，未触发网络任务。下一件事使用原两行标题区域放置地点，正常与大字体都检查高度不增加、文字字形互不相交；正常字体补充日程／收件箱与记录页渲染见 `build/compact-lists.log`。
+- 课表与课堂保留来源选择实例；学校学期标题可点击，导入空状态靠上，课堂日期栏切周保留实例。课堂合成数据专项 29 项通过；窄屏大字体覆盖来源与课堂导航首尾长按、拖出松手及双向快速甩动，动效水平包络未越屏。证据 `build/compact-classroom.log`、`build/compact-classroom-narrow.log`，截图 `build/compact-captures/`。
+- 日历开关胶囊、周导出收拢／反向切换及日期栏通过。初次全宽选择栏甩动捕获高光右界 1080.5127px（屏宽 1080px）；改为底板内部预留轨道包络后，420dpi／默认字体与 480dpi／1.3 倍字体的首尾长按、拖出松手、双向快速甩动均通过，弹簧参数保持原值。日志 `build/compact-calendar-inset.log`、`build/compact-calendar-inset-narrow.log`。实际查看常规与窄屏静止／长按截图；窄屏年历的日期粘连另通过自适应月份列数修复，12 个月网格均检查实际宽度。
+- Debug、androidTest 编译与 lintDebug 通过，最新收尾日志 `build/compact-calendar-inset-build.log`，此前全局标题栏日志 `build/compact-final-validation-build.log`。设置安全区 72 项、日期切页 221 项、周视图、筛选布局 17 项、首页筛选／重试与候选反馈离线检查通过；首页重试替身补齐现有偏好参数边界。未调用付费 AI，未操作真实账号数据。
+- 公共 Dock 队列替身 180 项通过，日志 `build/compact-dock-check.log`；替身补齐 Android margin 字段及横向滚动边界 API，实际动画仍以模拟器证据为准。新增内部轨道留白仅由日历显式启用，原全宽表单调用维持现状。
+- 收尾复查修复权限拒绝的开关状态：`CompoundButton` 监听器同步把勾选退回关闭时，动画现在跟随最终状态；首页和日历同时刷新关闭提示。新增回归在旧实现得到错误进度 1.0，修复后开关专项 39 项通过；Android 原生监听器重入拒绝及正常开启均通过。证据 `build/compact-toggle-before.log`、`build/compact-toggle-after.log`、`build/compact-toggle-native.log`。补充 Debug、androidTest、lintDebug 构建通过，`build/compact-recheck-build.log`；未变动选择栏几何与动效参数，沿用前述实际渲染证据。
+- 源文件恢复点 `.local-backups/compact-layout-20261019/`。模拟器经用户授权重新启动；测试完成后密度恢复 420、字体恢复 1.0。功能验收使用独立验证包，未覆盖真实账号验证包。
 
 ## 0.15.25 — 发布验证 — 2026-10-19
 

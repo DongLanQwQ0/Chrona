@@ -31,10 +31,7 @@ public final class SettingsHubActivity extends Activity {
         super.onCreate(state);
         page = new ScrollView(this);
         page.setVerticalScrollBarEnabled(false);
-        LinearLayout root = column();
-        root.setPadding(dp(20), dp(16), dp(20), dp(24));
-        UiStyle.page(this, root);
-        root.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout root = SettingsPageLayout.content(this);
         page.addView(root);
         header(root);
 
@@ -83,22 +80,7 @@ public final class SettingsHubActivity extends Activity {
     }
 
     private void header(LinearLayout root) {
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        ImageButton back = new ImageButton(this);
-        back.setImageResource(R.drawable.ic_arrow_left);
-        back.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
-        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        back.setPadding(dp(12), dp(12), dp(12), dp(12));
-        back.setContentDescription("返回");
-        UiStyle.acrylicChoice(back, false, UiStyle.RADIUS_PILL, false);
-        back.setOnClickListener(view -> finish());
-        header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        TextView title = text("设置", 24);
-        UiStyle.title(title);
-        title.setPadding(dp(12), 0, 0, 0);
-        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        UiStyle.addSpaced(root, header, 0, 2);
+        SettingsPageLayout.header(this, root, "设置");
     }
 
     private LinearLayout group(LinearLayout root, String name) {
@@ -106,7 +88,7 @@ public final class SettingsHubActivity extends Activity {
         UiStyle.muted(heading);
         heading.setPadding(dp(4), 0, dp(4), 0);
         if (Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true);
-        UiStyle.addSpaced(root, heading, 16, 7);
+        UiStyle.addSpaced(root, heading, root.getChildCount() == 1 ? 0 : 16, 7);
         LinearLayout group = column();
         UiStyle.glass(group);
         root.addView(group, new LinearLayout.LayoutParams(-1, -2));

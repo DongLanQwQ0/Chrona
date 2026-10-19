@@ -4,15 +4,25 @@
 
 先读[文档索引](docs/README.md)、[项目基本要求](docs/project-requirements.md)和[UI 设计规范](docs/ui-style-contract.md)，再按所改功能阅读对应文档。先检查工作区改动，保留其他人的文件。
 
+## 0.15.26 UI 续轮
+
+2026-10-19 晚间要求已纳入 `docs/ui-style-contract.md`，项目 `AGENTS.md` 强制 UI 操作前完整阅读该规范、交互基线及功能文档。紧凑工作区、首页胶囊与地点行、公共顶部位置和 Lucide 返回／确认已实现；验证条件与产物见[验证记录](docs/validation-history.md)。
+
+日历采用「底板铺满、内部轨道留动效空间」，未修改弹簧参数；常规尺寸与窄屏大字体的首尾长按、拖出松手、双向快速甩动均已通过。实际截图另发现窄屏大字体年历日期粘连，已改为按字宽选择一列或两列月份。其余有效证据复用，不重跑全套。2026-10-20 已获发布授权，正式产物与验证见验证记录。
+
+收尾复查另修复系统日程开关被权限监听器退回关闭时的动画与状态提示；旧实现的失败回归、修复后 39 项专项及原生监听器检查已记录，最新构建日志 `build/compact-recheck-build.log`。
+
 ## 当前版本
 
-- 当前 **0.15.25 / versionCode 187** ，数据库版本 **14**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
+- 当前 **0.15.26 / versionCode 188** ，数据库版本 **14**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
 - 源码与安装包：[GitHub Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
 - 本轮补齐网页日历、批量处理、来源管理、附件采集和同步冲突处理，统一审核与来源查询；修复备份列顺序、网页日期边界及同步网络占锁。详见[局域网访问](docs/features/connectivity/lan-access.md)。
 - 网页续轮增加年历与月日跳转、周密度和自动同步开关；修复附件冲突重试、文件名原文、记录单独删除及冲突版本字段展示。续轮备份 `build/backups/20261018-web-followup/`，构建日志 `build/0.15.23-web-followup-build.log`；同步 API 当前为 67 项通过。
 - 0.15.18 的选择栏手感已获用户确认，见[已确认交互基线](docs/ui-interaction-baseline.md)。后续修复和性能优化保持该效果。
 
 ## 最近证据与实际限制
+
+0.15.26 正式 Debug／Release、双 lint 与 quick 7/7 通过；签名沿用旧版且 release 关闭调试。模拟器从正式 0.15.25 覆盖升级并启动成功；升级前为空首页，实体手机非空数据升级未验收。产物 `build/distributions/0.15.26/Chrona-0.15.26.apk`，日志 `build/0.15.26-release-build.log`。
 
 0.15.25 收录工作区与课堂总结续轮：三页浮动导航、浙大课表直读、两轮图片分析、后台服务与通知、执行时间建议及独立自定义提示词。圆角五档、日期文字裁切与外层按压空间、移动亚克力取样已统一。完整[需求对照与验收](docs/followup-acceptance-20261019.md)列明条件和差异。Debug/Release、双 lint、androidTest 编译及 quick 7/7 通过；正式包 `build/distributions/0.15.25/Chrona-0.15.25.apk` 沿用旧签名且关闭调试，模拟器从正式 0.15.24 覆盖安装并启动成功。真实账号验证应用此前已备份后覆盖安装并读取 10 门学校课程及旧课堂素材；本次未在实体手机验收非空数据升级，真实付费 AI 生成仍未执行。
 

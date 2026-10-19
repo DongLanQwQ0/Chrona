@@ -65,19 +65,10 @@ public final class AppearanceActivity extends Activity {
     private void buildAppearance(int scrollY) {
         if (page == null) page = new ScrollView(this);
         else page.removeAllViews();
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(8), dp(20), dp(28));
-        UiStyle.page(this, root);
-        root.setFitsSystemWindows(false);
-        root.setBackgroundColor(Color.TRANSPARENT);
+        page.setVerticalScrollBarEnabled(false);
+        LinearLayout root = SettingsPageLayout.content(this);
         page.addView(root);
-        UiStyle.back(this, root);
-
-        TextView title = text("外观与配色", 28, true);
-        root.addView(title);
-        TextView lead = text("选一个看着舒服的样子。更改会立即应用到整个应用。", 15, false);
-        UiStyle.addSpaced(root, lead, 8, 18);
+        SettingsPageLayout.header(this, root, "外观与配色");
 
         heading(root, "显示模式");
         option(root, "跟随系统", "随设备的浅色或深色模式切换",
@@ -204,7 +195,7 @@ public final class AppearanceActivity extends Activity {
     }
 
     private void heading(LinearLayout root, String label) {
-        UiStyle.addSpaced(root, text(label, 19, true), 16, 10);
+        UiStyle.addSpaced(root, text(label, 19, true), root.getChildCount() == 1 ? 0 : 16, 10);
     }
 
     private void backgroundControls(LinearLayout root) {
@@ -387,9 +378,10 @@ public final class AppearanceActivity extends Activity {
             dot.setMargins(0, 0, dp(10), 0);
             headline.addView(color, dot);
         }
-        TextView heading = text(UiStyle.marked(name, selected), 17, true);
+        TextView heading = text(name, 17, true);
         heading.setTextColor(selected ? UiStyle.colors(this).onPrimaryContainer
                 : UiStyle.colors(this).text);
+        UiStyle.marked(heading, selected);
         headline.addView(heading);
         card.addView(headline);
         if (description != null && !description.isEmpty()) {
@@ -436,10 +428,11 @@ public final class AppearanceActivity extends Activity {
                 : UiStyle.colors(this).text);
         headline.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
         // Always present so the centred group does not shift when the marker appears.
-        TextView marker = text("✓", 15, true);
-        marker.setTextColor(UiStyle.colors(this).onPrimaryContainer);
+        android.widget.ImageView marker = new android.widget.ImageView(this);
+        marker.setImageResource(R.drawable.ic_check);
+        marker.setImageTintList(android.content.res.ColorStateList.valueOf(UiStyle.colors(this).onPrimaryContainer));
         marker.setVisibility(selected ? View.VISIBLE : View.INVISIBLE);
-        headline.addView(marker);
+        headline.addView(marker, new LinearLayout.LayoutParams(dp(18), dp(18)));
         card.addView(headline, new LinearLayout.LayoutParams(-1, -2));
         if (option.description != null && !option.description.isEmpty()) {
             TextView detail = text(option.description, 12, false);

@@ -42,18 +42,8 @@ public final class BackupRestoreActivity extends Activity {
         ThemeStore.apply(this);
         super.onCreate(state);
         ScrollView page = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(20), dp(20), dp(28));
-        UiStyle.page(this, root);
-        root.setBackgroundColor(Color.TRANSPARENT);
-        UiStyle.back(this, root);
-
-        TextView title = new TextView(this);
-        title.setText("备份与恢复");
-        title.setTextSize(26);
-        UiStyle.title(title);
-        UiStyle.addSpaced(root, title, 4, 8);
+        LinearLayout root = SettingsPageLayout.content(this);
+        SettingsPageLayout.header(this, root, "备份与恢复");
         TextView description = new TextView(this);
         description.setText("完整备份收件箱、日程草稿、图片、普通附件、模型输出和应用设置。"
                 + "系统日历会按日程内容重新关联；自定义背景图也会包含在备份中。");

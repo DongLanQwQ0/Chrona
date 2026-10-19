@@ -40,6 +40,9 @@ import java.util.concurrent.TimeUnit;
 /** Device measurements; only the explicit atomic fixture phase creates and removes its own test task. No server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("toggle_reentry".equals(arguments.getString("phase"))) return WorkspaceDeviceCheck.toggleReentry(test);
+        if ("compact_ui".equals(arguments.getString("phase"))) return CompactUiDeviceCheck.run(test, arguments);
+        if ("compact_calendar".equals(arguments.getString("phase"))) return WorkspaceDeviceCheck.compactCalendar(test);
         if ("acrylic_motion".equals(arguments.getString("phase"))) return AcrylicMotionDeviceCheck.run(test);
         if ("history_acrylic".equals(arguments.getString("phase"))) return AcrylicMotionDeviceCheck.runHistory(test);
         if ("schedule_preferences".equals(arguments.getString("phase"))) return ScheduleSettingsDeviceCheck.run(test);

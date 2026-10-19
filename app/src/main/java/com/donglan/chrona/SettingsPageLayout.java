@@ -7,11 +7,11 @@ import android.view.Gravity;
 import android.widget.*;
 
 /** Settings gutters belong to content; system bars belong to the scroll viewport. */
-final class SettingsPageLayout {
+public final class SettingsPageLayout {
     static final int GUTTER_DP = 20;
     static final int HEADER_CONTENT_GAP_DP = 16;
     private SettingsPageLayout() { }
-    static LinearLayout content(Activity activity) {
+    public static LinearLayout content(Activity activity) {
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
         UiStyle.page(activity, root);
@@ -22,17 +22,9 @@ final class SettingsPageLayout {
         root.setBackgroundColor(Color.TRANSPARENT);
         return root;
     }
-    static void header(Activity activity, LinearLayout root, String label) {
-        LinearLayout header = new LinearLayout(activity);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        ImageButton back = new ImageButton(activity);
-        back.setImageResource(R.drawable.ic_arrow_left);
-        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        back.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).primary));
-        back.setPadding(dp(activity, 12), dp(activity, 12), dp(activity, 12), dp(activity, 12));
-        back.setContentDescription("返回");
-        UiStyle.acrylicChoice(back, false, UiStyle.RADIUS_PILL, false);
-        back.setOnClickListener(view -> activity.finish());
+    public static void header(Activity activity, LinearLayout root, String label) {
+        LinearLayout header = UiStyle.headerRow(activity);
+        ImageButton back = UiStyle.navigationIcon(activity, R.drawable.ic_arrow_left, "返回", activity::finish);
         header.addView(back, new LinearLayout.LayoutParams(dp(activity, 48), dp(activity, 48)));
         TextView title = new TextView(activity);
         title.setText(label); title.setTextSize(24); UiStyle.title(title);
@@ -42,7 +34,7 @@ final class SettingsPageLayout {
         headerParams.bottomMargin = dp(activity, HEADER_CONTENT_GAP_DP);
         root.addView(header, headerParams);
     }
-    static void show(Activity activity, LinearLayout root, boolean animatePresentation) {
+    public static void show(Activity activity, LinearLayout root, boolean animatePresentation) {
         ScrollView viewport = viewport(activity, root, animatePresentation);
         FrameLayout stage = new FrameLayout(activity);
         stage.addView(new GlassBackdropView(activity), new FrameLayout.LayoutParams(-1, -1));

@@ -1183,22 +1183,6 @@ public final class DashboardActivity extends Activity {
             titleSlot.addView(underlinedTitle(title, "今天的安排，点击查看课表", TimetableActivity.class),
                     new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL));
             row.addView(titleSlot, new LinearLayout.LayoutParams(0, -2, 1));
-            if (new ZjuSettingsStore(this).enabled()) {
-                ImageButton homework = new ImageButton(this);
-                homework.setImageResource(R.drawable.ic_homework);
-                homework.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
-                homework.setPadding(dp(12), dp(12), dp(12), dp(12));
-                homework.setBackgroundColor(Color.TRANSPARENT);
-                homework.setContentDescription("最近作业");
-                homework.setOnClickListener(view -> openHomeHomework());
-                UiStyle.pressable(homework);
-                LinearLayout.LayoutParams homeworkParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-                homeworkParams.leftMargin = dp(8);
-                row.addView(homework, homeworkParams);
-            }
-            LinearLayout.LayoutParams calendarParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-            calendarParams.leftMargin = dp(8);
-            row.addView(homeSystemCalendarToggle(), calendarParams);
         } else {
             // The search field sits between the page title and the trailing control, so filtering
             // never moves the settings entry and the keyword stays reachable while scrolling.
@@ -1256,12 +1240,16 @@ public final class DashboardActivity extends Activity {
      * corner read as unrelated controls and cost width the search field needs.
      */
     private LinearLayout buildHeaderControls() {
-        LinearLayout group = new LinearLayout(this);
-        group.setOrientation(LinearLayout.HORIZONTAL);
-        group.setGravity(Gravity.CENTER_VERTICAL);
-        UiStyle.acrylicChoice(group, false, UiStyle.RADIUS_PILL, false);
+        HeaderActionGroup group = new HeaderActionGroup(this, section == HOME ? 48 : 44);
         orderToggle = null;
-        if (section != HOME) {
+        if (section == HOME) {
+            if (new ZjuSettingsStore(this).enabled()) {
+                ImageButton homework = WorkspacePageHeader.icon(this, R.drawable.ic_homework,
+                        "最近作业", this::openHomeHomework);
+                group.addAction(homework, 44);
+            }
+            group.addAction(homeSystemCalendarToggle(), 44);
+        } else {
             TextView order = text("", 15, true);
             order.setGravity(Gravity.CENTER);
             order.setMinWidth(dp(40));
@@ -1270,10 +1258,7 @@ public final class DashboardActivity extends Activity {
             UiStyle.pressable(order);
             orderToggle = order;
             refreshOrderToggle();
-            group.addView(order, new LinearLayout.LayoutParams(-2, -1));
-            View divider = new View(this);
-            divider.setBackgroundColor(UiStyle.colors(this).outline);
-            group.addView(divider, new LinearLayout.LayoutParams(dp(1), dp(16)));
+            group.addAction(order, 40);
         }
         ImageButton settings = new ImageButton(this);
         settings.setImageResource(R.drawable.ic_settings);
@@ -1285,9 +1270,8 @@ public final class DashboardActivity extends Activity {
         settings.setOnClickListener(view ->
                 startActivity(new Intent(this, SettingsHubActivity.class)));
         UiStyle.pressable(settings);
-        group.addView(settings, new LinearLayout.LayoutParams(dp(section == HOME ? 48 : 44), -1));
-        UiStyle.pressable(group);
-        PressFeedback.group(group, 1.10f);
+        group.addAction(settings, 44);
+        group.finish();
         return group;
     }
 
@@ -1390,6 +1374,7 @@ public final class DashboardActivity extends Activity {
             describe.run();
             if (enabled && !new CalendarStore(this).hasReadPermission()) {
                 include.setChecked(false);
+                describe.run();
                 requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR},
                         HOME_CALENDAR_PERMISSION_REQUEST);
                 return;
@@ -1721,10 +1706,24 @@ public final class DashboardActivity extends Activity {
                 item.setPadding(dp(14), dp(12), dp(14), dp(12));
                 TextView title = text(entry.title(), 16, true);
                 title.setIncludeFontPadding(false);
-                title.setMinLines(2);
-                title.setMaxLines(2);
+                title.setMinLines(2); title.setMaxLines(2);
+                title.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                int summaryHeight = title.getMeasuredHeight();
+                String location = entry.location();
+                title.setMinLines(location.isEmpty() ? 2 : 1);
+                title.setMaxLines(location.isEmpty() ? 2 : 1);
                 title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                item.addView(title);
+                FrameLayout summary = new FrameLayout(this);
+                summary.addView(title, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+                if (!location.isEmpty()) {
+                    TextView place = text(location, 13, false);
+                    place.setIncludeFontPadding(false); place.setSingleLine(true);
+                    place.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    place.setContentDescription("地点：" + location);
+                    summary.addView(place, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+                }
+                item.addView(summary, new LinearLayout.LayoutParams(-1, summaryHeight));
                 UiStyle.addSpaced(item, scheduleAttribute(entry.candidate != null && entry.candidate.isHomework()
                                 ? R.drawable.ic_homework : R.drawable.ic_schedule,
                         homeCardBoundary(entry.candidate, entry.systemEvent, false, true),
@@ -1768,7 +1767,6 @@ public final class DashboardActivity extends Activity {
     }
 
     private void inbox(TaskStore store) {
-        message(content, "所有输入与处理进度。点开一条，可确认、编辑或重试。");
         filterChips = filterDock(new String[]{"全部", "待确认", "处理中", "失败", "已写入"},
                 statusIndex, index -> {
                     if (statusIndex == index) return;
@@ -1784,7 +1782,7 @@ public final class DashboardActivity extends Activity {
         filters.addView(filterChips, new LinearLayout.LayoutParams(0, dp(48), 1));
         LinearLayout.LayoutParams category = new LinearLayout.LayoutParams(dp(48), dp(48));
         category.setMargins(dp(8), 0, 0, 0); filters.addView(inboxCategoryButton(), category);
-        UiStyle.addSpaced(content, filters, 12, 16);
+        UiStyle.addSpaced(content, filters, 4, 8);
         buildSelectionBar();
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
@@ -1956,7 +1954,7 @@ public final class DashboardActivity extends Activity {
         }
         heading.addView(selectionBar, new LinearLayout.LayoutParams(-2, height));
         // This height exists before selection too, so entering selection never moves the cards.
-        UiStyle.addSpaced(results, heading, 16, 9);
+        UiStyle.addSpaced(results, heading, 0, 4);
     }
 
     /** User-driven filter/order changes animate cards, while polling remains still. */
@@ -2007,7 +2005,7 @@ public final class DashboardActivity extends Activity {
         filterState.setTag("schedule_filter_summary");
         controls.addView(filterState, new LinearLayout.LayoutParams(-1, -2));
         controls.addView(bar, new LinearLayout.LayoutParams(-1, -2));
-        UiStyle.addSpaced(content, controls, 12, 16);
+        UiStyle.addSpaced(content, controls, 4, 8);
         scheduleControls = controls;
         buildSelectionBar();
         results = new LinearLayout(this);
@@ -2257,7 +2255,7 @@ public final class DashboardActivity extends Activity {
         }
         TextView heading = text(label, 15, true);
         heading.setTextColor(UiStyle.colors(this).primary);
-        UiStyle.addSpaced(results, heading, 14, 5);
+        UiStyle.addSpaced(results, heading, results.getChildCount() == 1 ? 4 : 12, 5);
     }
 
     private void schedulePageControls(int total) {
@@ -3192,7 +3190,11 @@ public final class DashboardActivity extends Activity {
         if (row == null) return;
         boolean selected = currentSelection().contains(taskId);
         row.marker.setVisibility(currentSelection().isEmpty() ? View.GONE : View.VISIBLE);
-        row.marker.setText(selected ? "✓" : "○");
+        row.marker.setText("");
+        android.graphics.drawable.Drawable marker = getDrawable(selected ? R.drawable.ic_check : R.drawable.ic_circle).mutate();
+        marker.setBounds(0, 0, dp(22), dp(22));
+        marker.setTint(selected ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
+        row.marker.setCompoundDrawables(marker, null, null, null);
         row.marker.setTextColor(selected ? UiStyle.colors(this).primary
                 : UiStyle.colors(this).muted);
         // Keep the acrylic card background; selection is already shown by the marker and toolbar.

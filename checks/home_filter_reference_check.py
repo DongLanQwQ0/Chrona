@@ -78,7 +78,7 @@ class DiagLog { static void add(Object context,String message) { } }
 class ChatCompletionClient {
     interface PreviewSink { void append(String s) throws IOException; void appendReasoning(String s) throws IOException; }
     static List<Long> anchors=new ArrayList<>();
-    ChatCompletionClient(AiSettings settings,RequestControl control) { }
+    ChatCompletionClient(AiSettings settings,RequestControl control,String system,int workStart,int workEnd) { }
     ParseResult parseImages(long id,String raw,List<byte[]> images,String links,String files,long now,String zone,
             BestEffortPreview preview,boolean stream) throws IOException {
         anchors.add(now);
@@ -103,11 +103,19 @@ class BestEffortPreview implements AutoCloseable {
 '''.replace("METHOD", method)
 check = out / "HomeFilterReferenceCheck.java"
 check.write_text(harness, encoding="utf-8")
+# Preferences are an Android storage boundary; retry timing uses the unchanged production method.
+preferences = out / "com/donglan/chrona/ai/SchedulePreferences.java"
+preferences.parent.mkdir(parents=True, exist_ok=True)
+preferences.write_text('''package com.donglan.chrona.ai; public class SchedulePreferences {
+    public int workStartMinutes=540,workEndMinutes=1020;
+    public static SchedulePreferences load(Object context){return new SchedulePreferences();}
+    public String systemPrompt(){return "fixture";}
+}''', encoding="utf-8")
 sources = [root / "app/src/main/java/com/donglan/chrona" / relative for relative in (
     "data/TaskRecord.java", "data/ScheduleFilterState.java", "data/ScheduleFilterSummary.java",
     "data/ScheduleRangeStep.java", "data/ScheduleQuery.java", "data/EventCategory.java", "net/RequestControl.java")]
 subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out),
-                *map(str, sources), str(check)]), check=True)
+                *map(str, sources), str(check), str(preferences)]), check=True)
 subprocess.run(recurrence_java([str(java / "java.exe"), "-cp", str(out), "HomeFilterReferenceCheck"]), check=True)
 subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-cp", str(out), "-d", str(out),
                 str(root / "app/src/main/java/com/donglan/chrona/CandidateFeedback.java"),

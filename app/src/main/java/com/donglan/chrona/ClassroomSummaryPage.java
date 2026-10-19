@@ -8,6 +8,7 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -33,7 +34,8 @@ final class ClassroomSummaryPage extends SchedulePage {
     private LinearLayout content, browseBody, listBody;
     private TextView status;
     private DockNavigationLayout navigation;
-    private Button refresh, cancel;
+    private ImageButton refresh;
+    private DateIntervalBar weekBar;
     private ScrollView scroll;
     private int shownMode = -1, listCount;
     private List<ClassroomLesson> shownCatalog;
@@ -108,59 +110,85 @@ final class ClassroomSummaryPage extends SchedulePage {
         }
         if (s != null) s.owner = new WeakReference<>(this);
         LinearLayout root = SettingsPageLayout.content(activity);
-        SettingsPageLayout.header(activity, root, "课堂总结");
+        root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(12));
+        navigation = new DockNavigationLayout(activity, this::selectMode, () -> { });
+        navigation.setPadding(dp(6), dp(6), dp(6), dp(6));
+        String[] modes = {"课表", "课堂", "历史"};
+        for (int i = 0; i < modes.length; i++) {
+            final int index = i;
+            TextView item = label(modes[i], 15); item.setGravity(Gravity.CENTER); UiStyle.title(item);
+            item.setOnClickListener(view -> { selectMode(index); navigation.finishPageSelection(index); });
+            navigation.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
+        }
+        refresh = WorkspacePageHeader.icon(activity, R.drawable.ic_refresh, "刷新课堂", () -> {
+            if (s != null) { if (s.busy) s.cancel(); else s.load(true); }
+        });
+        UiStyle.addSpaced(root, new WorkspacePageHeader(activity, navigation.motionHost(true), refresh), 0, 8);
+        weekBar = new DateIntervalBar(activity, () -> {
+            if (s != null) UiStyle.dateDialog(activity, "选择日期", s.week, value -> {
+                s.week = value.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)); update();
+            });
+        }, direction -> {
+            if (s == null) return false;
+            s.week = s.week.plusWeeks(direction); update(); return true;
+        });
         status = label("", 14); root.addView(status);
         content = new LinearLayout(activity); content.setOrientation(LinearLayout.VERTICAL); root.addView(content);
         scroll = SettingsPageLayout.viewport(activity, root, false); setContentView(scroll);
         update();
         if (s != null) scroll.post(() -> scroll.scrollTo(0, s.scrollY));
     }
+    private void selectMode(int index) {
+        if (s == null || s.mode == index) return;
+        s.mode = index; s.page = 50; update();
+    }
     private void checkAccount() {
-        if (s != null && !s.allowed()) { s.dispose(); s = null; navigation = null; }
+        if (s != null && !s.allowed()) { s.dispose(); s = null; browseBody = null; }
         if (s == null && settings.enabled() && settings.configured()) {
             s = new Session(getApplicationContext(), settings.account()); s.owner = new WeakReference<>(this);
-            navigation = null;
+            browseBody = null;
         }
         update(); if (active && s != null && !s.initialized && !s.busy) s.load(false);
     }
     private void update() {
         if (content == null) return;
         if (s == null || !s.allowed()) {
+            refresh.setEnabled(false);
             status.setVisibility(View.GONE);
             if (!gated) {
-                gated = true; navigation = null; content.removeAllViews();
+                gated = true; browseBody = null; content.removeAllViews();
                 button(content, "设置学校账号", () -> startActivity(new Intent(activity, ZjuSettingsActivity.class)));
             }
             return;
         }
         gated = false;
         status.setText(s.message); status.setVisibility(s.message.isEmpty() ? View.GONE : View.VISIBLE);
-        if (navigation == null) {
+        if (browseBody == null) {
             content.removeAllViews(); shownMode = -1;
-            navigation = new DockNavigationLayout(activity, index -> { s.mode = index; s.page = 50; update(); }, () -> { });
-            navigation.setPadding(dp(4), dp(3), dp(4), dp(3));
-            for (String tab : new String[]{"课表", "课堂", "历史"}) {
-                TextView item = label(tab, 15); item.setGravity(Gravity.CENTER); UiStyle.title(item);
-                navigation.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
-            }
-            content.addView(navigation.motionHost());
             browseBody = new LinearLayout(activity); browseBody.setOrientation(LinearLayout.VERTICAL); content.addView(browseBody);
-            refresh = button(content, "刷新课堂", () -> s.load(true));
-            cancel = button(content, "停止", () -> s.cancel());
         }
-        navigation.setSelectedIndex(s.mode);
-        refresh.setEnabled(!s.busy); cancel.setVisibility(s.busy ? View.VISIBLE : View.GONE);
+        navigation.finishPageSelection(s.mode);
+        refresh.setEnabled(true);
+        refresh.setImageResource(s.busy ? R.drawable.ic_x : R.drawable.ic_refresh);
+        refresh.setContentDescription(s.busy ? "停止刷新" : "刷新课堂");
+        refresh.setTooltipText(s.busy ? "停止刷新" : "刷新课堂");
         boolean changed = shownMode != s.mode || shownCatalog != s.catalog || shownHistory != s.history || !s.week.equals(shownWeek);
         if (changed) {
-            browseBody.removeAllViews(); listBody = null; listCount = 0;
+            boolean keepWeekBar = s.mode == 0 && weekBar.getParent() == browseBody;
+            if (keepWeekBar) {
+                while (browseBody.getChildCount() > 1) browseBody.removeViewAt(1);
+            } else {
+                if (weekBar.getParent() instanceof android.view.ViewGroup parent) parent.removeView(weekBar);
+                browseBody.removeAllViews();
+            }
+            listBody = null; listCount = 0;
             shownMode = s.mode; shownCatalog = s.catalog; shownHistory = s.history; shownWeek = s.week;
             if (s.mode == 0) {
-                button(browseBody, s.week.toString(), () -> UiStyle.dateDialog(activity, "选择日期", s.week, value -> {
-                    s.week = value.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)); update();
-                }));
-                LinearLayout row = new LinearLayout(activity);
-                action(row, "上一周", () -> { s.week = s.week.minusWeeks(1); update(); });
-                action(row, "下一周", () -> { s.week = s.week.plusWeeks(1); update(); }); browseBody.addView(row);
+                if (!keepWeekBar) {
+                    LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(-1, dp(48));
+                    dateParams.bottomMargin = dp(8); browseBody.addView(weekBar, dateParams);
+                }
+                weekBar.setText(s.week + " — " + s.week.plusDays(6));
                 browseBody.addView(new ClassroomLessonPickerView(activity, s.catalog, s.week, this::open));
             } else if (s.mode == 1) {
                 listBody = new LinearLayout(activity); listBody.setOrientation(LinearLayout.VERTICAL); browseBody.addView(listBody);
@@ -220,10 +248,6 @@ final class ClassroomSummaryPage extends SchedulePage {
     private Button button(LinearLayout parent, String title, Runnable action) {
         Button view = new Button(activity); view.setText(title); UiStyle.button(view, false);
         view.setOnClickListener(v -> action.run()); UiStyle.addSpaced(parent, view, 4, 6); return view;
-    }
-    private void action(LinearLayout parent, String title, Runnable action) {
-        Button view = new Button(activity); view.setText(title); UiStyle.button(view, false); view.setOnClickListener(v -> action.run());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1); params.setMargins(dp(2),dp(4),dp(2),dp(6)); parent.addView(view, params);
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 }

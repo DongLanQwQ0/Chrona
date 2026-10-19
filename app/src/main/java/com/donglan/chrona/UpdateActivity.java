@@ -26,13 +26,8 @@ public final class UpdateActivity extends Activity {
         super.onCreate(state);
         ScrollView page = new ScrollView(this);
         page.setVerticalScrollBarEnabled(false);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(24), dp(20), dp(24));
-        UiStyle.page(this, root);
-        root.setBackgroundColor(Color.TRANSPARENT);
-        UiStyle.back(this, root);
-        text(root, "版本更新", 28, true);
+        LinearLayout root = SettingsPageLayout.content(this);
+        SettingsPageLayout.header(this, root, "版本更新");
         text(root, "当前版本 " + ReleaseUpdates.installedVersion(this), 15, false);
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);

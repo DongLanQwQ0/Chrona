@@ -18,6 +18,11 @@ final class YearMonthGridView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final float density, scaledDensity, rowHeight;
     private LocalDate pressed, clicked;
+    static int minimumWidth(Context context) {
+        Paint measure = new Paint(Paint.ANTI_ALIAS_FLAG);
+        measure.setTextSize(12 * context.getResources().getDisplayMetrics().scaledDensity);
+        return (int)Math.ceil(7 * (measure.measureText("28") + 4 * context.getResources().getDisplayMetrics().density));
+    }
     YearMonthGridView(Context context, LocalDate month, LocalDate selected, CalendarDayCounts counts, Consumer<LocalDate> open) {
         super(context); this.month = month; this.selected = selected; this.counts = counts;
         first = month.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)); palette = UiStyle.colors(context);

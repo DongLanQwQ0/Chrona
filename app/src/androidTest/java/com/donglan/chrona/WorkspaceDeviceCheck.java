@@ -17,6 +17,49 @@ import java.util.function.BooleanSupplier;
 
 /** Native page gestures and week-edge behavior; no calendar writes or external service calls. */
 final class WorkspaceDeviceCheck {
+    static String toggleReentry(Instrumentation test) throws Exception {
+        if (!test.getTargetContext().getPackageName().equals("com.donglan.chrona.followup.validation"))
+            throw new IllegalStateException("Isolated followup package only");
+        ScheduleWorkspaceActivity activity=(ScheduleWorkspaceActivity)test.startActivitySync(new Intent(test.getTargetContext(),CalendarOverviewActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        CalendarVisibilityToggle[] toggle=new CalendarVisibilityToggle[1];
+        try {
+            test.runOnMainSync(()-> {
+                toggle[0]=new CalendarVisibilityToggle(activity);
+                ((ViewGroup)activity.getWindow().getDecorView()).addView(toggle[0],new ViewGroup.LayoutParams(120,120));
+                toggle[0].setOnCheckedChangeListener((button,enabled)->{if(enabled)button.setChecked(false);});
+                toggle[0].setChecked(true);
+            });
+            SystemClock.sleep(500);test.waitForIdleSync();
+            require(!toggle[0].isChecked()&&Math.abs(((Number)field(toggle[0],"checkedFraction")).floatValue())<.001f,"Native CompoundButton rejection settles off visually");
+            test.runOnMainSync(()->{toggle[0].setOnCheckedChangeListener(null);toggle[0].setChecked(true);});
+            SystemClock.sleep(500);test.waitForIdleSync();
+            require(toggle[0].isChecked()&&Math.abs(((Number)field(toggle[0],"checkedFraction")).floatValue()-1)<.001f,"Accepted native change still settles on");
+            return "PASS: native reentrant rejection and accepted state animation";
+        } finally {test.runOnMainSync(activity::finish);}
+    }
+    static String compactCalendar(Instrumentation test) throws Exception {
+        ScheduleWorkspaceActivity activity=(ScheduleWorkspaceActivity)test.startActivitySync(new Intent(test.getTargetContext(),CalendarOverviewActivity.class).putExtra("open_week",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try {
+            waitFor(test,()->activity.currentPage() instanceof CalendarOverviewPage,"calendar page");
+            CalendarOverviewPage calendar=(CalendarOverviewPage)activity.currentPage();
+            DockNavigationLayout tabs=(DockNavigationLayout)field(calendar,"tabs");
+            test.runOnMainSync(()->tabs.itemAt(2).performClick());
+            waitFor(test,()->tabs.getWidth()>0,"calendar tabs layout");
+            checkActions(test,calendar); checkDates(test,calendar);
+            capture(test,"compact-calendar");
+            CompactUiDeviceCheck.dockMotion(test,tabs,"compact-calendar-tabs");
+            test.runOnMainSync(()->tabs.itemAt(0).performClick());
+            waitFor(test,()->yearGridsFit(activity.getWindow().getDecorView())==12,"12 readable year grids");
+            capture(test,"compact-calendar-year");
+            return "PASS: full-width tabs, capsule collapse/reversal, calendar toggle and dates";
+        } finally {test.runOnMainSync(activity::finish);}
+    }
+    private static int yearGridsFit(View view) {
+        if(view instanceof YearMonthGridView) return view.getWidth() >= YearMonthGridView.minimumWidth(view.getContext()) ? 1 : 0;
+        int count=0;
+        if(view instanceof ViewGroup group) for(int i=0;i<group.getChildCount();i++) count+=yearGridsFit(group.getChildAt(i));
+        return count;
+    }
     static String dateClipping(Instrumentation test)throws Exception {
         ScheduleWorkspaceActivity activity=(ScheduleWorkspaceActivity)test.startActivitySync(new Intent(test.getTargetContext(),CalendarOverviewActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         try {waitFor(test,()->activity.currentPage() instanceof CalendarOverviewPage,"calendar page");checkDates(test,(CalendarOverviewPage)activity.currentPage());checkFilter(test,activity);return "PASS: calendar/filter text clips and outer press envelopes";}
@@ -169,16 +212,20 @@ final class WorkspaceDeviceCheck {
     private static void checkActions(Instrumentation test, CalendarOverviewPage calendar) throws Exception {
         View slot=(View)field(calendar,"weekExportSlot");
         ViewGroup group=(ViewGroup)slot.getParent();
-        View add=group.getChildAt(1);
+        View add=group.getChildAt(group.getChildCount()-1);
+        View source=(View)field(calendar,"sourceSwitch");
+        require(source instanceof CalendarVisibilityToggle && source.getParent()==group
+                && group instanceof HeaderActionGroup,"system calendar toggle shares header capsule");
         DockNavigationLayout tabs=(DockNavigationLayout)field(calendar,"tabs");
-        int expanded=dp(slot,49), addWidth=dp(slot,44);
-        waitFor(test, () -> slot.getWidth()==expanded && group.getWidth()==expanded+addWidth, "week export plus add expanded width");
+        int expanded=dp(slot,49), addWidth=dp(slot,44), systemWidth=dp(slot,44)+dp(slot,1);
+        require(tabs.getWidth()==((View)tabs.getParent()).getWidth(),"calendar tabs fill content width");
+        waitFor(test, () -> slot.getWidth()==expanded && group.getWidth()==systemWidth+expanded+addWidth, "week three-action capsule expanded width");
         test.runOnMainSync(() -> tabs.itemAt(1).performClick());
         waitFor(test, () -> slot.getVisibility()==View.GONE && slot.getLayoutParams().width==0
-                && group.getWidth()==addWidth && add.getWidth()==addWidth, "month hides export and collapses group");
+                && group.getWidth()==systemWidth+addWidth && add.getWidth()==addWidth, "month hides export and collapses group");
         test.runOnMainSync(() -> { tabs.itemAt(2).performClick(); tabs.itemAt(3).performClick(); tabs.itemAt(2).performClick(); });
         waitFor(test, () -> slot.getVisibility()==View.VISIBLE && slot.getWidth()==expanded
-                && group.getWidth()==expanded+addWidth && add.getWidth()==addWidth, "rapid mode reversal restores week group");
+                && group.getWidth()==systemWidth+expanded+addWidth && add.getWidth()==addWidth, "rapid mode reversal restores week group");
     }
     private static void checkFilter(Instrumentation test, ScheduleWorkspaceActivity activity) throws Exception {
         ScheduleFilterState original=new ScheduleFilterState(ScheduleFilterState.DATE,0,0,0,3,

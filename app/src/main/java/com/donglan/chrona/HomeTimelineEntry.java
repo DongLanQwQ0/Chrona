@@ -36,6 +36,11 @@ final class HomeTimelineEntry {
         return candidate != null ? candidate.title : systemEvent.title;
     }
 
+    String location() {
+        String value = candidate != null ? candidate.location : systemEvent.location;
+        return value == null ? "" : value.trim();
+    }
+
     static boolean deadlineOnly(EventCandidate candidate) {
         return candidate.isHomework() && candidate.startAtMillis == null && candidate.dueAtMillis != null;
     }

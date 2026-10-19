@@ -36,6 +36,29 @@ import java.util.WeakHashMap;
 
 /** Semantic colors, shapes and motion for the native View interface. */
 public final class UiStyle {
+    public static final int PAGE_TOP_DP = 8;
+    public static final int HEADER_HEIGHT_DP = 64;
+
+    /** 48dp controls share a centerline 40dp below the system safe area's top. */
+    public static LinearLayout headerRow(Activity activity) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(row, HEADER_HEIGHT_DP));
+        row.setClipChildren(false); row.setClipToPadding(false);
+        return row;
+    }
+
+    public static ImageButton navigationIcon(Activity activity, int resource, String label, Runnable action) {
+        ImageButton button = new ImageButton(activity);
+        button.setImageResource(resource);
+        button.setImageTintList(ColorStateList.valueOf(colors(activity).primary));
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        button.setPadding(dp(button, 12), dp(button, 12), dp(button, 12), dp(button, 12));
+        button.setContentDescription(label); button.setTooltipText(label);
+        acrylicChoice(button, false, 999, false);
+        button.setOnClickListener(view -> action.run()); pressable(button);
+        return button;
+    }
     private static final long DIALOG_BACKGROUND_SCALE_IN_DURATION_MS = 180L * 2L;
     private static final WeakHashMap<Activity, DialogScaleState> DIALOG_SCALES = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> DIALOG_ACRYLIC_ROOTS = new WeakHashMap<>();
@@ -873,8 +896,11 @@ public final class UiStyle {
     }
 
     /** The single marker used by every list of choices: a trailing check on the selected row. */
-    static String marked(String label, boolean selected) {
-        return selected ? label + "   ✓" : label;
+    static void marked(TextView label, boolean selected) {
+        Drawable check = selected ? label.getContext().getDrawable(R.drawable.ic_check).mutate() : null;
+        if (check != null) { check.setTint(label.getCurrentTextColor()); check.setBounds(0, 0, dp(label, 20), dp(label, 20)); }
+        label.setCompoundDrawablesRelative(null, null, check, null);
+        label.setCompoundDrawablePadding(dp(label, 8));
     }
 
     static void enter(View view, int index) {
@@ -1089,36 +1115,6 @@ public final class UiStyle {
         parent.addView(view, params);
     }
 
-    public static void back(Activity activity, LinearLayout parent) {
-        TextView back = new TextView(activity);
-        back.setText("←");
-        back.setTextSize(24);
-        back.setTextColor(colors(activity).primary);
-        back.setTypeface(null, Typeface.BOLD);
-        back.setGravity(Gravity.CENTER);
-        back.setContentDescription("返回");
-        glass(back);
-        pressable(back);
-        back.setOnClickListener(view -> activity.finish());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(back, 48), dp(back, 48));
-        params.setMargins(0, 0, 0, dp(back, 8));
-        parent.addView(back, params);
-    }
-
-    /** Same affordance with a different destination, for a screen that is also an app entry point. */
-    public static void backTo(Activity activity, LinearLayout parent, String label, Runnable action) {
-        TextView back = new TextView(activity);
-        back.setText(label);
-        back.setTextSize(15);
-        back.setTextColor(colors(activity).primary);
-        back.setTypeface(null, Typeface.BOLD);
-        back.setGravity(Gravity.CENTER_VERTICAL);
-        back.setMinimumHeight(dp(back, 48));
-        back.setContentDescription(label.replace("←", "").trim());
-        back.setOnClickListener(view -> action.run());
-        addSpaced(parent, back, 0, 8);
-    }
-
     /** A themed, scrollable choice sheet shared by settings and filters. */
     public static void choiceDialog(Activity activity, String title, String[] options,
             int selected, IntConsumer onChoice) {
@@ -1139,7 +1135,7 @@ public final class UiStyle {
         for (int i = 0; i < options.length; i++) {
             final int index = i;
             TextView item = new TextView(activity);
-            item.setText(marked(options[i], i == selected));
+            item.setText(options[i]);
             item.setTextSize(16);
             // A short list of short labels reads better as a centred column than as rows of text
             // pinned to the left edge of a full-width sheet.
@@ -1148,6 +1144,7 @@ public final class UiStyle {
             item.setPadding(dp(item, 14), 0, dp(item, 14), 0);
             item.setTextColor(i == selected ? colors(activity).onPrimaryContainer
                     : colors(activity).text);
+            marked(item, i == selected);
             choice(item, i == selected, RADIUS_FIELD);
             item.setOnClickListener(view -> {
                 dialog.dismiss();

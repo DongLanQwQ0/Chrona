@@ -5,7 +5,7 @@
 - [使用指南](user-guide.md)：下载安装、操作和常见问题。
 - [项目基本要求](project-requirements.md)：数据、工程、权限、验证与文档职责。
 - [开发指南](development.md)：技术基线、本机构建和代码入口。
-- [UI 设计规范](ui-style-contract.md)：全局视觉、布局与交互原则。
+- [UI 设计规范](ui-style-contract.md)：任何 UI 操作前必读；全局视觉、布局、公共组件与验收约束。
 - [已确认交互基线](ui-interaction-baseline.md)：保留具体用户决定，不与通用设计原则混写。
 
 ## 按功能开发

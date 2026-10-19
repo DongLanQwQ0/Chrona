@@ -21,11 +21,11 @@ class InsetDrawable extends Drawable {Drawable drawable;int inset;InsetDrawable(
 class RippleDrawable extends Drawable {Drawable mask;RippleDrawable(ColorStateList tint,Drawable content,Drawable mask){this.mask=mask;}}
 class Paint {static final int ANTI_ALIAS_FLAG=1;int color;Paint(int flags){}void setColor(int value){color=value;}}
 class Canvas {float x,y,radius;int color;void drawCircle(float x,float y,float radius,Paint paint){this.x=x;this.y=y;this.radius=radius;color=paint.color;}}
-class CheckBox {Context context;boolean checked,attached=true;Drawable foreground;int invalidations,changes,width=48,height=48;
+class CheckBox {Context context;boolean checked,attached=true,broadcasting;java.util.function.Consumer<Boolean> listener;Drawable foreground;int invalidations,changes,width=48,height=48;
  CheckBox(Context context){this.context=context;}Context getContext(){return context;}Resources getResources(){return new Resources();}
  int getWidth(){return width;}int getHeight(){return height;}void setButtonDrawable(Drawable drawable){}void setBackgroundColor(int color){}
  void setForeground(Drawable drawable){foreground=drawable;}boolean isChecked(){return checked;}
- void setChecked(boolean value){if(value!=checked){checked=value;changes++;}}boolean isAttachedToWindow(){return attached;}
+ void setChecked(boolean value){if(value!=checked){checked=value;changes++;if(!broadcasting&&listener!=null){broadcasting=true;try{listener.accept(value);}finally{broadcasting=false;}}}}boolean isAttachedToWindow(){return attached;}
  void invalidate(){invalidations++;}protected void onDraw(Canvas canvas){}protected void onDetachedFromWindow(){attached=false;}}
 class UiStyle {static class Palette {int primary=0xff44aaee,muted=0xff667788;}static Palette colors(Context context){return new Palette();}static void pressable(CheckBox view){}}
 class UiMotion {static long ENTER=240;static boolean enabled=true;static Object SETTLE=new Object();static boolean isEnabled(){return enabled;}}
@@ -71,6 +71,13 @@ public class CalendarVisibilityToggleCheck {
   UiMotion.enabled=false;starts=ValueAnimator.starts;view.setChecked(false);near(fraction(view),0,"Disabled animation switches off immediately");view.setChecked(true);near(fraction(view),1,"Disabled animation switches on immediately");check(ValueAnimator.starts==starts,"Disabled animation creates no running transition");
   UiMotion.enabled=true;view.setChecked(false);ValueAnimator detach=ValueAnimator.last;detach.advance(.25f);view.onDetachedFromWindow();check(detach.cancelled,"Detach cancels transition");near(fraction(view),0,"Detach settles actual native off state");
   starts=ValueAnimator.starts;view.setChecked(true);near(fraction(view),1,"Detached toggle initializes checked appearance immediately");check(ValueAnimator.starts==starts,"Detached initialization does not animate");
+  CalendarVisibilityToggle rejected=new CalendarVisibilityToggle(new Context());
+  rejected.listener=enabled->{if(enabled)rejected.setChecked(false);};
+  rejected.setChecked(true);ValueAnimator.last.advance(1);
+  check(!rejected.isChecked(),"Permission rejection restores native off state");
+  near(fraction(rejected),0,"Reentrant rejection animates toward final native state");
+  rejected.attached=false;rejected.setChecked(true);
+  near(fraction(rejected),0,"Detached reentrant rejection also retains off appearance");
   System.out.println("Calendar visibility toggle checks passed: "+checks+" (production view with animator/drawing transport; not Android rendering)");
  }
 }

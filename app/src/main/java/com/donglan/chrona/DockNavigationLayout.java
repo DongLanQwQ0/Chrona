@@ -46,6 +46,8 @@ final class DockNavigationLayout extends FrameLayout {
     private int selectedIndex, tapIndex;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private boolean fullWidthMotion;
+    private boolean reserveFullWidthMotionSpace;
+    private int motionInset;
     private final Runnable finishTouch = this::finishTouch;
 
     private void finishTouch() {
@@ -98,7 +100,12 @@ final class DockNavigationLayout extends FrameLayout {
     }
     /** Fill the content width without altering the highlight's motion or overflow geometry. */
     FrameLayout fullWidthMotionHost() {
+        return fullWidthMotionHost(false);
+    }
+    /** Keep the plate full width and reserve the rail's animated envelope inside it. */
+    FrameLayout fullWidthMotionHost(boolean reserveMotionSpace) {
         fullWidthMotion = true;
+        reserveFullWidthMotionSpace = reserveMotionSpace;
         return motionHostLayout(true, true);
     }
     private FrameLayout motionHostLayout(boolean overlapRows, boolean fullWidth) {
@@ -118,7 +125,12 @@ final class DockNavigationLayout extends FrameLayout {
                 float ratio = (plate - 1f) / 2f + DockSpring.MAX_OUTWARD_WIDTH * plate * widest;
                 int clearance = (int)Math.ceil(2f * getResources().getDisplayMetrics().density);
                 int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance + Math.round(dp(PLATE_LEAN_DP));
-                if (fullWidth) edge = 0;
+                if (fullWidth) {
+                    motionInset = reserveFullWidthMotionSpace ? edge : 0;
+                    FrameLayout.LayoutParams cells = (FrameLayout.LayoutParams)items.getLayoutParams();
+                    cells.leftMargin = cells.rightMargin = motionInset;
+                    edge = 0;
+                }
                 if (getPaddingLeft() != edge || getPaddingRight() != edge)
                     setPadding(edge, getPaddingTop(), edge, getPaddingBottom());
                 super.onMeasure(widthSpec, heightSpec);
@@ -354,19 +366,19 @@ final class DockNavigationLayout extends FrameLayout {
     private void updateHighlight() {
         View cell = itemAt(selectedIndex);
         if (cell != null) {
-            float x = centerAt(visualPosition);
+            float x = centerAt(visualPosition) - motionInset;
             float standardWidth = extentAt(visualPosition);
             float emphasis = spring.scale;
             // The leading end follows the finger, while the tail catches up. Limit the
             // extra length in physical pixels so unequal labels cannot produce a ribbon.
-            float lag = x - centerAt(spring.tailPosition);
+            float lag = x - (centerAt(spring.tailPosition) - motionInset);
             float heldAmount = Math.max(0f, Math.min(1f, (emphasis - DockSpring.TAP_SCALE) / (1.5f - DockSpring.TAP_SCALE)));
             float tailExtension = .12f + (MAX_TAIL_EXTENSION - .12f) * heldAmount;
             float stretch = Math.copySign(DockSpring.outwardExtension(Math.abs(lag), standardWidth * tailExtension), lag);
             x -= stretch / 2f;
             float width = standardWidth * emphasis + Math.abs(stretch);
             float height = (vertical() ? cell.getWidth() : cell.getHeight()) * emphasis * spring.trackingHeight;
-            float board = vertical() ? getHeight() : getWidth();
+            float board = (vertical() ? getHeight() : getWidth()) - 2 * motionInset;
             float left = x - width / 2f;
             float cross = vertical() ? items.getLeft() + (cell.getLeft() + cell.getRight()) / 2f
                     : items.getTop() + (cell.getTop() + cell.getBottom()) / 2f;
@@ -378,6 +390,8 @@ final class DockNavigationLayout extends FrameLayout {
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
             if (left < 0) left = -DockSpring.outwardExtension(-left, maximum);
             if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
+            left += motionInset;
+            right += motionInset;
             int baseWidth = Math.max(1, cell.getWidth()), baseHeight = Math.max(1, cell.getHeight());
             android.view.ViewGroup.LayoutParams layout = highlightView.getLayoutParams();
             if (layout.width != baseWidth || layout.height != baseHeight)

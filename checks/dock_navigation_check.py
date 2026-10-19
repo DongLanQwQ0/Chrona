@@ -92,7 +92,7 @@ import java.util.*; public class ViewGroup extends View {
  protected final List<View> children=new ArrayList<>(); private View target;
  public boolean disallowed,clipChildren=true,clipPadding=true;
  public ViewGroup(android.content.Context c){super(c);}
- public static class LayoutParams {public int width,height;public LayoutParams(int w,int h){width=w;height=h;}public LayoutParams(int w,int h,int gravity){this(w,h);}public void setMargins(int a,int b,int c,int d){}}
+ public static class LayoutParams {public int width,height,leftMargin,rightMargin;public LayoutParams(int w,int h){width=w;height=h;}public LayoutParams(int w,int h,int gravity){this(w,h);}public void setMargins(int a,int b,int c,int d){leftMargin=a;rightMargin=c;}}
  public void addView(View view,LayoutParams params){view.setLayoutParams(params);addView(view);}
  protected void onLayout(boolean changed,int l,int t,int r,int b){}
  public void setClipChildren(boolean value){clipChildren=value;}public void setClipToPadding(boolean value){clipPadding=value;}
@@ -117,6 +117,7 @@ import java.util.*; public class ViewGroup extends View {
     "android/widget/FrameLayout.java": "package android.widget; public class FrameLayout extends android.view.ViewGroup { public FrameLayout(android.content.Context c){super(c);} protected void onLayout(boolean changed,int l,int t,int r,int b){for(android.view.View child:children){var p=child.getLayoutParams();int w=p.width<0?getWidth()-pl-pr:p.width,h=p.height<0?getHeight()-pt-pb:p.height;child.layout(pl,pt,pl+w,pt+h);}} }",
     "android/widget/HorizontalScrollView.java": """package android.widget; public class HorizontalScrollView extends FrameLayout {
  public static final int OVER_SCROLL_NEVER=2;private int scrollX;
+ public boolean canScrollHorizontally(int direction){return getChildCount()>0&&(direction<0?scrollX>0:scrollX<getChildAt(0).getWidth()-getWidth());}
  public HorizontalScrollView(android.content.Context c){super(c);}public void setHorizontalScrollBarEnabled(boolean value){}public void setFillViewport(boolean value){}public void setOverScrollMode(int value){}
  @Override public int getScrollX(){return scrollX;}public void scrollTo(int x,int y){scrollX=x;}
  @Override public boolean onTouchEvent(android.view.MotionEvent event){return true;}

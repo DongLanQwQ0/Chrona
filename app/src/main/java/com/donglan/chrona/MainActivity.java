@@ -88,18 +88,17 @@ public final class MainActivity extends Activity {
         page.setFillViewport(true);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(28), dp(20), dp(12));
+        root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(12));
         root.setFitsSystemWindows(true);
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
         // Header bar: back on the left, the confirm tick on the right, matching the detail page.
-        LinearLayout topBar = new LinearLayout(this);
-        topBar.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        topBar.addView(headerButton("←", 24, "返回", this::requestExit),
+        LinearLayout topBar = UiStyle.headerRow(this);
+        topBar.addView(UiStyle.navigationIcon(this, R.drawable.ic_arrow_left, "返回", this::requestExit),
                 new LinearLayout.LayoutParams(dp(48), dp(48)));
         topBar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
-        topBar.addView(headerButton("✓", 20, "保存并解析", this::submit),
+        topBar.addView(UiStyle.navigationIcon(this, R.drawable.ic_check, "保存并解析", this::submit),
                 new LinearLayout.LayoutParams(dp(48), dp(48)));
         UiStyle.addSpaced(root, topBar, 0, 6);
 
@@ -119,12 +118,6 @@ public final class MainActivity extends Activity {
                 view -> pickFile()));
         UiStyle.addSpaced(root, titleRow, 0, 4);
 
-        TextView hint = new TextView(this);
-        hint.setText("文字或图片都可以。保存后自动解析，你可以继续记录下一件事。");
-        hint.setPadding(0, dp(6), 0, dp(12));
-        UiStyle.muted(hint);
-        root.addView(hint);
-
         input = new EditText(this);
         input.setHint("粘贴消息、链接或描述一件事…");
         input.setMinLines(4);
@@ -142,10 +135,6 @@ public final class MainActivity extends Activity {
         pendingFilesContainer.setOrientation(LinearLayout.VERTICAL);
         root.addView(pendingFilesContainer);
 
-        TextView footnote = new TextView(this);
-        footnote.setText("保存后可在「收件箱」查看处理进度，在「日程」查看已识别的事项。");
-        UiStyle.muted(footnote);
-        UiStyle.addSpaced(root, footnote, 12, 8);
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
@@ -819,21 +808,6 @@ public final class MainActivity extends Activity {
     }
 
     /** Glass square affordance shared by the page header: the back arrow and the confirm tick. */
-    private TextView headerButton(String glyph, int textSize, String description,
-            Runnable action) {
-        TextView button = new TextView(this);
-        button.setText(glyph);
-        button.setTextSize(textSize);
-        button.setTypeface(null, android.graphics.Typeface.BOLD);
-        button.setTextColor(UiStyle.colors(this).primary);
-        button.setGravity(android.view.Gravity.CENTER);
-        button.setContentDescription(description);
-        UiStyle.glass(button);
-        UiStyle.pressable(button);
-        button.setOnClickListener(view -> action.run());
-        return button;
-    }
-
     /** Compact icon affordance for the quick inputs, in the same style as the header buttons. */
     private ImageButton iconTool(int drawable, String description,
             android.view.View.OnClickListener action) {

@@ -40,7 +40,8 @@ final class CalendarVisibilityToggle extends CheckBox {
         super.setChecked(checked);
         if (!changed) return;
         if (transition != null) transition.cancel();
-        float target = checked ? 1f : 0f;
+        // A permission listener can synchronously reject the requested state.
+        float target = isChecked() ? 1f : 0f;
         if (!isAttachedToWindow() || !UiMotion.isEnabled()) {
             checkedFraction = target;
             invalidate();

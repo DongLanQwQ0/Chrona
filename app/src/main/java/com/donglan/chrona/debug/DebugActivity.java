@@ -54,12 +54,7 @@ public final class DebugActivity extends Activity {
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         page = new ScrollView(this);
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(24), dp(20), dp(32));
-        UiStyle.page(this, root);
-        root.setBackgroundColor(Color.TRANSPARENT);
-        root.setFitsSystemWindows(false);
+        root = com.donglan.chrona.SettingsPageLayout.content(this);
         page.addView(root);
         stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
         UiStyle.applyInsets(stage, page);
@@ -78,12 +73,7 @@ public final class DebugActivity extends Activity {
     }
 
     private void buildShell() {
-        UiStyle.back(this, root);
-        TextView title = new TextView(this);
-        title.setText("诊断信息");
-        title.setTextSize(28);
-        UiStyle.title(title);
-        root.addView(title);
+        com.donglan.chrona.SettingsPageLayout.header(this, root, "诊断信息");
         TextView description = new TextView(this);
         description.setText("设备状态与处理日志。复制后可整段发出去排查问题。");
         description.setTextSize(14);

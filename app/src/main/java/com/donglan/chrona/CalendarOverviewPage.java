@@ -123,7 +123,7 @@ final class CalendarOverviewPage extends SchedulePage {
     private boolean exportingWeek;
     private float weekZoom = 1f;
     private String weekExportName;
-    private android.widget.Switch sourceSwitch;
+    private CalendarVisibilityToggle sourceSwitch;
     private View timeLines;
     private android.app.Dialog allDayDialog;
     private boolean resumed;
@@ -164,15 +164,31 @@ final class CalendarOverviewPage extends SchedulePage {
             if (keys != null && xs != null && ys != null && keys.length == xs.length && keys.length == ys.length)
                 for (int i = 0; i < Math.min(12, keys.length); i++) positions.put(keys[i], new int[]{xs[i], ys[i]});
         }
-        root = column(); root.setPadding(dp(20), dp(12), dp(20), 0); UiStyle.page(activity, root);
+        root = column(); root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), 0); UiStyle.page(activity, root);
         root.setClipChildren(false); root.setClipToPadding(false);
         root.setFitsSystemWindows(false); root.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout header = row();
-        header.addView(icon(R.drawable.ic_arrow_left, "返回", this::finish), size(44, 44));
+        LinearLayout header = UiStyle.headerRow(activity);
+        header.addView(UiStyle.navigationIcon(activity, R.drawable.ic_arrow_left, "返回", this::finish), size(48, 48));
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(44), 1);
         searchParams.setMargins(dp(8), 0, dp(8), 0); header.addView(searchField(), searchParams);
-        LinearLayout controls = row();
-        UiStyle.acrylicChoice(controls, false, UiStyle.RADIUS_PILL, false);
+        HeaderActionGroup controls = new HeaderActionGroup(activity, 44);
+        sourceSwitch = new CalendarVisibilityToggle(this);
+        sourceSwitch.setContentDescription("包含系统日程");
+        sourceSwitch.setChecked(includeSystem);
+        describeSystemToggle();
+        sourceSwitch.setOnCheckedChangeListener((button, enabled) -> {
+            describeSystemToggle();
+            if (enabled == includeSystem) return;
+            if (enabled && !new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()) {
+                sourceSwitch.setChecked(false);
+                describeSystemToggle();
+                requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR}, 810); return;
+            }
+            includeSystem = enabled; CalendarSourcePreferences.setIncludesSystem(this, enabled); load();
+        });
+        controls.addAction(sourceSwitch, 44);
+        View sourceDivider = new View(activity); sourceDivider.setBackgroundColor(UiStyle.colors(this).outline);
+        controls.addView(sourceDivider, size(1, 16));
         weekExportSlot = row();
         weekExportButton = icon(R.drawable.ic_week_export, "导出周日程为图片", this::exportWeek);
         weekExportButton.setBackgroundColor(Color.TRANSPARENT);
@@ -185,6 +201,7 @@ final class CalendarOverviewPage extends SchedulePage {
         controls.addView(weekExportSlot, size(weekActionShown ? 49 : 0, 44));
         ImageButton create = icon(R.drawable.ic_add, "记录新日程", () -> startActivity(new Intent(this, MainActivity.class)));
         create.setBackgroundColor(Color.TRANSPARENT); controls.addView(create, size(44, 44));
+        controls.finish();
         header.addView(controls, new LinearLayout.LayoutParams(-2, dp(44)));
         root.addView(header);
         LinearLayout navigation = row();
@@ -192,7 +209,7 @@ final class CalendarOverviewPage extends SchedulePage {
         navigation.addView(dateTitle, new LinearLayout.LayoutParams(0, dp(48), 1));
         TextView today = action("今天", () -> navigateDate(LocalDate.now()));
         LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(-2, dp(44));todayParams.leftMargin=dp(8);
-        navigation.addView(today, todayParams); UiStyle.addSpaced(root,navigation,16,8);
+        navigation.addView(today, todayParams); UiStyle.addSpaced(root,navigation,12,8);
         tabs = new DockNavigationLayout(this, this::changeMode, () -> { });
         tabs.setPadding(dp(3), dp(3), dp(3), dp(3));
         String[] labels = {"年", "月", "周", "日", "日程"};
@@ -206,20 +223,8 @@ final class CalendarOverviewPage extends SchedulePage {
         updateTabSemantics();
         // Leave room for a held edge highlight and the plate's scale, on narrow windows too.
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(-1, -2);
-        tabParams.gravity = Gravity.CENTER_HORIZONTAL; tabParams.topMargin = dp(4); tabParams.bottomMargin = dp(10);
-        root.addView(tabs.motionHost(), tabParams);
-        sourceSwitch = new android.widget.Switch(this);
-        sourceSwitch.setText("包含系统日程"); sourceSwitch.setTextSize(14); sourceSwitch.setChecked(includeSystem);
-        sourceSwitch.setPadding(dp(6), 0, dp(6), 0); sourceSwitch.setSwitchPadding(dp(12)); UiStyle.toggle(sourceSwitch);
-        sourceSwitch.setOnCheckedChangeListener((button, enabled) -> {
-            if (enabled == includeSystem) return;
-            if (enabled && !new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()) {
-                sourceSwitch.setChecked(false);
-                requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR}, 810); return;
-            }
-            includeSystem = enabled; CalendarSourcePreferences.setIncludesSystem(this, enabled); load();
-        });
-        UiStyle.addSpaced(root, sourceSwitch, 0, 6);
+        tabParams.gravity = Gravity.CENTER_HORIZONTAL; tabParams.bottomMargin = dp(8);
+        root.addView(tabs.fullWidthMotionHost(true), tabParams);
         bodyStage = new FrameLayout(activity);
         body = createCalendarBody();
         bodyViewport = new FrameLayout(activity);
@@ -230,6 +235,12 @@ final class CalendarOverviewPage extends SchedulePage {
         FrameLayout stage = new FrameLayout(activity);
 
         stage.addView(root, new FrameLayout.LayoutParams(-1, -1));  setContentView(stage);
+    }
+
+    private void describeSystemToggle() {
+        String state = sourceSwitch.isChecked() ? "已开启" : "已关闭";
+        sourceSwitch.setTooltipText("包含系统日程：" + state);
+        if (android.os.Build.VERSION.SDK_INT >= 30) sourceSwitch.setStateDescription(state);
     }
 
     private FrameLayout createCalendarBody() {
@@ -763,17 +774,20 @@ final class CalendarOverviewPage extends SchedulePage {
         if (snapshot.systemUnavailable) notice(content, "系统日程暂时无法读取");
         if (snapshot.truncated) notice(content, "日程数量较多，请缩小日期范围");
         if (mode == YEAR) {
-            for (int pair = 0; pair < 6; pair++) {
-                final int monthPair = pair;
+            int available = (body.getWidth() > 0 ? body.getWidth()
+                    : getResources().getDisplayMetrics().widthPixels - dp(40)) - 2 * edge;
+            int columns = available >= 2 * (YearMonthGridView.minimumWidth(this) + dp(16)) + dp(8) ? 2 : 1;
+            for (int start = 1; start <= 12; start += columns) {
+                final int firstMonth = start;
                 final int year = date.getYear();
                 enqueueCalendarBuild(() -> {
                 LinearLayout months = row(); months.setGravity(Gravity.TOP);
-                for (int offset = 0; offset < 2; offset++) {
-                    LocalDate month = LocalDate.of(year, monthPair * 2 + offset + 1, 1);
+                for (int offset = 0; offset < columns; offset++) {
+                    LocalDate month = LocalDate.of(year, firstMonth + offset, 1);
                     LinearLayout tile = column(); tile.setPadding(dp(8), dp(10), dp(8), dp(10)); calendarSurface(tile, false, UiStyle.RADIUS_PANEL, true);
                     TextView label = text(month.getMonthValue() + "月", 17, true); label.setTextColor(UiStyle.colors(this).primary); tile.addView(label);
                     tile.addView(new YearMonthGridView(this, month, date, dayCounts, day -> { date = day; changeMode(MONTH); }));
-                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1); params.setMargins(0, 0, offset == 0 ? dp(8) : 0, 0);
+                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1); params.setMargins(0, 0, offset < columns - 1 ? dp(8) : 0, 0);
                     months.addView(tile, params);
                 }
                 UiStyle.addSpaced(content, months, 0, 8);

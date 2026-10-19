@@ -74,7 +74,8 @@ final class TimetablePage extends SchedulePage {
     private Session session;
     private LinearLayout shell;
     private FrameLayout body;
-    private Button importButton;
+    private ImageButton refreshButton;
+    private DockNavigationLayout sourceDock;
     private ScrollView vertical;
     private HorizontalScrollView horizontal;
     private LinearLayout courseContent;
@@ -83,7 +84,6 @@ final class TimetablePage extends SchedulePage {
     private Dialog floating, nested;
     private boolean resumed;
     private int gridWidth;
-    private LinearLayout sourceRow;
     private final Runnable schoolWatch = new Runnable() {
         @Override public void run() {
             if (!resumed) return;
@@ -105,32 +105,22 @@ final class TimetablePage extends SchedulePage {
 
         shell = new LinearLayout(activity);
         shell.setOrientation(LinearLayout.VERTICAL);
-        shell.setPadding(dp(20), dp(16), dp(20), dp(12));
+        shell.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(12));
         UiStyle.page(activity, shell);
         shell.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout header = new LinearLayout(activity);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        ImageButton back = new ImageButton(activity);
-        back.setImageResource(R.drawable.ic_arrow_left);
-        back.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
-        back.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        back.setContentDescription("返回");
-        UiStyle.acrylicChoice(back, false, UiStyle.RADIUS_PILL, false);
-        back.setPadding(dp(12), dp(12), dp(12), dp(12));
-        UiStyle.pressable(back);
-        back.setOnClickListener(view -> finish());
-        header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        TextView title = label("课表", 26, true);
-        title.setPadding(dp(12), 0, dp(8), 0);
-        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        importButton = new Button(activity);
-        importButton.setText("导入 ICS");
-        UiStyle.button(importButton, false);
-        importButton.setOnClickListener(view -> pickIcs());
-        header.addView(importButton, new LinearLayout.LayoutParams(-2, dp(48)));
-        UiStyle.addSpaced(shell, header, 0, 16);
-        sourceRow = new LinearLayout(activity);
-        UiStyle.addSpaced(shell, sourceRow, 0, 8);
+        sourceDock = new DockNavigationLayout(this, this::selectSource, () -> { });
+        sourceDock.setPadding(dp(6), dp(6), dp(6), dp(6));
+        String[] sourceNames = {"浙大", "导入"};
+        for (int i = 0; i < sourceNames.length; i++) {
+            final int index = i;
+            TextView item = label(sourceNames[i], 15, true);
+            item.setGravity(Gravity.CENTER); item.setPadding(dp(4), 0, dp(4), 0);
+            item.setContentDescription(i == 0 ? "浙大课表" : "导入课表");
+            item.setOnClickListener(view -> { selectSource(index); sourceDock.finishPageSelection(index); });
+            sourceDock.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
+        }
+        refreshButton = WorkspacePageHeader.icon(activity, R.drawable.ic_refresh, "刷新课表", this::syncSchool);
+        UiStyle.addSpaced(shell, new WorkspacePageHeader(activity, sourceDock.motionHost(true), refreshButton), 0, 8);
         body = new FrameLayout(activity);
         shell.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
@@ -386,14 +376,18 @@ final class TimetablePage extends SchedulePage {
     private void render() {
         if (isFinishing() || isDestroyed()) return;
         settleSemesterContent();
-        importButton.setEnabled(!session.busy);
-        importButton.setText(session.busy ? "读取中…" : "导入 ICS");
+        refreshButton.setEnabled(!session.schoolSyncing);
+        refreshButton.setVisibility(Boolean.TRUE.equals(session.schoolSource) ? View.VISIBLE : View.INVISIBLE);
+        ZjuSettingsStore settings = new ZjuSettingsStore(this);
+        String refreshLabel = !settings.configured() || !settings.enabled() ? "学校设置"
+                : !settings.timetable() ? "启用浙大课表" : session.schoolSyncing ? "刷新中" : "刷新课表";
+        refreshButton.setContentDescription(refreshLabel); refreshButton.setTooltipText(refreshLabel);
         body.removeAllViews();
         vertical = null;
         horizontal = null;
         courseContent = null;
         gridWidth = body.getWidth();
-        renderSources();
+        sourceDock.finishPageSelection(Boolean.TRUE.equals(session.schoolSource) ? 0 : 1);
         if (Boolean.TRUE.equals(session.schoolSource)) {
             renderSchool();
             if (session.pending != null && resumed) confirmImport();
@@ -423,7 +417,7 @@ final class TimetablePage extends SchedulePage {
                 params.topMargin = dp(20);
                 empty.addView(open, params);
             }
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
             body.addView(empty, params);
         } else {
             vertical = new ScrollView(activity);
@@ -451,7 +445,7 @@ final class TimetablePage extends SchedulePage {
                 // Keep the grid's coordinates unchanged; its outer content supplies motion room.
                 FrameLayout gridContent = new FrameLayout(activity);
                 int edgeX = PressFeedback.edgeSpace(grid.getLayoutParams().width);
-                int edgeY = PressFeedback.edgeSpace(grid.getLayoutParams().height);
+                int edgeY = gridMotionEdge(grid);
                 gridContent.setPadding(edgeX, edgeY, edgeX, edgeY);
                 gridContent.addView(grid);
                 horizontal.addView(gridContent);
@@ -486,31 +480,13 @@ final class TimetablePage extends SchedulePage {
         if (session.pending != null && resumed) confirmImport();
     }
 
-    private void renderSources() {
-        sourceRow.removeAllViews();
-        DockNavigationLayout dock = new DockNavigationLayout(this, index -> {
-            session.schoolSource = index == 0;
-            session.scrollX = session.scrollY = 0;
-        }, this::render);
-        dock.setPadding(dp(4), dp(3), dp(4), dp(3));
-        String[] names = {"浙大", "导入"};
-        for (int i = 0; i < names.length; i++) {
-            int index = i;
-            TextView item = label(names[i], 15, true);
-            item.setGravity(Gravity.CENTER);
-            item.setPadding(dp(8), 0, dp(8), 0);
-            item.setContentDescription(i == 0 ? "浙大课表" : "导入课表");
-            item.setOnClickListener(view -> {
-                session.schoolSource = index == 0;
-                session.scrollX = session.scrollY = 0;
-                dock.setSelectedIndex(index);
-                // Accessibility/keyboard clicks have no touch-finished callback.
-                if (!dock.isTrackingTouch()) render();
-            });
-            dock.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
-        }
-        dock.setSelectedIndex(Boolean.TRUE.equals(session.schoolSource) ? 0 : 1);
-        sourceRow.addView(dock.motionHost(), new LinearLayout.LayoutParams(-1, -2));
+    private void selectSource(int index) {
+        boolean school = index == 0;
+        if (session.schoolSource != null && session.schoolSource == school) return;
+        session.schoolSource = school;
+        session.scrollX = session.scrollY = 0;
+        // Keep the navigation view alive while its highlight is still moving.
+        render();
     }
 
     private void refreshSchool(boolean force) {
@@ -586,11 +562,6 @@ final class TimetablePage extends SchedulePage {
         vertical.setVerticalScrollBarEnabled(false);
         LinearLayout content = new LinearLayout(activity);
         content.setOrientation(LinearLayout.VERTICAL);
-        String refresh = !settings.configured() || !settings.enabled() ? "学校设置"
-                : !settings.timetable() ? "启用浙大课表" : session.schoolSyncing ? "刷新中…" : "刷新课表";
-        Button sync = action(refresh, true, this::syncSchool);
-        sync.setEnabled(!session.schoolSyncing);
-        UiStyle.addSpaced(content, sync, 0, 8);
         Timetable table = settings.configured() && settings.enabled()
                 ? session.schoolTerms.get(session.schoolTerm) : null;
         if (table == null) {
@@ -598,22 +569,32 @@ final class TimetablePage extends SchedulePage {
                     : session.schoolError != null ? session.schoolError : "暂无浙大课表", 18, true);
             UiStyle.addSpaced(content, empty, 16, 16);
         } else {
-            UiStyle.addSpaced(content, action(session.schoolTerm.isEmpty() ? "未标注学期" : session.schoolTerm,
-                    false, this::chooseSchoolTerm), 0, 8);
-            UiStyle.addSpaced(content, label(table.courseCount + " 门课程", 16, true), 0, 12);
+            LinearLayout card = new LinearLayout(activity);
+            card.setOrientation(LinearLayout.VERTICAL); UiStyle.glass(card);
+            card.setPadding(0, 0, 0, 0);
+            LinearLayout heading = new LinearLayout(activity); heading.setGravity(Gravity.CENTER_VERTICAL);
+            heading.setPadding(dp(12), dp(4), dp(12), 0);
+            TextView title = label(session.schoolTerm.isEmpty() ? "未标注学期" : session.schoolTerm, 18, true);
+            title.setMinHeight(dp(44)); title.setGravity(Gravity.CENTER_VERTICAL);
+            title.setContentDescription(title.getText() + "，选择学期");
+            title.setOnClickListener(view -> chooseSchoolTerm()); UiStyle.pressable(title);
+            heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView count = label(table.courseCount + " 门", 13, false);
+            count.setContentDescription(table.courseCount + " 门课程"); heading.addView(count);
+            card.addView(heading);
             horizontal = new HorizontalScrollView(activity);
             horizontal.setHorizontalScrollBarEnabled(false);
             horizontal.setFillViewport(true);
-            UiStyle.glass(horizontal);
             int available = gridWidth > 0 ? gridWidth : getResources().getDisplayMetrics().widthPixels - dp(40);
             TimetableGrid grid = new TimetableGrid(this, table, available, block -> showCourse(block, false));
             FrameLayout gridContent = new FrameLayout(activity);
             int edgeX = PressFeedback.edgeSpace(grid.getLayoutParams().width);
-            int edgeY = PressFeedback.edgeSpace(grid.getLayoutParams().height);
+            // Course cells scale individually; the full day's height is not a pressed surface.
+            int edgeY = gridMotionEdge(grid);
             gridContent.setPadding(edgeX, edgeY, edgeX, edgeY);
             gridContent.addView(grid);
             horizontal.addView(gridContent);
-            content.addView(horizontal);
+            card.addView(horizontal); content.addView(card);
             if (session.schoolError != null) UiStyle.addSpaced(content, label(session.schoolError, 14, false), 8, 0);
         }
         vertical.addView(content);
@@ -626,6 +607,15 @@ final class TimetablePage extends SchedulePage {
             scroll.scrollTo(0, y);
             if (sideways != null) sideways.scrollTo(x, 0);
         });
+    }
+
+    private int gridMotionEdge(TimetableGrid grid) {
+        int largestCell = 0;
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            View cell = grid.getChildAt(i);
+            if (cell.isClickable()) largestCell = Math.max(largestCell, cell.getLayoutParams().height);
+        }
+        return Math.max(dp(4), PressFeedback.edgeSpace(largestCell));
     }
 
     private void chooseSchoolTerm() {

@@ -210,7 +210,7 @@ public final class TaskDetailActivity extends Activity {
     private String exportFileName;
     private LinearLayout content;
     private LinearLayout shell;
-    private Button completionAction;
+    private ImageButton completionAction;
     private ScrollView page;
     private ScrollView previewScroll;
     private Button previewToggleButton;
@@ -813,23 +813,8 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void addDetailHeader() {
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView back = new TextView(this);
-        back.setText("←");
-        back.setTextSize(24);
-        back.setGravity(android.view.Gravity.CENTER);
-        back.setContentDescription("返回");
-        back.setFocusable(true);
-        back.setClickable(true);
-        back.setMinHeight(dp(48));
-        back.setMinimumHeight(dp(48));
-        back.setMinWidth(dp(48));
-        back.setMinimumWidth(dp(48));
-        back.setTextColor(UiStyle.colors(this).primary);
-        UiStyle.glass(back);
-        UiStyle.pressable(back);
-        back.setOnClickListener(view -> requestExit());
+        LinearLayout row = UiStyle.headerRow(this);
+        ImageButton back = UiStyle.navigationIcon(this, R.drawable.ic_arrow_left, "返回", this::requestExit);
         row.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView title = new TextView(this);
         title.setText("任务详情");
@@ -841,18 +826,7 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout headerActions = new LinearLayout(this);
         headerActions.setGravity(android.view.Gravity.CENTER_VERTICAL);
         UiStyle.glassPill(headerActions);
-        completionAction = new Button(this);
-        completionAction.setText("✓");
-        completionAction.setAllCaps(false);
-        completionAction.setContentDescription("保存日程");
-        completionAction.setMinWidth(dp(48));
-        completionAction.setMinimumWidth(dp(48));
-        completionAction.setMinHeight(dp(48));
-        completionAction.setMinimumHeight(dp(48));
-        completionAction.setPadding(0, 0, 0, 0);
-        completionAction.setTextColor(UiStyle.colors(this).primary);
-        completionAction.setTextSize(20);
-        completionAction.setTypeface(null, android.graphics.Typeface.BOLD);
+        completionAction = UiStyle.navigationIcon(this, R.drawable.ic_check, "保存日程", () -> { });
         completionAction.setBackgroundColor(Color.TRANSPARENT);
         UiStyle.pressable(completionAction);
         completionAction.setVisibility(View.GONE);
@@ -1311,7 +1285,7 @@ public final class TaskDetailActivity extends Activity {
         final ScrollView page;
         final LinearLayout content;
         final LinearLayout shell;
-        final Button completionAction;
+        final ImageButton completionAction;
         final TextView previewText;
         final ScrollView previewScroll;
         final Button previewToggleButton;

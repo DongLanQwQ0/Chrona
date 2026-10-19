@@ -53,13 +53,12 @@ public final class ScheduleCompareActivity extends Activity {
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(12), dp(12), dp(12), dp(8));
+        root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(8));
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(icon(R.drawable.ic_chevron_left, "返回", this::navigateBack),
-                new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout header = UiStyle.headerRow(this);
+        header.addView(UiStyle.navigationIcon(this, R.drawable.ic_arrow_left, "返回", this::navigateBack),
+                new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView title = new TextView(this);
         title.setText("课表对比");
         title.setTextSize(22);
