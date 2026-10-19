@@ -8,7 +8,8 @@ import com.donglan.chrona.data.EventCandidate;
 final class AgendaAcknowledgement {
     static String key(EventCandidate candidate) {
         Long anchor = candidate.reminderAnchor();
-        return anchor == null ? "" : "chrona:" + candidate.id + ":" + anchor;
+        return anchor == null ? "" : "chrona:" + candidate.id + ":"
+                + (candidate.occurrenceAtMillis == null ? anchor : candidate.occurrenceAtMillis);
     }
 
     static String key(long systemId, long start) { return "system:" + systemId + ":" + start; }

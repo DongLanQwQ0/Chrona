@@ -3,6 +3,8 @@
 Calendar and Android persistence are deterministic transport doubles, including rollback;
 no real AI calls or device calendar writes are performed.
 """
+from recurrence_dependencies import recurrence_java
+
 from pathlib import Path
 import os
 import subprocess
@@ -44,7 +46,7 @@ public class CalendarStore {
  public CalendarStore(android.content.Context c){}public boolean hasReadPermission(){return permitted;}public boolean hasWritePermission(){return permitted;}
  public long insertEvent(EventInput e){if(failInsert)throw new IllegalStateException("provider failure");long id=next++;events.put(id,e);if(inserted!=null)inserted.run();return id;}
  public boolean deleteEvent(long id){if(failDelete)throw new IllegalStateException("cleanup failure");events.remove(id);return true;}
- public static class EventInput {public EventInput(String title,long start,long end,String zone,boolean allDay,String description,String location,List<Integer>reminders){if(end<=start)throw new IllegalArgumentException();}}
+ public static class EventInput {public EventInput withRepeat(com.donglan.chrona.data.EventCandidate candidate){if(candidate.repeatRule!=null)throw new AssertionError("Non-repeating publication fixture");return this;}public EventInput(String title,long start,long end,String zone,boolean allDay,String description,String location,List<Integer>reminders){if(end<=start)throw new IllegalArgumentException();}}
 }''',
  'com/donglan/chrona/processing/AutoPublishCheck.java': '''package com.donglan.chrona.processing;
 import java.util.*;import com.donglan.chrona.data.*;import com.donglan.chrona.calendar.*;import com.donglan.chrona.net.*;
@@ -97,7 +99,7 @@ paths += [src / name for name in relative]
 paths += [root / 'checks/AiRequestCheck.java', root / 'checks/SemanticEventNormalizerCheck.java']
 jar = root / 'build/ai-checks/json.jar'
 java = Path(os.environ['JAVA_HOME']) / 'bin'
-subprocess.run([str(java / 'javac.exe'),'--release','17','-encoding','UTF-8','-cp',str(jar),'-d',str(out),*map(str,paths)],check=True)
+subprocess.run(recurrence_java([str(java / 'javac.exe'),'--release','17','-encoding','UTF-8','-cp',str(jar),'-d',str(out),*map(str,paths)]),check=True)
 classpath = str(out) + os.pathsep + str(jar)
 for name in ['com.donglan.chrona.ai.AiRequestCheck','SemanticEventNormalizerCheck','com.donglan.chrona.processing.AutoPublishCheck']:
-    subprocess.run([str(java / 'java.exe'),'-cp',classpath,name],check=True)
+    subprocess.run(recurrence_java([str(java / 'java.exe'),'-cp',classpath,name]),check=True)

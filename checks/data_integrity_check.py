@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     snap_path = Path(directory) / "snapshot.db"
     schema = """
     CREATE TABLE tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,status TEXT,error_message TEXT);
-    CREATE TABLE event_candidates(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id),start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,calendar_event_id INTEGER,is_record INTEGER DEFAULT 0,needs_confirmation INTEGER DEFAULT 1,due_at_millis INTEGER,completed_at_millis INTEGER);
+    CREATE TABLE event_candidates(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id),start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,calendar_event_id INTEGER,is_record INTEGER DEFAULT 0,needs_confirmation INTEGER DEFAULT 1,due_at_millis INTEGER,completed_at_millis INTEGER,repeat_rule TEXT,repeat_exceptions TEXT NOT NULL DEFAULT '{}',repeat_stopped_at INTEGER);
     CREATE TABLE task_attachments(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id));
     CREATE TABLE task_files(id INTEGER PRIMARY KEY AUTOINCREMENT,task_id INTEGER REFERENCES tasks(id));
     CREATE TABLE data_revision(id INTEGER PRIMARY KEY,revision INTEGER);
@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
 method = store.split("public List<EventCandidate> widgetCandidates(long begin, long end,", 1)[1].split("@Override", 1)[0]
 selection = "".join(literals(method.split('query("event_candidates", null,', 1)[1].split('new String[]', 1)[0]))
 with sqlite3.connect(":memory:") as db:
-    db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,is_record INTEGER DEFAULT 0,due_at_millis INTEGER,completed_at_millis INTEGER)")
+    db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,is_record INTEGER DEFAULT 0,due_at_millis INTEGER,completed_at_millis INTEGER,repeat_rule TEXT,repeat_exceptions TEXT NOT NULL DEFAULT '{}',repeat_stopped_at INTEGER)")
     db.executemany("INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day) VALUES(?,?,?,0)", [(i, 5, 9) for i in range(1, 201)])
     db.execute("INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day) VALUES(201,30,40,0)")
     query = f"SELECT id FROM event_candidates WHERE {selection} ORDER BY start_at_millis ASC,id ASC LIMIT 200"

@@ -77,9 +77,9 @@ final class DockNavigationLayout extends FrameLayout {
         items.setBaselineAligned(false);
         items.setClipChildren(false); items.setClipToPadding(false);
         addView(items, new FrameLayout.LayoutParams(-1, -1));
-        UiStyle.glass(this);
+        UiStyle.dockGlass(this);
         UiStyle.minimumAcrylicMix(this, 54);
-        highlight.setCornerRadius(UiStyle.RADIUS_PANEL * getResources().getDisplayMetrics().density);
+        highlight.setCornerRadius(UiStyle.RADIUS_DOCK * getResources().getDisplayMetrics().density);
         highlight.setColor((UiStyle.colors(context).primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
     }
     void setOrientation(int value) { orientation = value; items.setOrientation(value); }

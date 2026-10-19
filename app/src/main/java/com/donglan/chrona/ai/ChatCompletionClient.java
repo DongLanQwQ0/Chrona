@@ -140,6 +140,34 @@ public final class ChatCompletionClient {
 
     private ParseResult execute(long taskId, JSONObject body, boolean hasImages, PreviewSink preview,
             long nowMillis, String timeZoneId, boolean canDowngrade) throws IOException {
+        return parseResponse(taskId, executeEnvelope(body, hasImages, preview, canDowngrade), nowMillis, timeZoneId);
+    }
+
+    /** General completion uses the same cancellation, options and HTTP transport as capture parsing. */
+    public String complete(String system, String prompt, List<byte[]> imagesJpeg) throws IOException {
+        boolean hasImages = imagesJpeg != null && !imagesJpeg.isEmpty();
+        try {
+            JSONArray content = new JSONArray().put(new JSONObject().put("type", "text").put("text", prompt));
+            if (hasImages) for (byte[] bytes : imagesJpeg) content.put(new JSONObject().put("type", "image_url")
+                    .put("image_url", new JSONObject().put("url", "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(bytes))));
+            JSONObject body = new JSONObject().put("model", settings.model).put("messages", new JSONArray()
+                    .put(new JSONObject().put("role", "system").put("content", system))
+                    .put(new JSONObject().put("role", "user").put("content", content)));
+            RequestOptions.apply(body, settings);
+            body.remove("response_format"); body.remove("prompt_cache_key");
+            body.put("stream", true).put("stream_options", new JSONObject().put("include_usage", true));
+            JSONObject choice = new JSONObject(executeEnvelope(body, hasImages, null, true))
+                    .getJSONArray("choices").getJSONObject(0);
+            String finish = choice.optString("finish_reason");
+            if ("length".equals(finish) || "content_filter".equals(finish)) throw new ResponseException("总结未完整返回，请重试当前分段");
+            String result = StreamChunkContent.fromJsonValue(choice.getJSONObject("message").opt("content"));
+            if (result.isBlank()) throw new ResponseException("AI 未返回总结内容");
+            return result;
+        } catch (JSONException e) { throw new ResponseException("无法读取 AI 总结响应", e); }
+    }
+
+    private String executeEnvelope(JSONObject body, boolean hasImages, PreviewSink preview,
+            boolean canDowngrade) throws IOException {
         boolean streaming = body.optBoolean("stream");
         RequestControl.check(control);
         int readTimeout = control == null ? readTimeoutMillis(hasImages)
@@ -171,14 +199,14 @@ public final class ChatCompletionClient {
                 String detail = errorMessage(response);
                 if (canDowngrade && RequestOptions.downgrade(body, status, detail)) {
                     connection.disconnect();
-                    return execute(taskId, body, hasImages, preview, nowMillis, timeZoneId, false);
+                    return executeEnvelope(body, hasImages, preview, false);
                 }
                 throw new RequestException(status, "AI request failed (HTTP " + status + "): " + detail);
             }
             if (streaming && stream != null && connection.getContentType() != null
                     && connection.getContentType().toLowerCase(java.util.Locale.ROOT)
                     .contains("text/event-stream")) {
-                return parseStream(taskId, stream, preview, nowMillis, timeZoneId, control);
+                return streamEnvelope(stream, preview, control);
             }
             String response = stream == null ? "" : readLimited(stream, control);
             if (preview != null) {
@@ -193,7 +221,7 @@ public final class ChatCompletionClient {
                     // The ordinary parser below reports the malformed response.
                 }
             }
-            return parseResponse(taskId, response, nowMillis, timeZoneId);
+            return response;
         } catch (SocketTimeoutException exception) {
             RequestControl.check(control);
             throw new IOException("AI 服务在 " + (readTimeout / 1000) + " 秒内没有返回结果"
@@ -216,6 +244,10 @@ public final class ChatCompletionClient {
 
     private static ParseResult parseStream(long taskId, InputStream stream, PreviewSink preview,
             long nowMillis, String timeZoneId, RequestControl control) throws IOException {
+        return parseResponse(taskId, streamEnvelope(stream, preview, control), nowMillis, timeZoneId);
+    }
+
+    private static String streamEnvelope(InputStream stream, PreviewSink preview, RequestControl control) throws IOException {
         StringBuilder completion = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
         JSONObject usage = null;
@@ -292,7 +324,7 @@ public final class ChatCompletionClient {
         } catch (JSONException exception) {
             throw new IOException("Could not assemble AI response", exception);
         }
-        return parseResponse(taskId, envelope.toString(), nowMillis, timeZoneId);
+        return envelope.toString();
     }
 
     private static String reasoningFrom(JSONObject message) {

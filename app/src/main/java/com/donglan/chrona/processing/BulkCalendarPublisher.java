@@ -37,7 +37,7 @@ public final class BulkCalendarPublisher {
             return new CalendarStore.EventInput(item.title, item.calendarStart(), item.calendarEnd(),
                     item.timeZoneId, item.allDay, item.description, item.location,
                     item.reminderMinutesBefore == null ? Collections.emptyList()
-                            : Collections.singletonList(item.reminderMinutesBefore));
+                            : Collections.singletonList(item.reminderMinutesBefore)).withRepeat(item);
         } catch (RuntimeException invalid) { return null; }
     }
 

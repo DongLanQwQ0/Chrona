@@ -147,12 +147,14 @@ public final class UiStyle {
         }
     }
     /** One radius scale for the whole app: fields and buttons, cards, sheets, and chips. */
-    static final int RADIUS_FIELD = 18;
-    static final int RADIUS_CARD = 22;
-    static final int RADIUS_PANEL = 28;
-    static final int RADIUS_PILL = 24;
+    static final int RADIUS_FIELD = 8;
+    static final int RADIUS_CARD = 10;
+    static final int RADIUS_PANEL = 12;
+    static final int RADIUS_PILL = 8;
+    /** The animated Dock keeps its independently tuned round-ended geometry. */
+    static final int RADIUS_DOCK = 28;
     /** Filter chips: a soft rectangle, deliberately much less round than a pill. */
-    static final int RADIUS_CHIP = 12;
+    static final int RADIUS_CHIP = 6;
     /** Choice sheets carry short labels only, so they stay well inside the default sheet width. */
     private static final int CHOICE_SHEET_WIDTH_DP = 300;
     /** Length of the in-place cross-fade used when a screen rebuilds itself. */
@@ -455,9 +457,13 @@ public final class UiStyle {
         acrylicSurface(view, RADIUS_PANEL);
     }
 
-    /** Pill-shaped acrylic surface for transient in-app messages. */
+    /** Compact acrylic surface for controls and transient in-app messages. */
     public static void glassPill(View view) {
-        acrylicSurface(view, 999);
+        acrylicSurface(view, RADIUS_PILL);
+    }
+
+    static void dockGlass(View view) {
+        acrylicSurface(view, RADIUS_DOCK);
     }
 
     public static int uncertaintyIcon(int level) {
@@ -482,7 +488,7 @@ public final class UiStyle {
                 dark ? 246 : 248, dark ? 238 : 242);
         view.setBackground(new AcrylicSurfaceDrawable(view, blurred, fallback, radius,
                 false, true));
-        view.setElevation(dp(view, radius == RADIUS_CARD ? 2 : 8));
+        view.setElevation(dp(view, 8));
     }
 
     private static GradientDrawable surfaceDrawable(View view, Palette colors, int radius,

@@ -23,7 +23,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 13;
+    private static final int DATABASE_VERSION = 14;
 
     private final Context context;
     private SQLiteDatabase openedDatabase;
@@ -115,14 +115,14 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<EventCandidate> calendarCandidates(long begin, long end, long allDayBegin, long allDayEnd) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND ((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
+                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND ((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
                         + "AND CASE WHEN end_at_millis>COALESCE(start_at_millis,due_at_millis) THEN end_at_millis ELSE COALESCE(start_at_millis,due_at_millis)+60000 END>CAST(? AS INTEGER)) "
                         + "OR (all_day=1 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) AND COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>=CAST(? AS INTEGER)))",
                 new String[]{Long.toString(end), Long.toString(begin), Long.toString(allDayEnd), Long.toString(allDayBegin)},
                 null, null, "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", "5001")) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
-        return result;
+        return mergeRepeats(result, begin, end, allDayBegin, allDayEnd, 5001);
     }
 
     /** Three active and four future: one extra occurrence supplies the final card's next title. */
@@ -144,7 +144,7 @@ public final class TaskStore extends SQLiteOpenHelper {
             if (!started) args.add(Long.toString(now));
             args.addAll(hidden);
             try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                    "is_record=0 AND completed_at_millis IS NULL AND all_day=0 AND needs_confirmation=0 AND " + ZJU_REMINDER_ALLOWED + " AND " + anchor + " IS NOT NULL "
+                    "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND all_day=0 AND needs_confirmation=0 AND " + ZJU_REMINDER_ALLOWED + " AND " + anchor + " IS NOT NULL "
                             + "AND CASE WHEN category!='event' THEN " + anchor + "+" + startedDisplayWindow
                             + " WHEN end_at_millis>" + anchor + " THEN end_at_millis ELSE " + anchor + "+60000 END>CAST(? AS INTEGER) "
                             + "AND " + anchor + (started ? "<=" : ">") + "CAST(? AS INTEGER)"
@@ -155,19 +155,30 @@ public final class TaskStore extends SQLiteOpenHelper {
                 while (cursor.moveToNext()) result.add(readCandidate(cursor));
             }
         }
+        for (EventCandidate series : repeatingCandidates()) {
+            if (series.allDay || series.needsConfirmation) continue;
+            long duration = Math.max(3 * 60_000L, series.calendarEnd() - series.anchor());
+            for (EventCandidate occurrence : RepeatOccurrences.between(series, now - duration,
+                    253_402_300_799_999L, hidden.size() + 8)) {
+                if (occurrence.completed() || hidden.contains("chrona:" + occurrence.occurrenceKey())) continue;
+                Long reminder = occurrence.reminderAnchor();
+                if (reminder != null && (occurrence.isTask() ? reminder + startedDisplayWindow : occurrence.calendarEnd()) > now)
+                    result.add(occurrence);
+            }
+        }
         return result;
     }
 
     public List<EventCandidate> widgetCandidates(long begin, long end) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
+                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
                         + "AND COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>=CAST(? AS INTEGER)",
                 new String[]{Long.toString(end), Long.toString(begin)}, null, null,
                 "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
-        return result;
+        return mergeRepeats(result, begin, end, begin, end, WIDGET_ITEM_LIMIT);
     }
 
     /** Timed instants and all-day UTC dates use separate bounds before applying the limit. */
@@ -175,7 +186,7 @@ public final class TaskStore extends SQLiteOpenHelper {
             long allDayBegin, long allDayEnd) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND ((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
+                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND ((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
                         + "AND (COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>CAST(? AS INTEGER) "
                         + "OR COALESCE(start_at_millis,due_at_millis)>=CAST(? AS INTEGER))) "
                         + "OR (all_day=1 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
@@ -187,7 +198,26 @@ public final class TaskStore extends SQLiteOpenHelper {
                 "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
+        return mergeRepeats(result, begin, end, allDayBegin, allDayEnd, WIDGET_ITEM_LIMIT);
+    }
+
+    private List<EventCandidate> repeatingCandidates() {
+        List<EventCandidate> result = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
+                "repeat_rule IS NOT NULL AND is_record=0", null, null, null, "id ASC")) {
+            while (cursor.moveToNext()) result.add(readCandidate(cursor));
+        }
         return result;
+    }
+
+    private List<EventCandidate> mergeRepeats(List<EventCandidate> result, long begin, long end,
+            long allDayBegin, long allDayEnd, int limit) {
+        for (EventCandidate series : repeatingCandidates())
+            for (EventCandidate occurrence : RepeatOccurrences.between(series,
+                    series.allDay ? allDayBegin : begin, series.allDay ? allDayEnd : end, limit))
+                if (!occurrence.completed()) result.add(occurrence);
+        result.sort(java.util.Comparator.comparingLong((EventCandidate e) -> e.anchor()).thenComparingLong(e -> e.id));
+        return result.size() <= limit ? result : new ArrayList<>(result.subList(0, limit));
     }
     @Override
     public void onCreate(SQLiteDatabase db) {
@@ -234,6 +264,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         addCandidateMerges(db);
         createTaskIndexes(db);
         addZjuHomework(db);
+        addRecurrence(db);
     }
 
     /**
@@ -270,7 +301,26 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 11) addTaskSemantics(db);
         if (oldVersion < 12) addZjuHomework(db);
         if (oldVersion < 13) db.execSQL("UPDATE event_candidates SET category='homework' WHERE category='task' AND (id IN (SELECT candidate_id FROM zju_homework_map) OR task_id IN (SELECT id FROM tasks WHERE source='zju-homework'))");
+        if (oldVersion < 14) addRecurrence(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
+    }
+
+    private static void addRecurrence(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE event_candidates ADD COLUMN repeat_rule TEXT");
+        db.execSQL("ALTER TABLE event_candidates ADD COLUMN repeat_exceptions TEXT NOT NULL DEFAULT '{}'");
+        db.execSQL("ALTER TABLE event_candidates ADD COLUMN repeat_stopped_at INTEGER");
+    }
+
+    private static void putRepeat(ContentValues values, EventCandidate candidate) {
+        if (candidate.occurrenceAtMillis != null)
+            throw new IllegalArgumentException("请使用单次日程操作，不能将单次覆盖整个重复系列");
+        if (candidate.repeatRule != null) {
+            if (candidate.isRecord || candidate.anchor() == null) throw new IllegalArgumentException("重复日程需要首次时间");
+            candidate.repeatRule.validateAnchor(candidate.anchor(), candidate.timeZoneId);
+        }
+        values.put("repeat_rule", candidate.repeatRule == null ? null : candidate.repeatRule.toJson().toString());
+        values.put("repeat_exceptions", candidate.repeatExceptions);
+        values.put("repeat_stopped_at", candidate.repeatStoppedAtMillis);
     }
 
     /** Managed-source metadata remains local; portable task results use normal sync identities. */
@@ -449,20 +499,29 @@ public final class TaskStore extends SQLiteOpenHelper {
     }
 
     public List<EventCandidate> queryScheduleFirst(ScheduleQuery query, int limit) {
+        return scheduleRows(query, true, Math.max(1, limit));
+    }
+
+    private List<EventCandidate> scheduleRows(ScheduleQuery query, boolean oldestFirst, int limit) {
         List<EventCandidate> items = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                query.selection, query.arguments, null, null, query.orderBy(true),
+                "repeat_rule IS NULL AND (" + query.selection + ")", query.arguments, null, null, query.orderBy(oldestFirst),
                 Integer.toString(Math.max(1, limit)))) {
             while (cursor.moveToNext()) items.add(readCandidate(cursor));
         }
-        return items;
+        for (EventCandidate series : repeatingCandidates()) {
+            EventCandidate row = query.seriesRow(series);
+            if (row != null) items.add(row);
+        }
+        items.sort(query.comparator(oldestFirst));
+        return items.size() <= limit ? items : new ArrayList<>(items.subList(0, limit));
     }
 
     /** Homework deadlines are milestones; ordinary tasks still require execution time. */
     public List<EventCandidate> queryHomeUpcoming(long now, java.time.ZoneId zone, int limit) {
         long todayUtc = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                 .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
-        String selection = "is_record=0 AND completed_at_millis IS NULL AND ((start_at_millis IS NOT NULL"
+        String selection = "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND ((start_at_millis IS NOT NULL"
                 + " AND (category IN ('task','homework') OR (category='event' AND end_at_millis>start_at_millis))"
                 + " AND ((all_day=0 AND (CASE WHEN end_at_millis>start_at_millis THEN end_at_millis>CAST(? AS INTEGER)"
                 + " ELSE start_at_millis>=CAST(? AS INTEGER) END))"
@@ -476,14 +535,21 @@ public final class TaskStore extends SQLiteOpenHelper {
                 Integer.toString(Math.max(1, limit)))) {
             while (cursor.moveToNext()) items.add(readCandidate(cursor));
         }
-        return items;
+        for (EventCandidate series : repeatingCandidates()) {
+            if (series.startAtMillis == null && !series.isHomework()) continue;
+            for (EventCandidate occurrence : RepeatOccurrences.between(series, series.allDay ? todayUtc : now,
+                    253_402_300_799_999L, Math.max(1, limit)))
+                if (!occurrence.completed()) items.add(occurrence);
+        }
+        items.sort(java.util.Comparator.comparingLong((EventCandidate e) -> e.anchor()).thenComparingLong(e -> e.id));
+        return items.size() <= limit ? items : new ArrayList<>(items.subList(0, limit));
     }
 
     public HomeTodoSummary homeTodoSummary(long now, java.time.ZoneId zone, int focusLimit) {
         java.time.LocalDate today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
         long dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
         long dayEnd = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
-        String open = "is_record=0 AND category IN ('task','homework') AND completed_at_millis IS NULL";
+        String open = "repeat_rule IS NULL AND is_record=0 AND category IN ('task','homework') AND completed_at_millis IS NULL";
         String due = ScheduleQuery.TASK_DUE_SQL;
         int total = 0, todayDue = 0, overdue = 0, unscheduled = 0;
         try (Cursor cursor = getReadableDatabase().rawQuery("SELECT COUNT(*),"
@@ -507,27 +573,40 @@ public final class TaskStore extends SQLiteOpenHelper {
                 Integer.toString(Math.max(1, focusLimit)))) {
             while (cursor.moveToNext()) focus.add(readCandidate(cursor));
         }
+        ScheduleQuery repeatedOpen = new ScheduleQuery(3, null, 0, "", null, null, now, zone, ScheduleQuery.TODO_OPEN);
+        for (EventCandidate series : repeatingCandidates()) {
+            EventCandidate row = repeatedOpen.seriesRow(series);
+            if (row == null) continue;
+            total++;
+            Long deadline = row.effectiveDueAtMillis();
+            if (deadline != null && deadline >= dayStart && deadline < dayEnd) todayDue++;
+            if (deadline != null && deadline < now) overdue++;
+            focus.add(row);
+        }
+        focus.sort(java.util.Comparator.comparingInt((EventCandidate e) -> {
+            Long deadline = e.effectiveDueAtMillis();
+            return deadline == null ? 3 : deadline >= dayStart && deadline < dayEnd ? 0 : deadline < now ? 1 : 2;
+        }).thenComparing(EventCandidate::effectiveDueAtMillis, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+                .thenComparingLong(e -> e.id));
+        if (focus.size() > focusLimit) focus = new ArrayList<>(focus.subList(0, Math.max(0, focusLimit)));
         return new HomeTodoSummary(total, todayDue, overdue, unscheduled, focus);
     }
 
     public List<Long> queryScheduleIds(ScheduleQuery query) {
         List<Long> ids = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", new String[]{"id"},
-                query.selection, query.arguments, null, null, "id ASC")) {
+                "repeat_rule IS NULL AND (" + query.selection + ")", query.arguments, null, null, "id ASC")) {
             while (cursor.moveToNext()) ids.add(cursor.getLong(0));
         }
+        for (EventCandidate series : repeatingCandidates()) if (query.seriesRow(series) != null) ids.add(series.id);
         return ids;
     }
 
     public List<EventCandidate> querySchedulePage(ScheduleQuery query, boolean oldestFirst, int page) {
-        List<EventCandidate> items = new ArrayList<>();
         long offset = (long) Math.max(0, page) * ScheduleQuery.PAGE_SIZE;
-        try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                query.selection, query.arguments, null, null, query.orderBy(oldestFirst),
-                offset + "," + ScheduleQuery.PAGE_SIZE)) {
-            while (cursor.moveToNext()) items.add(readCandidate(cursor));
-        }
-        return items;
+        int end = (int) Math.min(Integer.MAX_VALUE, offset + ScheduleQuery.PAGE_SIZE);
+        List<EventCandidate> items = scheduleRows(query, oldestFirst, end);
+        return offset >= items.size() ? new ArrayList<>() : new ArrayList<>(items.subList((int) offset, items.size()));
     }
 
     public List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids) {
@@ -1151,6 +1230,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 values.put("due_at_millis", candidate.dueAtMillis);
                 values.put("completed_at_millis", candidate.completedAtMillis);
                 values.put("is_record", candidate.isRecord ? 1 : 0);
+                putRepeat(values, candidate);
                 db.insertOrThrow("event_candidates", null, values);
             }
             db.setTransactionSuccessful();
@@ -1204,6 +1284,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 values.put("due_at_millis", candidate.dueAtMillis);
                 values.put("completed_at_millis", candidate.completedAtMillis);
                 values.put("is_record", candidate.isRecord ? 1 : 0);
+            putRepeat(values, candidate);
             long id = db.insertOrThrow("event_candidates", null, values);
             db.setTransactionSuccessful();
             return id;
@@ -1248,6 +1329,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 values.put("due_at_millis", candidate.dueAtMillis);
                 values.put("completed_at_millis", candidate.completedAtMillis);
                 values.put("is_record", candidate.isRecord ? 1 : 0);
+        putRepeat(values, candidate);
         return getWritableDatabase().update("event_candidates", values,
                 "id = ? AND task_id = ?", new String[] {
                         Long.toString(candidate.id), Long.toString(candidate.taskId) }) > 0;
@@ -1279,6 +1361,18 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     /** Call before touching CalendarProvider; storage also enforces this at commit. */
     public void requireCandidateEditAllowed(EventCandidate candidate) {
+        List<EventCandidate> existing = getCandidatesByIds(java.util.List.of(candidate.id));
+        if (!existing.isEmpty() && existing.get(0).repeatRule != null) {
+            EventCandidate series = existing.get(0);
+            if (candidate.repeatRule == null || !series.repeatRule.toJson().toString().equals(candidate.repeatRule.toJson().toString())
+                    || !java.util.Objects.equals(series.startAtMillis, candidate.startAtMillis)
+                    || !java.util.Objects.equals(series.endAtMillis, candidate.endAtMillis)
+                    || !java.util.Objects.equals(series.dueAtMillis, candidate.dueAtMillis)
+                    || !java.util.Objects.equals(series.timeZoneId, candidate.timeZoneId)
+                    || !java.util.Objects.equals(series.category, candidate.category)
+                    || series.allDay != candidate.allDay || candidate.isRecord)
+                throw new IllegalArgumentException("请在重复日程中更改单次时间；更换重复规则请停止后新建");
+        }
         if (!isManagedHomework(candidate.id, candidate.taskId)) return;
         EventCandidate current = getCandidatesByIds(java.util.List.of(candidate.id)).get(0);
         if (!java.util.Objects.equals(current.title, candidate.title)
@@ -1432,7 +1526,17 @@ public final class TaskStore extends SQLiteOpenHelper {
                 cursor.getInt(cursor.getColumnIndexOrThrow("uncertainty_level")),
                 cursor.isNull(cursor.getColumnIndexOrThrow("due_at_millis")) ? null : cursor.getLong(cursor.getColumnIndexOrThrow("due_at_millis")),
                 cursor.isNull(cursor.getColumnIndexOrThrow("completed_at_millis")) ? null : cursor.getLong(cursor.getColumnIndexOrThrow("completed_at_millis")),
-                cursor.getInt(cursor.getColumnIndexOrThrow("is_record")) != 0);
+                cursor.getInt(cursor.getColumnIndexOrThrow("is_record")) != 0,
+                readRepeat(cursor.getString(cursor.getColumnIndexOrThrow("repeat_rule"))),
+                cursor.getString(cursor.getColumnIndexOrThrow("repeat_exceptions")),
+                cursor.isNull(cursor.getColumnIndexOrThrow("repeat_stopped_at")) ? null
+                        : cursor.getLong(cursor.getColumnIndexOrThrow("repeat_stopped_at")), null);
+    }
+
+    private static RepeatRule readRepeat(String value) {
+        if (value == null) return null;
+        try { return RepeatRule.fromJson(new org.json.JSONObject(value)); }
+        catch (org.json.JSONException invalid) { throw new IllegalStateException("重复规则损坏", invalid); }
     }
 
     private static void requireNonEmpty(String value, String name) {

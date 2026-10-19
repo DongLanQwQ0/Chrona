@@ -8,6 +8,7 @@ final class AgendaEntry {
     final Integer calendarColor;
     final Integer reminderMinutesBefore;
     final Long dueAtMillis;
+    final Long occurrenceAtMillis;
     AgendaEntry(long id, long taskId, long start, long end, String title, String location,
             String description, String source, boolean system, boolean allDay, boolean confirmed) {
         this(id, taskId, start, end, title, location, description, source, system, allDay, confirmed, null);
@@ -28,7 +29,11 @@ final class AgendaEntry {
         this(id,taskId,start,end,title,location,description,source,system,allDay,confirmed,calendarColor,category,reminderMinutesBefore,null);
     }
     AgendaEntry(long id,long taskId,long start,long end,String title,String location,String description,String source,boolean system,boolean allDay,boolean confirmed,Integer calendarColor,String category,Integer reminderMinutesBefore,Long dueAtMillis) {
+        this(id,taskId,start,end,title,location,description,source,system,allDay,confirmed,calendarColor,category,reminderMinutesBefore,dueAtMillis,null);
+    }
+    AgendaEntry(long id,long taskId,long start,long end,String title,String location,String description,String source,boolean system,boolean allDay,boolean confirmed,Integer calendarColor,String category,Integer reminderMinutesBefore,Long dueAtMillis,Long occurrenceAtMillis) {
         this.dueAtMillis=dueAtMillis;
+        this.occurrenceAtMillis=occurrenceAtMillis;
         this.id = id; this.taskId = taskId; this.start = start; this.end = Math.max(start, end);
         this.title = title; this.location = location == null ? "" : location;
         this.description = description == null ? "" : description;
@@ -37,7 +42,7 @@ final class AgendaEntry {
         this.category = category;
         this.reminderMinutesBefore = reminderMinutesBefore;
     }
-    String key() { return (system ? "system:" : "chrona:") + id + ":" + start; }
+    String key() { return (system ? "system:" : "chrona:") + id + ":" + (occurrenceAtMillis == null ? start : occurrenceAtMillis); }
     boolean isTask() { return com.donglan.chrona.data.EventCategory.isTaskLike(category); }
     long finish() { return end > start ? end : start + (isTask() ? 1L : 60_000L); }
     boolean overlaps(long begin, long until) { return start < until && finish() > begin; }
@@ -45,6 +50,7 @@ final class AgendaEntry {
         if (!(other instanceof AgendaEntry e)) return false;
         return id == e.id && taskId == e.taskId && start == e.start && end == e.end
                 && system == e.system && allDay == e.allDay && confirmed == e.confirmed
+                && java.util.Objects.equals(occurrenceAtMillis, e.occurrenceAtMillis)
                 && java.util.Objects.equals(title, e.title) && java.util.Objects.equals(location, e.location)
                 && java.util.Objects.equals(description, e.description) && java.util.Objects.equals(source, e.source)
                 && java.util.Objects.equals(dueAtMillis,e.dueAtMillis)
@@ -53,6 +59,6 @@ final class AgendaEntry {
                 && java.util.Objects.equals(calendarColor, e.calendarColor);
     }
     @Override public int hashCode() {
-        return java.util.Objects.hash(id, taskId, start, end, system, allDay, confirmed, title, location, description, source, calendarColor, category, reminderMinutesBefore,dueAtMillis);
+        return java.util.Objects.hash(id, taskId, start, end, system, allDay, confirmed, title, location, description, source, calendarColor, category, reminderMinutesBefore,dueAtMillis,occurrenceAtMillis);
     }
 }

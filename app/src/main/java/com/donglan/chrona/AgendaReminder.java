@@ -46,13 +46,13 @@ public final class AgendaReminder {
 
     static void refreshSafely(Context context, Intent action) {
         try { refresh(context, action); }
-        catch (RuntimeException exception) {
+        catch (Exception exception) {
             android.util.Log.w("Chrona", "Upcoming reminder refresh failed", exception);
             schedule(context, System.currentTimeMillis() + ReminderTimeline.SNOOZE);
         }
     }
 
-    private static void refresh(Context context, Intent action) {
+    private static void refresh(Context context, Intent action) throws Exception {
         ZjuHomeworkCalendar.retryPending(context);
         TaskCompletion.retryPending(context);
         SharedPreferences prefs = AgendaReminderPreferences.prefs(context);
@@ -70,11 +70,13 @@ public final class AgendaReminder {
                 if ("complete".equals(action.getAction()) && key.startsWith("chrona:")) {
                     try(TaskStore store=new TaskStore(context)) {
                         long id=Long.parseLong(key.split(":")[1]);
-                        for(EventCandidate candidate:store.getCandidatesByIds(java.util.Collections.singletonList(id)))
-                            if(candidate.isTask() && candidate.reminderAnchor()!=null && key.equals("chrona:"+id+":"+candidate.reminderAnchor())) {
-                                String warning = TaskCompletion.set(context,id,candidate.taskId,true);
+                        for(EventCandidate saved:store.getCandidatesByIds(java.util.Collections.singletonList(id))) {
+                            EventCandidate candidate = saved.repeatRule == null ? saved : com.donglan.chrona.data.RepeatOccurrences.at(saved, Long.parseLong(key.split(":")[2]));
+                            if(candidate != null && candidate.isTask() && candidate.reminderAnchor()!=null && key.equals(AgendaAcknowledgement.key(candidate))) {
+                                String warning = TaskCompletion.set(context,candidate,true);
                                 if (warning != null) HANDLER.post(() -> android.widget.Toast.makeText(context,warning,android.widget.Toast.LENGTH_LONG).show());
                             }
+                        }
                     }
                 }
                 if ("hide".equals(action.getAction()) || "complete".equals(action.getAction()))
@@ -118,15 +120,18 @@ public final class AgendaReminder {
             // Explicitly deferred tasks outlive their original deadline window, not the task itself.
             List<Long> deferred = new ArrayList<>();
             for (String key : snoozeUntil.keySet()) if(key.startsWith("chrona:")) deferred.add(Long.parseLong(key.split(":")[1]));
-            for (EventCandidate local : store.getCandidatesByIds(deferred)) {
+            for (EventCandidate saved : store.getCandidatesByIds(deferred)) for (String deferredKey : snoozeUntil.keySet()) {
+                if (!deferredKey.startsWith("chrona:" + saved.id + ":")) continue;
+                EventCandidate local = saved.repeatRule == null ? saved : com.donglan.chrona.data.RepeatOccurrences.at(saved, Long.parseLong(deferredKey.split(":")[2]));
+                if (local == null) continue;
                 if (!local.isTask() || local.completed() || local.needsConfirmation || local.reminderAnchor()==null || !store.allowsReminder(local.id)) continue;
-                String key="chrona:"+local.id+":"+local.reminderAnchor();
+                String key=AgendaAcknowledgement.key(local);
                 if (snoozeUntil.containsKey(key)) entries.add(new AgendaEntry(local.id,local.taskId,local.reminderAnchor(),local.reminderAnchor(),local.title,
-                        local.location,local.description,"拾时",false,false,true,null,local.category,local.reminderMinutesBefore,local.effectiveDueAtMillis()));
+                        local.location,local.description,"拾时",false,false,true,null,local.category,local.reminderMinutesBefore,local.effectiveDueAtMillis(),local.occurrenceAtMillis));
             }
             for (EventCandidate local : store.nextReminderCandidates(now, excluded)) entries.add(new AgendaEntry(local.id, local.taskId, local.reminderAnchor(),
                     local.isTask() ? local.reminderAnchor() : local.calendarEnd(), local.title,
-                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.effectiveDueAtMillis()));
+                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.effectiveDueAtMillis(),local.occurrenceAtMillis));
             List<CalendarOccurrence> other = new ArrayList<>();
             java.util.Set<Long> linkedIds = new HashSet<>(store.linkedCalendarIds());
             long horizon = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).plusYears(1).toInstant().toEpochMilli();

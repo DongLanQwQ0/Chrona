@@ -2437,6 +2437,18 @@ public final class TaskDetailActivity extends Activity {
                 : CandidateFeedback.state(candidate.calendarEventId != null, dirtyCandidateIds.contains(candidate.id)));
         refreshPublication.run();
         UiStyle.addSpaced(card, publication, 2, 2);
+        if (!managedHomework) {
+            Button repeat = new Button(this);
+            repeat.setText(candidate.repeatRule == null ? "设置重复" : candidate.repeatRule.label()
+                    + (candidate.repeatStoppedAtMillis == null ? "" : " · 已停止"));
+            UiStyle.button(repeat, false);
+            repeat.setOnClickListener(view -> {
+                if (dirtyCandidateIds.contains(candidate.id)) { Feedback.show(this, "请先保存当前修改"); return; }
+                startActivity(new Intent(this, RepeatScheduleActivity.class)
+                        .putExtra("task_id", candidate.taskId).putExtra("candidate_id", candidate.id));
+            });
+            UiStyle.addSpaced(card, repeat, 4, 4);
+        }
         if (!candidate.settled()) {
             TextView uncertainty = new TextView(this);
             uncertainty.setText(UiStyle.uncertaintyLabel(candidate.uncertaintyLevel));
@@ -2779,6 +2791,14 @@ public final class TaskDetailActivity extends Activity {
             categoryRow.addView(homeworkType);
             notePreview.setContentDescription("查看作业内容；" + currentDescription[0]);
         }
+        if (candidate.repeatRule != null) {
+            allDay.setEnabled(false); category.setEnabled(false);
+            for (EditText field : new EditText[]{start, end, due}) {
+                field.setFocusable(false);
+                field.setOnClickListener(view -> startActivity(new Intent(this, RepeatScheduleActivity.class)
+                        .putExtra("task_id", candidate.taskId).putExtra("candidate_id", candidate.id)));
+            }
+        }
         Button[] publish = new Button[1];
         publish[0] = button(card, "保存", () -> {
             if (saveInFlight) return;
@@ -2802,12 +2822,15 @@ public final class TaskDetailActivity extends Activity {
                 Integer minutes = reminderText.isEmpty() ? null : Integer.parseInt(reminderText);
                 if (minutes != null && minutes < 0) throw new IllegalArgumentException("提醒分钟数不能为负数");
                 EventCandidate edited = new EventCandidate(candidate.id, candidate.taskId, titleText,
-                        startAt, endAt, effectiveAllDay ? "UTC" : zone.getId(),
+                        candidate.repeatRule == null ? startAt : candidate.startAtMillis,
+                        candidate.repeatRule == null ? endAt : candidate.endAtMillis,
+                        candidate.repeatRule == null ? effectiveAllDay ? "UTC" : zone.getId() : candidate.timeZoneId,
                         location.getText().toString().trim(),
                         managedHomework ? candidate.description : currentDescription[0].trim(), minutes, false,
                         candidate.calendarEventId,
                         EventCategory.VALUES[selectedCategory[0]], effectiveAllDay, autoEnd[0], EventCandidate.CERTAIN,
-                        dueAt,taskKind ? candidate.completedAtMillis : null,false);
+                        candidate.repeatRule == null ? dueAt : candidate.dueAtMillis,
+                        taskKind ? candidate.completedAtMillis : null,false).withRepeatFrom(candidate);
                 if ((edited.calendarStart()!=null || candidate.calendarEventId!=null) && !requestCalendarPermission()) return;
                 snapshotDrafts();
                 setSaving(true);
@@ -2845,7 +2868,9 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void openHomeworkSite(String url) {
-        if (url == null || !new ZjuSettingsStore(this).enabled()) return;
+        if (url == null || !new ZjuSettingsStore(this).enabled()) {
+            return;
+        }
         try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
         catch (android.content.ActivityNotFoundException failure) { Feedback.show(this, "请先安装可打开网页的浏览器"); }
     }
@@ -3009,6 +3034,11 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void changeTaskCompletion(EventCandidate candidate) {
+        if (candidate.repeatRule != null) {
+            startActivity(new Intent(this, RepeatScheduleActivity.class).putExtra("task_id", candidate.taskId)
+                    .putExtra("candidate_id", candidate.id));
+            return;
+        }
         if (saveInFlight) return;
         if(dirtyCandidateIds.contains(candidate.id)){Feedback.show(this,"请先保存当前修改");return;}
         snapshotDrafts();
@@ -3054,7 +3084,7 @@ public final class TaskDetailActivity extends Activity {
                     ? Collections.emptyList() : Collections.singletonList(edited.reminderMinutesBefore);
             CalendarStore.EventInput input = new CalendarStore.EventInput(edited.title,
                     edited.calendarStart(), edited.calendarEnd(), edited.timeZoneId, edited.allDay,
-                    edited.description, edited.location, reminders);
+                    edited.description, edited.location, reminders).withRepeat(edited);
             if (edited.calendarEventId != null) {
                 if (!store.updateCandidate(edited))
                     throw new IllegalStateException("无法保存日程草稿");
@@ -3068,7 +3098,7 @@ public final class TaskDetailActivity extends Activity {
                             edited.title, edited.startAtMillis, edited.endAtMillis, edited.timeZoneId,
                             edited.location, edited.description, edited.reminderMinutesBefore,
                             edited.needsConfirmation, null, edited.category, edited.allDay,
-                            edited.endAutoGenerated, edited.uncertaintyLevel,edited.dueAtMillis,edited.completedAtMillis,edited.isRecord);
+                            edited.endAutoGenerated, edited.uncertaintyLevel,edited.dueAtMillis,edited.completedAtMillis,edited.isRecord).withRepeatFrom(edited);
                     retry = unlinked;
                     retryBaseline = CandidateEditBaseline.of(current);
                 }
@@ -3121,7 +3151,7 @@ public final class TaskDetailActivity extends Activity {
                     ? Collections.emptyList() : Collections.singletonList(edited.reminderMinutesBefore);
             CalendarStore.EventInput input = new CalendarStore.EventInput(edited.title,
                     edited.calendarStart(), edited.calendarEnd(), edited.timeZoneId, edited.allDay,
-                    edited.description, edited.location, reminders);
+                    edited.description, edited.location, reminders).withRepeat(edited);
             List<Long> matches = new CalendarStore(this).findMatchingEvents(input);
             if (matches.isEmpty()) {
                 publish(edited, expected);
@@ -3168,7 +3198,7 @@ public final class TaskDetailActivity extends Activity {
             EventCandidate linked = new EventCandidate(edited.id, edited.taskId, edited.title,
                     edited.startAtMillis, edited.endAtMillis, edited.timeZoneId, edited.location,
                     edited.description, edited.reminderMinutesBefore, edited.needsConfirmation,
-                    eventId, edited.category, edited.allDay, edited.endAutoGenerated, edited.uncertaintyLevel,edited.dueAtMillis,edited.completedAtMillis,edited.isRecord);
+                    eventId, edited.category, edited.allDay, edited.endAutoGenerated, edited.uncertaintyLevel,edited.dueAtMillis,edited.completedAtMillis,edited.isRecord).withRepeatFrom(edited);
             if (!store.updateCandidate(linked)
                     || !store.setCalendarEventIdIfUnlinked(edited.id, edited.taskId, eventId))
                 throw new IllegalStateException("无法保存日程关联");

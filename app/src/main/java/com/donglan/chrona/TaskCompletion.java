@@ -20,10 +20,27 @@ final class TaskCompletion {
     static String set(Context context, long id, long taskId, boolean completed) {
         return set(context,id,taskId,completed,-1);
     }
+    static String set(Context context, EventCandidate candidate, boolean completed) throws Exception {
+        if (candidate.repeatRule == null) return set(context, candidate.id, candidate.taskId, completed);
+        if (candidate.occurrenceAtMillis == null) throw new IllegalArgumentException("请选择具体一次待办");
+        try (TaskStore store = new TaskStore(context)) {
+            List<EventCandidate> rows = store.getCandidatesByIds(List.of(candidate.id));
+            if (rows.isEmpty()) throw new IllegalStateException("待办已不存在");
+            EventCandidate series = rows.get(0);
+            if (!series.repeatExceptions.equals(candidate.repeatExceptions)
+                    || !java.util.Objects.equals(series.repeatStoppedAtMillis, candidate.repeatStoppedAtMillis))
+                throw new IllegalStateException("日程已变化，请刷新后重试");
+            RepeatActions.change(context, series.taskId, series.id, CandidateEditBaseline.of(series),
+                    completed ? "complete" : "reopen", candidate.occurrenceAtMillis, null, null);
+        }
+        return null;
+    }
     static String set(Context context, long id, long taskId, boolean completed, long expectedRevision) {
         synchronized (AndroidSync.LOCK) {
             try (TaskStore store = new TaskStore(context)) {
                 if (expectedRevision >= 0 && store.dataRevision() != expectedRevision) throw new java.util.ConcurrentModificationException();
+                for (EventCandidate candidate : store.getCandidatesByIds(List.of(id)))
+                    if (candidate.repeatRule != null) throw new IllegalArgumentException("请选择具体一次待办");
                 if (!store.setCandidateCompleted(id, taskId, completed)) throw new IllegalStateException("待办已不存在或正在处理");
                 if (!completed) {
                     for (EventCandidate candidate : store.getCandidatesByIds(List.of(id)))

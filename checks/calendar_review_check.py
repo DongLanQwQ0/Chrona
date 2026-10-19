@@ -3,6 +3,8 @@
 Android provider/UI/queue transport uses stand-ins. A real single-thread executor exercises
 superseded running and queued reads; this is not Android rendering or touch validation.
 """
+from recurrence_dependencies import recurrence_java
+
 from pathlib import Path
 import os
 import subprocess
@@ -28,6 +30,7 @@ controller = '\n'.join(method(marker) for marker in ('private LocalDate windowSt
     'private boolean selectMonthDay(', 'private void navigateDate('))
 
 files = {
+ 'com/donglan/chrona/RepeatScheduleActivity.java':'package com.donglan.chrona;public class RepeatScheduleActivity {}',
  'android/os/OperationCanceledException.java': 'package android.os; public class OperationCanceledException extends RuntimeException {}',
  'android/os/CancellationSignal.java': '''package android.os; public class CancellationSignal {
  volatile boolean cancelled;public void cancel(){cancelled=true;}public boolean isCanceled(){return cancelled;}
@@ -233,5 +236,5 @@ for name, content in files.items():
 paths += [src / name for name in ['AgendaEntry.java','AgendaRepository.java','CalendarDayCounts.java','CalendarViewport.java','CalendarSwipe.java','CalendarSourceColors.java',
     'calendar/CalendarOccurrence.java','calendar/AllDayDates.java','data/EventCandidate.java','data/EventCategory.java']]
 java = Path(os.environ['JAVA_HOME']) / 'bin'
-subprocess.run([str(java / 'javac.exe'),'--release','17','-encoding','UTF-8','-d',str(out),*map(str,paths)],check=True)
-subprocess.run([str(java / 'java.exe'),'-cp',str(out),'com.donglan.chrona.CalendarReviewCheck'],check=True)
+subprocess.run(recurrence_java([str(java / 'javac.exe'),'--release','17','-encoding','UTF-8','-d',str(out),*map(str,paths)]),check=True)
+subprocess.run(recurrence_java([str(java / 'java.exe'),'-cp',str(out),'com.donglan.chrona.CalendarReviewCheck']),check=True)

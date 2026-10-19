@@ -3,6 +3,8 @@
 Reuses the existing SQLite bridge/adapters; calendar provider responses are isolated fixtures.
 Requires the existing debug Java classes and cached JSON dependency, downloads nothing.
 """
+from recurrence_dependencies import recurrence_java
+
 from pathlib import Path
 import ast
 import os
@@ -58,6 +60,6 @@ sources = list(src.rglob('*.java')) + [production / name for name in
     ('data/TaskStore.java', 'data/EventCandidate.java', 'data/EventCategory.java', 'data/TaskRecord.java', 'data/ScheduleQuery.java',
      'zju/ZjuSnapshot.java', 'ZjuHomeworkStore.java', 'ZjuHomeworkCalendar.java', 'HomeworkLinks.java')]
 sources += [root / 'checks/ZjuHomeworkUpdateCheck.java']
-subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', classpath, '-d', str(out), *map(str, sources)], check=True)
-subprocess.run([str(java / 'java.exe'), f'-Dpython={shutil.which("python")}', f'-Dbridge={root / "checks/sqlite_bridge.py"}',
-                '-cp', str(out) + os.pathsep + classpath, 'com.donglan.chrona.ZjuHomeworkUpdateCheck', str(out / 'databases')], check=True)
+subprocess.run(recurrence_java([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', classpath, '-d', str(out), *map(str, sources)]), check=True)
+subprocess.run(recurrence_java([str(java / 'java.exe'), f'-Dpython={shutil.which("python")}', f'-Dbridge={root / "checks/sqlite_bridge.py"}',
+                '-cp', str(out) + os.pathsep + classpath, 'com.donglan.chrona.ZjuHomeworkUpdateCheck', str(out / 'databases')]), check=True)

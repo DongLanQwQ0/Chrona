@@ -162,6 +162,9 @@ public final class ChronaDataBackup {
                     item.put("end", candidate.isRecord?candidate.endAtMillis:candidate.calendarEnd());
                     item.put("timeZone", candidate.timeZoneId == null ? "UTC" : candidate.timeZoneId);
                     item.put("allDay", candidate.allDay);
+                    item.put("recurrence", candidate.repeatRule == null ? JSONObject.NULL : candidate.repeatRule.toJson());
+                    item.put("repeatExceptions", new JSONObject(candidate.repeatExceptions));
+                    item.put("repeatStoppedAt", candidate.repeatStoppedAtMillis == null ? JSONObject.NULL : candidate.repeatStoppedAtMillis);
                     item.put("description", candidate.description == null ? JSONObject.NULL
                             : candidate.description);
                     item.put("location", candidate.location == null ? JSONObject.NULL
@@ -396,7 +399,7 @@ public final class ChronaDataBackup {
                     throw new IOException("备份数据库完整性检查失败");
             }
             try (Cursor cursor = db.rawQuery("PRAGMA user_version", null)) {
-                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 13)
+                if (!cursor.moveToFirst() || cursor.getInt(0) < 6 || cursor.getInt(0) > 14)
                     throw new IOException("备份数据库版本与当前应用不兼容");
             }
             long tasks;
@@ -1066,6 +1069,15 @@ public final class ChronaDataBackup {
                         event.getString("title"), event.getLong("start"), event.getLong("end"),
                         event.optString("timeZone", "UTC"), event.optBoolean("allDay"),
                         nullable(event, "description"), nullable(event, "location"), reminders);
+                if (!event.isNull("recurrence")) {
+                    EventCandidate repeated = new EventCandidate(0, 0, input.title, input.startMillis, input.endMillis,
+                            input.timeZoneId, input.location, input.description, null, false, null,
+                            com.donglan.chrona.data.EventCategory.EVENT, input.allDay)
+                            .withRepeat(com.donglan.chrona.data.RepeatRule.fromJson(event.getJSONObject("recurrence")))
+                            .withRepeatState(event.getJSONObject("repeatExceptions").toString(),
+                                    event.isNull("repeatStoppedAt") ? null : event.getLong("repeatStoppedAt"));
+                    input = input.withRepeat(repeated);
+                }
                 Long id = null;
                 if (oldId > 0) {
                     CalendarStore.EventRecord old = calendar.getEvent(oldId);
@@ -1099,7 +1111,9 @@ public final class ChronaDataBackup {
             CalendarStore.EventInput input) {
         return event != null && event.title.equals(input.title)
                 && event.startMillis == input.startMillis && event.endMillis == input.endMillis
-                && event.allDay == input.allDay;
+                && event.allDay == input.allDay && java.util.Objects.equals(event.rrule, input.rrule)
+                && java.util.Objects.equals(event.repeatExceptions, input.repeatExceptions)
+                && java.util.Objects.equals(event.repeatStoppedAtMillis, input.repeatStoppedAtMillis);
     }
 
     private static String nullable(JSONObject object, String key) {

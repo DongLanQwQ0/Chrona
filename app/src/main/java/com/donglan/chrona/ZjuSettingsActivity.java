@@ -17,7 +17,7 @@ public final class ZjuSettingsActivity extends Activity {
     private Switch enabled, homework, timetable;
     private EditText user,password;
     private TextView status;
-    private Button sync,save,calendarPermission;
+    private Button sync,save,calendarPermission,classroom;
     private boolean binding,busy;
     @Override protected void onCreate(Bundle state){
         ThemeStore.apply(this);super.onCreate(state);settings=new ZjuSettingsStore(this);
@@ -40,6 +40,7 @@ public final class ZjuSettingsActivity extends Activity {
             ZjuSync.request(this,result->{if(isDestroyed())return;status.setText(result);bind();});
         });
         button(root,"作业更新记录",()->startActivity(new Intent(this,ZjuHomeworkHistoryActivity.class)));
+        classroom=button(root,"课堂总结",()->startActivity(new Intent(this,ClassroomSummaryActivity.class)));
         button(root,"退出账号",()->UiStyle.choiceDialog(this,"退出账号",new String[]{"保留账号","退出并停止同步"},0,choice->{
             if(choice==1){ZjuSync.cancel();change(()->{new ZjuHomeworkStore(this).configure(settings.account(),false);settings.clear();new ZjuTimetableStore(this).clear();});}
         }));
@@ -91,6 +92,7 @@ public final class ZjuSettingsActivity extends Activity {
         com.donglan.chrona.calendar.CalendarStore calendar=new com.donglan.chrona.calendar.CalendarStore(this);
         calendarPermission.setVisibility(calendar.hasReadPermission()&&calendar.hasWritePermission()?View.GONE:View.VISIBLE);
         sync.setEnabled(!busy&&settings.enabled()&&settings.configured());status.setText(settings.status());
+        classroom.setEnabled(!busy&&settings.enabled()&&settings.configured());
         ZjuSync.WORKER.execute(()->{
             boolean on; synchronized(AndroidSync.LOCK){on=new ZjuHomeworkStore(this).state().enabled;}
             runOnUiThread(()->{if(isDestroyed()||busy)return;binding=true;homework.setChecked(on);binding=false;});

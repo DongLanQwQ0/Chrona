@@ -309,10 +309,12 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
     }
 
     private static Intent launchExtras(WidgetAgenda.Item item) {
-        return new Intent()
+        Intent intent = new Intent()
                 .putExtra("task_id", item.taskId).putExtra("event_id", item.system ? item.id : 0)
                 .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, item.system ? 0 : item.id)
                 .putExtra("begin", item.start).putExtra("end", item.end);
+        if (item.occurrenceAtMillis != null) intent.putExtra("occurrence_at", item.occurrenceAtMillis.longValue());
+        return intent;
     }
 
     private static void fill(Context context, RemoteViews views, WidgetAgenda.Item item, long now,
@@ -387,7 +389,7 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         edge.setShader(new android.graphics.BitmapShader(bitmap,
                 android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP));
-        float radius = Math.min(22f * metrics.density * scale, Math.min(width, height) / 2f);
+        float radius = Math.min(UiStyle.RADIUS_CARD * metrics.density * scale, Math.min(width, height) / 2f);
         new Canvas(rounded).drawRoundRect(new RectF(0, 0, width, height), radius, radius, edge);
         bitmap.recycle();
         BACKGROUNDS.put(key, rounded);

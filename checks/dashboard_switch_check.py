@@ -1,4 +1,6 @@
 """Execute production section loading and switch/defer controllers with platform transport doubles."""
+from recurrence_dependencies import recurrence_java
+
 from pathlib import Path
 import os
 import subprocess
@@ -28,7 +30,7 @@ files = {
 'android/database/sqlite/SQLiteDatabase.java': '''package android.database.sqlite;public class SQLiteDatabase {
  public int started,ended,successful;public void beginTransactionNonExclusive(){started++;}public void setTransactionSuccessful(){successful++;}public void endTransaction(){ended++;}}
 ''',
-'com/donglan/chrona/data/EventCandidate.java': 'package com.donglan.chrona.data;public class EventCandidate {}',
+
 'com/donglan/chrona/data/TaskStore.java': '''package com.donglan.chrona.data;
 import java.util.*;import android.content.Context;
 public class TaskStore implements AutoCloseable {
@@ -38,7 +40,7 @@ public class TaskStore implements AutoCloseable {
  public List<Long>queryInboxIds(InboxQuery query,boolean oldest){check();c.keyword=query.keyword;if(c.fail)throw new IllegalStateException("read failure");return java.util.stream.LongStream.rangeClosed(1,30).boxed().toList();}
  public List<TaskRecord>queryInboxPage(InboxQuery query,boolean oldest,int page,List<Long>ids){check();return List.of(new TaskRecord(ids.get(page*12),"text","source",0,"ready",null));}
  public List<Long>queryScheduleIds(ScheduleQuery query){check();c.lastSchedule=query;return List.of(1L,2L);}
- public List<EventCandidate>querySchedulePage(ScheduleQuery query,boolean oldest,int page){check();return List.of(new EventCandidate());}
+ public List<EventCandidate>querySchedulePage(ScheduleQuery query,boolean oldest,int page){check();return List.of(new EventCandidate(1,1,"fixture",null,null,"UTC","","",null,false));}
  public List<Long>linkedCalendarIds(){check();return List.of(55L);}
 }''',
 'com/donglan/chrona/HomeData.java': '''package com.donglan.chrona;class HomeData {
@@ -141,5 +143,5 @@ for name, content in files.items():
     p=out/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(content,encoding='utf-8');paths.append(p)
 paths += [src/'DashboardSectionData.java']+[src/'data'/name for name in ('TaskRecord.java','InboxQuery.java','ScheduleQuery.java','EventCategory.java')]
 java=Path(os.environ['JAVA_HOME'])/'bin'
-subprocess.run([str(java/'javac.exe'),'--release','17','-encoding','UTF-8','-d',str(out),*map(str,paths)],check=True)
-subprocess.run([str(java/'java.exe'),'-cp',str(out),'com.donglan.chrona.DashboardActivity'],check=True)
+subprocess.run(recurrence_java([str(java/'javac.exe'),'--release','17','-encoding','UTF-8','-d',str(out),*map(str,paths)]),check=True)
+subprocess.run(recurrence_java([str(java/'java.exe'),'-cp',str(out),'com.donglan.chrona.DashboardActivity']),check=True)

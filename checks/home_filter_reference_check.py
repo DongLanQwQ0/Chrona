@@ -1,4 +1,6 @@
 """Exercise actual filter rules and the job retry method without network or Android devices."""
+from recurrence_dependencies import recurrence_java
+
 from pathlib import Path
 import os
 import subprocess
@@ -104,13 +106,13 @@ check.write_text(harness, encoding="utf-8")
 sources = [root / "app/src/main/java/com/donglan/chrona" / relative for relative in (
     "data/TaskRecord.java", "data/ScheduleFilterState.java", "data/ScheduleFilterSummary.java",
     "data/ScheduleRangeStep.java", "data/ScheduleQuery.java", "data/EventCategory.java", "net/RequestControl.java")]
-subprocess.run([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out),
-                *map(str, sources), str(check)], check=True)
-subprocess.run([str(java / "java.exe"), "-cp", str(out), "HomeFilterReferenceCheck"], check=True)
-subprocess.run([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-cp", str(out), "-d", str(out),
+subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out),
+                *map(str, sources), str(check)]), check=True)
+subprocess.run(recurrence_java([str(java / "java.exe"), "-cp", str(out), "HomeFilterReferenceCheck"]), check=True)
+subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-cp", str(out), "-d", str(out),
                 str(root / "app/src/main/java/com/donglan/chrona/CandidateFeedback.java"),
                 str(root / "app/src/main/java/com/donglan/chrona/CategoryTimeChange.java"),
                 str(root / "app/src/main/java/com/donglan/chrona/data/EventCandidate.java"),
                 str(root / "app/src/main/java/com/donglan/chrona/data/EventTimeDefaults.java"),
-                str(root / "checks/CandidateFeedbackCheck.java")], check=True)
-subprocess.run([str(java / "java.exe"), "-cp", str(out), "com.donglan.chrona.CandidateFeedbackCheck"], check=True)
+                str(root / "checks/CandidateFeedbackCheck.java")]), check=True)
+subprocess.run(recurrence_java([str(java / "java.exe"), "-cp", str(out), "com.donglan.chrona.CandidateFeedbackCheck"]), check=True)

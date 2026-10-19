@@ -27,8 +27,14 @@ final class WidgetAgenda {
         final long id, taskId, start, end;
         final String title, location, category, source;
         final boolean system, allDay;
+        final Long occurrenceAtMillis;
         Item(long id, long taskId, long start, long end, String title, String location,
                 String category, String source, boolean system, boolean allDay) {
+            this(id,taskId,start,end,title,location,category,source,system,allDay,null);
+        }
+        Item(long id, long taskId, long start, long end, String title, String location,
+                String category, String source, boolean system, boolean allDay, Long occurrenceAtMillis) {
+            this.occurrenceAtMillis = occurrenceAtMillis;
             this.id = id; this.taskId = taskId; this.start = start; this.end = end;
             this.title = title; this.location = location == null ? "" : location;
             this.category = category; this.source = source; this.system = system;
@@ -113,12 +119,12 @@ final class WidgetAgenda {
             long utcBegin = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
             long utcTomorrow = date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
             long utcHorizon = date.plusMonths(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
-            Map<Long, EventCandidate> local = new LinkedHashMap<>();
+            Map<String, EventCandidate> local = new LinkedHashMap<>();
             for (EventCandidate candidate : store.widgetCandidates(begin, tomorrow, utcBegin, utcTomorrow))
-                local.put(candidate.id, candidate);
+                local.put(candidate.occurrenceKey(), candidate);
             // Finished history may fill today's page, but must never hide the next unfinished item.
             for (EventCandidate candidate : store.widgetCandidates(result.now, horizon, utcBegin, utcHorizon))
-                local.put(candidate.id, candidate);
+                local.put(candidate.occurrenceKey(), candidate);
             for (EventCandidate candidate : local.values()) {
                 long start = candidate.calendarStart();
                 long end = candidate.point() ? start : candidate.calendarEnd();
@@ -130,7 +136,7 @@ final class WidgetAgenda {
                 }
                 items.add(new Item(candidate.id, candidate.taskId, start, end,
                         candidate.title, candidate.location, EventCategory.label(candidate.category),
-                        "拾时", false, candidate.allDay));
+                        "拾时", false, candidate.allDay, candidate.occurrenceAtMillis));
             }
             List<CalendarOccurrence> systemEntries = new ArrayList<>();
             if (WidgetPreferences.includesSystemCalendar(context)) {

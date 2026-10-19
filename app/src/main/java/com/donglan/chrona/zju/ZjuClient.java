@@ -35,12 +35,61 @@ public final class ZjuClient implements Closeable {
     private static final String ZDBK = "https://zdbk.zju.edu.cn/jwglxt";
     private static final int MAX_REDIRECTS = 16;
     private static final int PAGE_SIZE = 100;
+    private static final int MAX_CLASSROOM_IMAGE_BYTES = 16 * 1024 * 1024;
     private final ZjuCalendarConfig calendar;
     private final MemoryCookies cookies = new MemoryCookies();
     private final OkHttpClient http;
     private String user, password;
     private volatile boolean cancelled, closed;
     private boolean coursesLoggedIn, timetableLoggedIn;
+    private boolean classroomLoggedIn, casAuthenticated;
+
+    /** Read-only classroom session; shares the verified CAS transport, never persists cookies. */
+    public synchronized JSONObject classroomJson(String url) throws IOException {
+        HttpUrl target = safeUrl(url);
+        if (!(target.host().equals("education.cmc.zju.edu.cn") || target.host().equals("yjapi.cmc.zju.edu.cn")
+                || target.host().equals("classroom.zju.edu.cn")))
+            throw new SchoolException("数据地址不属于智云课堂服务");
+        ensureClassroom();
+        try { return json(target.toString(), null); }
+        catch (JSONException e) { throw new SchoolException("智云返回的数据格式无法识别"); }
+    }
+
+    public synchronized byte[] classroomImage(String url) throws IOException {
+        HttpUrl target = safeUrl(url);
+        if (!target.host().equals("video.cmc.zju.edu.cn"))
+            throw new SchoolException("截图地址不属于智云媒体服务");
+        ensureClassroom();
+        try (Response response = execute(new Request.Builder().url(target).get().build())) {
+            if (response.code() == 401 || response.code() == 403) throw new AuthenticationException();
+            if (!response.isSuccessful() || response.body() == null)
+                throw new SchoolException("课堂截图下载失败");
+            String type = response.header("Content-Type", "").toLowerCase(java.util.Locale.ROOT);
+            if (!type.startsWith("image/")) throw new SchoolException("课堂截图未返回图像");
+            if (response.body().contentLength() > MAX_CLASSROOM_IMAGE_BYTES) throw new SchoolException("课堂截图过大");
+            try (java.io.InputStream input = response.body().byteStream();
+                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192]; int count;
+                while ((count = input.read(buffer)) != -1) {
+                    checkOpen();
+                    if (output.size() + count > MAX_CLASSROOM_IMAGE_BYTES) throw new SchoolException("课堂截图过大");
+                    output.write(buffer, 0, count);
+                }
+                checkOpen();
+                if (output.size() == 0) throw new SchoolException("课堂截图为空");
+                return output.toByteArray();
+            }
+        }
+    }
+
+    private void ensureClassroom() throws IOException {
+        checkOpen();
+        if (classroomLoggedIn) return;
+        try { if (!casAuthenticated) loginService(null); }
+        catch (JSONException e) { throw new AuthenticationException(); }
+        follow(new Request.Builder().url("https://tgmedia.cmc.zju.edu.cn/index.php?r=auth%2Flogin&forward=https%3A%2F%2Fclassroom.zju.edu.cn%2F").get().build(), true, true);
+        classroomLoggedIn = true;
+    }
 
     public ZjuClient(String user, String password) { this(user, password, ZjuCalendarConfig.ordinary()); }
 
@@ -309,10 +358,12 @@ public final class ZjuClient implements Closeable {
     }
 
     private String loginService(String service) throws IOException, JSONException {
-        safeUrl(service);
-        String url = safeUrl("https://zjuam.zju.edu.cn/cas/login").newBuilder().addQueryParameter("service", service).build().toString();
+        if (service != null) safeUrl(service);
+        HttpUrl.Builder login = safeUrl("https://zjuam.zju.edu.cn/cas/login").newBuilder();
+        if (service != null) login.addQueryParameter("service", service);
+        String url = login.build().toString();
         try (Response r = execute(new Request.Builder().url(url).get().build())) {
-            if (isRedirect(r)) return redirect(r);
+            if (isRedirect(r)) { String target = redirect(r); casAuthenticated = true; return target; }
             if (r.code() != 200) throw new AuthenticationException();
             String html = body(r);
             Matcher inputs = Pattern.compile("<input\\b([^>]*)>", Pattern.CASE_INSENSITIVE).matcher(html);
@@ -332,17 +383,24 @@ public final class ZjuClient implements Closeable {
                     .add("password", encrypted).add("execution", execution).add("_eventId", "submit").add("authcode", "").build()).build();
             try (Response result = execute(post)) {
                 if (!isRedirect(result)) throw new AuthenticationException();
-                return redirect(result);
+                String target = redirect(result); casAuthenticated = true; return target;
             }
         }
     }
 
     private String follow(Request request, boolean allowLogin) throws IOException {
+        return follow(request, allowLogin, false);
+    }
+
+    private String follow(Request request, boolean allowLogin, boolean classroomOauth) throws IOException {
         int authCount = 0;
         for (int i = 0; i < MAX_REDIRECTS; i++) {
             checkOpen();
             HttpUrl url = request.url();
-            if (url.host().equals("zjuam.zju.edu.cn") && url.encodedPath().equals("/cas/login")) {
+            // ZJU's OAuth server advertises its own callback using http in the opaque CAS service.
+            // Keep that ticket service unchanged, but only send the callback request over HTTPS.
+            boolean oauthService = classroomOauth && legacyOauthCallback(HttpUrl.parse(url.queryParameter("service") == null ? "" : url.queryParameter("service")));
+            if (url.host().equals("zjuam.zju.edu.cn") && url.encodedPath().equals("/cas/login") && !oauthService) {
                 if (!allowLogin || ++authCount > 2) throw new AuthenticationException();
                 String service = url.queryParameter("service");
                 if (service == null) throw new AuthenticationException();
@@ -353,7 +411,11 @@ public final class ZjuClient implements Closeable {
             try (Response response = execute(request)) {
                 if (response.code() == 401 || response.code() == 403) throw new AuthenticationException();
                 if (isRedirect(response)) {
-                    request = new Request.Builder().url(redirect(response)).get().build(); continue;
+                    String target;
+                    HttpUrl next = url.resolve(response.header("Location", ""));
+                    if (classroomOauth && legacyOauthCallback(next)) target = safeUrl(next.newBuilder().scheme("https").port(443).build().toString()).toString();
+                    else target = redirect(response);
+                    request = new Request.Builder().url(target).get().build(); continue;
                 }
                 if (!response.isSuccessful()) throw new SchoolException("学校服务暂时不可用（" + response.code() + "）");
                 String text = body(response);
@@ -368,6 +430,12 @@ public final class ZjuClient implements Closeable {
             }
         }
         throw new SchoolException("学校登录跳转过多，请稍后重试");
+    }
+
+    private static boolean legacyOauthCallback(HttpUrl url) {
+        return url != null && url.scheme().equals("http") && url.host().equals("zjuam.zju.edu.cn")
+                && url.port() == 80 && url.encodedPath().equals("/cas/oauth2.0/callbackAuthorize")
+                && url.username().isEmpty() && url.password().isEmpty();
     }
 
     private Response execute(Request request) throws IOException {
@@ -417,7 +485,9 @@ public final class ZjuClient implements Closeable {
     }
     private static final class MemoryCookies implements CookieJar {
         private final List<Cookie> values = new ArrayList<>();
+        private boolean closed;
         @Override public synchronized void saveFromResponse(HttpUrl url, List<Cookie> incoming) {
+            if (closed) return;
             for (Cookie cookie : incoming) {
                 values.removeIf(old -> old.name().equals(cookie.name()) && old.domain().equals(cookie.domain()) && old.path().equals(cookie.path()));
                 if (cookie.expiresAt() > System.currentTimeMillis()) values.add(cookie);
@@ -429,6 +499,6 @@ public final class ZjuClient implements Closeable {
             for (Cookie c : values) if (c.matches(url)) result.add(c);
             return result;
         }
-        synchronized void clear() { values.clear(); }
+        synchronized void clear() { closed = true; values.clear(); }
     }
 }

@@ -8,7 +8,7 @@ import java.time.format.DateTimeFormatter;
 
 /** Stable instructions and an explicitly encoded, bounded data suffix. */
 public final class SchedulePrompt {
-    public static final String VERSION = "schedule-v9";
+    public static final String VERSION = "schedule-v10";
     public static final String DECISION_RULES = "判断边界（按以下规则直接落字段，不再比较）："
             + "先按事项固有语义选类别：会议、课堂、考试、作业讲评会、赴约用event；普通个人行动用task；课程布置的作业、习题、实验报告、课程项目用homework，课程名纳入简短标题。"
             + "‘提醒’是设置，不覆盖事项固有类别：‘在T提醒我做X/提醒我T做X’按X分类，start=T，due=null，未给结束则end=null，reminder_specified=true，reminder_minutes_before=0。"
@@ -52,7 +52,13 @@ public final class SchedulePrompt {
             + "‘2到3点/两三点’作时间范围时保留范围，作大约时间时取一个合理钟点并标2；显式时区优先，无时区用请求时区。"
             + "明确交付期限‘截至/最晚/DDL/某日前提交/周五交作业’放task/homework.due；只有日期的截止取当天23:59、all_day=false并标2；‘会议之前提醒’只设提醒，勿填event.due；明确全天事项用all_day；普通无时间待办保持时间null。"
             + "‘明天上午10点提醒我开会’的10点是事项时间；‘10点开会提前15分钟提醒’保留10点并设置15分钟提醒，勿减两次。"
-            + "‘提前三天复习，当天考试’拆成独立任务/活动，锚定考试日期；重复/每周/工作日按可表达的最近一次生成，描述保留频率且标2，不假装已创建循环。"
+            + "‘提前三天复习，当天考试’拆成独立任务/活动，锚定考试日期。"
+            + "只有原文明确重复意图时填写recurrence，否则为null；event、task、homework均可重复，但必须有确定的首次start或due，不能创建无时间锚点的循环。"
+            + "recurrence.frequency只用daily/weekly/monthly/yearly，interval为1–999的整数；每天/每周/每月/每年取1，隔两周取2。"
+            + "weekdays只在weekly中填写周一=1至周日=7的整数数组，其他频率填[]；每个工作日为weekly、interval=1、weekdays=[1,2,3,4,5]，不推测法定调休。"
+            + "start或仅截止事项的due必须落在首次实际重复日；每周多日从第一个满足条件的日期开始，不能以不在weekdays内的今天占位。"
+            + "until为含当天的结束日期YYYY-MM-DD或null；count为包含首次的总次数1–100000或null，二者互斥；未指定结束时都为null。"
+            + "每月31日或每年2月29日等规则以首次日期为锚，遇到没有该日期的月份/年份跳过，不挪到月底。明确重复本身无需标2，只有首次时间或规则仍需推断时才标2。"
             + "节假日/农历/第几节课若上下文有对应日期时间则用它；否则给合理日期时间建议标2，不进行漫长历法或课表猜测。"
             + "约/左右保留给定中心时间并标2；多个候选、条件或矛盾优先具体日期与钟点，保留冲突摘要并标2。"
             + "任何补全日期、时段、模糊词或习惯推断都uncertainty_level=2、needs_confirmation=true，description中的推断说明只写一句‘时间建议：…（待确认）’，保留其他必要事实；"
@@ -109,6 +115,18 @@ public final class SchedulePrompt {
             for (String key : new String[]{"start", "end", "due"}) ep.put(key,
                     new JSONObject().put("anyOf", new org.json.JSONArray().put(time).put(new JSONObject().put("type", "null"))));
             for (String key : new String[]{"duration_minutes", "reminder_minutes_before"}) ep.put(key, nullable("integer"));
+            JSONObject recurrenceProperties = new JSONObject()
+                    .put("frequency", new JSONObject().put("type", "string").put("enum",
+                            new org.json.JSONArray(new String[]{"daily", "weekly", "monthly", "yearly"})))
+                    .put("interval", new JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 999))
+                    .put("weekdays", new JSONObject().put("type", "array").put("items",
+                            new JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 7)))
+                    .put("until", nullable("string"))
+                    .put("count", nullable("integer").put("minimum", 1).put("maximum", 100000));
+            JSONObject recurrence = new JSONObject().put("type", "object").put("additionalProperties", false)
+                    .put("properties", recurrenceProperties).put("required", recurrenceProperties.names());
+            ep.put("recurrence", new JSONObject().put("anyOf", new org.json.JSONArray()
+                    .put(recurrence).put(new JSONObject().put("type", "null"))));
             JSONObject event = new JSONObject().put("type", "object").put("additionalProperties", false)
                     .put("properties", ep).put("required", ep.names());
             JSONObject record = new JSONObject().put("type","object").put("additionalProperties",false)

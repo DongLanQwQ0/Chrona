@@ -1,4 +1,6 @@
 """Exercise the production bulk writer with deterministic Android/provider/store doubles."""
+from recurrence_dependencies import recurrence_java
+
 from pathlib import Path
 import os
 import subprocess
@@ -47,7 +49,7 @@ public class CalendarStore {
  public static class EventRecord {public final String location;EventRecord(String location){this.location=location;}}
  public long insertEvent(EventInput input){if(input.title.equals("provider-fail"))throw new IllegalStateException();long id=next++;events.put(id,input);return id;}
  public boolean deleteEvent(long id){if(failDelete)throw new IllegalStateException();events.remove(id);return true;}
- public static class EventInput {public final String title,location;public final long start,end;public final boolean allDay;public EventInput(String title,long start,long end,String zone,boolean allDay,String description,String location,List<Integer>reminders){
+ public static class EventInput {public EventInput withRepeat(com.donglan.chrona.data.EventCandidate candidate){if(candidate.repeatRule!=null)throw new AssertionError("Non-repeating publication fixture");return this;}public final String title,location;public final long start,end;public final boolean allDay;public EventInput(String title,long start,long end,String zone,boolean allDay,String description,String location,List<Integer>reminders){
  if(title==null||title.trim().isEmpty()||end<=start||zone==null||zone.isBlank())throw new IllegalArgumentException();
  if(allDay&&(!zone.equals("UTC")||start%86400000L!=0||end%86400000L!=0))throw new IllegalArgumentException();
  for(Integer reminder:reminders)if(reminder==null||reminder<0)throw new IllegalArgumentException();this.title=title;this.location=location;this.start=start;this.end=end;this.allDay=allDay;
@@ -107,8 +109,8 @@ for name, value in files.items():
     paths.append(path)
 paths += [src / name for name in ['data/EventCategory.java', 'data/EventCandidate.java', 'processing/BulkCalendarPublisher.java']]
 java = Path(os.environ['JAVA_HOME']) / 'bin'
-subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str, paths)], check=True)
-subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.processing.BulkCalendarPublishCheck'], check=True)
+subprocess.run(recurrence_java([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str, paths)]), check=True)
+subprocess.run(recurrence_java([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.processing.BulkCalendarPublishCheck']), check=True)
 activity = (src / 'DashboardActivity.java').read_text(encoding='utf-8')
 assert 'publishSelectedButton = inboxSelectionAction("写入日历"' in activity
 assert 'BULK_CALENDAR_PERMISSION_REQUEST' in activity

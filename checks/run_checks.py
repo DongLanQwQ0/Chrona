@@ -36,6 +36,8 @@ GROUPS = {
         "completion_card_motion_check.py", "schedule_filter_layout_check.py", "source_contents_check.py", "zju_ui_style_check.py",
     ),
     "cached_dependencies": (
+        "classroom_summary_check.py", "classroom_client_check.py",
+        "repeat_ai_check.py", "repeat_projection_check.py", "calendar_repeat_check.py",
         "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",
         "sync_core_check.py", "sync_lock_check.py", "lan_sync_api_check.py", "lan_sources_check.py", "lan_attachment_upload_check.py",
         "atomic_card_contract_check.py", "island_camera_check.py",

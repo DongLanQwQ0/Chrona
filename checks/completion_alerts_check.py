@@ -1,4 +1,6 @@
 """Exercise production completion orchestration with isolated calendar/preference adapters."""
+from recurrence_dependencies import recurrence_java
+
 import os
 import subprocess
 from pathlib import Path
@@ -7,6 +9,7 @@ root = Path(__file__).resolve().parents[1]
 out = root / 'build/completion-alerts-check'
 out.mkdir(parents=True, exist_ok=True)
 sources = {
+'com/donglan/chrona/RepeatActions.java': '''package com.donglan.chrona;class RepeatActions {static void change(android.content.Context c,long task,long id,String baseline,String action,Long occurrence,com.donglan.chrona.data.EventCandidate edited,Long now){throw new AssertionError("Non-repeating fixture must not call series actions");}}''',
 'android/content/Context.java': '''package android.content;
 public class Context {public static final int MODE_PRIVATE=0;public SharedPreferences prefs=new SharedPreferences();public SharedPreferences getSharedPreferences(String key,int mode){return prefs;}}''',
 'android/content/SharedPreferences.java': '''package android.content;
@@ -105,8 +108,8 @@ for name, text in sources.items():
     path.write_text(text, encoding='utf-8')
     paths.append(path)
 src = root / 'app/src/main/java/com/donglan/chrona'
-paths += [src / 'TaskCompletion.java', src / 'AgendaAcknowledgement.java', src / 'data/EventCandidate.java', src / 'data/EventCategory.java']
+paths += [src / 'CandidateEditBaseline.java', src / 'TaskCompletion.java', src / 'AgendaAcknowledgement.java', src / 'data/EventCandidate.java', src / 'data/EventCategory.java']
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
 cp = str(root / 'build/ai-checks/json.jar')
-subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', cp, '-d', str(out), *map(str, paths)], check=True)
-subprocess.run([str(java / 'java.exe'), '-cp', str(out) + os.pathsep + cp, 'com.donglan.chrona.CompletionCheck'], check=True)
+subprocess.run(recurrence_java([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', cp, '-d', str(out), *map(str, paths)]), check=True)
+subprocess.run(recurrence_java([str(java / 'java.exe'), '-cp', str(out) + os.pathsep + cp, 'com.donglan.chrona.CompletionCheck']), check=True)

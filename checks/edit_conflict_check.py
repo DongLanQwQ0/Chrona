@@ -1,4 +1,6 @@
 """Production baseline/network logic plus native transaction wiring; no Android runtime."""
+from recurrence_dependencies import recurrence_java
+
 import os
 from pathlib import Path
 import subprocess
@@ -10,8 +12,8 @@ java = Path(os.environ.get("JAVA_HOME", "D:/Minecraft/java21")) / "bin"
 files = [src / "CandidateEditBaseline.java", src / "LanNetworkIdentity.java",
          src / "data/EventCandidate.java", src / "data/EventCategory.java",
          root / "checks/EditConflictCheck.java"]
-subprocess.run([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out), *map(str, files)], check=True)
-subprocess.run([str(java / "java.exe"), "-cp", str(out), "com.donglan.chrona.EditConflictCheck"], check=True)
+subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out), *map(str, files)]), check=True)
+subprocess.run(recurrence_java([str(java / "java.exe"), "-cp", str(out), "com.donglan.chrona.EditConflictCheck"]), check=True)
 text = (src / "TaskDetailActivity.java").read_text(encoding="utf-8")
 for name, next_name in [("private void publish(", "private void checkCalendarDuplicate"),
                         ("private void associateExistingEvent(", "private static EventCandidate requireCandidate"),

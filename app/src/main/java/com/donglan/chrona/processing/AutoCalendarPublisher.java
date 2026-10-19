@@ -52,7 +52,7 @@ final class AutoCalendarPublisher {
                             created = calendar.insertEvent(new CalendarStore.EventInput(current.title,
                                     current.calendarStart(), current.calendarEnd(), current.timeZoneId, current.allDay,
                                     current.description, current.location, current.reminderMinutesBefore == null
-                                            ? Collections.emptyList() : Collections.singletonList(current.reminderMinutesBefore)));
+                                            ? Collections.emptyList() : Collections.singletonList(current.reminderMinutesBefore)).withRepeat(current));
                             control.check();
                             if (!store.setCalendarEventIdIfUnlinked(current.id, taskId, created))
                                 throw new IllegalStateException("日程关联已变化");

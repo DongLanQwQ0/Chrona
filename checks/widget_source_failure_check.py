@@ -1,4 +1,6 @@
 """Run the actual widget loader/merge, checking source switches and visible read failures."""
+from recurrence_dependencies import recurrence_java
+
 from pathlib import Path
 import os
 import subprocess
@@ -87,6 +89,6 @@ for name, text in fixtures.items():
 sources = [src / relative for relative in ("WidgetAgenda.java", "ExternalCourseAgenda.java", "CourseSourceMatching.java", "zju/ZjuSnapshot.java", "calendar/CalendarOccurrence.java",
            "calendar/AllDayDates.java", "data/EventCandidate.java", "data/EventCategory.java")]
 java = Path(os.environ["JAVA_HOME"]) / "bin"
-subprocess.run([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out),
-                *map(str, sources + stubs)], check=True)
-subprocess.run([str(java / "java.exe"), "-cp", str(out), "com.donglan.chrona.WidgetSourceFailureCheck"], check=True)
+subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out),
+                *map(str, sources + stubs)]), check=True)
+subprocess.run(recurrence_java([str(java / "java.exe"), "-cp", str(out), "com.donglan.chrona.WidgetSourceFailureCheck"]), check=True)

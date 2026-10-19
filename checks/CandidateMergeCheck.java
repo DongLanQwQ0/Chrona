@@ -119,6 +119,11 @@ public final class CandidateMergeCheck {
         return DuplicateCandidates.key(first).equals(DuplicateCandidates.key(second));
     }
     static void identityChecks(){
+        EventCandidate single = candidate(1, 0);
+        EventCandidate series = single.withRepeat(new RepeatRule("daily", 1, List.of(), null, 3));
+        check(!same(single, series), "single event and repeated series cannot merge");
+        check(!same(series, series.withRepeatState("{\"1000\":{\"deleted\":true}}", null)),
+                "series with different occurrence exceptions cannot merge");
         List<EventCandidate> variants=new ArrayList<>();variants.add(candidate(1,0));variants.add(candidate(2,0));
         Set<Integer> significant=new HashSet<>(Arrays.asList(1,2,3,5,10,11));
         for(int i=1;i<=13;i++){

@@ -28,6 +28,10 @@ public final class WidgetLaunchActivity extends Activity {
                         .putExtra(CalendarContract.EXTRA_EVENT_END_TIME,
                                 getIntent().getLongExtra("end", 0))
                 : new Intent(this, DashboardActivity.class);
+        if (task > 0 && getIntent().hasExtra("occurrence_at")) {
+            target.setClass(this, RepeatScheduleActivity.class)
+                    .putExtra("occurrence_at", getIntent().getLongExtra("occurrence_at", 0));
+        }
         try { startActivity(target); }
         catch (android.content.ActivityNotFoundException exception) {
             startActivity(new Intent(this, DashboardActivity.class));

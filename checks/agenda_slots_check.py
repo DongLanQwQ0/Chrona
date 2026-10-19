@@ -12,19 +12,19 @@ depth = 1
 while depth:
     depth += (source[end] == '{') - (source[end] == '}')
     end += 1
-refresh = source[start:end].replace("android.widget.Toast", "Toast")
+refresh = source[start:end].replace("android.widget.Toast", "Toast").replace("com.donglan.chrona.data.RepeatOccurrences.at", "RepeatOccurrences.at")
 pure = '\n'.join((src / f'{name}.java').read_text(encoding='utf-8').replace('package com.donglan.chrona;', '').replace('import java.util.*;', '').replace('import java.util.List;', '') for name in ('AgendaEntry', 'ReminderTimeline', 'ReminderSlots'))
 harness = r'''
 import java.util.*;import java.time.*;
 class Context {SharedPreferences prefs=new SharedPreferences();NotificationManager manager=new NotificationManager();<T>T getSystemService(Class<T> type){return type.cast(manager);}}
 class Handler {void post(Runnable r){r.run();}}
 class Toast {static final int LENGTH_LONG=1;static Toast makeText(Context c,String t,int len){return new Toast();}void show(){}}
-class TaskCompletion {static void retryPending(Context c){}static String set(Context c,long id,long task,boolean complete){for(EventCandidate e:TaskStore.rows)if(e.id==id)e.done=complete;return null;}}
+class TaskCompletion {static void retryPending(Context c){}static String set(Context c,EventCandidate e,boolean complete){return set(c,e.id,e.taskId,complete);}static String set(Context c,long id,long task,boolean complete){for(EventCandidate e:TaskStore.rows)if(e.id==id)e.done=complete;return null;}}
 class NotificationDeliveryStatus {static boolean canPostReminders(Context c){return c.manager.allowed;}}
 class Uri {final String key;Uri(String key){this.key=key;}String getLastPathSegment(){return key;}}
 class Intent {String key,action;Intent(String key,String action){this.key=key;this.action=action;}String getStringExtra(String k){return key;}Uri getData(){return new Uri(key);}String getAction(){return action;}}
 class ZjuHomeworkCalendar {static void retryPending(Context c){}}
-class AgendaAcknowledgement {static void set(Context c,String key,long until,boolean confirmed){SharedPreferences.Editor edit=c.prefs.edit();if(confirmed)edit.putLong("hidden:"+key,until);else edit.remove("hidden:"+key).remove("snooze_until:"+key).remove("snooze_end:"+key);edit.putLong("acknowledgement_revision",c.prefs.getLong("acknowledgement_revision",0)+1).apply();}}
+class AgendaAcknowledgement {static String key(EventCandidate e){return e.key();}static void set(Context c,String key,long until,boolean confirmed){SharedPreferences.Editor edit=c.prefs.edit();if(confirmed)edit.putLong("hidden:"+key,until);else edit.remove("hidden:"+key).remove("snooze_until:"+key).remove("snooze_end:"+key);edit.putLong("acknowledgement_revision",c.prefs.getLong("acknowledgement_revision",0)+1).apply();}}
 class SharedPreferences {
  Map<String,Object> values=new HashMap<>();String getString(String k,String d){return (String)values.getOrDefault(k,d);}long getLong(String k,long d){return (Long)values.getOrDefault(k,d);}boolean getBoolean(String k,boolean d){return (Boolean)values.getOrDefault(k,d);}Map<String,?> getAll(){return new HashMap<>(values);}Editor edit(){return new Editor();}
  class Editor {Map<String,Object> additions=new HashMap<>();Set<String> removed=new HashSet<>();Editor putString(String k,String v){additions.put(k,v);return this;}Editor putBoolean(String k,boolean v){additions.put(k,v);return this;}Editor putLong(String k,long v){additions.put(k,v);return this;}Editor remove(String k){removed.add(k);return this;}void apply(){for(String k:removed)values.remove(k);values.putAll(additions);}}
@@ -37,7 +37,8 @@ class AtomicCountdownUpdates {static void clear(int id){}static void remember(in
 class NotificationChannel {NotificationChannel(String id,String name,int importance){}void setDescription(String s){}void setLockscreenVisibility(int visibility){if(visibility!=Notification.VISIBILITY_PUBLIC)throw new AssertionError("reminder channel must be lockscreen visible");}}
 class VivoAtomicNotification {static boolean vivo=true;static List<Integer> ended=new ArrayList<>();static boolean available(Context c){return vivo&&c.manager.allowed;}static boolean active(NotificationManager m,int id){return m.atomic.getOrDefault(id,false);}static void end(Context c,NotificationManager m,int id){ended.add(id);m.events.add("end:"+id);m.cards.remove(id);m.atomic.remove(id);}}
 class AndroidSync {static final Object LOCK=new Object();}
-class EventCandidate {boolean isRecord,needsConfirmation,done;boolean completed(){return isTask()&&done;}Long dueAtMillis;boolean isTask(){return !isRecord&&com.donglan.chrona.data.EventCategory.isTaskLike(category);}Long anchor(){return startAtMillis;}Long effectiveDueAtMillis(){return !isTask()?null:dueAtMillis!=null?dueAtMillis:endAtMillis!=null?endAtMillis:startAtMillis;}Long reminderAnchor(){return isTask()?effectiveDueAtMillis():anchor();}Long calendarStart(){return startAtMillis;}Long calendarEnd(){return endAtMillis;}boolean point(){return false;}long id,taskId,startAtMillis;Long endAtMillis;Integer reminderMinutesBefore;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+reminderAnchor();}}
+class RepeatOccurrences {static EventCandidate at(EventCandidate saved,long at){throw new AssertionError("Non-repeating reminder fixture");}}
+class EventCandidate {Object repeatRule;Long occurrenceAtMillis;boolean isRecord,needsConfirmation,done;boolean completed(){return isTask()&&done;}Long dueAtMillis;boolean isTask(){return !isRecord&&com.donglan.chrona.data.EventCategory.isTaskLike(category);}Long anchor(){return startAtMillis;}Long effectiveDueAtMillis(){return !isTask()?null:dueAtMillis!=null?dueAtMillis:endAtMillis!=null?endAtMillis:startAtMillis;}Long reminderAnchor(){return isTask()?effectiveDueAtMillis():anchor();}Long calendarStart(){return startAtMillis;}Long calendarEnd(){return endAtMillis;}boolean point(){return false;}long id,taskId,startAtMillis;Long endAtMillis;Integer reminderMinutesBefore;String title="title",location="",description="",category="event";EventCandidate(long id,long start,long end){this.id=id;this.startAtMillis=start;this.endAtMillis=end;this.taskId=1;}String key(){return "chrona:"+id+":"+reminderAnchor();}}
 class TaskStore implements AutoCloseable {static List<EventCandidate> rows=new ArrayList<>();static Set<Long> blockedReminders=new HashSet<>();TaskStore(Context c){}boolean allowsReminder(long id){return !blockedReminders.contains(id);}List<EventCandidate> nextReminderCandidates(long now,Set<String> hidden){List<EventCandidate> r=new ArrayList<>();for(EventCandidate e:rows)if(!e.completed()&&!hidden.contains(e.key())&&allowsReminder(e.id))r.add(e);return r;}List<Long> linkedCalendarIds(){return List.of();}List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids){return rows.stream().filter(e->ids.contains(e.id)).toList();}boolean setCandidateCompleted(long id,long task,boolean done){return true;}public void close(){}}
 class CalendarOccurrence {long eventId,startMillis,endMillis;String title,location,calendarName,description;boolean allDay;}
 class ExternalCourseAgenda {static boolean isExternal(long id){return id<0;}static List<CalendarOccurrence> merge(Context c,List<CalendarOccurrence> system,long begin,long end,Set<Long> linked){return system.stream().filter(e->!linked.contains(e.eventId)).toList();}}
@@ -51,7 +52,7 @@ public class AgendaSlotsCheck {
  __REFRESH__
  static void check(boolean condition,String reason){checks++;if(!condition)throw new AssertionError(reason);}
  static String slot(Context c,int i){return c.prefs.getString("slot_key:"+i,"");}
- public static void main(String[] args){
+ public static void main(String[] args) throws Exception {
   long now=System.currentTimeMillis();Context c=new Context();
   AgendaEntry current=new AgendaEntry(90,1,now+1000,now+2000,"current","","","",false,false,true);
   AgendaEntry early=new AgendaEntry(91,1,now+3000,now+4000,"early","","","",false,false,true);

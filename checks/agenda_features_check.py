@@ -4,6 +4,8 @@ Pure Java is production source. Preference/SQLite transport are Android stand-in
 the SQL built by the actual TaskStore methods is then executed against real SQLite.
 This cannot establish Android notification rendering or background delivery.
 """
+from recurrence_dependencies import recurrence_java
+
 from pathlib import Path
 import json
 import os
@@ -186,7 +188,8 @@ sql_methods = '\n'.join(method(store, signature) for signature in ('public List<
 files['com/donglan/chrona/SqlCheck.java'] = '''package com.donglan.chrona;
 import java.util.*;
 import com.donglan.chrona.data.ScheduleQuery;
-class EventCandidate {}
+import com.donglan.chrona.data.EventCandidate;
+import com.donglan.chrona.data.RepeatOccurrences;
 class Cursor implements AutoCloseable {public boolean moveToNext(){return false;}public boolean moveToFirst(){return false;}public void close(){}}
 class Database {
  Cursor query(String table,Object columns,String selection,String[] args,Object group,Object having,String sort,String limit){
@@ -195,6 +198,9 @@ class Database {
 public class SqlCheck {
  __ZJU_REMINDER_ALLOWED__
  Database getReadableDatabase(){return new Database();}EventCandidate readCandidate(Cursor c){return null;}
+ // These SQL fixtures contain no series; projection behavior is covered by RepeatProjectionCheck.
+ List<EventCandidate> repeatingCandidates(){return List.of();}
+ List<EventCandidate> mergeRepeats(List<EventCandidate> rows,long a,long b,long c,long d,int limit){return rows;}
  ''' + sql_methods + '''
  public static void main(String[]args){SqlCheck c=new SqlCheck();c.calendarCandidates(10000000,20000000,10000000,20000000);c.nextReminderCandidates(10000000,Set.of());c.nextReminderCandidates(10000000,Set.of("chrona:8:9999999"));c.nextReminderCandidates(30000000,Set.of());c.nextReminderCandidates(18000000,Set.of());}
 }'''
@@ -294,10 +300,10 @@ for name, content in files.items():
 paths.append(src / 'data/EventCategory.java')
 paths.append(src / 'data/ScheduleQuery.java')
 java = Path(os.environ['JAVA_HOME']) / 'bin'
-subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str, paths)], check=True)
-subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.AgendaFeaturesCheck'], check=True)
-subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.calendar.ReminderProviderCheck'], check=True)
-queries = subprocess.check_output([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.SqlCheck'], text=True)
+subprocess.run(recurrence_java([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str, paths)]), check=True)
+subprocess.run(recurrence_java([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.AgendaFeaturesCheck']), check=True)
+subprocess.run(recurrence_java([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.calendar.ReminderProviderCheck']), check=True)
+queries = subprocess.check_output(recurrence_java([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.SqlCheck']), text=True)
 db = sqlite3.connect(':memory:')
 db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,needs_confirmation INTEGER,category TEXT NOT NULL DEFAULT 'event',reminder_minutes_before INTEGER)")
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(1,8000000,12000000,0,0),(2,9000000,13000000,0,0),(3,11000000,12000000,0,0),(4,11500000,12000000,0,0),(5,10500000,12000000,0,1),(6,10500000,12000000,1,0),(7,None,None,0,0),(8,9999999,None,0,0)])
@@ -305,7 +311,7 @@ db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,al
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation) VALUES(?,?,?,?,?)', [(9,11600000,12000000,0,0),(10,11700000,12000000,0,0)])
 db.executemany('INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day,needs_confirmation,category) VALUES(?,?,?,?,?,?)', [(20,29600000,33000000,0,0,'event'),(21,29820001,29820002,0,0,'todo'),(22,29820000,33000000,0,0,'reminder'),(23,29819999,33000000,0,0,'todo')])
 db.execute("INSERT INTO event_candidates VALUES(30,40000000,41000000,0,0,'event',600)")
-for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
+for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER","repeat_rule TEXT","repeat_exceptions TEXT NOT NULL DEFAULT '{}'","repeat_stopped_at INTEGER"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
 db.execute("ALTER TABLE event_candidates ADD COLUMN task_id INTEGER NOT NULL DEFAULT 1")
 db.execute("CREATE TABLE zju_homework_captures(capture_id INTEGER,account TEXT)")
 db.execute("CREATE TABLE managed_zju_state(enabled INTEGER,capture_id INTEGER)")

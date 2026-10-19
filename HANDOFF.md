@@ -6,13 +6,17 @@
 
 ## 当前版本
 
-- 当前 **0.15.23 / versionCode 185**。数据库版本 **13**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
+- 当前 **0.15.24 / versionCode 186** ，数据库版本 **14**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
 - 源码与安装包：[GitHub Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
 - 本轮补齐网页日历、批量处理、来源管理、附件采集和同步冲突处理，统一审核与来源查询；修复备份列顺序、网页日期边界及同步网络占锁。详见[局域网访问](docs/features/connectivity/lan-access.md)。
 - 网页续轮增加年历与月日跳转、周密度和自动同步开关；修复附件冲突重试、文件名原文、记录单独删除及冲突版本字段展示。续轮备份 `build/backups/20261018-web-followup/`，构建日志 `build/0.15.23-web-followup-build.log`；同步 API 当前为 67 项通过。
 - 0.15.18 的选择栏手感已获用户确认，见[已确认交互基线](docs/ui-interaction-baseline.md)。后续修复和性能优化保持该效果。
 
 ## 最近证据与实际限制
+
+重复日程与网页体验统一已完成。规则、单次跳过/改期/完成及停止历史语义见[重复日程](docs/features/schedules/repeat-schedules.md)；网页增加独立排序、日期预设、跨页全选与删除，并共用重复操作。既有 81 项检查在首轮与失败项修复复跑后全部通过；新增 AI、投影及 Provider 检查通过，统一入口现为 84 项。独立验证包 debug/androidTest 与 lintDebug 通过；真机 Provider/原生停止交互 22 项及真实 SQLite/HTTP 检查通过；浏览器已验证真实排序、改期及停止状态。模拟器补验停止后空月份视图通过，验证服务关闭后数据库收件数为 0；手机断连后的验证夹具清理未现场复核。源文件备份 `.local-backups/recurrence-20261019/source-before.zip`，构建日志 `build/recurrence-validation-build.log`。验证包名 `com.donglan.chrona.validation`，不覆盖正式应用。
+
+课堂总结已完成。新入口、周课表/倒序分页、字幕截图分段整理和含图 Markdown ZIP 已实现；开发说明见[课堂总结](docs/features/zju/classroom-summary.md)。debug/androidTest 构建与 lintDebug、既有 full 79/79、课堂总结 77 项及客户端 42 项检查通过，并完成生产 Java 智云只读访问。续轮修复导出恢复初始化、确认框滚动，公共普通控件收敛为轻圆角；选择栏保持已确认几何。相关七项专项及续轮构建/lint 通过。模拟器已修复并使用 WHPX + RTX 5060 宿主图形加速；课堂深浅主题、320dp/1.5倍字体、键盘滚动与原生图片/ZIP 检查通过，实际截图发现的日期/时间列断行与导航字号问题已修复。公共选择栏原生 27 组布局及日历交互检查通过。0.15.24 Debug/Release、双 lint 和 androidTest 构建通过，正式 APK 关闭调试，证书与旧版一致；模拟器从 0.15.23 覆盖升级并启动成功，数据库 13→14。旧库无收件，不能据此声称真实用户数据升级已验收。源码备份：`.local-backups/classroom-summary-20261019-163102/tracked-before.zip`。最新实际证据见[验证记录](docs/validation-history.md)。
 
 0.15.23 发布候选 debug/release 构建、两套 lint、androidTest 编译通过，日志 `build/0.15.23-publish-build.log`。集中 full 首轮 70/79，通过修复九项过期测试替身及断言后，失败项分别复跑通过，未更改已确认动效。新浙大同步恢复 17 项、作业 SQLite 更新 41 项和有效截止浏览器专项通过。APK 为 185 / 0.15.23、关闭调试，签名与既有发布证书一致。当前电脑访问学校公开入口遇到 TLS 失败／超时，未进行真实学校登录与更新；未使用手机。截止规则与学校恢复修复备份 `build/backups/20261018-zju-deadline/`。
 

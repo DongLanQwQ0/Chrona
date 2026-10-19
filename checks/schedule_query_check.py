@@ -1,4 +1,6 @@
 """Exercise the Java-generated predicates against real SQLite, without a device."""
+from recurrence_dependencies import recurrence_java
+
 import base64
 import datetime as dt
 import sqlite3
@@ -10,13 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 JAVA = Path(os.environ['JAVA_HOME']) / 'bin'
 OUT = ROOT / 'build/schedule-checks'
 OUT.mkdir(parents=True, exist_ok=True)
-subprocess.run([str(JAVA / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(OUT),
+subprocess.run(recurrence_java([str(JAVA / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(OUT),
                 str(ROOT / 'app/src/main/java/com/donglan/chrona/data/ScheduleQuery.java'),
                 str(ROOT / 'app/src/main/java/com/donglan/chrona/data/EventCategory.java'),
-                str(ROOT / 'checks/ScheduleQueryCheck.java')], check=True)
-output = subprocess.check_output([
+                str(ROOT / 'checks/ScheduleQueryCheck.java')]), check=True)
+output = subprocess.check_output(recurrence_java([
     str(JAVA / 'java.exe'), '-cp', str(OUT),
-    'com.donglan.chrona.data.ScheduleQueryCheck'], text=True)
+    'com.donglan.chrona.data.ScheduleQueryCheck']), text=True)
 queries = {}
 for line in output.splitlines():
     name, *parts = line.split('\t')
@@ -123,10 +125,10 @@ public final class SchemaExport {
 ''' + method + '\n}'
 generated = ROOT / 'build/schedule-checks/SchemaExport.java'
 generated.write_text(wrapper, encoding='utf-8')
-subprocess.run([str(JAVA / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8',
-                '-d', str(generated.parent), str(generated)], check=True)
-schema = subprocess.check_output([str(JAVA / 'java.exe'), '-cp',
-                                  str(generated.parent), 'SchemaExport'], text=True)
+subprocess.run(recurrence_java([str(JAVA / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8',
+                '-d', str(generated.parent), str(generated)]), check=True)
+schema = subprocess.check_output(recurrence_java([str(JAVA / 'java.exe'), '-cp',
+                                  str(generated.parent), 'SchemaExport']), text=True)
 db.execute('CREATE TABLE tasks(id INTEGER PRIMARY KEY,status TEXT)')
 db.execute('CREATE TABLE task_attachments(id INTEGER PRIMARY KEY)')
 db.execute('CREATE TABLE task_files(id INTEGER PRIMARY KEY)')

@@ -11,7 +11,9 @@ public final class DuplicateCandidates {
                 || (value.startAtMillis == null && value.endAtMillis == null && value.dueAtMillis == null);
         return Arrays.asList(normalized(value.title), value.startAtMillis, value.endAtMillis,
                 value.dueAtMillis, normalized(value.location), value.category, value.allDay,
-                value.isRecord, value.completed(), protectDescription ? value.description : null);
+                value.isRecord, value.completed(), protectDescription ? value.description : null,
+                value.repeatRule == null ? null : value.repeatRule.toJson().toString(),
+                value.repeatRule == null ? null : value.timeZoneId, value.repeatExceptions, value.repeatStoppedAtMillis);
     }
     private static String normalized(String value) {
         if (value == null) return "";

@@ -3,6 +3,8 @@
 The Android portion uses narrow field doubles, not device rendering or gestures.
 Nested selection-bar gesture ownership is covered by dock_navigation_check.py.
 """
+from recurrence_dependencies import recurrence_java
+
 import os
 import re
 import subprocess
@@ -221,10 +223,10 @@ java_file = out / "DetailEditorCheck.java"
 java_file.write_text(harness, encoding="utf-8")
 java_home = Path(os.environ.get("JAVA_HOME", r"D:\Minecraft\java21"))
 data = ROOT / "app/src/main/java/com/donglan/chrona/data"
-subprocess.run([str(java_home / "bin/javac"), "-encoding", "UTF-8", "-d", str(out), str(java_file),
+subprocess.run(recurrence_java([str(java_home / "bin/javac"), "-encoding", "UTF-8", "-d", str(out), str(java_file),
                 str(ROOT / "app/src/main/java/com/donglan/chrona/calendar/AllDayDates.java"),
-                *[str(data / name) for name in ("EventTimeDefaults.java", "EventCandidate.java", "EventCategory.java")]], check=True)
-subprocess.run([str(java_home / "bin/java"), "-cp", str(out), "DetailEditorCheck"], check=True)
+                *[str(data / name) for name in ("EventTimeDefaults.java", "EventCandidate.java", "EventCategory.java")]]), check=True)
+subprocess.run(recurrence_java([str(java_home / "bin/java"), "-cp", str(out), "DetailEditorCheck"]), check=True)
 
 web = (ROOT / "app/src/main/assets/lan/app.js").read_text(encoding="utf-8")
 web_constant = re.search(r"const SHIFTED_START_INTERVAL_MILLIS=[^;]+;", web).group(0)

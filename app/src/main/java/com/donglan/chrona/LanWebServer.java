@@ -116,7 +116,7 @@ final class LanWebServer extends NanoHTTPD {
                 JSONObject body = body(request, MAX_BODY);
                 List<Long> ids = new ArrayList<>();
                 JSONArray selected = body.getJSONArray("ids");
-                if (selected.length() == 0 || selected.length() > 500) throw new IllegalArgumentException();
+                if (selected.length() == 0) throw new IllegalArgumentException();
                 for (int i = 0; i < selected.length(); i++) ids.add(positive(selected.getString(i)));
                 try (TaskStore store = new TaskStore(context)) {
                     if (whole(body,"revision",0,Long.MAX_VALUE) != store.dataRevision()) throw new Conflict();
@@ -136,12 +136,26 @@ final class LanWebServer extends NanoHTTPD {
                     long id = positive(body.getString("candidateId")), taskId = positive(body.getString("id"));
                     EventCandidate item = store.getCandidatesByIds(Collections.singleton(id)).stream()
                             .filter(value -> value.taskId == taskId).findFirst().orElseThrow(Conflict::new);
+                    if(item.repeatRule!=null){if(!body.has("occurrenceAt"))throw new IllegalArgumentException();item=RepeatOccurrences.at(item,nullableLong(body,"occurrenceAt"));if(item==null)throw new Conflict();}
                     Long anchor = item.reminderAnchor();
                     long until = anchor == null ? 0 : item.endAtMillis != null && item.endAtMillis > anchor ? item.endAtMillis : anchor + 60_000L;
                     if (item.isRecord || item.isTask() || until <= System.currentTimeMillis()) throw new IllegalArgumentException();
                     AgendaAcknowledgement.set(context,AgendaAcknowledgement.key(item),until,bool(body,"acknowledged"));
                     return data(new JSONObject().put("ok",true).put("revision",store.dataRevision()));
                 }
+            }
+            if (method == Method.POST && path.equals("/api/candidate/repeat")) {
+                JSONObject body=body(request,MAX_BODY);
+                try(TaskStore store=new TaskStore(context)) {
+                    if(whole(body,"revision",0,Long.MAX_VALUE)!=store.dataRevision())throw new Conflict();
+                }
+                EventCandidate changed=RepeatActions.change(context,positive(body.getString("id")),positive(body.getString("candidateId")),
+                        string(body,"baseline",10000,true),string(body,"action",20,true),
+                        body.has("original")?nullableLong(body,"original"):null,body.has("moved")?nullableLong(body,"moved"):null,
+                        body.has("rule")?RepeatRule.fromJson(body.getJSONObject("rule")):null);
+                AgendaWidgetProvider.requestRefresh(context);
+                if(new WebDavSettingsStore(context).automatic()){SyncJobService.schedule(context);AndroidSync.request(context,null);}
+                try(TaskStore store=new TaskStore(context)){return data(new JSONObject().put("candidate",candidate(changed)).put("revision",store.dataRevision()));}
             }
             if(method==Method.POST&&path.equals("/api/preferences")){
                 JSONObject body=body(request,256);boolean included=bool(body,"systemCalendarIncluded");
@@ -168,6 +182,16 @@ final class LanWebServer extends NanoHTTPD {
     }
     private Response read(IHTTPSession request, TaskStore store) throws Exception {
         String path = request.getUri(); JSONObject result = new JSONObject().put("revision", store.dataRevision());
+        if(path.equals("/api/candidate/occurrences")) {
+            long id=positive(request.getParms().get("candidateId")),taskId=positive(request.getParms().get("id"));
+            EventCandidate series=store.getCandidatesByIds(Collections.singleton(id)).stream().filter(item->item.taskId==taskId).findFirst().orElseThrow(Conflict::new);
+            LocalDate from=LocalDate.parse(request.getParms().get("from")),until=LocalDate.parse(request.getParms().get("until"));
+            if(!until.isAfter(from)||java.time.temporal.ChronoUnit.DAYS.between(from,until)>366)throw new IllegalArgumentException();
+            ZoneId zone=ZoneId.of(series.timeZoneId);JSONArray items=new JSONArray();
+            for(EventCandidate item:RepeatOccurrences.between(series,from.atStartOfDay(zone).toInstant().toEpochMilli(),until.atStartOfDay(zone).toInstant().toEpochMilli(),1000))
+                items.put(candidate(item).put("baseline",CandidateEditBaseline.of(series)));
+            return data(result.put("items",items).put("series",candidate(series)));
+        }
         if(path.equals("/api/merge/preview")){
             store.getWritableDatabase().beginTransaction();try{
                 CandidateMerges.Preview preview=CandidateMerges.scan(store);JSONArray groups=new JSONArray();
@@ -181,7 +205,11 @@ final class LanWebServer extends NanoHTTPD {
             long id = positive(request.getParms().get("id")); TaskRecord record = store.getTask(id);
             if (record == null) return json(Response.Status.NOT_FOUND,"记录已不存在");
             JSONArray candidates = new JSONArray(), images = new JSONArray(), files = new JSONArray();
-            for (EventCandidate item : store.getCandidates(id)) {
+            for (EventCandidate saved : store.getCandidates(id)) {
+                EventCandidate item=saved;
+                if(saved.repeatRule!=null&&Long.toString(saved.id).equals(request.getParms().get("candidate_id"))&&request.getParms().containsKey("occurrenceAt")) {
+                    EventCandidate occurrence=RepeatOccurrences.at(saved,Long.parseLong(request.getParms().get("occurrenceAt")));if(occurrence!=null)item=occurrence;
+                }
                 JSONObject value = candidate(item).put("managed",store.isManagedHomework(item.id,item.taskId))
                         .put("submitted",store.isSubmittedHomework(item.id,item.taskId))
                         .put("mergedSources",CandidateMerges.sources(store,item.id));
@@ -202,9 +230,12 @@ final class LanWebServer extends NanoHTTPD {
             String search = request.getParms().getOrDefault("search",""); if (search.length()>256) throw new IllegalArgumentException();
             String category = request.getParms().get("category");
             if(category!=null&&!Arrays.asList(EventCategory.VALUES).contains(category)&&!"record".equals(category))throw new IllegalArgumentException();
-            InboxQuery query = new InboxQuery(status,category,search); List<Long> ids=store.queryInboxIds(query,false); JSONArray tasks=new JSONArray();
-            for(TaskRecord item:store.queryInboxPage(query,false,page,ids)) tasks.put(task(item));
-            return data(result.put("items",tasks).put("total",ids.size()).put("page",page).put("pageSize",InboxQuery.PAGE_SIZE));
+            boolean oldestFirst=Boolean.parseBoolean(request.getParms().getOrDefault("oldestFirst","false"));
+            InboxQuery query = new InboxQuery(status,category,search); List<Long> ids=store.queryInboxIds(query,oldestFirst); JSONArray tasks=new JSONArray();
+            page=Math.min(page,Math.max(0,(ids.size()-1)/InboxQuery.PAGE_SIZE));
+            for(TaskRecord item:store.queryInboxPage(query,oldestFirst,page,ids)) tasks.put(task(item));
+            if("true".equals(request.getParms().get("includeIds")))result.put("ids",new JSONArray(ids));
+            return data(result.put("items",tasks).put("total",ids.size()).put("page",page).put("pageSize",InboxQuery.PAGE_SIZE).put("oldestFirst",oldestFirst));
         }
         if (path.equals("/api/schedule")) {
             int page=integer(request.getParms().get("page"),0,0,100000); String search=request.getParms().getOrDefault("search",""); if(search.length()>256) throw new IllegalArgumentException();
@@ -213,9 +244,31 @@ final class LanWebServer extends NanoHTTPD {
             LocalDate from=request.getParms().containsKey("from")?LocalDate.parse(request.getParms().get("from")):null;
             LocalDate until=request.getParms().containsKey("until")?LocalDate.parse(request.getParms().get("until")):null;
             if((from==null)!=(until==null)||from!=null&&!until.isAfter(from))throw new IllegalArgumentException();
+            if("1".equals(request.getParms().get("source"))) {
+                ZoneId zone=ZoneId.systemDefault();if(from==null){from=LocalDate.now(zone).withDayOfMonth(1);until=from.plusMonths(1);}
+                if(until.isAfter(from.plusYears(1)))throw new IllegalArgumentException();
+                long begin=from.atStartOfDay(zone).toInstant().toEpochMilli(),end=until.atStartOfDay(zone).toInstant().toEpochMilli(),now=System.currentTimeMillis();
+                CalendarStore provider=new CalendarStore(context);List<CalendarOccurrence> providerItems=Collections.emptyList();
+                if(HomeTimelinePreferences.includesSystemCalendar(context)&&provider.hasReadPermission())providerItems=provider.listInstances(begin-86_400_000L,end+86_400_000L,null);
+                List<CalendarOccurrence> visible=new ArrayList<>();String keyword=search.toLowerCase(Locale.ROOT).trim();
+                for(CalendarOccurrence event:ExternalCourseAgenda.merge(context,providerItems,begin,end,new HashSet<>(store.linkedCalendarIds()))) {
+                    boolean future=event.displayEnd(zone)>now;
+                    if(event.displayStart(zone)>=end||event.displayEnd(zone)<=begin||tab==1||tab==0&&!future||tab==2&&future||publication==1||publication==3||category!=null&&!EventCategory.EVENT.equals(category))continue;
+                    if(!keyword.isEmpty()&&!event.title.toLowerCase(Locale.ROOT).contains(keyword)&&!(event.location==null?"":event.location).toLowerCase(Locale.ROOT).contains(keyword))continue;
+                    visible.add(event);
+                }
+                boolean oldestFirst=request.getParms().containsKey("oldestFirst")?Boolean.parseBoolean(request.getParms().get("oldestFirst")):ScheduleOrderPreferences.oldestFirst(context,tab);
+                visible.sort(Comparator.comparingLong((CalendarOccurrence event)->event.displayStart(zone)).thenComparingLong(event->event.eventId));if(!oldestFirst)Collections.reverse(visible);
+                page=Math.min(page,Math.max(0,(visible.size()-1)/ScheduleQuery.PAGE_SIZE));JSONArray items=new JSONArray();
+                for(int i=page*ScheduleQuery.PAGE_SIZE;i<Math.min(visible.size(),(page+1)*ScheduleQuery.PAGE_SIZE);i++){CalendarOccurrence item=visible.get(i);items.put(new JSONObject().put("id",item.eventId).put("title",item.title).put("location",item.location).put("description",item.description).put("allDay",item.allDay).put("start",item.displayStart(zone)).put("end",item.displayEnd(zone)).put("source",item.calendarName).put("system",true).put("category","event"));}
+                return data(result.put("items",items).put("total",visible.size()).put("page",page).put("pageSize",ScheduleQuery.PAGE_SIZE).put("oldestFirst",oldestFirst).put("system",true).put("from",from.toString()).put("until",until.toString()));
+            }
             ScheduleQuery query=new ScheduleQuery(tab,category,publication,search,from,until,System.currentTimeMillis(),ZoneId.systemDefault(),todo);
-            JSONArray entries=new JSONArray(); for(EventCandidate item:store.querySchedulePage(query,false,page))entries.put(candidate(item));
-            return data(result.put("items",entries).put("total",store.queryScheduleIds(query).size()).put("page",page).put("pageSize",ScheduleQuery.PAGE_SIZE));
+            boolean oldestFirst=request.getParms().containsKey("oldestFirst")?Boolean.parseBoolean(request.getParms().get("oldestFirst")):ScheduleOrderPreferences.oldestFirst(context,tab);
+            List<Long> ids=store.queryScheduleIds(query);page=Math.min(page,Math.max(0,(ids.size()-1)/ScheduleQuery.PAGE_SIZE));
+            JSONArray entries=new JSONArray(); for(EventCandidate item:store.querySchedulePage(query,oldestFirst,page))entries.put(candidate(item));
+            if("true".equals(request.getParms().get("includeIds")))result.put("ids",new JSONArray(ids));
+            return data(result.put("items",entries).put("total",ids.size()).put("page",page).put("pageSize",ScheduleQuery.PAGE_SIZE).put("oldestFirst",oldestFirst));
         }
         if (path.equals("/api/agenda")) {
             ZoneId zone=ZoneId.systemDefault();
@@ -227,31 +280,50 @@ final class LanWebServer extends NanoHTTPD {
             for(AgendaEntry item:snapshot.entries)entries.put(new JSONObject().put("id",item.id).put("taskId",item.taskId)
                     .put("title",item.title).put("start",item.start).put("end",item.end).put("allDay",item.allDay)
                     .put("location",item.location).put("description",item.description).put("source",item.source)
-                    .put("category",item.category).put("system",item.system).put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis));
+                    .put("category",item.category).put("system",item.system).put("occurrenceAt",item.occurrenceAtMillis==null?JSONObject.NULL:item.occurrenceAtMillis).put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis));
             return data(result.put("items",entries).put("truncated",snapshot.truncated).put("systemUnavailable",snapshot.systemUnavailable));
         }
         if (path.equals("/api/home")) {
-            ZoneId zone=ZoneId.systemDefault(); LocalDate date=LocalDate.now(zone); long start=date.atStartOfDay(zone).toInstant().toEpochMilli(),end=date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
-            JSONArray entries=new JSONArray(), calendar=new JSONArray();
-            for(EventCandidate item:store.widgetCandidates(start,end,date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()))entries.put(candidate(item));
+            HomeData home=new HomeData(context,store);ZoneId zone=home.zone;LocalDate date=home.today;
+            long start=date.atStartOfDay(zone).toInstant().toEpochMilli(),end=home.endDate.atStartOfDay(zone).toInstant().toEpochMilli();
+            JSONArray entries=new JSONArray(), calendar=new JSONArray(),recent=new JSONArray();
+            for(EventCandidate item:home.candidates)if(HomeTimelineEntry.hasUpcomingTime(item,home.now,zone)&&new HomeTimelineEntry(item).timestampMillis<end)entries.put(candidate(item));
+            for(EventCandidate item:home.upcoming)recent.put(candidate(item));
             String calendarState="系统日历需在手机授权"; CalendarStore provider=new CalendarStore(context);
             List<CalendarOccurrence> systemEntries=java.util.Collections.emptyList();
             if(HomeTimelinePreferences.includesSystemCalendar(context)&&provider.hasReadPermission()) {
-                try { systemEntries=provider.listInstances(start,end,null); calendarState=""; }
+                try { systemEntries=provider.listInstances(start-86_400_000L,end+86_400_000L,null); calendarState=""; }
                 catch(RuntimeException error){calendarState="系统日历暂时无法读取";}
             } else if(!HomeTimelinePreferences.includesSystemCalendar(context)) calendarState="手机已关闭系统日历时间线";
-            for(CalendarOccurrence item:ExternalCourseAgenda.merge(context,systemEntries,start,end,new HashSet<>(store.linkedCalendarIds())))
+            for(CalendarOccurrence item:ExternalCourseAgenda.merge(context,systemEntries,start,end,new HashSet<>(store.linkedCalendarIds())))if(item.displayEnd(zone)>home.now)
                 calendar.put(new JSONObject().put("id",item.eventId).put("title",item.title).put("location",item.location)
                         .put("source",item.calendarName).put("description",item.description).put("allDay",item.allDay)
                         .put("start",item.displayStart(zone)).put("end",item.displayEnd(zone)));
-            HomeTodoSummary todos=store.homeTodoSummary(System.currentTimeMillis(),zone,6);
+            HomeTodoSummary todos=home.todos;
             JSONArray focus=new JSONArray();for(EventCandidate item:todos.focus)focus.put(candidate(item));
-            return data(result.put("items",entries).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",store.taskCountByStatus(TaskRecord.NEEDS_REVIEW)).put("failed",store.taskCountByStatus(TaskRecord.FAILED))
+            return data(result.put("items",entries).put("recent",recent).put("limit",home.limit).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",home.review).put("failed",home.failed)
                     .put("todos",new JSONObject().put("total",todos.total).put("todayDue",todos.todayDue).put("overdue",todos.overdue).put("unscheduled",todos.unscheduled).put("items",focus)));
         }
         return json(Response.Status.NOT_FOUND,"页面不存在");
     }
     private JSONObject mutate(String path,JSONObject body,TaskStore store)throws Exception {
+        if(path.equals("/api/selection/delete")) {
+            JSONArray selected=body.getJSONArray("ids");if(selected.length()==0)throw new IllegalArgumentException();
+            Set<Long> ids=new LinkedHashSet<>();for(int i=0;i<selected.length();i++)ids.add(positive(selected.getString(i)));
+            boolean inbox=bool(body,"inbox");CalendarStore calendar=new CalendarStore(context);
+            List<EventCandidate> candidates=new ArrayList<>();
+            if(inbox){for(long taskId:ids){if(store.getTask(taskId)==null)throw new Conflict();candidates.addAll(store.getCandidates(taskId));}}
+            else {candidates=store.getCandidatesByIds(ids);if(candidates.size()!=ids.size())throw new Conflict();}
+            // All provider work succeeds before removing any local record or attachment.
+            for(EventCandidate item:candidates)if(item.calendarEventId!=null)calendar.deleteEvent(item.calendarEventId);
+            if(inbox)for(long taskId:ids){
+                ProcessingJobService.cancel(context,taskId);List<String> images=store.getImagePaths(taskId);
+                if(!store.deleteTask(taskId))throw new Conflict();new StreamingOutputStore(context).delete(taskId);
+                for(String image:images)new ImageStore(context).delete(image);
+                android.app.NotificationManager manager=context.getSystemService(android.app.NotificationManager.class);if(manager!=null)manager.cancel((int)taskId);
+            }else for(EventCandidate item:candidates){if(!store.deleteCandidate(item.id,item.taskId))throw new Conflict();store.updateReviewStatus(item.taskId);}
+            AgendaWidgetProvider.requestRefresh(context);return new JSONObject().put("ok",true).put("removed",ids.size());
+        }
         if(path.equals("/api/candidate/merge"))return new JSONObject().put("removed",CandidateMerges.mergeRows(store,whole(body,"revision",0,Long.MAX_VALUE)));
         if(path.equals("/api/task/create")) {
             String raw=string(body,"text",100000,true); long id=store.insertTask(raw,null,"局域网浏览器",System.currentTimeMillis());
@@ -282,6 +354,7 @@ final class LanWebServer extends NanoHTTPD {
             editable(record); long candidateId=positive(body.getString("candidateId")); EventCandidate old=null;
             for(EventCandidate item:store.getCandidates(id))if(item.id==candidateId)old=item;
             if(old==null)throw new Conflict(); CalendarStore calendar=new CalendarStore(context);
+            if(old.repeatRule!=null&&!path.endsWith("publish"))throw new IllegalArgumentException("请选择具体一次重复日程");
             if(path.endsWith("delete")){if(old.calendarEventId!=null)calendar.deleteEvent(old.calendarEventId); if(!store.deleteCandidate(candidateId,id))throw new Conflict();}
             else {
                 EventCandidate edited=edited(body,old); boolean publish=path.endsWith("publish");
@@ -291,7 +364,7 @@ final class LanWebServer extends NanoHTTPD {
                 if((publish||old.calendarEventId!=null) && edited.calendarStart()!=null && !edited.isRecord){
                     CalendarStore.EventInput input=input(edited);
                     if(old.calendarEventId!=null){if(!calendar.updateEvent(old.calendarEventId,input))throw new Conflict();}
-                    else { if(!calendar.findMatchingEvents(input).isEmpty())throw new IllegalArgumentException(); long event=calendar.insertEvent(input); if(!store.setCalendarEventIdIfUnlinked(candidateId,id,event)){calendar.deleteEvent(event);throw new Conflict();} edited=new EventCandidate(edited.id,id,edited.title,edited.startAtMillis,edited.endAtMillis,edited.timeZoneId,edited.location,edited.description,edited.reminderMinutesBefore,false,event,edited.category,edited.allDay,false,EventCandidate.CERTAIN,edited.dueAtMillis,edited.completedAtMillis,edited.isRecord); }
+                    else { if(!calendar.findMatchingEvents(input).isEmpty())throw new IllegalArgumentException(); long event=calendar.insertEvent(input); if(!store.setCalendarEventIdIfUnlinked(candidateId,id,event)){calendar.deleteEvent(event);throw new Conflict();} edited=new EventCandidate(edited.id,id,edited.title,edited.startAtMillis,edited.endAtMillis,edited.timeZoneId,edited.location,edited.description,edited.reminderMinutesBefore,false,event,edited.category,edited.allDay,false,EventCandidate.CERTAIN,edited.dueAtMillis,edited.completedAtMillis,edited.isRecord).withRepeatFrom(edited); }
                 }
                 if(!store.updateCandidate(edited))throw new Conflict();
             }
@@ -312,7 +385,7 @@ final class LanWebServer extends NanoHTTPD {
                     old.startAtMillis, old.endAtMillis, old.timeZoneId, old.location,
                     string(body,"description",100000,false), old.reminderMinutesBefore,
                     old.needsConfirmation, old.calendarEventId, old.category, old.allDay,
-                    old.endAutoGenerated, old.uncertaintyLevel, old.dueAtMillis, old.completedAtMillis, true);
+                    old.endAutoGenerated, old.uncertaintyLevel, old.dueAtMillis, old.completedAtMillis, true).withRepeatFrom(old);
         }
         String title=string(body,"title",500,true),category=string(body,"category",20,true);
         if(!Arrays.asList(EventCategory.VALUES).contains(category))throw new IllegalArgumentException();
@@ -324,9 +397,9 @@ final class LanWebServer extends NanoHTTPD {
         Integer reminder=body.isNull("reminder")?null:(int)whole(body,"reminder",0,525600);
         Long due=body.has("due")?nullableLong(body,"due"):old.dueAtMillis;
         boolean needs=!record&&((EventCategory.EVENT.equals(category)&&(start==null||end==null))||bool(body,"needsConfirmation"));
-        return new EventCandidate(old.id,old.taskId,title,start,end,zone,string(body,"location",2000,false),string(body,"description",100000,false),reminder,needs,old.calendarEventId,category,allDay,false,needs?EventCandidate.DOUBTFUL:EventCandidate.CERTAIN,due,EventCategory.isTaskLike(category)&&!record?old.completedAtMillis:null,record);
+        return new EventCandidate(old.id,old.taskId,title,start,end,zone,string(body,"location",2000,false),string(body,"description",100000,false),reminder,needs,old.calendarEventId,category,allDay,false,needs?EventCandidate.DOUBTFUL:EventCandidate.CERTAIN,due,EventCategory.isTaskLike(category)&&!record?old.completedAtMillis:null,record).withRepeatFrom(old);
     }
-    private static CalendarStore.EventInput input(EventCandidate item){if(item.isRecord||item.calendarStart()==null||item.calendarEnd()==null||item.needsConfirmation)throw new IllegalArgumentException();return new CalendarStore.EventInput(item.title,item.calendarStart(),item.calendarEnd(),item.timeZoneId,item.allDay,item.description,item.location,item.completed()||item.reminderMinutesBefore==null?Collections.emptyList():Collections.singletonList(item.reminderMinutesBefore));}
+    private static CalendarStore.EventInput input(EventCandidate item){if(item.isRecord||item.calendarStart()==null||item.calendarEnd()==null||item.needsConfirmation)throw new IllegalArgumentException();return new CalendarStore.EventInput(item.title,item.calendarStart(),item.calendarEnd(),item.timeZoneId,item.allDay,item.description,item.location,item.completed()||item.reminderMinutesBefore==null?Collections.emptyList():Collections.singletonList(item.reminderMinutesBefore)).withRepeat(item);}
     private Response timetable(IHTTPSession request)throws Exception {
         TimetableStore store=new TimetableStore(context);long capturedRevision=TimetableStore.revision();TimetableStore.Library library=store.load();
         if(request.getMethod()==Method.POST){
@@ -369,7 +442,11 @@ final class LanWebServer extends NanoHTTPD {
     private JSONObject candidate(EventCandidate item) throws JSONException {
         Long anchor=item.reminderAnchor();
         long until=anchor==null?0:item.endAtMillis!=null&&item.endAtMillis>anchor?item.endAtMillis:anchor+60_000L;
-        return candidateBase(item).put("canAcknowledge",!item.isRecord&&!item.isTask()&&until>System.currentTimeMillis())
+        EventCandidate series=item;
+        if(item.occurrenceAtMillis!=null)try(TaskStore store=new TaskStore(context)){List<EventCandidate> rows=store.getCandidatesByIds(Collections.singleton(item.id));if(!rows.isEmpty())series=rows.get(0);}
+        return candidateBase(item).put("recurrence",item.repeatRule==null?JSONObject.NULL:item.repeatRule.toJson()).put("repeatLabel",item.repeatRule==null?"":item.repeatRule.label())
+                .put("repeatStoppedAt",item.repeatStoppedAtMillis==null?JSONObject.NULL:item.repeatStoppedAtMillis).put("occurrenceAt",item.occurrenceAtMillis==null?JSONObject.NULL:item.occurrenceAtMillis)
+                .put("baseline",CandidateEditBaseline.of(series)).put("canAcknowledge",!item.isRecord&&!item.isTask()&&until>System.currentTimeMillis())
                 .put("acknowledged",AgendaAcknowledgement.isAcknowledged(context,AgendaAcknowledgement.key(item)));
     }
     private static JSONObject body(IHTTPSession request,int limit)throws Exception {

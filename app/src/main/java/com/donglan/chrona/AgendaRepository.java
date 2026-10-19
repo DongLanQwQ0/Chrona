@@ -52,7 +52,7 @@ final class AgendaRepository {
                 }
                 AgendaEntry entry = new AgendaEntry(candidate.id, candidate.taskId, start, end,
                         candidate.title, candidate.location, candidate.description, "拾时", false,
-                        candidate.allDay, !candidate.needsConfirmation, null, candidate.category,candidate.reminderMinutesBefore,candidate.effectiveDueAtMillis());
+                        candidate.allDay, !candidate.needsConfirmation, null, candidate.category,candidate.reminderMinutesBefore,candidate.effectiveDueAtMillis(),candidate.occurrenceAtMillis);
                 if (entry.overlaps(begin, until) && result.entries.size() < LIMIT) result.entries.add(entry);
             }
             List<CalendarOccurrence> systemEntries = new ArrayList<>();
@@ -82,8 +82,12 @@ final class AgendaRepository {
         return result;
     }
     static Intent details(Context context, AgendaEntry entry) {
-        if (!entry.system) return new Intent(context, TaskDetailActivity.class)
-                .putExtra("task_id", entry.taskId).putExtra("candidate_id", entry.id);
+        if (!entry.system) {
+            Intent intent = new Intent(context, entry.occurrenceAtMillis == null ? TaskDetailActivity.class : RepeatScheduleActivity.class)
+                    .putExtra("task_id", entry.taskId).putExtra("candidate_id", entry.id);
+            if (entry.occurrenceAtMillis != null) intent.putExtra("occurrence_at", entry.occurrenceAtMillis.longValue());
+            return intent;
+        }
         long start = entry.start, end = entry.end;
         if (entry.allDay) {
             ZoneId zone = ZoneId.systemDefault();

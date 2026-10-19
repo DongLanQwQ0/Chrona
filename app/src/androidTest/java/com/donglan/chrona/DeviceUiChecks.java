@@ -40,6 +40,9 @@ import java.util.concurrent.TimeUnit;
 /** Device measurements; only the explicit atomic fixture phase creates and removes its own test task. No server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("browser".equals(arguments.getString("phase"))) return BrowserDeviceCheck.run(test);
+        if ("repeat".equals(arguments.getString("phase"))) return RepeatDeviceCheck.run(test, arguments);
+        if ("classroom".equals(arguments.getString("phase"))) return ClassroomDeviceCheck.run(test, arguments);
         if ("sync_roundtrip".equals(arguments.getString("phase"))) {
             Context context = test.getTargetContext();
             File recovery = new File(context.getFilesDir(), "sync-recovery-" + System.currentTimeMillis());

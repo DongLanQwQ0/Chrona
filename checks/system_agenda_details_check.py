@@ -27,10 +27,10 @@ assert 'confirm.setVisibility(item.endMillis>System.currentTimeMillis()?android.
 assert '? View.VISIBLE : View.GONE' in method(detail, '    private void refreshAcknowledgementActions(')
 harness = '''
 import java.time.*;import java.util.*;
-class Context{}class TaskDetailActivity{}
+class Context{}class TaskDetailActivity{}class RepeatScheduleActivity{}
 class Uri{String value;Uri(String s){value=s;}static Uri parse(String s){return new Uri(s);}}
 class Intent{Class<?> target;Uri uri;Map<String,Object> extras=new HashMap<>();Intent(Context c,Class<?> type){target=type;}Intent putExtra(String key,Object value){extras.put(key,value);return this;}Intent setData(Uri u){uri=u;return this;}boolean getBooleanExtra(String key,boolean fallback){return (boolean)extras.getOrDefault(key,fallback);}}
-class AgendaEntry{boolean system,allDay;long id=42,taskId=7,start,end;String title="课程",location="教室",source="课表",description="第6节备注\\n第7-8节备注";}
+class AgendaEntry{Long occurrenceAtMillis;boolean system,allDay;long id=42,taskId=7,start,end;String title="课程",location="教室",source="课表",description="第6节备注\\n第7-8节备注";}
 class View{static final int VISIBLE=0,GONE=8;}
 class Button{int visibility;boolean enabled;String text;void setVisibility(int value){visibility=value;}void setEnabled(boolean value){enabled=value;}void setText(String value){text=value;}}
 class Handler{long delay;void removeCallbacks(Runnable r){delay=0;}void postDelayed(Runnable r,long millis){delay=millis;}}

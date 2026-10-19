@@ -143,8 +143,8 @@ public void setCompoundDrawableTintList(android.content.res.ColorStateList c){} 
   public void addListener(AnimatorListenerAdapter listener){end=listener;}
   public void start(){if(listener!=null)listener.onAnimationUpdate(this);if(end!=null)end.onAnimationEnd(this);} }""",
     "com/donglan/chrona/UiStyle.java": """package com.donglan.chrona; public class UiStyle {
-public static final int RADIUS_PANEL=20;
-public static void glass(android.view.View view){}public static void minimumAcrylicMix(android.view.View view,int percent){}
+public static final int RADIUS_DOCK=28;
+public static void dockGlass(android.view.View view){}public static void minimumAcrylicMix(android.view.View view,int percent){}
 public static class Palette {public int onPrimaryContainer,muted=0xff668080,primaryContainer,primary=0xff00b8a6;}
 public static Palette colors(android.content.Context c){return new Palette();} }""",
 }

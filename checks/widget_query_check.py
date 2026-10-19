@@ -16,7 +16,7 @@ db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY, start_at_milli
 db.executemany("INSERT INTO event_candidates(id,start_at_millis,end_at_millis) VALUES(?,?,?)", [
     (1, None, None), (2, 5, 9), (3, 5, 11), (4, 20, 22), (5, 10, None),
     (6, 15, 17), (7, 15, 18)])
-for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
+for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER","repeat_rule TEXT","repeat_exceptions TEXT NOT NULL DEFAULT '{}'","repeat_stopped_at INTEGER"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
 query = f"SELECT id FROM event_candidates WHERE {selection} ORDER BY start_at_millis ASC,id ASC LIMIT {limit}"
 # Android SQLiteDatabase.query binds selectionArgs as strings, not integers.
 arguments = ("20", "10")

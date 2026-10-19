@@ -20,6 +20,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
         super.onCreate(arguments); start();
     }
     @Override public void onStart() {
+        android.util.Log.i("ChronaDeviceCheck", "onStart phase=" + arguments.getString("phase"));
         if ("ui".equals(arguments.getString("check"))) {
             Bundle report = new Bundle();
             try { report.putString("ui_report", DeviceUiChecks.run(this, arguments)); finish(-1, report); }
@@ -138,9 +139,54 @@ public final class LanAccessInstrumentation extends Instrumentation {
             expect(request("POST","/api/ics",new JSONObject(),origin()),405);
             expect(request("POST","/api/task/delete",new JSONObject().put("id",Long.toString(id)).put("revision",revision),origin()),200);
             try(TaskStore store=new TaskStore(isolated)){require(store.getTask(id)==null,"delete must remove real row");require(store.getCandidates(id).isEmpty(),"candidate cascade");}
+            checkRepeatAndOrder(isolated);
             expect(request("POST","/api/logout",new JSONObject(),origin()),200);expect(request("GET","/api/inbox",null,null),401);
             server.closeAccess();require(!server.security.authenticated(cookie),"closing revokes connections");
         } finally { server.closeAccess(); delete(directory); }
+    }
+    private void checkRepeatAndOrder(Context context) throws Exception {
+        long taskId, candidateId;
+        java.time.ZoneId zone=java.time.ZoneId.of("Asia/Shanghai");
+        java.time.LocalDate date=java.time.LocalDate.now(zone).plusDays(1);
+        long first=date.atTime(9,0).atZone(zone).toInstant().toEpochMilli();
+        try(TaskStore store=new TaskStore(context)) {
+            taskId=store.insertTask("LAN repeat fixture",null,"integration",System.currentTimeMillis());
+            store.updateStatus(taskId,com.donglan.chrona.data.TaskRecord.READY,null);
+            candidateId=store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,taskId,"Repeat fixture",first,first+3600000,
+                    zone.getId(),"","",null,false,null,"event",false));
+            store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,taskId,"Later fixture",first+86400000,first+90000000,
+                    zone.getId(),"","",null,false,null,"event",false));
+        }
+        Reply ascending=request("GET","/api/schedule?tab=3&oldestFirst=true",null,null);
+        Reply descending=request("GET","/api/schedule?tab=3&oldestFirst=false",null,null);
+        expect(ascending,200);expect(descending,200);
+        require(ascending.body.getJSONArray("items").getJSONObject(0).getLong("id")==candidateId,"real SQL ascending order");
+        require(descending.body.getJSONArray("items").getJSONObject(1).getLong("id")==candidateId,"real SQL descending order");
+        JSONObject single=request("GET","/api/task?id="+taskId,null,null).body.getJSONArray("candidates").getJSONObject(0);
+        JSONObject change=new JSONObject().put("id",Long.toString(taskId)).put("candidateId",Long.toString(candidateId))
+                .put("revision",ascending.body.getLong("revision")).put("baseline",single.getString("baseline")).put("action","rule")
+                .put("rule",new com.donglan.chrona.data.RepeatRule("daily",1,java.util.List.of(),null,3).toJson());
+        Reply changed=request("POST","/api/candidate/repeat",change,origin());expect(changed,200);
+        expect(request("POST","/api/candidate/repeat",change,origin()),409);
+        String path="/api/candidate/occurrences?id="+taskId+"&candidateId="+candidateId+"&from="+date+"&until="+date.plusDays(8);
+        Reply occurrences=request("GET",path,null,null);expect(occurrences,200);
+        require(occurrences.body.getJSONArray("items").length()==3,"HTTP expands three instances");
+        change.remove("rule");change.put("revision",changed.body.getLong("revision"))
+                .put("baseline",changed.body.getJSONObject("candidate").getString("baseline")).put("action","skip").put("original",first);
+        changed=request("POST","/api/candidate/repeat",change,origin());expect(changed,200);
+        require(request("GET",path,null,null).body.getJSONArray("items").length()==2,"HTTP skip persists");
+        change.put("revision",changed.body.getLong("revision")).put("baseline",changed.body.getJSONObject("candidate").getString("baseline"))
+                .put("action","move").put("original",first+86400000).put("moved",first+5*86400000L);
+        changed=request("POST","/api/candidate/repeat",change,origin());expect(changed,200);
+        JSONObject moved=request("GET","/api/task?id="+taskId+"&candidate_id="+candidateId+"&occurrenceAt="+(first+86400000),null,null)
+                .body.getJSONArray("candidates").getJSONObject(0);
+        require(moved.getLong("occurrenceAt")==first+86400000 && moved.getLong("start")==first+5*86400000L,"HTTP moved identity");
+        change.put("revision",changed.body.getLong("revision")).put("baseline",changed.body.getJSONObject("candidate").getString("baseline")).put("action","stop");
+        changed=request("POST","/api/candidate/repeat",change,origin());expect(changed,200);
+        require(request("GET",path,null,null).body.getJSONArray("items").length()==0,"HTTP stop removes future instances");
+        expect(request("POST","/api/selection/delete",new JSONObject().put("revision",changed.body.getLong("revision"))
+                .put("inbox",true).put("ids",new org.json.JSONArray().put(Long.toString(taskId))),origin()),200);
+        try(TaskStore store=new TaskStore(context)){require(store.getTask(taskId)==null,"HTTP batch delete persists");}
     }
     private String origin(){return "http://127.0.0.1:"+port;}
     private Reply request(String method,String path,JSONObject body,String origin)throws Exception{

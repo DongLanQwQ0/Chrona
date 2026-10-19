@@ -37,7 +37,7 @@ public final class RequestOptions {
             body.put("reasoning_effort", resolved.equals("max") ? "high" : resolved);
         } else if (open) {
             body.put("response_format", new JSONObject().put("type", "json_schema").put("json_schema",
-                    new JSONObject().put("name", "chrona_schedule_v2").put("strict", true).put("schema", SchedulePrompt.schema())));
+                    new JSONObject().put("name", "chrona_schedule_v3").put("strict", true).put("schema", SchedulePrompt.schema())));
             body.put("prompt_cache_key", "chrona-" + SchedulePrompt.VERSION);
             // Avoid sending 'none' to reasoning families that may not accept it.
             if (reasoning) body.put("reasoning_effort", resolved.equals("max") ? "high" : resolved);

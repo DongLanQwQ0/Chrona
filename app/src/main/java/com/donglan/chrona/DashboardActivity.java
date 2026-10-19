@@ -1425,11 +1425,11 @@ public final class DashboardActivity extends Activity {
         long rangeStart = today.atStartOfDay(zone).toInstant().toEpochMilli();
         long rangeEnd = endDate.atStartOfDay(zone).toInstant().toEpochMilli();
         List<HomeTimelineEntry> all = new ArrayList<>();
-        Set<Long> candidateIds = new HashSet<>();
+        Set<String> candidateIds = new HashSet<>();
         for (EventCandidate item : candidates) {
             if (!candidateIntersects(item, today, endDate, rangeStart, rangeEnd, now))
                 continue;
-            if (!candidateIds.add(item.id)) continue;
+            if (!candidateIds.add(item.occurrenceKey())) continue;
             all.add(new HomeTimelineEntry(item));
         }
         for (CalendarOccurrence event : external) {
@@ -2741,8 +2741,7 @@ public final class DashboardActivity extends Activity {
             done.setEnabled(false);
             new Thread(() -> {
                 try {
-                    String warning = TaskCompletion.set(getApplicationContext(), candidate.id,
-                            candidate.taskId, !candidate.completed());
+                    String warning = TaskCompletion.set(getApplicationContext(), candidate, !candidate.completed());
                     runOnUiThread(() -> {
                         if (isDestroyed() || isFinishing()) return;
                         awaitingCompletionRows.add(candidate.id);
@@ -2788,7 +2787,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private String completionKey(EventCandidate candidate, CalendarOccurrence event) {
-        return candidate != null ? "candidate:" + candidate.id
+        return candidate != null ? "candidate:" + candidate.occurrenceKey()
                 : "system:" + event.eventId + ":" + event.startMillis;
     }
 
@@ -3431,9 +3430,11 @@ public final class DashboardActivity extends Activity {
     }
 
     private void openCandidate(EventCandidate candidate) {
-        startActivity(new Intent(this, TaskDetailActivity.class)
+        Intent intent = new Intent(this, candidate.repeatRule == null ? TaskDetailActivity.class : RepeatScheduleActivity.class)
                 .putExtra("task_id", candidate.taskId)
-                .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, candidate.id));
+                .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, candidate.id);
+        if (candidate.occurrenceAtMillis != null) intent.putExtra("occurrence_at", candidate.occurrenceAtMillis.longValue());
+        startActivity(intent);
     }
 
     private String statusText(String status) {
