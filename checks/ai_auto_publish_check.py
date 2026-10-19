@@ -96,10 +96,12 @@ relative = ['ai/AiSettings.java','ai/ChatCompletionClient.java','ai/ParseResult.
             'data/EventCandidate.java','data/EventCategory.java','data/EventTimeDefaults.java','data/CandidateRules.java',
             'calendar/AllDayDates.java','net/RequestControl.java','processing/BestEffortPreview.java','processing/AutoCalendarPublisher.java']
 paths += [src / name for name in relative]
-paths += [root / 'checks/AiRequestCheck.java', root / 'checks/SemanticEventNormalizerCheck.java']
+paths += [root / 'checks/AiRequestCheck.java', root / 'checks/SemanticEventNormalizerCheck.java',
+          root / 'checks/ScheduleExecutionCheck.java']
 jar = root / 'build/ai-checks/json.jar'
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 subprocess.run(recurrence_java([str(java / 'javac.exe'),'--release','17','-encoding','UTF-8','-cp',str(jar),'-d',str(out),*map(str,paths)]),check=True)
 classpath = str(out) + os.pathsep + str(jar)
-for name in ['com.donglan.chrona.ai.AiRequestCheck','SemanticEventNormalizerCheck','com.donglan.chrona.processing.AutoPublishCheck']:
+for name in ['com.donglan.chrona.ai.AiRequestCheck','SemanticEventNormalizerCheck',
+             'com.donglan.chrona.ai.ScheduleExecutionCheck','com.donglan.chrona.processing.AutoPublishCheck']:
     subprocess.run(recurrence_java([str(java / 'java.exe'),'-cp',classpath,name]),check=True)

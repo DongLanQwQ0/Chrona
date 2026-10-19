@@ -144,7 +144,7 @@ public final class ScheduleCompareActivity extends Activity {
     private void round(View view, int radius) {
         view.setOutlineProvider(new android.view.ViewOutlineProvider() {
             @Override public void getOutline(View target, android.graphics.Outline outline) {
-                outline.setRoundRect(0, 0, target.getWidth(), target.getHeight(), dp(radius));
+                outline.setRoundRect(0, 0, target.getWidth(), target.getHeight(), dp(UiStyle.radius(target.getContext(), radius)));
             }
         });
         view.setClipToOutline(true);

@@ -389,7 +389,7 @@ public class AgendaWidgetProvider extends AppWidgetProvider {
         Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         edge.setShader(new android.graphics.BitmapShader(bitmap,
                 android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP));
-        float radius = Math.min(UiStyle.RADIUS_CARD * metrics.density * scale, Math.min(width, height) / 2f);
+        float radius = Math.min(UiStyle.radius(context, UiStyle.RADIUS_CARD) * metrics.density * scale, Math.min(width, height) / 2f);
         new Canvas(rounded).drawRoundRect(new RectF(0, 0, width, height), radius, radius, edge);
         bitmap.recycle();
         BACKGROUNDS.put(key, rounded);

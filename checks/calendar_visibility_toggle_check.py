@@ -13,16 +13,17 @@ class Context {Drawable icon=new Drawable();Drawable getDrawable(int id){return 
 class R {static class drawable {static int ic_week_calendar=1;}}
 class Color {static int TRANSPARENT=0,WHITE=-1;}
 class ColorStateList {int color;static ColorStateList valueOf(int color){var v=new ColorStateList();v.color=color;return v;}}
-class Resources {static class Metrics {float density=1;}Metrics getDisplayMetrics(){return new Metrics();}}
+class Resources {static float density=1;static class Metrics {float density=Resources.density;}Metrics getDisplayMetrics(){return new Metrics();}}
 class Drawable {int tint,left,top,right,bottom;Drawable mutate(){return this;}void setTint(int color){tint=color;}
  void setBounds(int l,int t,int r,int b){left=l;top=t;right=r;bottom=b;}void draw(Canvas canvas){}}
 class GradientDrawable extends Drawable {static final int OVAL=1;int shape,color;void setShape(int value){shape=value;}void setColor(int value){color=value;}}
+class InsetDrawable extends Drawable {Drawable drawable;int inset;InsetDrawable(Drawable drawable,int inset){this.drawable=drawable;this.inset=inset;}}
 class RippleDrawable extends Drawable {Drawable mask;RippleDrawable(ColorStateList tint,Drawable content,Drawable mask){this.mask=mask;}}
 class Paint {static final int ANTI_ALIAS_FLAG=1;int color;Paint(int flags){}void setColor(int value){color=value;}}
 class Canvas {float x,y,radius;int color;void drawCircle(float x,float y,float radius,Paint paint){this.x=x;this.y=y;this.radius=radius;color=paint.color;}}
-class CheckBox {Context context;boolean checked,attached=true;Drawable foreground;int invalidations,changes;
+class CheckBox {Context context;boolean checked,attached=true;Drawable foreground;int invalidations,changes,width=48,height=48;
  CheckBox(Context context){this.context=context;}Context getContext(){return context;}Resources getResources(){return new Resources();}
- int getWidth(){return 44;}int getHeight(){return 44;}void setButtonDrawable(Drawable drawable){}void setBackgroundColor(int color){}
+ int getWidth(){return width;}int getHeight(){return height;}void setButtonDrawable(Drawable drawable){}void setBackgroundColor(int color){}
  void setForeground(Drawable drawable){foreground=drawable;}boolean isChecked(){return checked;}
  void setChecked(boolean value){if(value!=checked){checked=value;changes++;}}boolean isAttachedToWindow(){return attached;}
  void invalidate(){invalidations++;}protected void onDraw(Canvas canvas){}protected void onDetachedFromWindow(){attached=false;}}
@@ -44,14 +45,20 @@ public class CalendarVisibilityToggleCheck {
  public static void main(String[] args)throws Exception {
   Context context=new Context();CalendarVisibilityToggle view=new CalendarVisibilityToggle(context);Canvas canvas=new Canvas();
   check(view.foreground instanceof RippleDrawable,"Circular surface retains native ripple");
-  check(((RippleDrawable)view.foreground).mask instanceof GradientDrawable&&((GradientDrawable)((RippleDrawable)view.foreground).mask).shape==GradientDrawable.OVAL,"Ripple mask is circular");
+  InsetDrawable mask=(InsetDrawable)((RippleDrawable)view.foreground).mask;
+  check(mask.drawable instanceof GradientDrawable&&((GradientDrawable)mask.drawable).shape==GradientDrawable.OVAL,"Ripple mask is circular");
+  near(mask.inset,4,"Ripple surface retains a four dp inset within the touch target");
   view.onDraw(canvas);check(canvas.color>>>24==0&&context.icon.tint==UiStyle.colors(context).muted,"Off appearance has muted icon and transparent fill");
-  near(canvas.x,22,"Surface centered horizontally");near(canvas.y,22,"Surface centered vertically");near(canvas.radius,20,"Surface circle radius");
+  near(canvas.x,24,"Surface centered horizontally");near(canvas.y,24,"Surface centered vertically");near(canvas.radius,20,"Surface circle radius");
+  near(canvas.radius,view.getWidth()/2f-mask.inset,"Pressed and checked surface radii match");
+  view.width=view.height=56;view.onDraw(canvas);near(canvas.radius,view.getWidth()/2f-mask.inset,"Larger square target keeps pressed and checked radii aligned");view.width=view.height=48;
+  Resources.density=2.625f;CalendarVisibilityToggle scaled=new CalendarVisibilityToggle(new Context());scaled.width=scaled.height=126;scaled.onDraw(canvas);
+  near(canvas.radius,scaled.getWidth()/2f-((InsetDrawable)((RippleDrawable)scaled.foreground).mask).inset,"Fractional density uses identical rounded surface insets");Resources.density=1;
   view.setChecked(true);ValueAnimator on=ValueAnimator.last;check(view.isChecked()&&view.changes==1,"Native checked state updates immediately");
   near(fraction(view),0,"On transition starts from current fraction");check(on.duration==UiMotion.ENTER,"On transition uses enter duration");
   on.advance(.5f);near(fraction(view),.5f,"On transition supplies intermediate frame");view.onDraw(canvas);
   check(canvas.color>>>24==16&&context.icon.tint!=UiStyle.colors(context).muted&&context.icon.tint!=UiStyle.colors(context).primary,"Intermediate fill and tint animate together");
-  check(context.icon.right-context.icon.left>24&&(context.icon.left+context.icon.right)/2==22,"Icon pulse expands around its center");
+  check(context.icon.right-context.icon.left>24&&(context.icon.left+context.icon.right)/2==24,"Icon pulse expands around its center");
   on.advance(1);near(fraction(view),1,"On transition reaches checked appearance");view.onDraw(canvas);
   check(canvas.color>>>24==32&&context.icon.tint==UiStyle.colors(context).primary&&context.icon.right-context.icon.left==24,"Checked appearance restores base icon size");
   int starts=ValueAnimator.starts;view.setChecked(true);check(ValueAnimator.starts==starts,"Same state does not restart animation");

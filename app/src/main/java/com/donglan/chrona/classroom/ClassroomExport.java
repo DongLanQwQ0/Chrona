@@ -19,16 +19,19 @@ public final class ClassroomExport {
         long s=(long)Math.max(0,seconds);return String.format(Locale.ROOT,"%02d:%02d:%02d",s/3600,(s/60)%60,s%60);
     }
     public static void write(File dir,JSONObject summary,OutputStream output) throws Exception {
+        write(dir,summary,output,value->{});
+    }
+    public static void write(File dir,JSONObject summary,OutputStream output,ClassroomImages.Progress progress) throws Exception {
+        progress.update(ClassroomProgress.waiting("生成 Markdown 文档","整理笔记、字幕来源与图片引用"));
         JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));
         if(materials==null)throw new IOException("字幕缓存不存在，无法导出来源");
         JSONArray segments=materials.getJSONArray("segments");ClassroomLesson lesson=ClassroomLesson.fromJson(summary.getJSONObject("lesson"));
         Set<String> images=new LinkedHashSet<>();StringBuilder md=new StringBuilder("# ").append(escape(lesson.course)).append("\n\n").append(escape(lesson.title)).append("\n\n");
-        if(!summary.optBoolean("complete"))md.append("**未完成：").append(summary.getJSONArray("parts").length()).append(" / ").append(summary.getInt("total_parts")).append(" 段**\n\n");
+        if(!summary.optBoolean("complete"))md.append("**字幕草稿 · 图片分析尚未完成**\n\n");
         md.append("## 重点概览\n\n").append(escape(summary.optString("overview"))).append("\n\n");
         JSONArray parts=summary.getJSONArray("parts");
         for(int p=0;p<parts.length();p++) {
             JSONObject part=parts.getJSONObject(p);
-            if(!summary.optBoolean("complete"))md.append(escape(part.getString("overview"))).append("\n\n");
             JSONArray notes=part.getJSONArray("notes");
             for(int i=0;i<notes.length();i++) {
                 JSONObject note=notes.getJSONObject(i);md.append("## ").append(escape(note.getString("title"))).append("\n\n").append(escape(note.getString("text"))).append("\n\n");
@@ -50,8 +53,13 @@ public final class ClassroomExport {
         for(int i=0;i<segments.length();i++){JSONObject s=segments.getJSONObject(i);transcript.append("<a id=\"s").append(i).append("\"></a>\n\n### ")
                 .append(time(s.getDouble("start"))).append(" — ").append(time(s.getDouble("end"))).append("\n\n").append(escape(s.getString("text"))).append("\n\n");}
         try(ZipOutputStream zip=new ZipOutputStream(output,StandardCharsets.UTF_8)) {
-            entry(zip,"课堂总结.md",md.toString().getBytes(StandardCharsets.UTF_8));entry(zip,"sources.md",transcript.toString().getBytes(StandardCharsets.UTF_8));
-            for(String image:images)entry(zip,"images/"+image,ClassroomStore.bytes(new File(dir,image)));
+            int total=images.size()+2,done=0;
+            progress.update(new ClassroomProgress("写入 ZIP",done,total,"课堂总结.md"));
+            entry(zip,"课堂总结.md",md.toString().getBytes(StandardCharsets.UTF_8));done++;
+            progress.update(new ClassroomProgress("写入 ZIP",done,total,"sources.md"));
+            entry(zip,"sources.md",transcript.toString().getBytes(StandardCharsets.UTF_8));done++;
+            for(String image:images){progress.update(new ClassroomProgress("写入 ZIP",done,total,image));entry(zip,"images/"+image,ClassroomStore.bytes(new File(dir,image)));done++;}
+            progress.update(new ClassroomProgress("ZIP 内容已写入",done,total,images.size()+" 张图片"));
         }
     }
     private static void refs(StringBuilder md,JSONArray refs,JSONArray segments) throws Exception {

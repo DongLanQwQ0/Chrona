@@ -47,7 +47,13 @@ public final class ClassroomSummaryCheck {
         server.createContext("/",exchange->{try {
             JSONObject body=new JSONObject(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
             calls++;requests.add(body);String prompt=body.getJSONArray("messages").getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
-            JSONObject chunk=prompt.contains("资料：\n")?new JSONObject(prompt.substring(prompt.indexOf("资料：\n")+4)):null;
+            boolean second=prompt.contains("完整资料包：\n");
+            JSONObject chunk=null;
+            if(second) {
+                JSONObject context=new JSONObject(prompt.substring(prompt.indexOf("完整资料包：\n")+7));
+                String first=context.getString("first_prompt");
+                chunk=new JSONObject(first.substring(first.indexOf("资料：\n")+4)).put("images",context.getJSONArray("images"));
+            } else if(prompt.contains("资料：\n"))chunk=new JSONObject(prompt.substring(prompt.indexOf("资料：\n")+4));
             if(chunk!=null){int id=chunk.getJSONArray("segments").getJSONObject(0).getInt("id");chunkCalls.merge(id,1,Integer::sum);}
             if(mode.equals("slow"))Thread.sleep(500);
             int status=200;String payload,type="text/event-stream";
@@ -55,9 +61,12 @@ public final class ClassroomSummaryCheck {
             else if(mode.equals("downgrade")&&body.has("stream_options")){status=400;type="application/json";payload="{\"error\":{\"message\":\"unsupported parameter stream_options\"}}";}
             else {
                 JSONObject generated=chunk==null?new JSONObject().put("overview","合并重点"):part(chunk);
+                if(chunk!=null&&!second&&!mode.equals("no-request"))generated.put("image_requests",new JSONArray().put(new JSONObject().put("start",mode.equals("no-match")?9999:0).put("end",10000)));
+                if(chunk!=null&&mode.equals("invalid-window"))generated.put("image_requests",new JSONArray().put(new JSONObject().put("start",20).put("end",10)));
                 if(chunk!=null&&mode.equals("invalid-source"))generated.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(999));
                 if(chunk!=null&&mode.equals("invalid-image"))generated.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));
-                String result=generated.toString();
+                if(second&&mode.equals("invalid-final"))generated.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));
+                String result=chunk!=null&&!second?"```json\n"+generated.toString(2)+"\n```":generated.toString();
                 if(mode.equals("schedule"))result="{\"events\":[]}";
                 String finish=mode.equals("length")?"length":mode.equals("filter")?"content_filter":"stop";
                 JSONObject frame=new JSONObject().put("choices",new JSONArray().put(new JSONObject().put("delta",new JSONObject().put("reasoning_content","合成推理").put("content",result)).put("finish_reason",finish)));
@@ -75,17 +84,35 @@ public final class ClassroomSummaryCheck {
         }}:null);
         return server;
     }
-    private static void chunkBoundaries()throws Exception {
-        JSONArray segments=new JSONArray().put(segment(0,"字幕")),pics=new JSONArray();
-        for(int i=0;i<13;i++)pics.put(picture(i,i+1));
-        JSONArray chunks=ClassroomSummary.chunks(segments,pics);int total=0,max=0;
-        for(int i=0;i<chunks.length();i++){JSONObject chunk=chunks.getJSONObject(i);int count=chunk.getJSONArray("images").length();total+=count;max=Math.max(max,count);check(chunk.getJSONArray("segments").length()>0,"image-only tail retains real subtitle source");}
-        check(max<=4,"tail images obey four-image chunk budget; observed max="+max);check(total==13,"all selected images retained exactly once");
-        JSONArray longText=ClassroomSummary.chunks(new JSONArray().put(segment(0,"甲".repeat(5000))).put(segment(10,"乙".repeat(5000))),new JSONArray());
-        check(longText.length()==2,"subtitle character budget splits ordinary long transcript");
+    private static void windowSelection()throws Exception {
+        JSONArray candidates=new JSONArray();for(int i=39;i>=0;i--)candidates.put(new JSONObject().put("index",i).put("second",i));
+        JSONArray windows=new JSONArray().put(new JSONObject().put("start",5).put("end",35)).put(new JSONObject().put("start",10).put("end",20));
+        JSONArray chosen=ClassroomSummary.selectRequested(candidates,windows,20);Set<Integer> ids=new HashSet<>();
+        for(int i=0;i<chosen.length();i++){JSONObject image=chosen.getJSONObject(i);ids.add(image.getInt("index"));check(image.getDouble("second")>=5&&image.getDouble("second")<=35,"only requested windows selected");}
+        check(chosen.length()==20&&ids.size()==20,"overlapping windows share one global twenty-image cap without duplicates");
+        check(chosen.getJSONObject(0).getInt("index")==5&&chosen.getJSONObject(19).getInt("index")==35,"selection chronological and covers range endpoints");
+        check(ClassroomSummary.selectRequested(candidates,null,20).length()==0,"no image request selects none");
+        rejects(()->ClassroomSummary.selectRequested(candidates,new JSONArray().put(new JSONObject().put("start",-1).put("end",2)),20),"negative window rejected");
+        rejects(()->ClassroomSummary.selectRequested(candidates,new JSONArray().put(new JSONObject().put("start","0").put("end",2)),20),"string window rejected");
+    }
+    private static void subtitleCompression()throws Exception {
+        JSONArray source=new JSONArray().put(segment(0,"第一句")).put(segment(3,"第二句"))
+                .put(segment(30,"间隔后的第三句"));
+        source.getJSONObject(0).put("end",2);source.getJSONObject(1).put("end",5);
+        JSONObject original=ClassroomSummary.lessonInput(source,new JSONArray());
+        JSONObject upload=ClassroomSummary.uploadChunk(original);JSONArray rows=upload.getJSONArray("segments");
+        check(rows.length()==3&&rows.getJSONObject(0).has("start"),"first subtitle retains time anchor");
+        check(!rows.getJSONObject(1).has("start")&&!rows.getJSONObject(1).has("end"),"nearby subtitle omits repeated timestamps");
+        check(rows.getJSONObject(2).getDouble("start")==30,"long gap restores timestamp");
+        check(rows.getJSONObject(1).getInt("id")==1&&rows.getJSONObject(1).getString("text").equals("第二句"),"all text and source IDs preserved");
+        check(original.getJSONArray("segments").getJSONObject(1).getDouble("start")==3&&original.getJSONArray("segments").getJSONObject(1).getDouble("end")==5,"local source timings unchanged");
+        check(upload.toString().length()<original.toString().length(),"upload payload is smaller");
+        JSONArray continuous=new JSONArray();for(int i=0;i<40;i++)continuous.put(segment(i*3,"连续讲解").put("end",i*3+3));
+        JSONArray timed=ClassroomSummary.uploadChunk(ClassroomSummary.lessonInput(continuous,new JSONArray())).getJSONArray("segments");
+        check(timed.getJSONObject(20).getDouble("start")==60&&!timed.getJSONObject(19).has("start"),"continuous speech keeps sparse minute anchors for image requests");
     }
     private static void validation()throws Exception {
-        JSONObject chunk=ClassroomSummary.chunks(new JSONArray().put(segment(0,"来源")),new JSONArray().put(picture(0,0))).getJSONObject(0);
+        JSONObject chunk=ClassroomSummary.lessonInput(new JSONArray().put(segment(0,"来源")),new JSONArray().put(picture(0,0)));
         JSONObject valid=part(chunk);ClassroomSummary.validate(valid,chunk);check(true,"valid actual source and uploaded image accepted");
         JSONObject bad=new JSONObject(valid.toString());bad.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(99));rejects(()->ClassroomSummary.validate(bad,chunk),"out-of-chunk subtitle rejected");
         JSONObject missing=new JSONObject(valid.toString());missing.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray());rejects(()->ClassroomSummary.validate(missing,chunk),"missing source rejected");
@@ -117,29 +144,43 @@ public final class ClassroomSummaryCheck {
     }
     private static void pipeline()throws Exception {
         reset();File dir=materialDir("pipeline-"+System.nanoTime());failCall=2;
-        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{}),"mid-run HTTP failure propagated");}
+        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"保留英文术语"),"mid-run HTTP failure propagated");}
         JSONObject checkpoint=ClassroomStore.read(new File(dir,"run.json")),partial=ClassroomStore.read(new File(dir,"summary.json"));
-        check(checkpoint.getJSONArray("parts").length()==1,"successful segment checkpoint persisted before later failure");
-        check(!partial.getBoolean("complete")&&partial.getJSONArray("parts").length()==1&&partial.getInt("total_parts")==3,"partial result explicitly incomplete");
+        check(checkpoint.has("draft")&&checkpoint.has("first_output")&&!checkpoint.has("final"),"first round checkpoint persisted before second round failure");
+        check(!partial.getBoolean("complete")&&partial.getJSONArray("parts").length()==1&&partial.getInt("total_parts")==1,"partial result explicitly incomplete");
         check(partial.getInt("planned_images")==3,"partial result distinguishes planned from analysed image count");
-        check(partial.getJSONArray("images").length()==1,"partial image inventory includes only analysed segment; observed="+partial.getJSONArray("images").length());
+        check(partial.getJSONArray("images").length()==0,"partial image inventory does not claim images analysed");
         ByteArrayOutputStream partialZip=new ByteArrayOutputStream();ClassroomExport.write(dir,partial,partialZip);Map<String,byte[]> partialEntries=unzip(partialZip.toByteArray());String partialMd=new String(partialEntries.get("课堂总结.md"),StandardCharsets.UTF_8);
-        check(partialMd.contains("未完成：1 / 3"),"partial export reports incomplete status");
-        check(partialEntries.keySet().stream().filter(s->s.startsWith("images/")).count()==1,"partial export excludes not-yet-analysed images");
-        failCall=-1;JSONObject result;try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{});}
-        check(result.getBoolean("complete")&&result.getJSONArray("parts").length()==3,"retry completes remaining segments and final overview");
-        check(chunkCalls.get(0)==1&&chunkCalls.get(1)==2&&chunkCalls.get(2)==1,"resume does not resend completed segment: "+chunkCalls);
-        check(result.getString("overview").equals("合并重点"),"final overview persisted");
+        check(partialMd.contains("未完成"),"partial export reports incomplete status");
+        check(partialEntries.keySet().stream().noneMatch(s->s.startsWith("images/")),"partial export excludes not-yet-analysed images");
+        failCall=-1;JSONObject result;List<ClassroomProgress> progress=new ArrayList<>();try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,3,c,progress::add,"保留英文术语");}
+        check(progress.stream().anyMatch(p->p.stage.equals("AI 结合图片完成总结")&&p.completed==1&&p.total==2&&p.detail.contains("等待 AI 返回")),"resumed progress reports second-round wait");
+        ClassroomProgress done=progress.get(progress.size()-1);check(done.completed==2&&done.total==2&&done.stage.equals("课堂总结已保存"),"final save completes two rounds");
+        check(result.getBoolean("complete")&&result.getJSONArray("parts").length()==1,"retry finishes one whole-lesson final result");
+        check(calls==3,"retry calls only failed second round");
+        JSONArray firstMessages=requests.get(0).getJSONArray("messages");String firstPrompt=firstMessages.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
+        check(firstMessages.getJSONObject(1).getJSONArray("content").length()==1,"first round sends no image bytes");
+        check(new JSONObject(firstPrompt.substring(firstPrompt.indexOf("资料：\n")+4)).getJSONArray("segments").length()==3,"first round includes entire long transcript without chunks");
+        String secondPrompt=requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
+        JSONObject context=new JSONObject(secondPrompt.substring(secondPrompt.indexOf("完整资料包：\n")+7));
+        check(context.getString("first_system").equals(firstMessages.getJSONObject(0).getString("content"))&&context.getString("first_prompt").equals(firstPrompt),"second round contains exact full first system and prompt");
+        check(context.getString("first_system").contains("保留英文术语"),"classroom custom prompt reaches both rounds");
+        check(!ClassroomSummary.configKey(AI,20,"other").equals(ClassroomSummary.configKey(AI,20,"保留英文术语")),"custom prompt changes invalidate the previous run");
+        check(context.getString("first_output").equals(checkpoint.getString("first_output")),"second round contains exact raw first response");
+        JSONArray secondContent=requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content");
+        check(secondContent.length()==4&&context.getJSONArray("images").length()==3,"second round includes matching inventory and three actual images");
+        for(int i=0;i<3;i++)check(secondContent.getJSONObject(i+1).getJSONObject("image_url").getString("url").equals("data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(ClassroomStore.bytes(new File(dir,"image-"+i+".jpg")))),"second-round actual JPEG matches inventory "+i);
         check(result.getString("run").equals(partial.getString("run")),"resumed run keeps identity for UI replacement");
-        int before=calls;try(RequestControl c=new RequestControl(10000)){ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{});}check(calls==before,"completed run retry makes no HTTP requests");
-        ByteArrayOutputStream zip=new ByteArrayOutputStream();ClassroomExport.write(dir,result,zip);Map<String,byte[]> entries=unzip(zip.toByteArray());String md=new String(entries.get("课堂总结.md"),StandardCharsets.UTF_8),transcript=new String(entries.get("sources.md"),StandardCharsets.UTF_8);
+        int before=calls;try(RequestControl c=new RequestControl(10000)){ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"保留英文术语");}check(calls==before,"completed run retry makes no HTTP requests");
+        ByteArrayOutputStream zip=new ByteArrayOutputStream();List<ClassroomProgress> exportProgress=new ArrayList<>();ClassroomExport.write(dir,result,zip,exportProgress::add);Map<String,byte[]> entries=unzip(zip.toByteArray());String md=new String(entries.get("课堂总结.md"),StandardCharsets.UTF_8),transcript=new String(entries.get("sources.md"),StandardCharsets.UTF_8);
+        check(exportProgress.get(exportProgress.size()-1).completed==entries.size(),"export count equals actual ZIP entries");
         check(entries.size()==5,"ZIP contains Markdown, subtitle source, three local images");
-        for(int i=0;i<3;i++){check(md.contains("images/image-"+i+".jpg")&&entries.containsKey("images/image-"+i+".jpg"),"offline image reference resolves "+i);check(md.contains("sources.md#s"+i)&&transcript.contains("id=\"s"+i+"\""),"offline subtitle anchor resolves "+i);}
+        for(int i=0;i<3;i++){check(md.contains("images/image-"+i+".jpg")&&entries.containsKey("images/image-"+i+".jpg"),"offline image reference resolves "+i);check(transcript.contains("id=\"s"+i+"\""),"offline subtitle anchor resolves "+i);}
         check(md.contains("## 课堂安排")&&md.contains("下周交作业"),"assignments exported as suggestions without calendar writes");
         check(!md.contains(AI.apiKey)&&!checkpoint.toString().contains(AI.apiKey)&&!result.toString().contains(AI.apiKey),"credential absent from run/summary/export");
         rejects(()->ClassroomExport.safeImage("../secret"),"ZIP path traversal rejected");
-        try(RequestControl c=new RequestControl(20000)){JSONObject changed=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{});check(!changed.getString("run").equals(result.getString("run")),"changed image budget creates distinct run identity");check(changed.getJSONArray("images").length()==0&&changed.getInt("planned_images")==0,"changed config cannot reuse old image inventory");}
-        try(RequestControl c=new RequestControl(10000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,-1,c,s->{}),"negative image budget rejected");rejects(()->ClassroomSummary.generate(dir,LESSON,AI,101,c,s->{}),"over-100 image budget rejected");}
+        try(RequestControl c=new RequestControl(20000)){JSONObject changed=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"保留英文术语");check(!changed.getString("run").equals(result.getString("run")),"changed image budget creates distinct run identity");check(changed.getJSONArray("images").length()==0&&changed.getInt("planned_images")==0,"changed config cannot reuse old image inventory");}
+        try(RequestControl c=new RequestControl(10000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,-1,c,s->{},"保留英文术语"),"negative image budget rejected");rejects(()->ClassroomSummary.generate(dir,LESSON,AI,21,c,s->{},"保留英文术语"),"over-twenty image budget rejected");}
     }
     private static void isolation()throws Exception {
         android.content.Context context=new android.content.Context(new File(root,"accounts-"+System.nanoTime()));ClassroomStore a=new ClassroomStore(context,"anonymous-a"),b=new ClassroomStore(context,"anonymous-b");
@@ -148,18 +189,44 @@ public final class ClassroomSummaryCheck {
         rejects(()->new ClassroomStore(context,"../outside"),"unsafe account path rejected");rejects(()->a.lesson(new ClassroomLesson("../1","2","","","","6",1)),"unsafe lesson path rejected");
         check(LESSON.selectable(2)&&!LESSON.selectable(0),"only occurred completed lesson selectable");check(!new ClassroomLesson("1","2","","","","4",1).selectable(2),"unfinished recording cannot be selected");
     }
+    private static void capAndFinalValidation()throws Exception {
+        reset();File dir=materialDir("twenty-cap"+System.nanoTime());JSONArray candidates=new JSONArray();
+        for(int i=0;i<40;i++)candidates.put(new JSONObject().put("raw","raw-"+(i%3)+".img").put("second",i).put("index",i));
+        ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject().put("images",candidates));
+        mode="invalid-final";
+        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,20,c,s->{},"保留英文术语"),"final image citation outside selected set rejected");}
+        JSONObject partial=ClassroomStore.read(new File(dir,"summary.json"));
+        check(!partial.getBoolean("complete")&&partial.getJSONArray("images").length()==0,"invalid final preserves unillustrated draft");
+        mode="normal";JSONObject result;
+        try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,20,c,s->{},"保留英文术语");}
+        check(calls==3&&result.getJSONArray("images").length()==20,"final validation retry reuses first round and keeps twenty-image cap");
+        check(requests.get(0).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1
+                &&requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==21,"HTTP requests send zero then exactly twenty images");
+        JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
+        check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
+        check(state.getString("config").equals(ClassroomSummary.configKey(AI,20,"保留英文术语"))&&state.getString("config").endsWith("\n3\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
+    }
     private static void textOnlyAndInvalidRetry()throws Exception {
         reset();File dir=materialDir("text-only-"+System.nanoTime());
         check(ClassroomSummary.DEFAULT_IMAGES==20,"default image budget is twenty");
-        try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{});check(summary.getBoolean("complete")&&summary.getJSONArray("images").length()==0,"zero-budget pipeline completes without images");}
+        try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"保留英文术语");check(summary.getBoolean("complete")&&summary.getJSONArray("images").length()==0,"zero-budget pipeline completes without images");}
+        check(calls==1,"text-only performs exactly one model request");
         for(JSONObject request:requests)check(request.getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1,"text-only HTTP request has no image_url item");
         reset();File invalid=materialDir("invalid-reference-"+System.nanoTime());mode="invalid-source";
-        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(invalid,LESSON,AI,0,c,s->{}),"invalid AI subtitle citation fails before checkpoint");}
-        JSONObject run=ClassroomStore.read(new File(invalid,"run.json"));check(run==null||run.getJSONArray("parts").length()==0,"invalid subtitle response never persisted as successful segment");
+        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(invalid,LESSON,AI,0,c,s->{},"保留英文术语"),"invalid AI subtitle citation fails before checkpoint");}
+        JSONObject run=ClassroomStore.read(new File(invalid,"run.json"));check(run==null||!run.has("draft"),"invalid subtitle response never persisted as successful draft");
         mode="invalid-image";
-        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(invalid,LESSON,AI,0,c,s->{}),"invalid AI image citation fails before checkpoint");}
-        mode="normal";try(RequestControl c=new RequestControl(20000)){check(ClassroomSummary.generate(invalid,LESSON,AI,0,c,s->{}).getBoolean("complete"),"invalid-response retry resumes successfully");}
-        check(chunkCalls.get(0)==3&&chunkCalls.get(1)==1&&chunkCalls.get(2)==1,"invalid segment retried, successful later segments sent once");
+        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(invalid,LESSON,AI,0,c,s->{},"保留英文术语"),"invalid AI image citation fails before checkpoint");}
+        mode="normal";try(RequestControl c=new RequestControl(20000)){check(ClassroomSummary.generate(invalid,LESSON,AI,0,c,s->{},"保留英文术语").getBoolean("complete"),"invalid-response retry resumes successfully");}
+        check(calls==3,"invalid draft retried and successful full transcript sent once");
+        for(String scenario:List.of("no-request","no-match")) {
+            reset();mode=scenario;File empty=materialDir(scenario+System.nanoTime());
+            try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(empty,LESSON,AI,20,c,s->{},"保留英文术语");check(summary.getBoolean("complete")&&summary.getJSONArray("images").length()==0,"no requested matching image completes using draft: "+scenario);}
+            check(calls==1,"no empty-image second round: "+scenario);
+        }
+        reset();mode="invalid-window";File window=materialDir("invalid-window"+System.nanoTime());
+        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(window,LESSON,AI,20,c,s->{},"保留英文术语"),"reversed window rejected before second round");}
+        check(calls==1&&!ClassroomStore.read(new File(window,"run.json")).has("draft"),"invalid window never checkpoints successful draft");
     }
     private static void transport()throws Exception {
         reset();ChatCompletionClient client=new ChatCompletionClient(AI);String answer=client.complete("测试任务","合成输入",List.of(new byte[]{1,2,3}));
@@ -175,7 +242,9 @@ public final class ClassroomSummaryCheck {
     }
     public static void main(String[] args)throws Exception {
         root=new File(args[0]);root.mkdirs();HttpServer server=server();try {
-            test("chunk boundaries",ClassroomSummaryCheck::chunkBoundaries);test("reference validation",ClassroomSummaryCheck::validation);test("low-resolution dedup and budget",ClassroomSummaryCheck::images);test("transport options/cancel/deadline/SSE",ClassroomSummaryCheck::transport);test("checkpoint, retry and offline ZIP",ClassroomSummaryCheck::pipeline);test("text-only and invalid-response retry",ClassroomSummaryCheck::textOnlyAndInvalidRetry);test("anonymous account isolation",ClassroomSummaryCheck::isolation);
+            test("subtitle compression",ClassroomSummaryCheck::subtitleCompression);
+            test("HTTP twenty-image cap and final validation retry",ClassroomSummaryCheck::capAndFinalValidation);
+            test("requested image windows",ClassroomSummaryCheck::windowSelection);test("reference validation",ClassroomSummaryCheck::validation);test("low-resolution dedup and budget",ClassroomSummaryCheck::images);test("transport options/cancel/deadline/SSE",ClassroomSummaryCheck::transport);test("checkpoint, retry and offline ZIP",ClassroomSummaryCheck::pipeline);test("text-only and invalid-response retry",ClassroomSummaryCheck::textOnlyAndInvalidRetry);test("anonymous account isolation",ClassroomSummaryCheck::isolation);
         }finally{server.stop(0);}System.out.println("ClassroomSummaryCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError(failures+" classroom regression failures");
     }
 }

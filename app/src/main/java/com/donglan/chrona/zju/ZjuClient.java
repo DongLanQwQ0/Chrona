@@ -1,6 +1,7 @@
 package com.donglan.chrona.zju;
 
 import android.text.Html;
+import com.donglan.chrona.net.NetworkFailure;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -61,9 +62,9 @@ public final class ZjuClient implements Closeable {
             throw new SchoolException("截图地址不属于智云媒体服务");
         ensureClassroom();
         try (Response response = execute(new Request.Builder().url(target).get().build())) {
-            if (response.code() == 401 || response.code() == 403) throw new AuthenticationException();
-            if (!response.isSuccessful() || response.body() == null)
-                throw new SchoolException("课堂截图下载失败");
+            if (response.code() == 401 || response.code() == 403) throw new AuthenticationException(NetworkFailure.http("下载课堂截图",target.host(),response.code()));
+            if (!response.isSuccessful()) throw NetworkFailure.http("下载课堂截图",target.host(),response.code());
+            if (response.body() == null) throw new SchoolException("课堂截图返回空响应");
             String type = response.header("Content-Type", "").toLowerCase(java.util.Locale.ROOT);
             if (!type.startsWith("image/")) throw new SchoolException("课堂截图未返回图像");
             if (response.body().contentLength() > MAX_CLASSROOM_IMAGE_BYTES) throw new SchoolException("课堂截图过大");
@@ -78,7 +79,8 @@ public final class ZjuClient implements Closeable {
                 checkOpen();
                 if (output.size() == 0) throw new SchoolException("课堂截图为空");
                 return output.toByteArray();
-            }
+            } catch (SchoolException e) { throw e; }
+            catch (IOException e) { checkOpen(); throw NetworkFailure.transport("读取课堂截图", target.host(), e); }
         }
     }
 
@@ -364,7 +366,7 @@ public final class ZjuClient implements Closeable {
         String url = login.build().toString();
         try (Response r = execute(new Request.Builder().url(url).get().build())) {
             if (isRedirect(r)) { String target = redirect(r); casAuthenticated = true; return target; }
-            if (r.code() != 200) throw new AuthenticationException();
+            if (r.code() != 200) throw new AuthenticationException(NetworkFailure.http("学校登录",r.request().url().host(),r.code()));
             String html = body(r);
             Matcher inputs = Pattern.compile("<input\\b([^>]*)>", Pattern.CASE_INSENSITIVE).matcher(html);
             String execution = "";
@@ -382,7 +384,10 @@ public final class ZjuClient implements Closeable {
             Request post = new Request.Builder().url(url).post(new FormBody.Builder().add("username", user)
                     .add("password", encrypted).add("execution", execution).add("_eventId", "submit").add("authcode", "").build()).build();
             try (Response result = execute(post)) {
-                if (!isRedirect(result)) throw new AuthenticationException();
+                if (!isRedirect(result)) {
+                    if (!result.isSuccessful()) throw new AuthenticationException(NetworkFailure.http("学校登录",result.request().url().host(),result.code()));
+                    throw new AuthenticationException();
+                }
                 String target = redirect(result); casAuthenticated = true; return target;
             }
         }
@@ -409,7 +414,7 @@ public final class ZjuClient implements Closeable {
                 continue;
             }
             try (Response response = execute(request)) {
-                if (response.code() == 401 || response.code() == 403) throw new AuthenticationException();
+                if (response.code() == 401 || response.code() == 403) throw new AuthenticationException(NetworkFailure.http("请求学校数据",url.host(),response.code()));
                 if (isRedirect(response)) {
                     String target;
                     HttpUrl next = url.resolve(response.header("Location", ""));
@@ -417,7 +422,7 @@ public final class ZjuClient implements Closeable {
                     else target = redirect(response);
                     request = new Request.Builder().url(target).get().build(); continue;
                 }
-                if (!response.isSuccessful()) throw new SchoolException("学校服务暂时不可用（" + response.code() + "）");
+                if (!response.isSuccessful()) throw NetworkFailure.http("请求学校数据",url.host(),response.code());
                 String text = body(response);
                 if (Pattern.compile("<input[^>]*type\\s*=\\s*['\"]?password|name\\s*=\\s*['\"]execution['\"]", Pattern.CASE_INSENSITIVE).matcher(text).find()) throw new AuthenticationException();
                 Matcher refresh = Pattern.compile("<meta[^>]*http-equiv\\s*=\\s*['\"]refresh['\"][^>]*content\\s*=\\s*['\"]\\s*0;\\s*URL=([^'\"]+)", Pattern.CASE_INSENSITIVE).matcher(text);
@@ -442,7 +447,8 @@ public final class ZjuClient implements Closeable {
         checkOpen(); safeUrl(request.url().toString());
         Call call = http.newCall(request.newBuilder().header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0")
                 .header("Accept", "*/*").build());
-        return call.execute();
+        try { return call.execute(); }
+        catch (IOException e) { checkOpen(); throw NetworkFailure.transport("建立连接或等待响应", request.url().host(), e); }
     }
 
     private static HttpUrl safeUrl(String raw) throws IOException {
@@ -461,7 +467,8 @@ public final class ZjuClient implements Closeable {
     }
     private static String body(Response r) throws IOException {
         if (r.body() == null) throw new SchoolException("学校服务返回空响应");
-        return r.body().string();
+        try { return r.body().string(); }
+        catch (IOException e) { throw NetworkFailure.transport("读取学校响应",r.request().url().host(),e); }
     }
     private static String required(JSONObject o, String key) throws JSONException {
         if (!o.has(key) || o.isNull(key)) throw new JSONException("Missing required field");
@@ -482,6 +489,7 @@ public final class ZjuClient implements Closeable {
     }
     public static final class AuthenticationException extends SchoolException {
         AuthenticationException() { super("浙大统一身份认证失败或登录已失效，请检查学号、密码或校园网络后重试"); }
+        AuthenticationException(IOException cause) { super(NetworkFailure.describe(cause)); initCause(cause); }
     }
     private static final class MemoryCookies implements CookieJar {
         private final List<Cookie> values = new ArrayList<>();

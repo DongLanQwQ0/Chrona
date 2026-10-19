@@ -67,7 +67,8 @@ public final class UiStyle {
 
     /** Invalidates visible translucent surfaces when a parent scroll changes their backdrop. */
     private static final class AcrylicScrollWatcher
-            implements ViewTreeObserver.OnScrollChangedListener, ViewTreeObserver.OnGlobalLayoutListener, Runnable,
+            implements ViewTreeObserver.OnScrollChangedListener, ViewTreeObserver.OnGlobalLayoutListener,
+            ViewTreeObserver.OnPreDrawListener, Runnable,
             View.OnAttachStateChangeListener {
         private final java.lang.ref.WeakReference<ViewTreeObserver> observer;
         private final java.lang.ref.WeakReference<View> root;
@@ -75,6 +76,8 @@ public final class UiStyle {
         private final java.util.ArrayList<java.lang.ref.WeakReference<View>> hosts =
                 new java.util.ArrayList<>();
         private final android.graphics.Rect visible = new android.graphics.Rect();
+        private final WeakHashMap<View, android.graphics.Matrix> positions = new WeakHashMap<>();
+        private final android.graphics.Matrix currentPosition = new android.graphics.Matrix();
         AcrylicScrollWatcher(View root, ViewTreeObserver observer) {
             this.root = new java.lang.ref.WeakReference<>(root);
             this.observer = new java.lang.ref.WeakReference<>(observer);
@@ -104,6 +107,26 @@ public final class UiStyle {
             view.removeCallbacks(this);
             run();
         }
+        @Override public boolean onPreDraw() {
+            // ChangeBounds and property animations can move a retained RenderNode without
+            // another layout or scroll event. Re-record its sampled background in this frame.
+            for (java.lang.ref.WeakReference<View> reference : hosts) {
+                View host = reference.get();
+                if (host == null || !host.isAttachedToWindow()
+                        || !host.getGlobalVisibleRect(visible)) continue;
+                currentPosition.reset();
+                transformToRoot(host, currentPosition);
+                android.graphics.Matrix previous = positions.get(host);
+                if (previous == null) {
+                    positions.put(host, new android.graphics.Matrix(currentPosition));
+                    host.invalidate();
+                } else if (!previous.equals(currentPosition)) {
+                    previous.set(currentPosition);
+                    host.invalidate();
+                }
+            }
+            return true;
+        }
         @Override public void run() {
             queued = false;
             java.util.Iterator<java.lang.ref.WeakReference<View>> iterator = hosts.iterator();
@@ -125,8 +148,10 @@ public final class UiStyle {
             if (tree != null && tree.isAlive()) {
                 tree.removeOnScrollChangedListener(this);
                 tree.removeOnGlobalLayoutListener(this);
+                tree.removeOnPreDrawListener(this);
             }
             hosts.clear();
+            positions.clear();
             ACRYLIC_SCROLL_WATCHERS.remove(view);
             view.removeOnAttachStateChangeListener(this);
         }
@@ -147,14 +172,23 @@ public final class UiStyle {
         }
     }
     /** One radius scale for the whole app: fields and buttons, cards, sheets, and chips. */
-    static final int RADIUS_FIELD = 8;
-    static final int RADIUS_CARD = 10;
-    static final int RADIUS_PANEL = 12;
-    static final int RADIUS_PILL = 8;
+    static final int RADIUS_FIELD = CornerScale.FIELD;
+    static final int RADIUS_CARD = CornerScale.CARD;
+    static final int RADIUS_PANEL = CornerScale.PANEL;
+    static final int RADIUS_PILL = CornerScale.PILL;
     /** The animated Dock keeps its independently tuned round-ended geometry. */
     static final int RADIUS_DOCK = 28;
     /** Filter chips: a soft rectangle, deliberately much less round than a pill. */
-    static final int RADIUS_CHIP = 6;
+    static final int RADIUS_CHIP = CornerScale.CHIP;
+
+    static int radius(Context context, int token) {
+        return CornerScale.radius(token, ThemeStore.cornerLevel(context));
+    }
+
+    static boolean isCardSurface(View view) {
+        return view.getBackground() instanceof AcrylicSurfaceDrawable surface
+                && (surface.radius == RADIUS_CARD || surface.radius == RADIUS_PANEL);
+    }
     /** Choice sheets carry short labels only, so they stay well inside the default sheet width. */
     private static final int CHOICE_SHEET_WIDTH_DP = 300;
     /** Length of the in-place cross-fade used when a screen rebuilds itself. */
@@ -182,6 +216,16 @@ public final class UiStyle {
 
     private UiStyle() { }
 
+    /** Maps local pixels into the shared root, including every ancestor's scroll and transform. */
+    static void transformToRoot(View view, android.graphics.Matrix matrix) {
+        if (view.getParent() instanceof View parent) {
+            transformToRoot(parent, matrix);
+            matrix.preTranslate(-parent.getScrollX(), -parent.getScrollY());
+        }
+        matrix.preTranslate(view.getLeft(), view.getTop());
+        if (!view.getMatrix().isIdentity()) matrix.preConcat(view.getMatrix());
+    }
+
     private static void watchAcrylicScroll(View host) {
         View root = host.getRootView();
         ViewTreeObserver observer = root.getViewTreeObserver();
@@ -194,6 +238,7 @@ public final class UiStyle {
                 ACRYLIC_SCROLL_WATCHERS.put(root, watcher);
                 observer.addOnScrollChangedListener(watcher);
                 observer.addOnGlobalLayoutListener(watcher);
+                observer.addOnPreDrawListener(watcher);
             }
             watcher.addHost(host);
         }
@@ -399,6 +444,24 @@ public final class UiStyle {
         } else view.setButtonTintList(tint);
     }
 
+    static void dateDialog(Activity activity, String title, java.time.LocalDate date,
+            java.util.function.Consumer<java.time.LocalDate> onSave) {
+        Dialog dialog = dialog(activity);
+        LinearLayout panel = dialogPanel(activity, title);
+        GlassDateTimePickerView picker = new GlassDateTimePickerView(activity, date.atStartOfDay());
+        picker.showTime(false);
+        panel.addView(picker, new LinearLayout.LayoutParams(-1, dp(panel, 220)));
+        LinearLayout actions = new LinearLayout(activity);
+        Button cancel = new Button(activity); cancel.setText("取消"); button(cancel, false);
+        cancel.setOnClickListener(view -> dialog.dismiss());
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(panel, 52), 1));
+        Button save = new Button(activity); save.setText("确定"); button(save, true);
+        save.setOnClickListener(view -> { dialog.dismiss(); onSave.accept(picker.value().toLocalDate()); });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(panel, 52), 1);
+        params.leftMargin = dp(panel, 8); actions.addView(save, params);
+        addSpaced(panel, actions, 12, 0); showFloatingDialog(dialog, panel);
+    }
+
     static void timeDialog(Activity activity, String title, int minutes, IntConsumer onSave) {
         Dialog dialog = dialog(activity);
         LinearLayout panel = dialogPanel(activity, title);
@@ -459,7 +522,7 @@ public final class UiStyle {
 
     /** Compact acrylic surface for controls and transient in-app messages. */
     public static void glassPill(View view) {
-        acrylicSurface(view, RADIUS_PILL);
+        acrylicSurface(view, CornerScale.ROUND);
     }
 
     static void dockGlass(View view) {
@@ -496,7 +559,7 @@ public final class UiStyle {
         GradientDrawable surface = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{alpha(colors.surface, firstAlpha), alpha(colors.surfaceAlt, secondAlpha)});
         boolean dark = ThemeStore.dark(view.getContext());
-        surface.setCornerRadius(dp(view, radius));
+        surface.setCornerRadius(dp(view, radius(view.getContext(), radius)));
         surface.setStroke(dp(view, 1), alpha(dark ? colors.outline : Color.WHITE,
                 dark ? 210 : 225));
         return surface;
@@ -509,6 +572,7 @@ public final class UiStyle {
         private final int radius;
         private GlassBackdropView backdrop;
         private int lastMix = -1;
+        private int lastRadius = -1;
         private int lastSurface, lastAlt, lastOutline;
         private int lastText;
         private boolean lastDark;
@@ -554,6 +618,14 @@ public final class UiStyle {
         }
 
         @Override public void draw(android.graphics.Canvas canvas) {
+            int resolved = radius(host.getContext(), radius);
+            if (lastRadius != resolved) {
+                lastRadius = resolved;
+                blurredSurface.setCornerRadius(dp(host, resolved));
+                fallbackSurface.setCornerRadius(dp(host, resolved));
+                host.invalidateOutline();
+                railDirty = true;
+            }
             Palette palette = colors(host.getContext());
             boolean acrylic = ThemeStore.acrylicEnabled(host.getContext());
             updateBlurredSurface(host, palette);
@@ -605,7 +677,7 @@ public final class UiStyle {
                     backdrop = GlassBackdropView.findFor(host);
                 }
                 backdropReady = backdrop != null && backdrop.drawBlurredWallpaper(canvas, host,
-                        getBounds(), dp(host, radius), palette);
+                        getBounds(), dp(host, radius(host.getContext(), radius)), palette);
             }
             // A translucent mix is only safe when the matching blurred wallpaper was actually
             // drawn underneath. Until then, use the opaque fallback; cache completion invalidates
@@ -753,13 +825,14 @@ public final class UiStyle {
                 float x = parentLocation[0] - hostLocation[0], y = parentLocation[1] - hostLocation[1];
                 rect.set(x, y, x + parent.getWidth(), y + parent.getHeight());
                 path.reset();
-                path.addRoundRect(rect, dp(parent, surface.radius), dp(parent, surface.radius), android.graphics.Path.Direction.CW);
+                float corner = dp(parent, radius(parent.getContext(), surface.radius));
+                path.addRoundRect(rect, corner, corner, android.graphics.Path.Direction.CW);
                 canvas.clipPath(path);
                 break;
             }
             rect.set(getBounds());
             float radius = host.getBackground() instanceof AcrylicSurfaceDrawable surface
-                    ? dp(host, surface.radius) : dp(host, 6);
+                    ? dp(host, radius(host.getContext(), surface.radius)) : dp(host, 6);
             canvas.drawRoundRect(rect, radius, radius, paint);
             canvas.restoreToCount(save);
         }
@@ -791,7 +864,7 @@ public final class UiStyle {
                     selected, outline));
         }
         view.setForeground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
-                null, shape(view, Color.WHITE, radius, Color.TRANSPARENT)));
+                null, new ControlHighlightMask(view)));
         rememberChildSurface(view, 3, false, radius, selected, outline);
     }
 
@@ -1424,7 +1497,7 @@ public final class UiStyle {
     private static GradientDrawable shape(View view, int fill, int radius, int stroke) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(fill);
-        drawable.setCornerRadius(dp(view, radius));
+        drawable.setCornerRadius(dp(view, radius(view.getContext(), radius)));
         drawable.setStroke(dp(view, 1), stroke);
         return drawable;
     }

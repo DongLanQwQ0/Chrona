@@ -1,5 +1,6 @@
 import com.donglan.chrona.classroom.*;
 import com.donglan.chrona.zju.*;
+import com.donglan.chrona.net.NetworkFailure;
 import okhttp3.*;
 import okhttp3.Cookie;
 import org.json.*;
@@ -29,6 +30,7 @@ public final class ClassroomClientCheck {
         String state="6",transcriptCode="0",slideCode="0",transcriptId="20",slideId="20",imageHost="video.cmc.zju.edu.cn";
         int totalTranscript=1,totalSlides=3,materialCalls,requests,imageStatus=200,imageBytes=4;
         boolean emptySubtitles,repeatPages,future,imageHtml,unknownImageLength;
+        String pendingField="";
         Fixture()throws Exception {
             school=(ZjuClient)field(client,"school");field(school,"classroomLoggedIn",true);
             OkHttpClient old=(OkHttpClient)field(school,"http");
@@ -44,9 +46,10 @@ public final class ClassroomClientCheck {
                             .put("course_id",10).put("sub_id",20).put("title","fixture").put("status",state).put("start_at",future?System.currentTimeMillis()/1000+3600:1)))).toString());
                     if(p.endsWith("search-trans-result")) {
                         materialCalls++;
+                        if(pendingField.equals("message")||pendingField.equals("msg"))return response(r,200,"application/json",new JSONObject().put(pendingField,"字幕正在生成中").toString());
                         JSONArray segments=emptySubtitles?new JSONArray():new JSONArray().put(new JSONObject().put("BeginSec",8).put("EndSec",10).put("Text","second"))
                                 .put(new JSONObject().put("BeginSec",1).put("EndSec",2).put("Text","first"));
-                        return response(r,200,"application/json",new JSONObject().put("code",Integer.parseInt(transcriptCode)).put("total",totalTranscript).put("list",new JSONArray().put(new JSONObject().put("sub_id",transcriptId).put("all_content",segments))).toString());
+                        return response(r,200,"application/json",new JSONObject().put("code",Integer.parseInt(transcriptCode)).put("total",totalTranscript).put("list",new JSONArray().put(new JSONObject().put("sub_id",transcriptId).put("all_content",pendingField.equals("all_content")?"正在生成中":segments))).toString());
                     }
                     if(p.endsWith("search-ppt")) {
                         JSONArray images=new JSONArray();
@@ -70,6 +73,35 @@ public final class ClassroomClientCheck {
         public void close(){client.close();}
     }
     static void synthetic()throws Exception {
+        for(boolean image:new boolean[]{false,true})for(int mode=0;mode<4;mode++) {
+            try(ZjuClient school=new ZjuClient("fixture","password")) {
+                field(school,"classroomLoggedIn",true);
+                OkHttpClient old=(OkHttpClient)field(school,"http");final int testMode=mode;
+                field(school,"http",old.newBuilder().addInterceptor(chain->{
+                    if(testMode==0)throw new java.net.UnknownHostException("SECRET URL Cookie password");
+                    Response r=response(chain.request(),testMode==2?407:testMode==3?503:200,image?"image/png":"application/json","SECRET BODY");
+                    if(testMode==1)r=r.newBuilder().body(new ResponseBody(){
+                        final okio.BufferedSource source=okio.Okio.buffer(new okio.Source(){
+                            public long read(okio.Buffer sink,long count)throws IOException{throw new java.net.SocketTimeoutException("SECRET READ");}
+                            public okio.Timeout timeout(){return okio.Timeout.NONE;}public void close(){}
+                        });
+                        public MediaType contentType(){return MediaType.get(image?"image/png":"application/json");}
+                        public long contentLength(){return -1;}public okio.BufferedSource source(){return source;}
+                    }).build();
+                    return r;
+                }).build());
+                try {
+                    if(image)school.classroomImage("https://video.cmc.zju.edu.cn/private?key=SECRET");
+                    else school.classroomJson("https://classroom.zju.edu.cn/private?key=SECRET");
+                    throw new AssertionError("expected diagnostic");
+                } catch(IOException e) {
+                    String text=NetworkFailure.describe(e);
+                    check(NetworkFailure.hasDetails(e)&&!text.contains("SECRET")&&!text.contains("private"),"safe production transport diagnostic");
+                    check(text.contains(mode==0?"DNS":mode==1?"读取":mode==2?"HTTP 407":"HTTP 503"),"production phase and HTTP classification");
+                    if(mode==1)check(e instanceof java.net.SocketTimeoutException&&e.getCause()!=null,"body timeout retains cause and semantic type");
+                }
+            }
+        }
         try(Fixture f=new Fixture()) {
             check(f.client.lessons().size()==1,"numeric course identity");
             JSONObject materials=f.client.materials(f.selected());
@@ -82,7 +114,17 @@ public final class ClassroomClientCheck {
             f.transcriptCode="403";fails(()->f.client.materials(f.selected()),"subtitle denial rejected");f.transcriptCode="0";
             f.transcriptId="21";fails(()->f.client.materials(f.selected()),"subtitle identity checked");f.transcriptId="20";
             f.totalTranscript=2;fails(()->f.client.materials(f.selected()),"partial subtitle pagination rejected");f.totalTranscript=1;
-            f.emptySubtitles=true;fails(()->f.client.materials(f.selected()),"empty subtitle rejected");f.emptySubtitles=false;
+            f.emptySubtitles=true;
+            try { f.client.materials(f.selected());throw new AssertionError("empty subtitle pending"); }
+            catch(ClassroomClient.MaterialsPendingException expected){checks++;}
+            f.emptySubtitles=false;
+            for(String pending:List.of("message","msg","all_content")) {
+                f.pendingField=pending;
+                try { f.client.materials(f.selected());throw new AssertionError("explicit generating state"); }
+                catch(ClassroomClient.MaterialsPendingException expected){checks++;}
+                check(f.client.lessons().size()==1,"pending lesson remains in catalogue");
+            }
+            f.pendingField="";
             f.slideCode="403";fails(()->f.client.materials(f.selected()),"slide denial rejected");f.slideCode="0";
             f.slideId="21";fails(()->f.client.materials(f.selected()),"slide identity checked");f.slideId="20";
             f.totalSlides=4;fails(()->f.client.materials(f.selected()),"partial slides rejected");f.totalSlides=3;

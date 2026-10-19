@@ -33,17 +33,33 @@ public final class ChatCompletionClient {
 
     private final AiSettings settings;
     private final RequestControl control;
+    private final String scheduleSystem;
+    private final int workStartMinutes;
+    private final int workEndMinutes;
 
     public ChatCompletionClient(AiSettings settings) {
         this(settings, null);
     }
 
     public ChatCompletionClient(AiSettings settings, RequestControl control) {
+        this(settings, control, SchedulePrompt.SYSTEM);
+    }
+
+    public ChatCompletionClient(AiSettings settings, RequestControl control, String scheduleSystem) {
+        this(settings, control, scheduleSystem,
+                SemanticEventNormalizer.DEFAULT_WORK_START, SemanticEventNormalizer.DEFAULT_WORK_END);
+    }
+
+    public ChatCompletionClient(AiSettings settings, RequestControl control, String scheduleSystem,
+            int workStartMinutes, int workEndMinutes) {
         if (settings == null) {
             throw new IllegalArgumentException("settings must not be null");
         }
         this.settings = settings;
         this.control = control;
+        this.scheduleSystem = scheduleSystem;
+        this.workStartMinutes = workStartMinutes;
+        this.workEndMinutes = workEndMinutes;
     }
 
     /** The read timeout this client applies; exposed so diagnostics can report the real value. */
@@ -112,9 +128,11 @@ public final class ChatCompletionClient {
         try {
             body.put("model", settings.model);
             JSONArray messages = new JSONArray();
-            messages.put(new JSONObject().put("role", "system").put("content", SchedulePrompt.SYSTEM));
+            messages.put(new JSONObject().put("role", "system").put("content", scheduleSystem));
             String prompt = SchedulePrompt.data(rawText, linkText, attachmentMetadata,
-                    nowMillis, timeZoneId).toString();
+                    nowMillis, timeZoneId)
+                    .put("scheduling_now_local", java.time.Instant.ofEpochMilli(System.currentTimeMillis())
+                            .atZone(java.time.ZoneId.of(timeZoneId)).toString()).toString();
             JSONArray content = new JSONArray();
             content.put(new JSONObject().put("type", "text").put("text", prompt));
             if (hasImages) {
@@ -140,7 +158,9 @@ public final class ChatCompletionClient {
 
     private ParseResult execute(long taskId, JSONObject body, boolean hasImages, PreviewSink preview,
             long nowMillis, String timeZoneId, boolean canDowngrade) throws IOException {
-        return parseResponse(taskId, executeEnvelope(body, hasImages, preview, canDowngrade), nowMillis, timeZoneId);
+        String response = executeEnvelope(body, hasImages, preview, canDowngrade);
+        return parseResponse(taskId, response, nowMillis, timeZoneId, System.currentTimeMillis(),
+                workStartMinutes, workEndMinutes);
     }
 
     /** General completion uses the same cancellation, options and HTTP transport as capture parsing. */
@@ -338,6 +358,12 @@ public final class ChatCompletionClient {
     }
 
     static ParseResult parseResponse(long taskId, String response, long nowMillis, String timeZoneId) throws IOException {
+        return parseResponse(taskId, response, nowMillis, timeZoneId, nowMillis,
+                SemanticEventNormalizer.DEFAULT_WORK_START, SemanticEventNormalizer.DEFAULT_WORK_END);
+    }
+
+    static ParseResult parseResponse(long taskId, String response, long nowMillis, String timeZoneId,
+            long schedulingNowMillis, int workStartMinutes, int workEndMinutes) throws IOException {
         try {
             JSONObject root = new JSONObject(response);
             JSONArray choices = root.getJSONArray("choices");
@@ -354,7 +380,11 @@ public final class ChatCompletionClient {
             List<EventCandidate> candidates = new ArrayList<>();
             for (int i = 0; i < events.length(); i++) {
                 JSONObject event = events.getJSONObject(i);
-                candidates.add(SemanticEventNormalizer.fromJson(taskId, event, nowMillis, timeZoneId));
+                if (!(event.opt("execution_time_explicit") instanceof Boolean)
+                        || !event.has("suggested_start"))
+                    throw new JSONException("Missing execution time provenance or suggestion field");
+                candidates.add(SemanticEventNormalizer.fromJson(taskId, event, nowMillis, timeZoneId,
+                        schedulingNowMillis, workStartMinutes, workEndMinutes));
             }
             JSONArray records = parsed.optJSONArray("records");
             if (records != null) for (int i=0;i<records.length();i++) candidates.add(SemanticEventNormalizer.recordFromJson(taskId,records.getJSONObject(i),timeZoneId));

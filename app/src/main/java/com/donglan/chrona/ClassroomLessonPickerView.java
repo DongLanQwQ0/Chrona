@@ -26,7 +26,7 @@ final class ClassroomLessonPickerView extends HorizontalScrollView {
         for(Map.Entry<String,List<ClassroomLesson>> slot:slots.entrySet()){
             TableRow row=new TableRow(context);row.setGravity(Gravity.TOP);TextView time=label(context,slot.getKey(),timeWidth);time.setSingleLine(true);row.addView(time);
             for(int d=0;d<7;d++){LinearLayout cell=new LinearLayout(context);cell.setOrientation(LinearLayout.VERTICAL);cell.setPadding(dp(4),dp(4),dp(4),dp(4));
-                for(ClassroomLesson l:slot.getValue())if(l.date().equals(monday.plusDays(d))){TextView item=label(context,l.course+"\n"+l.title+"\n"+l.room+" · "+l.state(System.currentTimeMillis()),courseWidth-dp(8));item.setGravity(Gravity.START);item.setTextSize(14);UiStyle.choice(item,false,8);boolean ready=l.selectable(System.currentTimeMillis());item.setEnabled(ready);if(!ready)item.setAlpha(.55f);else item.setOnClickListener(v->select.accept(l));UiStyle.addSpaced(cell,item,0,6);}
+                for(ClassroomLesson l:slot.getValue())if(l.date().equals(monday.plusDays(d))){TextView item=label(context,l.course+"\n"+l.title+"\n"+l.room+" · "+l.state(System.currentTimeMillis()),courseWidth-dp(8));item.setGravity(Gravity.START);item.setTextSize(14);UiStyle.choice(item,false,UiStyle.RADIUS_FIELD);boolean ready=l.selectable(System.currentTimeMillis());item.setEnabled(ready);if(!ready)item.setAlpha(.55f);else item.setOnClickListener(v->select.accept(l));UiStyle.addSpaced(cell,item,0,6);}
                 row.addView(cell,new TableRow.LayoutParams(courseWidth,-2));}table.addView(row);
         }
         if(slots.isEmpty())table.addView(label(context,"本周暂无课堂",dp(240)));

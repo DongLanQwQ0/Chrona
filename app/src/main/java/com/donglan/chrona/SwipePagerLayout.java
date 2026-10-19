@@ -50,6 +50,9 @@ final class SwipePagerLayout extends FrameLayout {
     private VelocityTracker velocityTracker;
     private boolean taskPagingEnabled = true;
     private boolean framePacingEnabled;
+    private boolean horizontalEdgeHandoff;
+    private android.widget.HorizontalScrollView horizontalAtDown;
+    void setHorizontalEdgeHandoffEnabled(boolean enabled) { horizontalEdgeHandoff=enabled; }
     private boolean dragFramePending;
     private float pendingDistanceX;
     private final Runnable dragFrame = this::dispatchDragFrame;
@@ -108,12 +111,19 @@ final class SwipePagerLayout extends FrameLayout {
             candidatePagerAtDown = candidatePagerAt(event.getRawX(), event.getRawY());
             touchStartedInPriorityChild = candidatePagerAtDown != null
                     || containsGesturePriorityChild(event.getRawX(), event.getRawY());
+            horizontalAtDown=null;
+            if(horizontalEdgeHandoff)for(View child:gesturePriorityChildren)
+                if(child instanceof android.widget.HorizontalScrollView scroll && contains(child,event.getRawX(),event.getRawY()))horizontalAtDown=scroll;
             int edgeInset = dp(32);
             startedAtSystemEdge = dispatchDownX <= edgeInset
                     || dispatchDownX >= getWidth() - edgeInset;
         } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
             float dx = event.getX() - dispatchDownX;
             float dy = event.getY() - dispatchDownY;
+            if(horizontalAtDown!=null&&!startedAtSystemEdge&&Math.abs(dx)>touchSlop&&Math.abs(dx)>Math.abs(dy)*1.25f
+                    &&!horizontalAtDown.canScrollHorizontally(dx<0?1:-1)) {
+                horizontalAtDown=null;touchStartedInPriorityChild=false;
+            }
             if (candidatePagerAtDown != null && !startedAtSystemEdge
                     && Math.abs(dx) > touchSlop && Math.abs(dx) > Math.abs(dy) * 1.25f
                     && candidatePagerAtDown.canYieldToTaskPager(dx)) {
@@ -134,6 +144,7 @@ final class SwipePagerLayout extends FrameLayout {
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             touchStartedInPriorityChild = false;
             candidatePagerAtDown = null;
+            horizontalAtDown = null;
             if (velocityTracker != null) {
                 velocityTracker.recycle();
                 velocityTracker = null;

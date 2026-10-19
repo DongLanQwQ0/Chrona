@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
+import com.donglan.chrona.ai.SchedulePreferences;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -25,9 +26,9 @@ public final class ConfigBackup {
         public final boolean hasAi, hasApiKey, hasAppearance;
         public final boolean hasAcrylic, acrylicEnabled;
         public final boolean hasGaussianBlur, gaussianBlur, hasCustomColor;
-        public final boolean hasSurfaceMix, hasBlurStrength;
+        public final boolean hasSurfaceMix, hasBlurStrength, hasCornerLevel;
         public final String baseUrl, model, apiKey, mode, color, customColor, reasoningEffort;
-        public final int surfaceMix, blurStrength;
+        public final int surfaceMix, blurStrength, cornerLevel;
 
         private Imported(JSONObject root) {
             JSONObject ai = root.optJSONObject("ai");
@@ -51,6 +52,8 @@ public final class ConfigBackup {
             surfaceMix = hasSurfaceMix ? appearance.optInt("surfaceMix", 40) : 40;
             hasBlurStrength = hasAppearance && appearance.has("blurStrength");
             blurStrength = hasBlurStrength ? appearance.optInt("blurStrength", 2) : 2;
+            hasCornerLevel = hasAppearance && appearance.has("cornerLevel");
+            cornerLevel = hasCornerLevel ? appearance.optInt("cornerLevel", 4) : 4;
         }
 
         private Imported(String baseUrl, String model, String reasoningEffort) {
@@ -63,6 +66,8 @@ public final class ConfigBackup {
             hasCustomColor = false;
             hasSurfaceMix = false;
             hasBlurStrength = false;
+            hasCornerLevel = false;
+            cornerLevel = 4;
             gaussianBlur = false;
             this.baseUrl = baseUrl;
             this.model = model;
@@ -98,6 +103,7 @@ public final class ConfigBackup {
         String key = saved == null ? null : saved.apiKey;
         if (includeKey && key != null && !key.isEmpty()) ai.put("apiKey", key);
         root.put("ai", ai);
+        root.put("schedulePreferences", SchedulePreferences.load(context).toJson());
         JSONObject appearance = new JSONObject();
         appearance.put("mode", ThemeStore.mode(context));
         appearance.put("color", ThemeStore.color(context));
@@ -106,6 +112,7 @@ public final class ConfigBackup {
         appearance.put("gaussianBlur", ThemeStore.gaussianBlur(context));
         appearance.put("surfaceMix", ThemeStore.surfaceMix(context));
         appearance.put("blurStrength", ThemeStore.blurStrength(context));
+        appearance.put("cornerLevel", ThemeStore.cornerLevel(context));
         root.put("appearance", appearance);
         root.put("features", FeaturePreferenceBackup.export(context));
         return root.toString(2);
@@ -136,9 +143,11 @@ public final class ConfigBackup {
                         ? (config.gaussianBlur ? " / 高斯模糊" : " / 普通模糊") : "")
                 .append(config.hasSurfaceMix ? " / 面板纯色浓度 " + config.surfaceMix + "%" : "")
                 .append(config.hasBlurStrength ? " / 模糊强度 " + config.blurStrength + "/5" : "")
+                .append(config.hasCornerLevel ? " / 圆角 " + config.cornerLevel + "/5" : "")
                 .append('\n');
         JSONObject root = parse(json);
         String exportedAt = root.optString("exportedAt", "");
+        if (root.has("schedulePreferences")) text.append("· 含工作时间、日程解析与课堂总结提示词\n");
         if (root.has("features")) text.append("· 含通知、原子岛、主页待办与周日历导出开关\n");
         if (!exportedAt.isEmpty()) text.append("· 导出于 ").append(exportedAt).append('\n');
         return text.toString();
@@ -177,9 +186,12 @@ public final class ConfigBackup {
                     imported.hasGaussianBlur ? imported.gaussianBlur : null,
                     imported.hasSurfaceMix ? imported.surfaceMix : null,
                     imported.hasBlurStrength ? imported.blurStrength : null,
-                    imported.hasCustomColor ? imported.customColor : null);
+                    imported.hasCustomColor ? imported.customColor : null,
+                    imported.hasCornerLevel ? imported.cornerLevel : null);
         }
         FeaturePreferenceBackup.apply(context, root.optJSONObject("features"));
+        if (root.has("schedulePreferences"))
+            SchedulePreferences.fromJson(root.getJSONObject("schedulePreferences")).save(context);
         return imported;
     }
 
@@ -199,6 +211,8 @@ public final class ConfigBackup {
     private static JSONObject parse(String json) throws JSONException {
         if (json == null || json.trim().isEmpty()) throw new JSONException("文件是空的");
         JSONObject root = new JSONObject(json);
+        if (root.has("schedulePreferences"))
+            SchedulePreferences.fromJson(root.getJSONObject("schedulePreferences"));
         FeaturePreferenceBackup.validate(root);
         if (!(root.opt("app") instanceof String) || !APP.equals(root.optString("app")))
             throw new JSONException("这不是拾时的配置文件");
@@ -270,6 +284,12 @@ public final class ConfigBackup {
                 if (!(strength instanceof Number) || ((Number) strength).intValue() < 1
                         || ((Number) strength).intValue() > 5)
                     throw new JSONException("模糊强度无效");
+            }
+            if (appearance.has("cornerLevel")) {
+                Object level = appearance.opt("cornerLevel");
+                if (!(level instanceof Number) || ((Number) level).doubleValue() != ((Number) level).intValue()
+                        || ((Number) level).intValue() < 1 || ((Number) level).intValue() > 5)
+                    throw new JSONException("圆角档位无效");
             }
         } else if (root.has("appearance") && !root.isNull("appearance")) {
             throw new JSONException("外观配置格式无效");

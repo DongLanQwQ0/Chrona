@@ -16,7 +16,7 @@ public final class AiRequestCheck {
         check(prefix.contains(SchedulePrompt.TIME_RULES) && !prefix.contains("e.g. tomorrow at 10:00"),
                 "single colloquial policy; bare twelve-hour example cannot auto-publish");
         check(prefix.contains(SchedulePrompt.DECISION_RULES), "decision boundaries sent to model");
-        check(SchedulePrompt.VERSION.equals("schedule-v10"), "recurrence schema prompt revision");
+        check(SchedulePrompt.VERSION.equals("schedule-v11"), "execution suggestion provenance schema revision");
         for (String rule : new String[]{"作业讲评会", "课程项目", "课程名纳入简短标题", "不覆盖事项固有类别",
                 "event只用start/end，due=null", "只有截止时start/end=null", "all_day=false",
                 "报名task和活动event", "只用一个主锚", "显式日期优先", "缺少可选", "有用草稿并标2"})

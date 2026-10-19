@@ -37,10 +37,10 @@ subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8'
                 str(src / 'WeekTimelineScale.java'), str(check)], check=True)
 subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'com.donglan.chrona.WeekTimeScaleCheck'], check=True)
 
-activity = (src / 'CalendarOverviewActivity.java').read_text(encoding='utf-8')
+activity = (src / 'CalendarOverviewPage.java').read_text(encoding='utf-8')
 assert '!snapshot.systemUnavailable && !snapshot.truncated' in activity
 assert 'geometry.timeScale.minuteAt' in activity and 'geometry.y(minuteAtFocus)' in activity
 home = (src / 'DashboardActivity.java').read_text(encoding='utf-8')
-assert 'PressFeedback.group(summary, 1.05f)' in home
+assert 'PressFeedback.group(summary, PressFeedback.CARD_PRESSED_SCALE)' in home
 assert 'details.setAddStatesFromChildren(true)' in home
 assert 'PressFeedback.edgeSpace(b - t)' in home

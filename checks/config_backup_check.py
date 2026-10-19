@@ -46,7 +46,8 @@ public final class ThemeStore {
  public static int surfaceMix(Context c) { return 40; } public static int blurStrength(Context c) { return 2; }
  public static boolean supportedColor(String c) { return TEAL.equals(c)||CUSTOM.equals(c); }
  public static boolean isHexColor(String c) { return c.matches("#[0-9a-fA-F]{6}"); }
- public static void applyAppearance(Context c,String mode,String color,Boolean acrylic,Boolean gaussian,Integer mix,Integer strength,String custom) { }
+ public static int cornerLevel(Context c) { return 4; }
+ public static void applyAppearance(Context c,String mode,String color,Boolean acrylic,Boolean gaussian,Integer mix,Integer strength,String custom,Integer corner) { }
 }''',
 'ConfigBackupCheck.java': '''import android.content.Context;
 import com.donglan.chrona.ConfigBackup;
@@ -103,5 +104,9 @@ jar=root/'build/ai-checks/json.jar'
 subprocess.run([str(java/'javac.exe'),'--release','17','-cp',str(jar),'-d',str(directory),
                *paths,str(root/'app/src/main/java/com/donglan/chrona/ConfigBackup.java'),
                str(root/'app/src/main/java/com/donglan/chrona/FeaturePreferenceBackup.java'),
+               str(root/'app/src/main/java/com/donglan/chrona/ai/SchedulePreferences.java'),
+               str(root/'app/src/main/java/com/donglan/chrona/ai/SchedulePrompt.java'),
+               str(root/'checks/SchedulePreferencesCheck.java'),
                str(root/'app/src/main/java/com/donglan/chrona/ai/AiSettings.java')],check=True)
 subprocess.run([str(java/'java.exe'),'-cp',str(directory)+os.pathsep+str(jar),'ConfigBackupCheck'],check=True)
+subprocess.run([str(java/'java.exe'),'-cp',str(directory)+os.pathsep+str(jar),'SchedulePreferencesCheck'],check=True)

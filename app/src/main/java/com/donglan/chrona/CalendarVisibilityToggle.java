@@ -8,11 +8,13 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.widget.CheckBox;
 
 /** A native accessible toggle with one circular surface and an interruptible state transition. */
 final class CalendarVisibilityToggle extends CheckBox {
+    private static final int SURFACE_INSET_DP = 4;
     private final Drawable icon;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final android.animation.ArgbEvaluator tint = new android.animation.ArgbEvaluator();
@@ -28,7 +30,8 @@ final class CalendarVisibilityToggle extends CheckBox {
         circle.setShape(GradientDrawable.OVAL);
         circle.setColor(Color.WHITE);
         setForeground(new RippleDrawable(ColorStateList.valueOf(
-                (UiStyle.colors(context).primary & 0x00ffffff) | (32 << 24)), null, circle));
+                (UiStyle.colors(context).primary & 0x00ffffff) | (32 << 24)), null,
+                new InsetDrawable(circle, surfaceInset())));
         UiStyle.pressable(this);
     }
 
@@ -57,12 +60,17 @@ final class CalendarVisibilityToggle extends CheckBox {
         UiStyle.Palette palette = UiStyle.colors(getContext());
         fill.setColor((palette.primary & 0x00ffffff) | (Math.round(32 * checkedFraction) << 24));
         float density = getResources().getDisplayMetrics().density;
-        canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, 20 * density, fill);
+        canvas.drawCircle(getWidth() / 2f, getHeight() / 2f,
+                Math.max(0, Math.min(getWidth(), getHeight()) / 2f - surfaceInset()), fill);
         icon.setTint((Integer)tint.evaluate(checkedFraction, palette.muted, palette.primary));
         int size = Math.round(24 * density * (1f + .08f * (float)Math.sin(Math.PI * checkedFraction)));
         int left = (getWidth() - size) / 2, top = (getHeight() - size) / 2;
         icon.setBounds(left, top, left + size, top + size);
         icon.draw(canvas);
+    }
+
+    private int surfaceInset() {
+        return Math.round(SURFACE_INSET_DP * getResources().getDisplayMetrics().density);
     }
 
     @Override protected void onDetachedFromWindow() {

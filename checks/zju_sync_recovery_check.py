@@ -34,6 +34,7 @@ production = root / 'app/src/main/java/com/donglan/chrona'
 sources = list(src.rglob('*.java')) + [production / p for p in
     ['ZjuSettingsStore.java', 'zju/ZjuClient.java', 'zju/ZjuCalendarConfig.java', 'zju/ZjuAcademicCalendar.java', 'zju/ZjuSnapshot.java']]
 sources += [root / 'checks/ZjuSyncRecoveryCheck.java']
+sources += [production / 'net/NetworkFailure.java']
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
 subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', classpath, '-d', str(out), *map(str, sources)], check=True)
 subprocess.run([str(java / 'java.exe'), '-cp', str(out) + os.pathsep + classpath, 'com.donglan.chrona.ZjuSyncRecoveryCheck'], check=True)

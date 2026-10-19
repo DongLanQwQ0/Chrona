@@ -2,7 +2,7 @@
 import os,re,subprocess
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
-s=(root/'app/src/main/java/com/donglan/chrona/CalendarOverviewActivity.java').read_text(encoding='utf-8')
+s=(root/'app/src/main/java/com/donglan/chrona/CalendarOverviewPage.java').read_text(encoding='utf-8')
 def method(signature):
  start=s.index(signature); brace=s.index('{',start); depth=1; end=brace+1
  while depth: depth+=(s[end]=='{')-(s[end]=='}');end+=1
@@ -24,7 +24,7 @@ class Gravity {static int TOP=1;}
 class AgendaEntry {String category="event";long start,end;String title="课",location="教室",source="拾时";boolean system,confirmed=true;Integer calendarColor;String key(){return title;}boolean isTask(){return "task".equals(category)||"homework".equals(category);}}
 class EntryStatus {EntryStatus(AgendaEntry e,TextView t,TextView time){}}
 class CalendarSourceColors {static int mix(Integer c,int p){return p;}}
-class PressFeedback {static void group(LinearLayout l,float f){}}
+class PressFeedback {static final float CARD_PRESSED_SCALE=1.08f;static void group(LinearLayout l,float f){}}
 class UiStyle {static int RADIUS_PANEL=24;static class Palette {int primary,text,outline;}static Palette colors(Object o){return new Palette();}static void muted(TextView t){}static void pressable(View v){}static void addSpaced(LinearLayout p,View v,int a,int b){p.addView(v);}}
 class CalendarTimelineLayout {static class Block {AgendaEntry entry=new AgendaEntry();double startMinute=600,endMinute=650;int lane,lanes=1;}static List<Block> day(List<AgendaEntry> e,LocalDate d,ZoneId z){List<Block> r=new ArrayList<>();for(AgendaEntry a:e){Block b=new Block();b.entry=a;r.add(b);}return r;}}
 public class CalendarEventBuildCheck {

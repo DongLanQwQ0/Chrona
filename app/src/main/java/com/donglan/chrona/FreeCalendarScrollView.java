@@ -24,6 +24,7 @@ final class FreeCalendarScrollView extends HorizontalScrollView {
     private final int slop, maxVelocity;
     FreeCalendarScrollView(Context context) {
         super(context); ViewConfiguration config = ViewConfiguration.get(context);
+        setOverScrollMode(OVER_SCROLL_NEVER);
         slop = config.getScaledTouchSlop(); maxVelocity = config.getScaledMaximumFlingVelocity();
         detector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override public boolean onScaleBegin(ScaleGestureDetector d) { return true; }
@@ -33,7 +34,7 @@ final class FreeCalendarScrollView extends HorizontalScrollView {
             }
         });
     }
-    void vertical(ScrollView view) { vertical = view; }
+    void vertical(ScrollView view) { vertical = view; vertical.setOverScrollMode(OVER_SCROLL_NEVER); }
     void gestures(java.util.function.IntConsumer changeWeek, Zoom zoom) { this.changeWeek = changeWeek; this.zoom = zoom; }
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();

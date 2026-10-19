@@ -25,7 +25,7 @@ GROUPS = {
         "lan_security_check.py", "edit_conflict_check.py", "settings_layout_check.py", "attachment_remove_check.py",
         "lifecycle_motion_check.py", "native_motion_core_check.py", "section_motion_check.py",
         "automatic_update_check.py",
-        "background_preference_check.py", "custom_color_check.py", "accent_palette_cache_check.py",
+        "background_preference_check.py", "custom_color_check.py", "accent_palette_cache_check.py", "corner_scale_check.py",
         "dialog_layers_check.py", "widget_danmaku_refresh_check.py",
         "home_filter_reference_check.py", "sync_settings_check.py",
         "widget_source_failure_check.py",
@@ -36,7 +36,7 @@ GROUPS = {
         "completion_card_motion_check.py", "schedule_filter_layout_check.py", "source_contents_check.py", "zju_ui_style_check.py",
     ),
     "cached_dependencies": (
-        "classroom_summary_check.py", "classroom_client_check.py",
+        "classroom_summary_check.py", "classroom_client_check.py", "classroom_images_check.py", "classroom_work_service_check.py", "zju_timetable_view_check.py",
         "repeat_ai_check.py", "repeat_projection_check.py", "calendar_repeat_check.py",
         "config_backup_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",
         "sync_core_check.py", "sync_lock_check.py", "lan_sync_api_check.py", "lan_sources_check.py", "lan_attachment_upload_check.py",

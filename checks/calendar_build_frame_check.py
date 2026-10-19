@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'app/src/main/java/com/donglan/chrona/CalendarOverviewActivity.java').read_text(encoding='utf-8')
+source = (root / 'app/src/main/java/com/donglan/chrona/CalendarOverviewPage.java').read_text(encoding='utf-8')
 def method(name):
     start = source.index('    private void ' + name + '(')
     end = source.index('{', start) + 1

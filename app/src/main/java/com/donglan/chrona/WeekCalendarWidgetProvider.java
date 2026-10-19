@@ -53,7 +53,8 @@ public final class WeekCalendarWidgetProvider extends AppWidgetProvider {
         android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         paint.setColor(palette.surface);
         new android.graphics.Canvas(background).drawRoundRect(0, 0, width, height,
-                UiStyle.RADIUS_CARD * backgroundScale, UiStyle.RADIUS_CARD * backgroundScale, paint);
+                UiStyle.radius(context, UiStyle.RADIUS_CARD) * backgroundScale,
+                UiStyle.radius(context, UiStyle.RADIUS_CARD) * backgroundScale, paint);
         views.setImageViewBitmap(R.id.week_widget_background, background);
         views.setTextColor(R.id.week_widget_title, palette.primary);
         int iconSize = Math.round(28 * density);

@@ -32,7 +32,7 @@ public final class LanSettingsActivity extends Activity {
         qrFrame = new FrameLayout(this);
         android.graphics.drawable.GradientDrawable qrSurface = new android.graphics.drawable.GradientDrawable();
         qrSurface.setColor(Color.WHITE);
-        qrSurface.setCornerRadius(dp(UiStyle.RADIUS_FIELD));
+        qrSurface.setCornerRadius(dp(UiStyle.radius(this, UiStyle.RADIUS_FIELD)));
         qrSurface.setStroke(dp(1), UiStyle.colors(this).outline);
         qrFrame.setBackground(qrSurface);
         qrFrame.setPadding(dp(8), dp(8), dp(8), dp(8));

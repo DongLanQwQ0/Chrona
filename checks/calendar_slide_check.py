@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'app/src/main/java/com/donglan/chrona/CalendarOverviewActivity.java').read_text(encoding='utf-8')
+source = (root / 'app/src/main/java/com/donglan/chrona/CalendarOverviewPage.java').read_text(encoding='utf-8')
 assert 'body.setAlpha(' not in source, 'Calendar page transitions must not use alpha compositing'
 def method(name):
     start = source.index('    private void ' + name + '(')

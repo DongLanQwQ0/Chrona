@@ -1,19 +1,17 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
+import com.donglan.chrona.ai.SchedulePreferences;
 
 /** User-supplied HTTPS Chat Completions endpoint and model. */
 public final class SettingsActivity extends Activity {
@@ -26,31 +24,19 @@ public final class SettingsActivity extends Activity {
     private static final String[] EFFORT_LABELS = {"自动", "关闭", "低", "中", "高", "最高"};
     private String reasoningEffort = "auto";
     private TextView effortChoice;
+    private EditText customPrompt;
+    private EditText classroomPrompt;
+    private int workStartMinutes;
+    private int workEndMinutes;
+    private TextView workStart;
+    private TextView workEnd;
 
     @Override
     protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
-        ScrollView page = new ScrollView(this);
-        page.setFillViewport(true);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(8), dp(20), dp(20));
-        root.setFitsSystemWindows(true);
-        UiStyle.page(this, root);
-        root.setBackgroundColor(Color.TRANSPARENT);
-        page.addView(root);
-        UiStyle.back(this, root);
-        TextView title = new TextView(this);
-        title.setText("AI 服务设置");
-        title.setTextSize(28);
-        UiStyle.title(title);
-        root.addView(title);
-        TextView help = new TextView(this);
-        help.setText("配置解析服务。密钥保存在本机加密存储中，留空可保留已有密钥。");
-        help.setPadding(0, dp(12), 0, dp(12));
-        UiStyle.muted(help);
-        root.addView(help);
+        LinearLayout root = SettingsPageLayout.content(this);
+        SettingsPageLayout.header(this, root, "AI 服务设置");
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -92,6 +78,49 @@ public final class SettingsActivity extends Activity {
                 model.setText(position == 1 ? "deepseek-flash" : "deepseek-v4-pro");
         }));
         apiKey = field(form, "API 密钥（留空表示不更改）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        SchedulePreferences preferences = SchedulePreferences.load(this);
+        workStartMinutes = state == null ? preferences.workStartMinutes
+                : state.getInt("workStartMinutes", preferences.workStartMinutes);
+        workEndMinutes = state == null ? preferences.workEndMinutes
+                : state.getInt("workEndMinutes", preferences.workEndMinutes);
+        TextView scheduleTitle = new TextView(this);
+        scheduleTitle.setText("解析与总结");
+        scheduleTitle.setTextSize(18);
+        UiStyle.title(scheduleTitle);
+        UiStyle.addSpaced(form, scheduleTitle, 20, 8);
+        workStart = new TextView(this);
+        workEnd = new TextView(this);
+        UiStyle.fieldTrigger(workStart);
+        UiStyle.fieldTrigger(workEnd);
+        workStart.setSingleLine(false);
+        workEnd.setSingleLine(false);
+        UiStyle.addSpaced(form, workStart, 4, 4);
+        UiStyle.addSpaced(form, workEnd, 4, 8);
+        refreshWorkTime();
+        workStart.setOnClickListener(view -> UiStyle.timeDialog(this, "工作开始时间", workStartMinutes,
+                selected -> { workStartMinutes = selected; refreshWorkTime(); }));
+        workEnd.setOnClickListener(view -> UiStyle.timeDialog(this, "工作结束时间", workEndMinutes,
+                selected -> { workEndMinutes = selected; refreshWorkTime(); }));
+        TextView promptTitle = new TextView(this);
+        promptTitle.setText("日程解析提示词 · 优先于默认规则");
+        UiStyle.muted(promptTitle);
+        UiStyle.addSpaced(form, promptTitle, 8, 4);
+        customPrompt = field(form, "日程解析偏好", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        customPrompt.setSingleLine(false);
+        customPrompt.setMinLines(4);
+        customPrompt.setGravity(Gravity.TOP | Gravity.START);
+        customPrompt.setText(state == null ? preferences.customPrompt
+                : state.getString("customPrompt", preferences.customPrompt));
+        TextView classroomTitle = new TextView(this);
+        classroomTitle.setText("课堂总结提示词 · 优先于默认规则");
+        UiStyle.muted(classroomTitle);
+        UiStyle.addSpaced(form, classroomTitle, 12, 4);
+        classroomPrompt = field(form, "课堂总结偏好", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        classroomPrompt.setSingleLine(false);
+        classroomPrompt.setMinLines(4);
+        classroomPrompt.setGravity(Gravity.TOP | Gravity.START);
+        classroomPrompt.setText(state == null ? preferences.classroomPrompt
+                : state.getString("classroomPrompt", preferences.classroomPrompt));
         Button save = new Button(this);
         save.setText("保存设置");
         save.setOnClickListener(view -> save());
@@ -124,12 +153,7 @@ public final class SettingsActivity extends Activity {
         UiStyle.addSpaced(imageCard, allowImages, 5, 5);
         UiStyle.addSpaced(root, imageCard, 0, 8);
 
-        FrameLayout stage = new FrameLayout(this);
-        stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
-        stage.addView(page, new FrameLayout.LayoutParams(-1, -1));
-        root.setFitsSystemWindows(false);
-        UiStyle.applyInsets(stage, page);
-        setContentView(stage);
+        SettingsPageLayout.show(this, root, true);
         try {
             AiSettings existing = new AiSettingsStore(this).load();
             if (existing != null) {
@@ -198,6 +222,8 @@ public final class SettingsActivity extends Activity {
     /** Saves service settings; file transfer belongs to BackupRestoreActivity. */
     private void save() {
         try {
+            SchedulePreferences preferences = new SchedulePreferences(workStartMinutes, workEndMinutes,
+                    customPrompt.getText().toString(), classroomPrompt.getText().toString());
             AiSettingsStore store = new AiSettingsStore(this);
             String key = apiKey.getText().toString().trim();
             if (key.isEmpty()) {
@@ -206,6 +232,7 @@ public final class SettingsActivity extends Activity {
             }
             store.save(baseUrl.getText().toString().trim(), model.getText().toString().trim(), key,
                     reasoningEffort);
+            preferences.save(this);
             ConfigBackup.clearDraft(this);
             Feedback.show(this, "设置已保存");
             finish();
@@ -218,6 +245,21 @@ public final class SettingsActivity extends Activity {
         for (int i = 0; i < EFFORT_VALUES.length; i++)
             if (EFFORT_VALUES[i].equals(reasoningEffort)) return i;
         return 0;
+    }
+
+    private void refreshWorkTime() {
+        workStart.setText("工作开始  " + SchedulePreferences.time(workStartMinutes));
+        workEnd.setText("工作结束  " + SchedulePreferences.time(workEndMinutes)
+                + (workEndMinutes < workStartMinutes ? " · 次日" : ""));
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        state.putInt("workStartMinutes", workStartMinutes);
+        state.putInt("workEndMinutes", workEndMinutes);
+        state.putString("customPrompt", customPrompt.getText().toString());
+        state.putString("classroomPrompt", classroomPrompt.getText().toString());
+        super.onSaveInstanceState(state);
     }
 
     private void setEffort(String value) {

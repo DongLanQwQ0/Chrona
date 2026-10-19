@@ -1619,7 +1619,7 @@ public final class DashboardActivity extends Activity {
         });
         PressFeedback.group(counts, 1f);
         details.setAddStatesFromChildren(true);
-        PressFeedback.group(summary, 1.05f);
+        PressFeedback.group(summary, PressFeedback.CARD_PRESSED_SCALE);
         UiStyle.addSpaced(content, summary, 4, 14);
         summary.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> {
             int clearance = PressFeedback.edgeSpace(b - t);

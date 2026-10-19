@@ -33,9 +33,7 @@ final class ScheduleFilterSheet {
     private final Consumer<ScheduleFilterState> apply;
     private final LinearLayout body;
     private int scrollY;
-    private int renderGeneration;
-    private TextView intervalLabel;
-    private FrameLayout interval;
+    private DateIntervalBar interval;
     private ChoiceDock dates, category, todo, publication, source;
 
     static void show(Activity activity, ScheduleFilterState initial, DatePicker picker,
@@ -112,7 +110,6 @@ final class ScheduleFilterSheet {
     }
 
     private void render() {
-        renderGeneration++;
         if (dates == null) buildChoices();
         int dateIndex = draft.range == ScheduleFilterState.DATE || draft.range == ScheduleFilterState.CUSTOM
                 ? 4 : draft.range;
@@ -126,10 +123,7 @@ final class ScheduleFilterSheet {
         source.sync(draft.source, true);
         LocalDate[] window = draft.window(LocalDate.now());
         interval.setVisibility(window[0] == null ? View.GONE : View.VISIBLE);
-        intervalLabel.animate().cancel();
-        intervalLabel.setTranslationX(0f);
-        intervalLabel.setAlpha(1f);
-        if (window[0] != null) intervalLabel.setText(window[0] + " — " + window[1].minusDays(1));
+        if (window[0] != null) interval.setText(window[0] + " — " + window[1].minusDays(1));
         if (body.getParent() instanceof ScrollView scroll) {
             int previous = scrollY;
             scroll.post(() -> scroll.scrollTo(0, previous));
@@ -147,37 +141,14 @@ final class ScheduleFilterSheet {
                 if (range != ScheduleFilterState.ALL) draft.tab = 3;
             }
         });
-        interval = new FrameLayout(activity);
-        interval.setClipChildren(true);
-        UiStyle.acrylicChoice(interval, false, UiStyle.RADIUS_PILL, true);
-        interval.setOnClickListener(view -> pickCustomRange());
-        FrameLayout labelHost = new FrameLayout(activity);
-        labelHost.setClipChildren(true);
-        FrameLayout.LayoutParams labelHostParams = new FrameLayout.LayoutParams(-1, -1);
-        labelHostParams.setMargins(dp(44), dp(4), dp(44), dp(4));
-        interval.addView(labelHost, labelHostParams);
-        TextView rangeLabel = label("", 13, false);
-        rangeLabel.setGravity(Gravity.CENTER);
-        rangeLabel.setMaxLines(2);
-        labelHost.addView(rangeLabel, new FrameLayout.LayoutParams(-1, -1));
-        intervalLabel = rangeLabel;
-        for (int side = 0; side < 2; side++) {
-            final int direction = side == 0 ? -1 : 1;
-            ImageButton arrow = new ImageButton(activity);
-            arrow.setImageResource(side == 0 ? R.drawable.ic_chevron_left : R.drawable.ic_chevron_right);
-            arrow.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));
-            arrow.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-            arrow.setPadding(dp(12), dp(12), dp(12), dp(12));
-            arrow.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-            arrow.setContentDescription(side == 0 ? "上一段日期范围" : "下一段日期范围");
-            arrow.setOnClickListener(view -> shiftInterval(rangeLabel, direction));
-            UiStyle.pressable(arrow);
-            FrameLayout.LayoutParams arrowParams = new FrameLayout.LayoutParams(dp(44), dp(44),
-                    Gravity.CENTER_VERTICAL | (side == 0 ? Gravity.LEFT : Gravity.RIGHT));
-            arrowParams.leftMargin = arrowParams.rightMargin = dp(2);
-            interval.addView(arrow, arrowParams);
-        }
-        installIntervalSwipe(interval, rangeLabel);
+        interval = new DateIntervalBar(activity, this::pickCustomRange, direction -> {
+            LocalDate today = LocalDate.now();
+            ScheduleFilterState next = draft.copy();
+            if (!next.shift(direction, today)) {
+                Feedback.show(activity, "系统日历每次最多查询一年"); return false;
+            }
+            draft.shift(direction, today); render(); return true;
+        });
         LinearLayout.LayoutParams intervalParams = new LinearLayout.LayoutParams(-1, dp(48));
         intervalParams.bottomMargin = dp(8);
         body.addView(interval, intervalParams);
@@ -283,88 +254,6 @@ final class ScheduleFilterSheet {
                     render();
                 });
         });
-    }
-
-    private void installIntervalSwipe(View interval, TextView value) {
-        interval.setContentDescription("日期区间，左右滑动切换，点击修改起止日期");
-        interval.setOnTouchListener(new View.OnTouchListener() {
-            float x, y, initialTranslation; boolean horizontal;
-            @Override public boolean onTouch(View view, android.view.MotionEvent event) {
-                float dx = event.getX() - x, dy = event.getY() - y;
-                switch (event.getActionMasked()) {
-                    case MotionEvent.ACTION_DOWN:
-                        value.animate().cancel();
-                        LocalDate[] active = draft.window(LocalDate.now());
-                        if (active[0] != null) value.setText(active[0] + " — " + active[1].minusDays(1));
-                        value.setAlpha(1f);
-                        initialTranslation = value.getTranslationX();
-                        x = event.getX(); y = event.getY(); horizontal = false; break;
-                    case MotionEvent.ACTION_MOVE:
-                        if (Math.abs(dx) > dp(10) && Math.abs(dx) > Math.abs(dy)) {
-                            horizontal = true;
-                            view.getParent().requestDisallowInterceptTouchEvent(true);
-                            view.setPressed(false);
-                        }
-                        if (horizontal) value.setTranslationX(Math.max(-value.getWidth(),
-                                Math.min(value.getWidth(), initialTranslation + dx)));
-                        return horizontal;
-                    case MotionEvent.ACTION_UP:
-                        horizontal |= Math.abs(dx) >= dp(36) && Math.abs(dx) > Math.abs(dy);
-                        view.getParent().requestDisallowInterceptTouchEvent(false);
-                        if (horizontal) {
-                            view.setPressed(false);
-                            if (Math.abs(dx) >= dp(36)) {
-                                finishIntervalSwipe(value, dx);
-                            } else settleInterval(value);
-                            return true;
-                        }
-                        value.setTranslationX(0f);
-                        break;
-                    case MotionEvent.ACTION_CANCEL:
-                        view.getParent().requestDisallowInterceptTouchEvent(false);
-                        view.setPressed(false);
-                        settleInterval(value);
-                        return horizontal;
-                    default: break;
-                }
-                return false;
-            }
-        });
-    }
-
-    private void settleInterval(TextView value) {
-        value.animate().translationX(0f).alpha(1f).setDuration(180).start();
-    }
-
-    private void finishIntervalSwipe(TextView value, float distance) {
-        shiftInterval(value, distance < 0 ? 1 : -1);
-    }
-
-    private void shiftInterval(TextView value, int direction) {
-        value.animate().cancel();
-        LocalDate today = LocalDate.now();
-        ScheduleFilterState next = draft.copy();
-        if (!next.shift(direction, today)) {
-            Feedback.show(activity, "系统日历每次最多查询一年");
-            settleInterval(value);
-            return;
-        }
-        int generation = ++renderGeneration;
-        // Apply must see the released gesture immediately, even if the exit animation is interrupted.
-        draft.shift(direction, today);
-        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            render(); return;
-        }
-        value.animate().translationX(direction > 0 ? -value.getWidth() : value.getWidth())
-                .alpha(0f).setDuration(110).withEndAction(() -> {
-                    if (generation != renderGeneration || !dialog.isShowing()) return;
-                    render();
-                    TextView incoming = intervalLabel;
-                    if (incoming == null) return;
-                    incoming.setTranslationX(direction > 0 ? value.getWidth() : -value.getWidth());
-                    incoming.setAlpha(0f);
-                    incoming.animate().translationX(0f).alpha(1f).setDuration(180).start();
-                }).start();
     }
 
     private Button pill(String title, Runnable action, boolean selected) {

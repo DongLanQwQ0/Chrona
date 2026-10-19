@@ -39,6 +39,7 @@ public final class ThemeStore {
     private static final String KEY_GAUSSIAN_BLUR = "gaussian_blur";
     private static final String KEY_SURFACE_MIX = "surface_mix";
     private static final String KEY_BLUR_STRENGTH = "blur_strength";
+    private static final String KEY_CORNER_LEVEL = "corner_level";
     private static final String KEY_REVISION = "revision";
     /** Live screens, so an appearance change reaches the ones already sitting behind this one. */
     private static final List<WeakReference<Activity>> LIVE = new ArrayList<>();
@@ -212,10 +213,22 @@ public final class ThemeStore {
     static void applyAppearance(Context context, String mode, String color,
             Boolean acrylicEnabled, Boolean gaussianBlur,
             Integer surfaceMix, Integer blurStrength, String customColor) {
+        applyAppearance(context, mode, color, acrylicEnabled, gaussianBlur,
+                surfaceMix, blurStrength, customColor, null);
+    }
+
+    static void applyAppearance(Context context, String mode, String color,
+            Boolean acrylicEnabled, Boolean gaussianBlur,
+            Integer surfaceMix, Integer blurStrength, String customColor, Integer cornerLevel) {
         SharedPreferences preferences = prefs(context);
         SharedPreferences.Editor editor = preferences.edit();
         boolean changed = !mode(context).equals(mode) || !color(context).equals(color);
         boolean blurChanged = false;
+        if (cornerLevel != null) {
+            int value = CornerScale.clamp(cornerLevel);
+            changed |= cornerLevel(context) != value;
+            editor.putInt(KEY_CORNER_LEVEL, value);
+        }
         editor.putString(KEY_MODE, mode).putString(KEY_COLOR, color);
         if (customColor != null) {
             if (!isHexColor(customColor))
@@ -309,6 +322,24 @@ public final class ThemeStore {
 
     static int blurStrength(Context context) {
         return Math.max(1, Math.min(5, prefs(context).getInt(KEY_BLUR_STRENGTH, 2)));
+    }
+
+    static int cornerLevel(Context context) {
+        return CornerScale.clamp(prefs(context).getInt(KEY_CORNER_LEVEL, CornerScale.DEFAULT_LEVEL));
+    }
+
+    static void setCornerLevel(Context context, int level) {
+        int value = CornerScale.clamp(level);
+        if (cornerLevel(context) == value) return;
+        SharedPreferences preferences = prefs(context);
+        preferences.edit().putInt(KEY_CORNER_LEVEL, value)
+                .putInt(KEY_REVISION, revision(context) + 1).apply();
+        refreshLiveAppearance(context);
+        if (context instanceof Activity activity) {
+            synchronized (LIVE) { SEEN.put(activity, revision(context)); }
+        }
+        AgendaWidgetProvider.requestRefresh(context);
+        WeekCalendarWidgetProvider.requestRefresh(context);
     }
 
     static void previewSurfaceMix(Context context, int percent) {

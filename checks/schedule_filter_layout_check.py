@@ -51,7 +51,9 @@ require('category.sync(draft.source == 1' in source
         and 'draft.source == 0);' in source
         and 'option.setEnabled(enabled)' in source,
         "System-source selection retains disabled filter semantics")
-require('R.drawable.ic_chevron_left : R.drawable.ic_chevron_right' in source
-        and 'arrow.setOnClickListener(view -> shiftInterval(rangeLabel, direction))' in source,
-        "Date interval arrow actions remain available")
+rail = (root / "app/src/main/java/com/donglan/chrona/DateIntervalBar.java").read_text(encoding="utf-8")
+require('new DateIntervalBar(' in source
+        and 'R.drawable.ic_chevron_left : R.drawable.ic_chevron_right' in rail
+        and 'arrow.setOnClickListener(view -> shift(direction))' in rail,
+        "Shared date interval preserves both arrow actions")
 print(f"Schedule filter layout contract checks passed: {checks}; device rendering not exercised")

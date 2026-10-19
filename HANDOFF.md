@@ -6,13 +6,15 @@
 
 ## 当前版本
 
-- 当前 **0.15.24 / versionCode 186** ，数据库版本 **14**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
+- 当前 **0.15.25 / versionCode 187** ，数据库版本 **14**；版本以 `app/build.gradle`、`TaskStore.DATABASE_VERSION` 为准。
 - 源码与安装包：[GitHub Releases](https://github.com/DongLanQwQ0/Chrona/releases)。
 - 本轮补齐网页日历、批量处理、来源管理、附件采集和同步冲突处理，统一审核与来源查询；修复备份列顺序、网页日期边界及同步网络占锁。详见[局域网访问](docs/features/connectivity/lan-access.md)。
 - 网页续轮增加年历与月日跳转、周密度和自动同步开关；修复附件冲突重试、文件名原文、记录单独删除及冲突版本字段展示。续轮备份 `build/backups/20261018-web-followup/`，构建日志 `build/0.15.23-web-followup-build.log`；同步 API 当前为 67 项通过。
 - 0.15.18 的选择栏手感已获用户确认，见[已确认交互基线](docs/ui-interaction-baseline.md)。后续修复和性能优化保持该效果。
 
 ## 最近证据与实际限制
+
+0.15.25 收录工作区与课堂总结续轮：三页浮动导航、浙大课表直读、两轮图片分析、后台服务与通知、执行时间建议及独立自定义提示词。圆角五档、日期文字裁切与外层按压空间、移动亚克力取样已统一。完整[需求对照与验收](docs/followup-acceptance-20261019.md)列明条件和差异。Debug/Release、双 lint、androidTest 编译及 quick 7/7 通过；正式包 `build/distributions/0.15.25/Chrona-0.15.25.apk` 沿用旧签名且关闭调试，模拟器从正式 0.15.24 覆盖安装并启动成功。真实账号验证应用此前已备份后覆盖安装并读取 10 门学校课程及旧课堂素材；本次未在实体手机验收非空数据升级，真实付费 AI 生成仍未执行。
 
 重复日程与网页体验统一已完成。规则、单次跳过/改期/完成及停止历史语义见[重复日程](docs/features/schedules/repeat-schedules.md)；网页增加独立排序、日期预设、跨页全选与删除，并共用重复操作。既有 81 项检查在首轮与失败项修复复跑后全部通过；新增 AI、投影及 Provider 检查通过，统一入口现为 84 项。独立验证包 debug/androidTest 与 lintDebug 通过；真机 Provider/原生停止交互 22 项及真实 SQLite/HTTP 检查通过；浏览器已验证真实排序、改期及停止状态。模拟器补验停止后空月份视图通过，验证服务关闭后数据库收件数为 0；手机断连后的验证夹具清理未现场复核。源文件备份 `.local-backups/recurrence-20261019/source-before.zip`，构建日志 `build/recurrence-validation-build.log`。验证包名 `com.donglan.chrona.validation`，不覆盖正式应用。
 

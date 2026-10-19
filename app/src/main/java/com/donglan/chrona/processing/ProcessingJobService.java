@@ -395,6 +395,9 @@ public final class ProcessingJobService extends JobService {
         // A queued input and all of its retries/re-parses keep the same meaning of "tomorrow".
         final long referenceTime = task.createdAtMillis;
         final String referenceZone = TimeZone.getDefault().getID();
+        final com.donglan.chrona.ai.SchedulePreferences schedulePreferences =
+                com.donglan.chrona.ai.SchedulePreferences.load(this);
+        final String scheduleSystem = schedulePreferences.systemPrompt();
         for (int attempt = 1; ; attempt++) {
             control.check();
             long attemptStartedAt = System.currentTimeMillis();
@@ -411,7 +414,8 @@ public final class ProcessingJobService extends JobService {
                 };
                 try (BestEffortPreview preview = new BestEffortPreview(sink, writer,
                         exception -> previewFailure(taskId, exception))) {
-                    ChatCompletionClient client = new ChatCompletionClient(settings, control);
+                    ChatCompletionClient client = new ChatCompletionClient(settings, control, scheduleSystem,
+                            schedulePreferences.workStartMinutes, schedulePreferences.workEndMinutes);
                     return client.parseImages(taskId, task.rawText, images, linkText,
                             attachmentMetadata, referenceTime, referenceZone, preview, true);
                 }

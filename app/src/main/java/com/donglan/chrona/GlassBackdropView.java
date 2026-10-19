@@ -59,8 +59,9 @@ public final class GlassBackdropView extends View {
     private boolean blurFailed;
     private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF blurDestination = new RectF();
-    private final int[] backdropLocation = new int[2];
-    private final int[] targetLocation = new int[2];
+    private final android.graphics.Matrix backdropTransform = new android.graphics.Matrix();
+    private final android.graphics.Matrix targetTransform = new android.graphics.Matrix();
+    private final android.graphics.Matrix inverseTargetTransform = new android.graphics.Matrix();
     private final RectF surfaceBounds = new RectF();
     private Bitmap shaderBitmap;
     private android.graphics.BitmapShader surfaceShader;
@@ -674,10 +675,11 @@ public final class GlassBackdropView extends View {
                 || requestedGaussian != ThemeStore.gaussianBlur(getContext()))
             rebuildBlurredWallpaper();
         if (blurredWallpaper == null || blurredWallpaper.isRecycled()) return false;
-        getLocationInWindow(backdropLocation);
-        target.getLocationInWindow(targetLocation);
-        int left = targetLocation[0] - backdropLocation[0];
-        int top = targetLocation[1] - backdropLocation[1];
+        backdropTransform.reset();
+        targetTransform.reset();
+        UiStyle.transformToRoot(this, backdropTransform);
+        UiStyle.transformToRoot(target, targetTransform);
+        if (!targetTransform.invert(inverseTargetTransform)) return false;
         surfaceBounds.set(destination);
         surfacePaint.setShader(null); surfacePaint.setColor(palette.background);
         canvas.drawRoundRect(surfaceBounds, cornerRadius, cornerRadius, surfacePaint);
@@ -687,7 +689,9 @@ public final class GlassBackdropView extends View {
         }
         surfaceMatrix.setScale(blurDestination.width() / shaderBitmap.getWidth(),
                 blurDestination.height() / shaderBitmap.getHeight());
-        surfaceMatrix.postTranslate(blurDestination.left - left, blurDestination.top - top);
+        surfaceMatrix.postTranslate(blurDestination.left, blurDestination.top);
+        surfaceMatrix.postConcat(backdropTransform);
+        surfaceMatrix.postConcat(inverseTargetTransform);
         surfaceShader.setLocalMatrix(surfaceMatrix);
         surfacePaint.setShader(surfaceShader); surfacePaint.setColor(Color.WHITE);
         surfacePaint.setAlpha(Math.round(255 * wallpaperOpacity));

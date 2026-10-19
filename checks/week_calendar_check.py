@@ -33,7 +33,7 @@ assert 'setStateDescription(state)' in toggle and 'include.setChecked(false)' in
 assert 'refresh.removeCallbacks(homeCalendarToggleRefresh)' in toggle
 assert 'refresh.postDelayed(homeCalendarToggleRefresh, UiMotion.isEnabled() ? UiMotion.ENTER : 0L)' in toggle
 provider = (src / 'WeekCalendarWidgetProvider.java').read_text(encoding='utf-8')
-activity = (src / 'CalendarOverviewActivity.java').read_text(encoding='utf-8')
+activity = (src / 'CalendarOverviewPage.java').read_text(encoding='utf-8')
 assert '.putExtra("open_week", true)' in provider and 'CalendarOverviewActivity.class' in provider
 assert 'getBooleanExtra("open_week", false)' in activity and 'mode = WEEK; date = LocalDate.now()' in activity
 assert 'setOnClickPendingIntent(R.id.week_widget_root' in provider
@@ -85,6 +85,7 @@ float x,y,vx,vy;boolean first=true;public static VelocityTracker obtain(){return
 public void addMovement(MotionEvent e){if(!first){vx=(e.getX()-x)*100;vy=(e.getY()-y)*100;}first=false;x=e.getX();y=e.getY();}
 public void computeCurrentVelocity(int units,int max){}public float getXVelocity(){return vx;}public float getYVelocity(){return vy;}public void recycle(){} }''',
     'android/widget/ScrollView.java': '''package android.widget; public class ScrollView {
+public static final int OVER_SCROLL_NEVER=2;public int overscroll;public void setOverScrollMode(int mode){overscroll=mode;}
 public int x,y,flingVelocity,stops;public void scrollBy(int x,int y){this.x+=x;this.y+=y;}
 public void fling(int v){flingVelocity=v;}public boolean onTouchEvent(android.view.MotionEvent e){if(e.getActionMasked()==0){stops++;flingVelocity=0;}return true;}}''',
     'android/widget/HorizontalScrollView.java': '''package android.widget;public class HorizontalScrollView extends ScrollView {
@@ -110,6 +111,7 @@ if(i==1)check(Boolean.TRUE.equals(route.opened.extras.get("open_week")),"week re
 if(i>=2)check(route.opened.extras.get("section").equals(i==2?2:1),"correct dashboard section");}
 LauncherShortcutActivity unknown=new LauncherShortcutActivity();unknown.input.action="untrusted";unknown.onCreate(null);check(unknown.finished&&unknown.opened==null,"unknown action cannot launch destination");
 FreeCalendarScrollView v=new FreeCalendarScrollView(new android.content.Context());ScrollView vertical=new ScrollView();v.vertical(vertical);
+check(v.overscroll==ScrollView.OVER_SCROLL_NEVER&&vertical.overscroll==ScrollView.OVER_SCROLL_NEVER,"both week axes suppress platform edge stretch");
 send(v,0,100,100);send(v,2,100,80);check(v.x==0&&vertical.y==20,"first vertical move");
 send(v,2,70,60);check(v.x==30&&vertical.y==40,"diagonal move follows both axes");
 send(v,2,50,70);check(v.x==50&&vertical.y==30,"direction change within same gesture");

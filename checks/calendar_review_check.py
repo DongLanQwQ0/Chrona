@@ -13,7 +13,7 @@ root = Path(__file__).resolve().parents[1]
 src = root / 'app/src/main/java/com/donglan/chrona'
 out = root / 'build/calendar-review-check'
 out.mkdir(parents=True, exist_ok=True)
-activity = (src / 'CalendarOverviewActivity.java').read_text(encoding='utf-8')
+activity = (src / 'CalendarOverviewPage.java').read_text(encoding='utf-8')
 
 def method(marker):
     start = activity.index(marker)
@@ -110,6 +110,7 @@ class Preferences {int mode;boolean system;Preferences edit(){return this;}Prefe
  Preferences putBoolean(String k,boolean value){system=value;return this;}void apply(){}}
 class Feedback {static void show(Context c,String message){c.feedback=message;}}
 public class CalendarReviewCheck extends Context {
+ final Context activity=this;
  static final int YEAR=0,MONTH=1,WEEK=2,DAY=3,AGENDA=4;
  int mode=MONTH,generation,renderedMode=MONTH,renderCalls,renderedHighlights;boolean includeSystem,loading,loadingStale,bodyTouchActive,resumed=true,destroyed,animateNext,renderedSystem;
  LocalDate date=LocalDate.of(2026,10,12),renderedDate,renderedToday;

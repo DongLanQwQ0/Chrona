@@ -43,16 +43,20 @@ final class SettingsPageLayout {
         root.addView(header, headerParams);
     }
     static void show(Activity activity, LinearLayout root, boolean animatePresentation) {
-        ScrollView viewport = new ScrollView(activity);
-        viewport.setVerticalScrollBarEnabled(false);
-        viewport.addView(root);
+        ScrollView viewport = viewport(activity, root, animatePresentation);
         FrameLayout stage = new FrameLayout(activity);
         stage.addView(new GlassBackdropView(activity), new FrameLayout.LayoutParams(-1, -1));
         stage.addView(viewport, new FrameLayout.LayoutParams(-1, -1));
         UiStyle.applyInsets(stage, viewport);
         activity.setContentView(stage);
+    }
+    static ScrollView viewport(Activity activity, LinearLayout root, boolean animatePresentation) {
+        ScrollView viewport = new ScrollView(activity);
+        viewport.setVerticalScrollBarEnabled(false);
+        viewport.addView(root);
         if (animatePresentation) UiMotion.observeScroll(viewport, root);
         else UiMotion.settleScroll(viewport, root);
+        return viewport;
     }
     private static int dp(Activity activity, int value) {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);

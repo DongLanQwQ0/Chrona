@@ -120,6 +120,7 @@ public final class AppearanceActivity extends Activity {
         // An odd preset count would leave the final cell stretched across the row.
         if (colorRow != null && colors.size() % 2 == 1)
             colorRow.addView(new View(this), new LinearLayout.LayoutParams(0, dp(1), 1));
+        cornerControls(root);
         heading(root, "毛玻璃与层级");
         acrylicControls(root);
         backgroundControls(root);
@@ -316,6 +317,31 @@ public final class AppearanceActivity extends Activity {
             @Override public void onStopTrackingTouch(SeekBar seekBar) { }
         });
 
+        UiStyle.addSpaced(root, card, 4, 7);
+    }
+
+    private void cornerControls(LinearLayout root) {
+        heading(root, "圆角大小");
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(14), dp(18), dp(12));
+        UiStyle.card(card);
+        TextView value = text("第 " + ThemeStore.cornerLevel(this) + " 档 / 5", 16, true);
+        card.addView(value);
+        SeekBar slider = new SeekBar(this);
+        slider.setContentDescription("圆角大小");
+        tintSeekBar(slider);
+        slider.setMax(4);
+        slider.setProgress(ThemeStore.cornerLevel(this) - 1);
+        card.addView(slider, new LinearLayout.LayoutParams(-1, dp(48)));
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                value.setText("第 " + (progress + 1) + " 档 / 5");
+                if (fromUser) ThemeStore.setCornerLevel(AppearanceActivity.this, progress + 1);
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
         UiStyle.addSpaced(root, card, 4, 7);
     }
 

@@ -13,13 +13,14 @@ import java.util.WeakHashMap;
 /** Shared pressed-state feedback without replacing touch or click handlers. */
 final class PressFeedback {
     private static final float PRESSED_SCALE = 1.05f;
+    static final float CARD_PRESSED_SCALE = 1.08f;
     private static final WeakHashMap<View, Float> installed = new WeakHashMap<>();
     private static final WeakHashMap<View, Boolean> roots = new WeakHashMap<>();
     private static final WeakHashMap<ViewGroup, int[]> viewports = new WeakHashMap<>();
 
     /** Pixels needed on either edge when the whole control reaches its held scale. */
     static int edgeSpace(int extentPx) {
-        return (int) Math.ceil(Math.max(0, extentPx) * (PRESSED_SCALE - 1f) / 2f) + 1;
+        return (int) Math.ceil(Math.max(0, extentPx) * (CARD_PRESSED_SCALE - 1f) / 2f) + 1;
     }
 
     /** Keep a viewport's own bounds independent from its parent's child-clipping flags. */
@@ -42,7 +43,8 @@ final class PressFeedback {
     }
 
     static void apply(View view) {
-        if (!installed.containsKey(view)) apply(view, PRESSED_SCALE);
+        if (!installed.containsKey(view)) apply(view,
+                UiStyle.isCardSurface(view) ? CARD_PRESSED_SCALE : PRESSED_SCALE);
         else if (!Float.isNaN(installed.get(view))) allowOverflow(view);
     }
 

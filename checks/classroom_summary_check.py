@@ -15,6 +15,8 @@ src = root / 'app/src/main/java/com/donglan/chrona'
 out = root / 'build/classroom-summary-check'
 out.mkdir(parents=True, exist_ok=True)
 fixtures = {
+    'com/donglan/chrona/zju/ZjuClient.java': '''package com.donglan.chrona.zju;
+public class ZjuClient {public static class SchoolException extends java.io.IOException {public SchoolException(String s){super(s);}}}''',
     'android/content/Context.java': '''package android.content;
 public class Context {private final java.io.File root;public Context(java.io.File root){this.root=root;}
 public java.io.File getNoBackupFilesDir(){return root;}}''',
@@ -50,12 +52,13 @@ for name, content in fixtures.items():
     path.write_text(content, encoding='utf-8')
     paths.append(path)
 relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java',
-            'classroom/ClassroomImages.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomExport.java',
+            'classroom/ClassroomImages.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomExport.java', 'classroom/ClassroomProgress.java',
             'ai/AiSettings.java', 'ai/ChatCompletionClient.java', 'ai/ParseResult.java', 'ai/SchedulePrompt.java',
             'ai/SemanticEventNormalizer.java', 'ai/RequestOptions.java', 'ai/StreamChunkContent.java',
             'data/EventCandidate.java', 'data/EventCategory.java', 'data/EventTimeDefaults.java',
             'data/CandidateRules.java', 'calendar/AllDayDates.java', 'net/RequestControl.java']
 paths += [src / name for name in relative]
+paths.append(src / 'net/NetworkFailure.java')
 paths += [root / 'checks/ClassroomSummaryCheck.java', root / 'checks/AiRequestCheck.java']
 jar = root / 'build/ai-checks/json.jar'
 if not jar.is_file():
