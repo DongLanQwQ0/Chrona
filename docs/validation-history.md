@@ -15,6 +15,7 @@
 - APK 包名 `com.donglan.chrona`，版本 188 / 0.15.26，无 debuggable 标志；新 debug、release 与旧 0.15.25 证书一致。分发产物 `build/distributions/0.15.26/Chrona-0.15.26.apk`。
 - Android 36 模拟器从正式 0.15.25 覆盖升级成功并启动首页，未卸载或清数据。升级前首页无日程／待办，实体手机非空数据升级与本版本长时后台未验收；真实账号验证应用未被覆盖。
 - 发布准备恢复点 `.local-backups/release-0.15.26/`，原 UI 源码备份保留在 `.local-backups/compact-layout-20261019/`。
+- `v0.15.26` 已发布为 Latest，正式 Release 非草稿、非预发布，APK 下载返回 HTTP 200；上传资产大小与摘要通过发布脚本核对。正式应用进入设置 → 检查更新，实际显示「已是最新版本」、`v0.15.26` 和本次更新说明，记录 `build/0.15.26-update.xml`；发布信息见 `build/release-0.15.26-artifact.json`。
 
 ## 0.15.26 — 紧凑布局与全局标题栏 — 2026-10-19 至 2026-10-20
 
