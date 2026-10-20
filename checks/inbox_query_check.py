@@ -33,7 +33,7 @@ db.executemany("INSERT INTO tasks VALUES(?,?,?)",
                [(i, statuses.get(i, "needs_review"), i // 3) for i in range(1, 31)])
 expected = {"all": list(range(30, 0, -1)), "oldest": list(range(1, 31)),
             "pending": list(range(30, 5, -1)) + [1], "processing": [3, 2], "failed": [4],
-            "published_event": [2, 1], "published_note": [], "note": [3, 1]}
+            "published_event": [2, 1], "published_task": [], "event": [2, 1]}
 for line in plans.splitlines():
     name, encoded_selection, encoded_args, encoded_order = line.split("\t")
     selection, order = decode(encoded_selection), decode(encoded_order)

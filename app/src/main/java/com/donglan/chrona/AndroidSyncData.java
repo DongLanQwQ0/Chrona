@@ -9,6 +9,7 @@ import com.donglan.chrona.data.*;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.sync.SyncState;
 import com.donglan.chrona.sync.TaskCodec;
+import com.donglan.chrona.classroom.*;
 import org.json.*;
 import java.io.*;
 import java.nio.file.Files;
@@ -29,6 +30,7 @@ final class AndroidSyncData implements AutoCloseable {
         db.execSQL("CREATE TABLE IF NOT EXISTS sync_task_map(sync_id TEXT PRIMARY KEY,local_id INTEGER UNIQUE,baseline TEXT,baseline_clock TEXT)");
         db.execSQL("CREATE TABLE IF NOT EXISTS sync_candidate_map(local_id INTEGER PRIMARY KEY,sync_id TEXT UNIQUE)");
         db.execSQL("CREATE TABLE IF NOT EXISTS sync_term_map(sync_id TEXT PRIMARY KEY,baseline TEXT,baseline_clock TEXT)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS sync_classroom_map(sync_id TEXT PRIMARY KEY,baseline TEXT,baseline_clock TEXT)");
         db.execSQL("CREATE TABLE IF NOT EXISTS sync_meta(id INTEGER PRIMARY KEY CHECK(id=1),identity TEXT NOT NULL)");
         db.execSQL("INSERT OR IGNORE INTO sync_meta(id,identity) VALUES(1,?)", new Object[]{UUID.randomUUID().toString()});
         databaseIdentity = value("SELECT identity FROM sync_meta WHERE id=?", "1");
@@ -142,6 +144,7 @@ final class AndroidSyncData implements AutoCloseable {
         final Map<Long, JSONObject> payloads = new HashMap<>();
         String terms;
         Map<String, JSONObject> termPayloads;
+        final Map<String,JSONObject> classroomPayloads=new TreeMap<>();
     }
     /** Hash provider bytes and parse ICS without holding a SQLite transaction. */
     Snapshot prepareCapture() throws Exception {
@@ -150,6 +153,14 @@ final class AndroidSyncData implements AutoCloseable {
         for (TaskRecord task : snapshot.tasks) if (!busy(task)) snapshot.payloads.put(task.id, payload(task));
         snapshot.terms = new TimetableStore(context).snapshot();
         snapshot.termPayloads = terms(TimetableStore.inspect(snapshot.terms));
+        synchronized(ClassroomStore.LOCK){
+            for(ClassroomArchive.Entry entry:ClassroomArchive.snapshot(context).values()){
+                JSONArray files=new JSONArray();for(Map.Entry<String,File> image:ClassroomArchive.images(entry).entrySet())
+                    files.put(attachment(new FileInputStream(image.getValue()),image.getKey(),"image/jpeg",true));
+                JSONObject payload=TaskCodec.validate(new JSONObject().put("kind","classroom").put("document",entry.document).put("attachments",files));
+                snapshot.classroomPayloads.put(ClassroomDocument.syncId(entry.document.getJSONObject("summary").getJSONObject("lesson")),payload);
+            }
+        }
         requireRevision(snapshot);
         return snapshot;
     }
@@ -200,6 +211,42 @@ final class AndroidSyncData implements AutoCloseable {
             String nextClock = changed(state, id, payload, value("SELECT baseline FROM sync_term_map WHERE sync_id=?", id),
                     value("SELECT baseline_clock FROM sync_term_map WHERE sync_id=?", id));
             db.execSQL("INSERT OR REPLACE INTO sync_term_map(sync_id,baseline,baseline_clock) VALUES(?,?,?)", new Object[]{id, canonical(payload), nextClock});
+        }
+    }
+    void captureClassrooms(SyncState state,Snapshot snapshot)throws Exception {
+        // Missing cache files are not user deletion. Only completed, available lessons are captured.
+        for(Map.Entry<String,JSONObject> entry:snapshot.classroomPayloads.entrySet()){
+            String id=entry.getKey();JSONObject payload=entry.getValue();
+            String nextClock=changed(state,id,payload,value("SELECT baseline FROM sync_classroom_map WHERE sync_id=?",id),value("SELECT baseline_clock FROM sync_classroom_map WHERE sync_id=?",id));
+            db.execSQL("INSERT OR REPLACE INTO sync_classroom_map(sync_id,baseline,baseline_clock) VALUES(?,?,?)",new Object[]{id,canonical(payload),nextClock});
+        }
+    }
+    void applyClassrooms(SyncState state,Snapshot snapshot,String onlyId)throws Exception {
+        synchronized(ClassroomStore.LOCK){
+            Map<String,ClassroomArchive.Entry> current=ClassroomArchive.snapshot(context);
+            for(Map.Entry<String,List<SyncState.Version>> entry:state.records().entrySet()){
+                String id=entry.getKey();if(!id.startsWith("classroom_")||entry.getValue().size()!=1||onlyId!=null&&!onlyId.equals(id))continue;
+                SyncState.Version version=entry.getValue().get(0);if(version.deleted)throw new IOException("课堂总结不支持同步删除");
+                JSONObject payload=TaskCodec.validate(version.payload),document=payload.getJSONObject("document");
+                String key=ClassroomDocument.key(document.getJSONObject("summary").getJSONObject("lesson"));
+                if(ClassroomArchive.busy(context,key))continue;
+                JSONObject captured=snapshot.classroomPayloads.get(id);ClassroomArchive.Entry now=current.get(key);
+                if(!canonical(captured==null?null:captured.getJSONObject("document")).equals(canonical(now==null?null:now.document)))continue;
+                if(now==null||!canonical(now.document).equals(canonical(document))
+                        ||!canonical(payload).equals(value("SELECT baseline FROM sync_classroom_map WHERE sync_id=?",id))){
+                    Map<String,File> images=new TreeMap<>();JSONArray files=payload.getJSONArray("attachments");
+                    for(int i=0;i<files.length();i++){
+                        JSONObject file=files.getJSONObject(i);File blob=new File(blobs,file.getString("sha"));
+                        if(!blob.isFile()||blob.length()!=file.getLong("size"))throw new IOException("课堂同步图片缺失");
+                        byte[] bytes=Files.readAllBytes(blob.toPath());if(!SyncState.sha256(bytes).equals(file.getString("sha")))throw new IOException("课堂同步图片校验失败");
+                        android.graphics.BitmapFactory.Options bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;
+                        android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.length,bounds);if(bounds.outWidth<=0||bounds.outHeight<=0)throw new IOException("课堂同步图片无法解码");
+                        images.put(file.getString("name"),blob);
+                    }
+                    ClassroomArchive.install(context,document,images);
+                }
+                db.execSQL("INSERT OR REPLACE INTO sync_classroom_map(sync_id,baseline,baseline_clock) VALUES(?,?,?)",new Object[]{id,canonical(payload),new JSONObject(version.clock).toString()});
+            }
         }
     }
     boolean linked(long taskId) {

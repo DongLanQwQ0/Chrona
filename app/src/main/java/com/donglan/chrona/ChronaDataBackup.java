@@ -16,6 +16,7 @@ import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
+import com.donglan.chrona.classroom.*;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -76,6 +77,7 @@ public final class ChronaDataBackup {
                     + manifest.optInt("candidates") + " 项\n· 图片 "
                     + manifest.optInt("imageCount") + " 张，普通附件 "
                     + manifest.optInt("fileCount") + " 个\n" + wallpaperSummary
+                    + (manifest.has("classrooms") ? "· 课堂总结 " + manifest.getJSONArray("classrooms").length() + " 份（含引用图片与字幕）\n" : "")
                     + (manifest.has("timetable") ? "· 导入课表："
                             + (manifest.isNull("timetable") ? "未设置\n" : "已包含\n") : "") + "· "
                     + ConfigBackup.describe(config)
@@ -99,6 +101,12 @@ public final class ChronaDataBackup {
     }
 
     private static File createArchive(Context context, boolean includeApiKey) throws Exception {
+        synchronized(ClassroomStore.LOCK){
+            if(ClassroomStore.anyActive())throw new IOException("课堂正在处理，请结束后再备份");
+            return createArchiveLocked(context,includeApiKey);
+        }
+    }
+    private static File createArchiveLocked(Context context,boolean includeApiKey)throws Exception {
         File archive = File.createTempFile("chrona-backup-", ".zip", context.getCacheDir());
         File database = File.createTempFile("chrona-snapshot-", ".db", context.getCacheDir());
         List<File> extractedFiles = new ArrayList<>();
@@ -232,6 +240,8 @@ public final class ChronaDataBackup {
             manifest.put("zjuCalendar", new JSONObject(com.donglan.chrona.zju.ZjuCalendarStore.exportJson(context)));
             manifest.put("scheduleSources", new JSONObject(ScheduleSources.exportJson(context)));
             manifest.put("schoolData", SchoolDataBackup.export(context));
+            Map<String,ClassroomArchive.Entry> classroom=ClassroomArchive.snapshot(context);
+            manifest.put("classrooms",new JSONArray(classroom.keySet()));
             manifest.put("wallpaperIncluded", true);
             manifest.put("wallpaperEnabled", ThemeStore.backgroundEnabled(context));
             manifest.put("wallpaper", wallpaper == null ? JSONObject.NULL : wallpaper);
@@ -240,6 +250,11 @@ public final class ChronaDataBackup {
             try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(
                     new FileOutputStream(archive)))) {
                 addFile(zip, database, "chrona.db");
+                for(Map.Entry<String,ClassroomArchive.Entry> entry:classroom.entrySet()){
+                    String prefix="classrooms/"+entry.getKey()+"/";
+                    zip.putNextEntry(new ZipEntry(prefix+"document.json"));zip.write(entry.getValue().document.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();
+                    for(Map.Entry<String,File> image:ClassroomArchive.images(entry.getValue()).entrySet())addFile(zip,image.getValue(),prefix+image.getKey());
+                }
                 for (int i = 0; i < images.length(); i++) {
                     JSONObject item = images.getJSONObject(i);
                     addFile(zip, new ImageStore(context).fileFor(item.getString("name")),
@@ -311,6 +326,7 @@ public final class ChronaDataBackup {
             if(manifest.has("zjuCalendar"))com.donglan.chrona.zju.ZjuCalendarConfig.parse(manifest.getJSONObject("zjuCalendar").toString());
             if(manifest.has("scheduleSources"))ScheduleSources.validateJson(manifest.getJSONObject("scheduleSources").toString());
             if(manifest.has("schoolData"))SchoolDataBackup.validate(manifest.getJSONObject("schoolData"));
+            validateClassrooms(manifest,directory);
             if (manifest.has("timetable") && !manifest.isNull("timetable"))
                 TimetableStore.inspect(manifest.getJSONObject("timetable").toString());
             long[] databaseCounts = inspectDatabase(new File(directory, "chrona.db"));
@@ -326,6 +342,23 @@ public final class ChronaDataBackup {
         }
     }
 
+    private static void validateClassrooms(JSONObject manifest,File directory)throws Exception {
+        if(!manifest.has("classrooms"))return;
+        JSONArray entries=manifest.getJSONArray("classrooms");Set<String> seen=new HashSet<>();
+        for(int i=0;i<entries.length();i++){
+            String key=entries.getString(i);if(!key.matches("[0-9]+-[0-9]+")||!seen.add(key))throw new IOException("课堂备份身份无效或重复");
+            File source=new File(directory,"classrooms/"+key),json=new File(source,"document.json");
+            if(!json.isFile()||json.length()>com.donglan.chrona.sync.TaskCodec.MAX_TASK_BYTES)throw new IOException("课堂备份正文缺失或过大");
+            JSONObject document=new JSONObject(readText(json));ClassroomDocument.validate(document);
+            if(!key.equals(ClassroomDocument.key(document.getJSONObject("summary").getJSONObject("lesson"))))throw new IOException("课堂备份身份与正文不一致");
+            for(String name:ClassroomDocument.referencedImages(document.getJSONObject("summary"))){
+                File image=new File(source,name);
+                if(!image.isFile()||image.length()==0||image.length()>com.donglan.chrona.sync.TaskCodec.MAX_ATTACHMENT_BYTES)throw new IOException("课堂备份引用图片缺失或过大");
+                android.graphics.BitmapFactory.Options bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;
+                android.graphics.BitmapFactory.decodeFile(image.getPath(),bounds);if(bounds.outWidth<=0||bounds.outHeight<=0)throw new IOException("课堂备份图片无法解码");
+            }
+        }
+    }
     private static void validateManifestPaths(JSONObject manifest, File directory)
             throws Exception {
         if (manifest.has("wallpaperIncluded")) {
@@ -421,6 +454,8 @@ public final class ChronaDataBackup {
     public static String restore(Context context, Prepared prepared) throws Exception {
         // A cloud apply must not retain an open handle to the database being replaced here.
         synchronized (AndroidSync.LOCK) {
+          synchronized(ClassroomStore.LOCK){
+            if(ClassroomStore.anyActive())throw new IOException("课堂正在处理，请结束后再恢复备份");
             ZjuSync.cancel();
             String result = restoreExclusive(context, prepared);
             ZjuSettingsStore school = new ZjuSettingsStore(context);
@@ -428,6 +463,7 @@ public final class ChronaDataBackup {
             new ZjuHomeworkStore(context).configure(school.account(), false);
             AndroidSync.resetAfterRestore(context);
             return result + "\n自动同步已关闭。已有日程保留同步身份，与云端不同的版本可能待确认，请整理后再手动同步。";
+          }
         }
     }
 
@@ -471,6 +507,8 @@ public final class ChronaDataBackup {
         for (int tab = 0; tab < 4; tab++) previousOrders[tab] = ScheduleOrderPreferences.oldestFirst(context, tab);
         String previousTimetable = new TimetableStore(context).snapshot();
         boolean timetableApplied = false;
+        File classroomRoot=ClassroomStore.root(context),classroomPrevious=new File(context.getNoBackupFilesDir(),"classroom.previous"),classroomStage=new File(context.getNoBackupFilesDir(),"classroom.incoming");
+        boolean classroomMoved=false,classroomInstalled=false;
         Map<Long, Long> calendarLinks = new HashMap<>();
         try {
         Map<String, String> imageNames = restoreImages(context, prepared, createdImages);
@@ -605,6 +643,20 @@ public final class ChronaDataBackup {
             new TimetableStore(context).restore(prepared.manifest.isNull("timetable")
                     ? null : prepared.manifest.getJSONObject("timetable").toString());
         }
+        if(prepared.manifest.has("classrooms")){
+            validateClassrooms(prepared.manifest,prepared.directory);ClassroomArchive.remove(classroomStage);
+            if(!classroomStage.mkdirs())throw new IOException("无法创建课堂恢复目录");
+            JSONArray entries=prepared.manifest.getJSONArray("classrooms");
+            for(int i=0;i<entries.length();i++){
+                String key=entries.getString(i);File source=new File(prepared.directory,"classrooms/"+key);
+                JSONObject document=new JSONObject(readText(new File(source,"document.json")));Map<String,File> pictures=new HashMap<>();
+                for(String name:ClassroomDocument.referencedImages(document.getJSONObject("summary")))pictures.put(name,new File(source,name));
+                ClassroomArchive.write(new File(classroomStage,"shared/"+key),document,pictures);
+            }
+            ClassroomArchive.remove(classroomPrevious);
+            if(classroomRoot.exists()){if(!classroomRoot.renameTo(classroomPrevious))throw new IOException("无法保留原课堂数据");classroomMoved=true;}
+            if(!classroomStage.renameTo(classroomRoot))throw new IOException("无法恢复课堂数据");classroomInstalled=true;
+        }
         if (installedPrevious != null) installedPrevious.delete();
         deleteTree(previousOutputs);
         android.content.SharedPreferences.Editor reminderState = AgendaReminderPreferences.prefs(context).edit();
@@ -612,11 +664,19 @@ public final class ChronaDataBackup {
             if (!FeaturePreferenceBackup.reminderSetting(key)) reminderState.remove(key);
         reminderState.apply();
         AgendaReminder.requestRefresh(context);
+        ClassroomCleanupService.schedule(context);
+        deleteTree(classroomPrevious);
         return calendarLinks.containsValue(null)
                 ? "数据已恢复；部分日程因日历权限不可用已转为待确认。"
                 : "收件箱、日程与设置已恢复。";
         } catch (Exception exception) {
             IOException failure = new IOException("恢复失败：" + exception.getMessage(), exception);
+            try{
+                if(classroomInstalled)ClassroomArchive.remove(classroomRoot);
+                if(classroomMoved&&!classroomPrevious.renameTo(classroomRoot))throw new IOException("原课堂数据恢复失败，副本保留在 "+classroomPrevious);
+                ClassroomArchive.remove(classroomStage);
+                ClassroomCleanupService.schedule(context);
+            }catch(Exception rollbackClassroomFailure){failure.addSuppressed(rollbackClassroomFailure);}
             if (timetableApplied) {
                 try { new TimetableStore(context).restore(previousTimetable); }
                 catch (Exception rollbackTimetableFailure) { failure.addSuppressed(rollbackTimetableFailure); }
@@ -1211,6 +1271,7 @@ public final class ChronaDataBackup {
                 || name.matches("images/[0-9a-fA-F\\-]{36}\\.jpg")
                 || WALLPAPER_ENTRY.equals(name)
                 || name.matches("files/[0-9]+\\.bin")
+                || name.matches("classrooms/[0-9]+-[0-9]+/(document\\.json|image-[0-9]+\\.jpg)")
                 || name.matches("outputs/[0-9]+\\.txt");
     }
 

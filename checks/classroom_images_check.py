@@ -25,6 +25,7 @@ for name, body in fixtures.items():
 src = root / 'app/src/main/java/com/donglan/chrona'
 sources += [src / name for name in ['classroom/ClassroomImages.java', 'classroom/ClassroomProgress.java', 'classroom/ClassroomStore.java', 'classroom/ClassroomLesson.java', 'net/RequestControl.java']]
 sources.append(root / 'checks/ClassroomImagesCheck.java')
+sources.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java')
 sources.append(src / 'net/NetworkFailure.java')
 jar = root / 'build/ai-checks/json.jar'
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'

@@ -125,7 +125,7 @@ public class CalendarReviewCheck extends Context {
  final TextView dateTitle=new TextView();final Switch sourceSwitch=new Switch();final Tabs tabs=new Tabs();Object tabMotion;Dialog allDayDialog;final Preferences preferences=new Preferences();
  View weekExportButton=new View();
  boolean isDestroyed(){return destroyed;}Preferences getPreferences(int mode){return preferences;}
- void finishTabMotion(){}void finishBodyMotion(){}void moveTabHighlight(){renderedHighlights++;}
+ void finishTabMotion(){}void finishBodyMotion(){}void moveTabHighlight(){renderedHighlights++;}void showWeekAction(boolean show){}
  View action(String label,Runnable action){return new View();}
  View text(String label,int size,boolean bold){return new View();}
  void updateMonthCell(LocalDate day){cellUpdates++;}void updateMonthDetails(List<AgendaEntry>entries){detailsUpdates++;detailsDate=date;}

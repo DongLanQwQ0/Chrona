@@ -41,6 +41,7 @@ press_methods = '\n'.join(method(PRESS, signature) for signature in [
 ]).replace('android.graphics.Rect', 'Rect')
 constants = re.search(r'private static final int CHOICE_SHEET_WIDTH_DP = [^;]+;', STYLE).group()
 scale = re.search(r'private static final float PRESSED_SCALE = [^;]+;', PRESS).group()
+scale += '\n' + re.search(r'static final float CARD_PRESSED_SCALE = [^;]+;', PRESS).group()
 
 HARNESS = r'''
 import java.util.*;
@@ -155,6 +156,7 @@ public class ChoiceMotionCheck {
     static void title(View v) { }
     static void choice(View v,boolean selected,int radius) { }
     static String marked(String text,boolean selected) { return text; }
+    static void marked(TextView text,boolean selected) { }
     static Palette colors(Activity a) { return new Palette(); }
     __STYLE__
     static boolean contained(View row,int width,int height,int offsetY) {

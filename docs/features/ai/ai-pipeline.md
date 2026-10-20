@@ -1,12 +1,14 @@
 # AI 解析链路
 
-时间与分类规则见[AI 时间提取约定](ai-time-extraction.md)，服务能力与参数见[请求协议](ai-request-notes.md)。提示词版本由 `SchedulePrompt.VERSION` 管理，当前为 `schedule-v9`。
+时间与分类规则见[AI 时间提取约定](ai-time-extraction.md)，服务能力与参数见[请求协议](ai-request-notes.md)。提示词版本由 `SchedulePrompt.VERSION` 管理，当前为 `schedule-v13`。
 
 ## 从输入到日历
 
 记录／分享 → `ProcessingJobService` 收集原文、图片、链接正文及文件元信息 → `ChatCompletionClient` 请求 → `SemanticEventNormalizer` 转换时间 → `CandidateRules` 校验 → `TaskStore` 保存 → `AutoCalendarPublisher` 自动写入明确项，或用户审核后写入 `CalendarStore`。
 
-活动、待办、作业按事项含义分类，提醒是属性；执行时段与独立截止分开。纯信息进入记录。模型提取语义，程序处理时区、时间换算、全天边界、默认值及合法性。合理推断给出具体建议并标存疑，不因反复比较可能性拖延输出。
+活动、待办、作业按事项含义分类，提醒是属性；执行时段与独立截止分开。纯信息保留在收件原文；输出仅含 `events`，不再生成独立记录。模型提取语义，程序处理时区、时间换算、全天边界、默认值及合法性。合理推断给出具体建议并标存疑，不因反复比较可能性拖延输出。
+
+同一未来事项的多个子项由模型用 `plan_group` 标识并按依赖顺序输出，`plan_until` 提供总截止或活动开始这一准备边界。`SemanticEventNormalizer.fromJsonBatch` 在整个可用周期内分散执行建议，固定执行时间分隔前后阶段；不把分组子项压回截止前最后三天。分组仅服务本轮解析，不新增数据库层级，也不重排已经保存的日程。
 
 明确且无需确认的有效项逐项自动写入；缺少信息、权限或写入失败时保留草稿及原因。混合批次只处理可写部分，关联失败补偿本次新建，已有关联不重复创建。审核状态、完成状态与系统日历关联分别管理。
 

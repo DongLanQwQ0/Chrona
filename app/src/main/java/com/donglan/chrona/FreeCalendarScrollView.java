@@ -9,7 +9,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.ScrollView;
 
 /** Owns one gesture and applies both axes, avoiding nested ScrollView axis locking. */
-final class FreeCalendarScrollView extends HorizontalScrollView {
+class FreeCalendarScrollView extends HorizontalScrollView {
     private ScrollView vertical;
     private float downX, downY, lastX, lastY;
     private boolean dragging;
@@ -47,7 +47,10 @@ final class FreeCalendarScrollView extends HorizontalScrollView {
             if (vertical != null) vertical.onTouchEvent(event);
             MotionEvent cancel = MotionEvent.obtain(event); cancel.setAction(MotionEvent.ACTION_CANCEL);
             super.onTouchEvent(cancel); if (vertical != null) vertical.onTouchEvent(cancel); cancel.recycle();
-            detector.onTouchEvent(event); return super.dispatchTouchEvent(event);
+            detector.onTouchEvent(event);
+            // This viewport applies both axes itself; keep ancestors from taking the first move.
+            getParent().requestDisallowInterceptTouchEvent(true);
+            return super.dispatchTouchEvent(event);
         }
         if (action == MotionEvent.ACTION_POINTER_DOWN) {
             multiTouch = true; edgeSwipe.cancel(); cancelChild(event); recycleVelocity();
@@ -68,7 +71,9 @@ final class FreeCalendarScrollView extends HorizontalScrollView {
         }
         if (dragging) return onTouchEvent(event);
         boolean handled = super.dispatchTouchEvent(event);
-        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) recycleVelocity();
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            recycleVelocity(); getParent().requestDisallowInterceptTouchEvent(false);
+        }
         return handled;
     }
     @Override public boolean onInterceptTouchEvent(MotionEvent event) { return false; }

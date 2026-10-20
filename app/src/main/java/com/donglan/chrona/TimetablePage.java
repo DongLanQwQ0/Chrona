@@ -75,6 +75,7 @@ final class TimetablePage extends SchedulePage {
     private LinearLayout shell;
     private FrameLayout body;
     private ImageButton refreshButton;
+    private WorkspacePageHeader pageHeader;
     private DockNavigationLayout sourceDock;
     private ScrollView vertical;
     private HorizontalScrollView horizontal;
@@ -120,7 +121,8 @@ final class TimetablePage extends SchedulePage {
             sourceDock.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
         refreshButton = WorkspacePageHeader.icon(activity, R.drawable.ic_refresh, "刷新课表", this::syncSchool);
-        UiStyle.addSpaced(shell, new WorkspacePageHeader(activity, sourceDock.motionHost(true), refreshButton), 0, 8);
+        pageHeader = new WorkspacePageHeader(activity, sourceDock.headerMotionHost(), refreshButton);
+        UiStyle.addSpaced(shell, pageHeader, 0, 8);
         body = new FrameLayout(activity);
         shell.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
@@ -377,7 +379,7 @@ final class TimetablePage extends SchedulePage {
         if (isFinishing() || isDestroyed()) return;
         settleSemesterContent();
         refreshButton.setEnabled(!session.schoolSyncing);
-        refreshButton.setVisibility(Boolean.TRUE.equals(session.schoolSource) ? View.VISIBLE : View.INVISIBLE);
+        pageHeader.setActionVisible(Boolean.TRUE.equals(session.schoolSource));
         ZjuSettingsStore settings = new ZjuSettingsStore(this);
         String refreshLabel = !settings.configured() || !settings.enabled() ? "学校设置"
                 : !settings.timetable() ? "启用浙大课表" : session.schoolSyncing ? "刷新中" : "刷新课表";
@@ -465,10 +467,7 @@ final class TimetablePage extends SchedulePage {
             int x = session.scrollX, y = session.scrollY;
             LinearLayout renderedCourses = courseContent;
             int direction = semesterDirection;
-            scroll.post(() -> {
-                if (vertical != scroll) return;
-                scroll.scrollTo(0, y);
-                sideways.scrollTo(x, 0);
+            restoreScrollBeforeDraw(scroll, sideways, x, y, () -> {
                 if (animateSemester && resumed && UiMotion.isEnabled())
                     enterSemesterContent(renderedCourses, direction);
             });
@@ -572,21 +571,33 @@ final class TimetablePage extends SchedulePage {
             LinearLayout card = new LinearLayout(activity);
             card.setOrientation(LinearLayout.VERTICAL); UiStyle.glass(card);
             card.setPadding(0, 0, 0, 0);
-            LinearLayout heading = new LinearLayout(activity); heading.setGravity(Gravity.CENTER_VERTICAL);
+            TextView count = label(table.courseCount + " 门", 13, false);
+            FrameLayout heading = new FrameLayout(activity) {
+                @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                    count.measure(View.MeasureSpec.makeMeasureSpec(View.MeasureSpec.getSize(widthSpec), View.MeasureSpec.AT_MOST),
+                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                    FrameLayout.LayoutParams titleParams = (FrameLayout.LayoutParams)getChildAt(0).getLayoutParams();
+                    titleParams.leftMargin = titleParams.rightMargin = count.getMeasuredWidth() + dp(8);
+                    super.onMeasure(widthSpec, heightSpec);
+                }
+            };
             heading.setPadding(dp(12), dp(4), dp(12), 0);
             TextView title = label(session.schoolTerm.isEmpty() ? "未标注学期" : session.schoolTerm, 18, true);
             title.setMinHeight(dp(44)); title.setGravity(Gravity.CENTER_VERTICAL);
             title.setContentDescription(title.getText() + "，选择学期");
+            title.setGravity(Gravity.CENTER);
+            title.setPaintFlags(title.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
             title.setOnClickListener(view -> chooseSchoolTerm()); UiStyle.pressable(title);
-            heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-            TextView count = label(table.courseCount + " 门", 13, false);
-            count.setContentDescription(table.courseCount + " 门课程"); heading.addView(count);
+            heading.addView(title, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+            count.setContentDescription(table.courseCount + " 门课程");
+            heading.addView(count, new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
             card.addView(heading);
             horizontal = new HorizontalScrollView(activity);
             horizontal.setHorizontalScrollBarEnabled(false);
             horizontal.setFillViewport(true);
             int available = gridWidth > 0 ? gridWidth : getResources().getDisplayMetrics().widthPixels - dp(40);
-            TimetableGrid grid = new TimetableGrid(this, table, available, block -> showCourse(block, false));
+            AcademicTerms.View overview = new AcademicTerms.View(table.occurrences, table.zone, Collections.emptyMap());
+            TimetableGrid grid = new TimetableGrid(this, overview.regular, available, block -> showCourse(block, false));
             FrameLayout gridContent = new FrameLayout(activity);
             int edgeX = PressFeedback.edgeSpace(grid.getLayoutParams().width);
             // Course cells scale individually; the full day's height is not a pressed surface.
@@ -594,7 +605,9 @@ final class TimetablePage extends SchedulePage {
             gridContent.setPadding(edgeX, edgeY, edgeX, edgeY);
             gridContent.addView(grid);
             horizontal.addView(gridContent);
-            card.addView(horizontal); content.addView(card);
+            if (!overview.regular.blocks.isEmpty()) card.addView(horizontal);
+            UiStyle.addSpaced(content, card, 0, overview.special.isEmpty() ? 0 : 16);
+            addSpecialArrangements(content, overview.special, table.zone);
             if (session.schoolError != null) UiStyle.addSpaced(content, label(session.schoolError, 14, false), 8, 0);
         }
         vertical.addView(content);
@@ -602,10 +615,30 @@ final class TimetablePage extends SchedulePage {
         ScrollView scroll = vertical;
         HorizontalScrollView sideways = horizontal;
         int x = session.scrollX, y = session.scrollY;
-        scroll.post(() -> {
-            if (vertical != scroll) return;
-            scroll.scrollTo(0, y);
-            if (sideways != null) sideways.scrollTo(x, 0);
+        restoreScrollBeforeDraw(scroll, sideways, x, y, () -> { });
+    }
+
+    /** A new grid must never be drawn at x=0 before restoring its retained position. */
+    private void restoreScrollBeforeDraw(ScrollView scroll, HorizontalScrollView sideways,
+            int x, int y, Runnable ready) {
+        body.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                if (vertical != scroll) {
+                    if (body.getViewTreeObserver().isAlive()) body.getViewTreeObserver().removeOnPreDrawListener(this);
+                    return true;
+                }
+                int oldX = sideways == null ? 0 : sideways.getScrollX(), oldY = scroll.getScrollY();
+                scroll.scrollTo(0, y);
+                if (sideways != null) sideways.scrollTo(x, 0);
+                if (scroll.isLayoutRequested() || sideways != null && sideways.isLayoutRequested()
+                        || oldY != scroll.getScrollY() || sideways != null && oldX != sideways.getScrollX()) {
+                    scroll.postInvalidateOnAnimation();
+                    return false;
+                }
+                body.getViewTreeObserver().removeOnPreDrawListener(this);
+                ready.run();
+                return true;
+            }
         });
     }
 
@@ -734,12 +767,16 @@ final class TimetablePage extends SchedulePage {
     }
 
     private void addSpecialArrangements(LinearLayout parent, TimetableStore.Semester term) {
-        if (term.view.special.isEmpty()) return;
+        addSpecialArrangements(parent, term.view.special, term.document.table.zone);
+    }
+
+    private void addSpecialArrangements(LinearLayout parent, List<Timetable.Occurrence> special, ZoneId zone) {
+        if (special.isEmpty()) return;
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.VERTICAL);
         UiStyle.glass(card);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        UiStyle.addSpaced(card, label("特殊安排 · " + term.view.special.size(), 18, true), 0, 12);
+        UiStyle.addSpaced(card, label("特殊安排 · " + special.size(), 18, true), 0, 12);
         LinearLayout rows = new LinearLayout(activity);
         rows.setOrientation(LinearLayout.VERTICAL);
         card.addView(rows);
@@ -749,9 +786,9 @@ final class TimetablePage extends SchedulePage {
         Button next = action("下一页", false, () -> { });
         Runnable renderRows = () -> {
             rows.removeAllViews();
-            int from = page[0] * pageSize, until = Math.min(term.view.special.size(), from + pageSize);
+            int from = page[0] * pageSize, until = Math.min(special.size(), from + pageSize);
             for (int i = from; i < until; i++) {
-                Timetable.Occurrence entry = term.view.special.get(i);
+                Timetable.Occurrence entry = special.get(i);
                 TextView row = label(entry.title + "\n" + DATE.format(entry.start) + " · "
                         + TimetableGrid.DAYS[entry.start.getDayOfWeek().getValue() - 1] + " · "
                         + (entry.allDay ? "全天" : TIME.format(entry.start) + "–" + TIME.format(entry.end)), 14, false);
@@ -764,17 +801,17 @@ final class TimetablePage extends SchedulePage {
                 UiStyle.pressable(row);
                 row.setOnClickListener(view -> {
                     if (session.busy) return;
-                    Timetable single = new Timetable(Collections.singletonList(entry), term.document.table.zone, 1);
+                    Timetable single = new Timetable(Collections.singletonList(entry), zone, 1);
                     showCourse(single.blocks.get(0), true);
                 });
                 UiStyle.addSpaced(rows, row, 0, 8);
             }
             previous.setEnabled(page[0] > 0);
-            next.setEnabled(until < term.view.special.size());
+            next.setEnabled(until < special.size());
         };
         previous.setOnClickListener(view -> { page[0]--; renderRows.run(); });
         next.setOnClickListener(view -> { page[0]++; renderRows.run(); });
-        if (term.view.special.size() > pageSize) {
+        if (special.size() > pageSize) {
             LinearLayout navigation = new LinearLayout(activity);
             navigation.addView(previous, new LinearLayout.LayoutParams(0, -2, 1));
             navigation.addView(next, new LinearLayout.LayoutParams(0, -2, 1));

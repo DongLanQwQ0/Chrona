@@ -2,6 +2,8 @@ package com.donglan.chrona;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.text.LineBreaker;
+import android.text.StaticLayout;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -33,7 +35,8 @@ final class DateIntervalBar extends FrameLayout {
         FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(-1, -1);
         labelParams.setMargins(dp(44), dp(4), dp(44), dp(4)); addView(labelHost, labelParams);
         value = new TextView(context); value.setTextSize(13); value.setIncludeFontPadding(false);
-        value.setTextColor(UiStyle.colors(context).text); value.setGravity(Gravity.CENTER); value.setMaxLines(2);
+        value.setTextColor(UiStyle.colors(context).text); value.setGravity(Gravity.CENTER);
+        value.setBreakStrategy(LineBreaker.BREAK_STRATEGY_SIMPLE);
         labelHost.addView(value, new FrameLayout.LayoutParams(-1, -1));
         for (int side = 0; side < 2; side++) {
             final int direction = side == 0 ? -1 : 1;
@@ -54,7 +57,7 @@ final class DateIntervalBar extends FrameLayout {
                 float dx=event.getX()-x, dy=event.getY()-y;
                 switch(event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
-                        cancelMotion(); value.setText(desired); value.setAlpha(1f);
+                        cancelMotion(); value.setText(displayText()); value.setAlpha(1f);
                         initialTranslation=value.getTranslationX(); x=event.getX();y=event.getY();horizontal=false;break;
                     case MotionEvent.ACTION_MOVE:
                         if(Math.abs(dx)>dp(10)&&Math.abs(dx)>Math.abs(dy)) {
@@ -75,18 +78,34 @@ final class DateIntervalBar extends FrameLayout {
             }
         });
     }
-    void setText(String text) { desired=text; if(!moving)value.setText(text); }
+    void setText(String text) { desired=text; if(!moving)value.setText(displayText()); requestLayout(); }
     String text() { return desired; }
+    String displayText() { return displayText(Math.max(1, getWidth()-2*dp(44))); }
+    private String displayText(int width) {
+        return value.getPaint().measureText(desired)>width ? desired.replace(" — ", "\n") : desired;
+    }
+    @Override protected void onMeasure(int widthSpec,int heightSpec) {
+        int textWidth=Math.max(1,View.MeasureSpec.getSize(widthSpec)-2*dp(44));
+        String text=displayText(textWidth);
+        if(!moving&&!text.contentEquals(value.getText()))value.setText(text);
+        StaticLayout layout=StaticLayout.Builder.obtain(text,0,text.length(),value.getPaint(),textWidth)
+                .setIncludePad(false).setBreakStrategy(LineBreaker.BREAK_STRATEGY_SIMPLE).build();
+        setMinimumHeight(Math.max(dp(48),layout.getHeight()+2*dp(4)));
+        // Resolve our wrap-content height first so the sole match-parent text viewport
+        // receives an exact height, rather than staying at its intrinsic text height.
+        int height=resolveSize(getMinimumHeight(),heightSpec);
+        super.onMeasure(widthSpec,View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY));
+    }
     private void cancelMotion(){generation++;value.animate().withEndAction(null).cancel();moving=false;}
-    private void settle(){cancelMotion();value.setText(desired);value.animate().translationX(0f).alpha(1f).setDuration(UiMotion.isEnabled()?180:0).start();}
+    private void settle(){cancelMotion();value.setText(displayText());value.animate().translationX(0f).alpha(1f).setDuration(UiMotion.isEnabled()?180:0).start();}
     private void shift(int direction) {
         cancelMotion();moving=true;
         if(!shift.test(direction)){settle();return;}
         int token=generation;
-        if(!UiMotion.isEnabled()){moving=false;value.setText(desired);value.setTranslationX(0);value.setAlpha(1);return;}
+        if(!UiMotion.isEnabled()){moving=false;value.setText(displayText());value.setTranslationX(0);value.setAlpha(1);return;}
         value.animate().translationX(direction>0?-value.getWidth():value.getWidth()).alpha(0f).setDuration(110).withEndAction(()->{
             if(token!=generation)return;
-            value.setText(desired);value.setTranslationX(direction>0?value.getWidth():-value.getWidth());value.setAlpha(0f);
+            value.setText(displayText());value.setTranslationX(direction>0?value.getWidth():-value.getWidth());value.setAlpha(0f);
             value.animate().translationX(0f).alpha(1f).setDuration(180).withEndAction(()->{if(token==generation)moving=false;}).start();
         }).start();
     }

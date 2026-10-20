@@ -94,22 +94,38 @@ public final class ClassroomClient implements Closeable {
             if(slides.getInt("total")!=rows.length())throw new IOException("课堂截图未完整返回，请重试");
             Set<String> urls=new HashSet<>();List<JSONObject> orderedImages=new ArrayList<>();
             for(int i=0;i<rows.length();i++) {
-                JSONObject row=rows.getJSONObject(i),content=new JSONObject(row.getString("content"));
+                JSONObject row=rows.getJSONObject(i);
+                Object rawContent=row.get("content");
+                JSONObject content=rawContent instanceof JSONObject?(JSONObject)rawContent:new JSONObject(row.getString("content"));
                 if(!lesson.courseId.equals(identity(row,"course_id"))||!lesson.id.equals(identity(row,"sub_id")))throw new IOException("截图与课堂不匹配");
-                String image=content.getString("pptimgurl");
-                HttpUrl parsed=HttpUrl.parse(image);
-                if(parsed==null||!parsed.isHttps()||!parsed.host().equals("video.cmc.zju.edu.cn")||parsed.port()!=443
-                        ||!parsed.username().isEmpty()||!parsed.password().isEmpty())throw new IOException("截图地址无法识别");
+                String image=content.optString("pptimgurl","").trim();
+                // The official stream also contains text-only/empty PPT entries.
+                // ZJU-live-better likewise skips downloadImage when pptimgurl is empty.
+                if(image.isEmpty())continue;
+                HttpUrl parsed;
+                try{parsed=imageUrl(image);}catch(IOException failure){throw new IOException("第 "+(i+1)+"/"+rows.length()+" 条截图："+failure.getMessage(),failure);}
                 double second=row.getDouble("created_sec");
                 if(!Double.isFinite(second)||second<0)throw new IOException("截图时间无效");
                 orderedImages.add(new JSONObject().put("url",parsed.toString()).put("second",second));
             }
             orderedImages.sort(Comparator.comparingDouble(o->o.optDouble("second")));
             for(JSONObject image:orderedImages)if(urls.add(image.getString("url")))images.put(image);
-            return new JSONObject().put("segments",segments).put("images",images).put("raw_images",rows.length());
+            return new JSONObject().put("segments",segments).put("images",images).put("raw_images",orderedImages.size());
         } catch(JSONException|ArithmeticException e) { throw new IOException("课堂素材数据格式无法识别",e); }
     }
     public byte[] image(String url) throws IOException { return school.classroomImage(url); }
+    static HttpUrl imageUrl(String source)throws IOException{
+        String input=source.trim();
+        if(input.startsWith("//"))input="https:"+input;
+        HttpUrl url=HttpUrl.parse(input);
+        if(url==null)throw new IOException("截图地址格式无效");
+        if(!url.host().equals("video.cmc.zju.edu.cn"))throw new IOException("截图媒体域名不受支持（"+url.host()+"）");
+        if(!url.username().isEmpty()||!url.password().isEmpty())throw new IOException("截图地址包含用户信息");
+        if(url.isHttps()&&url.port()==443)return url;
+        // An HTTP media reference is upgraded locally; no plaintext request or credentials are sent.
+        if(url.scheme().equals("http")&&url.port()==80)return url.newBuilder().scheme("https").port(443).build();
+        throw new IOException("截图协议或端口不受支持（"+url.scheme()+":"+url.port()+"）");
+    }
     private static boolean generating(Object value) { return value instanceof String&&((String)value).contains("正在生成"); }
     private static void requireAvailable(JSONObject response) throws MaterialsPendingException {
         if(generating(response.opt("message"))||generating(response.opt("msg")))throw new MaterialsPendingException();

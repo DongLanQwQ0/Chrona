@@ -165,7 +165,9 @@ final class RepeatDeviceCheck {
         test.waitForIdleSync();
         android.view.accessibility.AccessibilityNodeInfo root = test.getUiAutomation().getRootInActiveWindow();
         if (root != null) for (android.view.accessibility.AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(label)) {
-            if (label.contentEquals(node.getText() == null ? "" : node.getText()) && node.isClickable() && node.isEnabled()) {
+            if ((label.contentEquals(node.getText() == null ? "" : node.getText())
+                    || label.contentEquals(node.getContentDescription() == null ? "" : node.getContentDescription()))
+                    && node.isClickable() && node.isEnabled()) {
                 require(node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK), "click " + label);
                 test.waitForIdleSync(); return;
             }

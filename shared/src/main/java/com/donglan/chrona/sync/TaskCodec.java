@@ -92,6 +92,20 @@ public final class TaskCodec {
                     if (file.getBoolean("image") && !"image/jpeg".equals(file.getString("mime")))
                         throw new IOException("同步图片需要使用 JPEG 格式");
                 }
+            } else if ("classroom".equals(kind)) {
+                only(value,"kind","document","attachments");
+                com.donglan.chrona.classroom.ClassroomDocument.validate(value.getJSONObject("document"));
+                Set<String> required=com.donglan.chrona.classroom.ClassroomDocument.referencedImages(value.getJSONObject("document").getJSONObject("summary"));
+                Set<String> present=new HashSet<>();JSONArray files=value.getJSONArray("attachments");
+                if(files.length()>64)throw new IOException("课堂引用图片过多");
+                for(int i=0;i<files.length();i++){
+                    JSONObject file=files.getJSONObject(i);only(file,"sha","name","mime","size","image");
+                    String name=com.donglan.chrona.classroom.ClassroomDocument.imageName(file.getString("name"));
+                    if(!name.equals(file.getString("name"))||!present.add(name))throw new IOException("课堂图片名称重复或无效");
+                    if(!file.getString("sha").matches("[0-9a-f]{64}")||integer(file,"size")<1||integer(file,"size")>MAX_ATTACHMENT_BYTES
+                            ||!file.getBoolean("image")||!"image/jpeg".equals(file.getString("mime")))throw new IOException("课堂图片元数据无效");
+                }
+                if(!present.equals(required))throw new IOException("课堂图片清单与正文引用不一致");
             } else if ("merge".equals(kind)) {
                 only(value,"kind","sourceTask","sourceCandidate","targetTask","targetCandidate","source");
                 for(String key:new String[]{"sourceTask","targetTask"}) {
@@ -123,6 +137,8 @@ public final class TaskCodec {
             if ("task".equals(payload.getString("kind"))) {
                 if (!id.matches("task_[0-9a-fA-F-]{36}")) throw new IOException("任务身份无效");
                 UUID.fromString(id.substring(5));
+            } else if ("classroom".equals(payload.getString("kind"))) {
+                if(!id.equals(com.donglan.chrona.classroom.ClassroomDocument.syncId(payload.getJSONObject("document").getJSONObject("summary").getJSONObject("lesson"))))throw new IOException("课堂身份与内容不一致");
             } else if ("merge".equals(payload.getString("kind"))) {
                 if(!id.equals("merge_"+payload.getString("sourceCandidate")))throw new IOException("合并记录身份不一致");
             } else {

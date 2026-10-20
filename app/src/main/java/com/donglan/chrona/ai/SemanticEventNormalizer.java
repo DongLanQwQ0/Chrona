@@ -8,6 +8,7 @@ import com.donglan.chrona.data.RepeatRule;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -20,6 +21,8 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 
 /** Converts extracted time facts into calendar values without guessing missing clock times. */
 public final class SemanticEventNormalizer {
@@ -48,6 +51,119 @@ public final class SemanticEventNormalizer {
         Long millis;
     }
 
+    /** Response-local planning only; no grouping or synthetic deadlines are persisted. */
+    private record ExecutionWindow(long lower, long deadline, long target) { }
+
+    static List<EventCandidate> fromJsonBatch(long taskId, JSONArray events, long reference,
+            String zone, long now, int workStart, int workEnd) throws JSONException {
+        List<EventCandidate> candidates = new ArrayList<>();
+        LinkedHashMap<String, List<Integer>> groups = new LinkedHashMap<>();
+        for (int i = 0; i < events.length(); i++) {
+            JSONObject event = events.getJSONObject(i);
+            if (!(event.opt("execution_time_explicit") instanceof Boolean)
+                    || !event.has("suggested_start") || !event.has("plan_group") || !event.has("plan_until"))
+                throw new JSONException("Missing execution provenance, suggestion or plan group field");
+            Object group = event.opt("plan_group");
+            if (!event.isNull("plan_until") && !(event.opt("plan_until") instanceof JSONObject))
+                throw new JSONException("Planning boundary must be a time object or null");
+            if (group != JSONObject.NULL) {
+                if (!(group instanceof String) || ((String) group).trim().isEmpty())
+                    throw new JSONException("Plan group must be a nonempty string or null");
+                if (!EventCategory.isTaskLike(event.optString("category")))
+                    throw new JSONException("Only task or homework steps can have a plan group");
+                groups.computeIfAbsent(((String) group).trim(), key -> new ArrayList<>()).add(i);
+            } else if (!event.isNull("plan_until")) {
+                throw new JSONException("Planning boundary requires a plan group");
+            }
+            EventCandidate candidate = fromJson(taskId, event, reference, zone, now, workStart, workEnd);
+            if (!event.isNull("plan_until")) planningDeadline(event, candidate, reference, zone);
+            candidates.add(candidate);
+        }
+        for (List<Integer> group : groups.values()) {
+            if (group.size() < 2) continue;
+            long deadline = Long.MIN_VALUE;
+            for (int index : group) {
+                Long until = planningDeadline(events.getJSONObject(index), candidates.get(index), reference, zone);
+                if (until != null) deadline = Math.max(deadline, until);
+            }
+            if (deadline == Long.MIN_VALUE) continue;
+            long lower = now;
+            List<Integer> run = new ArrayList<>();
+            for (int index : group) {
+                JSONObject event = events.getJSONObject(index);
+                EventCandidate candidate = candidates.get(index);
+                if (flexibleStep(event, candidate, now, planningDeadline(event, candidate, reference, zone))) {
+                    run.add(index);
+                } else {
+                    // Preserve fixed source times. An unresolved step provides no safe
+                    // dependency boundary, so its adjacent suggestions stay pending.
+                    long upper = candidate.startAtMillis == null ? lower
+                            : Math.min(deadline, candidate.startAtMillis);
+                    spreadRun(taskId, events, candidates, run, reference, zone, now,
+                            workStart, workEnd, lower, upper);
+                    run.clear();
+                    Long finish = candidate.endAtMillis;
+                    lower = Math.max(lower, finish == null ? deadline : finish);
+                }
+            }
+            spreadRun(taskId, events, candidates, run, reference, zone, now,
+                    workStart, workEnd, lower, deadline);
+        }
+        return candidates;
+    }
+
+    private static Long planningDeadline(JSONObject event, EventCandidate candidate, long reference, String zone)
+            throws JSONException {
+        if (event.isNull("plan_until")) return candidate.dueAtMillis;
+        Context context = new Context();
+        try {
+            context.zone = ZoneId.of(event.optString("time_zone_id", zone));
+            context.anchor = Instant.ofEpochMilli(reference).atZone(context.zone);
+        } catch (RuntimeException invalidZone) { throw new JSONException("Invalid planning time zone"); }
+        Long deadline = epoch(resolve(event, "plan_until", context, null, false).millis, context);
+        if (deadline == null) throw new JSONException("Planning boundary must resolve to a valid date and time");
+        return deadline;
+    }
+
+    private static boolean flexibleStep(JSONObject event, EventCandidate candidate, long now, Long until) {
+        return until != null && candidate.timeZoneId != null
+                && Boolean.FALSE.equals(event.opt("execution_time_explicit"))
+                && event.isNull("start") && event.isNull("end") && event.isNull("recurrence");
+    }
+
+    private static void spreadRun(long taskId, JSONArray events, List<EventCandidate> candidates,
+            List<Integer> run, long reference, String zone, long now, int workStart, int workEnd,
+            long lower, long deadline) throws JSONException {
+        if (run.isEmpty()) return;
+        double occupied = 0;
+        List<Long> durations = new ArrayList<>();
+        for (int index : run) {
+            JSONObject event = events.getJSONObject(index);
+            Context context = new Context();
+            Long minutes = integer(event, "duration_minutes", context);
+            Long duration = context.uncertain ? null : executionDurationMillis(minutes);
+            durations.add(duration);
+            if (duration != null) occupied += duration;
+        }
+        // Equal free gaps spread both short and long steps across the whole horizon.
+        // Actual work windows and each step's own deadline are applied below.
+        double gap = Math.max(0, (deadline - (double) lower - occupied) / (run.size() + 1));
+        double target = lower + gap;
+        long available = lower;
+        for (int step = 0; step < run.size(); step++) {
+            int index = run.get(step);
+            Long until = planningDeadline(events.getJSONObject(index), candidates.get(index), reference, zone);
+            EventCandidate planned = fromJson(taskId, events.getJSONObject(index), reference, zone,
+                    now, workStart, workEnd, new ExecutionWindow(available,
+                            until == null ? deadline : Math.min(deadline, until), (long) target));
+            candidates.set(index, planned);
+            // A missing prerequisite cannot silently be treated as completed.
+            available = planned.endAtMillis == null ? deadline : planned.endAtMillis;
+            Long duration = durations.get(step);
+            target += (duration == null ? 0 : duration) + gap;
+        }
+    }
+
     public static EventCandidate fromJson(long taskId, JSONObject event, long nowMillis,
             String fallbackZone) throws JSONException {
         return fromJson(taskId, event, nowMillis, fallbackZone, nowMillis,
@@ -57,6 +173,13 @@ public final class SemanticEventNormalizer {
     public static EventCandidate fromJson(long taskId, JSONObject event, long nowMillis,
             String fallbackZone, long schedulingNowMillis, int workStartMinutes, int workEndMinutes)
             throws JSONException {
+        return fromJson(taskId, event, nowMillis, fallbackZone, schedulingNowMillis,
+                workStartMinutes, workEndMinutes, null);
+    }
+
+    private static EventCandidate fromJson(long taskId, JSONObject event, long nowMillis,
+            String fallbackZone, long schedulingNowMillis, int workStartMinutes, int workEndMinutes,
+            ExecutionWindow plan) throws JSONException {
         Object rawTitle = event.opt("title");
         if (!(rawTitle instanceof String) || ((String) rawTitle).trim().isEmpty())
             throw new JSONException("Event title must be a nonempty string");
@@ -138,7 +261,7 @@ public final class SemanticEventNormalizer {
         String description = text(event, "description", context);
         // start/end remain source facts even if the model mislabeled their provenance.
         // A separate suggested_start can never overwrite an existing or unresolved source time.
-        if (EventCategory.isTaskLike(sourceCategory) && due != null && due > schedulingNowMillis
+        if (EventCategory.isTaskLike(sourceCategory) && (plan != null || due != null && due > schedulingNowMillis)
                 && Boolean.FALSE.equals(event.opt("execution_time_explicit"))
                 && event.isNull("start") && event.isNull("end") && context.zone != null) {
             context.uncertain = true;
@@ -147,8 +270,12 @@ public final class SemanticEventNormalizer {
             } else {
                 TimeValue suggestion = resolve(event, "suggested_start", context, null, false);
                 Long executionDuration = invalidDuration ? null : executionDurationMillis(duration);
-                Long selected = executionDuration == null ? null : chooseExecutionStart(schedulingNowMillis,
-                        due, suggestion.millis, executionDuration, ZoneId.of(fallbackZone), workStartMinutes, workEndMinutes);
+                Long selected = executionDuration == null ? null : plan == null
+                        ? chooseExecutionStart(schedulingNowMillis, due, suggestion.millis, executionDuration,
+                                ZoneId.of(fallbackZone), workStartMinutes, workEndMinutes)
+                        : plannedExecutionStart(Math.max(schedulingNowMillis, plan.lower),
+                                due == null ? plan.deadline : Math.min(due, plan.deadline), plan.target, executionDuration,
+                                ZoneId.of(fallbackZone), workStartMinutes, workEndMinutes);
                 start = selected;
                 end = selected == null ? null : selected + executionDuration;
                 endAutoGenerated = selected != null && duration == null;
@@ -186,13 +313,6 @@ public final class SemanticEventNormalizer {
         }
     }
 
-    public static EventCandidate recordFromJson(long taskId, JSONObject item, String zone) throws JSONException {
-        String title = item.getString("title").trim();
-        if (title.isEmpty()) throw new JSONException("Record title is empty");
-        return new EventCandidate(0,taskId,title,null,null,zone,"",item.optString("description",""),
-                null,false,null,EventCategory.EVENT,false,false,EventCandidate.CERTAIN,null,null,true);
-    }
-
     private static String append(String description, String note) {
         return description == null || description.isEmpty() ? note : description + "\n" + note;
     }
@@ -205,10 +325,14 @@ public final class SemanticEventNormalizer {
     }
 
     /** Picks the nearest complete daily work interval; never changes the deadline. */
+    private static Long plannedExecutionStart(long lower, long deadline, long target, long duration,
+            ZoneId zone, int workStart, int workEnd) {
+        if (deadline <= lower || duration > deadline - lower) return null;
+        return nearestExecutionStart(lower, deadline - duration, target, duration, zone, workStart, workEnd);
+    }
+
     private static Long chooseExecutionStart(long now, long due, Long proposed, long duration,
             ZoneId zone, int workStart, int workEnd) {
-        if (workStart < 0 || workStart >= 1440 || workEnd < 0 || workEnd >= 1440 || workStart == workEnd)
-            throw new IllegalArgumentException("Invalid work window");
         long lower = now;
         long upper = due - duration;
         boolean distant = due - now > DAY;
@@ -220,6 +344,14 @@ public final class SemanticEventNormalizer {
         }
         if (upper < lower) return null;
         if (distant && proposed != null) target = proposed;
+        return nearestExecutionStart(lower, upper, target, duration, zone, workStart, workEnd);
+    }
+
+    private static Long nearestExecutionStart(long lower, long upper, long target, long duration,
+            ZoneId zone, int workStart, int workEnd) {
+        if (workStart < 0 || workStart >= 1440 || workEnd < 0 || workEnd >= 1440 || workStart == workEnd)
+            throw new IllegalArgumentException("Invalid work window");
+        if (upper < lower) return null;
         target = Math.max(lower, Math.min(upper, target));
         // Whole-minute placement avoids showing a minute that has already begun as a future start.
         lower = Math.floorDiv(lower + MINUTE - 1, MINUTE) * MINUTE;

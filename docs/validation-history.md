@@ -1,6 +1,6 @@
 # 验证记录
 
-当前版本为 **0.15.26 / 188**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前版本为 **0.15.27 / 189**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)
@@ -8,6 +8,71 @@
 - [设备验收模板](device-acceptance.md)
 
 构建、离线检查、实际设备操作分别记录。旧版本某项通过，只支持对应候选和条件。
+
+## 0.15.27 — 切周、课表一致性与静默推理 — 2026-10-20
+
+- 课堂周表复用双轴滚动及边缘切周，旧／新原生视图用同一进度滑动，日期栏保持原实例。Android 36 独立模拟器在 420dpi／字体 1／浅色与 540dpi／320dp／字体 1.45／深色各 34 项通过，日志 `build/week-timetable-{light,dark}.log`。覆盖表内平移、两端切周、短拖、纵滑、取消、多指、连续反向、过渡层清理及关闭动画后保留横向位置。
+- 学校课表复用导入的常规／特殊分类，单次调课保留实际日期和只读详情；离线检查覆盖真实重复周末课及短学期日期保留。设备检查还监听双向切学期的首次绘制：每个重建网格均直接在保留的 x=320 绘制，再开始入场；学校原账号数据未现场读取。
+- 首页系统日程开关取消启用背景，仅改变图标颜色。深浅两组 `build/home-toggle-{light,dark}.log` 各 12 项通过，覆盖 off/on/off、偏好写入、原生无障碍状态、颜色末态和图标外透明像素。日历页原开关样式保留。
+- UI 审核初次发现关闭动画时横向位置丢失，已补一次布局后的恢复；测试曾在过渡准备间隙抓到日期栏／网格不同周，现同时断言已显示周、无过渡、完成布局及实际网格日期后再截图。最新稳定画面与中途暂停帧为 `build/classroom-week-{light,dark}.png`、`build/classroom-week-mid-{light,dark}.png`；暂停帧只证明空间关系，不代表真实中点耗时。
+- AI 所有内容类型统一 180 秒读等待，保留 30 秒连接超时和日程整轮 240 秒预算。真实 loopback HTTP 文本请求静默 31 秒后只返回内容 SSE，成功完成；取消及短总预算检查仍通过。`classroom_summary_check.py` 最终 140 项通过，未调用付费服务。
+- 发布完整离线组首轮 81/88，通过部分见 `build/0.15.27-offline-full.log`。7 个失败均为随已改接口／布局过时的测试适配：轮播布局替身、选择框颜色入口、详情底部删除位置、周操作代理、首页图标开关构造、课堂共享文档编译依赖和同步课堂适配器。补齐后这 7 个入口逐项复跑通过：轮播 108、选择框 720、完成提醒 32、日历 139、周手势、图片 10、同步锁 3；未重复运行仍有效的另外 81 项。
+- 本轮源码恢复点 `.local-backups/week-and-timetable-20261020/`，发布元数据和测试适配恢复点 `.local-backups/release-0.15.27/`。此前 Markdown、分享、同步／备份等证据见下列续修记录。实体手机当前未连接，未进行本轮真实账号、付费 AI 或真实 WebDAV 验证。
+- 专门 UI 审核复审通过，本轮 P2 和稳定帧证据缺口均关闭；此前各续轮已通过的结论继续有效。正式 Debug／Release、lintDebug／lintRelease 通过，日志 `build/0.15.27-release-build.log`。GitHub Release 尚待可用认证发布入口；已提供 GitHub 插件安装／连接入口，浏览器控制连续超时。
+- 新 debug、release 与已发布 0.15.26 的 APK 签名一致。正式包 `build/distributions/0.15.27/Chrona-0.15.27.apk` 为 `com.donglan.chrona`、189 / 0.15.27、3070626 字节且无 debuggable 标志；Android 36 模拟器从正式 188 覆盖安装到 189、启动首页成功，未卸载或清数据。实体手机的非空真实数据升级仍未验收。
+
+## 未发布续修 — 导出后系统分享与下载目录 — 2026-10-20
+
+- 课堂总结 ZIP 与周日程 PNG 保存成功后自动打开 Android 系统分享面板，使用精确 MIME、内容 URI、ClipData 与临时只读授权。流写入及关闭成功后才排队分享；取消保存或写入失败不启动分享，取消分享保留文件。暂停期间等待页面恢复，已消费的分享不重复弹出。
+- Android 10 及以上的周日程 PNG 复用现有 `TaskFileStore` 写入公共 `Download/Chrona`，发布完成后分享；Android 8–9 沿用文件保存器并默认定位下载目录。课堂 ZIP 保留选择保存位置的流程。
+- Android 36 独立模拟器分别以 420dpi／字体 1／浅色和 540dpi／字体 1.45／深色完成 ZIP 与 PNG 四组检查，各 12 项通过。检查真实 ZIP 条目和 PNG 解码、系统分享 Intent 与读权限、实际 Downloads URI 及 `RELATIVE_PATH=Download/Chrona/`、`IS_PENDING=0`、取消后文件可读、返回不重复分享，以及 ZIP 取消／写入失败不分享。实际打开系统面板后仅返回，未选择接收方。日志与截图 `build/export-share-{zip,week}-{light,dark}.{log,png}`。
+- 独立审核发现日程导出期间重建页面会丢失分享回调，已改由工作区保留的 `WeekExport` 接交进行中任务与结果。确定性检查阻塞导出队列、发起任务、真实 `Activity.recreate`、验证新页接管同一运行状态，再放行写入并自动分享；Downloads 与 SAF copy 两条路径在上述两组环境各 16 项通过，日志及图片 `build/export-share-week{,-saf}-recreate-{light,dark}.{log,png}`。SAF copy 在 Android 36 投递文件选择结果后验证。独立 UI 复审已关闭该 P2，本轮审核通过。
+- Debug、androidTest 与正式 Debug／Release、双 lint 通过，正式日志 `build/export-share-formal-build.log`；APK 签名验证通过、关闭调试，仍为 188 / 0.15.26。产物 `build/distributions/export-share-20261020/Chrona-0.15.26-export-share.apk`；恢复副本 `.local-backups/export-share-20261020/`。Android 8–9 分支及实体手机未现场验证。
+
+## 未发布续修 — 课堂正文、素材清理与可移植文档 — 2026-10-20
+
+- 课堂正文采用本地打包 Markdown-it 14.1.0 与 MathJax 3.2.2，支持 Obsidian 风格行内与独立公式、行内图片。课堂安排改为蓝色正文点击提取；导出进入原生标题栏右侧。图片预算统一为 40 张，数学提示仅保留“中国大陆教材的常用风格”，不硬编码具体记法。
+- 完成文档、完整字幕与正文引用 JPEG 参与 WebDAV 和完整备份。统一图片引用清单用于渲染、ZIP、同步和清理；七天清理与手动清理保护引用图片、未完成及运行中课堂。导出统一相对图片路径；来源弹窗跳过清理掉的非引用图，避免空图片占位。列表和历史采用每页 50 条真实翻页，课程目录仍完整读取后排序。
+- 实际已登录智云页面读取到 5 个 PPT `img src` 均使用 `http://video.cmc.zju.edu.cn/ai3/ppt/...`，均加载为 1280×720；这解释了原 HTTPS 校验与浏览器显示之间的差异。相同图片改为 HTTPS 的 HEAD 返回 200、image/jpeg、104917 字节。应用只在确切媒体域名、标准 HTTP 端口下本地升级至 HTTPS，保留其他安全限制；同时接受 content 对象或 JSON 字符串并跳过空 PPT 项。未导出 Cookie 或账号凭据。
+- 离线总结 139 项、客户端 73 项与网络诊断 44 项通过；真实回环 HTTP 同步交换 22 项通过，包含课堂文档、图片先上传及另一端下载。Android 原生同步／完整备份 17 项通过，覆盖晚到本地修改保护、同基线恢复缺失缓存、运行中拒绝覆盖、恢复前图片缺失与失败保留、恢复后 Markdown／图片／字幕／历史可达。日志 `build/classroom-assets-summary-check.log`、`build/classroom-assets-client-check.log`、`build/classroom-sync-exchange.log`、`build/classroom-portability-device.log`。
+- Android 36 独立验证包：完整课堂浅色流程 38 项；420dpi／字体 1 浅色与 540dpi／字体 1.45 深色 Markdown 各 11 项，覆盖分式、极限、矩阵、积分、代码美元符号、图片去重、来源弹窗、蓝色安排原生确认。首次实际截图发现 MathJax 辅助 MathML 重复显示，已保留无障碍节点并以标准裁切隐藏视觉副本。截图 `build/classroom-current-screens/classroom-markdown-*.png` 与 `build/classroom-markdown-source-{light,dark}.png`。
+- 学校设置保存／退出同行、同步圆形图标置顶；窄屏四字按钮初次换行后改为 12dp 水平内距，保持字号与点击宽度。两组设置各 4 项通过并实际执行合成素材清理，图片 `build/classroom-settings-{top,cleanup}-{light,dark}.png`。
+- 公共胶囊端部按圆角单元可见面积居中，日历周导出槽为 45dp、分隔无额外横向留白。两组日历的收拢、反向恢复、日期及首尾持有检查通过，图片独立保存在 `build/classroom-calendar-{light,dark}/`。初次检查的 49dp 旧夹具断言已更新；批量拉取目录曾混入旧截图，已排除，深色公共页面有效图片在 `build/classroom-current-screens/files/`。独立 UI 审核通过本轮课堂、设置及胶囊／日历候选。
+- 独立遗留 P2：旧 `DashboardActivity.filterDock` 在窄屏大字体下标签挤连、同组字号不同；本轮未修改该筛选栏，后续应独立修复并复审。保留已确认选择栏动效，极端甩动允许高光出屏。
+- 正式 Debug／Release 和双 lint 通过，日志 `build/classroom-assets-formal-build.log`；APK 签名校验通过、关闭调试，仍为 188 / 0.15.26，未发布 GitHub Release。安装包 `build/distributions/classroom-20261020/Chrona-0.15.26-classroom.apk`。
+- 未执行真实付费 AI 生成、真实远端 WebDAV 交换或实体手机安装；现有真实页面证据仅验证 PPT 地址与显示，不代表整条账号生成链路已在手机验收。源码恢复副本 `.local-backups/classroom-assets-20261020/`。
+
+## 未发布续修 — 记录移除、标题栏动画与时间完整显示 — 2026-10-20
+
+- 移除独立记录的 AI schema、解析工厂、原生／网页编辑转换和筛选入口；提示词升为 `schedule-v13`，仅输出 `events`。纯信息留在原文。旧记录保留存储，详情接口不返回且拒绝编辑；未增加数据迁移或删除。
+- `WorkspacePageHeader` 两侧统一 8dp；导入来源下刷新按钮按当前进度渐隐、缩小并收起宽度及间距，退出开始即停止点击／无障碍入口，反向连续恢复。未改变选择栏内部留白或弹簧参数。
+- 详情开始／结束／截止字段自然换行、不缩字不省略。`DetailRepeatUiCheck -scope values` 在 420dpi／字体 1／浅色和 540dpi（320dp）／字体 1.45／深色通过完整行宽、高度、字符及实际点按选择器和取消检查；独立旧记录卡片缺席而原文保留。首次用重复实例点按进入了重复页，改用普通事项 fixture 后通过，不属于选择器失败。截图 `build/detail-values-light.png`、`build/detail-values-narrow-dark.png`。
+- `ClassroomDeviceCheck -scope header` 同样两组环境通过：课表与课堂 8dp、实际切来源、无残留空槽、动画中间帧及反向续接。完整课堂设备检查 37 项通过，见 `build/header-classroom-full-check.log`。截图 `build/header-*-light.png`、`build/header-*-narrow-dark.png`；模拟器恢复 420dpi／字体 1。
+- `checks/ai_auto_publish_check.py` 通过请求协议、59 项时间规范化、363 项执行排期、16 项发布检查（`build/record-ai-check.log`）。收件查询 8 项 SQLite 与 4 项搜索检查通过。真实 Android SQLite／HTTP 集成检查通过旧记录拒绝编辑、详情过滤、原文与历史行保留，以及普通日程增删改和状态操作。
+- 实际 Edge 网页专项、完整交互和来源／同步／附件检查通过，日志分别为 `build/record-removal-web-focused.log`、`build/record-removal-web-check.log`、`build/record-removal-web-features.log`。完整脚本的旧「今日安排」标题已更新为现行「首页」；动画测试显式设置 no-preference，仍单独覆盖 reduced-motion，避免依赖宿主系统偏好。已查看桌面与移动端截图 `build/lan-web-checks/record-removal-*.png`。
+- 专门只读 UI 审核亲自检查 9 张指定截图与候选代码，确认时间截断关闭，本轮间距、刷新退出／恢复及记录 UI 移除通过，无需退回的实质缺陷。
+- 缺课调查：真实手机刷新后本周 10/19 音响技术仍缺席，上周 10/12 有回放，教务课表正常。用户随后确认单双周安排中一周不录像；保持实际回放目录，不补造课堂条目。
+- Debug、androidTest、lintDebug 与正式 Release、lintRelease 均通过（`build/record-header-validation-build.log`、`build/record-header-phone-build.log`）。11:26 无线 ADB `install -r` 成功，首页启动 `Status: ok`；手机导入页已显示无刷新空槽。实体机后续页面发生切换，停止追加自动操作，未做完整实体机回归；主要交互与窄屏验收使用独立模拟器。正式包保留 188 / 0.15.26，未发布 GitHub Release。恢复副本及安装前 APK：`.local-backups/remove-inbox-record-20261020/`。
+
+## 未发布续修 — 详情操作、重复页与专门 UI 审核 — 2026-10-20
+
+- 详情候选卡片的重复和删除同行置底，位于原始内容之前；空执行开始／结束字段不再显示占位，切换全天仍保持空白。重复页建立／停止放在公共标题栏，月份使用 `DateIntervalBar`；日程名称与规则合为一个可换行文本区，正常字号首实例由约 y=722px 提前至 y=590px（420dpi）。学期标题整卡居中、下划线，右侧保留「10 门」。
+- 专门只读审核代理 `ui_contract_reviewer` 首轮发现重复页层级和间距仍偏高、实例点击重建整页；修正后复审关闭两项。实例点击现在仅更新选中态；原生回归滚动到后段实例、打开并取消操作，验证相同 ScrollView、scrollY 及日期栏实例。`AGENTS.md` 已规定每轮 UI 改动必须独立审核，修正后交回复审。
+- 表单补测实际发现窄屏键盘遮住次数输入：视口仍有全屏高度，键盘仅作为其底部 padding，焦点滚动计算使用了错误可见高度。`SettingsPageLayout` 改由视口外安全区容器承接系统／键盘占位。失败证据 `build/detail-repeat-review-form-dark.log`；修复后 `build/detail-repeat-ime-dark.log`、`build/detail-repeat-ime-light.log` 均通过，覆盖每周、结束日期、次数输入完整滚到键盘上方、收起键盘后创建，以及删除确认、建立／停止和日期双向滑动。
+- Android 36 独立验证包分别使用 420dpi／字体 1.0／浅色和 540dpi（320dp 宽）／字体 1.5／深色；深色使用长日程名称。学期标题正常与窄屏检查通过，日志 `build/term-heading-light.log`、`build/term-heading-narrow-dark.log`。已查看实际底部操作与原始内容、空时间、重复页、表单键盘和学期截图，位于 `build/detail-repeat-captures/`。
+- 公共安全区调整后的 20 个原生页面仍保持返回按钮距安全区 16dp、左侧 20dp、点击区域 48dp，见 `build/detail-repeat-ime-headers.log`；设置布局 72 组替身及原错误反证通过，见 `build/detail-repeat-settings-layout.log`。Debug、androidTest 和 lintDebug 成功，见 `build/detail-repeat-ime-build.log`。
+- 最终专门复审亲自检查深浅色键盘截图、最终原生断言和公共标题回归，确认键盘阻塞关闭，本轮改动审核通过，未发现新的实质缺陷。
+- 审核另记录既有详情时间值在窄屏大字体下被单行截断，本轮未修复，不能将本次结果表述为详情页全部适配通过。未变动的选择栏动效沿用下一节同一候选的有效证据。模拟器测试结束恢复 420dpi／字体 1.0；实体手机页面效果尚未验收。恢复副本 `.local-backups/detail-repeat-20261020/`、`.local-backups/ui-review-gate-20261020-103524/`。
+- 用户随后要求推到手机：正式包名 Release 构建与 lintRelease 通过（`build/detail-repeat-phone-build.log`），安装包无 debuggable 标记。2026-10-20 10:56 经无线 ADB 使用 `install -r` 覆盖现有应用，安装成功、首页启动 `Status: ok`，未卸载或清数据。此次本地续修保留版本 188 / 0.15.26，未发布新的 GitHub Release。
+
+## 未发布续修 — 选择栏、日期手势与跨月子项排期 — 2026-10-20
+
+- 标题槽与日历选择栏的选项等宽填满底板，文字居中；保留原样式、弹簧、放大和惯性。按用户最新决定，极端甩动允许出屏，不再挤窄内容轨道。`WorkspacePageHeader` 在保持左右按钮位置的情况下最后绘制标题槽，高光覆盖刷新／取消按钮。
+- Android 36 独立包 `com.donglan.chrona.followup.validation`：420dpi／默认字体深色与 540dpi（320dp 宽）／1.5 倍字体浅色均通过课堂 35 项原生检查，含真实触摸注入的日期双向滑动、工作区不误翻页、来源切换、标题绘制顺序及日期文字居中；选择栏另检查均分、首尾长按、拖出、双向甩动。日志 `build/selector-layer-dark.log`、`build/selector-final-classroom-narrow.log`。
+- 实际截图发现日期文字偏上，修正公共日期栏的确定高度测量；窄屏复查又捕获两侧 dp 分别取整导致的 1px 高度不足，已按实际 margin 合计计算。日历常规与窄屏检查通过，含日期文字完整显示／裁切、视图均分、动效、操作胶囊和 12 个月年历；日志 `build/selector-final-calendar-dark.log`、`build/selector-final-calendar-narrow.log`。已查看最终正常日期、窄屏日期／日历，以及深浅主题下高光与刷新按钮重叠的截图，目录 `build/selector-captures/`。测试结束恢复 420dpi、字体 1.0。
+- 课堂夹具曾被自己生成的课程悬浮通知挡住触摸。测试现在仅允许独立包，在测试期间关闭自身提醒并清除自身通知，结束恢复提醒偏好且关闭合成学校来源；没有更改正式应用的通知设置。
+- `schedule-v12` 的响应分组排期通过生产响应解析入口验证：30／60 天、不同工作量、固定时间、独立提前截止、无真实截止的活动准备、过期边界、独立组、时间不足、排队延迟、跨夜窗口及非法协议。`ScheduleExecutionCheck` 363 项、语义时间 60 项、自动写入 16 项及请求协议检查通过，日志 `build/subtask-spread-check.log`；全部自动排期仍待用户确认。未调用真实付费 AI 服务，未验收模型识别分组的真实准确率。
+- Debug、androidTest 构建与 lintDebug 通过，日志 `build/selector-final-build.log`；Dock 离线 180 项、筛选布局 17 项通过。修改前恢复点 `.local-backups/selector-20261020/`、`.local-backups/subtask-spread-20261020/`。本轮未发布、未覆盖正式应用；实体手机效果尚未验收。
 
 ## 0.15.26 — 发布验证 — 2026-10-20
 

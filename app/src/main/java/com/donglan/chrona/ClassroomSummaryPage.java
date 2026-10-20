@@ -10,6 +10,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import com.donglan.chrona.classroom.ClassroomClient;
@@ -29,6 +30,7 @@ import java.util.concurrent.Executors;
 
 /** Classroom catalogue only. Each lesson opens its own Activity and retains this browser. */
 final class ClassroomSummaryPage extends SchedulePage {
+    private static final int PAGE_SIZE=50;
     private Session s;
     private final ZjuSettingsStore settings;
     private LinearLayout content, browseBody, listBody;
@@ -37,7 +39,12 @@ final class ClassroomSummaryPage extends SchedulePage {
     private ImageButton refresh;
     private DateIntervalBar weekBar;
     private ScrollView scroll;
-    private int shownMode = -1, listCount;
+    private FrameLayout weekViewport;
+    private ClassroomLessonPickerView weekPicker, outgoingWeek;
+    private android.animation.ValueAnimator weekMotion;
+    private android.view.ViewTreeObserver.OnPreDrawListener weekReady;
+    private boolean weekTransition;
+    private int shownMode = -1, shownPage=-1;
     private List<ClassroomLesson> shownCatalog;
     private List<JSONObject> shownHistory;
     private LocalDate shownWeek;
@@ -58,7 +65,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         String message = "";
         List<ClassroomLesson> catalog = new ArrayList<>();
         List<JSONObject> history = new ArrayList<>();
-        int mode, page = 50, scrollY;
+        int mode, page, scrollY;
         LocalDate week = LocalDate.now(ClassroomLesson.ZONE).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         boolean initialized;
         Session(Context app, String account) { this.app = app; this.account = account; }
@@ -104,7 +111,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             s = new Session(getApplicationContext(), settings.account());
             if (state != null) {
                 s.mode = Math.max(0, Math.min(2, state.getInt("mode")));
-                s.page = Math.max(50, state.getInt("page", 50)); s.scrollY = state.getInt("scroll_y");
+                s.page = Math.max(0, state.getInt("page", 0)); s.scrollY = state.getInt("scroll_y");
                 s.week = LocalDate.parse(state.getString("week", s.week.toString()));
             }
         }
@@ -123,14 +130,14 @@ final class ClassroomSummaryPage extends SchedulePage {
         refresh = WorkspacePageHeader.icon(activity, R.drawable.ic_refresh, "刷新课堂", () -> {
             if (s != null) { if (s.busy) s.cancel(); else s.load(true); }
         });
-        UiStyle.addSpaced(root, new WorkspacePageHeader(activity, navigation.motionHost(true), refresh), 0, 8);
+        UiStyle.addSpaced(root, new WorkspacePageHeader(activity, navigation.headerMotionHost(), refresh), 0, 8);
         weekBar = new DateIntervalBar(activity, () -> {
             if (s != null) UiStyle.dateDialog(activity, "选择日期", s.week, value -> {
-                s.week = value.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)); update();
+                setWeek(value.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
             });
         }, direction -> {
             if (s == null) return false;
-            s.week = s.week.plusWeeks(direction); update(); return true;
+            setWeek(s.week.plusWeeks(direction)); return true;
         });
         status = label("", 14); root.addView(status);
         content = new LinearLayout(activity); content.setOrientation(LinearLayout.VERTICAL); root.addView(content);
@@ -140,7 +147,11 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private void selectMode(int index) {
         if (s == null || s.mode == index) return;
-        s.mode = index; s.page = 50; update();
+        s.mode = index; s.page = 0; update();
+    }
+    private void setWeek(LocalDate week) {
+        if (s == null || s.week.equals(week)) return;
+        s.week = week; update();
     }
     private void checkAccount() {
         if (s != null && !s.allowed()) { s.dispose(); s = null; browseBody = null; }
@@ -153,6 +164,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     private void update() {
         if (content == null) return;
         if (s == null || !s.allowed()) {
+            finishWeekMotion();
             refresh.setEnabled(false);
             status.setVisibility(View.GONE);
             if (!gated) {
@@ -172,49 +184,134 @@ final class ClassroomSummaryPage extends SchedulePage {
         refresh.setImageResource(s.busy ? R.drawable.ic_x : R.drawable.ic_refresh);
         refresh.setContentDescription(s.busy ? "停止刷新" : "刷新课堂");
         refresh.setTooltipText(s.busy ? "停止刷新" : "刷新课堂");
-        boolean changed = shownMode != s.mode || shownCatalog != s.catalog || shownHistory != s.history || !s.week.equals(shownWeek);
+        if (s.mode == 0) weekBar.setText(s.week + " — " + s.week.plusDays(6));
+        if (weekTransition && s.mode == 0) return;
+        boolean changed = shownMode != s.mode || shownPage!=s.page || shownCatalog != s.catalog || shownHistory != s.history || !s.week.equals(shownWeek);
         if (changed) {
+            boolean animateWeek = s.mode == 0 && shownMode == 0 && weekPicker != null
+                    && !s.week.equals(shownWeek) && active && UiMotion.isEnabled();
+            LocalDate previousWeek = shownWeek;
             boolean keepWeekBar = s.mode == 0 && weekBar.getParent() == browseBody;
-            if (keepWeekBar) {
-                while (browseBody.getChildCount() > 1) browseBody.removeViewAt(1);
-            } else {
+            if (!keepWeekBar) {
+                finishWeekMotion(); weekPicker = null; weekViewport = null;
                 if (weekBar.getParent() instanceof android.view.ViewGroup parent) parent.removeView(weekBar);
                 browseBody.removeAllViews();
             }
-            listBody = null; listCount = 0;
-            shownMode = s.mode; shownCatalog = s.catalog; shownHistory = s.history; shownWeek = s.week;
+            listBody = null;
+            shownMode = s.mode; shownPage=s.page; shownCatalog = s.catalog; shownHistory = s.history; shownWeek = s.week;
             if (s.mode == 0) {
                 if (!keepWeekBar) {
-                    LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(-1, dp(48));
+                    LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(-1, -2);
                     dateParams.bottomMargin = dp(8); browseBody.addView(weekBar, dateParams);
                 }
-                weekBar.setText(s.week + " — " + s.week.plusDays(6));
-                browseBody.addView(new ClassroomLessonPickerView(activity, s.catalog, s.week, this::open));
-            } else if (s.mode == 1) {
-                listBody = new LinearLayout(activity); listBody.setOrientation(LinearLayout.VERTICAL); browseBody.addView(listBody);
-                button(browseBody, "加载更多", () -> { s.page += 50; update(); });
+                if (weekViewport == null) {
+                    weekViewport = new FrameLayout(activity) {
+                        @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+                            return weekTransition || super.dispatchTouchEvent(event);
+                        }
+                    };
+                    PressFeedback.protectViewport(weekViewport);
+                    browseBody.addView(weekViewport, new LinearLayout.LayoutParams(-1, -2));
+                }
+                showWeek(animateWeek, previousWeek);
             } else {
-                for (JSONObject record : s.history) try {
-                    ClassroomLesson lesson = ClassroomLesson.fromJson(record.getJSONObject("lesson"));
-                    button(browseBody, lesson.course + "\n" + lesson.date() + " · " + (record.optBoolean("complete") ? "已完成" : "未完成"), () -> open(lesson));
-                } catch (Exception ignored) { }
-                if (s.history.isEmpty()) browseBody.addView(label("暂无历史总结", 16));
+                renderPage();
             }
         }
-        if (s.mode == 1) {
+    }
+    private void showWeek(boolean animate, LocalDate previousWeek) {
+        ClassroomLessonPickerView next = new ClassroomLessonPickerView(activity, s.catalog, s.week, this::open);
+        next.vertical(scroll);
+        next.gestures(direction -> { if (s != null && s.mode == 0) setWeek(s.week.plusWeeks(direction)); }, null);
+        ClassroomLessonPickerView old = weekPicker;
+        int x = old == null ? 0 : old.getScrollX();
+        weekPicker = next;
+        if (!animate || weekViewport.getWidth() == 0) {
+            next.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                @Override public void onLayoutChange(View view, int left, int top, int right, int bottom,
+                        int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                    next.scrollTo(x, 0); next.removeOnLayoutChangeListener(this);
+                }
+            });
+            weekViewport.removeAllViews(); weekViewport.addView(next, new FrameLayout.LayoutParams(-1, -2));
+            return;
+        }
+        int direction = s.week.isAfter(previousWeek) ? 1 : -1;
+        int width = weekViewport.getWidth(), oldHeight = old.getHeight();
+        outgoingWeek = old; weekTransition = true;
+        old.setLayoutParams(new FrameLayout.LayoutParams(-1, oldHeight));
+        next.setTranslationX(width * direction);
+        weekViewport.addView(next, new FrameLayout.LayoutParams(-1, -2));
+        weekReady = () -> {
+            int prior = next.getScrollX(); next.scrollTo(x, 0);
+            if (next.isLayoutRequested() || prior != next.getScrollX()) {
+                weekViewport.postInvalidateOnAnimation(); return false;
+            }
+            int newHeight = next.getHeight();
+            weekViewport.getViewTreeObserver().removeOnPreDrawListener(weekReady); weekReady = null;
+            next.setLayoutParams(new FrameLayout.LayoutParams(-1, newHeight));
+            android.animation.ValueAnimator motion = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            weekMotion = motion; motion.setDuration(UiMotion.ENTER); motion.setInterpolator(UiMotion.SETTLE);
+            motion.addUpdateListener(value -> {
+                if (!UiMotion.isEnabled()) { finishWeekMotion(); update(); return; }
+                float p = (float) value.getAnimatedValue();
+                next.setTranslationX(CalendarSlideMotion.incoming(width, direction, p));
+                old.setTranslationX(CalendarSlideMotion.outgoing(width, direction, p));
+                android.view.ViewGroup.LayoutParams params = weekViewport.getLayoutParams();
+                params.height = Math.round(oldHeight + (newHeight - oldHeight) * p); weekViewport.setLayoutParams(params);
+            });
+            motion.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    if (weekMotion == motion) { finishWeekMotion(); update(); }
+                }
+            });
+            motion.start(); return false;
+        };
+        weekViewport.getViewTreeObserver().addOnPreDrawListener(weekReady);
+    }
+    private void finishWeekMotion() {
+        if (weekReady != null && weekViewport != null && weekViewport.getViewTreeObserver().isAlive())
+            weekViewport.getViewTreeObserver().removeOnPreDrawListener(weekReady);
+        weekReady = null;
+        if (weekMotion != null) {
+            android.animation.ValueAnimator motion = weekMotion; weekMotion = null;
+            motion.removeAllListeners(); motion.removeAllUpdateListeners(); motion.cancel();
+        }
+        if (outgoingWeek != null && weekViewport != null) weekViewport.removeView(outgoingWeek);
+        outgoingWeek = null; weekTransition = false;
+        if (weekPicker != null) {
+            weekPicker.setTranslationX(0f); weekPicker.setLayoutParams(new FrameLayout.LayoutParams(-1, -2));
+        }
+        if (weekViewport != null) {
+            android.view.ViewGroup.LayoutParams params = weekViewport.getLayoutParams();
+            params.height = -2; weekViewport.setLayoutParams(params);
+        }
+    }
+    private void renderPage(){
+            listBody=new LinearLayout(activity);listBody.setOrientation(LinearLayout.VERTICAL);browseBody.addView(listBody);
             List<ClassroomLesson> recent = new ArrayList<>();
             for (ClassroomLesson lesson : s.catalog) if (lesson.startsAt <= System.currentTimeMillis()) recent.add(lesson);
             recent.sort((a,b) -> Long.compare(b.startsAt, a.startsAt));
-            for (int i = listCount; i < Math.min(s.page, recent.size()); i++) {
-                ClassroomLesson lesson = recent.get(i);
+            int count=s.mode==1?recent.size():s.history.size(),pages=Math.max(1,(count+PAGE_SIZE-1)/PAGE_SIZE);
+            s.page=Math.min(s.page,pages-1);shownPage=s.page;
+            for (int i = s.page*PAGE_SIZE; i < Math.min((s.page+1)*PAGE_SIZE,count); i++) {
+              if(s.mode==1){ClassroomLesson lesson = recent.get(i);
                 Button item = button(listBody, lesson.date() + " " + clock(lesson) + " · " + lesson.state(System.currentTimeMillis())
                         + "\n" + lesson.course + " · " + lesson.title, () -> open(lesson));
-                item.setEnabled(lesson.selectable(System.currentTimeMillis())); listCount++;
+                item.setEnabled(lesson.selectable(System.currentTimeMillis()));
+              }else try{JSONObject record=s.history.get(i);ClassroomLesson lesson=ClassroomLesson.fromJson(record.getJSONObject("lesson"));
+                button(listBody,lesson.course+"\n"+lesson.date()+" · "+(record.optBoolean("complete")?"已完成":"未完成"),()->open(lesson));
+              }catch(Exception ignored){}
             }
-            browseBody.getChildAt(1).setVisibility(listCount < recent.size() ? View.VISIBLE : View.GONE);
-            if (changed && recent.isEmpty()) listBody.addView(label("暂无课堂", 16));
-        }
+            if(count==0)listBody.addView(label(s.mode==1?"暂无课堂":"暂无历史总结",16));
+            if(pages>1){LinearLayout paging=new LinearLayout(activity);paging.setGravity(Gravity.CENTER_VERTICAL);
+                ImageButton previous=UiStyle.navigationIcon(activity,R.drawable.ic_chevron_left,"上一页",()->changePage(-1));previous.setEnabled(s.page>0);paging.addView(previous,new LinearLayout.LayoutParams(dp(48),dp(48)));
+                TextView number=label((s.page+1)+" / "+pages,15);number.setGravity(Gravity.CENTER);paging.addView(number,new LinearLayout.LayoutParams(0,-2,1));
+                ImageButton next=UiStyle.navigationIcon(activity,R.drawable.ic_chevron_right,"下一页",()->changePage(1));next.setEnabled(s.page+1<pages);paging.addView(next,new LinearLayout.LayoutParams(dp(48),dp(48)));
+                UiStyle.addSpaced(browseBody,paging,8,8);
+            }
     }
+    private void changePage(int delta){s.page=Math.max(0,s.page+delta);update();scroll.post(()->scroll.scrollTo(0,0));}
     private void open(ClassroomLesson lesson) {
         if (s == null || !s.allowed() || !lesson.selectable(System.currentTimeMillis())) return;
         try { startActivity(new Intent(activity, ClassroomLessonActivity.class)
@@ -230,6 +327,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     @Override protected void onPause() {
         active = false; if (s != null) s.scrollY = scroll.getScrollY();
+        finishWeekMotion(); update();
         settings.prefs.unregisterOnSharedPreferenceChangeListener(preference);
     }
     @Override protected void onDestroy() {

@@ -66,7 +66,7 @@ abstract class SchedulePage extends ContextWrapper {
     void collectGesturePriority(List<View> views) { collectGesturePriority(content, views); }
     private static void collectGesturePriority(View view, List<View> views) {
         if (view == null) return;
-        if (view instanceof DockNavigationLayout || view instanceof HorizontalScrollView
+        if (view instanceof DockNavigationLayout || view instanceof DateIntervalBar || view instanceof HorizontalScrollView
                 || view instanceof android.widget.SeekBar) { views.add(view); return; }
         if (view instanceof ViewGroup group) for (int i = 0; i < group.getChildCount(); i++)
             collectGesturePriority(group.getChildAt(i), views);

@@ -40,9 +40,10 @@ import java.util.concurrent.TimeUnit;
 /** Device measurements; only the explicit atomic fixture phase creates and removes its own test task. No server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("detail_repeat_ui".equals(arguments.getString("phase"))) return DetailRepeatUiCheck.run(test,arguments);
         if ("toggle_reentry".equals(arguments.getString("phase"))) return WorkspaceDeviceCheck.toggleReentry(test);
         if ("compact_ui".equals(arguments.getString("phase"))) return CompactUiDeviceCheck.run(test, arguments);
-        if ("compact_calendar".equals(arguments.getString("phase"))) return WorkspaceDeviceCheck.compactCalendar(test);
+        if ("compact_calendar".equals(arguments.getString("phase"))) return WorkspaceDeviceCheck.compactCalendar(test,arguments);
         if ("acrylic_motion".equals(arguments.getString("phase"))) return AcrylicMotionDeviceCheck.run(test);
         if ("history_acrylic".equals(arguments.getString("phase"))) return AcrylicMotionDeviceCheck.runHistory(test);
         if ("schedule_preferences".equals(arguments.getString("phase"))) return ScheduleSettingsDeviceCheck.run(test);
@@ -54,6 +55,7 @@ final class DeviceUiChecks {
         if ("browser".equals(arguments.getString("phase"))) return BrowserDeviceCheck.run(test);
         if ("repeat".equals(arguments.getString("phase"))) return RepeatDeviceCheck.run(test, arguments);
         if ("classroom".equals(arguments.getString("phase"))) return ClassroomDeviceCheck.run(test, arguments);
+        if ("week_export_share".equals(arguments.getString("phase"))) return ExportShareDeviceCheck.week(test, arguments);
         if ("sync_roundtrip".equals(arguments.getString("phase"))) {
             Context context = test.getTargetContext();
             File recovery = new File(context.getFilesDir(), "sync-recovery-" + System.currentTimeMillis());

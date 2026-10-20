@@ -37,7 +37,8 @@ final class WorkspaceDeviceCheck {
             return "PASS: native reentrant rejection and accepted state animation";
         } finally {test.runOnMainSync(activity::finish);}
     }
-    static String compactCalendar(Instrumentation test) throws Exception {
+    static String compactCalendar(Instrumentation test, android.os.Bundle args) throws Exception {
+        ThemeStore.setMode(test.getTargetContext(),args.getString("theme","light"));
         ScheduleWorkspaceActivity activity=(ScheduleWorkspaceActivity)test.startActivitySync(new Intent(test.getTargetContext(),CalendarOverviewActivity.class).putExtra("open_week",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         try {
             waitFor(test,()->activity.currentPage() instanceof CalendarOverviewPage,"calendar page");
@@ -47,7 +48,8 @@ final class WorkspaceDeviceCheck {
             waitFor(test,()->tabs.getWidth()>0,"calendar tabs layout");
             checkActions(test,calendar); checkDates(test,calendar);
             capture(test,"compact-calendar");
-            CompactUiDeviceCheck.dockMotion(test,tabs,"compact-calendar-tabs");
+            CompactUiDeviceCheck.uniformLabels(test,tabs);
+            CompactUiDeviceCheck.dockMotion(test,tabs,"compact-calendar-tabs",true);
             test.runOnMainSync(()->tabs.itemAt(0).performClick());
             waitFor(test,()->yearGridsFit(activity.getWindow().getDecorView())==12,"12 readable year grids");
             capture(test,"compact-calendar-year");
@@ -206,7 +208,7 @@ final class WorkspaceDeviceCheck {
     }
     private static boolean railSettled(DateIntervalBar rail) {
         TextView label=(TextView)field(rail,"value");
-        return label.getText().toString().equals(rail.text()) && Math.abs(label.getTranslationX())<.5f
+        return label.getText().toString().equals(rail.displayText()) && Math.abs(label.getTranslationX())<.5f
                 && label.getAlpha()>.99f && !((Boolean)field(rail,"moving"));
     }
     private static void checkActions(Instrumentation test, CalendarOverviewPage calendar) throws Exception {
@@ -217,7 +219,7 @@ final class WorkspaceDeviceCheck {
         require(source instanceof CalendarVisibilityToggle && source.getParent()==group
                 && group instanceof HeaderActionGroup,"system calendar toggle shares header capsule");
         DockNavigationLayout tabs=(DockNavigationLayout)field(calendar,"tabs");
-        int expanded=dp(slot,49), addWidth=dp(slot,44), systemWidth=dp(slot,44)+dp(slot,1);
+        int expanded=dp(slot,45), addWidth=dp(slot,44), systemWidth=dp(slot,44)+dp(slot,1);
         require(tabs.getWidth()==((View)tabs.getParent()).getWidth(),"calendar tabs fill content width");
         waitFor(test, () -> slot.getWidth()==expanded && group.getWidth()==systemWidth+expanded+addWidth, "week three-action capsule expanded width");
         test.runOnMainSync(() -> tabs.itemAt(1).performClick());
@@ -266,7 +268,10 @@ final class WorkspaceDeviceCheck {
     private static void checkRailClipping(Instrumentation test,DateIntervalBar rail,String name)throws Exception {
         TextView label=(TextView)field(rail,"value");View host=(View)label.getParent();
         int[] xy=new int[2],textXY=new int[2];
+        capture(test,name+"-before-clipping");
         test.runOnMainSync(()->{
+            require(label.getLayout()!=null&&label.getLayout().getHeight()<=label.getHeight(),"full date range fits without reducing font: layout="+(label.getLayout()==null?null:label.getLayout().getHeight())+", label="+label.getWidth()+"x"+label.getHeight()+", rail="+rail.getWidth()+"x"+rail.getHeight());
+            require(label.getText().toString().replace("\n"," — ").equals(rail.text()),"both date endpoints retained");
             require(host.getClipBounds()!=null&&host.getClipBounds().width()==host.getWidth(),"explicit date text viewport");
             rail.getLocationOnScreen(xy);host.getLocationOnScreen(textXY);label.setAlpha(0);
         });
@@ -307,7 +312,7 @@ final class WorkspaceDeviceCheck {
         try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(test.getTargetContext().getExternalFilesDir(null),name+".png"))){bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}
     }
     private static int dp(View view,int value){return Math.round(value*view.getResources().getDisplayMetrics().density);}
-    private static void swipe(Instrumentation test, View view, float from, float to, int yDp) throws Exception {
+    static void swipe(Instrumentation test, View view, float from, float to, int yDp) throws Exception {
         int[] xy = new int[2]; test.runOnMainSync(() -> view.getLocationOnScreen(xy));
         float y = xy[1]+yDp*view.getResources().getDisplayMetrics().density;
         drag(test, xy[0]+view.getWidth()*from, y, xy[0]+view.getWidth()*to, y);

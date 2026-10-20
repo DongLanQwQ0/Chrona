@@ -149,7 +149,7 @@ final class ScheduleFilterSheet {
             }
             draft.shift(direction, today); render(); return true;
         });
-        LinearLayout.LayoutParams intervalParams = new LinearLayout.LayoutParams(-1, dp(48));
+        LinearLayout.LayoutParams intervalParams = new LinearLayout.LayoutParams(-1, -2);
         intervalParams.bottomMargin = dp(8);
         body.addView(interval, intervalParams);
         category = new ChoiceDock("类型", R.drawable.ic_event, categoryOptions(), value -> {

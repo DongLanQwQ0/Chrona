@@ -24,6 +24,7 @@ public java.io.File getNoBackupFilesDir(){return root;}}''',
 import java.io.*;import java.nio.file.*;
 public class AtomicFile {private final File file,stage;public AtomicFile(File f){file=f;stage=new File(f+".new");}
 public byte[] readFully()throws IOException{return Files.readAllBytes(file.toPath());}
+public void delete(){file.delete();stage.delete();}
 public FileOutputStream startWrite()throws IOException{return new FileOutputStream(stage);}
 public void finishWrite(FileOutputStream s)throws IOException{s.close();Files.move(stage.toPath(),file.toPath(),StandardCopyOption.REPLACE_EXISTING);}
 public void failWrite(FileOutputStream s){try{s.close();Files.deleteIfExists(stage.toPath());}catch(IOException ignored){}}}''',
@@ -58,6 +59,7 @@ relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java',
             'data/EventCandidate.java', 'data/EventCategory.java', 'data/EventTimeDefaults.java',
             'data/CandidateRules.java', 'calendar/AllDayDates.java', 'net/RequestControl.java']
 paths += [src / name for name in relative]
+paths.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java')
 paths.append(src / 'net/NetworkFailure.java')
 paths += [root / 'checks/ClassroomSummaryCheck.java', root / 'checks/AiRequestCheck.java']
 jar = root / 'build/ai-checks/json.jar'

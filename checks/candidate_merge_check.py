@@ -137,6 +137,7 @@ sources += [ROOT / 'app/src/main/java/com/donglan/chrona/CandidateMerges.java']
 sources += [ROOT / 'app/src/main/java/com/donglan/chrona' / name for name in (
     'HomeTimelineEntry.java', 'calendar/AllDayDates.java', 'calendar/CalendarOccurrence.java')]
 sources += [shared / name for name in ('TaskCodec.java','MergeLedger.java','SyncState.java','SyncExchange.java','WebDavClient.java')]
+sources += [ROOT / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java']
 sources += [ROOT / 'checks/CandidateMergeCheck.java',ROOT / 'checks/TwoScheduleTypesCheck.java',ROOT / 'checks/SyncExchangeCheck.java',ROOT / 'checks/SnapshotBackupCheck.java',ROOT / 'checks/ReviewStatusCheck.java']
 cache = Path(os.environ.get('GRADLE_USER_HOME','F:/Android/GradleCache')) / 'caches/modules-2/files-2.1'
 jars = [ROOT / 'build/ai-checks/json.jar']

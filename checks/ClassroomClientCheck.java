@@ -30,7 +30,7 @@ public final class ClassroomClientCheck {
         String state="6",transcriptCode="0",slideCode="0",transcriptId="20",slideId="20",imageHost="video.cmc.zju.edu.cn";
         int totalTranscript=1,totalSlides=3,materialCalls,requests,imageStatus=200,imageBytes=4;
         boolean emptySubtitles,repeatPages,future,imageHtml,unknownImageLength;
-        String pendingField="";
+        String pendingField="",imagePrefix="https://";boolean emptyImage,objectContent;
         Fixture()throws Exception {
             school=(ZjuClient)field(client,"school");field(school,"classroomLoggedIn",true);
             OkHttpClient old=(OkHttpClient)field(school,"http");
@@ -53,8 +53,11 @@ public final class ClassroomClientCheck {
                     }
                     if(p.endsWith("search-ppt")) {
                         JSONArray images=new JSONArray();
-                        for(int i=0;i<3;i++)images.put(new JSONObject().put("course_id",10).put("sub_id",slideId).put("created_sec",new int[]{9,2,1}[i])
-                                .put("content",new JSONObject().put("pptimgurl","https://"+imageHost+"/"+(i==1?"b":"a")+".jpg").toString()));
+                        for(int i=0;i<3;i++){
+                            JSONObject content=new JSONObject().put("pptimgurl",emptyImage&&i==1?" ":imagePrefix+imageHost+"/"+(i==1?"b":"a")+".jpg");
+                            images.put(new JSONObject().put("course_id",10).put("sub_id",slideId).put("created_sec",new int[]{9,2,1}[i])
+                                    .put("content",objectContent?content:content.toString()));
+                        }
                         return response(r,200,"application/json",new JSONObject().put("code",Integer.parseInt(slideCode)).put("total",totalSlides).put("list",images).toString());
                     }
                     if(r.url().host().equals("video.cmc.zju.edu.cn")) {
@@ -109,6 +112,19 @@ public final class ClassroomClientCheck {
             check(materials.getJSONArray("images").length()==2,"duplicate image URLs collapse");
             check(materials.getJSONArray("images").getJSONObject(0).getDouble("second")==1,"earliest duplicate image wins");
             check(materials.getInt("raw_images")==3,"raw screenshot count preserved");
+            f.emptyImage=true;f.objectContent=true;
+            JSONObject filtered=f.client.materials(f.selected());
+            check(filtered.getJSONArray("images").length()==1&&filtered.getInt("raw_images")==2,"empty image rows ignored and object content accepted");
+            f.emptyImage=false;
+            for(String prefix:List.of("http://","//","  https://")){
+                f.imagePrefix=prefix;JSONObject normalized=f.client.materials(f.selected());
+                check(normalized.getJSONArray("images").getJSONObject(0).getString("url").startsWith("https://video.cmc.zju.edu.cn/"),"media URL safely normalized: "+prefix);
+            }
+            f.imagePrefix="https://";f.objectContent=false;
+            for(String host:List.of("video.cmc.zju.edu.cn.evil.example","user@video.cmc.zju.edu.cn","video.cmc.zju.edu.cn:444")){
+                f.imageHost=host;fails(()->f.client.materials(f.selected()),"unsafe media manifest URL rejected");
+            }
+            f.imageHost="video.cmc.zju.edu.cn";
             f.state="2";int calls=f.materialCalls;fails(()->f.client.materials(f.selected()),"stale ready rejected");check(calls==f.materialCalls,"no material request before fresh ready check");
             f.state="6";f.future=true;fails(()->f.client.materials(f.selected()),"future recording rejected");f.future=false;
             f.transcriptCode="403";fails(()->f.client.materials(f.selected()),"subtitle denial rejected");f.transcriptCode="0";

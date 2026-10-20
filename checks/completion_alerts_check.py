@@ -77,10 +77,10 @@ end = detail.index('\n    }', begin) + len('\n    }')
 sources['com/donglan/chrona/CompletionCheck.java'] = sources['com/donglan/chrona/CompletionCheck.java'].replace('__ACKNOWLEDGEMENT_UNTIL__', detail[begin:end])
 assert '&& acknowledgementUntil(candidate) > System.currentTimeMillis()' in detail
 assert 'if (!key.isEmpty() && until > System.currentTimeMillis())' in detail
-assert detail.index('cardHeader.addView(acknowledgement, acknowledgementParams)') < detail.index('cardHeader.addView(removeCandidate,')
+assert detail.index('cardHeader.addView(acknowledgement, acknowledgementParams)') < detail.index('candidateActions.addView(removeCandidate,')
 assert 'action.setContentDescription(confirmed ? "取消确认活动" : "确认活动")' in detail
 assert 'complete.setOnClickListener(view -> changeTaskCompletion(candidate))' in detail
-assert detail.index('cardHeader.addView(createCandidate,') < detail.index('cardHeader.addView(complete,') < detail.index('cardHeader.addView(removeCandidate,')
+assert detail.index('cardHeader.addView(createCandidate,') < detail.index('cardHeader.addView(complete,') < detail.index('candidateActions.addView(removeCandidate,')
 assert 'new LinearLayout.LayoutParams(dp(48), dp(48))' in detail
 assert 'candidate.isTask()) button(card,candidate.completed()' not in detail
 system_detail = (root / 'app/src/main/java/com/donglan/chrona/SystemAgendaDetailActivity.java').read_text(encoding='utf-8')

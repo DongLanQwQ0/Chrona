@@ -11,7 +11,7 @@ import java.util.*;
 import java.util.function.Consumer;
 
 /** Start-time matrix: unknown end times never become invented lesson durations. */
-final class ClassroomLessonPickerView extends HorizontalScrollView {
+final class ClassroomLessonPickerView extends FreeCalendarScrollView {
     ClassroomLessonPickerView(Context context,List<ClassroomLesson> lessons,LocalDate monday,Consumer<ClassroomLesson> select){
         super(context);setHorizontalScrollBarEnabled(true);
         TextView metrics=label(context,"",dp(64));

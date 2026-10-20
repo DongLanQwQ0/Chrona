@@ -53,15 +53,34 @@ async function checkModalSelect(page){
  await page.evaluate(()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert(await page.locator('#dialog').evaluate(element=>element.open),'menu Escape does not dismiss editor');
  await page.setViewportSize({width:1280,height:900});
 }
-(async()=>{await new Promise(resolve=>source.listen(0,'127.0.0.1',resolve));const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});try{const page=await browser.newPage({viewport:{width:1280,height:900}});page.on('pageerror',error=>errors.push(String(error)));await page.route('**/api/**',mock);activePage=page;const base=`http://127.0.0.1:${source.address().port}/`;let before=pairRequests;
- await page.goto(base+'?case=scan#pair=000007');await page.getByRole('heading',{name:'今日安排'}).waitFor();assert.equal(pairRequests,before+1,'leading-zero scan pairs once');assert.equal(await page.evaluate(()=>location.hash),'');assert.equal(await page.locator('#pair-code').evaluate(element=>element.value),'','scanned code never copied into form');
+(async()=>{await new Promise(resolve=>source.listen(0,'127.0.0.1',resolve));const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});try{const page=await browser.newPage({viewport:{width:1280,height:900}});await page.cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});page.on('pageerror',error=>errors.push(String(error)));await page.route('**/api/**',mock);activePage=page;const base=`http://127.0.0.1:${source.address().port}/`;let before=pairRequests;
+
+ if(process.argv.includes('--record-removal')){
+  await page.goto(base+'#pair=000007');await page.getByRole('heading',{name:'首页',exact:true}).waitFor();
+  await page.evaluate(async()=>{await navigate('task/1');await Promise.all(document.getAnimations().map(a=>a.finished.catch(()=>{})));});
+  assert(await page.evaluate(()=>document.querySelector('.raw-text').textContent.includes('<script>unsafe()</script>')),'original content preserved literally');
+  assert(await page.evaluate(()=>![...document.querySelectorAll('button')].some(b=>['编辑记录','转为待办','转为活动','保存记录'].includes(b.textContent))),'independent record controls removed');
+  await page.getByRole('button',{name:'修改日程',exact:true}).click();
+  assert(await page.evaluate(()=>!!document.querySelector('[name=title]')&&!!document.querySelector('[name=category]')),'schedule editor remains available');
+  await page.evaluate(()=>closeDialog(true));
+  await page.screenshot({path:path.join(out,'record-removal-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.body.classList.add('dark'));
+  await page.screenshot({path:path.join(out,'record-removal-mobile.png'),fullPage:true});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no mobile overflow');
+  await page.evaluate(async()=>{await navigate('inbox');filterDialog(true);});
+  assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('[aria-label="类型"] button')].map(b=>b.textContent)),['全部','活动','待办','作业']);
+  assert.equal(errors.length,0,errors.join('\n'));
+  const result={type:'mock phone API; actual browser render',checks:['source retained','schedule editor opens','record controls absent','filter has three active categories','desktop and mobile render','no mobile overflow'],pageErrors:errors};
+  fs.writeFileSync(path.join(out,'record-removal-result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));return;
+ }
+ await page.goto(base+'?case=scan#pair=000007');await page.getByRole('heading',{name:'首页'}).waitFor();assert.equal(pairRequests,before+1,'leading-zero scan pairs once');assert.equal(await page.evaluate(()=>location.hash),'');assert.equal(await page.locator('#pair-code').evaluate(element=>element.value),'','scanned code never copied into form');
  paired=false;await page.evaluate(()=>api('/api/session').catch(()=>{}));await page.locator('#pair-form').waitFor();assert.equal(pairRequests,before+1,'expired session does not retry scanned code');
  await page.goto(base+'?case=refresh');await page.locator('#pair-form').waitFor();assert.equal(pairRequests,before+1,'clean refresh cannot reuse scan code');
  before=pairRequests;await page.goto(base+'?case=bad#pair=999999');await page.locator('#toast').waitFor();assert(await page.locator('#workspace').isHidden());assert.equal(pairRequests,before+1,'wrong scan pairs only once');assert.equal(await page.evaluate(()=>location.hash),'');
  before=pairRequests;pairingAvailable=false;await page.goto(base+'?case=expired#pair=000007');await page.locator('#toast').waitFor();assert.equal(pairRequests,before+1,'expired code falls back once');assert(await page.locator('#workspace').isHidden());pairingAvailable=true;
  before=pairRequests;await page.goto(base+'?case=malformed#pair=12x');await page.locator('#toast').waitFor();assert.equal(pairRequests,before,'malformed fragment never posted');assert.equal(await page.evaluate(()=>location.hash),'');
- validPairing='000009';before=pairRequests;await page.goto(base+'?case=rotated#pair=000009');await page.getByRole('heading',{name:'今日安排'}).waitFor();assert.equal(pairRequests,before+1,'rotated QR connects');validPairing='000007';paired=false;
- await page.goto(`http://127.0.0.1:${source.address().port}`);await page.locator('#pair-form').waitFor();assert(await page.locator('#workspace').isHidden());await page.locator('#pair-code').fill('12');assert.equal(await page.evaluate(()=>document.querySelector('#pair-code').checkValidity()),false,'short numeric code rejected');await page.locator('#pair-code').fill('000007');await page.getByRole('button',{name:'连接手机',exact:true}).click();await page.getByRole('heading',{name:'今日安排'}).waitFor();await page.screenshot({path:path.join(out,'desktop-home.png'),fullPage:true});await screenshotIcons(page,'settings-icons-light.png');
+ validPairing='000009';before=pairRequests;await page.goto(base+'?case=rotated#pair=000009');await page.getByRole('heading',{name:'首页'}).waitFor();assert.equal(pairRequests,before+1,'rotated QR connects');validPairing='000007';paired=false;
+ await page.goto(`http://127.0.0.1:${source.address().port}`);await page.locator('#pair-form').waitFor();assert(await page.locator('#workspace').isHidden());await page.locator('#pair-code').fill('12');assert.equal(await page.evaluate(()=>document.querySelector('#pair-code').checkValidity()),false,'short numeric code rejected');await page.locator('#pair-code').fill('000007');await page.getByRole('button',{name:'连接手机',exact:true}).click();await page.getByRole('heading',{name:'首页'}).waitFor();await page.screenshot({path:path.join(out,'desktop-home.png'),fullPage:true});await screenshotIcons(page,'settings-icons-light.png');
 
  await page.evaluate(async()=>{await navigate('inbox');await Promise.all(document.getAnimations().map(a=>a.finished.catch(()=>{})));});
  for(const dark of [false,true]){
@@ -86,7 +105,7 @@ async function checkModalSelect(page){
  const navMotion=await page.evaluate(async()=>{await navigate('schedule');return document.querySelector('#content').getAnimations().map(animation=>animation.effect.getTiming().duration);});assert.deepEqual(navMotion,[240],'route enter motion starts');
  await page.evaluate(async()=>{await Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{})));});
  assert.equal(await page.evaluate(async()=>{await render();return document.querySelector('#content').getAnimations().length;}),0,'routine render does not replay motion');
- await page.evaluate(async()=>{await Promise.all([navigate('schedule'),navigate('inbox'),navigate('home')]);await Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{})));});assert(await page.getByRole('heading',{name:'今日安排'}).isHidden()===false,'latest rapid route wins');
+ await page.evaluate(async()=>{await Promise.all([navigate('schedule'),navigate('inbox'),navigate('home')]);await Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{})));});assert(await page.getByRole('heading',{name:'首页'}).isHidden()===false,'latest rapid route wins');
  const iconGeometry=await page.evaluate(()=>{const gear=document.querySelector('#settings svg'),theme=document.querySelector('#theme svg'),bounds=gear.getBBox();return{gear:gear.getBoundingClientRect().width,theme:theme.getBoundingClientRect().width,x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2,stroke:getComputedStyle(gear).strokeWidth};});assert.equal(iconGeometry.gear,iconGeometry.theme);assert(Math.abs(iconGeometry.x-12)<.1&&Math.abs(iconGeometry.y-12)<.1,'centered standard gear');assert.equal(iconGeometry.stroke,'2px');
  assert(await page.evaluate(async()=>{capture();const input=document.querySelector('#field-text');input.value='动画输入保留';input.focus();await render();return input.value==='动画输入保留'&&document.activeElement===input&&document.querySelector('#dialog').getAnimations().length===1;}),'dialog entry retains draft/focus during data render');
  assert(await page.evaluate(()=>{closeDialog();return document.querySelector('#dialog').open&&document.querySelector('#dialog').inert;}),'dialog exit starts without blocking action');

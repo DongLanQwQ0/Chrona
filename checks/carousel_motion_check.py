@@ -51,6 +51,9 @@ public class CarouselMotionCheck {
   View(CarouselMotionCheck c){context=c;}
   void setPadding(int l,int t,int r,int b){pl=l;pt=t;pr=r;pb=b;}
   void setOnClickListener(Click c){clickable=true;}
+  static class MeasureSpec {static final int UNSPECIFIED=0;static int makeMeasureSpec(int size,int mode){return size;}}
+  void measure(int width,int height){measure(width);}int getMeasuredHeight(){return h;}
+  void setContentDescription(String text){}
   void measure(int available){w=params.width>=0?params.width:Math.max(0,available);h=params.height>=0?params.height:context.dp(20);}
  }
  static class LinearLayout extends View {
@@ -88,12 +91,18 @@ public class CarouselMotionCheck {
    child.x=pl;child.y=pt;h=pt+child.h+pb;
   }
  }
+ static class FrameLayout extends LinearLayout {
+  static class LayoutParams extends Params {LayoutParams(int w,int h,int gravity){super(w,h);}}
+  FrameLayout(CarouselMotionCheck c){super(c);}
+ }
+ static class Gravity {static final int TOP=1,BOTTOM=2;}
  static class TextView extends View {
   int minLines=1,maxLines=Integer.MAX_VALUE,size;
   TextView(CarouselMotionCheck c,int size){super(c);this.size=size;}
   void setIncludeFontPadding(boolean b){}
   void setMinLines(int n){minLines=n;}
   void setMaxLines(int n){maxLines=n;}
+  void setSingleLine(boolean value){if(value)minLines=maxLines=1;}
   void setEllipsize(Object o){}
   @Override void measure(int available){super.measure(available);h=context.dp((size+4)*Math.min(minLines,maxLines));}
  }
@@ -103,6 +112,7 @@ public class CarouselMotionCheck {
  static class HomeTimelineEntry {
   long timestampMillis; Candidate candidate=new Candidate();Object systemEvent; String name;
   HomeTimelineEntry(String n,long t){name=n;timestampMillis=t;} String title(){return name;}
+  String location(){return "East1";}
  }
  static class UiStyle {
   static void addSpaced(LinearLayout p,View v,int top,int bottom){Params lp=new Params(-1,-2);lp.setMargins(0,p.context.dp(top),0,p.context.dp(bottom));p.addView(v,lp);}

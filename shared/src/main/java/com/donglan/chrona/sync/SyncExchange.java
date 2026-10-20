@@ -71,8 +71,10 @@ public final class SyncExchange {
     private static void validate(SyncState state, Set<String> validated, Map<String, Long> sizes) throws IOException {
         try {
             for (Map.Entry<String, List<SyncState.Version>> entry : state.records().entrySet()) {
-                if (!entry.getKey().matches("task_[0-9a-fA-F-]{36}|term_[0-9]{4}_[0-3]|merge_[0-9a-fA-F-]{36}"))
+                if (!entry.getKey().matches("task_[0-9a-fA-F-]{36}|term_[0-9]{4}_[0-3]|merge_[0-9a-fA-F-]{36}|classroom_[0-9a-fA-F-]{36}"))
                     throw new IOException("云端记录身份不受支持");
+                if(entry.getKey().startsWith("classroom_")&&entry.getValue().stream().anyMatch(version->version.deleted))
+                    throw new IOException("课堂总结不支持同步删除");
                 for (SyncState.Version version : entry.getValue()) if (!version.deleted) {
                     String fingerprint = SyncState.sha256(SyncState.canonical(version.payload).getBytes(StandardCharsets.UTF_8));
                     TaskCodec.validateId(entry.getKey(), version.payload);
@@ -91,7 +93,7 @@ public final class SyncExchange {
         try {
             Map<String, Long> result = new HashMap<>();
             for (List<SyncState.Version> versions : state.records().values()) for (SyncState.Version version : versions) {
-                if (version.deleted || !"task".equals(version.payload.optString("kind"))) continue;
+                if (version.deleted || !("task".equals(version.payload.optString("kind"))||"classroom".equals(version.payload.optString("kind")))) continue;
                 JSONArray files = version.payload.getJSONArray("attachments");
                 for (int i = 0; i < files.length(); i++) {
                     JSONObject file = files.getJSONObject(i);

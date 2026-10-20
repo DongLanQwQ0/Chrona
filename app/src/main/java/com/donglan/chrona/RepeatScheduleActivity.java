@@ -50,6 +50,10 @@ public final class RepeatScheduleActivity extends Activity {
     private boolean daysInitialized;
     private EditText intervalInput, countInput;
     private List<EventCandidate> occurrences = List.of();
+    private DateIntervalBar monthBar;
+    private LinearLayout occurrenceBody;
+    private TextView seriesState;
+    private ImageButton headerAction;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
@@ -86,7 +90,7 @@ public final class RepeatScheduleActivity extends Activity {
     private void load() {
         if (busy) return;
         busy = true;
-        render();
+        if (monthBar == null || !monthBar.isAttachedToWindow()) render();
         WORKER.execute(() -> {
             try (TaskStore store = new TaskStore(getApplicationContext())) {
                 EventCandidate found = null;
@@ -116,7 +120,8 @@ public final class RepeatScheduleActivity extends Activity {
                         weekdays[Instant.ofEpochMilli(series.anchor()).atZone(zone()).getDayOfWeek().getValue() - 1] = true;
                         daysInitialized = true;
                     }
-                    render();
+                    if (monthBar != null && monthBar.isAttachedToWindow() && series.repeatRule != null) refreshSeries();
+                    else render();
                 });
             } catch (Exception error) { failed(error); }
         });
@@ -130,11 +135,20 @@ public final class RepeatScheduleActivity extends Activity {
 
     private void render() {
         root = SettingsPageLayout.content(this);
-        SettingsPageLayout.header(this, root, "重复日程");
+        monthBar = null; occurrenceBody = null; headerAction = null;
+        if (series != null && !series.isRecord && series.anchor() != null) {
+            boolean existing = series.repeatRule != null;
+            headerAction = UiStyle.navigationIcon(this, existing ? R.drawable.ic_circle_stop : R.drawable.ic_check,
+                    existing ? "停止重复" : "建立重复日程", existing ? this::confirmStop : this::createRepeat);
+            headerAction.setEnabled(!busy && (!existing || series.repeatStoppedAtMillis == null));
+        }
+        SettingsPageLayout.header(this, root, "重复日程", headerAction);
         intervalInput = null; countInput = null;
         if (series == null) text(root, busy ? "正在读取…" : "无法读取日程", 16, false);
         else {
-            text(root, series.title, 22, true);
+            seriesState = new TextView(this);
+            seriesState.setTextSize(16); UiStyle.title(seriesState);
+            root.addView(seriesState, new LinearLayout.LayoutParams(-1, -2));
             if (series.repeatRule == null) renderForm();
             else renderSeries();
         }
@@ -143,12 +157,12 @@ public final class RepeatScheduleActivity extends Activity {
     }
 
     private void renderForm() {
+        setSeriesSummary(series.anchor() == null ? "" : "首次 " + format(series.anchor()));
         if (series.anchor() == null || series.isRecord) {
             text(root, "请先设置首次日程时间", 16, false);
             return;
         }
-        text(root, "首次  " + format(series.anchor()), 15, false);
-        Button frequencyChoice = button(root, FREQUENCY_LABELS[frequency], false, () -> {
+        Button frequencyChoice = choiceRow("频率", FREQUENCY_LABELS[frequency], () -> {
             snapshotForm();
             UiStyle.choiceDialog(this, "重复频率", FREQUENCY_LABELS, frequency, index -> { frequency = index; render(); });
         });
@@ -172,7 +186,7 @@ public final class RepeatScheduleActivity extends Activity {
         }
         String endLabel = ending == 1 ? "结束日期  " + (until == null ? "选择日期" : until)
                 : ending == 2 ? "按次数结束" : "持续重复";
-        button(root, endLabel, false, () -> {
+        choiceRow("结束", endLabel, () -> {
             snapshotForm();
             UiStyle.choiceDialog(this, "结束条件", new String[]{"持续重复", "结束日期", "重复次数"}, ending, index -> {
                 ending = index;
@@ -182,54 +196,87 @@ public final class RepeatScheduleActivity extends Activity {
             });
         });
         if (ending == 2) { text(root, "次数（包含首次）", 14, false); countInput = number(root, count); }
-        button(root, "建立重复日程", true, () -> {
-            snapshotForm();
-            try {
-                ArrayList<Integer> days = new ArrayList<>();
-                if (frequency == 1) {
-                    for (int i = 0; i < 7; i++) if (weekdays[i]) days.add(i + 1);
-                    if (days.isEmpty()) throw new IllegalArgumentException("请选择重复星期");
-                }
-                if (ending == 1 && until == null) throw new IllegalArgumentException("请选择结束日期");
-                RepeatRule rule = new RepeatRule(FREQUENCIES[frequency], Integer.parseInt(interval.trim()), days,
-                        ending == 1 ? until : null, ending == 2 ? Integer.valueOf(count.trim()) : null);
-                rule.validateAnchor(series.anchor(), zone().getId());
-                change("rule", null, null, rule);
-            } catch (NumberFormatException error) { Feedback.show(this, "请输入有效的间隔和次数"); }
-            catch (IllegalArgumentException error) { Feedback.show(this, error.getMessage()); }
-        });
+    }
+
+    private void createRepeat() {
+        if (busy) return;
+        snapshotForm();
+        try {
+            ArrayList<Integer> days = new ArrayList<>();
+            if (frequency == 1) {
+                for (int i = 0; i < 7; i++) if (weekdays[i]) days.add(i + 1);
+                if (days.isEmpty()) throw new IllegalArgumentException("请选择重复星期");
+            }
+            if (ending == 1 && until == null) throw new IllegalArgumentException("请选择结束日期");
+            RepeatRule rule = new RepeatRule(FREQUENCIES[frequency], Integer.parseInt(interval.trim()), days,
+                    ending == 1 ? until : null, ending == 2 ? Integer.valueOf(count.trim()) : null);
+            rule.validateAnchor(series.anchor(), zone().getId());
+            change("rule", null, null, rule);
+        } catch (NumberFormatException error) { Feedback.show(this, "请输入有效的间隔和次数"); }
+        catch (IllegalArgumentException error) { Feedback.show(this, error.getMessage()); }
+    }
+
+    private void confirmStop() {
+        if (busy || series.repeatStoppedAtMillis != null) return;
+        UiStyle.confirmDialog(this, "停止重复", "过往日程将保留，停止今后的重复。", "停止重复",
+                () -> change("stop", null, null, null));
     }
 
     private void renderSeries() {
-        text(root, series.repeatRule.label() + (series.repeatStoppedAtMillis == null ? "" : " · 已停止"), 15, false);
-        LinearLayout navigation = new LinearLayout(this);
-        navigation.setGravity(Gravity.CENTER_VERTICAL);
-        navigation.addView(monthArrow(R.drawable.ic_chevron_left, "上个月", -1), new LinearLayout.LayoutParams(dp(48), dp(48)));
-        Button date = new Button(this); date.setText(month.getYear() + "年" + month.getMonthValue() + "月"); UiStyle.button(date, false);
-        date.setOnClickListener(view -> pickDate(month.atDay(1), value -> { month = YearMonth.from(value); load(); }));
-        navigation.addView(date, new LinearLayout.LayoutParams(0, dp(52), 1));
-        navigation.addView(monthArrow(R.drawable.ic_chevron_right, "下个月", 1), new LinearLayout.LayoutParams(dp(48), dp(48)));
-        UiStyle.addSpaced(root, navigation, 16, 8);
-        if (busy) text(root, "正在读取…", 16, false);
-        else if (occurrences.isEmpty()) text(root, "本月无日程", 16, false);
+        monthBar = new DateIntervalBar(this,
+                () -> { if (!busy) pickDate(month.atDay(1), value -> { month = YearMonth.from(value); monthBar.setText(monthLabel()); load(); }); },
+                direction -> { if (busy) return false; month = month.plusMonths(direction); monthBar.setText(monthLabel()); load(); return true; });
+        UiStyle.addSpaced(root, monthBar, 8, 8);
+        occurrenceBody = new LinearLayout(this); occurrenceBody.setOrientation(LinearLayout.VERTICAL);
+        root.addView(occurrenceBody, new LinearLayout.LayoutParams(-1,-2));
+        refreshSeries();
+    }
+
+    private String monthLabel() { return month.getYear() + "年" + month.getMonthValue() + "月"; }
+
+    private void refreshSeries() {
+        setEnabled(root, !busy);
+        headerAction.setEnabled(!busy && series.repeatStoppedAtMillis == null);
+        setSeriesSummary(series.repeatRule.label() + (series.repeatStoppedAtMillis == null ? "" : " · 已停止"));
+        monthBar.setText(monthLabel());
+        occurrenceBody.removeAllViews();
+        if (busy) text(occurrenceBody, "正在读取…", 16, false);
+        else if (occurrences.isEmpty()) text(occurrenceBody, "本月无日程", 16, false);
         for (EventCandidate item : busy ? List.<EventCandidate>of() : occurrences) {
             long original = item.occurrenceAtMillis;
             LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL);
             row.setPadding(dp(14), dp(12), dp(14), dp(12));
             boolean selected = selectedOriginal != null && selectedOriginal == original;
+            row.setTag(original);
             UiStyle.acrylicChoice(row, selected, 8, true);
             text(row, format(item.anchor()), 17, true);
             String state = item.completed() ? "已完成" : "";
             if (original != item.anchor()) state += (state.isEmpty() ? "" : " · ") + "已改期";
             if (!state.isEmpty()) text(row, state, 14, false);
-            row.setOnClickListener(view -> { if (!busy) { selectedOriginal = original; render(); occurrenceActions(item); } });
+            row.setOnClickListener(view -> {
+                if (busy) return;
+                selectedOriginal = original;
+                for (int i = 0; i < occurrenceBody.getChildCount(); i++) {
+                    View candidate = occurrenceBody.getChildAt(i);
+                    UiStyle.acrylicChoice(candidate, Long.valueOf(original).equals(candidate.getTag()), 8, true);
+                }
+                occurrenceActions(item);
+            });
             UiStyle.pressable(row);
-            UiStyle.addSpaced(root, row, 4, 4);
+            UiStyle.addSpaced(occurrenceBody, row, 0, 8);
         }
-        Button stop = button(root, series.repeatStoppedAtMillis == null ? "停止重复" : "已停止重复", false, () ->
-                UiStyle.confirmDialog(this, "停止重复", "过往日程将保留，停止今后的重复。", "停止重复",
-                        () -> change("stop", null, null, null)));
-        stop.setEnabled(series.repeatStoppedAtMillis == null && !busy);
+    }
+
+    private void setSeriesSummary(String detail) {
+        android.text.SpannableString summary = new android.text.SpannableString(series.title
+                + (detail.isEmpty() ? "" : " · " + detail));
+        if (!detail.isEmpty()) {
+            int start = series.title.length();
+            summary.setSpan(new android.text.style.RelativeSizeSpan(13f / 16f), start, summary.length(), 0);
+            summary.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.NORMAL), start, summary.length(), 0);
+            summary.setSpan(new android.text.style.ForegroundColorSpan(UiStyle.colors(this).muted), start, summary.length(), 0);
+        }
+        seriesState.setText(summary);
     }
 
     private void occurrenceActions(EventCandidate item) {
@@ -329,13 +376,6 @@ public final class RepeatScheduleActivity extends Activity {
             Feedback.show(this, error.getMessage() == null ? "操作失败，请重试" : error.getMessage());
         });
     }
-    private ImageButton monthArrow(int icon, String label, int direction) {
-        ImageButton button = new ImageButton(this); button.setImageResource(icon);
-        button.setImageTintList(android.content.res.ColorStateList.valueOf(UiStyle.colors(this).primary));
-        button.setContentDescription(label); button.setPadding(dp(12), dp(12), dp(12), dp(12));
-        UiStyle.acrylicChoice(button, false, 8, false);
-        button.setOnClickListener(view -> { if (!busy) { month = month.plusMonths(direction); load(); } }); return button;
-    }
     private String format(long millis) {
         return DateTimeFormatter.ofPattern(series.allDay ? "M月d日 EEEE · 全天" : "M月d日 EEEE HH:mm", java.util.Locale.CHINA)
                 .format(Instant.ofEpochMilli(millis).atZone(zone()));
@@ -353,10 +393,14 @@ public final class RepeatScheduleActivity extends Activity {
         if (strong) UiStyle.title(text); else UiStyle.muted(text);
         UiStyle.addSpaced(parent, text, 3, 5); return text;
     }
-    private Button button(LinearLayout parent, String title, boolean primary, Runnable action) {
-        Button button = new Button(this); button.setText(title); UiStyle.button(button, primary);
+    private Button choiceRow(String label, String value, Runnable action) {
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = new TextView(this); name.setText(label); name.setTextSize(16); UiStyle.muted(name);
+        row.addView(name, new LinearLayout.LayoutParams(dp(56), -2));
+        Button button = new Button(this); button.setText(value); UiStyle.button(button, false);
         button.setOnClickListener(view -> { if (!busy) action.run(); });
-        UiStyle.addSpaced(parent, button, 8, 4); return button;
+        row.addView(button, new LinearLayout.LayoutParams(0, -2, 1));
+        UiStyle.addSpaced(root, row, 8, 4); return button;
     }
     private void setEnabled(View view, boolean enabled) {
         view.setEnabled(enabled);

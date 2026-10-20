@@ -120,9 +120,14 @@ final class CalendarOverviewPage extends SchedulePage {
     private ImageButton weekExportButton;
     private static final int CREATE_WEEK_IMAGE = 811;
     private static final java.util.concurrent.ExecutorService EXPORTS = java.util.concurrent.Executors.newSingleThreadExecutor();
-    private boolean exportingWeek;
     private float weekZoom = 1f;
-    private String weekExportName;
+    private static final class WeekExport {
+        java.lang.ref.WeakReference<CalendarOverviewPage> owner=new java.lang.ref.WeakReference<>(null);
+        boolean busy,pickerOpen;
+        String imageName,displayName,message;
+        android.net.Uri shareUri;
+    }
+    private WeekExport weekExport;
     private CalendarVisibilityToggle sourceSwitch;
     private View timeLines;
     private android.app.Dialog allDayDialog;
@@ -154,9 +159,16 @@ final class CalendarOverviewPage extends SchedulePage {
         includeSystem = CalendarSourcePreferences.includesSystem(this);
         mode = getPreferences(MODE_PRIVATE).getInt("mode", MONTH);
         if (getIntent().getBooleanExtra("open_week", false) && state == null) { mode = WEEK; date = LocalDate.now(); }
+        boolean retainedExport=getLastNonConfigurationInstance() instanceof WeekExport;
+        weekExport=retainedExport?(WeekExport)getLastNonConfigurationInstance():new WeekExport();
+        weekExport.owner=new java.lang.ref.WeakReference<>(this);
         if (state != null) {
             weekZoom = state.getFloat("week_zoom", 1f);
-            weekExportName = state.getString("week_export_name");
+            if(!retainedExport){
+                weekExport.imageName=state.getString("week_export_name");weekExport.displayName=state.getString("week_export_display_name");
+                weekExport.pickerOpen=state.getBoolean("week_export_picker");
+                String share=state.getString("week_share_uri");if(share!=null)weekExport.shareUri=android.net.Uri.parse(share);
+            }
             date = LocalDate.parse(state.getString("date", date.toString()));
             mode = state.getInt("mode", mode); query = state.getString("query", "");
             String[] keys = state.getStringArray("position_keys");
@@ -191,14 +203,15 @@ final class CalendarOverviewPage extends SchedulePage {
         controls.addView(sourceDivider, size(1, 16));
         weekExportSlot = row();
         weekExportButton = icon(R.drawable.ic_week_export, "导出周日程为图片", this::exportWeek);
+        weekExportButton.setEnabled(!weekExport.busy);
         weekExportButton.setBackgroundColor(Color.TRANSPARENT);
         weekExportSlot.addView(weekExportButton, size(44, 44));
         View divider = new View(activity); divider.setBackgroundColor(UiStyle.colors(this).outline);
-        LinearLayout.LayoutParams dividerParams = size(1, 18); dividerParams.setMargins(dp(2),0,dp(2),0);
+        LinearLayout.LayoutParams dividerParams = size(1, 16);
         weekExportSlot.addView(divider, dividerParams);
         weekActionShown = mode == WEEK;
         weekExportSlot.setVisibility(weekActionShown ? View.VISIBLE : View.GONE);
-        controls.addView(weekExportSlot, size(weekActionShown ? 49 : 0, 44));
+        controls.addView(weekExportSlot, size(weekActionShown ? 45 : 0, 44));
         ImageButton create = icon(R.drawable.ic_add, "记录新日程", () -> startActivity(new Intent(this, MainActivity.class)));
         create.setBackgroundColor(Color.TRANSPARENT); controls.addView(create, size(44, 44));
         controls.finish();
@@ -206,7 +219,7 @@ final class CalendarOverviewPage extends SchedulePage {
         root.addView(header);
         LinearLayout navigation = row();
         dateTitle = new DateIntervalBar(activity, this::pickDate, direction -> { shift(direction); return true; });
-        navigation.addView(dateTitle, new LinearLayout.LayoutParams(0, dp(48), 1));
+        navigation.addView(dateTitle, new LinearLayout.LayoutParams(0, -2, 1));
         TextView today = action("今天", () -> navigateDate(LocalDate.now()));
         LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(-2, dp(44));todayParams.leftMargin=dp(8);
         navigation.addView(today, todayParams); UiStyle.addSpaced(root,navigation,12,8);
@@ -221,10 +234,10 @@ final class CalendarOverviewPage extends SchedulePage {
         }
         tabs.setSelectedIndex(mode);
         updateTabSemantics();
-        // Leave room for a held edge highlight and the plate's scale, on narrow windows too.
+        // Equal cells fill the plate; preserve the approved outward highlight motion.
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(-1, -2);
         tabParams.gravity = Gravity.CENTER_HORIZONTAL; tabParams.bottomMargin = dp(8);
-        root.addView(tabs.fullWidthMotionHost(true), tabParams);
+        root.addView(tabs.fullWidthMotionHost(), tabParams);
         bodyStage = new FrameLayout(activity);
         body = createCalendarBody();
         bodyViewport = new FrameLayout(activity);
@@ -312,6 +325,7 @@ final class CalendarOverviewPage extends SchedulePage {
             try { getContentResolver().registerContentObserver(android.provider.CalendarContract.CONTENT_URI, true, calendarObserver); }
             catch (SecurityException ignored) { calendarObserver = null; }
         }
+        deliverWeekExport();
     }
     @Override protected void onPause() {
         resumed = false; handler.removeCallbacks(minuteTick); handler.removeCallbacks(calendarReload);
@@ -322,10 +336,13 @@ final class CalendarOverviewPage extends SchedulePage {
         if (calendarObserver != null) { getContentResolver().unregisterContentObserver(calendarObserver); calendarObserver = null; }
         super.onPause();
     }
-    @Override protected void onDestroy() { cancelRead(); reader.shutdownNow(); if(weekActionMotion!=null){weekActionMotion.removeAllListeners();weekActionMotion.cancel();} super.onDestroy(); }
+    @Override protected void onDestroy() { if(weekExport.owner.get()==this)weekExport.owner.clear();cancelRead(); reader.shutdownNow(); if(weekActionMotion!=null){weekActionMotion.removeAllListeners();weekActionMotion.cancel();} super.onDestroy(); }
+    @Override public Object onRetainNonConfigurationInstance(){return weekExport;}
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state); state.putString("date", date.toString()); state.putInt("mode", mode); state.putString("query", query);
-        state.putString("week_export_name", weekExportName);
+        state.putString("week_export_name",weekExport.imageName);state.putString("week_export_display_name",weekExport.displayName);
+        state.putBoolean("week_export_picker",weekExport.pickerOpen);
+        if(weekExport.shareUri!=null)state.putString("week_share_uri",weekExport.shareUri.toString());
         state.putFloat("week_zoom", weekZoom);
         rememberPosition();
         String[] keys = positions.keySet().toArray(new String[0]); int[] xs = new int[keys.length], ys = new int[keys.length];
@@ -611,15 +628,15 @@ final class CalendarOverviewPage extends SchedulePage {
         if(weekExportSlot==null||show==weekActionShown)return;
         weekActionShown=show;
         if(weekActionMotion!=null){weekActionMotion.removeAllListeners();weekActionMotion.cancel();}
-        int from=weekExportSlot.getLayoutParams().width,to=show?dp(49):0;
-        weekExportSlot.setVisibility(View.VISIBLE);weekExportButton.setEnabled(show&&!exportingWeek);
+        int from=weekExportSlot.getLayoutParams().width,to=show?dp(45):0;
+        weekExportSlot.setVisibility(View.VISIBLE);weekExportButton.setEnabled(show&&!weekExport.busy);
         weekActionMotion=android.animation.ValueAnimator.ofInt(from,to);
         weekActionMotion.setDuration(UiMotion.isEnabled()?UiMotion.ENTER:0);
         weekActionMotion.setInterpolator(UiMotion.SETTLE);
         weekActionMotion.addUpdateListener(animation->{
             int width=(int)animation.getAnimatedValue();
             android.view.ViewGroup.LayoutParams p=weekExportSlot.getLayoutParams();p.width=width;weekExportSlot.setLayoutParams(p);
-            weekExportSlot.setAlpha(width/(float)dp(49));
+            weekExportSlot.setAlpha(width/(float)dp(45));
         });
         weekActionMotion.addListener(new android.animation.AnimatorListenerAdapter(){
             @Override public void onAnimationEnd(android.animation.Animator animation){
@@ -628,7 +645,7 @@ final class CalendarOverviewPage extends SchedulePage {
         });weekActionMotion.start();
     }
     private void exportWeek() {
-        if (mode != WEEK || exportingWeek) return;
+        if (mode != WEEK || weekExport.busy) return;
         if (loading || !renderedKey.equals(windowKey(snapshot.zone))) { Feedback.show(activity, "日程仍在读取，请稍候"); return; }
         if (snapshot.truncated || includeSystem && new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()
                 && snapshot.systemUnavailable) { Feedback.show(activity, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
@@ -647,59 +664,78 @@ final class CalendarOverviewPage extends SchedulePage {
         UiStyle.showFloatingDialog(dialog, content);
     }
     private void writeWeekImage(boolean includeIndex) {
-        if (mode != WEEK || exportingWeek || loading || !renderedKey.equals(windowKey(snapshot.zone))) return;
+        if (mode != WEEK || weekExport.busy || loading || !renderedKey.equals(windowKey(snapshot.zone))) return;
         if (snapshot.truncated || includeSystem && new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()
                 && snapshot.systemUnavailable) { Feedback.show(activity, "日程尚未完整读取，请缩小范围或重试后导出"); return; }
-        exportingWeek = true; weekExportButton.setEnabled(false);
+        WeekExport job=weekExport;job.busy=true;weekExportButton.setEnabled(false);
         LocalDate first = windowStart(); ZoneId zone = snapshot.zone; List<AgendaEntry> entries = List.copyOf(matching());
         UiStyle.Palette palette = UiStyle.colors(this); String search = query; boolean system = includeSystem;
         android.content.Context app = getApplicationContext(); Handler responses = handler;
-        java.lang.ref.WeakReference<CalendarOverviewPage> owner = new java.lang.ref.WeakReference<>(this);
+        job.displayName="Chrona-周日程-"+first+".png";
         EXPORTS.execute(() -> {
             try {
                 java.io.File image = WeekAgendaImage.write(app.getCacheDir(), first, zone, entries, palette, search, system, includeIndex);
+                if(android.os.Build.VERSION.SDK_INT>=29){
+                    android.net.Uri destination;
+                    try{
+                        com.donglan.chrona.data.TaskFileAttachment saved=new com.donglan.chrona.data.TaskFileStore(app)
+                                .importFile(android.net.Uri.fromFile(image),job.displayName,"image/png");
+                        destination=android.net.Uri.parse(saved.storedName);
+                    }finally{image.delete();}
+                    responses.post(()->finishWeekExport(job,destination,"周日程图片已保存到下载文件夹"));
+                    return;
+                }
                 responses.post(() -> {
-                    CalendarOverviewPage screen = owner.get();
-                    if (screen == null || screen.isDestroyed() || screen.isFinishing()) { image.delete(); return; }
-                    screen.exportingWeek = false; screen.weekExportButton.setEnabled(true); screen.weekExportName = image.getName();
-                    Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/png")
-                            .putExtra(Intent.EXTRA_TITLE, "Chrona-周日程-" + first + ".png");
-                    try { screen.startActivityForResult(save, CREATE_WEEK_IMAGE); }
-                    catch (android.content.ActivityNotFoundException error) { image.delete(); screen.weekExportName = null; Feedback.show(screen.activity, "未找到文件保存应用"); }
+                    job.busy=false;job.imageName=image.getName();
+                    CalendarOverviewPage screen=job.owner.get();if(screen!=null)screen.deliverWeekExport();
                 });
             } catch (Exception | OutOfMemoryError error) {
-                responses.post(() -> {
-                    CalendarOverviewPage screen = owner.get(); if (screen == null || screen.isDestroyed()) return;
-                    screen.exportingWeek = false; screen.weekExportButton.setEnabled(true);
-                    Feedback.showLong(screen.activity, error instanceof OutOfMemoryError ? "图片过大，请缩小日程范围后导出" : "导出失败：" + error.getMessage());
-                });
+                responses.post(()->finishWeekExport(job,null,error instanceof OutOfMemoryError?"图片过大，请缩小日程范围后导出":"导出失败："+error.getMessage()));
             }
         });
     }
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != CREATE_WEEK_IMAGE) return;
-        String name = weekExportName; weekExportName = null;
+        WeekExport job=weekExport;String name=job.imageName;job.imageName=null;job.pickerOpen=false;
         if (name == null || !name.matches("week-export-[A-Za-z0-9-]+\\.png")) return;
         java.io.File image = new java.io.File(getCacheDir(), name);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) { image.delete(); return; }
         android.net.Uri destination = data.getData(); android.content.Context app = getApplicationContext();
-        java.lang.ref.WeakReference<CalendarOverviewPage> owner = new java.lang.ref.WeakReference<>(this);
+        job.busy=true;weekExportButton.setEnabled(false);
         EXPORTS.execute(() -> {
             try (java.io.InputStream input = new java.io.FileInputStream(image);
                     java.io.OutputStream output = app.getContentResolver().openOutputStream(destination, "wt")) {
                 if (output == null) throw new java.io.IOException("无法打开保存位置");
                 byte[] buffer = new byte[8192]; int count;
                 while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-                output.flush(); new Handler(Looper.getMainLooper()).post(() -> {
-                    CalendarOverviewPage screen = owner.get(); if (screen != null && !screen.isDestroyed()) Feedback.show(screen.activity, "周日程图片已保存");
-                });
+                output.flush();
             } catch (Exception error) {
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    CalendarOverviewPage screen = owner.get(); if (screen != null && !screen.isDestroyed()) Feedback.showLong(screen.activity, "保存失败：" + error.getMessage());
-                });
+                new Handler(Looper.getMainLooper()).post(()->finishWeekExport(job,null,"保存失败："+error.getMessage()));
+                return;
             } finally { image.delete(); }
+            new Handler(Looper.getMainLooper()).post(()->finishWeekExport(job,destination,"周日程图片已保存"));
         });
+    }
+    private static void finishWeekExport(WeekExport job,android.net.Uri uri,String message){
+        job.busy=false;job.shareUri=uri;job.message=message;
+        CalendarOverviewPage owner=job.owner.get();if(owner!=null)owner.deliverWeekExport();
+    }
+    private void deliverWeekExport(){
+        weekExportButton.setEnabled(mode==WEEK&&!weekExport.busy);
+        if(!resumed||isFinishing()||isDestroyed())return;
+        if(weekExport.message!=null){String message=weekExport.message;weekExport.message=null;Feedback.show(activity,message);}
+        if(weekExport.imageName!=null&&!weekExport.pickerOpen){
+            Intent save=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/png")
+                    .putExtra(Intent.EXTRA_TITLE,weekExport.displayName)
+                    .putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                            android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents","primary:Download"));
+            weekExport.pickerOpen=true;
+            try{startActivityForResult(save,CREATE_WEEK_IMAGE);}
+            catch(android.content.ActivityNotFoundException error){new java.io.File(getCacheDir(),weekExport.imageName).delete();weekExport.imageName=null;weekExport.pickerOpen=false;Feedback.show(activity,"未找到文件保存应用");}
+            return;
+        }
+        if(weekExport.shareUri!=null){android.net.Uri uri=weekExport.shareUri;weekExport.shareUri=null;ExportShare.show(activity,uri,"image/png");}
     }
     private List<AgendaEntry> matching() {
         String needle = query.trim().toLowerCase(Locale.ROOT);

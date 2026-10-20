@@ -23,6 +23,9 @@ public final class SettingsPageLayout {
         return root;
     }
     public static void header(Activity activity, LinearLayout root, String label) {
+        header(activity, root, label, null);
+    }
+    public static void header(Activity activity, LinearLayout root, String label, android.view.View action) {
         LinearLayout header = UiStyle.headerRow(activity);
         ImageButton back = UiStyle.navigationIcon(activity, R.drawable.ic_arrow_left, "返回", activity::finish);
         header.addView(back, new LinearLayout.LayoutParams(dp(activity, 48), dp(activity, 48)));
@@ -30,6 +33,7 @@ public final class SettingsPageLayout {
         title.setText(label); title.setTextSize(24); UiStyle.title(title);
         title.setPadding(dp(activity, 12), 0, 0, 0);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        if (action != null) header.addView(action, new LinearLayout.LayoutParams(dp(activity,48), dp(activity,48)));
         LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(-1, -2);
         headerParams.bottomMargin = dp(activity, HEADER_CONTENT_GAP_DP);
         root.addView(header, headerParams);
@@ -38,8 +42,11 @@ public final class SettingsPageLayout {
         ScrollView viewport = viewport(activity, root, animatePresentation);
         FrameLayout stage = new FrameLayout(activity);
         stage.addView(new GlassBackdropView(activity), new FrameLayout.LayoutParams(-1, -1));
-        stage.addView(viewport, new FrameLayout.LayoutParams(-1, -1));
-        UiStyle.applyInsets(stage, viewport);
+        // Give ScrollView the actual visible height, so focused fields scroll above the IME.
+        FrameLayout safeArea = new FrameLayout(activity);
+        safeArea.addView(viewport, new FrameLayout.LayoutParams(-1, -1));
+        stage.addView(safeArea, new FrameLayout.LayoutParams(-1, -1));
+        UiStyle.applyInsets(stage, safeArea);
         activity.setContentView(stage);
     }
     static ScrollView viewport(Activity activity, LinearLayout root, boolean animatePresentation) {

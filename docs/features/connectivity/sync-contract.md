@@ -1,10 +1,12 @@
 # 多设备 WebDAV 同步协议
 
-本文件描述多台 Android 手机共同使用的 v1 数据格式。同步内容为记录原文、日程、附件及课表学期；AI/WebDAV 密钥、界面偏好、设备日历事件 ID、提醒设置和处理队列留在本机。局域网浏览器调用所连接手机的 API，共用手机数据与同步身份。
+本文件描述多台 Android 手机共同使用的 v1 数据格式。同步内容为记录原文、日程、附件、课表学期及已完成课堂总结；AI/WebDAV 密钥、界面偏好、设备日历事件 ID、提醒设置和处理队列留在本机。局域网浏览器调用所连接手机的 API，共用手机数据与同步身份。
+
+已完成课堂总结使用 `classroom_<UUID>`，UUID 由课程与回放编号确定。payload 为 `kind: classroom`、`document`（总结 Markdown 与完整字幕）及 `attachments`（正文引用 JPEG 的内容寻址清单）。复用版本向量、多值冲突和附件传输；未完成或正在处理的课堂不覆盖，缺少本机缓存不表示删除。此格式需要所有同步设备更新至支持课堂文档的版本。远程截图 URL、账号凭据与 AI 生成检查点留在本机。
 
 ## 记录
 
-对象 ID 为 `task_<UUID>`、`term_<学年>_<季节编号>` 或 `merge_<source candidate UUID>`。task/term 使用版本向量和多值寄存器；并发修改保留全部版本，用户选择后产生一个覆盖已知版本的新版本。删除也是有版本的墓碑，不以云端文件缺失判断删除。0.14.4 的 merge 为不可删除的单调记录，较小目标 UUID 优先，版本向量合并，详情及验证见 [合并日程](../schedules/candidate-merge.md)；所有同步设备需升级到 0.14.4 或更新版本。
+对象 ID 为 `task_<UUID>`、`term_<学年>_<季节编号>`、`classroom_<UUID>` 或 `merge_<source candidate UUID>`。task/term/classroom 使用版本向量和多值寄存器；并发修改保留全部版本，用户选择后产生一个覆盖已知版本的新版本。task/term 的删除使用有版本的墓碑，不以云端文件缺失判断删除；classroom 不支持同步删除。0.14.4 的 merge 为不可删除的单调记录，较小目标 UUID 优先，版本向量合并，详情及验证见 [合并日程](../schedules/candidate-merge.md)；所有同步设备需升级到 0.14.4 或更新版本。
 
 任务 payload：
 

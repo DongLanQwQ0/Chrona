@@ -60,6 +60,7 @@ public final class AndroidSync {
                     tasks.rotateRestoredSyncIdentity();
                     db.execSQL("UPDATE sync_task_map SET baseline=NULL,baseline_clock=NULL");
                     db.execSQL("DROP TABLE IF EXISTS sync_term_map");
+                    db.execSQL("DROP TABLE IF EXISTS sync_classroom_map");
                     db.execSQL("UPDATE candidate_merges SET calendar_event_id=NULL");
                     db.setTransactionSuccessful();
                 } finally { db.endTransaction(); }
@@ -135,7 +136,7 @@ public final class AndroidSync {
                         AndroidSyncData.Snapshot snapshot = data.prepareCapture();
                         data.db.beginTransaction();
                         try {
-                            data.captureTasks(latest, snapshot); data.captureTerms(latest, snapshot);
+                            data.captureTasks(latest, snapshot); data.captureTerms(latest, snapshot); data.captureClassrooms(latest,snapshot);
                             save(app, latest); merged.merge(latest); save(app, merged);
                             data.db.setTransactionSuccessful();
                         } finally { data.db.endTransaction(); }
@@ -152,6 +153,7 @@ public final class AndroidSync {
                         } finally { data.db.endTransaction(); }
                         data.appliedResourcesCommitted();
                         data.applyTerms(merged, snapshot.terms);
+                        data.applyClassrooms(merged,snapshot,null);
                     }
                     int pending = pending(app).size();
                     return "上次同步：" + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(new Date())
@@ -166,7 +168,7 @@ public final class AndroidSync {
     }
     private static void capture(Context app, AndroidSyncData data, SyncState state, AndroidSyncData.Snapshot snapshot) throws Exception {
         data.db.beginTransaction();
-        try { data.captureTasks(state, snapshot); data.captureTerms(state, snapshot); save(app, state); data.db.setTransactionSuccessful(); }
+        try { data.captureTasks(state, snapshot); data.captureTerms(state, snapshot); data.captureClassrooms(state,snapshot); save(app, state); data.db.setTransactionSuccessful(); }
         finally { data.db.endTransaction(); }
     }
     static void foreground(Context context) {
@@ -182,7 +184,7 @@ public final class AndroidSync {
         final boolean calendar;
         Pending(String id, List<SyncState.Version> versions, boolean calendar) {
             this.id = id; this.versions = versions; this.calendar = calendar; signature = signature(versions);
-            title = (id.startsWith("term_") ? "课表 " + id.substring(5) : "记录") + (calendar ? " · 日历关联待确认" : " · 版本冲突");
+            title = (id.startsWith("term_") ? "课表 " + id.substring(5) : id.startsWith("classroom_") ? "课堂总结" : "记录") + (calendar ? " · 日历关联待确认" : " · 版本冲突");
         }
     }
     private static String signature(List<SyncState.Version> versions) {
@@ -207,6 +209,7 @@ public final class AndroidSync {
         if (version.deleted) return "已删除";
         JSONObject p = version.payload;
         if ("term".equals(p.optString("kind"))) return p.optJSONObject("document").optString("name", "课表");
+        if ("classroom".equals(p.optString("kind"))) {JSONObject summary=p.optJSONObject("document").optJSONObject("summary");return summary.optJSONObject("lesson").optString("course")+"\n"+summary.optString("overview");}
         String text = p.optString("rawText");
         org.json.JSONArray candidates = p.optJSONArray("candidates");
         StringBuilder titles = new StringBuilder();
@@ -228,6 +231,9 @@ public final class AndroidSync {
                             TaskRecord task = data.store.getTask(local);
                             if (AndroidSyncData.busy(task)) throw new IOException("记录正在处理");
                             if (task == null) state.delete(choice.id); else state.put(choice.id, snapshot.payloads.get(local));
+                        } else if(choice.id.startsWith("classroom_")) {
+                            JSONObject classroom=snapshot.classroomPayloads.get(choice.id);
+                            if(classroom==null)throw new IOException("本机课堂正在处理或文档不可用");state.put(choice.id,classroom);
                         } else {
                             JSONObject term = snapshot.termPayloads.get(choice.id);
                             if (term == null) state.delete(choice.id); else state.put(choice.id, term);
@@ -258,6 +264,7 @@ public final class AndroidSync {
                     } finally { data.db.endTransaction(); }
                     data.appliedResourcesCommitted();
                     if (choice.id.startsWith("term_")) data.applyTerms(state, snapshot.terms);
+                    if (choice.id.startsWith("classroom_")) data.applyClassrooms(state,snapshot,choice.id);
                 }
                 return "已确认，点击立即同步上传选择";
             }

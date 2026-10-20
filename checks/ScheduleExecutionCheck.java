@@ -6,6 +6,7 @@ import org.json.JSONArray;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.List;
 
 /** Real model normalization and transport-response parsing, with deterministic clocks. */
 public final class ScheduleExecutionCheck {
@@ -140,7 +141,123 @@ public final class ScheduleExecutionCheck {
                     && begin.toLocalDate().equals(end.toLocalDate()) && begin.getHour() >= 10
                     && (end.getHour() < 22 || end.getHour() == 22 && end.getMinute() == 0), "sweep fits whole work interval");
         }
+        spreadPlans();
         System.out.println("ScheduleExecutionCheck: " + checks + " checks passed");
+    }
+
+    private static void spreadPlans() throws Exception {
+        for (int days : new int[]{30, 60}) {
+            int count = days == 30 ? 4 : 6;
+            long due = NOW + days * 24 * HOUR;
+            JSONArray steps = steps("project", count, due);
+            // Even a stale final-days suggestion must no longer pull all grouped steps late.
+            for (int i=0;i<count;i++) steps.getJSONObject(i).put("suggested_start", clock(due-24*HOUR));
+            String original=steps.toString();
+            List<EventCandidate> planned=batch(steps,NOW,600,1320);
+            check(steps.toString().equals(original),"planning never rewrites extracted facts");
+            check(planned.get(0).startAtMillis < NOW + days*24*HOUR/4,"long-horizon plan starts early: "+days);
+            check(planned.get(count-1).startAtMillis-planned.get(0).startAtMillis > days*24*HOUR/2,
+                    "steps span more than half the available period: "+days);
+            long previous=NOW;
+            for(EventCandidate item:planned) {
+                check(item.startAtMillis>=previous && item.endAtMillis<=due,"ordered nonoverlapping steps before deadline");
+                check(item.dueAtMillis==due&&item.uncertaintyLevel==2&&item.needsConfirmation,"original due retained and all suggestions require review");
+                check(item.startAtMillis>=NOW&&item.endAtMillis-item.startAtMillis==30*MINUTE,"full default duration retained");
+                ZonedDateTime start=Instant.ofEpochMilli(item.startAtMillis).atZone(ZoneId.of("Asia/Shanghai"));
+                check(start.getHour()>=10&&start.getHour()<22,"spread target respects work window");
+                previous=item.endAtMillis;
+            }
+        }
+        long due=NOW+30*24*HOUR;
+        JSONArray weighted=steps("report",3,due);
+        weighted.getJSONObject(0).put("duration_minutes",120);
+        weighted.getJSONObject(1).put("duration_minutes",45);
+        weighted.getJSONObject(2).put("duration_minutes",90);
+        List<EventCandidate> plan=batch(weighted,NOW,600,1320);
+        check(plan.get(0).endAtMillis-plan.get(0).startAtMillis==120*MINUTE
+                &&plan.get(1).endAtMillis-plan.get(1).startAtMillis==45*MINUTE
+                &&plan.get(2).endAtMillis-plan.get(2).startAtMillis==90*MINUTE,"unequal workloads keep their durations");
+        long gap1=plan.get(1).startAtMillis-plan.get(0).endAtMillis;
+        long gap2=plan.get(2).startAtMillis-plan.get(1).endAtMillis;
+        check(Math.abs(gap1-gap2)<24*HOUR,"workload-aware free gaps remain roughly uniform");
+
+        JSONArray fixed=steps("project",4,due);
+        long milestone=NOW+14*24*HOUR;
+        fixed.getJSONObject(1).put("execution_time_explicit",true).put("start",clock(milestone))
+                .put("end",clock(milestone+2*HOUR));
+        plan=batch(fixed,NOW,600,1320);
+        check(plan.get(1).startAtMillis==milestone&&plan.get(1).endAtMillis==milestone+2*HOUR,"explicit fixed execution is untouched");
+        check(plan.get(0).endAtMillis<=milestone&&plan.get(2).startAtMillis>=milestone+2*HOUR
+                &&plan.get(3).startAtMillis>plan.get(2).endAtMillis,"fixed execution splits the planning horizon");
+        fixed.getJSONObject(0).put("due",clock(NOW+3*24*HOUR));
+        plan=batch(fixed,NOW,600,1320);
+        check(plan.get(0).dueAtMillis==NOW+3*24*HOUR&&plan.get(0).endAtMillis<=plan.get(0).dueAtMillis,"early child deadline overrides its target without changing due");
+
+        JSONArray preparation=steps("exam-preparation",4,NOW+60*24*HOUR);
+        for(int i=0;i<preparation.length();i++)preparation.getJSONObject(i).put("due",JSONObject.NULL);
+        plan=batch(preparation,NOW,600,1320);
+        check(plan.get(0).startAtMillis<NOW+15*24*HOUR&&plan.get(3).startAtMillis>NOW+40*24*HOUR,"fixed future activity can anchor preparation without a task deadline");
+        for(EventCandidate item:plan)check(item.dueAtMillis==null&&item.reminderMinutesBefore==null,"preparation boundary does not fabricate a deadline or reminder");
+        JSONArray expired=steps("expired-boundary",2,due);
+        for(int i=0;i<2;i++)expired.getJSONObject(i).put("plan_until",clock(NOW-HOUR));
+        plan=batch(expired,NOW,600,1320);
+        for(EventCandidate item:plan)check(item.startAtMillis==null&&item.dueAtMillis==due&&item.needsConfirmation,
+                "expired preparation boundary does not fall back to future standalone scheduling");
+
+        JSONArray independent=steps("ignored",2,due);
+        for(int i=0;i<2;i++)independent.getJSONObject(i).put("plan_group",JSONObject.NULL).put("plan_until",JSONObject.NULL);
+        plan=batch(independent,NOW,600,1320);
+        check(plan.get(0).startAtMillis>=due-72*HOUR&&plan.get(1).startAtMillis.equals(plan.get(0).startAtMillis),"unrelated same-deadline tasks retain standalone policy");
+        JSONArray a=steps("a",2,due),b=steps("b",2,due);
+        plan=batch(new JSONArray().put(a.get(0)).put(b.get(0)).put(a.get(1)).put(b.get(1)),NOW,600,1320);
+        check(plan.get(0).startAtMillis.equals(plan.get(1).startAtMillis)
+                &&plan.get(2).startAtMillis.equals(plan.get(3).startAtMillis),"interleaved independent groups do not merge");
+
+        JSONArray crowded=steps("crowded",2,NOW+HOUR);
+        for(int i=0;i<2;i++)crowded.getJSONObject(i).put("duration_minutes",45);
+        plan=batch(crowded,NOW,600,1320);
+        check(plan.get(0).startAtMillis!=null&&plan.get(1).startAtMillis==null
+                &&plan.get(1).dueAtMillis==NOW+HOUR&&plan.get(1).needsConfirmation,"insufficient group time keeps unfinished step pending instead of overlapping");
+        plan=batch(steps("queued",3,due),NOW+20*24*HOUR,1320,360);
+        for(EventCandidate item:plan) {
+            check(item.startAtMillis>=NOW+20*24*HOUR&&item.endAtMillis<=due,"queue delay uses fresh scheduling clock");
+            int hour=Instant.ofEpochMilli(item.startAtMillis).atZone(ZoneId.of("Asia/Shanghai")).getHour();
+            check(hour>=22||hour<6,"group placement supports overnight work window");
+        }
+        JSONObject schema=SchedulePrompt.schema().getJSONObject("properties").getJSONObject("events").getJSONObject("items");
+        check(schema.getJSONArray("required").toList().contains("plan_group")
+                &&schema.getJSONArray("required").toList().contains("plan_until"),"plan provenance is explicit in schema");
+        for(Object invalid:new Object[]{"",3,true}) {
+            JSONArray bad=steps("bad",2,due);bad.getJSONObject(0).put("plan_group",invalid);
+            try{batch(bad,NOW,600,1320);throw new AssertionError("invalid planning group accepted");}
+            catch(ChatCompletionClient.ResponseException expected){checks++;}
+        }
+        JSONArray missing=steps("missing",2,due);missing.getJSONObject(0).remove("plan_group");
+        try{batch(missing,NOW,600,1320);throw new AssertionError("missing plan field accepted");}
+        catch(ChatCompletionClient.ResponseException expected){checks++;}
+        for(Object invalid:new Object[]{"later",time("2026-02-30","10:00"),new JSONObject().put("time","broken")}) {
+            JSONArray bad=steps("bad-time",2,due);bad.getJSONObject(0).put("plan_until",invalid);
+            try{batch(bad,NOW,600,1320);throw new AssertionError("invalid boundary silently fell back to final-days scheduling");}
+            catch(ChatCompletionClient.ResponseException expected){checks++;}
+        }
+    }
+
+    private static JSONArray steps(String group,int count,long due)throws Exception {
+        ZonedDateTime local=Instant.ofEpochMilli(due).atZone(ZoneId.of("Asia/Shanghai"));
+        JSONArray result=new JSONArray();
+        for(int i=0;i<count;i++)result.put(base("homework",local.toLocalDate().toString(),local.toLocalTime().toString())
+                .put("title","子项"+(i+1)).put("plan_group",group).put("plan_until",clock(due)));
+        return result;
+    }
+    private static JSONObject clock(long instant)throws Exception {
+        ZonedDateTime local=Instant.ofEpochMilli(instant).atZone(ZoneId.of("Asia/Shanghai"));
+        return time(local.toLocalDate().toString(),local.toLocalTime().toString());
+    }
+    private static List<EventCandidate> batch(JSONArray events,long now,int start,int end)throws Exception {
+        JSONObject content=new JSONObject().put("events",events);
+        JSONObject envelope=new JSONObject().put("choices",new JSONArray().put(new JSONObject()
+                .put("message",new JSONObject().put("content",content.toString()))));
+        return ChatCompletionClient.parseResponse(7,envelope.toString(),NOW,"Asia/Shanghai",now,start,end).candidates;
     }
 
     private static EventCandidate parse(JSONObject event, long schedulingNow, int start, int end) throws Exception {
@@ -152,6 +269,7 @@ public final class ScheduleExecutionCheck {
                 .put("start", JSONObject.NULL).put("end", JSONObject.NULL)
                 .put("due", date == null ? JSONObject.NULL : time(date, clock))
                 .put("suggested_start", JSONObject.NULL).put("execution_time_explicit", false)
+                .put("plan_group",JSONObject.NULL).put("plan_until",JSONObject.NULL)
                 .put("duration_minutes", JSONObject.NULL).put("location", JSONObject.NULL).put("description", "原始要求")
                 .put("reminder_minutes_before", JSONObject.NULL).put("reminder_specified", false).put("recurrence", JSONObject.NULL);
     }

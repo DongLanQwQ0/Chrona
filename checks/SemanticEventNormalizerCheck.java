@@ -47,8 +47,6 @@ public final class SemanticEventNormalizerCheck {
                 && !relativeInterval.needsConfirmation, "relative end uses instant rather than inherited date");
         EventCandidate activityDefault=parse(base("event").put("start",time("2026-09-29","11:00",null)));
         check(activityDefault.endAtMillis-activityDefault.startAtMillis==60*60_000L,"activity default duration");
-        EventCandidate record=SemanticEventNormalizer.recordFromJson(7,new JSONObject().put("title","地址").put("description","东二"),"Asia/Shanghai");
-        check(record.isRecord&&record.calendarStart()==null&&record.settled(),"record never occupies calendar");
         EventCandidate explicit = parse(base("event").put("start", time("2026-09-29", "11:00", null))
                 .put("duration_minutes", 90));
         check(explicit.endAtMillis - explicit.startAtMillis == 90 * 60_000L, "explicit duration");

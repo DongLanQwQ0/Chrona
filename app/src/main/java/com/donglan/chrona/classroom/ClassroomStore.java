@@ -14,15 +14,22 @@ import java.util.List;
 
 /** Account-isolated local study material. Atomic checkpoints survive interruption. */
 public final class ClassroomStore {
+    public static final Object LOCK=new Object();
+    private static final java.util.Set<String> ACTIVE=new java.util.HashSet<>();
+    public static final long UNUSED_RETENTION_MILLIS=7L*24*60*60*1000;
     private final File root;
+    private final File shared;
     public ClassroomStore(Context context,String account) throws IOException {
         if(!account.matches("[a-zA-Z0-9-]+"))throw new IOException("请先登录学校账号");
-        root=new File(context.getNoBackupFilesDir(),"classroom/"+account);
+        root=new File(root(context),account);
+        shared=new File(root(context),"shared");
         if(!root.isDirectory()&&!root.mkdirs())throw new IOException("无法创建课堂缓存");
     }
     public File lesson(ClassroomLesson lesson) throws IOException {
         if(!lesson.courseId.matches("[0-9]+")||!lesson.id.matches("[0-9]+"))throw new IOException("课堂编号无效");
         File dir=new File(root,lesson.courseId+"-"+lesson.id);
+        File imported=new File(shared,dir.getName());
+        if(!new File(dir,"summary.json").isFile()&&new File(imported,"summary.json").isFile())return imported;
         if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建课堂缓存");
         return dir;
     }
@@ -37,9 +44,59 @@ public final class ClassroomStore {
         write(new File(root,"catalog.json"),new JSONObject().put("lessons",rows));
     }
     public List<JSONObject> history() throws IOException {
-        List<JSONObject> entries=new ArrayList<>(); File[] dirs=root.listFiles(File::isDirectory);
-        if(dirs!=null)for(File dir:dirs){JSONObject value=read(new File(dir,"summary.json"));if(value!=null)entries.add(value);}
+        java.util.Map<String,JSONObject> byLesson=new java.util.LinkedHashMap<>();
+        for(File source:new File[]{shared,root}){File[] dirs=source.listFiles(File::isDirectory);
+            if(dirs!=null)for(File dir:dirs){JSONObject value=read(new File(dir,"summary.json"));if(value!=null)byLesson.put(dir.getName(),value);}}
+        List<JSONObject> entries=new ArrayList<>(byLesson.values());
         entries.sort((a,b)->Long.compare(b.optLong("updated"),a.optLong("updated")));return entries;
+    }
+    public static void begin(File dir) throws IOException {
+        synchronized(LOCK){if(!ACTIVE.add(dir.getCanonicalPath()))throw new IOException("本节课堂正在处理");}
+    }
+    public static void end(File dir){synchronized(LOCK){try{ACTIVE.remove(dir.getCanonicalPath());}catch(IOException ignored){}}}
+    public static boolean active(File dir)throws IOException{synchronized(LOCK){return ACTIVE.contains(dir.getCanonicalPath());}}
+    public static boolean anyActive(){synchronized(LOCK){return !ACTIVE.isEmpty();}}
+    public static File root(Context context){synchronized(LOCK){File root=new File(context.getNoBackupFilesDir(),"classroom"),previous=new File(context.getNoBackupFilesDir(),"classroom.previous");
+        if(!root.exists()&&previous.exists()&&!previous.renameTo(root))throw new IllegalStateException("课堂恢复副本无法还原");return root;}}
+    public static List<File> lessonDirectories(Context context){
+        List<File> result=new ArrayList<>();File[] accounts=root(context).listFiles(File::isDirectory);
+        if(accounts!=null)for(File account:accounts){File[] lessons=account.listFiles(File::isDirectory);
+            if(lessons!=null)for(File lesson:lessons)if(lesson.getName().matches("[0-9]+-[0-9]+\\.previous")){
+                File original=new File(account,lesson.getName().replace(".previous",""));if(!original.exists())lesson.renameTo(original);
+            }
+            lessons=account.listFiles(File::isDirectory);if(lessons!=null)for(File lesson:lessons)if(lesson.getName().matches("[0-9]+-[0-9]+"))result.add(lesson);}
+        return result;
+    }
+    /** Only finished, inactive lessons; the original transcript and referenced JPEGs never enter this delete set. */
+    public static long cleanUnused(Context context,boolean all,long now) throws Exception {
+        synchronized(LOCK){long bytes=0;
+            for(File dir:lessonDirectories(context)){
+                if(Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("清理已停止");
+                if(active(dir))continue;
+                JSONObject summary=read(new File(dir,"summary.json"));
+                if(summary==null||!summary.optBoolean("complete"))continue;
+                JSONObject run=read(new File(dir,"run.json"));
+                // An interrupted replacement can coexist with the previous finished summary.
+                if(run!=null&&(!run.has("final")||!run.optString("run").equals(summary.optString("run"))))continue;
+                if(!all&&(summary.optLong("updated",now)>now-UNUSED_RETENTION_MILLIS))continue;
+                java.util.Set<String> used=ClassroomDocument.referencedImages(summary);
+                // Check every used asset before deleting anything from this lesson.
+                for(String name:used)if(!new File(dir,name).isFile())throw new IOException("总结引用的图片缺失，已保留该课堂缓存");
+                File[] files=dir.listFiles(File::isFile);boolean removedRaw=false;
+                if(files!=null)for(File file:files){String name=file.getName();
+                    boolean raw=name.matches("raw-[0-9]+\\.img(?:\\.validating)?");
+                    boolean unused=name.matches("image-[0-9]+\\.jpg")&&!used.contains(name);
+                    if(raw||unused){long size=file.length();if(!file.delete())throw new IOException("部分课堂截图无法清理，请稍后重试");bytes+=size;removedRaw|=raw;}
+                }
+                if(removedRaw){
+                    // A fresh preparation rebuilds candidates from the retained source manifest.
+                    // Completed run metadata is stale once its selected raw files are removed.
+                    new AtomicFile(new File(dir,"candidates.json")).delete();
+                    new AtomicFile(new File(dir,"run.json")).delete();
+                }
+            }
+            return bytes;
+        }
     }
     public static JSONObject read(File file) throws IOException {
         AtomicFile atomic=new AtomicFile(file);

@@ -20,9 +20,15 @@ final class CalendarVisibilityToggle extends CheckBox {
     private final android.animation.ArgbEvaluator tint = new android.animation.ArgbEvaluator();
     private ValueAnimator transition;
     private float checkedFraction;
+    private final boolean checkedBackground;
 
     CalendarVisibilityToggle(Context context) {
+        this(context, true);
+    }
+
+    CalendarVisibilityToggle(Context context, boolean checkedBackground) {
         super(context);
+        this.checkedBackground = checkedBackground;
         icon = context.getDrawable(R.drawable.ic_week_calendar).mutate();
         setButtonDrawable((Drawable)null);
         setBackgroundColor(Color.TRANSPARENT);
@@ -61,7 +67,7 @@ final class CalendarVisibilityToggle extends CheckBox {
         UiStyle.Palette palette = UiStyle.colors(getContext());
         fill.setColor((palette.primary & 0x00ffffff) | (Math.round(32 * checkedFraction) << 24));
         float density = getResources().getDisplayMetrics().density;
-        canvas.drawCircle(getWidth() / 2f, getHeight() / 2f,
+        if (checkedBackground) canvas.drawCircle(getWidth() / 2f, getHeight() / 2f,
                 Math.max(0, Math.min(getWidth(), getHeight()) / 2f - surfaceInset()), fill);
         icon.setTint((Integer)tint.evaluate(checkedFraction, palette.muted, palette.primary));
         int size = Math.round(24 * density * (1f + .08f * (float)Math.sin(Math.PI * checkedFraction)));

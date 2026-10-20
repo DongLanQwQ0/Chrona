@@ -35,6 +35,8 @@ public final class ChronaApp extends Application {
     @Override public void onCreate() {
         super.onCreate();
         SyncJobService.schedule(this);
+        ClassroomCleanupService.schedule(this);
+        ClassroomCleanupService.foreground(this);
         ZjuSyncJobService.schedule(this);
         AgendaReminderJobService.schedule(this);
         AgendaReminder.requestRefresh(this);

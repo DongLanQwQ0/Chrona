@@ -62,7 +62,7 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
         pager.setHorizontalEdgeHandoffEnabled(true);
         shell.addView(pager, new LinearLayout.LayoutParams(-1, 0, 1));
         navigation = new DockNavigationLayout(this, this::selectPage, () -> { });
-        navigation.setPadding(dp(4), dp(3), dp(4), dp(3));
+        navigation.setPadding(dp(6), dp(6), dp(6), dp(6));
         for (String label : new String[]{"课表", "课堂", "日程"}) {
             TextView item = new TextView(this); item.setText(label); item.setTextSize(15);
             item.setPadding(dp(8), 0, dp(8), 0);

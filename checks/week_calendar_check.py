@@ -25,9 +25,9 @@ assert title.get(android+'includeFontPadding') == 'false'
 home = (src / 'DashboardActivity.java').read_text(encoding='utf-8')
 toggle = home[home.index('private CheckBox homeSystemCalendarToggle()'):home.index('private void home(HomeData')]
 toggle_view = (src / 'CalendarVisibilityToggle.java').read_text(encoding='utf-8')
-assert 'new CalendarVisibilityToggle(this)' in toggle and 'extends CheckBox' in toggle_view
+assert 'new CalendarVisibilityToggle(this, false)' in toggle and 'extends CheckBox' in toggle_view
 assert '(getWidth() - size) / 2' in toggle_view and '(getHeight() - size) / 2' in toggle_view
-assert 'canvas.drawCircle' in toggle_view and 'circle.setShape(GradientDrawable.OVAL)' in toggle_view
+assert 'if (checkedBackground) canvas.drawCircle' in toggle_view and 'circle.setShape(GradientDrawable.OVAL)' in toggle_view
 assert 'tint.evaluate(checkedFraction, palette.muted, palette.primary)' in toggle_view
 assert 'setStateDescription(state)' in toggle and 'include.setChecked(false)' in toggle
 assert 'refresh.removeCallbacks(homeCalendarToggleRefresh)' in toggle

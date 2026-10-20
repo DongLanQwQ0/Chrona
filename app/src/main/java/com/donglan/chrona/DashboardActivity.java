@@ -219,7 +219,7 @@ public final class DashboardActivity extends Activity {
         if (state != null) {
             section = state.getInt(EXTRA_SECTION, HOME);
             sectionHistory.restore(state.getIntArray("section_history"));
-            categoryIndex = Math.max(0, Math.min(EventCategory.VALUES.length+1,state.getInt("category")));
+            categoryIndex = Math.max(0, Math.min(EventCategory.VALUES.length,state.getInt("category")));
             statusIndex = state.getInt("status");
             scheduleTab = state.getInt("schedule_tab");
             schedulePage = state.getInt("schedule_page");
@@ -1351,7 +1351,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private CheckBox homeSystemCalendarToggle() {
-        CheckBox include = new CalendarVisibilityToggle(this);
+        CheckBox include = new CalendarVisibilityToggle(this, false);
         include.setButtonDrawable((android.graphics.drawable.Drawable) null);
         include.setContentDescription("包含系统其他日程");
         include.setTooltipText("包含系统其他日程");
@@ -3455,12 +3455,11 @@ public final class DashboardActivity extends Activity {
         return (minutes / 60) + " 小时 " + (minutes % 60) + " 分";
     }
 
-    private String inboxCategory() { return categoryIndex==EventCategory.VALUES.length+1 ? "record" : categoryIndex==0 ? null : EventCategory.VALUES[categoryIndex-1]; }
+    private String inboxCategory() { return categoryIndex==0 ? null : EventCategory.VALUES[categoryIndex-1]; }
     private String[] categoryOptions() {
-        String[] result = new String[EventCategory.LABELS.length + 2];
+        String[] result = new String[EventCategory.LABELS.length + 1];
         result[0] = "全部类型";
         System.arraycopy(EventCategory.LABELS, 0, result, 1, EventCategory.LABELS.length);
-        result[result.length-1]="记录";
         return result;
     }
 

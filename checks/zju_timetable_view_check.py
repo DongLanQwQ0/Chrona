@@ -12,6 +12,6 @@ if not javac:
     raise RuntimeError('A Java 17+ compiler is required')
 java = Path(javac).with_name('java.exe' if javac.endswith('.exe') else 'java')
 subprocess.run([javac, '--release', '17', '-encoding', 'UTF-8', '-d', str(out),
-                str(source / 'timetable/Timetable.java'), str(source / 'zju/ZjuSnapshot.java'),
+                str(source / 'timetable/Timetable.java'), str(source / 'timetable/AcademicTerms.java'), str(source / 'zju/ZjuSnapshot.java'),
                 str(source / 'zju/ZjuTimetableView.java'), str(root / 'checks/ZjuTimetableViewCheck.java')], check=True)
 subprocess.run([str(java), '-cp', str(out), 'ZjuTimetableViewCheck'], check=True)

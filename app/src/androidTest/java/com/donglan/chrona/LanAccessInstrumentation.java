@@ -77,12 +77,13 @@ public final class LanAccessInstrumentation extends Instrumentation {
             revision=request("GET","/api/task?id="+id,null,null).body.getLong("revision");
             JSONObject memo=new JSONObject().put("id",Long.toString(id)).put("candidateId",Long.toString(memoId))
                     .put("revision",revision).put("title","独立可见标题").put("description","修改后的正文").put("record",true);
-            expect(request("POST","/api/candidate/save",memo,origin()),200);
+            expect(request("POST","/api/candidate/save",memo,origin()),400);
+            require(request("GET","/api/task?id="+id,null,null).body.getJSONArray("candidates").length()==2,
+                    "retired records omitted from detail results");
             try(TaskStore store=new TaskStore(isolated)){
                 var row=store.getCandidatesByIds(java.util.List.of(memoId)).get(0);
-                require(row.isRecord&&row.title.equals("独立可见标题")&&row.description.equals("修改后的正文"),"record edit retains record identity");
-                require(store.getTask(id).rawText.equals("edited"),"record edit preserves independent original");
-                require(store.queryInboxIds(new com.donglan.chrona.data.InboxQuery(0,"record","独立可见标题"),false).equals(java.util.List.of(id)),"visible record title is searchable");
+                require(row.isRecord&&row.title.equals("原记录")&&row.description.equals("原正文"),"retired record remains untouched");
+                require(store.getTask(id).rawText.equals("edited"),"original capture remains available");
                 revision=store.dataRevision();
             }
             JSONObject completion=new JSONObject().put("id",Long.toString(id)).put("candidateId",Long.toString(todoId))
@@ -100,19 +101,19 @@ public final class LanAccessInstrumentation extends Instrumentation {
                     .put("start",System.currentTimeMillis()+3_600_000L).put("end",System.currentTimeMillis()+7_200_000L);
             expect(request("POST","/api/candidate/create",extra,origin()),200);
             detail=request("GET","/api/task?id="+id,null,null);revision=detail.body.getLong("revision");
-            require(detail.body.getJSONArray("candidates").length()==4,"append retains all existing results");
-            long extraId=detail.body.getJSONArray("candidates").getJSONObject(3).getLong("id");
+            require(detail.body.getJSONArray("candidates").length()==3,"append retains active schedule results");
+            long extraId=detail.body.getJSONArray("candidates").getJSONObject(2).getLong("id");
             JSONObject acknowledgement=new JSONObject().put("id",Long.toString(id)).put("candidateId",Long.toString(extraId))
                     .put("revision",revision).put("acknowledged",true);
             expect(request("POST","/api/candidate/acknowledge",acknowledgement,origin()),200);
             detail=request("GET","/api/task?id="+id,null,null);
-            require(detail.body.getJSONArray("candidates").getJSONObject(3).getBoolean("acknowledged"),"event acknowledgement visible through HTTP");
+            require(detail.body.getJSONArray("candidates").getJSONObject(2).getBoolean("acknowledged"),"event acknowledgement visible through HTTP");
             expect(request("POST","/api/candidate/acknowledge",acknowledgement.put("acknowledged",false),origin()),200);
             expect(request("GET","/api/schedule?tab=1&category=task&publication=3&todo=3",null,null),200);
             Reply unscheduled=request("GET","/api/schedule?tab=1&category=task&publication=3&todo=3",null,null);
             require(unscheduled.body.getJSONArray("items").length()==1&&unscheduled.body.getJSONArray("items").getJSONObject(0).getLong("id")==todoId,"shared pending task filters");
             expect(request("GET","/api/schedule?tab=3&from=2026-10-02&until=2026-10-01",null,null),400);
-            expect(request("GET","/api/inbox?category=record",null,null),200);
+            expect(request("GET","/api/inbox?category=record",null,null),400);
             expect(request("GET","/api/agenda?from=2026-10-01&until=2026-11-01",null,null),200);
             expect(request("GET","/api/agenda?from=2026-10-01&until=2028-11-01",null,null),400);
             expect(request("POST","/api/calendar/publish-selected",new JSONObject().put("revision",revision-1)

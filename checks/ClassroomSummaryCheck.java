@@ -56,6 +56,7 @@ public final class ClassroomSummaryCheck {
             } else if(prompt.contains("资料：\n"))chunk=new JSONObject(prompt.substring(prompt.indexOf("资料：\n")+4));
             if(chunk!=null){int id=chunk.getJSONArray("segments").getJSONObject(0).getInt("id");chunkCalls.merge(id,1,Integer::sum);}
             if(mode.equals("slow"))Thread.sleep(500);
+            if(mode.equals("silent-reasoning"))Thread.sleep(31_000);
             int status=200;String payload,type="text/event-stream";
             if(calls==failCall){status=503;type="application/json";payload="{\"error\":{\"message\":\"synthetic failure\"}}";}
             else if(mode.equals("downgrade")&&body.has("stream_options")){status=400;type="application/json";payload="{\"error\":{\"message\":\"unsupported parameter stream_options\"}}";}
@@ -70,6 +71,7 @@ public final class ClassroomSummaryCheck {
                 if(mode.equals("schedule"))result="{\"events\":[]}";
                 String finish=mode.equals("length")?"length":mode.equals("filter")?"content_filter":"stop";
                 JSONObject frame=new JSONObject().put("choices",new JSONArray().put(new JSONObject().put("delta",new JSONObject().put("reasoning_content","合成推理").put("content",result)).put("finish_reason",finish)));
+                if(mode.equals("silent-reasoning"))frame.getJSONArray("choices").getJSONObject(0).getJSONObject("delta").remove("reasoning_content");
                 payload="data: "+frame+"\n\ndata: [DONE]\n\n";
                 if(mode.equals("json")){type="application/json";payload=new JSONObject().put("choices",new JSONArray().put(new JSONObject().put("message",new JSONObject().put("content",result)).put("finish_reason","stop"))).toString();}
             }
@@ -165,6 +167,8 @@ public final class ClassroomSummaryCheck {
         JSONObject context=new JSONObject(secondPrompt.substring(secondPrompt.indexOf("完整资料包：\n")+7));
         check(context.getString("first_system").equals(firstMessages.getJSONObject(0).getString("content"))&&context.getString("first_prompt").equals(firstPrompt),"second round contains exact full first system and prompt");
         check(context.getString("first_system").contains("保留英文术语"),"classroom custom prompt reaches both rounds");
+        check(context.getString("first_system").contains("数学符号与记法偏好中国大陆教材的常用风格。"),"general Chinese mathematical notation style reaches both rounds");
+        check(requests.get(2).getJSONArray("messages").getJSONObject(0).getString("content").equals(context.getString("first_system")),"final image round retains the same Chinese math style instructions");
         check(!ClassroomSummary.configKey(AI,20,"other").equals(ClassroomSummary.configKey(AI,20,"保留英文术语")),"custom prompt changes invalidate the previous run");
         check(context.getString("first_output").equals(checkpoint.getString("first_output")),"second round contains exact raw first response");
         JSONArray secondContent=requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content");
@@ -180,7 +184,7 @@ public final class ClassroomSummaryCheck {
         check(!md.contains(AI.apiKey)&&!checkpoint.toString().contains(AI.apiKey)&&!result.toString().contains(AI.apiKey),"credential absent from run/summary/export");
         rejects(()->ClassroomExport.safeImage("../secret"),"ZIP path traversal rejected");
         try(RequestControl c=new RequestControl(20000)){JSONObject changed=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"保留英文术语");check(!changed.getString("run").equals(result.getString("run")),"changed image budget creates distinct run identity");check(changed.getJSONArray("images").length()==0&&changed.getInt("planned_images")==0,"changed config cannot reuse old image inventory");}
-        try(RequestControl c=new RequestControl(10000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,-1,c,s->{},"保留英文术语"),"negative image budget rejected");rejects(()->ClassroomSummary.generate(dir,LESSON,AI,21,c,s->{},"保留英文术语"),"over-twenty image budget rejected");}
+        try(RequestControl c=new RequestControl(10000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,-1,c,s->{},"保留英文术语"),"negative image budget rejected");rejects(()->ClassroomSummary.generate(dir,LESSON,AI,41,c,s->{},"保留英文术语"),"over-forty image budget rejected");}
     }
     private static void isolation()throws Exception {
         android.content.Context context=new android.content.Context(new File(root,"accounts-"+System.nanoTime()));ClassroomStore a=new ClassroomStore(context,"anonymous-a"),b=new ClassroomStore(context,"anonymous-b");
@@ -190,25 +194,25 @@ public final class ClassroomSummaryCheck {
         check(LESSON.selectable(2)&&!LESSON.selectable(0),"only occurred completed lesson selectable");check(!new ClassroomLesson("1","2","","","","4",1).selectable(2),"unfinished recording cannot be selected");
     }
     private static void capAndFinalValidation()throws Exception {
-        reset();File dir=materialDir("twenty-cap"+System.nanoTime());JSONArray candidates=new JSONArray();
-        for(int i=0;i<40;i++)candidates.put(new JSONObject().put("raw","raw-"+(i%3)+".img").put("second",i).put("index",i));
+        reset();File dir=materialDir("forty-cap"+System.nanoTime());JSONArray candidates=new JSONArray();
+        for(int i=0;i<80;i++)candidates.put(new JSONObject().put("raw","raw-"+(i%3)+".img").put("second",i).put("index",i));
         ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject().put("images",candidates));
         mode="invalid-final";
-        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,20,c,s->{},"保留英文术语"),"final image citation outside selected set rejected");}
+        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,40,c,s->{},"保留英文术语"),"final image citation outside selected set rejected");}
         JSONObject partial=ClassroomStore.read(new File(dir,"summary.json"));
         check(!partial.getBoolean("complete")&&partial.getJSONArray("images").length()==0,"invalid final preserves unillustrated draft");
         mode="normal";JSONObject result;
-        try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,20,c,s->{},"保留英文术语");}
-        check(calls==3&&result.getJSONArray("images").length()==20,"final validation retry reuses first round and keeps twenty-image cap");
+        try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,40,c,s->{},"保留英文术语");}
+        check(calls==3&&result.getJSONArray("images").length()==40,"final validation retry reuses first round and keeps forty-image cap");
         check(requests.get(0).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1
-                &&requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==21,"HTTP requests send zero then exactly twenty images");
+                &&requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==41,"HTTP requests send zero then exactly forty images");
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
-        check(state.getString("config").equals(ClassroomSummary.configKey(AI,20,"保留英文术语"))&&state.getString("config").endsWith("\n3\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
+        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n7\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
     }
     private static void textOnlyAndInvalidRetry()throws Exception {
         reset();File dir=materialDir("text-only-"+System.nanoTime());
-        check(ClassroomSummary.DEFAULT_IMAGES==20,"default image budget is twenty");
+        check(ClassroomSummary.DEFAULT_IMAGES==40,"default image budget is forty");
         try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"保留英文术语");check(summary.getBoolean("complete")&&summary.getJSONArray("images").length()==0,"zero-budget pipeline completes without images");}
         check(calls==1,"text-only performs exactly one model request");
         for(JSONObject request:requests)check(request.getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1,"text-only HTTP request has no image_url item");
@@ -228,7 +232,44 @@ public final class ClassroomSummaryCheck {
         try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(window,LESSON,AI,20,c,s->{},"保留英文术语"),"reversed window rejected before second round");}
         check(calls==1&&!ClassroomStore.read(new File(window,"run.json")).has("draft"),"invalid window never checkpoints successful draft");
     }
+    private static void retention()throws Exception {
+        check(ClassroomDocument.exportMarkdown("![图](image-0.jpg) $x^2$").equals("![图](images/image-0.jpg) $x^2$"),"export canonicalizes bare image paths without changing math");
+        android.content.Context context=new android.content.Context(new File(root,"retention-"+System.nanoTime()));
+        File dir=new ClassroomStore(context,"account").lesson(LESSON);
+        JSONObject note=new JSONObject().put("title","公式").put("text","$x^2$\n![图](images/image-0.jpg)").put("images",new JSONArray()).put("sources",new JSONArray().put(0));
+        JSONObject summary=new JSONObject().put("lesson",LESSON.json()).put("updated",1).put("complete",true).put("run","finished").put("overview","重点").put("raw_images",2).put("candidate_images",2)
+                .put("images",new JSONArray().put(picture(0,0)).put(picture(1,1)))
+                .put("parts",new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(note)).put("assignments",new JSONArray())));
+        JSONObject materials=new JSONObject().put("segments",new JSONArray().put(segment(0,"字幕"))).put("images",new JSONArray());
+        ClassroomStore.write(new File(dir,"summary.json"),summary);ClassroomStore.write(new File(dir,"materials.json"),materials);
+        for(String name:List.of("raw-0.img","image-0.jpg","image-1.jpg"))ClassroomStore.writeBytes(new File(dir,name),image(100));
+        ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject());
+        check(ClassroomDocument.referencedImages(summary).equals(Set.of("image-0.jpg")),"inline image is part of retention contract");
+        JSONObject portable=ClassroomDocument.portable(summary,materials);check(portable.has("segments")&&!portable.has("materials"),"portable document excludes remote material manifest");
+        check(ClassroomStore.cleanUnused(context,false,1000)==0,"seven-day age gate preserves recent completed lesson");
+        ClassroomStore.begin(dir);try{check(ClassroomStore.cleanUnused(context,true,Long.MAX_VALUE)==0,"manual cleanup protects active lesson");}finally{ClassroomStore.end(dir);}
+        ClassroomStore.write(new File(dir,"run.json"),new JSONObject().put("run","replacement"));
+        check(ClassroomStore.cleanUnused(context,true,Long.MAX_VALUE)==0,"interrupted replacement protects previous summary and retry files");
+        ClassroomStore.write(new File(dir,"run.json"),new JSONObject().put("run","finished").put("final",new JSONObject()));
+        check(ClassroomStore.cleanUnused(context,false,ClassroomStore.UNUSED_RETENTION_MILLIS+2)>0,"aged completed lesson cleaned");
+        check(new File(dir,"image-0.jpg").isFile()&&!new File(dir,"image-1.jpg").exists()&&!new File(dir,"raw-0.img").exists(),"cleanup retains inline image only");
+        check(new File(dir,"materials.json").isFile()&&new File(dir,"summary.json").isFile(),"cleanup retains complete text and source transcript");
+        check(!new File(dir,"candidates.json").exists()&&!new File(dir,"run.json").exists(),"cleanup invalidates raw-dependent retry checkpoints");
+        ByteArrayOutputStream archive=new ByteArrayOutputStream();ClassroomExport.write(dir,summary,archive,p->{});
+        Map<String,byte[]> entries=unzip(archive.toByteArray());
+        check(entries.containsKey("images/image-0.jpg")&&!entries.containsKey("images/image-1.jpg"),"export after cleanup uses actual references rather than analysed inventory");
+        check(new String(entries.get("课堂总结.md"),StandardCharsets.UTF_8).contains("$x^2$"),"Markdown math source survives export");
+        summary.put("complete",false);ClassroomStore.write(new File(dir,"summary.json"),summary);ClassroomStore.writeBytes(new File(dir,"raw-1.img"),image(100));
+        check(ClassroomStore.cleanUnused(context,true,Long.MAX_VALUE)==0&&new File(dir,"raw-1.img").isFile(),"manual cleanup preserves unfinished draft assets");
+    }
     private static void transport()throws Exception {
+        reset();mode="silent-reasoning";
+        try(RequestControl c=new RequestControl(40_000)) {
+            long began=System.nanoTime();
+            String silent=new ChatCompletionClient(AI,c).complete("s","p",List.of());
+            check(silent.contains("合并重点")&&TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-began)>=30_000,
+                    "text-only SSE without reasoning survives 31 seconds of real loopback silence");
+        }
         reset();ChatCompletionClient client=new ChatCompletionClient(AI);String answer=client.complete("测试任务","合成输入",List.of(new byte[]{1,2,3}));
         check(answer.equals("{\"overview\":\"合并重点\"}"),"general completion returns non-schedule JSON from SSE");JSONObject request=requests.get(0);
         check(!request.has("response_format")&&!request.has("prompt_cache_key"),"general completion removes schedule schema/cache key");check(request.getString("reasoning_effort").equals("high")&&request.getInt("max_completion_tokens")==32768,"reasoning and token options preserved");
@@ -243,7 +284,8 @@ public final class ClassroomSummaryCheck {
     public static void main(String[] args)throws Exception {
         root=new File(args[0]);root.mkdirs();HttpServer server=server();try {
             test("subtitle compression",ClassroomSummaryCheck::subtitleCompression);
-            test("HTTP twenty-image cap and final validation retry",ClassroomSummaryCheck::capAndFinalValidation);
+            test("inline images, portable document and safe retention",ClassroomSummaryCheck::retention);
+            test("HTTP forty-image cap and final validation retry",ClassroomSummaryCheck::capAndFinalValidation);
             test("requested image windows",ClassroomSummaryCheck::windowSelection);test("reference validation",ClassroomSummaryCheck::validation);test("low-resolution dedup and budget",ClassroomSummaryCheck::images);test("transport options/cancel/deadline/SSE",ClassroomSummaryCheck::transport);test("checkpoint, retry and offline ZIP",ClassroomSummaryCheck::pipeline);test("text-only and invalid-response retry",ClassroomSummaryCheck::textOnlyAndInvalidRetry);test("anonymous account isolation",ClassroomSummaryCheck::isolation);
         }finally{server.stop(0);}System.out.println("ClassroomSummaryCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError(failures+" classroom regression failures");
     }

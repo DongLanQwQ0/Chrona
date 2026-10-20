@@ -25,10 +25,8 @@ import java.util.regex.Pattern;
 /** Synchronous network client. Call parse from a worker thread, never the UI thread. */
 public final class ChatCompletionClient {
     private static final int CONNECT_TIMEOUT_MILLIS = 30_000;
-    /** A text-only reply comes back quickly, so waiting longer only delays a real failure. */
-    private static final int TEXT_READ_TIMEOUT_MILLIS = 30_000;
-    /** An image request uploads far more and the provider needs longer to look at it. */
-    private static final int IMAGE_READ_TIMEOUT_MILLIS = 180_000;
+    /** Hidden reasoning can stay silent for minutes, with or without images or SSE. */
+    private static final int RESPONSE_READ_TIMEOUT_MILLIS = 180_000;
     private static final int MAX_RESPONSE_CHARS = 2_000_000;
 
     private final AiSettings settings;
@@ -64,7 +62,7 @@ public final class ChatCompletionClient {
 
     /** The read timeout this client applies; exposed so diagnostics can report the real value. */
     public static int readTimeoutMillis(boolean withImage) {
-        return withImage ? IMAGE_READ_TIMEOUT_MILLIS : TEXT_READ_TIMEOUT_MILLIS;
+        return RESPONSE_READ_TIMEOUT_MILLIS;
     }
 
     /** Parses one submitted input and returns all proposed entries plus reported token usage. */
@@ -377,17 +375,8 @@ public final class ChatCompletionClient {
             String content = choice.getJSONObject("message").getString("content");
             JSONObject parsed = new JSONObject(content);
             JSONArray events = parsed.getJSONArray("events");
-            List<EventCandidate> candidates = new ArrayList<>();
-            for (int i = 0; i < events.length(); i++) {
-                JSONObject event = events.getJSONObject(i);
-                if (!(event.opt("execution_time_explicit") instanceof Boolean)
-                        || !event.has("suggested_start"))
-                    throw new JSONException("Missing execution time provenance or suggestion field");
-                candidates.add(SemanticEventNormalizer.fromJson(taskId, event, nowMillis, timeZoneId,
-                        schedulingNowMillis, workStartMinutes, workEndMinutes));
-            }
-            JSONArray records = parsed.optJSONArray("records");
-            if (records != null) for (int i=0;i<records.length();i++) candidates.add(SemanticEventNormalizer.recordFromJson(taskId,records.getJSONObject(i),timeZoneId));
+            List<EventCandidate> candidates = SemanticEventNormalizer.fromJsonBatch(taskId, events,
+                    nowMillis, timeZoneId, schedulingNowMillis, workStartMinutes, workEndMinutes);
             JSONObject usage = root.optJSONObject("usage");
             JSONObject promptDetails = usage == null ? null
                     : usage.optJSONObject("prompt_tokens_details");

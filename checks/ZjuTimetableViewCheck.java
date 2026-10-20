@@ -2,6 +2,8 @@ import com.donglan.chrona.zju.ZjuSnapshot;
 import com.donglan.chrona.zju.ZjuTimetableView;
 import java.time.LocalDate;
 import java.util.List;
+import com.donglan.chrona.timetable.AcademicTerms;
+import java.util.Collections;
 
 public final class ZjuTimetableViewCheck {
     private static ZjuSnapshot.Lesson lesson(String term, String date) {
@@ -22,6 +24,18 @@ public final class ZjuTimetableViewCheck {
         if (!ZjuTimetableView.current(terms, LocalDate.of(2026, 10, 1)).equals("2026秋"))
             throw new AssertionError("nearest term");
         if (!ZjuTimetableView.terms(List.of()).isEmpty()) throw new AssertionError("empty cache");
+        var raw = ZjuTimetableView.terms(List.of(lesson("秋", "2026-10-05"), lesson("秋", "2026-10-12"),
+                lesson("秋", "2026-10-19"), lesson("秋", "2026-10-10"),
+                lesson("秋", "2026-10-04"), lesson("秋", "2026-10-11"), lesson("秋", "2026-10-18"))).get("秋");
+        var view = new AcademicTerms.View(raw.occurrences, raw.zone, Collections.emptyMap());
+        if (view.regular.blocks.size() != 2 || view.special.size() != 1
+                || view.special.get(0).start.getDayOfWeek() != java.time.DayOfWeek.SATURDAY)
+            throw new AssertionError("one-off makeup separated; genuine recurring weekend course retained");
+        if (raw.occurrences.size() != 7 || view.all.size() != 7 || view.regular.occurrences.size() != 6)
+            throw new AssertionError("classification preserves every actual school occurrence");
+        var shortView = new AcademicTerms.View(summer.occurrences, summer.zone, Collections.emptyMap());
+        if (shortView.special.size() != 2 || !shortView.regular.blocks.isEmpty())
+            throw new AssertionError("short-term dates remain available as special arrangements");
         System.out.println("ZjuTimetableViewCheck passed");
     }
 }

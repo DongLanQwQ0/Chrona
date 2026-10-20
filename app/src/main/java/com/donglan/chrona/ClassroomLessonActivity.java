@@ -26,7 +26,7 @@ public final class ClassroomLessonActivity extends Activity {
     private static final int EXPORT=2041;
     private static final ExecutorService PICTURES=Executors.newFixedThreadPool(2);
     private Session s; private LinearLayout root,content,notes; private TextView status,overview,completion;
-    private Button prepare,generate,export,cancel;private int rendered,shownRevision=-1;private String detailKey="";
+    private Button prepare,generate,cancel;private ImageButton export;private int rendered,shownRevision=-1;private String detailKey="";
     private ProgressBar progressBar;
     private LinearLayout progressPanel;
     private TextView progressStage,progressCount,progressTime,progressDetail;
@@ -36,6 +36,7 @@ public final class ClassroomLessonActivity extends Activity {
     private String shownRun="";
     private String shownParts="";
     private ZjuSettingsStore settings;
+    private ClassroomMarkdownView documentView;
     private final android.content.SharedPreferences.OnSharedPreferenceChangeListener preference=(p,k)->gate();
     static final class Session {
         final Context app;final String account;final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -50,8 +51,8 @@ public final class ClassroomLessonActivity extends Activity {
         volatile boolean notifyWork;
         boolean updateQueued, detached;
         long startedAt;
-        ClassroomLesson selected;File dir;JSONObject summary,materials,prepared;int imageLimit=20;
-        ClassroomLesson pendingExport;Uri exportUri;boolean localInitialized,exportInFlight;int revision;long ignoredSummaryUpdated=-1;
+        ClassroomLesson selected;File dir;JSONObject summary,materials,prepared;int imageLimit=ClassroomSummary.DEFAULT_IMAGES;
+        ClassroomLesson pendingExport;Uri exportUri,shareUri;boolean localInitialized,exportInFlight;int revision;long ignoredSummaryUpdated=-1;
         Session(Context app,String account){this.app=app;this.account=account;preferences=new ZjuSettingsStore(app).prefs;changes=(p,k)->{if(!allowed()){cancel();if(notifications!=null)notifications.clear();}};preferences.registerOnSharedPreferenceChangeListener(changes);}
         boolean allowed(){ZjuSettingsStore p=new ZjuSettingsStore(app);return p.enabled()&&p.configured()&&account.equals(p.account());}
         void publish(){synchronized(this){if(updateQueued)return;updateQueued=true;}main.postDelayed(()->{synchronized(this){updateQueued=false;}ClassroomLessonActivity a=owner.get();if(a!=null&&!a.isDestroyed()&&allowed())a.update();},100);}
@@ -61,10 +62,10 @@ public final class ClassroomLessonActivity extends Activity {
         void run(String stage,boolean notices,Work work){if(busy)return;busy=true;notifyWork=notices;cancelRequested=false;message="";startedAt=SystemClock.elapsedRealtime();progress=ClassroomProgress.waiting(stage,"");
             if(notices){if(notifications==null)notifications=new ClassroomNotifications(app,account,selected);notifications.progress(progress,true);}
             publish();Runnable execute=()->worker.execute(()->{
-            boolean success=false;
-            try{if(!allowed())return;control=new RequestControl(60*60*1000L);if(cancelRequested)control.cancel();control.check();work.run();success=true;}
+            boolean success=false;File leased=null;
+            try{if(!allowed())return;if(dir!=null){ClassroomStore.begin(dir);leased=dir;}control=new RequestControl(60*60*1000L);if(cancelRequested)control.cancel();control.check();work.run();success=true;}
             catch(Exception e){message=cancelRequested||control!=null&&control.isCancelled()?"已停止，已完成内容已保存":NetworkFailure.hasDetails(e)?NetworkFailure.describe(e):(e.getMessage()==null?"操作失败，请重试":e.getMessage());}
-            finally{if(client!=null){client.close();client=null;}if(control!=null){control.close();control=null;}if(exportInFlight){exportUri=null;exportInFlight=false;}boolean completed=success;main.post(()->{busy=false;
+            finally{if(leased!=null)ClassroomStore.end(leased);if(client!=null){client.close();client=null;}if(control!=null){control.close();control=null;}if(exportInFlight){exportUri=null;exportInFlight=false;}boolean completed=success;main.post(()->{busy=false;
                 if(notices&&notifications!=null){if(allowed())notifications.finished(message,completed);else notifications.clear();}notifyWork=false;if(notices)ClassroomWorkService.finished(this);publish();disposeIfDetached();});}
         });
             if(notices)ClassroomWorkService.submit(this,execute);else execute.run();
@@ -93,13 +94,16 @@ public final class ClassroomLessonActivity extends Activity {
                     String json=state.getString("export_lesson");
                     if(json!=null)s.pendingExport=ClassroomLesson.fromJson(new JSONObject(json));
                     String uri=state.getString("export_uri"); if(uri!=null)s.exportUri=Uri.parse(uri);
+                    String share=state.getString("share_uri");if(share!=null)s.shareUri=Uri.parse(share);
                 }
             } catch(Exception error) { Feedback.show(this,"课堂信息无效"); finish(); return; }
         }
-        root=SettingsPageLayout.content(this); SettingsPageLayout.header(this,root,"课堂总结");
+        root=SettingsPageLayout.content(this);
+        export=UiStyle.navigationIcon(this,R.drawable.ic_week_export,"导出课堂总结 ZIP",()->{if(gate())export();});
+        SettingsPageLayout.header(this,root,"课堂总结",export);
         status=text(root,"",14,false);
         progressPanel=new LinearLayout(this);progressPanel.setOrientation(LinearLayout.VERTICAL);
-        progressPanel.setPadding(dp(12),dp(12),dp(12),dp(12));UiStyle.acrylicChoice(progressPanel,false,8,false);UiStyle.addSpaced(root,progressPanel,0,12);
+        progressPanel.setPadding(dp(16),dp(12),dp(16),dp(12));UiStyle.card(progressPanel);UiStyle.addSpaced(root,progressPanel,0,12);
         LinearLayout heading=new LinearLayout(this);heading.setGravity(android.view.Gravity.CENTER_VERTICAL);progressPanel.addView(heading);
         progressStage=new TextView(this);progressStage.setTextSize(16);progressStage.setTextColor(UiStyle.colors(this).text);progressStage.setMaxLines(2);progressStage.setGravity(android.view.Gravity.CENTER_VERTICAL);heading.addView(progressStage,new LinearLayout.LayoutParams(0,dp(48),1));
         progressCount=new TextView(this);progressCount.setTextSize(14);progressCount.setSingleLine(true);progressCount.setTextColor(UiStyle.colors(this).primary);progressCount.setTypeface(Typeface.MONOSPACE);progressCount.setGravity(android.view.Gravity.END|android.view.Gravity.CENTER_VERTICAL);heading.addView(progressCount,new LinearLayout.LayoutParams(dp(100),dp(48)));
@@ -119,7 +123,7 @@ public final class ClassroomLessonActivity extends Activity {
     @Override public Object onRetainNonConfigurationInstance(){if(s!=null&&s.owner.get()==this)s.owner.clear();return s;}
     @Override protected void onResume(){super.onResume();visible=true;if(s!=null){s.owner=new WeakReference<>(this);s.detached=false;}progressHandler.post(progressTick);if(settings!=null){settings.prefs.registerOnSharedPreferenceChangeListener(preference);if(gate())update();}}
     @Override protected void onPause(){visible=false;progressHandler.removeCallbacks(progressTick);super.onPause();if(settings!=null)settings.prefs.unregisterOnSharedPreferenceChangeListener(preference);}
-    @Override protected void onDestroy(){if(s!=null&&s.owner.get()==this){s.owner.clear();if(!isChangingConfigurations()){s.detached=true;s.disposeIfDetached();}}super.onDestroy();}
+    @Override protected void onDestroy(){if(documentView!=null)documentView.dispose();if(s!=null&&s.owner.get()==this){s.owner.clear();if(!isChangingConfigurations()){s.detached=true;s.disposeIfDetached();}}super.onDestroy();}
     private boolean gate(){if(s==null||s.allowed())return true;s.cancel();if(s.notifications!=null)s.notifications.clear();if(content!=null)content.removeAllViews();Feedback.show(this,"请启用折姜星辰并保存账号");finish();return false;}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==ClassroomNotifications.PERMISSION_REQUEST&&s!=null&&s.allowed()&&s.notifications!=null)s.notifications.repost();}
     private void loadLocal() {
@@ -146,6 +150,7 @@ public final class ClassroomLessonActivity extends Activity {
             if(detailKey.isEmpty()){detailKey=s.selected.courseId+"/"+s.selected.id;showDetail();}
             updateDetail();
         }
+        if(visible&&!s.busy&&s.shareUri!=null){Uri uri=s.shareUri;s.shareUri=null;ExportShare.show(this,uri,"application/zip");}
     }
     private void updateProgress(){
         if(status==null||s==null)return;
@@ -161,45 +166,77 @@ public final class ClassroomLessonActivity extends Activity {
     private void showDetail(){content.removeAllViews();rendered=0;
         text(content,s.selected.course,21,true);text(content,s.selected.date()+" "+clock(s.selected)+" · "+s.selected.title,14,false);
         completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"获取素材",this::prepare);generate=action(actions,"生成总结",this::confirmGeneration);content.addView(actions);
-        export=button(content,"导出 ZIP",this::export,false);cancel=button(content,"停止",()->s.cancel(),false);
+        cancel=button(content,"停止",()->s.cancel(),false);
         overview=text(content,"",17,false);notes=new LinearLayout(this);notes.setOrientation(LinearLayout.VERTICAL);content.addView(notes);
     }
     private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary!=null&&!s.summary.optBoolean("complete")?"继续整理":"生成总结");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
         if(s.prepared!=null)completion.setText("字幕就绪 · "+s.prepared.optInt("segments")+" 条\n截图 "+s.prepared.optInt("raw")+" → "+s.prepared.optInt("candidates")+" 张");else completion.setText(s.selected.state(System.currentTimeMillis()));
-        if(shownRevision!=s.revision){notes.removeAllViews();rendered=0;overview.setText("");shownRevision=s.revision;}
-        JSONObject summary=s.summary;if(summary==null)return;if(!shownRun.equals(summary.optString("run"))){notes.removeAllViews();rendered=0;shownRun=summary.optString("run");}JSONArray parts=summary.optJSONArray("parts");if(parts==null)return;
-        String partState=parts.toString()+summary.optBoolean("complete");if(!partState.equals(shownParts)){notes.removeAllViews();rendered=0;shownParts=partState;}
-        overview.setText((summary.optBoolean("complete")?"重点概览":"字幕草稿 · 等待图片分析")+"\n"+summary.optString("overview")+"\n未分析图片 "+Math.max(0,summary.optInt("candidate_images")-summary.optJSONArray("images").length())+" 张");
-        if(parts.length()<rendered){notes.removeAllViews();rendered=0;}
-        while(rendered<parts.length()){JSONObject part=parts.optJSONObject(rendered++);if(part==null)continue;if(!summary.optBoolean("complete"))text(notes,part.optString("overview"),16,true);JSONArray items=part.optJSONArray("notes");if(items!=null)for(int i=0;i<items.length();i++){JSONObject n=items.optJSONObject(i);if(n==null)continue;text(notes,n.optString("title"),19,true);text(notes,n.optString("text"),16,false);sources(notes,n.optJSONArray("sources"));JSONArray images=n.optJSONArray("images");if(images!=null)for(int p=0;p<images.length();p++)image(notes,images.optString(p));}
-            JSONArray tasks=part.optJSONArray("assignments");if(tasks!=null)for(int i=0;i<tasks.length();i++){JSONObject task=tasks.optJSONObject(i);if(task==null)continue;text(notes,"课堂安排",18,true);text(notes,task.optString("text"),16,false);sources(notes,task.optJSONArray("sources"));String taskText=task.optString("text");ClassroomLesson lesson=s.selected;String classroomTime=Instant.ofEpochMilli(lesson.startsAt).atZone(ClassroomLesson.ZONE).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));String prefill=lesson.course+"\n课堂时间："+classroomTime+"（Asia/Shanghai）\n老师在这节课提出的安排："+taskText;button(notes,"提取为日程",()->UiStyle.confirmDialog(this,"提取课堂安排",prefill,"继续",()->startActivity(new Intent(this,MainActivity.class).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,prefill))),false);}}
+        overview.setVisibility(View.GONE);
+        JSONObject summary=s.summary;
+        String next=summary==null?"":summary.toString();
+        if(next.equals(shownParts)&&shownRevision==s.revision)return;
+        shownParts=next;shownRevision=s.revision;
+        if(documentView!=null){notes.removeView(documentView);documentView.dispose();documentView=null;}
+        notes.removeAllViews();
+        if(summary==null)return;
+        try{
+            documentView=new ClassroomMarkdownView(this,s.dir,summary,s.materials,new ClassroomMarkdownView.Actions(){
+                @Override public void source(int id){if(!gate()||s.materials==null)return;JSONObject source=s.materials.optJSONArray("segments").optJSONObject(id);if(source!=null)showSource(source);}
+                @Override public void assignment(int index){extractAssignment(index);}
+                @Override public void image(String name){if(!gate())return;Dialog dialog=new Dialog(ClassroomLessonActivity.this);LinearLayout panel=UiStyle.dialogPanel(ClassroomLessonActivity.this,"课堂截图");ClassroomLessonActivity.this.image(panel,name);button(panel,"关闭",dialog::dismiss,false);UiStyle.showFloatingDialog(dialog,panel);}
+            });
+            notes.addView(documentView);
+        }catch(Exception error){text(notes,"课堂正文无法显示："+error.getMessage(),16,false);}
+    }
+    private void extractAssignment(int index){
+        if(!gate()||s.summary==null||index<0)return;
+        JSONArray parts=s.summary.optJSONArray("parts");if(parts==null)return;
+        for(int p=0;p<parts.length();p++){
+            JSONArray tasks=parts.optJSONObject(p).optJSONArray("assignments");if(tasks==null)continue;
+            if(index>=tasks.length()){index-=tasks.length();continue;}
+            String classroomTime=Instant.ofEpochMilli(s.selected.startsAt).atZone(ClassroomLesson.ZONE).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            String prefill=s.selected.course+"\n课堂时间："+classroomTime+"（Asia/Shanghai）\n老师在这节课提出的安排："+tasks.optJSONObject(index).optString("text");
+            UiStyle.confirmDialog(this,"提取课堂安排",prefill,"继续",()->startActivity(new Intent(this,MainActivity.class).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,prefill)));return;
+        }
     }
     private void prepare(){ClassroomNotifications.requestPermission(this);Session job=s;job.run("获取课堂素材",true,()->{job.prepared=ClassroomSummary.prepare(job.dir,job.selected,job.connect(),job.control,job::checkpoint);job.materials=ClassroomStore.read(new File(job.dir,"materials.json"));job.message="素材已就绪";});}
     private void confirmGeneration(){Session job=s;job.run("检查 AI 服务配置",()->{AiSettingsStore store=new AiSettingsStore(job.app);AiSettings ai=store.load();if(ai==null)throw new IOException("请先在 AI 设置中配置服务");boolean unsupported=store.isImageUnsupported(ai);job.message="";job.main.post(()->{ClassroomLessonActivity a=job.owner.get();if(a!=null&&job.allowed())a.generationDialog(ai,unsupported);});});}
     private void generationDialog(AiSettings ai,boolean unsupported){
         Dialog dialog=new Dialog(this);LinearLayout panel=UiStyle.dialogPanel(this,"生成课堂总结");LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);
         text(body,ai.model+"\n"+ai.baseUrl,15,false);
-        CheckBox upload=new CheckBox(this);upload.setText("上传图片 · 最多 20 张");UiStyle.toggle(upload);upload.setChecked(!unsupported&&s.imageLimit>0);upload.setEnabled(!unsupported);body.addView(upload);
+        CheckBox upload=new CheckBox(this);upload.setText("上传图片 · 最多 "+ClassroomSummary.MAX_IMAGES+" 张");UiStyle.toggle(upload);upload.setChecked(!unsupported&&s.imageLimit>0);upload.setEnabled(!unsupported);body.addView(upload);
         if(unsupported)text(body,"当前模型仅支持文字",14,false);
         button(body,"上传并生成",()->{dialog.dismiss();startGeneration(ai,upload.isChecked()?ClassroomSummary.MAX_IMAGES:0);},true);
         button(body,"取消",dialog::dismiss,false);UiStyle.dialogBody(panel,body);UiStyle.showFloatingDialog(dialog,panel);
     }
     private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;String classroomPrompt=SchedulePreferences.load(this).classroomPrompt;s.imageLimit=limit;job.run("准备整理课堂",true,()->{JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));String config=ClassroomSummary.configKey(ai,limit,classroomPrompt);if(prior==null||!config.equals(prior.optString("config"))){job.ignoredSummaryUpdated=job.summary==null?-1:job.summary.optLong("updated");job.summary=null;job.revision++;job.publish();}
-            try{job.summary=ClassroomSummary.generate(job.dir,job.selected,ai,limit,job.control,job::checkpoint,classroomPrompt);}
+            try{if(!new File(job.dir,"candidates.json").isFile()){job.prepared=ClassroomSummary.prepare(job.dir,job.selected,job.connect(),job.control,job::checkpoint);job.materials=ClassroomStore.read(new File(job.dir,"materials.json"));}
+                job.summary=ClassroomSummary.generate(job.dir,job.selected,ai,limit,job.control,job::checkpoint,classroomPrompt);}
             catch(ChatCompletionClient.RequestException e){if(limit>0&&e.rejectsImage()){new AiSettingsStore(job.app).markImageUnsupported(ai);throw new IOException("当前 AI 服务拒绝图片。可再次选择生成总结，以纯文字模式上传字幕。",e);}throw e;}
             job.ignoredSummaryUpdated=-1;job.message="总结已完成";});}
     private void sources(LinearLayout parent,JSONArray refs){if(refs==null||s.materials==null)return;JSONArray segments=s.materials.optJSONArray("segments");HorizontalScrollView scroll=new HorizontalScrollView(this);LinearLayout row=new LinearLayout(this);scroll.addView(row);for(int i=0;i<refs.length();i++){JSONObject source=segments==null?null:segments.optJSONObject(refs.optInt(i,-1));if(source==null)continue;TextView link=new TextView(this);link.setText(ClassroomExport.time(source.optDouble("start"))+"  ·  ");link.setTextSize(14);link.setTextColor(UiStyle.colors(this).primary);link.setMinHeight(dp(48));link.setGravity(android.view.Gravity.CENTER_VERTICAL);link.setContentDescription("字幕来源 "+ClassroomExport.time(source.optDouble("start")));link.setOnClickListener(v->{if(gate())showSource(source);});row.addView(link);}parent.addView(scroll);}
-    private void showSource(JSONObject source){Dialog dialog=new Dialog(this);LinearLayout panel=UiStyle.dialogPanel(this,ClassroomExport.time(source.optDouble("start"))+" — "+ClassroomExport.time(source.optDouble("end")));LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);text(body,source.optString("text"),16,false);JSONArray images=s.summary==null?null:s.summary.optJSONArray("images");if(images!=null)for(int i=0;i<images.length();i++){JSONObject pic=images.optJSONObject(i);if(pic!=null&&Math.abs(pic.optDouble("second")-source.optDouble("start"))<90)image(body,pic.optString("file"));}UiStyle.dialogBody(panel,body);button(panel,"关闭",dialog::dismiss,false);UiStyle.showFloatingDialog(dialog,panel);}
+    private void showSource(JSONObject source){
+        Dialog dialog=new Dialog(this);
+        LinearLayout panel=UiStyle.dialogPanel(this,ClassroomExport.time(source.optDouble("start"))+" — "+ClassroomExport.time(source.optDouble("end")));
+        LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);text(body,source.optString("text"),16,false);
+        JSONArray images=s.summary==null?null:s.summary.optJSONArray("images");
+        if(images!=null)for(int i=0;i<images.length();i++){
+            JSONObject pic=images.optJSONObject(i);
+            if(pic!=null&&Math.abs(pic.optDouble("second")-source.optDouble("start"))<90
+                    &&new File(s.dir,pic.optString("file")).isFile())image(body,pic.optString("file"));
+        }
+        UiStyle.dialogBody(panel,body);button(panel,"关闭",dialog::dismiss,false);UiStyle.showFloatingDialog(dialog,panel);
+    }
     private void image(LinearLayout parent,String name){try{ClassroomExport.safeImage(name);}catch(Exception e){return;}File file=new File(s.dir,name);ImageView view=new ImageView(this);view.setAdjustViewBounds(true);view.setContentDescription("课堂截图，点击放大");parent.addView(view,new LinearLayout.LayoutParams(-1,dp(190)));WeakReference<ImageView> target=new WeakReference<>(view);Session job=s;PICTURES.execute(()->{BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(file.getPath(),bounds);BitmapFactory.Options options=new BitmapFactory.Options();options.inSampleSize=Math.max(1,Math.max(bounds.outWidth,bounds.outHeight)/1200);Bitmap bitmap=BitmapFactory.decodeFile(file.getPath(),options);job.main.post(()->{ImageView v=target.get();if(v!=null&&job.allowed()&&v.isAttachedToWindow()){if(bitmap!=null)v.setImageBitmap(bitmap);else v.setContentDescription("截图读取失败");}else if(bitmap!=null)bitmap.recycle();});});view.setOnClickListener(v->{Dialog dialog=new Dialog(this);LinearLayout panel=UiStyle.dialogPanel(this,"课堂截图");ImageView large=new ImageView(this);large.setAdjustViewBounds(true);large.setImageDrawable(view.getDrawable());panel.addView(large,new LinearLayout.LayoutParams(-1,-2));button(panel,"关闭",dialog::dismiss,false);UiStyle.showFloatingDialog(dialog,panel);});}
     private void export(){s.pendingExport=s.selected;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,"课堂总结-"+s.selected.date()+".zip");try{startActivityForResult(intent,EXPORT);}catch(Exception e){Feedback.show(this,"无法打开文件保存器");}}
-    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());}catch(Exception ignored){}}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("share_uri",s.shareUri.toString());}catch(Exception ignored){}}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=EXPORT||result!=RESULT_OK||data==null||data.getData()==null||!gate())return;s.exportUri=data.getData();
         boolean read=(data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION)!=0,write=(data.getFlags()&Intent.FLAG_GRANT_WRITE_URI_PERMISSION)!=0;
         try{if(read&&write)getContentResolver().takePersistableUriPermission(s.exportUri,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             else if(write)getContentResolver().takePersistableUriPermission(s.exportUri,Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             else if(read)getContentResolver().takePersistableUriPermission(s.exportUri,Intent.FLAG_GRANT_READ_URI_PERMISSION);
         }catch(SecurityException ignored){}if(s.localInitialized&&!s.busy)writeExport();}
-    private void writeExport(){Session job=s;if(!job.localInitialized||job.busy||job.exportInFlight)return;Uri uri=job.exportUri;ClassroomLesson lesson=job.pendingExport;if(lesson==null){job.exportUri=null;return;}job.exportInFlight=true;job.run("生成导出文件",()->{try{File dir=job.store().lesson(lesson);JSONObject summary=ClassroomStore.read(new File(dir,"summary.json"));if(summary==null)throw new IOException("总结缓存不存在");try(OutputStream out=job.app.getContentResolver().openOutputStream(uri,"w")){if(out==null)throw new IOException("无法写入文件");ClassroomExport.write(dir,summary,out,job::checkpoint);}job.message="ZIP 已导出";job.pendingExport=null;}finally{job.exportUri=null;job.exportInFlight=false;}});}
+    private void writeExport(){Session job=s;if(!job.localInitialized||job.busy||job.exportInFlight)return;Uri uri=job.exportUri;ClassroomLesson lesson=job.pendingExport;if(lesson==null){job.exportUri=null;return;}job.exportInFlight=true;job.run("生成导出文件",()->{try{File dir=job.store().lesson(lesson);JSONObject summary=ClassroomStore.read(new File(dir,"summary.json"));if(summary==null)throw new IOException("总结缓存不存在");try(OutputStream out=job.app.getContentResolver().openOutputStream(uri,"w")){if(out==null)throw new IOException("无法写入文件");ClassroomExport.write(dir,summary,out,job::checkpoint);}job.message="ZIP 已导出";job.pendingExport=null;job.shareUri=uri;}finally{job.exportUri=null;job.exportInFlight=false;}});}
     private TextView text(LinearLayout parent,String value,int size,boolean title){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextIsSelectable(true);if(title)UiStyle.title(v);else v.setTextColor(UiStyle.colors(this).text);UiStyle.addSpaced(parent,v,6,10);return v;}
     private Button button(LinearLayout parent,String title,Runnable work,boolean primary){Button b=new Button(this);b.setText(title);b.setAllCaps(false);UiStyle.button(b,primary);b.setOnClickListener(v->{if(gate())work.run();});UiStyle.addSpaced(parent,b,4,6);return b;}
     private Button action(LinearLayout row,String title,Runnable work){Button b=new Button(this);b.setText(title);b.setTextSize(14);UiStyle.button(b,false);b.setOnClickListener(v->{if(gate())work.run();});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.setMargins(dp(2),dp(4),dp(2),dp(6));row.addView(b,p);return b;}

@@ -71,10 +71,11 @@ static class AttachmentException extends IOException {}
 final android.database.sqlite.SQLiteDatabase db=new android.database.sqlite.SQLiteDatabase();
 final com.donglan.chrona.data.TaskStore store;final File blobs;
 AndroidSyncData(android.content.Context c){if(!Thread.holdsLock(AndroidSync.LOCK))throw new AssertionError("DB outside lock");opens++;store=new com.donglan.chrona.data.TaskStore(c);blobs=new File(c.getFilesDir(),"sync-blobs");blobs.mkdirs();}
-static class Snapshot {Object terms;Map<Long,JSONObject> payloads=new HashMap<>();Map<String,JSONObject> termPayloads=new HashMap<>();String text;}
+static class Snapshot {Object terms;Map<Long,JSONObject> payloads=new HashMap<>();Map<String,JSONObject> termPayloads=new HashMap<>(),classroomPayloads=new HashMap<>();String text;}
 Snapshot prepareCapture(){Snapshot s=new Snapshot();s.text=text;return s;}
 void captureTasks(SyncState s,Snapshot p)throws Exception {JSONObject j=new JSONObject().put("rawText",p.text);java.util.List<SyncState.Version> v=s.records().get(ID);if(v==null||!p.text.equals(v.get(0).payload.optString("rawText")))s.put(ID,j);}
 void captureTerms(SyncState s,Snapshot p){}void applyMergeRecords(SyncState s){}void prepareTaskApply(SyncState s,Snapshot p,String id){}
+void captureClassrooms(SyncState s,Snapshot p){}void applyClassrooms(SyncState s,Snapshot p,String id){}
 void prepareTaskApply(SyncState s,Snapshot p,String id,String only){}void requireRevision(Snapshot s){}
 void applyTask(String id,SyncState.Version v){applies++;text=v.payload.optString("rawText");}void appliedResourcesCommitted(){}void applyTerms(SyncState s,Object t){}
 long localId(String id){return 1;}boolean linked(long id){return false;}boolean taskDifferent(String id,SyncState.Version v){return false;}
