@@ -125,7 +125,7 @@ public final class CourseSourceMatchingActivity extends Activity {
     private String pretty(String identity){int split=identity.indexOf('\n');return split<0?identity:sourceName(identity.substring(0,split))+" · "+identity.substring(split+1);}
     private void text(String value){TextView view=new TextView(this);view.setText(value);view.setTextSize(15);view.setTextColor(UiStyle.colors(this).text);UiStyle.addSpaced(content,view,0,12);}
     private void button(String value,Runnable click){Button button=new Button(this);button.setText(value);UiStyle.button(button,false);UiStyle.addSpaced(content,button,0,12);button.setOnClickListener(v->click.run());}
-    private void modalAction(LinearLayout parent,String label,Runnable run){Button button=new Button(this);button.setText(label);UiStyle.button(button,false);button.setOnClickListener(v->run.run());UiStyle.addSpaced(parent,button,0,8);}
+    private void modalAction(LinearLayout parent,String label,Runnable run){UiStyle.addMenuItem(parent,label,false,run);}
     private void entry(String title,String detail,Runnable run){
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);UiStyle.card(card);
         int density=Math.round(16*getResources().getDisplayMetrics().density);

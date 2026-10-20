@@ -49,12 +49,13 @@ final class CompactUiDeviceCheck {
                     store.appendCandidate(new EventCandidate(0,tasks[i],i==0?"微积分课后讨论":"紧凑布局验收 "+i,
                             now+(i+1)*3600000L,now+(i+1)*3600000L+1800000,java.time.ZoneId.systemDefault().getId(),
                             i==0?"东1-201":i==1?"紫金港校区东教学区二楼讨论室":"","",null,false,null,"task",false));
-                    store.updateStatus(tasks[i],TaskRecord.READY,null);
+                    store.updateStatus(tasks[i],i==1&&"filter_overflow".equals(args.getString("scope"))?TaskRecord.FAILED:TaskRecord.READY,null);
                 }
             }
             screen=test.startActivitySync(new Intent(context,DashboardActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             Activity home=screen;
             waitFor(test,()->findText(home.getWindow().getDecorView(),"东1-201")!=null,"home location");
+            if("menu".equals(args.getString("scope"))) return MenuDeviceCheck.run(test,home,args);
             onMain(test,()-> {
                 TextView place=findText(home.getWindow().getDecorView(),"东1-201");
                 ViewGroup summary=(ViewGroup)place.getParent();
@@ -110,8 +111,57 @@ final class CompactUiDeviceCheck {
                 onMain(test,()->{try{switchTo.invoke(home,section);}catch(ReflectiveOperationException e){throw new AssertionError(e);}});
                 waitFor(test,()->!Boolean.TRUE.equals(field(home,"pageTransitionRunning"))&&Integer.valueOf(section).equals(field(home,"section")),"list transition settled");
                 waitFor(test,()->findText(home.getWindow().getDecorView(),section==DashboardActivity.SCHEDULE?"微积分课后讨论":"紧凑布局验收 0")!=null,"compact list loaded");
+                if ("filter_overflow".equals(args.getString("scope"))) {
+                    DockNavigationLayout dock=(DockNavigationLayout)field(home,"filterChips");
+                    LinearLayout compact=(LinearLayout)dock.getTag();
+                    boolean collapsed=compact.isAttachedToWindow();
+                    onMain(test,()-> {
+                        TextView expected=new TextView(home); expected.setTextSize(14);
+                        for(int i=0;i<dock.itemCount();i++) {
+                            View cell=dock.itemAt(i);TextView label=cell instanceof TextView?(TextView)cell:(TextView)((ViewGroup)cell).getChildAt(0);
+                            require(Math.abs(label.getTextSize()-expected.getTextSize())<.1f,"uniform original 14sp labels");
+                            require(label.getAutoSizeTextType()==TextView.AUTO_SIZE_TEXT_TYPE_NONE,"no automatic shrinking");
+                            if(!collapsed) {
+                                require(label.getWidth()>=label.getPaint().measureText(label.getText().toString())+label.getPaddingLeft()+label.getPaddingRight()-1,"complete inline label "+label.getText());
+                                require(label.getLayout().getEllipsisCount(0)==0,"no ellipsis");
+                            }
+                        }
+                        float density=home.getResources().getDisplayMetrics().density;
+                        require((collapsed?compact:dock).getHeight()<=density*54+1,"compact row retains original height");
+                    });
+                    String name="filter-menu-"+section+"-"+args.getString("theme","light");
+                    capture(test,name+"-base");
+                    if(!collapsed) {onMain(test,()->require(dock.getWidth()>=dock.getMinimumWidth(),"fitting rail remains full width"));continue;}
+                    tap(test,compact);
+                    waitForNode(test,"筛选");
+                    for(int i=0;i<dock.itemCount();i++) {
+                        View cell=dock.itemAt(i);TextView label=cell instanceof TextView?(TextView)cell:(TextView)((ViewGroup)cell).getChildAt(0);
+                        String option=filterOption(cell);
+                        android.graphics.Rect rect=waitForNode(test,option);
+                        require(rect.width()>label.getPaint().measureText(option),"dialog has complete option width");
+                    }
+                    capture(test,name+"-open");
+                    test.getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);
+                    SystemClock.sleep(500);
+                    onMain(test,()->require(Integer.valueOf(0).equals(field(home,section==DashboardActivity.SCHEDULE?"scheduleTab":"statusIndex")),"cancel preserves selected filter"));
+                    for(int choice:new int[]{dock.itemCount()/2,dock.itemCount()-1,0}) {
+                        tap(test,compact);waitForNode(test,"筛选");
+                        View cell=dock.itemAt(choice);TextView label=cell instanceof TextView?(TextView)cell:(TextView)((ViewGroup)cell).getChildAt(0);
+                        android.graphics.Rect rect=waitForNode(test,filterOption(cell));
+                        long down=SystemClock.uptimeMillis();physical(test,down,0,rect.exactCenterX(),rect.exactCenterY());physical(test,down,1,rect.exactCenterX(),rect.exactCenterY());
+                        waitFor(test,()->Integer.valueOf(choice).equals(field(home,section==DashboardActivity.SCHEDULE?"scheduleTab":"statusIndex")),"dialog selection updates real filter");
+                        onMain(test,()-> {
+                            require(label.getText().toString().contentEquals(((TextView)compact.getChildAt(0)).getText()),"compact value follows selection");
+                            require(("筛选："+label.getText()).contentEquals(compact.getContentDescription()),"accessible current value");
+                            require(Integer.valueOf(section).equals(field(home,"section")),"selection stays on workspace");
+                        });
+                    }
+                    capture(test,name+"-selected");
+                    continue;
+                }
                 capture(test,section==DashboardActivity.SCHEDULE?"compact-schedule":"compact-inbox");
             }
+            if ("filter_overflow".equals(args.getString("scope"))) return new JSONObject().put("passed",true).put("sections",2).toString();
             test.runOnMainSync(home::finish);screen=null;
             Class<?>[] pages={MainActivity.class,SettingsHubActivity.class,AppearanceActivity.class,SettingsActivity.class,
                     ScheduleSourceSettingsActivity.class,SystemCalendarSettingsActivity.class,NotificationSettingsActivity.class,
@@ -194,6 +244,10 @@ final class CompactUiDeviceCheck {
         }
     }
     private static void event(Instrumentation test,DockNavigationLayout dock,long down,int action,float x,float y){onMain(test,()->{android.view.MotionEvent e=android.view.MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0);try{dock.dispatchTouchEvent(e);}finally{e.recycle();}});}
+    private static void physical(Instrumentation test,long down,int action,float x,float y){android.view.MotionEvent event=android.view.MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0);try{test.sendPointerSync(event);}finally{event.recycle();}}
+    private static void tap(Instrumentation test,View view){int[] p=new int[2];onMain(test,()->view.getLocationOnScreen(p));long down=SystemClock.uptimeMillis();physical(test,down,0,p[0]+view.getWidth()/2f,p[1]+view.getHeight()/2f);physical(test,down,1,p[0]+view.getWidth()/2f,p[1]+view.getHeight()/2f);}
+    private static String filterOption(View cell){TextView label=cell instanceof TextView?(TextView)cell:(TextView)((ViewGroup)cell).getChildAt(0);String option=label.getText().toString();if(cell instanceof ViewGroup group&&group.getChildCount()>1&&group.getChildAt(1).getVisibility()==View.VISIBLE)option+=" · "+((TextView)group.getChildAt(1)).getText();return option;}
+    private static android.graphics.Rect waitForNode(Instrumentation test,String text)throws Exception{long until=SystemClock.elapsedRealtime()+5000;do{var root=test.getUiAutomation().getRootInActiveWindow();if(root!=null)for(var node:root.findAccessibilityNodeInfosByText(text))if(text.contentEquals(node.getText()==null?"":node.getText())){android.graphics.Rect rect=new android.graphics.Rect();node.getBoundsInScreen(rect);return rect;}SystemClock.sleep(80);}while(SystemClock.elapsedRealtime()<until);throw new AssertionError("dialog option "+text);}
     private static void bounds(Instrumentation test,DockNavigationLayout dock,String label,boolean allowScreenOverflow){onMain(test,()->{try{Field f=DockNavigationLayout.class.getDeclaredField("highlightView");f.setAccessible(true);View highlight=(View)f.get(dock);android.graphics.Matrix m=new android.graphics.Matrix();highlight.transformMatrixToGlobal(m);android.graphics.RectF r=new android.graphics.RectF(0,0,highlight.getWidth(),highlight.getHeight());m.mapRect(r);require(Float.isFinite(r.left)&&Float.isFinite(r.right)&&r.width()>0,label+" valid highlight geometry");if(!allowScreenOverflow)require(r.left>=0&&r.right<=dock.getResources().getDisplayMetrics().widthPixels,label+" screen envelope "+r);require(dock.isAttachedToWindow(),label+" retained");}catch(ReflectiveOperationException e){throw new AssertionError(e);}});}
     private static void onMain(Instrumentation test,Runnable action){Throwable[] failure={null};test.runOnMainSync(()->{try{action.run();}catch(Throwable error){failure[0]=error;}});if(failure[0]!=null)throw new AssertionError(failure[0]);}
 }

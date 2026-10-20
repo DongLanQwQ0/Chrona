@@ -1115,12 +1115,48 @@ public final class UiStyle {
         parent.addView(view, params);
     }
 
-    /** A themed, scrollable choice sheet shared by settings and filters. */
+    /** Borderless menu rows share one surface; only adjacent items have a divider. */
+    static TextView addMenuItem(LinearLayout parent, String label, boolean selected, Runnable action) {
+        if (parent.getChildCount() > 0 && "menu_item".equals(parent.getChildAt(parent.getChildCount()-1).getTag())) {
+            View divider = new View(parent.getContext());
+            divider.setTag("menu_separator");
+            divider.setBackgroundColor(colors(parent.getContext()).outline);
+            divider.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams line = new LinearLayout.LayoutParams(-1, dp(parent,1));
+            line.setMargins(dp(parent,14),0,dp(parent,14),0);
+            parent.addView(divider,line);
+        }
+        TextView item = new TextView(parent.getContext());
+        item.setTag("menu_item");
+        item.setText(label);
+        item.setTextSize(16);
+        item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        item.setMinHeight(dp(item,52));
+        item.setPadding(dp(item,14),dp(item,12),dp(item,14),dp(item,12));
+        item.setTextColor(selected ? colors(parent.getContext()).primary : colors(parent.getContext()).text);
+        item.setSelected(selected);
+        if (Build.VERSION.SDK_INT >= 30) item.setStateDescription(selected ? "已选中" : null);
+        marked(item,selected);
+        item.setOnClickListener(v -> action.run());
+        pressable(item);
+        PressFeedback.apply(item,1f);
+        parent.addView(item,new LinearLayout.LayoutParams(-1,-2));
+        return item;
+    }
+
+    /** A themed, scrollable menu shared by settings, filters and action lists. */
     public static void choiceDialog(Activity activity, String title, String[] options,
             int selected, IntConsumer onChoice) {
         Dialog dialog = dialog(activity);
         LinearLayout panel = dialogPanel(activity, title);
-        ScrollView scroll = new ScrollView(activity);
+        ScrollView scroll = new ScrollView(activity) {
+            @Override protected void onMeasure(int widthSpec,int heightSpec) {
+                int limit = Math.round(getResources().getDisplayMetrics().heightPixels * .58f);
+                if (View.MeasureSpec.getMode(heightSpec) != View.MeasureSpec.UNSPECIFIED)
+                    limit = Math.min(limit,View.MeasureSpec.getSize(heightSpec));
+                super.onMeasure(widthSpec,View.MeasureSpec.makeMeasureSpec(limit,View.MeasureSpec.AT_MOST));
+            }
+        };
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout choices = new LinearLayout(activity);
@@ -1128,36 +1164,16 @@ public final class UiStyle {
         int sheetWidth = Math.min(
                 (int) (activity.getResources().getDisplayMetrics().widthPixels * .72f),
                 dp(panel, CHOICE_SHEET_WIDTH_DP));
-        // The scroll clips its direct content. Keep the held row inside that content.
-        int rowEdge = PressFeedback.edgeSpace(Math.max(0, sheetWidth - 2 * dp(panel, 20)));
-        choices.setPadding(rowEdge, dp(panel, 3), rowEdge, dp(panel, 3));
         PressFeedback.protectViewport(scroll);
         for (int i = 0; i < options.length; i++) {
             final int index = i;
-            TextView item = new TextView(activity);
-            item.setText(options[i]);
-            item.setTextSize(16);
-            // A short list of short labels reads better as a centred column than as rows of text
-            // pinned to the left edge of a full-width sheet.
-            item.setGravity(Gravity.CENTER);
-            item.setMinHeight(dp(item, 52));
-            item.setPadding(dp(item, 14), 0, dp(item, 14), 0);
-            item.setTextColor(i == selected ? colors(activity).onPrimaryContainer
-                    : colors(activity).text);
-            marked(item, i == selected);
-            choice(item, i == selected, RADIUS_FIELD);
-            item.setOnClickListener(view -> {
+            addMenuItem(choices,options[i],i==selected,() -> {
                 dialog.dismiss();
                 onChoice.accept(index);
             });
-            addSpaced(choices, item, 2, 5);
         }
         scroll.addView(choices);
-        int maxHeight = (int) (activity.getResources().getDisplayMetrics().heightPixels * .58f);
-        panel.addView(scroll, new LinearLayout.LayoutParams(-1,
-                Math.min(maxHeight, options.length * dp(scroll, 60) + 2 * dp(panel, 3))));
-        // Narrower than the default sheet: these are one-word choices, and the full width left the
-        // rows looking like empty bars.
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1,-2));
         showDialog(dialog, panel, sheetWidth);
     }
 

@@ -40,7 +40,7 @@ final class DetailRepeatUiCheck {
             String title="true".equals(args.getString("long_title"))?"机器人与无人机基础：室外飞行安全与自主导航实验":"机器人与无人机基础";
             long repeated, empty, fresh;
             try(TaskStore store=new TaskStore(context)) {
-                task=store.insertTask("详情操作布局验收",null,"detail-repeat-ui",System.currentTimeMillis());
+                task=store.insertTask("详情操作布局验收"+("hints".equals(args.getString("scope"))?" https://example.invalid/menu":""),null,"detail-repeat-ui",System.currentTimeMillis());
                 repeated=store.appendCandidate(new EventCandidate(0,task,title,first,first+5400000,
                         "Asia/Shanghai","北四-212","每周课堂",null,true,null,"event",false)
                         .withRepeat(new RepeatRule("daily",1,List.of(),null,40)));
@@ -51,9 +51,29 @@ final class DetailRepeatUiCheck {
                         null,false,null,"event",false,false,0,null,null,true));
                 store.updateStatus(task,TaskRecord.READY,null);
             }
-            detail=open(test,context,TaskDetailActivity.class,task,"values".equals(args.getString("scope"))?fresh:repeated);
+            boolean hintScope="hints".equals(args.getString("scope"));
+            detail=open(test,context,TaskDetailActivity.class,task,hintScope?empty:"values".equals(args.getString("scope"))?fresh:repeated);
             final Activity editor=detail;
-            waitFor(test,()->description(editor.getWindow().getDecorView(),"开始时间，点按选择日期和时间")!=null,"time value");
+            waitFor(test,()->description(editor.getWindow().getDecorView(),hintScope?"执行开始时间，点按选择日期和时间":"开始时间，点按选择日期和时间")!=null,"time value");
+            if(hintScope) {
+                tap(test,description(editor.getWindow().getDecorView(),"打开模型输出、解析用量、来源与任务操作"));
+                waitFor(test,()->MenuDeviceCheck.rows().size()==2,"detail header menu");
+                MenuDeviceCheck.inspect(test,2,-1);capture(test,"menu-detail-"+args.getString("theme","light"));
+                test.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
+                waitFor(test,()->MenuDeviceCheck.rows().isEmpty(),"detail menu cancelled");
+                EditText start=(EditText)description(editor.getWindow().getDecorView(),"执行开始时间，点按选择日期和时间");
+                EditText end=(EditText)description(editor.getWindow().getDecorView(),"执行结束时间，点按选择日期和时间");
+                require(timeHints(start,end)&&start.length()==0&&end.length()==0,"exact requested empty-field hints");
+                test.runOnMainSync(()-> {View range=(View)start.getParent().getParent();range.requestRectangleOnScreen(new Rect(0,0,range.getWidth(),range.getHeight()),true);});
+                capture(test,"detail-time-hints-"+args.getString("theme","light"));
+                tap(test,start);waitFor(test,()->windowText("执行开始时间")!=null,"hint field opens picker");tap(test,windowAction("取消"));
+                require(timeHints(start,end)&&start.length()==0&&end.length()==0,"cancel preserves hints and empty values");
+                View allDay=type(editor.getWindow().getDecorView(),Class.forName("com.donglan.chrona.TaskDetailActivity$AllDayToggle"));
+                tap(test,allDay);require(timeHints(start,end),"all-day toggle retains exact hints");
+                test.runOnMainSync(()->start.setText("2026-11-01"));
+                require("2026-11-01".contentEquals(start.getText())&&timeHints(start,end),"hint does not replace entered value");
+                return "PASS: literal start/end hints, normal/large wrapping render, picker/cancel, all-day retention, filled value, and borderless detail menu";
+            }
             require(text(editor.getWindow().getDecorView(),"收件箱记录")==null
                     &&text(editor.getWindow().getDecorView(),"退役记录标题")==null,"retired independent record UI removed");
             if ("values".equals(args.getString("scope"))) {
@@ -128,13 +148,13 @@ final class DetailRepeatUiCheck {
             waitFor(test,()->description(blank.getWindow().getDecorView(),"执行开始时间，点按选择日期和时间")!=null,"blank execution fields");
             EditText start=(EditText)description(blank.getWindow().getDecorView(),"执行开始时间，点按选择日期和时间");
             EditText end=(EditText)description(blank.getWindow().getDecorView(),"执行结束时间，点按选择日期和时间");
-            require(start!=null&&end!=null&&emptyHint(start)&&emptyHint(end),"empty time fields have no placeholder");
+            require(start!=null&&end!=null&&timeHints(start,end),"empty time fields show requested hints");
             test.runOnMainSync(()->start.requestRectangleOnScreen(new Rect(0,0,start.getWidth(),start.getHeight()),true));
             capture(test,"detail-empty-time-"+args.getString("theme","light"));
             tap(test,start);waitFor(test,()->windowText("执行开始时间")!=null,"empty time still opens picker");
             tap(test,windowText("取消"));
             View allDay=type(blank.getWindow().getDecorView(),Class.forName("com.donglan.chrona.TaskDetailActivity$AllDayToggle"));
-            tap(test,allDay);require(emptyHint(start)&&emptyHint(end),"all-day toggle does not restore hints");
+            tap(test,allDay);require(timeHints(start,end),"all-day toggle retains requested hints");
             test.runOnMainSync(blank::finish);detail=null;
             repeat=open(test,context,RepeatScheduleActivity.class,task,fresh);final Activity form=repeat;
             waitFor(test,()->description(form.getWindow().getDecorView(),"建立重复日程")!=null,"create header action");
@@ -173,7 +193,7 @@ final class DetailRepeatUiCheck {
             AgendaReminderPreferences.setEnabled(context,reminders);
         }
     }
-    private static boolean emptyHint(TextView view){return view.getHint()==null||view.getHint().length()==0;}
+    private static boolean timeHints(TextView start,TextView end){return "欸~这好像还没有时间".contentEquals(start.getHint())&&"遥遥路途，没有终点~".contentEquals(end.getHint());}
     private static void fullText(TextView view){
         require(view!=null&&view.getLayout()!=null,"time value layout exists");
         android.text.Layout layout=view.getLayout();

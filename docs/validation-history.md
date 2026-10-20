@@ -1,6 +1,6 @@
 # 验证记录
 
-当前版本为 **0.15.27 / 189**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前版本为 **0.15.28 / 190**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)
@@ -8,6 +8,15 @@
 - [设备验收模板](device-acceptance.md)
 
 构建、离线检查、实际设备操作分别记录。旧版本某项通过，只支持对应候选和条件。
+
+## 0.15.28 — 菜单分隔行、空时间提示与窄屏筛选 — 2026-10-20
+
+- 旧筛选栏标签固定保留 14sp、按完整字宽分配。正常宽度保持原 Dock；放不下时在原行显示当前值与 Lucide 下拉图标，公共面板完整列出选项和计数。第一版横向视口被独立审核以静态大段留白、滚动中间高光仍可能裁切两项 P2 否决，已撤销其全部视口与公共 Dock 改动；新方案复审关闭两项 P2，原 Dock 参数无改动。正常浅色与 320dp／字体 1.45／深色的两页切换、取消、中间与末项选择通过。
+- 纵向浮动菜单改用公共 `UiStyle.addMenuItem`：透明文字行、相邻 1dp 分隔、左对齐、选中勾及整行涟漪，无独立边框和缩放；设置／筛选选择、真实课程关联预览与主来源子菜单、详情操作均覆盖。`build/menu-style-{light,dark}.log` 两组各 164 项通过，包含长标签、长列表底部可达、首项长按无缩放及取消不写课程规则。实际图为 `build/menu-{short,held,long-top,long-bottom,course-actions,course-source,detail}-{light,dark}.png`；用户同款筛选图为 `build/filter-menu-{1,2}-dark-open.png`。
+- 空开始提示精确为「欸~这好像还没有时间」，空结束为「遥遥路途，没有终点~」。`build/time-hints-{light,dark}.log` 通过，核对空值与文字、正常／大字体渲染、实际点按日期选择器、取消、全天切换及填值不被提示替代；图为 `build/detail-time-hints-{light,dark}.png`。相关文档原空白规则已按用户新要求替换。
+- 本轮两次 UI 独立复审均通过，菜单与提示本轮核对 18 张实际图。离线菜单合同更新为 88 项、40 个回归负例，覆盖 API 26 与 36；旧放大按钮包络检查随菜单不缩放的新合同替换。Dock 180、计数 15、详情编辑 23 及 LAN 7 项通过；其他未受影响检查沿用下节有效结果。首次正式 lint 发现 API 30 的 `setStateDescription` 调用未设门槛，已修正并重新通过 Debug／Release、lintDebug／lintRelease，日志 `build/0.15.28-release-build.log`。
+- 新 debug／release APK 验签通过，证书与旧版一致。正式包 `build/distributions/0.15.28/Chrona-0.15.28.apk` 为 `com.donglan.chrona`、190 / 0.15.28、3072378 字节，无 debuggable；发布资产 SHA-256 为 `a663130bf9b49b1f47a409240fb74cbcee24ada72b005d79292a0b027ccff19a`。GitHub 已登录，待发布及旧版手动发现更新／模拟器覆盖安装；实体手机非空数据、真实付费 AI、真实远端 WebDAV 本轮仍未验收。
+- 恢复副本 `.local-backups/filter-overflow-20261020/`、`.local-backups/menu-and-time-hints-20261020/`；下节 0.15.27 保留源码标签，全部功能合入本版，不另发包。
 
 ## 0.15.27 — 切周、课表一致性与静默推理 — 2026-10-20
 
@@ -18,7 +27,7 @@
 - AI 所有内容类型统一 180 秒读等待，保留 30 秒连接超时和日程整轮 240 秒预算。真实 loopback HTTP 文本请求静默 31 秒后只返回内容 SSE，成功完成；取消及短总预算检查仍通过。`classroom_summary_check.py` 最终 140 项通过，未调用付费服务。
 - 发布完整离线组首轮 81/88，通过部分见 `build/0.15.27-offline-full.log`。7 个失败均为随已改接口／布局过时的测试适配：轮播布局替身、选择框颜色入口、详情底部删除位置、周操作代理、首页图标开关构造、课堂共享文档编译依赖和同步课堂适配器。补齐后这 7 个入口逐项复跑通过：轮播 108、选择框 720、完成提醒 32、日历 139、周手势、图片 10、同步锁 3；未重复运行仍有效的另外 81 项。
 - 本轮源码恢复点 `.local-backups/week-and-timetable-20261020/`，发布元数据和测试适配恢复点 `.local-backups/release-0.15.27/`。此前 Markdown、分享、同步／备份等证据见下列续修记录。实体手机当前未连接，未进行本轮真实账号、付费 AI 或真实 WebDAV 验证。
-- 专门 UI 审核复审通过，本轮 P2 和稳定帧证据缺口均关闭；此前各续轮已通过的结论继续有效。正式 Debug／Release、lintDebug／lintRelease 通过，日志 `build/0.15.27-release-build.log`。GitHub Release 尚待可用认证发布入口；已提供 GitHub 插件安装／连接入口，浏览器控制连续超时。
+- 专门 UI 审核复审通过，本轮 P2 和稳定帧证据缺口均关闭；此前各续轮已通过的结论继续有效。正式 Debug／Release、lintDebug／lintRelease 通过，日志 `build/0.15.27-release-build.log`。源码及 `v0.15.27` 标签已推送，构建源码为 `d58538e`；本版本保留源码检查点，全部内容合入上节 0.15.28。
 - 新 debug、release 与已发布 0.15.26 的 APK 签名一致。正式包 `build/distributions/0.15.27/Chrona-0.15.27.apk` 为 `com.donglan.chrona`、189 / 0.15.27、3070626 字节且无 debuggable 标志；Android 36 模拟器从正式 188 覆盖安装到 189、启动首页成功，未卸载或清数据。实体手机的非空真实数据升级仍未验收。
 
 ## 未发布续修 — 导出后系统分享与下载目录 — 2026-10-20

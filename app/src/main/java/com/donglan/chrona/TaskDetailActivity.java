@@ -964,32 +964,12 @@ public final class TaskDetailActivity extends Activity {
 
     private void addHeaderMenuRow(LinearLayout panel, Dialog dialog, String title,
             boolean destructive, Runnable action) {
-        TextView row = headerMenuAction(title, destructive);
-        row.setOnClickListener(view -> {
+        TextView row = UiStyle.addMenuItem(panel,title,false,() -> {
             dialog.dismiss();
             action.run();
         });
-        if (panel.getChildCount() > 0) {
-            View divider = new View(this);
-            divider.setBackgroundColor(UiStyle.colors(this).outline);
-            LinearLayout.LayoutParams separator = new LinearLayout.LayoutParams(-1, dp(1));
-            separator.setMargins(dp(12), 0, dp(12), 0);
-            panel.addView(divider, separator);
-        }
-        panel.addView(row, new LinearLayout.LayoutParams(-1, dp(48)));
-    }
-
-    private TextView headerMenuAction(String text, boolean destructive) {
-        TextView action = new TextView(this);
-        action.setText(text);
-        action.setTextSize(15);
-        action.setGravity(android.view.Gravity.CENTER);
-        action.setPadding(dp(6), 0, dp(6), 0);
-        action.setSingleLine(true);
-        action.setMinHeight(dp(48));
-        action.setTextColor(destructive ? UiStyle.danger(this) : UiStyle.colors(this).primary);
-        UiStyle.pressable(action);
-        return action;
+        row.setTextSize(15);
+        row.setTextColor(destructive ? UiStyle.danger(this) : UiStyle.colors(this).primary);
     }
 
     private void showModelOutputPreviewDialog() {
@@ -2486,7 +2466,7 @@ public final class TaskDetailActivity extends Activity {
         endRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         endRow.setMinimumHeight(dp(54));
         endRow.setPadding(0, dp(3), 0, dp(3));
-        EditText start = inlineField(startRow, "",
+        EditText start = inlineField(startRow, "欸~这好像还没有时间",
                 candidate.allDay ? dayStart(defaulted.startAtMillis)
                         : format(defaulted.startAtMillis), 1f);
         start.setPadding(dp(4), dp(5), dp(4), dp(5));
@@ -2494,7 +2474,7 @@ public final class TaskDetailActivity extends Activity {
         allDay.setChecked(candidate.allDay);
         endRow.addView(allDay, new LinearLayout.LayoutParams(
                 dp(DETAIL_FIELD_LABEL_WIDTH_DP), dp(48)));
-        EditText end = inlineField(endRow, "",
+        EditText end = inlineField(endRow, "遥遥路途，没有终点~",
                 candidate.allDay ? dayEnd(defaulted.endAtMillis)
                         : format(defaulted.endAtMillis), 1f);
         end.setPadding(dp(4), dp(5), dp(4), dp(5));

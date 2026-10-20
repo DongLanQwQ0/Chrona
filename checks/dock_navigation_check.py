@@ -20,6 +20,7 @@ public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){
     "android/os/Build.java": "package android.os;public class Build {public static class VERSION {public static int SDK_INT=36;}}",
     "android/content/res/ColorStateList.java": "package android.content.res; public class ColorStateList { public static ColorStateList valueOf(int x){return new ColorStateList();} }",
     "android/graphics/Canvas.java": "package android.graphics; public class Canvas {}",
+    "android/graphics/Paint.java": "package android.graphics;public class Paint {public float measureText(String text){return text.length()*14f;}}",
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
 public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight,lastLeft,lastRight;public static int lastColor; int l,r,t,b;
 public static float[] radii;public void setCornerRadius(float x){}public void setCornerRadii(float[] x){radii=x.clone();} public void setColor(int c){lastColor=c;}
@@ -62,6 +63,8 @@ public class View {
   public boolean isShown(){return true;}public boolean isAttachedToWindow(){return parent!=null;}public void getLocationOnScreen(int[] xy){xy[0]=l;xy[1]=t;for(View p=parent;p!=null;p=p.parent){xy[0]+=p.l-p.getScrollX();xy[1]+=p.t-p.getScrollY();}}
  public int getLeft(){return l;} public int getRight(){return r;} public int getTop(){return t;} public int getBottom(){return b;}
  public int getWidth(){return r-l;} public int getHeight(){return b-t;}
+ private int minimumWidth; public void setMinimumWidth(int value){minimumWidth=value;}public int getMinimumWidth(){return minimumWidth;}
+ private boolean selected;public void setSelected(boolean value){selected=value;}public boolean isSelected(){return selected;}
  public static class MeasureSpec {public static final int EXACTLY=1073741824,AT_MOST=-2147483648,UNSPECIFIED=0;public static int getSize(int spec){return spec&0x3fffffff;}public static int getMode(int spec){return spec&0xc0000000;}public static int makeMeasureSpec(int size,int mode){return size|mode;}}
  private int measuredWidth,measuredHeight;public final void measure(int w,int h){onMeasure(w,h);}protected void onMeasure(int w,int h){setMeasuredDimension(MeasureSpec.getSize(w),MeasureSpec.getSize(h));}protected final void setMeasuredDimension(int w,int h){measuredWidth=w;measuredHeight=h;}public int getMeasuredWidth(){return measuredWidth;}public int getMeasuredHeight(){return measuredHeight;}
  public int layouts,invalidations;public void layout(int l,int t,int r,int b){this.l=l;this.t=t;this.r=r;this.b=b;layouts++;if(this instanceof ViewGroup group)group.onLayout(true,l,t,r,b);}
@@ -126,6 +129,8 @@ import java.util.*; public class ViewGroup extends View {
 public TextView(android.content.Context c){super(c);}private int color; public void setTextColor(int c){color=c;}public int getCurrentTextColor(){return color;}
 public float textSize=14;public boolean singleLine,fontPadding=true,horizontalScrolling;public int autoMin,autoMax,autoStep,autoUnit;
 public void setTextSize(float value){textSize=value;}public float getTextSize(){return textSize;}
+public android.graphics.Paint getPaint(){return new android.graphics.Paint();}
+public static final int AUTO_SIZE_TEXT_TYPE_NONE=0;public void setAutoSizeTextTypeWithDefaults(int type){autoMin=autoMax=0;}
 public void setSingleLine(boolean value){singleLine=value;horizontalScrolling=value;}public void setHorizontallyScrolling(boolean value){horizontalScrolling=value;}
 public void setGravity(int g){}public void setIncludeFontPadding(boolean b){fontPadding=b;}
 public void setAutoSizeTextTypeUniformWithConfiguration(int min,int max,int step,int unit){autoMin=min;autoMax=max;autoStep=step;autoUnit=unit;}
@@ -158,6 +163,7 @@ public class DockNavigationCheck extends Context {
  final List<View> strips=new ArrayList<>();
  int dp(int value){return value;}TextView text(String title,int size,boolean bold){return new TextView(this);}TextView countBadge(int count){return new TextView(this);}
  __FILTER_DOCK__
+ void updateCompactFilterSelection(DockNavigationLayout dock,int selected){}
  __OVERFLOW__
  static int checks; static void require(boolean ok,String message){checks++;if(!ok)throw new AssertionError(message);}
  static Context c=new Context(); static DockNavigationLayout dock; static List<Integer> selected; static int rebuilds;
@@ -500,7 +506,7 @@ public class DockNavigationCheck extends Context {
 
 dashboard = (ROOT / "app/src/main/java/com/donglan/chrona/DashboardActivity.java").read_text(encoding="utf-8")
 start = dashboard.index("    private DockNavigationLayout filterDock(")
-end = dashboard.index("    /** The one count marker:", start)
+end = dashboard.index("    private View filterControlHost(", start)
 RUNNER = RUNNER.replace("__FILTER_DOCK__", dashboard[start:end])
 start = dashboard.index("    private void allowSectionDockOverflow(")
 end = dashboard.index("    private DockNavigationLayout filterDock(", start)

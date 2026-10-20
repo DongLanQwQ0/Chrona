@@ -24,9 +24,11 @@ import java.util.*;
 class View {
  static final int VISIBLE=0,GONE=8;Object tag;int visibility=VISIBLE;String description="";
  void setTag(Object value){tag=value;}void setVisibility(int value){visibility=value;}void setContentDescription(String value){description=value;}
+ void setSelected(boolean value){}void setMinimumWidth(int value){}void setPadding(int a,int b,int c,int d){}int getPaddingLeft(){return 4;}int getPaddingRight(){return 4;}
  @SuppressWarnings("unchecked") <T extends View>T findViewWithTag(Object value){return Objects.equals(tag,value)?(T)this:null;}
 }
-class TextView extends View {String value="";void setText(String s){value=s;}void setGravity(int x){}void setIncludeFontPadding(boolean x){}void setOnClickListener(java.util.function.Consumer<View> c){}}
+class Paint {float measureText(String value){return value.length()*14f;}}
+class TextView extends View {static final int AUTO_SIZE_TEXT_TYPE_NONE=0;String value="";void setText(String s){value=s;}void setGravity(int x){}void setIncludeFontPadding(boolean x){}void setOnClickListener(java.util.function.Consumer<View> c){}Paint getPaint(){return new Paint();}void setAutoSizeTextTypeWithDefaults(int type){}}
 class LinearLayout extends View {void removeAllViews(){}static class LayoutParams{LayoutParams(int w,int h,int weight){}}}
 class FrameLayout extends View {
  List<View>children=new ArrayList<>();FrameLayout(Object c){}void setClipChildren(boolean x){}void setClipToPadding(boolean x){}
@@ -55,6 +57,7 @@ public class ReviewBadgeCheck {
  int dp(int v){return v;}TextView text(String s,int z,boolean b){TextView t=new TextView();t.setText(s);return t;}
  TextView countBadge(int n){return text(n>99?"99+":Integer.toString(n),11,true);}
  void drawNavigation(){navigationCount=pendingReview+pendingFailed;navigationUpdates++;}
+ void updateCompactFilterSelection(DockNavigationLayout dock,int selected){}
  void requestScheduleResults(){throw new AssertionError("wrong path");}void renderScheduleResults(TaskStore s){throw new AssertionError("wrong path");}
  void renderInboxResults(TaskStore s){check(pendingReview==TaskStore.review&&pendingFailed==TaskStore.failed,"counts synchronized before rows");rendered++;}
  void message(Object c,String s){throw new AssertionError(s);}

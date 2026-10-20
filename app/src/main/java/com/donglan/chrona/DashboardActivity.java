@@ -1779,7 +1779,7 @@ public final class DashboardActivity extends Activity {
                 new int[]{0, pendingReview, 0, pendingFailed, 0});
         LinearLayout filters = new LinearLayout(this); filters.setGravity(Gravity.CENTER_VERTICAL);
         filters.setClipChildren(false); filters.setClipToPadding(false);
-        filters.addView(filterChips, new LinearLayout.LayoutParams(0, dp(48), 1));
+        filters.addView(filterControlHost(filterChips), new LinearLayout.LayoutParams(0, -2, 1));
         LinearLayout.LayoutParams category = new LinearLayout.LayoutParams(dp(48), dp(48));
         category.setMargins(dp(8), 0, 0, 0); filters.addView(inboxCategoryButton(), category);
         UiStyle.addSpaced(content, filters, 4, 8);
@@ -1986,7 +1986,7 @@ public final class DashboardActivity extends Activity {
             updateResultsWithEntrance();
         }, null);
         updateChipSelection(scheduleTab);
-        bar.addView(filterChips, new LinearLayout.LayoutParams(0, dp(48), 1));
+        bar.addView(filterControlHost(filterChips), new LinearLayout.LayoutParams(0, -2, 1));
         ImageButton filters = new ImageButton(this);
         filters.setImageResource(R.drawable.ic_filter_alt);
         filters.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
@@ -2564,6 +2564,7 @@ public final class DashboardActivity extends Activity {
             cell.setSelected(i == selected);
             cell.setContentDescription(chip.getText() + (i == selected ? "，已选中" : ""));
         }
+        updateCompactFilterSelection(filterChips, selected);
     }
 
     private void candidateRow(EventCandidate item, int index) {
@@ -3663,11 +3664,15 @@ public final class DashboardActivity extends Activity {
         // SwipePagerLayout otherwise forcibly re-enables interception on horizontal MOVE.
         strips.add(dock);
         dock.setPadding(dp(4), dp(2), dp(4), dp(2));
+        int minimumWidth = dock.getPaddingLeft() + dock.getPaddingRight();
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
             TextView label = text(labels[i], 14, true);
             label.setGravity(Gravity.CENTER); label.setIncludeFontPadding(false);
-            label.setOnClickListener(view -> { action.accept(index); dock.finishPageSelection(index); });
+            label.setPadding(dp(8), 0, dp(8), 0);
+            int labelWidth = (int)Math.ceil(label.getPaint().measureText(labels[i])) + dp(16);
+            minimumWidth += labelWidth;
+            label.setOnClickListener(view -> { action.accept(index); dock.finishPageSelection(index); updateCompactFilterSelection(dock, index); });
             View item = label;
             int count = counts == null ? 0 : counts[i];
             if (counts != null) {
@@ -3679,10 +3684,73 @@ public final class DashboardActivity extends Activity {
                 FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(-2, dp(18), Gravity.TOP | Gravity.END);
                 badgeParams.setMargins(0, 0, dp(2), 0); cell.addView(badge, badgeParams); item = cell;
             }
-            dock.addItem(item, new LinearLayout.LayoutParams(0, dp(44), 1));
+            dock.addItem(item, new LinearLayout.LayoutParams(0, dp(44), labelWidth));
+            item.setSelected(i == selected);
+            label.setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_TYPE_NONE);
         }
+        dock.setMinimumWidth(minimumWidth);
         dock.setSelectedIndex(selected);
         return dock;
+    }
+
+    private View filterControlHost(DockNavigationLayout dock) {
+        LinearLayout compact = new LinearLayout(this);
+        compact.setTag("compact_filter");
+        compact.setGravity(Gravity.CENTER);
+        compact.setMinimumHeight(dp(48));
+        compact.setPadding(dp(12), dp(6), dp(12), dp(6));
+        compact.setClipChildren(false); compact.setClipToPadding(false);
+        TextView value = text("",14,true);
+        value.setGravity(Gravity.CENTER);
+        value.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        compact.addView(value,new LinearLayout.LayoutParams(0,-2,1));
+        ImageView chevron = new ImageView(this);
+        chevron.setImageResource(R.drawable.ic_chevron_down);
+        chevron.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).muted));
+        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        compact.addView(chevron,new LinearLayout.LayoutParams(dp(24),dp(24)));
+        applyThemeControlSurface(compact,false,UiStyle.RADIUS_CHIP);
+        UiStyle.pressable(compact);
+        dock.setTag(compact);
+        for (int i=0;i<dock.itemCount();i++) if(dock.itemAt(i).isSelected()) updateCompactFilterSelection(dock,i);
+        compact.setOnClickListener(v -> {
+            String[] choices = new String[dock.itemCount()];
+            int selected=0;
+            for(int i=0;i<choices.length;i++) {
+                View cell=dock.itemAt(i);
+                TextView label=(TextView)(cell instanceof FrameLayout group?group.getChildAt(0):cell);
+                choices[i]=label.getText().toString();
+                if(cell instanceof FrameLayout group && group.getChildCount()>1 && group.getChildAt(1).getVisibility()==View.VISIBLE)
+                    choices[i]+=" · "+((TextView)group.getChildAt(1)).getText();
+                if(cell.isSelected()) selected=i;
+            }
+            UiStyle.choiceDialog(this,"筛选",choices,selected,index -> {
+                View cell=dock.itemAt(index);
+                ((TextView)(cell instanceof FrameLayout group?group.getChildAt(0):cell)).performClick();
+            });
+        });
+        FrameLayout adaptive = new FrameLayout(this) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                boolean overflow = View.MeasureSpec.getSize(widthSpec) < dock.getMinimumWidth();
+                View child=overflow?compact:dock;
+                if(getChildCount()==0 || getChildAt(0)!=child) {
+                    removeAllViews();
+                    addView(child,new FrameLayout.LayoutParams(-1,overflow?-2:dp(48)));
+                }
+                super.onMeasure(widthSpec,heightSpec);
+            }
+        };
+        adaptive.setClipChildren(false);adaptive.setClipToPadding(false);
+        strips.add(adaptive);
+        return adaptive;
+    }
+
+    private void updateCompactFilterSelection(DockNavigationLayout dock, int selected) {
+        if (!(dock.getTag() instanceof LinearLayout compact)) return;
+        View cell = dock.itemAt(selected);
+        TextView label=(TextView)(cell instanceof FrameLayout group?group.getChildAt(0):cell);
+        ((TextView)compact.getChildAt(0)).setText(label.getText());
+        compact.setContentDescription("筛选："+label.getText());
     }
 
     /** The one count marker: a translucent, theme-tinted pill used by every corner badge. */
