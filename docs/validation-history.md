@@ -11,6 +11,9 @@
 
 ## 0.15.30 — 课堂滚动、自动状态、重新生成与公式 — 2026-10-20
 
+- 发布源码 `80f2362`、不可变标签 `v0.15.30` 已推送；[正式 Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.30) 已设为 Latest。公开 API 为非 Draft／非 Pre-release，正式 APK 3081266 字节；公开下载的实际包名／192／0.15.30、不可调试和原签名验证通过，保存在 `build/distributions/0.15.30/Chrona-0.15.30.apk`。记录 `build/release-0.15.30-{public.json,public-apk.log,published.png}`。
+- 正式模拟器旧 0.15.29 通过真实更新页发现 v0.15.30 及下载入口；覆盖安装公开 APK 后显示已是最新版本。升级前后不含 API 密钥的完整备份比较通过：全部 15 张表的结构与逐行数据、1 条收件／1 个候选、设置、课堂文档和图片内容保留，仅备份导出时间变化。日志 `build/release-0.15.30-{old-update,current-update,upgrade-preservation}.log`；恢复副本 `.local-backups/release-01530-20261020/`。普通收件附件与桌面小组件本轮没有升级样本。
+
 - 手机现场复现课堂表格纵向拖动抽搐：外层纵向视口移动了处理双轴手势的横向容器，局部触点坐标形成反向反馈。改为直接复用周日程的层级：固定 `FreeCalendarScrollView`，内部原生 `ScrollView` 承载表格。公共手势实现未改；标题与日期固定，切周使用固定视口横向过渡。
 - 正常浅色与 320dp／字体 1.45 深色各 104 项通过，日志 `build/classroom-viewport-reuse-{light,narrow-dark}.log`。覆盖每个 MOVE 的静止容器坐标与单调纵向位移、横向浏览／边缘切周、取消／多指、半途反向、减少动画位置、末行到达 Dock 上方、短周无额外滚动，以及真实时间边界、原位状态重绑、缓存年龄、五分钟失败冷却、不重叠和生命周期清理。截图在 `build/classroom-final-captures/`。
 - 用户新授权 USB 调试后，先通过应用导出不含 API 密钥的完整备份并保留原 APK，再以 `-r` 覆盖安装候选，不卸载、不清数据、不调整手机密度／字体。手机原有课堂的公式尺寸和基线已实际对照，课堂表格进行了多次慢速上下拖动；视频 `build/classroom-phone-scroll-final.mp4`，截图 `build/classroom-phone-week-reuse-{top,scrolled}.png`。恢复副本 `.local-backups/classroom-viewport-status-20261020/phone/`。没有向手机注入合成课堂或调用付费 AI。
