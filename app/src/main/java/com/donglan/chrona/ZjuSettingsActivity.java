@@ -35,7 +35,7 @@ public final class ZjuSettingsActivity extends Activity {
         password=field(account,settings.configured()?"密码（留空保留）":"密码",true);
         LinearLayout accountActions=new LinearLayout(this);
         save=accountAction(accountActions,"保存账号",this::saveAccount);
-        logout=accountAction(accountActions,"退出账号",()->UiStyle.choiceDialog(this,"退出账号",new String[]{"保留账号","退出并停止同步"},0,choice->{
+        logout=accountAction(accountActions,"退出账号",()->UiDialogs.choiceDialog(this,"退出账号",new String[]{"保留账号","退出并停止同步"},0,choice->{
             if(choice==1){ZjuSync.cancel();change(()->{new ZjuHomeworkStore(this).configure(settings.account(),false);settings.clear();new ZjuTimetableStore(this).clear();});}
         }));
         account.addView(accountActions);root.addView(account);

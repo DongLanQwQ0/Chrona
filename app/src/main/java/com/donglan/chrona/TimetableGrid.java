@@ -80,7 +80,7 @@ final class TimetableGrid extends FrameLayout {
             course.setMaxLines(Math.max(1, (int) ((height - dp(12))
                     / (course.getPaint().getFontSpacing() + dp(1)))));
             UiStyle.acrylicChoice(course, true, COURSE_RADIUS_DP, true);
-            UiStyle.minimumAcrylicMix(course, 54);
+            UiSurfaces.minimumAcrylicMix(course, 54);
             course.setElevation(0);
             course.setPadding(dp(4), dp(6), dp(4), dp(6));
             course.setContentDescription(block.title + "，" + DAYS[block.day] + "，"

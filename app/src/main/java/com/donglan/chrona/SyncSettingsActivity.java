@@ -1,11 +1,8 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.res.ColorStateList;
 import android.os.Bundle;
 import android.text.InputType;
-import android.view.Gravity;
 import android.widget.*;
 import com.donglan.chrona.sync.WebDavClient;
 import java.lang.ref.WeakReference;
@@ -121,10 +118,10 @@ public final class SyncSettingsActivity extends Activity {
     private void choose(AndroidSync.Pending record) {
         String[] labels = new String[record.versions.size() + 1]; labels[0] = "保留本机版本";
         for (int i = 0; i < record.versions.size(); i++) labels[i + 1] = "版本 " + (i + 1) + "\n" + AndroidSync.describe(record.versions.get(i));
-        UiStyle.choiceDialog(this, record.title, labels, -1, which -> {
+        UiDialogs.choiceDialog(this, record.title, labels, -1, which -> {
             if (which == 0) { resolve(record, -1, false); return; }
             if (!record.calendar) { resolve(record, which - 1, false); return; }
-            UiStyle.confirmDialog(this, "移除本机日历中的旧事件并应用云端版本",
+            UiDialogs.confirmDialog(this, "移除本机日历中的旧事件并应用云端版本",
                     "此操作将移除这条记录已写入系统日历的全部旧事件及其系统提醒，然后应用所选版本。新日程需再次手动写入日历。若部分移除失败，将保留记录供重试。",
                     "移除旧事件并应用", () -> resolve(record, which - 1, true));
         });

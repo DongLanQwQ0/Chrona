@@ -132,7 +132,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         });
         UiStyle.addSpaced(root, new WorkspacePageHeader(activity, navigation.headerMotionHost(), refresh), 0, 8);
         weekBar = new DateIntervalBar(activity, () -> {
-            if (s != null) UiStyle.dateDialog(activity, "选择日期", s.week, value -> {
+            if (s != null) UiDialogs.dateDialog(activity, "选择日期", s.week, value -> {
                 setWeek(value.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
             });
         }, direction -> {

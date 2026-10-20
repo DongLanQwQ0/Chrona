@@ -67,7 +67,7 @@ final class CornerDeviceCheck {
         return null;
     }
     private static View card(View view) {
-        if (view.isClickable() && UiStyle.isCardSurface(view)) return view;
+        if (view.isClickable() && UiSurfaces.isCardSurface(view)) return view;
         if (view instanceof ViewGroup group) for (int i=0; i<group.getChildCount(); i++) {
             View found = card(group.getChildAt(i)); if (found != null) return found;
         }

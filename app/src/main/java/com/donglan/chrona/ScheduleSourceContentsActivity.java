@@ -183,13 +183,13 @@ public final class ScheduleSourceContentsActivity extends Activity {
             if (item.details != null) { startActivity(item.details); return; }
             // Inactive imported terms remain inspectable without enabling them or selecting another term.
             android.app.Dialog dialog = new android.app.Dialog(this);
-            LinearLayout panel = UiStyle.dialogPanel(this, item.title);
+            LinearLayout panel = UiDialogs.dialogPanel(this, item.title);
             LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
             text(body, item.time(), 16);
             if (!item.location.isBlank()) text(body, item.location, 16);
-            UiStyle.dialogBody(panel, body);
+            UiDialogs.dialogBody(panel, body);
             Button close = navigationButton("关闭", dialog::dismiss); panel.addView(close);
-            UiStyle.showFloatingDialog(dialog, panel);
+            UiDialogs.showFloatingDialog(dialog, panel);
         });
         UiStyle.pressable(card);UiStyle.addSpaced(rows, card, 0, 8);
     }

@@ -4,7 +4,7 @@ import os
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'app/src/main/java/com/donglan/chrona/UiStyle.java').read_text(encoding='utf-8')
+source = (root / 'app/src/main/java/com/donglan/chrona/UiDialogs.java').read_text(encoding='utf-8')
 methods = []
 for marker in ('private static void applyDialogSurface(', 'private static void registerDialogLayer(',
                'private static void removeDialogLayer('):
@@ -14,7 +14,7 @@ for marker in ('private static void applyDialogSurface(', 'private static void r
     while depth:
         depth += (source[end] == '{') - (source[end] == '}')
         end += 1
-    methods.append(source[start:end].replace('android.graphics.Shader.TileMode.CLAMP', '0'))
+    methods.append(source[start:end].replace('android.graphics.Shader.TileMode.CLAMP', '0').replace('UiStyle.', '').replace('UiSurfaces.', ''))
 
 harness = r'''
 import java.util.*;

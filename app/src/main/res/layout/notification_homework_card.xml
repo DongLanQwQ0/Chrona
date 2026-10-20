@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/homework_card" android:layout_width="match_parent" android:layout_height="wrap_content">
+    <ViewFlipper android:id="@+id/homework_background" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:autoStart="true" android:flipInterval="16000" android:clipChildren="true"
+        android:inAnimation="@anim/atomic_background_in" android:outAnimation="@anim/atomic_background_out">
+        <ImageView android:id="@+id/homework_background_first" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+        <ImageView android:id="@+id/homework_background_second" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+    </ViewFlipper>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingBottom="16dp" android:paddingTop="8dp">
+        <LinearLayout android:id="@+id/homework_header" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:id="@+id/homework_label" android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:textSize="13sp" android:textStyle="bold" android:maxLines="2" android:ellipsize="end" />
+            <ImageButton android:id="@+id/homework_close" android:layout_width="48dp" android:layout_height="48dp"
+                android:padding="14dp" android:scaleType="fitCenter" android:contentDescription="关闭作业通知"
+                android:background="?android:attr/selectableItemBackgroundBorderless" />
+        </LinearLayout>
+        <TextView android:id="@+id/homework_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textSize="18sp" android:textStyle="bold" android:maxLines="3" android:ellipsize="end" />
+        <TextView android:id="@+id/homework_deadline" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="6dp" android:textSize="13sp" />
+        <TextView android:id="@+id/homework_body" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:textSize="14sp" android:maxLines="3" android:ellipsize="end" />
+    </LinearLayout>
+</FrameLayout>

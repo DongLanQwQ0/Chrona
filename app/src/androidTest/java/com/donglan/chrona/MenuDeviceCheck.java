@@ -12,8 +12,6 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import com.donglan.chrona.calendar.CalendarOccurrence;
 import java.io.File;
@@ -30,7 +28,7 @@ final class MenuDeviceCheck {
     static String run(Instrumentation test,Activity owner,Bundle args)throws Exception {
         if(!owner.getPackageName().equals("com.donglan.chrona.followup.validation"))throw new IllegalStateException("Isolated package only");
         checks=0;String theme=args.getString("theme","light");int[] chosen={-1};
-        onMain(test,()->UiStyle.choiceDialog(owner,"外观菜单",new String[]{"跟随系统","浅色","深色"},1,i->chosen[0]=i));
+        onMain(test,()->UiDialogs.choiceDialog(owner,"外观菜单",new String[]{"跟随系统","浅色","深色"},1,i->chosen[0]=i));
         waitFor(test,()->rows().size()==3,"short menu");
         inspect(test,3,1);capture(test,"menu-short-"+theme);
         View first=rows().get(0);int[] xy=new int[2];onMain(test,()->first.getLocationOnScreen(xy));
@@ -39,7 +37,7 @@ final class MenuDeviceCheck {
         capture(test,"menu-held-"+theme);pointer(test,down,3,xy[0]+first.getWidth()/2f,xy[1]+first.getHeight()/2f);
         tap(test,rows().get(2));waitFor(test,()->chosen[0]==2&&rows().isEmpty(),"short menu callback");
         String[] labels=new String[12];for(int i=0;i<labels.length;i++)labels[i]="课程 "+(i+1)+" · 智能机器人系统与自主导航实验安排\n紫金港校区东教学区";
-        onMain(test,()->UiStyle.choiceDialog(owner,"选择课程",labels,0,i->chosen[0]=i));
+        onMain(test,()->UiDialogs.choiceDialog(owner,"选择课程",labels,0,i->chosen[0]=i));
         waitFor(test,()->rows().size()==12,"long menu");inspect(test,12,0);capture(test,"menu-long-top-"+theme);
         TextView last=rows().get(11);
         onMain(test,()->last.requestRectangleOnScreen(new Rect(0,0,last.getWidth(),last.getHeight()),true));SystemClock.sleep(300);

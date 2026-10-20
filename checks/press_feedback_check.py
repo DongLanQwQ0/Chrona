@@ -12,6 +12,10 @@ style = (root / 'app/src/main/java/com/donglan/chrona/UiStyle.java').read_text(e
 start = style.index('    static void pressable(View view) {')
 end = style.index('\n    }', start) + len('\n    }')
 pressable = style[start:end]
+surface = (root / 'app/src/main/java/com/donglan/chrona/UiSurfaces.java').read_text(encoding='utf-8')
+start = surface.index('    static void installRipple(View view) {')
+end = surface.index('\n    }', start) + len('\n    }')
+ripple = surface[start:end]
 harness = r'''
 import java.util.*;
 interface ViewParent { ViewParent getParent(); }
@@ -53,6 +57,9 @@ class UiStyle {static boolean isCardSurface(View view){return view instanceof Ca
 __PRESSABLE__
 }
 __SOURCE__
+class UiSurfaces {static boolean isCardSurface(View view){return view instanceof Card;}static UiStyle.Palette colors(Object c){return UiStyle.colors(c);}static int alpha(int c,int v){return UiStyle.alpha(c,v);}
+__RIPPLE__
+}
 class Card extends ViewGroup {}
 public class PressFeedbackCheck {
  static int checks;static void check(boolean ok){checks++;if(!ok)throw new AssertionError("press check "+checks);}
@@ -89,7 +96,7 @@ public class PressFeedbackCheck {
   System.out.println("Press feedback passed: "+checks+" (production controller with View/animator doubles)");
  }
 }
-'''.replace('__SOURCE__', source).replace('__PRESSABLE__', pressable)
+'''.replace('__SOURCE__', source).replace('__PRESSABLE__', pressable).replace('__RIPPLE__', ripple)
 out = root / 'build/press-feedback-check'
 out.mkdir(parents=True, exist_ok=True)
 file = out / 'PressFeedbackCheck.java'

@@ -3,7 +3,6 @@ package com.donglan.chrona;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Intent;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -239,7 +238,7 @@ public final class BackupRestoreActivity extends Activity {
         restoreParams.setMargins(dp(6), 0, 0, 0);
         actions.addView(restore, restoreParams);
         panel.addView(actions);
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
         dialog.setOnCancelListener(ignored -> {
             pendingRestore = null;
             prepared.cleanup();

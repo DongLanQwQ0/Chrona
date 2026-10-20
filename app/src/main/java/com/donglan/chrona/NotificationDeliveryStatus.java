@@ -21,11 +21,15 @@ final class NotificationDeliveryStatus {
     }
 
     static NotificationDeliveryStatus read(Context context) {
+        return read(context, AgendaReminder.CHANNEL);
+    }
+
+    static NotificationDeliveryStatus read(Context context, String channelId) {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         boolean permission = Build.VERSION.SDK_INT < 33
                 || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 == PackageManager.PERMISSION_GRANTED;
-        NotificationChannel channel = manager.getNotificationChannel(AgendaReminder.CHANNEL);
+        NotificationChannel channel = manager.getNotificationChannel(channelId);
         // The publisher creates this channel on its first real reminder. Absence is not a user block.
         return new NotificationDeliveryStatus(permission && manager.areNotificationsEnabled(),
                 channel != null, channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE);

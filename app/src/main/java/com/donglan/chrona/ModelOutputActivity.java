@@ -1,7 +1,6 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.widget.Button;
@@ -125,7 +124,7 @@ public final class ModelOutputActivity extends Activity {
                 boolean first = output.getText().length() == 0;
                 output.setText(text);
                 scroll.scrollTo(0, 0);
-                if (!first) UiStyle.pop(output);
+                if (!first) UiMotion.pop(output);
             });
         } catch (Exception exception) {
             runOnUiThread(() -> {

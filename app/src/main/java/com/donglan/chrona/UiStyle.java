@@ -1,25 +1,14 @@
 package com.donglan.chrona;
 
-import android.animation.ObjectAnimator;
-import android.animation.ValueAnimator;
 import android.app.Activity;
-import android.app.Dialog;
 import android.content.Context;
 import android.content.res.ColorStateList;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.PixelFormat;
-import android.graphics.RenderEffect;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
 import android.view.Window;
 import android.widget.Button;
@@ -30,11 +19,8 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import java.util.function.IntConsumer;
-import java.util.function.Consumer;
-import java.util.WeakHashMap;
 
-/** Semantic colors, shapes and motion for the native View interface. */
+/** Theme tokens and semantic control styles for the native View interface. */
 public final class UiStyle {
     public static final int PAGE_TOP_DP = 8;
     public static final int HEADER_HEIGHT_DP = 64;
@@ -59,11 +45,6 @@ public final class UiStyle {
         button.setOnClickListener(view -> action.run()); pressable(button);
         return button;
     }
-    private static final long DIALOG_BACKGROUND_SCALE_IN_DURATION_MS = 180L * 2L;
-    private static final WeakHashMap<Activity, DialogScaleState> DIALOG_SCALES = new WeakHashMap<>();
-    private static final WeakHashMap<View, Boolean> DIALOG_ACRYLIC_ROOTS = new WeakHashMap<>();
-    private static final WeakHashMap<View, AcrylicScrollWatcher> ACRYLIC_SCROLL_WATCHERS =
-            new WeakHashMap<>();
     private static final java.util.ArrayList<ChildSurfaceRecord> CHILD_SURFACES =
             new java.util.ArrayList<>();
 
@@ -88,112 +69,6 @@ public final class UiStyle {
         }
     }
 
-    /** Invalidates visible translucent surfaces when a parent scroll changes their backdrop. */
-    private static final class AcrylicScrollWatcher
-            implements ViewTreeObserver.OnScrollChangedListener, ViewTreeObserver.OnGlobalLayoutListener,
-            ViewTreeObserver.OnPreDrawListener, Runnable,
-            View.OnAttachStateChangeListener {
-        private final java.lang.ref.WeakReference<ViewTreeObserver> observer;
-        private final java.lang.ref.WeakReference<View> root;
-        private boolean queued;
-        private final java.util.ArrayList<java.lang.ref.WeakReference<View>> hosts =
-                new java.util.ArrayList<>();
-        private final android.graphics.Rect visible = new android.graphics.Rect();
-        private final WeakHashMap<View, android.graphics.Matrix> positions = new WeakHashMap<>();
-        private final android.graphics.Matrix currentPosition = new android.graphics.Matrix();
-        AcrylicScrollWatcher(View root, ViewTreeObserver observer) {
-            this.root = new java.lang.ref.WeakReference<>(root);
-            this.observer = new java.lang.ref.WeakReference<>(observer);
-            root.addOnAttachStateChangeListener(this);
-        }
-        void addHost(View host) {
-            java.util.Iterator<java.lang.ref.WeakReference<View>> iterator = hosts.iterator();
-            while (iterator.hasNext()) {
-                View existing = iterator.next().get();
-                if (existing == null) iterator.remove();
-                else if (existing == host) return;
-            }
-            hosts.add(new java.lang.ref.WeakReference<>(host));
-        }
-        @Override public void onScrollChanged() {
-            View view = root.get();
-            if (queued || view == null || !view.isAttachedToWindow()) return;
-            queued = true;
-            view.postOnAnimation(this);
-        }
-        @Override public void onGlobalLayout() {
-            // A retained card can move without changing its own size (for example
-            // when the todo above it folds). Re-record its wallpaper sample now,
-            // before this layout's draw, rather than rebuilding the card hierarchy.
-            View view = root.get();
-            if (view == null || !view.isAttachedToWindow()) return;
-            view.removeCallbacks(this);
-            run();
-        }
-        @Override public boolean onPreDraw() {
-            // ChangeBounds and property animations can move a retained RenderNode without
-            // another layout or scroll event. Re-record its sampled background in this frame.
-            for (java.lang.ref.WeakReference<View> reference : hosts) {
-                View host = reference.get();
-                if (host == null || !host.isAttachedToWindow()
-                        || !host.getGlobalVisibleRect(visible)) continue;
-                currentPosition.reset();
-                transformToRoot(host, currentPosition);
-                android.graphics.Matrix previous = positions.get(host);
-                if (previous == null) {
-                    positions.put(host, new android.graphics.Matrix(currentPosition));
-                    host.invalidate();
-                } else if (!previous.equals(currentPosition)) {
-                    previous.set(currentPosition);
-                    host.invalidate();
-                }
-            }
-            return true;
-        }
-        @Override public void run() {
-            queued = false;
-            java.util.Iterator<java.lang.ref.WeakReference<View>> iterator = hosts.iterator();
-            while (iterator.hasNext()) {
-                View host = iterator.next().get();
-                if (host == null) {
-                    iterator.remove();
-                } else if (host.isAttachedToWindow()
-                        && host.getGlobalVisibleRect(visible)) {
-                    host.invalidate();
-                }
-            }
-        }
-        @Override public void onViewAttachedToWindow(View view) { }
-        @Override public void onViewDetachedFromWindow(View view) {
-            view.removeCallbacks(this);
-            queued = false;
-            ViewTreeObserver tree = observer.get();
-            if (tree != null && tree.isAlive()) {
-                tree.removeOnScrollChangedListener(this);
-                tree.removeOnGlobalLayoutListener(this);
-                tree.removeOnPreDrawListener(this);
-            }
-            hosts.clear();
-            positions.clear();
-            ACRYLIC_SCROLL_WATCHERS.remove(view);
-            view.removeOnAttachStateChangeListener(this);
-        }
-    }
-
-    private static final class DialogScaleState {
-        final View content;
-        final float scaleX, scaleY;
-        final Object originalRenderEffect;
-        final java.util.List<View> dialogRoots = new java.util.ArrayList<>();
-        int count;
-        DialogScaleState(View content, Object originalRenderEffect) {
-            this.content = content;
-            scaleX = content.getScaleX();
-            scaleY = content.getScaleY();
-            this.originalRenderEffect = originalRenderEffect;
-            count = 1;
-        }
-    }
     /** One radius scale for the whole app: fields and buttons, cards, sheets, and chips. */
     static final int RADIUS_FIELD = CornerScale.FIELD;
     static final int RADIUS_CARD = CornerScale.CARD;
@@ -207,17 +82,6 @@ public final class UiStyle {
     static int radius(Context context, int token) {
         return CornerScale.radius(token, ThemeStore.cornerLevel(context));
     }
-
-    static boolean isCardSurface(View view) {
-        return view.getBackground() instanceof AcrylicSurfaceDrawable surface
-                && (surface.radius == RADIUS_CARD || surface.radius == RADIUS_PANEL);
-    }
-    /** Choice sheets carry short labels only, so they stay well inside the default sheet width. */
-    private static final int CHOICE_SHEET_WIDTH_DP = 300;
-    /** Length of the in-place cross-fade used when a screen rebuilds itself. */
-    static final long SWAP_MILLIS = 220L;
-    /** Marks the temporary snapshot view a swap leaves over the container while it fades. */
-    private static final Object SWAP_GHOST = new Object();
 
     static final class Palette {
         final int background, surface, surfaceAlt, text, muted, outline, primary, onPrimary;
@@ -238,34 +102,6 @@ public final class UiStyle {
     }
 
     private UiStyle() { }
-
-    /** Maps local pixels into the shared root, including every ancestor's scroll and transform. */
-    static void transformToRoot(View view, android.graphics.Matrix matrix) {
-        if (view.getParent() instanceof View parent) {
-            transformToRoot(parent, matrix);
-            matrix.preTranslate(-parent.getScrollX(), -parent.getScrollY());
-        }
-        matrix.preTranslate(view.getLeft(), view.getTop());
-        if (!view.getMatrix().isIdentity()) matrix.preConcat(view.getMatrix());
-    }
-
-    private static void watchAcrylicScroll(View host) {
-        View root = host.getRootView();
-        ViewTreeObserver observer = root.getViewTreeObserver();
-        if (!observer.isAlive()) return;
-        synchronized (ACRYLIC_SCROLL_WATCHERS) {
-            AcrylicScrollWatcher watcher = ACRYLIC_SCROLL_WATCHERS.get(root);
-            if (watcher == null || watcher.observer.get() != observer) {
-                if (watcher != null) watcher.onViewDetachedFromWindow(root);
-                watcher = new AcrylicScrollWatcher(root, observer);
-                ACRYLIC_SCROLL_WATCHERS.put(root, watcher);
-                observer.addOnScrollChangedListener(watcher);
-                observer.addOnGlobalLayoutListener(watcher);
-                observer.addOnPreDrawListener(watcher);
-            }
-            watcher.addHost(host);
-        }
-    }
 
     static Palette colors(Context context) {
         boolean dark = ThemeStore.dark(context);
@@ -400,7 +236,7 @@ public final class UiStyle {
         view.setTextSize(16);
         view.setHintTextColor(colors.muted);
         view.setBackgroundTintList(null);
-        acrylicSurface(view, RADIUS_FIELD);
+        UiSurfaces.acrylicSurface(view, RADIUS_FIELD);
         view.setElevation(0f);
         view.setPadding(dp(view, 16), dp(view, 14), dp(view, 16), dp(view, 14));
         rememberChildSurface(view, 0, false, 0, false);
@@ -467,52 +303,6 @@ public final class UiStyle {
         } else view.setButtonTintList(tint);
     }
 
-    static void dateDialog(Activity activity, String title, java.time.LocalDate date,
-            java.util.function.Consumer<java.time.LocalDate> onSave) {
-        Dialog dialog = dialog(activity);
-        LinearLayout panel = dialogPanel(activity, title);
-        GlassDateTimePickerView picker = new GlassDateTimePickerView(activity, date.atStartOfDay());
-        picker.showTime(false);
-        panel.addView(picker, new LinearLayout.LayoutParams(-1, dp(panel, 220)));
-        LinearLayout actions = new LinearLayout(activity);
-        Button cancel = new Button(activity); cancel.setText("取消"); button(cancel, false);
-        cancel.setOnClickListener(view -> dialog.dismiss());
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(panel, 52), 1));
-        Button save = new Button(activity); save.setText("确定"); button(save, true);
-        save.setOnClickListener(view -> { dialog.dismiss(); onSave.accept(picker.value().toLocalDate()); });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(panel, 52), 1);
-        params.leftMargin = dp(panel, 8); actions.addView(save, params);
-        addSpaced(panel, actions, 12, 0); showFloatingDialog(dialog, panel);
-    }
-
-    static void timeDialog(Activity activity, String title, int minutes, IntConsumer onSave) {
-        Dialog dialog = dialog(activity);
-        LinearLayout panel = dialogPanel(activity, title);
-        GlassDateTimePickerView picker = new GlassDateTimePickerView(activity,
-                java.time.LocalDate.now().atTime(minutes / 60, minutes % 60));
-        picker.showTime(true);
-        panel.addView(picker, new LinearLayout.LayoutParams(-1, dp(panel, 220)));
-        LinearLayout actions = new LinearLayout(activity);
-        Button cancel = new Button(activity);
-        cancel.setText("取消");
-        button(cancel, false);
-        cancel.setOnClickListener(view -> dialog.dismiss());
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(panel, 52), 1));
-        Button save = new Button(activity);
-        save.setText("保存");
-        button(save, true);
-        save.setOnClickListener(view -> {
-            java.time.LocalDateTime value = picker.value();
-            dialog.dismiss();
-            onSave.accept(value.getHour() * 60 + value.getMinute());
-        });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(panel, 52), 1);
-        params.leftMargin = dp(panel, 8);
-        actions.addView(save, params);
-        addSpaced(panel, actions, 12, 0);
-        showDialog(dialog, panel);
-    }
-
     /**
      * The single record entry: the shared plus glyph on the app's translucent acrylic surface,
      * tinted with the theme colour. Phone (floating over the dock) and wide (corner) both build it
@@ -534,22 +324,22 @@ public final class UiStyle {
     }
 
     public static void card(View view) {
-        acrylicSurface(view, RADIUS_CARD);
+        UiSurfaces.acrylicSurface(view, RADIUS_CARD);
         view.setElevation(dp(view, 2));
     }
 
     /** Translucent surface over the softly colored backdrop; text stays opaque. */
     public static void glass(View view) {
-        acrylicSurface(view, RADIUS_PANEL);
+        UiSurfaces.acrylicSurface(view, RADIUS_PANEL);
     }
 
     /** Compact acrylic surface for controls and transient in-app messages. */
     public static void glassPill(View view) {
-        acrylicSurface(view, CornerScale.ROUND);
+        UiSurfaces.acrylicSurface(view, CornerScale.ROUND);
     }
 
     static void dockGlass(View view) {
-        acrylicSurface(view, RADIUS_DOCK);
+        UiSurfaces.acrylicSurface(view, RADIUS_DOCK);
     }
 
     public static int uncertaintyIcon(int level) {
@@ -564,304 +354,9 @@ public final class UiStyle {
         return "明确";
     }
 
-    private static void acrylicSurface(View view, int radius) {
-        Palette colors = colors(view.getContext());
-        boolean dark = ThemeStore.dark(view.getContext());
-        GradientDrawable blurred = surfaceDrawable(view, colors, radius,
-                ThemeStore.surfaceMix(view.getContext()) * 255 / 100,
-                ThemeStore.surfaceMix(view.getContext()) * 225 / 100);
-        GradientDrawable fallback = surfaceDrawable(view, colors, radius,
-                dark ? 246 : 248, dark ? 238 : 242);
-        view.setBackground(new AcrylicSurfaceDrawable(view, blurred, fallback, radius,
-                false, true));
-        view.setElevation(dp(view, 8));
-    }
-
-    private static GradientDrawable surfaceDrawable(View view, Palette colors, int radius,
-            int firstAlpha, int secondAlpha) {
-        GradientDrawable surface = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{alpha(colors.surface, firstAlpha), alpha(colors.surfaceAlt, secondAlpha)});
-        boolean dark = ThemeStore.dark(view.getContext());
-        surface.setCornerRadius(dp(view, radius(view.getContext(), radius)));
-        surface.setStroke(dp(view, 1), alpha(dark ? colors.outline : Color.WHITE,
-                dark ? 210 : 225));
-        return surface;
-    }
-
-    /** Blurs only the wallpaper sampled behind this surface; labels remain separate and sharp. */
-    private static final class AcrylicSurfaceDrawable extends Drawable {
-        private final GradientDrawable blurredSurface;
-        private final GradientDrawable fallbackSurface;
-        private final int radius;
-        private GlassBackdropView backdrop;
-        private int lastMix = -1;
-        private int lastRadius = -1;
-        private int lastSurface, lastAlt, lastOutline;
-        private int lastText;
-        private boolean lastDark;
-        private boolean lastSelected;
-        private int drawableAlpha = 255;
-        private int minimumMix;
-        private Integer calendarColor;
-        private final View host;
-        private boolean selected;
-        private boolean outline;
-        private Bitmap railSurface;
-        private Canvas railCanvas;
-        private boolean railDirty = true, railStatic, railAcrylic;
-        private final android.graphics.Rect railSource = new android.graphics.Rect();
-        private static final int RAIL_RASTER_BLOCK_PX = 256;
-
-        AcrylicSurfaceDrawable(View host, GradientDrawable blurredSurface,
-                GradientDrawable fallbackSurface, int radius, boolean selected, boolean outline) {
-            this.host = host;
-            this.blurredSurface = blurredSurface;
-            this.fallbackSurface = fallbackSurface;
-            this.radius = radius;
-            this.selected = selected;
-            this.outline = outline;
-            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface, calendarColor);
-        }
-
-        boolean belongsTo(View candidate, int candidateRadius) {
-            return host == candidate && radius == candidateRadius;
-        }
-
-        void updateSelection(boolean selected, boolean outline) {
-            if (this.selected == selected && this.outline == outline) return;
-            this.selected = selected;
-            this.outline = outline;
-            railDirty = true;
-            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface, calendarColor);
-            invalidateSelf();
-        }
-
-        @Override protected void onBoundsChange(android.graphics.Rect bounds) {
-            railDirty = true;
-        }
-
-        @Override public void draw(android.graphics.Canvas canvas) {
-            int resolved = radius(host.getContext(), radius);
-            if (lastRadius != resolved) {
-                lastRadius = resolved;
-                blurredSurface.setCornerRadius(dp(host, resolved));
-                fallbackSurface.setCornerRadius(dp(host, resolved));
-                host.invalidateOutline();
-                railDirty = true;
-            }
-            Palette palette = colors(host.getContext());
-            boolean acrylic = ThemeStore.acrylicEnabled(host.getContext());
-            updateBlurredSurface(host, palette);
-            if (host instanceof DockNavigationLayout && canvas.isHardwareAccelerated()) {
-                android.graphics.Rect bounds = getBounds();
-                if (bounds.isEmpty()) return;
-                // Nested glass inherits its parent's backdrop: its plate pixels depend on
-                // style and bounds, not the moving highlight or screen position.
-                boolean staticRaster = !acrylic || insideAcrylicSurface(host) || insideAcrylicDialog(host);
-                if (railSurface == null || railSurface.getWidth() < bounds.width()
-                        || railSurface.getHeight() < bounds.height()) {
-                    // The dashboard dock changes width continuously. Reserve reusable blocks
-                    // rather than allocating a new bitmap for each animation frame.
-                    int capacity = ((bounds.width() + RAIL_RASTER_BLOCK_PX - 1) / RAIL_RASTER_BLOCK_PX) * RAIL_RASTER_BLOCK_PX;
-                    int rasterWidth = railSurface == null ? capacity : Math.max(capacity, railSurface.getWidth());
-                    int rasterHeight = railSurface == null ? bounds.height() : Math.max(bounds.height(), railSurface.getHeight());
-                    railSurface = Bitmap.createBitmap(rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888);
-                    railCanvas = new Canvas(railSurface);
-                    railDirty = true;
-                }
-                if (!staticRaster || !railStatic || railAcrylic != acrylic || railDirty) {
-                    railSurface.eraseColor(Color.TRANSPARENT);
-                    int save = railCanvas.save();
-                    railCanvas.translate(-bounds.left, -bounds.top);
-                    drawAcrylic(railCanvas, palette, acrylic);
-                    railCanvas.restoreToCount(save);
-                    railDirty = false;
-                    railStatic = staticRaster;
-                    railAcrylic = acrylic;
-                }
-                // Rasterize only the static glass plate: GPU round-rect gradients can
-                // develop a centre seam while scaling. Text and the overflowing highlight
-                // remain independent hardware nodes; the dock itself has no bitmap layer.
-                railSource.set(0, 0, bounds.width(), bounds.height());
-                canvas.drawBitmap(railSurface, railSource, bounds, null);
-                return;
-            }
-            drawAcrylic(canvas, palette, acrylic);
-        }
-
-        private void drawAcrylic(android.graphics.Canvas canvas, Palette palette, boolean acrylic) {
-            boolean backdropReady = false;
-            if (acrylic && (insideAcrylicSurface(host) || insideAcrylicDialog(host))) {
-                // The ancestor already drew a sampled surface or owns a blurred dialog window.
-                backdropReady = true;
-            } else if (acrylic) {
-                watchAcrylicScroll(host);
-                if (backdrop == null) {
-                    backdrop = GlassBackdropView.findFor(host);
-                }
-                backdropReady = backdrop != null && backdrop.drawBlurredWallpaper(canvas, host,
-                        getBounds(), dp(host, radius(host.getContext(), radius)), palette);
-            }
-            // A translucent mix is only safe when the matching blurred wallpaper was actually
-            // drawn underneath. Until then, use the opaque fallback; cache completion invalidates
-            // acrylic hosts so they switch to the mixed surface on their next frame.
-            blurredSurface.setBounds(getBounds());
-            fallbackSurface.setBounds(getBounds());
-            if (!backdropReady) {
-                fallbackSurface.setAlpha(drawableAlpha);
-                fallbackSurface.draw(canvas);
-                return;
-            }
-            fallbackSurface.setAlpha(drawableAlpha);
-            blurredSurface.draw(canvas);
-        }
-
-        private void updateBlurredSurface(View host, Palette palette) {
-            int mix = Math.max(minimumMix, ThemeStore.surfaceMix(host.getContext()));
-            boolean dark = ThemeStore.dark(host.getContext());
-            int accent = CalendarSourceColors.mix(calendarColor, palette.primary);
-            int outlineColor = selected ? accent
-                    : dark ? palette.outline : Color.WHITE;
-            if (lastMix == mix && lastSurface == palette.surface && lastAlt == palette.surfaceAlt
-                    && lastOutline == outlineColor && lastText == palette.text && lastDark == dark
-                    && lastSelected == selected)
-                return;
-            lastMix = mix;
-            lastSurface = palette.surface;
-            lastAlt = palette.surfaceAlt;
-            lastOutline = outlineColor;
-            lastText = palette.text;
-            lastDark = dark;
-            lastSelected = selected;
-            railDirty = true;
-            // A gentle theme-aware RGB shift makes the wallpaper blur read through the tint:
-            // dark surfaces lift toward the text color; light surfaces settle toward black.
-            float toneShift = dark ? .20f : .12f;
-            int toneTarget = dark ? palette.text : Color.BLACK;
-            int mixedSurface = blendRgb(palette.surface, toneTarget, toneShift);
-            int mixedAlt = blendRgb(palette.surfaceAlt, toneTarget, toneShift);
-            if (selected) {
-                int selection = calendarColor == null ? palette.primaryContainer : accent;
-                mixedSurface = blendRgb(mixedSurface, selection, .34f);
-                mixedAlt = blendRgb(mixedAlt, selection, .34f);
-            }
-            fallbackSurface.setColors(new int[]{
-                    alpha(calendarColor == null ? palette.surface : blendRgb(palette.surface, accent, .20f), dark ? 246 : 248),
-                    alpha(calendarColor == null ? palette.surfaceAlt : blendRgb(palette.surfaceAlt, accent, .20f), dark ? 238 : 242)});
-            blurredSurface.setColors(new int[]{alpha(mixedSurface, mix * 255 / 100),
-                    alpha(mixedAlt, mix * 225 / 100)});
-            applyAcrylicStroke(host, selected, outline, blurredSurface, fallbackSurface, calendarColor);
-        }
-
-        @Override public void setAlpha(int alpha) {
-            if (drawableAlpha != alpha) railDirty = true;
-            drawableAlpha = alpha;
-            blurredSurface.setAlpha(alpha);
-            fallbackSurface.setAlpha(alpha);
-        }
-        @Override public void setColorFilter(android.graphics.ColorFilter filter) {
-            railDirty = true;
-            blurredSurface.setColorFilter(filter);
-            fallbackSurface.setColorFilter(filter);
-        }
-        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
-    }
-
-    private static void applyAcrylicStroke(View host, boolean selected, boolean outline,
-            GradientDrawable blurredSurface, GradientDrawable fallbackSurface, Integer calendarColor) {
-        Palette palette = colors(host.getContext());
-        boolean dark = ThemeStore.dark(host.getContext());
-        int width = outline ? dp(host, selected ? 2 : 1) : 0;
-        int strokeColor = selected ? CalendarSourceColors.mix(calendarColor, palette.primary) : dark ? palette.outline : Color.WHITE;
-        int strokeAlpha = selected ? 240 : dark ? 210 : 225;
-        int color = outline ? alpha(strokeColor, strokeAlpha) : Color.TRANSPARENT;
-        blurredSurface.setStroke(width, color);
-        fallbackSurface.setStroke(width, color);
-    }
-
-    private static boolean insideAcrylicSurface(View view) {
-        android.view.ViewParent parent = view.getParent();
-        while (parent instanceof View ancestor) {
-            if (ancestor.getBackground() instanceof AcrylicSurfaceDrawable) return true;
-            parent = ancestor.getParent();
-        }
-        return false;
-    }
-
-    private static boolean insideAcrylicDialog(View view) {
-        android.view.ViewParent parent = view.getParent();
-        while (parent instanceof View ancestor) {
-            synchronized (DIALOG_ACRYLIC_ROOTS) {
-                if (DIALOG_ACRYLIC_ROOTS.containsKey(ancestor)) return true;
-            }
-            parent = ancestor.getParent();
-        }
-        return false;
-    }
-
-    static void invalidateAcrylicSurfaces(View root) {
-        invalidateAcrylicSurfaces(root, new android.graphics.Rect());
-    }
-
-    /** Collect once for a page gesture; ordinary text and icons need no per-frame traversal. */
-    static void collectAcrylicSurfaces(View root, java.util.List<View> surfaces) {
-        if (root.getBackground() instanceof AcrylicSurfaceDrawable) surfaces.add(root);
-        if (root instanceof android.view.ViewGroup group) {
-            for (int i = 0; i < group.getChildCount(); i++)
-                collectAcrylicSurfaces(group.getChildAt(i), surfaces);
-        }
-    }
-
-    private static void invalidateAcrylicSurfaces(View root, android.graphics.Rect visible) {
-        if (!root.getGlobalVisibleRect(visible)) return;
-        if (root.getBackground() instanceof AcrylicSurfaceDrawable) root.invalidate();
-        if (root instanceof android.view.ViewGroup group) {
-            for (int i = 0; i < group.getChildCount(); i++)
-                invalidateAcrylicSurfaces(group.getChildAt(i), visible);
-        }
-    }
-
     static void pressable(View view) {
         PressFeedback.apply(view);
-        // Styled controls already carry a ripple mask matched to their own surface radius.
-        if (view.getForeground() instanceof RippleDrawable) return;
-        view.setForeground(new RippleDrawable(ColorStateList.valueOf(
-                alpha(colors(view.getContext()).primary, 32)), null,
-                new ControlHighlightMask(view)));
-    }
-
-    /** The mask follows the control's surface and the nearest enclosing plate. */
-    private static final class ControlHighlightMask extends Drawable {
-        private final View host;
-        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        private final android.graphics.Path path = new android.graphics.Path();
-        private final android.graphics.RectF rect = new android.graphics.RectF();
-        private final int[] hostLocation = new int[2], parentLocation = new int[2];
-        ControlHighlightMask(View host) { this.host = host; paint.setColor(Color.WHITE); }
-        @Override public void draw(Canvas canvas) {
-            int save = canvas.save();
-            host.getLocationInWindow(hostLocation);
-            for (android.view.ViewParent ancestor = host.getParent(); ancestor instanceof View parent;
-                    ancestor = parent.getParent()) {
-                if (!(parent.getBackground() instanceof AcrylicSurfaceDrawable surface)) continue;
-                parent.getLocationInWindow(parentLocation);
-                float x = parentLocation[0] - hostLocation[0], y = parentLocation[1] - hostLocation[1];
-                rect.set(x, y, x + parent.getWidth(), y + parent.getHeight());
-                path.reset();
-                float corner = dp(parent, radius(parent.getContext(), surface.radius));
-                path.addRoundRect(rect, corner, corner, android.graphics.Path.Direction.CW);
-                canvas.clipPath(path);
-                break;
-            }
-            rect.set(getBounds());
-            float radius = host.getBackground() instanceof AcrylicSurfaceDrawable surface
-                    ? dp(host, radius(host.getContext(), surface.radius)) : dp(host, 6);
-            canvas.drawRoundRect(rect, radius, radius, paint);
-            canvas.restoreToCount(save);
-        }
-        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
-        @Override public void setColorFilter(android.graphics.ColorFilter filter) { paint.setColorFilter(filter); }
-        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+        UiSurfaces.installRipple(view);
     }
 
     /** Selectable surface: chips use the pill radius, dialog rows the field radius. */
@@ -871,23 +366,7 @@ public final class UiStyle {
 
     /** Theme-mixed acrylic selection surface; set outline=false for borderless navigation chips. */
     public static void acrylicChoice(View view, boolean selected, int radius, boolean outline) {
-        Palette colors = colors(view.getContext());
-        Drawable existing = view.getBackground();
-        if (existing instanceof AcrylicSurfaceDrawable acrylic
-                && acrylic.belongsTo(view, radius)) {
-            acrylic.updateSelection(selected, outline);
-        } else {
-            boolean dark = ThemeStore.dark(view.getContext());
-            GradientDrawable blurred = surfaceDrawable(view, colors, radius,
-                    ThemeStore.surfaceMix(view.getContext()) * 255 / 100,
-                    ThemeStore.surfaceMix(view.getContext()) * 225 / 100);
-            GradientDrawable fallback = surfaceDrawable(view, colors, radius,
-                    dark ? 246 : 248, dark ? 238 : 242);
-            view.setBackground(new AcrylicSurfaceDrawable(view, blurred, fallback, radius,
-                    selected, outline));
-        }
-        view.setForeground(new RippleDrawable(ColorStateList.valueOf(alpha(colors.primary, 34)),
-                null, new ControlHighlightMask(view)));
+        UiSurfaces.acrylicChoice(view, selected, radius, outline);
         rememberChildSurface(view, 3, false, radius, selected, outline);
     }
 
@@ -903,539 +382,10 @@ public final class UiStyle {
         label.setCompoundDrawablePadding(dp(label, 8));
     }
 
-    static void enter(View view, int index) {
-        view.post(() -> UiMotion.reveal(view, index));
-    }
-
-    /**
-     * Staggers a card list into view. Only for a screen that is being opened: rebuilding a screen
-     * for another reason (theme change, returning from another page) must not look like a reload.
-     */
-    public static void enterChildren(LinearLayout parent) {
-        for (int i = 0; i < parent.getChildCount(); i++) enter(parent.getChildAt(i), i);
-    }
-
-    /**
-     * Rebuilds a container's contents as a cross-fade: a snapshot of the outgoing content fades
-     * out while the rebuilt content fades in. The earlier version dipped the container towards
-     * transparent first and only rebuilt afterwards, so the new content appeared once the old one
-     * was already gone.
-     *
-     * <p>The snapshot is placed in the container's own parent, at the container's layout position,
-     * so the parent's scroll offset applies to it exactly as it does to the rebuilt content.
-     * Pinning it to window coordinates instead left it behind whenever the rebuild scrolled the
-     * page (a section switch resets the scroll), which only lined up at zero offset.
-     */
-    public static void swap(View container, Runnable rebuild) {
-        swap(container, container, rebuild);
-    }
-
-    /** Keep busy wallpaper from washing out a surface without dimming its children. */
-    static void minimumAcrylicMix(View view, int percent) {
-        if (view.getBackground() instanceof AcrylicSurfaceDrawable acrylic) {
-            acrylic.minimumMix = Math.max(0, Math.min(100, percent));
-            view.invalidate();
-        }
-    }
-    static void acrylicSourceColor(View view, Integer calendarColor) {
-        if (view.getBackground() instanceof AcrylicSurfaceDrawable acrylic) {
-            acrylic.calendarColor = calendarColor; acrylic.lastMix = -1; view.invalidate();
-        }
-    }
-
-    /** Explicit lifecycle/focus completion for a composed in-page transition. */
-    static void finishSwap(View container) {
-        container.animate().setListener(null).setUpdateListener(null).cancel();
-        if (container.getParent() instanceof FrameLayout host && hostsSeveralChildren(host)) dropSwapGhosts(host);
-        container.setAlpha(1f); container.setTranslationX(0f); container.setTranslationY(0f);
-    }
-
-    /**
-     * Cross-fades a rebuild where the outgoing look is taken from {@code snapshotOf} but
-     * {@code container} is the view that fades back in. Use this when the rebuilt content sits on
-     * a transparent background — for example an activity page over the shared backdrop — so the
-     * ghost covers the whole visual, background included.
-     */
-    public static void swap(View snapshotOf, View container, Runnable rebuild) {
-        // Capture the currently composed frame, including an unfinished previous cross-fade.
-        Snapshot outgoing = UiMotion.isEnabled() && snapshotOf.getParent() instanceof FrameLayout candidate
-                && hostsSeveralChildren(candidate) ? snapshot(snapshotOf) : null;
-        container.animate().cancel();
-        container.setAlpha(1f);
-        if (snapshotOf.getParent() instanceof FrameLayout previousHost
-                && hostsSeveralChildren(previousHost)) dropSwapGhosts(previousHost);
-        if (!ValueAnimator.areAnimatorsEnabled()) {
-            if (outgoing != null) outgoing.bitmap.recycle();
-            rebuild.run();
-            return;
-        }
-        if (snapshotOf.getWidth() <= 0
-                || !(snapshotOf.getParent() instanceof FrameLayout host)
-                || !hostsSeveralChildren(host)) {
-            if (outgoing != null) outgoing.bitmap.recycle();
-            rebuild.run();
-            return;
-        }
-        dropSwapGhosts(host);
-        if (outgoing == null) {
-            rebuild.run();
-            return;
-        }
-        ImageView ghost = new ImageView(snapshotOf.getContext());
-        ghost.setImageBitmap(outgoing.bitmap);
-        ghost.setScaleType(ImageView.ScaleType.FIT_XY);
-        ghost.setTag(SWAP_GHOST);
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                outgoing.bounds.width(), outgoing.bounds.height());
-        params.leftMargin = snapshotOf.getLeft() + outgoing.bounds.left;
-        params.topMargin = snapshotOf.getTop() + outgoing.bounds.top;
-        ghost.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
-            @Override public void onViewAttachedToWindow(View view) { }
-            @Override public void onViewDetachedFromWindow(View view) {
-                ghost.animate().cancel();
-                ghost.setImageDrawable(null);
-                outgoing.bitmap.recycle();
-                ghost.removeOnAttachStateChangeListener(this);
-                container.animate().cancel();
-                container.setAlpha(1f);
-            }
-        });
-        // Added after the snapshot source so it draws on top of it.
-        host.addView(ghost, params);
-
-        try {
-            rebuild.run();
-        } catch (RuntimeException | Error failure) {
-            host.removeView(ghost);
-            throw failure;
-        }
-        container.animate().cancel();
-        container.setAlpha(0f);
-        container.animate().alpha(1f).setStartDelay(0).setDuration(SWAP_MILLIS)
-                .setInterpolator(UiMotion.SETTLE)
-                .start();
-        ghost.animate().alpha(0f).setDuration(SWAP_MILLIS)
-                .setInterpolator(UiMotion.SETTLE)
-                .withEndAction(() -> host.removeView(ghost)).start();
-    }
-
-    /**
-     * The ghost is a second child, so the host has to accept one. Scrolling containers extend
-     * FrameLayout but raise {@code IllegalStateException} on a second child, which crashed the
-     * section switch while its body still lived directly in a ScrollView.
-     */
-    private static boolean hostsSeveralChildren(ViewGroup host) {
-        return !(host instanceof ScrollView)
-                && !(host instanceof android.widget.HorizontalScrollView);
-    }
-
-    private static final int SNAPSHOT_MAX_EDGE = 1024;
-    private static final int SNAPSHOT_MAX_PIXELS = 524288;
-    private static final class Snapshot {
-        final Bitmap bitmap;
-        final android.graphics.Rect bounds;
-        Snapshot(Bitmap bitmap, android.graphics.Rect bounds) {
-            this.bitmap = bitmap;
-            this.bounds = bounds;
-        }
-    }
-
-    /** Only the visible viewport; bounded to 2 MiB even for very long settings pages. */
-    private static Snapshot snapshot(View container) {
-        android.graphics.Rect bounds = new android.graphics.Rect();
-        if (!container.isAttachedToWindow() || !container.getLocalVisibleRect(bounds)) return null;
-        bounds.offset(-container.getScrollX(), -container.getScrollY());
-        if (!bounds.intersect(0, 0, container.getWidth(), container.getHeight())) return null;
-        int width = bounds.width(), height = bounds.height();
-        float scale = (float) Math.min(.5, Math.min(
-                (double) SNAPSHOT_MAX_EDGE / Math.max(width, height),
-                Math.sqrt((double) SNAPSHOT_MAX_PIXELS / ((double) width * height))));
-        Bitmap bitmap = null;
-        try {
-            bitmap = Bitmap.createBitmap(Math.max(1, (int) (width * scale)),
-                    Math.max(1, (int) (height * scale)),
-                    Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bitmap);
-            canvas.scale((float) bitmap.getWidth() / width, (float) bitmap.getHeight() / height);
-            ViewGroup parent = (ViewGroup) container.getParent();
-            canvas.translate(-container.getLeft() + parent.getScrollX() - bounds.left,
-                    -container.getTop() + parent.getScrollY() - bounds.top);
-            parent.draw(canvas);
-            return new Snapshot(bitmap, bounds);
-        } catch (OutOfMemoryError error) {
-            if (bitmap != null) bitmap.recycle();
-            return null;
-        }
-    }
-
-    /** A second swap replaces the previous cross-fade instead of stacking ghosts. */
-    private static void dropSwapGhosts(ViewGroup host) {
-        for (int i = host.getChildCount() - 1; i >= 0; i--) {
-            View child = host.getChildAt(i);
-            if (child.getTag() != SWAP_GHOST) continue;
-            child.animate().cancel();
-            host.removeView(child);
-        }
-    }
-
-    public static void pop(View view) {
-        view.animate().cancel();
-        if (!UiMotion.isEnabled()) {
-            view.setScaleX(1f);
-            view.setScaleY(1f);
-            return;
-        }
-        if (view.getScaleX() == 1f && view.getScaleY() == 1f) {
-            view.setScaleX(0.97f);
-            view.setScaleY(0.97f);
-        }
-        view.animate().scaleX(1f).scaleY(1f).setStartDelay(0)
-                .setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE).start();
-    }
-
-    /** A quiet breathing cue for something that is still running; stops itself when detached. */
-    public static void pulse(View view) {
-        if (!ValueAnimator.areAnimatorsEnabled()) return;
-        ObjectAnimator pulse = ObjectAnimator.ofFloat(view, View.ALPHA, 1f, 0.6f, 1f);
-        pulse.setDuration(1600);
-        pulse.setRepeatCount(ValueAnimator.INFINITE);
-        pulse.start();
-        view.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
-            @Override public void onViewAttachedToWindow(View attached) { }
-
-            @Override public void onViewDetachedFromWindow(View detached) {
-                pulse.cancel();
-            }
-        });
-    }
-
     public static void addSpaced(LinearLayout parent, View view, int top, int bottom) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.setMargins(0, dp(view, top), 0, dp(view, bottom));
         parent.addView(view, params);
-    }
-
-    /** Borderless menu rows share one surface; only adjacent items have a divider. */
-    static TextView addMenuItem(LinearLayout parent, String label, boolean selected, Runnable action) {
-        if (parent.getChildCount() > 0 && "menu_item".equals(parent.getChildAt(parent.getChildCount()-1).getTag())) {
-            View divider = new View(parent.getContext());
-            divider.setTag("menu_separator");
-            divider.setBackgroundColor(colors(parent.getContext()).outline);
-            divider.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            LinearLayout.LayoutParams line = new LinearLayout.LayoutParams(-1, dp(parent,1));
-            line.setMargins(dp(parent,14),0,dp(parent,14),0);
-            parent.addView(divider,line);
-        }
-        TextView item = new TextView(parent.getContext());
-        item.setTag("menu_item");
-        item.setText(label);
-        item.setTextSize(16);
-        item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        item.setMinHeight(dp(item,52));
-        item.setPadding(dp(item,14),dp(item,12),dp(item,14),dp(item,12));
-        item.setTextColor(selected ? colors(parent.getContext()).primary : colors(parent.getContext()).text);
-        item.setSelected(selected);
-        if (Build.VERSION.SDK_INT >= 30) item.setStateDescription(selected ? "已选中" : null);
-        marked(item,selected);
-        item.setOnClickListener(v -> action.run());
-        pressable(item);
-        PressFeedback.apply(item,1f);
-        parent.addView(item,new LinearLayout.LayoutParams(-1,-2));
-        return item;
-    }
-
-    /** A themed, scrollable menu shared by settings, filters and action lists. */
-    public static void choiceDialog(Activity activity, String title, String[] options,
-            int selected, IntConsumer onChoice) {
-        Dialog dialog = dialog(activity);
-        LinearLayout panel = dialogPanel(activity, title);
-        ScrollView scroll = new ScrollView(activity) {
-            @Override protected void onMeasure(int widthSpec,int heightSpec) {
-                int limit = Math.round(getResources().getDisplayMetrics().heightPixels * .58f);
-                if (View.MeasureSpec.getMode(heightSpec) != View.MeasureSpec.UNSPECIFIED)
-                    limit = Math.min(limit,View.MeasureSpec.getSize(heightSpec));
-                super.onMeasure(widthSpec,View.MeasureSpec.makeMeasureSpec(limit,View.MeasureSpec.AT_MOST));
-            }
-        };
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout choices = new LinearLayout(activity);
-        choices.setOrientation(LinearLayout.VERTICAL);
-        int sheetWidth = Math.min(
-                (int) (activity.getResources().getDisplayMetrics().widthPixels * .72f),
-                dp(panel, CHOICE_SHEET_WIDTH_DP));
-        PressFeedback.protectViewport(scroll);
-        for (int i = 0; i < options.length; i++) {
-            final int index = i;
-            addMenuItem(choices,options[i],i==selected,() -> {
-                dialog.dismiss();
-                onChoice.accept(index);
-            });
-        }
-        scroll.addView(choices);
-        panel.addView(scroll, new LinearLayout.LayoutParams(-1,-2));
-        showDialog(dialog, panel, sheetWidth);
-    }
-
-    public static void confirmDialog(Activity activity, String title, String message,
-            String positive, Runnable onConfirm) {
-        Dialog dialog = dialog(activity);
-        LinearLayout panel = dialogPanel(activity, title);
-        TextView explanation = new TextView(activity);
-        explanation.setText(message);
-        explanation.setTextSize(15);
-        muted(explanation);
-        addSpaced(panel, explanation, 4, 20);
-        LinearLayout actions = new LinearLayout(activity);
-        Button cancel = new Button(activity);
-        cancel.setText("取消");
-        button(cancel, false);
-        cancel.setOnClickListener(view -> dialog.dismiss());
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(cancel, 52), 1));
-        Button confirm = new Button(activity);
-        confirm.setText(positive);
-        button(confirm, true);
-        confirm.setOnClickListener(view -> {
-            dialog.dismiss();
-            onConfirm.run();
-        });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(confirm, 52), 1);
-        params.setMargins(dp(confirm, 8), 0, 0, 0);
-        actions.addView(confirm, params);
-        panel.addView(actions);
-        showDialog(dialog, panel);
-    }
-
-    static void textEditorDialog(Activity activity, String title, String initialValue,
-            String positive, Consumer<String> onSave) {
-        textEditorDialog(activity, title, initialValue, positive, null, onSave);
-    }
-
-    static void textEditorDialog(Activity activity, String title, String initialValue,
-            String positive, String hint, Consumer<String> onSave) {
-        Dialog dialog = dialog(activity);
-        LinearLayout panel = dialogPanel(activity, title);
-        if (hint != null && !hint.isEmpty()) {
-            TextView explanation = new TextView(activity);
-            explanation.setText(hint);
-            explanation.setTextSize(12);
-            muted(explanation);
-            addSpaced(panel, explanation, 0, 10);
-        }
-        EditText editor = new EditText(activity);
-        editor.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        editor.setGravity(Gravity.TOP | Gravity.START);
-        editor.setMinLines(4);
-        editor.setMaxLines(9);
-        editor.setText(initialValue == null ? "" : initialValue);
-        editor.setSelection(editor.length());
-        input(editor);
-        addSpaced(panel, editor, 0, 16);
-        LinearLayout actions = new LinearLayout(activity);
-        Button cancel = new Button(activity);
-        cancel.setText("取消");
-        button(cancel, false);
-        cancel.setOnClickListener(view -> dialog.dismiss());
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(cancel, 52), 1));
-        Button save = new Button(activity);
-        save.setText(positive);
-        button(save, true);
-        save.setOnClickListener(view -> {
-            String value = editor.getText().toString();
-            dialog.dismiss();
-            onSave.accept(value);
-        });
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(save, 52), 1);
-        saveParams.setMargins(dp(save, 8), 0, 0, 0);
-        actions.addView(save, saveParams);
-        panel.addView(actions);
-        showDialog(dialog, panel);
-        editor.requestFocus();
-    }
-
-    private static Dialog dialog(Activity activity) {
-        Dialog dialog = new Dialog(activity);
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawableResource(android.R.color.transparent);
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            android.view.WindowManager.LayoutParams params = window.getAttributes();
-            params.dimAmount = 0.44f;
-            window.setAttributes(params);
-        }
-        return dialog;
-    }
-
-    static LinearLayout dialogPanel(Activity activity, String title) {
-        LinearLayout panel = new LinearLayout(activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(panel, 20), dp(panel, 20), dp(panel, 20), dp(panel, 20));
-        glass(panel);
-        TextView heading = new TextView(activity);
-        heading.setText(title);
-        heading.setTextSize(21);
-        title(heading);
-        addSpaced(panel, heading, 0, 12);
-        return panel;
-    }
-
-    /** Long modal content scrolls; actions remain outside the scrolling area. */
-    static void dialogBody(LinearLayout panel, View body) {
-        ScrollView scroll = new ScrollView(panel.getContext()) {
-            @Override protected void onMeasure(int widthSpec, int heightSpec) {
-                int limit = Math.round(getResources().getDisplayMetrics().heightPixels * .52f);
-                if (View.MeasureSpec.getMode(heightSpec) != View.MeasureSpec.UNSPECIFIED)
-                    limit = Math.min(limit, View.MeasureSpec.getSize(heightSpec));
-                super.onMeasure(widthSpec, View.MeasureSpec.makeMeasureSpec(limit, View.MeasureSpec.AT_MOST));
-            }
-        };
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.addView(body);
-        addSpaced(panel, scroll, 0, 12);
-    }
-
-    private static void showDialog(Dialog dialog, View content) {
-        showDialog(dialog, content, Math.min(
-                (int) (content.getResources().getDisplayMetrics().widthPixels * .90f),
-                dp(content, 460)));
-    }
-
-    private static void showDialog(Dialog dialog, View content, int widthPx) {
-        dialog.setContentView(content);
-        Window dialogWindow = dialog.getWindow();
-        if (dialogWindow != null) {
-            // Some callers create Dialog directly instead of using dialog(Activity). Clear the
-            // framework's rectangular window surface so the rounded panel is the outer edge.
-            dialogWindow.setBackgroundDrawableResource(android.R.color.transparent);
-            dialogWindow.setWindowAnimations(ValueAnimator.areAnimatorsEnabled()
-                    ? R.style.Animation_Chrona_Dialog : 0);
-        }
-        Activity owner = content.getContext() instanceof Activity activity ? activity : null;
-        if (owner != null) {
-            beginDialogScale(owner);
-            registerDialogLayer(owner, content);
-            applyDialogSurface(content, owner);
-            boolean dialogAcrylic = Build.VERSION.SDK_INT >= 31
-                    && ThemeStore.acrylicEnabled(owner);
-            if (dialogAcrylic) synchronized (DIALOG_ACRYLIC_ROOTS) {
-                DIALOG_ACRYLIC_ROOTS.put(content, Boolean.TRUE);
-            }
-            dialog.setOnDismissListener(ignored -> {
-                if (dialogAcrylic) synchronized (DIALOG_ACRYLIC_ROOTS) {
-                    DIALOG_ACRYLIC_ROOTS.remove(content);
-                }
-                removeDialogLayer(owner, content);
-                endDialogScale(owner);
-            });
-        }
-        dialog.show();
-        PressFeedback.install(content);
-        Window window = dialog.getWindow();
-        if (window != null) window.setLayout(widthPx, -2);
-        // The window owns both enter and exit, including outside-tap and system-back dismissals.
-        // No delayed dismiss callback can outlive the Activity or block a confirmation action.
-    }
-
-    /** Applies the shared backdrop blur and page scale to a custom floating dialog. */
-    static void showFloatingDialog(Dialog dialog, View content) {
-        showDialog(dialog, content);
-    }
-
-    private static void applyDialogSurface(View content, Activity owner) {
-        if (Build.VERSION.SDK_INT >= 31 && ThemeStore.acrylicEnabled(owner)) {
-            Palette palette = colors(content.getContext());
-            boolean dark = ThemeStore.dark(content.getContext());
-            // Lower dialog layers are already blurred. Keep the same translucent surface at
-            // every depth so a child picker does not hide that blur behind an opaque panel.
-            content.setBackground(surfaceDrawable(content, palette, RADIUS_PANEL,
-                    dark ? 112 : 124, dark ? 100 : 112));
-            content.setElevation(dp(content, 8));
-        } else {
-            glass(content);
-        }
-    }
-
-    /** A child modal obscures the previous dialog window as well as the Activity behind it. */
-    private static void registerDialogLayer(Activity owner, View root) {
-        synchronized (DIALOG_SCALES) {
-            DialogScaleState state = DIALOG_SCALES.get(owner);
-            if (state == null) return;
-            for (View parent : state.dialogRoots) {
-                parent.animate().cancel();
-                parent.setScaleX(1f);
-                parent.setScaleY(1f);
-                parent.setAlpha(.4f);
-                if (Build.VERSION.SDK_INT >= 31 && ThemeStore.acrylicEnabled(owner))
-                    parent.setRenderEffect(RenderEffect.createBlurEffect(dp(parent, 12), dp(parent, 12),
-                            android.graphics.Shader.TileMode.CLAMP));
-            }
-            state.dialogRoots.add(root);
-        }
-    }
-
-    private static void removeDialogLayer(Activity owner, View root) {
-        synchronized (DIALOG_SCALES) {
-            DialogScaleState state = DIALOG_SCALES.get(owner);
-            if (state == null) return;
-            state.dialogRoots.remove(root);
-            // These sheet roots have no persistent effects; only the top layer is interactive.
-            if (!state.dialogRoots.isEmpty()) {
-                View parent = state.dialogRoots.get(state.dialogRoots.size() - 1);
-                if (Build.VERSION.SDK_INT >= 31) parent.setRenderEffect(null);
-                parent.setAlpha(1f);
-            }
-        }
-    }
-
-    private static void beginDialogScale(Activity activity) {
-        if (activity.isFinishing() || activity.isDestroyed())
-            return;
-        DialogScaleState state;
-        synchronized (DIALOG_SCALES) {
-            state = DIALOG_SCALES.get(activity);
-            if (state != null) {
-                state.count++;
-                return;
-            }
-            View content = activity.findViewById(android.R.id.content);
-            if (content == null) return;
-            // This app does not install a persistent effect on the Activity content root.
-            state = new DialogScaleState(content, null);
-            DIALOG_SCALES.put(activity, state);
-        }
-        if (Build.VERSION.SDK_INT >= 31 && ThemeStore.acrylicEnabled(activity)) {
-            state.content.setRenderEffect(RenderEffect.createBlurEffect(dp(state.content, 13),
-                    dp(state.content, 13), android.graphics.Shader.TileMode.CLAMP));
-        }
-        if (!ValueAnimator.areAnimatorsEnabled()) return;
-        state.content.animate().cancel();
-        state.content.animate().scaleX(state.scaleX * 1.04f).scaleY(state.scaleY * 1.04f)
-                .setDuration(DIALOG_BACKGROUND_SCALE_IN_DURATION_MS)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                .start();
-    }
-
-    private static void endDialogScale(Activity activity) {
-        DialogScaleState state;
-        synchronized (DIALOG_SCALES) {
-            state = DIALOG_SCALES.get(activity);
-            if (state == null) return;
-            if (--state.count > 0) return;
-            DIALOG_SCALES.remove(activity);
-        }
-        View content = state.content;
-        content.animate().cancel();
-        if (Build.VERSION.SDK_INT >= 31) content.setRenderEffect(
-                (RenderEffect) state.originalRenderEffect);
-        if (!ValueAnimator.areAnimatorsEnabled() || activity.isFinishing() || activity.isDestroyed()) {
-            content.setScaleX(state.scaleX);
-            content.setScaleY(state.scaleY);
-        } else {
-            content.animate().scaleX(state.scaleX).scaleY(state.scaleY).setDuration(160)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
-        }
     }
 
     /** Keep controls clear of Android 15+ system bars while the backdrop draws behind them. */
@@ -1507,30 +457,8 @@ public final class UiStyle {
         }
     }
 
-    private static GradientDrawable shape(View view, int fill, int radius, int stroke) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(fill);
-        drawable.setCornerRadius(dp(view, radius(view.getContext(), radius)));
-        drawable.setStroke(dp(view, 1), stroke);
-        return drawable;
-    }
-
-    private static int alpha(int color, int value) {
+    static int alpha(int color, int value) {
         return Color.argb(value, Color.red(color), Color.green(color), Color.blue(color));
-    }
-
-    private static int blendRgb(int color, int target, float amount) {
-        float inverse = 1f - amount;
-        return Color.argb(Color.alpha(color),
-                Math.round(Color.red(color) * inverse + Color.red(target) * amount),
-                Math.round(Color.green(color) * inverse + Color.green(target) * amount),
-                Math.round(Color.blue(color) * inverse + Color.blue(target) * amount));
-    }
-
-    private static int childSurface(int color) {
-        int baseAlpha = Color.alpha(color);
-        // Preserve the former default surface strength without a nonfunctional preference.
-        return alpha(color, baseAlpha * 194 / 255);
     }
 
     private static void rememberChildSurface(View view, int kind, boolean primary, int radius,
@@ -1567,7 +495,7 @@ public final class UiStyle {
     static void refreshAppearancePreview(Activity activity) {
         View content = activity.findViewById(android.R.id.content);
         if (content == null) return;
-        invalidateAcrylicSurfaces(content);
+        UiSurfaces.invalidateAcrylicSurfaces(content);
         synchronized (CHILD_SURFACES) {
             java.util.Iterator<ChildSurfaceRecord> iterator = CHILD_SURFACES.iterator();
             while (iterator.hasNext()) {

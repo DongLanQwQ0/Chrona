@@ -67,7 +67,7 @@ final class ZjuSettingsStore {
         // reuses its capture and deletion markers. No username/password is retained here.
         SharedPreferences.Editor edit=prefs.edit();
         edit.remove("credentials").remove("iv").remove("account").remove("enabled").remove("timetable")
-                .remove("homework").remove("last_success").remove("status");
+                .remove("homework").remove("last_success").remove("homework_attempt").remove("timetable_attempt").remove("status");
         if(!edit.commit())throw new java.io.IOException("无法清除登录信息");
     }
 }

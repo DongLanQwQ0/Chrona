@@ -89,7 +89,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         }
         boolean school = new ZjuSettingsStore(this).enabled();
         String[] choices = school ? new String[]{"导入课表", "折姜星辰课表", "两种课表"} : new String[]{"导入课表"};
-        UiStyle.choiceDialog(this, "选择写入来源", choices, -1, index -> {
+        UiDialogs.choiceDialog(this, "选择写入来源", choices, -1, index -> {
             if (index < 0 || index >= choices.length || exporting) return;
             loadCourseExport(index != 1, school && index != 0);
         });
@@ -107,7 +107,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
                     if (isFinishing() || isDestroyed()) return;
                     exportCourses.setEnabled(true);
                     if (lessons.isEmpty()) { Feedback.show(this, "没有可写入的本地课表"); return; }
-                    UiStyle.confirmDialog(this, "写入 " + lessons.size() + " 节课程？",
+                    UiDialogs.confirmDialog(this, "写入 " + lessons.size() + " 节课程？",
                             "包括所选来源已保存的全部学期；相同课程会跳过。此次写入为副本，后续课表改动不会自动更新副本。",
                             "写入", () -> writeCourses(lessons));
                 });
@@ -196,7 +196,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         keys.add("imported"); labels.add("导入课表优先");
         if (new ZjuSettingsStore(this).enabled()) { keys.add("zju"); labels.add("浙大课表优先"); }
         for (Source source : sources) { keys.add("system:" + source.id); labels.add(source.name + " · " + source.account + " · 优先"); }
-        UiStyle.choiceDialog(this, "重复课表优先来源", labels.toArray(new String[0]),
+        UiDialogs.choiceDialog(this, "重复课表优先来源", labels.toArray(new String[0]),
                 keys.indexOf(effectivePrimary()), selected -> {
                     ScheduleSources.setPrimary(this, keys.get(selected)); updatePrimary();
                 });

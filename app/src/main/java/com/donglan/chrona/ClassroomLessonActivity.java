@@ -15,7 +15,6 @@ import org.json.*;
 import java.io.*;
 import java.lang.ref.WeakReference;
 import java.time.*;
-import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -183,7 +182,7 @@ public final class ClassroomLessonActivity extends Activity {
             documentView=new ClassroomMarkdownView(this,s.dir,summary,s.materials,new ClassroomMarkdownView.Actions(){
                 @Override public void source(int id){if(!gate()||s.materials==null)return;JSONObject source=s.materials.optJSONArray("segments").optJSONObject(id);if(source!=null)showSource(source);}
                 @Override public void assignment(int index){extractAssignment(index);}
-                @Override public void image(String name){if(!gate())return;Dialog dialog=new Dialog(ClassroomLessonActivity.this);LinearLayout panel=UiStyle.dialogPanel(ClassroomLessonActivity.this,"课堂截图");ClassroomLessonActivity.this.image(panel,name);button(panel,"关闭",dialog::dismiss,false);UiStyle.showFloatingDialog(dialog,panel);}
+                @Override public void image(String name){if(!gate())return;Dialog dialog=new Dialog(ClassroomLessonActivity.this);LinearLayout panel=UiDialogs.dialogPanel(ClassroomLessonActivity.this,"课堂截图");ClassroomLessonActivity.this.image(panel,name);button(panel,"关闭",dialog::dismiss,false);UiDialogs.showFloatingDialog(dialog,panel);}
             });
             notes.addView(documentView);
         }catch(Exception error){text(notes,"课堂正文无法显示："+error.getMessage(),16,false);}
@@ -196,18 +195,18 @@ public final class ClassroomLessonActivity extends Activity {
             if(index>=tasks.length()){index-=tasks.length();continue;}
             String classroomTime=Instant.ofEpochMilli(s.selected.startsAt).atZone(ClassroomLesson.ZONE).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
             String prefill=s.selected.course+"\n课堂时间："+classroomTime+"（Asia/Shanghai）\n老师在这节课提出的安排："+tasks.optJSONObject(index).optString("text");
-            UiStyle.confirmDialog(this,"提取课堂安排",prefill,"继续",()->startActivity(new Intent(this,MainActivity.class).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,prefill)));return;
+            UiDialogs.confirmDialog(this,"提取课堂安排",prefill,"继续",()->startActivity(new Intent(this,MainActivity.class).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,prefill)));return;
         }
     }
     private void prepare(){ClassroomNotifications.requestPermission(this);Session job=s;job.run("获取课堂素材",true,()->{job.prepared=ClassroomSummary.prepare(job.dir,job.selected,job.connect(),job.control,job::checkpoint);job.materials=ClassroomStore.read(new File(job.dir,"materials.json"));job.message="素材已就绪";});}
     private void confirmGeneration(){Session job=s;job.run("检查 AI 服务配置",()->{AiSettingsStore store=new AiSettingsStore(job.app);AiSettings ai=store.load();if(ai==null)throw new IOException("请先在 AI 设置中配置服务");boolean unsupported=store.isImageUnsupported(ai);job.message="";job.main.post(()->{ClassroomLessonActivity a=job.owner.get();if(a!=null&&job.allowed())a.generationDialog(ai,unsupported);});});}
     private void generationDialog(AiSettings ai,boolean unsupported){
-        Dialog dialog=new Dialog(this);LinearLayout panel=UiStyle.dialogPanel(this,"生成课堂总结");LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);
+        Dialog dialog=new Dialog(this);LinearLayout panel=UiDialogs.dialogPanel(this,"生成课堂总结");LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);
         text(body,ai.model+"\n"+ai.baseUrl,15,false);
         CheckBox upload=new CheckBox(this);upload.setText("上传图片 · 最多 "+ClassroomSummary.MAX_IMAGES+" 张");UiStyle.toggle(upload);upload.setChecked(!unsupported&&s.imageLimit>0);upload.setEnabled(!unsupported);body.addView(upload);
         if(unsupported)text(body,"当前模型仅支持文字",14,false);
         button(body,"上传并生成",()->{dialog.dismiss();startGeneration(ai,upload.isChecked()?ClassroomSummary.MAX_IMAGES:0);},true);
-        button(body,"取消",dialog::dismiss,false);UiStyle.dialogBody(panel,body);UiStyle.showFloatingDialog(dialog,panel);
+        button(body,"取消",dialog::dismiss,false);UiDialogs.dialogBody(panel,body);UiDialogs.showFloatingDialog(dialog,panel);
     }
     private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;String classroomPrompt=SchedulePreferences.load(this).classroomPrompt;s.imageLimit=limit;job.run("准备整理课堂",true,()->{JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));String config=ClassroomSummary.configKey(ai,limit,classroomPrompt);if(prior==null||!config.equals(prior.optString("config"))){job.ignoredSummaryUpdated=job.summary==null?-1:job.summary.optLong("updated");job.summary=null;job.revision++;job.publish();}
             try{if(!new File(job.dir,"candidates.json").isFile()){job.prepared=ClassroomSummary.prepare(job.dir,job.selected,job.connect(),job.control,job::checkpoint);job.materials=ClassroomStore.read(new File(job.dir,"materials.json"));}
@@ -217,7 +216,7 @@ public final class ClassroomLessonActivity extends Activity {
     private void sources(LinearLayout parent,JSONArray refs){if(refs==null||s.materials==null)return;JSONArray segments=s.materials.optJSONArray("segments");HorizontalScrollView scroll=new HorizontalScrollView(this);LinearLayout row=new LinearLayout(this);scroll.addView(row);for(int i=0;i<refs.length();i++){JSONObject source=segments==null?null:segments.optJSONObject(refs.optInt(i,-1));if(source==null)continue;TextView link=new TextView(this);link.setText(ClassroomExport.time(source.optDouble("start"))+"  ·  ");link.setTextSize(14);link.setTextColor(UiStyle.colors(this).primary);link.setMinHeight(dp(48));link.setGravity(android.view.Gravity.CENTER_VERTICAL);link.setContentDescription("字幕来源 "+ClassroomExport.time(source.optDouble("start")));link.setOnClickListener(v->{if(gate())showSource(source);});row.addView(link);}parent.addView(scroll);}
     private void showSource(JSONObject source){
         Dialog dialog=new Dialog(this);
-        LinearLayout panel=UiStyle.dialogPanel(this,ClassroomExport.time(source.optDouble("start"))+" — "+ClassroomExport.time(source.optDouble("end")));
+        LinearLayout panel=UiDialogs.dialogPanel(this,ClassroomExport.time(source.optDouble("start"))+" — "+ClassroomExport.time(source.optDouble("end")));
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);text(body,source.optString("text"),16,false);
         JSONArray images=s.summary==null?null:s.summary.optJSONArray("images");
         if(images!=null)for(int i=0;i<images.length();i++){
@@ -225,9 +224,9 @@ public final class ClassroomLessonActivity extends Activity {
             if(pic!=null&&Math.abs(pic.optDouble("second")-source.optDouble("start"))<90
                     &&new File(s.dir,pic.optString("file")).isFile())image(body,pic.optString("file"));
         }
-        UiStyle.dialogBody(panel,body);button(panel,"关闭",dialog::dismiss,false);UiStyle.showFloatingDialog(dialog,panel);
+        UiDialogs.dialogBody(panel,body);button(panel,"关闭",dialog::dismiss,false);UiDialogs.showFloatingDialog(dialog,panel);
     }
-    private void image(LinearLayout parent,String name){try{ClassroomExport.safeImage(name);}catch(Exception e){return;}File file=new File(s.dir,name);ImageView view=new ImageView(this);view.setAdjustViewBounds(true);view.setContentDescription("课堂截图，点击放大");parent.addView(view,new LinearLayout.LayoutParams(-1,dp(190)));WeakReference<ImageView> target=new WeakReference<>(view);Session job=s;PICTURES.execute(()->{BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(file.getPath(),bounds);BitmapFactory.Options options=new BitmapFactory.Options();options.inSampleSize=Math.max(1,Math.max(bounds.outWidth,bounds.outHeight)/1200);Bitmap bitmap=BitmapFactory.decodeFile(file.getPath(),options);job.main.post(()->{ImageView v=target.get();if(v!=null&&job.allowed()&&v.isAttachedToWindow()){if(bitmap!=null)v.setImageBitmap(bitmap);else v.setContentDescription("截图读取失败");}else if(bitmap!=null)bitmap.recycle();});});view.setOnClickListener(v->{Dialog dialog=new Dialog(this);LinearLayout panel=UiStyle.dialogPanel(this,"课堂截图");ImageView large=new ImageView(this);large.setAdjustViewBounds(true);large.setImageDrawable(view.getDrawable());panel.addView(large,new LinearLayout.LayoutParams(-1,-2));button(panel,"关闭",dialog::dismiss,false);UiStyle.showFloatingDialog(dialog,panel);});}
+    private void image(LinearLayout parent,String name){try{ClassroomExport.safeImage(name);}catch(Exception e){return;}File file=new File(s.dir,name);ImageView view=new ImageView(this);view.setAdjustViewBounds(true);view.setContentDescription("课堂截图，点击放大");parent.addView(view,new LinearLayout.LayoutParams(-1,dp(190)));WeakReference<ImageView> target=new WeakReference<>(view);Session job=s;PICTURES.execute(()->{BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(file.getPath(),bounds);BitmapFactory.Options options=new BitmapFactory.Options();options.inSampleSize=Math.max(1,Math.max(bounds.outWidth,bounds.outHeight)/1200);Bitmap bitmap=BitmapFactory.decodeFile(file.getPath(),options);job.main.post(()->{ImageView v=target.get();if(v!=null&&job.allowed()&&v.isAttachedToWindow()){if(bitmap!=null)v.setImageBitmap(bitmap);else v.setContentDescription("截图读取失败");}else if(bitmap!=null)bitmap.recycle();});});view.setOnClickListener(v->{Dialog dialog=new Dialog(this);LinearLayout panel=UiDialogs.dialogPanel(this,"课堂截图");ImageView large=new ImageView(this);large.setAdjustViewBounds(true);large.setImageDrawable(view.getDrawable());panel.addView(large,new LinearLayout.LayoutParams(-1,-2));button(panel,"关闭",dialog::dismiss,false);UiDialogs.showFloatingDialog(dialog,panel);});}
     private void export(){s.pendingExport=s.selected;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,"课堂总结-"+s.selected.date()+".zip");try{startActivityForResult(intent,EXPORT);}catch(Exception e){Feedback.show(this,"无法打开文件保存器");}}
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("share_uri",s.shareUri.toString());}catch(Exception ignored){}}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=EXPORT||result!=RESULT_OK||data==null||data.getData()==null||!gate())return;s.exportUri=data.getData();

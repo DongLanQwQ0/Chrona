@@ -148,7 +148,7 @@ public final class GuideActivity extends Activity {
         int destination = Math.max(0, Math.min(STEPS.length - 1, index));
         if (destination == currentStep) return;
         // Snapshot only the visible viewport, never the full height of a tutorial step.
-        UiStyle.swap(page, () -> renderStep(destination));
+        UiMotion.swap(page, () -> renderStep(destination));
     }
 
     private void renderStep(int index) {

@@ -124,6 +124,7 @@ public final class DashboardActivity extends Activity {
     private Button deleteSelectedButton;
     private Button publishSelectedButton;
     private boolean bulkCalendarWriting;
+    private boolean homeworkRefreshRunning;
     private static final int BULK_CALENDAR_PERMISSION_REQUEST = 14;
     private final Set<Long> selectedInboxIds = new LinkedHashSet<>();
     private final Set<Long> selectedScheduleIds = new LinkedHashSet<>();
@@ -597,7 +598,7 @@ public final class DashboardActivity extends Activity {
     private void invalidateSectionSurfaces() {
         if (pager == null || !pager.isAttachedToWindow()) return;
         if (sectionAcrylicSurfaces.isEmpty()) {
-            UiStyle.invalidateAcrylicSurfaces(pager);
+            UiSurfaces.invalidateAcrylicSurfaces(pager);
         } else {
             for (View surface : sectionAcrylicSurfaces) {
                 if (surface.isAttachedToWindow() && surface.getGlobalVisibleRect(sectionVisibleRect))
@@ -608,7 +609,7 @@ public final class DashboardActivity extends Activity {
 
     private void collectSectionSurfaces() {
         sectionAcrylicSurfaces.clear();
-        UiStyle.collectAcrylicSurfaces(pager, sectionAcrylicSurfaces);
+        UiSurfaces.collectAcrylicSurfaces(pager, sectionAcrylicSurfaces);
     }
 
     private void switchToPendingSection() {
@@ -1442,22 +1443,41 @@ public final class DashboardActivity extends Activity {
         summary.setPadding(dp(14), dp(8), dp(14), dp(8));
         summary.setClipChildren(false);
         summary.setClipToPadding(false);
-        LinearLayout heading = new LinearLayout(this);
-        heading.setGravity(Gravity.CENTER_VERTICAL);
-        heading.setMinimumHeight(dp(44));
         TextView title = text("待办 · " + todos.total, 16, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
-        title.setMinimumHeight(dp(44));
-        heading.addView(title, new LinearLayout.LayoutParams(0, -1, 1));
+        title.setMinimumHeight(dp(48));
         TextView all = text("全部待办", 13, true);
         all.setTextColor(UiStyle.colors(this).primary);
         all.setGravity(Gravity.CENTER);
-        all.setMinimumHeight(dp(44));
+        all.setMinimumHeight(dp(48));
+        all.setMaxLines(2);
         all.setPadding(dp(8), 0, dp(8), 0);
         all.setContentDescription("查看全部未完成待办，共 " + todos.total + " 项");
         all.setOnClickListener(view -> openHomeTodos(ScheduleQuery.TODO_OPEN, false));
         UiStyle.pressable(all);
+        int actionWidth=dp(todos.focus.isEmpty()?56:105);
+        LinearLayout heading = new LinearLayout(this) {
+            @Override protected void onMeasure(int widthSpec,int heightSpec) {
+                int available=View.MeasureSpec.getSize(widthSpec)-getPaddingLeft()-getPaddingRight();
+                float required=title.getPaint().measureText(title.getText().toString())
+                        +all.getPaint().measureText(all.getText().toString())+all.getPaddingLeft()+all.getPaddingRight()+actionWidth;
+                LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)all.getLayoutParams();
+                params.width=available>0&&required>available
+                        ?(int)Math.ceil(all.getPaint().measureText("全部"))+all.getPaddingLeft()+all.getPaddingRight():-2;
+                super.onMeasure(widthSpec,heightSpec);
+            }
+        };
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        heading.setMinimumHeight(dp(48));
+        heading.addView(title, new LinearLayout.LayoutParams(0, -1, 1));
         heading.addView(all);
+        HeaderActionGroup todoActions=new HeaderActionGroup(this,48);
+        ImageButton homeworkRefresh=UiStyle.navigationIcon(this,R.drawable.ic_refresh,"刷新作业",this::refreshHomeHomework);
+        homeworkRefresh.setTag("home-homework-refresh");
+        homeworkRefresh.setEnabled(!homeworkRefreshRunning);
+        homeworkRefresh.setAlpha(homeworkRefreshRunning?.45f:1f);
+        homeworkRefresh.setContentDescription(homeworkRefreshRunning?"正在刷新作业":"刷新作业");
+        todoActions.addAction(homeworkRefresh,48);
         ImageButton disclosure = new ImageButton(this);
         RotateDrawable disclosureIcon = new RotateDrawable();
         disclosureIcon.setDrawable(getDrawable(R.drawable.ic_chevron_down));
@@ -1468,7 +1488,11 @@ public final class DashboardActivity extends Activity {
         disclosure.setPadding(dp(12), dp(12), dp(12), dp(12));
         disclosure.setBackgroundColor(Color.TRANSPARENT);
         UiStyle.pressable(disclosure);
-        heading.addView(disclosure, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        if(!todos.focus.isEmpty())todoActions.addAction(disclosure,48);
+        todoActions.finish();
+        LinearLayout.LayoutParams todoActionParams=new LinearLayout.LayoutParams(-2,dp(48));
+        todoActionParams.leftMargin=dp(8);
+        heading.addView(todoActions,todoActionParams);
         summary.addView(heading);
 
         LinearLayout counts = new LinearLayout(this);
@@ -1534,7 +1558,9 @@ public final class DashboardActivity extends Activity {
         };
         describeExpansion.run();
         View.OnClickListener toggle = view -> {
-            LinearLayout liveDetails = ((View) view.getParent().getParent()).findViewWithTag("home-todo-details");
+            View owner=view;
+            while(owner.findViewWithTag("home-todo-details")==null)owner=(View)owner.getParent();
+            LinearLayout liveDetails = owner.findViewWithTag("home-todo-details");
             expanded[0] = !expanded[0];
             preferences.edit().putBoolean("todos_expanded", expanded[0]).apply();
             describeExpansion.run();
@@ -1645,6 +1671,32 @@ public final class DashboardActivity extends Activity {
             return prefix + new SimpleDateFormat(pattern, Locale.CHINA).format(new Date(deadline));
         }
         return candidate.startAtMillis == null ? "待安排" : "执行 · " + formatWhen(candidate);
+    }
+
+    private void refreshHomeHomework() {
+        if(homeworkRefreshRunning)return;
+        ZjuSettingsStore settings=new ZjuSettingsStore(this);
+        if(!settings.enabled()||!settings.configured()||!new ZjuHomeworkStore(this).state().enabled) {
+            startActivity(new Intent(this,ZjuSettingsActivity.class));return;
+        }
+        homeworkRefreshRunning=true;
+        updateHomeworkRefreshButtons(getWindow().getDecorView());
+        ZjuSync.requestHomework(this,status->{
+            homeworkRefreshRunning=false;
+            if(isDestroyed())return;
+            updateHomeworkRefreshButtons(getWindow().getDecorView());
+            dirtySections.add(HOME);dirtySections.add(SCHEDULE);dirtySections.add(INBOX);
+            refreshHomeContent();
+            Feedback.show(this,status);
+        });
+    }
+    private void updateHomeworkRefreshButtons(View view) {
+        if("home-homework-refresh".equals(view.getTag())) {
+            view.setEnabled(!homeworkRefreshRunning);
+            view.setAlpha(homeworkRefreshRunning?.45f:1f);
+            view.setContentDescription(homeworkRefreshRunning?"正在刷新作业":"刷新作业");
+        }
+        if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++)updateHomeworkRefreshButtons(group.getChildAt(i));
     }
 
     private void openHomeTodos(int scope, boolean unscheduled) {
@@ -1818,7 +1870,7 @@ public final class DashboardActivity extends Activity {
         categoryChip = category;
         category.setOnClickListener(view -> {
             String[] choices = categoryOptions();
-            UiStyle.choiceDialog(this, "选择收件类型", choices, categoryIndex, selected -> {
+            UiDialogs.choiceDialog(this, "选择收件类型", choices, categoryIndex, selected -> {
                 if (categoryIndex == selected) return;
                 clearInboxSelection();
                 categoryIndex = selected;
@@ -2353,7 +2405,7 @@ public final class DashboardActivity extends Activity {
         right.setMargins(dp(6), 0, 0, 0);
         actions.addView(select, right);
         UiStyle.addSpaced(panel, actions, 8, 0);
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private void renderSystemSchedule(TaskStore store) {
@@ -3056,7 +3108,7 @@ public final class DashboardActivity extends Activity {
                         .format(new Date(task.createdAtMillis))), 13, false);
         if (waiting) {
             // A quiet pulse so "解析中" reads as alive rather than as a stuck row.
-            UiStyle.pulse(meta);
+            UiMotion.pulse(meta);
             elapsedLabels.add(new ElapsedLabel(meta, task.createdAtMillis, task.status));
         }
         UiStyle.addSpaced(card, meta, 7, 0);
@@ -3259,7 +3311,7 @@ public final class DashboardActivity extends Activity {
         int taskCount = selectedInboxIds.size();
         String linked = publishedCount == 0 ? ""
                 : "及其关联的 " + publishedCount + " 条系统日历日程";
-        UiStyle.confirmDialog(this, "删除所选收件？",
+        UiDialogs.confirmDialog(this, "删除所选收件？",
                 "将删除 " + taskCount + " 条收件及其待确认日程" + linked
                         + "。普通文件副本会保留在公共存储中；Android 10 及以上可在 Downloads/Chrona 找到。此操作无法撤销。",
                 "删除", () -> deleteSelectedTasks());
@@ -3274,7 +3326,7 @@ public final class DashboardActivity extends Activity {
         boolean linked = false;
         for (EventCandidate item : chosen) if (item.calendarEventId != null) linked = true;
         if (linked && !requestCalendarPermission()) return;
-        UiStyle.confirmDialog(this, "删除所选日程？", "将删除 " + chosen.size()
+        UiDialogs.confirmDialog(this, "删除所选日程？", "将删除 " + chosen.size()
                 + " 条日程及其系统日历关联，原始收件会保留。此操作无法撤销。", "删除",
                 () -> deleteSchedules(chosen));
     }
@@ -3724,7 +3776,7 @@ public final class DashboardActivity extends Activity {
                     choices[i]+=" · "+((TextView)group.getChildAt(1)).getText();
                 if(cell.isSelected()) selected=i;
             }
-            UiStyle.choiceDialog(this,"筛选",choices,selected,index -> {
+            UiDialogs.choiceDialog(this,"筛选",choices,selected,index -> {
                 View cell=dock.itemAt(index);
                 ((TextView)(cell instanceof FrameLayout group?group.getChildAt(0):cell)).performClick();
             });

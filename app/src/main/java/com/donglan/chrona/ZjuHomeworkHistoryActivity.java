@@ -93,7 +93,7 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
 
     private void showRecord(ZjuHomeworkStore.History record) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = UiStyle.dialogPanel(this, record.title);
+        LinearLayout panel = UiDialogs.dialogPanel(this, record.title);
         LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
         UiStyle.addSpaced(body, text(record.change, 13, false), 0, 12);
         try {
@@ -111,10 +111,10 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
         } catch (Exception error) {
             UiStyle.addSpaced(body, text("变更详情无法读取", 15, false), 0, 12);
         }
-        UiStyle.dialogBody(panel, body);
+        UiDialogs.dialogBody(panel, body);
         Button close = new Button(this); close.setText("关闭"); UiStyle.button(close, false);
         close.setOnClickListener(v -> dialog.dismiss()); panel.addView(close, new LinearLayout.LayoutParams(-1, -2));
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private TextView text(String value, int size, boolean primary) {

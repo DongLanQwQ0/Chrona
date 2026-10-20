@@ -9,7 +9,7 @@
 | 项目 | 配置来源与当前值 |
 | --- | --- |
 | 应用 | 原生 Android Java，`com.donglan.chrona` |
-| 版本 | `app/build.gradle`：0.15.28 / 190 |
+| 版本 | `app/build.gradle`：0.15.29 / 191 |
 | Android | minSdk 26，compileSdk / targetSdk 36 |
 | 语言与构建 | Java 源码 17，AGP 9.4.1，Gradle Wrapper 9.6.0 |
 | 数据库 | `TaskStore.DATABASE_VERSION`：14 |
@@ -29,7 +29,7 @@
 | 学校作业与课表 | `ZjuClient`、`ZjuSync`、`ZjuHomeworkCalendar` | [折姜星辰](features/zju/zju-services.md) |
 | 数据、附件与备份 | `data/`、`image/`、`ConfigBackup`、`SchoolDataBackup` | [备份范围](features/data/backup-coverage.md)、[附件与链接](features/schedules/selection-and-link-fetch.md) |
 | 局域网与同步 | `LanAccessService`、`LanSecurity`、`LanWebServer`、`AndroidSync`、`shared/` | [局域网](features/connectivity/lan-access.md)、[WebDAV 同步](features/connectivity/sync-contract.md) |
-| UI 与动效 | `UiStyle`、`SettingsPageLayout`、`DockNavigationLayout`、`DockSpring` | [UI 规范](ui-style-contract.md)、[交互基线](ui-interaction-baseline.md)、[性能测量](motion-startup.md) |
+| UI 与动效 | `UiStyle`、`UiSurfaces`、`UiDialogs`、`UiMotion` 及公共布局组件 | [公共 UI 库](ui-library.md)、[UI 规范](ui-style-contract.md)、[交互基线](ui-interaction-baseline.md)、[性能测量](motion-startup.md) |
 | 小组件与更新 | `AgendaWidgetProvider`、`ReleaseUpdates`、`GitHubRelease` | [小组件](features/widgets/desktop-widgets.md)、[发布](github-releases.md) |
 
 ## 本机构建
@@ -57,9 +57,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Build or lint failed' }
 
 ## 开发、验证与交付
 
+执行纪律见仓库 `AGENTS.md`；当前交付、候选、有效证据、缺口与下一步只维护在 `HANDOFF.md`。修改前先确认本批完成条件，尽早探明决定验收的设备／服务路径；实现后固定候选，集中验收，最后生成正式标签与发布资产。新增需求更新受影响项，不重启已完成且证据仍有效的工作。
+
 1. 检查当前变更，读目标功能文档与直接依赖，备份将修改的文件。
 2. 完成同一功能涉及的状态、数据、入口及恢复路径；保持用户授权范围和已确认交互。
 3. 开发后集中执行相关检查、构建及必要的实际交互验证。`checks/` 中各脚本说明自身依赖；`python checks/run_checks.py full --list` 可列出统一离线集合，`full` 执行该集合。浏览器、设备和真实服务验证单独进行。
 4. 实际结果写[验证记录](validation-history.md)，产品改动写对应功能文档及 `CHANGELOG.md`，当前限制写 `HANDOFF.md`。正式发布按发布指南核对有效 APK 和升级路径。
 
 纯文档修改检查事实、链接和差异，无需重新打包 APK。仅相关输入或候选变化时补充验证，已有有效证据无需反复执行。归档保留历史证据，不当作当前要求或待办。
+
+反馈以结果、证据和影响下一步的缺口为主；交接明确源码／产物位置、适用候选、未完成项及负责动作。避免常规工具播报、重复状态、泛泛自证与无法执行的后续建议。遇到同一路径连续失败且没有新证据，先重新定位再尝试，独立工作继续推进。

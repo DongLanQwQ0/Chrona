@@ -1,10 +1,8 @@
 package com.donglan.chrona;
 
-import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
-import android.content.res.ColorStateList;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -18,7 +16,6 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -308,7 +305,7 @@ final class TimetablePage extends SchedulePage {
         panel.addView(actions);
         dialog.setOnCancelListener(ignored -> session.pending = null);
         floating = dialog;
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private AcademicTerms.Plan importPlan() {
@@ -326,7 +323,7 @@ final class TimetablePage extends SchedulePage {
             }), 0, 6);
         }
         nested = dialog;
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private void chooseDate(String title, LocalDate initial, java.util.function.Consumer<LocalDate> chosen) {
@@ -338,7 +335,7 @@ final class TimetablePage extends SchedulePage {
         Button confirm = action("确定", true, () -> { chosen.accept(picker.value().toLocalDate()); dialog.dismiss(); });
         UiStyle.addSpaced(panel, confirm, 12, 0);
         nested = dialog;
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private void save(TimetableStore.Library library) {
@@ -665,7 +662,7 @@ final class TimetablePage extends SchedulePage {
             }), 0, 8);
         boundedContent(panel, rows, .55f);
         floating = dialog;
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private TimetableStore.Semester currentTerm() {
@@ -741,12 +738,12 @@ final class TimetablePage extends SchedulePage {
         courseContent.animate().setUpdateListener(null).cancel();
         courseContent.setAlpha(1f);
         courseContent.setTranslationX(0f);
-        UiStyle.invalidateAcrylicSurfaces(courseContent);
+        UiSurfaces.invalidateAcrylicSurfaces(courseContent);
     }
 
     private void enterSemesterContent(LinearLayout courses, int direction) {
         ArrayList<View> surfaces = new ArrayList<>();
-        UiStyle.collectAcrylicSurfaces(courses, surfaces);
+        UiSurfaces.collectAcrylicSurfaces(courses, surfaces);
         courses.setAlpha(.65f);
         courses.setTranslationX(direction * dp(10));
         courses.animate().alpha(1f).translationX(0f).setDuration(UiMotion.ENTER)
@@ -837,11 +834,11 @@ final class TimetablePage extends SchedulePage {
             }), 0, 8);
             confirmPanel.addView(action("取消", false, confirmation::dismiss));
             nested = confirmation;
-            UiStyle.showFloatingDialog(confirmation, confirmPanel);
+            UiDialogs.showFloatingDialog(confirmation, confirmPanel);
         }), 0, 8);
         panel.addView(action("关闭", false, dialog::dismiss));
         floating = dialog;
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private void showCourse(Timetable.Block block, boolean special) {
@@ -934,7 +931,7 @@ final class TimetablePage extends SchedulePage {
         closeParams.topMargin = dp(12);
         panel.addView(close, closeParams);
         floating = dialog;
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private void detail(LinearLayout parent, String heading, String value) {

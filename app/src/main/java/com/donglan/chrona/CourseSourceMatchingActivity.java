@@ -69,7 +69,7 @@ public final class CourseSourceMatchingActivity extends Activity {
                 String pair=entry.getKey();String[] names=pair.split("\u001f",-1);
                 entry(pretty(names[0])+"\n"+pretty(names.length>1?names[1]:""),
                     ("reject".equals(entry.getValue())?"保持独立":"主来源 · "+sourceName(entry.getValue())),()->{
-                        UiStyle.choiceDialog(this,"课程关联",new String[]{"解除关联 / 撤销排除","取消"},-1,choice->{
+                        UiDialogs.choiceDialog(this,"课程关联",new String[]{"解除关联 / 撤销排除","取消"},-1,choice->{
                             if(choice==0){ScheduleSources.setCourseRule(this,pair,null);render();}});
                     });
             }
@@ -89,26 +89,26 @@ public final class CourseSourceMatchingActivity extends Activity {
     private void manual(){
         if(courses.size()<2){Feedback.show(this,"当前样本中可关联的课程不足");return;}
         String[] names=new String[courses.size()];for(int i=0;i<names.length;i++)names[i]=label(courses.get(i));
-        UiStyle.choiceDialog(this,"选择第一门课程",names,-1,first->{
+        UiDialogs.choiceDialog(this,"选择第一门课程",names,-1,first->{
             CalendarOccurrence a=courses.get(first);List<CalendarOccurrence> others=new ArrayList<>();
             for(CalendarOccurrence c:courses)if(!CourseSourceMatching.source(a).equals(CourseSourceMatching.source(c)))others.add(c);
             if(others.isEmpty()){Feedback.show(this,"需要来自另一来源的课程");return;}
             String[] targets=new String[others.size()];for(int i=0;i<targets.length;i++)targets[i]=label(others.get(i));
-            UiStyle.choiceDialog(this,"选择另一来源的课程名字",targets,-1,second->preview(a,others.get(second)));
+            UiDialogs.choiceDialog(this,"选择另一来源的课程名字",targets,-1,second->preview(a,others.get(second)));
         });
     }
     private void preview(CalendarOccurrence a,CalendarOccurrence b){
         String warning=CourseSourceMatching.conflict(a,b)?"\n地点或分组存在差异，请核对后选择。":"";
         String message=label(a)+"\n"+times(a)+"\n\n"+label(b)+"\n"+times(b)+warning;
         android.app.Dialog dialog=new android.app.Dialog(this);
-        LinearLayout panel=UiStyle.dialogPanel(this,"核对课程关联");
+        LinearLayout panel=UiDialogs.dialogPanel(this,"核对课程关联");
         TextView details=new TextView(this);details.setText(message);details.setTextSize(15);details.setTextColor(UiStyle.colors(this).text);
-        details.setTextIsSelectable(true);UiStyle.dialogBody(panel,details);
-        modalAction(panel,"选择主来源",()->{dialog.dismiss();UiStyle.choiceDialog(this,"这门课程的主来源",
+        details.setTextIsSelectable(true);UiDialogs.dialogBody(panel,details);
+        modalAction(panel,"选择主来源",()->{dialog.dismiss();UiDialogs.choiceDialog(this,"这门课程的主来源",
                 new String[]{a.calendarName+" · "+a.title,b.calendarName+" · "+b.title},-1,selected->{
                     ScheduleSources.setCourseRule(this,CourseSourceMatching.pairKey(a,b),CourseSourceMatching.source(selected==0?a:b));render();});});
         modalAction(panel,"保持独立",()->{dialog.dismiss();ScheduleSources.setCourseRule(this,CourseSourceMatching.pairKey(a,b),"reject");render();});
-        modalAction(panel,"取消",dialog::dismiss);UiStyle.showFloatingDialog(dialog,panel);
+        modalAction(panel,"取消",dialog::dismiss);UiDialogs.showFloatingDialog(dialog,panel);
     }
     private String times(CalendarOccurrence course){
         DateTimeFormatter format=DateTimeFormatter.ofPattern("M月d日 E HH:mm",Locale.CHINA).withZone(ZoneId.systemDefault());
@@ -125,7 +125,7 @@ public final class CourseSourceMatchingActivity extends Activity {
     private String pretty(String identity){int split=identity.indexOf('\n');return split<0?identity:sourceName(identity.substring(0,split))+" · "+identity.substring(split+1);}
     private void text(String value){TextView view=new TextView(this);view.setText(value);view.setTextSize(15);view.setTextColor(UiStyle.colors(this).text);UiStyle.addSpaced(content,view,0,12);}
     private void button(String value,Runnable click){Button button=new Button(this);button.setText(value);UiStyle.button(button,false);UiStyle.addSpaced(content,button,0,12);button.setOnClickListener(v->click.run());}
-    private void modalAction(LinearLayout parent,String label,Runnable run){UiStyle.addMenuItem(parent,label,false,run);}
+    private void modalAction(LinearLayout parent,String label,Runnable run){UiDialogs.addMenuItem(parent,label,false,run);}
     private void entry(String title,String detail,Runnable run){
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);UiStyle.card(card);
         int density=Math.round(16*getResources().getDisplayMetrics().density);

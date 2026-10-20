@@ -56,6 +56,7 @@ final class CompactUiDeviceCheck {
             Activity home=screen;
             waitFor(test,()->findText(home.getWindow().getDecorView(),"东1-201")!=null,"home location");
             if("menu".equals(args.getString("scope"))) return MenuDeviceCheck.run(test,home,args);
+            if("homework_refresh".equals(args.getString("scope"))) return homeworkRefresh(test,home,args);
             onMain(test,()-> {
                 TextView place=findText(home.getWindow().getDecorView(),"东1-201");
                 ViewGroup summary=(ViewGroup)place.getParent();
@@ -209,6 +210,56 @@ final class CompactUiDeviceCheck {
     private static void capture(Instrumentation test,String name)throws Exception{test.waitForIdleSync();SystemClock.sleep(300);Bitmap bitmap=test.getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(test.getTargetContext().getExternalFilesDir(null),name+".png"))){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}finally{bitmap.recycle();}}
     private static void require(boolean ok,String label){if(!ok)throw new AssertionError(label);}
     private static Object field(Object object,String name){try{Field field=object.getClass().getDeclaredField(name);field.setAccessible(true);return field.get(object);}catch(ReflectiveOperationException error){throw new AssertionError(error);}}
+    private static String homeworkRefresh(Instrumentation test, Activity home, Bundle args) throws Exception {
+        waitFor(test, home::hasWindowFocus, "home is foreground");
+        View root = home.getWindow().getDecorView();
+        View refresh = root.findViewWithTag("home-homework-refresh");
+        TextView all = findText(root, "全部待办");
+        require(refresh != null && all != null, "all-todos and homework refresh exist");
+        ViewGroup group = (ViewGroup) refresh.getParent();
+        require(group instanceof HeaderActionGroup && group.getChildCount() == 3
+                && group.getChildAt(0) == refresh, "refresh precedes disclosure in shared action group");
+        View disclosure = group.getChildAt(2);
+        onMain(test, () -> {
+            int[] a = new int[2], r = new int[2], d = new int[2];
+            all.getLocationOnScreen(a); refresh.getLocationOnScreen(r); disclosure.getLocationOnScreen(d);
+            require(a[0] + all.getWidth() <= r[0] && r[0] + refresh.getWidth() <= d[0], "all / refresh / disclosure ordered without overlap");
+            require(refresh.getWidth() >= 48 * refresh.getResources().getDisplayMetrics().density - 1, "full refresh target");
+            TextView title = (TextView) ((ViewGroup) all.getParent()).getChildAt(0);
+            for (TextView label : new TextView[]{title, all})
+                require(label.getLayout() != null && label.getLayout().getHeight() <= label.getHeight() - label.getPaddingTop() - label.getPaddingBottom(),
+                        "complete header text: " + label.getText());
+        });
+        capture(test, "homework-refresh-home-" + args.getString("theme", "light"));
+        var prefs = home.getSharedPreferences("home_timeline", 0);
+        boolean expanded = prefs.getBoolean("todos_expanded", false);
+        onMain(test, disclosure::performClick);
+        waitFor(test, () -> prefs.getBoolean("todos_expanded", false) != expanded, "disclosure still toggles real preference");
+        onMain(test, disclosure::performClick);
+        waitFor(test, () -> prefs.getBoolean("todos_expanded", false) == expanded, "disclosure restores original state");
+        Field running = DashboardActivity.class.getDeclaredField("homeworkRefreshRunning"); running.setAccessible(true);
+        Method update = DashboardActivity.class.getDeclaredMethod("updateHomeworkRefreshButtons", View.class); update.setAccessible(true);
+        onMain(test, () -> {
+            try {
+                running.setBoolean(home, true); update.invoke(home, root);
+                require(!refresh.isEnabled() && "正在刷新作业".contentEquals(refresh.getContentDescription()), "busy refresh is disabled and accessible");
+                running.setBoolean(home, false); update.invoke(home, root);
+                require(refresh.isEnabled() && "刷新作业".contentEquals(refresh.getContentDescription()), "idle refresh recovers");
+            } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+        });
+        Instrumentation.ActivityMonitor monitor = test.addMonitor(ZjuSettingsActivity.class.getName(), null, false);
+        Activity settings = null;
+        try {
+            onMain(test, refresh::performClick);
+            settings = test.waitForMonitorWithTimeout(monitor, 5000);
+            require(settings != null, "unconfigured refresh opens school settings instead of networking");
+        } finally {
+            Activity opened = settings; if (opened != null) test.runOnMainSync(opened::finish);
+            test.removeMonitor(monitor);
+        }
+        return "PASS: real home refresh placement/text/target/disclosure/busy feedback/settings entry; configured homework-only scope covered offline";
+    }
+
     static void dockMotion(Instrumentation test,DockNavigationLayout dock,String name)throws Exception {
         dockMotion(test,dock,name,false);
     }

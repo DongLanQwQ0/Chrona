@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT / 'app/src/main/java/com/donglan/chrona/UiStyle.java').read_text(encoding='utf-8')
+source = (ROOT / 'app/src/main/java/com/donglan/chrona/UiDialogs.java').read_text(encoding='utf-8')
 
 
 def method(signature):
@@ -17,7 +17,7 @@ def method(signature):
     return source[start:end]
 
 
-menu = method('    static TextView addMenuItem(')
+menu = method('    static TextView addMenuItem(').replace('UiStyle.', '')
 choice = method('    public static void choiceDialog(')
 assert 'addMenuItem(choices,options[i],i==selected,' in choice
 assert 'choice(item,' not in choice and 'options.length * dp' not in choice

@@ -8,7 +8,6 @@ import android.content.ClipboardManager;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Process;
@@ -25,6 +24,7 @@ import com.donglan.chrona.Feedback;
 import com.donglan.chrona.GlassBackdropView;
 import com.donglan.chrona.ThemeStore;
 import com.donglan.chrona.UiStyle;
+import com.donglan.chrona.UiMotion;
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.data.TaskStore;
@@ -205,7 +205,7 @@ public final class DebugActivity extends Activity {
             }
             UiStyle.addSpaced(root, card, 0, 10);
         }
-        UiStyle.pop(sections.isEmpty() ? root : root.getChildAt(root.getChildCount() - 1));
+        UiMotion.pop(sections.isEmpty() ? root : root.getChildAt(root.getChildCount() - 1));
     }
 
     /** Everything below is read-only: no key material is ever printed. */

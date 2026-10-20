@@ -24,6 +24,7 @@ public class AcrylicTranslationCheck {
  static class Paint { Shader shader; void setShader(Shader s){shader=s;} void setColor(int c){} void setAlpha(int a){} }
  static class Canvas { float tx,ty,sx,sy; int draws; void drawRoundRect(RectF r,int x,int y,Paint p){draws++;if(p.shader instanceof BitmapShader s){tx=s.m.tx;ty=s.m.ty;sx=s.m.sx;sy=s.m.sy;}} }
  static class View { int x,y; float scale=1; void transformMatrixToGlobal(Matrix m){m.setScale(scale,scale);m.postTranslate(x,y);} }
+ static class UiSurfaces {static void transformToRoot(Object v,Matrix m){UiStyle.transformToRoot(v,m);}}
  static class UiStyle { static void transformToRoot(Object v,Matrix m){if(v instanceof View view)view.transformMatrixToGlobal(m);else ((AcrylicTranslationCheck)v).transformMatrixToGlobal(m);} static class Palette { int background=0xff111111; } }
  static class ThemeStore { static int blurStrength(Object c){return 2;} static boolean gaussianBlur(Object c){return true;} static boolean dark(Object c){return true;} }
  static class Color { static int WHITE=-1; static int argb(int a,int r,int g,int b){return a<<24|r<<16|g<<8|b;} }

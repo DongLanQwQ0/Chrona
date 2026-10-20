@@ -64,8 +64,8 @@ static GitHubRelease fetch()throws Exception {android.content.Context.worker();c
 if(started!=null)started.countDown();if(release!=null)release.await();if(fail)throw new Exception("offline");return new GitHubRelease();}
 static boolean newer(String v,String current){return v.compareTo(current)>0;}}
 ''',
-"com/donglan/chrona/UiStyle.java": '''package com.donglan.chrona;
-class UiStyle {static int prompts;static android.app.Activity last;
+"com/donglan/chrona/UiDialogs.java": '''package com.donglan.chrona;
+class UiDialogs {static int prompts;static android.app.Activity last;
 static void confirmDialog(android.app.Activity a,String t,String b,String p,Runnable r){
 if(Thread.currentThread()!=android.os.Looper.MAIN)throw new AssertionError("off-main dialog");prompts++;last=a;}}
 ''',
@@ -97,15 +97,15 @@ GitHubRelease.started=new CountDownLatch(1);GitHubRelease.release=new CountDownL
 Handler.advance();check(GitHubRelease.started.await(2,TimeUnit.SECONDS),"background request starts");
 old.destroyed=true;Activity fresh=new Activity();ReleaseUpdates.checkAutomatically(fresh);
 GitHubRelease.release.countDown();drain();
-check(GitHubRelease.calls.get()==1&&UiStyle.prompts==1&&UiStyle.last==fresh,"rotation delivers current owner once");
-launch(fresh);check(GitHubRelease.calls.get()==1&&UiStyle.prompts==1,"same-day relaunch skips request and prompt");
+check(GitHubRelease.calls.get()==1&&UiDialogs.prompts==1&&UiDialogs.last==fresh,"rotation delivers current owner once");
+launch(fresh);check(GitHubRelease.calls.get()==1&&UiDialogs.prompts==1,"same-day relaunch skips request and prompt");
 Context.data.clear();GitHubRelease.fail=true;launch(fresh);launch(fresh);
-check(GitHubRelease.calls.get()==2&&UiStyle.prompts==1,"failure silent and no same-day retry");
+check(GitHubRelease.calls.get()==2&&UiDialogs.prompts==1,"failure silent and no same-day retry");
 Context.data.clear();Context.data.put("automatic",false);launch(fresh);
 check(GitHubRelease.calls.get()==2,"disabled skips IO request");
 Context.data.clear();GitHubRelease.fail=false;fresh.focus=false;launch(fresh);
-check(UiStyle.prompts==1&&Context.data.containsKey("pending_version"),"background retains notice");
-fresh.focus=true;launch(fresh);check(UiStyle.prompts==2&&GitHubRelease.calls.get()==3,"resume delivers without fetching again");
+check(UiDialogs.prompts==1&&Context.data.containsKey("pending_version"),"background retains notice");
+fresh.focus=true;launch(fresh);check(UiDialogs.prompts==2&&GitHubRelease.calls.get()==3,"resume delivers without fetching again");
 System.out.println("Automatic update checks passed: background-only IO, deferral, single-flight, daily policy, failure, rotation and pending notice");
 }finally{reader.shutdownNow();}}
 }'''

@@ -5,12 +5,9 @@ import android.app.Dialog;
 import android.content.res.ColorStateList;
 import android.graphics.Rect;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
-import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -106,7 +103,7 @@ final class ScheduleFilterSheet {
         saveParams.topMargin = dp(10);
         panel.addView(save, saveParams);
         render();
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private void render() {

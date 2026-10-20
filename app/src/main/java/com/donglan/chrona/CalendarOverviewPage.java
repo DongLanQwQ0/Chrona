@@ -1,6 +1,5 @@
 package com.donglan.chrona;
 
-import android.app.Activity;
 import android.app.Dialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -359,7 +358,7 @@ final class CalendarOverviewPage extends SchedulePage {
         }
     }
     private void pickDate() {
-        UiStyle.dateDialog(activity, "选择日期", date, this::navigateDate);
+        UiDialogs.dateDialog(activity, "选择日期", date, this::navigateDate);
     }
     private void shift(int direction) {
         date = mode == YEAR ? date.plusYears(direction) : mode == WEEK ? date.plusWeeks(direction)
@@ -661,7 +660,7 @@ final class CalendarOverviewPage extends SchedulePage {
             getPreferences(MODE_PRIVATE).edit().putBoolean("week_export_index", includeIndex).apply();
             dialog.dismiss(); writeWeekImage(includeIndex);
         }), 16, 0);
-        UiStyle.showFloatingDialog(dialog, content);
+        UiDialogs.showFloatingDialog(dialog, content);
     }
     private void writeWeekImage(boolean includeIndex) {
         if (mode != WEEK || weekExport.busy || loading || !renderedKey.equals(windowKey(snapshot.zone))) return;
@@ -1195,7 +1194,7 @@ final class CalendarOverviewPage extends SchedulePage {
             statuses.removeAll(dialogStatuses); if (allDayDialog == dialog) allDayDialog = null;
             handler.removeCallbacks(deferredApply); handler.post(deferredApply);
         });
-        UiStyle.showFloatingDialog(dialog, scroll);
+        UiDialogs.showFloatingDialog(dialog, scroll);
     }
     private void open(AgendaEntry entry) {
         try { startActivity(AgendaRepository.details(this, entry)); }
@@ -1224,11 +1223,11 @@ final class CalendarOverviewPage extends SchedulePage {
     }
     private void calendarSurface(View view, boolean selected, int radius, boolean outline) {
         UiStyle.acrylicChoice(view, selected, radius, outline);
-        UiStyle.minimumAcrylicMix(view, ThemeStore.dark(this) ? 70 : 80);
+        UiSurfaces.minimumAcrylicMix(view, ThemeStore.dark(this) ? 70 : 80);
     }
     private void eventSurface(View view, AgendaEntry entry) {
         calendarSurface(view, true, 8, true);
-        if (entry.system) UiStyle.acrylicSourceColor(view, entry.calendarColor);
+        if (entry.system) UiSurfaces.acrylicSourceColor(view, entry.calendarColor);
     }
     private void notice(LinearLayout container, String message) { TextView label = text(message, 13, false); UiStyle.muted(label); UiStyle.addSpaced(container, label, 12, 12); }
     private TextView text(String title, int sp, boolean bold) {

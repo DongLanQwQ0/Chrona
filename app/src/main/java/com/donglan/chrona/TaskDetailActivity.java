@@ -619,8 +619,10 @@ public final class TaskDetailActivity extends Activity {
                 }
             }
 
-            addAttachmentSection(task, store.getImagePaths(taskId),
-                    store.getFileAttachments(taskId));
+            if (!store.isHomeworkCapture(taskId)) {
+                addAttachmentSection(task, store.getImagePaths(taskId),
+                        store.getFileAttachments(taskId));
+            }
             addMergedSources(store,candidates);
         } catch (Exception exception) {
             showError(exception);
@@ -796,7 +798,7 @@ public final class TaskDetailActivity extends Activity {
             }
         }
         if (otherDirty) {
-            UiStyle.confirmDialog(this, "保存当前日程？",
+            UiDialogs.confirmDialog(this, "保存当前日程？",
                     "其他项目有未保存修改。继续后会放弃那些修改。", "继续保存", () -> {
                         dirtyCandidateIds.removeIf(id -> id != candidateId);
                         candidateDrafts.keySet().removeIf(id -> id != candidateId);
@@ -889,7 +891,7 @@ public final class TaskDetailActivity extends Activity {
         actions.addView(save, saveParams);
         panel.addView(actions);
         dialog.setCanceledOnTouchOutside(true);
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private void setCompletionAction(Runnable action, EventCandidate candidate,
@@ -946,7 +948,7 @@ public final class TaskDetailActivity extends Activity {
         int menuWidth = Math.min((int) Math.ceil(longestText * 1.5f) + dp(12)
                 + panel.getPaddingLeft() + panel.getPaddingRight(),
                 getResources().getDisplayMetrics().widthPixels - dp(40));
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
         android.view.Window window = dialog.getWindow();
         if (dialog.getWindow() != null) {
             window.setLayout(menuWidth, -2);
@@ -964,7 +966,7 @@ public final class TaskDetailActivity extends Activity {
 
     private void addHeaderMenuRow(LinearLayout panel, Dialog dialog, String title,
             boolean destructive, Runnable action) {
-        TextView row = UiStyle.addMenuItem(panel,title,false,() -> {
+        TextView row = UiDialogs.addMenuItem(panel,title,false,() -> {
             dialog.dismiss();
             action.run();
         });
@@ -985,7 +987,7 @@ public final class TaskDetailActivity extends Activity {
         scroll.setFillViewport(false);
         scroll.addView(text);
         panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(320)));
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
         long[] lastLength = {-1};
         StreamingOutputStore previewStore = new StreamingOutputStore(this);
         Runnable[] refresh = new Runnable[1];
@@ -1024,7 +1026,7 @@ public final class TaskDetailActivity extends Activity {
         Dialog dialog = new Dialog(this);
         LinearLayout panel = floatingDialogPanel("解析用量");
         addScrollableDialogBody(panel, body, 180);
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
         sizeFloatingDialog(dialog, dp(420), Gravity.CENTER);
     }
 
@@ -1059,7 +1061,7 @@ public final class TaskDetailActivity extends Activity {
         Dialog dialog = new Dialog(this);
         LinearLayout panel = floatingDialogPanel("来源与检索");
         addScrollableDialogBody(panel, body, 320);
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
         sizeFloatingDialog(dialog, dp(460), Gravity.CENTER);
     }
 
@@ -1418,9 +1420,9 @@ public final class TaskDetailActivity extends Activity {
     private void invalidateVisibleAcrylicSurfaces() {
         if (movingSurfacesDirty) {
             movingSurfaces.clear();
-            if (shell != null) UiStyle.collectAcrylicSurfaces(shell, movingSurfaces);
+            if (shell != null) UiSurfaces.collectAcrylicSurfaces(shell, movingSurfaces);
             if (adjacentPage != null)
-                UiStyle.collectAcrylicSurfaces(adjacentPage.shell, movingSurfaces);
+                UiSurfaces.collectAcrylicSurfaces(adjacentPage.shell, movingSurfaces);
             movingSurfacesDirty = false;
         }
         for (View surface : movingSurfaces)
@@ -1481,7 +1483,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void editCaptureContent(TaskRecord task, String draft) {
-        UiStyle.textEditorDialog(this, "编辑捕获内容", draft, "保存", relativeTimeReference(task), updated -> {
+        UiDialogs.textEditorDialog(this, "编辑捕获内容", draft, "保存", relativeTimeReference(task), updated -> {
             if (saveInFlight) return;
             snapshotDrafts();
             setSaving(true);
@@ -1655,7 +1657,7 @@ public final class TaskDetailActivity extends Activity {
                     return;
                 }
             }
-            UiStyle.confirmDialog(this, "重新解析这条捕获？",
+            UiDialogs.confirmDialog(this, "重新解析这条捕获？",
                     "将使用当前文字和全部图片重新识别；普通文件只会提供文件名、类型和大小，不会上传文件内容。现有日程草稿会被替换。",
                     "重新解析", this::retry);
         } catch (Exception exception) {
@@ -1884,7 +1886,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void confirmRemoveOrdinaryFile(TaskFileAttachment file) {
-        UiStyle.confirmDialog(this, "移除普通文件？",
+        UiDialogs.confirmDialog(this, "移除普通文件？",
                 "将从此任务移除“" + file.displayName
                         + "”的附件关联。公共 Downloads 文件不会被删除。",
                 "移除关联", () -> removeOrdinaryFile(file));
@@ -2159,7 +2161,7 @@ public final class TaskDetailActivity extends Activity {
         String message = publishedCount == 0
                 ? "删除这条输入及其日程草稿，无法撤销。"
                 : "删除这条输入、日程草稿，以及已写入日历的 " + publishedCount + " 条日程，无法撤销。";
-        UiStyle.confirmDialog(this, "确认删除任务？", message, "删除", () -> {
+        UiDialogs.confirmDialog(this, "确认删除任务？", message, "删除", () -> {
                     deleting = true;
                     content.removeAllViews();
                     label("正在删除任务与关联日程…", 18);
@@ -2202,7 +2204,7 @@ public final class TaskDetailActivity extends Activity {
 
     /** Drops the attachment so a text-only retry stays possible when images are rejected. */
     private void confirmRemoveImage(String imagePath) {
-        UiStyle.confirmDialog(this, "移除图片？",
+        UiDialogs.confirmDialog(this, "移除图片？",
                 "将从任务捕获内容中删除图片“" + imagePath
                         + "”；重新解析将不再使用它。",
                 "移除图片", () -> removeImage(imagePath));
@@ -2221,7 +2223,7 @@ public final class TaskDetailActivity extends Activity {
     private void confirmRemoveCandidate(EventCandidate candidate, int number) {
         boolean published = candidate.calendarEventId != null;
         if (published && !requestCalendarPermission()) return;
-        UiStyle.confirmDialog(this, "删除" + candidate.itemLabel() + " " + number + "？", published
+        UiDialogs.confirmDialog(this, "删除" + candidate.itemLabel() + " " + number + "？", published
                         ? "将从系统日历中删除这条日程，并移除对应草稿。此操作无法撤销。"
                         : "将移除这条日程草稿。此操作无法撤销。", "删除",
                 () -> removeCandidate(candidate, published));
@@ -2799,19 +2801,19 @@ public final class TaskDetailActivity extends Activity {
 
     private void showHomeworkNotes(String value) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = UiStyle.dialogPanel(this, "作业内容");
+        LinearLayout panel = UiDialogs.dialogPanel(this, "作业内容");
         TextView body = new TextView(this);
         body.setText(value.isEmpty() ? "暂无内容" : value);
         body.setTextSize(16);
         body.setTextIsSelectable(true);
         UiStyle.title(body);
-        UiStyle.dialogBody(panel, body);
+        UiDialogs.dialogBody(panel, body);
         Button close = new Button(this);
         close.setText("关闭");
         UiStyle.button(close, false);
         close.setOnClickListener(view -> dialog.dismiss());
         panel.addView(close, new LinearLayout.LayoutParams(-1, -2));
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private static final class AcknowledgementAction {
@@ -2981,7 +2983,7 @@ public final class TaskDetailActivity extends Activity {
                     options[i] = "关联已有日程（" + matches.get(i) + "）";
                 options[matches.size()] = "仍然新建";
                 options[matches.size() + 1] = "取消";
-                UiStyle.choiceDialog(owner, "发现相同日程 · 选择关联或新建",
+                UiDialogs.choiceDialog(owner, "发现相同日程 · 选择关联或新建",
                         options, -1, choice -> {
                             if (choice < 0 || choice >= options.length - 1) return;
                             owner.snapshotDrafts();
@@ -3116,7 +3118,7 @@ public final class TaskDetailActivity extends Activity {
 
     private void addManualCandidate() {
         if (saveInFlight) return;
-        UiStyle.choiceDialog(this,"新建事项",EventCategory.LABELS,-1,index -> appendManualCandidate(EventCategory.VALUES[index]));
+        UiDialogs.choiceDialog(this,"新建事项",EventCategory.LABELS,-1,index -> appendManualCandidate(EventCategory.VALUES[index]));
     }
     private void appendManualCandidate(String kind) {
         EventCandidate candidate = new EventCandidate(0, taskId,EventCategory.HOMEWORK.equals(kind)?"新作业":EventCategory.isTaskLike(kind)?"新待办":"新活动",null,null,
@@ -3304,7 +3306,7 @@ public final class TaskDetailActivity extends Activity {
         saveParams.setMargins(dp(6), 0, 0, 0);
         actions.addView(save, saveParams);
         panel.addView(actions);
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
         editor.requestFocus();
     }
 
@@ -3397,7 +3399,7 @@ public final class TaskDetailActivity extends Activity {
             int overhead = panel.getMeasuredHeight() - picker.getMeasuredHeight();
             picker.getLayoutParams().height = Math.max(1, Math.min(dp(240), availableHeight - overhead - dp(32)));
             picker.requestLayout();
-            UiStyle.showFloatingDialog(dialog, panel);
+            UiDialogs.showFloatingDialog(dialog, panel);
             dialog.setCanceledOnTouchOutside(true);
             sizeFloatingDialog(dialog, dp(420), Gravity.CENTER);
         });

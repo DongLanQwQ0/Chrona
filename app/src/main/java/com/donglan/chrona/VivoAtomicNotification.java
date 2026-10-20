@@ -16,8 +16,11 @@ final class VivoAtomicNotification {
     private static final int REMINDER_DISPLAYS = 0x1 | 0x10 | 0x100;
     static boolean supportedManufacturer() { return "vivo".equalsIgnoreCase(Build.MANUFACTURER); }
     static boolean available(Context context) {
+        return available(context, AgendaReminder.CHANNEL);
+    }
+    static boolean available(Context context, String channel) {
         return supportedManufacturer() && Boolean.TRUE.equals(sceneEnabled(context))
-                && NotificationDeliveryStatus.canPostReminders(context);
+                && NotificationDeliveryStatus.read(context, channel).canPostReminders();
     }
     /** OEM-documented optional API; null means the system cannot report this capability. */
     static Boolean sceneEnabled(Context context) {

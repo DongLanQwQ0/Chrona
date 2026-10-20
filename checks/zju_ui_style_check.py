@@ -16,8 +16,8 @@ assert 'title.setMaxLines(2)' in history and 'title.setEllipsize(TextUtils.Trunc
 assert 'if (!day.equals(lastDay))' in history
 assert 'created && key.equals("title")' in history
 assert 'if (!created)' in history and '状态未知' in history
-assert 'UiStyle.dialogPanel(this, record.title)' in history and 'UiStyle.dialogBody(panel, body)' in history
-assert 'UiStyle.showFloatingDialog(dialog, panel)' in history
+assert 'UiDialogs.dialogPanel(this, record.title)' in history and 'UiDialogs.dialogBody(panel, body)' in history
+assert 'UiDialogs.showFloatingDialog(dialog, panel)' in history
 probe = (src / 'CourseSourceProbe.java').read_text(encoding='utf-8')
 assert 'if(settings.enabled())for(' in probe
 matching = (src / 'CourseSourceMatchingActivity.java').read_text(encoding='utf-8')
@@ -28,7 +28,7 @@ assert 'sourceIntent(android.content.Context context,String source,String key,lo
 assert '.load(settings.account())' in detail
 assert 'ZjuSync.WORKER' not in detail and '"course-detail-local-reader").start()' in detail
 assert 'if(!item.description.isBlank())detail(card,item.description);' in detail
-style = (src / 'UiStyle.java').read_text(encoding='utf-8')
+style = (src / 'UiDialogs.java').read_text(encoding='utf-8')
 assert 'static LinearLayout dialogPanel' in style and 'static void dialogBody' in style
 assert 'MeasureSpec.AT_MOST' in style and 'scroll.setVerticalScrollBarEnabled(false)' in style
 assert (root / 'docs/ui-style-contract.md').is_file()

@@ -67,9 +67,9 @@ public final class SettingsActivity extends Activity {
         effortNote.setTextSize(12);
         UiStyle.muted(effortNote);
         UiStyle.addSpaced(form, effortNote, 0, 4);
-        effortChoice.setOnClickListener(view -> UiStyle.choiceDialog(this, "思考强度",
+        effortChoice.setOnClickListener(view -> UiDialogs.choiceDialog(this, "思考强度",
                 EFFORT_LABELS, effortIndex(), position -> setEffort(EFFORT_VALUES[position])));
-        preset.setOnClickListener(view -> UiStyle.choiceDialog(this, "常用模型预设",
+        preset.setOnClickListener(view -> UiDialogs.choiceDialog(this, "常用模型预设",
                 presets, selectedPreset[0], position -> {
                 selectedPreset[0] = position;
                 preset.setText(presets[position]);
@@ -97,9 +97,9 @@ public final class SettingsActivity extends Activity {
         UiStyle.addSpaced(form, workStart, 4, 4);
         UiStyle.addSpaced(form, workEnd, 4, 8);
         refreshWorkTime();
-        workStart.setOnClickListener(view -> UiStyle.timeDialog(this, "工作开始时间", workStartMinutes,
+        workStart.setOnClickListener(view -> UiDialogs.timeDialog(this, "工作开始时间", workStartMinutes,
                 selected -> { workStartMinutes = selected; refreshWorkTime(); }));
-        workEnd.setOnClickListener(view -> UiStyle.timeDialog(this, "工作结束时间", workEndMinutes,
+        workEnd.setOnClickListener(view -> UiDialogs.timeDialog(this, "工作结束时间", workEndMinutes,
                 selected -> { workEndMinutes = selected; refreshWorkTime(); }));
         TextView promptTitle = new TextView(this);
         promptTitle.setText("日程解析提示词 · 优先于默认规则");

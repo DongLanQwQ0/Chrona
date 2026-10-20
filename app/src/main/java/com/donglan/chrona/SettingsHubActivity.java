@@ -6,13 +6,11 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
-import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -141,7 +139,7 @@ public final class SettingsHubActivity extends Activity {
             String[] options = new String[10];
             for (int i = 0; i < options.length; i++) options[i] = (5 + i * 5) + " 项";
             int selected = (HomeTimelinePreferences.getItemLimit(this) - 5) / 5;
-            UiStyle.choiceDialog(this, "首页时间线数量", options, selected, choice -> {
+            UiDialogs.choiceDialog(this, "首页时间线数量", options, selected, choice -> {
                 HomeTimelinePreferences.setItemLimit(this, 5 + choice * 5);
                 value[0].setText(HomeTimelinePreferences.getItemLimit(this) + " 项");
             });
@@ -184,7 +182,7 @@ public final class SettingsHubActivity extends Activity {
     private void widgetPreview(LinearLayout group) {
         TextView[] value = new TextView[1];
         value[0] = row(group, "明日安排预览", previewTime(), () ->
-                UiStyle.timeDialog(this, "明日安排预览时间", WidgetPreferences.previewMinutes(this), selected -> {
+                UiDialogs.timeDialog(this, "明日安排预览时间", WidgetPreferences.previewMinutes(this), selected -> {
                     WidgetPreferences.setPreviewMinutes(this, selected);
                     value[0].setText(previewTime());
                 }));
@@ -242,7 +240,7 @@ public final class SettingsHubActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(panel);
-        UiStyle.showFloatingDialog(aboutDialog, scroll);
+        UiDialogs.showFloatingDialog(aboutDialog, scroll);
     }
 
     private void copyQq() {

@@ -69,7 +69,7 @@ public final class ChronaApp extends Application {
                 if (ThemeStore.outdated(activity)) activity.recreate();
             }
 
-            @Override public void onActivityPaused(Activity activity) { }
+            @Override public void onActivityPaused(Activity activity) { ZjuSync.background(); }
 
             @Override public void onActivityStopped(Activity activity) { }
 

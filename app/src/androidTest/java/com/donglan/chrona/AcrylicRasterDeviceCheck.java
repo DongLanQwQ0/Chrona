@@ -37,7 +37,7 @@ final class AcrylicRasterDeviceCheck {
                 }
                 Arrays.sort(nanos);
                 if ("true".equals(arguments.getString("expect_cache"))) require(changed == 0, "Unchanged nested plate was rasterized again");
-                UiStyle.minimumAcrylicMix(dock, 85); draw(dock, node, width, height);
+                UiSurfaces.minimumAcrylicMix(dock, 85); draw(dock, node, width, height);
                 int mixGeneration = ((Bitmap) raster.get(dock.getBackground())).getGenerationId();
                 require(mixGeneration != previous, "Mix change did not redraw the plate");
                 dock.getBackground().setAlpha(128); draw(dock, node, width, height);

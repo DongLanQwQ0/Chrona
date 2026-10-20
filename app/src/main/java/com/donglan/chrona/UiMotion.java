@@ -3,6 +3,12 @@ package com.donglan.chrona;
 import android.view.animation.Interpolator;
 import android.view.animation.PathInterpolator;
 import android.animation.ValueAnimator;
+import android.animation.ObjectAnimator;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ScrollView;
@@ -11,7 +17,7 @@ import android.widget.HorizontalScrollView;
 import java.util.WeakHashMap;
 
 /** Motion for in-page content only. Activity transitions belong to the Android system. */
-final class UiMotion {
+public final class UiMotion {
     static final long ENTER = 240L;
     static final long EXIT = 180L;
     static final Interpolator SETTLE = new PathInterpolator(.2f, 0f, 0f, 1f);
@@ -65,7 +71,7 @@ final class UiMotion {
         view.setAlpha(0f);
         view.setTranslationY(8f * view.getResources().getDisplayMetrics().density);
         java.util.ArrayList<View> surfaces = new java.util.ArrayList<>();
-        UiStyle.collectAcrylicSurfaces(view, surfaces);
+        UiSurfaces.collectAcrylicSurfaces(view, surfaces);
         java.util.ArrayList<View> interactionTargets = new java.util.ArrayList<>();
         collectInteractionTargets(view, interactionTargets);
         Runnable finish = () -> {
@@ -148,4 +154,201 @@ final class UiMotion {
         return false;
     }
 
+    /** Length of the in-place cross-fade used when a screen rebuilds itself. */
+    static final long SWAP_MILLIS = 220L;
+    /** Marks the temporary snapshot view a swap leaves over the container while it fades. */
+    private static final Object SWAP_GHOST = new Object();
+    private static final int SNAPSHOT_MAX_EDGE = 1024;
+    private static final int SNAPSHOT_MAX_PIXELS = 524288;
+
+    static void enter(View view, int index) {
+        view.post(() -> UiMotion.reveal(view, index));
+    }
+
+    /**
+     * Staggers a card list into view. Only for a screen that is being opened: rebuilding a screen
+     * for another reason (theme change, returning from another page) must not look like a reload.
+     */
+    public static void enterChildren(LinearLayout parent) {
+        for (int i = 0; i < parent.getChildCount(); i++) enter(parent.getChildAt(i), i);
+    }
+
+    /**
+     * Rebuilds a container's contents as a cross-fade: a snapshot of the outgoing content fades
+     * out while the rebuilt content fades in. The earlier version dipped the container towards
+     * transparent first and only rebuilt afterwards, so the new content appeared once the old one
+     * was already gone.
+     *
+     * <p>The snapshot is placed in the container's own parent, at the container's layout position,
+     * so the parent's scroll offset applies to it exactly as it does to the rebuilt content.
+     * Pinning it to window coordinates instead left it behind whenever the rebuild scrolled the
+     * page (a section switch resets the scroll), which only lined up at zero offset.
+     */
+    public static void swap(View container, Runnable rebuild) {
+        swap(container, container, rebuild);
+    }
+
+    /** Explicit lifecycle/focus completion for a composed in-page transition. */
+    static void finishSwap(View container) {
+        container.animate().setListener(null).setUpdateListener(null).cancel();
+        if (container.getParent() instanceof FrameLayout host && hostsSeveralChildren(host)) dropSwapGhosts(host);
+        container.setAlpha(1f); container.setTranslationX(0f); container.setTranslationY(0f);
+    }
+
+    /**
+     * Cross-fades a rebuild where the outgoing look is taken from {@code snapshotOf} but
+     * {@code container} is the view that fades back in. Use this when the rebuilt content sits on
+     * a transparent background — for example an activity page over the shared backdrop — so the
+     * ghost covers the whole visual, background included.
+     */
+    public static void swap(View snapshotOf, View container, Runnable rebuild) {
+        // Capture the currently composed frame, including an unfinished previous cross-fade.
+        Snapshot outgoing = UiMotion.isEnabled() && snapshotOf.getParent() instanceof FrameLayout candidate
+                && hostsSeveralChildren(candidate) ? snapshot(snapshotOf) : null;
+        container.animate().cancel();
+        container.setAlpha(1f);
+        if (snapshotOf.getParent() instanceof FrameLayout previousHost
+                && hostsSeveralChildren(previousHost)) dropSwapGhosts(previousHost);
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            if (outgoing != null) outgoing.bitmap.recycle();
+            rebuild.run();
+            return;
+        }
+        if (snapshotOf.getWidth() <= 0
+                || !(snapshotOf.getParent() instanceof FrameLayout host)
+                || !hostsSeveralChildren(host)) {
+            if (outgoing != null) outgoing.bitmap.recycle();
+            rebuild.run();
+            return;
+        }
+        dropSwapGhosts(host);
+        if (outgoing == null) {
+            rebuild.run();
+            return;
+        }
+        ImageView ghost = new ImageView(snapshotOf.getContext());
+        ghost.setImageBitmap(outgoing.bitmap);
+        ghost.setScaleType(ImageView.ScaleType.FIT_XY);
+        ghost.setTag(SWAP_GHOST);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                outgoing.bounds.width(), outgoing.bounds.height());
+        params.leftMargin = snapshotOf.getLeft() + outgoing.bounds.left;
+        params.topMargin = snapshotOf.getTop() + outgoing.bounds.top;
+        ghost.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View view) { }
+            @Override public void onViewDetachedFromWindow(View view) {
+                ghost.animate().cancel();
+                ghost.setImageDrawable(null);
+                outgoing.bitmap.recycle();
+                ghost.removeOnAttachStateChangeListener(this);
+                container.animate().cancel();
+                container.setAlpha(1f);
+            }
+        });
+        // Added after the snapshot source so it draws on top of it.
+        host.addView(ghost, params);
+
+        try {
+            rebuild.run();
+        } catch (RuntimeException | Error failure) {
+            host.removeView(ghost);
+            throw failure;
+        }
+        container.animate().cancel();
+        container.setAlpha(0f);
+        container.animate().alpha(1f).setStartDelay(0).setDuration(SWAP_MILLIS)
+                .setInterpolator(UiMotion.SETTLE)
+                .start();
+        ghost.animate().alpha(0f).setDuration(SWAP_MILLIS)
+                .setInterpolator(UiMotion.SETTLE)
+                .withEndAction(() -> host.removeView(ghost)).start();
+    }
+
+    /**
+     * The ghost is a second child, so the host has to accept one. Scrolling containers extend
+     * FrameLayout but raise {@code IllegalStateException} on a second child, which crashed the
+     * section switch while its body still lived directly in a ScrollView.
+     */
+    private static boolean hostsSeveralChildren(ViewGroup host) {
+        return !(host instanceof ScrollView)
+                && !(host instanceof android.widget.HorizontalScrollView);
+    }
+
+    private static final class Snapshot {
+        final Bitmap bitmap;
+        final android.graphics.Rect bounds;
+        Snapshot(Bitmap bitmap, android.graphics.Rect bounds) {
+            this.bitmap = bitmap;
+            this.bounds = bounds;
+        }
+    }
+
+    /** Only the visible viewport; bounded to 2 MiB even for very long settings pages. */
+    private static Snapshot snapshot(View container) {
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        if (!container.isAttachedToWindow() || !container.getLocalVisibleRect(bounds)) return null;
+        bounds.offset(-container.getScrollX(), -container.getScrollY());
+        if (!bounds.intersect(0, 0, container.getWidth(), container.getHeight())) return null;
+        int width = bounds.width(), height = bounds.height();
+        float scale = (float) Math.min(.5, Math.min(
+                (double) SNAPSHOT_MAX_EDGE / Math.max(width, height),
+                Math.sqrt((double) SNAPSHOT_MAX_PIXELS / ((double) width * height))));
+        Bitmap bitmap = null;
+        try {
+            bitmap = Bitmap.createBitmap(Math.max(1, (int) (width * scale)),
+                    Math.max(1, (int) (height * scale)),
+                    Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            canvas.scale((float) bitmap.getWidth() / width, (float) bitmap.getHeight() / height);
+            ViewGroup parent = (ViewGroup) container.getParent();
+            canvas.translate(-container.getLeft() + parent.getScrollX() - bounds.left,
+                    -container.getTop() + parent.getScrollY() - bounds.top);
+            parent.draw(canvas);
+            return new Snapshot(bitmap, bounds);
+        } catch (OutOfMemoryError error) {
+            if (bitmap != null) bitmap.recycle();
+            return null;
+        }
+    }
+
+    /** A second swap replaces the previous cross-fade instead of stacking ghosts. */
+    private static void dropSwapGhosts(ViewGroup host) {
+        for (int i = host.getChildCount() - 1; i >= 0; i--) {
+            View child = host.getChildAt(i);
+            if (child.getTag() != SWAP_GHOST) continue;
+            child.animate().cancel();
+            host.removeView(child);
+        }
+    }
+
+    public static void pop(View view) {
+        view.animate().cancel();
+        if (!UiMotion.isEnabled()) {
+            view.setScaleX(1f);
+            view.setScaleY(1f);
+            return;
+        }
+        if (view.getScaleX() == 1f && view.getScaleY() == 1f) {
+            view.setScaleX(0.97f);
+            view.setScaleY(0.97f);
+        }
+        view.animate().scaleX(1f).scaleY(1f).setStartDelay(0)
+                .setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE).start();
+    }
+
+    /** A quiet breathing cue for something that is still running; stops itself when detached. */
+    public static void pulse(View view) {
+        if (!ValueAnimator.areAnimatorsEnabled()) return;
+        ObjectAnimator pulse = ObjectAnimator.ofFloat(view, View.ALPHA, 1f, 0.6f, 1f);
+        pulse.setDuration(1600);
+        pulse.setRepeatCount(ValueAnimator.INFINITE);
+        pulse.start();
+        view.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View attached) { }
+
+            @Override public void onViewDetachedFromWindow(View detached) {
+                pulse.cancel();
+            }
+        });
+    }
 }

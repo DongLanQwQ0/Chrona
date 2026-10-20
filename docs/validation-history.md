@@ -1,6 +1,6 @@
 # 验证记录
 
-当前版本为 **0.15.28 / 190**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前版本为 **0.15.29 / 191**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)
@@ -8,6 +8,35 @@
 - [设备验收模板](device-acceptance.md)
 
 构建、离线检查、实际设备操作分别记录。旧版本某项通过，只支持对应候选和条件。
+
+## 0.15.29 — 作业通知最终验收续轮 — 2026-10-20
+
+- `build/homework-notice-durable-lifecycle.log` 通过真实 SQLite 与 `TaskCompletion.set` 入口，验证部分完成仅移除对应项、剩余 ID／标题与原到期时间保留、静默更新、全部完成撤下、来源关闭、绑定替换及删除后的撤下。通知清理不删除或撤销已完成作业。
+- 正常浅色与 320dp／字体 1.45 深色的真实系统通知栏折叠／展开和实际「×」关闭通过；关闭后完成字段未改变。折叠保留系统标题／摘要，展开标题与关闭键同首行，正文可读。日志 `build/homework-notice-system-shade-light.log`、`build/homework-notice-system-shade-narrow-dark.log`，有效画面在 `build/homework-notice-final-captures/notification-*.png`。这一组才是系统宿主证据，先前 Activity 预览只证明 RemoteViews 布局。
+- 主页新刷新在「全部待办」与折叠箭头之间，共用操作组；同两组原生检查验证顺序、不重叠、48dp 目标、文字完整、原折叠偏好恢复、忙碌禁用／无障碍状态，以及未配置来源时实际打开学校设置。日志 `build/homework-refresh-home-{light,narrow-dark}.log`；已配置来源的仅作业请求／排队／回调沿用 24 项生产 owner 检查，本轮不发送真实学校请求。
+- 进程结束后发现已有通知仍在而异步写入的通知身份尚未落盘。`HomeworkNotice` 改为先同步保存身份再投递，关闭同样同步清理；写入失败时不留下未跟踪的新通知。`build/homework-notice-durable-restart-status.log` 证明新进程仍能读取相同 expiry、真实未完成作业与系统通知。修正后的 Debug／Release、双 lint 通过，日志 `build/0.15.29-durable-final-build.log`。
+- 最新真实十分钟检查通过，`build/homework-notice-durable-expiry.log` 证明真实 600000ms 后系统通知缺席、未完成作业仍保留；夹具保留到观察结束才清理，未通过删除源数据提前撤下。只有独立包受到测试；模拟器显示配置已恢复，记录 `build/homework-notice-display-{before,after}.txt`。恢复副本 `.local-backups/homework-notice-followup-20261020/`。
+- 独立复审发现首项有截止时普通批量通知遗漏总数；已在系统折叠摘要与展开截止信息同时保留数量，不增加额外区域。`build/homework-notice-batch-shade-light.log` 验证两项真实 SQLite 作业、首项有截止、其它标题保留、真实系统折叠／展开数量与截止可见、实际关闭不完成作业。图片 `build/homework-notice-final-captures/notification-batch-{collapsed,expanded}-light.png`。单项空截止隐藏及原子岛布局不变；批量修正副本 `.local-backups/homework-notice-batch-count-20261020/`。
+- 普通通知、主页刷新及批量数量的独立 UI 复审全部通过，无未修缺陷。最后候选 Debug／Release、双 lint 通过，日志 `build/0.15.29-batch-final-build.log`。原子岛图片仅支持 RemoteViews 判断，手机 OEM 宿主及手机十分钟现场效果仍未验收。
+- `build/0.15.29-final-signing.log` 记录新 Debug、Release 与手机备份 0.15.26 APK 的签名证书一致；Release 实际包名 `com.donglan.chrona`、191／0.15.29、不可调试。最新候选已保存为 `build/candidates/0.15.29/Chrona-0.15.29.apk`（3079870 字节），未提交或发布；签名一致支持升级资格，实际旧版数据覆盖升级仍待发布阶段检查。
+
+## 0.15.29 — 公共 UI 库与执行规范整理 — 2026-10-20
+
+- `UiStyle` 从 1635 行／80571 字节收敛为 563 行／27136 字节；渲染与采样归 `UiSurfaces`，浮层归 `UiDialogs`，内容切换归已有 `UiMotion`。四处弹窗操作行合为一处，删除两项无调用的私有样式函数和始终为空的状态；生产与原生夹具直接迁移，不留旧转发别名。该数字仅说明原单文件规模变化，不表示整个库减少同等体积。
+- `AGENTS.md` 固化工作收敛、失败止损、证据复用、反馈总结与无功能删减的整理门槛；当前工作只维护在精简后的 `HANDOFF.md`，旧交接原文归档。职责、接入及维护入口见[公共 UI 库](ui-library.md)。文档本地链接 124 项通过，日志 `build/ui-library-doc-links.log`。
+- 统一离线集合现为 91 项：补跑 78 项全部通过，复用 12 项仍有效检查，再通过新增浮层缩放检查，未重复整轮。日志 `build/ui-library-regression.log` 与 `build/ui-library-*.log`；其中共享操作行 63 项、缩放反向／嵌套／减少动画／脱离清理 17 项。学校调度替身已匹配新候选 ID 接口，加入主页仅作业手动刷新后 24 项通过。
+- 实际连续开关浮层发现背景缩放未归位，失败见 `build/ui-library-native-light-before-scale-fix.log`。修复为退出完成前保留最初基准，退出中重开继续使用同一基准，结束或脱离清理；原幅度与时长不变。最终原生正常深浅、320dp／字体 1.45 深浅四组各 32 项通过，覆盖确认／取消、多行编辑、日期／时间值与嵌套恢复。日志 `build/ui-library-native-{light,dark}.log`、`build/ui-library-native-narrow-{light,dark}.log`，实际图片 `build/ui-library-captures/`。
+- 原生菜单深浅各 164 项通过；配置局部渲染的 27 组覆盖 320／360／640dp、字体 1／1.5／2、首尾长按与甩动，未更改系统设置；亚克力重排中间帧、祖先变换、重绘等价及静止停止刷新通过。日志 `build/ui-library-menu-{light,dark}.log`、`build/ui-library-motion-layout.log`、`build/ui-library-acrylic-motion.log`。窄屏整页浮层测试临时更改的模拟器显示配置已恢复，前后记录 `build/ui-library-emulator-display-{before,after}.txt`。
+- 隔离 Debug／androidTest／lintDebug 通过，日志 `build/ui-library-validation-final-build.log`；正式 Release／lintRelease 通过，日志 `build/ui-library-release-build.log`。合成操作仅在 `com.donglan.chrona.followup.validation`，未重新操作用户手机。首轮截图被遗留的系统通知栏遮挡，未用作视觉证据；关闭该栏、增加前台焦点校验后重新取得实际画面。
+- 专门 UI 审核代理对照原备份、调用者及有效日志并检查实际截图，确认职责与迁移完整、功能和参数保留、缩放生命周期修复正确，本轮审核通过，无待修缺陷。作业通知的系统宿主、完成收起与最终发布缺口继续见[当前工作单](../HANDOFF.md)。恢复副本 `.local-backups/ui-library-organize-20261020-160028/`。
+
+## 0.15.29 — 新作业信息卡、独立同步频率与详情精简 — 2026-10-20
+
+- 复用 `VivoAtomicNotification` 已注册 SuperX 通道，新增 `HomeworkNotice` 信息卡及独立通知 ID。正常／岛上 RemoteViews 复用原子卡壁纸／极光；标题、截止、正文与 48dp Lucide「×」，不包含地点、进度或完成动作。系统超时 600000ms，另设结束闹钟清理 OEM 身份；相同通知的关闭／过期按本次 expiry 校验，旧回调不关闭新提示。
+- `ZjuHomeworkStore.Result.newHomework` 只包含事务中新增且未完成的作业；重复拉取、普通内容修改、已提交新导入均不发新作业提示。真实 SQLite upsert 检查扩至 45 项通过；原有日历关联、删除和个人完成状态保持。
+- 作业 300000ms、课表 1800000ms 独立尝试时间；单次 Job 按最早到期来源重排，前台保留到期检查。手动全量刷新与后台单来源请求共用单个网络 owner，缺失 scope 排队，取消后新请求使用新 epoch；独立 fetch 共用一次内存认证会话，失败来源不应用空结果。`zju_sync_cadence_check.py` 22 项通过，覆盖两类开关、联网／持久 Job、单来源、部分失败、凭据失败防重试风暴、排队与取消、前后台生命周期。
+- 学校作业详情整组附件／原文／重新解析区域不加入布局；普通收件保留。独立包原生检查覆盖两种详情、卡片两类宿主布局、真实通知 600000ms、提前／旧过期保护及真实「×」PendingIntent，关闭后本地作业完成字段和原文均未修改。正常浅色及 320dp／字体 1.45／深色日志 `build/homework-notice-{light,dark}.log`；图片 `build/homework-{detail,ordinary-retained,card-island,card-shade}-{light,dark}.png`。岛上截图是 RemoteViews 在模拟器中的实际布局；未获得本轮 vivo OEM 宿主的新样式画面。
+- 通知权限／频道检查 650 项、原子协议生命周期 111 项及原卡动画资源合同通过。Debug、androidTest 与 lintDebug 首轮通过；最终正式包、独立 UI 复审及发布证据待补。源码备份 `.local-backups/homework-notice-sync-20261020/`。
 
 ## 0.15.28 — 菜单分隔行、空时间提示与窄屏筛选 — 2026-10-20
 

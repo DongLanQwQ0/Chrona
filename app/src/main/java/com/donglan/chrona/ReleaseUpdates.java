@@ -75,7 +75,7 @@ final class ReleaseUpdates {
                     Activity target = owner.get();
                     if (target == null || target.isFinishing() || target.isDestroyed()
                             || !target.hasWindowFocus()) return;
-                    UiStyle.confirmDialog(target, "发现新版本 " + version,
+                    UiDialogs.confirmDialog(target, "发现新版本 " + version,
                             "当前版本 " + current + "，可查看更新说明并下载 APK。",
                             "查看更新", () -> target.startActivity(new Intent(target, UpdateActivity.class)));
                     READER.execute(() -> prefs.edit().putString("notified_version", version)

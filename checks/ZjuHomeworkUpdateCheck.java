@@ -22,6 +22,7 @@ public final class ZjuHomeworkUpdateCheck {
         ZjuHomeworkStore managed=new ZjuHomeworkStore(c);managed.configure("account",true);long generation=managed.state().generation;
         Homework a=homework("a","A",DUE,false),b=homework("b","B",DUE,false);
         var initial=managed.apply("account",generation,List.of(a,b));check(initial.actionableAdded==2&&initial.actionableUpdated==0,"new unfinished actionable additions");
+        check(initial.newHomework.equals(List.of(a,b)),"new-work notice carries the actual committed titles, body and deadlines");
         check(managed.trackedCourses("account",generation).equals(java.util.Set.of("course")),"existing course is tracked for later terms");
         check(managed.trackedCourses("other-account",generation).isEmpty(),"other account course IDs never enter fetch");
         check(managed.trackedCourses("account",generation+1).isEmpty(),"stale generation cannot supply course IDs");
@@ -51,11 +52,12 @@ public final class ZjuHomeworkUpdateCheck {
             check(row(c,aid).dueAtMillis.equals(DUE), "category upgrade preserves original deadline");
         }
         check(row(c,aid).calendarEventId!=null&&row(c,bid).calendarEventId!=null&&CalendarStore.rows.size()==2,"unfinished deadline homework automatically published");
-        managed.apply("account",generation,List.of(a,b));check(CalendarStore.rows.size()==2,"unchanged refresh does not duplicate provider events");
+        check(managed.apply("account",generation,List.of(a,b)).newHomework.isEmpty(),"unchanged refresh never reopens or extends a new-work notice");check(CalendarStore.rows.size()==2,"unchanged refresh does not duplicate provider events");
         personal(c,aid,0,101);event(101,DUE,true);
         a=homework("a","A updated",DUE+100000,false);
         var changed=managed.apply("account",generation,List.of(a,b));
         check(changed.actionableAdded==0&&changed.actionableUpdated==1,"only actual changed unfinished row notifies");
+        check(changed.newHomework.isEmpty(),"edited existing work is not announced as new homework");
         check(CalendarStore.rows.get(101L).input.startMillis==DUE+100000&&CalendarStore.rows.get(101L).input.endMillis==DUE+160000,"deadline-only provider point follows new deadline");
         check(CalendarStore.rows.get(101L).input.title.equals("A updated")&&CalendarStore.rows.get(101L).reminderMinutes.equals(List.of(15)),"provider title and personal reminder updated");
         check(row(c,aid).id==aid&&row(c,aid).calendarEventId==101,"candidate identity and calendar link retained");
@@ -73,6 +75,7 @@ public final class ZjuHomeworkUpdateCheck {
         check(row(c,aid).completedAtMillis!=null&&CalendarStore.rows.get(101L).reminderMinutes.isEmpty(),"manual completion retained with provider alerts suppressed");
         var submitted=managed.apply("account",generation,List.of(a,b,homework("c","C",DUE,true)));
         check(submitted.added==1&&submitted.completed==1&&submitted.actionableAdded==0,"new submitted work never actionable");
+        check(submitted.newHomework.isEmpty(),"already-submitted imports do not produce a new-work notice");
         a=homework("a","A no deadline",0,false);managed.apply("account",generation,List.of(a,b));
         check(ZjuHomeworkCalendar.pendingCount(c)==1&&CalendarStore.rows.get(101L).reminderMinutes.isEmpty(),"removed deadline preserves history without obsolete alarms and stays pending");
         try(TaskStore store=new TaskStore(c)){check(!store.allowsReminder(aid),"completion retry cannot restore reminder on removed deadline");}

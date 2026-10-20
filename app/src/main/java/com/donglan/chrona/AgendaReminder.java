@@ -45,6 +45,8 @@ public final class AgendaReminder {
     }
 
     static void refreshSafely(Context context, Intent action) {
+        try { HomeworkNotice.refresh(context); }
+        catch (RuntimeException failure) { android.util.Log.w("ChronaHomework", "Unable to refresh homework notice", failure); }
         try { refresh(context, action); }
         catch (Exception exception) {
             android.util.Log.w("Chrona", "Upcoming reminder refresh failed", exception);

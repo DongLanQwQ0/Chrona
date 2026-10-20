@@ -44,7 +44,7 @@ final class PressFeedback {
 
     static void apply(View view) {
         if (!installed.containsKey(view)) apply(view,
-                UiStyle.isCardSurface(view) ? CARD_PRESSED_SCALE : PRESSED_SCALE);
+                UiSurfaces.isCardSurface(view) ? CARD_PRESSED_SCALE : PRESSED_SCALE);
         else if (!Float.isNaN(installed.get(view))) allowOverflow(view);
     }
 

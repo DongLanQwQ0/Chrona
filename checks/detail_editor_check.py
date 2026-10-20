@@ -43,7 +43,7 @@ for expected in (
 ):
     if expected not in source:
         raise AssertionError(f"Missing detail selection-bar integration: {expected}")
-if 'UiStyle.choiceDialog(this, "日程类型"' in source:
+if 'UiDialogs.choiceDialog(this, "日程类型"' in source:
     raise AssertionError("Detail type must use the selection bar, not the previous picker")
 picker = block(source, "private void configureTimePicker(")
 assert '"截止时间", candidate.isHomework() && !managedHomework, null)' in source

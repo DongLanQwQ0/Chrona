@@ -9,7 +9,7 @@ source=source.replace('android.os.SystemClock', 'SystemClock')
 delivery=(root/'app/src/main/java/com/donglan/chrona/NotificationDeliveryStatus.java').read_text(encoding='utf-8')
 source += '\n' + re.sub(r'^package .*;\s*|^import .*;\s*','',delivery,flags=re.M).replace('android.Manifest.','Manifest.')
 card_source=(root/'app/src/main/java/com/donglan/chrona/AtomicAgendaCard.java').read_text(encoding='utf-8')
-a=card_source.index('    static String remainingText(long millis)');b=card_source.index('    private static int cameraTopPadding',a)
+a=card_source.index('    static String remainingText(long millis)');b=card_source.index('    static int cameraTopPadding',a)
 source += '\nclass ReminderTimeline {static long CAPSULE_COUNTDOWN_WINDOW=120000;static long capsuleDeadline(AgendaEntry e,long now){return e.deadline;}static long expiresAt(AgendaEntry e){return e.deadline;}}\nclass AtomicAgendaCard {' + card_source[a:b] + '}\n'
 updates=(root/'app/src/main/java/com/donglan/chrona/AtomicCountdownUpdates.java').read_text(encoding='utf-8')
 updates=re.sub(r'^package .*;\s*|^import .*;\s*','',updates,flags=re.M).replace('android.os.PowerManager','PowerManager').replace('android.util.Log','Log').replace('android.util.TypedValue.COMPLEX_UNIT_SP','1')

@@ -109,14 +109,19 @@ final class AtomicAgendaCard {
         }
         int tickerInterval = (int)Math.min(Integer.MAX_VALUE, Math.max(16000, (longestDp / 30 + 6) * 1000));
         views.setInt(R.id.atomic_ticker, "setFlipInterval", motion ? tickerInterval : Integer.MAX_VALUE);
+        applyBackground(context, views, R.id.atomic_background,
+                R.id.atomic_background_first, R.id.atomic_background_second);
+        return views;
+    }
+    static void applyBackground(Context context, RemoteViews views, int flipper, int first, int second) {
+        UiStyle.Palette palette = UiStyle.colors(context);
         Bitmap wallpaper = AgendaReminderPreferences.atomicWallpaper(context)
                 ? GlassBackdropView.blurredForNotification(context, BACKGROUND_WIDTH, BACKGROUND_HEIGHT) : null;
         Bitmap[] backgrounds = backgrounds(palette.surface, palette.primary, wallpaper);
         // Keep the same children during reapply: replacing animated children leaves ghosts.
-        views.setImageViewBitmap(R.id.atomic_background_first, backgrounds[0]);
-        views.setImageViewBitmap(R.id.atomic_background_second, backgrounds[1]);
-        views.setInt(R.id.atomic_background, "setFlipInterval", motion ? 16000 : Integer.MAX_VALUE);
-        return views;
+        views.setImageViewBitmap(first, backgrounds[0]);
+        views.setImageViewBitmap(second, backgrounds[1]);
+        views.setInt(flipper, "setFlipInterval", ValueAnimator.areAnimatorsEnabled() ? 16000 : Integer.MAX_VALUE);
     }
     static String locationText(String location) {
         return location == null || location.isBlank() ? "在你手里~" : location.trim();
@@ -131,7 +136,7 @@ final class AtomicAgendaCard {
             return ((millis + 999) / 1000) + "秒";
         return remainingText(millis);
     }
-    private static int cameraTopPadding(Context context) {
+    static int cameraTopPadding(Context context) {
         if (android.os.Build.VERSION.SDK_INT < 30) return 0;
         try {
             android.view.WindowMetrics metrics = context.getSystemService(android.view.WindowManager.class).getCurrentWindowMetrics();

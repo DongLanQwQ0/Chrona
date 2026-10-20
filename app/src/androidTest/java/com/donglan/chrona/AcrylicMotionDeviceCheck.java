@@ -43,7 +43,7 @@ final class AcrylicMotionDeviceCheck {
             GlassBackdropView backdrop=GlassBackdropView.findFor(second);
             Bitmap wallpaper=Bitmap.createBitmap(backdrop.getWidth(),backdrop.getHeight(),Bitmap.Config.ARGB_8888);
             for(int y=0;y<wallpaper.getHeight();y++)for(int x=0;x<wallpaper.getWidth();x++)wallpaper.setPixel(x,y,Color.rgb(y*255/wallpaper.getHeight(),0,255-y*255/wallpaper.getHeight()));
-            test.runOnMainSync(()->{try{set(backdrop,"blurredWallpaper",wallpaper);set(backdrop,"requestedBlurStrength",ThemeStore.blurStrength(context));set(backdrop,"requestedGaussian",ThemeStore.gaussianBlur(context));UiStyle.invalidateAcrylicSurfaces(screen.getWindow().getDecorView());}catch(Exception e){throw new AssertionError(e);}});
+            test.runOnMainSync(()->{try{set(backdrop,"blurredWallpaper",wallpaper);set(backdrop,"requestedBlurStrength",ThemeStore.blurStrength(context));set(backdrop,"requestedGaussian",ThemeStore.gaussianBlur(context));UiSurfaces.invalidateAcrylicSurfaces(screen.getWindow().getDecorView());}catch(Exception e){throw new AssertionError(e);}});
             SystemClock.sleep(200);int before=sample(test,second);int[] beforeXY=new int[2];second.getLocationOnScreen(beforeXY);
             test.runOnMainSync(()->{View button=completion(first);require(button!=null&&button.performClick(),"real completion click");});
             await(test,()->find(screen.getWindow().getDecorView(),ids[0])==null,"completed row removed");

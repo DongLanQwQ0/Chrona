@@ -6,6 +6,8 @@
 
 ## 交接快照
 
+- [UI 库整理前快照（2026-10-20）](handoff-before-ui-library-20261020.md)
+
 - [0.15 系列](handoff-0.15.md)
 - [0.14 系列](handoff-0.14.md)
 - [早期产品讨论与实现](handoff-early.md)

@@ -164,7 +164,7 @@ public final class RepeatScheduleActivity extends Activity {
         }
         Button frequencyChoice = choiceRow("频率", FREQUENCY_LABELS[frequency], () -> {
             snapshotForm();
-            UiStyle.choiceDialog(this, "重复频率", FREQUENCY_LABELS, frequency, index -> { frequency = index; render(); });
+            UiDialogs.choiceDialog(this, "重复频率", FREQUENCY_LABELS, frequency, index -> { frequency = index; render(); });
         });
         frequencyChoice.setContentDescription("重复频率，" + FREQUENCY_LABELS[frequency]);
         text(root, "间隔", 14, false);
@@ -188,7 +188,7 @@ public final class RepeatScheduleActivity extends Activity {
                 : ending == 2 ? "按次数结束" : "持续重复";
         choiceRow("结束", endLabel, () -> {
             snapshotForm();
-            UiStyle.choiceDialog(this, "结束条件", new String[]{"持续重复", "结束日期", "重复次数"}, ending, index -> {
+            UiDialogs.choiceDialog(this, "结束条件", new String[]{"持续重复", "结束日期", "重复次数"}, ending, index -> {
                 ending = index;
                 if (index == 1) pickDate(until == null ? Instant.ofEpochMilli(series.anchor()).atZone(zone()).toLocalDate() : until,
                         date -> { until = date; render(); });
@@ -218,7 +218,7 @@ public final class RepeatScheduleActivity extends Activity {
 
     private void confirmStop() {
         if (busy || series.repeatStoppedAtMillis != null) return;
-        UiStyle.confirmDialog(this, "停止重复", "过往日程将保留，停止今后的重复。", "停止重复",
+        UiDialogs.confirmDialog(this, "停止重复", "过往日程将保留，停止今后的重复。", "停止重复",
                 () -> change("stop", null, null, null));
     }
 
@@ -282,10 +282,10 @@ public final class RepeatScheduleActivity extends Activity {
     private void occurrenceActions(EventCandidate item) {
         String[] options = item.isTask() ? new String[]{"改单次时间", "跳过这一次", item.completed() ? "恢复待完成" : "标记已完成"}
                 : new String[]{"改单次时间", "跳过这一次"};
-        UiStyle.choiceDialog(this, format(item.anchor()), options, -1, choice -> {
+        UiDialogs.choiceDialog(this, format(item.anchor()), options, -1, choice -> {
             if (busy) return;
             if (choice == 0) pickDateTime(item);
-            else if (choice == 1) UiStyle.confirmDialog(this, "跳过这一次", format(item.anchor()), "跳过",
+            else if (choice == 1) UiDialogs.confirmDialog(this, "跳过这一次", format(item.anchor()), "跳过",
                     () -> change("skip", item.occurrenceAtMillis, null, null));
             else change(item.completed() ? "reopen" : "complete", item.occurrenceAtMillis, null, null);
         });
@@ -305,7 +305,7 @@ public final class RepeatScheduleActivity extends Activity {
 
     private void picker(String title, LocalDateTime seed, boolean dateOnly, Consumer<LocalDateTime> save) {
         Dialog dialog = new Dialog(this);
-        LinearLayout panel = UiStyle.dialogPanel(this, title);
+        LinearLayout panel = UiDialogs.dialogPanel(this, title);
         GlassDateTimePickerView picker = new GlassDateTimePickerView(this, seed);
         TextView selected = text(panel, "", 16, true);
         selected.setGravity(Gravity.CENTER);
@@ -343,7 +343,7 @@ public final class RepeatScheduleActivity extends Activity {
         int overhead = panel.getMeasuredHeight() - picker.getMeasuredHeight();
         picker.getLayoutParams().height = Math.max(1, Math.min(dp(240), available - overhead - dp(32)));
         picker.requestLayout();
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private void change(String action, Long original, Long moved, RepeatRule rule) {

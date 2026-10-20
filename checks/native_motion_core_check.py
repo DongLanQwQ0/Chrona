@@ -20,11 +20,14 @@ def method(source, marker):
 
 def production(name):
     source = (JAVA / name).read_text(encoding='utf-8')
+    if name == 'UiMotion.java':
+        source = source[:source.index('    /** Length of the in-place cross-fade')] + '}\n'
+        source = source.replace('public final class UiMotion', 'final class UiMotion')
     source = re.sub(r'^(package |import ).*;\s*', '', source, flags=re.M)
     return source.replace('android.graphics.Rect', 'Rect')
 
 
-style = (JAVA / 'UiStyle.java').read_text(encoding='utf-8')
+style = (JAVA / 'UiMotion.java').read_text(encoding='utf-8')
 snapshot = method(style, 'private static Snapshot snapshot(View container)')
 snapshot = snapshot.replace('android.graphics.Rect', 'Rect')
 snapshot_type = method(style, 'private static final class Snapshot')
@@ -114,7 +117,7 @@ class ImageView extends View {
 class ScrollView extends ViewGroup {}
 class HorizontalScrollView extends ViewGroup {}
 class EditText extends View {}
-class UiStyle { static void collectAcrylicSurfaces(View v,List<View> surfaces){surfaces.add(v);} }
+class UiSurfaces { static void collectAcrylicSurfaces(View v,List<View> surfaces){surfaces.add(v);} }
 class Bitmap {
  enum Config{ARGB_8888} int w,h;boolean recycled; static boolean oom;
  static Bitmap createBitmap(int w,int h,Config c){if(oom)throw new OutOfMemoryError();Bitmap b=new Bitmap();b.w=w;b.h=h;return b;}

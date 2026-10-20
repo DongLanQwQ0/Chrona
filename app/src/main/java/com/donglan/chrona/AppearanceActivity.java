@@ -59,7 +59,7 @@ public final class AppearanceActivity extends Activity {
         // Cross-fade the whole stage, not just the page: the page's own background is transparent,
         // so a snapshot of it alone would let the already-recoloured backdrop show through and the
         // switch would still read as instant.
-        UiStyle.swap(stage, page, () -> buildAppearance(scrollY));
+        UiMotion.swap(stage, page, () -> buildAppearance(scrollY));
     }
 
     private void buildAppearance(int scrollY) {
@@ -611,7 +611,7 @@ public final class AppearanceActivity extends Activity {
         paintPreview.run();
         updateHex.run();
         syncSliders.run();
-        UiStyle.showFloatingDialog(dialog, panel);
+        UiDialogs.showFloatingDialog(dialog, panel);
     }
 
     private int dp(int value) {

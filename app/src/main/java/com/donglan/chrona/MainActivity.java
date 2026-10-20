@@ -14,7 +14,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
@@ -250,7 +249,7 @@ public final class MainActivity extends Activity {
             leaveCapture();
             return;
         }
-        UiStyle.choiceDialog(this, "尚未提交这条记录", new String[]{"保留草稿", "放弃", "取消"},
+        UiDialogs.choiceDialog(this, "尚未提交这条记录", new String[]{"保留草稿", "放弃", "取消"},
                 -1, choice -> {
                     if (choice == 0) {
                         saveDraft();
@@ -481,7 +480,7 @@ public final class MainActivity extends Activity {
         String title = "发现 " + duplicateCount + " 条重复内容 · 默认跳过";
         if (allEntries.size() > 1 && !nonDuplicateEntries.isEmpty())
             title += "（另有 " + nonDuplicateEntries.size() + " 条可提交）";
-        UiStyle.choiceDialog(this, title, options, -1, choice -> {
+        UiDialogs.choiceDialog(this, title, options, -1, choice -> {
             if (existing != null && choice == 0) {
                 startActivity(new Intent(this, TaskDetailActivity.class)
                         .putExtra("task_id", existing.id));
@@ -673,7 +672,7 @@ public final class MainActivity extends Activity {
             remove.setMinHeight(dp(48));
             remove.setTextColor(UiStyle.colors(this).primary);
             remove.setOnClickListener(view -> {
-                UiStyle.confirmDialog(this, "移除这个文件？", file.displayName
+                UiDialogs.confirmDialog(this, "移除这个文件？", file.displayName
                         + " 将从本次记录中移除，公共 Downloads/Chrona 中的副本会保留。", "移除", () -> {
                     pendingFiles.remove(file);
                     showPendingFiles();
@@ -701,7 +700,7 @@ public final class MainActivity extends Activity {
                     Uri.fromFile(new ImageStore(this).fileFor(imageName)), imageName,
                     () -> startActivity(new Intent(this, AttachmentViewerActivity.class)
                             .putExtra(AttachmentViewerActivity.EXTRA_IMAGE_NAME, imageName)),
-                    () -> UiStyle.confirmDialog(this, "移除图片？",
+                    () -> UiDialogs.confirmDialog(this, "移除图片？",
                             "将从本次记录中移除图片“" + imageName + "”。",
                             "移除图片", () -> {
                                 pendingImages.remove(imageName);

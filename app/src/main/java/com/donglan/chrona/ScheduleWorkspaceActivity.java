@@ -109,7 +109,7 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
             view.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
             view.setImportantForAccessibility(i == selected ? View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                     : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-            if (visible) UiStyle.invalidateAcrylicSurfaces(view);
+            if (visible) UiSurfaces.invalidateAcrylicSurfaces(view);
         }
     }
     final void selectPage(int index) {

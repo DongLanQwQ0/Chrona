@@ -415,7 +415,7 @@ public final class GlassBackdropView extends View {
             wallpaperEntrance.setDuration(UiMotion.EXIT);
             wallpaperEntrance.setInterpolator(UiMotion.SETTLE);
             java.util.List<View> surfaces = new java.util.ArrayList<>();
-            UiStyle.collectAcrylicSurfaces(getRootView(), surfaces);
+            UiSurfaces.collectAcrylicSurfaces(getRootView(), surfaces);
             wallpaperEntrance.addUpdateListener(animation -> {
                 wallpaperOpacity = (float) animation.getAnimatedValue();
                 invalidate();
@@ -430,7 +430,7 @@ public final class GlassBackdropView extends View {
         invalidate();
         View root = getRootView();
         root.invalidate();
-        UiStyle.invalidateAcrylicSurfaces(root);
+        UiSurfaces.invalidateAcrylicSurfaces(root);
     }
 
     private void clearBlurredWallpaper() {
@@ -677,8 +677,8 @@ public final class GlassBackdropView extends View {
         if (blurredWallpaper == null || blurredWallpaper.isRecycled()) return false;
         backdropTransform.reset();
         targetTransform.reset();
-        UiStyle.transformToRoot(this, backdropTransform);
-        UiStyle.transformToRoot(target, targetTransform);
+        UiSurfaces.transformToRoot(this, backdropTransform);
+        UiSurfaces.transformToRoot(target, targetTransform);
         if (!targetTransform.invert(inverseTargetTransform)) return false;
         surfaceBounds.set(destination);
         surfacePaint.setShader(null); surfacePaint.setColor(palette.background);

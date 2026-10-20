@@ -35,9 +35,14 @@ public final class ZjuHomeworkStore {
     }
     public static final class Result {
         public final int added, updated, completed, actionableAdded, actionableUpdated;
-        Result(int added, int updated, int completed, int actionableAdded, int actionableUpdated) {
+        public final List<ZjuSnapshot.Homework> newHomework;
+        public final List<Long> newHomeworkIds;
+        Result(int added, int updated, int completed, int actionableAdded, int actionableUpdated,
+                List<ZjuSnapshot.Homework> newHomework, List<Long> newHomeworkIds) {
             this.added = added; this.updated = updated; this.completed = completed;
             this.actionableAdded = actionableAdded; this.actionableUpdated = actionableUpdated;
+            this.newHomework = List.copyOf(newHomework);
+            this.newHomeworkIds = List.copyOf(newHomeworkIds);
         }
     }
     public static final class History {
@@ -135,8 +140,10 @@ public final class ZjuHomeworkStore {
             try {
                 State current = state(db);
                 if (!current.enabled || current.generation != generation || !Objects.equals(current.account, account)
-                        || current.captureId == 0 || store.getTask(current.captureId) == null) return new Result(0, 0, 0, 0, 0);
+                        || current.captureId == 0 || store.getTask(current.captureId) == null) return new Result(0, 0, 0, 0, 0, List.of(), List.of());
                 int added = 0, updated = 0, completed = 0, actionableAdded = 0, actionableUpdated = 0;
+                List<ZjuSnapshot.Homework> newHomework = new ArrayList<>();
+                List<Long> newHomeworkIds = new ArrayList<>();
                 Map<Long, EventCandidate> candidates = new HashMap<>();
                 for (EventCandidate candidate : store.getCandidates(current.captureId)) candidates.put(candidate.id, candidate);
                 Set<String> seen = new HashSet<>();
@@ -169,7 +176,7 @@ public final class ZjuHomeworkStore {
                         candidateId = store.appendCandidate(new EventCandidate(0, current.captureId, item.title, null, null,
                                 "Asia/Shanghai", "", description, null, false, null, "homework", false, false, 0, item.deadline, done, false));
                         added++;
-                        if (done == null) actionableAdded++;
+                        if (done == null) { actionableAdded++; newHomework.add(item); newHomeworkIds.add(candidateId); }
                     } else if (changed) {
                         ContentValues values = new ContentValues();
                         values.put("title", item.title); values.put("description", description);
@@ -191,7 +198,7 @@ public final class ZjuHomeworkStore {
                         history.put("remote_updated_at", item.updatedAt); db.insertOrThrow("zju_homework_history", null, history);
                     }
                 }
-                db.setTransactionSuccessful(); committed = true; return new Result(added, updated, completed, actionableAdded, actionableUpdated);
+                db.setTransactionSuccessful(); committed = true; return new Result(added, updated, completed, actionableAdded, actionableUpdated, newHomework, newHomeworkIds);
             } finally { db.endTransaction(); if (committed) { reconcileAlerts(alerts); ZjuHomeworkCalendar.retryPending(context); } }
         }
     }
