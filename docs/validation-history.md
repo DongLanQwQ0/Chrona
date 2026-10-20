@@ -5,8 +5,10 @@
 - 用户发现三个 `重复验收 <时间戳>` 系列未清干净，并明确允许删除这三个系列的全部实例。真实手机Provider确认9条例外仍引用已缺失的三个主ID；按已确认标题、所属日历、主ID和实际行ID联合限制删除。全量433→424条，剩余424条完整行逐项一致，三个标题及原主ID／例外查询均为空。私有原始快照和修改前副本仅保存在 `.local-backups/calendar-fixture-cleanup-20261020/`。
 - 根因是 `CalendarStore.deleteEvent` 仅删除主ID，依赖Provider级联清理；此手机Provider留下改期／取消例外。源码改为在同一自有日历内单次删除主ID及其 `original_id` 例外，主记录缺失仍能清理其例外，保留跨日历隔离。隔离官方模拟器实际创建、跳过、改期再删整系列，15项通过，确认主行和全部例外为零、二次删除返回false；`build/calendar-cleanup-native.log`。既有重复边界20项及实际生产SQL的系列、孤儿、陈旧ID、普通事件和跨日历隔离回归通过，`build/calendar-cleanup-regression.log`。
 - 重复与浏览器写入夹具首行调用隔离守卫：拒绝实体手机、正式／旧validation包、真实学校账号、外部同步及已有LAN会话。实际Java守卫16个场景和写入前调用顺序检查通过，`build/fixture-isolation-check.log`，已纳入full。
-- 正式debug／release、androidTest编译和双lint通过，`build/calendar-cleanup-formal-build.log`；日历链接原有SQL专项通过。手机正式195未替换，最后成功观察8756仍处于前台；随后USB设备断开，网页复查连续两次CUA超时未完成。新增源码修复尚未发布或安装手机，未为恢复连接而重启服务。手机暂存的 `/sdcard/chrona-cleanup-window.xml` 与 `/sdcard/chrona-cleanup.png` 因断开尚未移除，重连后仅清理这两个验收文件。
+- 正式debug／release、androidTest编译和双lint通过，`build/calendar-cleanup-formal-build.log`；日历链接原有SQL专项通过。手机正式195未替换，最后成功观察8756仍处于前台；随后USB设备断开，网页复查连续两次CUA超时未完成，未为恢复连接而重启服务。手机暂存的 `/sdcard/chrona-cleanup-window.xml` 与 `/sdcard/chrona-cleanup.png` 因断开尚未移除，重连后仅清理这两个验收文件。
 - 196／0.15.34正式debug、release、androidTest及双lint通过，`build/release-01534-formal.log`；quick 7/7通过。候选 `build/candidates/0.15.34/Chrona-0.15.34.apk` 为3085598字节，官方包名、196／0.15.34、关闭调试及debug／release原签名一致通过，记录 `build/release-01534-{candidate.json,signing.log,badging.log}`。隔离Provider和SQL证据对应同一删除实现，仅版本元数据变化。
+- 源码 `d3c0dc5` 与不可变标签 `v0.15.34` 已推送，正式[Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.34) 为Latest。公开API非Draft／非Pre-release，下载资产3085598字节；公开APK实际196／0.15.34、不可调试和原签名通过。分发包 `build/distributions/0.15.34/Chrona-0.15.34.apk`，证据 `build/release-0.15.34-{public.json,public-apk.log,public-signing.log,published.png}`。CLI直连GitHub连接重置／超时后，沿现有系统代理作本次命令路由完成推送，未改全局Git／代理配置。
+- 正式模拟器195实际显示发现0.15.34；公开196覆盖成功后显示已是最新。覆盖前后完整备份比较15张表结构与全部行、1条收件／1个候选、设置、课堂文档／图片字节一致，仅导出时间变化；日志 `build/release-0.15.34-{old-update,current-update,upgrade-preservation}.log`，副本 `.local-backups/release-01534-20261020/`。实体手机未覆盖新版，现有LAN未被重启。
 
 当前源码版本为 **0.15.34 / 196**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
