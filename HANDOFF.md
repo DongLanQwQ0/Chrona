@@ -12,7 +12,7 @@
 
 ## 验收与剩余工作
 
-- 用户确认后，已精确清除手机三个 `重复验收 <时间戳>` 测试系列的9条例外残留，原主事件均已缺失。Provider 全量前后433→424条；其余424条完整行逐项一致，三个标题／原系列ID及其例外查询为空。私有快照和修改前源码位于 `.local-backups/calendar-fixture-cleanup-20261020/`。源码修复的隔离模拟器真实Provider删除15项、既有重复边界20项及新增删除SQL、夹具隔离16个场景通过；日志 `build/calendar-cleanup-native.log`、`build/calendar-cleanup-regression.log`、`build/fixture-isolation-check.log`。浏览器复查因CUA连续超时未完成，清理结论依据真实Provider快照，不以网页缓存作证据。
+- 用户确认后，已精确清除手机三个 `重复验收 <时间戳>` 测试系列的9条例外残留，原主事件均已缺失。Provider 全量前后433→424条；其余424条完整行逐项一致，三个标题／原系列ID及其例外查询为空。私有快照和修改前源码位于 `.local-backups/calendar-fixture-cleanup-20261020/`。源码修复的隔离模拟器真实Provider删除15项、既有重复边界20项及新增删除SQL、夹具隔离16个场景通过；日志 `build/calendar-cleanup-native.log`、`build/calendar-cleanup-regression.log`、`build/fixture-isolation-check.log`。真实手机网页手动刷新后仍连接，三个测试标题为零，本周23条正常日程保留；`build/phone-calendar-cleanup-browser.json`，私有实际截图仅存上述恢复目录。
 - 0.15.34正式发布后，公开API确认为Latest、非Draft／非Pre-release；公开下载APK原签名及版本196通过。正式模拟器195实际发现196，公开196覆盖安装后显示已是最新，前后15张表结构及全部行、1条收件／1个候选、设置、课堂文档／图片字节保留。证据 `build/release-0.15.34-*.log`、`build/release-0.15.34-public.json`，恢复副本 `.local-backups/release-01534-20261020/`。未覆盖实体手机。
 - 普通待办真实首页／列表／详情触摸返回及空字段保留：浅色 67 项、360dp／系统字体 1.45 深色 69 项通过；真实 Agenda／Widget 模型通过，未测试 launcher 宿主。
 - 课堂阅读两组各 29 项通过：八个公式、图片真实点击和放大、横向公式手势、无引用导航、导出内容保留；深色为 360dp／系统字体 1.45。证据 `build/classroom-reader-native-*.log`、`build/01533-ui-evidence/`。
