@@ -20,16 +20,17 @@ async function idle(page){await page.evaluate(async()=>{while(pending)await new 
 (async()=>{
  const java=relative=>fs.readFileSync(path.join(root,'app/src/main/java/com/donglan/chrona',relative),'utf8');
  const serverSource=java('LanWebServer.java');
- assert(serverSource.includes('.put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis).put("effectiveDue",item.effectiveDueAtMillis()==null?JSONObject.NULL:item.effectiveDueAtMillis())'),'LAN preserves raw due and sends derived due separately');
+ assert(serverSource.includes('.put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis)')&&serverSource.includes('.put("effectiveDue",item.effectiveDueAtMillis()==null?JSONObject.NULL:item.effectiveDueAtMillis())'),'LAN preserves raw due and sends derived due separately');
+ assert(serverSource.includes('.put("executionStart",item.executionStartAtMillis()'),'LAN exposes display interval separately');
  assert(serverSource.includes('body.has("due")?nullableLong(body,"due"):old.dueAtMillis'),'editor saves only raw due');
  assert(java('AgendaRepository.java').includes('candidate.reminderMinutesBefore,candidate.effectiveDueAtMillis()'),'calendar occurrence carries effective deadline metadata');
- assert(java('AgendaRepository.java').includes('long start = candidate.calendarStart();'),'calendar positioning retains execution start');
+ assert(java('AgendaRepository.java').includes('candidate.executionStartAtMillis() : candidate.calendarStart()'),'calendar display uses default execution without changing provider input');
  assert.equal((java('AgendaReminder.java').match(/local\.effectiveDueAtMillis\(\)/g)||[]).length,2,'ordinary and snoozed reminder entries carry effective deadline');
- assert(java('DashboardActivity.java').includes('deadlineScope ? item.effectiveDueAtMillis() : item.anchor()'),'deadline-scoped grouping uses effective deadline');
+ assert(/deadlineScope \? item.effectiveDueAtMillis\(\)\s*: item.hasDefaultExecutionInterval\(\) \? item.executionStartAtMillis\(\)/.test(java('DashboardActivity.java')),'deadline-scoped grouping uses effective deadline');
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
  try{
-  const page=await browser.newPage({viewport:{width:1280,height:900}});page.on('pageerror',error=>errors.push(String(error)));await page.route('**/api/**',mock);await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.getByRole('heading',{name:'今日安排'}).waitFor();await idle(page);
+  const page=await browser.newPage({viewport:{width:1280,height:900}});page.on('pageerror',error=>errors.push(String(error)));await page.route('**/api/**',mock);await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.getByRole('heading',{name:'首页'}).waitFor();await idle(page);
   let text=await page.evaluate(()=>document.querySelector('#content').textContent);assert(text.includes('11:00')&&text.includes('15:00')&&text.includes('13:00'),'home shows derived end, explicit due and derived start');
   await page.evaluate(()=>navigate('schedule'));await idle(page);text=await page.evaluate(()=>document.querySelector('#content').textContent);assert(text.includes('截止 ·')&&text.includes('11:00')&&text.includes('15:00'),'schedule shows effective deadlines');
   await page.evaluate(()=>navigate('task/1'));await idle(page);text=await page.evaluate(()=>document.querySelector('#content').textContent);assert(text.includes('11:00')&&text.includes('15:00'),'detail shows effective deadlines');

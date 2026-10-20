@@ -2,6 +2,7 @@ package com.donglan.chrona.data;
 
 /** A proposed calendar entry. Nullable times and reminder mean the AI has not resolved them. */
 public final class EventCandidate {
+    public static final long DEFAULT_EXECUTION_DURATION_MILLIS = 30 * 60_000L;
     public static final int CERTAIN = 0, INFERRED = 1, DOUBTFUL = 2;
     public final long id;
     public final long taskId;
@@ -139,7 +140,20 @@ public final class EventCandidate {
                 : endAtMillis != null ? endAtMillis : startAtMillis;
     }
     public Long reminderAnchor() { return isTask() ? effectiveDueAtMillis() : anchor(); }
-    public boolean point() { return isTask() && (startAtMillis == null || endAtMillis == null); }
+    /** Read-only execution default; source fields, deadline and recurrence identity stay intact. */
+    public boolean hasDefaultExecutionInterval() {
+        return !isRecord && EventCategory.TASK.equals(category) && startAtMillis == null
+                && endAtMillis == null && dueAtMillis != null;
+    }
+    public Long executionStartAtMillis() {
+        if (hasDefaultExecutionInterval()) return dueAtMillis - DEFAULT_EXECUTION_DURATION_MILLIS;
+        return startAtMillis;
+    }
+    public Long executionEndAtMillis() {
+        return hasDefaultExecutionInterval() ? dueAtMillis : endAtMillis;
+    }
+    public boolean executionAllDay() { return allDay && !hasDefaultExecutionInterval(); }
+    public boolean point() { return isTask() && (executionStartAtMillis() == null || executionEndAtMillis() == null); }
     public Long calendarStart() { return isRecord ? null : anchor(); }
     public Long calendarEnd() {
         Long begin = calendarStart();

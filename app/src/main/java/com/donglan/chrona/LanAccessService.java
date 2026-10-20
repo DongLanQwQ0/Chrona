@@ -10,6 +10,8 @@ import java.net.*;
 public final class LanAccessService extends Service {
     static final int PORT = 8765;
     private static final String CHANNEL = "chrona_lan";
+    private static final String APPROVAL_CHANNEL = "chrona_lan_approval";
+    private static final int APPROVAL_NOTIFICATION = 8757;
     private static volatile LanAccessService live;
     private static volatile String state = "已关闭";
     private static volatile boolean starting;
@@ -17,11 +19,25 @@ public final class LanAccessService extends Service {
     private String address;
     private LanNetworkIdentity binding;
     private ConnectivityManager.NetworkCallback networks;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private String notifiedApproval = "";
+    private final Runnable approvalTick = new Runnable() {
+        @Override public void run() { updateApprovals(); }
+    };
     static boolean running() { LanAccessService current = live; return current != null && current.server != null; }
     static boolean starting() { return starting; }
     static String status() { return state; }
     static String url() { LanAccessService current = live; return current == null || current.server == null ? "" : "http://" + current.address + ":" + PORT; }
     static String pairing() { LanAccessService current = live; return current == null || current.server == null ? "" : current.server.security.pairing(); }
+    static LanSecurity.Approval pendingApproval() {
+        LanAccessService current = live;
+        return current == null || current.server == null ? null : current.server.security.pendingApproval();
+    }
+    static boolean decideApproval(String id, boolean allow) {
+        LanAccessService current = live;
+        if (current == null || current.server == null || !current.server.security.decideApproval(id, allow)) return false;
+        current.approvalsChanged(); return true;
+    }
     static void start(android.content.Context context) {
         if (running() || starting) return;
         starting = true; state = "正在开启…";
@@ -50,7 +66,7 @@ public final class LanAccessService extends Service {
             binding = lanBinding();
             if (binding == null) throw new IllegalStateException("请先连接 Wi-Fi 或以太网局域网");
             address = binding.address;
-            server = new LanWebServer(this, address, PORT); server.start(10_000, false);
+            server = new LanWebServer(this, address, PORT, this::approvalsChanged); server.start(10_000, false);
             state = "已开启"; starting = false;
             networks = new ConnectivityManager.NetworkCallback() {
                 @Override public void onLinkPropertiesChanged(Network network, LinkProperties properties) { checkAddress(); }
@@ -67,6 +83,29 @@ public final class LanAccessService extends Service {
             shutdown(); state = message; starting = false; stopSelf();
         }
         return START_NOT_STICKY;
+    }
+    private void approvalsChanged() { main.post(() -> { if (live == this) updateApprovals(); }); }
+    private void updateApprovals() {
+        main.removeCallbacks(approvalTick);
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        LanSecurity.Approval request = server == null ? null : server.security.pendingApproval();
+        if (request == null || LanPairingActivity.present()) {
+            if (!notifiedApproval.isEmpty()) manager.cancel(APPROVAL_NOTIFICATION);
+            notifiedApproval = "";
+        } else if (!request.id.equals(notifiedApproval)) {
+            manager.createNotificationChannel(new NotificationChannel(APPROVAL_CHANNEL, "浏览器连接授权", NotificationManager.IMPORTANCE_HIGH));
+            PendingIntent open = PendingIntent.getActivity(this, APPROVAL_NOTIFICATION,
+                    new Intent(this, LanPairingActivity.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            Notification notification = new Notification.Builder(this, APPROVAL_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_chrona_foreground).setContentTitle("浏览器请求连接")
+                    .setContentText(request.device + " · " + request.remote).setContentIntent(open)
+                    .setAutoCancel(true).setVisibility(Notification.VISIBILITY_PRIVATE)
+                    .setTimeoutAfter(Math.max(1, request.expiresAt - System.currentTimeMillis())).build();
+            notifiedApproval = request.id;
+            try { manager.notify(APPROVAL_NOTIFICATION, notification); }
+            catch (SecurityException error) { /* The foreground confirmation remains available if notifications were revoked. */ }
+        }
+        if (request != null) main.postDelayed(approvalTick, 1000);
     }
     private void checkAddress() {
         new Handler(Looper.getMainLooper()).post(() -> {
@@ -92,6 +131,8 @@ public final class LanAccessService extends Service {
     }
     private synchronized void shutdown() {
         if (server != null) { server.closeAccess(); server = null; }
+        main.removeCallbacks(approvalTick);
+        getSystemService(NotificationManager.class).cancel(APPROVAL_NOTIFICATION); notifiedApproval = "";
         if (networks != null) { try { getSystemService(ConnectivityManager.class).unregisterNetworkCallback(networks); } catch (RuntimeException ignored) { } networks = null; }
         stopForeground(STOP_FOREGROUND_REMOVE); starting = false;
     }

@@ -10,6 +10,7 @@ def section(start, end):
     return source[source.index(start):source.index(end, source.index(start))]
 
 production = '\n'.join((
+    section('function executionStart(', 'function entry('),
     section('function entry(', 'function taskRoute('),
     section('function appendGrouped(', 'function timelineTime('),
     section('function timelineTime(', 'function dateISO('),

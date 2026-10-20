@@ -44,15 +44,16 @@ final class AgendaRepository {
             result.truncated = candidates.size() > LIMIT;
             for (EventCandidate candidate : candidates) {
                 cancellation.throwIfCanceled();
-                long start = candidate.calendarStart();
-                long end = candidate.point() ? start : candidate.calendarEnd();
-                if (candidate.allDay) {
+                long start = candidate.hasDefaultExecutionInterval() ? candidate.executionStartAtMillis() : candidate.calendarStart();
+                long end = candidate.hasDefaultExecutionInterval() ? candidate.executionEndAtMillis()
+                        : candidate.point() ? start : candidate.calendarEnd();
+                if (candidate.executionAllDay()) {
                     start = LocalDate.parse(AllDayDates.displayStart(start)).atStartOfDay(zone).toInstant().toEpochMilli();
                     end = LocalDate.parse(AllDayDates.displayEnd(end)).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
                 }
                 AgendaEntry entry = new AgendaEntry(candidate.id, candidate.taskId, start, end,
                         candidate.title, candidate.location, candidate.description, "拾时", false,
-                        candidate.allDay, !candidate.needsConfirmation, null, candidate.category,candidate.reminderMinutesBefore,candidate.effectiveDueAtMillis(),candidate.occurrenceAtMillis);
+                        candidate.executionAllDay(), !candidate.needsConfirmation, null, candidate.category,candidate.reminderMinutesBefore,candidate.effectiveDueAtMillis(),candidate.occurrenceAtMillis);
                 if (entry.overlaps(begin, until) && result.entries.size() < LIMIT) result.entries.add(entry);
             }
             List<CalendarOccurrence> systemEntries = new ArrayList<>();

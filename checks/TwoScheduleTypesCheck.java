@@ -85,18 +85,19 @@ public final class TwoScheduleTypesCheck {
                     "five older overdue tasks cannot displace real upcoming or ongoing arrangements");
             check(Collections.disjoint(upcoming,old)&&!upcoming.contains(dueToday)
                     &&!upcoming.contains(overdueToday)&&!upcoming.contains(futureDue),
-                    "deadline-only tasks never become execution appointments, even for future deadlines");
+                    "bounded first five arrangements exclude expired tasks and later default intervals");
+            check(ids(store.queryHomeUpcoming(now,zone,100)).containsAll(List.of(dueToday,futureDue)),
+                    "ordinary due-only tasks enter home through the final half-hour default");
             check(!upcoming.contains(finishedExecution)&&!upcoming.contains(ended)
                     &&!upcoming.contains(completed)&&!upcoming.contains(memo),
                     "ended execution, ended events, completed tasks and records stay outside next events");
             check(store.queryHomeUpcoming(now,zone,2).size()==2,"upcoming query is bounded at the database");
             EventCandidate deadline=store.getCandidatesByIds(List.of(dueToday)).get(0);
-            check(!HomeTimelineEntry.hasUpcomingExecution(deadline,now,zone),
-                    "home presentation agrees that a deadline is not an execution time");
-            try {
-                new HomeTimelineEntry(deadline);
-                throw new AssertionError("deadline-only task accepted by home timeline");
-            } catch(IllegalArgumentException expected) { checks++; }
+            check(HomeTimelineEntry.hasUpcomingExecution(deadline,now,zone)
+                    &&new HomeTimelineEntry(deadline).timestampMillis==deadline.dueAtMillis-1800000,
+                    "home presentation uses the derived half-hour interval");
+            check(deadline.startAtMillis==null&&deadline.endAtMillis==null,
+                    "persisted due-only source fields remain empty");
             EventCandidate pointCandidate=store.getCandidatesByIds(List.of(point)).get(0);
             check(HomeTimelineEntry.hasUpcomingExecution(pointCandidate,now,zone)
                     &&HomeTimelineEntry.executionEnd(pointCandidate)==pointCandidate.startAtMillis,
@@ -280,7 +281,9 @@ public final class TwoScheduleTypesCheck {
             id=store.appendCandidate(value(task,null,null,now-1000,null,false));
             record=store.appendCandidate(value(task,null,null,null,null,true));
             EventCandidate original=store.getCandidatesByIds(List.of(id)).get(0);
-            check(original.dueAtMillis==now-1000&&original.startAtMillis==null&&original.point(),"deadline remains exact and does not invent execution time");
+            check(original.dueAtMillis==now-1000&&original.startAtMillis==null&&original.endAtMillis==null
+                    &&!original.point()&&original.executionStartAtMillis()==now-1000-1800000,
+                    "deadline and source fields remain exact while display derives a half-hour interval");
             check(original.taskState(now).equals("已逾期"),"overdue pending task");
             ScheduleQuery pending=new ScheduleQuery(0,null,0,"",null,null,now,ZoneId.systemDefault());
             check(store.queryScheduleIds(pending).equals(List.of(id)),"overdue task remains pending, record excluded");

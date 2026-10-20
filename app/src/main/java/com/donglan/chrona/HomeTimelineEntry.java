@@ -14,11 +14,11 @@ final class HomeTimelineEntry {
     final CalendarOccurrence systemEvent;
 
     HomeTimelineEntry(EventCandidate candidate) {
-        Long start = candidate.startAtMillis != null ? candidate.startAtMillis
+        Long start = candidate.executionStartAtMillis() != null ? candidate.executionStartAtMillis()
                 : deadlineOnly(candidate) ? candidate.dueAtMillis : null;
         if (start == null)
             throw new IllegalArgumentException("首页时间轴需要明确的执行开始时间");
-        timestampMillis = candidate.allDay && !deadlineOnly(candidate)
+        timestampMillis = candidate.executionAllDay() && !deadlineOnly(candidate)
                 ? LocalDate.parse(AllDayDates.displayStart(start))
                         .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
                 : start;
@@ -51,21 +51,23 @@ final class HomeTimelineEntry {
     }
 
     static boolean hasUpcomingExecution(EventCandidate candidate, long now, ZoneId zone) {
-        if (candidate.isRecord || candidate.completed() || candidate.startAtMillis == null) return false;
+        Long start = candidate.executionStartAtMillis();
+        if (candidate.isRecord || candidate.completed() || start == null) return false;
         if (!candidate.isTask() && (candidate.endAtMillis == null
                 || candidate.endAtMillis <= candidate.startAtMillis)) return false;
         long finish = executionEnd(candidate);
-        if (candidate.allDay) {
+        if (candidate.executionAllDay()) {
             long todayUtc = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                     .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
             return finish > todayUtc;
         }
-        return finish > now || (finish == candidate.startAtMillis && finish == now);
+        return finish > now || (finish == start && finish == now);
     }
 
     static long executionEnd(EventCandidate candidate) {
-        long start = candidate.startAtMillis;
-        if (candidate.endAtMillis != null && candidate.endAtMillis > start) return candidate.endAtMillis;
-        return candidate.allDay ? start + ALL_DAY_DURATION_MILLIS : start;
+        long start = candidate.executionStartAtMillis();
+        Long end = candidate.executionEndAtMillis();
+        if (end != null && end > start) return end;
+        return candidate.executionAllDay() ? start + ALL_DAY_DURATION_MILLIS : start;
     }
 }

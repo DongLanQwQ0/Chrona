@@ -13,7 +13,7 @@ import java.util.*;
 /** A local-only document renderer; native code owns every document action. */
 final class ClassroomMarkdownView extends WebView {
     private static final String ORIGIN="https://classroom.chrona.local/";
-    interface Actions { void source(int id); void assignment(int index); void image(String name); }
+    interface Actions { void assignment(int index); void image(String name); }
     private final Activity activity;
     private final File directory;
     private final Set<String> images;
@@ -21,12 +21,11 @@ final class ClassroomMarkdownView extends WebView {
     private final Actions actions;
     private boolean disposed;
     @android.annotation.SuppressLint({"SetJavaScriptEnabled","AddJavascriptInterface"})
-    ClassroomMarkdownView(Activity activity,File directory,JSONObject summary,JSONObject materials,Actions actions) throws Exception {
+    ClassroomMarkdownView(Activity activity,File directory,JSONObject summary,Actions actions) throws Exception {
         super(activity);this.activity=activity;this.directory=directory;this.actions=actions;
         images=ClassroomDocument.referencedImages(summary);
         JSONArray names=new JSONArray();for(String name:images)names.put(name);
-        document=new JSONObject().put("summary",summary).put("segments",materials==null?new JSONArray():materials.getJSONArray("segments"))
-                .put("images",names).toString();
+        document=new JSONObject().put("summary",summary).put("images",names).toString();
         setBackgroundColor(Color.TRANSPARENT);setVerticalScrollBarEnabled(false);setHorizontalScrollBarEnabled(false);
         getSettings().setJavaScriptEnabled(true);getSettings().setAllowFileAccess(false);getSettings().setAllowContentAccess(false);
         getSettings().setBlockNetworkLoads(true);getSettings().setDomStorageEnabled(false);getSettings().setTextZoom(100);
@@ -57,7 +56,6 @@ final class ClassroomMarkdownView extends WebView {
                 List<String> parts=uri.getPathSegments();
                 if(parts.size()==3&&parts.get(0).equals("action"))try{
                     switch(parts.get(1)){
-                        case "source" -> actions.source(Integer.parseInt(parts.get(2)));
                         case "task" -> actions.assignment(Integer.parseInt(parts.get(2)));
                         case "image" -> {if(images.contains(parts.get(2)))actions.image(parts.get(2));}
                     }

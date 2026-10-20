@@ -1797,12 +1797,12 @@ public final class DashboardActivity extends Activity {
             long rangeStart, long rangeEnd, long now) {
         if (!HomeTimelineEntry.hasUpcomingTime(item, now, ZoneId.systemDefault())) return false;
         if (HomeTimelineEntry.deadlineOnly(item)) return item.dueAtMillis >= rangeStart && item.dueAtMillis < rangeEnd;
-        if (item.allDay) {
-            LocalDate start = LocalDate.parse(AllDayDates.displayStart(item.startAtMillis));
+        if (item.executionAllDay()) {
+            LocalDate start = LocalDate.parse(AllDayDates.displayStart(item.executionStartAtMillis()));
             LocalDate inclusiveEnd = LocalDate.parse(AllDayDates.displayEnd(HomeTimelineEntry.executionEnd(item)));
             return !inclusiveEnd.isBefore(today) && start.isBefore(endDate);
         }
-        return HomeTimelineEntry.executionEnd(item) >= rangeStart && item.startAtMillis < rangeEnd;
+        return HomeTimelineEntry.executionEnd(item) >= rangeStart && item.executionStartAtMillis() < rangeEnd;
     }
 
     private LocalDate timelineDate(HomeTimelineEntry entry, LocalDate today, ZoneId zone) {
@@ -2093,8 +2093,9 @@ public final class DashboardActivity extends Activity {
             boolean deadlineScope = scheduleTodoScope == ScheduleQuery.TODO_TODAY_DUE
                     || scheduleTodoScope == ScheduleQuery.TODO_OVERDUE
                     || scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
-            Long dateMillis = deadlineScope ? item.effectiveDueAtMillis() : item.anchor();
-            String date = dateMillis == null ? "待安排" : item.allDay && !deadlineScope
+            Long dateMillis = deadlineScope ? item.effectiveDueAtMillis()
+                    : item.hasDefaultExecutionInterval() ? item.executionStartAtMillis() : item.anchor();
+            String date = dateMillis == null ? "待安排" : item.executionAllDay() && !deadlineScope
                     ? AllDayDates.displayStart(dateMillis)
                     : AllDayDates.localDate(dateMillis, ZoneId.systemDefault());
             boolean newDay = !date.equals(previousDate);
@@ -2717,7 +2718,7 @@ public final class DashboardActivity extends Activity {
             addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, true, showTime),
                     "终止时间");
         }
-        if (candidate != null && candidate.isTask() && candidate.startAtMillis != null
+        if (candidate != null && candidate.isTask() && candidate.executionStartAtMillis() != null
                 && candidate.effectiveDueAtMillis() != null) {
             String deadline = (candidate.isHomework() ? "作业截止 · " : "截止 · ") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
                     DateFormat.SHORT).format(new Date(candidate.effectiveDueAtMillis()));
@@ -2990,11 +2991,11 @@ public final class DashboardActivity extends Activity {
     private String homeCardBoundary(EventCandidate candidate, CalendarOccurrence systemEvent,
             boolean end, boolean includeDate) {
         if (candidate != null && HomeTimelineEntry.deadlineOnly(candidate)) return formatWhen(candidate);
-        Long startMillis = candidate == null ? systemEvent.startMillis : candidate.startAtMillis;
+        Long startMillis = candidate == null ? systemEvent.startMillis : candidate.executionStartAtMillis();
         Long endMillis = candidate == null ? systemEvent.endMillis : HomeTimelineEntry.executionEnd(candidate);
         Long millis = end ? endMillis : startMillis;
         if (millis == null) return end ? "终止时间未定" : "起始时间未定";
-        boolean allDay = candidate == null ? systemEvent.allDay : candidate.allDay;
+        boolean allDay = candidate == null ? systemEvent.allDay : candidate.executionAllDay();
         if (allDay) {
             // CalendarContract all-day ends are exclusive UTC dates, not local clock times.
             String date = end ? AllDayDates.displayEnd(millis) : AllDayDates.displayStart(millis);
@@ -3831,6 +3832,12 @@ public final class DashboardActivity extends Activity {
     }
 
     private String formatWhen(EventCandidate item) {
+        if (item.hasDefaultExecutionInterval()) {
+            return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                    .format(new Date(item.executionStartAtMillis())) + " — "
+                    + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                    .format(new Date(item.executionEndAtMillis()));
+        }
         if (item.isTask() && item.startAtMillis == null && item.effectiveDueAtMillis() != null) {
             return (item.isHomework() ? "作业截止 · " : "截止 · ")
                     + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)

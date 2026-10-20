@@ -37,7 +37,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
         try { check(); result.putString("stream", "LAN integration: PASS (real Android SQLite and HTTP)\n"); finish(-1, result); }
         catch (Throwable error) { result.putString("stream", "LAN integration: FAIL " + error.getClass().getSimpleName() + ": " + error.getMessage()+"\n"); finish(0, result); }
     }
-    private String cookie, csrf;
+    private String cookie, csrf, lastSetCookie;
     private int port;
     private boolean providerCompletion;
     private void check() throws Exception {
@@ -53,11 +53,13 @@ public final class LanAccessInstrumentation extends Instrumentation {
             @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode) { return super.getSharedPreferences("lan-test-"+directory.getName()+"-"+name,mode); }
         };
         try(ServerSocket reserve = new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"))) { port=reserve.getLocalPort(); }
-        LanWebServer server = new LanWebServer(isolated,"127.0.0.1",port);
+        java.util.concurrent.atomic.AtomicInteger approvalChanges = new java.util.concurrent.atomic.AtomicInteger();
+        LanWebServer server = new LanWebServer(isolated,"127.0.0.1",port,approvalChanges::incrementAndGet);
         try {
             server.start(3000,false);
             expect(request("GET","/api/inbox",null,null),401);
             expect(request("GET","/api/attachment/1/image-0",null,null),401);
+            checkApprovalProtocol(server,approvalChanges);
             expect(request("POST","/api/pair",new JSONObject().put("code",server.security.pairing()),"http://evil.invalid"),403);
             expect(request("POST","/api/pair",new JSONObject().put("code",server.security.pairing()),origin()),200);
             Reply session=request("GET","/api/session",null,null);expect(session,200);csrf=session.body.getString("csrf");
@@ -147,9 +149,58 @@ public final class LanAccessInstrumentation extends Instrumentation {
             expect(request("POST","/api/task/delete",new JSONObject().put("id",Long.toString(id)).put("revision",revision),origin()),200);
             try(TaskStore store=new TaskStore(isolated)){require(store.getTask(id)==null,"delete must remove real row");require(store.getCandidates(id).isEmpty(),"candidate cascade");}
             checkRepeatAndOrder(isolated);
+            checkDefaultExecution(isolated);
             expect(request("POST","/api/logout",new JSONObject(),origin()),200);expect(request("GET","/api/inbox",null,null),401);
             server.closeAccess();require(!server.security.authenticated(cookie),"closing revokes connections");
         } finally { server.closeAccess(); delete(directory); }
+    }
+    private void checkApprovalProtocol(LanWebServer server,java.util.concurrent.atomic.AtomicInteger changes) throws Exception {
+        expect(request("POST","/api/approval/request",new JSONObject(),null),403);
+        expect(request("POST","/api/approval/request",new JSONObject(),"http://evil.invalid"),403);
+        Reply created=request("POST","/api/approval/request",new JSONObject(),origin());expect(created,200);
+        String id=created.body.getString("id");JSONObject handle=new JSONObject().put("id",id);
+        require(id.matches("[0-9a-f]{64}")&&created.body.getString("verification").matches("[0-9]{4}"),"HTTP returns one pending handle and comparison digits");
+        require(lastSetCookie==null&&cookie==null&&changes.get()==1,"request alone grants no session and notifies once");
+        expect(request("GET","/api/session",null,null),401);
+        require(request("POST","/api/approval/poll",handle,origin()).body.getString("state").equals("pending"),"HTTP poll waits for native decision");
+        JSONObject missing=new JSONObject().put("id","0".repeat(64));
+        for(int i=0;i<10;i++) {
+            expect(request("POST","/api/approval/cancel",missing,origin()),200);
+            require(request("POST","/api/approval/poll",missing,origin()).body.getString("state").equals("expired"),"unknown handle is unavailable");
+        }
+        require(changes.get()==1,"invalid poll/cancel cannot flood the main-thread notifier");
+        require(server.security.decideApproval(id,true),"native decision accepts pending HTTP request");
+        Reply accepted=request("POST","/api/approval/poll",handle,origin());expect(accepted,200);
+        require(accepted.body.getString("state").equals("approved")&&lastSetCookie.contains("HttpOnly")&&lastSetCookie.contains("SameSite=Strict"),"approval claims protected cookie");
+        require(changes.get()==2,"consumed approval notifies exactly once");
+        Reply session=request("GET","/api/session",null,null);expect(session,200);csrf=session.body.getString("csrf");
+        require(request("POST","/api/approval/poll",handle,origin()).body.getString("state").equals("expired")&&lastSetCookie==null&&changes.get()==2,"claim replay issues no cookie or callback");
+        expect(request("POST","/api/logout",new JSONObject(),origin()),200);cookie=null;csrf=null;
+        created=request("POST","/api/approval/request",new JSONObject(),origin());expect(created,200);
+        handle=new JSONObject().put("id",created.body.getString("id"));
+        expect(request("POST","/api/approval/cancel",handle,origin()),200);int cancelled=changes.get();
+        expect(request("POST","/api/approval/cancel",handle,origin()),200);
+        require(changes.get()==cancelled&&server.security.pendingApproval()==null,"real cancel updates once, repeat is inert");
+        created=request("POST","/api/approval/request",new JSONObject(),origin());expect(created,200);
+        id=created.body.getString("id");handle=new JSONObject().put("id",id);require(server.security.decideApproval(id,false),"native rejection");
+        require(request("POST","/api/approval/poll",handle,origin()).body.getString("state").equals("denied")&&cookie==null,"rejection never grants cookie");
+        expect(request("GET","/api/session",null,null),401);
+    }
+    private void checkDefaultExecution(Context context) throws Exception {
+        long capture,candidate;
+        java.time.ZoneId zone=java.time.ZoneId.systemDefault();java.time.LocalDate day=java.time.LocalDate.now(zone).plusDays(1);
+        long due=day.atTime(0,10).atZone(zone).toInstant().toEpochMilli();
+        try(TaskStore store=new TaskStore(context)) {
+            capture=store.insertTask("due-only integration",null,"integration",System.currentTimeMillis());
+            store.updateStatus(capture,com.donglan.chrona.data.TaskRecord.READY,null);
+            candidate=store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,capture,"默认半小时",null,null,zone.getId(),"","",null,false,null,"task",false,false,0,due,null,false));
+        }
+        JSONObject detail=request("GET","/api/task?id="+capture,null,null).body.getJSONArray("candidates").getJSONObject(0);
+        require(detail.isNull("start")&&detail.isNull("end")&&detail.getLong("executionStart")==due-1800000L&&detail.getLong("executionEnd")==due&&!detail.getBoolean("executionAllDay"),"HTTP separates raw editor values from default display interval");
+        Reply previous=request("GET","/api/schedule?tab=3&from="+day.minusDays(1)+"&until="+day,null,null);expect(previous,200);
+        boolean found=false;for(int i=0;i<previous.body.getJSONArray("items").length();i++)if(previous.body.getJSONArray("items").getJSONObject(i).getLong("id")==candidate)found=true;
+        require(found,"HTTP date filter includes cross-midnight default start");
+        try(TaskStore store=new TaskStore(context)) { require(store.getCandidates(capture).get(0).startAtMillis==null&&store.getCandidates(capture).get(0).endAtMillis==null,"HTTP reads never persist display defaults");store.deleteTask(capture); }
     }
     private void checkRepeatAndOrder(Context context) throws Exception {
         long taskId, candidateId;
@@ -197,6 +248,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
     }
     private String origin(){return "http://127.0.0.1:"+port;}
     private Reply request(String method,String path,JSONObject body,String origin)throws Exception{
+        lastSetCookie=null;
         // Raw loopback sockets avoid changing the release APK's outbound cleartext policy.
         try(Socket socket=new Socket()){
             socket.connect(new InetSocketAddress("127.0.0.1",port),5000);socket.setSoTimeout(5000);
@@ -210,7 +262,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
             BufferedInputStream input=new BufferedInputStream(socket.getInputStream());int status=Integer.parseInt(line(input).split(" ")[1]);int length=-1;String header;
             while(!(header=line(input)).isEmpty()){
                 if(header.toLowerCase(java.util.Locale.ROOT).startsWith("content-length:"))length=Integer.parseInt(header.substring(15).trim());
-                if(header.toLowerCase(java.util.Locale.ROOT).startsWith("set-cookie:"))cookie=header.substring(11).trim().split(";",2)[0];
+                if(header.toLowerCase(java.util.Locale.ROOT).startsWith("set-cookie:")){lastSetCookie=header;cookie=header.substring(11).trim().split(";",2)[0];}
             }
             if(length<0||length>1024*1024)throw new IOException("Invalid test response length");
             byte[] response=new byte[length];int offset=0;while(offset<length){int count=input.read(response,offset,length-offset);if(count<0)throw new IOException("Truncated response");offset+=count;}

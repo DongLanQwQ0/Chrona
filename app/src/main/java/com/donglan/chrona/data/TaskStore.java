@@ -115,11 +115,11 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<EventCandidate> calendarCandidates(long begin, long end, long allDayBegin, long allDayEnd) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND ((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
-                        + "AND CASE WHEN end_at_millis>COALESCE(start_at_millis,due_at_millis) THEN end_at_millis ELSE COALESCE(start_at_millis,due_at_millis)+60000 END>CAST(? AS INTEGER)) "
-                        + "OR (all_day=1 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) AND COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>=CAST(? AS INTEGER)))",
+                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND " + ScheduleQuery.EXECUTION_START_SQL + " IS NOT NULL AND ((NOT " + ScheduleQuery.EXECUTION_ALL_DAY_SQL + " AND " + ScheduleQuery.EXECUTION_START_SQL + "<CAST(? AS INTEGER) "
+                        + "AND " + ScheduleQuery.CALENDAR_END_SQL + ">CAST(? AS INTEGER)) "
+                        + "OR (" + ScheduleQuery.EXECUTION_ALL_DAY_SQL + " AND " + ScheduleQuery.EXECUTION_START_SQL + "<CAST(? AS INTEGER) AND COALESCE(" + ScheduleQuery.EXECUTION_END_SQL + "," + ScheduleQuery.EXECUTION_START_SQL + ")>=CAST(? AS INTEGER)))",
                 new String[]{Long.toString(end), Long.toString(begin), Long.toString(allDayEnd), Long.toString(allDayBegin)},
-                null, null, "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", "5001")) {
+                null, null, ScheduleQuery.EXECUTION_START_SQL + " ASC,id ASC", "5001")) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
         return mergeRepeats(result, begin, end, allDayBegin, allDayEnd, 5001);
@@ -172,10 +172,10 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<EventCandidate> widgetCandidates(long begin, long end) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
-                        + "AND COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>=CAST(? AS INTEGER)",
+                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND " + ScheduleQuery.EXECUTION_START_SQL + " IS NOT NULL AND " + ScheduleQuery.EXECUTION_START_SQL + "<CAST(? AS INTEGER) "
+                        + "AND COALESCE(" + ScheduleQuery.EXECUTION_END_SQL + "," + ScheduleQuery.EXECUTION_START_SQL + ")>=CAST(? AS INTEGER)",
                 new String[]{Long.toString(end), Long.toString(begin)}, null, null,
-                "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
+                ScheduleQuery.EXECUTION_START_SQL + " ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
         return mergeRepeats(result, begin, end, begin, end, WIDGET_ITEM_LIMIT);
@@ -186,16 +186,16 @@ public final class TaskStore extends SQLiteOpenHelper {
             long allDayBegin, long allDayEnd) {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
-                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND COALESCE(start_at_millis,due_at_millis) IS NOT NULL AND ((all_day=0 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
-                        + "AND (COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>CAST(? AS INTEGER) "
-                        + "OR COALESCE(start_at_millis,due_at_millis)>=CAST(? AS INTEGER))) "
-                        + "OR (all_day=1 AND COALESCE(start_at_millis,due_at_millis)<CAST(? AS INTEGER) "
-                        + "AND (COALESCE(end_at_millis,COALESCE(start_at_millis,due_at_millis))>CAST(? AS INTEGER) "
-                        + "OR COALESCE(start_at_millis,due_at_millis)>=CAST(? AS INTEGER))))",
+                "repeat_rule IS NULL AND is_record=0 AND completed_at_millis IS NULL AND " + ScheduleQuery.EXECUTION_START_SQL + " IS NOT NULL AND ((NOT " + ScheduleQuery.EXECUTION_ALL_DAY_SQL + " AND " + ScheduleQuery.EXECUTION_START_SQL + "<CAST(? AS INTEGER) "
+                        + "AND (COALESCE(" + ScheduleQuery.EXECUTION_END_SQL + "," + ScheduleQuery.EXECUTION_START_SQL + ")>CAST(? AS INTEGER) "
+                        + "OR " + ScheduleQuery.EXECUTION_START_SQL + ">=CAST(? AS INTEGER))) "
+                        + "OR (" + ScheduleQuery.EXECUTION_ALL_DAY_SQL + " AND " + ScheduleQuery.EXECUTION_START_SQL + "<CAST(? AS INTEGER) "
+                        + "AND (COALESCE(" + ScheduleQuery.EXECUTION_END_SQL + "," + ScheduleQuery.EXECUTION_START_SQL + ")>CAST(? AS INTEGER) "
+                        + "OR " + ScheduleQuery.EXECUTION_START_SQL + ">=CAST(? AS INTEGER))))",
                 new String[]{Long.toString(end), Long.toString(begin), Long.toString(begin),
                         Long.toString(allDayEnd), Long.toString(allDayBegin),
                         Long.toString(allDayBegin)}, null, null,
-                "COALESCE(start_at_millis,due_at_millis) ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
+                ScheduleQuery.EXECUTION_START_SQL + " ASC,id ASC", Integer.toString(WIDGET_ITEM_LIMIT))) {
             while (cursor.moveToNext()) result.add(readCandidate(cursor));
         }
         return mergeRepeats(result, begin, end, allDayBegin, allDayEnd, WIDGET_ITEM_LIMIT);
@@ -214,9 +214,9 @@ public final class TaskStore extends SQLiteOpenHelper {
             long allDayBegin, long allDayEnd, int limit) {
         for (EventCandidate series : repeatingCandidates())
             for (EventCandidate occurrence : RepeatOccurrences.between(series,
-                    series.allDay ? allDayBegin : begin, series.allDay ? allDayEnd : end, limit))
+                    series.executionAllDay() ? allDayBegin : begin, series.executionAllDay() ? allDayEnd : end, limit))
                 if (!occurrence.completed()) result.add(occurrence);
-        result.sort(java.util.Comparator.comparingLong((EventCandidate e) -> e.anchor()).thenComparingLong(e -> e.id));
+        result.sort(java.util.Comparator.comparingLong((EventCandidate e) -> ScheduleQuery.executionBegin(e)).thenComparingLong(e -> e.id));
         return result.size() <= limit ? result : new ArrayList<>(result.subList(0, limit));
     }
     @Override
@@ -517,7 +517,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         return items.size() <= limit ? items : new ArrayList<>(items.subList(0, limit));
     }
 
-    /** Homework deadlines are milestones; ordinary tasks still require execution time. */
+    /** Homework deadlines are milestones; ordinary due-only tasks use their derived execution interval. */
     public List<EventCandidate> queryHomeUpcoming(long now, java.time.ZoneId zone, int limit) {
         long todayUtc = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                 .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli();
@@ -527,21 +527,22 @@ public final class TaskStore extends SQLiteOpenHelper {
                 + " ELSE start_at_millis>=CAST(? AS INTEGER) END))"
                 + " OR (all_day=1 AND (CASE WHEN end_at_millis>start_at_millis THEN end_at_millis"
                 + " ELSE start_at_millis+" + ALL_DAY_DURATION_MILLIS + " END)>CAST(? AS INTEGER))))"
-                + " OR (category='homework' AND start_at_millis IS NULL AND due_at_millis>=CAST(? AS INTEGER)))";
-        String order = ScheduleQuery.DAY_SQL + " ASC, all_day DESC, COALESCE(start_at_millis,due_at_millis) ASC, id ASC";
+                + " OR (category='homework' AND start_at_millis IS NULL AND due_at_millis>=CAST(? AS INTEGER))"
+                + " OR (" + ScheduleQuery.DEFAULT_EXECUTION_SQL + " AND due_at_millis>CAST(? AS INTEGER)))";
+        String order = ScheduleQuery.DAY_SQL + " ASC, " + ScheduleQuery.EXECUTION_ALL_DAY_SQL + " DESC, " + ScheduleQuery.EXECUTION_START_SQL + " ASC, id ASC";
         List<EventCandidate> items = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null, selection,
-                new String[]{Long.toString(now), Long.toString(now), Long.toString(todayUtc), Long.toString(now)}, null, null, order,
+                new String[]{Long.toString(now), Long.toString(now), Long.toString(todayUtc), Long.toString(now), Long.toString(now)}, null, null, order,
                 Integer.toString(Math.max(1, limit)))) {
             while (cursor.moveToNext()) items.add(readCandidate(cursor));
         }
         for (EventCandidate series : repeatingCandidates()) {
-            if (series.startAtMillis == null && !series.isHomework()) continue;
-            for (EventCandidate occurrence : RepeatOccurrences.between(series, series.allDay ? todayUtc : now,
+            if (series.executionStartAtMillis() == null && !series.isHomework()) continue;
+            for (EventCandidate occurrence : RepeatOccurrences.between(series, series.executionAllDay() ? todayUtc : now,
                     253_402_300_799_999L, Math.max(1, limit)))
                 if (!occurrence.completed()) items.add(occurrence);
         }
-        items.sort(java.util.Comparator.comparingLong((EventCandidate e) -> e.anchor()).thenComparingLong(e -> e.id));
+        items.sort(java.util.Comparator.comparingLong((EventCandidate e) -> ScheduleQuery.executionBegin(e)).thenComparingLong(e -> e.id));
         return items.size() <= limit ? items : new ArrayList<>(items.subList(0, limit));
     }
 

@@ -22,9 +22,14 @@ final class LanWebServer extends NanoHTTPD {
     private static final long MAX_DATE_MILLIS = 4102444800000L; // 2100-01-01 UTC
     final LanSecurity security;
     private final Context context;
+    private final Runnable approvalsChanged;
     private volatile boolean closed;
     LanWebServer(Context context, String address, int port) {
-        super(address, port); this.context = context.getApplicationContext(); security = new LanSecurity(address + ":" + port);
+        this(context, address, port, () -> { });
+    }
+    LanWebServer(Context context, String address, int port, Runnable approvalsChanged) {
+        super(address, port); this.context = context.getApplicationContext(); this.approvalsChanged = approvalsChanged;
+        security = new LanSecurity(address + ":" + port);
         setAsyncRunner(new BoundedRunner());
     }
     void closeAccess() { closed = true; security.close(); stop(); }
@@ -63,6 +68,31 @@ final class LanWebServer extends NanoHTTPD {
             if (token == null) return json(Response.Status.TOO_MANY_REQUESTS, "配对失败，请核对配对码；连续尝试后请等待一分钟");
             Response result = data(new JSONObject().put("ok", true));
             result.addHeader("Set-Cookie", "chrona_session=" + token + "; HttpOnly; SameSite=Strict; Path=/"); return result;
+        }
+        if (method == Method.POST && path.startsWith("/api/approval/")) {
+            if (!security.origin(origin)) return json(Response.Status.FORBIDDEN, "来源无效");
+            JSONObject body = body(request, 256);
+            if (path.equals("/api/approval/request")) {
+                LanSecurity.Approval approval = security.requestApproval(request.getRemoteIpAddress(), headers.get("user-agent"));
+                if (approval == null) return json(Response.Status.TOO_MANY_REQUESTS, "暂时无法请求连接，请稍后重试");
+                approvalsChanged.run();
+                return data(new JSONObject().put("id", approval.id).put("verification", approval.verification)
+                        .put("expiresIn", LanSecurity.APPROVAL_LIFETIME / 1000));
+            }
+            String id = string(body, "id", 64, true);
+            if (!id.matches("[0-9a-f]{64}")) throw new IllegalArgumentException();
+            if (path.equals("/api/approval/cancel")) {
+                if (security.cancelApproval(request.getRemoteIpAddress(), id)) approvalsChanged.run();
+                return data(new JSONObject().put("ok", true));
+            }
+            if (path.equals("/api/approval/poll")) {
+                LanSecurity.ApprovalResult approval = security.pollApproval(request.getRemoteIpAddress(), id);
+                Response result = data(new JSONObject().put("state", approval.state));
+                if (approval.token != null) result.addHeader("Set-Cookie", "chrona_session=" + approval.token + "; HttpOnly; SameSite=Strict; Path=/");
+                if (!approval.state.equals("pending") && !approval.state.equals("expired")) approvalsChanged.run();
+                return result;
+            }
+            return json(Response.Status.NOT_FOUND, "连接请求不存在");
         }
         if (!security.authenticated(headers.get("cookie"))) return json(Response.Status.UNAUTHORIZED, "请在手机开启局域网访问并配对");
         if (method == Method.POST && !security.write(origin, headers.get("x-chrona-csrf"))) return json(Response.Status.FORBIDDEN, "连接验证失败，请重新配对");
@@ -431,7 +461,22 @@ final class LanWebServer extends NanoHTTPD {
         }
     }
     private static JSONObject task(TaskRecord item)throws JSONException{return new JSONObject().put("id",item.id).put("text",item.rawText).put("linkText",item.linkText==null?"":item.linkText).put("status",item.status).put("error",item.errorMessage==null?"":item.errorMessage).put("created",item.createdAtMillis).put("source",item.source);}
-    private static JSONObject candidateBase(EventCandidate item)throws JSONException{return new JSONObject().put("id",item.id).put("taskId",item.taskId).put("title",item.title).put("start",item.startAtMillis==null?JSONObject.NULL:item.startAtMillis).put("end",item.endAtMillis==null?JSONObject.NULL:item.endAtMillis).put("zone",item.timeZoneId==null?ZoneId.systemDefault().getId():item.timeZoneId).put("location",item.location==null?"":item.location).put("description",item.description==null?"":item.description).put("category",item.category).put("allDay",item.allDay).put("reminder",item.reminderMinutesBefore==null?JSONObject.NULL:item.reminderMinutesBefore).put("needsConfirmation",item.needsConfirmation).put("calendarLinked",item.calendarEventId!=null).put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis).put("effectiveDue",item.effectiveDueAtMillis()==null?JSONObject.NULL:item.effectiveDueAtMillis()).put("completed",item.completed()).put("record",item.isRecord);}
+    private static JSONObject candidateBase(EventCandidate item)throws JSONException {
+        return new JSONObject().put("id",item.id).put("taskId",item.taskId).put("title",item.title)
+                .put("start",item.startAtMillis==null?JSONObject.NULL:item.startAtMillis)
+                .put("end",item.endAtMillis==null?JSONObject.NULL:item.endAtMillis)
+                .put("executionStart",item.executionStartAtMillis()==null?JSONObject.NULL:item.executionStartAtMillis())
+                .put("executionEnd",item.executionEndAtMillis()==null?JSONObject.NULL:item.executionEndAtMillis())
+                .put("executionAllDay",item.executionAllDay())
+                .put("zone",item.timeZoneId==null?ZoneId.systemDefault().getId():item.timeZoneId)
+                .put("location",item.location==null?"":item.location).put("description",item.description==null?"":item.description)
+                .put("category",item.category).put("allDay",item.allDay)
+                .put("reminder",item.reminderMinutesBefore==null?JSONObject.NULL:item.reminderMinutesBefore)
+                .put("needsConfirmation",item.needsConfirmation).put("calendarLinked",item.calendarEventId!=null)
+                .put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis)
+                .put("effectiveDue",item.effectiveDueAtMillis()==null?JSONObject.NULL:item.effectiveDueAtMillis())
+                .put("completed",item.completed()).put("record",item.isRecord);
+    }
     private JSONObject candidate(EventCandidate item) throws JSONException {
         Long anchor=item.reminderAnchor();
         long until=anchor==null?0:item.endAtMillis!=null&&item.endAtMillis>anchor?item.endAtMillis:anchor+60_000L;

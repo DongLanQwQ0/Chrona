@@ -38,7 +38,6 @@
   };
   md.renderer.rules.table_open=()=>'<div class="table-scroll"><table>';
   md.renderer.rules.table_close=()=>'</table></div>';
-  const clock=seconds=>{const s=Math.max(0,Math.floor(seconds));return [Math.floor(s/3600),Math.floor(s/60)%60,s%60].map(n=>String(n).padStart(2,'0')).join(':');};
   // SVG uses TeX x-height units. Resolve them against its own font, not an OEM
   // system font's CSS `ex`, which can be much larger than the surrounding text.
   function sizeMath(output,element,block){
@@ -56,25 +55,24 @@
       svg.style.verticalAlign='0';
     }
   }
-  const sources=(refs,segments)=>'<nav class="sources" aria-label="字幕来源">'+refs.filter(id=>segments[id]).map(id=>`<a href="action/source/${id}">${clock(segments[id].start)}</a>`).join('')+'</nav>';
   function resize(){if(window.ChronaSize)window.ChronaSize.height(Math.ceil(document.querySelector('main').getBoundingClientRect().height));}
   new ResizeObserver(resize).observe(document.querySelector('main'));
   window.renderClassroom=async(data,theme={})=>{
     const turn=++generation;formulas=[];allowed=new Set(data.images);
     for(const key of ['text','muted','link','line'])if(theme[key])document.documentElement.style.setProperty('--'+key,theme[key]);
     document.documentElement.style.fontSize=(16*(theme.fontScale||1))+'px';
-    const summary=data.summary,segments=data.segments||[];
+    const summary=data.summary;
     let html=summary.complete?'':'<p class="draft">字幕草稿 · 等待图片分析</p>';
     html+='<h2>重点概览</h2>'+md.render(summary.overview||'');
     let taskIndex=0;
     for(const part of summary.parts||[]){
       for(const note of part.notes||[]){
-        html+='<h2>'+md.renderInline(note.title||'')+'</h2>'+md.render(note.text||'')+sources(note.sources||[],segments);
+        html+='<h2>'+md.renderInline(note.title||'')+'</h2>'+md.render(note.text||'');
         const inline=new Set([...String(note.text).matchAll(/!\[[^\]\r\n]*\]\((?:images\/)?(image-\d+\.jpg)\)/g)].map(m=>m[1]));
         for(const image of note.images||[])if(!inline.has(image))html+=md.render(`![课堂截图](images/${image})`);
       }
       for(const task of part.assignments||[]){
-        html+=`<h2>课堂安排</h2><div class="assignment" role="link" tabindex="0" data-task="${taskIndex++}" aria-label="提取课堂安排为日程">${md.render(task.text||'')}</div>`+sources(task.sources||[],segments);
+        html+=`<h2>课堂安排</h2><div class="assignment" role="link" tabindex="0" data-task="${taskIndex++}" aria-label="提取课堂安排为日程">${md.render(task.text||'')}</div>`;
       }
     }
     const main=document.querySelector('main');main.innerHTML=html;resize();

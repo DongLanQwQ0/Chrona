@@ -46,7 +46,7 @@ public final class LanSettingsActivity extends Activity {
         code.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
         Button rotate = new Button(this); rotate.setText("重新配对所有浏览器"); UiStyle.button(rotate, false);
         rotate.setOnClickListener(v -> { LanAccessService.stop(this); enable(); }); UiStyle.addSpaced(root, rotate, 16, 0);
-        TextView note = text("同一可信局域网内扫码即可连接，或输入地址和配对码。HTTP 仅适合可信网络；关闭或网络变化会撤销连接。", 13);
+        TextView note = text("打开网页后在手机确认授权，也可扫码或使用配对码。HTTP 仅适合可信网络；关闭或网络变化会撤销连接。", 13);
         UiStyle.muted(note); UiStyle.addSpaced(root, note, 18, 0);
         SettingsPageLayout.show(this, root, saved == null);
     }

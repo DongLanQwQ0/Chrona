@@ -41,7 +41,7 @@ final class ClassroomDeviceCheck {
     private static int assertions;
     static String run(Instrumentation test,Bundle args) throws Exception {
         Context context=test.getTargetContext();
-        if(!context.getPackageName().equals("com.donglan.chrona.followup.validation"))
+        if(!context.getPackageName().equals("com.donglan.chrona.followup.validation.v33"))
             throw new IllegalStateException("Isolated followup package only");
         boolean reminders=AgendaReminderPreferences.enabled(context);
         AgendaReminderPreferences.setEnabled(context,false);
@@ -125,7 +125,7 @@ final class ClassroomDeviceCheck {
             notes.getJSONObject(1).put("text",notes.getJSONObject(1).getString("text")
                     +"\n\n与线性方程组联系起来。对于 $A^{-1}$，若矩阵可逆，继续计算。\n\n行内长式 $"+longMath+"$ 完整可读。\n\n$$"+longMath+"$$");
             ClassroomStore.write(new File(dir,"summary.json"),summary);
-            return markdown(test,args,ready);
+            return markdown(test,args,ready,dir,summary);
         }
         File imagesDir=new File(dir,"bitmap-check");imagesDir.mkdirs();
         for(int i=0;i<3;i++)java.nio.file.Files.copy(new File(dir,"image-0.jpg").toPath(),new File(imagesDir,"raw-"+i+".img").toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
@@ -400,7 +400,8 @@ final class ClassroomDeviceCheck {
             return new JSONObject().put("assertions",assertions).put("nativeRegeneration",true).put("loopbackOnly",true).toString();
         } finally {test.runOnMainSync(activity::finish);}
     }
-    private static String markdown(Instrumentation test,Bundle args,ClassroomLesson lesson)throws Exception {
+    private static String markdown(Instrumentation test,Bundle args,ClassroomLesson lesson,File dir,JSONObject saved)throws Exception {
+        String savedSummary=saved.toString(),savedMaterials=ClassroomStore.read(new File(dir,"materials.json")).toString();
         Context context=test.getTargetContext();Activity activity=test.startActivitySync(new Intent(context,ClassroomLessonActivity.class)
                 .putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         waitFor(test,()->field(activity,"documentView")!=null,"Markdown view created");
@@ -411,6 +412,7 @@ final class ClassroomDeviceCheck {
         JSONObject metrics=new JSONObject(javascript(test,web,"({svg:document.querySelectorAll('mjx-container svg').length,errors:document.querySelectorAll('mjx-merror,.formula-error').length,images:document.images.length,loaded:[...document.images].every(i=>i.complete&&i.naturalWidth>0),overflow:document.documentElement.scrollWidth>innerWidth+1,code:document.querySelector('code').textContent,assignment:getComputedStyle(document.querySelector('.assignment')).color})"));
         require(metrics.getInt("svg")==8&&metrics.getInt("errors")==0,"fractions, limit, rank, matrix, integral and long inverse formulas render as SVG");
         require(metrics.getInt("images")==1&&metrics.getBoolean("loaded"),"inline image loads once without duplicate appendix");
+        require("true".equals(javascript(test,web,"document.querySelectorAll('nav,.sources,a[href*=\"action/source/\"]').length===0&&!document.querySelector('main').textContent.includes('00:00:15')")),"reader omits transcript source navigation and timestamp links");
         require(!metrics.getBoolean("overflow"),"document fits viewport");require(metrics.getString("code").equals("$code$"),"code dollars stay literal");
         require(metrics.getString("assignment").equals(args.getString("theme","light").equals("dark")?"rgb(128, 186, 255)":"rgb(20, 104, 200)"),"assignment text is blue");
         require(web.getHeight()>200,"WebView height follows actual rendered content");
@@ -444,16 +446,49 @@ final class ClassroomDeviceCheck {
             require(edges.getBoolean("end")&&edges.getBoolean("documentFits"),"last formula edge is reachable and page stays bounded");
         }
         screenshot(test,context,"classroom-markdown-long-end-"+args.getString("theme","light"));
-        javascript(test,web,"document.querySelector('a[href=\"action/source/0\"]').click();true");test.waitForIdleSync();
-        View sourceDialog=null;for(View window:android.view.inspector.WindowInspector.getGlobalWindowViews())if(findText(window,"00:00:15 — 00:00:42",true)!=null)sourceDialog=window;
-        require(sourceDialog!=null,"Markdown source opens native transcript dialog");
-        require(countClassroomImages(sourceDialog)==1,"source dialog omits cleaned unused images without blank placeholders");
-        screenshot(test,context,"classroom-markdown-source-"+args.getString("theme","light"));
-        View close=findText(sourceDialog,"关闭",true);test.runOnMainSync(close::performClick);test.waitForIdleSync();
+        JSONObject imageBounds=new JSONObject(javascript(test,web,"(()=>{const r=document.querySelector('a[href=\"action/image/image-0.jpg\"] img').getBoundingClientRect();return {left:r.left,top:r.top,right:r.right,bottom:r.bottom};})()"));
+        float imageDensity=context.getResources().getDisplayMetrics().density;
+        Rect imageRect=new Rect((int)(imageBounds.getDouble("left")*imageDensity),(int)(imageBounds.getDouble("top")*imageDensity),
+                (int)(imageBounds.getDouble("right")*imageDensity),(int)(imageBounds.getDouble("bottom")*imageDensity));
+        test.runOnMainSync(()->web.requestRectangleOnScreen(new Rect(imageRect),true));test.waitForIdleSync();
+        int[] imageOrigin=new int[2];test.runOnMainSync(()->web.getLocationOnScreen(imageOrigin));
+        long imageTap=SystemClock.uptimeMillis();
+        float imageX=imageOrigin[0]+imageRect.exactCenterX(),imageY=imageOrigin[1]+imageRect.exactCenterY();
+        MotionEvent imageDown=MotionEvent.obtain(imageTap,imageTap,MotionEvent.ACTION_DOWN,imageX,imageY,0),imageUp=MotionEvent.obtain(imageTap,imageTap+80,MotionEvent.ACTION_UP,imageX,imageY,0);
+        test.sendPointerSync(imageDown);test.sendPointerSync(imageUp);imageDown.recycle();imageUp.recycle();
+        waitFor(test,()->{for(View window:android.view.inspector.WindowInspector.getGlobalWindowViews())if(findText(window,"课堂截图",true)!=null&&hasImage(window))return true;return false;},"image tap opens decoded native screenshot");
+        View imageDialog=null;for(View window:android.view.inspector.WindowInspector.getGlobalWindowViews())if(findText(window,"课堂截图",true)!=null&&hasImage(window))imageDialog=window;
+        require(imageDialog!=null&&countClassroomImages(imageDialog)==1,"reader image retains native enlargement action without unused image placeholders");
+        tap(test,findDescription(imageDialog,"课堂截图，点击放大"));
+        waitFor(test,()->{for(View window:android.view.inspector.WindowInspector.getGlobalWindowViews())if(findText(window,"课堂截图",true)!=null&&!hasImage(window)
+                &&findType(window,ImageView.class) instanceof ImageView large&&large.getDrawable()!=null)return true;return false;},"native screenshot opens full enlargement");
+        View enlarged=null;for(View window:android.view.inspector.WindowInspector.getGlobalWindowViews())if(findText(window,"课堂截图",true)!=null&&!hasImage(window)
+                &&findType(window,ImageView.class) instanceof ImageView large&&large.getDrawable()!=null)enlarged=window;
+        require(enlarged!=null,"full screenshot enlargement retains decoded image");
+        screenshot(test,context,"classroom-markdown-image-"+args.getString("theme","light"));
+        View closeEnlarged=findText(enlarged,"关闭",true);test.runOnMainSync(closeEnlarged::performClick);test.waitForIdleSync();
+        View close=findText(imageDialog,"关闭",true);test.runOnMainSync(close::performClick);test.waitForIdleSync();
         javascript(test,web,"document.querySelector('.assignment').click();true");test.waitForIdleSync();
-        boolean confirmation=false;for(View window:android.view.inspector.WindowInspector.getGlobalWindowViews())if(findText(window,"提取课堂安排",true)!=null)confirmation=true;
+        boolean confirmation=false;for(View window:android.view.inspector.WindowInspector.getGlobalWindowViews())if(findText(window,"提取课堂安排",true)!=null
+                &&findText(window,lesson.course,false)!=null&&findText(window,"完成教材习题 3.1 第 2、4、6 题，下次课讨论。",false)!=null)confirmation=true;
         require(confirmation,"blue assignment opens existing native extraction confirmation");
         screenshot(test,context,"classroom-markdown-extract-"+args.getString("theme","light"));
+        require(savedSummary.equals(((JSONObject)field(session(activity),"summary")).toString())
+                &&savedSummary.equals(ClassroomStore.read(new File(dir,"summary.json")).toString()),"reading, image enlargement and extraction preserve every note and assignment source JSON");
+        require(savedMaterials.equals(((JSONObject)field(session(activity),"materials")).toString())
+                &&savedMaterials.equals(ClassroomStore.read(new File(dir,"materials.json")).toString()),"reader preserves complete transcript JSON");
+        File archive=new File(context.getExternalFilesDir(null),"classroom-markdown-export.zip");
+        try(FileOutputStream out=new FileOutputStream(archive)){ClassroomExport.write(dir,saved,out);}
+        try(ZipFile zip=new ZipFile(archive)){
+            String exported=new String(zip.getInputStream(zip.getEntry("课堂总结.md")).readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+            String transcript=new String(zip.getInputStream(zip.getEntry("sources.md")).readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+            JSONArray segments=new JSONObject(savedMaterials).getJSONArray("segments");
+            for(int i=0;i<segments.length();i++){
+                require(exported.contains("["+ClassroomExport.time(segments.getJSONObject(i).getDouble("start"))+"](sources.md#s"+i+")"),"export retains note and assignment source time link "+i);
+                require(transcript.contains("<a id=\"s"+i+"\"></a>")&&transcript.contains(segments.getJSONObject(i).getString("text")),"export source anchor resolves to complete transcript "+i);
+            }
+            require(zip.getEntry("images/image-0.jpg")!=null&&exported.contains("![割线与切线](images/image-0.jpg)"),"export retains referenced image and relative Markdown link");
+        }
         test.runOnMainSync(activity::finish);
         return new JSONObject().put("assertions",assertions).put("metrics",metrics).put("synthetic",true).toString();
     }
@@ -464,8 +499,8 @@ final class ClassroomDeviceCheck {
     private static Object field(Object object,String name){if(object instanceof ScheduleWorkspaceActivity workspace)object=workspace.currentPage();try{Field f=object.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(object);}catch(Exception e){throw new IllegalStateException(e);}}
     private static void waitFor(Instrumentation test,BooleanSupplier condition,String label) throws Exception {long end=SystemClock.uptimeMillis()+30000;while(SystemClock.uptimeMillis()<end){test.waitForIdleSync();if(condition.getAsBoolean())return;SystemClock.sleep(100);}throw new IllegalStateException("Timed out: "+label);}
     private static View findText(View view,String text,boolean exact){if(view instanceof TextView t&&(exact?t.getText().toString().equals(text):t.getText().toString().contains(text)))return view;if(view instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){View found=findText(g.getChildAt(i),text,exact);if(found!=null)return found;}return null;}
-    private static boolean hasImage(View view){if(view instanceof ImageView image&&image.getDrawable()!=null&&"课堂截图，点击放大".contentEquals(image.getContentDescription()))return true;if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++)if(hasImage(group.getChildAt(i)))return true;return false;}
-    private static int countClassroomImages(View view){int count=view instanceof ImageView&&"课堂截图，点击放大".contentEquals(view.getContentDescription())?1:0;if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++)count+=countClassroomImages(group.getChildAt(i));return count;}
+    private static boolean hasImage(View view){if(view instanceof ImageView image&&image.getDrawable()!=null&&"课堂截图，点击放大".equals(String.valueOf(image.getContentDescription())))return true;if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++)if(hasImage(group.getChildAt(i)))return true;return false;}
+    private static int countClassroomImages(View view){int count=view instanceof ImageView&&"课堂截图，点击放大".equals(String.valueOf(view.getContentDescription()))?1:0;if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++)count+=countClassroomImages(group.getChildAt(i));return count;}
     private static ScrollView rootScroll(Activity a){return (ScrollView)findType(a.getWindow().getDecorView(),ScrollView.class);}
     private static View findType(View view,Class<?> type){if(type.isInstance(view))return view;if(view instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){View result=findType(g.getChildAt(i),type);if(result!=null)return result;}return null;}
     private static void tap(Instrumentation test,View view)throws Exception{if(view==null)throw new IllegalStateException("Tap target missing");waitFor(test,()->view.hasWindowFocus()&&view.isShown()&&view.getWidth()>0,"tap window ready");int[] xy=new int[2];test.runOnMainSync(()->view.getLocationOnScreen(xy));long t=SystemClock.uptimeMillis();float x=xy[0]+view.getWidth()/2f,y=xy[1]+view.getHeight()/2f;MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,x,y,0),up=MotionEvent.obtain(t,t+80,MotionEvent.ACTION_UP,x,y,0);test.sendPointerSync(down);test.sendPointerSync(up);down.recycle();up.recycle();}

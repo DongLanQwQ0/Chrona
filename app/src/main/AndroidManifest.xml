@@ -33,6 +33,7 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.Chrona.Starting"
         android:enableOnBackInvokedCallback="true">
+        <activity android:name=".LanPairingActivity" android:exported="false" android:launchMode="singleTop" />
         <activity android:name=".ClassroomLessonActivity" android:exported="false" />
         <service android:name=".ClassroomWorkService" android:exported="false" android:foregroundServiceType="dataSync" />
         <activity android:name=".CalendarOverviewActivity" android:exported="false" />

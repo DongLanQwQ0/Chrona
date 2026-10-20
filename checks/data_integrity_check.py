@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import threading
 from contextlib import ExitStack, closing
+from schedule_sql_literals import sql_expression
 
 root = Path(__file__).resolve().parents[1]
 store = (root / "app/src/main/java/com/donglan/chrona/data/TaskStore.java").read_text(encoding="utf-8")
@@ -111,9 +112,9 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     live.close()
 
 method = store.split("public List<EventCandidate> widgetCandidates(long begin, long end,", 1)[1].split("@Override", 1)[0]
-selection = "".join(literals(method.split('query("event_candidates", null,', 1)[1].split('new String[]', 1)[0]))
+selection = sql_expression(method.split('query("event_candidates", null,', 1)[1].split('new String[]', 1)[0])
 with sqlite3.connect(":memory:") as db:
-    db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,is_record INTEGER DEFAULT 0,due_at_millis INTEGER,completed_at_millis INTEGER,repeat_rule TEXT,repeat_exceptions TEXT NOT NULL DEFAULT '{}',repeat_stopped_at INTEGER)")
+    db.execute("CREATE TABLE event_candidates(id INTEGER PRIMARY KEY,start_at_millis INTEGER,end_at_millis INTEGER,all_day INTEGER,is_record INTEGER DEFAULT 0,category TEXT DEFAULT 'task',due_at_millis INTEGER,completed_at_millis INTEGER,repeat_rule TEXT,repeat_exceptions TEXT NOT NULL DEFAULT '{}',repeat_stopped_at INTEGER)")
     db.executemany("INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day) VALUES(?,?,?,0)", [(i, 5, 9) for i in range(1, 201)])
     db.execute("INSERT INTO event_candidates(id,start_at_millis,end_at_millis,all_day) VALUES(201,30,40,0)")
     query = f"SELECT id FROM event_candidates WHERE {selection} ORDER BY start_at_millis ASC,id ASC LIMIT 200"

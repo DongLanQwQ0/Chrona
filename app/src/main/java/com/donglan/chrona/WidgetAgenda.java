@@ -126,9 +126,10 @@ final class WidgetAgenda {
             for (EventCandidate candidate : store.widgetCandidates(result.now, horizon, utcBegin, utcHorizon))
                 local.put(candidate.occurrenceKey(), candidate);
             for (EventCandidate candidate : local.values()) {
-                long start = candidate.calendarStart();
-                long end = candidate.point() ? start : candidate.calendarEnd();
-                if (candidate.allDay) {
+                long start = candidate.hasDefaultExecutionInterval() ? candidate.executionStartAtMillis() : candidate.calendarStart();
+                long end = candidate.hasDefaultExecutionInterval() ? candidate.executionEndAtMillis()
+                        : candidate.point() ? start : candidate.calendarEnd();
+                if (candidate.executionAllDay()) {
                     start = LocalDate.parse(AllDayDates.displayStart(start))
                             .atStartOfDay(result.zone).toInstant().toEpochMilli();
                     end = LocalDate.parse(AllDayDates.displayEnd(end)).plusDays(1)
@@ -136,7 +137,7 @@ final class WidgetAgenda {
                 }
                 items.add(new Item(candidate.id, candidate.taskId, start, end,
                         candidate.title, candidate.location, EventCategory.label(candidate.category),
-                        "拾时", false, candidate.allDay, candidate.occurrenceAtMillis));
+                        "拾时", false, candidate.executionAllDay(), candidate.occurrenceAtMillis));
             }
             List<CalendarOccurrence> systemEntries = new ArrayList<>();
             if (WidgetPreferences.includesSystemCalendar(context)) {

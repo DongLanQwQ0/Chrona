@@ -1,6 +1,6 @@
 # 验证记录
 
-当前源码版本为 **0.15.32 / 194**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前源码版本为 **0.15.33 / 195**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)
@@ -8,6 +8,16 @@
 - [设备验收模板](device-acceptance.md)
 
 构建、离线检查、实际设备操作分别记录。旧版本某项通过，只支持对应候选和条件。
+
+## 0.15.33 — 缺省执行区间、手机授权与课堂阅读 — 2026-10-20
+
+- 普通 `task` 原始起止均空且 due 非空时派生 due−1800000ms 至 due，原始字段、编辑器、同步、Provider 写入与重复锚不变；学校作业仍为截止点。真实模型／首页／SQL、已有重复、Agenda、Widget 与 TaskStore 检查通过；新检查 `todo_due_default_check.py` 已纳入 full。主代理日志 `build/todo-due-default-root.log`，其余受影响检查有效结果沿用本轮执行记录。
+- 普通待办原生浅色 67、360dp／系统字体 1.45 深色 69 项通过：三类首页卡片、列表完整区间、实际触摸进入详情和返回、读取不回填、真实 Agenda／Widget 模型；launcher 宿主未测。日志 `build/todo-due-native-{light,dark-narrow}.log`，截图 `build/01533-ui-evidence/`。
+- 课堂总结阅读移除计时与来源导航，保持来源 JSON 和导出完整。两组原生各 29 项通过：八个公式 SVG、x-height 压力、长公式真实横向触摸、引用图真实点击／放大、无重复图片及 ZIP 原始链接保留。日志 `build/classroom-reader-native-{light,dark-narrow}.log`；深色 360dp／系统字体 1.45。图片链离线 146／10 项及五个补充探针通过，`build/classroom-image-reference-audit.log`；四份实际 ZIP 零张分析图片不足以判断原因，AI 图片选择策略保持不变。
+- 授权安全离线 83 项、独立 21 项及并发 30 次仅一次 session 通过。独立审查发现无效 poll/cancel 触发通知回调的 P2 后，改为真实消费／取消才通知；真实 Android HTTP 回归包括十轮无效调用／重放不增加回调，`build/lan-01533-http-integration.log` PASS，局部安全复审确认关闭。
+- 授权浅色和窄屏大字体深色原生主流程通过：真实生产服务／HTTP、前台允许与拒绝、网页取消自动关闭、后台8757通知不抢前台、系统通知真实触摸进入确认、单次 Cookie、停服断连和重启后旧凭证撤销。日志 `build/lan-approval-native-{light,dark-narrow}.log`。最初失败为模拟器 Wi-Fi 未连接、旧夹具节点／坐标／通知检索问题；保留旧包数据，另建 `.followup.validation.v33` 后完成实际验收。
+- 浏览器实际 CUA 加载生产资源与本地合成 API，验证取消、重试、拒绝、批准和手输码，列表／详情显示跨日 23:40—00:10，编辑原始起止仍空。桌面深浅、360px 列表及 360px／body22.5px 深色授权图已目检，无横向溢出；合成 CSS 字号不冒充系统字体。实际主题按钮深色断连重试的核对码 #00b1ad 对 #252629 对比 5.686:1。受控 API／计时器执行真实授权函数 14 项、主页节点复用 87 项通过；整套旧 CLI 浏览器矩阵未重跑。
+- 正式 Debug／Release 与双 lint 通过，`build/release-01533-formal.log`。正式候选 3085590 字节，官方包名、195／0.15.33、原签名通过，包内 LAN 三项与课堂两项资源逐字节一致；记录 `build/release-01533-{candidate.json,signing.log}`。121147ms 真实等待后的请求过期、原生页关闭和通知撤下通过，`build/lan-approval-native-expiry.log`；专门独立 UI 审核通过。公开发布与非空升级状态完成后续填。
 
 ## 0.15.32 — 局域网主页重复节点 — 2026-10-20
 
