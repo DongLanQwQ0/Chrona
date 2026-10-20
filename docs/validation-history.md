@@ -15,7 +15,9 @@
 - `checks/lan_dom_reuse_check.py` 生产片段回归 87 项通过，覆盖连续五轮、两区重复显示、节点身份、标题更新、点击目标、合法空状态及重复键保护，日志 `build/lan-home-reuse-core.log`。检查已纳入 full；quick 7/7 通过，日志 `build/lan-home-reuse-quick.log`。
 - 实际浏览器加载生产 HTML／JS／CSS，合成 API 同时提供两区相同记录：时间线 4、最近记录 4、待办 1，9 个独立显示键。多轮真实十秒轮询与手动刷新后数量及日期保留；更新标题在两处出现，学校只读详情与本地候选详情入口正确。桌面深浅、360px 浅色与 360px／22.5px 页面字号深色实际图已检查，后者仅是相对 15px 的页面字号 1.5 倍。报告 `build/lan-home-reuse-browser-report.json`；原有整套 CLI 浏览器矩阵未重跑。
 - 正式 Debug／Release、lintDebug／lintRelease 通过，日志 `build/lan-home-reuse-final-formal.log`。候选 `build/candidates/0.15.32/Chrona-0.15.32.apk` 为 3081046 字节，官方包名、194／0.15.32、不可调试及原签名通过；包内 LAN 三项资源与所检查源码逐字节一致。签名记录 `build/release-0.15.32-signing.log`。
-- 专门 UI 独立审核已核对代码、回归及实际浏览器图，无剩余代码／界面缺陷。用户已明确同意覆盖手机并重开局域网；安装仍在等待系统确认，真实服务现场、正式发布及公开包覆盖升级尚未闭环。恢复副本 `.local-backups/lan-home-node-reuse-20261020/`。
+- 专门 UI 独立审核已核对代码、回归及实际浏览器图，无剩余代码／界面缺陷。用户明确同意覆盖手机并重开局域网，系统确认后安装成功，实际为 194／0.15.32；通过正常设置界面重新开启，服务处于前台运行。手机真实网页配对在十分钟期限后返回失败，尚未进入主页；随用户新增手机确认授权流程补验真实连续刷新。恢复副本 `.local-backups/lan-home-node-reuse-20261020/`。
+- 发布源码 `8457f4f`、不可变标签 `v0.15.32` 已推送；[正式 Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.32) 为 Latest，公开 API 为非 Draft／非 Pre-release，APK 3081046 字节。公开下载实际官方包名、194／0.15.32、不可调试及原签名通过，分发包 `build/distributions/0.15.32/Chrona-0.15.32.apk`；记录 `build/release-0.15.32-{public.json,public-apk.log,public-signing.log,published.png}`。
+- 正式模拟器 193 实际发现 0.15.32，覆盖安装公开 194 后显示已是最新版本。前后完整备份比较通过：15 张表结构与全部行、1 条收件／1 个候选、设置、课堂文档和图片字节保留，仅备份导出时间变化。日志 `build/release-0.15.32-{old-update,current-update,upgrade-preservation}.log`，恢复副本 `.local-backups/release-01532-20261020/`。
 
 ## 0.15.31 — 操作胶囊系统日程高光 — 2026-10-20
 
