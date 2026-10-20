@@ -1,4 +1,4 @@
-"""Explicit offline suites: quick needs Python only; full also needs existing Java/JARs and PowerShell 7.
+"""Explicit offline suites: quick needs Python only; full also needs existing Java/JARs, Node and PowerShell 7.
 
 Run from any directory: python checks/run_checks.py [quick|full] [--list].
 No device operations, Gradle builds, downloads, or paid API requests are performed.
@@ -47,6 +47,7 @@ GROUPS = {
         "school_data_backup_check.py",
         "zju_homework_update_check.py", "zju_sync_recovery_check.py", "course_calendar_export_check.py", "homework_links_check.py", "bulk_calendar_publish_check.py",
     ),
+    "javascript": ("lan_dom_reuse_check.py",),
     "powershell": ("vivo_provision_check.py",),
 }
 SUITES = {"quick": ("python",), "full": tuple(GROUPS)}

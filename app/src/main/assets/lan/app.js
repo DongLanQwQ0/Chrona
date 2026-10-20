@@ -101,10 +101,10 @@ function restoreList(value={}){page=value.page??0;search=value.search??'';filter
 const categories={event:'活动',task:'待办',homework:'作业'};
 function taskLike(category){return category==='task'||category==='homework';}
 const SHIFTED_START_INTERVAL_MILLIS=5*60*1000;
-function entry(item,click,source=''){
+function entry(item,click,source='',scope=''){
  const button=action('',click,'entry'),time=node('span','entry-time',fmt(item.start??item.effectiveDue,item.allDay));
  const main=node('span','entry-main');main.append(node('span','entry-title',item.title),node('span','entry-detail',[item.effectiveDue!=null?`截止 · ${fmt(item.effectiveDue,false,true,item.zone)}`:'',item.location,source||categories[item.category],item.needsConfirmation?'待确认':''].filter(Boolean).join(' · ')));
- button.dataset.key=`entry-${item.kind||item.category}-${item.taskId||0}-${item.id||item.start}-${item.start}`;button.dataset.content=JSON.stringify(item);
+ button.dataset.key=`entry-${scope}-${item.kind||item.category}-${item.taskId||0}-${item.id||item.start}-${item.start}`;button.dataset.content=JSON.stringify(item);
  button.append(time,main,icon('chevron-right'));const complete=source||item.system?null:completionAction(item);if(!complete)return button;const row=node('div','entry-row');row.dataset.key=button.dataset.key;button.removeAttribute('data-key');row.append(button,complete);return row;
 }
 function taskRoute(item){return `task/${item.taskId}?candidate_id=${item.id}${item.occurrenceAt!=null?'&occurrenceAt='+item.occurrenceAt:''}`;}
@@ -211,7 +211,8 @@ async function render(animate=false){const ticket=++sequence,host=$('#content');
   const previous=new Map([...host.querySelectorAll('[data-key]')].map(element=>[element.dataset.key,{element,rect:element.getBoundingClientRect()}]));
   const incoming=document.createDocumentFragment();incoming.append(...content);
   const local=!animate||animate.local;
-  if(local)for(const element of incoming.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(old&&!element.querySelector('input')&&old.element.isEqualNode(element))element.replaceWith(old.element);}
+  const reused=new Set();
+  if(local)for(const element of incoming.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(old&&!reused.has(old.element)&&!element.querySelector('input')&&old.element.isEqualNode(element)){element.replaceWith(old.element);reused.add(old.element);}}
   host.replaceChildren(incoming);icons();
   if(local){window.scrollTo(0,scrollY);for(const element of host.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(!old)continue;const rect=element.getBoundingClientRect(),x=old.rect.x-rect.x,y=old.rect.y-rect.y;if(Math.abs(x)+Math.abs(y)>1)motion(element,[{transform:`translate(${x}px,${y}px)`},{transform:'translate(0,0)'}],280);}}
   if(label&&local){const replacement=[...host.querySelectorAll('[aria-label]')].find(element=>element.getAttribute('aria-hidden')!=='true'&&element.getAttribute('aria-label')===label);replacement?.focus({preventScroll:true});if(selection&&replacement?.setSelectionRange)replacement.setSelectionRange(...selection);}
@@ -222,17 +223,17 @@ async function homePage(ticket){
  const columns=node('div','columns'),agenda=card('时间线'),list=node('div','timeline');
  const events=[...data.items.map(item=>({...item,kind:'event'})),...data.calendar.map(item=>({...item,kind:'calendar'}))].sort((a,b)=>timelineTime(a)-timelineTime(b));
  const future=events.slice(0,data.limit??30);
- appendGrouped(list,future,item=>entry(item,()=>item.kind==='event'?navigate(taskRoute(item)):showReadOnly(item),item.kind==='calendar'?item.source||'日历':''),data.date);
+ appendGrouped(list,future,item=>entry(item,()=>item.kind==='event'?navigate(taskRoute(item)):showReadOnly(item),item.kind==='calendar'?item.source||'日历':'','home-timeline'),data.date);
  if(!future.length)empty(list,'暂无未来安排');agenda.append(list);
  const summary=card();summary.classList.add('summary');const date=new Date(data.date+'T12:00:00');
  summary.append(node('div','eyebrow','TODAY'),node('p','date-large',String(date.getDate()).padStart(2,'0')),node('p','date-label',new Intl.DateTimeFormat('zh-CN',{month:'long',weekday:'long'}).format(date)));
  const stats=node('div','stat-row');for(const [value,label,status]of [[data.review,'待确认','1'],[data.failed,'处理失败','3']]){const button=action('',async()=>{await navigate('inbox');filter=status;page=0;await render();},'stat');button.append(node('strong','',String(value)),node('span','',label));stats.append(button);}summary.append(stats);
  const shortcuts=node('div','detail-actions');shortcuts.append(action('查看日历',()=>navigate('calendar')),action('最近作业',()=>openSchedule({filter:'homework',scheduleTab:3,todoScope:3})),action('记录',capture,'primary'));summary.append(shortcuts);columns.append(agenda,summary);
  const result=[heading('首页',data.date),columns];
- const recentItems=[...(data.recent||[]).map(item=>({...item,kind:'event'})),...data.calendar.map(item=>({...item,kind:'calendar'}))].sort((a,b)=>timelineTime(a)-timelineTime(b)).slice(0,5);if(recentItems.length){const recent=card('最近事项');appendGrouped(recent,recentItems,item=>entry(item,()=>item.kind==='event'?navigate(taskRoute(item)):showReadOnly(item),item.kind==='calendar'?item.source||'日历':''),data.date);result.push(recent);}
+ const recentItems=[...(data.recent||[]).map(item=>({...item,kind:'event'})),...data.calendar.map(item=>({...item,kind:'calendar'}))].sort((a,b)=>timelineTime(a)-timelineTime(b)).slice(0,5);if(recentItems.length){const recent=card('最近事项');appendGrouped(recent,recentItems,item=>entry(item,()=>item.kind==='event'?navigate(taskRoute(item)):showReadOnly(item),item.kind==='calendar'?item.source||'日历':'','home-recent'),data.date);result.push(recent);}
  if(data.todos){const todo=card('待办 · '+data.todos.total),counts=node('div','stat-row');
   for(const [value,label,scope,tab]of [[data.todos.todayDue,'今日截止',1,3],[data.todos.overdue,'已逾期',2,3],[data.todos.unscheduled,'待安排',3,1]]){const b=action('',()=>openSchedule({scheduleTab:tab,todoScope:scope}),'stat');b.append(node('strong','',String(value)),node('span','',label));counts.append(b);}todo.append(counts);
-  for(const item of data.todos.items)todo.append(entry(item,()=>navigate(taskRoute(item))));
+  for(const item of data.todos.items)todo.append(entry(item,()=>navigate(taskRoute(item)),'','home-todos'));
   todo.append(action('全部待办',()=>openSchedule({scheduleTab:3,todoScope:3}),'quick-action'));result.push(todo);
  }
  return result;

@@ -14,7 +14,7 @@ async function mock(route){const request=route.request(),url=new URL(request.url
  else if(!paired){status=401;data={error:'需要配对'};}
  else if(request.method()==='POST'&&request.headers()['x-chrona-csrf']!=='test-csrf'){status=403;data={error:'CSRF'};}
  else if(url.pathname==='/api/session')data={csrf:'test-csrf',zone:'Asia/Shanghai',palette:{background:'#f4f6f8',surface:'#ffffff',text:'#202c36',muted:'#70808e',primary:'#486a85',outline:'#d7e0e7'},calendarAllowed:true,calendarReadable:true,systemCalendarIncluded,syncStatus:'模拟数据 · 同步状态'};
- else if(url.pathname==='/api/home')data={revision,items:candidates,calendar:systemCalendarIncluded?[{id:90,title:'系统原样日程',start:1791072000000,end:1791075600000,zone:'Asia/Shanghai',allDay:false}]:[],calendarState:systemCalendarIncluded?'':'已隐藏',date:'2026-10-04',review:1,failed:0};
+ else if(url.pathname==='/api/home')data={revision,items:candidates,recent:candidates,calendar:systemCalendarIncluded?[{id:90,title:'系统原样日程',start:1791072000000,end:1791075600000,zone:'Asia/Shanghai',allDay:false}]:[],calendarState:systemCalendarIncluded?'':'已隐藏',date:'2026-10-04',review:1,failed:0};
  else if(url.pathname==='/api/inbox')data={revision,items:tasks,total:tasks.length,page:0,pageSize:12};
  else if(url.pathname==='/api/schedule')data={revision,items:candidates,total:candidates.length,page:0,pageSize:24};
  else if(url.pathname==='/api/task')data={revision,task:tasks.find(item=>item.id===Number(url.searchParams.get('id'))),candidates:candidates.filter(item=>item.taskId===Number(url.searchParams.get('id'))).map(item=>({...item,mergedSources:mergeDone?[{taskId:77,source:'合并来源 · 模拟',text:'原文保留'}]:[]})),mergedTargets:[],images:[],files:[{id:7,name:'课程资料.pdf',size:2000}]};
@@ -82,6 +82,12 @@ async function checkModalSelect(page){
  validPairing='000009';before=pairRequests;await page.goto(base+'?case=rotated#pair=000009');await page.getByRole('heading',{name:'首页'}).waitFor();assert.equal(pairRequests,before+1,'rotated QR connects');validPairing='000007';paired=false;
  await page.goto(`http://127.0.0.1:${source.address().port}`);await page.locator('#pair-form').waitFor();assert(await page.locator('#workspace').isHidden());await page.locator('#pair-code').fill('12');assert.equal(await page.evaluate(()=>document.querySelector('#pair-code').checkValidity()),false,'short numeric code rejected');await page.locator('#pair-code').fill('000007');await page.getByRole('button',{name:'连接手机',exact:true}).click();await page.getByRole('heading',{name:'首页'}).waitFor();await page.screenshot({path:path.join(out,'desktop-home.png'),fullPage:true});await screenshotIcons(page,'settings-icons-light.png');
 
+ for(let refresh=0;refresh<3;refresh++){
+  await page.locator('#refresh').click();await page.evaluate(async()=>{while(pending)await new Promise(resolve=>setTimeout(resolve,10));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  const snapshot=await page.evaluate(()=>[...document.querySelectorAll('#content .card')].filter(card=>['时间线','最近事项'].includes(card.querySelector('h2')?.textContent)).map(card=>({title:card.querySelector('h2').textContent,keys:[...card.querySelectorAll('[data-key]')].map(row=>row.dataset.key)})));
+  assert.equal(snapshot.length,2,'timeline and recent sections remain');assert(snapshot.every(section=>section.keys.length===candidates.length),'same entries remain in both sections after refresh');
+  const keys=snapshot.flatMap(section=>section.keys);assert.equal(new Set(keys).size,keys.length,'duplicate appearances have distinct presentation keys');
+ }
  await page.evaluate(async()=>{await navigate('inbox');await Promise.all(document.getAnimations().map(a=>a.finished.catch(()=>{})));});
  for(const dark of [false,true]){
   await page.evaluate(dark=>document.body.classList.toggle('dark',dark),dark);
