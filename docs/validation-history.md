@@ -17,6 +17,8 @@
 - 检查夹具按压捕获改为等待原生延迟 pressed 后直接截图，避开长按 tooltip；开关验证等待实际颜色终态而非固定延时。生产实现未因这些夹具修正而改变。最终 androidTest 构建通过，日志 `build/header-toggle-final-test-build.log`；模拟器显示设置已恢复。
 - 正式 Debug／Release 与双 lint 通过，日志 `build/header-toggle-final-formal.log`；实际 APK 官方包名、193／0.15.31、不可调试及与旧版一致的签名证书通过，日志 `build/release-0.15.31-signing.log`。候选 `build/candidates/0.15.31/Chrona-0.15.31.apk` 为 3080998 字节；手机已成功覆盖安装并确认实际版本，未卸载或清除数据。
 - 独立 UI 审核已核对公共遮罩、两组按压对照和完整截图、开关状态以及相关检查，未见旧圆形高光、新增裁切或剩余缺陷，本轮 UI 验收通过。
+- 发布源码 `94cfe38`、不可变标签 `v0.15.31` 已推送；[正式 Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.31) 已设为 Latest。公开 API 为非 Draft／非 Pre-release，APK 3080998 字节；公开下载的官方包名、193／0.15.31、不可调试和原签名通过，保存在 `build/distributions/0.15.31/Chrona-0.15.31.apk`。记录 `build/release-0.15.31-{public.json,public-apk.log,published.png}`。
+- 正式模拟器 0.15.30 实际发现 v0.15.31 及下载入口，覆盖安装公开包后显示已是最新版本。前后不含 API 密钥的完整备份比较通过：全部 15 张表结构与逐行数据、1 条收件／1 个候选、全部设置、课堂文档和图片字节保留，仅备份导出时间变化。日志 `build/release-0.15.31-{old-update,current-update,upgrade-preservation}.log`；恢复副本 `.local-backups/release-01531-20261020/`。普通收件附件与桌面小组件没有本轮升级样本。
 
 ## 0.15.30 — 课堂滚动、自动状态、重新生成与公式 — 2026-10-20
 
