@@ -168,7 +168,7 @@ public final class ClassroomLessonActivity extends Activity {
         cancel=button(content,"停止",()->s.cancel(),false);
         overview=text(content,"",17,false);notes=new LinearLayout(this);notes.setOrientation(LinearLayout.VERTICAL);content.addView(notes);
     }
-    private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary!=null&&!s.summary.optBoolean("complete")?"继续整理":"生成总结");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
+    private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary==null?"生成总结":s.summary.optBoolean("complete")?"重新生成":"继续整理");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
         if(s.prepared!=null)completion.setText("字幕就绪 · "+s.prepared.optInt("segments")+" 条\n截图 "+s.prepared.optInt("raw")+" → "+s.prepared.optInt("candidates")+" 张");else completion.setText(s.selected.state(System.currentTimeMillis()));
         overview.setVisibility(View.GONE);
         JSONObject summary=s.summary;
@@ -208,11 +208,12 @@ public final class ClassroomLessonActivity extends Activity {
         button(body,"上传并生成",()->{dialog.dismiss();startGeneration(ai,upload.isChecked()?ClassroomSummary.MAX_IMAGES:0);},true);
         button(body,"取消",dialog::dismiss,false);UiDialogs.dialogBody(panel,body);UiDialogs.showFloatingDialog(dialog,panel);
     }
-    private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;String classroomPrompt=SchedulePreferences.load(this).classroomPrompt;s.imageLimit=limit;job.run("准备整理课堂",true,()->{JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));String config=ClassroomSummary.configKey(ai,limit,classroomPrompt);if(prior==null||!config.equals(prior.optString("config"))){job.ignoredSummaryUpdated=job.summary==null?-1:job.summary.optLong("updated");job.summary=null;job.revision++;job.publish();}
+    private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;String classroomPrompt=SchedulePreferences.load(this).classroomPrompt;s.imageLimit=limit;job.run("准备整理课堂",true,()->{JSONObject previousSummary=job.summary;JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));String config=ClassroomSummary.configKey(ai,limit,classroomPrompt);if(prior==null||!config.equals(prior.optString("config"))||prior.has("final")){job.ignoredSummaryUpdated=job.summary==null?-1:job.summary.optLong("updated");job.summary=null;job.revision++;job.publish();}
             try{if(!new File(job.dir,"candidates.json").isFile()){job.prepared=ClassroomSummary.prepare(job.dir,job.selected,job.connect(),job.control,job::checkpoint);job.materials=ClassroomStore.read(new File(job.dir,"materials.json"));}
                 job.summary=ClassroomSummary.generate(job.dir,job.selected,ai,limit,job.control,job::checkpoint,classroomPrompt);}
             catch(ChatCompletionClient.RequestException e){if(limit>0&&e.rejectsImage()){new AiSettingsStore(job.app).markImageUnsupported(ai);throw new IOException("当前 AI 服务拒绝图片。可再次选择生成总结，以纯文字模式上传字幕。",e);}throw e;}
-            job.ignoredSummaryUpdated=-1;job.message="总结已完成";});}
+            finally{job.ignoredSummaryUpdated=-1;if(job.summary==null){job.summary=previousSummary;job.revision++;}}
+            job.message="总结已完成";});}
     private void sources(LinearLayout parent,JSONArray refs){if(refs==null||s.materials==null)return;JSONArray segments=s.materials.optJSONArray("segments");HorizontalScrollView scroll=new HorizontalScrollView(this);LinearLayout row=new LinearLayout(this);scroll.addView(row);for(int i=0;i<refs.length();i++){JSONObject source=segments==null?null:segments.optJSONObject(refs.optInt(i,-1));if(source==null)continue;TextView link=new TextView(this);link.setText(ClassroomExport.time(source.optDouble("start"))+"  ·  ");link.setTextSize(14);link.setTextColor(UiStyle.colors(this).primary);link.setMinHeight(dp(48));link.setGravity(android.view.Gravity.CENTER_VERTICAL);link.setContentDescription("字幕来源 "+ClassroomExport.time(source.optDouble("start")));link.setOnClickListener(v->{if(gate())showSource(source);});row.addView(link);}parent.addView(scroll);}
     private void showSource(JSONObject source){
         Dialog dialog=new Dialog(this);

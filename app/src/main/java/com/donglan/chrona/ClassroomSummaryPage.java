@@ -31,6 +31,9 @@ import java.util.concurrent.Executors;
 /** Classroom catalogue only. Each lesson opens its own Activity and retains this browser. */
 final class ClassroomSummaryPage extends SchedulePage {
     private static final int PAGE_SIZE=50;
+    private static final long CATALOG_REFRESH_MILLIS = 5 * 60_000L;
+    private static final long STATUS_REFRESH_MILLIS = 30_000L;
+    private enum Load { CACHE, REFRESH, AUTOMATIC }
     private Session s;
     private final ZjuSettingsStore settings;
     private LinearLayout content, browseBody, listBody;
@@ -38,7 +41,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     private DockNavigationLayout navigation;
     private ImageButton refresh;
     private DateIntervalBar weekBar;
-    private ScrollView scroll;
+    private ScrollView scroll, listScroll;
     private FrameLayout weekViewport;
     private ClassroomLessonPickerView weekPicker, outgoingWeek;
     private android.animation.ValueAnimator weekMotion;
@@ -49,6 +52,13 @@ final class ClassroomSummaryPage extends SchedulePage {
     private List<JSONObject> shownHistory;
     private LocalDate shownWeek;
     private boolean active, gated;
+    private final Handler refreshHandler = new Handler(Looper.getMainLooper());
+    private final Runnable refreshTick = () -> {
+        if (!active || s == null || !s.allowed() || s.mode != 0) return;
+        if (weekPicker != null) weekPicker.refreshStates(System.currentTimeMillis());
+        if (!s.busy && android.os.SystemClock.elapsedRealtime() >= s.nextRemoteAt) s.load(Load.AUTOMATIC);
+        scheduleRefresh();
+    };
     private final android.content.SharedPreferences.OnSharedPreferenceChangeListener preference = (p,k) -> checkAccount();
 
     ClassroomSummaryPage(ScheduleWorkspaceActivity activity, Object retained) {
@@ -62,6 +72,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         WeakReference<ClassroomSummaryPage> owner = new WeakReference<>(null);
         volatile ClassroomClient client;
         volatile boolean busy, cancelled;
+        volatile long nextRemoteAt;
         String message = "";
         List<ClassroomLesson> catalog = new ArrayList<>();
         List<JSONObject> history = new ArrayList<>();
@@ -75,16 +86,21 @@ final class ClassroomSummaryPage extends SchedulePage {
         }
         void cancel() { cancelled = true; ClassroomClient current = client; if (current != null) current.cancel(); }
         void dispose() { cancel(); worker.shutdown(); owner.clear(); }
-        void publish() { main.post(() -> { ClassroomSummaryPage page = owner.get(); if (page != null && !page.isDestroyed()) page.update(); }); }
-        void load(boolean remote) {
+        void publish() { main.post(() -> { ClassroomSummaryPage page = owner.get(); if (page != null && !page.isDestroyed()) { page.update(); page.scheduleRefresh(); } }); }
+        void load(Load kind) {
             if (busy || !allowed()) return;
-            busy = true; cancelled = false; message = remote ? "正在获取课堂列表" : "正在读取课堂记录"; publish();
+            boolean remote = kind != Load.CACHE;
+            if (remote || nextRemoteAt == 0) nextRemoteAt = android.os.SystemClock.elapsedRealtime() + CATALOG_REFRESH_MILLIS;
+            busy = true; cancelled = false; message = kind == Load.AUTOMATIC ? "" : remote ? "正在获取课堂列表" : "正在读取课堂记录"; publish();
             worker.execute(() -> {
                 try {
                     ClassroomStore store = new ClassroomStore(app, account);
                     List<ClassroomLesson> loaded = store.catalog();
                     List<JSONObject> savedHistory = store.history();
+                    if (!initialized && !remote) nextRemoteAt = android.os.SystemClock.elapsedRealtime()
+                            + Math.max(0, CATALOG_REFRESH_MILLIS - Math.max(0, System.currentTimeMillis() - store.catalogUpdatedAt()));
                     if ((remote || !initialized && loaded.isEmpty()) && !cancelled && allowed()) {
+                        nextRemoteAt = android.os.SystemClock.elapsedRealtime() + CATALOG_REFRESH_MILLIS;
                         String[] credentials = new ZjuSettingsStore(app).credentials();
                         try { client = new ClassroomClient(credentials[0], credentials[1]); }
                         finally { Arrays.fill(credentials, ""); }
@@ -128,7 +144,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             navigation.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
         refresh = WorkspacePageHeader.icon(activity, R.drawable.ic_refresh, "刷新课堂", () -> {
-            if (s != null) { if (s.busy) s.cancel(); else s.load(true); }
+            if (s != null) { if (s.busy) s.cancel(); else s.load(Load.REFRESH); }
         });
         UiStyle.addSpaced(root, new WorkspacePageHeader(activity, navigation.headerMotionHost(), refresh), 0, 8);
         weekBar = new DateIntervalBar(activity, () -> {
@@ -140,18 +156,30 @@ final class ClassroomSummaryPage extends SchedulePage {
             setWeek(s.week.plusWeeks(direction)); return true;
         });
         status = label("", 14); root.addView(status);
-        content = new LinearLayout(activity); content.setOrientation(LinearLayout.VERTICAL); root.addView(content);
-        scroll = SettingsPageLayout.viewport(activity, root, false); setContentView(scroll);
+        LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(-1, -2);
+        dateParams.bottomMargin = dp(8); root.addView(weekBar, dateParams);
+        content = new LinearLayout(activity); content.setOrientation(LinearLayout.VERTICAL);
+        scroll = listScroll = SettingsPageLayout.viewport(activity, content, false);
+        FrameLayout body = new FrameLayout(activity);
+        body.addView(listScroll, new FrameLayout.LayoutParams(-1, -1));
+        weekViewport = new FrameLayout(activity) {
+            @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+                return weekTransition || super.dispatchTouchEvent(event);
+            }
+        };
+        PressFeedback.protectViewport(weekViewport);
+        body.addView(weekViewport, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1)); setContentView(root);
         update();
         if (s != null) scroll.post(() -> scroll.scrollTo(0, s.scrollY));
     }
     private void selectMode(int index) {
         if (s == null || s.mode == index) return;
-        s.mode = index; s.page = 0; update();
+        s.mode = index; s.page = 0; update(); scheduleRefresh();
     }
     private void setWeek(LocalDate week) {
         if (s == null || s.week.equals(week)) return;
-        s.week = week; update();
+        s.week = week; update(); scheduleRefresh();
     }
     private void checkAccount() {
         if (s != null && !s.allowed()) { s.dispose(); s = null; browseBody = null; }
@@ -159,12 +187,15 @@ final class ClassroomSummaryPage extends SchedulePage {
             s = new Session(getApplicationContext(), settings.account()); s.owner = new WeakReference<>(this);
             browseBody = null;
         }
-        update(); if (active && s != null && !s.initialized && !s.busy) s.load(false);
+        update(); if (active && s != null && !s.initialized && !s.busy) s.load(Load.CACHE);
+        scheduleRefresh();
     }
     private void update() {
         if (content == null) return;
         if (s == null || !s.allowed()) {
             finishWeekMotion();
+            weekBar.setVisibility(View.GONE);
+            weekViewport.setVisibility(View.GONE); listScroll.setVisibility(View.VISIBLE); scroll = listScroll;
             refresh.setEnabled(false);
             status.setVisibility(View.GONE);
             if (!gated) {
@@ -174,6 +205,10 @@ final class ClassroomSummaryPage extends SchedulePage {
             return;
         }
         gated = false;
+        weekBar.setVisibility(s.mode == 0 ? View.VISIBLE : View.GONE);
+        weekViewport.setVisibility(s.mode == 0 ? View.VISIBLE : View.GONE);
+        listScroll.setVisibility(s.mode == 0 ? View.GONE : View.VISIBLE);
+        if (s.mode != 0) scroll = listScroll;
         status.setText(s.message); status.setVisibility(s.message.isEmpty() ? View.GONE : View.VISIBLE);
         if (browseBody == null) {
             content.removeAllViews(); shownMode = -1;
@@ -188,31 +223,18 @@ final class ClassroomSummaryPage extends SchedulePage {
         if (weekTransition && s.mode == 0) return;
         boolean changed = shownMode != s.mode || shownPage!=s.page || shownCatalog != s.catalog || shownHistory != s.history || !s.week.equals(shownWeek);
         if (changed) {
+            if (s.mode == 0 && shownMode == 0 && s.week.equals(shownWeek) && weekPicker != null
+                    && weekPicker.refreshLessons(s.catalog)) {
+                shownCatalog = s.catalog; shownHistory = s.history; shownPage = s.page;
+                return;
+            }
             boolean animateWeek = s.mode == 0 && shownMode == 0 && weekPicker != null
                     && !s.week.equals(shownWeek) && active && UiMotion.isEnabled();
             LocalDate previousWeek = shownWeek;
-            boolean keepWeekBar = s.mode == 0 && weekBar.getParent() == browseBody;
-            if (!keepWeekBar) {
-                finishWeekMotion(); weekPicker = null; weekViewport = null;
-                if (weekBar.getParent() instanceof android.view.ViewGroup parent) parent.removeView(weekBar);
-                browseBody.removeAllViews();
-            }
+            if (s.mode != 0) { finishWeekMotion(); browseBody.removeAllViews(); }
             listBody = null;
             shownMode = s.mode; shownPage=s.page; shownCatalog = s.catalog; shownHistory = s.history; shownWeek = s.week;
             if (s.mode == 0) {
-                if (!keepWeekBar) {
-                    LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(-1, -2);
-                    dateParams.bottomMargin = dp(8); browseBody.addView(weekBar, dateParams);
-                }
-                if (weekViewport == null) {
-                    weekViewport = new FrameLayout(activity) {
-                        @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
-                            return weekTransition || super.dispatchTouchEvent(event);
-                        }
-                    };
-                    PressFeedback.protectViewport(weekViewport);
-                    browseBody.addView(weekViewport, new LinearLayout.LayoutParams(-1, -2));
-                }
                 showWeek(animateWeek, previousWeek);
             } else {
                 renderPage();
@@ -221,35 +243,35 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private void showWeek(boolean animate, LocalDate previousWeek) {
         ClassroomLessonPickerView next = new ClassroomLessonPickerView(activity, s.catalog, s.week, this::open);
-        next.vertical(scroll);
         next.gestures(direction -> { if (s != null && s.mode == 0) setWeek(s.week.plusWeeks(direction)); }, null);
         ClassroomLessonPickerView old = weekPicker;
         int x = old == null ? 0 : old.getScrollX();
-        weekPicker = next;
+        int y = old == null ? s.scrollY : old.verticalViewport().getScrollY();
+        weekPicker = next; scroll = next.verticalViewport();
         if (!animate || weekViewport.getWidth() == 0) {
-            next.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
-                @Override public void onLayoutChange(View view, int left, int top, int right, int bottom,
-                        int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                    next.scrollTo(x, 0); next.removeOnLayoutChangeListener(this);
+            next.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    next.scrollTo(x, 0);
+                    next.verticalViewport().scrollTo(0, y);
+                    next.getViewTreeObserver().removeOnPreDrawListener(this);
+                    return true;
                 }
             });
-            weekViewport.removeAllViews(); weekViewport.addView(next, new FrameLayout.LayoutParams(-1, -2));
+            weekViewport.removeAllViews(); weekViewport.addView(next, new FrameLayout.LayoutParams(-1, -1));
             return;
         }
         int direction = s.week.isAfter(previousWeek) ? 1 : -1;
-        int width = weekViewport.getWidth(), oldHeight = old.getHeight();
+        int width = weekViewport.getWidth();
         outgoingWeek = old; weekTransition = true;
-        old.setLayoutParams(new FrameLayout.LayoutParams(-1, oldHeight));
         next.setTranslationX(width * direction);
-        weekViewport.addView(next, new FrameLayout.LayoutParams(-1, -2));
+        weekViewport.addView(next, new FrameLayout.LayoutParams(-1, -1));
         weekReady = () -> {
             int prior = next.getScrollX(); next.scrollTo(x, 0);
+            next.verticalViewport().scrollTo(0, y);
             if (next.isLayoutRequested() || prior != next.getScrollX()) {
                 weekViewport.postInvalidateOnAnimation(); return false;
             }
-            int newHeight = next.getHeight();
             weekViewport.getViewTreeObserver().removeOnPreDrawListener(weekReady); weekReady = null;
-            next.setLayoutParams(new FrameLayout.LayoutParams(-1, newHeight));
             android.animation.ValueAnimator motion = android.animation.ValueAnimator.ofFloat(0f, 1f);
             weekMotion = motion; motion.setDuration(UiMotion.ENTER); motion.setInterpolator(UiMotion.SETTLE);
             motion.addUpdateListener(value -> {
@@ -257,8 +279,6 @@ final class ClassroomSummaryPage extends SchedulePage {
                 float p = (float) value.getAnimatedValue();
                 next.setTranslationX(CalendarSlideMotion.incoming(width, direction, p));
                 old.setTranslationX(CalendarSlideMotion.outgoing(width, direction, p));
-                android.view.ViewGroup.LayoutParams params = weekViewport.getLayoutParams();
-                params.height = Math.round(oldHeight + (newHeight - oldHeight) * p); weekViewport.setLayoutParams(params);
             });
             motion.addListener(new android.animation.AnimatorListenerAdapter() {
                 @Override public void onAnimationEnd(android.animation.Animator animation) {
@@ -280,11 +300,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         if (outgoingWeek != null && weekViewport != null) weekViewport.removeView(outgoingWeek);
         outgoingWeek = null; weekTransition = false;
         if (weekPicker != null) {
-            weekPicker.setTranslationX(0f); weekPicker.setLayoutParams(new FrameLayout.LayoutParams(-1, -2));
-        }
-        if (weekViewport != null) {
-            android.view.ViewGroup.LayoutParams params = weekViewport.getLayoutParams();
-            params.height = -2; weekViewport.setLayoutParams(params);
+            weekPicker.setTranslationX(0f);
         }
     }
     private void renderPage(){
@@ -321,16 +337,29 @@ final class ClassroomSummaryPage extends SchedulePage {
     private static String clock(ClassroomLesson lesson) {
         return Instant.ofEpochMilli(lesson.startsAt).atZone(ClassroomLesson.ZONE).toLocalTime().toString();
     }
+    private void scheduleRefresh() {
+        refreshHandler.removeCallbacks(refreshTick);
+        if (!active || s == null || !s.allowed() || s.mode != 0) return;
+        long now = System.currentTimeMillis(), delay = STATUS_REFRESH_MILLIS;
+        for (ClassroomLesson lesson : s.catalog)
+            if (lesson.startsAt > now) delay = Math.min(delay, lesson.startsAt - now);
+        if (!s.busy) delay = Math.min(delay, Math.max(1, s.nextRemoteAt - android.os.SystemClock.elapsedRealtime()));
+        refreshHandler.postDelayed(refreshTick, Math.max(1, delay));
+    }
     @Override protected void onResume() {
         active = true; settings.prefs.registerOnSharedPreferenceChangeListener(preference); checkAccount();
-        if (s != null && s.initialized && !s.busy) s.load(false);
+        if (s != null && s.initialized && !s.busy) s.load(Load.CACHE);
+        if (weekPicker != null) weekPicker.refreshStates(System.currentTimeMillis());
+        scheduleRefresh();
     }
     @Override protected void onPause() {
         active = false; if (s != null) s.scrollY = scroll.getScrollY();
+        refreshHandler.removeCallbacks(refreshTick);
         finishWeekMotion(); update();
         settings.prefs.unregisterOnSharedPreferenceChangeListener(preference);
     }
     @Override protected void onDestroy() {
+        refreshHandler.removeCallbacks(refreshTick);
         if (s != null) { if (isFinishing()) s.dispose(); else if (s.owner.get() == this) s.owner.clear(); }
         super.onDestroy();
     }

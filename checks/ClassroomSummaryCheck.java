@@ -175,7 +175,18 @@ public final class ClassroomSummaryCheck {
         check(secondContent.length()==4&&context.getJSONArray("images").length()==3,"second round includes matching inventory and three actual images");
         for(int i=0;i<3;i++)check(secondContent.getJSONObject(i+1).getJSONObject("image_url").getString("url").equals("data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(ClassroomStore.bytes(new File(dir,"image-"+i+".jpg")))),"second-round actual JPEG matches inventory "+i);
         check(result.getString("run").equals(partial.getString("run")),"resumed run keeps identity for UI replacement");
-        int before=calls;try(RequestControl c=new RequestControl(10000)){ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"保留英文术语");}check(calls==before,"completed run retry makes no HTTP requests");
+        int before=calls;JSONObject regenerated;
+        try(RequestControl c=new RequestControl(20000)){regenerated=ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"保留英文术语");}
+        check(calls==before+2,"regenerate completed summary performs both real HTTP rounds again");
+        check(regenerated.getBoolean("complete")&&!regenerated.getString("run").equals(result.getString("run")),"regeneration has a fresh completed run identity with unchanged settings");
+        failCall=calls+1;
+        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"保留英文术语"),"regeneration first-round failure is not reported as cached success");}
+        JSONObject interrupted=ClassroomStore.read(new File(dir,"run.json"));
+        check(!interrupted.has("draft")&&!interrupted.has("final")&&!interrupted.getString("run").equals(regenerated.getString("run")),"failed new request leaves its own incomplete checkpoint");
+        check(ClassroomStore.read(new File(dir,"summary.json")).toString().equals(regenerated.toString()),"first-round regeneration failure preserves the previous saved summary");
+        failCall=-1;before=calls;
+        try(RequestControl c=new RequestControl(20000)){JSONObject retried=ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"保留英文术语");check(retried.getString("run").equals(interrupted.getString("run")),"incomplete regeneration resumes its own identity");}
+        check(calls==before+2,"failed first-round regeneration retry actually completes both rounds");
         ByteArrayOutputStream zip=new ByteArrayOutputStream();List<ClassroomProgress> exportProgress=new ArrayList<>();ClassroomExport.write(dir,result,zip,exportProgress::add);Map<String,byte[]> entries=unzip(zip.toByteArray());String md=new String(entries.get("课堂总结.md"),StandardCharsets.UTF_8),transcript=new String(entries.get("sources.md"),StandardCharsets.UTF_8);
         check(exportProgress.get(exportProgress.size()-1).completed==entries.size(),"export count equals actual ZIP entries");
         check(entries.size()==5,"ZIP contains Markdown, subtitle source, three local images");

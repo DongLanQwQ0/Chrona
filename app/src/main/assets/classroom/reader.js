@@ -39,6 +39,23 @@
   md.renderer.rules.table_open=()=>'<div class="table-scroll"><table>';
   md.renderer.rules.table_close=()=>'</table></div>';
   const clock=seconds=>{const s=Math.max(0,Math.floor(seconds));return [Math.floor(s/3600),Math.floor(s/60)%60,s%60].map(n=>String(n).padStart(2,'0')).join(':');};
+  // SVG uses TeX x-height units. Resolve them against its own font, not an OEM
+  // system font's CSS `ex`, which can be much larger than the surrounding text.
+  function sizeMath(output,element,block){
+    const xHeight=MathJax.startup.output.font.params.x_height;
+    const em=value=>value.replace(/(-?\d*\.?\d+)ex\b/g,(_,number)=>(Number(number)*xHeight)+'em');
+    for(const svg of output.querySelectorAll(':scope > svg'))
+      for(const name of ['width','height'])if(svg.hasAttribute(name))svg.setAttribute(name,em(svg.getAttribute(name)));
+    for(const node of [output,...output.querySelectorAll('[style]')])
+      if(node.hasAttribute('style'))node.setAttribute('style',em(node.getAttribute('style')));
+    if(!block){
+      const svg=output.querySelector(':scope > svg');
+      // Overflow makes the wrapper's baseline its bottom edge. Transfer TeX's
+      // depth to that wrapper; CSS `middle` would use the OEM font's x-height.
+      element.style.verticalAlign=svg.style.verticalAlign||'baseline';
+      svg.style.verticalAlign='0';
+    }
+  }
   const sources=(refs,segments)=>'<nav class="sources" aria-label="字幕来源">'+refs.filter(id=>segments[id]).map(id=>`<a href="action/source/${id}">${clock(segments[id].start)}</a>`).join('')+'</nav>';
   function resize(){if(window.ChronaSize)window.ChronaSize.height(Math.ceil(document.querySelector('main').getBoundingClientRect().height));}
   new ResizeObserver(resize).observe(document.querySelector('main'));
@@ -69,7 +86,7 @@
     for(const element of main.querySelectorAll('[data-formula]')){
       if(turn!==generation)return;
       const formula=formulas[Number(element.dataset.formula)];
-      try{const output=await MathJax.tex2svgPromise(formula.tex,{display:formula.block});if(turn!==generation)return;element.replaceChildren(output);}
+      try{const metrics=MathJax.getMetricsFor(element,formula.block);const output=await MathJax.tex2svgPromise(formula.tex,metrics);if(turn!==generation)return;sizeMath(output,element,formula.block);element.replaceChildren(output);}
       catch(error){element.classList.add('formula-error');element.textContent=(formula.block?'$$':'$')+formula.tex+(formula.block?'$$':'$');}
     }
     window.classroomReady=true;resize();

@@ -43,6 +43,7 @@ public final class ClassroomStore {
         JSONArray rows=new JSONArray();for(ClassroomLesson lesson:lessons)rows.put(lesson.json());
         write(new File(root,"catalog.json"),new JSONObject().put("lessons",rows));
     }
+    public long catalogUpdatedAt() { return new File(root,"catalog.json").lastModified(); }
     public List<JSONObject> history() throws IOException {
         java.util.Map<String,JSONObject> byLesson=new java.util.LinkedHashMap<>();
         for(File source:new File[]{shared,root}){File[] dirs=source.listFiles(File::isDirectory);

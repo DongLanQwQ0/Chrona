@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.MotionEvent;
 import android.widget.HorizontalScrollView;
 import android.widget.TextView;
 import com.donglan.chrona.classroom.*;
@@ -36,8 +37,26 @@ final class WeekTimetableDeviceCheck {
             waitFor(()->Boolean.TRUE.equals(field(session,"initialized"))&&!Boolean.TRUE.equals(field(session,"busy"))
                     &&field(page,"shownCatalog")==field(session,"catalog")
                     &&field(page,"weekPicker")!=null&&((View)field(page,"weekPicker")).getWidth()>0,"catalogue loaded");
+            if("empty_viewport".equals(args.getString("scope"))){
+                HorizontalScrollView old=(HorizontalScrollView)field(page,"weekPicker");
+                test.runOnMainSync(()->{old.scrollTo(200,0);invoke(page,"setWeek",new Class<?>[]{LocalDate.class},monday.plusWeeks(8));});
+                waitFor(()->!Boolean.TRUE.equals(field(page,"weekTransition"))&&((View)field(page,"weekPicker")).getWidth()>0,"empty week settled");
+                HorizontalScrollView empty=(HorizontalScrollView)field(page,"weekPicker");
+                require(empty.getScrollX()==200,"empty week preserves horizontal offset");
+                TextView label=(TextView)findText(empty,"本周暂无课堂");
+                android.graphics.Rect visible=new android.graphics.Rect();label.getGlobalVisibleRect(visible);
+                require(visible.width()==label.getWidth()&&visible.height()==label.getHeight(),"entire empty state visible at retained offset");
+                require(!((android.widget.ScrollView)field(page,"scroll")).canScrollVertically(1),"empty week has no vertical range");
+                shot(test,"classroom-viewport-empty-fixed-"+args.getString("theme","light"));
+                test.runOnMainSync(()->empty.scrollTo(100000,0));
+                SystemClock.sleep(100);label.getGlobalVisibleRect(visible);
+                require(visible.width()==label.getWidth(),"empty state remains visible at far horizontal edge");
+                return new JSONObject().put("passed",true).put("assertions",assertions).toString();
+            }
             View bar=(View)field(page,"weekBar");
             HorizontalScrollView picker=(HorizontalScrollView)field(page,"weekPicker");
+            View header=findType(host.currentPage().content(),WorkspacePageHeader.class);
+            int[] headerBefore=position(header),dateBefore=position(bar);
             shot(test,"classroom-week-before-"+args.getString("theme","light"));
             WorkspaceDeviceCheck.swipe(test,picker,.8f,.2f,20);SystemClock.sleep(450);
             require(monday.equals(field(session,"week"))&&picker.getScrollX()>0,"ordinary horizontal pan stays in week: week="+field(session,"week")+" x="+picker.getScrollX()+" width="+picker.getWidth()+" content="+picker.getChildAt(0).getWidth()+" attached="+picker.isAttachedToWindow()+" same="+(picker==field(page,"weekPicker"))+" down="+field(picker,"downX")+" last="+field(picker,"lastX"));
@@ -57,6 +76,9 @@ final class WeekTimetableDeviceCheck {
             SystemClock.sleep(250);
             android.widget.ScrollView vertical=(android.widget.ScrollView)field(page,"scroll");
             require(monday.equals(field(session,"week"))&&vertical.getScrollY()>0,"vertical pan scrolls without changing week");
+            require(Arrays.equals(headerBefore,position(header))&&Arrays.equals(dateBefore,position(bar)),"header and dates remain fixed during table scrolling");
+            smoothVerticalDrag(test,current,vertical);
+            shot(test,"classroom-viewport-scrolled-"+args.getString("theme","light"));
             test.runOnMainSync(()->{vertical.scrollTo(0,0);current.scrollTo(0,0);});
             drag(test,current,.2f,.8f,20,20,android.view.MotionEvent.ACTION_CANCEL);
             require(monday.equals(field(session,"week")),"cancelled edge drag keeps week");
@@ -81,6 +103,7 @@ final class WeekTimetableDeviceCheck {
                     &&((View)field(page,"weekPicker")).getTranslationX()==0,"settled week leaves one untransformed tree");
             test.runOnMainSync(()->invoke(page,"setWeek",new Class<?>[]{LocalDate.class},monday));
             waitFor(()->monday.equals(field(page,"shownWeek"))&&!Boolean.TRUE.equals(field(page,"weekTransition")),"return to current week");
+            test.waitForIdleSync();SystemClock.sleep(100);
             HorizontalScrollView settled=(HorizontalScrollView)field(page,"weekPicker");
             test.runOnMainSync(()->settled.scrollTo(200,0));int offset=settled.getScrollX();
             Method setScale=android.animation.ValueAnimator.class.getDeclaredMethod("setDurationScale",float.class);
@@ -89,20 +112,119 @@ final class WeekTimetableDeviceCheck {
                 test.runOnMainSync(()->{try{setScale.invoke(null,0f);}catch(Exception e){throw new IllegalStateException(e);}});
                 require(!UiMotion.isEnabled(),"reduced motion active");
                 test.runOnMainSync(()->invoke(page,"setWeek",new Class<?>[]{LocalDate.class},monday.plusWeeks(1)));
-                waitFor(()->((View)field(page,"weekPicker")).getWidth()>0,"reduced motion target laid out");
+                waitFor(()->((View)field(page,"weekPicker")).getWidth()>0&&((View)field(page,"weekPicker")).getScrollX()==offset,"reduced motion target laid out at retained offset");
                 require(((HorizontalScrollView)field(page,"weekPicker")).getScrollX()==offset
-                        &&field(page,"weekMotion")==null,"reduced motion switch retains horizontal position");
+                        &&field(page,"weekMotion")==null,"reduced motion switch retains horizontal position: expected="+offset+" actual="+((View)field(page,"weekPicker")).getScrollX());
                 test.runOnMainSync(()->invoke(page,"setWeek",new Class<?>[]{LocalDate.class},monday));
             }finally{test.runOnMainSync(()->{try{setScale.invoke(null,scale);}catch(Exception e){throw new IllegalStateException(e);}});}
             waitFor(()->monday.equals(field(page,"shownWeek"))&&!Boolean.TRUE.equals(field(page,"weekTransition"))
                     &&((View)field(page,"weekPicker")).getWidth()>0,"stable current-week tree");
-            require(((TextView)((ViewGroup)((ViewGroup)((HorizontalScrollView)field(page,"weekPicker")).getChildAt(0)).getChildAt(0)).getChildAt(1)).getText().toString()
+            require(((TextView)((ViewGroup)table((HorizontalScrollView)field(page,"weekPicker")).getChildAt(0)).getChildAt(1)).getText().toString()
                     .startsWith(monday.format(java.time.format.DateTimeFormatter.ofPattern("M/d"))),"header and grid show the same settled week");
             shot(test,"classroom-week-"+args.getString("theme","light"));
+            if("viewport_status".equals(args.getString("scope")))viewportStatus(test,args,host,page,session,store,lessons,monday);
         }finally{test.runOnMainSync(activity::finish);}
-        timetable(test,args,monday,store);
+        if(!"viewport_status".equals(args.getString("scope")))timetable(test,args,monday,store);
         return new JSONObject().put("passed",true).put("assertions",assertions).toString();
     }
+
+    private static void viewportStatus(Instrumentation test,Bundle args,ScheduleWorkspaceActivity host,Object page,Object session,
+            ClassroomStore store,List<ClassroomLesson> lessons,LocalDate monday)throws Exception {
+        android.widget.ScrollView scroll=(android.widget.ScrollView)field(page,"scroll");
+        test.runOnMainSync(()->scroll.fullScroll(View.FOCUS_DOWN));SystemClock.sleep(200);
+        ViewGroup table=table((HorizontalScrollView)field(page,"weekPicker"));
+        View last=((ViewGroup)table).getChildAt(((ViewGroup)table).getChildCount()-1);
+        android.graphics.Rect visible=new android.graphics.Rect();last.getGlobalVisibleRect(visible);
+        require(visible.height()==last.getHeight(),"last table row is fully reachable above the workspace dock");
+        test.runOnMainSync(()->invoke(page,"setWeek",new Class<?>[]{LocalDate.class},monday.plusWeeks(8)));
+        waitFor(()->!Boolean.TRUE.equals(field(page,"weekTransition"))&&((View)field(page,"scroll")).getScrollY()==0,"empty week settles at top");
+        android.widget.ScrollView emptyScroll=(android.widget.ScrollView)field(page,"scroll");
+        require(!emptyScroll.canScrollVertically(1)&&!emptyScroll.canScrollVertically(-1),"short empty week has no vertical scroll range");
+        shot(test,"classroom-viewport-empty-"+args.getString("theme","light"));
+        test.runOnMainSync(()->invoke(page,"setWeek",new Class<?>[]{LocalDate.class},monday));
+        waitFor(()->!Boolean.TRUE.equals(field(page,"weekTransition")),"current week restored");
+        long now=System.currentTimeMillis();
+        ClassroomLesson future=new ClassroomLesson("boundary","future","自动状态","到点可回看","东1","6",now+2500);
+        ClassroomLesson processing=new ClassroomLesson("boundary","processing","远端状态","准备完成","东1","2",now-60000);
+        List<ClassroomLesson> changed=new ArrayList<>(lessons);changed.add(future);changed.add(processing);
+        test.runOnMainSync(()->{set(session,"catalog",changed);set(session,"nextRemoteAt",SystemClock.elapsedRealtime()+300000);invoke(page,"update",new Class<?>[]{});invoke(page,"scheduleRefresh",new Class<?>[]{});});
+        View body=(View)field(page,"weekPicker");
+        TextView timed=(TextView)findText(body,"自动状态");TextView remote=(TextView)findText(body,"远端状态");
+        require(timed!=null&&!timed.isEnabled()&&timed.getText().toString().contains("未开始"),"future cell begins disabled");
+        waitFor(()->timed.isEnabled()&&timed.getText().toString().contains("可回看"),"time boundary updates without a tap or rebuilding");
+        require(body==field(page,"weekPicker"),"timer preserves the table instance");
+        test.runOnMainSync(()->((HorizontalScrollView)body).scrollTo(150,0));int pan=body.getScrollX();
+        List<ClassroomLesson> refreshed=new ArrayList<>(changed);refreshed.remove(processing);
+        refreshed.add(new ClassroomLesson(processing.courseId,processing.id,processing.course,processing.title,processing.room,"6",processing.startsAt));
+        test.runOnMainSync(()->{set(session,"catalog",refreshed);invoke(session,"publish",new Class<?>[]{});});
+        waitFor(()->remote.isEnabled(),"remote preparation status updates existing cell");
+        require(body==field(page,"weekPicker")&&body.getScrollX()==pan,"status-only refresh retains table and horizontal offset");
+        require(((ClassroomLesson)remote.getTag()).selectable(System.currentTimeMillis()),"new clickable lesson uses the refreshed record");
+        android.os.Handler handler=(android.os.Handler)field(page,"refreshHandler");Runnable tick=(Runnable)field(page,"refreshTick");
+        test.runOnMainSync(()->invoke(page,"selectMode",new Class<?>[]{int.class},1));
+        require(!handler.hasCallbacks(tick),"automatic catalogue work stops outside the table mode");
+        test.runOnMainSync(()->invoke(page,"selectMode",new Class<?>[]{int.class},0));
+        require(handler.hasCallbacks(tick),"table mode resumes automatic work");
+        test.runOnMainSync(()->host.selectPage(0));
+        waitFor(()->host.selectedPage()==0,"workspace transition leaves classroom page");
+        require(!handler.hasCallbacks(tick)&&!Boolean.TRUE.equals(field(page,"active")),"leaving the page removes all refresh callbacks");
+        test.runOnMainSync(()->host.selectPage(1));
+        waitFor(()->host.selectedPage()==1&&!Boolean.TRUE.equals(field(session,"busy")),"resume cache read finishes");
+        // Invalid synthetic credentials fail locally, before any school connection.
+        test.runOnMainSync(()->{set(session,"nextRemoteAt",SystemClock.elapsedRealtime()-1);tick.run();});
+        waitFor(()->!Boolean.TRUE.equals(field(session,"busy")),"automatic request failure completes locally");
+        long next=(long)field(session,"nextRemoteAt");
+        require(next-SystemClock.elapsedRealtime()>295000,"failed automatic attempt retains five-minute retry spacing");
+        test.runOnMainSync(tick);
+        require(!Boolean.TRUE.equals(field(session,"busy"))&&(long)field(session,"nextRemoteAt")==next,"timer does not immediately repeat a failed request");
+        test.runOnMainSync(()->{set(session,"busy",true);load(session,"REFRESH");});
+        require((long)field(session,"nextRemoteAt")==next,"busy refresh does not overlap or reset cadence");
+        test.runOnMainSync(()->{set(session,"busy",false);set(session,"nextRemoteAt",SystemClock.elapsedRealtime()+900000);load(session,"REFRESH");});
+        waitFor(()->!Boolean.TRUE.equals(field(session,"busy")),"manual refresh bypasses automatic cadence");
+        require((long)field(session,"nextRemoteAt")-SystemClock.elapsedRealtime()<301000,"manual attempt resets normal cadence");
+        store.catalog(lessons);
+        test.runOnMainSync(()->{set(session,"initialized",false);load(session,"CACHE");});
+        waitFor(()->!Boolean.TRUE.equals(field(session,"busy")),"fresh cached catalogue loaded");
+        require((long)field(session,"nextRemoteAt")-SystemClock.elapsedRealtime()>290000,"fresh cache waits the remaining catalogue interval");
+        require(new java.io.File((java.io.File)field(store,"root"),"catalog.json").setLastModified(System.currentTimeMillis()-400000),"fixture ages cached catalogue");
+        test.runOnMainSync(()->{invoke(page,"onPause",new Class<?>[]{});set(session,"initialized",false);load(session,"CACHE");});
+        waitFor(()->!Boolean.TRUE.equals(field(session,"busy")),"stale cached catalogue loaded while paused");
+        require((long)field(session,"nextRemoteAt")<=SystemClock.elapsedRealtime(),"stale cache becomes immediately eligible");
+        require(!handler.hasCallbacks(tick),"asynchronous completion cannot restart a paused page timer");
+        test.runOnMainSync(()->invoke(page,"onResume",new Class<?>[]{}));
+        waitFor(()->!Boolean.TRUE.equals(field(session,"busy")),"resumed catalogue settled");
+        DockNavigationLayout navigation=(DockNavigationLayout)field(page,"navigation");
+        require(navigation.isAttachedToWindow(),"Dock ready for fixed-header motion verification");
+        CompactUiDeviceCheck.uniformLabels(test,navigation);
+        require(true,"fixed-header label geometry verified");
+        CompactUiDeviceCheck.dockMotion(test,navigation,"classroom-fixed-header-"+args.getString("theme","light"),true);
+        require(field(page,"navigation")==navigation,"fixed header retains Dock through holds, drag-out and fast flings");
+        new ZjuSettingsStore(test.getTargetContext()).prefs.edit().putBoolean("enabled",false).commit();
+        waitFor(()->field(page,"s")==null&&!handler.hasCallbacks(tick),"account disable detaches session and removes timer after its UI callback");
+        require(!handler.hasCallbacks(tick),"account disable removes timer");
+    }
+    private static int[] position(View view){int[] p=new int[2];view.getLocationOnScreen(p);return p;}
+    private static ViewGroup table(HorizontalScrollView picker){return (ViewGroup)((android.widget.ScrollView)picker.getChildAt(0)).getChildAt(0);}
+    private static void smoothVerticalDrag(Instrumentation test,HorizontalScrollView picker,android.widget.ScrollView scroll)throws Exception{
+        require(scroll.getParent()==picker,"week agenda hierarchy: stationary horizontal owner outside native vertical viewport");
+        test.runOnMainSync(()->scroll.scrollTo(0,0));SystemClock.sleep(80);
+        int[] anchor=position(picker);float density=picker.getResources().getDisplayMetrics().density;
+        float x=anchor[0]+picker.getWidth()*.5f,start=anchor[1]+300*density;long down=SystemClock.uptimeMillis();
+        int previous=0;ArrayList<Integer> samples=new ArrayList<>();
+        for(int i=0;i<=16;i++){
+            MotionEvent event=MotionEvent.obtain(down,SystemClock.uptimeMillis(),i==0?0:2,x,start-i*8*density,0);
+            test.sendPointerSync(event);event.recycle();SystemClock.sleep(25);
+            int[] current={0};test.runOnMainSync(()->current[0]=scroll.getScrollY());samples.add(current[0]);
+            require(Arrays.equals(anchor,position(picker)),"gesture owner stays stationary at move "+i);
+            require(current[0]>=previous,"vertical offset never reverses during an upward drag at move "+i+": "+samples);
+            if(i>2)require(Math.abs(current[0]-i*8*density)<=i+2,"table follows cumulative finger travel without feedback oscillation at move "+i+": "+samples);
+            previous=current[0];
+        }
+        MotionEvent cancel=MotionEvent.obtain(down,SystemClock.uptimeMillis(),3,x,start-128*density,0);test.sendPointerSync(cancel);cancel.recycle();
+        android.util.Log.i("ClassroomViewportCheck","SCROLL_SAMPLES "+samples);
+    }
+    private static void set(Object o,String name,Object value){try{Field f=o.getClass().getDeclaredField(name);f.setAccessible(true);f.set(o,value);}catch(Exception e){throw new IllegalStateException(e);}}
+    @SuppressWarnings({"unchecked","rawtypes"}) private static void load(Object session,String kind){try{Class type=Class.forName("com.donglan.chrona.ClassroomSummaryPage$Load");invoke(session,"load",new Class<?>[]{type},Enum.valueOf(type,kind));}catch(Exception e){throw new IllegalStateException(e);}}
 
     private static void timetable(Instrumentation test,Bundle args,LocalDate monday,ClassroomStore store)throws Exception{
         ArrayList<ZjuSnapshot.Lesson> rows=new ArrayList<>();
@@ -161,8 +283,8 @@ final class WeekTimetableDeviceCheck {
     }
     private static Object field(Object o,String name){for(Class<?> c=o.getClass();c!=null;c=c.getSuperclass())try{Field f=c.getDeclaredField(name);f.setAccessible(true);return f.get(o);}catch(NoSuchFieldException e){}catch(Exception e){throw new IllegalStateException(e);}throw new IllegalArgumentException(name);}
     private static void invoke(Object o,String name,Class<?>[] types,Object...args){try{Method m=o.getClass().getDeclaredMethod(name,types);m.setAccessible(true);m.invoke(o,args);}catch(Exception e){throw new IllegalStateException(e);}}
-    private static void waitFor(BooleanSupplier condition,String label){long end=SystemClock.uptimeMillis()+15000;while(SystemClock.uptimeMillis()<end){if(condition.getAsBoolean()){assertions++;return;}SystemClock.sleep(15);}throw new AssertionError(label);}
-    private static void require(boolean value,String label){if(!value)throw new AssertionError(label);assertions++;}
+    private static void waitFor(BooleanSupplier condition,String label){android.util.Log.i("ClassroomViewportCheck","WAIT "+label);long end=SystemClock.uptimeMillis()+15000;while(SystemClock.uptimeMillis()<end){if(condition.getAsBoolean()){assertions++;android.util.Log.i("ClassroomViewportCheck","PASS "+label);return;}SystemClock.sleep(15);}throw new AssertionError(label);}
+    private static void require(boolean value,String label){if(!value)throw new AssertionError(label);assertions++;android.util.Log.i("ClassroomViewportCheck","PASS "+label);}
     private static <T extends View>T findType(View root,Class<T> type){if(type.isInstance(root))return type.cast(root);if(root instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){T v=findType(group.getChildAt(i),type);if(v!=null)return v;}return null;}
     private static View findText(View root,String prefix){if(root instanceof TextView text&&text.getText().toString().startsWith(prefix))return root;if(root instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){View v=findText(group.getChildAt(i),prefix);if(v!=null)return v;}return null;}
     private static void shot(Instrumentation test,String name)throws Exception{SystemClock.sleep(100);android.graphics.Bitmap b=test.getUiAutomation().takeScreenshot();try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(test.getTargetContext().getFilesDir(),name+".png"))){b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}b.recycle();}

@@ -30,6 +30,7 @@ final class ClassroomMarkdownView extends WebView {
         setBackgroundColor(Color.TRANSPARENT);setVerticalScrollBarEnabled(false);setHorizontalScrollBarEnabled(false);
         getSettings().setJavaScriptEnabled(true);getSettings().setAllowFileAccess(false);getSettings().setAllowContentAccess(false);
         getSettings().setBlockNetworkLoads(true);getSettings().setDomStorageEnabled(false);getSettings().setTextZoom(100);
+        getSettings().setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
         getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         addJavascriptInterface(new Object(){@JavascriptInterface public void height(int cssPixels){
             if(cssPixels<0)return;

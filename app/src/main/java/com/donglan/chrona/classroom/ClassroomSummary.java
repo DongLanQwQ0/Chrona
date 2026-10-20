@@ -56,7 +56,7 @@ public final class ClassroomSummary {
         String config=configKey(ai,imageLimit,classroomPrompt);
         String system=systemPrompt(classroomPrompt);
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
-        if(state==null||!config.equals(state.optString("config")))state=new JSONObject().put("config",config)
+        if(state==null||!config.equals(state.optString("config"))||state.has("final"))state=new JSONObject().put("config",config)
                 .put("run",java.util.UUID.randomUUID().toString());
         ChatCompletionClient client=new ChatCompletionClient(ai,control);
         if(!state.has("draft")) {

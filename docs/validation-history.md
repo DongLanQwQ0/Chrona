@@ -1,6 +1,6 @@
 # 验证记录
 
-当前版本为 **0.15.29 / 191**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前源码版本为 **0.15.30 / 192**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)
@@ -8,6 +8,18 @@
 - [设备验收模板](device-acceptance.md)
 
 构建、离线检查、实际设备操作分别记录。旧版本某项通过，只支持对应候选和条件。
+
+## 0.15.30 — 课堂滚动、自动状态、重新生成与公式 — 2026-10-20
+
+- 手机现场复现课堂表格纵向拖动抽搐：外层纵向视口移动了处理双轴手势的横向容器，局部触点坐标形成反向反馈。改为直接复用周日程的层级：固定 `FreeCalendarScrollView`，内部原生 `ScrollView` 承载表格。公共手势实现未改；标题与日期固定，切周使用固定视口横向过渡。
+- 正常浅色与 320dp／字体 1.45 深色各 104 项通过，日志 `build/classroom-viewport-reuse-{light,narrow-dark}.log`。覆盖每个 MOVE 的静止容器坐标与单调纵向位移、横向浏览／边缘切周、取消／多指、半途反向、减少动画位置、末行到达 Dock 上方、短周无额外滚动，以及真实时间边界、原位状态重绑、缓存年龄、五分钟失败冷却、不重叠和生命周期清理。截图在 `build/classroom-final-captures/`。
+- 用户新授权 USB 调试后，先通过应用导出不含 API 密钥的完整备份并保留原 APK，再以 `-r` 覆盖安装候选，不卸载、不清数据、不调整手机密度／字体。手机原有课堂的公式尺寸和基线已实际对照，课堂表格进行了多次慢速上下拖动；视频 `build/classroom-phone-scroll-final.mp4`，截图 `build/classroom-phone-week-reuse-{top,scrolled}.png`。恢复副本 `.local-backups/classroom-viewport-status-20261020/phone/`。没有向手机注入合成课堂或调用付费 AI。
+- 公式专项在相同两组显示条件下各 19 项通过，日志 `build/classroom-math-final-{light,narrow-dark}.log`：8 个公式均成功，TeX x-height 转为 em；模拟异常系统 ex 后公式高度不变，大字体仍自然增大。长行内／独立公式真实横向手势首尾可达，正文不被挤宽，源码／图片／课堂安排入口保留。手机原有线性代数和多项式正文实际显示正常，图像 `build/classroom-phone-summary-final.png` 与 `build/classroom-phone-polynomial-final.png`。
+- 重新生成核心 146 项通过，日志 `build/classroom-regenerate-regression.log`；原生 9 项通过，日志 `build/classroom-regenerate-native.log`。已完成轮次新建 run 并实际尝试本地 HTTP；未完成同配置续跑，首轮连接失败时原总结恢复可读。正式 AI 服务的付费生成与内容准确率未实测。
+- 快速离线检查 7／7 通过，日志 `build/classroom-release-quick.log`。旧版完整检查仅复用未改变的对应前提，不当作新增 UI 的渲染证据。
+- 独立审核指出空周提示跟随宽表被裁掉；改为按视口宽度布局并抵消横向偏移，不重置浏览位置。正常浅色及 320dp／字体 1.45 深色各 7 项通过：X=200 保留、提示完整可见、无纵向范围、最右边缘仍可见。日志 `build/classroom-empty-final-{light,narrow-dark}.log`，截图 `build/classroom-final-captures/classroom-viewport-empty-fixed-{light,dark}.png`。原审核代理局部复审通过，本轮整体 UI 无剩余缺陷或关键证据缺口。
+- 最终正式 Debug／Release 与双 lint 通过，日志 `build/classroom-empty-final-formal.log`；隔离 Debug／androidTest 构建通过，日志 `build/classroom-empty-isolated-build.log`。最终 Release `build/candidates/0.15.30/Chrona-0.15.30.apk` 为 3081266 字节、官方包名、192／0.15.30、不可调试；新 Debug／Release 与旧 0.15.29 的签名证书一致，日志 `build/release-0.15.30-signing.log`。
+- 手机首次安装最终包被系统拒绝后停止重试；用户亮屏明确允许继续，覆盖安装成功，确认实际安装版本为 192／0.15.30，原有数据可正常打开。手机密度／字体未调整；模拟器检查后恢复 density override 411、font_scale 1.0。
 
 ## 0.15.29 — 正式发布与覆盖升级 — 2026-10-20
 

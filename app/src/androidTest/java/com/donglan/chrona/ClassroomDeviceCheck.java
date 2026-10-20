@@ -95,8 +95,9 @@ final class ClassroomDeviceCheck {
                 .put("total_parts",1).put("images",new JSONArray().put(new JSONObject().put("file","image-0.jpg").put("second",20)))
                 .put("candidate_images",44).put("raw_images",367).put("planned_images",1);
         ClassroomStore.write(new File(dir,"summary.json"),summary);
-        if("week_timetable".equals(args.getString("scope")))return WeekTimetableDeviceCheck.run(test,args,store,lessons,monday);
+        if("week_timetable".equals(args.getString("scope"))||"viewport_status".equals(args.getString("scope"))||"empty_viewport".equals(args.getString("scope")))return WeekTimetableDeviceCheck.run(test,args,store,lessons,monday);
         if("portability".equals(args.getString("scope")))return portability(test,dir,summary);
+        if("regenerate".equals(args.getString("scope")))return regenerate(test,ready,dir,summary);
         if("export_share".equals(args.getString("scope")))return ExportShareDeviceCheck.classroom(test,args,ready);
         if("settings".equals(args.getString("scope"))) {
             File unused=new File(dir,"raw-999.img");ClassroomStore.writeBytes(unused,new byte[]{1,2,3});
@@ -120,6 +121,9 @@ final class ClassroomDeviceCheck {
             summary.getJSONArray("images").put(new JSONObject().put("file","image-999.jpg").put("second",20));
             notes.getJSONObject(0).put("text","平均变化率为 $\\frac{f(x+h)-f(x)}{h}$。\n\n$$\nf'(x)=\\lim_{h\\to0}\\frac{f(x+h)-f(x)}{h}\n$$\n\n![割线与切线](images/image-0.jpg)");
             notes.getJSONObject(1).put("text","矩阵的秩为 $r(A)=2$。\n\n$$A=\\begin{pmatrix}1&0\\\\0&1\\end{pmatrix}$$\n\n**例题**：$\\int_0^1 x^2\\,\\mathrm{d}x=\\frac13$。\n\n`$code$` 保留原样。");
+            String longMath="A^{-1}=\\frac14(A+2I)(A-I)+"+"a_1+a_2+a_3+a_4+a_5+a_6+a_7+a_8+a_9+a_{10}+a_{11}+a_{12}";
+            notes.getJSONObject(1).put("text",notes.getJSONObject(1).getString("text")
+                    +"\n\n与线性方程组联系起来。对于 $A^{-1}$，若矩阵可逆，继续计算。\n\n行内长式 $"+longMath+"$ 完整可读。\n\n$$"+longMath+"$$");
             ClassroomStore.write(new File(dir,"summary.json"),summary);
             return markdown(test,args,ready);
         }
@@ -371,6 +375,31 @@ final class ClassroomDeviceCheck {
         if(description.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;
         if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){View found=findDescription(group.getChildAt(i),description);if(found!=null)return found;}return null;
     }
+    private static String regenerate(Instrumentation test,ClassroomLesson lesson,File dir,JSONObject saved)throws Exception {
+        com.donglan.chrona.ai.AiSettings ai=new com.donglan.chrona.ai.AiSettings("https://127.0.0.1:1","synthetic","synthetic-unused");
+        String prompt=com.donglan.chrona.ai.SchedulePreferences.load(test.getTargetContext()).classroomPrompt;
+        ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject().put("images",new JSONArray()));
+        ClassroomStore.write(new File(dir,"run.json"),new JSONObject().put("config",ClassroomSummary.configKey(ai,0,prompt))
+                .put("run",saved.getString("run")).put("selected",new JSONArray()).put("final",saved.getJSONArray("parts").getJSONObject(0)));
+        Activity activity=test.startActivitySync(new Intent(test.getTargetContext(),ClassroomLessonActivity.class)
+                .putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try {
+            waitFor(test,()->Boolean.TRUE.equals(field(session(activity),"localInitialized"))&&!busy(activity),"saved summary loaded");
+            require("重新生成".contentEquals(((TextView)field(activity,"generate")).getText()),"completed summary offers regenerate");
+            String interrupted="";
+            for(int attempt=0;attempt<2;attempt++) {
+                test.runOnMainSync(()->{try{var m=ClassroomLessonActivity.class.getDeclaredMethod("startGeneration",com.donglan.chrona.ai.AiSettings.class,int.class);m.setAccessible(true);m.invoke(activity,ai,0);}catch(Exception e){throw new IllegalStateException(e);}});
+                waitFor(test,()->!busy(activity),"local regeneration failure returned");
+                JSONObject run=ClassroomStore.read(new File(dir,"run.json"));
+                require(!run.has("final")&&!run.getString("run").equals(saved.getString("run")),"completed checkpoint is replaced before a real loopback connection attempt");
+                require(attempt==0||interrupted.equals(run.getString("run")),"unfinished regeneration keeps its identity on retry");
+                interrupted=run.getString("run");
+                require(((JSONObject)field(session(activity),"summary")).toString().equals(saved.toString())&&field(activity,"documentView")!=null,"first-round failure restores previous readable summary in the same Activity");
+                require((long)field(session(activity),"ignoredSummaryUpdated")==-1,"failed regeneration clears ignored-summary state");
+            }
+            return new JSONObject().put("assertions",assertions).put("nativeRegeneration",true).put("loopbackOnly",true).toString();
+        } finally {test.runOnMainSync(activity::finish);}
+    }
     private static String markdown(Instrumentation test,Bundle args,ClassroomLesson lesson)throws Exception {
         Context context=test.getTargetContext();Activity activity=test.startActivitySync(new Intent(context,ClassroomLessonActivity.class)
                 .putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -380,17 +409,41 @@ final class ClassroomDeviceCheck {
         while(SystemClock.elapsedRealtime()<deadline){ready=javascript(test,web,"window.classroomReady===true");if("true".equals(ready))break;SystemClock.sleep(150);}
         require("true".equals(ready),"offline Markdown and MathJax ready");
         JSONObject metrics=new JSONObject(javascript(test,web,"({svg:document.querySelectorAll('mjx-container svg').length,errors:document.querySelectorAll('mjx-merror,.formula-error').length,images:document.images.length,loaded:[...document.images].every(i=>i.complete&&i.naturalWidth>0),overflow:document.documentElement.scrollWidth>innerWidth+1,code:document.querySelector('code').textContent,assignment:getComputedStyle(document.querySelector('.assignment')).color})"));
-        require(metrics.getInt("svg")==5&&metrics.getInt("errors")==0,"fractions, limit, rank, matrix and integral render as SVG");
+        require(metrics.getInt("svg")==8&&metrics.getInt("errors")==0,"fractions, limit, rank, matrix, integral and long inverse formulas render as SVG");
         require(metrics.getInt("images")==1&&metrics.getBoolean("loaded"),"inline image loads once without duplicate appendix");
         require(!metrics.getBoolean("overflow"),"document fits viewport");require(metrics.getString("code").equals("$code$"),"code dollars stay literal");
         require(metrics.getString("assignment").equals(args.getString("theme","light").equals("dark")?"rgb(128, 186, 255)":"rgb(20, 104, 200)"),"assignment text is blue");
         require(web.getHeight()>200,"WebView height follows actual rendered content");
         require(((View)field(activity,"export")).getParent()!=null,"export icon retained in native header");
+        JSONObject sizes=new JSONObject(javascript(test,web,"(()=>{const svg=document.querySelectorAll('mjx-container>svg')[5];window.inverseHeight=svg.getBoundingClientRect().height;return {height:inverseHeight,font:parseFloat(getComputedStyle(svg).fontSize),em:[...document.querySelectorAll('mjx-container>svg')].every(s=>s.getAttribute('height').endsWith('em'))};})()"));
+        require(sizes.getBoolean("em")&&sizes.getDouble("height")/sizes.getDouble("font")<1.6,"simple inverse matches surrounding text, SVG sizes use em");
+        // Stress CSS x-height without needing the user's private OEM font file.
+        JSONObject stressed=new JSONObject(javascript(test,web,"(()=>{document.querySelectorAll('mjx-container').forEach(n=>n.style.fontSizeAdjust='2');const probe=document.createElement('span');probe.style.cssText='display:inline-block;height:1ex;font-size-adjust:2';document.body.append(probe);const ex=probe.getBoundingClientRect().height;probe.remove();return {ex,height:document.querySelectorAll('mjx-container>svg')[5].getBoundingClientRect().height};})()"));
+        require(stressed.getDouble("ex")>sizes.getDouble("font")*1.5&&Math.abs(stressed.getDouble("height")-sizes.getDouble("height"))<.1,"oversized font x-height cannot enlarge math");
+        javascript(test,web,"document.querySelectorAll('mjx-container').forEach(n=>n.style.removeProperty('font-size-adjust'));true");
+        metrics.put("sizes",sizes).put("xHeightStress",stressed);
+        SystemClock.sleep(800);
         screenshot(test,context,"classroom-markdown-top-"+args.getString("theme","light"));
         test.runOnMainSync(()->{ScrollView scroll=(ScrollView)findType(activity.getWindow().getDecorView(),ScrollView.class);scroll.fullScroll(View.FOCUS_DOWN);});test.waitForIdleSync();
         metrics.put("layout",new JSONObject(javascript(test,web,"({height:document.querySelector('main').getBoundingClientRect().height,tail:document.querySelector('.assignment').getBoundingClientRect().bottom,viewport:innerHeight,scrollY,devicePixelRatio})")));
         metrics.put("nativeHeight",web.getHeight()).put("nativeScroll",web.getScrollY());
         screenshot(test,context,"classroom-markdown-bottom-"+args.getString("theme","light"));
+        for(String selector:List.of(".math-inline[data-formula='6']",".math-block[data-formula='7']")) {
+            JSONObject bounds=new JSONObject(javascript(test,web,"(()=>{const el=document.querySelector("+JSONObject.quote(selector)+");el.scrollLeft=0;return {width:el.clientWidth,content:el.scrollWidth,viewport:innerWidth,top:el.getBoundingClientRect().top,height:el.getBoundingClientRect().height};})()"));
+            require(bounds.getInt("content")>bounds.getInt("width")&&bounds.getInt("width")<=bounds.getInt("viewport"),"long formula has a bounded horizontal viewport");
+            int[] xy=new int[2];test.runOnMainSync(()->web.getLocationOnScreen(xy));
+            float density=context.getResources().getDisplayMetrics().density;
+            float y=xy[1]+(float)(bounds.getDouble("top")+bounds.getDouble("height")/2)*density;
+            float left=xy[0]+24*density,right=xy[0]+(bounds.getInt("width")-24)*density;
+            long down=SystemClock.uptimeMillis();
+            for(int i=0;i<=15;i++){float p=i/15f;MotionEvent event=MotionEvent.obtain(down,SystemClock.uptimeMillis(),i==0?0:i==15?1:2,right+(left-right)*p,y,0);test.sendPointerSync(event);event.recycle();SystemClock.sleep(20);}
+            SystemClock.sleep(250);
+            double offset=Double.parseDouble(javascript(test,web,"document.querySelector("+JSONObject.quote(selector)+").scrollLeft"));
+            require(offset>0,"real horizontal touch scrolls long formula without moving the whole document");
+            JSONObject edges=new JSONObject(javascript(test,web,"(()=>{const el=document.querySelector("+JSONObject.quote(selector)+");el.scrollLeft=el.scrollWidth;return {end:el.scrollLeft+el.clientWidth>=el.scrollWidth-1,documentFits:document.documentElement.scrollWidth<=innerWidth+1};})()"));
+            require(edges.getBoolean("end")&&edges.getBoolean("documentFits"),"last formula edge is reachable and page stays bounded");
+        }
+        screenshot(test,context,"classroom-markdown-long-end-"+args.getString("theme","light"));
         javascript(test,web,"document.querySelector('a[href=\"action/source/0\"]').click();true");test.waitForIdleSync();
         View sourceDialog=null;for(View window:android.view.inspector.WindowInspector.getGlobalWindowViews())if(findText(window,"00:00:15 — 00:00:42",true)!=null)sourceDialog=window;
         require(sourceDialog!=null,"Markdown source opens native transcript dialog");
