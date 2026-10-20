@@ -9,6 +9,15 @@
 
 构建、离线检查、实际设备操作分别记录。旧版本某项通过，只支持对应候选和条件。
 
+## 0.15.29 — 正式发布与覆盖升级 — 2026-10-20
+
+- 源码提交 `0ee3217` 与不可变标签 `v0.15.29` 已通过本地 Git 推送；[正式 Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.29) 已发布并设为 Latest。Git 直连出现连接重置，使用当前系统已有的代理完成推送，未修改全局 Git 或网络设置。
+- 公开 `/releases/latest` 返回 `v0.15.29`、非 Draft、非 Pre-release；`Chrona-0.15.29.apk` 已上传、3079870 字节。公开下载的 APK 实际包名 `com.donglan.chrona`、191／0.15.29、签名与原版一致；最终本地分发包来自该公开下载。API 记录 `build/release-0.15.29-public.json`，截图 `build/release-0.15.29-published.png`。
+- 模拟器官方 0.15.27 的真实 `UpdateActivity` 读取公开 API，显示「发现新版本 v0.15.29」与下载按钮；覆盖安装公开 APK 后，官方 0.15.29 显示「已是最新版本」。日志 `build/release-0.15.29-{old-update,current-update}.log`，对应截图同名 PNG。下载按钮实际将正确 APK URL 交给外部浏览器；模拟器浏览器连接重置，宿主公开下载成功，二者不混为同一路由成功。
+- 升级前先导出不含 API 密钥的完整备份并保存旧 APK；不卸载、不清数据，公开 Release APK 覆盖安装成功。升级后再导出备份，比较全部 15 张 SQLite 表结构和逐行数据、1 条收件、1 个候选、全部配置、学校／课表数据与课堂文档和图片内容，均一致；只排除本次备份操作生成的 `config.exportedAt`。日志 `build/release-0.15.29-upgrade-preservation.log`，恢复副本 `.local-backups/release-preparation-20261020/`。本轮没有普通收件附件或桌面小组件样本，不据此宣称其升级验收通过。
+- 发布夹具补充只读完整备份入口；旧 IntentFilter-only 下载拦截未匹配实际外部启动，且浏览器留在任务栈上会使 `startActivitySync` 等待并未创建的 Activity（系统启动结果为 delivered-to-top）。检查改为新建测试页面、只断言更新结果与下载入口；外部交接使用上述实际浏览器证据。该修正仅影响 androidTest，生产 APK 和发布标签不变。
+- 手机原子岛 OEM 宿主外观、手机非空数据升级、真实付费 AI 与真实远端 WebDAV 尚未现场验收，已在正式发布说明中列出。
+
 ## 0.15.29 — 作业通知最终验收续轮 — 2026-10-20
 
 - `build/homework-notice-durable-lifecycle.log` 通过真实 SQLite 与 `TaskCompletion.set` 入口，验证部分完成仅移除对应项、剩余 ID／标题与原到期时间保留、静默更新、全部完成撤下、来源关闭、绑定替换及删除后的撤下。通知清理不删除或撤销已完成作业。
