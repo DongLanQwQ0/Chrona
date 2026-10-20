@@ -13,8 +13,7 @@ import java.util.List;
 final class BrowserDeviceCheck {
     static String run(Instrumentation test) throws Exception {
         Context context=test.getTargetContext();
-        if(!context.getPackageName().equals("com.donglan.chrona.validation"))
-            throw new IllegalStateException("Browser fixture requires the isolated validation application");
+        FixtureIsolation.require(context);
         long task=0; Activity screen=null; LanWebServer server=null;
         File stop=new File(context.getFilesDir(),"browser-check-stop");
         if(stop.exists()&&!stop.delete())throw new IllegalStateException("Cannot reset browser check");

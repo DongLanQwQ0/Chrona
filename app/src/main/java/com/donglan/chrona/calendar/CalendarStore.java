@@ -369,15 +369,15 @@ public final class CalendarStore {
         return true;
     }
 
-    /** Returns false if the event ID is stale or belongs to another calendar. */
+    /** Deletes the owned event and its repeat exceptions, including orphaned exceptions. */
     public boolean deleteEvent(long eventId) {
         requireReadWrite();
         requireId(eventId);
         Long calendarId = findCalendarId();
         if (calendarId == null) return false;
         int count = resolver.delete(syncUri(Events.CONTENT_URI),
-                Events._ID + "=? AND " + Events.CALENDAR_ID + "=?",
-                new String[]{Long.toString(eventId), Long.toString(calendarId)});
+                "(" + Events._ID + "=? OR " + Events.ORIGINAL_ID + "=?) AND " + Events.CALENDAR_ID + "=?",
+                new String[]{Long.toString(eventId), Long.toString(eventId), Long.toString(calendarId)});
         return count > 0;
     }
 

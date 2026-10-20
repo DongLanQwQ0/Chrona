@@ -23,6 +23,8 @@ import org.json.JSONObject;
 final class RepeatDeviceCheck {
     private static int assertions;
     static String run(Instrumentation test, Bundle args) throws Exception {
+        Context context = test.getTargetContext();
+        FixtureIsolation.require(context);
         android.util.Log.i("ChronaDeviceCheck", "repeat entered");
         Thread owner = Thread.currentThread();
         Thread watchdog = new Thread(() -> {
@@ -33,7 +35,6 @@ final class RepeatDeviceCheck {
             Bundle status = new Bundle(); status.putString("repeat_wait_stack", trace.toString()); test.sendStatus(1, status);
         }, "repeat-check-watchdog");
         watchdog.setDaemon(true); watchdog.start();
-        Context context = test.getTargetContext();
         CalendarStore calendar = new CalendarStore(context);
         if (!calendar.hasReadPermission() || !calendar.hasWritePermission()) throw new IllegalStateException("Calendar permission required");
         long task = 0, event = 0;
@@ -93,6 +94,16 @@ final class RepeatDeviceCheck {
             assertParity(calendar, series, first - day, first + 7 * day, 4, "move out");
             series = RepeatActions.change(context, task, id, CandidateEditBaseline.of(series), "move", first + 4 * day, first - day, null);
             assertParity(calendar, series, first - 2 * day, first + 7 * day, 4, "future original moved past");
+            if ("delete_only".equals(args.getString("scope"))) {
+                require(calendar.deleteEvent(event), "delete whole provider series");
+                try (android.database.Cursor cursor = context.getContentResolver().query(
+                        android.provider.CalendarContract.Events.CONTENT_URI, new String[]{"_id"},
+                        "_id=? OR original_id=?", new String[]{Long.toString(event), Long.toString(event)}, null)) {
+                    require(cursor != null && cursor.getCount() == 0, "no master or cancelled/moved exception remains");
+                }
+                require(!calendar.deleteEvent(event), "deleted series is stale");
+                return new JSONObject().put("assertions", assertions).put("providerDeletion", true).toString();
+            }
             try (TaskStore store = new TaskStore(context)) {
                 long begin = first - 2 * day, end = first + 7 * day;
                 require(store.calendarCandidates(begin, end, begin, end).stream().filter(e -> e.id == id).count() == 4, "calendar query projects");
