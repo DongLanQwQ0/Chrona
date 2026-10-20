@@ -17,7 +17,12 @@
 - 授权安全离线 83 项、独立 21 项及并发 30 次仅一次 session 通过。独立审查发现无效 poll/cancel 触发通知回调的 P2 后，改为真实消费／取消才通知；真实 Android HTTP 回归包括十轮无效调用／重放不增加回调，`build/lan-01533-http-integration.log` PASS，局部安全复审确认关闭。
 - 授权浅色和窄屏大字体深色原生主流程通过：真实生产服务／HTTP、前台允许与拒绝、网页取消自动关闭、后台8757通知不抢前台、系统通知真实触摸进入确认、单次 Cookie、停服断连和重启后旧凭证撤销。日志 `build/lan-approval-native-{light,dark-narrow}.log`。最初失败为模拟器 Wi-Fi 未连接、旧夹具节点／坐标／通知检索问题；保留旧包数据，另建 `.followup.validation.v33` 后完成实际验收。
 - 浏览器实际 CUA 加载生产资源与本地合成 API，验证取消、重试、拒绝、批准和手输码，列表／详情显示跨日 23:40—00:10，编辑原始起止仍空。桌面深浅、360px 列表及 360px／body22.5px 深色授权图已目检，无横向溢出；合成 CSS 字号不冒充系统字体。实际主题按钮深色断连重试的核对码 #00b1ad 对 #252629 对比 5.686:1。受控 API／计时器执行真实授权函数 14 项、主页节点复用 87 项通过；整套旧 CLI 浏览器矩阵未重跑。
-- 正式 Debug／Release 与双 lint 通过，`build/release-01533-formal.log`。正式候选 3085590 字节，官方包名、195／0.15.33、原签名通过，包内 LAN 三项与课堂两项资源逐字节一致；记录 `build/release-01533-{candidate.json,signing.log}`。121147ms 真实等待后的请求过期、原生页关闭和通知撤下通过，`build/lan-approval-native-expiry.log`；专门独立 UI 审核通过。公开发布与非空升级状态完成后续填。
+- 正式 Debug／Release 与双 lint 通过，`build/release-01533-formal.log`。正式候选 3085590 字节，官方包名、195／0.15.33、原签名通过，包内 LAN 三项与课堂两项资源逐字节一致；记录 `build/release-01533-{candidate.json,signing.log}`。121147ms 真实等待后的请求过期、原生页关闭和通知撤下通过，`build/lan-approval-native-expiry.log`；专门独立 UI 审核通过。
+- quick 7/7 通过；Widget 和数据完整性检查从生产拼接表达式解析共享 SQL 常量，保持 quick 只需 Python，`build/release-01533-quick.log`。
+- 源码 `5b33193` 与不可变 `v0.15.33` 已推送；[正式 Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.33) 为 Latest，公开 API 非 Draft／非 Pre-release，APK 3085590 字节。公开下载实际官方包名、195／0.15.33、原签名通过；分发包 `build/distributions/0.15.33/Chrona-0.15.33.apk`，证据 `build/release-0.15.33-{public.json,public-apk.log,public-signing.log,published.png}`。
+- 正式模拟器194实际发现新版；公开195覆盖成功后显示已是最新版本。前后完整备份比较保留全部15张表结构与全部行、1条收件／1个候选、设置、课堂文档与图片字节，仅导出时间变化。日志 `build/release-0.15.33-{old-update,current-update,upgrade-preservation}.log`，副本 `.local-backups/release-01533-20261020/`。
+- 用户确认手机升级并重开LAN。USB调试打开后重新插拔并选文件传输即正常识别，未改驱动。正常备份界面确认密钥未勾选后导出当前ZIP，3586147字节、39条收件、81个候选、56个归档项；原APK也保留于 `.local-backups/release-01533-20261020/phone/`。正常系统确认后公开195覆盖成功，`build/release-0.15.33-phone-install.log`，手机实际版本195／0.15.33。
+- 手机从正常设置入口重开LAN，8756前台服务保持运行。新网页自动申请并实际弹出原生授权页，两端核对一致后由用户在手机允许。真实首页在可见状态下间隔79423ms，时间线50条、明日7条及总58个独立展示键完整保留；随后实际手动刷新仍保持相同计数，无横向溢出。报告 `build/release-0.15.33-phone-home.json`；实际画面保存在上述私有phone恢复目录。服务与已授权网页继续可用，用户数据未上传到公开发布页。
 
 ## 0.15.32 — 局域网主页重复节点 — 2026-10-20
 
