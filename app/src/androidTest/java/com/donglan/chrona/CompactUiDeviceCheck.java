@@ -83,6 +83,7 @@ final class CompactUiDeviceCheck {
                 } catch(ReflectiveOperationException e){throw new AssertionError(e);}
                 finally {school.prefs.edit().putBoolean("enabled",false).commit();}
             });
+            if("header_highlights".equals(args.getString("scope"))) return headerHighlights(test,home,args);
             if("home_toggle".equals(args.getString("scope"))) {
                 test.getUiAutomation().grantRuntimePermission(context.getPackageName(),android.Manifest.permission.READ_CALENDAR);
                 CalendarVisibilityToggle toggle=(CalendarVisibilityToggle)findType(home.getWindow().getDecorView(),CalendarVisibilityToggle.class);
@@ -202,6 +203,86 @@ final class CompactUiDeviceCheck {
             try(TaskStore store=new TaskStore(context)){for(long id:tasks)if(id>0)store.deleteTask(id);}
             guide.edit().putInt("version",oldGuide).commit();
         }
+    }
+    private static String headerHighlights(Instrumentation test,Activity home,Bundle args)throws Exception {
+        Context context=test.getTargetContext();String theme=args.getString("theme","light");
+        test.getUiAutomation().grantRuntimePermission(context.getPackageName(),android.Manifest.permission.READ_CALENDAR);
+        CalendarVisibilityToggle homeToggle=(CalendarVisibilityToggle)findType(home.getWindow().getDecorView(),CalendarVisibilityToggle.class);
+        boolean homeOriginal=HomeTimelinePreferences.includesSystemCalendar(context);
+        boolean calendarOriginal=CalendarSourcePreferences.includesSystem(context);
+        ScheduleWorkspaceActivity calendar=null;
+        try {
+            onMain(test,()->homeToggle.setChecked(false));SystemClock.sleep(450);
+            pressActions(test,(ViewGroup)homeToggle.getParent(),"home",theme,3);
+            verifyToggle(test,homeToggle,()->HomeTimelinePreferences.includesSystemCalendar(context),"home",theme);
+            calendar=(ScheduleWorkspaceActivity)test.startActivitySync(new Intent(context,CalendarOverviewActivity.class)
+                    .putExtra("open_week",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            ScheduleWorkspaceActivity host=calendar;
+            waitFor(test,()->host.currentPage() instanceof CalendarOverviewPage,"calendar highlight page");
+            CalendarOverviewPage page=(CalendarOverviewPage)host.currentPage();
+            CalendarVisibilityToggle source=(CalendarVisibilityToggle)field(page,"sourceSwitch");
+            ViewGroup controls=(ViewGroup)source.getParent();
+            waitFor(test,()->controls.getWidth()>0&&((View)field(page,"weekExportSlot")).getWidth()>0,"three calendar actions laid out");
+            onMain(test,()->source.setChecked(false));SystemClock.sleep(450);
+            pressActions(test,controls,"week",theme,3);
+            verifyToggle(test,source,()->CalendarSourcePreferences.includesSystem(context),"week",theme);
+            DockNavigationLayout tabs=(DockNavigationLayout)field(page,"tabs");
+            onMain(test,()->tabs.itemAt(4).performClick());
+            waitFor(test,()->((View)field(page,"weekExportSlot")).getVisibility()==View.GONE,"list hides week export");
+            pressActions(test,controls,"agenda",theme,2);
+            verifyToggle(test,source,()->CalendarSourcePreferences.includesSystem(context),"agenda",theme);
+            return new JSONObject().put("passed",true).put("groups",3).put("pressedActions",8).put("toggleStates",6).toString();
+        } finally {
+            if(calendar!=null){ScheduleWorkspaceActivity current=calendar;onMain(test,current::finish);}
+            onMain(test,()->homeToggle.setChecked(homeOriginal));
+            CalendarSourcePreferences.setIncludesSystem(context,calendarOriginal);
+        }
+    }
+    private static void verifyToggle(Instrumentation test,CalendarVisibilityToggle toggle,BooleanSupplier saved,String name,String theme)throws Exception {
+        for(boolean enabled:new boolean[]{true,false}){
+            onMain(test,()->{if(toggle.isChecked()!=enabled)toggle.performClick();});
+            waitFor(test,()->Math.abs(((Number)field(toggle,"checkedFraction")).floatValue()-(enabled?1:0))<.001f,"icon transition settles: "+name);
+            SystemClock.sleep(150);
+            onMain(test,()->{
+                require(toggle.isChecked()==enabled&&saved.getAsBoolean()==enabled,"real source toggle persists: "+name);
+                require((enabled?"已开启":"已关闭").contentEquals(toggle.getStateDescription()),"native accessible checked state: "+name);
+                require(Math.abs(((Number)field(toggle,"checkedFraction")).floatValue()-(enabled?1:0))<.001f,"icon tint settles: "+name);
+                Bitmap image=Bitmap.createBitmap(toggle.getWidth(),toggle.getHeight(),Bitmap.Config.ARGB_8888);
+                toggle.draw(new android.graphics.Canvas(image));
+                int x=Math.round(6*toggle.getResources().getDisplayMetrics().density);
+                require(android.graphics.Color.alpha(image.getPixel(x,image.getHeight()/2))==0,"no persistent circular checked fill: "+name);image.recycle();
+            });
+            capture(test,"header-highlight-"+name+"-"+(enabled?"on":"off")+"-"+theme);
+        }
+    }
+    private static void pressActions(Instrumentation test,ViewGroup group,String name,String theme,int expected)throws Exception {
+        java.util.ArrayList<View> actions=new java.util.ArrayList<>();collectActions(group,actions);
+        require(actions.size()==expected,"visible action count: "+name);
+        capture(test,"header-highlight-"+name+"-base-"+theme);
+        for(int i=0;i<actions.size();i++){
+            View action=actions.get(i);int[] xy=new int[2];boolean checked=action instanceof CalendarVisibilityToggle toggle&&toggle.isChecked();
+            onMain(test,()->{
+                require(action.getForeground() instanceof android.graphics.drawable.RippleDrawable,"native ripple for "+name);
+                android.graphics.drawable.Drawable mask=((android.graphics.drawable.RippleDrawable)action.getForeground()).findDrawableByLayerId(android.R.id.mask);
+                require(mask!=null&&mask.getClass().getSimpleName().equals("ControlHighlightMask"),"shared filled mask for "+name);
+                action.getLocationOnScreen(xy);
+            });
+            long down=SystemClock.uptimeMillis();float x=xy[0]+action.getWidth()/2f,y=xy[1]+action.getHeight()/2f;
+            physical(test,down,android.view.MotionEvent.ACTION_DOWN,x,y);
+            // Capture before the platform's long-press tooltip can intercept the next action.
+            try {SystemClock.sleep(200);require(action.isPressed(),"real held press: "+name+" action="+i+" attached="+action.isAttachedToWindow());
+                Bitmap image=test.getUiAutomation().takeScreenshot();
+                try(FileOutputStream out=new FileOutputStream(new File(test.getTargetContext().getExternalFilesDir(null),
+                        "header-highlight-"+name+"-held-"+i+"-"+theme+".png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}finally{image.recycle();}
+            } finally {physical(test,down,android.view.MotionEvent.ACTION_CANCEL,x,y);}
+            SystemClock.sleep(350);
+            require(!action.isPressed(),"cancel clears press: "+name);
+            if(action instanceof CalendarVisibilityToggle toggle)require(toggle.isChecked()==checked,"cancel never toggles source: "+name);
+        }
+    }
+    private static void collectActions(ViewGroup group,java.util.List<View> actions){
+        for(int i=0;i<group.getChildCount();i++){View view=group.getChildAt(i);if(!view.isShown())continue;
+            if(view.isClickable())actions.add(view);else if(view instanceof ViewGroup children)collectActions(children,actions);}
     }
     private static View findDescription(View view,String text){if(text.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){View found=findDescription(group.getChildAt(i),text);if(found!=null)return found;}return null;}
     private static TextView findText(View view,String text){if(view instanceof TextView label&&text.contentEquals(label.getText()))return label;if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){TextView found=findText(group.getChildAt(i),text);if(found!=null)return found;}return null;}

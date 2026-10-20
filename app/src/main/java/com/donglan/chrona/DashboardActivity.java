@@ -1352,7 +1352,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private CheckBox homeSystemCalendarToggle() {
-        CheckBox include = new CalendarVisibilityToggle(this, false);
+        CheckBox include = new CalendarVisibilityToggle(this);
         include.setButtonDrawable((android.graphics.drawable.Drawable) null);
         include.setContentDescription("包含系统其他日程");
         include.setTooltipText("包含系统其他日程");

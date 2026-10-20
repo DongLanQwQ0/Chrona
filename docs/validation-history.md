@@ -1,6 +1,6 @@
 # 验证记录
 
-当前源码版本为 **0.15.30 / 192**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前源码版本为 **0.15.31 / 193**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)
@@ -8,6 +8,15 @@
 - [设备验收模板](device-acceptance.md)
 
 构建、离线检查、实际设备操作分别记录。旧版本某项通过，只支持对应候选和条件。
+
+## 0.15.31 — 操作胶囊系统日程高光 — 2026-10-20
+
+- `CalendarVisibilityToggle` 原来先安装专用圆形涟漪，`UiStyle.pressable` 检测已有 RippleDrawable 后保留它，造成同组高光不同。删除该圆形遮罩及圆形选中底色，直接复用现有 `ControlHighlightMask`，图标颜色继续表达开关状态。主页调用者同步移除废弃的布尔配置；公共高光、胶囊与按压动效参数未改。
+- 核心 35 项通过，覆盖连续 tint／图标 pulse、快速反向、重复值、减少动画、脱离及权限同步拒绝，日志 `build/header-toggle-core.log`。周日程资源／路由及实际双轴手势替身检查通过，日志 `build/header-toggle-week.log`。
+- 正常浅色和 320dp／字体 1.45 深色两组原生检查通过，日志 `build/header-toggle-native-{light,narrow-dark}.log`：每组实际按压主页 3、周日程 3、日程列表 2 个动作，验证公共填充遮罩、真实 DOWN／CANCEL、取消不切换来源，以及 6 次开关状态／偏好／无障碍／颜色终态与无圆形选中底色。34 张原始截图及按压对照图在 `build/header-toggle-captures/`。启用学校的主页仅临时调用实际标题构建方法，未运行学校生命周期或真实网络；测试数据仅在隔离包创建并清理。
+- 检查夹具按压捕获改为等待原生延迟 pressed 后直接截图，避开长按 tooltip；开关验证等待实际颜色终态而非固定延时。生产实现未因这些夹具修正而改变。最终 androidTest 构建通过，日志 `build/header-toggle-final-test-build.log`；模拟器显示设置已恢复。
+- 正式 Debug／Release 与双 lint 通过，日志 `build/header-toggle-final-formal.log`；实际 APK 官方包名、193／0.15.31、不可调试及与旧版一致的签名证书通过，日志 `build/release-0.15.31-signing.log`。候选 `build/candidates/0.15.31/Chrona-0.15.31.apk` 为 3080998 字节；手机已成功覆盖安装并确认实际版本，未卸载或清除数据。
+- 独立 UI 审核已核对公共遮罩、两组按压对照和完整截图、开关状态以及相关检查，未见旧圆形高光、新增裁切或剩余缺陷，本轮 UI 验收通过。
 
 ## 0.15.30 — 课堂滚动、自动状态、重新生成与公式 — 2026-10-20
 

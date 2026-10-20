@@ -20,6 +20,7 @@
 | 页面背景／短时结果消息 | `GlassBackdropView`、`Feedback` |
 
 页面调用样式和组合组件，不自行创建另一份亚克力 Drawable、弹窗层级管理或快照切换。渲染状态由 `UiSurfaces` 管理；浮层登记窗口模糊根，渲染层无需依赖浮层生命周期实现。
+`CalendarVisibilityToggle` 只管理开关图标及连续颜色变化；按压通过 `UiStyle.pressable` 使用 `UiSurfaces` 的公共填充遮罩，随 `HeaderActionGroup` 胶囊边界裁切。调用方不叠加专用圆形涟漪或选中底色。
 
 浮层背景缩放状态覆盖进入、持有和退出全过程；退出中重开复用最初基准，最终恢复后释放状态，视图脱离时清理。该边界由公共实现处理，调用方不补延时或手动重置缩放。
 
