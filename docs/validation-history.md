@@ -2,6 +2,7 @@
 
 ## 0.15.37 — 通知详情与交互绘制层级 — 2026-10-21
 
+- 源码 `7c2e0ad`、不可变标签 `v0.15.37` 已推送；正式 Release 已发布为 Latest，页面确认同一提交、三条用户更新及 `Chrona-0.15.37.apk`（2.95 MB）。发布页 https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.37 ，截图 `build/release-0.15.37-published.png`。未追加此前用户叫停的发布后公开下载、手动更新及覆盖安装核对；实体手机未覆盖。
 - 处理结果通知将实际保存的事项详情同时用于 ContentText 与 BigText，保留权限检查、点击入口和查看操作；不改自动确认／日历写入策略。
 - 新公共 InteractionLayers 按事件提升按压与焦点分支的 translationZ，不更改父容器子项顺序、静态尺寸或 Dock 弹簧参数。固定主页、宽屏及工作区导航分支优先。释放回落结束、失焦及脱离恢复原值；修正 Android 脱离回调期间 isAttachedToWindow 仍为真的时序。
 - `NotificationLayersDeviceCheck` 仅允许独立 v33 官方模拟器，使用合成任务及已保存候选，不调用 AI、不写真实日历。通过真实服务通知入口与 NotificationManager 验证正文／展开内容、时间地点提醒备注及详情 PendingIntent；实际 SystemUI 展开和折叠截图。收件箱首尾长按、取消、拖出、键盘焦点、邻居分支 Z 与固定 Dock，附 30 次非累积、双状态、非零基线恢复及脱离检查。浅色 1080×1920 density411 font1 为原 Dock，137 条通过；深色 1080×2160 density480 font1.45 为原紧凑适配，136 条通过。日志 `build/notification-layers-device-{light,dark}.log`，9 张实际截图 `build/notification-layers-evidence/`。系统折叠高度仅容纳摘要，展开直接显示全部本通知内容。
