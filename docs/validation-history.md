@@ -1,5 +1,12 @@
 # 验证记录
 
+## 代码裁剪体积试验（未接入正式构建）— 2026-10-21
+
+- 同197／0.15.35源码，临时R8入口使用平台默认规则、`-dontobfuscate`和`-dontoptimize`，不裁剪资源。APK 3087526→1940720字节，减少1146806字节／37.14%；压缩DEX 2142181→995460字节，全部assets清单及内容逐字节相同。官方包名、版本和原签名通过。试验APK、result.json、签名／清单／usage／configuration均在 `build/r8-size-trial/`；入口 `build/r8-size-trial.init.gradle`、`build/r8-size-trial.pro`。
+- 相同裁剪配置的独立v33 Release在模拟器实际通过8项检查：ICS重复／排除日期／时区／时长、二维码、OkHttp TLS初始化、Activity启动、离线MathJax SVG及JavascriptInterface回调。日志 `build/r8-size-trial-runtime.log`；临时夹具源 `build/r8-smoke-source/`，入口 `build/r8-smoke.init.gradle`。测试只进入单独androidTest包，未添加影响产品裁剪的测试保留规则。
+- 初轮测试runner注册与异步回调等待已修正。loopback明文HTTP受原策略拒绝，未放宽策略，最终仅验证TLS初始化，不声称外部网络请求通过。biweekly包含反射构造和字段枚举，正式接入前仍需检查动态边界；有限路径通过不代替完整发布验收。
+- 正式配置与公开资产未变。独立v33包及测试runner已恢复，正常Release经原构建入口恢复至3087526字节；未覆盖正式模拟器或实体手机。恢复材料 `.local-backups/r8-size-trial-20261021/`。
+
 ## 0.15.35 — 课堂下载历史与学生重要事项 — 2026-10-21
 
 - 完整素材下载后按课程／课堂身份归入历史并从课堂列表排除；下载中断不归档，草稿／完成总结优先并去重，保留共享历史与账号隔离。新下载完成时将课堂身份与完成时间一同原子写入候选素材清单，已有下载按当前保存目录索引。历史不受远端回放状态变化阻止，仍执行学校账号门禁；缓存先呈现，远端刷新失败不遮住本地内容。
