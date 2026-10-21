@@ -11,7 +11,7 @@ import java.util.List;
 
 /** Bounded local first-screen data, prepared away from the UI thread on cold launch. */
 final class HomeData {
-    final long revision, now;
+    final long revision, now, unreadHomework;
     final int review, failed, limit;
     final LocalDate today, endDate;
     final ZoneId zone;
@@ -26,6 +26,7 @@ final class HomeData {
         endDate = today.plusMonths(1);
         limit = HomeTimelinePreferences.getItemLimit(context);
         revision = store.dataRevision();
+        unreadHomework = new ZjuHomeworkStore(context).newestUnread(store);
         review = store.taskCountByStatus(TaskRecord.NEEDS_REVIEW);
         failed = store.taskCountByStatus(TaskRecord.FAILED);
         candidates = store.queryHomeUpcoming(now, zone, Math.max(5, limit));

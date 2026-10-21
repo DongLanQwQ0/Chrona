@@ -8,6 +8,9 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.Build;
+import android.os.PowerManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.view.View;
@@ -27,14 +30,70 @@ public final class HomeworkNotice extends BroadcastReceiver {
     private static final DateTimeFormatter DEADLINE = DateTimeFormatter.ofPattern("M月d日 HH:mm");
 
     static synchronized void show(Context context, List<ZjuSnapshot.Homework> items, List<Long> ids) {
-        publish(context, items, ids, System.currentTimeMillis() + DURATION, false);
-    }
-    private static void publish(Context context, List<ZjuSnapshot.Homework> items, List<Long> ids,
-            long expiry, boolean update) {
         if (items.size() != ids.size()) throw new IllegalArgumentException("Homework identities do not match notice items");
-        if (items.isEmpty() || !NotificationDeliveryStatus.read(context, CHANNEL).canPostReminders()) return;
-        long capture = new ZjuHomeworkStore(context).state().captureId;
-        if (capture <= 0) return;
+        refresh(context);
+        // Several fetches may finish before the first wake. Keep every still-unseen item.
+        java.util.LinkedHashMap<Long, ZjuSnapshot.Homework> pending = new java.util.LinkedHashMap<>();
+        if (awaitingScreen(context)) {
+            try {
+                org.json.JSONArray saved = new org.json.JSONArray(context.getSharedPreferences(PREFS, 0).getString("items", "[]"));
+                for (int i = 0; i < saved.length(); i++) {
+                    org.json.JSONObject item = saved.getJSONObject(i);
+                    pending.put(item.getLong("id"), savedItem(item));
+                }
+            } catch (org.json.JSONException failure) { throw new IllegalStateException("Invalid pending homework notice", failure); }
+        }
+        for (int i = 0; i < items.size(); i++) pending.put(ids.get(i), items.get(i));
+        publish(context, new java.util.ArrayList<>(pending.values()), new java.util.ArrayList<>(pending.keySet()),
+                System.currentTimeMillis() + DURATION, false, !interactive(context));
+    }
+
+    static boolean awaitingScreen(Context context) {
+        return context.getSharedPreferences(PREFS, 0).getBoolean("waiting_for_screen", false);
+    }
+
+    private static boolean interactive(Context context) {
+        PowerManager power = context.getSystemService(PowerManager.class);
+        return power != null && power.isInteractive();
+    }
+
+    /** Record the broadcast's actual time before queued notification/DB work can delay it. */
+    static synchronized void screenOn(Context context, long at) {
+        var prefs = context.getSharedPreferences(PREFS, 0);
+        if (!prefs.getBoolean("waiting_for_screen", false)) return;
+        if (!prefs.edit().putBoolean("waiting_for_screen", false).putLong("expiry", at + DURATION)
+                .putBoolean("needs_post", true).commit()) {
+            android.util.Log.w("ChronaHomework", "Unable to persist first screen-on time");
+            return;
+        }
+        android.util.Log.i("ChronaHomework", "first_screen_on at=" + at + " expiry=" + (at + DURATION));
+        action(context, "close", at + DURATION);
+        // Arm the durable deadline in the broadcast itself. The process may end
+        // before the queued card refresh, but unseen work must not linger then.
+        scheduleExpiry(context, at + DURATION, false);
+        AgendaReminder.requestRefresh(context);
+    }
+
+    /** Application lifetime observer also covers wakes when no agenda countdown is active. */
+    static void observeScreen(Context context) {
+        Context app = context.getApplicationContext();
+        BroadcastReceiver screen = new BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent intent) {
+                if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) screenOn(app, System.currentTimeMillis());
+            }
+        };
+        IntentFilter events = new IntentFilter(Intent.ACTION_SCREEN_ON);
+        if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(screen, events, Context.RECEIVER_NOT_EXPORTED);
+        else app.registerReceiver(screen, events);
+    }
+
+    private static void publish(Context context, List<ZjuSnapshot.Homework> items, List<Long> ids,
+            long expiry, boolean update, boolean waiting) {
+        if (items.size() != ids.size()) throw new IllegalArgumentException("Homework identities do not match notice items");
+        if (items.isEmpty()) return;
+        var binding = new ZjuHomeworkStore(context).state();
+        long capture = binding.captureId;
+        if (capture <= 0 || !binding.enabled) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
         manager.createNotificationChannel(new NotificationChannel(CHANNEL, "作业更新", NotificationManager.IMPORTANCE_DEFAULT));
@@ -54,7 +113,7 @@ public final class HomeworkNotice extends BroadcastReceiver {
                 .setOngoing(atomic).setAutoCancel(!atomic).setOnlyAlertOnce(update)
                 .setCategory(Notification.CATEGORY_EVENT).setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setWhen(expiry - DURATION).setShowWhen(false)
-                .setTimeoutAfter(Math.max(1, expiry - System.currentTimeMillis()))
+                .setTimeoutAfter(waiting ? 0 : Math.max(1, expiry - System.currentTimeMillis()))
                 .setStyle(new Notification.DecoratedCustomViewStyle()).setCustomBigContentView(card);
         if (atomic) {
             // Reuse the registered, verified SuperX transport, with a separate information card.
@@ -73,30 +132,44 @@ public final class HomeworkNotice extends BroadcastReceiver {
             // A background job or receiver may finish immediately after this call. Persist
             // the identity before delivery so another process can reconcile the live notice.
             if (!context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("expiry", expiry)
-                    .putLong("capture",capture).putString("items",saved.toString()).commit()) {
+                    .putLong("capture",capture).putString("items",saved.toString())
+                    .putBoolean("waiting_for_screen", waiting).putBoolean("needs_post", true).commit()) {
                 VivoAtomicNotification.end(context, manager, ID);
                 android.util.Log.w("ChronaHomework", "Unable to persist homework notice");
                 return;
             }
+            // The provisional expiry identifies this pending batch, but does not expire it.
+            // Android receives no timeout/alarm until the first real screen-on.
+            if (!NotificationDeliveryStatus.read(context, CHANNEL).canPostReminders()) return;
             manager.notify(ID, builder.build());
-            AlarmManager alarms = context.getSystemService(AlarmManager.class);
-            if (alarms != null) {
-                PendingIntent expire = action(context, "expire", expiry);
-                if (android.os.Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expiry, expire);
-                else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expiry, expire);
-            }
+            android.util.Log.i("ChronaHomework", "notice_post items=" + items.size() + " waiting=" + waiting + " expiry=" + expiry + " update=" + update);
+            context.getSharedPreferences(PREFS, 0).edit().putBoolean("needs_post", false).commit();
+            scheduleExpiry(context, expiry, waiting);
+            if (waiting) AgendaReminderLiveService.update(context, false, 0);
         } catch (SecurityException | org.json.JSONException failure) {
             android.util.Log.w("ChronaHomework", "Unable to deliver homework notice", failure);
         }
     }
 
+    private static void scheduleExpiry(Context context, long expiry, boolean waiting) {
+        AlarmManager alarms = context.getSystemService(AlarmManager.class);
+        if (alarms == null) return;
+        PendingIntent expire = action(context, "expire", expiry);
+        if (waiting) alarms.cancel(expire);
+        else if (Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms())
+            alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expiry, expire);
+        else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expiry, expire);
+    }
+
     /** Completion, deletion and source/account changes remove only the affected notice items. */
     static synchronized void refresh(Context context) {
         android.content.SharedPreferences prefs=context.getSharedPreferences(PREFS,0);
+        if (awaitingScreen(context) && interactive(context)) screenOn(context, System.currentTimeMillis());
         long expiry=prefs.getLong("expiry",0);
         if(expiry<=0)return;
+        boolean waiting = awaitingScreen(context);
         ZjuHomeworkStore.State state=new ZjuHomeworkStore(context).state();
-        if(System.currentTimeMillis()>=expiry || !state.enabled || state.captureId!=prefs.getLong("capture",0)) {
+        if((!waiting && System.currentTimeMillis()>=expiry) || !state.enabled || state.captureId!=prefs.getLong("capture",0)) {
             dismiss(context,expiry);return;
         }
         try(com.donglan.chrona.data.TaskStore store=new com.donglan.chrona.data.TaskStore(context)) {
@@ -111,14 +184,18 @@ public final class HomeworkNotice extends BroadcastReceiver {
                     if(rows.isEmpty() || rows.get(0).completed() || !rows.get(0).isHomework())continue;
                 }
                 ids.add(id);
-                remaining.add(new ZjuSnapshot.Homework("notice:"+id,"",item.getString("title"),
-                        item.getString("body"),"","",item.isNull("deadline")?null:item.getLong("deadline"),false));
+                remaining.add(savedItem(item));
             }
             if(remaining.isEmpty())dismiss(context,expiry);
-            else if(remaining.size()!=saved.length())publish(context,remaining,ids,expiry,true);
+            else if(remaining.size()!=saved.length() || prefs.getBoolean("needs_post", false))publish(context,remaining,ids,expiry,true,waiting);
         }catch(org.json.JSONException failure) {
             android.util.Log.w("ChronaHomework","Unable to read active homework notice",failure);
         }
+    }
+
+    private static ZjuSnapshot.Homework savedItem(org.json.JSONObject item) throws org.json.JSONException {
+        return new ZjuSnapshot.Homework("notice:" + item.getLong("id"), "", item.getString("title"),
+                item.getString("body"), "", "", item.isNull("deadline") ? null : item.getLong("deadline"), false);
     }
 
     static RemoteViews card(Context context, List<ZjuSnapshot.Homework> items,
@@ -176,17 +253,19 @@ public final class HomeworkNotice extends BroadcastReceiver {
     private static synchronized void receive(Context context, Intent intent) {
         long expiry = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("expiry", 0);
         if (expiry <= 0 || expiry != intent.getLongExtra("expiry", 0)) return;
-        if ("expire".equals(intent.getAction()) && System.currentTimeMillis() < expiry) return;
+        if ("expire".equals(intent.getAction()) && (awaitingScreen(context) || System.currentTimeMillis() < expiry)) return;
         if (!"close".equals(intent.getAction()) && !"expire".equals(intent.getAction())) return;
         dismiss(context,expiry);
     }
     private static void dismiss(Context context,long expiry) {
+        android.util.Log.i("ChronaHomework", "notice_dismiss expiry=" + expiry);
         if (!context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .remove("expiry").remove("capture").remove("items").commit())
+                .remove("expiry").remove("capture").remove("items").remove("waiting_for_screen").remove("needs_post").commit())
             android.util.Log.w("ChronaHomework", "Unable to persist homework notice dismissal");
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager != null) VivoAtomicNotification.end(context, manager, ID);
         AlarmManager alarms = context.getSystemService(AlarmManager.class);
         if (alarms != null) alarms.cancel(action(context, "expire", expiry));
+        AgendaReminder.requestRefresh(context);
     }
 }

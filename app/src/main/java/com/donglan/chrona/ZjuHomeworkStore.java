@@ -152,9 +152,9 @@ public final class ZjuHomeworkStore {
                         throw new IllegalArgumentException("作业身份或标题缺失");
                     String key = UUID.nameUUIDFromBytes((account + ":" + item.key).getBytes(StandardCharsets.UTF_8)).toString();
                     if (!seen.add(key)) throw new IllegalArgumentException("作业身份重复");
-                    String before = null; long candidateId = 0; boolean ignored = false, pendingCalendar = false;
-                    try (Cursor cursor = db.rawQuery("SELECT candidate_id,ignored,snapshot,pending_calendar FROM zju_homework_map WHERE account=? AND remote_key=?", new String[]{account, key})) {
-                        if (cursor.moveToFirst()) { candidateId = cursor.isNull(0) ? 0 : cursor.getLong(0); ignored = cursor.getInt(1) != 0; before = cursor.getString(2); pendingCalendar = cursor.getInt(3) != 0; }
+                    String before = null; long candidateId = 0; boolean ignored = false, pendingCalendar = false, unread = false;
+                    try (Cursor cursor = db.rawQuery("SELECT candidate_id,ignored,snapshot,pending_calendar,unread FROM zju_homework_map WHERE account=? AND remote_key=?", new String[]{account, key})) {
+                        if (cursor.moveToFirst()) { candidateId = cursor.isNull(0) ? 0 : cursor.getLong(0); ignored = cursor.getInt(1) != 0; before = cursor.getString(2); pendingCalendar = cursor.getInt(3) != 0; unread = cursor.getInt(4) != 0; }
                     }
                     if (ignored) continue;
                     String after = snapshot(item, before);
@@ -176,7 +176,7 @@ public final class ZjuHomeworkStore {
                         candidateId = store.appendCandidate(new EventCandidate(0, current.captureId, item.title, null, null,
                                 "Asia/Shanghai", "", description, null, false, null, "homework", false, false, 0, item.deadline, done, false));
                         added++;
-                        if (done == null) { actionableAdded++; newHomework.add(item); newHomeworkIds.add(candidateId); }
+                        if (done == null) { actionableAdded++; newHomework.add(item); newHomeworkIds.add(candidateId); unread = true; }
                     } else if (changed) {
                         ContentValues values = new ContentValues();
                         values.put("title", item.title); values.put("description", description);
@@ -188,8 +188,8 @@ public final class ZjuHomeworkStore {
                     }
                     if (prior != null) { updated++; if (sourceChanged && done == null) actionableUpdated++; }
                     String stable = store.stableCandidateId(candidateId);
-                    db.execSQL("INSERT OR REPLACE INTO zju_homework_map(account,remote_key,capture_id,candidate_id,sync_id,ignored,snapshot,pending_calendar) VALUES(?,?,?,?,?,0,?,?)",
-                            new Object[]{account, key, current.captureId, candidateId, stable, after, pendingCalendar ? 1 : 0});
+                    db.execSQL("INSERT OR REPLACE INTO zju_homework_map(account,remote_key,capture_id,candidate_id,sync_id,ignored,snapshot,pending_calendar,unread) VALUES(?,?,?,?,?,0,?,?,?)",
+                            new Object[]{account, key, current.captureId, candidateId, stable, after, pendingCalendar ? 1 : 0, unread ? 1 : 0});
                     if (!Objects.equals(before, after) || changed) {
                         ContentValues history = new ContentValues();
                         history.put("account", account); history.put("title", item.title);
@@ -200,6 +200,28 @@ public final class ZjuHomeworkStore {
                 }
                 db.setTransactionSuccessful(); committed = true; return new Result(added, updated, completed, actionableAdded, actionableUpdated, newHomework, newHomeworkIds);
             } finally { db.endTransaction(); if (committed) { reconcileAlerts(alerts); ZjuHomeworkCalendar.retryPending(context); } }
+        }
+    }
+
+    /** Attention is committed with insertion, independently of notification permissions/expiry. */
+    long newestUnread() {
+        try (TaskStore store = new TaskStore(context)) { return newestUnread(store); }
+    }
+
+    long newestUnread(TaskStore store) {
+        if (!new ZjuSettingsStore(context).enabled()) return 0;
+        try (Cursor rows = store.getReadableDatabase().rawQuery("SELECT m.candidate_id FROM zju_homework_map m "
+                     + "JOIN managed_zju_state s ON s.id=1 AND s.enabled=1 AND s.account=m.account AND s.capture_id=m.capture_id "
+                     + "JOIN event_candidates c ON c.id=m.candidate_id WHERE m.unread=1 AND m.ignored=0 "
+                     + "AND c.category='homework' AND c.completed_at_millis IS NULL ORDER BY m.candidate_id DESC LIMIT 1", null)) {
+            return rows.moveToFirst() ? rows.getLong(0) : 0;
+        }
+    }
+
+    void markSeen(long candidateId) {
+        try (TaskStore store = new TaskStore(context)) {
+            store.getWritableDatabase().execSQL("UPDATE zju_homework_map SET unread=0 WHERE candidate_id=? "
+                    + "AND capture_id=(SELECT capture_id FROM managed_zju_state WHERE id=1 AND enabled=1)", new Object[]{candidateId});
         }
     }
 

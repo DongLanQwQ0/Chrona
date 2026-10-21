@@ -47,7 +47,7 @@
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <service android:name=".AgendaReminderLiveService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Update user-visible local calendar countdown and event progress only while atomic agenda reminders are active." />
+                android:value="Keep new homework notices pending until first screen-on, and update local countdown and event progress while atomic agenda reminders are active." />
         </service>
         <receiver android:name=".AgendaReminderReceiver" android:exported="false">
             <intent-filter>

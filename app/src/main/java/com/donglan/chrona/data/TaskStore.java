@@ -23,7 +23,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
-    private static final int DATABASE_VERSION = 14;
+    public static final int DATABASE_VERSION = 15;
 
     private final Context context;
     private SQLiteDatabase openedDatabase;
@@ -264,6 +264,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         addCandidateMerges(db);
         createTaskIndexes(db);
         addZjuHomework(db);
+        addHomeworkAttention(db);
         addRecurrence(db);
     }
 
@@ -302,7 +303,12 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 12) addZjuHomework(db);
         if (oldVersion < 13) db.execSQL("UPDATE event_candidates SET category='homework' WHERE category='task' AND (id IN (SELECT candidate_id FROM zju_homework_map) OR task_id IN (SELECT id FROM tasks WHERE source='zju-homework'))");
         if (oldVersion < 14) addRecurrence(db);
+        if (oldVersion < 15) addHomeworkAttention(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
+    }
+
+    public static void addHomeworkAttention(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE zju_homework_map ADD COLUMN unread INTEGER NOT NULL DEFAULT 0 CHECK(unread IN (0,1))");
     }
 
     private static void addRecurrence(SQLiteDatabase db) {
@@ -608,6 +614,13 @@ public final class TaskStore extends SQLiteOpenHelper {
         int end = (int) Math.min(Integer.MAX_VALUE, offset + ScheduleQuery.PAGE_SIZE);
         List<EventCandidate> items = scheduleRows(query, oldestFirst, end);
         return offset >= items.size() ? new ArrayList<>() : new ArrayList<>(items.subList((int) offset, items.size()));
+    }
+
+    /** Explicit deep navigation uses the same projected order as the visible paginated list. */
+    public int schedulePageForCandidate(ScheduleQuery query, boolean oldestFirst, long candidateId) {
+        List<EventCandidate> rows = scheduleRows(query, oldestFirst, Integer.MAX_VALUE);
+        for (int i = 0; i < rows.size(); i++) if (rows.get(i).id == candidateId) return i / ScheduleQuery.PAGE_SIZE;
+        return -1;
     }
 
     public List<EventCandidate> getCandidatesByIds(java.util.Collection<Long> ids) {

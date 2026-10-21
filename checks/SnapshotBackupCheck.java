@@ -81,7 +81,7 @@ public final class SnapshotBackupCheck {
             db.execSQL("UPDATE sync_meta SET identity='original-namespace'");
             db.execSQL("UPDATE managed_zju_state SET enabled=1,generation=8,account='synthetic-account',capture_id=7");
             db.execSQL("INSERT INTO zju_homework_captures VALUES(7,'synthetic-account')");
-            db.execSQL("INSERT INTO zju_homework_map VALUES('synthetic-account','remote-key',7,9,'stable-candidate',1,'{\"submitted\":true}',1)");
+            db.execSQL("INSERT INTO zju_homework_map VALUES('synthetic-account','remote-key',7,9,'stable-candidate',1,'{\"submitted\":true}',1,1)");
             db.execSQL("INSERT INTO zju_homework_history VALUES(3,'synthetic-account','历史','变更',12345,'{}','{}','remote-time')");
             db.execSQL("INSERT INTO zju_homework_deleted_tasks VALUES('deleted-task')");
             // Deleted IDs must remain reserved even after snapshot and restore.

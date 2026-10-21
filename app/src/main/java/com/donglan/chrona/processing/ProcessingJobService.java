@@ -499,11 +499,17 @@ public final class ProcessingJobService extends JobService {
 
     private void notifyResult(long taskId, String text) {
         StringBuilder details = new StringBuilder();
+        String title = text;
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
             if (task == null) return;
             if (task.errorMessage != null && !task.errorMessage.trim().isEmpty()) details.append(task.errorMessage).append("\n\n");
             List<com.donglan.chrona.data.EventCandidate> candidates = store.getCandidates(taskId);
+            List<com.donglan.chrona.data.EventCandidate> written = candidates.stream()
+                    .filter(item -> item.calendarEventId != null && !item.isRecord).collect(java.util.stream.Collectors.toList());
+            List<com.donglan.chrona.data.EventCandidate> named = written.isEmpty() ? candidates : written;
+            if (!named.isEmpty()) title = named.get(0).title
+                    + (named.size() > 1 ? " 等 " + named.size() + " 项" : "");
             int count = 0;
             for (com.donglan.chrona.data.EventCandidate item : candidates) {
                 if (count++ == 12) { details.append("另有 ").append(candidates.size() - 12).append(" 项，点按查看全部"); break; }
@@ -544,10 +550,11 @@ public final class ProcessingJobService extends JobService {
         PendingIntent pending = PendingIntent.getActivity(this, (int) taskId, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String body = details.length() == 0 ? text : details.toString().trim();
+        String expanded = details.length() == 0 ? text : text + "\n\n" + body;
         Notification notification = notificationBuilder(CHANNEL_ID)
-                .setContentTitle(text)
+                .setContentTitle(title)
                 .setContentText(body)
-                .setStyle(new Notification.BigTextStyle().setBigContentTitle(text).bigText(body))
+                .setStyle(new Notification.BigTextStyle().setBigContentTitle(title).bigText(expanded))
                 .setCategory(Notification.CATEGORY_REMINDER)
                 .setAutoCancel(true)
                 .setContentIntent(pending)

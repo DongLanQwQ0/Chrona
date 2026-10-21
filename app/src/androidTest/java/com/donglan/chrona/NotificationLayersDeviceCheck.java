@@ -54,7 +54,9 @@ final class NotificationLayersDeviceCheck {
             String body = notice.extras.getCharSequence(Notification.EXTRA_TEXT).toString();
             require(body.contains("微积分复习讨论") && body.contains("14:00") && body.contains("15:00")
                     && body.contains("东1-201") && body.contains("提前 15 分钟") && body.contains("携带第三章习题"), "collapsed extras contain complete event detail");
-            require(body.equals(notice.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()), "expanded and collapsed use same actual details");
+            require("微积分复习讨论".contentEquals(notice.extras.getCharSequence(Notification.EXTRA_TITLE)), "collapsed first line names the actual schedule");
+            String expanded = notice.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString();
+            require(expanded.contains(body) && expanded.contains("已自动确认"), "expanded notice keeps result status and complete actual details");
             require(notice.contentIntent != null && notice.actions.length > 0 && notice.contentIntent.equals(notice.actions[0].actionIntent), "detail entry and action retained");
             shell(test, "cmd statusbar expand-notifications"); SystemClock.sleep(1400);
             capture(test, context, "notification-details-" + proof);
@@ -68,6 +70,7 @@ final class NotificationLayersDeviceCheck {
             SystemClock.sleep(500); capture(test, context, "notification-collapsed-" + proof);
             shell(test, "cmd statusbar collapse");
             notifications.cancel((int) taskId);
+            if ("notification_only".equals(args.getString("scope"))) return new JSONObject().put("assertions", assertions).put("theme", theme).toString();
 
             Instrumentation.ActivityMonitor monitor = test.addMonitor(DashboardActivity.class.getName(), null, false);
             try {

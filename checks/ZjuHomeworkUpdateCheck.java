@@ -15,6 +15,7 @@ public final class ZjuHomeworkUpdateCheck {
     static void check(boolean yes,String why){checks++;if(!yes)throw new AssertionError(why);}
     static Homework homework(String key,String title,long due,Boolean submitted){return new Homework(key,"course",title,"description","https://example.test/item","version",due==0?null:due,submitted);}
     static EventCandidate row(Context c,long id){try(TaskStore store=new TaskStore(c)){return store.getCandidatesByIds(List.of(id)).get(0);}}
+    static boolean unread(Context c,long id){try(TaskStore store=new TaskStore(c);var rows=store.getReadableDatabase().rawQuery("SELECT unread FROM zju_homework_map WHERE candidate_id=?",new String[]{Long.toString(id)})){return rows.moveToFirst()&&rows.getInt(0)==1;}}
     static void personal(Context c,long id,long execution,long event){try(TaskStore store=new TaskStore(c)){ContentValues v=new ContentValues();if(execution!=0){v.put("start_at_millis",execution);v.put("end_at_millis",execution+3_600_000L);}v.put("reminder_minutes_before",15);v.put("calendar_event_id",event);store.getWritableDatabase().update("event_candidates",v,"id=?",new String[]{Long.toString(id)});}}
     static void event(long id,long at,boolean own){CalendarStore.rows.put(id,new CalendarStore.EventRecord(new CalendarStore.EventInput("old",at,at+60000,"Asia/Shanghai",false,"old","",List.of(15)),own));}
     public static void main(String[] args)throws Exception{
@@ -28,6 +29,11 @@ public final class ZjuHomeworkUpdateCheck {
         check(managed.trackedCourses("account",generation+1).isEmpty(),"stale generation cannot supply course IDs");
         List<EventCandidate> all;try(TaskStore store=new TaskStore(c)){all=store.getCandidates(managed.state().captureId);}
         long aid=all.get(0).id,bid=all.get(1).id;
+        check(unread(c,aid)&&unread(c,bid),"new homework and unread marker commit together");
+        managed.markSeen(aid);
+        check(!unread(c,aid)&&unread(c,bid),"opening one new homework leaves other attention intact");
+        managed.apply("account",generation,List.of(a,b));
+        check(!unread(c,aid)&&unread(c,bid),"duplicate fetch never reopens read attention");
         check(row(c,aid).isHomework() && row(c,aid).isTask(), "homework is distinct but keeps task behavior");
         try(TaskStore store=new TaskStore(c)) {
             long now=DUE-86_400_000L;
@@ -47,9 +53,11 @@ public final class ZjuHomeworkUpdateCheck {
             // Reconstruct the v12 schema before exercising every subsequent migration.
             for (String column : new String[]{"repeat_rule", "repeat_exceptions", "repeat_stopped_at"})
                 store.getWritableDatabase().execSQL("ALTER TABLE event_candidates DROP COLUMN " + column);
-            store.onUpgrade(store.getWritableDatabase(),12,14);
+            store.getWritableDatabase().execSQL("ALTER TABLE zju_homework_map DROP COLUMN unread");
+            store.onUpgrade(store.getWritableDatabase(),12,15);
             check(row(c,aid).isHomework() && !row(c,ordinary).isHomework(), "existing managed homework upgrades without reclassifying ordinary tasks");
             check(row(c,aid).dueAtMillis.equals(DUE), "category upgrade preserves original deadline");
+            check(!unread(c,aid)&&!unread(c,bid),"upgrading existing work does not fabricate new-work badges");
         }
         check(row(c,aid).calendarEventId!=null&&row(c,bid).calendarEventId!=null&&CalendarStore.rows.size()==2,"unfinished deadline homework automatically published");
         check(managed.apply("account",generation,List.of(a,b)).newHomework.isEmpty(),"unchanged refresh never reopens or extends a new-work notice");check(CalendarStore.rows.size()==2,"unchanged refresh does not duplicate provider events");

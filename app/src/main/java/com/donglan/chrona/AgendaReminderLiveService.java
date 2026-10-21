@@ -32,16 +32,21 @@ public final class AgendaReminderLiveService extends Service {
     };
     private final BroadcastReceiver screen = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
+            if (Intent.ACTION_SCREEN_ON.equals(i.getAction())) HomeworkNotice.screenOn(c, System.currentTimeMillis());
             scheduleSeconds(0);
             AgendaReminder.requestRefresh(AgendaReminderLiveService.this);
         }
     };
     static void update(Context context, boolean needed, long nextAt) {
-        needed = needed && NotificationDeliveryStatus.canPostReminders(context);
+        boolean waiting = HomeworkNotice.awaitingScreen(context)
+                && NotificationDeliveryStatus.read(context, "zju_homework_updates").canPostReminders();
+        needed = needed && NotificationDeliveryStatus.canPostReminders(context) || waiting;
+        if (waiting && nextAt <= System.currentTimeMillis()) nextAt = System.currentTimeMillis() + ReminderTimeline.PROGRESS_REFRESH;
         if (!needed) { context.stopService(new Intent(context, AgendaReminderLiveService.class)); return; }
         AgendaReminderLiveService current = live;
         if (current != null) {
-            current.handler.post(() -> { if (live == current) { current.scheduleTick(nextAt); current.scheduleSeconds(1000); } });
+            long boundary = nextAt;
+            current.handler.post(() -> { if (live == current) { current.scheduleTick(boundary); current.scheduleSeconds(1000); } });
             return;
         }
         try { context.startForegroundService(new Intent(context, AgendaReminderLiveService.class).putExtra("next_at", nextAt)); }
@@ -57,7 +62,11 @@ public final class AgendaReminderLiveService extends Service {
         else registerReceiver(screen, events);
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (!AgendaReminderPreferences.enabled(this) || !NotificationDeliveryStatus.canPostReminders(this)) { stopSelf(); return START_NOT_STICKY; }
+        boolean agenda = AgendaReminderPreferences.enabled(this) && NotificationDeliveryStatus.canPostReminders(this);
+        boolean homework = HomeworkNotice.awaitingScreen(this)
+                && NotificationDeliveryStatus.read(this, "zju_homework_updates").canPostReminders();
+        boolean needed = agenda || homework;
+        if (!needed && intent == null) { stopSelf(); return START_NOT_STICKY; }
         NotificationManager manager = getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(CHANNEL, "日程后台更新", NotificationManager.IMPORTANCE_MIN);
         channel.setSound(null, null); channel.enableVibration(false); channel.setShowBadge(false);
@@ -65,10 +74,13 @@ public final class AgendaReminderLiveService extends Service {
         PendingIntent open = PendingIntent.getActivity(this, ID,
                 new Intent(this, DashboardActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notifications)
-                .setContentTitle("日程提醒正在更新").setContentText("提醒结束后自动停止")
+                .setContentTitle("提醒正在更新").setContentText("提醒结束后自动停止")
                 .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).build();
         if (Build.VERSION.SDK_INT >= 34) startForeground(ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         else startForeground(ID, notification);
+        // The first wake can consume the pending work before this start command arrives.
+        // Fulfil the outstanding foreground start before stopping that now-unneeded service.
+        if (!needed) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY; }
         scheduleTick(intent == null ? System.currentTimeMillis() + ReminderTimeline.PROGRESS_REFRESH
                 : intent.getLongExtra("next_at", System.currentTimeMillis() + ReminderTimeline.PROGRESS_REFRESH));
         AgendaReminder.requestRefresh(this);

@@ -125,6 +125,13 @@ public final class DashboardActivity extends Activity {
     private Button publishSelectedButton;
     private boolean bulkCalendarWriting;
     private boolean homeworkRefreshRunning;
+    private static final int HOMEWORK_UNREAD_COLOR = 0xffed4256;
+    private static final long HOMEWORK_FOCUS_DURATION = 2000L;
+    private long unreadHomeworkId, pendingHomeworkFocus;
+    private int homeworkFocusTop, homeworkFocusBottom;
+    private String homeworkFocusFilter = "";
+    private final Map<ImageButton, GradientDrawable> homeworkDots = new java.util.WeakHashMap<>();
+    private final Runnable homeworkFocus = this::focusNewHomework;
     private static final int BULK_CALENDAR_PERMISSION_REQUEST = 14;
     private final Set<Long> selectedInboxIds = new LinkedHashSet<>();
     private final Set<Long> selectedScheduleIds = new LinkedHashSet<>();
@@ -224,6 +231,10 @@ public final class DashboardActivity extends Activity {
             statusIndex = state.getInt("status");
             scheduleTab = state.getInt("schedule_tab");
             schedulePage = state.getInt("schedule_page");
+            pendingHomeworkFocus = state.getLong("homework_focus", 0);
+            homeworkFocusTop = state.getInt("homework_focus_top", 0);
+            homeworkFocusBottom = state.getInt("homework_focus_bottom", 0);
+            homeworkFocusFilter = state.getString("homework_focus_filter", "");
             scheduleRange = state.getInt("schedule_range");
             scheduleCategory = Math.max(0, Math.min(com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY,
                     state.getInt("schedule_category")));
@@ -262,6 +273,10 @@ public final class DashboardActivity extends Activity {
         state.putInt("status", statusIndex);
         state.putInt("schedule_tab", scheduleTab);
         state.putInt("schedule_page", schedulePage);
+        state.putLong("homework_focus", pendingHomeworkFocus);
+        state.putInt("homework_focus_top", homeworkFocusTop);
+        state.putInt("homework_focus_bottom", homeworkFocusBottom);
+        state.putString("homework_focus_filter", homeworkFocusFilter);
         state.putInt("schedule_range", scheduleRange);
         state.putInt("schedule_category", scheduleCategory);
         state.putInt("schedule_publication", schedulePublication);
@@ -647,6 +662,7 @@ public final class DashboardActivity extends Activity {
             refresh.removeCallbacks(deferredSectionRefresh); refresh.post(deferredSectionRefresh);
             updateSelectionBack();
             drawNavigation();
+            if (section == SCHEDULE) queueHomeworkFocus();
         } else {
             pager.removeView(target.scroll);
             target.scroll.setTranslationX(0f);
@@ -827,6 +843,7 @@ public final class DashboardActivity extends Activity {
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && pendingHomeworkFocus > 0) queueHomeworkFocus();
         if (hasFocus && updateChecksReady) ReleaseUpdates.checkAutomatically(this);
     }
 
@@ -1249,6 +1266,16 @@ public final class DashboardActivity extends Activity {
             if (new ZjuSettingsStore(this).enabled()) {
                 ImageButton homework = WorkspacePageHeader.icon(this, R.drawable.ic_homework,
                         "最近作业", this::openHomeHomework);
+                homework.setTag("home-homework");
+                GradientDrawable dot = new GradientDrawable();
+                dot.setShape(GradientDrawable.OVAL); dot.setColor(HOMEWORK_UNREAD_COLOR);
+                dot.setAlpha(unreadHomeworkId > 0 ? 255 : 0);
+                homework.getOverlay().add(dot); homeworkDots.put(homework, dot);
+                homework.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> {
+                    int x = view.getWidth() / 2 + dp(9), y = view.getHeight() / 2 - dp(9), radius = dp(4);
+                    dot.setBounds(x - radius, y - radius, x + radius, y + radius);
+                });
+                homework.setContentDescription(unreadHomeworkId > 0 ? "最近作业，有新作业" : "最近作业");
                 group.addAction(homework, 44);
             }
             group.addAction(homeSystemCalendarToggle(), 44);
@@ -1395,6 +1422,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void home(HomeData data) {
+        updateHomeworkAttention(data.unreadHomework);
         long now = data.now;
         ZoneId zone = data.zone;
         LocalDate today = data.today;
@@ -1718,6 +1746,8 @@ public final class DashboardActivity extends Activity {
 
     private void openHomeHomework() {
         if (!new ZjuSettingsStore(this).enabled()) return;
+        pendingHomeworkFocus = unreadHomeworkId;
+        homeworkFocusTop = homeworkFocusBottom = 0; homeworkFocusFilter = "";
         scheduleTab = 3; scheduleTodoScope = ScheduleQuery.TODO_OPEN;
         scheduleCategory = com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
         scheduleRange = schedulePublication = scheduleSource = schedulePage = 0;
@@ -1726,6 +1756,91 @@ public final class DashboardActivity extends Activity {
         selectedScheduleIds.clear();
         sectionPages.remove(SCHEDULE); sectionVersions.remove(SCHEDULE); dirtySections.add(SCHEDULE);
         switchTo(SCHEDULE);
+    }
+
+    private void updateHomeworkAttention(long candidateId) {
+        unreadHomeworkId = candidateId;
+        for (var entry : homeworkDots.entrySet()) {
+            entry.getValue().setAlpha(candidateId > 0 ? 255 : 0);
+            entry.getKey().setContentDescription(candidateId > 0 ? "最近作业，有新作业" : "最近作业");
+            entry.getKey().invalidate();
+        }
+    }
+
+    private void queueHomeworkFocus() {
+        refresh.removeCallbacks(homeworkFocus);
+        if (pendingHomeworkFocus > 0) refresh.postDelayed(homeworkFocus, 16);
+    }
+
+    private void focusNewHomework() {
+        if (isDestroyed() || isFinishing() || !foreground || !hasWindowFocus() || section != SCHEDULE || pendingHomeworkFocus <= 0) return;
+        if (pageTransitionRunning || sectionLoadRunning || scheduleResultLoading) { queueHomeworkFocus(); return; }
+        InboxRow row = inboxRows.get(pendingHomeworkFocus);
+        if (row == null) {
+            pendingHomeworkFocus = 0;
+            Feedback.show(this, "这项作业已更新，请查看当前作业列表");
+            return;
+        }
+        View card = row.card;
+        if (!card.isLaidOut() || scroll.getHeight() <= 0 || card.isLayoutRequested()) { queueHomeworkFocus(); return; }
+        int[] point = new int[2], viewport = new int[2];
+        card.getLocationOnScreen(point); scroll.getLocationOnScreen(viewport);
+        int desired = scroll.getScrollY() + point[1] + card.getHeight() / 2 - viewport[1] - scroll.getHeight() / 2;
+        View body = scroll.getChildAt(0);
+        int maximum = Math.max(0, body.getHeight() + scroll.getPaddingTop() + scroll.getPaddingBottom() - scroll.getHeight());
+        // Only the explicit focus route adds the real scroll room needed to center edge rows.
+        if (desired < 0 || desired > maximum) {
+            homeworkFocusTop += Math.max(0, -desired);
+            homeworkFocusBottom += Math.max(0, desired - maximum);
+            homeworkFocusFilter = completionFilterKey();
+            results.setPadding(0, homeworkFocusTop, 0, homeworkFocusBottom);
+            queueHomeworkFocus(); return;
+        }
+        scroll.scrollTo(0, desired);
+        long shown = pendingHomeworkFocus;
+        card.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                if (card.getViewTreeObserver().isAlive()) card.getViewTreeObserver().removeOnPreDrawListener(this);
+                // Consume attention after the centered frame has actually been drawn, not
+                // while a notification shade or another window still covers this page.
+                card.post(() -> completeHomeworkFocus(card, shown));
+                return true;
+            }
+        });
+        card.invalidate();
+    }
+
+    private void completeHomeworkFocus(View card, long shown) {
+        if (pendingHomeworkFocus != shown || isDestroyed() || isFinishing() || !foreground
+                || !hasWindowFocus() || section != SCHEDULE || !card.isAttachedToWindow()) return;
+        android.graphics.Rect visible = new android.graphics.Rect();
+        if (!card.getGlobalVisibleRect(visible)) return;
+        int[] point = new int[2]; card.getLocationOnScreen(point);
+        if (!visible.contains(point[0] + card.getWidth() / 2, point[1] + card.getHeight() / 2)) return;
+        pendingHomeworkFocus = 0;
+        GradientDrawable focus = new GradientDrawable();
+        int primary = UiStyle.colors(this).primary;
+        focus.setColor(Color.argb(36, Color.red(primary), Color.green(primary), Color.blue(primary)));
+        focus.setStroke(dp(2), primary); focus.setCornerRadius(dp(Math.round(UiStyle.radius(this, UiStyle.RADIUS_CARD))));
+        android.graphics.drawable.Drawable previous = card.getForeground();
+        card.setForeground(focus);
+        if (android.os.Build.VERSION.SDK_INT >= 30) card.setStateDescription("新作业");
+        if (UiMotion.isEnabled()) {
+            android.animation.ValueAnimator fade = android.animation.ValueAnimator.ofInt(255, 0);
+            fade.setStartDelay(UiMotion.ENTER); fade.setDuration(HOMEWORK_FOCUS_DURATION);
+            fade.addUpdateListener(animation -> focus.setAlpha((int) animation.getAnimatedValue()));
+            fade.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    if (card.getForeground() == focus) { card.setForeground(previous); if (android.os.Build.VERSION.SDK_INT >= 30) card.setStateDescription(null); }
+                }
+            });
+            fade.start();
+        } else card.postDelayed(() -> { if (card.getForeground() == focus) { card.setForeground(previous); if (android.os.Build.VERSION.SDK_INT >= 30) card.setStateDescription(null); } }, HOMEWORK_FOCUS_DURATION);
+        startupReader.execute(() -> {
+            ZjuHomeworkStore store = new ZjuHomeworkStore(getApplicationContext());
+            store.markSeen(shown); long next = store.newestUnread();
+            refresh.post(() -> { if (!isDestroyed()) updateHomeworkAttention(next); });
+        });
     }
 
     private void showUpcomingCarousel(List<HomeTimelineEntry> upcoming) {
@@ -2070,6 +2185,10 @@ public final class DashboardActivity extends Activity {
 
     private void renderScheduleResults(TaskStore store) {
         results.removeAllViews();
+        if (!homeworkFocusFilter.equals(completionFilterKey())) {
+            homeworkFocusTop = homeworkFocusBottom = 0; homeworkFocusFilter = "";
+        }
+        results.setPadding(0, homeworkFocusTop, 0, homeworkFocusBottom);
         addScheduleFilterSummary();
         if (scheduleSource == 1) {
             renderSystemSchedule(store);
@@ -2108,7 +2227,7 @@ public final class DashboardActivity extends Activity {
                 candidateRow(results, item, index);
             });
         }
-        enqueueScheduleResult(() -> schedulePageControls(total));
+        enqueueScheduleResult(() -> { schedulePageControls(total); queueHomeworkFocus(); });
     }
 
     private LocalDate[] scheduleWindow(boolean system) {
@@ -2485,13 +2604,14 @@ public final class DashboardActivity extends Activity {
                 inboxCategory(), inboxQuery);
         boolean oldest = scheduleOldestFirst, system = scheduleSource == 1;
         int requestedPage = schedulePage;
+        long focusCandidate = pendingHomeworkFocus;
         scheduleResultLoading = true;
         dirtySections.add(SCHEDULE);
         startupReader.execute(() -> {
             DashboardSectionData data;
             try {
                 data = DashboardSectionData.load(getApplicationContext(), SCHEDULE,
-                        inbox, query, oldest, requestedPage, system);
+                        inbox, query, oldest, requestedPage, system, focusCandidate);
             } catch (RuntimeException failure) {
                 refresh.post(() -> {
                     if (!scheduleResultCurrent(token, target)) return;
@@ -2885,7 +3005,7 @@ public final class DashboardActivity extends Activity {
             DashboardSectionData data;
             try {
                 data = DashboardSectionData.load(getApplicationContext(), destination, inbox,
-                        query, oldest, page, system);
+                        query, oldest, page, system, 0);
             } catch (RuntimeException failure) {
                 refresh.post(() -> {
                     completionRefreshRunning = false;
@@ -3658,10 +3778,11 @@ public final class DashboardActivity extends Activity {
         ScheduleQuery schedule = buildScheduleQuery(System.currentTimeMillis(), ZoneId.systemDefault());
         boolean oldest = destination == INBOX ? inboxOldestFirst : scheduleOldestFirst;
         int page = destination == INBOX ? inboxPage : schedulePage;
+        long focusCandidate = destination == SCHEDULE ? pendingHomeworkFocus : 0;
         boolean system = scheduleSource == 1;
         startupReader.execute(() -> {
             DashboardSectionData data;
-            try { data = DashboardSectionData.load(getApplicationContext(), destination, inbox, schedule, oldest, page, system); }
+            try { data = DashboardSectionData.load(getApplicationContext(), destination, inbox, schedule, oldest, page, system, focusCandidate); }
             catch (RuntimeException failure) {
                 refresh.post(() -> {
                     if (token != sectionLoadGeneration || isDestroyed()) return;

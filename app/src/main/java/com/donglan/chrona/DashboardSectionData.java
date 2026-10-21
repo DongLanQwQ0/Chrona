@@ -13,7 +13,7 @@ final class DashboardSectionData {
     List<TaskRecord> tasks = java.util.Collections.emptyList();
     List<EventCandidate> candidates = java.util.Collections.emptyList();
     static DashboardSectionData load(Context context, int destination, InboxQuery inbox,
-            ScheduleQuery schedule, boolean oldestFirst, int requestedPage, boolean system) {
+            ScheduleQuery schedule, boolean oldestFirst, int requestedPage, boolean system, long focusCandidate) {
         DashboardSectionData data = new DashboardSectionData();
         try (TaskStore store = new TaskStore(context)) {
             android.database.sqlite.SQLiteDatabase db = store.getReadableDatabase();
@@ -33,6 +33,10 @@ final class DashboardSectionData {
                     } else if (system) data.linked = store.linkedCalendarIds();
                     else {
                         data.ids = store.queryScheduleIds(schedule);
+                        if (focusCandidate > 0) {
+                            int page = store.schedulePageForCandidate(schedule, oldestFirst, focusCandidate);
+                            if (page >= 0) requestedPage = page;
+                        }
                         data.page = Math.max(0, Math.min(requestedPage, (Math.max(1, data.ids.size()) - 1) / ScheduleQuery.PAGE_SIZE));
                         data.candidates = store.querySchedulePage(schedule, oldestFirst, data.page);
                     }

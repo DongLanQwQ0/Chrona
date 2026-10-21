@@ -34,6 +34,7 @@ public final class ChronaApp extends Application {
 
     @Override public void onCreate() {
         super.onCreate();
+        HomeworkNotice.observeScreen(this);
         SyncJobService.schedule(this);
         ClassroomCleanupService.schedule(this);
         ClassroomCleanupService.foreground(this);
