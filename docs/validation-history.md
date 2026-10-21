@@ -8,6 +8,8 @@
 - 初轮夹具误读隐藏周表、空contentDescription，以及重复ActivityMonitor返回旧Activity；修正可见范围、空值处理与每次启动前独立monitor后通过，未为这些夹具问题修改产品。合成目录和所建课堂在测试后恢复／删除，不写入手机账号或日历。
 - 197／0.15.35正式debug／release、androidTest与双lint通过，`build/release-01535-formal.log`；quick7/7通过。候选 `build/candidates/0.15.35/Chrona-0.15.35.apk` 为3087526字节，官方包名、197版本、关闭调试及debug／release原签名通过，`build/release-01535-{candidate.json,signing.log,debug-signing.log,badging.log}`。专门只读UI审核及非零滚动补充复审均通过，无剩余缺陷或验收缺口。派发工具不支持角色参数，按只读check职责约束，未覆盖或声称固定角色模型；未安装实体手机。
 
+- 源码 `a17b88d` 与标签 `v0.15.35` 已推送；GitHub安装包上传失败（policy request），随后页面超时，Release尚未完成。公开包与正式196→197非空覆盖升级尚未验收；前置备份 `.local-backups/release-01535-20261021/upgrade-before.zip` 已保存，正式模拟器及实体手机未被覆盖。网络恢复后继续发布同一候选。
+
 ## 0.15.34 — 重复系列残留清理 — 2026-10-20
 
 - 用户发现三个 `重复验收 <时间戳>` 系列未清干净，并明确允许删除这三个系列的全部实例。真实手机Provider确认9条例外仍引用已缺失的三个主ID；按已确认标题、所属日历、主ID和实际行ID联合限制删除。全量433→424条，剩余424条完整行逐项一致，三个标题及原主ID／例外查询均为空。私有原始快照和修改前副本仅保存在 `.local-backups/calendar-fixture-cleanup-20261020/`。
@@ -18,7 +20,7 @@
 - 源码 `d3c0dc5` 与不可变标签 `v0.15.34` 已推送，正式[Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.34) 为Latest。公开API非Draft／非Pre-release，下载资产3085598字节；公开APK实际196／0.15.34、不可调试和原签名通过。分发包 `build/distributions/0.15.34/Chrona-0.15.34.apk`，证据 `build/release-0.15.34-{public.json,public-apk.log,public-signing.log,published.png}`。CLI直连GitHub连接重置／超时后，沿现有系统代理作本次命令路由完成推送，未改全局Git／代理配置。
 - 正式模拟器195实际显示发现0.15.34；公开196覆盖成功后显示已是最新。覆盖前后完整备份比较15张表结构与全部行、1条收件／1个候选、设置、课堂文档／图片字节一致，仅导出时间变化；日志 `build/release-0.15.34-{old-update,current-update,upgrade-preservation}.log`，副本 `.local-backups/release-01534-20261020/`。实体手机未覆盖新版，现有LAN未被重启。
 
-当前源码版本为 **0.15.34 / 196**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前源码版本为 **0.15.35 / 197**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)
