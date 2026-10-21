@@ -10,7 +10,17 @@
 3. 使用现有 Android SDK 的 `apksigner verify --verbose --print-certs` 分别检查新 debug、release 和可取得的上一版 APK。证书 SHA-256 均须为 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`。正式产物为 `app/build/outputs/apk/release/app-release.apk`。使用 SDK 的 `apkanalyzer manifest debuggable` 检查 release 必须输出 `false`；或使用 `aapt dump badging` 确认无 `application-debuggable`，并核对包名、versionCode 与 versionName。只查看 Gradle 配置不算 APK 验证。
 4. 将审核后的源码提交推送到上述仓库，为对应构建源码创建 `v0.13.71` 形式的标签。首次仓库不能为空，需要先推送源码再发布。
 5. 在 GitHub Releases 创建正式 Release，填写更新说明、上传 `Chrona-0.13.71.apk`。不要勾选 Draft 或 Pre-release；正式发布后设为 Latest。
-6. 核对发布页、APK 下载、应用手动检查与旧版本覆盖安装，按 [设备验收清单](device-acceptance.md) 记录旧版到新版的数据保留结果。未进行或失败的设备验证应在更新说明里明确写出；构建成功不能代替覆盖升级验收。
+6. 核对发布页、APK 下载、应用手动检查与旧版本覆盖安装，按 [设备验收清单](device-acceptance.md) 记录旧版到新版的数据保留结果。未进行或失败的检查及其影响写入验证记录和HANDOFF；影响用户安装、数据安全或功能使用的已知限制，同时写入更新说明的相关条目。构建成功不能代替覆盖升级验收。
+
+## 更新说明面向使用者
+
+GitHub Release正文采用CHANGELOG对应版本的用户可读内容；技术验证留在验证记录，不另建重复文案源。
+
+- 只写用户能感知的变化、修复的问题，以及升级后需要采取的操作，按重要性排序。
+- 用具体行为描述变化，避免内部实现术语；不堆测试数量、HTTP请求、构建流程、lint结果和内部版本编号。
+- 使用条件、升级注意事项及影响使用的已知限制紧挨对应功能说明。例如：已有总结保留，重新生成后应用新规则。
+- 只写当前候选实际交付的内容，不把请求或代码检查通过写成实际效果已验证。开发交付中区分已实现、已构建、已验证与已发布；草稿或上传失败不能称为已发布。
+- 发布前通读标题与正文：读者应能快速回答“改了什么、对我有什么影响、我需要做什么”；删除无助于这三个问题的验收流水账。
 
 ## 统一离线检查
 
