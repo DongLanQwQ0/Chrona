@@ -40,6 +40,7 @@ import java.util.concurrent.TimeUnit;
 /** Device measurements; only the explicit atomic fixture phase creates and removes its own test task. No server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("notification_layers".equals(arguments.getString("phase"))) return NotificationLayersDeviceCheck.run(test, arguments);
         if ("workspace_initial_state".equals(arguments.getString("phase"))) return WorkspaceInitialStateDeviceCheck.run(test, arguments);
         if ("classroom_history".equals(arguments.getString("phase"))) return ClassroomHistoryDeviceCheck.run(test, arguments);
         if ("lan_approval".equals(arguments.getString("phase"))) return LanApprovalDeviceCheck.run(test, arguments);

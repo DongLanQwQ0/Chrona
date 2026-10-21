@@ -294,12 +294,13 @@ final class DockNavigationLayout extends FrameLayout {
         long now = android.os.SystemClock.uptimeMillis();
         long elapsed = Math.max(0L, Math.min(64L, now - followFrameTime));
         followFrameTime = now;
-        boolean moving = spring.step(elapsed / 1000f); applySpring();
+        boolean moving = spring.step(elapsed / 1000f);
         if (coastSelection && !spring.coasting) commitCoast();
         if (moving && !followPosted) {
             followPosted = true;
             postOnAnimation(followFinger);
         }
+        applySpring();
     }
     private void commitCoast() {
         coastSelection = false;
@@ -309,6 +310,7 @@ final class DockNavigationLayout extends FrameLayout {
         post(finishTouch);
     }
     private void applySpring() {
+        InteractionLayers.setPressed(this, tracking || followPosted || coastSelection ? 1f : 0f);
         float scaleX = fullWidthMotion ? 1f : spring.bar;
         float along = fullWidthMotion ? 0f : spring.lean * dp(PLATE_LEAN_DP);
         float across = spring.crossLean * dp(CROSS_LEAN_DP);

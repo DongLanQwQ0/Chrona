@@ -71,6 +71,7 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
             navigation.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
         dockHost = navigation.motionHost();
+        InteractionLayers.pin(dockHost);
         FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         dockParams.setMargins(dp(20), 0, dp(20), dp(4));
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));

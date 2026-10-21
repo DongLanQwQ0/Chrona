@@ -543,10 +543,11 @@ public final class ProcessingJobService extends JobService {
         Intent intent = new Intent(this, TaskDetailActivity.class).putExtra("task_id", taskId);
         PendingIntent pending = PendingIntent.getActivity(this, (int) taskId, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        String body = details.length() == 0 ? text : details.toString().trim();
         Notification notification = notificationBuilder(CHANNEL_ID)
                 .setContentTitle(text)
-                .setContentText(text)
-                .setStyle(new Notification.BigTextStyle().setBigContentTitle(text).bigText(details.length() == 0 ? text : details.toString().trim()))
+                .setContentText(body)
+                .setStyle(new Notification.BigTextStyle().setBigContentTitle(text).bigText(body))
                 .setCategory(Notification.CATEGORY_REMINDER)
                 .setAutoCancel(true)
                 .setContentIntent(pending)

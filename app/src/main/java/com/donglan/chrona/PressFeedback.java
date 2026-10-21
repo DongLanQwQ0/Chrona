@@ -57,8 +57,8 @@ final class PressFeedback {
         if (previous != null && previous == pressedScale) { allowOverflow(view); return; }
         StateListAnimator states = new StateListAnimator();
         states.addState(new int[]{android.R.attr.state_enabled, android.R.attr.state_pressed},
-                scale(view, pressedScale, UiMotion.PRESS));
-        states.addState(new int[]{}, scale(view, 1f, UiMotion.RELEASE));
+                scale(view, pressedScale, UiMotion.PRESS, true));
+        states.addState(new int[]{}, scale(view, 1f, UiMotion.RELEASE, false));
         view.setStateListAnimator(states);
         installed.put(view, pressedScale);
         allowOverflow(view);
@@ -89,10 +89,11 @@ final class PressFeedback {
         }
     }
 
-    private static AnimatorSet scale(View view, float value, long duration) {
+    private static AnimatorSet scale(View view, float value, long duration, boolean pressed) {
         AnimatorSet pair = new AnimatorSet();
         pair.playTogether(ObjectAnimator.ofFloat(view, View.SCALE_X, value),
-                ObjectAnimator.ofFloat(view, View.SCALE_Y, value));
+                ObjectAnimator.ofFloat(view, View.SCALE_Y, value),
+                ObjectAnimator.ofFloat(view, InteractionLayers.PRESSED, pressed ? 1f : 0f));
         pair.setDuration(UiMotion.isEnabled() ? duration : 0);
         pair.setInterpolator(UiMotion.SETTLE);
         return pair;
@@ -114,13 +115,19 @@ final class PressFeedback {
         scan(root);
         // Layout changes cover dynamic results and newly opened dialog controls. Animating
         // scale does not request layout, so this never scans the tree on each motion frame.
-        ViewTreeObserver.OnGlobalLayoutListener listener = () -> scan(root);
+        ViewTreeObserver.OnGlobalLayoutListener listener = () -> { scan(root); InteractionLayers.refresh(); };
+        ViewTreeObserver.OnGlobalFocusChangeListener focus = InteractionLayers::focus;
         root.getViewTreeObserver().addOnGlobalLayoutListener(listener);
+        root.getViewTreeObserver().addOnGlobalFocusChangeListener(focus);
+        InteractionLayers.focus(null, root.findFocus());
         root.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View view) { }
             @Override public void onViewDetachedFromWindow(View view) {
-                if (view.getViewTreeObserver().isAlive())
+                InteractionLayers.focus(view.findFocus(), null);
+                if (view.getViewTreeObserver().isAlive()) {
                     view.getViewTreeObserver().removeOnGlobalLayoutListener(listener);
+                    view.getViewTreeObserver().removeOnGlobalFocusChangeListener(focus);
+                }
                 roots.remove(view);
                 view.removeOnAttachStateChangeListener(this);
             }

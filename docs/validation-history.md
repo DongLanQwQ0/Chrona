@@ -1,5 +1,14 @@
 # 验证记录
 
+## 0.15.37 — 通知详情与交互绘制层级 — 2026-10-21
+
+- 处理结果通知将实际保存的事项详情同时用于 ContentText 与 BigText，保留权限检查、点击入口和查看操作；不改自动确认／日历写入策略。
+- 新公共 InteractionLayers 按事件提升按压与焦点分支的 translationZ，不更改父容器子项顺序、静态尺寸或 Dock 弹簧参数。固定主页、宽屏及工作区导航分支优先。释放回落结束、失焦及脱离恢复原值；修正 Android 脱离回调期间 isAttachedToWindow 仍为真的时序。
+- `NotificationLayersDeviceCheck` 仅允许独立 v33 官方模拟器，使用合成任务及已保存候选，不调用 AI、不写真实日历。通过真实服务通知入口与 NotificationManager 验证正文／展开内容、时间地点提醒备注及详情 PendingIntent；实际 SystemUI 展开和折叠截图。收件箱首尾长按、取消、拖出、键盘焦点、邻居分支 Z 与固定 Dock，附 30 次非累积、双状态、非零基线恢复及脱离检查。浅色 1080×1920 density411 font1 为原 Dock，137 条通过；深色 1080×2160 density480 font1.45 为原紧凑适配，136 条通过。日志 `build/notification-layers-device-{light,dark}.log`，9 张实际截图 `build/notification-layers-evidence/`。系统折叠高度仅容纳摘要，展开直接显示全部本通知内容。
+- Dock 离线 180 条、公共 UI 63 条通过；前者仅替身逻辑检查，不代替上述真实触摸。初次原生层测试发现脱离 pin 未恢复 Z，已修复并双主题复验；通知 UI 查询改用实际可访问树遍历定位系统展开控件，未改产品语义。
+- 独立 UI 初审发现以 scale 阈值恢复层级会早于惯性／尾部结束；改用实际 tracking、followPosted、coastSelection 状态，在安排下一帧后更新层级。新增真实末项双向甩出与每个 preDraw 断言，覆盖 scale<1.001 但仍运动的后段，最终恢复；浅色最终 138 条，新增 `inbox-late-inertia-light.png`。深色紧凑分支 136 条、关闭系统动画 136 条通过；关闭动画日志 `build/notification-layers-device-reduced.log`。专门只读 UI 复审通过，无剩余缺陷。
+- 正式199／0.15.37双构建与双lint通过（`build/release-01537-formal.log`），quick7/7通过。正式候选 `build/candidates/0.15.37/Chrona-0.15.37.apk` 为3089194字节，比.36增加1784字节。原签名、官方包名／版本、release不可调试通过，`build/release-01537-{signing,debug-signing,badging}.log`。不更改工具链／混淆策略，不覆盖手机或正式模拟器包。修改前副本 `.local-backups/notification-and-interaction-layer-20261021/`；发布状态见当前 HANDOFF。不恢复此前叫停的发布后额外核对。
+
 ## 0.15.36 — 课表首帧高光与课堂加载布局 — 2026-10-21
 
 - 课表首次render前先解析来源，避免null来源先显示导入、随后切到浙大的虚假高光动画；保留导入深链、学校停用默认来源及真实手动切换动画。课堂本地读取与远端刷新不再插入临时加载文字，使用原位刷新／取消图标；失败与取消消息路径保留。

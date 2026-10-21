@@ -10,6 +10,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build/dock-navigation-check"
 STUBS = {
+    "com/donglan/chrona/InteractionLayers.java": "package com.donglan.chrona;final class InteractionLayers {static void setPressed(android.view.View view,float amount){}}",
     "android/view/Gravity.java": "package android.view;public class Gravity {public static final int CENTER=1,TOP=2,END=4;}",
     "android/content/Context.java": """package android.content;
 public class Context { public android.content.res.Resources getResources(){return new android.content.res.Resources();} }""",

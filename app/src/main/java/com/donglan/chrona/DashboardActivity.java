@@ -1057,6 +1057,7 @@ public final class DashboardActivity extends Activity {
         FrameLayout mobileBottomArea = null;
         if (wide) {
             FrameLayout rail = new FrameLayout(this); rail.setClipChildren(false); rail.setClipToPadding(false);
+            InteractionLayers.pin(rail);
             FrameLayout.LayoutParams railDock = new FrameLayout.LayoutParams(dp(78), dp(290), Gravity.CENTER);
             rail.addView(navigation, railDock);
             shell.addView(rail, new LinearLayout.LayoutParams(dp(110), -1));
@@ -1070,6 +1071,7 @@ public final class DashboardActivity extends Activity {
                 }
             };
             mobileBottomArea.setClipChildren(false);
+            InteractionLayers.pin(mobileBottomArea);
             mobileBottomArea.setClipToPadding(false);
             navigation.setElevation(dp(8));
             FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(-1,
