@@ -8,7 +8,7 @@
 - 初轮夹具误读隐藏周表、空contentDescription，以及重复ActivityMonitor返回旧Activity；修正可见范围、空值处理与每次启动前独立monitor后通过，未为这些夹具问题修改产品。合成目录和所建课堂在测试后恢复／删除，不写入手机账号或日历。
 - 197／0.15.35正式debug／release、androidTest与双lint通过，`build/release-01535-formal.log`；quick7/7通过。候选 `build/candidates/0.15.35/Chrona-0.15.35.apk` 为3087526字节，官方包名、197版本、关闭调试及debug／release原签名通过，`build/release-01535-{candidate.json,signing.log,debug-signing.log,badging.log}`。专门只读UI审核及非零滚动补充复审均通过，无剩余缺陷或验收缺口。派发工具不支持角色参数，按只读check职责约束，未覆盖或声称固定角色模型；未安装实体手机。
 
-- 源码 `a17b88d` 与标签 `v0.15.35` 已推送；GitHub安装包上传失败（policy request），随后页面超时，Release尚未完成。公开包与正式196→197非空覆盖升级尚未验收；前置备份 `.local-backups/release-01535-20261021/upgrade-before.zip` 已保存，正式模拟器及实体手机未被覆盖。网络恢复后继续发布同一候选。
+- 源码 `a17b88d` 与标签 `v0.15.35` 已推送；首次GitHub上传失败并超时，后续成功上传同一候选并正式发布为[Latest](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.35)，实际页面显示APK资产及修订后的用户版更新说明；截图 `build/release-0.15.35-published.png`。用户明确要求直接发布并停止追加核对，因此未追加公开下载复验、应用内检查与正式196→197非空覆盖升级测试。前置备份 `.local-backups/release-01535-20261021/upgrade-before.zip` 已保存，正式模拟器及实体手机未被覆盖。
 
 ## 0.15.34 — 重复系列残留清理 — 2026-10-20
 
