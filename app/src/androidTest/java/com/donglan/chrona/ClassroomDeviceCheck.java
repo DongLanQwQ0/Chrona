@@ -239,7 +239,7 @@ final class ClassroomDeviceCheck {
         screenshot(test,context,"classroom-list-"+args.getString("theme","light"));
         View more=findDescription(activity.getWindow().getDecorView(),"下一页");
         test.runOnMainSync(more::performClick);test.waitForIdleSync();
-        list=(LinearLayout)field(activity,"listBody");require(list.getChildCount()==22,"second page replaces first page");
+        list=(LinearLayout)field(activity,"listBody");require(list.getChildCount()==21,"second page excludes the summarized classroom now in history");
         View previous=findDescription(activity.getWindow().getDecorView(),"上一页");test.runOnMainSync(previous::performClick);test.waitForIdleSync();
         require(((LinearLayout)field(activity,"listBody")).getChildCount()==50,"previous page returns to first fifty lessons");
         test.runOnMainSync(()->rootScroll(activity).scrollTo(0,0));test.waitForIdleSync();

@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.35 — 课堂下载历史与学生重要事项 — 2026-10-21
+
+- 完整素材下载后按课程／课堂身份归入历史并从课堂列表排除；下载中断不归档，草稿／完成总结优先并去重，保留共享历史与账号隔离。新下载完成时将课堂身份与完成时间一同原子写入候选素材清单，已有下载按当前保存目录索引。历史不受远端回放状态变化阻止，仍执行学校账号门禁；缓存先呈现，远端刷新失败不遮住本地内容。
+- 用户确认两轮共用提示词加入全部十类学生重要事项，前八类优先，区分明确要求、参考建议与暗示；仅明确行动安排进入原有提取流程。流水线版本8使新请求采用新规则，已有总结保留。真实Java／循环HTTP166项通过，覆盖完整／中断素材、实际prepare保存身份、目录移除后历史可达、去重／账号隔离，以及实际两轮请求完整十类、优先级和不确定性要求；`build/classroom-history-and-attention-check.log`。未调用真实付费AI，不以请求断言代替模型输出质量判断。
+- 正式原生隔离包197两组各17项通过：浅色1080×1920／density411／字体1；深色1080×2160／density480／字体1.45（360dp）。覆盖课堂排除、历史状态、远端未就绪但缓存可打开、真实触摸与返回、过滤后50＋4分页、非零滚动位置本地刷新与详情返回保留、未变条目及选择栏实例。后台完成后真实等待定时刷新，浅色29982ms／深色30072ms进入历史。日志 `build/classroom-history-native-{light,dark}.log`，八张本轮图 `build/classroom-history-evidence/files/classroom-{list,history,downloaded-detail,history-refreshed}-{light,dark}.png`。
+- 初轮夹具误读隐藏周表、空contentDescription，以及重复ActivityMonitor返回旧Activity；修正可见范围、空值处理与每次启动前独立monitor后通过，未为这些夹具问题修改产品。合成目录和所建课堂在测试后恢复／删除，不写入手机账号或日历。
+- 197／0.15.35正式debug／release、androidTest与双lint通过，`build/release-01535-formal.log`；quick7/7通过。候选 `build/candidates/0.15.35/Chrona-0.15.35.apk` 为3087526字节，官方包名、197版本、关闭调试及debug／release原签名通过，`build/release-01535-{candidate.json,signing.log,debug-signing.log,badging.log}`。专门只读UI审核及非零滚动补充复审均通过，无剩余缺陷或验收缺口。派发工具不支持角色参数，按只读check职责约束，未覆盖或声称固定角色模型；未安装实体手机。
+
 ## 0.15.34 — 重复系列残留清理 — 2026-10-20
 
 - 用户发现三个 `重复验收 <时间戳>` 系列未清干净，并明确允许删除这三个系列的全部实例。真实手机Provider确认9条例外仍引用已缺失的三个主ID；按已确认标题、所属日历、主ID和实际行ID联合限制删除。全量433→424条，剩余424条完整行逐项一致，三个标题及原主ID／例外查询均为空。私有原始快照和修改前副本仅保存在 `.local-backups/calendar-fixture-cleanup-20261020/`。

@@ -168,6 +168,11 @@ public final class ClassroomSummaryCheck {
         check(context.getString("first_system").equals(firstMessages.getJSONObject(0).getString("content"))&&context.getString("first_prompt").equals(firstPrompt),"second round contains exact full first system and prompt");
         check(context.getString("first_system").contains("保留英文术语"),"classroom custom prompt reaches both rounds");
         check(context.getString("first_system").contains("数学符号与记法偏好中国大陆教材的常用风格。"),"general Chinese mathematical notation style reaches both rounds");
+        for(String topic:List.of("评分规则","考试与测试安排","考核范围与题型","重点与透题线索","作业、实验与报告",
+                "截止与补救机会","出勤与课堂表现","规则变更与纠错","复习与学习资源","其他重要提醒"))
+            check(context.getString("first_system").contains(topic),"both real requests retain student concern: "+topic);
+        check(context.getString("first_system").contains("优先突出前八类")&&context.getString("first_system").contains("区分明确要求、参考建议与含糊暗示")
+                &&context.getString("first_system").contains("不补猜时间、比例、范围或承诺"),"priority and uncertainty are explicit");
         check(requests.get(2).getJSONArray("messages").getJSONObject(0).getString("content").equals(context.getString("first_system")),"final image round retains the same Chinese math style instructions");
         check(!ClassroomSummary.configKey(AI,20,"other").equals(ClassroomSummary.configKey(AI,20,"保留英文术语")),"custom prompt changes invalidate the previous run");
         check(context.getString("first_output").equals(checkpoint.getString("first_output")),"second round contains exact raw first response");
@@ -219,7 +224,7 @@ public final class ClassroomSummaryCheck {
                 &&requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==41,"HTTP requests send zero then exactly forty images");
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
-        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n7\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
+        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n8\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
     }
     private static void textOnlyAndInvalidRetry()throws Exception {
         reset();File dir=materialDir("text-only-"+System.nanoTime());
@@ -292,8 +297,34 @@ public final class ClassroomSummaryCheck {
         reset();try(RequestControl c=new RequestControl(5000)){c.cancel();rejects(()->new ChatCompletionClient(AI,c).complete("s","p",List.of()),"cancelled completion rejected before transport");check(calls==0,"cancel sends no request");}
         reset();mode="slow";try(RequestControl c=new RequestControl(80)){rejects(()->new ChatCompletionClient(AI,c).complete("s","p",List.of()),"deadline interrupts loopback network request");}Thread.sleep(550);reset();
     }
+    private static void downloadedHistory()throws Exception {
+        File home=new File(root,"history-"+System.nanoTime());android.content.Context context=new android.content.Context(home);
+        ClassroomStore store=new ClassroomStore(context,"account-one");store.catalog(List.of(LESSON));
+        File dir=store.lesson(LESSON);
+        ClassroomStore.write(new File(dir,"materials.json"),new JSONObject().put("segments",new JSONArray().put(segment(0,"字幕"))));
+        check(store.history().isEmpty(),"partial source download is not archived");
+        ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject().put("images",new JSONArray()));
+        List<JSONObject> rows=store.history();
+        check(rows.size()==1&&rows.get(0).getBoolean("downloaded")&&!rows.get(0).optBoolean("complete"),"complete download enters history before AI");
+        check(rows.get(0).getJSONObject("lesson").getString("id").equals(LESSON.id),"existing cached download resolved from saved catalogue");
+        ClassroomStore.write(new File(dir,"materials.json"),new JSONObject().put("segments",new JSONArray().put(segment(0,"字幕")))
+                .put("images",new JSONArray()).put("raw_images",0));
+        new android.util.AtomicFile(new File(dir,"candidates.json")).delete();
+        try(RequestControl control=new RequestControl(5000)){ClassroomSummary.prepare(dir,LESSON,new ClassroomClient(),control,p->{});}
+        check(ClassroomStore.read(new File(dir,"candidates.json")).getJSONObject("lesson").getString("id").equals(LESSON.id),"actual successful preparation persists download identity");
+        store.catalog(List.of());check(store.history().size()==1,"download metadata survives removal from remote catalogue");
+        check(new ClassroomStore(context,"account-two").history().isEmpty(),"download history remains account isolated");
+        JSONObject draft=new JSONObject().put("lesson",LESSON.json()).put("updated",124).put("complete",false);
+        ClassroomStore.write(new File(dir,"summary.json"),draft);
+        check(store.history().size()==1&&!store.history().get(0).optBoolean("downloaded"),"draft replaces download entry without duplicates");
+        draft.put("complete",true);ClassroomStore.write(new File(dir,"summary.json"),draft);
+        check(store.history().size()==1&&store.history().get(0).getBoolean("complete"),"finished summary replaces draft in history");
+        File shared=new File(ClassroomStore.root(context),"shared/1-2");shared.mkdirs();ClassroomStore.write(new File(shared,"summary.json"),draft);
+        check(store.history().size()==1,"shared and account summary deduplicate by course and lesson");
+    }
     public static void main(String[] args)throws Exception {
         root=new File(args[0]);root.mkdirs();HttpServer server=server();try {
+            test("downloaded classroom history",ClassroomSummaryCheck::downloadedHistory);
             test("subtitle compression",ClassroomSummaryCheck::subtitleCompression);
             test("inline images, portable document and safe retention",ClassroomSummaryCheck::retention);
             test("HTTP forty-image cap and final validation retry",ClassroomSummaryCheck::capAndFinalValidation);

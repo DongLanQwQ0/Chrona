@@ -46,8 +46,24 @@ public final class ClassroomStore {
     public long catalogUpdatedAt() { return new File(root,"catalog.json").lastModified(); }
     public List<JSONObject> history() throws IOException {
         java.util.Map<String,JSONObject> byLesson=new java.util.LinkedHashMap<>();
+        java.util.Map<String,ClassroomLesson> known=new java.util.HashMap<>();
+        for(ClassroomLesson lesson:catalog())known.put(lesson.courseId+"-"+lesson.id,lesson);
         for(File source:new File[]{shared,root}){File[] dirs=source.listFiles(File::isDirectory);
-            if(dirs!=null)for(File dir:dirs){JSONObject value=read(new File(dir,"summary.json"));if(value!=null)byLesson.put(dir.getName(),value);}}
+            if(dirs!=null)for(File dir:dirs){
+                JSONObject value=read(new File(dir,"summary.json"));
+                if(value!=null){byLesson.put(dir.getName(),value);continue;}
+                if(source.equals(shared)||byLesson.containsKey(dir.getName()))continue;
+                JSONObject materials=read(new File(dir,"materials.json")), candidates=read(new File(dir,"candidates.json"));
+                if(materials==null||materials.optJSONArray("segments")==null||materials.optJSONArray("segments").length()==0
+                        ||candidates==null||candidates.optJSONArray("images")==null)continue;
+                JSONObject lesson=candidates.optJSONObject("lesson");
+                if(lesson==null&&known.containsKey(dir.getName()))try{lesson=known.get(dir.getName()).json();}
+                    catch(org.json.JSONException invalid){throw new IOException("课堂记录无法读取",invalid);}
+                if(lesson==null)continue;
+                try{byLesson.put(dir.getName(),new JSONObject().put("lesson",lesson).put("downloaded",true)
+                        .put("updated",candidates.optLong("updated",new File(dir,"candidates.json").lastModified())));}
+                catch(org.json.JSONException invalid){throw new IOException("课堂记录无法读取",invalid);}
+            }}
         List<JSONObject> entries=new ArrayList<>(byLesson.values());
         entries.sort((a,b)->Long.compare(b.optLong("updated"),a.optLong("updated")));return entries;
     }
