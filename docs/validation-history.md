@@ -7,6 +7,7 @@
 - 独立v33模拟器198两主题各29项通过：学校两次新打开、导入深链及学校停用的创建后／首个preDraw精确高光位置；真实来源触摸的中间动画、归位和同实例；单次特殊安排首帧与窗口焦点；阻塞实际worker的CACHE／REFRESH加载、无临时状态行、日期栏顶部起止不变、真实取消及错误反馈。浅1080×1920／density411／字体1，深1080×2160／density480／字体1.45（360dp）；日期栏顶部309／355px保持不变。`build/workspace-first-frame-{light,dark}.log`；八张最终实际画面 `build/workspace-first-frame-evidence/{timetable-initial,timetable-special-only,classroom-loading-cache,classroom-loading-refresh}-{light,dark}.png`。专门只读UI复审通过，无剩余缺陷或关键证据缺口。
 - 初轮夹具误用Activity.onCreate中的生命周期回调、过早触摸与空闲等待；已改用postCreated／首个preDraw／窗口焦点、真实条件等待与异步点击结果等待。未通过改产品门禁规避输入限制。布局期真实等待问题和特殊安排问题在产品修正，未以夹具绕过。首轮lint的连续单行if缩进误报用等价花括号修复。
 - 正式198／0.15.36双构建、androidTest与双lint通过（`build/release-01536-formal.log`），quick7/7通过。候选 `build/candidates/0.15.36/Chrona-0.15.36.apk` 为3087410字节，官方包名、版本、不可调试与原签名通过；`build/release-01536-{signing,badging}.log`。R8试验未混入本版。修改前副本 `.local-backups/workspace-first-frame-20261021/`，未覆盖实体手机或正式模拟器。
+- 源码 `713db77` 与不可变标签 `v0.15.36` 已推送，正式[Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.36) 已发布为Latest，页面显示同版APK与简洁用户说明；`build/release-0.15.36-published.png`。按用户此前叫停要求，未追加公开下载复验、应用内更新或覆盖升级核对。用户新提出的自动确认通知详情及收件箱聚焦层级／固定Dock顶层要求，明确留到下一版，本版未实现。
 
 ## 代码裁剪体积试验（未接入正式构建）— 2026-10-21
 
