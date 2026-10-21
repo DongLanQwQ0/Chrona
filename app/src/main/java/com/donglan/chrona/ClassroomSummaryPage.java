@@ -102,7 +102,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             if (busy || !allowed()) return;
             boolean remote = kind == Load.REFRESH || kind == Load.AUTOMATIC;
             if (remote || nextRemoteAt == 0) nextRemoteAt = android.os.SystemClock.elapsedRealtime() + CATALOG_REFRESH_MILLIS;
-            busy = true; cancelled = false; message = kind == Load.AUTOMATIC || kind == Load.LOCAL ? "" : remote ? "正在获取课堂列表" : "正在读取课堂记录"; publish();
+            busy = true; cancelled = false; message = ""; publish();
             worker.execute(() -> {
                 try {
                     ClassroomStore store = new ClassroomStore(app, account);

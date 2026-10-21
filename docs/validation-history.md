@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.36 — 课表首帧高光与课堂加载布局 — 2026-10-21
+
+- 课表首次render前先解析来源，避免null来源先显示导入、随后切到浙大的虚假高光动画；保留导入深链、学校停用默认来源及真实手动切换动画。课堂本地读取与远端刷新不再插入临时加载文字，使用原位刷新／取消图标；失败与取消消息路径保留。
+- 实际原生启动还发现布局期重建网格后，滚动恢复的preDraw等待只重绘而不安排新布局，可能阻止首帧。现安排body重新布局，并只恢复／等待实际挂载的横向视口；独立UI初审指出的仅特殊安排分支未挂载控件等待P2已关闭。
+- 独立v33模拟器198两主题各29项通过：学校两次新打开、导入深链及学校停用的创建后／首个preDraw精确高光位置；真实来源触摸的中间动画、归位和同实例；单次特殊安排首帧与窗口焦点；阻塞实际worker的CACHE／REFRESH加载、无临时状态行、日期栏顶部起止不变、真实取消及错误反馈。浅1080×1920／density411／字体1，深1080×2160／density480／字体1.45（360dp）；日期栏顶部309／355px保持不变。`build/workspace-first-frame-{light,dark}.log`；八张最终实际画面 `build/workspace-first-frame-evidence/{timetable-initial,timetable-special-only,classroom-loading-cache,classroom-loading-refresh}-{light,dark}.png`。专门只读UI复审通过，无剩余缺陷或关键证据缺口。
+- 初轮夹具误用Activity.onCreate中的生命周期回调、过早触摸与空闲等待；已改用postCreated／首个preDraw／窗口焦点、真实条件等待与异步点击结果等待。未通过改产品门禁规避输入限制。布局期真实等待问题和特殊安排问题在产品修正，未以夹具绕过。首轮lint的连续单行if缩进误报用等价花括号修复。
+- 正式198／0.15.36双构建、androidTest与双lint通过（`build/release-01536-formal.log`），quick7/7通过。候选 `build/candidates/0.15.36/Chrona-0.15.36.apk` 为3087410字节，官方包名、版本、不可调试与原签名通过；`build/release-01536-{signing,badging}.log`。R8试验未混入本版。修改前副本 `.local-backups/workspace-first-frame-20261021/`，未覆盖实体手机或正式模拟器。
+
 ## 代码裁剪体积试验（未接入正式构建）— 2026-10-21
 
 - 同197／0.15.35源码，临时R8入口使用平台默认规则、`-dontobfuscate`和`-dontoptimize`，不裁剪资源。APK 3087526→1940720字节，减少1146806字节／37.14%；压缩DEX 2142181→995460字节，全部assets清单及内容逐字节相同。官方包名、版本和原签名通过。试验APK、result.json、签名／清单／usage／configuration均在 `build/r8-size-trial/`；入口 `build/r8-size-trial.init.gradle`、`build/r8-size-trial.pro`。
@@ -27,7 +35,7 @@
 - 源码 `d3c0dc5` 与不可变标签 `v0.15.34` 已推送，正式[Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.34) 为Latest。公开API非Draft／非Pre-release，下载资产3085598字节；公开APK实际196／0.15.34、不可调试和原签名通过。分发包 `build/distributions/0.15.34/Chrona-0.15.34.apk`，证据 `build/release-0.15.34-{public.json,public-apk.log,public-signing.log,published.png}`。CLI直连GitHub连接重置／超时后，沿现有系统代理作本次命令路由完成推送，未改全局Git／代理配置。
 - 正式模拟器195实际显示发现0.15.34；公开196覆盖成功后显示已是最新。覆盖前后完整备份比较15张表结构与全部行、1条收件／1个候选、设置、课堂文档／图片字节一致，仅导出时间变化；日志 `build/release-0.15.34-{old-update,current-update,upgrade-preservation}.log`，副本 `.local-backups/release-01534-20261020/`。实体手机未覆盖新版，现有LAN未被重启。
 
-当前源码版本为 **0.15.35 / 197**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
+当前源码版本为 **0.15.36 / 198**。下面记录近期版本的实际验证；历史记录按版本分卷保留。
 
 - [0.15 系列](archive/validation-0.15.md)
 - [0.14 系列](archive/validation-0.14.md)

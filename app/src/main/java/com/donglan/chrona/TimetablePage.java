@@ -131,8 +131,8 @@ final class TimetablePage extends SchedulePage {
                 render();
             }
         });
-        render();
         refreshSchool(false);
+        render();
         if (!session.initialized && !session.busy) load();
     }
 
@@ -624,12 +624,15 @@ final class TimetablePage extends SchedulePage {
                     if (body.getViewTreeObserver().isAlive()) body.getViewTreeObserver().removeOnPreDrawListener(this);
                     return true;
                 }
-                int oldX = sideways == null ? 0 : sideways.getScrollX(), oldY = scroll.getScrollY();
+                boolean hasSideways = sideways != null && sideways.getParent() != null;
+                int oldX = hasSideways ? sideways.getScrollX() : 0, oldY = scroll.getScrollY();
                 scroll.scrollTo(0, y);
-                if (sideways != null) sideways.scrollTo(x, 0);
-                if (scroll.isLayoutRequested() || sideways != null && sideways.isLayoutRequested()
-                        || oldY != scroll.getScrollY() || sideways != null && oldX != sideways.getScrollX()) {
-                    scroll.postInvalidateOnAnimation();
+                if (hasSideways) sideways.scrollTo(x, 0);
+                if (scroll.isLayoutRequested() || hasSideways && sideways.isLayoutRequested()
+                        || oldY != scroll.getScrollY() || hasSideways && oldX != sideways.getScrollX()) {
+                    // A grid replaced during layout needs another layout pass, not only a redraw.
+                    body.requestLayout();
+                    body.postInvalidateOnAnimation();
                     return false;
                 }
                 body.getViewTreeObserver().removeOnPreDrawListener(this);
@@ -1054,9 +1057,9 @@ final class TimetablePage extends SchedulePage {
     }
     @Override protected void onDestroy() {
         MAIN.removeCallbacks(schoolWatch);
-        if (session.owner.get() == this) session.owner.clear();
-        if (nested != null && nested.isShowing()) nested.dismiss();
-        if (floating != null && floating.isShowing()) floating.dismiss();
+        if (session.owner.get() == this) { session.owner.clear(); }
+        if (nested != null && nested.isShowing()) { nested.dismiss(); }
+        if (floating != null && floating.isShowing()) { floating.dismiss(); }
         super.onDestroy();
     }
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
