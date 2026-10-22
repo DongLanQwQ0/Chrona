@@ -8,7 +8,7 @@
 - 独立UI审核发现并修复模态直接关闭丢稿、模态删除取消丢稿、窄屏返回列表目标不可见三项P2，最终复审通过。仅无编辑表单时跳过异步离开检查，保留Dock惯性预测即时切页；动效原回归和67项再次通过，独立复核该单行调整安全。
 - 受影响浏览器反馈、parity、来源/同步/附件、motion、deadline、record-removal均通过，主页DOM复用87项和quick7/7通过。旧测试的首页标题、原文浮层和inline编辑选择器已跟随真实入口更新。CUA实际在隔离数据保存改标题并保留目标，再点击真正遮罩关闭原文弹窗，截图`cua-master-detail.png`。
 - 正式debug/release构建及双lint通过（`formal-final-build.log`）。固定APK `build/candidates/0.15.40/Chrona-0.15.40.apk`为3100134字节，`com.donglan.chrona`、202/0.15.40、不可调试，原签名证书保持一致（`candidate-signing.log`/`candidate-badging.log`）。此版本只修改网页资源，原生首页课表修复沿用已验收候选。
-- 本轮真实手机离线：ADB仅列出emulator-5580，旧vivo地址连接10060超时，已请求用户重连。尚未覆盖更新手机或验证本轮真实LAN数据链路；不以模拟API代替设备链路，不写真实作业或日历。
+- 用户随后通过USB连接vivo V2527A：install -r将201/0.15.39覆盖更新为202/0.15.40，返回Success，dumpsys确认新版，DashboardActivity启动Status: ok。未卸载或清数据，未写测试作业或日历。只读服务检查未见LanAccessService运行，真实LAN链路仍未验证，需用户开启局域网访问后使用；不以模拟API代替设备链路。
 
 ## 0.15.39 — 网页横向卡片与首页课表刷新竞态 — 2026-10-22
 
