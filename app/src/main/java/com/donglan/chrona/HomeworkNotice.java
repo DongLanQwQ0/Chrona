@@ -77,12 +77,18 @@ public final class HomeworkNotice extends BroadcastReceiver {
     /** Application lifetime observer also covers wakes when no agenda countdown is active. */
     static void observeScreen(Context context) {
         Context app = context.getApplicationContext();
+        AtomicCapsuleController.initialize(app);
         BroadcastReceiver screen = new BroadcastReceiver() {
             @Override public void onReceive(Context c, Intent intent) {
-                if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) screenOn(app, System.currentTimeMillis());
+                long receivedAt = android.os.SystemClock.elapsedRealtime();
+                if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
+                    screenOn(app, System.currentTimeMillis());
+                    AtomicCapsuleController.screenOn(app, receivedAt);
+                } else if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) AtomicCapsuleController.screenOff(app);
             }
         };
         IntentFilter events = new IntentFilter(Intent.ACTION_SCREEN_ON);
+        events.addAction(Intent.ACTION_SCREEN_OFF);
         if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(screen, events, Context.RECEIVER_NOT_EXPORTED);
         else app.registerReceiver(screen, events);
     }
@@ -117,9 +123,10 @@ public final class HomeworkNotice extends BroadcastReceiver {
                 .setStyle(new Notification.DecoratedCustomViewStyle()).setCustomBigContentView(card);
         if (atomic) {
             // Reuse the registered, verified SuperX transport, with a separate information card.
-            builder.addExtras(VivoAtomicNotification.extras(context, first.title, "新作业", deadline(first),
+            builder.addExtras(AtomicCapsuleController.decorate(context, ID, "homework:" + expiry,
+                    VivoAtomicNotification.extras(context, first.title, "新作业", deadline(first),
                     "新作业", label(items.size()), details, same, card,
-                    card(context, items, details, close, true), "{\"animations\":[]}", "新作业"));
+                    card(context, items, details, close, true), "{\"animations\":[]}", "新作业")));
         }
         try {
             org.json.JSONArray saved = new org.json.JSONArray();
@@ -145,7 +152,7 @@ public final class HomeworkNotice extends BroadcastReceiver {
             android.util.Log.i("ChronaHomework", "notice_post items=" + items.size() + " waiting=" + waiting + " expiry=" + expiry + " update=" + update);
             context.getSharedPreferences(PREFS, 0).edit().putBoolean("needs_post", false).commit();
             scheduleExpiry(context, expiry, waiting);
-            if (waiting) AgendaReminderLiveService.update(context, false, 0);
+            if (waiting || atomic) AgendaReminderLiveService.update(context, false, 0);
         } catch (SecurityException | org.json.JSONException failure) {
             android.util.Log.w("ChronaHomework", "Unable to deliver homework notice", failure);
         }
@@ -159,6 +166,17 @@ public final class HomeworkNotice extends BroadcastReceiver {
         else if (Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms())
             alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expiry, expire);
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expiry, expire);
+    }
+
+    static synchronized void refreshCapsule(Context context) {
+        var prefs = context.getSharedPreferences(PREFS, 0);
+        if (prefs.getLong("expiry", 0) > 0) prefs.edit().putBoolean("needs_post", true).commit();
+    }
+
+    static boolean activeAtomic(Context context) {
+        var prefs = context.getSharedPreferences(PREFS, 0);
+        return prefs.getLong("expiry", 0) > System.currentTimeMillis()
+                && VivoAtomicNotification.available(context, CHANNEL);
     }
 
     /** Completion, deletion and source/account changes remove only the affected notice items. */

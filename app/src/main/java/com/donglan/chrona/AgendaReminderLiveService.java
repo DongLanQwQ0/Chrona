@@ -40,8 +40,9 @@ public final class AgendaReminderLiveService extends Service {
     static void update(Context context, boolean needed, long nextAt) {
         boolean waiting = HomeworkNotice.awaitingScreen(context)
                 && NotificationDeliveryStatus.read(context, "zju_homework_updates").canPostReminders();
-        needed = needed && NotificationDeliveryStatus.canPostReminders(context) || waiting;
-        if (waiting && nextAt <= System.currentTimeMillis()) nextAt = System.currentTimeMillis() + ReminderTimeline.PROGRESS_REFRESH;
+        boolean activeHomework = HomeworkNotice.activeAtomic(context);
+        needed = needed && NotificationDeliveryStatus.canPostReminders(context) || waiting || activeHomework;
+        if ((waiting || activeHomework) && nextAt <= System.currentTimeMillis()) nextAt = System.currentTimeMillis() + ReminderTimeline.PROGRESS_REFRESH;
         if (!needed) { context.stopService(new Intent(context, AgendaReminderLiveService.class)); return; }
         AgendaReminderLiveService current = live;
         if (current != null) {
@@ -65,7 +66,7 @@ public final class AgendaReminderLiveService extends Service {
         boolean agenda = AgendaReminderPreferences.enabled(this) && NotificationDeliveryStatus.canPostReminders(this);
         boolean homework = HomeworkNotice.awaitingScreen(this)
                 && NotificationDeliveryStatus.read(this, "zju_homework_updates").canPostReminders();
-        boolean needed = agenda || homework;
+        boolean needed = agenda || homework || HomeworkNotice.activeAtomic(this);
         if (!needed && intent == null) { stopSelf(); return START_NOT_STICKY; }
         NotificationManager manager = getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(CHANNEL, "日程后台更新", NotificationManager.IMPORTANCE_MIN);

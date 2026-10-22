@@ -89,6 +89,11 @@ final class AtomicCountdownUpdates {
                             + base.getCharSequence(PREFIX + "baseInfos.title"));
                     data.putBundle(PREFIX + "capsule", updatedCapsule);
                 }
+                if (AgendaReminderPreferences.capsuleCountdown(context)) AtomicCapsuleController.countdown(data, text);
+                AtomicCapsuleController.apply(context, data);
+                // Opening is a single delivery command, never replayed by a later seconds tick.
+                Bundle deliveredIsland = data.getBundle(PREFIX + "island");
+                if (deliveredIsland != null) deliveredIsland.putBoolean("island.superx.forceShowCard", false);
                 manager.notify(item.getKey(), Notification.Builder.recoverBuilder(context, snapshot.notice)
                         .addExtras(data).setTimeoutAfter(Math.max(1000, snapshot.expiresAt - now))
                         .setOnlyAlertOnce(true).build());

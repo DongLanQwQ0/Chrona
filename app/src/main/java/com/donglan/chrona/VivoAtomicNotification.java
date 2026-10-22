@@ -111,6 +111,7 @@ final class VivoAtomicNotification {
         return false;
     }
     static void end(Context context, NotificationManager manager, int id) {
+        AtomicCapsuleController.clear(context, id);
         if (supportedManufacturer()) {
             try {
                 for (android.service.notification.StatusBarNotification item : manager.getActiveNotifications()) {

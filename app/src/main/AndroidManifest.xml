@@ -47,7 +47,7 @@
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <service android:name=".AgendaReminderLiveService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keep new homework notices pending until first screen-on, and update local countdown and event progress while atomic agenda reminders are active." />
+                android:value="Observe screen-on while new homework or agenda atomic reminders are active, and update their local capsule, countdown and event progress until expiry." />
         </service>
         <receiver android:name=".AgendaReminderReceiver" android:exported="false">
             <intent-filter>
@@ -101,6 +101,7 @@
         <activity android:name=".ExternalCourseDetailActivity" android:exported="false" />
         <service android:name=".ZjuSyncJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver android:name=".HomeworkNotice" android:exported="false" />
+        <receiver android:name=".AtomicCapsuleController" android:exported="false" />
         <service android:name=".ClassroomCleanupService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
         <activity android:name=".NotificationSettingsActivity" android:exported="false" />
         <activity android:name=".SystemCalendarSettingsActivity" android:exported="false" />

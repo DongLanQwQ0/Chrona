@@ -265,12 +265,13 @@ public final class AgendaReminder {
             String capsuleText = startedNotice || !AgendaReminderPreferences.capsuleCountdown(context) ? clock
                     : VivoAtomicNotification.countdownText(ReminderTimeline.capsuleDeadline(e, now) - now,
                             AgendaReminderPreferences.showSeconds(context));
-            builder.addExtras(VivoAtomicNotification.extras(context, e.title, status, range,
+            builder.addExtras(AtomicCapsuleController.decorate(context, notificationId, e.key() + "@" + notifiedAt,
+                    VivoAtomicNotification.extras(context, e.title, status, range,
                     clock,
                     remainingText, details, same && VivoAtomicNotification.active(
                             context.getSystemService(NotificationManager.class), notificationId),
                     card, AtomicAgendaCard.forIsland(context, e, now, notifiedAt, nextTitle, details),
-                    AtomicAgendaCard.marqueeConfiguration(), capsuleText));
+                    AtomicAgendaCard.marqueeConfiguration(), capsuleText)));
             String detail = range + "\n" + (e.location.trim().isEmpty() ? "地点未填写" : e.location)
                     + "\n" + e.source + " · " + status
                     + (e.description.trim().isEmpty() ? "" : "\n" + e.description);
