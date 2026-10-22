@@ -25,7 +25,7 @@ async function until(check){for(let i=0;i<100;i++){if(await check())return;await
   const page=await browser.newPage({viewport:{width:390,height:600}}),errors=[];
   page.on('pageerror',error=>errors.push(String(error)));
   await page.goto(`http://127.0.0.1:${source.address().port}/`);
-  await page.getByRole('heading',{name:'今日安排'}).waitFor();
+  await page.getByRole('heading',{name:'首页'}).waitFor();
   const open=()=>page.evaluate(`candidateEditor(${JSON.stringify(item)})`);
   const clickPublish=()=>page.evaluate(()=>[...document.querySelectorAll('#dialog button')].find(b=>b.textContent==='写入手机日历').click());
   await open();
@@ -37,9 +37,9 @@ async function until(check){for(let i=0;i<100;i++){if(await check())return;await
   await page.evaluate(()=>{const b=[...document.querySelectorAll('#dialog button')].find(b=>b.textContent==='写入手机日历');b.click();b.click();document.querySelector('#dialog form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));});
   await until(()=>requests===1);
   assert(await page.evaluate(()=>[...document.querySelectorAll('#dialog button')].filter(b=>['保存','写入手机日历'].includes(b.textContent)).every(b=>b.disabled)),'both mutation buttons disabled');
-  release();await page.locator('#dialog-feedback').waitFor();
+  release();await page.locator('.candidate-form .form-feedback').waitFor();
   assert.equal(requests,1,'double click and concurrent submit send only one request');
-  assert(await page.evaluate(()=>{const f=document.querySelector('#dialog-feedback'),r=f.getBoundingClientRect();return f.closest('dialog').open&&r.top>=0&&r.bottom<=innerHeight&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===f;}),'modal error visible and on top at mobile size');
+  assert(await page.evaluate(()=>{const f=document.querySelector('.candidate-form .form-feedback'),r=f.getBoundingClientRect();return f.closest('dialog').open&&r.top>=0&&r.bottom<=innerHeight&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===f;}),'modal error visible and on top at mobile size');
   const ax=await page.cdp.send('Accessibility.getFullAXTree');
   assert(ax.nodes.some(n=>!n.ignored&&n.name?.value==='模拟手机暂时不可用，请重试'),'error is present in accessibility tree');
   assert(await page.evaluate(()=>[...document.querySelectorAll('#dialog button')].filter(b=>['保存','写入手机日历'].includes(b.textContent)).every(b=>!b.disabled)),'failure restores both buttons');
@@ -50,7 +50,7 @@ async function until(check){for(let i=0;i<100;i++){if(await check())return;await
   await page.evaluate(()=>{toast('关闭前提示');closeDialog(true);toast('页面提示');});
   assert(await page.locator('#dialog-feedback').isHidden());assert.equal(await page.locator('#toast').textContent(),'页面提示');
   await page.evaluate(()=>{session.calendarAllowed=false;});await open();
-  await page.locator('#dialog').getByRole('button',{name:'保存',exact:true}).click();await until(()=>requests===3);release();await page.locator('#dialog-feedback').waitFor();
+  await page.locator('#dialog').getByRole('button',{name:'保存',exact:true}).click();await until(()=>requests===3);release();await page.locator('.candidate-form .form-feedback').waitFor();
   assert(await page.evaluate(()=>[...document.querySelectorAll('#dialog button')].find(b=>b.textContent==='写入手机日历').disabled),'failed save preserves unavailable calendar permission');
   assert(await page.evaluate(()=>![...document.querySelectorAll('#dialog button')].find(b=>b.textContent==='保存').disabled),'failed save is retryable');
   await page.evaluate(()=>{showDialog('新弹窗',body=>body.append(document.createTextNode('内容')));});

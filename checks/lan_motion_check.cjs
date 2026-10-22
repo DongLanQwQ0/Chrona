@@ -18,7 +18,7 @@ async function until(fn){for(let i=0;i<100;i++){if(await fn())return;await delay
  try{
   browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
   const page=await browser.newPage({viewport:{width:390,height:680}}),errors=[],evidence={};page.on('pageerror',e=>errors.push(String(e)));
-  await page.goto(`http://127.0.0.1:${source.address().port}/`);await page.getByRole('heading',{name:'今日安排'}).waitFor();await delay(300);
+  await page.goto(`http://127.0.0.1:${source.address().port}/`);await page.getByRole('heading',{name:'首页'}).waitFor();await delay(300);
   evidence.route=await page.evaluate(async()=>{await navigate('schedule');const host=document.querySelector('#content'),animation=activeMotion.get(host);const a=getComputedStyle(host).transform;await new Promise(r=>setTimeout(r,65));const b=getComputedStyle(host).transform;return{a,b,keyframes:animation.effect.getKeyframes()};});
   assert.notEqual(evidence.route.a,evidence.route.b,'route moves through actual intermediate frames');
   await page.screenshot({path:path.join(out,'schedule-enter-mobile.png')});await delay(260);
