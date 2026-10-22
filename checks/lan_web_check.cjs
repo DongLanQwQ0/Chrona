@@ -61,7 +61,9 @@ async function checkModalSelect(page){
  if(process.argv.includes('--record-removal')){
   await page.goto(base+'#pair=000007');await page.getByRole('heading',{name:'首页',exact:true}).waitFor();
   await page.evaluate(async()=>{await navigate('task/1');await Promise.all(document.getAnimations().map(a=>a.finished.catch(()=>{})));});
-  assert(await page.evaluate(()=>document.querySelector('.raw-text').textContent.includes('<script>unsafe()</script>')),'original content preserved literally');
+  await page.getByRole('button',{name:'原始内容',exact:true}).click();
+  assert(await page.evaluate(()=>document.querySelector('#dialog-body .raw-text').textContent.includes('<script>unsafe()</script>')),'original content preserved literally');
+  await page.evaluate(()=>closeDialog(true));
   assert(await page.evaluate(()=>![...document.querySelectorAll('button')].some(b=>['编辑记录','转为待办','转为活动','保存记录'].includes(b.textContent))),'independent record controls removed');
   await page.getByRole('button',{name:'修改日程',exact:true}).click();
   assert(await page.evaluate(()=>!!document.querySelector('[name=title]')&&!!document.querySelector('[name=category]')),'schedule editor remains available');

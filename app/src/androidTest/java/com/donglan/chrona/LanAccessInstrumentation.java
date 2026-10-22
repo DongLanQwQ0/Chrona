@@ -21,6 +21,12 @@ public final class LanAccessInstrumentation extends Instrumentation {
     }
     @Override public void onStart() {
         android.util.Log.i("ChronaDeviceCheck", "onStart phase=" + arguments.getString("phase"));
+        if ("home_calendar_race".equals(arguments.getString("check"))) {
+            Bundle report=new Bundle();
+            try { report.putString("home_calendar_report",HomeCalendarRefreshDeviceCheck.run(this,arguments)); finish(-1,report); }
+            catch(Throwable error){report.putString("error",android.util.Log.getStackTraceString(error));finish(0,report);}
+            return;
+        }
         if ("homework_diagnostics".equals(arguments.getString("check"))) {
             Bundle report = new Bundle();
             try { report.putString("homework_report", HomeworkPhoneDiagnostics.run(this, arguments)); finish(-1, report); }

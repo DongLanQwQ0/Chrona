@@ -16,7 +16,7 @@ production = '\n'.join((
     section('function timelineTime(', 'function dateISO('),
     section('async function homePage(', 'async function openSchedule('),
 ))
-reuse = '{\n' + section('  const reused=new Set();', '  host.replaceChildren(incoming);') + '\n}'
+reuse = '{\n' + section('  const reused=new Set();', "  $('#workspace').classList.toggle('task-mode'") + '\n}'
 script = r'''
 const assert=require('node:assert/strict'),vm=require('node:vm');
 class Element {

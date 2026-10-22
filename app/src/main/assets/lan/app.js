@@ -197,6 +197,10 @@ function dockPointerVelocity(samples){const recent=samples.filter(sample=>sample
  let numerator=0,denominator=0;for(const sample of recent){numerator+=(sample.time-meanTime)*(sample.x-meanX);denominator+=(sample.time-meanTime)**2;}return denominator>0?numerator/denominator*1000:0;}
 function recordDockPointer(touch,event){const samples=event.getCoalescedEvents?.()||[];for(const sample of samples.length?samples:[event])touch.samples.push({x:sample.clientX,time:sample.timeStamp});touch.samples=touch.samples.filter(sample=>sample.time>=event.timeStamp-150);}
 new ResizeObserver(()=>{if(dockTouch)dockTouch.cancelled=true;updateDock();}).observe(dockNav);
+// Detail controls stay above the real Dock, including enlarged browser text.
+function updateDockClearance(){const bottom=$('.bottom');document.documentElement.style.setProperty('--dock-clearance',(bottom.offsetHeight+(parseFloat(getComputedStyle(bottom).bottom)||0)+20)+'px');}
+new ResizeObserver(updateDockClearance).observe($('.bottom'));
+window.addEventListener('resize',updateDockClearance);
 dockNav.addEventListener('pointerdown',event=>{if(event.button!==0)return;if(dockTouch){dockTouch.cancelled=true;dockCoasting=false;pressDock(false);return;}dockCoasting=false;dockTouch={id:event.pointerId,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false,samples:[]};recordDockPointer(dockTouch,event);dockNav.setPointerCapture(event.pointerId);pressDock(true);});
 dockNav.addEventListener('pointermove',event=>{const touch=dockTouch;if(!touch||touch.id!==event.pointerId||touch.cancelled)return;const dx=Math.abs(event.clientX-touch.x),dy=Math.abs(event.clientY-touch.y),rect=dockNav.getBoundingClientRect();
  recordDockPointer(touch,event);
@@ -223,10 +227,14 @@ function observeCards(host){
 }
 reducedMotion.addEventListener('change',()=>{if(!reducedMotion.matches)return;clearReveals();for(const animation of runningMotions)if(animation.playState==='running')animation.finish();});
 async function navigate(next,updateHash=true,initialState=null){
+ rememberDetailScroll();
+ const [path,query]=next.split('?');
+ if(path==='schedule'&&query){const params=new URLSearchParams(query);initialState=history.state?.schedule??{filter:params.get('category')||'',scheduleTab:Number(params.get('tab')||0),todoScope:Number(params.get('todo')||0)};next=path;}
  const previous=route,changed=previous!==next;
  if(changed){routeState.delete(previous);routeState.set(previous,listState());while(routeState.size>10)routeState.delete(routeState.keys().next().value);}
  route=next;restoreList(initialState??(changed?routeState.get(next):listState()));currentTask=null;
- if(updateHash&&location.hash!==`#${next}`)history.pushState(null,'',`#${next}`);
+ const destination=next==='schedule'&&initialState?`schedule?${new URLSearchParams({category:filter,tab:scheduleTab,todo:todoScope})}`:next;
+ if(updateHash&&location.hash!==`#${destination}`)history.pushState(next==='schedule'?{schedule:listState()}:null,'',`#${destination}`);
  document.querySelectorAll('[data-page]').forEach(button=>{const selected=button.dataset.page===next;button.classList.toggle('active',selected);if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
  updateDock();const direction=next.startsWith('task/')?1:previous.startsWith('task/')?-1:Math.sign(pageOrder.indexOf(next)-pageOrder.indexOf(previous));
  await render(changed?{direction,detail:next.startsWith('task/')}:false);
@@ -248,7 +256,9 @@ async function render(animate=false){const ticket=++sequence,host=$('#content');
   const local=!animate||animate.local;
   const reused=new Set();
   if(local)for(const element of incoming.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(old&&!reused.has(old.element)&&!element.querySelector('input')&&old.element.isEqualNode(element)){element.replaceWith(old.element);reused.add(old.element);}}
+  $('#workspace').classList.toggle('task-mode',route.startsWith('task/'));
   host.replaceChildren(incoming);icons();
+  if(route==='schedule')history.replaceState({schedule:listState()},'',`#schedule?${new URLSearchParams({category:filter,tab:scheduleTab,todo:todoScope})}`);
   if(local){window.scrollTo(0,scrollY);for(const element of host.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(!old)continue;const rect=element.getBoundingClientRect(),x=old.rect.x-rect.x,y=old.rect.y-rect.y;if(Math.abs(x)+Math.abs(y)>1)motion(element,[{transform:`translate(${x}px,${y}px)`},{transform:'translate(0,0)'}],280);}}
   if(label&&local){const replacement=[...host.querySelectorAll('[aria-label]')].find(element=>element.getAttribute('aria-hidden')!=='true'&&element.getAttribute('aria-label')===label);replacement?.focus({preventScroll:true});if(selection&&replacement?.setSelectionRange)replacement.setSelectionRange(...selection);}
   if(animate&&!animate.local){motion(host,[{opacity:.55,transform:`translateX(${(animate.direction||1)*(animate.detail?20:12)}px)`},{opacity:1,transform:'translateX(0)'}],240);observeCards(host);}
@@ -361,7 +371,80 @@ function capture(){showDialog('记录',(body,owner)=>{
 });}
 function appendAttachments(id,version){showDialog('添加附件',(body,owner)=>{const attachments=attachmentPicker(body),save=action('上传附件',async()=>{if(!attachments.chosen.some(item=>!item.done))throw new Error('请先选择附件');save.disabled=true;attachments.lock(true);attachmentWork++;try{version=await attachments.upload(id,version);if(ownsDialog(owner)){closeDialog(false,owner);await render();}}finally{attachmentWork--;save.disabled=false;attachments.lock(false);}},'primary');const buttons=node('div','actions');buttons.append(save);body.append(buttons);});}
 function disclosure(label,text){const details=node('details'),summary=node('summary','subtle',label),panel=node('div','disclosure-body');panel.append(node('p','raw-text',text));details.append(summary,panel);let expanded=false;summary.addEventListener('click',event=>{event.preventDefault();const start=details.open?panel.getBoundingClientRect().height:0;expanded=!expanded;details.open=true;summary.setAttribute('aria-expanded',String(expanded));const end=expanded?panel.scrollHeight:0,animation=motion(panel,[{height:start+'px',opacity:start?1:0,overflow:'hidden'},{height:end+'px',opacity:expanded?1:0,overflow:'hidden'}],160);if(!animation){details.open=expanded;return;}animation.finished.then(()=>{if(activeMotion.get(panel)===animation&&!expanded)details.open=false;}).catch(()=>{});});return details;}
-async function taskPage(id,ticket){const data=await api(`/api/task?id=${id}${route.includes('?')?'&'+route.split('?')[1]:''}`);if(ticket!==sequence)return [];revision=data.revision;currentTask=data;const task=data.task,layout=node('div','detail-layout'),original=card('原始内容');original.append(node('span','status-label',statusLabel(task.status)),node('p','raw-text',task.text));if(task.error)original.append(node('p','subtle',task.error));if(task.linkText){original.append(disclosure('链接正文',task.linkText));}if(data.images.length){const grid=node('div','attachment-grid');for(const item of data.images){const link=node('a');link.href=`/api/attachment/${id}/image-${item.index}`;link.target='_blank';link.rel='noopener';const image=node('img');image.src=link.href;image.alt=`记录图片 ${item.index+1}`;image.loading='lazy';link.append(image);grid.append(link);}original.append(grid);}if(data.files.length){const files=node('div','files');for(const item of data.files){const link=node('a','',item.name+` · ${(item.size/1024).toFixed(1)} KB`);link.href=`/api/attachment/${id}/${item.id}`;files.append(link);}original.append(files);}const actions=node('div','detail-actions');const busy=task.status==='queued'||task.status==='processing';const edit=action('修改原文',()=>editRaw(task));edit.disabled=busy;const process=action('AI 重新处理',()=>confirmAction('重新处理','现有未写入日历的日程将由新的 AI 结果替换。',async()=>{await api('/api/task/process',{id:String(id),revision});await render();}));process.disabled=busy||data.managedHomeworkCapture||data.candidates.some(item=>item.calendarLinked);if(!busy&&!data.managedHomeworkCapture)actions.append(action('添加附件',()=>appendAttachments(id,data.revision)));actions.append(edit,process,action('删除记录',()=>confirmAction('删除记录','将删除原文、日程及已关联的手机系统日历事件。公共 Downloads 文件会保留。',async owner=>{await api('/api/task/delete',{id:String(id),revision});if(ownsDialog(owner))await navigate('inbox');else await render();}),'danger'));original.append(actions);const results=node('div','details');for(const item of data.candidates){const result=card();result.append(node('span','status-label',categories[item.category]+(item.calendarLinked?' · 已写入日历':item.needsConfirmation?' · 待确认':'')),node('h3','',item.title),node('p','subtle',executionWhen(item,true)));if(item.effectiveDue!=null)result.append(node('p','subtle',`截止 · ${fmt(item.effectiveDue,false,true,item.zone)}`));if(item.location)result.append(node('p','subtle',item.location));if(item.description)result.append(node('p','raw-text',item.description));const controls=node('div','detail-actions'),modify=action(item.category==='homework'?'修改作业':'修改日程',()=>item.recurrence?repeatDialog(item):candidateEditor(item));modify.textContent=item.recurrence?'重复日程':modify.textContent;modify.disabled=busy;controls.append(modify);if(!item.recurrence&&!item.managed){const repeat=action('设置重复',()=>repeatRuleDialog(item));repeat.disabled=busy||item.start==null&&item.effectiveDue==null;controls.append(repeat);}if(item.recurrence)result.append(node('span','tag',item.repeatLabel+(item.repeatStoppedAt?' · 已停止':'')));{const state=completionAction(item);if(state)controls.append(state);}result.dataset.key='candidate-'+item.id;result.append(controls);appendHomeworkLinks(result,item);for(const source of item.mergedSources||[]){if(source.taskId===Number(id))continue;if(source.taskId)result.append(action('合并来源 · '+source.source,()=>navigate('task/'+source.taskId)));else result.append(node('p','raw-text',source.source+'\n'+source.text));}results.append(result);}if(!data.candidates.length){const block=card('日程');empty(block,busy?'手机正在处理，可稍后刷新查看结果':'这条记录还没有日程');const create=action('手动建立日程',()=>candidateEditor({id:0,taskId:id,title:task.text.slice(0,80),category:'event',start:null,end:null,zone:session.zone,location:'',description:'',allDay:false,reminder:null,needsConfirmation:true,calendarLinked:false}),'primary');create.disabled=busy||data.managedHomeworkCapture;block.append(create);results.append(block);}for(const target of data.mergedTargets||[]){if(target.taskId===Number(id))continue;if(target.taskId)original.append(action('已合并 · '+target.title,()=>navigate('task/'+target.taskId)));else original.append(node('p','subtle','已合并 · '+target.title+'（保留日程已不存在）'));}if(!busy&&!data.managedHomeworkCapture&&!data.candidates.some(item=>item.managed))results.append(action('新增事项',()=>candidateEditor({id:0,taskId:id,title:'',category:'event',start:null,end:null,due:null,zone:session.zone,location:'',description:'',allDay:false,reminder:null,needsConfirmation:true,calendarLinked:false}),'quick-action'));layout.append(original,results);const back=action('',()=>{const previous=[...routeState.keys()].reverse().find(key=>key==='home'||key==='inbox'||key==='schedule'||key==='calendar');return navigate(previous||'inbox');},'icon-button');back.append(icon('arrow-left'));back.setAttribute('aria-label','返回收件箱');return[heading('记录详情',`${task.source} · ${fmt(task.created,false,true)}`,[back]),layout];}
+// Candidate identity, not its old index, survives chronological reordering and refresh.
+const detailPositions=new Map();
+function detailPosition(id){if(!detailPositions.has(id)){detailPositions.set(id,{candidate:null,scroll:new Map()});if(detailPositions.size>10)detailPositions.delete(detailPositions.keys().next().value);}return detailPositions.get(id);}
+function rememberDetailScroll(){const workspace=$('.task-workspace');if(!workspace)return;const saved=detailPosition(Number(workspace.dataset.task));for(const slide of workspace.querySelectorAll('.candidate-slide'))saved.scroll.set(Number(slide.dataset.candidate),slide.scrollTop);}
+function chronologicalCandidates(items){return [...items].sort((a,b)=>{const first=executionStart(a)??Infinity,second=executionStart(b)??Infinity;return(first===second?0:first-second)||a.id-b.id;});}
+function taskOriginal(data,id){
+ const task=data.task,original=node('div','record-original');
+ original.append(node('span','status-label',statusLabel(task.status)),node('p','raw-text',task.text));
+ if(task.error)original.append(node('p','subtle',task.error));
+ if(task.linkText)original.append(disclosure('链接正文',task.linkText));
+ if(data.images.length){const grid=node('div','attachment-grid');for(const item of data.images){const link=node('a');link.href=`/api/attachment/${id}/image-${item.index}`;link.target='_blank';link.rel='noopener';const image=node('img');image.src=link.href;image.alt=`记录图片 ${item.index+1}`;image.loading='lazy';link.append(image);grid.append(link);}original.append(grid);}
+ if(data.files.length){const files=node('div','files');for(const item of data.files){const link=node('a','',item.name+` · ${(item.size/1024).toFixed(1)} KB`);link.href=`/api/attachment/${id}/${item.id}`;files.append(link);}original.append(files);}
+ const actions=node('div','detail-actions'),busy=['queued','processing'].includes(task.status),edit=action('修改原文',()=>editRaw(task));edit.disabled=busy;
+ const process=action('AI 重新处理',()=>confirmAction('重新处理','现有未写入日历的日程将由新的 AI 结果替换。',async()=>{await api('/api/task/process',{id:String(id),revision});await render();}));
+ process.disabled=busy||data.candidates.some(item=>item.calendarLinked);
+ if(!busy)actions.append(action('添加附件',()=>appendAttachments(id,data.revision)));
+ actions.append(edit,process,action('删除记录',()=>confirmAction('删除记录','将删除原文、日程及已关联的手机系统日历事件。公共 Downloads 文件会保留。',async owner=>{await api('/api/task/delete',{id:String(id),revision});if(ownsDialog(owner))await navigate('inbox');else await render();}),'danger'));original.append(actions);
+ for(const target of data.mergedTargets||[]){if(target.taskId===Number(id))continue;if(target.taskId)original.append(action('已合并 · '+target.title,()=>navigate('task/'+target.taskId)));else original.append(node('p','subtle','已合并 · '+target.title+'（保留日程已不存在）'));}
+ return original;
+}
+function detailCandidate(item,id,busy){
+ const result=card();result.dataset.key='candidate-'+item.id;
+ result.append(node('span','status-label',categories[item.category]+(item.completed?' · 已完成':item.calendarLinked?' · 已写入日历':item.needsConfirmation?' · 待确认':'')),node('h2','',item.title),node('p','subtle',executionWhen(item,true)));
+ if(item.effectiveDue!=null)result.append(node('p','subtle',`截止 · ${fmt(item.effectiveDue,false,true,item.zone)}`));
+ if(item.location)result.append(node('p','subtle',item.location));if(item.description)result.append(node('p','raw-text',item.description));
+ const controls=node('div','detail-actions'),modify=action(item.recurrence?'重复日程':item.category==='homework'?'修改作业':'修改日程',()=>item.recurrence?repeatDialog(item):candidateEditor(item));modify.disabled=busy;controls.append(modify);
+ if(!item.recurrence&&!item.managed){const repeat=action('设置重复',()=>repeatRuleDialog(item));repeat.disabled=busy||item.start==null&&item.effectiveDue==null;controls.append(repeat);}
+ if(item.recurrence)result.append(node('span','tag',item.repeatLabel+(item.repeatStoppedAt?' · 已停止':'')));
+ const state=completionAction(item);if(state){state.disabled=busy;controls.append(state);}appendHomeworkLinks(result,item);
+ for(const source of item.mergedSources||[]){if(source.taskId===Number(id))continue;if(source.taskId)result.append(action('合并来源 · '+source.source,()=>navigate('task/'+source.taskId)));else result.append(node('p','raw-text',source.source+'\n'+source.text));}
+ return {result,controls};
+}
+async function taskPage(id,ticket){
+ rememberDetailScroll();
+ const data=await api(`/api/task?id=${id}${route.includes('?')?'&'+route.split('?')[1]:''}`);if(ticket!==sequence)return [];
+ revision=data.revision;currentTask=data;
+ const task=data.task,busy=['queued','processing'].includes(task.status),saved=detailPosition(id),items=chronologicalCandidates(data.candidates),params=new URLSearchParams(route.split('?')[1]||'');
+ const requested=Number(params.get('candidate_id'))||saved.candidate;
+ let active=Math.max(0,items.findIndex(item=>item.id===requested));
+ const workspace=node('section','task-workspace'),viewport=node('div','candidate-viewport'),footer=node('div','candidate-footer'),navigation=node('div','candidate-navigation'),controls=node('div','candidate-actions'),slides=[],actions=[];
+ workspace.dataset.task=id;viewport.setAttribute('aria-label','日程卡片');viewport.setAttribute('role','region');viewport.tabIndex=0;
+ for(const [index,item]of items.entries()){
+  const slide=node('section','candidate-slide'),built=detailCandidate(item,id,busy);slide.dataset.candidate=item.id;slide.setAttribute('role','group');slide.setAttribute('aria-label',`${index+1} / ${items.length} · ${item.title}`);slide.tabIndex=0;slide.append(built.result);viewport.append(slide);slides.push(slide);actions.push(built.controls);
+ }
+ const previous=action('',()=>choose(active-1)),next=action('',()=>choose(active+1)),select=node('select'),position=node('span','candidate-position');
+ previous.append(icon('chevron-left'));previous.setAttribute('aria-label','上一项日程');next.append(icon('chevron-right'));next.setAttribute('aria-label','下一项日程');select.setAttribute('aria-label','切换日程');
+ for(const [index,item]of items.entries()){const option=node('option','',`${index+1} · ${item.title}`);option.value=item.id;select.append(option);}
+ const sync=()=>{
+  if(!items.length)return;
+  const item=items[active];saved.candidate=item.id;select.value=item.id;select.dispatchEvent(new Event('change'));position.textContent=`${active+1} / ${items.length}`;previous.disabled=active===0;next.disabled=active===items.length-1;
+  for(const [index,slide]of slides.entries())slide.setAttribute('aria-current',String(index===active));
+  controls.replaceChildren(actions[active]);
+  if(workspace.isConnected&&ticket===sequence){route=taskRoute(item);history.replaceState(null,'',`#${route}`);}
+ };
+ let settleTimer=0,scrollTarget=null;
+ function choose(index,smooth=true){if(!viewport.isConnected||ticket!==sequence||!items.length)return;active=Math.max(0,Math.min(items.length-1,index));sync();scrollTarget=active;const slide=slides[active],left=viewport.scrollLeft+slide.getBoundingClientRect().left-viewport.getBoundingClientRect().left-(viewport.clientWidth-slide.offsetWidth)/2;viewport.scrollTo({left,behavior:smooth&&!reducedMotion.matches?'smooth':'instant'});}
+ // Native scrolling serves touch/trackpad; buttons and keyboard share the same selection.
+ const settled=()=>{clearTimeout(settleTimer);if(!viewport.isConnected||ticket!==sequence||!viewport.clientWidth||!items.length)return;if(scrollTarget!==null){active=scrollTarget;scrollTarget=null;}else if(viewport.scrollLeft<=1)active=0;else if(viewport.scrollLeft>=viewport.scrollWidth-viewport.clientWidth-1)active=items.length-1;else{const center=viewport.getBoundingClientRect().left+viewport.clientWidth/2;active=slides.reduce((best,slide,index)=>{const rect=slide.getBoundingClientRect(),distance=Math.abs(rect.left+rect.width/2-center);return distance<best.distance?{index,distance}:best;},{index:active,distance:Infinity}).index;}sync();};
+ viewport.addEventListener('wheel',()=>scrollTarget=null,{passive:true});viewport.addEventListener('pointerdown',()=>scrollTarget=null,{passive:true});
+ for(const [index,slide]of slides.entries()){slide.addEventListener('click',event=>{if(!event.target.closest('a,button'))choose(index);});slide.addEventListener('focusin',()=>{if(index!==active)choose(index);});}
+ viewport.addEventListener('scroll',()=>{clearTimeout(settleTimer);settleTimer=setTimeout(settled,140);});viewport.addEventListener('scrollend',settled);
+ viewport.addEventListener('keydown',event=>{if(event.target.closest('button,a,input,textarea,select'))return;if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();choose(event.key==='Home'?0:event.key==='End'?items.length-1:active+(event.key==='ArrowRight'?1:-1));}});
+ // Listen to real user selection only; programmatic sync above updates the shared select UI.
+ select.addEventListener('change',()=>{const index=items.findIndex(item=>String(item.id)===select.value);if(index!==active)choose(index,false);});
+ navigation.append(previous,select,position,next);navigation.hidden=!items.length;footer.append(navigation,controls);
+ if(!data.managedHomeworkCapture)footer.append(action('原始内容',()=>showDialog('原始内容',body=>body.append(taskOriginal(data,id))),'record-source-button'));
+ if(!busy&&!data.managedHomeworkCapture&&!items.some(item=>item.managed))footer.append(action('新增事项',()=>candidateEditor({id:0,taskId:id,title:'',category:'event',start:null,end:null,due:null,zone:session.zone,location:'',description:'',allDay:false,reminder:null,needsConfirmation:true,calendarLinked:false}),'quick-action'));
+ if(!items.length){const block=card('日程');empty(block,busy?'手机正在处理，可稍后刷新查看结果':'这条记录还没有日程');const create=action('手动建立日程',()=>candidateEditor({id:0,taskId:id,title:task.text.slice(0,80),category:'event',start:null,end:null,zone:session.zone,location:'',description:'',allDay:false,reminder:null,needsConfirmation:true,calendarLinked:false}),'primary');create.disabled=busy||data.managedHomeworkCapture;block.append(create);viewport.append(block);}
+ workspace.append(viewport,footer);
+ sync();viewport.style.visibility='hidden';
+ requestAnimationFrame(()=>{if(!workspace.isConnected)return;choose(active,false);for(const slide of slides)slide.scrollTop=saved.scroll.get(Number(slide.dataset.candidate))||0;viewport.style.visibility='';let width=viewport.clientWidth;const observer=new ResizeObserver(()=>{if(!viewport.isConnected)return;const nextWidth=viewport.clientWidth;if(nextWidth!==width){width=nextWidth;choose(active,false);}});observer.observe(viewport);selectionObservers.add(observer);});
+ const back=action('',()=>{const previous=[...routeState.keys()].reverse().find(key=>['home','inbox','schedule','calendar'].includes(key));return navigate(previous||'inbox');},'icon-button');back.append(icon('arrow-left'));back.setAttribute('aria-label','返回列表');
+ return[heading('记录详情',`${task.source} · ${fmt(task.created,false,true)}`,[back]),workspace];
+}
 function editRaw(task){showDialog('修改原文',(body,owner)=>{const form=node('form'),input=field(form,'原文',task.text,'textarea','text');input.required=true;input.maxLength=100000;const actions=node('div','actions'),submit=node('button','primary','保存');submit.type='submit';actions.append(submit);form.append(actions);form.addEventListener('submit',event=>{event.preventDefault();guard(async()=>{submit.disabled=true;try{await api('/api/task/edit',{id:String(task.id),revision,text:input.value});closeDialog(false,owner);await render();}finally{submit.disabled=false;}});});body.append(form);});}
 function alignEndAfterStart(start,end,allDay,zone){
  if(allDay||!start.value||!end.value||!start.validity.valid||!end.validity.valid)return;

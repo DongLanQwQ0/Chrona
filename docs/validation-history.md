@@ -1,5 +1,15 @@
 # 验证记录
 
+## 0.15.39 — 网页横向卡片与首页课表刷新竞态 — 2026-10-22
+
+- 网页详情从纵向堆叠改为时间升序的多卡横向轨道；桌面250–340px卡宽、1280px下三张完整卡片，短内容自然高度、长内容卡内纵向滚动。底部保留切换和当前项操作；外部candidate_id按实际几何居中，当前ID写入历史，刷新／返回保留。主页最近作业入口携带筛选身份，刷新与历史不丢失；总列表仍筛选分页。原文／附件／记录操作收纳到浮层，托管作业隐藏该入口。
+- `lan_detail_navigation_check.cjs`生产资源＋隔离HTTP合成45候选，33条通过：稳定时间排序、同时间ID、未定项末尾、目标居中与三完整卡、内部滚动、编辑与返回、旧回调不劫持新路由、真实计算字号150%的390/320深色布局、减少动画及空记录。大字体初验发现Dock变高遮挡10px，改为实际Dock高度决定详情底部安全距离后通过。专门只读UI复审通过。实际CUA滚轮从118横滚到122，URL／高亮／操作同步；实际主页最近作业显示作业／全部／未完成，`cua-horizontal-scroll.png`、`cua-homework-filter.png`。
+- 受影响浏览器parity、deadline、原文保留record-removal专项通过；DOM复用87条与quick7/7通过。旧parity入口标题和隐藏候选操作、DOM片段边界及原文浮层选择器已同步，不通过改产品迁就夹具。CDP整页截图会错误偏移横向轨道，改用实际视口截图；CUA画面另行确认。
+- 原生稳定复现：课表结果在`applyCompletionRows`完成动画期间到达，旧`refreshHomeContent`只置homeRefreshPending，结束回调却只消费completionRefreshPending；相同快照不触发poll刷新，课表继续缺失。旧候选受控实际Activity测试`home-race-red.log`失败，新代码将请求合入完成队列后通过。独立审查发现关联失败恢复缺口，补读取失败清双标志、保留dirty、既有轮询按dirty重试；无忙等或陈旧来源回退。
+- `HomeCalendarRefreshDeviceCheck`限独立v33模拟器，真实首页／本地读取／动画／渲染，主动控制迟到课程回调顺序，关闭周期轮询以验证不需重进；再调用真实失败完成回调，断言立即解锁、dirty保留且没有立即重试，随后同快照的真实poll恢复。深浅主题`home-race-recovery-{light,dark}.log`均通过，`home-race-{light,dark}.png`干净实际截图并检查窗口焦点；无任务／Calendar写入，偏好已恢复。完成卡片复用9条及接线检查通过。未模拟实际存储I/O异常，用户历史现场无日志，所复现路径与历史原因不混为同一证据。专门只读UI最终复审通过。
+- 正式双构建、androidTest编译及双lint日志`build/lan-detail-navigation/formal-final-build.log`；同目录保存候选签名与清单。固定APK为`build/candidates/0.15.39/Chrona-0.15.39.apk`，201／0.15.39、官方包名与原签名。原生修复加入后已重新构建，不分发先前仅含网页改动的产物。
+- 本轮未覆盖真实手机；网页真实手机数据链路与真实手机触摸横滑未验收。公开Release发布状态见当前工作单；不追加此前叫停的公开下载／手动更新复验、付费AI或真实WebDAV。
+
 ## 0.15.38 — 新作业定位与首次亮屏计时 — 2026-10-21
 
 - 源码`e96080f`与不可变标签`v0.15.38`已推送；正式[Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.38)于21:12发布为Latest。页面确认同一提交、三条用户更新说明和固定`Chrona-0.15.38.apk`（2.95 MB），截图`build/release-0.15.38-published.png`。手机已安装同一200／0.15.38；未追加此前叫停的发布后公开下载或手动更新复验。

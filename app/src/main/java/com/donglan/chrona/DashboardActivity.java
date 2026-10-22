@@ -868,7 +868,7 @@ public final class DashboardActivity extends Activity {
         }
         if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
         String current = dataSnapshot();
-        if (!current.equals(snapshot)) {
+        if (dirtySections.contains(section) || !current.equals(snapshot)) {
             if (!pageTransitionRunning && !dragTargetLoaded) {
                 refreshActivePageIfNeeded();
                 snapshot = current;
@@ -961,7 +961,13 @@ public final class DashboardActivity extends Activity {
     private void refreshHomeContent() {
         if (section != HOME || previewRender) return;
         if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending) {
-            homeRefreshPending = true; return;
+            // A calendar result may arrive after the local rows have been built but
+            // before their transition finishes. That completion drains this queue,
+            // not homeRefreshPending; otherwise the new courses wait for re-entry.
+            homeRefreshPending = true;
+            completionRefreshPending = true;
+            android.util.Log.d("ChronaHome", "external_refresh_queued_during_local_reconcile");
+            return;
         }
         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
                 || (navigation != null && navigation.isAnimating())) {
@@ -3007,10 +3013,7 @@ public final class DashboardActivity extends Activity {
                 data = DashboardSectionData.load(getApplicationContext(), destination, inbox,
                         query, oldest, page, system, 0);
             } catch (RuntimeException failure) {
-                refresh.post(() -> {
-                    completionRefreshRunning = false;
-                    if (!isDestroyed()) Feedback.show(this, "状态已保存，列表暂时无法刷新");
-                });
+                refresh.post(this::finishCompletionReadFailure);
                 return;
             }
             refresh.post(() -> {
@@ -3024,6 +3027,13 @@ public final class DashboardActivity extends Activity {
                 applyCompletionRows(data, target, viewport, destination);
             });
         });
+    }
+
+    private void finishCompletionReadFailure() {
+        completionRefreshRunning = false;
+        completionRefreshPending = false;
+        // Keep dirtySections: the next ordinary poll/resume retries, without a tight loop.
+        if (!isDestroyed()) Feedback.show(this, "列表暂时无法刷新，请稍后重试");
     }
 
     private void applyCompletionRows(DashboardSectionData data, LinearLayout target,
