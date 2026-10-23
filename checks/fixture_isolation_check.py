@@ -70,10 +70,13 @@ source = ROOT / 'app/src/androidTest/java/com/donglan/chrona'
 subprocess.run([str(JAVA / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(OUT),
                 *files, str(source / 'FixtureIsolation.java')], check=True)
 subprocess.run([str(JAVA / 'java.exe'), '-cp', str(OUT), 'com.donglan.chrona.FixtureIsolationCheck'], check=True)
-for name in ('RepeatDeviceCheck.java', 'BrowserDeviceCheck.java'):
+for name, argument in (('RepeatDeviceCheck.java', 'context'), ('BrowserDeviceCheck.java', 'context'),
+                       ('BackupRestoreDeviceCheck.java', 'target'), ('ClassroomVisibilityDeviceCheck.java', 'context'),
+                       ('CapsuleSettingsDeviceCheck.java', 'context'), ('CompactDetailAtomicCheck.java', 'context')):
     text = (source / name).read_text(encoding='utf-8')
-    guard = text.index('FixtureIsolation.require(context)')
-    for mutation in ('store.insertTask(', 'watchdog.start()', 'stop.delete()', 'test.startActivitySync('):
+    guard = text.index(f'FixtureIsolation.require({argument})')
+    for mutation in ('store.insertTask(', 'watchdog.start()', 'stop.delete()', 'test.startActivitySync(',
+                     'new Sandbox(', 'ChronaDataBackup.write(', 'ChronaDataBackup.restore('):
         if mutation in text:
             assert guard < text.index(mutation), (name, mutation)
-print('Both fixture entry points guard before mutations')
+print('All five fixture entry points guard before mutations')

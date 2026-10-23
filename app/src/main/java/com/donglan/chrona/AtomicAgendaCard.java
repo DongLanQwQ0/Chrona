@@ -18,7 +18,7 @@ import java.time.format.DateTimeFormatter;
 final class AtomicAgendaCard {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
     private static final int BACKGROUND_WIDTH = 320, BACKGROUND_HEIGHT = 180;
-    private static final int ISLAND_HEADER_SAFE_BOTTOM_DP = 44;
+    private static final int ISLAND_HEADER_SAFE_BOTTOM_DP = 40;
     private static final int CAMERA_CLEARANCE_DP = 4;
     private static int cachedBase, cachedAccent;
     private static Bitmap[] cachedBackgrounds;
@@ -145,8 +145,8 @@ final class AtomicAgendaCard {
             float density = context.getResources().getDisplayMetrics().density;
             android.graphics.Rect rect = cutout.getBoundingRectTop();
             int bottom = rect.isEmpty() ? 0 : Math.max(0, rect.bottom - metrics.getBounds().top);
-            // Content starts at 12dp; the 28dp header plus 4dp title margin
-            // already reserve 44dp. Add only what this device's cutout needs.
+            // Content starts at 8dp; the minimum 28dp header plus 4dp body margin
+            // reserve 40dp. The countdown may grow the row further at large fonts.
             return cameraHeaderPaddingPixels(bottom, density);
         } catch (RuntimeException failure) {
             android.util.Log.w("ChronaAtomic", "Unable to read camera cutout", failure);

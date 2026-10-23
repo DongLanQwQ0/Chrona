@@ -14,7 +14,7 @@ fixture = '''public class IslandCameraCheck { __CONSTANTS__ __METHOD__
 public static void main(String[] args){int checks=0;
 for(float density:new float[]{1,1.5f,2,3,4})for(int bottomDp:new int[]{0,12,24,36,44,48,60,90}){
 int bottom=Math.round(bottomDp*density),padding=cameraHeaderPaddingPixels(bottom,density);
-if(padding<0||Math.round(44*density)+padding<bottom+Math.round(4*density))throw new AssertionError("title intersects cutout");
+if(padding<0||Math.round(ISLAND_HEADER_SAFE_BOTTOM_DP*density)+padding<bottom+Math.round(4*density))throw new AssertionError("title intersects cutout");
 if(bottomDp<=36&&padding!=0)throw new AssertionError("unnecessary height");checks++;}
 System.out.println("Camera header padding passed: "+checks+" density/cutout cases");}}
 '''.replace('__CONSTANTS__', constants).replace('__METHOD__', method)
@@ -27,13 +27,15 @@ layout = ET.parse(root / 'app/src/main/res/layout/notification_atomic_card.xml')
 a = '{http://schemas.android.com/apk/res/android}'
 header = next(node for node in layout.iter() if node.get(a+'id') == '@+id/atomic_header')
 parent = next(node for node in layout.iter() if header in list(node))
-title = next(node for node in parent if node.get(a+'id') == '@+id/atomic_island_title')
+title = next(node for node in parent.iter() if node.get(a+'id') == '@+id/atomic_island_title')
+body = list(parent)[list(parent).index(header) + 1]
 icon = next(node for node in header if node.get(a+'id') == '@+id/atomic_icon')
 minimum_dp = sum(int(value.removesuffix('dp')) for value in (
-    parent.get(a+'paddingVertical'), icon.get(a+'layout_height'), title.get(a+'layout_marginTop')))
+    parent.get(a+'paddingVertical'), icon.get(a+'layout_height'), body.get(a+'layout_marginTop')))
 assert minimum_dp == int(re.search(r'ISLAND_HEADER_SAFE_BOTTOM_DP = (\d+)', source).group(1))
-assert list(parent).index(title) > list(parent).index(header)
-assert title.get(a+'layout_width') == 'match_parent' and title.get(a+'ellipsize') == 'end'
+assert title in list(body.iter())
+assert title.get(a+'layout_width') == 'match_parent' and title.get(a+'ellipsize') is None
+assert title.get(a+'maxLines') is None, 'Expanded card retains the complete title at large font sizes'
 assert any(node.get(a+'id') == '@+id/atomic_camera_space' for node in header)
 assert all(node.get(a+'id') != '@+id/atomic_island_title' for node in header.iter())
 print('Expanded island title remains below the camera band; normal notification uses its own header')

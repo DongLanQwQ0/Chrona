@@ -9,7 +9,7 @@
 | 项目 | 配置来源与当前值 |
 | --- | --- |
 | 应用 | 原生 Android Java，`com.donglan.chrona` |
-| 版本 | `app/build.gradle`：候选0.15.41 / 203（待真机验收）；公开版0.15.40 |
+| 版本 | `app/build.gradle`：0.15.41 / 203 |
 | Android | minSdk 26，compileSdk / targetSdk 36 |
 | 语言与构建 | Java 源码 17，AGP 9.4.1，Gradle Wrapper 9.6.0 |
 | 数据库 | `TaskStore.DATABASE_VERSION`：15 |
@@ -34,6 +34,8 @@
 
 ## 本机构建
 
+胶囊计时快速复验使用 `:app:assembleCapsuleTest`：独立构建变体将桌面窗口设为5秒、点击窗口设为10秒，版本名带 `-capsule-test-5s-10s`。同包同签名可保留数据覆盖安装；测试结束用正式release覆盖恢复。debug/release的BuildConfig始终为30／60秒，发布不得选用capsuleTest产物。离线 `python checks/atomic_capsule_check.py` 同时检查两种配置。
+
 本机使用 PowerShell 7。SDK、用户数据和 Gradle 缓存在 F 盘；新增或更换工具链先经用户确认，不修改全局 Java 配置。
 
 ```powershell
@@ -48,6 +50,18 @@ if ($LASTEXITCODE -ne 0) { throw 'Build or lint failed' }
 ```
 
 目录名含中文，保留 `android.overridePathCheck=true`。debug / release 都沿用 `chronaDebugKeystore` 指向的既有签名，不能生成另一份密钥替代。正式 APK 为 `app/build/outputs/apk/release/app-release.apk`；debug 和 androidTest 按任务需要构建。签名与发布验证见[发布指南](github-releases.md)。
+
+## 启动本机安卓虚拟机
+
+双击桌面「启动安卓虚拟机」快捷方式，或在 PowerShell 7 中运行：
+
+```powershell
+& 'E:\Programs\拾时 · Chrona\tools\Start-AndroidEmulator.ps1'
+```
+
+脚本使用F盘现有 `Chrona_Classroom_36`，默认竖屏1080×2376并开启电脑键盘输入。没有实例时直接启动；已有窗口时复用；后台无窗口时先询问是否保留数据重启，不强制终止。修改硬件配置前在AVD原目录保存备份，启动日志位于 `F:\Android\user-home\emulator-logs`。屏幕像素与电脑上的窗口尺寸不同，窗口可缩放。
+
+`-CheckOnly` 只读检查；`-RestartHeadless` 明确允许将已有后台实例重启为窗口；可用 `-Width 1080 -Height 2376` 调整像素。脚本不清数据、不重新安装Android、不操作真机。点击输入框后可使用电脑键盘；中文输入还需要模拟器内支持中文的输入法。
 
 ## 原生布局接入
 
@@ -66,6 +80,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Build or lint failed' }
 
 纯文档修改检查事实、链接和差异，无需重新打包 APK。仅相关输入或候选变化时补充验证，已有有效证据无需反复执行。归档保留历史证据，不当作当前要求或待办。
 
-`RepeatDeviceCheck` 与 `BrowserDeviceCheck` 的写入前置统一由 `FixtureIsolation` 检查：仅官方模拟器上的 `com.donglan.chrona.followup.validation.v33`，学校功能停用且无真实账号、无外部同步配置或自动同步、无运行中或正在启动的 LAN 会话。旧 `.validation` 包及实体手机均拒绝运行。离线 `fixture_isolation_check.py` 检查拒绝条件和入口顺序；重复系列删除专项使用 `check=ui / phase=repeat / scope=delete_only`，只在该隔离包执行。
+`RepeatDeviceCheck`、`BrowserDeviceCheck` 与 `BackupRestoreDeviceCheck` 的写入前置统一由 `FixtureIsolation` 检查：仅官方模拟器上的 `com.donglan.chrona.followup.validation.v33`，学校功能停用且无真实账号、无外部同步配置或自动同步、无运行中或正在启动的 LAN 会话。旧 `.validation` 包及实体手机均拒绝运行。离线 `fixture_isolation_check.py` 检查拒绝条件和入口顺序；重复系列删除专项使用 `check=ui / phase=repeat / scope=delete_only`。备份往返使用 `check=backup_restore`，数据库、文件与偏好另设隔离目录／命名空间，校验大课堂正文及提交后维护失败；仅使用合成数据。
+
+胶囊设置行渲染使用同一隔离守卫，入口`check=capsule_settings`，参数`theme=light|dark`、`widthDp=320..600`、`font=1..2`。宽度与字体仅覆盖测试Activity资源，不更改模拟器全局设置。真实页面和行监听器参与测试，OEM能力及状态值使用展示夹具；该检查不能替代vivo权限启停、胶囊事件或原生大卡片验收。
+
+自动重复提示隔离夹具入口为`check=compact_detail_atomic / scope=automatic_merge`，同样支持`theme/widthDp/font`的Activity级覆盖。实际进入前后台、插入合成来源、取消及选择提交，验证真实候选仅删除所选组；沿用`FixtureIsolation`，拒绝实体手机及有真实学校／同步配置的环境。截图存目标应用外部files目录，报告输出`compact_report`。浏览器专项`node checks/lan_web_check.cjs --merge-only`使用模拟API，数据选择安全性另由`python checks/candidate_merge_check.py`验证生产事务与SQLite。
 
 反馈以结果、证据和影响下一步的缺口为主；交接明确源码／产物位置、适用候选、未完成项及负责动作。避免常规工具播报、重复状态、泛泛自证与无法执行的后续建议。遇到同一路径连续失败且没有新证据，先重新定位再尝试，独立工作继续推进。

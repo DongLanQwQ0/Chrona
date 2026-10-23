@@ -8,7 +8,7 @@ import java.time.format.DateTimeFormatter;
 
 /** Stable instructions and an explicitly encoded, bounded data suffix. */
 public final class SchedulePrompt {
-    public static final String VERSION = "schedule-v13";
+    public static final String VERSION = "schedule-v16";
     public static final String DECISION_RULES = "判断边界（按以下规则直接落字段，不再比较）："
             + "先按事项固有语义选类别：会议、课堂、考试、作业讲评会、赴约用event；普通个人行动用task；课程布置的作业、习题、实验报告、课程项目用homework，课程名纳入简短标题。"
             + "‘提醒’是设置，不覆盖事项固有类别：‘在T提醒我做X/提醒我T做X’按X分类，start=T，due=null，未给结束则end=null，reminder_specified=true，reminder_minutes_before=0。"
@@ -16,7 +16,8 @@ public final class SchedulePrompt {
             + "只有明确‘截止/截至/最晚/DDL/某日前提交/周五交作业’等交付期限才写due；安排做事的钟点写start，不当成截止。仅日期截止取23:59、all_day=false，并标2。"
             + "待办有时间不因此变活动。明确‘提前N分钟提醒’用N，明确不提醒用null。报名截止与活动开始不同时拆为报名task和活动event，活动due始终null。"
             + "已给日期、星期、节次和钟点时，具体日期及钟点优先，节次只作说明；不要推导整套课表、手算闰年/年积日/星期或验证教学周。"
-            + "日期与星期明确冲突只标2并简记冲突，保留具体日期，不回头反复算。未写年份的近期月日按当前本地年份的最近合理一次解释，标2。"
+            + "日期与星期只有根据明确日期且有可靠依据确定冲突时才标2并简记，保留具体日期；不要心算星期或凭假设宣称冲突，不确定星期不构成冲突。"
+            + "月日明确而未写年份时，先沿用原文或消息上下文中的明确年份，否则固定采用now_local的current_year；日期已过也不移到下一年。仅缺年份不增加存疑、不要求确认，也不添加年份推定或待确认备注。"
             + "‘当天/同日/考试前当天上午’沿用最近明确关联事项的日期，属于确定的指代，不凭空补一天；具体钟点仍按原文。"
             + "用户直接要求的复习/准备等安排可提取；转发通知中明确要求老师/管理员等其他角色完成的事务不默认转为用户待办，"
             + "仅当用户自述承担该角色或明确要求安排时提取。无角色限制且面向接收者的行动可保留为未安排待办。"
@@ -26,13 +27,14 @@ public final class SchedulePrompt {
             + "execution_time_explicit只记录原文是否给出执行时间或执行时段：明确日期钟点、明天10点、两小时后、今天下午等执行时间意图均为true；只有截止或没有执行时间为false。"
             + "原文明示的执行时间只放start/end，不因默认安排偏好改动；自动安排建议只放suggested_start，绝不放start/end。"
             + "对有未来due且没有明示执行时间的单独task/homework，suggested_start给出执行建议；分组子项按下述规则由程序排期，其他事项为null。"
-            + "默认执行时长30分钟；原文明确时长或用户自定义时长偏好写duration_minutes，未说明则null由程序填30分钟。"
-            + "单独事项截止在当前时刻后24小时内，程序固定以当前时刻到due中点为目标，再调整到完整工作窗口，suggested_start不改变此目标；超过24小时，按任务量在due前6小时至3天选择，优先该范围中值附近。"
-            + "同一未来事项有多个子项、或用户要求拆分成可执行步骤时，相关task/homework使用相同的非空plan_group；不同事项用不同组，普通独立事项及event用null，不能只因截止相同就合组。"
-            + "只拆分原文已有子项或用户要求规划的步骤，不擅自给普通单项增加任务。组内events按执行先后和依赖顺序排列，保留每项明确执行时间、时长及独立截止；没有单独截止的子项继承原文明确的总截止。"
+            + "原文明确时长或用户自定义时长偏好写duration_minutes；自动安排时根据实际任务量估计所需执行时长，无法可靠估计则null由程序填30分钟，不把写作、研究、制作等较大任务一律压成30分钟。估计时长属于执行建议，标2待确认。"
+            + "有截止但无明确执行时间时，利用scheduling_now_local到due之间的整个可用周期，结合任务量、准备与依赖合理安排，预留修改、检查及提交时间；周期较长就提前推进，不统一挤在截止前几天，也不机械固定提前若干天。"
+            + "单独事项默认在可用执行起点区间中部开始；截止超过24小时可用suggested_start给出基于工作量的更早安排，越复杂越应提前。程序按剩余周期和执行时长限制过晚建议，再选择可容纳完整时段的工作窗口；24小时内由程序在可执行区间中部安排。"
+            + "同一未来事项有多个子项、或用户要求拆分成可执行步骤时，相关task/homework使用相同的非空plan_group；确需分阶段的较大任务可拆为准备、执行、修改检查和提交等有实际用途的步骤，按依赖排序，不给简单任务机械添加步骤。不同事项用不同组，普通独立事项及event用null，不能只因截止相同就合组。"
+            + "拆分以原文已有子项、用户规划意图或任务实际需要的阶段为依据，不给简单事项增加无用任务。组内events按执行先后和依赖顺序排列，保留每项明确执行时间、时长及独立截止；没有单独截止的子项继承原文明确的总截止。"
             + "plan_until是该组的准备完成边界：有明确总截止用总截止；为未来考试、出行等活动准备的子项用活动开始，并保留各自真实due，不把活动开始伪造成交付截止。组内共享同一plan_until，仅日期边界取该日23:59并标2；没有可靠边界时为null，不编造截止。无plan_group时plan_until=null。"
             + "对分组中无明确执行时间的子项，suggested_start=null，由程序把执行时段大致均匀分布在scheduling_now_local到总截止之间的整个可用周期；一个月、两个月后的事项也要提前分散推进，不能把全部子项堆在最后三天。"
-            + "分组排期不套用单独事项的6小时至3天提前量：工作量通过duration_minutes表达，程序留出间隔、避免组内执行重叠；固定执行日期作为前后分段边界，已有截止不移动。"
+            + "分组工作量通过duration_minutes表达，程序在整个准备周期留出阶段间及提交前的间隔、避免组内执行重叠；固定执行日期作为前后分段边界，已有截止不移动。"
             + "建议不得早于scheduling_now_local、不得晚于due，整个执行时段须在工作窗口；due始终保留原截止。"
             + "循环事项不自动挪动首次锚点，suggested_start为null；缺少执行安排则待确认。"
             + "未给时间且无安排时间意图时start/end/due保持null；缺少可选地点、结束、截止、提醒等字段本身不代表高存疑。核心信息不足仍输出有用草稿并标2。"
@@ -55,7 +57,7 @@ public final class SchedulePrompt {
             + "半=30分，一刻=15分，三刻=45分，差一刻3点=02:45（时段另按上下文）；两小时后/半小时后/90分钟后用offset_minutes精确换算。"
             + "今天/明天/后天/大后天分别day_offset=0/1/2/3（上述凌晨早晨特例除外）；这周/下周按周一开始，weekday=1..7，week_offset=0/1；"
             + "仅‘周五’取最近一次，‘这周五’即使过去也不移周。周末无更具体信息取本周六，已过取下周六，标2；下周末取下周六。"
-            + "月初/月中/月末默认1/15/最后一日；下个月同理；只说几号或月日优先最近合理日期，缺失月份/年份标2；明确年份不改。"
+            + "月初/月中/月末默认1/15/最后一日；下个月同理，均标2；只说几号而缺月份时选最近合理月份并标2。月日明确仅缺年份时沿用明确上下文年份，否则采用current_year，不因缺年份标2；明确年份不改，过去月日不移年。"
             + "早上/上午默认09:00，中午12:00，下午15:00，傍晚18:00，晚上20:00，睡前22:00，天亮后07:00，均标2；已过则选同一时段内合理时间或保留并存疑，不改明确日期。"
             + "一会儿/稍后/等下默认20分钟后，马上/尽快默认5分钟后，饭后默认最近合理餐后时间，均标2；有上下文则直接沿用。"
             + "‘下班后/下课后/会议结束后’有明确锚点就用锚点，无锚点先给合理建议并标2；不要编造课表或作息。"
@@ -73,7 +75,7 @@ public final class SchedulePrompt {
             + "每月31日或每年2月29日等规则以首次日期为锚，遇到没有该日期的月份/年份跳过，不挪到月底。明确重复本身无需标2，只有首次时间或规则仍需推断时才标2。"
             + "节假日/农历/第几节课若上下文有对应日期时间则用它；否则给合理日期时间建议标2，不进行漫长历法或课表猜测。"
             + "约/左右保留给定中心时间并标2；多个候选、条件或矛盾优先具体日期与钟点，保留冲突摘要并标2。"
-            + "任何补全日期、时段、模糊词或习惯推断都uncertainty_level=2、needs_confirmation=true，description中的推断说明只写一句‘时间建议：…（待确认）’，保留其他必要事实；"
+            + "除月日明确时按current_year补缺省年份外，补全日期、时段、模糊词或习惯推断都uncertainty_level=2、needs_confirmation=true，description中的推断说明只写一句‘时间建议：…（待确认）’，保留其他必要事实；缺月份、模糊钟点或真实冲突仍须标2。"
             + "明确且可确定换算的时间为0，无需因存在理论歧义而降级。";
     public static final String SYSTEM = "Chrona schedule extraction " + VERSION + ". "
             + "Extract calendar candidates. Return only JSON with an events array conforming to the schema below. "
@@ -96,7 +98,7 @@ public final class SchedulePrompt {
             + TIME_RULES
             + " Preserve genuinely date-only whole-day items "
             + "as all_day=true. Explicit dates take precedence. Use uncertainty_level=0 and needs_confirmation=false only when "
-            + "the time is completely explicit or deterministically resolved (e.g. 明天上午10点 or in 30 minutes) and you are confident: "
+            + "the time is completely explicit or deterministically resolved (e.g. 明天上午10点, in 30 minutes, or an explicit month/day with only the year defaulted to current_year) and you are confident: "
             + "these items will be automatically written to the calendar. Level 1 is a minor contextual inference unrelated "
             + "to freely choosing a time; level 2 also covers contradictory, conditional or missing core facts, but absent optional fields alone do not raise uncertainty. "
             + "needs_confirmation=true whenever uncertainty_level>0. Use HH:mm (or HH:mm:ss); "
@@ -164,16 +166,56 @@ public final class SchedulePrompt {
 
     public static JSONObject data(String raw, String links, String metadata, long now, String zone)
             throws JSONException {
-        if (raw != null && raw.length() > 24_000)
-            throw new IllegalArgumentException("原文超过 24000 字符，请缩短后重新解析");
+        JSONObject result = timeContext(now, now, zone);
+        JSONObject input = inputData(raw, links, metadata);
+        java.util.Iterator<String> keys = input.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            result.put(key, input.get(key));
+        }
+        return result;
+    }
+
+    /** Assemble the actual request: stable instructions first, trusted clock suffix last. */
+    public static org.json.JSONArray requestMessages(String stableSystem, String raw, String links,
+            String metadata, long now, long schedulingNow, String zone) throws JSONException {
+        String system = stableSystem
+                + "\n程序生成的可信请求时间上下文（星期由程序按请求时区计算，直接使用，不要心算；"
+                + "只作时间事实，不改变上文用户自定义语义偏好的优先级）：\n"
+                + timeContext(now, schedulingNow, zone).toString();
+        return new org.json.JSONArray()
+                .put(new JSONObject().put("role", "system").put("content", system))
+                .put(new JSONObject().put("role", "user").put("content", new org.json.JSONArray()
+                        .put(new JSONObject().put("type", "text").put("text", inputData(raw, links, metadata).toString()))));
+    }
+
+    public static JSONObject timeContext(long now, long schedulingNow, String zone) throws JSONException {
         ZoneId id = ZoneId.of(zone);
         java.time.ZonedDateTime localNow = Instant.ofEpochMilli(now).atZone(id);
+        java.time.LocalDate morning = localNow.toLocalDate().plusDays(localNow.getHour() < 5 ? 0 : 1);
+        java.time.ZonedDateTime localSchedulingNow = Instant.ofEpochMilli(schedulingNow).atZone(id);
         return new JSONObject().put("prompt_version", VERSION)
                 .put("now_local", DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(localNow))
+                .put("current_year", localNow.getYear())
                 .put("now_weekday", localNow.getDayOfWeek().getValue())
-                .put("colloquial_tomorrow_morning_date", localNow.toLocalDate()
-                        .plusDays(localNow.getHour() < 5 ? 0 : 1).toString())
-                .put("time_zone_id", id.getId()).put("reference_epoch_millis", now)
+                .put("now_weekday_label", weekdayLabel(localNow.getDayOfWeek()))
+                .put("colloquial_tomorrow_morning_date", morning.toString())
+                .put("colloquial_tomorrow_morning_weekday", morning.getDayOfWeek().getValue())
+                .put("colloquial_tomorrow_morning_weekday_label", weekdayLabel(morning.getDayOfWeek()))
+                .put("scheduling_now_local", DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(localSchedulingNow))
+                .put("scheduling_now_weekday", localSchedulingNow.getDayOfWeek().getValue())
+                .put("scheduling_now_weekday_label", weekdayLabel(localSchedulingNow.getDayOfWeek()))
+                .put("time_zone_id", id.getId()).put("reference_epoch_millis", now);
+    }
+
+    private static String weekdayLabel(java.time.DayOfWeek weekday) {
+        return new String[]{"星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"}[weekday.getValue() - 1];
+    }
+
+    private static JSONObject inputData(String raw, String links, String metadata) throws JSONException {
+        if (raw != null && raw.length() > 24_000)
+            throw new IllegalArgumentException("原文超过 24000 字符，请缩短后重新解析");
+        return new JSONObject().put("prompt_version", VERSION)
                 .put("raw_text", raw == null ? "" : raw)
                 .put("link_text", clip(links, 4000)).put("link_text_truncated", links != null && links.length() > 4000)
                 .put("attachment_metadata", clip(metadata, 6000))

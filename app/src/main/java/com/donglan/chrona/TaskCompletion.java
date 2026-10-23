@@ -3,6 +3,7 @@ package com.donglan.chrona;
 import android.content.Context;
 import android.content.SharedPreferences;
 import com.donglan.chrona.calendar.CalendarStore;
+import com.donglan.chrona.calendar.LinkedCalendarEvents;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.data.TaskStore;
 import org.json.JSONArray;
@@ -104,7 +105,15 @@ final class TaskCompletion {
                                 && event.startMillis - item.reminderMinutesBefore * 60_000L > System.currentTimeMillis())
                             alerts.add(item.reminderMinutesBefore);
                     }
-                    calendar.replaceReminders(item.calendarEventId, alerts);
+                    try (LinkedCalendarEvents writes = new LinkedCalendarEvents(store,calendar)) {
+                        store.getWritableDatabase().beginTransaction();
+                        try {
+                            if (!writes.reminders(item, alerts))
+                                store.clearMissingCalendarLinks(List.of(item.calendarEventId));
+                            store.getWritableDatabase().setTransactionSuccessful();
+                        } finally {store.getWritableDatabase().endTransaction();}
+                        writes.committed();
+                    }
                 } else store.clearMissingCalendarLinks(List.of(item.calendarEventId));
             }
             Set<String> pending = new HashSet<>(prefs.getStringSet(PENDING, Set.of()));

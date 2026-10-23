@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.AtomicFile;
 import com.donglan.chrona.calendar.CalendarStore;
+import com.donglan.chrona.calendar.LinkedCalendarEvents;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskStore;
@@ -87,7 +88,7 @@ public final class AndroidSync {
                     if (e instanceof WebDavClient.Failure) result = e.getMessage();
                     else if (e instanceof AndroidSyncData.AttachmentException) result = e.getMessage();
                     else if (e instanceof SecurityException) result = "操作失败，请授予日历或附件访问权限后重试";
-                    else if (Arrays.asList("记录已变化，请重新选择", "记录正在处理", "日历旧事件未能全部移除，请重试",
+                    else if (Arrays.asList("记录已变化，请重新选择", "记录正在处理", "日历旧事件未能移除，请重试",
                             "需要确认移除本机日历旧事件", "课表正在修改，请重新同步", "请输入账号和应用密码",
                             "记录正在修改，请稍后重新同步",
                             "同步格式不受支持，请将所有同步设备升级到最新版本后重试",
@@ -249,10 +250,7 @@ public final class AndroidSync {
                     // all local associations remain available for an explicit retry.
                     if (clearCalendar) {
                         CalendarStore calendar = new CalendarStore(app);
-                        for (EventCandidate candidate : data.store.getCandidates(local)) if (candidate.calendarEventId != null) {
-                            if (!calendar.deleteEvent(candidate.calendarEventId) && calendar.getEvent(candidate.calendarEventId) != null)
-                                throw new IOException("日历旧事件未能全部移除，请重试");
-                        }
+                        new LinkedCalendarEvents(data.store,calendar).delete(data.store.getCandidates(local));
                     }
                     data.db.beginTransaction();
                     try {

@@ -120,7 +120,7 @@ assert 'dockChrome.setHome(section == HOME)' in source
 assert 'if (dockChrome != null) dockChrome.layoutMobile();' in source
 assert source.count('captureHost.setPadding(blurGutter, blurGutter, blurGutter, blurGutter)') == 2
 assert 'dp(14) - blurGutter' in source and 'dp(24) - blurGutter' in source
-style = (ROOT / 'app/src/main/java/com/donglan/chrona/UiStyle.java').read_text(encoding='utf-8')
+style = (ROOT / 'app/src/main/java/com/donglan/chrona/UiSurfaces.java').read_text(encoding='utf-8')
 assert 'railSurface.getWidth() < bounds.width()' in style
 assert 'railSource.set(0, 0, bounds.width(), bounds.height())' in style
 assert 'canvas.drawBitmap(railSurface, railSource, bounds, null)' in style

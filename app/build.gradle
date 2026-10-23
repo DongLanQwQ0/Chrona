@@ -21,6 +21,8 @@ android {
     sourceSets.main.java.srcDir '../shared/src/main/java'
     namespace 'com.donglan.chrona'
     compileSdk 36
+    buildFeatures { buildConfig true }
+    testBuildType providers.gradleProperty('chronaTestBuildType').getOrElse('debug')
 
     defaultConfig {
         applicationId 'com.donglan.chrona'
@@ -29,6 +31,8 @@ android {
         versionCode 203
         versionName '0.15.41'
         testInstrumentationRunner 'com.donglan.chrona.LanAccessInstrumentation'
+        buildConfigField 'long', 'CAPSULE_DESKTOP_MILLIS', '30000L'
+        buildConfigField 'long', 'CAPSULE_CLICK_MILLIS', '60000L'
     }
 
     signingConfigs {
@@ -46,6 +50,13 @@ android {
             minifyEnabled false
             // Preserve the signing identity used by installed Chrona versions.
             signingConfig signingConfigs.debug
+        }
+        capsuleTest {
+            initWith release
+            versionNameSuffix '-capsule-test-5s-10s'
+            buildConfigField 'long', 'CAPSULE_DESKTOP_MILLIS', '5000L'
+            buildConfigField 'long', 'CAPSULE_CLICK_MILLIS', '10000L'
+            matchingFallbacks = ['release']
         }
     }
 

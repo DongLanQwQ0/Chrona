@@ -50,4 +50,4 @@ for line in plans.splitlines():
         assert len(rows) <= 12
         pages.extend(rows)
     assert pages == ids, (name, "page gaps or duplicates")
-print("Inbox checks passed: 8 SQLite filter/order/page cases and 4 Java search cases")
+print("Inbox checks passed: 8 SQLite filter/order/page cases; Java search checks reported above")

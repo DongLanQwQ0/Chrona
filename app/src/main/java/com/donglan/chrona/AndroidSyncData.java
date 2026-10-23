@@ -26,7 +26,9 @@ final class AndroidSyncData implements AutoCloseable {
     final File blobs;
     private final String databaseIdentity;
     AndroidSyncData(Context context) throws IOException {
-        this.context = context; store = new TaskStore(context); db = store.getWritableDatabase();
+        this.context = context; store = new TaskStore(context);
+        try {
+        db = store.getWritableDatabase();
         db.execSQL("CREATE TABLE IF NOT EXISTS sync_task_map(sync_id TEXT PRIMARY KEY,local_id INTEGER UNIQUE,baseline TEXT,baseline_clock TEXT)");
         db.execSQL("CREATE TABLE IF NOT EXISTS sync_candidate_map(local_id INTEGER PRIMARY KEY,sync_id TEXT UNIQUE)");
         db.execSQL("CREATE TABLE IF NOT EXISTS sync_term_map(sync_id TEXT PRIMARY KEY,baseline TEXT,baseline_clock TEXT)");
@@ -36,14 +38,20 @@ final class AndroidSyncData implements AutoCloseable {
         databaseIdentity = value("SELECT identity FROM sync_meta WHERE id=?", "1");
         blobs = new File(context.getFilesDir(), "sync-blobs");
         if (!blobs.isDirectory() && !blobs.mkdirs()) throw new IOException("无法创建同步附件目录");
+        } catch (IOException | RuntimeException | Error failure) {
+            try { store.close(); }
+            catch (RuntimeException closeFailure) { failure.addSuppressed(closeFailure); }
+            throw failure;
+        }
     }
     private final List<File> stagedImages = new ArrayList<>();
     private final List<Uri> stagedFiles = new ArrayList<>();
     @Override public void close() {
         // Only resources created by this uncommitted attempt are eligible for cleanup.
-        for (File image : stagedImages) image.delete();
-        for (Uri file : stagedFiles) try { context.getContentResolver().delete(file, null, null); } catch (RuntimeException ignored) { }
-        store.close();
+        try {
+            for (File image : stagedImages) image.delete();
+            for (Uri file : stagedFiles) try { context.getContentResolver().delete(file, null, null); } catch (RuntimeException ignored) { }
+        } finally { store.close(); }
     }
     void appliedResourcesCommitted() { stagedImages.clear(); stagedFiles.clear(); }
     static String canonical(JSONObject json) throws Exception { return json == null ? "null" : SyncState.canonical(json); }

@@ -2,6 +2,7 @@ package com.donglan.chrona;
 
 import android.content.Context;
 import com.donglan.chrona.calendar.CalendarStore;
+import com.donglan.chrona.calendar.LinkedCalendarEvents;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.data.RepeatOccurrences;
 import com.donglan.chrona.data.RepeatRule;
@@ -16,7 +17,8 @@ final class RepeatActions {
     static EventCandidate change(Context context, long taskId, long id, String baseline,
             String action, Long original, Long moved, RepeatRule rule) throws Exception {
         synchronized (AndroidSync.LOCK) {
-            try (TaskStore store = new TaskStore(context)) {
+            try (TaskStore store = new TaskStore(context);
+                    LinkedCalendarEvents writes = new LinkedCalendarEvents(store,new CalendarStore(context))) {
                 List<EventCandidate> rows = store.getCandidatesByIds(List.of(id));
                 EventCandidate current = rows.isEmpty() ? null : rows.get(0);
                 CandidateEditBaseline.require(current, baseline);
@@ -66,14 +68,14 @@ final class RepeatActions {
                 try {
                     if (!store.updateCandidate(changed)) throw new IllegalStateException("日程已不存在");
                     if (changed.calendarEventId != null) {
-                        CalendarStore calendar = new CalendarStore(context);
-                        if (!calendar.updateEvent(changed.calendarEventId, input(changed)))
+                        if (!writes.update(changed, input(changed)))
                             throw new IllegalStateException("系统日历日程已不存在，请重新关联后操作");
                     }
                     store.updateReviewStatus(taskId);
                     store.getWritableDatabase().setTransactionSuccessful();
                 } finally { store.getWritableDatabase().endTransaction(); }
-                return changed;
+                writes.committed();
+                return store.getCandidatesByIds(List.of(id)).get(0);
             }
         }
     }

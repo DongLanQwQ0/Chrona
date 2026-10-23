@@ -18,7 +18,7 @@ public final class SystemCalendarSettingsActivity extends Activity {
         home = toggle(root, "首页包含系统其他日程", HOME_PERMISSION);
         calendar = toggle(root, "日历包含系统日程", CALENDAR_PERMISSION);
         android.widget.Button merge = new android.widget.Button(this);
-        merge.setText("合并完全相同日程");
+        merge.setText("合并重复日程");
         UiStyle.button(merge, false);
         merge.setOnClickListener(view -> startActivity(new android.content.Intent(this, CandidateMergeActivity.class)));
         UiStyle.addSpaced(root, merge, 0, 12);

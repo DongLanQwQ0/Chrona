@@ -19,7 +19,7 @@ methods = '\n'.join(method(x) for x in (
     'private void cancelScheduleResults(', 'private void requestScheduleResults()', 'private void requestScheduleResults(boolean',
     'private boolean scheduleResultCurrent(', 'private void enqueueScheduleResult(',
     'private void buildScheduleResultFrame(', 'private void renderScheduleResults(', 'private void updateResultsWithEntrance(', 'private String inboxCategory(',
-    'private ScheduleQuery buildScheduleQuery('
+    'private ScheduleQuery buildScheduleQuery(', 'private String completionFilterKey(', 'private void queueHomeworkFocus('
 ))
 java = r'''
 import java.util.*;
@@ -27,6 +27,7 @@ import java.time.*;
 import java.util.function.*;
 class LinearLayout {
  int rows, headings, footer; boolean removed;
+ int paddingTop,paddingBottom;void setPadding(int left,int top,int right,int bottom){paddingTop=top;paddingBottom=bottom;}
  Queue<Runnable> frames=new ArrayDeque<>();
  void removeAllViews(){rows=headings=footer=0;removed=true;}
  void removeCallbacks(Runnable r){frames.removeIf(x->x==r);}
@@ -35,12 +36,13 @@ class LinearLayout {
 }
 class ScrollView {int y; Queue<Runnable> posts=new ArrayDeque<>();int getScrollY(){return y;}void scrollTo(int x,int value){y=value;}void post(Runnable r){posts.add(r);}void drain(){while(!posts.isEmpty())posts.remove().run();}}
 class QueueExecutor {boolean worker;Queue<Runnable> tasks=new ArrayDeque<>();void execute(Runnable r){tasks.add(r);}void run(){worker=true;try{tasks.remove().run();}finally{worker=false;}}}
-class Handler {Queue<Runnable> tasks=new ArrayDeque<>();void post(Runnable r){tasks.add(r);}void drain(){while(!tasks.isEmpty())tasks.remove().run();}}
+class Handler {Queue<Runnable> tasks=new ArrayDeque<>();void post(Runnable r){tasks.add(r);}void postDelayed(Runnable r,long delay){post(r);}void removeCallbacks(Runnable r){tasks.removeIf(x->x==r);}void drain(){while(!tasks.isEmpty())tasks.remove().run();}}
 class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int PAGE_SIZE=50,TODO_ANY=0,TODO_TODAY_DUE=1,TODO_OVERDUE=2,TODO_OPEN=3;static String CATEGORY_HOMEWORK="homework";}
 class ZjuSettingsStore {ZjuSettingsStore(Object context){}boolean enabled(){return true;}}
 class InboxQuery {InboxQuery(Object...a){}}
 class EventCategory {static String[] VALUES={"event"};}
-class EventCandidate {Long anchor(){return startAtMillis;}Long effectiveDueAtMillis(){return dueAtMillis!=null?dueAtMillis:endAtMillis!=null?endAtMillis:startAtMillis;}Long startAtMillis=1L,endAtMillis,dueAtMillis=2L; boolean allDay;}
+// All rows in this frame-budget fixture are explicitly timed events, not deadline-only tasks.
+class EventCandidate {Long anchor(){return startAtMillis;}Long effectiveDueAtMillis(){return dueAtMillis!=null?dueAtMillis:endAtMillis!=null?endAtMillis:startAtMillis;}boolean hasDefaultExecutionInterval(){return false;}Long executionStartAtMillis(){return startAtMillis;}boolean executionAllDay(){return allDay;}Long startAtMillis=1L,endAtMillis,dueAtMillis=2L; boolean allDay;}
 class TaskStore {List<Long> queryScheduleIds(ScheduleQuery q){throw new AssertionError("SQL on UI");}List<EventCandidate> querySchedulePage(ScheduleQuery q,boolean o,int p){throw new AssertionError("SQL on UI");}}
 class AllDayDates {static String displayStart(long t){return "2026-10-13";}static String localDate(long t,ZoneId z){return "2026-10-13";}}
 class HomeTimelinePreferences {static boolean includesSystemCalendar(Object c){return true;}}
@@ -49,7 +51,7 @@ class Feedback {static int failures;static void show(Object c,String s){failures
 class DashboardSectionData {
  List<Long> ids=new ArrayList<>();List<EventCandidate> candidates=new ArrayList<>();int page,review,failed;long revision=9;
  static int reads, count=55,nextReview=2,nextFailed=1;static boolean fail;static ScheduleQuery last;
- static DashboardSectionData load(DashboardRefreshCheck c,int destination,InboxQuery i,ScheduleQuery q,boolean o,int p,boolean system){
+ static DashboardSectionData load(DashboardRefreshCheck c,int destination,InboxQuery i,ScheduleQuery q,boolean o,int p,boolean system,long focusCandidate){
   if(!c.startupReader.worker)throw new AssertionError("read outside worker");reads++;last=q;
   if(fail)throw new RuntimeException("read failed");
   DashboardSectionData d=new DashboardSectionData();d.page=p;d.review=nextReview;d.failed=nextFailed;
@@ -62,6 +64,9 @@ public class DashboardRefreshCheck {
  int section=SCHEDULE,scheduleResultGeneration,resultMotionGeneration,scheduleSource,scheduleTab,scheduleCategory,schedulePublication,schedulePage,statusIndex,categoryIndex,scheduleTodoScope;
  boolean scheduleResultLoading,scheduleOldestFirst,destroyed,finishing;int updates,pendingReview=-1,pendingFailed=-1,countUpdates;
  String scheduleQuery="original",inboxQuery="";
+ long pendingHomeworkFocus;int homeworkFocusTop,homeworkFocusBottom,scheduleRange;String homeworkFocusFilter="";
+ LocalDate scheduleDate=LocalDate.of(2026,10,1),scheduleUntil=LocalDate.of(2026,11,1);
+ final Runnable homeworkFocus=()->{};
  LinearLayout results=new LinearLayout(),scheduleBuildTarget;
  ScrollView scroll=new ScrollView();
  ArrayDeque<Runnable> scheduleBuildSteps;Runnable scheduleBuildDone;

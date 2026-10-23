@@ -69,10 +69,10 @@ public final class ChronaApp extends Application {
                 // Covers the change that could not reach a stopped screen, and a system light/dark
                 // switch made while the screen sat in the back stack.
                 if (ThemeStore.outdated(activity)) activity.recreate();
-                else LanPairingActivity.activityResumed(activity);
+                else { LanPairingActivity.activityResumed(activity); DuplicateScheduleReview.resumed(activity); }
             }
 
-            @Override public void onActivityPaused(Activity activity) { LanPairingActivity.activityPaused(activity); ZjuSync.background(); }
+            @Override public void onActivityPaused(Activity activity) { DuplicateScheduleReview.paused(activity); LanPairingActivity.activityPaused(activity); ZjuSync.background(); }
 
             @Override public void onActivityStopped(Activity activity) { }
 

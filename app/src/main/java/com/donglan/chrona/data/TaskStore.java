@@ -26,6 +26,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int DATABASE_VERSION = 15;
 
     private final Context context;
+    private final LiveDatabaseAccess.Lease liveAccess;
     private SQLiteDatabase openedDatabase;
     private long openedRevision;
 
@@ -36,6 +37,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     private TaskStore(Context context, String databaseName) {
         super(context.getApplicationContext(), databaseName, null, DATABASE_VERSION);
         this.context = context.getApplicationContext();
+        liveAccess = DATABASE_NAME.equals(databaseName) ? LiveDatabaseAccess.acquire() : null;
     }
 
     /** Independent read source for backups; never reads the live database again. */
@@ -102,12 +104,14 @@ public final class TaskStore extends SQLiteOpenHelper {
             if (openedDatabase != null && openedDatabase.isOpen())
                 changed = openedRevision != revisionOf(openedDatabase);
         } finally {
-            openedDatabase = null;
-            super.close();
-            if (changed) {
-                com.donglan.chrona.AgendaWidgetProvider.requestRefresh(context);
-                com.donglan.chrona.AgendaReminder.requestRefresh(context);
-            }
+            try {
+                openedDatabase = null;
+                super.close();
+                if (changed) {
+                    com.donglan.chrona.AgendaWidgetProvider.requestRefresh(context);
+                    com.donglan.chrona.AgendaReminder.requestRefresh(context);
+                }
+            } finally { if (liveAccess != null) liveAccess.close(); }
         }
     }
 
@@ -1423,6 +1427,30 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     public boolean setCalendarEventId(long candidateId, long taskId, long calendarEventId) {
         return setCalendarEventId(candidateId, taskId, calendarEventId, false);
+    }
+
+    /** Merge audit links retain their provider event even after the source candidate is removed. */
+    public boolean hasOtherCalendarReferences(long eventId, java.util.Collection<Long> excluding) {
+        java.util.Set<Long> excluded = new java.util.HashSet<>(excluding);
+        String[] args = {Long.toString(eventId)};
+        try (Cursor rows = getReadableDatabase().query("event_candidates", new String[]{"id"},
+                "calendar_event_id=?", args, null, null, null)) {
+            while (rows.moveToNext()) if (!excluded.contains(rows.getLong(0))) return true;
+        }
+        try (Cursor rows = getReadableDatabase().query("candidate_merges", new String[]{"calendar_event_id"},
+                "calendar_event_id=?", args, null, null, null, "1")) {
+            return rows.moveToFirst();
+        }
+    }
+
+    /** Change only this candidate's association, after rechecking the provider identity. */
+    public boolean replaceCalendarEventId(long candidateId, long taskId, long expected, Long replacement) {
+        if (replacement != null && replacement <= 0) throw new IllegalArgumentException("Invalid calendar ID");
+        ContentValues values = new ContentValues();
+        values.put("calendar_event_id", replacement);
+        return getWritableDatabase().update("event_candidates", values,
+                "id=? AND task_id=? AND calendar_event_id=?", new String[]{Long.toString(candidateId),
+                        Long.toString(taskId), Long.toString(expected)}) == 1;
     }
 
     public boolean setCalendarEventIdIfUnlinked(long candidateId, long taskId, long calendarEventId) {

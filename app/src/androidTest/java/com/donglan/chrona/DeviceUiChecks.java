@@ -40,6 +40,68 @@ import java.util.concurrent.TimeUnit;
 /** Device measurements; only the explicit atomic fixture phase creates and removes its own test task. No server calls. */
 final class DeviceUiChecks {
     static String run(Instrumentation test, Bundle arguments) throws Exception {
+        if ("capsule_live_fixture".equals(arguments.getString("phase"))) {
+            Context context = test.getTargetContext();
+            if (!"com.donglan.chrona".equals(context.getPackageName()))
+                throw new IllegalStateException("Explicitly authorized phone fixture only");
+            return AgendaReminder.WORKER.submit(() -> {
+                String marker = "胶囊关闭连续性临时测试";
+                var fixture = context.getSharedPreferences("capsule_live_fixture", Context.MODE_PRIVATE);
+                try (var store = new TaskStore(context)) {
+                    long task = fixture.getLong("task", 0);
+                    if ("cleanup".equals(arguments.getString("action"))) {
+                        var saved = task > 0 ? store.getTask(task) : null;
+                        if (saved != null && (!marker.equals(saved.rawText) || !"capsule_live_fixture".equals(saved.source)))
+                            throw new IllegalStateException("Fixture identity mismatch; nothing deleted");
+                        if (saved != null && !store.deleteTask(task)) throw new IllegalStateException("Fixture delete failed");
+                        if (task > 0 && (store.getTask(task) != null || !store.getCandidates(task).isEmpty()))
+                            throw new IllegalStateException("Fixture cleanup incomplete");
+                        fixture.edit().clear().commit();
+                        AgendaReminder.refreshSafely(context, null);
+                        return "fixtureCleaned=true task=" + task;
+                    }
+                    if (!"create".equals(arguments.getString("action")) || task > 0)
+                        throw new IllegalStateException("Explicit create action and no existing fixture required");
+                    long now = System.currentTimeMillis();
+                    task = store.insertTask(marker, null, "capsule_live_fixture", now);
+                    try {
+                        if (!fixture.edit().putLong("task", task).commit()) throw new IllegalStateException("Cannot save cleanup identity");
+                        long candidate = store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0, task,
+                                marker, now + 15 * 60_000L, now + 30 * 60_000L,
+                                "Asia/Shanghai", "", "用户授权临时测试，验后删除", 30, false, null, "event", false));
+                        store.updateStatus(task, com.donglan.chrona.data.TaskRecord.READY, null);
+                        AgendaReminder.refreshSafely(context, null);
+                        return "fixtureCreated=true task=" + task + " candidate=" + candidate;
+                    } catch (Exception failure) {
+                        store.deleteTask(task); fixture.edit().clear().commit(); throw failure;
+                    }
+                }
+            }).get();
+        }
+        if ("capsule_trace".equals(arguments.getString("phase"))) {
+            Context context=test.getTargetContext();
+            StringBuilder result=new StringBuilder();
+            for(String line:com.donglan.chrona.debug.DiagLog.read(context).split("\\R"))
+                if(line.contains("CAPSULE "))result.append(line).append('\n');
+            var prefs=context.getSharedPreferences("atomic_capsule",Context.MODE_PRIVATE);
+            result.append("wake_until=").append(prefs.getLong("wake_until",0)).append(" item_until=").append(prefs.getLong("until:73112",0))
+                    .append(" now=").append(SystemClock.elapsedRealtime());
+            return result.toString();
+        }
+        if ("set_ai_endpoint".equals(arguments.getString("phase"))) {
+            String endpoint = arguments.getString("endpoint");
+            if (!"com.donglan.chrona".equals(test.getTargetContext().getPackageName())
+                    || !"https://api-slb.jiji.cc".equals(endpoint))
+                throw new IllegalArgumentException("Explicit phone endpoint change only");
+            var settings = test.getTargetContext().getSharedPreferences("chrona_ai_settings", Context.MODE_PRIVATE);
+            if (!settings.contains("base_url")) throw new IllegalStateException("No existing AI configuration");
+            if (!settings.edit().putString("base_url", endpoint).commit()
+                    || !endpoint.equals(settings.getString("base_url", "")))
+                throw new IllegalStateException("Endpoint was not saved");
+            return new JSONObject().put("endpoint", settings.getString("base_url", ""))
+                    .put("changedKeys", new JSONArray().put("base_url")).put("networkRequests", 0).toString();
+        }
+        if ("atomic_event_observation".equals(arguments.getString("phase"))) return AtomicEventObservationCheck.run(test, arguments);
         if ("homework_attention".equals(arguments.getString("phase"))) return HomeworkAttentionDeviceCheck.run(test, arguments);
         if ("notification_layers".equals(arguments.getString("phase"))) return NotificationLayersDeviceCheck.run(test, arguments);
         if ("workspace_initial_state".equals(arguments.getString("phase"))) return WorkspaceInitialStateDeviceCheck.run(test, arguments);

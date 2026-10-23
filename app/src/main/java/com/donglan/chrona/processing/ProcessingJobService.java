@@ -25,6 +25,7 @@ import com.donglan.chrona.ai.ParseResult;
 import com.donglan.chrona.data.TaskRecord;
 import com.donglan.chrona.data.TaskFileAttachment;
 import com.donglan.chrona.data.TaskStore;
+import com.donglan.chrona.data.LiveDatabaseAccess;
 import com.donglan.chrona.data.CandidateRules;
 import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
@@ -63,7 +64,9 @@ public final class ProcessingJobService extends JobService {
     private static final ConcurrentHashMap<Integer, Execution> workers = new ConcurrentHashMap<>();
     private static final class Execution {
         final RequestControl control = new RequestControl(RETRY_BUDGET_MILLIS);
+        final LiveDatabaseAccess.Lease access;
         Thread thread;
+        Execution(LiveDatabaseAccess.Lease access) { this.access = access; }
     }
 
     public static void enqueue(Context context, long taskId) {
@@ -131,10 +134,19 @@ public final class ProcessingJobService extends JobService {
     public boolean onStartJob(JobParameters params) {
         long taskId = params.getExtras().getLong(EXTRA_TASK_ID, -1L);
         if (taskId <= 0) return false;
+        LiveDatabaseAccess.Lease access = LiveDatabaseAccess.tryAcquire();
+        if (access == null) {
+            // Retry after replacement (or its rollback), without reading either database version.
+            new android.os.Handler(android.os.Looper.getMainLooper())
+                    .post(() -> jobFinished(params, true));
+            return true;
+        }
         // Claimed on the main thread so a concurrent reconcile() cannot mistake a starting job
         // for one that was lost with a dead process.
-        Execution execution = new Execution();
+        Execution execution = new Execution(access);
         Execution preceding;
+        boolean started = false;
+        try {
         synchronized (IN_FLIGHT) {
             preceding = IN_FLIGHT.putIfAbsent(taskId, execution);
         }
@@ -153,7 +165,16 @@ public final class ProcessingJobService extends JobService {
         execution.thread = worker;
         workers.put(params.getJobId(), execution);
         worker.start();
+        started = true;
         return true;
+        } finally {
+            if (!started) {
+                IN_FLIGHT.remove(taskId, execution);
+                workers.remove(params.getJobId(), execution);
+                execution.control.close();
+                access.close();
+            }
+        }
     }
 
     /** Describes the work the running job is doing, as a user-initiated job's notice must. */
@@ -243,11 +264,13 @@ public final class ProcessingJobService extends JobService {
             if (claimed && !execution.control.isCancelled()
                     && !Thread.currentThread().isInterrupted()) recordFailure(taskId, message(exception));
         } finally {
+          try {
             IN_FLIGHT.remove(taskId, execution);
             workers.remove(params.getJobId(), execution);
             execution.control.close();
             if (!execution.control.isCancelled() && !Thread.currentThread().isInterrupted())
                 jobFinished(params, !claimed);
+          } finally { execution.access.close(); }
         }
     }
 

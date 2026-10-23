@@ -28,6 +28,8 @@ public final class ZjuSettingsActivity extends Activity {
             ZjuSync.request(this,result->{if(isDestroyed())return;status.setText(result);bind();});
         });
         SettingsPageLayout.header(this,root,"折姜星辰",sync);
+        TextView description=new TextView(this);description.setText("浙江大学专属功能");
+        description.setTextSize(13);UiStyle.muted(description);UiStyle.addSpaced(root,description,0,8);
         enabled=toggle(root,"折姜星辰");
         LinearLayout account=new LinearLayout(this);account.setOrientation(LinearLayout.VERTICAL);
         account.setPadding(dp(16),dp(12),dp(16),dp(12));UiStyle.glass(account);
@@ -102,6 +104,7 @@ public final class ZjuSettingsActivity extends Activity {
         com.donglan.chrona.calendar.CalendarStore calendar=new com.donglan.chrona.calendar.CalendarStore(this);
         calendarPermission.setVisibility(calendar.hasReadPermission()&&calendar.hasWritePermission()?View.GONE:View.VISIBLE);
         sync.setEnabled(!busy&&settings.enabled()&&settings.configured());status.setText(settings.status());
+        classroom.setVisibility(settings.enabled()?View.VISIBLE:View.GONE);
         classroom.setEnabled(!busy&&settings.enabled()&&settings.configured());
         ZjuSync.WORKER.execute(()->{
             boolean on; synchronized(AndroidSync.LOCK){on=new ZjuHomeworkStore(this).state().enabled;}

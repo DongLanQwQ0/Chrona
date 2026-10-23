@@ -16,6 +16,7 @@ def write(path, source):
     target.write_text(textwrap.dedent(source), encoding="utf-8")
 
 write("com/donglan/chrona/AndroidSync.java", (ROOT / "app/src/main/java/com/donglan/chrona/AndroidSync.java").read_text(encoding="utf-8"))
+write("com/donglan/chrona/calendar/LinkedCalendarEvents.java", (ROOT / "app/src/main/java/com/donglan/chrona/calendar/LinkedCalendarEvents.java").read_text(encoding="utf-8"))
 write("com/donglan/chrona/sync/SyncState.java", (ROOT / "shared/src/main/java/com/donglan/chrona/sync/SyncState.java").read_text(encoding="utf-8"))
 write("android/content/Context.java", '''
 package android.content;
@@ -36,16 +37,28 @@ package android.database.sqlite; public class SQLiteDatabase {public void beginT
 public void setTransactionSuccessful(){}public void execSQL(String s){}public void execSQL(String s,Object[] a){}}
 ''')
 write("com/donglan/chrona/data/TaskRecord.java", 'package com.donglan.chrona.data; public class TaskRecord {}')
-write("com/donglan/chrona/data/EventCandidate.java", 'package com.donglan.chrona.data; public class EventCandidate {public Long calendarEventId;}')
+write("com/donglan/chrona/data/EventCandidate.java", 'package com.donglan.chrona.data; public class EventCandidate {public long id,taskId;public Long calendarEventId;}')
 write("com/donglan/chrona/data/TaskStore.java", '''
 package com.donglan.chrona.data; public class TaskStore implements AutoCloseable {
 public TaskStore(android.content.Context c){}public android.database.sqlite.SQLiteDatabase getWritableDatabase(){return new android.database.sqlite.SQLiteDatabase();}
 public static void addCandidateMerges(android.database.sqlite.SQLiteDatabase d){}public void rotateRestoredSyncIdentity(){}
+public boolean hasOtherCalendarReferences(long id,java.util.Collection<Long> excluding){return false;}
+public boolean setCalendarEventIdIfUnlinked(long id,long task,long event){throw new AssertionError("sync lock fixture cannot publish events");}
+public boolean replaceCalendarEventId(long id,long task,long expected,Long replacement){throw new AssertionError("sync lock fixture cannot relink events");}
 public TaskRecord getTask(long id){return null;}public java.util.List<EventCandidate> getCandidates(long id){return java.util.Collections.emptyList();}public void close(){}}
 ''')
 write("com/donglan/chrona/calendar/CalendarStore.java", '''
 package com.donglan.chrona.calendar;public class CalendarStore {public CalendarStore(android.content.Context c){}
-public boolean deleteEvent(long id){return true;}public Object getEvent(long id){return null;}}
+public boolean deleteEvent(long id){return true;}public EventRecord getEvent(long id){return null;}
+public long insertEvent(EventInput input){throw new AssertionError("sync lock fixture cannot insert provider event");}
+public boolean updateEvent(long id,EventInput input){throw new AssertionError("sync lock fixture cannot update provider event");}
+public boolean updateDescription(long id,String value){throw new AssertionError("sync lock fixture cannot edit provider notes");}
+public boolean replaceReminders(long id,java.util.List<Integer> values){throw new AssertionError("sync lock fixture cannot edit provider reminders");}
+public static class EventRecord {public String title,timeZoneId,description,location;public long startMillis,endMillis;public boolean allDay;public java.util.List<Integer> reminderMinutes;}
+public static class EventInput {
+public EventInput(String title,long start,long end,String zone,boolean allDay,String description,String location,java.util.List<Integer> minutes){throw new AssertionError("sync lock fixture cannot build provider input");}
+public EventInput withRepeat(EventRecord event){throw new AssertionError("sync lock fixture cannot copy provider event");}}
+}
 ''')
 write("com/donglan/chrona/sync/WebDavClient.java", '''
 package com.donglan.chrona.sync;public class WebDavClient implements AutoCloseable {

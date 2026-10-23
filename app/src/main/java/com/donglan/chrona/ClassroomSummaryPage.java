@@ -387,10 +387,10 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     @Override protected void onDestroy() {
         refreshHandler.removeCallbacks(refreshTick);
-        if (s != null) { if (isFinishing()) s.dispose(); else if (s.owner.get() == this) s.owner.clear(); }
+        if (s != null) { if (isFinishing() || !s.allowed()) s.dispose(); else if (s.owner.get() == this) s.owner.clear(); }
         super.onDestroy();
     }
-    @Override public Object onRetainNonConfigurationInstance() { return s; }
+    @Override public Object onRetainNonConfigurationInstance() { return s != null && s.allowed() ? s : null; }
     @Override protected void onSaveInstanceState(Bundle state) {
         if (s == null) return;
         state.putInt("mode", s.mode); state.putInt("page", s.page); state.putString("week", s.week.toString());

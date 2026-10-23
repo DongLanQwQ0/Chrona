@@ -1,21 +1,44 @@
 # 当前工作单
 
-## 当前交付：原子岛胶囊30秒后精简
+## 当前交付与唯一下一步
 
-- 最新决定：每次亮屏后胶囊完整显示30秒，随后仅显示标题前两个字；用户接受将手动收起计时改为点击胶囊起计60秒。展开卡片保留完整内容，不改变通知生命周期、作业十分钟期限、关闭及红点规则。
-- 已实现AtomicCapsuleController统一正常/秒级刷新，短态同时移除时间并截标题前两个字，完整卡片不改。不可变点击URI校验通知身份，旧点击不复活；点击只请求一次展开，重复刷新不续时。屏幕/点击广播入口先捕获单调时间，排队不延长期限。
-- 已核实本机存档SystemUIPlugin：ISLAND_STATE_CHANGED受signatureOrSystem权限保护；showTime是岛显示期限，不能用于二字精简。采用应用自己的不可变点击PendingIntent计时，并通过同一通知forceShowCard展开；卡片根节点仍直达原详情。单一控制器持久保存通知身份/单调时钟期限，用主线程定时＋系统闹钟补偿进程退出，统一正常与秒级刷新投影，不重置提醒期限。
-- 代码阶段完成：生产controller37项、原适配111项、live生命周期/正常调度、卡片contract与作业存储通过，专门check代码审查通过。debug/release/androidTest编译及双lint最终通过；证据build/atomic-capsule-30s/final-build.log、signing.log、badging.log，详见验证记录。
-- 固定待验候选：build/candidates/0.15.41/Chrona-0.15.41.apk，203/0.15.41、3103022字节、原签名、不可调试。仅本地代码/构建，不创建标签、不发布、不操作手机。
-- 唯一下一步：用户回来连接vivo后，安装该固定候选并验收亮屏30秒、点击60秒/展开/详情、两字宽度与图标避让、秒级更新、锁屏/恢复及十分钟期限/红点/关闭完成，补实际截图交UI复审；通过后再发布。进程错过亮屏且全部旧窗口过期时从恢复补30秒；无精确闹钟权限且进程退出时边界可能被系统推迟。
-- 用户即将带走手机：不再操作手机，后续先做无需设备的调查/实现/构建。真正30秒、手动展开收起及状态栏避让必须待再次连接真机验收，不以编译或模拟器冒充。
+当前交付：用户明确接受现固件约200ms系统过渡，并要求恢复正式30／60秒后发布Release。候选固定0.15.41／203，正式构建／签名／覆盖安装及真实30／60秒核对已完成。唯一下一步：提交审核业务源码、打标签并发布`build/candidates/0.15.41/Chrona-0.15.41.apk`，核对Latest和下载资产。排除本地agent规范、角色配置和备份。完全断开ADB独立运行未单独验收，作为证据边界记录，不以无线连接冒充。
 
-## 上一交付：0.15.40 网页主从详情
+2026-10-23。用户确认临时5／10秒版的胶囊计时已恢复，随后要求修复“原生大卡片关闭后先变窄，再变详细”的闪动。**闪动未修复，已定位到当前OriginOS系统宿主固定的200ms中间动画；不宣称应用侧修好。**
 
-- 已实现并验收方案A：桌面30/70列表/完整详情，窄屏列表/详情切换；取消横向卡片、卡内长文滚动和底部事项选择器。紧迫优先，完成后置；外部目标直接选中，返回列表目标可见。
-- 原位分组编辑、Dock上方可达操作、模态遮罩关闭、四关闭路径及删除取消草稿保护、保存中锁定、失败保留与浏览器返回/刷新保护已通过。受影响源码、规范、功能文档与回归同步。
-- 固定候选为202/0.15.40，APK：build/candidates/0.15.40/Chrona-0.15.40.apk（3100134字节，原签名，不可调试）。正式debug/release及双lint、67项主从专项、反馈/parity/features/motion/deadline/record-removal、DOM87与quick7/7通过，专门UI复审通过；证据见docs/validation-history.md和build/lan-detail-navigation/。
-- 已发布Latest：[0.15.40](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.40)，源码18d974f与标签v0.15.40已推送，页面确认同一提交、四条更新说明及固定APK（2.96MB），截图build/release-0.15.40-published.png。
-- 手机覆盖安装完成：USB vivo V2527A从201/0.15.39更新为202/0.15.40，install -r返回Success，安装版本已确认，DashboardActivity启动Status: ok；未卸载或清数据。
-- 当前交付已发布并安装。真实LAN链路尚未验证：手机当前未运行LanAccessService，用户重新开启局域网访问后刷新网页使用；模拟API验收不替代此链路。无需重做已通过的布局与草稿检查。
-- 0.15.39原生首页课表修复已在vivo安装，本轮不改动。不得重启此前叫停的公开下载复验、手动更新核对、付费AI或真实WebDAV。历史见验证记录。
+手机版已于19:49:55保留数据覆盖安装正式0.15.41，无测试后缀；普通辅助服务Bound、Crashed空。系统设置确认在前台后返回桌面，＋24秒完整／＋33秒精简；原生点击后点外关闭，＋55秒完整／＋63秒精简，accepted=true。未用instrumentation／UiAutomation／手动tick，未创建新记录。第一组Dashboard重入的home25／33均短，未用作桌面边界证据；有效新组由系统设置前台确认起算。
+
+## 当前候选与手机状态
+
+- 源码203／0.15.41，远端最新正式发布仍0.15.40，0.15.41标签／Release尚未创建。业务已分范围暂存，保留本地其他修改，禁止重置。
+- `capsuleTest`仅作独立开发变体保留；正式debug／release均30／60秒，手机已退出短时测试。临时包不得作为正式发布资产。
+- 最终正式构建`build/release-0.15.41-final-build.txt`：debug/release assemble及lint成功。`build/release-0.15.41-artifact-check.txt`含APK签名、包名版本、DEBUG=false及DEX内30/60常量；上版证书相同。正式APK为`build/candidates/0.15.41/Chrona-0.15.41.apk`。
+- vivo V2527A／OriginOS16当前安装正式0.15.41，不含即时快投实验；设备唯一标识仅留本地证据，不公开提交。
+- 用户关闭独立「日程后台更新」频道；读回importance=0，保留关闭，不能改成关闭整个应用或事项通知。
+- 用户明确授权创建一条临时活动、验后删除；`capsule_live_fixture`的task116／candidate423已清理，读回task和候选不存在，记录`build/capsule-live-fixture-cleanup.txt`。**没有待删除测试活动。** 不再操作用户真实日程、账号、系统日历或同步配置。
+
+## 闪动结论与证据
+
+- 常规点击建立原点击时刻＋10秒（正式＋60秒）的期限。普通及秒级刷新不续时，不强制开关大卡，外部点空白仍由系统原生关闭。
+- 绕过350ms合并刷新、用最新通知快照即时投影的实验通过离线检查，但实际`flash-after.mp4`仍经窄黑再扩宽；持有3秒后收起也一样。专门只读`/root/ui_review`已否决无闪回签收，该实验及其专用检查均撤回。
+- `build/atomic-event-review/flash-before.mp4`、`flash-after.mp4`、`flash-held.mp4`及对应10fps接触表有效。录制期间无UiAutomation、instrumentation或手动tick；USB条件。临时活动由生产提醒流程正常发布。
+- 只读宿主APK及派生源码在`F:/Android/ChronaBuildCheck/capsule-host/`。`DynamicCapsuleStateController`规定展开态4经中间态1转2／3；`ContainerAnimatorCommon`中间态使用系统资源固定宽度且duration=200；展开期间不重建收起用左右view。主代理已查看关键代码；该机制与录屏200ms窄黑阶段吻合。
+- 已检查通知协议未发现跳过该中间态的app入口。没有修改系统APK、全局动画、强制展开或阻止关闭；不再无依据试参数。此限制只确认为当前固件，不推广其他OriginOS版本。
+- 恢复后定向检查`build/capsule-final-restored-checks.txt`：正式45／短时18／vivo111通过，构建变体隔离通过。无闪回目标仍未达到。
+
+## 本批其他已完成内容
+
+- AI `schedule-v16`：三个请求时间锚点均附程序时区计算的星期，动态时间上下文在完整稳定system前缀末尾；user只保留输入。缺年采用明确上下文或本地当前年，不因仅缺年份存疑；JSON只剥外层escape／代码围栏，保留字符串正文与原始流展示。
+- 通用执行建议取消截止前6小时至3天限制，利用整个准备周期并按工作量留缓冲；不针对征文特判，不自动重排已保存日程。请求493／归一化59／排期418／自动发布16通过。无付费在线解析。功能与规则见`docs/features/ai/ai-time-extraction.md`。
+- 重复日程自动检测、默认不选、按组提交、取消去重、新组提示、前后台与原生／网页入口已验收，独立UI审核通过。数据336＋关联102／16／45，真实Edge专项和模拟器Activity／SQLite通过。全网页旧无关disclosure时序失败仍未称全通过。
+- 紧凑原子卡、Lucide任务菜单、每个重复成员的标题／来源／地点、窄屏大字预览已验收，不因本轮重新设计。
+- 备份恢复可靠性、共享日历引用、恢复并发、课堂入口隐藏等本批已验收项保留，具体实现和有效证据见`docs/validation-history.md`及各功能文档，不重复整轮。
+
+## 仍保留的验收边界与发布条件
+
+- 物理断开ADB后的独立胶囊运行仍未正式验收；用户此前一直插着USB，不把辅助程序退出当拔线。当前故障定位不等于该项通过。
+- 先前普通服务source=null点击问题已修，USB59／61、再次展开及保持卡片65秒有效证据仍适用。旧home29/31本轮均为精简，不签为桌面边界通过。
+- 当前无需继续付费AI、真实WebDAV、公开下载／手动更新复验；手机LAN实链路仍缺实际开启访问，模拟API不替代它。
+- 常规发布已授权，但本轮未发布。发布前必须同候选确认源码、版本、安装包、签名、升级路径及剩余验收；旧含强制展开APK禁止分发。
+- 本地`AGENTS.md`、`.backups/`、`.local-backups/`及角色toml不纳入业务提交。
+- FastCtx未提供，使用PowerShell7；Java `D:/Minecraft/java21`，SDK `F:/Android/Sdk`，Gradle缓存`F:/Android/GradleCache`，Android用户目录`F:/Android/user-home`，下载与缓存仅F盘。

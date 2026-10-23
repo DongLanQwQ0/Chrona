@@ -31,8 +31,7 @@ public final class SemanticEventNormalizer {
     public static final int DEFAULT_WORK_END = 22 * 60;
     private static final long DEFAULT_EXECUTION_MINUTES = 30;
     private static final long DAY = 24 * 60 * MINUTE;
-    private static final long MIN_ADVANCE = 6 * 60 * MINUTE;
-    private static final long MAX_ADVANCE = 3 * DAY;
+    private static final int REVIEW_BUFFER_SHARE = 4;
     // The editor displays four-digit Gregorian years; reject epoch values outside that domain.
     private static final long MIN_EPOCH = -62_135_596_800_000L;
     private static final long MAX_EPOCH = 253_402_300_799_999L;
@@ -335,15 +334,15 @@ public final class SemanticEventNormalizer {
             ZoneId zone, int workStart, int workEnd) {
         long lower = now;
         long upper = due - duration;
-        boolean distant = due - now > DAY;
-        long target = now + (due - now) / 2;
-        if (distant) {
-            lower = Math.max(now, due - MAX_ADVANCE);
-            upper = Math.min(upper, due - MIN_ADVANCE);
-            target = due - (MAX_ADVANCE + MIN_ADVANCE) / 2;
-        }
         if (upper < lower) return null;
-        if (distant && proposed != null) target = proposed;
+        long slack = upper - lower;
+        long target = lower + slack / 2;
+        if (due - now > DAY && proposed != null) {
+            // Workload and the whole available horizon determine the preparation buffer.
+            // This is a target preference, not a restriction that discards a usable work window.
+            long buffer = Math.min(slack / 2, Math.max(duration, slack / REVIEW_BUFFER_SHARE));
+            target = Math.min(proposed, upper - buffer);
+        }
         return nearestExecutionStart(lower, upper, target, duration, zone, workStart, workEnd);
     }
 

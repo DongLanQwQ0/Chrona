@@ -151,10 +151,123 @@ public final class CandidateMergeCheck {
         check(same(identity("Meeting",1000L,3000L,null,null,"Notes",null,false),
                 identity("Meeting",1000L,3000L,null," \u3000 ","Notes",null,false)),"empty location normalization");
     }
+    static EventCandidate named(long id,String title,String location){
+        return new EventCandidate(id,id,title,1000L,3000L,"UTC",location,"Notes",10,false,
+                null,EventCategory.TASK,false,false,EventCandidate.CERTAIN,4000L,null,false);
+    }
+    static boolean grouped(EventCandidate first,EventCandidate second){
+        return DuplicateCandidates.groups(List.of(first,second)).size()==1;
+    }
+    static void boundedDistanceChecks()throws Exception{
+        var method=DuplicateCandidates.class.getDeclaredMethod("distanceAtMost",int[].class,int[].class,int.class);
+        method.setAccessible(true);
+        Random random=new Random(20261023);
+        for(int sample=0;sample<180;sample++){
+            int length=8+random.nextInt(40),otherLength=length-2+random.nextInt(5);
+            int[] a=new int[length],b=new int[otherLength];
+            for(int i=0;i<a.length;i++)a[i]=random.nextInt(5);
+            for(int i=0;i<b.length;i++)b[i]=random.nextBoolean()&&i<a.length?a[i]:random.nextInt(5);
+            int[][] full=new int[a.length+1][b.length+1];
+            for(int i=0;i<=a.length;i++)full[i][0]=i;
+            for(int j=0;j<=b.length;j++)full[0][j]=j;
+            for(int i=1;i<=a.length;i++)for(int j=1;j<=b.length;j++)
+                full[i][j]=Math.min(Math.min(full[i-1][j]+1,full[i][j-1]+1),full[i-1][j-1]+(a[i-1]==b[j-1]?0:1));
+            int budget=Math.max(Math.abs(a.length-b.length),sample%14);
+            check((Boolean)method.invoke(null,a,b,budget)==(full[a.length][b.length]<=budget),"banded distance equals full DP "+sample);
+        }
+    }
+    static void broadMatchingChecks(){
+        EventCandidate meeting=named(1,"项目进度汇报","教学楼-101");
+        check(grouped(meeting,named(2,"项目进度汇报（会议）","教学楼 101")),"Chinese suffix and punctuation-normalized location");
+        check(!same(meeting,named(2,"项目进度汇报（会议）","教学楼 101")),"exact key contract is unchanged");
+        check(grouped(named(1,"Annual Review","Room-A"),named(2,"ＡＮＮＵＡＬ， ＲＥＶＩＥＷ!","room a")),"English fullwidth case and punctuation");
+        check(grouped(meeting,named(2,"项目进度汇报",null)),"missing location may match known location");
+        check(grouped(named(1,"项目进度汇报",null),named(2,"项目进度汇报（会议）","教学楼101")),"missing location is symmetric");
+        check(!grouped(meeting,named(2,"项目进度汇报","教学楼102")),"explicit conflicting locations remain independent");
+        check(!grouped(meeting,named(2,"完全不同事项","教学楼101")),"location and notes cannot replace title similarity");
+        check(grouped(named(1,"项目汇报第１次",""),named(2,"项目汇报第1次（会议）","")),"fullwidth numeric sequence matches");
+        check(!grouped(named(1,"项目汇报第1次",""),named(2,"项目汇报第2次","")),"different occurrence numbers remain independent");
+        check(!grouped(named(1,"项目进度汇报",""),named(2,"项目进度汇报1","")),"missing number is not equivalent");
+        check(!grouped(named(1,"项目进度汇报1-2",""),named(2,"项目进度汇报12","")),"number sequence boundaries survive punctuation removal");
+        check(!grouped(named(1,"项目进度汇报1 2",""),named(2,"项目进度汇报12","")),"number boundaries also protect normalized exact titles");
+        check(!grouped(named(1,"跨学期项目进度汇报第三次会议",""),named(2,"跨学期项目进度汇报第四次会议","")),"Chinese occurrence numbers remain independent");
+        check(!grouped(named(1,"大学物理阅读笔记第二章讨论",""),named(2,"大学物理阅读笔记第三章讨论","")),"Chinese chapter numbers remain independent");
+        check(!grouped(named(1,"项目计划第壹次说明会议",""),named(2,"项目计划第贰次说明会议","")),"financial Chinese numbers remain independent");
+        check(!grouped(named(1,"物理实验",""),named(2,"物理","")),"short contained titles are protected");
+        check(!grouped(meeting,named(2,"项目进度汇报及下学期规划会议","教学楼101")),"containment requires sufficient coverage");
+        check(grouped(named(1,"abcdefghi",""),named(2,"abcxefghi","")),"Levenshtein above threshold");
+        check(!grouped(named(1,"abcdefgh",""),named(2,"abcxefgh","")),"Levenshtein below threshold");
+        check(grouped(named(1,"abcdefghijklmnopqrstuvwxy",""),named(2,"abcxefghijkymnopqrstuvwxz","")),"exactly 88 percent similarity is accepted");
+        check(!grouped(named(1,"abcdefghijklmnopqrstuvwxy",""),named(2,"abcxefghijkymnopqzstuvwxz","")),"four edits at length 25 fail similarity");
+        String longTitle="a".repeat(500);
+        check(grouped(named(1,longTitle,""),named(2,"b".repeat(60)+"a".repeat(440),"")),"long title matches at exact edit budget");
+        check(!grouped(named(1,longTitle,""),named(2,"b".repeat(61)+"a".repeat(439),"")),"long title fails beyond edit budget");
+        check(!grouped(named(1,"𠮷野家",""),named(2,"𠮷野家店","")),"containment counts code points instead of UTF16 units");
+        check(grouped(named(1,"𠮷野家店",""),named(2,"𠮷野家店铺","")),"four-code-point containment is allowed");
+        EventCandidate a=named(1,"abcdefghi",""),b=named(2,"abcxefghi",""),c=named(3,"abcxefghj","");
+        check(grouped(a,b)&&grouped(b,c)&&!grouped(a,c),"synthetic non-transitive similarity chain");
+        List<List<EventCandidate>> chain=DuplicateCandidates.groups(List.of(c,b,a));
+        check(chain.size()==1&&chain.get(0).size()==2&&chain.get(0).get(0).id==1&&chain.get(0).get(1).id==2,"pairwise group rejects chain bridge and orders IDs");
+        check(DuplicateCandidates.groups(List.of(a,b,c)).get(0).equals(chain.get(0)),"input order cannot change similarity grouping");
+        List<List<EventCandidate>> locations=DuplicateCandidates.groups(List.of(named(3,"项目进度汇报","B楼"),named(2,"项目进度汇报",null),named(1,"项目进度汇报","A楼")));
+        check(locations.size()==1&&locations.get(0).size()==2,"missing location cannot bridge conflicting known locations");
+        for(int difference:new int[]{2,3,10,11})
+            check(!grouped(candidate(1,0),candidate(2,difference)),"broad matcher preserves business conflict "+difference);
+        EventCandidate dated=identity("项目进度汇报",1000L,3000L,4000L,"","Notes",null,false);
+        check(!grouped(dated,identity("项目进度汇报会议",1000L,3000L,4001L,"","Notes",null,false)),"broad matcher preserves deadline");
+        check(!grouped(dated,identity("项目进度汇报会议",1000L,3000L,4000L,"","Notes",5000L,false)),"broad matcher preserves completion state");
+        check(!grouped(dated,dated.withRepeat(new RepeatRule("daily",1,List.of(),null,3))),"broad matcher preserves repeat rule");
+        EventCandidate repeated=dated.withRepeat(new RepeatRule("daily",1,List.of(),null,3));
+        check(!grouped(repeated,repeated.withRepeatState("{\"1000\":{\"deleted\":true}}",null)),"broad matcher preserves repeat exceptions");
+        check(!grouped(repeated,repeated.withRepeatState("{}",2000L)),"broad matcher preserves repeat stop");
+        EventCandidate otherZone=new EventCandidate(0,99,"项目进度汇报",1000L,3000L,"Asia/Shanghai","","Notes",30,true,88L,
+                EventCategory.TASK,false,true,EventCandidate.INFERRED,4000L,null,false)
+                .withRepeat(new RepeatRule("daily",1,List.of(),null,3));
+        check(!grouped(repeated,otherZone),"broad matcher preserves repeated local timezone");
+        check(grouped(identity("项目进度汇报",1000L,3000L,4000L,"","Notes",5000L,false),
+                identity("项目进度汇报会议",1000L,3000L,4000L,"","Other",6000L,false)),"completion timestamps do not block broad dated match");
+        check(grouped(identity("项目进度汇报",null,null,4000L,"","Notes",null,false),
+                identity("项目进度汇报会议",null,null,4000L,"","Other",null,false)),"deadline alone anchors broad match");
+        check(!grouped(identity("项目进度汇报",null,null,null,"","Notes",null,false),identity("项目进度汇报会议",null,null,null,"","Notes",null,false)),"undated items do not use fuzzy titles");
+        check(!grouped(identity("项目进度汇报",1000L,3000L,null,"","Notes",null,true),identity("项目进度汇报会议",1000L,3000L,null,"","Notes",null,true)),"records do not use fuzzy titles");
+        check(!grouped(identity("项目进度汇报",null,null,null,"","Notes",null,false),identity("项目进度汇报",null,null,null,"","Other",null,false)),"undated description protection remains");
+    }
     public static void main(String[] args)throws Exception{
         File base=new File(args[0],UUID.randomUUID().toString());base.mkdirs();
         appendChecks(base);
         identityChecks();
+        broadMatchingChecks();
+        boundedDistanceChecks();
+        try(TaskStore store=new TaskStore(new Context(new File(base,"selected-groups")))){
+            task(store,"first source",0);task(store,"second source",0);
+            task(store,"other first",1);task(store,"other second",1);
+            CandidateMerges.Preview preview=CandidateMerges.scan(store);
+            check(preview.groups.size()==2,"two independent groups for explicit choice");
+            Set<Long> selected=Collections.singleton(preview.groups.get(0).get(0).id);
+            SQLiteDatabase db=store.getWritableDatabase();db.beginTransaction();
+            try{check(CandidateMerges.mergeRows(store,preview.revision,selected)==1,"only selected group merged");db.setTransactionSuccessful();}finally{db.endTransaction();}
+            CandidateMerges.Preview remaining=CandidateMerges.scan(store);
+            check(remaining.groups.size()==1&&remaining.groups.get(0).size()==2,"unselected group remains intact");
+            db.beginTransaction();try{
+                check(CandidateMerges.mergeRows(store,remaining.revision,Collections.emptySet())==0,"empty selection never deletes");
+                try{CandidateMerges.mergeRows(store,remaining.revision,Collections.singleton(Long.MAX_VALUE));throw new AssertionError("unknown group accepted");}catch(java.io.IOException expected){checks++;}
+            }finally{db.endTransaction();}
+            check(CandidateMerges.scan(store).groups.size()==1,"invalid choice leaves group untouched");
+        }
+        try(TaskStore store=new TaskStore(new Context(new File(base,"broad-match")))){
+            long first=task(store,"short title source",0),second=task(store,"detailed title source",0);
+            store.replaceCandidates(second,List.of(new EventCandidate(0,second,"Meeting (review)",1000L,3000L,
+                    "Asia/Shanghai","Room","Notes",10,false,7L,EventCategory.EVENT,false,false,EventCandidate.CERTAIN)));
+            // Short title must cover at least 65% of the longer one; this suffix is intentionally too long.
+            check(CandidateMerges.scan(store).removed()==0,"long suffix below coverage is absent from real preview");
+            store.replaceCandidates(second,List.of(new EventCandidate(0,second,"Meeting!",1000L,3000L,
+                    "Asia/Shanghai","","Preserved second-source notes",10,false,7L,EventCategory.EVENT,false,false,EventCandidate.CERTAIN)));
+            CandidateMerges.Preview preview=CandidateMerges.scan(store);
+            check(preview.removed()==1,"normalized title and missing location appear in real preview");
+            check(store.listCandidates().size()==2&&store.mergeLedger().records().isEmpty(),"scan never automatically merges broad matches");
+            check(merge(store,preview.revision)==1&&store.listCandidates().size()==1,"broad match uses existing confirmation transaction");
+            check(store.getTask(first)!=null&&store.getTask(second)!=null&&store.mergeLedger().records().size()==1,"broad merge retains sources and permanent ledger");
+        }
         try(TaskStore store=new TaskStore(new Context(new File(base,"metadata")))){
             long first=task(store,"capture source",0),second=task(store,"calendar source",9);
             EventCandidate source=store.getCandidates(second).get(0);

@@ -80,10 +80,8 @@ final class WorkspaceDeviceCheck {
         View pager = (View)field(activity, "pager");
         checkOverlay(test, activity, pager);
         swipe(test, pager, .80f, .18f, 24);
-        waitFor(test, () -> activity.selectedPage() == 1, "timetable to classroom swipe");
-        require(activity.currentPage() instanceof ClassroomSummaryPage, "classroom page");
-        swipe(test, pager, .80f, .18f, 24);
-        waitFor(test, () -> activity.selectedPage() == 2, "classroom to calendar swipe");
+        waitFor(test, () -> activity.selectedPage() == 2, "disabled school: timetable to calendar swipe");
+        require(((SchedulePage[])field(activity,"pages"))[1]==null,"hidden classroom never mounted");
         CalendarOverviewPage calendar = (CalendarOverviewPage)activity.currentPage();
         waitFor(test, () -> field(calendar, "horizontalViewport") instanceof FreeCalendarScrollView, "week view loaded");
         FreeCalendarScrollView horizontal = (FreeCalendarScrollView)field(calendar, "horizontalViewport");
@@ -179,7 +177,7 @@ final class WorkspaceDeviceCheck {
                     if(sample==0 || sample==4 || sample==8 || sample==11 || sample==12)
                         trace.append("\nstep ").append(sample).append(": ").append(handoffState(activity,pager,synthetic));
                 });
-                waitFor(test, () -> activity.selectedPage()==1, "timetable body edge hands off to classroom");
+                waitFor(test, () -> activity.selectedPage()==2, "timetable body edge skips disabled classroom");
             } catch(AssertionError timeout) {
                 test.runOnMainSync(() -> trace.append("\nfinal: ").append(handoffState(activity,pager,synthetic)));
                 throw new AssertionError(timeout.getMessage()+trace,timeout);

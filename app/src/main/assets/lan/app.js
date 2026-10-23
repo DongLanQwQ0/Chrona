@@ -577,18 +577,40 @@ function importIcs(){
   });body.append(form);
  });
 }
+let mergeChecking=false;
+const shownMergeGroups=new Set(JSON.parse(sessionStorage.getItem('chrona-shown-merges')||'[]'));
+const mergeSignature=group=>{const {canAcknowledge,acknowledged,...candidate}=group.candidate;return JSON.stringify({...group,candidate});};
+async function detectMerges(){
+ if(mergeChecking||!session||pending||attachmentWork||$('#dialog').open||document.hidden)return;
+ mergeChecking=true;
+ const requestedDialog=dialogGeneration,requestedRoute=route;
+ try{
+  const preview=await api('/api/merge/preview');
+  if(requestedDialog!==dialogGeneration||requestedRoute!==route||$('#dialog').open||document.hidden)return;
+  const fresh=preview.groups.filter(group=>!shownMergeGroups.has(mergeSignature(group)));
+  if(!fresh.length)return;
+  for(const group of fresh)shownMergeGroups.add(mergeSignature(group));
+  sessionStorage.setItem('chrona-shown-merges',JSON.stringify([...shownMergeGroups]));
+  showMergePreview({...preview,groups:fresh,removed:fresh.reduce((count,group)=>count+group.sources.length-1,0)},true);
+ }finally{mergeChecking=false;}
+}
 async function previewMerges(){
  const requestedDialog=dialogGeneration,requestedRoute=route;
  const preview=await api('/api/merge/preview');
  if(requestedDialog!==dialogGeneration||requestedRoute!==route)return;
- const pageSize=12,show=(index=0)=>showDialog('合并完全相同日程',(body,owner)=>{
-  if(!preview.groups.length){body.append(node('p','empty','没有完全相同的日程'));return;}
+ showMergePreview(preview,false);
+}
+function showMergePreview(preview,automatic){
+ let submitting=false;
+ const selected=new Set(),pageSize=12,show=(index=0)=>showDialog(automatic?'发现重复日程':'合并重复日程',(body,owner)=>{
+  if(!preview.groups.length){body.append(node('p','empty','没有可合并的重复日程'));return;}
   body.append(node('h3','',`${preview.groups.length} 组 · 合并 ${preview.removed} 份重复日程`));
-  for(const group of preview.groups.slice(index*pageSize,(index+1)*pageSize)){const candidate=group.candidate,block=card(candidate.title);block.append(node('p','subtle',`${fmt(candidate.start,candidate.allDay,true,candidate.zone)} — ${fmt(candidate.end,candidate.allDay,true,candidate.zone)} · ${candidate.zone}`),node('p','raw-text',candidate.location),node('p','raw-text',candidate.description),node('p','subtle',`${categories[candidate.category]}${candidate.allDay?' · 全天':''} · 提醒 ${candidate.reminder??'关闭'}${candidate.needsConfirmation?' · 待确认':' · 已确认'}`));
-   for(const source of group.sources)block.append(action('来源 · '+source.source,()=>{closeDialog();return navigate('task/'+source.taskId);}));body.append(block);
+  for(const group of preview.groups.slice(index*pageSize,(index+1)*pageSize)){const candidate=group.candidate,block=card(candidate.title),label=node('label','checkbox'),choice=node('input');choice.type='checkbox';choice.checked=selected.has(String(candidate.id));choice.setAttribute('aria-label','选择合并 '+candidate.title);choice.addEventListener('change',()=>{if(choice.checked)selected.add(String(candidate.id));else selected.delete(String(candidate.id));update();});label.append(choice,document.createTextNode('合并此组'));block.prepend(label);block.append(node('p','subtle',`${fmt(candidate.start,candidate.allDay,true,candidate.zone)} — ${fmt(candidate.end,candidate.allDay,true,candidate.zone)} · ${candidate.zone}`),node('p','raw-text',candidate.location),node('p','raw-text',candidate.description),node('p','subtle',`${categories[candidate.category]}${candidate.allDay?' · 全天':''} · 提醒 ${candidate.reminder??'关闭'}${candidate.needsConfirmation?' · 待确认':' · 已确认'}`));
+   for(const source of group.sources)block.append(action(`${String(source.candidateId)===String(candidate.id)?'保留':'合并'} · ${source.title}\n${source.source}${source.location?' · '+source.location:''}`,()=>{closeDialog();return navigate('task/'+source.taskId+'?candidate_id='+encodeURIComponent(source.candidateId));}));body.append(block);
   }
   if(preview.groups.length>pageSize){const pages=node('div','pagination'),previous=action('上一页',()=>show(index-1)),next=action('下一页',()=>show(index+1));previous.disabled=index===0;next.disabled=(index+1)*pageSize>=preview.groups.length;pages.append(previous,node('span','',`${index+1} / ${Math.ceil(preview.groups.length/pageSize)}`),next);body.append(pages);}
-  const actions=node('div','actions'),confirm=action(`确认合并 ${preview.removed} 份`,async()=>{confirm.disabled=true;try{const result=await api('/api/candidate/merge',{revision:preview.revision});closeDialog(false,owner);toast(`已合并 ${result.removed} 份重复日程`,owner);await render();}catch(error){confirm.disabled=true;actions.append(action('重新扫描',previewMerges));throw error;}},'primary');actions.append(confirm);body.append(actions);
+  const actions=node('div','actions'),confirm=action('合并所选',async()=>{if(submitting)return;submitting=true;body.querySelectorAll('button,input').forEach(control=>control.disabled=true);try{const result=await api('/api/candidate/merge',{revision:preview.revision,groups:[...selected]});closeDialog(false,owner);toast(`已合并 ${result.removed} 份重复日程`,owner);await render();}catch(error){actions.append(action('重新扫描',previewMerges));throw error;}},'primary');
+  const update=()=>{const count=preview.groups.filter(group=>selected.has(String(group.candidate.id))).reduce((sum,group)=>sum+group.sources.length-1,0);confirm.textContent=count?`确认合并 ${count} 份`:'合并所选';confirm.disabled=submitting||!count;};update();actions.append(action('暂不合并',()=>closeDialog(false,owner)),confirm);body.append(actions);
  });show();
 }
 
@@ -683,8 +705,9 @@ function syncConflict(conflict){showDialog('处理冲突',(body,owner)=>{
  const consent=node('label','checkbox'),remove=node('input');remove.type='checkbox';consent.append(remove,document.createTextNode('移除本机旧日历事件，再应用所选版本'));body.append(consent);const update=()=>{const version=conflict.versions.find(item=>String(item.index)===choice.value);preview.textContent=version?version.description||(version.deleted?'此版本已删除记录':'此版本无正文'):'保留当前本机记录';preview.scrollTop=0;consent.hidden=!conflict.calendar||choice.value==='-1';remove.checked=false;clearDialogFeedback();};choice.addEventListener('change',update);update();
  const buttons=node('div','actions'),save=action('应用版本',async()=>{const index=Number(choice.value);if(conflict.calendar&&index!==-1&&!remove.checked)throw new Error('请确认移除本机旧日历事件');save.disabled=true;try{await api('/api/sync/resolve',{id:conflict.id,signature:conflict.signature,index,removeCalendar:index!==-1&&remove.checked});if(ownsDialog(owner)){await syncDialog(0,true);}}finally{save.disabled=false;}},'primary');buttons.append(action('返回',()=>syncDialog()),save);body.append(buttons);
 });}
-function settingsPage(){const group=card('服务与数据');group.append(action('日程来源',sourcesDialog,'quick-action'),action('跨设备同步',()=>syncDialog(),'quick-action'));for(const [title,text]of [['AI 服务','浏览器使用手机已有 AI 配置，账号与密钥仅保留在手机'],['权限与提醒','系统日历授权、通知、后台运行及小组件设置请在手机操作'],['局域网访问','在手机关闭服务或重新配对，会撤销当前浏览器连接']]){const row=node('div','settings-row');row.append(node('h3','',title),node('p','subtle',text));group.append(row);}const include=node('label','checkbox'),checkbox=node('input');checkbox.type='checkbox';checkbox.checked=!!session.systemCalendarIncluded;checkbox.addEventListener('change',()=>guard(async()=>{checkbox.disabled=true;try{await api('/api/preferences',{systemCalendarIncluded:checkbox.checked});session.systemCalendarIncluded=checkbox.checked;}catch(error){checkbox.checked=!!session.systemCalendarIncluded;throw error;}finally{checkbox.disabled=false;}}));include.append(checkbox,document.createTextNode('包含系统其他日程'));group.append(include,action('合并完全相同日程',previewMerges,'quick-action'));group.append(action('断开当前浏览器',async()=>{await api('/api/logout',{});disconnect();},'quick-action'));return[heading('设置'),group];}
+function settingsPage(){const group=card('服务与数据');group.append(action('日程来源',sourcesDialog,'quick-action'),action('跨设备同步',()=>syncDialog(),'quick-action'));for(const [title,text]of [['AI 服务','浏览器使用手机已有 AI 配置，账号与密钥仅保留在手机'],['权限与提醒','系统日历授权、通知、后台运行及小组件设置请在手机操作'],['局域网访问','在手机关闭服务或重新配对，会撤销当前浏览器连接']]){const row=node('div','settings-row');row.append(node('h3','',title),node('p','subtle',text));group.append(row);}const include=node('label','checkbox'),checkbox=node('input');checkbox.type='checkbox';checkbox.checked=!!session.systemCalendarIncluded;checkbox.addEventListener('change',()=>guard(async()=>{checkbox.disabled=true;try{await api('/api/preferences',{systemCalendarIncluded:checkbox.checked});session.systemCalendarIncluded=checkbox.checked;}catch(error){checkbox.checked=!!session.systemCalendarIncluded;throw error;}finally{checkbox.disabled=false;}}));include.append(checkbox,document.createTextNode('包含系统其他日程'));group.append(include,action('合并重复日程',previewMerges,'quick-action'));group.append(action('断开当前浏览器',async()=>{await api('/api/logout',{});disconnect();},'quick-action'));return[heading('设置'),group];}
 document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>guard(()=>navigate(button.dataset.page))));$('#capture').addEventListener('click',capture);$('#settings').addEventListener('click',()=>guard(()=>navigate('settings')));$('#refresh').addEventListener('click',()=>guard(async()=>{session=await api('/api/session');applyPalette(session.palette);await render();}));$('#theme').addEventListener('click',()=>{themeOverride=true;document.body.classList.toggle('dark');applyPalette();});
 // Refresh the session and actively processing record; never replace an open editor.
 setInterval(()=>{if(!session||pending||attachmentWork||$('#dialog').open||document.hidden)return;guard(async()=>{const latest=await api('/api/session');session=latest;csrf=latest.csrf;applyPalette(latest.palette);if(route==='home'||currentTask&&['queued','processing'].includes(currentTask.task.status))await render();});},10000);
+setInterval(()=>{detectMerges().catch(()=>{});},2500);
 icons();guard(async()=>{const code=scannedPairing;scannedPairing=null;if(code!==null){if(!code){disconnect();throw new Error('配对二维码无效，请重新扫码或手动输入');}try{await api('/api/pair',{code});await connect();}catch(error){disconnect();throw new Error('扫码配对未完成，请重新扫码或手动输入');}return;}try{await connect();}catch(error){if(!csrf){disconnect();if(error.status===401)await requestApproval();else approvalStatus(error.message,true);}else throw error;}});

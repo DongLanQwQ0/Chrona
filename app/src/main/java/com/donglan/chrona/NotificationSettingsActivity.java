@@ -16,7 +16,7 @@ public final class NotificationSettingsActivity extends Activity {
     private static final int CALENDAR_PERMISSION = 703, NOTIFICATION_PERMISSION = 704;
     private LinearLayout atomicSection;
     private Switch enabled, system, chronaAtomic, systemAtomic, wallpaper, countdown, seconds;
-    private TextView notificationStatus, channelStatus, exactStatus, atomicStatus;
+    private TextView notificationStatus, channelStatus, exactStatus, atomicStatus, capsuleTimingStatus;
     private boolean atomicAvailable;
     private int generation;
     @Override protected void onCreate(Bundle state) {
@@ -72,6 +72,9 @@ public final class NotificationSettingsActivity extends Activity {
             if (delivery.appAllowed && !delivery.channelAllowed) openReminderChannelSettings();
             else openSettings(NotificationDeliveryStatus.appSettings(this));
         });
+        capsuleTimingStatus = row(group, "胶囊计时", () -> {
+            openSettings(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        });
     }
     private void updateControls() {
         if (system != null) system.setEnabled(AgendaReminderPreferences.enabled(this));
@@ -106,6 +109,7 @@ public final class NotificationSettingsActivity extends Activity {
                     atomicStatus.setText(!current.appAllowed ? "通知权限未允许"
                             : !current.channelAllowed ? "提醒频道已关闭"
                             : Boolean.TRUE.equals(scene) ? "可用" : "未启用");
+                    capsuleTimingStatus.setText(AtomicCapsuleAccessibilityService.enabled(this) ? "已开启" : "未开启");
                     updateControls();
                 }
             });

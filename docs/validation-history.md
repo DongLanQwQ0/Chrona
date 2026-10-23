@@ -1,5 +1,116 @@
 # 验证记录
 
+## 0.15.41正式候选与发布前验收 — 2026-10-23
+
+- 用户明确接受当前固件约200ms原生收起过渡，要求恢复30／60秒并Release。候选固定code203／0.15.41，使用release而非capsuleTest；已审核的业务源码不再改动。
+- `build/release-0.15.41-final-build.txt`：assembleDebug／assembleRelease／lintDebug／lintRelease成功。实际APK元数据为官方包名、203／0.15.41、不可调试；反汇编APK内BuildConfig确认桌面30000ms、点击60000ms。新debug/release与已保存0.15.40安装包签名证书一致，见`build/release-0.15.41-artifact-check.txt`和上版签名记录。无卸载或清数据。
+- 19:49:55同手机无线覆盖安装正式0.15.41，普通辅助服务Bound／Crashed空。实际系统设置前台确认后返回桌面，＋24秒完整／＋33秒短形；原生点击及点外关闭后＋55秒完整／＋63秒短形，点击accepted=true。有效图片`release-settings-home-{24,33}-capsule.png`、`release-click-{closed,55,63}-capsule.png`在`build/atomic-event-review/`。第一组Dashboard重入home25／33均短，不用作通过证据。测试未操作真实日程数据。
+- 本轮沿用本批已验收的全套基线和后续受影响定向检查，不为发布重复有效整套。独立发布审查未发现生产代码阻断；新增公开文档已去除设备唯一标识、无线地址及真实活动标题，并补充无障碍启用要求和系统过渡限制。手机LAN实链路、付费模型与完全断开ADB的独立运行未新增验收，不把替身或无线验收扩大为这些项目。
+
+## 无线恢复安装及真实活动点击窗口复验 — 2026-10-23
+
+- 用户再次反馈点击收起后不保持完整；无线ADB （同一授权手机）核对同一V2527A，初查本服务配置Enabled但Bound空、Crashed含本服务。首次恢复安装被系统明确拒绝，得到用户“重新发起，我会允许安装”后才重试成功，未绕过拒绝。
+- 19:18:38实际安装`0.15.41-capsule-test-5s-10s`恢复包，不含无效即时快投；普通辅助服务Bound、Crashed空。使用用户当前真实活动（用户当前真实活动）只做原生展开和点外关闭，未修改活动或创建新记录。
+- 先等桌面5秒失效，再点击，约700ms点外关闭。点击＋8秒仍是完整倒计时和长标题，＋11.5秒为图标及“机器”；`ChronaDiag`记录`CAPSULE matched id=4409426 accepted=true`。截图`build/atomic-event-review/wireless-click-{8,11}-capsule.png`、记录`build/capsule-wireless-recovery-report.txt`。`wireless-click-closed-capsule.png`为模糊过渡帧，不用于认定即时稳定形态；不把本次检查说成系统收起200ms过渡已消除。
+- 全过程无instrumentation、UiAutomation或手动tick，原后台更新频道关闭状态保留。当前继续保留用户要求的5／10秒测试包，正式30／60配置未变。
+
+## 收起窄黑过渡定位及无效候选撤回 — 2026-10-23
+
+- 用户确认5／10秒计时功能恢复，进一步反馈点击卡片收起后先窄再详细。实际`flash-before.mp4`、即时快投后的`flash-after.mp4`及各10fps接触表位于`build/atomic-event-review/`，均显示关闭先经窄黑形态再扩展；持有3秒后的`flash-held.mp4`同样出现。正式普通服务、无UiAutomation／instrumentation／手动tick参与录制，USB条件。
+- 即时快投实验绕过350ms合并刷新／日历读取，保持最新秒文字和原提醒到期；离线控制器及协议检查通过，但真机未消除过渡。专门UI审核明确否决“无闪回”签收，主代理查看后撤回该生产改动及实验专用检查，保留已确认的5／10构建隔离。
+- 只读拉取当前手机`/system/priv-app/SystemUIPlugin/SystemUIPlugin.apk`到`F:/Android/ChronaBuildCheck/capsule-host/`。派生`DynamicCapsuleStateController.java:20–33,73–77,243–252`表明展开态4收起必经中间态1；`ContainerAnimatorCommon.java:623–626`使用系统固定过渡宽度，`:1407`设置200ms；`DynamicCapsuleContainer.java:311–336`及`updateContentView.smali`交叉核对展开期不重建左右胶囊视图。主代理已抽读决定性代码。DEX事实为观察结果，它与录屏约200ms的对应关系为解释；不推广到其他固件。
+- 已检查协议未见跳过中间态或改变其200ms的应用入口。没有修改系统APK、全局动画或以强制展开阻止用户关闭。用户要求的无闪回效果仍未达到，不再用未验证参数猜测继续试修。
+- 用户明确授权创建一条临时活动以供复验，专属source/raw校验的夹具创建task116／candidate423，无AI或系统日历发布。`build/capsule-live-fixture-cleanup.txt`已确认该task与关联候选删除；不删除其他记录。最终恢复原点击刷新逻辑，正式45／短时18／vivo111检查通过，见`build/capsule-final-restored-checks.txt`。
+
+## 活动胶囊复现与短计时测试候选 — 2026-10-23
+
+- 用户确认作业卡片正常、活动卡片收起仍精简。16:23 USB普通运行时，系统服务配置Enabled但Bound空、Crashed含胶囊辅助服务；实时刷新服务仍在，未获得本包Java异常。原子岛截图不用于证明点击链路正常。单独后台更新频道已由用户关闭，本轮读回importance=0并保留。
+- 按用户要求新增独立`capsuleTest`变体：桌面5秒、点击10秒，正式debug/release保持30／60秒。版本后缀明确标识测试，同包同签名保留数据覆盖。`build/short-capsule-build.txt`双变体构建通过，生成的BuildConfig已直接检查；`build/short-capsule-controller.txt`执行正式45及短时18断言通过，不以源码替换时长冒充变体。
+- 手机16:39安装`0.15.41-capsule-test-5s-10s`成功，安装后普通辅助服务Bound恢复、Crashed空。用户活动16:11–16:34已结束，无活跃Chrona卡片，实际5／10边界仍缺；未将恢复连接称为活动故障已修复。没有修改真实日程或对其它无障碍服务执行开关。
+
+## 通用全周期执行建议（未发布）— 2026-10-23
+
+- `schedule-v16`取消单项截止前6小时至3天限制。提示词按工作量估计执行时长，必要的复杂任务沿用现有分组阶段，预留修改、检查和提交，不使用征文或具体日期特判。
+- 本地`chooseExecutionStart`使用整个有效起点区间的中点作为默认目标；长期模型建议过晚时按剩余周期及执行时长提前目标。工作窗口仍搜索整个有效区间，缓冲偏好不导致本可执行的任务丢失。明确执行时间、原始截止、循环锚点与自动确认保护不变，不重排已有记录。
+- 只读/受限执行分工的测试代理更新两份夹具并运行`python checks/ai_auto_publish_check.py`：请求493、归一化59、排期418、自动发布16通过。新增10／30／60天task和homework、早期模型建议、过晚建议、较大工作量、唯一临截止工作窗口、恰好可容纳时长及分组保护。主代理已审关键断言及生产逻辑。
+- 当前ADB设备列表为空，本轮未安装手机、未付费在线解析；新行为的验证范围为真实Java请求组装、转换与响应解析夹具。正式构建记录`build/whole-period-formal-build.txt`。
+
+## 自动重复日程提示与整轮 UI 收尾（未发布）— 2026-10-23
+
+- 生产候选203／0.15.41新增`DuplicateScheduleReview`：应用级前台revision检查，变化后共用同步锁后台扫描；后台入库不拉起窗口，恢复前台再提示。按内容保存已展示组，取消／外部关闭／来源跳转后不因无关更新重复弹窗。弹窗与主动入口均默认不选，按组确认，未选组不动。网页可见且无其它浮层／上传时检测，旧路由结果丢弃；忽略随时间变化的确认可用态作为提示签名。
+- 数据检查`build/automatic-merge-data.txt`：生产Java与真实SQLite336项通过，新增两组选一、空选择、未知组拒绝及未选组完整保留；关联双类型102、备份16、review45通过。保留原宽松匹配、稳定UUID保留项、revision校验和原子事务。
+- `build/automatic-merge-browser.txt`：真实Edge＋模拟手机API专项通过，覆盖自动出现、默认不选、取消与无关revision去重、动态确认展示状态不重弹、追加新组只展示新组且计数正确、精确来源导航、过期拒绝／重扫及明确groups提交。稳定390px暗色帧等待公共150ms背景过渡后截取，启用动作computed对比均≥4.5；旧即时换主题截图为过渡帧，不作稳定对比依据。`build/automatic-merge-web-parity.txt`通过，未重跑原全网页已知无关动效失败路径。
+- 隔离v33官方模拟器实际Activity与SQLite：`build/automatic-merge-native-light.txt`（400dp／1.0字体／浅色）、`automatic-merge-native-dark.txt`（320dp／1.5字体／深色）均PASS。覆盖前台新入库自动弹窗、每项来源、默认不选、取消与无关原文修改去重、后台新增组不弹、回前台显示新组、只合并选组且来源任务完整。宽度与字体只覆盖Activity，未改全局配置。`automatic-merge-native-scroll.txt`仅补320dp大字体滚到末条来源画面，不重复其它验收。截图`build/atomic-event-review/automatic-merge-{light,dark}.png`、`automatic-merge-dark-{selected,sources}.png`及`build/lan-web-checks/merge-{wide,narrow-dark}.png`已查看。初版“selected”截图取了旧帧；有效深色图已在idle＋200ms后补齐，不能将旧浅色selected图当选中态。
+- 专门只读审核`/root/ui_review`发现并促成修正提交期复选框重启用、自动新组数量和手动入口选择缺失；最终源码／稳定暗色／选中态复审通过。随后补审既有紧凑原子卡、真实菜单触摸和成员预览，均签收；整轮UI审核缺口关闭。工具无`agent_type`字段，实际仅按只读check职责约束，未声明已设置角色模型。
+- 正式构建与签名、产物元数据见`build/automatic-merge-formal-build.txt`及本轮当前工作单。未安装用户手机、未发布；物理断开ADB后的胶囊独立运行仍缺，保留到用户再次提供设备时验证。
+
+## 前批紧凑卡片、菜单与 USB 胶囊有效证据补录 — 2026-10-23
+
+- `notification_atomic_card.xml`外层垂直内距8dp、完整标题与48dp操作共行；摄像头基础安全带40dp，仍保留真实cutout＋4dp。RemoteViews实际apply短卡约155.56dp，320dp／1.5字体长标题完整；40种密度／cutout及相关合同通过。真机最终图`build/atomic-event-review/compact-native-phone-final.png`、`compact-native-closed-final.png`主代理已查看，关闭图为过渡帧，不证明计时。
+- 任务详情Lucide竖向三点图标、48dp热区与整组1.10按压，实际DOWN／UP打开并回落通过`build/compact-click-light-report.txt`。成员预览400dp浅色正常字、320dp深色1.5字体分别通过`build/compact-merge-native-{light,dark}-report.txt`；截图与菜单按压／打开、短长卡图均在上述证据目录。现有有效证据仍适用于新自动检测候选中未改变的这些部位。
+- USB正式服务证据：`usb-production-home-{29000,31500}.png`、`usb-production-click-{59000,61500}.png`、`usb-production-click-outside.png`、`usb-production-held-65s.png`及held-dismissed；`usb-auto-seconds-final.txt`／`usb-auto-final-*`为真实AgendaReminderLiveService自动秒级更新；`usb-settings-notifications-on.png`、`usb-settings-returned-{off,on}.png`为设置实际启停返回。均在`build/atomic-event-review/`。不再把这些项目列为待USB验证。
+- 手机已交还用户；最后仅临时通知测试，无真实日程／TaskStore写入，通知与临时截图已清理，无障碍Bound且Crashed为空。本轮不操作手机；**仍缺物理断开ADB后独立运行**，辅助程序退出不等于拔线。旧通话胶囊／错误前台画面不能用于Chrona通过或失败判断。
+
+## 胶囊辅助事件接入与离线续修（未发布）— 2026-10-22
+
+- 用户明确授权安装、启用「原子岛胶囊计时」无障碍服务。正式实现只观察桌面窗口包名及`com.vivo.systemuiplugin`内Chrona标题标记，不执行手势／点击，不记录或上传正文；设置入口复用现有通知页面行及系统公开无障碍设置。专门UI源码初审无P0／P1，要求补实际设置页画面及完整边界。
+- 真机证明跨包RemoteViews的非视觉Annotation标记可读取，但宿主按Chrona资源ID查询不可靠；已改为仅HOST内256节点／32层的有界遍历。`capsule-tree-build.log`记录release／lint通过，同候选已保留数据安装。`tree-real-service-device.txt`中真实服务将点击期限设为295194484，295194809时投影精简；轮询间隔1秒。`tree-click-open.png`／`tree-click-outside.png`实际查看，支持原生展开、外部立即关闭及关闭后长胶囊保持。本轮辅助循环发送投影，不单独证明正式提醒的边界调度。
+- 实际桌面30秒局部证据为`actual-home-full.png`／`actual-home-compact.png`及`capsule-real-service-device.txt`。早先资源查找候选的点击失败不扩大为桌面失败；`tree-held-after-60.png`所在尝试已超过辅助运行期限，无效，不用于验收保持大卡片跨60秒。
+- `seconds-production-device.txt`曾调用真实`AtomicCountdownUpdates.tick`，但点击续期断言失败。后续检查已保存的`seconds-home-29.png`／`seconds-home-32.png`发现当时为通话胶囊，前台为Chrona首页而非桌面；该轮不能判断Chrona胶囊点击或30秒行为，不把绑定时序当作已证实原因。探测器新增通信状态前置拒绝，且清理快照异常时仍结束临时通知／删除频道。
+- instrumentation启动／结束会终止同包服务，enabled列表不能证明实际运行；验收驱动须在启动后核对服务Bound。最后测试已结束、临时通知已清理、正式服务重新Bound且Crashed为空，随后手机交还用户。离线续修不再自动操作真机。
+- 新增`atomic_capsule_observer_check.py`，实际编译生产观察器／标记类，42项通过，覆盖桌面去重、锁屏／解锁、原始点击时刻、延迟出卡、一次消费、外部节点不读正文、超时／销毁、遍历上限和标记身份。空包事件现在忽略，避免假离开桌面后重复续期。Android事件传送／标记传输在此使用替身；通信前置仅验证接线。原控制器45项证据继续有效；新专项纳入统一集合，现109项。
+- 新控制器／观察器候选的release、androidTest编译及lintRelease通过（`build/atomic-event-review/offline-final-build.log`）。内部包`Chrona-0.15.41-offline-candidate.apk`确认官方包名、203／0.15.41，APK签名校验通过，未安装真机或发布。随后仅新增／调整测试夹具，生产源码保持不变。
+- 隔离v33模拟器的真实`NotificationSettingsActivity`设置行，400dp／浅色／字体1.0、320dp／深色／字体1.5最终各26项通过。使用Activity独立资源配置，模拟器全局仍1080×2376／字体1.0；OEM能力与「未开启／已开启」值为展示夹具。检查标签／值完整、无相交、20dp边界、54dp触控、整行可达，以及真实点按打开公开无障碍设置并返回同一行实例；未启用权限。日志`settings-light.txt`／`settings-dark-narrow.txt`，截图`capsule-settings-{light,dark}-{top,off,on}.png`均在`build/atomic-event-review/`。修正截图取旧帧及夹具未调用`updateControls`的问题，最终相邻开关与真实总开关一致，已查看light-top及dark-on等画面。专门UI代理局部复审通过，无新增缺陷；不扩大为OEM动态权限通过。
+- 后续准备发现测试通知ID`0x4348f1`与生产`AgendaReminderLiveService`前台通知相同；已改为`0x4349f1`，保留运行时碰撞拒绝，并增加已知生产ID区分检查。通信检查从仅入口扩展到运行中每秒检查，通话期间退出并清理。观察器42项及两项源码接线通过，正式测试包构建成功，`device-helper-final-build.log`；旧通知ID的测试不作为生产服务并存证明。
+- 此阶段的USB边界、跨期限及设置启停缺口已由上方2026-10-23补录证据关闭；物理断开ADB独立运行仍待验收，手机已交还，不再等待旧无线地址。0.15.41未发布，旧强制展开APK禁止分发。
+
+## 模拟器启动脚本与插入交付 — 2026-10-22
+
+- 用户手动将默认分辨率改为1080×2376，已保留。启动脚本损坏UTF-8及中文字符串丢失引号导致ParserError，和虚拟机是否已关机无关。损坏文件备份至F盘日志`script-repair/`，修复后保存UTF-8 BOM。
+- `tools/Start-AndroidEmulator.ps1`语法／只读预检通过，实际从关机状态启动窗口成功；Android物理1080×2376、hw.keyboard=yes／lid=no、内建键盘识别及可见窗口句柄已确认，画面`build/atomic-event-review/emulator-started-2376.png`已查看。未模拟电脑键盘实际输入。桌面快捷方式「启动安卓虚拟机」可复用，日志与AVD在F盘。
+- 手机端点已仅修改`chrona_ai_settings/base_url`为`https://api-slb.jiji.cc`并回读，证据`build/atomic-event-review/endpoint-update.txt`；密钥／模型未变，无付费或网络测试。
+- 用户指定浙大体艺APK2.9.7／116，安装到当前虚拟机实际返回`INSTALL_FAILED_NO_MATCHING_ABIS`／-113：仅ARM库，当前x86_64 AVD无ARM转译。有限标准位置检查未找到现成转译模拟器；未改APK／AVD、未下载其它模拟器。完整诊断`F:/Android/ApkInstallDiagnostics/zju-sports/diagnosis.md`。此为安装尝试的明确负结果，需要其它运行环境才可继续安装。
+
+## 共享日历关联与恢复并发（未发布）— 2026-10-22
+
+- 抽取 `LinkedCalendarEvents` 供原生、网页、完成提醒、重复规则、学校更新与同步删除共用。修改共享事件时拆分当前候选，删除保留其它候选及永久合并引用；新事件仅在最外层 SQLite 提交后保留。已有独占事件的原地修改／删除仍跨两个存储顺序执行。
+- 共享关联专项执行真实生产 helper、实际 TaskStore SQL 和 SQLite：29 场景／211 断言通过；完成提醒48项、学校更新68项通过。同步锁、LAN同步接口67项、重复投影33项、日历重复20项、编辑冲突及浏览器 parity 通过。独立只读审核发现同步错误透传仍匹配旧文案，已对齐为实际删除失败提示。
+- 隔离模拟器 `check=linked_calendar` 实际操作 HTTP、SQLite 与 CalendarProvider：共享编辑、完成、删除、撤销时间、最后引用删除；用延迟外键触发真实 COMMIT 失败，确认新事件清理、本地关联回滚及同请求重试成功。证据 `build/linked-calendar-device-result.txt`，夹具入口 `LanAccessInstrumentation.checkLinkedCalendar`；不触及真实手机。
+- 旧解析/恢复竞态已以真实处理控制流复现：扫描 queued 后 worker 开始，取消调度返回时 worker 仍持有旧数据库及输出。现 `LiveDatabaseAccess` 覆盖 TaskStore 与解析执行生命周期，恢复在业务锁内仅尝试独占，忙则立即拒绝；恢复期间解析延后，普通读者等待，独占覆盖回滚与身份重置。恢复仅取消解析作业，保留其它周期任务。
+- 并发专项编译真实准入类并提取实际 job/restore/bridge 控制流，14 场景／124 断言通过；原 job_execution 的取消、重调度与身份清理通过。独立审查发现 `AndroidSyncData` 构造失败泄漏句柄，已在构造失败及附件清理异常时确保关闭，并通过局部复核。
+- 最终隔离 Android `check=backup_restore` 通过：真实数据库持有时拒绝恢复；真实同步附件目录阻挡和数据库打开失败后可再取得独占；恢复读取失败后释放；并发读者等待直至新数据安装。大于4MiB课堂及真实ZIP/SQLite往返、提交后维护失败保留和自动同步关闭仍通过，日志 `build/restore-concurrency-final-device-result.txt`。首次故障注入改至 Android 实际调用的 getDatabasePath，未用未触发的旧钩子宣称通过。
+- 统一入口纳入共享关联与恢复并发专项。整轮 `full` 为104/108通过（`build/project-review-full-checks.log`）；4项旧夹具缺少实际新增接口，补齐后逐项通过：按压47、通知80、首页切页46、日程刷新374。全部108项已有有效通过证据，保留原断言，未重复整轮运行。
+- 最终生产候选 `assembleRelease`／`lintRelease` 通过（`build/project-review-final-build.log`）。内部 APK `build/project-review/Chrona-0.15.41-data-reliability.apk`，3109150字节，未发布或覆盖真机；胶囊进入桌面30秒／点击60秒的事件接入仍单独待完成。
+
+## 课堂条件入口与学校说明（未发布）— 2026-10-22
+
+- 折姜星辰关闭时，工作区移除课堂页与导航项，课表直接切到日程；稳定页面 ID 与可见位置分离，直接课堂入口及旧选中状态回课表，设置中的课堂入口隐藏。启停时重新检查条件并保留合法页面状态，停用课堂会话不再保留。学校设置显示「浙江大学专属功能」。
+- 隔离 v33 模拟器浅色 1080×1920／density 411／font 1.0，与深色 900×1600／density 411／font 1.5 各 41 断言通过：真实导航点按与标题滑动、页面不创建、直接路由、启停恢复、真实学校开关及返回工作区、说明完整显示。证据 `build/classroom-visibility-supplement-{light,dark}.txt`，截图 `build/classroom-visibility/`。
+- 专门只读 UI 审核通过静态实现、实际画面与设置路径；指出两项导航动效检查不应允许出屏，收紧后仅补跑首尾长按、拖出释放、双向快速甩动，所有采样帧高光在屏幕内，日志 `build/classroom-visibility-motion-{light,dark}.txt`。未修改公共动效参数；启用三项导航的选中截图等待动画结束后采集。
+- `assembleRelease` 与 `lintRelease` 通过（`build/classroom-visibility-release.log`）；候选内部包 `build/project-review/Chrona-0.15.41-school-visibility.apk`，3104038 字节，未发布／未覆盖真机。新设备夹具受隔离守卫保护，模拟器尺寸、字体与偏好恢复。
+- 离线统一入口显式补入 9 项专项；全部新增项目已运行通过。补齐过程中修正两处旧夹具：Dock 表面断言改读实际 `UiSurfaces`，页面历史替身补作业定位回调并验证进入日程触发。它们不更改生产行为。
+
+## 第五版历史构建 — 2026-10-22
+
+- 按用户要求从 `1ef2426` 独立导出原始源码，0.5.0／versionCode 5；`F:/Android/ChronaHistoricalBuilds/0.5.0-1ef2426/build.log` 为离线 debug 构建成功证据。APK 元信息及签名校验通过，交付桌面 `C:/Users/DongLan/Desktop/拾时-Chrona-0.5.0-第五版.apk`（934576 字节），未安装手机，不作为现版本升级包。
+
+## 项目巡检首批 — 备份提交边界与容量一致性（未发布）— 2026-10-22
+
+- 通览产品／开发规范及模块入口，对原生首页／详情、AI 与课堂后台、学校同步、数据保护、LAN 接口、共享同步和检查集合进行分区审阅。首批选择两个有控制流证据的备份缺陷；共享日历关联与单条发布补偿问题留在当前工作单，不将本轮当成全项目无缺陷证明。
+- 旧代码故障注入复现 10 个失败场景：删掉旧数据库回滚点后，提醒状态／刷新／课堂调度异常进入回滚并删掉当前数据库；合法大于 4 MiB 的 JSON 被隐含读取上限拒绝，导出还允许超过声明容量。红测记录 `build/backup-restore-check/red-result.txt`。
+- `ChronaDataBackup` 将提交后维护移出回滚区，各项失败保留恢复结果并报告具体警告；提交前仍执行回滚，缺少旧副本时保留幸存数据库。清单 40 MiB、课堂正文 16 MiB 均按 UTF-8 字节在导入与导出端检查。
+- 新专项 `checks/backup_restore_check.py` 已纳入 `full`：21 个场景、104 项断言通过，执行生产恢复控制流／实际调用处和真实临时文件、ZIP；覆盖提交前后故障、缺回滚点、大正文、精确上限、超限 1 字节、多字节内容。Android／SQLite 在该专项中为替身，绿测 `build/backup-restore-check/green-result.txt`。
+- 隔离官方模拟器 v33 包执行 `check=backup_restore`，实际调用 `write → prepare → restore`，使用真实 Android SQLite 与 ZIP。超过 4 MiB 的中文课堂正文、收件原文、解析输出均往返成功；故意使提交后课堂清理调度抛异常，恢复内容仍完整且有警告。目标隔离偏好的学校启用与 WebDAV 自动同步由 true 变为 false，未配置任何凭据。最终证据 `build/project-review-backup-device.txt`。夹具开发期间修正了测试 Context 对必备系统服务及绝对数据库路径的不完整模拟，最终使用真实系统服务，仅在指定清理调用处注入故障。
+- 配置备份／22 项日程偏好、10 项学校备份、16 项隔离条件及三处写入入口前置通过。release 构建与 lintRelease 通过（`build/project-review-release-build.log`），隔离 debug/androidTest 构建通过。独立只读审查未发现本轮阻断缺陷，补齐了自动同步状态转换断言及功能文档证据范围。
+- 无 UI 布局修改，不操作真实手机、账号、外部附件提供器或系统日历写入。未修改版本、未发布；原子岛任务按用户要求暂停，点击 60 秒仍未完成。旧原子岛候选不得作为本轮产物分发。
+
+## 0.15.41候选修正 — 恢复原生大卡片关闭（未发布）— 2026-10-22
+
+- 用户重申：点击起一分钟仅控制胶囊完整显示，绝不意味着强制展开或阻止大卡片点外部关闭。原候选已安装，在用户vivo上复现点击展开后约0.5秒点外部，卡片不收起；证据`build/atomic-capsule-30s/device/early-outside.png`。本机固件强制展开时普通外部关闭不重置点击状态，默认强制期限5秒；之前单次稍后关闭成功不足以验收。
+- 试验点击后追加普通刷新清除forceShowCard，虽然能关闭，却在没有外部点击时也自动关闭，`fix-held.png`反证该方案，已撤回，未发布。
+- 当前移除应用点击拦截与强制展开，恢复原生islandClick=0及原详情PendingIntent。release构建、lintRelease及33项生产controller检查通过，原签名覆盖安装成功并启动。当前包为`build/atomic-capsule-30s/Chrona-0.15.41-native.apk`，构建日志`native-dismiss-build.log`；早先固定候选不是此修正版。
+- 真机`native-held.png`为原生点击后2秒保持展开，`native-outside.png`为点击外部后0.7秒已收起；未写入日历或合成作业。原生出卡分支不发送应用clickResp，受保护状态广播不可作为普通应用点击回调。点击60秒要求仍未实现，保留在当前工作单，不以恢复交互当作整个交付完成。
+
 ## 0.15.41候选 — 原子岛胶囊限时精简（未发布，待真机）— 2026-10-22
 
 - 用户最终规则为亮屏后完整30秒、点击胶囊后从点击起完整60秒，随后仅显示标题前两个字。卡片保留完整信息，点击桥接以不可变URI身份接收，再由同一通知请求OEM展开；不使用需要系统签名权限的收起广播，也不以showTime移除整条通知代替精简。

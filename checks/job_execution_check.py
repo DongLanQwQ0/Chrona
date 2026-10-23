@@ -25,6 +25,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.net.*;
 import com.donglan.chrona.net.RequestControl;
+import com.donglan.chrona.data.LiveDatabaseAccess;
 class Context {
     final JobScheduler scheduler = new JobScheduler();
     <T> T getSystemService(Class<T> type) { return type.cast(scheduler); }
@@ -52,7 +53,7 @@ public final class JobExecutionCheck extends Context {
     static String message(Exception error) { return error.getMessage(); }
     void jobFinished(JobParameters params,boolean retry) { finishes.incrementAndGet(); }
     Execution start(Execution preceding) {
-        Execution run=new Execution();
+        Execution run=new Execution(LiveDatabaseAccess.acquire());
         if(preceding==null) IN_FLIGHT.put(1L,run);
         run.thread=new Thread(()->process(new JobParameters(),1L,run,preceding));
         workers.put(10001,run);run.thread.start();return run;

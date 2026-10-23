@@ -12,8 +12,8 @@ for required in ['queryInboxIds(query,oldestFirst)', 'querySchedulePage(query,ol
                  'provider.listInstances(begin-86_400_000L,end+86_400_000L,null)', '.withRepeat(item)']:
     assert required in source, required
 bulk = source[source.index('if(path.equals("/api/selection/delete"))'):source.index('if(path.equals("/api/candidate/merge"))')]
-assert bulk.index('calendar.deleteEvent') < bulk.index('store.deleteTask') < bulk.index('new ImageStore')
-assert bulk.index('calendar.deleteEvent') < bulk.index('store.deleteCandidate')
+assert bulk.index('calendarWrites.delete') < bulk.index('store.deleteTask') < bulk.index('new ImageStore')
+assert bulk.index('calendarWrites.delete') < bulk.index('store.deleteCandidate')
 out = ROOT / 'build/web-parity-checks'
 out.mkdir(parents=True, exist_ok=True)
 script = r'''

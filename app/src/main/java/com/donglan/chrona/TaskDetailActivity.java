@@ -40,6 +40,7 @@ import android.widget.TextView;
 
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.calendar.CalendarStore;
+import com.donglan.chrona.calendar.LinkedCalendarEvents;
 import com.donglan.chrona.calendar.AllDayDates;
 import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.EventCandidate;
@@ -821,34 +822,18 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.title(title);
         title.setPadding(dp(8), 0, 0, 0);
         row.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
-        LinearLayout headerActions = new LinearLayout(this);
-        headerActions.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        UiStyle.glassPill(headerActions);
+        HeaderActionGroup headerActions = new HeaderActionGroup(this, 48);
         completionAction = UiStyle.navigationIcon(this, R.drawable.ic_check, "保存日程", () -> { });
-        completionAction.setBackgroundColor(Color.TRANSPARENT);
-        UiStyle.pressable(completionAction);
         completionAction.setVisibility(View.GONE);
-        headerActions.addView(completionAction,
-                new LinearLayout.LayoutParams(dp(48), dp(48)));
-        View actionDivider = new View(this);
-        actionDivider.setBackgroundColor(UiStyle.colors(this).outline);
+        headerActions.addAction(completionAction, 48);
+        ImageButton more = UiStyle.navigationIcon(this, R.drawable.ic_ellipsis_vertical,
+                "打开模型输出、解析用量、来源与任务操作", this::showHeaderMenu);
+        more.setTag("detail_header_menu");
+        headerActions.addAction(more, 48);
+        View actionDivider = headerActions.getChildAt(1);
         actionDivider.setVisibility(View.GONE);
         completionAction.setTag(actionDivider);
-        headerActions.addView(actionDivider,
-                new LinearLayout.LayoutParams(dp(1), dp(24)));
-        TextView more = new TextView(this);
-        more.setText("⋮");
-        more.setTextSize(24);
-        more.setGravity(android.view.Gravity.CENTER);
-        more.setTextColor(UiStyle.colors(this).primary);
-        more.setContentDescription("打开模型输出、解析用量、来源与任务操作");
-        more.setMinWidth(dp(48));
-        more.setMinHeight(dp(48));
-        more.setMinimumWidth(dp(48));
-        more.setMinimumHeight(dp(48));
-        UiStyle.pressable(more);
-        more.setOnClickListener(view -> showHeaderMenu());
-        headerActions.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        headerActions.finish();
         row.addView(headerActions, new LinearLayout.LayoutParams(-2, dp(48)));
         UiStyle.addSpaced(content, row, 0, 2);
     }
@@ -2170,17 +2155,12 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void deleteTask() {
+      synchronized (AndroidSync.LOCK) {
         try (TaskStore store = new TaskStore(this)) {
             ProcessingJobService.cancel(this, taskId);
             List<String> imagePaths = store.getImagePaths(taskId);
             int ordinaryFileCount = store.getFileAttachments(taskId).size();
-            CalendarStore calendar = new CalendarStore(this);
-            for (EventCandidate candidate : store.getCandidates(taskId)) {
-                if (candidate.calendarEventId != null) {
-                    // A missing provider row is already deleted; provider errors stop the removal.
-                    calendar.deleteEvent(candidate.calendarEventId);
-                }
-            }
+            new LinkedCalendarEvents(store,new CalendarStore(this)).delete(store.getCandidates(taskId));
             if (!store.deleteTask(taskId)) throw new IllegalStateException("任务不存在或已删除");
             new StreamingOutputStore(this).delete(taskId);
             ImageStore images = new ImageStore(this);
@@ -2200,6 +2180,7 @@ public final class TaskDetailActivity extends Activity {
                 showError(exception);
             });
         }
+      }
     }
 
     /** Drops the attachment so a text-only retry stays possible when images are rejected. */
@@ -2234,11 +2215,10 @@ public final class TaskDetailActivity extends Activity {
         content.removeAllViews();
         label("正在删除" + candidate.itemLabel() + "…", 18);
         new Thread(() -> {
+          synchronized (AndroidSync.LOCK) {
             try (TaskStore store = new TaskStore(this)) {
-                if (published) {
-                    // A missing provider row is already deleted; provider errors stop the removal.
-                    new CalendarStore(this).deleteEvent(candidate.calendarEventId);
-                }
+                List<EventCandidate> current=store.getCandidatesByIds(Collections.singletonList(candidate.id));
+                new LinkedCalendarEvents(store,new CalendarStore(this)).delete(current);
                 if (!store.deleteCandidate(candidate.id, taskId)) {
                     throw new IllegalStateException("日程草稿不存在或已被删除");
                 }
@@ -2254,6 +2234,7 @@ public final class TaskDetailActivity extends Activity {
                     showError(exception);
                 });
             }
+          }
         }, "chrona-candidate-delete").start();
     }
 
@@ -2876,12 +2857,18 @@ public final class TaskDetailActivity extends Activity {
         }, "chrona-task-complete").start();
     }
     private void saveUndatedTask(EventCandidate edited,String expected) {
-        try {synchronized(AndroidSync.LOCK){try(TaskStore store=new TaskStore(this)) {
-            requireCandidateBaseline(store,edited.taskId,edited.id,expected);
+        try {synchronized(AndroidSync.LOCK){try(TaskStore store=new TaskStore(this);
+                LinkedCalendarEvents writes=new LinkedCalendarEvents(store,new CalendarStore(this))) {
+          store.getWritableDatabase().beginTransaction();
+          try {
+            EventCandidate current=requireCandidateBaseline(store,edited.taskId,edited.id,expected);
             store.requireCandidateEditAllowed(edited);
-            if(edited.calendarEventId!=null){new CalendarStore(this).deleteEvent(edited.calendarEventId);store.clearMissingCalendarLinks(Collections.singletonList(edited.calendarEventId));}
+            writes.detach(current);
             if(!store.updateCandidate(edited))throw new IllegalStateException("待办已不存在");
             store.updateStatus(edited.taskId,TaskStore.reviewStatus(store.getCandidates(edited.taskId)),null);
+            store.getWritableDatabase().setTransactionSuccessful();
+          } finally {store.getWritableDatabase().endTransaction();}
+          writes.committed();
         }}deliverSave(owner->{owner.setSaving(false);owner.candidateDrafts.remove(edited.id);owner.dirtyCandidateIds.remove(edited.id);owner.render();});}
         catch(Exception e){deliverSave(owner->{owner.setSaving(false);owner.showCandidateError(edited,e);});}
     }
@@ -2893,21 +2880,21 @@ public final class TaskDetailActivity extends Activity {
         List<EventCandidate> committed = null;
         try {
           synchronized (AndroidSync.LOCK) {
-            try (TaskStore store = new TaskStore(this)) {
+            try (TaskStore store = new TaskStore(this);
+                    LinkedCalendarEvents writes = new LinkedCalendarEvents(store, new CalendarStore(this))) {
               store.getWritableDatabase().beginTransaction();
               try {
-                requireCandidateBaseline(store, edited.taskId, edited.id, expected);
-            CalendarStore calendar = new CalendarStore(this);
+                EventCandidate linkedCurrent=requireCandidateBaseline(store, edited.taskId, edited.id, expected);
             List<Integer> reminders = edited.completed() || edited.reminderMinutesBefore == null
                     ? Collections.emptyList() : Collections.singletonList(edited.reminderMinutesBefore);
             CalendarStore.EventInput input = new CalendarStore.EventInput(edited.title,
                     edited.calendarStart(), edited.calendarEnd(), edited.timeZoneId, edited.allDay,
                     edited.description, edited.location, reminders).withRepeat(edited);
-            if (edited.calendarEventId != null) {
+            if (linkedCurrent.calendarEventId != null) {
                 if (!store.updateCandidate(edited))
                     throw new IllegalStateException("无法保存日程草稿");
-                if (!calendar.updateEvent(edited.calendarEventId, input)) {
-                    store.clearMissingCalendarLinks(Collections.singletonList(edited.calendarEventId));
+                if (!writes.update(linkedCurrent, input)) {
+                    store.clearMissingCalendarLinks(Collections.singletonList(linkedCurrent.calendarEventId));
                     EventCandidate current = store.getCandidates(edited.taskId).stream()
                             .filter(candidate -> candidate.id == edited.id).findFirst().orElse(null);
                     if (current == null || current.calendarEventId != null)
@@ -2923,11 +2910,7 @@ public final class TaskDetailActivity extends Activity {
             } else {
                 if (!store.updateCandidate(edited))
                     throw new IllegalStateException("无法保存日程草稿");
-                long eventId = calendar.insertEvent(input);
-                if (!store.setCalendarEventIdIfUnlinked(edited.id, edited.taskId, eventId)) {
-                    calendar.deleteEvent(eventId);
-                    throw new IllegalStateException("无法保存日程关联");
-                }
+                writes.insert(edited, input);
             }
             if (retry == null) {
             List<EventCandidate> savedCandidates = store.getCandidates(edited.taskId);
@@ -2939,6 +2922,7 @@ public final class TaskDetailActivity extends Activity {
             }
             store.getWritableDatabase().setTransactionSuccessful();
               } finally { store.getWritableDatabase().endTransaction(); }
+              writes.committed();
             }
           }
             if (retry != null) {
@@ -3249,12 +3233,12 @@ public final class TaskDetailActivity extends Activity {
                     EventCandidate current;
                     String savedBaseline;
                     synchronized (AndroidSync.LOCK) {
-                        try (TaskStore store = new TaskStore(this)) {
+                        try (TaskStore store = new TaskStore(this);
+                                LinkedCalendarEvents writes = new LinkedCalendarEvents(store,new CalendarStore(this))) {
                             store.getWritableDatabase().beginTransaction();
                             try {
                                 current = requireCandidateBaseline(store, candidate.taskId, candidate.id, expected);
-                                if (current.calendarEventId != null && !new CalendarStore(this)
-                                        .updateDescription(current.calendarEventId, value))
+                                if (current.calendarEventId != null && !writes.description(current, value))
                                     throw new IllegalStateException("系统日程已删除，请刷新后重试");
                                 if (!store.updateCandidateDescription(current.id, current.taskId, value))
                                     throw new IllegalStateException("无法保存备注");
@@ -3262,6 +3246,7 @@ public final class TaskDetailActivity extends Activity {
                                         .filter(item -> item.id == candidate.id).findFirst().orElse(null));
                                 store.getWritableDatabase().setTransactionSuccessful();
                             } finally { store.getWritableDatabase().endTransaction(); }
+                            writes.committed();
                         }
                     }
                     deliverSave(owner -> {

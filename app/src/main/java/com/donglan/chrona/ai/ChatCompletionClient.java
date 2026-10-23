@@ -6,6 +6,7 @@ import com.donglan.chrona.net.RequestControl;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -125,14 +126,10 @@ public final class ChatCompletionClient {
         JSONObject body = new JSONObject();
         try {
             body.put("model", settings.model);
-            JSONArray messages = new JSONArray();
-            messages.put(new JSONObject().put("role", "system").put("content", scheduleSystem));
-            String prompt = SchedulePrompt.data(rawText, linkText, attachmentMetadata,
-                    nowMillis, timeZoneId)
-                    .put("scheduling_now_local", java.time.Instant.ofEpochMilli(System.currentTimeMillis())
-                            .atZone(java.time.ZoneId.of(timeZoneId)).toString()).toString();
-            JSONArray content = new JSONArray();
-            content.put(new JSONObject().put("type", "text").put("text", prompt));
+            long schedulingNowMillis = System.currentTimeMillis();
+            JSONArray messages = SchedulePrompt.requestMessages(scheduleSystem, rawText, linkText,
+                    attachmentMetadata, nowMillis, schedulingNowMillis, timeZoneId);
+            JSONArray content = messages.getJSONObject(1).getJSONArray("content");
             if (hasImages) {
                 for (byte[] imageJpeg : imagesJpeg) {
                     if (imageJpeg == null || imageJpeg.length == 0) continue;
@@ -141,7 +138,6 @@ public final class ChatCompletionClient {
                                     + Base64.getEncoder().encodeToString(imageJpeg))));
                 }
             }
-            messages.put(new JSONObject().put("role", "user").put("content", content));
             body.put("messages", messages);
             RequestOptions.apply(body, settings);
             body.put("stream", streaming);
@@ -373,7 +369,7 @@ public final class ChatCompletionClient {
                 throw new JSONException("Completion was truncated");
             }
             String content = choice.getJSONObject("message").getString("content");
-            JSONObject parsed = new JSONObject(content);
+            JSONObject parsed = contentObject(content);
             JSONArray events = parsed.getJSONArray("events");
             List<EventCandidate> candidates = SemanticEventNormalizer.fromJsonBatch(taskId, events,
                     nowMillis, timeZoneId, schedulingNowMillis, workStartMinutes, workEndMinutes);
@@ -394,6 +390,31 @@ public final class ChatCompletionClient {
         } catch (JSONException e) {
             throw new ResponseException("Invalid AI response JSON: " + e.getMessage(), e);
         }
+    }
+
+    /** Strip recognized outer presentation wrappers without editing JSON string contents. */
+    private static JSONObject contentObject(String content) throws JSONException {
+        String json = content.trim();
+        while (true) {
+            if (json.startsWith("<escape>")) {
+                json = json.substring("<escape>".length()).trim();
+                // Some compatible services emit only the opening marker.
+                if (json.endsWith("</escape>"))
+                    json = json.substring(0, json.length() - "</escape>".length()).trim();
+            } else if (json.startsWith("```")) {
+                int lineEnd = json.indexOf('\n');
+                String opening = lineEnd < 0 ? "" : json.substring(0, lineEnd).trim();
+                if ((!opening.equals("```") && !opening.equalsIgnoreCase("```json"))
+                        || !json.endsWith("```"))
+                    throw new JSONException("Invalid JSON code fence");
+                json = json.substring(lineEnd + 1, json.length() - 3).trim();
+            } else break;
+        }
+        JSONTokener tokener = new JSONTokener(json);
+        Object value = tokener.nextValue();
+        if (!(value instanceof JSONObject) || tokener.nextClean() != 0)
+            throw new JSONException("Expected one complete JSON object");
+        return (JSONObject) value;
     }
 
     private static Long optionalLong(JSONObject object, String key) throws JSONException {

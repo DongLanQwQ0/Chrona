@@ -22,7 +22,12 @@ for name, next_name in [("private void publish(", "private void checkCalendarDup
     assert "synchronized (AndroidSync.LOCK)" in body
     assert body.index("beginTransaction()") < body.index("requireCandidateBaseline(") < body.index("endTransaction()")
     assert body.index("endTransaction()") < body.index("deliverSave(owner ->")
-    assert body.index("requireCandidateBaseline(") < body.index("new CalendarStore") if name.endswith("Dialog(") else True
+    if name.endswith("Dialog("):
+        # Constructing the provider/helper is read-free; the first provider mutation
+        # must still follow the baseline check inside the outer transaction.
+        assert body.index("requireCandidateBaseline(") < body.index("writes.description(") < body.index("endTransaction()")
+    if "LinkedCalendarEvents" in body:
+        assert body.index("endTransaction()") < body.index("writes.committed()") < body.index("deliverSave(owner ->")
 assert "owner.publish(edited, expected)" in text and "owner.associateExistingEvent(edited, expected, eventId)" in text
 assert 'draft.putString("baseline", savedBaseline)' in text
 raw = text[text.index("private void editCaptureContent(TaskRecord task, String draft)"):text.index("private void addAttachmentSection")]

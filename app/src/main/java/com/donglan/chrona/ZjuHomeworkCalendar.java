@@ -4,6 +4,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import com.donglan.chrona.calendar.CalendarStore;
+import com.donglan.chrona.calendar.LinkedCalendarEvents;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.data.TaskStore;
 import java.util.ArrayList;
@@ -55,16 +56,22 @@ public final class ZjuHomeworkCalendar {
                             // deadline alert; allowsReminder keeps completion retry from restoring it.
                             TaskCompletion.enqueue(context, id);
                             TaskCompletion.retryPending(context);
-                            calendar.replaceReminders(item.calendarEventId, Collections.emptyList());
                             continue;
                         }
                         boolean suppressed = item.completed() || !store.allowsReminder(item.id);
                         List<Integer> reminders = suppressed ? Collections.emptyList()
                                 : item.reminderMinutesBefore == null ? event.reminderMinutes : Collections.singletonList(item.reminderMinutesBefore);
                         CalendarStore.EventInput input = input(item, reminders);
-                        if (!calendar.updateEvent(item.calendarEventId, input))
-                            store.clearMissingCalendarLinks(Collections.singletonList(item.calendarEventId));
-                        clear(db, id);
+                        try (LinkedCalendarEvents writes = new LinkedCalendarEvents(store,calendar)) {
+                            db.beginTransaction();
+                            try {
+                                if (!writes.update(item, input))
+                                    store.clearMissingCalendarLinks(Collections.singletonList(item.calendarEventId));
+                                clear(db, id);
+                                db.setTransactionSuccessful();
+                            } finally {db.endTransaction();}
+                            writes.committed();
+                        }
                     } catch (RuntimeException failure) {
                         // The durable pending bit remains set for permission/provider recovery.
                         android.util.Log.w("ChronaZjuCalendar", "Homework calendar update pending", failure);
@@ -78,24 +85,22 @@ public final class ZjuHomeworkCalendar {
         List<Integer> reminders = item.reminderMinutesBefore == null ? Collections.emptyList()
                 : Collections.singletonList(item.reminderMinutesBefore);
         CalendarStore.EventInput input = input(item, reminders);
-        long created = 0;
-        boolean committed = false;
-        db.beginTransaction();
-        try {
+        try (LinkedCalendarEvents writes = new LinkedCalendarEvents(store,calendar)) {
+          db.beginTransaction();
+          try {
             long eventId = 0;
             for (long match : calendar.findMatchingEvents(input)) {
                 CalendarStore.EventRecord existing = calendar.getEvent(match);
                 if (existing != null && java.util.Objects.equals(existing.description, item.description)
                         && java.util.Objects.equals(existing.location, item.location)) { eventId = match; break; }
             }
-            if (eventId == 0) eventId = created = calendar.insertEvent(input);
-            if (!store.setCalendarEventIdIfUnlinked(item.id, item.taskId, eventId))
+            if (eventId == 0) writes.insert(item,input);
+            else if (!store.setCalendarEventIdIfUnlinked(item.id, item.taskId, eventId))
                 throw new IllegalStateException("作业日历关联已变化");
             clear(db, item.id);
-            db.setTransactionSuccessful(); committed = true;
-        } finally {
-            db.endTransaction();
-            if (!committed && created > 0) calendar.deleteEvent(created);
+            db.setTransactionSuccessful();
+          } finally {db.endTransaction();}
+          writes.committed();
         }
     }
 

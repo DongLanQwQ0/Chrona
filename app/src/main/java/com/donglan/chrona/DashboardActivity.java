@@ -32,6 +32,7 @@ import android.widget.TextView;
 import com.donglan.chrona.data.EventCandidate;
 import com.donglan.chrona.calendar.AllDayDates;
 import com.donglan.chrona.calendar.CalendarStore;
+import com.donglan.chrona.calendar.LinkedCalendarEvents;
 import com.donglan.chrona.calendar.CalendarOccurrence;
 import com.donglan.chrona.data.EventCategory;
 import com.donglan.chrona.data.HomeTodoSummary;
@@ -3471,12 +3472,13 @@ public final class DashboardActivity extends Activity {
         selectAction.setEnabled(false);
         new Thread(() -> {
             int failed = 0;
+          synchronized (AndroidSync.LOCK) {
             try (TaskStore store = new TaskStore(this)) {
                 CalendarStore calendar = new CalendarStore(this);
                 Set<Long> affectedTasks = new LinkedHashSet<>();
                 for (EventCandidate item : chosen) {
                     try {
-                        if (item.calendarEventId != null) calendar.deleteEvent(item.calendarEventId);
+                        new LinkedCalendarEvents(store,calendar).delete(store.getCandidatesByIds(java.util.Collections.singletonList(item.id)));
                         if (!store.deleteCandidate(item.id, item.taskId))
                             throw new IllegalStateException("日程已变化，请刷新后重试");
                         affectedTasks.add(item.taskId);
@@ -3490,6 +3492,7 @@ public final class DashboardActivity extends Activity {
                     store.updateStatus(taskId, allPublished ? TaskRecord.READY : TaskRecord.NEEDS_REVIEW, null);
                 }
             } catch (Exception exception) { failed = chosen.size(); }
+          }
             int failures = failed;
             runOnUiThread(() -> {
                 deleteAction.setEnabled(true);
@@ -3529,6 +3532,7 @@ public final class DashboardActivity extends Activity {
         new Thread(() -> {
             int deleted = 0;
             int failed = 0;
+          synchronized (AndroidSync.LOCK) {
             try (TaskStore store = new TaskStore(this)) {
                 CalendarStore calendar = new CalendarStore(this);
                 ImageStore images = new ImageStore(this);
@@ -3540,10 +3544,7 @@ public final class DashboardActivity extends Activity {
                         if (task == null) continue;
                         List<EventCandidate> candidates = store.getCandidates(id);
                         ProcessingJobService.cancel(this, id);
-                        for (EventCandidate candidate : candidates) {
-                            if (candidate.calendarEventId != null)
-                                calendar.deleteEvent(candidate.calendarEventId);
-                        }
+                        new LinkedCalendarEvents(store,calendar).delete(candidates);
                         List<String> imagePaths = store.getImagePaths(id);
                         if (!store.deleteTask(id)) throw new IllegalStateException("任务已变化");
                         outputs.delete(id);
@@ -3560,6 +3561,7 @@ public final class DashboardActivity extends Activity {
                 failed += taskIds.size() - deleted - failed;
                 android.util.Log.e("Chrona", "Could not delete selected inbox tasks", exception);
             }
+          }
             int deletedCount = deleted;
             int failedCount = failed;
             runOnUiThread(() -> {

@@ -19,8 +19,56 @@ public final class LanAccessInstrumentation extends Instrumentation {
         this.arguments = arguments == null ? new Bundle() : new Bundle(arguments);
         super.onCreate(arguments); start();
     }
+    @Override public android.app.Activity newActivity(ClassLoader loader, String name, Intent intent)
+            throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+        android.app.Activity activity = super.newActivity(loader, name, intent);
+        if (("capsule_settings".equals(arguments.getString("check"))
+                && NotificationSettingsActivity.class.getName().equals(name))
+                || ("compact_detail_atomic".equals(arguments.getString("check"))
+                && (TaskDetailActivity.class.getName().equals(name) || CandidateMergeActivity.class.getName().equals(name)))) {
+            FixtureIsolation.require(getTargetContext());
+            // Per-activity resources only: do not change the user's emulator display/font settings.
+            var metrics = getTargetContext().getResources().getDisplayMetrics();
+            int width = Integer.parseInt(arguments.getString("widthDp", "400"));
+            float font = Float.parseFloat(arguments.getString("font", "1.0"));
+            if (width < 320 || width > 600 || font < 1 || font > 2)
+                throw new IllegalArgumentException("Invalid settings render configuration");
+            var config = new android.content.res.Configuration();
+            config.densityDpi = Math.round(metrics.widthPixels * 160f / width);
+            config.screenWidthDp = width;
+            config.screenHeightDp = Math.round(metrics.heightPixels * 160f / config.densityDpi);
+            config.smallestScreenWidthDp = width;
+            config.fontScale = font;
+            activity.applyOverrideConfiguration(config);
+        }
+        return activity;
+    }
     @Override public void onStart() {
         android.util.Log.i("ChronaDeviceCheck", "onStart phase=" + arguments.getString("phase"));
+        if ("compact_detail_atomic".equals(arguments.getString("check"))) {
+            Bundle report = new Bundle();
+            try { report.putString("compact_report", CompactDetailAtomicCheck.run(this, arguments)); finish(-1, report); }
+            catch (Throwable error) { report.putString("error", android.util.Log.getStackTraceString(error)); finish(0, report); }
+            return;
+        }
+        if ("capsule_settings".equals(arguments.getString("check"))) {
+            Bundle report = new Bundle();
+            try { report.putString("capsule_settings_report", CapsuleSettingsDeviceCheck.run(this, arguments)); finish(-1, report); }
+            catch (Throwable error) { report.putString("error", android.util.Log.getStackTraceString(error)); finish(0, report); }
+            return;
+        }
+        if ("classroom_visibility".equals(arguments.getString("check"))) {
+            Bundle report=new Bundle();
+            try { report.putString("visibility_report",ClassroomVisibilityDeviceCheck.run(this,arguments));finish(-1,report); }
+            catch(Throwable error){report.putString("error",android.util.Log.getStackTraceString(error));finish(0,report);}
+            return;
+        }
+        if ("backup_restore".equals(arguments.getString("check"))) {
+            Bundle report = new Bundle();
+            try { report.putString("backup_report", BackupRestoreDeviceCheck.run(this)); finish(-1, report); }
+            catch (Throwable error) { report.putString("error", android.util.Log.getStackTraceString(error)); finish(0, report); }
+            return;
+        }
         if ("home_calendar_race".equals(arguments.getString("check"))) {
             Bundle report=new Bundle();
             try { report.putString("home_calendar_report",HomeCalendarRefreshDeviceCheck.run(this,arguments)); finish(-1,report); }
@@ -54,6 +102,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
     private boolean providerCompletion;
     private void check() throws Exception {
         Context target = getTargetContext();
+        if ("linked_calendar".equals(arguments.getString("check"))) FixtureIsolation.require(target);
         File directory = new File(target.getCacheDir(), "lan-integration-" + UUID.randomUUID());
         if (!directory.mkdirs()) throw new IOException("Cannot create isolated test directory");
         Context isolated = new ContextWrapper(target) {
@@ -162,6 +211,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
             try(TaskStore store=new TaskStore(isolated)){require(store.getTask(id)==null,"delete must remove real row");require(store.getCandidates(id).isEmpty(),"candidate cascade");}
             checkRepeatAndOrder(isolated);
             checkDefaultExecution(isolated);
+            if ("linked_calendar".equals(arguments.getString("check"))) checkLinkedCalendar(isolated);
             expect(request("POST","/api/logout",new JSONObject(),origin()),200);expect(request("GET","/api/inbox",null,null),401);
             server.closeAccess();require(!server.security.authenticated(cookie),"closing revokes connections");
         } finally { server.closeAccess(); delete(directory); }
@@ -198,6 +248,90 @@ public final class LanAccessInstrumentation extends Instrumentation {
         require(request("POST","/api/approval/poll",handle,origin()).body.getString("state").equals("denied")&&cookie==null,"rejection never grants cookie");
         expect(request("GET","/api/session",null,null),401);
     }
+    private void checkLinkedCalendar(Context context) throws Exception {
+        var calendar=new com.donglan.chrona.calendar.CalendarStore(context);
+        require(calendar.hasReadPermission()&&calendar.hasWritePermission(),"linked-calendar check needs provider permission");
+        String title="shared-check-"+UUID.randomUUID();long at=System.currentTimeMillis()+7_200_000L;
+        java.util.List<com.donglan.chrona.calendar.CalendarStore.EventInput> fixtures=new java.util.ArrayList<>();
+        var input=new com.donglan.chrona.calendar.CalendarStore.EventInput(title,at,at+60000,"UTC",false,"provider notes","room",java.util.List.of(20));
+        fixtures.add(input);long event=calendar.insertEvent(input);long capture,other,a,b,c,d;
+        try {
+            try(TaskStore store=new TaskStore(context)) {
+                capture=store.insertTask(title,null,"linked-calendar-check",System.currentTimeMillis());
+                other=store.insertTask(title+" other",null,"linked-calendar-check",System.currentTimeMillis());
+                store.updateStatus(capture,com.donglan.chrona.data.TaskRecord.READY,null);store.updateStatus(other,com.donglan.chrona.data.TaskRecord.READY,null);
+                a=linkedCandidate(store,capture,title,event,at);b=linkedCandidate(store,capture,title,event,at);
+                c=linkedCandidate(store,capture,title,event,at);d=linkedCandidate(store,other,title,event,at);
+            }
+            JSONObject edit=new JSONObject().put("id",Long.toString(capture)).put("candidateId",Long.toString(a))
+                    .put("title",title+" edited").put("start",at).put("end",at+60000).put("zone","UTC")
+                    .put("allDay",false).put("category","task").put("location","room").put("description","changed")
+                    .put("reminder",20).put("needsConfirmation",false).put("due",JSONObject.NULL);
+            var editedInput=new com.donglan.chrona.calendar.CalendarStore.EventInput(title+" edited",at,at+60000,"UTC",false,"changed","room",java.util.List.of(20));fixtures.add(editedInput);
+            expect(request("POST","/api/candidate/save",revision(context,edit),origin()),200);
+            long split;
+            try(TaskStore store=new TaskStore(context)) {
+                split=store.getCandidatesByIds(java.util.List.of(a)).get(0).calendarEventId;
+                require(split!=event&&store.getCandidatesByIds(java.util.List.of(b)).get(0).calendarEventId==event,"HTTP edit isolates shared event");
+            }
+            require(calendar.getEvent(event).title.equals(title)&&calendar.getEvent(split).title.equals(title+" edited"),"real provider untouched sibling title");
+            JSONObject remove=new JSONObject().put("id",Long.toString(capture)).put("candidateId",Long.toString(b));
+            expect(request("POST","/api/candidate/delete",revision(context,remove),origin()),200);
+            require(calendar.getEvent(event)!=null,"deleting one shared candidate keeps provider event");
+            JSONObject complete=new JSONObject().put("id",Long.toString(capture)).put("candidateId",Long.toString(c)).put("completed",true);
+            expect(request("POST","/api/candidate/complete",revision(context,complete),origin()),200);
+            try(TaskStore store=new TaskStore(context)) {
+                long completed=store.getCandidatesByIds(java.util.List.of(c)).get(0).calendarEventId;
+                require(completed!=event&&calendar.getEvent(completed).reminderMinutes.isEmpty(),"completion owns independent silent event");
+            }
+            require(calendar.getEvent(event).reminderMinutes.equals(java.util.List.of(20)),"other task retains provider reminder");
+            edit.put("start",JSONObject.NULL).put("end",JSONObject.NULL);
+            expect(request("POST","/api/candidate/save",revision(context,edit),origin()),200);
+            try(TaskStore store=new TaskStore(context)){require(store.getCandidatesByIds(java.util.List.of(a)).get(0).calendarEventId==null,"undated edit detaches only owner");}
+            require(calendar.getEvent(split)==null&&calendar.getEvent(event)!=null,"detached unique event removed; shared sibling retained");
+            expect(request("POST","/api/task/delete",revision(context,new JSONObject().put("id",Long.toString(capture))),origin()),200);
+            require(calendar.getEvent(event)!=null,"task deletion preserves another task owner");
+            expect(request("POST","/api/task/delete",revision(context,new JSONObject().put("id",Long.toString(other))),origin()),200);
+            require(calendar.getEvent(event)==null,"last owner deletion removes provider event");
+
+            // Fail at the outer SQL COMMIT, after provider insertion and status/link writes succeeded.
+            long failureTask,failureCandidate;
+            try(TaskStore store=new TaskStore(context)) {
+                failureTask=store.insertTask(title+" failure",null,"linked-calendar-check",System.currentTimeMillis());
+                store.updateStatus(failureTask,com.donglan.chrona.data.TaskRecord.READY,null);
+                failureCandidate=store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,failureTask,title+" failure",at,at+60000,"UTC","","",null,false,null,"event",false));
+                var db=store.getWritableDatabase();db.execSQL("CREATE TABLE linked_guard_parent(id INTEGER PRIMARY KEY)");
+                db.execSQL("CREATE TABLE linked_guard_child(id INTEGER REFERENCES linked_guard_parent(id) DEFERRABLE INITIALLY DEFERRED)");
+                db.execSQL("CREATE TRIGGER linked_commit_failure AFTER UPDATE OF status ON tasks WHEN NEW.id="+failureTask+" BEGIN INSERT INTO linked_guard_child VALUES(1); END");
+            }
+            var failureInput=new com.donglan.chrona.calendar.CalendarStore.EventInput(title+" failure",at,at+60000,"UTC",false,"","",java.util.List.of());fixtures.add(failureInput);
+            JSONObject publish=new JSONObject().put("id",Long.toString(failureTask)).put("candidateId",Long.toString(failureCandidate))
+                    .put("title",title+" failure").put("start",at).put("end",at+60000).put("zone","UTC").put("allDay",false)
+                    .put("category","event").put("location","").put("description","").put("reminder",JSONObject.NULL).put("needsConfirmation",false);
+            expect(request("POST","/api/candidate/publish",revision(context,publish),origin()),500);
+            require(calendar.findMatchingEvents(failureInput).isEmpty(),"outer commit failure removes inserted provider event");
+            try(TaskStore store=new TaskStore(context)) {
+                require(store.getCandidatesByIds(java.util.List.of(failureCandidate)).get(0).calendarEventId==null,"failed commit leaves draft unlinked");
+                store.getWritableDatabase().execSQL("DROP TRIGGER linked_commit_failure");
+            }
+            expect(request("POST","/api/candidate/publish",revision(context,publish),origin()),200);
+            require(calendar.findMatchingEvents(failureInput).size()==1,"same request retries without orphan duplicate");
+            expect(request("POST","/api/task/delete",revision(context,new JSONObject().put("id",Long.toString(failureTask))),origin()),200);
+        } finally {
+            java.util.Set<Long> removeEvents=new java.util.HashSet<>();
+            try(TaskStore store=new TaskStore(context)) {
+                store.getWritableDatabase().execSQL("DROP TRIGGER IF EXISTS linked_commit_failure");
+                try(android.database.Cursor rows=store.getReadableDatabase().query("tasks",new String[]{"id"},"source=?",new String[]{"linked-calendar-check"},null,null,null)) {
+                    while(rows.moveToNext()){long id=rows.getLong(0);for(var item:store.getCandidates(id))if(item.calendarEventId!=null)removeEvents.add(item.calendarEventId);store.deleteTask(id);}
+                }
+            }
+            for(var fixture:fixtures)removeEvents.addAll(calendar.findMatchingEvents(fixture));
+            for(long id:removeEvents)calendar.deleteEvent(id);
+        }
+    }
+    private JSONObject revision(Context context,JSONObject body)throws Exception {try(TaskStore store=new TaskStore(context)){return body.put("revision",store.dataRevision());}}
+    private static long linkedCandidate(TaskStore store,long task,String title,long event,long at){return store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,task,title,at,at+60000,"UTC","room","provider notes",20,false,event,"task",false));}
+
     private void checkDefaultExecution(Context context) throws Exception {
         long capture,candidate;
         java.time.ZoneId zone=java.time.ZoneId.systemDefault();java.time.LocalDate day=java.time.LocalDate.now(zone).plusDays(1);

@@ -18,6 +18,71 @@ public final class ZjuHomeworkUpdateCheck {
     static boolean unread(Context c,long id){try(TaskStore store=new TaskStore(c);var rows=store.getReadableDatabase().rawQuery("SELECT unread FROM zju_homework_map WHERE candidate_id=?",new String[]{Long.toString(id)})){return rows.moveToFirst()&&rows.getInt(0)==1;}}
     static void personal(Context c,long id,long execution,long event){try(TaskStore store=new TaskStore(c)){ContentValues v=new ContentValues();if(execution!=0){v.put("start_at_millis",execution);v.put("end_at_millis",execution+3_600_000L);}v.put("reminder_minutes_before",15);v.put("calendar_event_id",event);store.getWritableDatabase().update("event_candidates",v,"id=?",new String[]{Long.toString(id)});}}
     static void event(long id,long at,boolean own){CalendarStore.rows.put(id,new CalendarStore.EventRecord(new CalendarStore.EventInput("old",at,at+60000,"Asia/Shanghai",false,"old","",List.of(15)),own));}
+    static long otherOwner(Context context,long event) {
+        try(TaskStore store=new TaskStore(context)) {
+            long task=store.insertTask("independent owner",null,"text",DUE);
+            long id=store.appendCandidate(new EventCandidate(0,task,"independent owner",DUE,DUE+60000,
+                    "Asia/Shanghai","other location","other description",15,false,null,"task",false));
+            check(store.setCalendarEventId(id,task,event),"fixture second owner linked");
+            return id;
+        }
+    }
+    static void sharedOwners(File parent) {
+        Context context=new Context(new File(parent,"shared-homework-"+System.nanoTime()));
+        ZjuHomeworkStore managed=new ZjuHomeworkStore(context);managed.configure("shared-account",true);
+        long generation=managed.state().generation;
+        Homework source=homework("shared","Shared homework",DUE,false);
+        managed.apply("shared-account",generation,List.of(source));
+        EventCandidate a;try(TaskStore store=new TaskStore(context)){a=store.getCandidates(managed.state().captureId).get(0);}
+        long old=a.calendarEventId,bid=otherOwner(context,old);
+        personal(context,a.id,0,old);CalendarStore.rows.get(old).reminderMinutes=new java.util.ArrayList<>(List.of(15));
+        CalendarStore.EventRecord before=CalendarStore.rows.get(old);
+        source=homework("shared","Shared homework updated",DUE+600000,false);
+        managed.apply("shared-account",generation,List.of(source));
+        EventCandidate changed=row(context,a.id);long split=changed.calendarEventId;
+        check(split!=old&&row(context,bid).calendarEventId==old,"school content update splits only school owner");
+        check(CalendarStore.rows.get(old)==before&&before.input.title.equals("Shared homework")
+                &&before.reminderMinutes.equals(List.of(15)),"school content update preserves second owner's old provider fields and reminders");
+        check(CalendarStore.rows.get(split).input.title.equals("Shared homework updated")
+                &&CalendarStore.rows.get(split).startMillis==DUE+600000,"school update writes latest content to split provider");
+        check(ZjuHomeworkCalendar.pendingCount(context)==0,"shared school update commits and clears repair");
+
+        long cid=otherOwner(context,split);CalendarStore.EventRecord splitBefore=CalendarStore.rows.get(split);
+        source=homework("shared","Shared homework deadline removed",0,false);
+        managed.apply("shared-account",generation,List.of(source));
+        long detachedAlerts=row(context,a.id).calendarEventId;
+        check(detachedAlerts!=split,"removed deadline suppresses only school owner's reminders via copy-on-write");
+        check(CalendarStore.rows.get(detachedAlerts).reminderMinutes.isEmpty(),"removed deadline new provider has no obsolete alerts");
+        check(row(context,cid).calendarEventId==split&&CalendarStore.rows.get(split)==splitBefore
+                &&splitBefore.reminderMinutes.equals(List.of(15)),"removed deadline never reuses stale event ID to clear second owner's alerts");
+        check(row(context,bid).calendarEventId==old&&before.reminderMinutes.equals(List.of(15)),"earlier independent owner also remains unchanged");
+        check(ZjuHomeworkCalendar.pendingCount(context)==1,"removed deadline remains pending without valid interval");
+        source=homework("shared","Shared homework restored",DUE+900000,false);
+        managed.apply("shared-account",generation,List.of(source));
+        check(row(context,a.id).calendarEventId==detachedAlerts&&CalendarStore.rows.get(detachedAlerts).reminderMinutes.equals(List.of(15)),"restored deadline updates A's own event and restores configured reminders");
+        check(splitBefore.reminderMinutes.equals(List.of(15))&&row(context,cid).calendarEventId==split,"restored deadline leaves second owner intact");
+
+        long did=otherOwner(context,detachedAlerts);
+        try(TaskStore store=new TaskStore(context)) {
+            var db=store.getWritableDatabase();
+            db.execSQL("CREATE TABLE linked_commit_parent(id INTEGER PRIMARY KEY)");
+            db.execSQL("CREATE TABLE linked_commit_child(parent_id INTEGER REFERENCES linked_commit_parent(id) DEFERRABLE INITIALLY DEFERRED)");
+            db.execSQL("CREATE TRIGGER fail_shared_commit AFTER UPDATE OF calendar_event_id ON event_candidates "
+                    +"WHEN NEW.id="+a.id+" AND NEW.calendar_event_id!=OLD.calendar_event_id BEGIN INSERT INTO linked_commit_child VALUES(1); END");
+        }
+        int count=CalendarStore.rows.size();CalendarStore.EventRecord original=CalendarStore.rows.get(detachedAlerts);
+        source=homework("shared","Shared failed commit",DUE+1200000,false);
+        managed.apply("shared-account",generation,List.of(source));
+        check(ZjuHomeworkCalendar.pendingCount(context)==1,"actual SQLite COMMIT failure retains durable school repair");
+        check(row(context,a.id).calendarEventId==detachedAlerts&&row(context,did).calendarEventId==detachedAlerts,"failed school relink commit retains both old associations");
+        check(CalendarStore.rows.size()==count&&CalendarStore.rows.get(detachedAlerts)==original,"failed school relink commit cleans new provider, keeps existing provider");
+        try(TaskStore store=new TaskStore(context)){store.getWritableDatabase().execSQL("DROP TRIGGER fail_shared_commit");}
+        ZjuHomeworkCalendar.retryPending(context);
+        long recovered=row(context,a.id).calendarEventId;
+        check(recovered!=detachedAlerts&&ZjuHomeworkCalendar.pendingCount(context)==0,"school relink retries successfully after commit failure removed");
+        check(CalendarStore.rows.get(recovered).title.equals("Shared failed commit")&&row(context,did).calendarEventId==detachedAlerts
+                &&CalendarStore.rows.get(detachedAlerts)==original,"recovered school update preserves second owner");
+    }
     public static void main(String[] args)throws Exception{
         File directory=new File(args[0],"homework-"+System.nanoTime());Context c=new Context(directory);
         ZjuHomeworkStore managed=new ZjuHomeworkStore(c);managed.configure("account",true);long generation=managed.state().generation;
@@ -133,6 +198,7 @@ public final class ZjuHomeworkUpdateCheck {
             catch (IllegalArgumentException expected) { rejected = true; }
             check(rejected && row(c, bid) != null, "reparse cannot wipe a managed homework capture");
         }
+        sharedOwners(new File(args[0]));
         System.out.println("PASS: "+checks+" production homework upsert/actionable/calendar retry checks against real SQLite");
     }
 }

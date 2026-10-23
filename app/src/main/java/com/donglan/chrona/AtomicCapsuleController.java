@@ -1,13 +1,11 @@
 package com.donglan.chrona;
 
 import android.app.AlarmManager;
-import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,16 +14,14 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import java.text.BreakIterator;
 import java.util.Locale;
-import java.util.Set;
 
 /** Presentation deadlines only. Never changes reminder expiry, completion or unread state. */
 public final class AtomicCapsuleController extends BroadcastReceiver {
-    static final long WAKE_MILLIS = 30_000L, CLICK_MILLIS = 60_000L;
+    static final long WAKE_MILLIS = BuildConfig.CAPSULE_DESKTOP_MILLIS;
+    static final long CLICK_MILLIS = BuildConfig.CAPSULE_CLICK_MILLIS;
     private static final String PREFS = "atomic_capsule", PREFIX = "notification.superx.";
-    private static final String META = "chrona.atomic.", CLICK = "capsule_click", EXPIRE = "capsule_expire";
+    private static final String META = "chrona.atomic.", EXPIRE = "capsule_expire";
     private static final Handler HANDLER = new Handler(Looper.getMainLooper());
-    // Accessed on AgendaReminder.WORKER, including click dispatch and all notification builds.
-    private static final Set<Integer> OPEN_CARD = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static Runnable boundary;
 
     private static synchronized SharedPreferences prefs(Context context) {
@@ -42,8 +38,9 @@ public final class AtomicCapsuleController extends BroadcastReceiver {
         boolean pendingWindow = prefs.getAll().entrySet().stream()
                 .anyMatch(item -> item.getKey().startsWith("until:") && (Long) item.getValue() > now);
         // A recovered process cannot receive a screen-on broadcast sent while it was absent.
-        // Restore one reading window, but never extend an already-running click deadline.
-        if (interactive(context) && prefs.getLong("wake_until", 0) <= now && !pendingWindow) {
+        // Restore one reading window, but never extend an already-running window.
+        if (!AtomicCapsuleAccessibilityService.enabled(context) && interactive(context)
+                && prefs.getLong("wake_until", 0) <= now && !pendingWindow) {
             prefs.edit().putLong("wake_until", now + WAKE_MILLIS).commit();
             refresh(context);
         }
@@ -52,8 +49,26 @@ public final class AtomicCapsuleController extends BroadcastReceiver {
 
     static void screenOn(Context context, long receivedAt) {
         if (!VivoAtomicNotification.supportedManufacturer()) return;
+        if (AtomicCapsuleAccessibilityService.enabled(context)) return;
+        desktopEntered(context, receivedAt);
+    }
+
+    static void desktopEntered(Context context, long receivedAt) {
+        if (!VivoAtomicNotification.supportedManufacturer()) return;
         prefs(context).edit().putLong("wake_until", receivedAt + WAKE_MILLIS).commit();
         refresh(context);
+        schedule(context);
+    }
+
+    static boolean capsuleClicked(Context context, int id, String identity, long clickedAt) {
+        SharedPreferences prefs = prefs(context);
+        if (!identity.equals(prefs.getString("identity:" + id, ""))) return false;
+        long now = SystemClock.elapsedRealtime();
+        if (clickedAt > now || now - clickedAt > 2000) return false;
+        prefs.edit().putLong("until:" + id, clickedAt + CLICK_MILLIS).commit();
+        refresh(context);
+        schedule(context);
+        return true;
     }
 
     static void screenOff(Context context) {
@@ -84,17 +99,9 @@ public final class AtomicCapsuleController extends BroadcastReceiver {
         data.putString(META + "left", island.getBundle("island.superx.leftInfo")
                 .getCharSequence("island.superx.leftInfo.content").toString());
         data.putString(META + "capsule", capsule.getString(PREFIX + "capsule.content", ""));
-        PendingIntent click = PendingIntent.getBroadcast(context, id,
-                new Intent(context, AtomicCapsuleController.class).setAction(CLICK)
-                        .setData(new Uri.Builder().scheme("chrona").authority("atomic-capsule")
-                                .appendPath(String.valueOf(id)).appendPath(identity).build()),
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        // The tap is delivered to us first, then the same OEM notification opens its card.
-        // Card root RemoteViews retain the original activity PendingIntent for details.
-        island.putInt("island.superx.islandClick", 1);
-        island.putParcelable("island.superx.clickResp", click);
-        if (OPEN_CARD.remove(id)) island.putBoolean("island.superx.forceShowCard", true);
-        capsule.putParcelable(PREFIX + "capsule.clickResp", click);
+        AtomicCapsuleIdentity.attach(island, id, identity, data.getString(META + "title", ""));
+        // Preserve the native expand/dismiss gesture and the existing detail action.
+        // Force-show blocks immediate outside-tap dismissal on vivo; never use it here.
         apply(context, data);
         schedule(context);
         return data;
@@ -143,7 +150,6 @@ public final class AtomicCapsuleController extends BroadcastReceiver {
     static void clear(Context context, int id) {
         if (!VivoAtomicNotification.supportedManufacturer()) return;
         prefs(context).edit().remove("identity:" + id).remove("until:" + id).commit();
-        OPEN_CARD.remove(id);
         schedule(context);
     }
 
@@ -192,25 +198,10 @@ public final class AtomicCapsuleController extends BroadcastReceiver {
     }
 
     @Override public void onReceive(Context context, Intent intent) {
-        String action = intent.getAction();
-        if (!CLICK.equals(action) && !EXPIRE.equals(action)) return;
-        long receivedAt = SystemClock.elapsedRealtime();
+        if (!EXPIRE.equals(intent.getAction())) return;
         PendingResult pending = goAsync();
         AgendaReminder.WORKER.execute(() -> {
             try {
-                if (CLICK.equals(action)) {
-                    Uri uri = intent.getData();
-                    if (uri == null || !"chrona".equals(uri.getScheme()) || !"atomic-capsule".equals(uri.getAuthority())
-                            || uri.getPathSegments().size() != 2) return;
-                    int id;
-                    try { id = Integer.parseInt(uri.getPathSegments().get(0)); }
-                    catch (NumberFormatException invalid) { return; }
-                    String identity = uri.getPathSegments().get(1);
-                    if (!identity.equals(prefs(context).getString("identity:" + id, ""))
-                            || !VivoAtomicNotification.active(context.getSystemService(NotificationManager.class), id)) return;
-                    prefs(context).edit().putLong("until:" + id, receivedAt + CLICK_MILLIS).commit();
-                    OPEN_CARD.add(id);
-                }
                 HomeworkNotice.refreshCapsule(context);
                 AgendaReminder.refreshSafely(context.getApplicationContext(), null);
                 schedule(context);

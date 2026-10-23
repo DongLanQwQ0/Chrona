@@ -1,5 +1,6 @@
 package com.donglan.chrona.data;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -10,6 +11,7 @@ public final class InboxQuery {
     public final String selection;
     public final String[] arguments;
     public final String keyword;
+    private final String[] terms;
 
     public InboxQuery(int status, String category, String search) {
         List<String> clauses = new ArrayList<>(), values = new ArrayList<>();
@@ -30,7 +32,8 @@ public final class InboxQuery {
         }
         selection = clauses.isEmpty() ? "1" : String.join(" AND ", clauses);
         arguments = values.toArray(new String[0]);
-        keyword = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
+        keyword = normalized(search).trim();
+        terms = keyword.isEmpty() ? new String[0] : keyword.split(" ");
     }
 
     public boolean matchesSearch(String rawText, String linkText) {
@@ -39,13 +42,21 @@ public final class InboxQuery {
 
     public boolean matchesSearch(String rawText, String linkText,
             String candidateTitles, String candidateDescriptions) {
-        // Keep Java Unicode case handling and literal %, _ and backslashes; SQLite LOWER/LIKE differ.
-        return keyword.isEmpty() || contains(rawText) || contains(linkText)
-                || contains(candidateTitles) || contains(candidateDescriptions);
+        // Each literal term may occur in any field; every term must be present in this capture.
+        if (terms.length == 0) return true;
+        String[] fields = {normalized(rawText), normalized(linkText),
+                normalized(candidateTitles), normalized(candidateDescriptions)};
+        for (String term : terms) {
+            boolean found = false;
+            for (String field : fields) if (field.contains(term)) { found = true; break; }
+            if (!found) return false;
+        }
+        return true;
     }
 
-    private boolean contains(String value) {
-        return value != null && value.toLowerCase(Locale.ROOT).contains(keyword);
+    private static String normalized(String value) {
+        return value == null ? "" : Normalizer.normalize(value, Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT).replaceAll("[\\p{javaWhitespace}\\p{Z}]+", " ");
     }
 
     public String orderBy(boolean oldestFirst) {

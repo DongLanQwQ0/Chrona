@@ -24,7 +24,7 @@ import java.util.*;
 public class DashboardActivity {
  static final int HOME=0,INBOX=1,SCHEDULE=2;
  final SectionHistory sectionHistory=new SectionHistory();
- int section=HOME,dragDirection,scheduleSource,requests,lastRequest=-1;
+ int section=HOME,dragDirection,scheduleSource,requests,lastRequest=-1,homeworkFocusRequests;
  boolean sectionSwitchFromHistory,dragTargetLoaded,pageTransitionRunning,sectionLoadRunning,initialDataReady=true,startupReported=true;
  final Set<Long> selection=new HashSet<>();final List<Object>sectionAcrylicSurfaces=new ArrayList<>();
  final Map<Integer,SectionPage>sectionPages=new HashMap<>();
@@ -40,6 +40,7 @@ public class DashboardActivity {
  void activateSectionPage(SectionPage target){section=target.section;scroll=target.scroll;}
  int sectionPosition(int target){return target;}void updateSelectionBack(){}void drawNavigation(){}void invalidateSectionSurfaces(){}
  void refreshSystemCalendar(){}void switchToPendingSection(){}void afterDraw(Scroll scroll,Runnable action){}void maybeReportStartup(){}
+ void queueHomeworkFocus(){homeworkFocusRequests++;}
  void switchTo(int destination,boolean fromHistory){requests++;lastRequest=destination;sectionSwitchFromHistory=fromHistory;pageTransitionRunning=true;adjacentPage=new SectionPage(destination);}
  @@CONTROLLER@@
  static int checks;static void check(boolean value,String label){checks++;if(!value)throw new AssertionError(label);}
@@ -57,6 +58,7 @@ public class DashboardActivity {
   restored.restore(new int[]{-1,HOME,99,SCHEDULE});check(Arrays.equals(restored.snapshot(),new int[]{HOME,SCHEDULE}),"restore ignores invalid section values");
   restored.restore(null);check(restored.previous()==-1,"absent saved history clears state");
   DashboardActivity d=new DashboardActivity();d.visit(SCHEDULE);d.visit(INBOX);
+  check(d.homeworkFocusRequests==1,"schedule commit still requests pending homework focus");
   check(Arrays.equals(d.sectionHistory.snapshot(),new int[]{HOME,SCHEDULE}),"real commit records outgoing page once");
   d.adjacentPage=d.new SectionPage(HOME);d.completeSectionDrag(false);
   check(d.section==INBOX&&d.sectionHistory.previous()==SCHEDULE,"cancelled preview does not add history");

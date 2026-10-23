@@ -252,7 +252,8 @@ public final class ChronaDataBackup {
                 addFile(zip, database, "chrona.db");
                 for(Map.Entry<String,ClassroomArchive.Entry> entry:classroom.entrySet()){
                     String prefix="classrooms/"+entry.getKey()+"/";
-                    zip.putNextEntry(new ZipEntry(prefix+"document.json"));zip.write(entry.getValue().document.toString().getBytes(StandardCharsets.UTF_8));zip.closeEntry();
+                    writeJson(zip, prefix + "document.json", entry.getValue().document,
+                            com.donglan.chrona.sync.TaskCodec.MAX_TASK_BYTES);
                     for(Map.Entry<String,File> image:ClassroomArchive.images(entry.getValue()).entrySet())addFile(zip,image.getValue(),prefix+image.getKey());
                 }
                 for (int i = 0; i < images.length(); i++) {
@@ -289,9 +290,7 @@ public final class ChronaDataBackup {
                     File output = new File(outputDir, "task-" + id + ".txt");
                     if (output.isFile()) addFile(zip, output, "outputs/" + id + ".txt");
                 }
-                zip.putNextEntry(new ZipEntry("manifest.json"));
-                zip.write(manifest.toString().getBytes(StandardCharsets.UTF_8));
-                zip.closeEntry();
+                writeJson(zip, "manifest.json", manifest, MAX_MANIFEST_BYTES);
             }
             return archive;
         } catch (Exception exception) {
@@ -318,7 +317,7 @@ public final class ChronaDataBackup {
             File manifestFile = new File(directory, "manifest.json");
             if (!manifestFile.isFile() || manifestFile.length() > MAX_MANIFEST_BYTES)
                 throw new IOException("备份清单缺失或过大");
-        JSONObject manifest = new JSONObject(readText(manifestFile));
+            JSONObject manifest = new JSONObject(readText(manifestFile, MAX_MANIFEST_BYTES));
             if (!APP.equals(manifest.optString("app")) || manifest.optInt("format") != FORMAT)
                 throw new IOException("备份来源或版本不受支持");
             String config = manifest.getString("config");
@@ -349,7 +348,7 @@ public final class ChronaDataBackup {
             String key=entries.getString(i);if(!key.matches("[0-9]+-[0-9]+")||!seen.add(key))throw new IOException("课堂备份身份无效或重复");
             File source=new File(directory,"classrooms/"+key),json=new File(source,"document.json");
             if(!json.isFile()||json.length()>com.donglan.chrona.sync.TaskCodec.MAX_TASK_BYTES)throw new IOException("课堂备份正文缺失或过大");
-            JSONObject document=new JSONObject(readText(json));ClassroomDocument.validate(document);
+            JSONObject document=new JSONObject(readText(json,com.donglan.chrona.sync.TaskCodec.MAX_TASK_BYTES));ClassroomDocument.validate(document);
             if(!key.equals(ClassroomDocument.key(document.getJSONObject("summary").getJSONObject("lesson"))))throw new IOException("课堂备份身份与正文不一致");
             for(String name:ClassroomDocument.referencedImages(document.getJSONObject("summary"))){
                 File image=new File(source,name);
@@ -456,6 +455,8 @@ public final class ChronaDataBackup {
         synchronized (AndroidSync.LOCK) {
           synchronized(ClassroomStore.LOCK){
             if(ClassroomStore.anyActive())throw new IOException("课堂正在处理，请结束后再恢复备份");
+            try (com.donglan.chrona.data.LiveDatabaseAccess.Restore access =
+                    com.donglan.chrona.data.LiveDatabaseAccess.beginRestore()) {
             ZjuSync.cancel();
             String result = restoreExclusive(context, prepared);
             ZjuSettingsStore school = new ZjuSettingsStore(context);
@@ -463,6 +464,7 @@ public final class ChronaDataBackup {
             new ZjuHomeworkStore(context).configure(school.account(), false);
             AndroidSync.resetAfterRestore(context);
             return result + "\n自动同步已关闭。已有日程保留同步身份，与云端不同的版本可能待确认，请整理后再手动同步。";
+            }
           }
         }
     }
@@ -649,7 +651,7 @@ public final class ChronaDataBackup {
             JSONArray entries=prepared.manifest.getJSONArray("classrooms");
             for(int i=0;i<entries.length();i++){
                 String key=entries.getString(i);File source=new File(prepared.directory,"classrooms/"+key);
-                JSONObject document=new JSONObject(readText(new File(source,"document.json")));Map<String,File> pictures=new HashMap<>();
+                JSONObject document=new JSONObject(readText(new File(source,"document.json"),com.donglan.chrona.sync.TaskCodec.MAX_TASK_BYTES));Map<String,File> pictures=new HashMap<>();
                 for(String name:ClassroomDocument.referencedImages(document.getJSONObject("summary")))pictures.put(name,new File(source,name));
                 ClassroomArchive.write(new File(classroomStage,"shared/"+key),document,pictures);
             }
@@ -657,18 +659,6 @@ public final class ChronaDataBackup {
             if(classroomRoot.exists()){if(!classroomRoot.renameTo(classroomPrevious))throw new IOException("无法保留原课堂数据");classroomMoved=true;}
             if(!classroomStage.renameTo(classroomRoot))throw new IOException("无法恢复课堂数据");classroomInstalled=true;
         }
-        if (installedPrevious != null) installedPrevious.delete();
-        deleteTree(previousOutputs);
-        android.content.SharedPreferences.Editor reminderState = AgendaReminderPreferences.prefs(context).edit();
-        for (String key : AgendaReminderPreferences.prefs(context).getAll().keySet())
-            if (!FeaturePreferenceBackup.reminderSetting(key)) reminderState.remove(key);
-        reminderState.apply();
-        AgendaReminder.requestRefresh(context);
-        ClassroomCleanupService.schedule(context);
-        deleteTree(classroomPrevious);
-        return calendarLinks.containsValue(null)
-                ? "数据已恢复；部分日程因日历权限不可用已转为待确认。"
-                : "收件箱、日程与设置已恢复。";
         } catch (Exception exception) {
             IOException failure = new IOException("恢复失败：" + exception.getMessage(), exception);
             try{
@@ -730,18 +720,16 @@ public final class ChronaDataBackup {
                         ? installedPrevious
                         : new File(current.getParentFile(), "chrona.db.previous");
                 try {
+                    // Never destroy the only surviving database when its recovery copy is missing.
+                    if (!rollbackCopy.isFile())
+                        throw new IOException("旧数据库回滚副本不存在，已保留当前数据库");
                     deleteDatabaseFile(current);
-                    if (rollbackCopy.exists()) {
-                        if (!rollbackCopy.renameTo(current))
-                            throw new IOException("无法恢复旧数据库");
-                        long[] restoredCounts = inspectDatabase(current);
-                        if (restoredCounts[0] != previousDatabaseCounts[0]
-                                || restoredCounts[1] != previousDatabaseCounts[1])
-                            throw new IOException("恢复后的旧数据库记录数量不一致");
-                    } else if (previousDatabaseCounts[0] != 0
-                            || previousDatabaseCounts[1] != 0) {
-                        throw new IOException("旧数据库回滚副本不存在");
-                    }
+                    if (!rollbackCopy.renameTo(current))
+                        throw new IOException("无法恢复旧数据库");
+                    long[] restoredCounts = inspectDatabase(current);
+                    if (restoredCounts[0] != previousDatabaseCounts[0]
+                            || restoredCounts[1] != previousDatabaseCounts[1])
+                        throw new IOException("恢复后的旧数据库记录数量不一致");
                     databaseRollbackSucceeded = true;
                 } catch (Exception rollbackDatabaseFailure) {
                     String recoveryPath = rollbackCopy.exists()
@@ -792,6 +780,37 @@ public final class ChronaDataBackup {
             }
             throw failure;
         }
+        // Commit boundary: installed data is now authoritative. Maintenance may report a warning,
+        // but must never re-enter rollback after any recovery copy has been retired.
+        ArrayList<String> warnings = new ArrayList<>();
+        try {
+            if (installedPrevious != null && installedPrevious.exists() && !installedPrevious.delete())
+                throw new IOException("旧数据库副本无法清理");
+            deleteTree(previousOutputs);
+            deleteTree(classroomPrevious);
+            if (previousOutputs.exists() || classroomPrevious.exists())
+                throw new IOException("旧数据目录无法清理");
+        } catch (IOException | RuntimeException cleanupFailure) {
+            warnings.add("旧恢复副本清理未完成，副本已保留");
+        }
+        try {
+            android.content.SharedPreferences.Editor reminderState = AgendaReminderPreferences.prefs(context).edit();
+            for (String key : AgendaReminderPreferences.prefs(context).getAll().keySet())
+                if (!FeaturePreferenceBackup.reminderSetting(key)) reminderState.remove(key);
+            reminderState.apply();
+            AgendaReminder.requestRefresh(context);
+        } catch (RuntimeException reminderFailure) {
+            warnings.add("提醒重建未完成，请重新打开应用后检查提醒");
+        }
+        try {
+            ClassroomCleanupService.schedule(context);
+        } catch (RuntimeException scheduleFailure) {
+            warnings.add("课堂自动清理未安排，下次启动应用时重试");
+        }
+        String result = calendarLinks.containsValue(null)
+                ? "数据已恢复；部分日程因日历权限不可用已转为待确认。"
+                : "收件箱、日程与设置已恢复。";
+        return warnings.isEmpty() ? result : result + "\n" + String.join("；", warnings) + "。";
     }
 
     private static void rescheduleQueuedTasks(Context context) {
@@ -1303,10 +1322,19 @@ public final class ChronaDataBackup {
         zip.closeEntry();
     }
 
-    private static String readText(File file) throws IOException {
+    private static void writeJson(ZipOutputStream zip, String entry, JSONObject value, long max)
+            throws IOException {
+        byte[] bytes = value.toString().getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > max) throw new IOException("备份内容过大：" + entry);
+        zip.putNextEntry(new ZipEntry(entry));
+        zip.write(bytes);
+        zip.closeEntry();
+    }
+
+    private static String readText(File file, long max) throws IOException {
         try (InputStream input = new FileInputStream(file)) {
             java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
-            copyLimited(input, output, 4 * 1024 * 1024);
+            copyLimited(input, output, max);
             return new String(output.toByteArray(), StandardCharsets.UTF_8);
         }
     }
@@ -1354,7 +1382,10 @@ public final class ChronaDataBackup {
         static void cancel(Context context) {
             android.app.job.JobScheduler scheduler = context.getSystemService(
                     android.app.job.JobScheduler.class);
-            if (scheduler != null) scheduler.cancelAll();
+            if (scheduler != null) for (android.app.job.JobInfo job : scheduler.getAllPendingJobs()) {
+                if (ProcessingJobService.class.getName().equals(job.getService().getClassName()))
+                    scheduler.cancel(job.getId());
+            }
         }
     }
 }

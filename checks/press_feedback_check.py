@@ -23,9 +23,13 @@ class Attr { static int state_enabled=1,state_pressed=2; }
 class Rect {int left,top,right,bottom;Rect(int l,int t,int r,int b){left=l;top=t;right=r;bottom=b;}}
 class ViewTreeObserver {
  interface OnGlobalLayoutListener { void onGlobalLayout(); }
+ interface OnGlobalFocusChangeListener {void onGlobalFocusChanged(View oldFocus,View newFocus);}
  List<OnGlobalLayoutListener> listeners=new ArrayList<>();
+ List<OnGlobalFocusChangeListener> focusListeners=new ArrayList<>();
  boolean isAlive(){return true;}void addOnGlobalLayoutListener(OnGlobalLayoutListener l){listeners.add(l);}
  void removeOnGlobalLayoutListener(OnGlobalLayoutListener l){listeners.remove(l);}
+ void addOnGlobalFocusChangeListener(OnGlobalFocusChangeListener l){focusListeners.add(l);}
+ void removeOnGlobalFocusChangeListener(OnGlobalFocusChangeListener l){focusListeners.remove(l);}
  void layout(){for(var l:new ArrayList<>(listeners))l.onGlobalLayout();}
 }
 class View implements ViewParent {
@@ -39,6 +43,7 @@ class View implements ViewParent {
  void setStateListAnimator(StateListAnimator a){states=a;installs++;}ViewTreeObserver getViewTreeObserver(){return observer;}
  boolean getClipToOutline(){return clipOutline;}void setScaleX(float f){sx=f;}void setScaleY(float f){sy=f;}
  Object getContext(){return this;}Object getForeground(){return foreground;}void setForeground(Object value){foreground=value;}
+ View focused;View findFocus(){return focused;}
  void setPressed(boolean p){pressed=p;if(parent instanceof ViewGroup g&&g.addStates)g.pressed=p;}
  void addOnAttachStateChangeListener(OnAttachStateChangeListener l){attach.add(l);}void removeOnAttachStateChangeListener(OnAttachStateChangeListener l){attach.remove(l);}
  void detach(){for(var l:new ArrayList<>(attach))l.onViewDetachedFromWindow(this);}
@@ -49,6 +54,7 @@ class ObjectAnimator {float value;int property;static ObjectAnimator ofFloat(Vie
 class AnimatorSet {ObjectAnimator[] pair;long duration;void playTogether(ObjectAnimator... a){pair=a;}void setDuration(long d){duration=d;}void setInterpolator(Object o){}}
 class StateListAnimator {List<int[]> keys=new ArrayList<>();List<AnimatorSet> animations=new ArrayList<>();void addState(int[] k,AnimatorSet a){keys.add(k);animations.add(a);}}
 class UiMotion {static boolean enabled=true;static long PRESS=90,RELEASE=160;static Object SETTLE=new Object();static boolean isEnabled(){return enabled;}}
+class InteractionLayers {static int PRESSED=3,refreshes;static View focus;static void refresh(){refreshes++;}static void focus(View oldFocus,View newFocus){focus=newFocus;}}
 class RippleDrawable {Object mask;RippleDrawable(Object tint,Object content,Object mask){this.mask=mask;}}
 class ControlHighlightMask {final View host;ControlHighlightMask(View view){host=view;}}
 class ColorStateList {static Object valueOf(int value){return value;}}
@@ -73,11 +79,15 @@ public class PressFeedbackCheck {
   PressFeedback.install(root);check(button.installs==1&&longPress.installs==1&&nested.installs==1);
   check(label.installs==0&&dock.installs==0&&tab.installs==0&&scroll.installs==0);
   check(Arrays.equals(button.states.keys.get(0),new int[]{1,2}));check(button.states.keys.get(1).length==0);
-  check(button.states.animations.get(0).pair.length==2);check(button.states.animations.get(0).pair[0].value==1.05f);
+  check(button.states.animations.get(0).pair.length==3);check(button.states.animations.get(0).pair[0].value==1.05f);
+  check(button.states.animations.get(0).pair[0].property==View.SCALE_X&&button.states.animations.get(0).pair[1].property==View.SCALE_Y&&button.states.animations.get(0).pair[1].value==1.05f);
+  check(button.states.animations.get(0).pair[2].property==InteractionLayers.PRESSED&&button.states.animations.get(0).pair[2].value==1f&&button.states.animations.get(1).pair[2].value==0f);
   check(button.states.animations.get(1).pair[0].value==1f);check(button.states.animations.get(0).duration==90&&button.states.animations.get(1).duration==160);
   PressFeedback.install(root);root.observer.layout();check(root.observer.listeners.size()==1&&button.installs==1);
+  check(root.observer.focusListeners.size()==1&&InteractionLayers.refreshes==1);root.focused=button;root.observer.focusListeners.get(0).onGlobalFocusChanged(null,button);check(InteractionLayers.focus==button);
   View dynamic=new View();dynamic.clickable=true;root.add(dynamic);root.observer.layout();check(dynamic.installs==1);
   PressFeedback.apply(tab);check(tab.installs==0);root.detach();check(root.observer.listeners.isEmpty()&&root.attach.isEmpty());
+  check(root.observer.focusListeners.isEmpty()&&InteractionLayers.focus==null);
   PressFeedback.install(root);check(root.observer.listeners.size()==1&&button.installs==1);
   ScrollView viewport=new ScrollView();ViewGroup host=new ViewGroup(),rows=new ViewGroup();View wideCard=new View();wideCard.clickable=true;PressFeedback.apply(wideCard);rows.add(wideCard);host.add(rows);viewport.add(host);PressFeedback.install(viewport);
   check(!rows.clipChildren&&!rows.clipPadding&&!host.clipChildren&&!host.clipPadding);check(viewport.clipChildren&&viewport.clipPadding);

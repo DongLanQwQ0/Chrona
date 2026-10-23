@@ -38,19 +38,30 @@ final class CandidateMerges {
                 .put("targetTask",store.stableTaskId(target.taskId)).put("targetCandidate",store.stableCandidateId(target.id)).put("source",snapshot));
     }
     static int merge(Context context,long expectedRevision)throws Exception{
+        return merge(context,expectedRevision,null);
+    }
+    static int merge(Context context,long expectedRevision,Set<Long> selected)throws Exception{
         int removed;
         synchronized(AndroidSync.LOCK){try(TaskStore store=new TaskStore(context)){SQLiteDatabase db=store.getWritableDatabase();db.beginTransaction();try{
-            removed=mergeRows(store,expectedRevision);
+            removed=mergeRows(store,expectedRevision,selected);
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}}}
         if(removed>0){AgendaWidgetProvider.requestRefresh(context);if(new WebDavSettingsStore(context).automatic()){SyncJobService.schedule(context);AndroidSync.request(context,null);}}
         return removed;
     }
     static int mergeRows(TaskStore store,long expectedRevision)throws Exception{
+        return mergeRows(store,expectedRevision,null);
+    }
+    static int mergeRows(TaskStore store,long expectedRevision,Set<Long> selected)throws Exception{
         if(!store.getWritableDatabase().inTransaction())throw new IllegalStateException("合并必须在事务中确认");
         if(store.dataRevision()!=expectedRevision)throw new IOException("日程已变化，请重新扫描");
         Preview preview=scan(store);List<JSONObject> records=new ArrayList<>();
-        for(List<EventCandidate> group:preview.groups)for(int i=1;i<group.size();i++)records.add(record(store,group.get(i),group.get(0),preview.tasks.get(group.get(i).taskId)));
+        Set<Long> remaining=selected==null?null:new HashSet<>(selected);
+        for(List<EventCandidate> group:preview.groups){
+            if(remaining!=null&&!remaining.remove(group.get(0).id))continue;
+            for(int i=1;i<group.size();i++)records.add(record(store,group.get(i),group.get(0),preview.tasks.get(group.get(i).taskId)));
+        }
+        if(remaining!=null&&!remaining.isEmpty())throw new IOException("日程已变化，请重新扫描");
         for(JSONObject record:records)store.acceptMerge(record);
         return records.size();
     }

@@ -40,6 +40,7 @@ public class TaskStore implements AutoCloseable {
  public List<Long>queryInboxIds(InboxQuery query,boolean oldest){check();c.keyword=query.keyword;if(c.fail)throw new IllegalStateException("read failure");return java.util.stream.LongStream.rangeClosed(1,30).boxed().toList();}
  public List<TaskRecord>queryInboxPage(InboxQuery query,boolean oldest,int page,List<Long>ids){check();return List.of(new TaskRecord(ids.get(page*12),"text","source",0,"ready",null));}
  public List<Long>queryScheduleIds(ScheduleQuery query){check();c.lastSchedule=query;return List.of(1L,2L);}
+ public int schedulePageForCandidate(ScheduleQuery query,boolean oldest,long id){check();return queryScheduleIds(query).contains(id)?0:-1;}
  public List<EventCandidate>querySchedulePage(ScheduleQuery query,boolean oldest,int page){check();return List.of(new EventCandidate(1,1,"fixture",null,null,"UTC","","",null,false));}
  public List<Long>linkedCalendarIds(){check();return List.of(55L);}
 }''',
@@ -73,6 +74,7 @@ public class DashboardActivity extends android.content.Context {
  boolean completionRefreshRunning,completionRefreshPending;final Set<Long>completingCandidates=new HashSet<>();
  void refreshCompletionRows(){completionRefreshPending=false;}
  int statusIndex,categoryIndex,scheduleTab,scheduleCategory,schedulePublication,scheduleSource,inboxPage=999,schedulePage,scheduleTodoScope,scheduleRange;
+ long pendingHomeworkFocus,unreadHomeworkId;int homeworkFocusTop,homeworkFocusBottom;String homeworkFocusFilter="";
  LocalDate scheduleDate=LocalDate.now(),scheduleUntil=scheduleDate;
  String inboxQuery="original",scheduleQuery="",snapshot="",failure;boolean inboxOldestFirst,scheduleOldestFirst;
  final Map<Integer,Page>sectionPages=new HashMap<>();Page adjacentPage;DashboardSectionData preparedSection;
@@ -111,7 +113,7 @@ public class DashboardActivity extends android.content.Context {
   }finally{returning.startupReader.shutdownNow();}
   DashboardActivity failure=new DashboardActivity();try{failure.fail=true;failure.switchTo(INBOX);failure.await();check(failure.section==HOME&&failure.builds==0&&failure.failure!=null,"failed read preserves page");check(failure.db.ended==1&&failure.closed==1,"failure releases read transaction");}finally{failure.startupReader.shutdownNow();}
   DashboardActivity paused=new DashboardActivity();try{paused.switchTo(INBOX);paused.startupReader.submit(()->{}).get(3,TimeUnit.SECONDS);paused.sectionLoadGeneration++;paused.sectionLoadRunning=false;paused.refresh.drain();check(paused.builds==0&&paused.section==HOME,"stale lifecycle callback cannot create page");}finally{paused.startupReader.shutdownNow();}
-  android.content.Context c=new android.content.Context();ExecutorService worker=Executors.newSingleThreadExecutor();try{DashboardSectionData system=worker.submit(()->DashboardSectionData.load(c,SCHEDULE,null,null,false,0,true)).get();check(system.linked.equals(List.of(55L))&&system.ids.isEmpty()&&system.candidates.isEmpty(),"system source uses linked snapshot without local schedule query");}finally{worker.shutdownNow();}
+  android.content.Context c=new android.content.Context();ExecutorService worker=Executors.newSingleThreadExecutor();try{DashboardSectionData system=worker.submit(()->DashboardSectionData.load(c,SCHEDULE,null,null,false,0,true,0)).get();check(system.linked.equals(List.of(55L))&&system.ids.isEmpty()&&system.candidates.isEmpty(),"system source uses linked snapshot without local schedule query");}finally{worker.shutdownNow();}
   for(int scope:new int[]{ScheduleQuery.TODO_TODAY_DUE,ScheduleQuery.TODO_OVERDUE,ScheduleQuery.TODO_OPEN,ScheduleQuery.TODO_ANY}){
    DashboardActivity route=new DashboardActivity();try{
     route.sectionPages.put(SCHEDULE,new Page(SCHEDULE));route.sectionVersions.put(SCHEDULE,"stale");

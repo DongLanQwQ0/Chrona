@@ -18,6 +18,8 @@
 
 `RepeatActions` 为原生与网页共用写入入口，检查候选编辑基线，在同步锁内更新。系统日历使用 RRULE/DURATION 主事件与异常事件；写入失败时本地事务回滚。跨设备同步及备份保存规则、异常和停止时间，恢复时重建日历系列。
 
+系列共用系统事件时，本次重复操作先为当前候选拆出独立事件；返回的数据携带新关联，其他候选的规则与提醒保留。新事件遵循[系统日历关联](schedule-browser.md#系统日历关联)的提交补偿规则。
+
 ## 验证
 
 离线检查：`repeat_ai_check.py`、`repeat_projection_check.py`、`calendar_repeat_check.py`；覆盖规则提取、日期边界、夏令时、改期身份、停止历史与 Provider 写入字段。`RepeatDeviceCheck` 使用独立验证应用与自建记录，比较真实 Calendar Provider 实例和本地投影，完成后清除测试记录。实际设备结果见[验证记录](../../validation-history.md)。
