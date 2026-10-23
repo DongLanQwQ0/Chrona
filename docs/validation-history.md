@@ -1,11 +1,12 @@
 # 验证记录
 
-## 0.15.41正式候选与发布前验收 — 2026-10-23
+## 0.15.41正式发布与验收 — 2026-10-23
 
 - 用户明确接受当前固件约200ms原生收起过渡，要求恢复30／60秒并Release。候选固定code203／0.15.41，使用release而非capsuleTest；已审核的业务源码不再改动。
 - `build/release-0.15.41-final-build.txt`：assembleDebug／assembleRelease／lintDebug／lintRelease成功。实际APK元数据为官方包名、203／0.15.41、不可调试；反汇编APK内BuildConfig确认桌面30000ms、点击60000ms。新debug/release与已保存0.15.40安装包签名证书一致，见`build/release-0.15.41-artifact-check.txt`和上版签名记录。无卸载或清数据。
 - 19:49:55同手机无线覆盖安装正式0.15.41，普通辅助服务Bound／Crashed空。实际系统设置前台确认后返回桌面，＋24秒完整／＋33秒短形；原生点击及点外关闭后＋55秒完整／＋63秒短形，点击accepted=true。有效图片`release-settings-home-{24,33}-capsule.png`、`release-click-{closed,55,63}-capsule.png`在`build/atomic-event-review/`。第一组Dashboard重入home25／33均短，不用作通过证据。测试未操作真实日程数据。
 - 本轮沿用本批已验收的全套基线和后续受影响定向检查，不为发布重复有效整套。独立发布审查未发现生产代码阻断；新增公开文档已去除设备唯一标识、无线地址及真实活动标题，并补充无障碍启用要求和系统过渡限制。手机LAN实链路、付费模型与完全断开ADB的独立运行未新增验收，不把替身或无线验收扩大为这些项目。
+- 独立UI审核亲看正式24／33秒及关闭后55／63秒稳定画面，通过本轮30／60秒范围验收；约200ms系统过渡按用户接受保留。正式源码`e0dcedb28831e4d69c7546cd0ec759df659368a6`及标签`v0.15.41`已推送，发布[0.15.41](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.41)。GitHub Latest读回同标签、draft=false、prerelease=false，资产`Chrona-0.15.41.apk`已uploaded，3120586字节，与本地正式产物长度一致。公开下载HEAD实际返回200、相同Content-Length及Android安装包类型。
 
 ## 无线恢复安装及真实活动点击窗口复验 — 2026-10-23
 
