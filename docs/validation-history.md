@@ -19,6 +19,7 @@
 - 独立只读时间审计检查发现并促成修正本地字段确定性与中断running状态两项P2，补审均关闭；设置退出独立UI审核通过。所有设备写入只发生于隔离v33包与合成数据，未操作真实账号或手机。
 - 加入重新解析与共享按钮修复后的正式debug／release assemble及lint成功，`build/reparse-final-build.txt`。实际APK签名与上版已验证证书一致，包名正确、204／0.15.42、DEBUG=false，DEX胶囊常量仍为30000／60000ms；`build/release-0.15.42-artifact-check.txt`。尚未覆盖实体手机或验证应用内更新。
 - 最新短文案正式分发候选为 `build/candidates/0.15.42/Chrona-0.15.42.apk`，3134070字节；此前3132654字节旧候选已替换，不用于发布。
+- 已提交并推送源码823f86d，正式标签v0.15.42固定同一提交；[0.15.42 Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.42)已公开并成为latest。唯一资产Chrona-0.15.42.apk为uploaded／3134070字节，公开下载HTTP200且Content-Length一致；记录 `build/release-0.15.42-{publication.json,download-head.txt}`。未在实体手机覆盖安装，应用内更新交互未新增实测。
 
 ## 0.15.41正式发布与验收 — 2026-10-23
 
