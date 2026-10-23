@@ -23,7 +23,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
-    public static final int DATABASE_VERSION = 15;
+    public static final int DATABASE_VERSION = 16;
 
     private final Context context;
     private final LiveDatabaseAccess.Lease liveAccess;
@@ -60,7 +60,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 for (String table : new String[]{"tasks", "event_candidates", "task_attachments",
                         "task_files", "candidate_merges", "sync_task_map", "sync_candidate_map",
                         "sync_meta", "managed_zju_state", "zju_homework_captures", "zju_homework_map",
-                        "zju_homework_history", "zju_homework_deleted_tasks", "data_revision", "sqlite_sequence"}) {
+                        "zju_homework_history", "zju_homework_deleted_tasks", "parse_runs", "parse_time_entries", "data_revision", "sqlite_sequence"}) {
                     // ALTER TABLE appends columns; upgraded databases need not share onCreate's order.
                     List<String> columns = new ArrayList<>();
                     try (Cursor cursor = source.rawQuery("PRAGMA main.table_info(" + table + ")", null)) {
@@ -270,6 +270,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         addZjuHomework(db);
         addHomeworkAttention(db);
         addRecurrence(db);
+        addParseAudits(db);
     }
 
     /**
@@ -308,11 +309,108 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 13) db.execSQL("UPDATE event_candidates SET category='homework' WHERE category='task' AND (id IN (SELECT candidate_id FROM zju_homework_map) OR task_id IN (SELECT id FROM tasks WHERE source='zju-homework'))");
         if (oldVersion < 14) addRecurrence(db);
         if (oldVersion < 15) addHomeworkAttention(db);
+        if (oldVersion < 16) addParseAudits(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
 
     public static void addHomeworkAttention(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE zju_homework_map ADD COLUMN unread INTEGER NOT NULL DEFAULT 0 CHECK(unread IN (0,1))");
+    }
+
+    private static void addParseAudits(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE parse_runs (id TEXT PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, "
+                + "started_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL CHECK(status IN ('running','succeeded','failed','cancelled')), "
+                + "request_json TEXT NOT NULL, result_json TEXT, error TEXT)");
+        db.execSQL("CREATE INDEX parse_runs_by_task ON parse_runs(task_id,started_at DESC,id)");
+        // Historical IDs deliberately survive candidate replacement/deletion. Deleting the source task removes its audit.
+        db.execSQL("CREATE TABLE parse_time_entries (run_id TEXT NOT NULL REFERENCES parse_runs(id) ON DELETE CASCADE, "
+                + "position INTEGER NOT NULL, candidate_id INTEGER NOT NULL, candidate_sync_id TEXT NOT NULL, "
+                + "plan_group TEXT, evidence_json TEXT NOT NULL, PRIMARY KEY(run_id,position))");
+        db.execSQL("CREATE INDEX parse_time_by_candidate ON parse_time_entries(candidate_id,run_id)");
+        db.execSQL("CREATE INDEX parse_time_by_plan ON parse_time_entries(run_id,plan_group)");
+    }
+
+    public String beginParseRun(long taskId, long startedAt, org.json.JSONObject request) {
+        String id = java.util.UUID.randomUUID().toString();
+        ContentValues values = new ContentValues();
+        values.put("id", id); values.put("task_id", taskId); values.put("started_at", startedAt);
+        values.put("status", "running"); values.put("request_json", request.toString());
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            // The processing coordinator owns this task exclusively. Any preceding running row
+            // belongs to an interrupted process/attempt, not a concurrent request.
+            finishInterruptedParseRuns(db, taskId, "InterruptedBeforeNewAttempt");
+            db.insertOrThrow("parse_runs", null, values);
+            db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+        return id;
+    }
+
+    /** Called only after the processing owner is gone, or on the offline restore database. */
+    public static void finishInterruptedParseRuns(SQLiteDatabase db, Long taskId, String error) {
+        ContentValues values = new ContentValues(); values.put("status", "failed");
+        values.put("finished_at", System.currentTimeMillis()); values.put("error", error);
+        db.update("parse_runs", values, taskId == null ? "status='running'" : "task_id=? AND status='running'",
+                taskId == null ? null : new String[]{Long.toString(taskId)});
+    }
+
+    /** Does not overwrite a committed successful parse when later notification/calendar work fails. */
+    public void failParseRun(String runId, boolean cancelled, String error) {
+        ContentValues values = new ContentValues();
+        values.put("status", cancelled ? "cancelled" : "failed");
+        values.put("finished_at", System.currentTimeMillis()); values.put("error", error);
+        getWritableDatabase().update("parse_runs", values, "id=? AND status='running'", new String[]{runId});
+    }
+
+    /** Read-only paged audit; a plan is identified by the pair (runId, planGroup), never its label alone. */
+    public org.json.JSONArray getParseAudits(long taskId, Long candidateId, String runId,
+            String planGroup, int offset, int limit) throws org.json.JSONException {
+        if (taskId <= 0 || offset < 0 || limit < 1 || limit > 20 || (planGroup != null && runId == null))
+            throw new IllegalArgumentException("Invalid audit query");
+        String where = "task_id=?";
+        List<String> arguments = new ArrayList<>(); arguments.add(Long.toString(taskId));
+        if (runId != null) { where += " AND id=?"; arguments.add(runId); }
+        if (candidateId != null || planGroup != null) {
+            where += " AND EXISTS(SELECT 1 FROM parse_time_entries e WHERE e.run_id=parse_runs.id";
+            if (candidateId != null) { where += " AND e.candidate_id=?"; arguments.add(Long.toString(candidateId)); }
+            if (planGroup != null) { where += " AND e.plan_group=?"; arguments.add(planGroup); }
+            where += ")";
+        }
+        org.json.JSONArray result = new org.json.JSONArray();
+        try (Cursor runs = getReadableDatabase().query("parse_runs", null, where,
+                arguments.toArray(new String[0]), null, null, "started_at DESC,id DESC", offset + "," + limit)) {
+            while (runs.moveToNext()) {
+                String id = runs.getString(runs.getColumnIndexOrThrow("id"));
+                org.json.JSONObject value = new org.json.JSONObject().put("runId", id).put("taskId", taskId)
+                        .put("startedAt", runs.getLong(runs.getColumnIndexOrThrow("started_at")))
+                        .put("finishedAt", jsonColumn(runs, "finished_at"))
+                        .put("status", runs.getString(runs.getColumnIndexOrThrow("status")))
+                        .put("request", new org.json.JSONObject(runs.getString(runs.getColumnIndexOrThrow("request_json"))))
+                        .put("error", jsonColumn(runs, "error"));
+                String raw = runs.getString(runs.getColumnIndexOrThrow("result_json"));
+                value.put("result", raw == null ? org.json.JSONObject.NULL : new org.json.JSONObject(raw));
+                org.json.JSONArray entries = new org.json.JSONArray();
+                String filter = "run_id=?"; List<String> args = new ArrayList<>(); args.add(id);
+                if (candidateId != null) { filter += " AND candidate_id=?"; args.add(Long.toString(candidateId)); }
+                if (planGroup != null) { filter += " AND plan_group=?"; args.add(planGroup); }
+                try (Cursor rows = getReadableDatabase().query("parse_time_entries", null, filter,
+                        args.toArray(new String[0]), null, null, "position")) {
+                    while (rows.moveToNext()) entries.put(new org.json.JSONObject()
+                            .put("candidateId", rows.getLong(rows.getColumnIndexOrThrow("candidate_id")))
+                            .put("candidateSyncId", rows.getString(rows.getColumnIndexOrThrow("candidate_sync_id")))
+                            .put("evidence", new org.json.JSONObject(rows.getString(rows.getColumnIndexOrThrow("evidence_json")))));
+                }
+                result.put(value.put("entries", entries));
+            }
+        }
+        return result;
+    }
+
+    private static Object jsonColumn(Cursor cursor, String name) {
+        int index = cursor.getColumnIndexOrThrow(name);
+        if (cursor.isNull(index)) return org.json.JSONObject.NULL;
+        return name.equals("finished_at") ? cursor.getLong(index) : cursor.getString(index);
     }
 
     private static void addRecurrence(SQLiteDatabase db) {
@@ -909,8 +1007,13 @@ public final class TaskStore extends SQLiteOpenHelper {
         ContentValues values = new ContentValues();
         values.put("status", TaskRecord.FAILED);
         values.put("error_message", message);
-        return getWritableDatabase().update("tasks", values, "id = ? AND status = ?",
-                new String[]{Long.toString(id), TaskRecord.PROCESSING}) > 0;
+        SQLiteDatabase db = getWritableDatabase(); db.beginTransaction();
+        try {
+            boolean changed = db.update("tasks", values, "id = ? AND status = ?",
+                    new String[]{Long.toString(id), TaskRecord.PROCESSING}) > 0;
+            if (changed) finishInterruptedParseRuns(db, id, "InterruptedProcess");
+            db.setTransactionSuccessful(); return changed;
+        } finally { db.endTransaction(); }
     }
 
     /** Newest inputs whose proposed entries include this category. */
@@ -1204,6 +1307,19 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     /** Atomically replaces all candidates for a task; list order is retained. */
     public void replaceCandidates(long taskId, List<EventCandidate> candidates) {
+        replaceCandidates(taskId, candidates, null, null, null);
+    }
+
+    /** Candidates and their successful parse evidence commit together, before calendar publication. */
+    public void replaceParsedCandidates(long taskId, List<EventCandidate> retained,
+            List<EventCandidate> original, String runId, String auditJson) {
+        if (runId == null || auditJson == null || original == null)
+            throw new IllegalArgumentException("Parsed schedules require a parse audit");
+        replaceCandidates(taskId, retained, original, runId, auditJson);
+    }
+
+    private void replaceCandidates(long taskId, List<EventCandidate> candidates,
+            List<EventCandidate> original, String runId, String auditJson) {
         if (isHomeworkCapture(taskId))
             throw new IllegalArgumentException("作业收件由同步管理，不能重新解析替换");
         if (candidates == null) {
@@ -1219,6 +1335,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 }
             }
             db.delete("event_candidates", "task_id = ?", new String[] { Long.toString(taskId) });
+            List<Long> savedIds = new ArrayList<>();
             for (int position = 0; position < candidates.size(); position++) {
                 EventCandidate candidate = candidates.get(position);
                 if (candidate == null) {
@@ -1249,7 +1366,32 @@ public final class TaskStore extends SQLiteOpenHelper {
                 values.put("completed_at_millis", candidate.completedAtMillis);
                 values.put("is_record", candidate.isRecord ? 1 : 0);
                 putRepeat(values, candidate);
-                db.insertOrThrow("event_candidates", null, values);
+                savedIds.add(db.insertOrThrow("event_candidates", null, values));
+            }
+            if (runId != null) {
+                try {
+                    org.json.JSONObject audit = new org.json.JSONObject(auditJson);
+                    org.json.JSONArray entries = audit.getJSONArray("entries");
+                    if (entries.length() != original.size()) throw new IllegalArgumentException("Audit item count differs from parsed schedules");
+                    for (int i = 0; i < entries.length(); i++) {
+                        long savedId = savedIds.get(CandidateRules.retainedPosition(candidates, original.get(i)));
+                        org.json.JSONObject evidence = entries.getJSONObject(i);
+                        ContentValues values = new ContentValues(); values.put("run_id", runId);
+                        values.put("position", i); values.put("candidate_id", savedId);
+                        values.put("candidate_sync_id", stableCandidateId(savedId));
+                        values.put("plan_group", evidence.isNull("plan_group") ? null : evidence.getString("plan_group"));
+                        values.put("evidence_json", evidence.toString());
+                        db.insertOrThrow("parse_time_entries", null, values);
+                    }
+                    audit.remove("entries");
+                    ContentValues values = new ContentValues(); values.put("status", "succeeded");
+                    values.put("finished_at", System.currentTimeMillis()); values.put("result_json", audit.toString());
+                    if (db.update("parse_runs", values, "id=? AND task_id=? AND status='running'",
+                            new String[]{runId, Long.toString(taskId)}) != 1)
+                        throw new IllegalArgumentException("Parse audit is no longer active for this input");
+                } catch (org.json.JSONException invalid) {
+                    throw new IllegalArgumentException("Invalid parse audit", invalid);
+                }
             }
             db.setTransactionSuccessful();
         } finally {

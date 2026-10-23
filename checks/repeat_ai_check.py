@@ -10,7 +10,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 JAVA = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
 JAR = ROOT / 'build/ai-checks/json.jar'
 sources = [SRC / name for name in (
-    'ai/SchedulePrompt.java', 'ai/SemanticEventNormalizer.java', 'data/EventCandidate.java',
+    'ai/SchedulePrompt.java', 'ai/TimeAssessment.java', 'ai/SemanticEventNormalizer.java', 'data/EventCandidate.java',
     'data/EventCategory.java', 'data/EventTimeDefaults.java', 'data/RepeatRule.java', 'calendar/AllDayDates.java',
 )]
 sources += [ROOT / 'checks/RepeatAiCheck.java', ROOT / 'checks/SemanticEventNormalizerCheck.java',

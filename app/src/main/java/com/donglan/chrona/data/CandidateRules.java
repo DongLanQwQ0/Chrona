@@ -32,4 +32,10 @@ public final class CandidateRules {
                 && Objects.equals(a.dueAtMillis,b.dueAtMillis) && Objects.equals(a.completedAtMillis,b.completedAtMillis)
                 && Objects.equals(a.category, b.category) && Objects.equals(a.calendarEventId, b.calendarEventId);
     }
+
+    /** Link every model item, including an identical duplicate, to its retained schedule. */
+    public static int retainedPosition(List<EventCandidate> retained, EventCandidate original) {
+        for (int i = 0; i < retained.size(); i++) if (same(retained.get(i), original)) return i;
+        throw new IllegalArgumentException("Parsed candidate has no retained schedule");
+    }
 }

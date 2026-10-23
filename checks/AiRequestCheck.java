@@ -21,7 +21,7 @@ public final class AiRequestCheck {
         check(prefix.contains(SchedulePrompt.TIME_RULES) && !prefix.contains("e.g. tomorrow at 10:00"),
                 "single colloquial policy; bare twelve-hour example cannot auto-publish");
         check(prefix.contains(SchedulePrompt.DECISION_RULES), "decision boundaries sent to model");
-        check(SchedulePrompt.VERSION.equals("schedule-v16"), "whole-period workload-aware scheduling prompt revision");
+        check(SchedulePrompt.VERSION.equals("schedule-v17"), "auditable proactive preference-aware scheduling prompt revision");
         checkTimeContext();
         check(data.getInt("current_year") == 1970, "request sends explicit local default year");
         for (String rule : new String[]{"月日明确而未写年份", "消息上下文中的明确年份", "日期已过也不移到下一年",
@@ -30,7 +30,9 @@ public final class AiRequestCheck {
         check(SchedulePrompt.TIME_RULES.contains("不因缺年份标2")
                 && SchedulePrompt.TIME_RULES.contains("除月日明确时按current_year补缺省年份外")
                 && SchedulePrompt.TIME_RULES.contains("缺月份、模糊钟点或真实冲突仍须标2"),
-                "generic uncertainty policy exempts only the deterministic year default");
+                "generic uncertainty policy preserves the deterministic year default");
+        check(SchedulePrompt.TIME_RULES.contains("明确偏好规则补全外") && prefix.contains(SchedulePrompt.AUDIT_RULES),
+                "deterministic preferences and both certainty classes require evidence");
         check(prefix.contains("an explicit month/day with only the year defaulted to current_year")
                 && !prefix.contains("缺失月份/年份标2") && !prefix.contains("最近合理一次解释，标2"),
                 "English and Chinese guidance do not override the year exception");
@@ -207,6 +209,7 @@ public final class AiRequestCheck {
                 .put("execution_time_explicit", true).put("suggested_start", JSONObject.NULL)
                 .put("plan_group", JSONObject.NULL).put("plan_until", JSONObject.NULL)
                 .put("all_day", false).put("start", new JSONObject().put("date", "2026-10-24").put("time", "10:00"));
+        TimeAssessmentCheck.evidence(event);
         String json = new JSONObject().put("events", new org.json.JSONArray().put(event)).toString();
         long now = java.time.Instant.parse("2026-10-23T02:00:00Z").toEpochMilli();
         for (String wrapped : new String[]{json, " \r\n" + json + "\n", "<escape>" + json + "</escape>",

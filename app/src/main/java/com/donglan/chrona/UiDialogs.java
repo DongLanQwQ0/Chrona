@@ -196,17 +196,44 @@ final class UiDialogs {
 
     /** One geometry for paired modal actions; each caller owns its value and dismiss order. */
     private static LinearLayout actionRow(Activity activity, Dialog dialog, String positive, Runnable action) {
-        LinearLayout actions = new LinearLayout(activity);
+        LinearLayout actions = new LinearLayout(activity) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                int available = View.MeasureSpec.getSize(widthSpec) - getPaddingLeft() - getPaddingRight();
+                int gap = dp(this, 8);
+                boolean stack = false;
+                if (View.MeasureSpec.getMode(widthSpec) != View.MeasureSpec.UNSPECIFIED) {
+                    for (int index = 0; index < getChildCount(); index++) {
+                        Button button = (Button) getChildAt(index);
+                        int needed = (int) Math.ceil(button.getPaint().measureText(button.getText().toString()))
+                                + button.getPaddingLeft() + button.getPaddingRight();
+                        if (needed > (available - gap) / 2) stack = true;
+                    }
+                }
+                int orientation = stack ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL;
+                if (getOrientation() != orientation) {
+                    setOrientation(orientation);
+                    for (int index = 0; index < getChildCount(); index++) {
+                        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(stack ? -1 : 0, -2, stack ? 0 : 1);
+                        if (index > 0) { params.leftMargin = stack ? 0 : gap; params.topMargin = stack ? gap : 0; }
+                        getChildAt(index).setLayoutParams(params);
+                    }
+                }
+                super.onMeasure(widthSpec, heightSpec);
+            }
+        };
+        actions.setBaselineAligned(false);
         Button cancel = new Button(activity);
         cancel.setText("取消");
         UiStyle.button(cancel, false);
+        cancel.setSingleLine(false);
         cancel.setOnClickListener(view -> dialog.dismiss());
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(cancel, 52), 1));
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1));
         Button submit = new Button(activity);
         submit.setText(positive);
         UiStyle.button(submit, true);
+        submit.setSingleLine(false);
         submit.setOnClickListener(view -> action.run());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(submit, 52), 1);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1);
         params.leftMargin = dp(submit, 8);
         actions.addView(submit, params);
         return actions;

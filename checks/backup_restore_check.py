@@ -151,6 +151,7 @@ class TaskStore implements AutoCloseable {final Context c;TaskStore(Context v){c
  SQLiteDatabase getWritableDatabase(){return new SQLiteDatabase();}public void close(){}
  static void addEndTimeProvenance(SQLiteDatabase d){}static void addScheduleBrowsing(SQLiteDatabase d){}static void addUncertaintyLevel(SQLiteDatabase d){}
  static void addCandidateMerges(SQLiteDatabase d){}static void addTaskSemantics(SQLiteDatabase d){}static void addZjuHomework(SQLiteDatabase d){}
+ static void finishInterruptedParseRuns(SQLiteDatabase d,Long task,String error){}
 }
 class ProcessingJobService {static void enqueue(Context c,long id){}}
 class CalendarStore {CalendarStore(Context c){}void deleteEvent(long id){}}

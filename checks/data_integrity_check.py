@@ -38,6 +38,8 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     INSERT INTO data_revision VALUES(1,0);
     """
     # Include the production managed-homework tables now covered by complete snapshots.
+    audit = store.split('private static void addParseAudits(SQLiteDatabase db) {', 1)[1].split('public String beginParseRun', 1)[0]
+    audit_sql = [''.join(literals(expression)) for expression in re.findall(r'db\.execSQL\((.*?)\);', audit, re.S)]
     managed = store.split('public static void addZjuHomework(SQLiteDatabase db) {', 1)[1].split('public boolean ignoredZjuCandidate', 1)[0]
     managed_sql = []
     for expression in re.findall(r'db\.execSQL\(((?:"(?:\\.|[^"\\])*"|[^"])*?)\);', managed, re.S):
@@ -50,6 +52,8 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
         db.execute("PRAGMA foreign_keys=ON")
         db.executescript(schema)
         for statement in managed_sql:
+            db.execute(statement)
+        for statement in audit_sql:
             db.execute(statement)
         for table in tables[:4]:
             for operation in ("INSERT", "UPDATE", "DELETE"):

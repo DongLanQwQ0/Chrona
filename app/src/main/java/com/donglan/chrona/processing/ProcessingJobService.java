@@ -43,9 +43,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ProcessingJobService extends JobService {
     private static final String EXTRA_TASK_ID = "task_id";
     private static final int JOB_ID_BASE = 10_000;
-    private static final String CHANNEL_ID = "chrona_results";
-    /** The pre-0.13.29 result channel; deleted once because its importance can never be raised. */
-    private static final String LEGACY_CHANNEL_ID = "chrona_processing";
     private static final String RUNNING_CHANNEL_ID = "chrona_parsing";
     /** Keeps the running notice clear of the result notice posted for the same input. */
     private static final int RUNNING_NOTIFICATION_BASE = 20_000;
@@ -277,6 +274,7 @@ public final class ProcessingJobService extends JobService {
     private void processOnce(JobParameters params, long taskId, RequestControl control) {
         AiSettings settings = null;
         boolean sentImage = false;
+        String parseRunId = null;
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
             if (task == null) {
@@ -343,15 +341,17 @@ public final class ProcessingJobService extends JobService {
             long startedAt = System.currentTimeMillis();
             ParseResult result = requestWithRetries(settings, task, images, linkText,
                     attachmentMetadata, taskId, control);
+            parseRunId = result.parseRunId;
             control.check();
             long elapsed = System.currentTimeMillis() - startedAt;
             if (wasStopped(control)) {
+                store.failParseRun(result.parseRunId, true, "StoppedBeforeSave");
                 DiagLog.add(this, "response dropped task=" + taskId + " after " + elapsed
                         + "ms (job stopped before the draft was saved)");
                 return;
             }
             List<com.donglan.chrona.data.EventCandidate> candidates = CandidateRules.apply(result.candidates);
-            store.replaceCandidates(taskId, candidates);
+            store.replaceParsedCandidates(taskId, candidates, result.candidates, result.parseRunId, result.timeAuditJson);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
                     result.totalTokens, result.cachedTokens);
             AutoCalendarPublisher.Result publication = AutoCalendarPublisher.publish(this, taskId, control);
@@ -359,7 +359,7 @@ public final class ProcessingJobService extends JobService {
                     candidates.isEmpty() ? (fetched.warning == null ? "未识别到日程，请检查原文或重试"
                             : fetched.warning) : publication.warning == null ? fetched.warning : publication.warning);
             DiagLog.add(this, "response task=" + taskId + " ok in " + elapsed + "ms events="
-                    + candidates.size() + " tokens=" + result.totalTokens);
+                    + candidates.size() + " tokens=" + result.totalTokens + " run=" + result.parseRunId);
             notifyResult(taskId, publication.summary());
         } catch (ChatCompletionClient.RequestException exception) {
             if (wasStopped(control)) {
@@ -378,6 +378,11 @@ public final class ProcessingJobService extends JobService {
                 }
             }
         } catch (Exception exception) {
+            if (parseRunId != null) {
+                try (TaskStore audit = new TaskStore(this)) {
+                    audit.failParseRun(parseRunId, wasStopped(control), exception.getClass().getSimpleName());
+                }
+            }
             if (wasStopped(control)) {
                 DiagLog.add(this, "parse abandoned task=" + taskId + " (job stopped while waiting) "
                         + exception.getClass().getSimpleName());
@@ -426,6 +431,17 @@ public final class ProcessingJobService extends JobService {
             long attemptStartedAt = System.currentTimeMillis();
             DiagLog.add(this, "attempt " + attempt + "/" + MAX_REQUEST_ATTEMPTS
                     + " task=" + taskId);
+            final String runId;
+            try (TaskStore audit = new TaskStore(this)) {
+                org.json.JSONObject request = com.donglan.chrona.ai.SchedulePrompt.data(task.rawText,
+                        linkText, attachmentMetadata, referenceTime, referenceZone)
+                        .put("attempt", attempt).put("model", settings.model)
+                        .put("reasoning_effort", settings.reasoningEffort)
+                        .put("preferences", schedulePreferences.toJson()).put("system", scheduleSystem)
+                        .put("image_count", images.size());
+                runId = audit.beginParseRun(taskId, attemptStartedAt, request);
+            } catch (org.json.JSONException invalid) { throw new IOException("Could not record parse context", invalid); }
+            DiagLog.add(this, "parse audit task=" + taskId + " run=" + runId + " attempt=" + attempt);
             try {
                 StreamingOutputStore.Writer output = null;
                 try { output = new StreamingOutputStore(this).begin(taskId); }
@@ -440,9 +456,12 @@ public final class ProcessingJobService extends JobService {
                     ChatCompletionClient client = new ChatCompletionClient(settings, control, scheduleSystem,
                             schedulePreferences.workStartMinutes, schedulePreferences.workEndMinutes);
                     return client.parseImages(taskId, task.rawText, images, linkText,
-                            attachmentMetadata, referenceTime, referenceZone, preview, true);
+                            attachmentMetadata, referenceTime, referenceZone, preview, true).withRunId(runId);
                 }
             } catch (IOException exception) {
+                try (TaskStore audit = new TaskStore(this)) {
+                    audit.failParseRun(runId, wasStopped(control), exception.getClass().getSimpleName());
+                }
                 control.check();
                 long attemptMillis = System.currentTimeMillis() - attemptStartedAt;
                 boolean giveUp = attempt >= MAX_REQUEST_ATTEMPTS
@@ -525,9 +544,12 @@ public final class ProcessingJobService extends JobService {
         String title = text;
         try (TaskStore store = new TaskStore(this)) {
             TaskRecord task = store.getTask(taskId);
-            if (task == null) return;
-            if (task.errorMessage != null && !task.errorMessage.trim().isEmpty()) details.append(task.errorMessage).append("\n\n");
             List<com.donglan.chrona.data.EventCandidate> candidates = store.getCandidates(taskId);
+            if (ResultNotifications.shouldClear(task, candidates)) {
+                ResultNotifications.cancel(this, taskId);
+                return;
+            }
+            if (task.errorMessage != null && !task.errorMessage.trim().isEmpty()) details.append(task.errorMessage).append("\n\n");
             List<com.donglan.chrona.data.EventCandidate> written = candidates.stream()
                     .filter(item -> item.calendarEventId != null && !item.isRecord).collect(java.util.stream.Collectors.toList());
             List<com.donglan.chrona.data.EventCandidate> named = written.isEmpty() ? candidates : written;
@@ -564,8 +586,8 @@ public final class ProcessingJobService extends JobService {
                 != PackageManager.PERMISSION_GRANTED) return;
         // Channel importance is frozen when the channel is created, so the old DEFAULT-importance
         // channel cannot be promoted in place; it is dropped and replaced by a HIGH one.
-        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID);
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "处理结果",
+        manager.deleteNotificationChannel(ResultNotifications.LEGACY_CHANNEL_ID);
+        NotificationChannel channel = new NotificationChannel(ResultNotifications.CHANNEL_ID, "处理结果",
                 NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription("解析完成的提醒，以悬浮通知弹出");
         manager.createNotificationChannel(channel);
@@ -574,7 +596,7 @@ public final class ProcessingJobService extends JobService {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String body = details.length() == 0 ? text : details.toString().trim();
         String expanded = details.length() == 0 ? text : text + "\n\n" + body;
-        Notification notification = notificationBuilder(CHANNEL_ID)
+        Notification notification = notificationBuilder(ResultNotifications.CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().setBigContentTitle(title).bigText(expanded))

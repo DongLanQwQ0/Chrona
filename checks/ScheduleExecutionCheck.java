@@ -96,7 +96,7 @@ public final class ScheduleExecutionCheck {
                 "original reference clock resolves relative due while fresh clock limits scheduling");
         JSONObject response = new JSONObject().put("choices", new JSONArray().put(new JSONObject()
                 .put("message", new JSONObject().put("content", new JSONObject().put("events", new JSONArray()
-                        .put(base("task", "2026-10-19", "20:00"))).toString()))));
+                        .put(TimeAssessmentCheck.evidence(base("task", "2026-10-19", "20:00")))).toString()))));
         chosen = ChatCompletionClient.parseResponse(1, response.toString(), NOW, "Asia/Shanghai", NOW, 600, 1320).candidates.get(0);
         check(chosen.startAtMillis == mid.startAtMillis.longValue(), "actual response parser applies execution policy");
         JSONObject missing = base("task", "2026-10-19", "20:00"); missing.remove("execution_time_explicit");
@@ -303,7 +303,9 @@ public final class ScheduleExecutionCheck {
         return time(local.toLocalDate().toString(),local.toLocalTime().toString());
     }
     private static List<EventCandidate> batch(JSONArray events,long now,int start,int end)throws Exception {
-        JSONObject content=new JSONObject().put("events",events);
+        JSONArray model = new JSONArray(events.toString());
+        for (int i=0;i<model.length();i++) TimeAssessmentCheck.evidence(model.getJSONObject(i));
+        JSONObject content=new JSONObject().put("events",model);
         JSONObject envelope=new JSONObject().put("choices",new JSONArray().put(new JSONObject()
                 .put("message",new JSONObject().put("content",content.toString()))));
         return ChatCompletionClient.parseResponse(7,envelope.toString(),NOW,"Asia/Shanghai",now,start,end).candidates;

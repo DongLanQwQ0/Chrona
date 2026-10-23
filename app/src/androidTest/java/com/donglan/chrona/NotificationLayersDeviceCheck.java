@@ -39,7 +39,7 @@ final class NotificationLayersDeviceCheck {
                 long start = java.time.LocalDate.now().plusDays(1).atTime(14, 0)
                         .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
                 store.appendCandidate(new EventCandidate(0, taskId, "微积分复习讨论", start, start + 3600000,
-                        java.time.ZoneId.systemDefault().getId(), "东1-201", "携带第三章习题", 15, false,
+                        java.time.ZoneId.systemDefault().getId(), "东1-201", "携带第三章习题", 15, true,
                         null, "task", false));
                 store.updateStatus(taskId, TaskRecord.READY, null);
             }
@@ -47,7 +47,7 @@ final class NotificationLayersDeviceCheck {
             ProcessingJobService service = new ProcessingJobService();
             Method attach = ContextWrapper.class.getDeclaredMethod("attachBaseContext", Context.class); attach.setAccessible(true); attach.invoke(service, context);
             Method notify = ProcessingJobService.class.getDeclaredMethod("notifyResult", long.class, String.class); notify.setAccessible(true);
-            notify.invoke(service, taskId, "已自动确认 1 项日程");
+            notify.invoke(service, taskId, "1 项日程待确认");
             long id = taskId;
             await(test, () -> Arrays.stream(notifications.getActiveNotifications()).anyMatch(n -> n.getId() == (int) id), "real notification delivered");
             Notification notice = Arrays.stream(notifications.getActiveNotifications()).filter(n -> n.getId() == (int) id).findFirst().orElseThrow().getNotification();
@@ -56,7 +56,7 @@ final class NotificationLayersDeviceCheck {
                     && body.contains("东1-201") && body.contains("提前 15 分钟") && body.contains("携带第三章习题"), "collapsed extras contain complete event detail");
             require("微积分复习讨论".contentEquals(notice.extras.getCharSequence(Notification.EXTRA_TITLE)), "collapsed first line names the actual schedule");
             String expanded = notice.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString();
-            require(expanded.contains(body) && expanded.contains("已自动确认"), "expanded notice keeps result status and complete actual details");
+            require(expanded.contains(body) && expanded.contains("待确认"), "expanded notice keeps result status and complete actual details");
             require(notice.contentIntent != null && notice.actions.length > 0 && notice.contentIntent.equals(notice.actions[0].actionIntent), "detail entry and action retained");
             shell(test, "cmd statusbar expand-notifications"); SystemClock.sleep(1400);
             capture(test, context, "notification-details-" + proof);

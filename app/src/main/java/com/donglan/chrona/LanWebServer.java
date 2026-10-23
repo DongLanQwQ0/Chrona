@@ -6,6 +6,7 @@ import com.donglan.chrona.calendar.*;
 import com.donglan.chrona.data.*;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
+import com.donglan.chrona.processing.CaptureReparser;
 import com.donglan.chrona.processing.StreamingOutputStore;
 import com.donglan.chrona.processing.BulkCalendarPublisher;
 import com.donglan.chrona.timetable.Timetable;
@@ -139,6 +140,21 @@ final class LanWebServer extends NanoHTTPD {
         // Sync apply and browser mutations must not interleave their database/file snapshots.
         synchronized (AndroidSync.LOCK) {
             if (closed) return json(Response.Status.SERVICE_UNAVAILABLE, "局域网访问已关闭");
+            if (method == Method.POST && path.equals("/api/task/process")) {
+                JSONObject body = body(request, MAX_BODY);
+                long id = positive(body.getString("id"));
+                try {
+                    CaptureReparser.enqueue(context, id, true, whole(body, "revision", 0, Long.MAX_VALUE));
+                } catch (IllegalStateException error) {
+                    return json(Response.Status.CONFLICT, error.getMessage());
+                }
+                if (new WebDavSettingsStore(context).automatic()) {
+                    SyncJobService.schedule(context); AndroidSync.request(context, null);
+                }
+                try (TaskStore store = new TaskStore(context)) {
+                    return data(new JSONObject().put("ok", true).put("revision", store.dataRevision()));
+                }
+            }
             if (path.equals("/api/sources")) return data(method == Method.GET
                     ? LanSourcesApi.read(context, request.getParms())
                     : LanSourcesApi.update(context, body(request, 4096)));
@@ -215,6 +231,20 @@ final class LanWebServer extends NanoHTTPD {
     }
     private Response read(IHTTPSession request, TaskStore store) throws Exception {
         String path = request.getUri(); JSONObject result = new JSONObject().put("revision", store.dataRevision());
+        if (path.equals("/api/parse-audit")) {
+            long taskId = positive(request.getParms().get("id"));
+            if (store.getTask(taskId) == null) return json(Response.Status.NOT_FOUND,"记录已不存在");
+            String candidate = request.getParms().get("candidateId");
+            Long candidateId = candidate == null ? null : positive(candidate);
+            String runId = request.getParms().get("runId"), group = request.getParms().get("planGroup");
+            if (runId != null) java.util.UUID.fromString(runId);
+            if (group != null && (group.trim().isEmpty() || group.length() > 256 || runId == null))
+                throw new IllegalArgumentException("方案查询需同时提供解析ID");
+            int offset = integer(request.getParms().get("offset"), 0, 0, 100000);
+            int limit = integer(request.getParms().get("limit"), 10, 1, 20);
+            return data(result.put("audits", store.getParseAudits(taskId, candidateId, runId, group, offset, limit))
+                    .put("offset", offset).put("limit", limit));
+        }
         if(path.equals("/api/candidate/occurrences")) {
             long id=positive(request.getParms().get("candidateId")),taskId=positive(request.getParms().get("id"));
             EventCandidate series=store.getCandidatesByIds(Collections.singleton(id)).stream().filter(item->item.taskId==taskId).findFirst().orElseThrow(Conflict::new);
@@ -380,13 +410,6 @@ final class LanWebServer extends NanoHTTPD {
             android.app.NotificationManager manager=context.getSystemService(android.app.NotificationManager.class); if(manager!=null)manager.cancel((int)id);
         } else if(path.equals("/api/task/edit")) {
             editable(record); if(!store.updateRawText(id,string(body,"text",100000,true)))throw new Conflict();
-        } else if(path.equals("/api/task/process")) {
-            editable(record); for(EventCandidate item:store.getCandidates(id))if(item.calendarEventId!=null)throw new IllegalArgumentException();
-            // Schedule first; if Android rejects background work, retain existing results and status.
-            store.getWritableDatabase().beginTransaction();
-            try { store.replaceCandidates(id,Collections.emptyList()); store.updateStatus(id,TaskRecord.QUEUED,null);
-                ProcessingJobService.enqueueRemote(context,id); store.getWritableDatabase().setTransactionSuccessful();
-            } finally { store.getWritableDatabase().endTransaction(); }
         } else if(path.equals("/api/candidate/create")) {
             editable(record); if(store.isHomeworkCapture(id))throw new IllegalArgumentException();
             EventCandidate initial=new EventCandidate(0,id,"",null,null,ZoneId.systemDefault().getId(),"","",null,true);

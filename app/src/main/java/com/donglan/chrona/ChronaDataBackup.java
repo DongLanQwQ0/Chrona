@@ -583,6 +583,8 @@ public final class ChronaDataBackup {
             }
             staged.execSQL("UPDATE tasks SET status='failed', error_message=? WHERE status IN ('processing','queued')",
                     new Object[]{"从备份恢复后需要重新解析；请手动重试"});
+            if (staged.getVersion() >= 16)
+                TaskStore.finishInterruptedParseRuns(staged, null, "InterruptedByRestore");
             staged.execSQL("UPDATE tasks SET status='needs_review',error_message=NULL WHERE status='ready' "
                     + "AND EXISTS(SELECT 1 FROM event_candidates WHERE task_id=tasks.id "
                     + "AND is_record=0 AND needs_confirmation=1)");

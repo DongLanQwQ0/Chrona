@@ -320,11 +320,13 @@ public final class TwoScheduleTypesCheck {
             db.execSQL("DROP INDEX candidates_by_due");db.execSQL("DROP INDEX candidates_by_anchor");
             for(String column:new String[]{"due_at_millis","completed_at_millis","is_record","repeat_rule","repeat_exceptions","repeat_stopped_at"})db.execSQL("ALTER TABLE event_candidates DROP COLUMN "+column);
             // Reconstruct the v10 schema, including absence of the later school tables/triggers.
+            db.execSQL("DROP TABLE parse_time_entries");
+            db.execSQL("DROP TABLE parse_runs");
             db.execSQL("DROP TRIGGER zju_capture_deleted");
             db.execSQL("DROP TRIGGER zju_candidate_deleted");
             for(String table:new String[]{"managed_zju_state","zju_homework_captures","zju_homework_map","zju_homework_history","zju_homework_deleted_tasks"})
                 db.execSQL("DROP TABLE "+table);
-            db.beginTransaction();try{store.onUpgrade(db,10,14);db.setTransactionSuccessful();}finally{db.endTransaction();}
+            db.beginTransaction();try{store.onUpgrade(db,10,TaskStore.DATABASE_VERSION);db.setTransactionSuccessful();}finally{db.endTransaction();}
             EventCandidate upgraded=store.getCandidatesByIds(List.of(deadline)).get(0),memo=store.getCandidatesByIds(List.of(note)).get(0);
             check(upgraded.isTask()&&upgraded.startAtMillis==null&&upgraded.dueAtMillis==now&&upgraded.calendarEventId==71,"old deadline converted without shifting due time or association");
             check(memo.isRecord&&memo.calendarEventId==72&&memo.title.equals("原始标题")&&memo.description.equals("原始备注"),"old memo retained as inbox record with identity and content");

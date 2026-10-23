@@ -55,13 +55,13 @@ for name, content in fixtures.items():
 relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java',
             'classroom/ClassroomImages.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomExport.java', 'classroom/ClassroomProgress.java',
             'ai/AiSettings.java', 'ai/ChatCompletionClient.java', 'ai/ParseResult.java', 'ai/SchedulePrompt.java',
-            'ai/SemanticEventNormalizer.java', 'ai/RequestOptions.java', 'ai/StreamChunkContent.java',
+            'ai/SemanticEventNormalizer.java', 'ai/TimeAssessment.java', 'ai/RequestOptions.java', 'ai/StreamChunkContent.java',
             'data/EventCandidate.java', 'data/EventCategory.java', 'data/EventTimeDefaults.java',
             'data/CandidateRules.java', 'calendar/AllDayDates.java', 'net/RequestControl.java']
 paths += [src / name for name in relative]
 paths.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java')
 paths.append(src / 'net/NetworkFailure.java')
-paths += [root / 'checks/ClassroomSummaryCheck.java', root / 'checks/AiRequestCheck.java']
+paths += [root / 'checks/ClassroomSummaryCheck.java', root / 'checks/AiRequestCheck.java', root / 'checks/TimeAssessmentCheck.java']
 jar = root / 'build/ai-checks/json.jar'
 if not jar.is_file():
     raise RuntimeError('Existing build/ai-checks/json.jar is required; nothing will be downloaded')

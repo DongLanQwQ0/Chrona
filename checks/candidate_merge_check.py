@@ -138,7 +138,7 @@ sources += [ROOT / 'app/src/main/java/com/donglan/chrona' / name for name in (
     'HomeTimelineEntry.java', 'calendar/AllDayDates.java', 'calendar/CalendarOccurrence.java')]
 sources += [shared / name for name in ('TaskCodec.java','MergeLedger.java','SyncState.java','SyncExchange.java','WebDavClient.java')]
 sources += [ROOT / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java']
-sources += [ROOT / 'checks/CandidateMergeCheck.java',ROOT / 'checks/TwoScheduleTypesCheck.java',ROOT / 'checks/SyncExchangeCheck.java',ROOT / 'checks/SnapshotBackupCheck.java',ROOT / 'checks/ReviewStatusCheck.java']
+sources += [ROOT / 'checks/CandidateMergeCheck.java',ROOT / 'checks/TwoScheduleTypesCheck.java',ROOT / 'checks/SyncExchangeCheck.java',ROOT / 'checks/SnapshotBackupCheck.java',ROOT / 'checks/ReviewStatusCheck.java',ROOT / 'checks/ParseAuditStoreCheck.java']
 cache = Path(os.environ.get('GRADLE_USER_HOME','F:/Android/GradleCache')) / 'caches/modules-2/files-2.1'
 jars = [ROOT / 'build/ai-checks/json.jar']
 for group,module in [('net.sf.biweekly','biweekly'),('com.github.mangstadt','vinnie'),
@@ -154,5 +154,6 @@ subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:
 subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.TwoScheduleTypesCheck',str(OUT / 'databases')],check=True)
 
 subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.SnapshotBackupCheck',str(OUT / 'databases')],check=True)
+subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.ParseAuditStoreCheck',str(OUT / 'databases')],check=True)
 
 subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.ReviewStatusCheck',str(OUT / 'databases')],check=True)

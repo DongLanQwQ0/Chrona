@@ -45,6 +45,8 @@ public final class AgendaReminder {
     }
 
     static void refreshSafely(Context context, Intent action) {
+        try { com.donglan.chrona.processing.ResultNotifications.refresh(context); }
+        catch (RuntimeException failure) { android.util.Log.w("Chrona", "Unable to refresh parsing results", failure); }
         try { HomeworkNotice.refresh(context); }
         catch (RuntimeException failure) { android.util.Log.w("ChronaHomework", "Unable to refresh homework notice", failure); }
         try { refresh(context, action); }

@@ -1,5 +1,25 @@
 # 验证记录
 
+## 时间确定性审计、主动排程及设置／通知收尾 — 2026-10-23
+
+- 同批新增重新解析自动清理：原生与网页统一 `CaptureReparser`，先校验再删除本收件独占的系统事件；共享／永久归档引用、源输入及历史审计保留。查询旧候选、状态和清空操作处于同一SQLite事务，提交后才调度；外部部分删除无法回滚，失败不排队并允许重试，调度失败另标FAILED。
+- `build/reparse-web.txt`：实际Edge加载正式LAN页面，模拟手机传输；已关联日程可重新处理，四组深浅／1280px与320px实际150%弹窗文字渲染、取消零写入、确认请求、排队禁用及调度失败状态／版本刷新通过。压缩图 `F:/Android/temp/reparse-web-evidence/confirm-{light,dark}-{1280,320-large}-view.jpg`。不把网页mock结果当系统日历验收。
+- `build/reparse-linked-calendar.txt`：生产关联清理器＋精确TaskStore引用SQL＋真实SQLite，29场景／211断言通过；含共享／归档保护、缺失事件、provider拒绝与异常及提交失败。LAN安全83、作业取消与生命周期专项继续通过，见 `build/reparse-{lan_security_check.py,job_execution_check.py,lifecycle_motion_check.py}.txt`。
+- `build/reparse-device.txt`：隔离Android16实际SQLite／CalendarProvider／MediaStore共84断言通过；独占与重复引用清理、共享及归档保护、缺失事件、源文／图片与文件字节／历史审计保留，空输入／无配置／加密配置损坏／忙碌／学校托管／旧版本前置拒绝，以及provider／SQL／调度失败重试。日历权限拒绝用Context gate、provider拒绝与异常用transport注入；正向调度为no-op，无真实AI请求。
+- 原生320dp／1.5初轮发现「重新解析」按钮截掉末字，已在公共 `UiDialogs.actionRow` 修复完整字宽测量及横／纵自适应，自然高度不缩字。`build/reparse-ui-library-check.txt`真实方法1530断言，含临界宽度、恢复及回调；`build/reparse-native-{light,dark}-{400-1.0,320-1.5}.txt`四组各22断言，实际Layout全文、无ellipsis、视口内、方向及触摸取消保留数据。最终压缩图 `F:/Temp/chrona-reparse-action-row-final/reparse-{light,dark}-{400-1.0,320-1.5}-preview.jpg`，主代理已查看窄大字浅色和正常深色。
+- 用户随后将重新解析确认正文精简为「这将替换已有日程」，原生／网页统一且无附加标点。`build/reparse-short-native-{light,dark}-{400-1.0,320-1.5}.txt`四组各23断言及网页专项通过，压缩图 `F:/Temp/chrona-reparse-short-copy-final/reparse-{light,dark}-{400-1.0,320-1.5}-preview.jpg`；业务84项与公共1530项证据仍适用。
+- 专门UI审核亲看最新原生／网页八图，原生重新解析与公共行整体审核、短文案补审均通过；设置退出与结果通知既有签收继续有效。
+
+- 候选0.15.42／204、DB16、schedule-v17。确定与存疑都要求七字段时间依据，模型原始依据与本地实际字段、校验原因分开留存；每次请求尝试、日程及run＋plan关联持久化，并经已配对LAN分页查询。用户随后撤销截止日22:00–23:00默认，正式提示词与执行分支均已删除；单项仍利用整个可用周期，较大任务明确要求提前分阶段、预留修改提交。
+- `build/time-audit-ai-final.txt`：实际请求契约494、归一化59、排期418、时间审计35、自动写入16通过。覆盖确定／规则补全／自由建议、日截止与执行独立、撤销专用晚间默认、日期缺钟点的具体建议、缺依据拒绝；本地补日期、冲突日期及结束日期继承不再残留错误explicit，明确日期仅钟点存疑不会误传。均为合成模型响应，不代表真实服务语义准确率；未付费调用或重解析用户记录。
+- `build/time-audit-persistence-final.txt`：生产TaskStore＋真实SQLite32项通过，包含v15→v16保留原文／候选、无伪造旧依据、确定与存疑保存、去重原项关联、重解析历史、精确方案与日程查询、失败回滚、中断／重试／恢复收口及快照复制。`build/time-audit-store-checks.txt`关联合并336、双类型102、快照16、审核状态45通过；快照覆盖17表及非默认审计数据。`build/time-audit-api.txt`实际GET分支＋真实SQLite13项通过，HTTP传输边界不在该专项内。
+- 配置偏好22项与配置备份通过（`build/time-audit-preferences.txt`）；备份恢复104、作业取消／串行重调度、生命周期恢复通过（`build/time-audit-{backup_restore_check.py,job_execution_check.py,lifecycle_motion_check.py}.txt`）。quick 8/8通过，沿用本批未改职责的有效基线，不重复整套。
+- SettingsActivity的八字段脏表单保护，在隔离官方Android16模拟器400dp／1.0与320dp／1.5、深浅四组各63断言通过；涵盖标题／系统返回、改回原值、取消／外部关闭、放弃不写、校验失败、保存成功及Activity重建恢复。日志`F:/Android/temp/settings-exit-{light,dark-400-1.0,light-320-1.5,dark-320-1.5}.log`，专门UI审核及主代理查看压缩JPG后通过；旧Android、真实边缘手势与进程死亡未设备实测。图片即时动作保持原独立语义。
+- `build/result-notifications-device.txt`：隔离Android16真实NotificationManager＋SQLite64断言通过。自动全确认不再发结果通知，手工确认后的TaskStore.close后台清理已有通知；混合剩余项、失败／处理中／排队／空结果与未关联活动草稿保留，孤儿和旧结果频道清理，其他四类频道同ID不同tag保留，重复清理幂等。原文、候选、成功解析审计及关联条目读回完整。无样式变化、无实体手机操作；剩余结果标题专项6项通过。
+- 独立只读时间审计检查发现并促成修正本地字段确定性与中断running状态两项P2，补审均关闭；设置退出独立UI审核通过。所有设备写入只发生于隔离v33包与合成数据，未操作真实账号或手机。
+- 加入重新解析与共享按钮修复后的正式debug／release assemble及lint成功，`build/reparse-final-build.txt`。实际APK签名与上版已验证证书一致，包名正确、204／0.15.42、DEBUG=false，DEX胶囊常量仍为30000／60000ms；`build/release-0.15.42-artifact-check.txt`。尚未覆盖实体手机或验证应用内更新。
+- 最新短文案正式分发候选为 `build/candidates/0.15.42/Chrona-0.15.42.apk`，3134070字节；此前3132654字节旧候选已替换，不用于发布。
+
 ## 0.15.41正式发布与验收 — 2026-10-23
 
 - 用户明确接受当前固件约200ms原生收起过渡，要求恢复30／60秒并Release。候选固定code203／0.15.41，使用release而非capsuleTest；已审核的业务源码不再改动。

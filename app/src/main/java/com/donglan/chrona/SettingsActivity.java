@@ -30,6 +30,8 @@ public final class SettingsActivity extends Activity {
     private int workEndMinutes;
     private TextView workStart;
     private TextView workEnd;
+    private String[] savedForm;
+    private android.window.OnBackInvokedCallback settingsBack;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -179,7 +181,59 @@ public final class SettingsActivity extends Activity {
                 }
             } catch (Exception ignored) { }
         }
+        savedForm = state == null ? formValues() : state.getStringArray("savedForm");
+        if (savedForm == null) savedForm = formValues();
+        if (state != null) restoreForm(state.getStringArray("settingsForm"));
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            settingsBack = this::requestExit;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, settingsBack);
+        }
         refreshImageState();
+    }
+
+    /** The shared title back button calls finish; every exit uses the same guard. */
+    @Override public void finish() { requestExit(); }
+
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Override public void onBackPressed() { requestExit(); }
+
+    private void requestExit() {
+        if (savedForm == null || java.util.Arrays.equals(savedForm, formValues())) {
+            super.finish();
+            return;
+        }
+        UiDialogs.choiceDialog(this, "保存修改？", new String[]{"保存", "取消", "放弃"}, -1,
+                choice -> {
+                    if (choice == 0) save();
+                    else if (choice == 2) super.finish();
+                });
+    }
+
+    private String[] formValues() {
+        return new String[]{baseUrl.getText().toString(), model.getText().toString(),
+                apiKey.getText().toString(), reasoningEffort, Integer.toString(workStartMinutes),
+                Integer.toString(workEndMinutes), customPrompt.getText().toString(),
+                classroomPrompt.getText().toString()};
+    }
+
+    private void restoreForm(String[] values) {
+        if (values == null) return;
+        baseUrl.setText(values[0]);
+        model.setText(values[1]);
+        apiKey.setText(values[2]);
+        setEffort(values[3]);
+        workStartMinutes = Integer.parseInt(values[4]);
+        workEndMinutes = Integer.parseInt(values[5]);
+        customPrompt.setText(values[6]);
+        classroomPrompt.setText(values[7]);
+        refreshWorkTime();
+    }
+
+    @Override protected void onDestroy() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && settingsBack != null)
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(settingsBack);
+        super.onDestroy();
     }
 
     /** Shows whether this endpoint and model were already found to reject images. */
@@ -235,7 +289,7 @@ public final class SettingsActivity extends Activity {
             preferences.save(this);
             ConfigBackup.clearDraft(this);
             Feedback.show(this, "设置已保存");
-            finish();
+            super.finish();
         } catch (Exception exception) {
             Feedback.showLong(this, "保存失败：" + exception.getMessage());
         }
@@ -255,6 +309,8 @@ public final class SettingsActivity extends Activity {
 
     @Override
     protected void onSaveInstanceState(Bundle state) {
+        state.putStringArray("savedForm", savedForm);
+        state.putStringArray("settingsForm", formValues());
         state.putInt("workStartMinutes", workStartMinutes);
         state.putInt("workEndMinutes", workEndMinutes);
         state.putString("customPrompt", customPrompt.getText().toString());

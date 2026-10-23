@@ -153,8 +153,17 @@ public final class ChatCompletionClient {
     private ParseResult execute(long taskId, JSONObject body, boolean hasImages, PreviewSink preview,
             long nowMillis, String timeZoneId, boolean canDowngrade) throws IOException {
         String response = executeEnvelope(body, hasImages, preview, canDowngrade);
-        return parseResponse(taskId, response, nowMillis, timeZoneId, System.currentTimeMillis(),
+        ParseResult parsed = parseResponse(taskId, response, nowMillis, timeZoneId, System.currentTimeMillis(),
                 workStartMinutes, workEndMinutes);
+        try {
+            JSONObject audit = new JSONObject(parsed.timeAuditJson).put("request", new JSONObject()
+                    .put("system", body.getJSONArray("messages").getJSONObject(0).getString("content"))
+                    .put("input", new JSONObject(body.getJSONArray("messages").getJSONObject(1)
+                            .getJSONArray("content").getJSONObject(0).getString("text")))
+                    .put("model", settings.model).put("reasoning_effort", settings.reasoningEffort));
+            return new ParseResult(parsed.candidates, parsed.promptTokens, parsed.completionTokens,
+                    parsed.totalTokens, parsed.cachedTokens, audit.toString());
+        } catch (JSONException invalidAudit) { throw new IOException("Could not retain parse time evidence", invalidAudit); }
     }
 
     /** General completion uses the same cancellation, options and HTTP transport as capture parsing. */
@@ -371,6 +380,7 @@ public final class ChatCompletionClient {
             String content = choice.getJSONObject("message").getString("content");
             JSONObject parsed = contentObject(content);
             JSONArray events = parsed.getJSONArray("events");
+            TimeAssessment.validate(events);
             List<EventCandidate> candidates = SemanticEventNormalizer.fromJsonBatch(taskId, events,
                     nowMillis, timeZoneId, schedulingNowMillis, workStartMinutes, workEndMinutes);
             JSONObject usage = root.optJSONObject("usage");
@@ -386,7 +396,11 @@ public final class ChatCompletionClient {
                     usage == null ? null : optionalInteger(usage, "prompt_tokens"),
                     usage == null ? null : optionalInteger(usage, "completion_tokens"),
                     usage == null ? null : optionalInteger(usage, "total_tokens"),
-                    cachedTokens);
+                    cachedTokens, new JSONObject().put("prompt_version", SchedulePrompt.VERSION)
+                            .put("reference_epoch_millis", nowMillis).put("scheduling_epoch_millis", schedulingNowMillis)
+                            .put("time_zone_id", timeZoneId).put("work_start_minutes", workStartMinutes)
+                            .put("work_end_minutes", workEndMinutes).put("usage", usage == null ? JSONObject.NULL : usage)
+                            .put("entries", TimeAssessment.audit(events, candidates, nowMillis, timeZoneId)).toString());
         } catch (JSONException e) {
             throw new ResponseException("Invalid AI response JSON: " + e.getMessage(), e);
         }

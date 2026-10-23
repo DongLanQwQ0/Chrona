@@ -31,6 +31,7 @@ public class HomeFilterReferenceCheck {
     static void previewFailure(long id,IOException error) { throw new AssertionError(error); }
     static boolean sleep(long ms) { return true; }
     static boolean isTransient(IOException error) { return true; }
+    static boolean wasStopped(RequestControl control) { return control.isCancelled(); }
     static void require(boolean value,String message) { if(!value) throw new AssertionError(message); }
     public static void main(String[] args) throws Exception {
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
@@ -72,8 +73,13 @@ public class HomeFilterReferenceCheck {
         System.out.println("Home filter and actual retry reference checks passed");
     }
 }
-class AiSettings { }
-class ParseResult { }
+class AiSettings { String model="test",reasoningEffort="low"; }
+class ParseResult { ParseResult withRunId(String id){return this;} }
+class TaskStore implements AutoCloseable {
+    TaskStore(Object context){} public void close(){}
+    String beginParseRun(long id,long time,org.json.JSONObject request){return java.util.UUID.randomUUID().toString();}
+    void failParseRun(String id,boolean cancelled,String error){}
+}
 class DiagLog { static void add(Object context,String message) { } }
 class ChatCompletionClient {
     interface PreviewSink { void append(String s) throws IOException; void appendReasoning(String s) throws IOException; }
@@ -110,10 +116,12 @@ preferences.write_text('''package com.donglan.chrona.ai; public class SchedulePr
     public int workStartMinutes=540,workEndMinutes=1020;
     public static SchedulePreferences load(Object context){return new SchedulePreferences();}
     public String systemPrompt(){return "fixture";}
+    public org.json.JSONObject toJson() throws org.json.JSONException{return new org.json.JSONObject();}
 }''', encoding="utf-8")
 sources = [root / "app/src/main/java/com/donglan/chrona" / relative for relative in (
     "data/TaskRecord.java", "data/ScheduleFilterState.java", "data/ScheduleFilterSummary.java",
-    "data/ScheduleRangeStep.java", "data/ScheduleQuery.java", "data/EventCategory.java", "net/RequestControl.java")]
+    "data/ScheduleRangeStep.java", "data/ScheduleQuery.java", "data/EventCategory.java", "net/RequestControl.java",
+    "ai/SchedulePrompt.java", "ai/TimeAssessment.java")]
 subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out),
                 *map(str, sources), str(check), str(preferences)]), check=True)
 subprocess.run(recurrence_java([str(java / "java.exe"), "-cp", str(out), "HomeFilterReferenceCheck"]), check=True)

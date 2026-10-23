@@ -52,6 +52,7 @@ import com.donglan.chrona.data.TaskStore;
 import com.donglan.chrona.debug.DiagLog;
 import com.donglan.chrona.image.ImageStore;
 import com.donglan.chrona.processing.ProcessingJobService;
+import com.donglan.chrona.processing.CaptureReparser;
 import com.donglan.chrona.processing.StreamingOutputStore;
 import com.donglan.chrona.web.LinkFetcher;
 
@@ -1637,13 +1638,10 @@ public final class TaskDetailActivity extends Activity {
             }
             List<EventCandidate> candidates = store.getCandidates(taskId);
             for (EventCandidate candidate : candidates) {
-                if (candidate.calendarEventId != null) {
-                    Feedback.showLong(this, "已有日程写入系统日历，请先编辑或移除日程");
-                    return;
-                }
+                if (candidate.calendarEventId != null && !requestCalendarPermission()) return;
             }
             UiDialogs.confirmDialog(this, "重新解析这条捕获？",
-                    "将使用当前文字和全部图片重新识别；普通文件只会提供文件名、类型和大小，不会上传文件内容。现有日程草稿会被替换。",
+                    "这将替换已有日程",
                     "重新解析", this::retry);
         } catch (Exception exception) {
             showError(exception);
@@ -3071,33 +3069,37 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void retry() {
+        if (saveInFlight) return;
         try (TaskStore store = new TaskStore(this)) {
-            TaskRecord task = store.getTask(taskId);
-            if (task == null) throw new IllegalStateException("任务不存在或已删除");
-            if (task.rawText.trim().isEmpty() && store.getImagePaths(taskId).isEmpty()
-                    && store.getFileAttachments(taskId).isEmpty()) {
-                Feedback.showLong(this, "没有可解析的内容，请补充文字或附件");
-                return;
-            }
             for (EventCandidate candidate : store.getCandidates(taskId)) {
-                if (candidate.calendarEventId != null) {
-                    throw new IllegalStateException("已有日程写入日历，请直接编辑已有日程");
-                }
+                if (candidate.calendarEventId != null && !requestCalendarPermission()) return;
             }
-            if (new AiSettingsStore(this).load() == null) {
-                Feedback.showLong(this, "请先在设置中配置 AI 服务");
-                return;
-            }
-            store.replaceCandidates(taskId, Collections.emptyList());
-            new StreamingOutputStore(this).delete(taskId);
-            store.updateStatus(taskId, TaskRecord.QUEUED, null);
-            ProcessingJobService.enqueue(this, taskId);
-            DiagLog.add(this, "retry task=" + taskId);
-            Feedback.show(this, "已加入解析队列");
-            render();
         } catch (Exception exception) {
             showError(exception);
+            return;
         }
+        final long requestedTaskId = taskId;
+        final android.content.Context context = getApplicationContext();
+        setSaving(true);
+        new Thread(() -> {
+            try {
+                CaptureReparser.enqueue(context, requestedTaskId, false, -1);
+                DiagLog.add(context, "retry task=" + requestedTaskId);
+                deliverSave(owner -> {
+                    owner.setSaving(false);
+                    if (owner.taskId != requestedTaskId) return;
+                    Feedback.show(owner, "已加入解析队列");
+                    owner.render();
+                });
+            } catch (Exception exception) {
+                deliverSave(owner -> {
+                    owner.setSaving(false);
+                    if (owner.taskId != requestedTaskId) return;
+                    owner.showError(exception);
+                    owner.render();
+                });
+            }
+        }, "chrona-reparse").start();
     }
 
     private void addManualCandidate() {

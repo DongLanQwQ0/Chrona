@@ -70,7 +70,8 @@ public final class SemanticEventNormalizerCheck {
         check(parse(base("task").put("start", time("2026-09-28", "09:00", null))).startAtMillis
                 == at("2026-09-28T01:00:00Z"), "explicit elapsed date never silently rolls forward");
         EventCandidate dateOnly = parse(base("event").put("start", time("2026-09-29", null, null)));
-        check(dateOnly.startAtMillis == null && dateOnly.needsConfirmation, "date without clock stays unresolved");
+        check(dateOnly.startAtMillis == at("2026-09-29T07:00:00Z") && dateOnly.needsConfirmation,
+                "date without clock keeps a concrete editable high-uncertainty suggestion");
         EventCandidate contradictory = parse(base("task").put("start", time("2026-09-30", "11:00", 1)));
         check(contradictory.startAtMillis == at("2026-09-30T03:00:00Z") && contradictory.needsConfirmation,
                 "explicit date has priority but contradiction requires confirmation");

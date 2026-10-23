@@ -1,0 +1,9 @@
+allprojects {
+    plugins.withId('com.android.application') {
+        extensions.getByName('androidComponents').finalizeDsl { android ->
+            android.defaultConfig.applicationId = 'com.donglan.chrona.followup.validation.v33'
+            android.defaultConfig.testApplicationId = 'com.donglan.chrona.followup.validation.v33.test'
+            android.defaultConfig.testInstrumentationRunner = 'com.donglan.chrona.ResultNotificationsInstrumentation'
+        }
+    }
+}

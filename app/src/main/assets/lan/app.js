@@ -419,8 +419,8 @@ function taskOriginal(data,id){
  if(data.images.length){const grid=node('div','attachment-grid');for(const item of data.images){const link=node('a');link.href=`/api/attachment/${id}/image-${item.index}`;link.target='_blank';link.rel='noopener';const image=node('img');image.src=link.href;image.alt=`记录图片 ${item.index+1}`;image.loading='lazy';link.append(image);grid.append(link);}original.append(grid);}
  if(data.files.length){const files=node('div','files');for(const item of data.files){const link=node('a','',item.name+` · ${(item.size/1024).toFixed(1)} KB`);link.href=`/api/attachment/${id}/${item.id}`;files.append(link);}original.append(files);}
  const actions=node('div','detail-actions'),busy=['queued','processing'].includes(task.status),edit=action('修改原文',()=>editRaw(task));edit.disabled=busy;
- const process=action('AI 重新处理',()=>confirmAction('重新处理','现有未写入日历的日程将由新的 AI 结果替换。',async()=>{await api('/api/task/process',{id:String(id),revision});await render();}));
- process.disabled=busy||data.candidates.some(item=>item.calendarLinked);
+ const process=action('AI 重新处理',()=>confirmAction('重新处理','这将替换已有日程',async()=>{try{await api('/api/task/process',{id:String(id),revision});}finally{await render();}}));
+ process.disabled=busy||data.managedHomeworkCapture;
  if(!busy)actions.append(action('添加附件',()=>appendAttachments(id,data.revision)));
  actions.append(edit,process,action('删除记录',()=>confirmAction('删除记录','将删除原文、日程及已关联的手机系统日历事件。公共 Downloads 文件会保留。',async owner=>{await api('/api/task/delete',{id:String(id),revision});if(ownsDialog(owner))await navigate('inbox');else await render();}),'danger'));original.append(actions);
  for(const target of data.mergedTargets||[]){if(target.taskId===Number(id))continue;if(target.taskId)original.append(action('已合并 · '+target.title,()=>navigate('task/'+target.taskId)));else original.append(node('p','subtle','已合并 · '+target.title+'（保留日程已不存在）'));}

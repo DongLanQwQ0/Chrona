@@ -2,43 +2,29 @@
 
 ## 当前交付与唯一下一步
 
-当前交付已完成：用户明确接受现固件约200ms系统过渡；正式30／60秒已恢复并覆盖安装手机，0.15.41／203已发布为Latest：[GitHub Release](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.41)。标签对应源码`e0dcedb28831e4d69c7546cd0ec759df659368a6`，资产`Chrona-0.15.41.apk`为3120586字节。正式构建、签名、升级及真实30／60秒核对通过。当前无待执行修复；完全断开ADB独立运行未单独验收，作为证据边界记录，不以无线连接冒充。
+候选0.15.42／204，DB16、schedule-v17，功能、定向检查、实际渲染及独立UI审核全部通过。原生／网页重新解析确认正文统一为「这将替换已有日程」。正式包已重建并核验原签名、正确版本及30／60秒计时；分发候选3134070字节。唯一下一步：按常规授权提交、推送并发布v0.15.42，核对公开更新资产。尚未覆盖实体手机。
 
-2026-10-23。用户确认临时5／10秒版的胶囊计时已恢复，随后要求修复“原生大卡片关闭后先变窄，再变详细”的闪动。**闪动未修复，已定位到当前OriginOS系统宿主固定的200ms中间动画；不宣称应用侧修好。**
+## 已交付行为
 
-手机版已于19:49:55保留数据覆盖安装正式0.15.41，无测试后缀；普通辅助服务Bound、Crashed空。系统设置确认在前台后返回桌面，＋24秒完整／＋33秒精简；原生点击后点外关闭，＋55秒完整／＋63秒精简，accepted=true。未用instrumentation／UiAutomation／手动tick，未创建新记录。第一组Dashboard重入的home25／33均短，未用作桌面边界证据；有效新组由系统设置前台确认起算。
+- AI时间审计：确定和不确定均返回七字段的依据／规则／短原因；模型原依据与实际归一化结果、字段校验、存疑及调整分别保留。每次请求尝试独立runId，日程历史ID＋稳定身份、run＋plan关联落库；重解析不覆盖旧记录。TaskStore与已认证LAN /api/parse-audit支持分页查询，完整备份包含审计；旧日程不补造依据，删除源收件才级联清理。
+- 用户已撤销截止日22:00–23:00专用默认，提示词和执行分支均已删除。单项及较大任务利用整个可用周期；更主动给具体建议和时长，较大工作分阶段并预留修改提交。自由建议保留高存疑；只有实际保存且能唯一应用的明确时间偏好可确定补全。不改用户模型思考强度，不自动重排已保存事项。
+- AI服务退出保护：八字段脏表单统一保存／取消／放弃；取消与外部关闭保留输入、放弃不写、校验失败留页，Activity重建保留草稿及原基线。图片重新允许仍是独立即时动作。
+- 已确认后只清通知栏解析结果：READY且非空批次全部settled时移除，自动全确认不再发无须处理的通知；mixed、失败／处理中／排队／空结果及未关联草稿保留。不删除原文／日程／审计，不影响其它通知频道，复用后台刷新。
+- 重新解析统一CaptureReparser：状态、版本、旧候选读取和替换在同一SQLite事务；先验证再清独占旧系统事件，共享及永久合并引用保留，提交排队后才启动请求。清理失败不解析，部分已删外部事件不回滚；调度失败标FAILED可重试。原生后台执行绑定SaveSession，网页不再因已关联而禁用。公共actionRow在窄屏／大字放不下完整按钮文字时纵排，保留字号与点击语义。
 
-## 当前候选与手机状态
+## 决定验收的证据
 
-- 源码203／0.15.41，远端标签及正式Release均已创建，GitHub Latest读回v0.15.41、draft=false、prerelease=false，APK资产uploaded；公开下载HEAD返回200及3120586字节。保留本地其他修改，禁止重置。
-- `capsuleTest`仅作独立开发变体保留；正式debug／release均30／60秒，手机已退出短时测试。临时包不得作为正式发布资产。
-- 最终正式构建`build/release-0.15.41-final-build.txt`：debug/release assemble及lint成功。`build/release-0.15.41-artifact-check.txt`含APK签名、包名版本、DEBUG=false及DEX内30/60常量；上版证书相同。正式APK为`build/candidates/0.15.41/Chrona-0.15.41.apk`。
-- vivo V2527A／OriginOS16当前安装正式0.15.41，不含即时快投实验；设备唯一标识仅留本地证据，不公开提交。
-- 用户关闭独立「日程后台更新」频道；读回importance=0，保留关闭，不能改成关闭整个应用或事项通知。
-- 用户明确授权创建一条临时活动、验后删除；`capsule_live_fixture`的task116／candidate423已清理，读回task和候选不存在，记录`build/capsule-live-fixture-cleanup.txt`。**没有待删除测试活动。** 不再操作用户真实日程、账号、系统日历或同步配置。
+- build/time-audit-ai-final.txt：请求494、归一化59、排期418、时间审计35、自动写入16通过。合成模型响应，未付费调用，不宣称测得真实模型准确率。
+- build/time-audit-persistence-final.txt：生产TaskStore＋真实SQLite32项，含v15→v16保留数据、历史关联、去重、回滚、查询、中断／重试／恢复及快照。关联合并336、双类型102、快照16、审核45继续有效；实际GET分支13项。
+- 配置偏好22、备份恢复104、作业取消与生命周期恢复、quick 8/8通过；不重复未变职责整套。具体日志见docs/validation-history.md。
+- 设置退出：隔离Android16的400dp／1.0、320dp／1.5深浅四组各63断言，专门UI审核通过；主代理已查看窄屏大字压缩图。
+- build/result-notifications-device.txt：实际NotificationManager＋SQLite64项，通知清理及原文／候选／审计保留通过；标题专项6项。通知无样式改动，独立交互补审已通过。
+- 时间审计独立审查发现的两项P2（本地字段依据、中断日志状态）已修并补审关闭，包括继承日期存疑不误传仅钟点存疑。
+- 重新解析：build/reparse-device.txt真实SQLite／CalendarProvider／MediaStore84断言；build/reparse-ui-library-check.txt公共方法1530断言。最终短文案四组原生各23断言及网页四组通过，取消／确认／失败刷新有效。生产清理器＋SQLite211、LAN安全83及job／lifecycle通过。专门UI审核已亲看最新原生／网页八图，业务、公共行与短文案均通过。
+- build/reparse-final-build.txt：最终assembleDebug／assembleRelease／lintDebug／lintRelease成功。build/release-0.15.42-artifact-check.txt：正确包名204／0.15.42、不可调试、原证书、正式30／60常量；资产build/candidates/0.15.42/Chrona-0.15.42.apk为3134070字节。
 
-## 闪动结论与证据
+## 边界与保留状态
 
-- 常规点击建立原点击时刻＋10秒（正式＋60秒）的期限。普通及秒级刷新不续时，不强制开关大卡，外部点空白仍由系统原生关闭。
-- 绕过350ms合并刷新、用最新通知快照即时投影的实验通过离线检查，但实际`flash-after.mp4`仍经窄黑再扩宽；持有3秒后收起也一样。专门只读`/root/ui_review`已否决无闪回签收，该实验及其专用检查均撤回。
-- `build/atomic-event-review/flash-before.mp4`、`flash-after.mp4`、`flash-held.mp4`及对应10fps接触表有效。录制期间无UiAutomation、instrumentation或手动tick；USB条件。临时活动由生产提醒流程正常发布。
-- 只读宿主APK及派生源码在`F:/Android/ChronaBuildCheck/capsule-host/`。`DynamicCapsuleStateController`规定展开态4经中间态1转2／3；`ContainerAnimatorCommon`中间态使用系统资源固定宽度且duration=200；展开期间不重建收起用左右view。主代理已查看关键代码；该机制与录屏200ms窄黑阶段吻合。
-- 已检查通知协议未发现跳过该中间态的app入口。没有修改系统APK、全局动画、强制展开或阻止关闭；不再无依据试参数。此限制只确认为当前固件，不推广其他OriginOS版本。
-- 恢复后定向检查`build/capsule-final-restored-checks.txt`：正式45／短时18／vivo111通过，构建变体隔离通过。无闪回目标仍未达到。
-
-## 本批其他已完成内容
-
-- AI `schedule-v16`：三个请求时间锚点均附程序时区计算的星期，动态时间上下文在完整稳定system前缀末尾；user只保留输入。缺年采用明确上下文或本地当前年，不因仅缺年份存疑；JSON只剥外层escape／代码围栏，保留字符串正文与原始流展示。
-- 通用执行建议取消截止前6小时至3天限制，利用整个准备周期并按工作量留缓冲；不针对征文特判，不自动重排已保存日程。请求493／归一化59／排期418／自动发布16通过。无付费在线解析。功能与规则见`docs/features/ai/ai-time-extraction.md`。
-- 重复日程自动检测、默认不选、按组提交、取消去重、新组提示、前后台与原生／网页入口已验收，独立UI审核通过。数据336＋关联102／16／45，真实Edge专项和模拟器Activity／SQLite通过。全网页旧无关disclosure时序失败仍未称全通过。
-- 紧凑原子卡、Lucide任务菜单、每个重复成员的标题／来源／地点、窄屏大字预览已验收，不因本轮重新设计。
-- 备份恢复可靠性、共享日历引用、恢复并发、课堂入口隐藏等本批已验收项保留，具体实现和有效证据见`docs/validation-history.md`及各功能文档，不重复整轮。
-
-## 仍保留的验收边界
-
-- 物理断开ADB后的独立胶囊运行仍未正式验收；用户此前一直插着USB，不把辅助程序退出当拔线。当前故障定位不等于该项通过。
-- 先前普通服务source=null点击问题已修，USB59／61、再次展开及保持卡片65秒有效证据仍适用。旧home29/31本轮均为精简，不签为桌面边界通过。
-- 当前无需继续付费AI、真实WebDAV或应用内手动更新复验；手机LAN实链路仍缺实际开启访问，模拟API不替代它。
-- 本轮已按授权发布同候选源码、版本、安装包及签名；保留数据升级已完成。旧含强制展开APK不属于当前正式资产，禁止分发。
-- 本地`AGENTS.md`、`.backups/`、`.local-backups/`及角色toml不纳入业务提交。
-- FastCtx未提供，使用PowerShell7；Java `D:/Minecraft/java21`，SDK `F:/Android/Sdk`，Gradle缓存`F:/Android/GradleCache`，Android用户目录`F:/Android/user-home`，下载与缓存仅F盘。
+- 只在隔离v33包、合成记录中做设备写入；无真实账号／付费模型／实体手机操作。手机仍为此前正式0.15.41；新候选尚未设备覆盖安装。旧Android、真实边缘手势及进程死亡恢复未设备实测，Activity重建和中断持久化分别已有有效证据。
+- 30／60秒正式胶囊窗口不变；当前OriginOS约200ms系统收起过渡按用户接受保留，不修改宿主或全局动画。无待清理临时活动，用户关闭的后台更新通知频道保留。
+- 本地AGENTS.md、角色toml、.backups及.local-backups不纳入业务提交。FastCtx未提供时使用PowerShell7；Java D:/Minecraft/java21、SDK F:/Android/Sdk、Gradle缓存F:/Android/GradleCache、Android用户目录F:/Android/user-home。

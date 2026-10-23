@@ -1,4 +1,5 @@
 """Exercise real portable configuration logic with in-memory Android preference/store doubles."""
+from recurrence_dependencies import recurrence_java
 from pathlib import Path
 import os
 import subprocess
@@ -101,12 +102,16 @@ for relative, content in fixtures.items():
     paths.append(str(path))
 java=Path(os.environ.get('JAVA_HOME','D:/Minecraft/java21'))/'bin'
 jar=root/'build/ai-checks/json.jar'
-subprocess.run([str(java/'javac.exe'),'--release','17','-cp',str(jar),'-d',str(directory),
+subprocess.run(recurrence_java([str(java/'javac.exe'),'--release','17','-encoding','UTF-8','-cp',str(jar),'-d',str(directory),
                *paths,str(root/'app/src/main/java/com/donglan/chrona/ConfigBackup.java'),
                str(root/'app/src/main/java/com/donglan/chrona/FeaturePreferenceBackup.java'),
                str(root/'app/src/main/java/com/donglan/chrona/ai/SchedulePreferences.java'),
                str(root/'app/src/main/java/com/donglan/chrona/ai/SchedulePrompt.java'),
+               str(root/'app/src/main/java/com/donglan/chrona/ai/TimeAssessment.java'),
+               str(root/'app/src/main/java/com/donglan/chrona/ai/SemanticEventNormalizer.java'),
+               str(root/'app/src/main/java/com/donglan/chrona/data/EventTimeDefaults.java'),
+               str(root/'app/src/main/java/com/donglan/chrona/calendar/AllDayDates.java'),
                str(root/'checks/SchedulePreferencesCheck.java'),
-               str(root/'app/src/main/java/com/donglan/chrona/ai/AiSettings.java')],check=True)
-subprocess.run([str(java/'java.exe'),'-cp',str(directory)+os.pathsep+str(jar),'ConfigBackupCheck'],check=True)
-subprocess.run([str(java/'java.exe'),'-cp',str(directory)+os.pathsep+str(jar),'SchedulePreferencesCheck'],check=True)
+               str(root/'app/src/main/java/com/donglan/chrona/ai/AiSettings.java')]),check=True)
+subprocess.run(recurrence_java([str(java/'java.exe'),'-cp',str(directory)+os.pathsep+str(jar),'ConfigBackupCheck']),check=True)
+subprocess.run(recurrence_java([str(java/'java.exe'),'-cp',str(directory)+os.pathsep+str(jar),'SchedulePreferencesCheck']),check=True)
