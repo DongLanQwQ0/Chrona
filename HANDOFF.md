@@ -2,9 +2,11 @@
 
 ## 当前交付与唯一下一步
 
-当前交付：明确原子岛通知首次启用需逐机ADB配置，并提供面向其他用户的Windows一键配置包，推送GitHub。不改主应用功能或版本；以0.15.42正式版为目标，发布独立配置附件。候选：自动识别设备的配置脚本、仅可配置CHRONA_AGENDA的专用辅助APK及双击入口；文档说明PowerShell7／ADB、手机授权、固件限制和日常无需连接电脑。
+已交付：README、用户指南、原子岛文档及Release说明明确逐机首次需ADB配置、安装APK不会自动完成、日常无需连接电脑。Windows一键配置包已发布，源码提交9b4078dc818ba0f8b1f6da052bb437fef82080af，独立标签／Release为`vivo-setup-0.15.42`；主应用功能、版本及原APK不变，应用latest保持`v0.15.42`。
 
-候选已完成脚本25场景、双击入口2场景、受限辅助源码16场景及旧配置4项检查，最终release AndroidTest构建成功；手机普通身份Status／Enable读回true且changed=false，没有关闭既有场景。证据及范围见docs/validation-history.md。唯一下一步：固定工具源码提交，打包ZIP并核对原签名／文件清单，推送独立工具标签及Release，保持应用latest为v0.15.42。保留主应用APK及数据，不修改其它应用场景或系统全局设置。
+脚本25场景、双击入口2场景、受限辅助源码16场景及旧配置4项检查通过，最终release AndroidTest构建成功；手机普通身份Status／Enable读回true且changed=false，没有关闭既有场景。ZIP共11个必要文件、4520720字节，原签名辅助APK仅含专用runner与生成支持类，内置ADB可运行，脚本WhatIf正常；公开下载HTTP200，SOURCE.txt关联同一工具提交。证据及范围见docs/validation-history.md。当前无待实施事项；使用者安装PowerShell7、连接授权手机后双击Enable-VivoAtomic.cmd。未在未配置手机上新增注册，不承诺其它固件兼容。
+
+下载：https://github.com/DongLanQwQ0/Chrona/releases/download/vivo-setup-0.15.42/Chrona-vivo-setup-0.15.42.zip
 
 此前拖放调查已按用户要求仅说明结论：手机拖放直达4.0.9.1由服务配置管理目标名单，未找到普通ADB新增接口；相关签名权限不属于shell，模拟更新广播仅重读厂商配置。不继续改拖放入口。
 

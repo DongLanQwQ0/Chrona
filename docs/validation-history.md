@@ -8,6 +8,7 @@
 - `build/vivo-setup-build.txt`：受限release AndroidTest最终构建通过；专用APK仅包含runner、Java集合回移与生成R／BuildConfig，不包含测试夹具。签名与既有正式版证书一致，目标包`com.donglan.chrona`，安装显示名“拾时原子岛配置”。
 - 实体vivo V2527A／PD2527_A_16.0.19.3.W10：Status与最终Enable均普通身份读回`before=true, enabled=true, changed=false`，没有关闭既有场景；实际脚本完成辅助程序安装／运行／卸载。日志`build/vivo-setup-device-status.txt`和`build/vivo-setup-device-enable-final.txt`。本轮没有在未配置手机上首次注册，也没有关闭现有通知或新增日程；写入接口沿用此前初次配置的已验证调用，新增恢复路径以替身检查覆盖。
 - README、用户指南与功能文档明确：逐机首次需ADB、不随APK分发、配置后日常无需电脑或保持USB调试；工具只配置通知，不启用拖放直达名单。不同固件仍可能拒绝隐藏接口，保留普通提醒。
+- 工具源码9b4078dc818ba0f8b1f6da052bb437fef82080af及独立标签`vivo-setup-0.15.42`已推送，工具Release公开且非latest。ZIP4520720字节、11个必要文件，包含SDK的ADB37.0.1与NOTICE；解压后ADB实际运行、脚本WhatIf、辅助APK原证书检查通过，SOURCE.txt匹配工具提交。公开下载HTTP200、Content-Length4520720；应用latest仍为v0.15.42，原应用APK不替换，正式应用Release另补首次ADB要求与工具下载链接。
 
 ## 时间确定性审计、主动排程及设置／通知收尾 — 2026-10-23
 
