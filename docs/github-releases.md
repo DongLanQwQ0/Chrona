@@ -12,6 +12,12 @@
 5. 在 GitHub Releases 创建正式 Release，填写更新说明、上传 `Chrona-0.13.71.apk`。不要勾选 Draft 或 Pre-release；正式发布后设为 Latest。
 6. 核对发布页、APK 下载、应用手动检查与旧版本覆盖安装，按 [设备验收清单](device-acceptance.md) 记录旧版到新版的数据保留结果。未进行或失败的检查及其影响写入验证记录和HANDOFF；影响用户安装、数据安全或功能使用的已知限制，同时写入更新说明的相关条目。构建成功不能代替覆盖升级验收。
 
+## 原子岛配置工具单独分发
+
+首次配置要求与用户步骤维护在[配置包说明](../tools/vivo/README.md)。使用`checks/vivo-setup.init.gradle`构建受限辅助APK，再用`tools/vivo/Build-VivoSetupBundle.ps1`生成包含ADB及其NOTICE的一键配置ZIP。固定候选后核对辅助包仅包含配置runner、目标为正式包、签名一致，验证脚本失败路径及设备读回。
+
+工具使用独立标签`vivo-setup-0.15.42`和Release，发布时显式`--latest=false`；应用latest继续指向`v0.15.42`。工具包适配版本不意味着重建或替换原正式应用APK；附件的`SOURCE.txt`记录工具源码提交。发布后核对ZIP可下载、所需文件齐全、README及用户指南链接有效。
+
 ## 更新说明面向使用者
 
 GitHub Release正文采用CHANGELOG对应版本的用户可读内容；技术验证留在验证记录，不另建重复文案源。

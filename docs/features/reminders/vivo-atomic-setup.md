@@ -1,5 +1,7 @@
 # vivo 原子岛日程提醒
 
+**目前每台支持的 vivo / iQOO 手机首次启用拾时原子岛通知，都需要用电脑通过 ADB 配置一次。配置只保存在执行过的手机系统里，不随 APK 分发；只安装软件无法自动完成。** 配置成功后日常使用无需电脑或保持 USB 调试。Windows [一键配置包](https://github.com/DongLanQwQ0/Chrona/releases/download/vivo-setup-0.15.42/Chrona-vivo-setup-0.15.42.zip)包含专用辅助程序及 ADB，具体步骤见[首次配置说明](../../../tools/vivo/README.md)。
+
 在已完成本机配置的 vivo 设备上，Chrona 默认在日程开始前30分钟发送原子通知；Chrona 活动配置了更早的提前提醒时，从该提醒时刻出现。提醒使用专属场景 `CHRONA_AGENDA`，包含标题、时间和地点。是否读取系统日程由设置中的提醒选项独立控制。
 
 2026-10-13 已在用户手机上完成专属场景注册，并取得原子岛实际显示截图。注册后的发送以普通应用身份进行，不需要持续连接 ADB。首次点击岛展开卡片，展开后点击卡片进入详情，用户已确认此交互完善。
@@ -27,9 +29,9 @@
 
 0.15.41紧凑候选将卡片外层垂直内距改为8dp，标题与右侧48dp完成操作共行；保留字号，长标题自然换行。摄像头基础安全带40dp，仍优先采用真实cutout下缘加4dp；不改变胶囊计时或原生开关。短卡、320dp／1.5字体长卡实际RemoteViews及vivo最终画面已保存，后续自动重复提示改动不改变这些布局。
 
-## 个人开发设备的一次性配置
+## 每台手机的首次配置
 
-这是一项显式的本机开发配置，会持久增加仅包含 Chrona 的场景。生产 APK 不含场景注册代码，也不取得系统权限。配置工具借用已授权 ADB 的临时 `STATUS_BAR_SERVICE` 身份执行注册，立即撤掉身份，再以普通应用身份读回确认；不会修改已有的 `METTING` 或其它场景的应用名单。
+此工具只为当前连接的手机配置 Chrona 专属场景。生产 APK 不含场景注册代码，也不取得系统权限。配置工具借用已授权 ADB 的临时 `STATUS_BAR_SERVICE` 身份执行注册，立即撤掉身份，再以普通应用身份读回确认；不会修改已有的 `METTING` 或其它场景的应用名单。
 
 0.14.33 的提前提醒有独立总开关、Chrona原子通知开关、系统日程原子通知开关及系统来源开关。系统来源关闭时完全不提醒系统日程，优先于系统原子开关。原子开关关闭或场景不可用时，使用普通常驻提醒；更换形式先清理旧卡片。首页与日历显示开关统一入口位于设置中的“系统日程”，原页面开关保留，显示偏好不影响提前提醒。
 
@@ -39,18 +41,18 @@
 
 0.14.36在距离开始（或活动结束）剩余两分钟时，将收起胶囊的固定时刻切换为系统秒级倒计时。非活动日程开始后显示“已开始”，最多三分钟关闭；活动继续显示进度直至结束。通知超时、下一次闹钟和数据库候选查询共用同一期限，刷新不会延长这三分钟。
 
-先安装对应版本 Chrona，连接已授权 ADB 的手机，再解压发布附件 `Chrona-vivo-setup-0.14.36.zip`。使用 PowerShell 7：
+先安装 GitHub 正式版拾时，等待解析和同步结束，再按[首次配置说明](../../../tools/vivo/README.md)解压配置包并双击 `Enable-VivoAtomic.cmd`。Windows 需 PowerShell 7，配置包已包含 ADB。高级用法：
 
 ```powershell
-pwsh -File .\Configure-VivoAtomicScene.ps1 -Device '手机IP:连接端口' -Mode Enable -TestApk .\Chrona-device-checks.apk
+pwsh -File .\Configure-VivoAtomicScene.ps1 -Mode Enable
 ```
 
-ADB 未在 PATH 中时，使用 `-Adb '你的adb.exe绝对路径'`。工具只安装对应的测试 APK，运行专属场景配置并检查结果，不修改日程记录、不打开日历页面、不操作其它应用。
+脚本自动识别单台已授权的实体手机，多台时需 `-Device '序列号'`，也可用 `-Adb '你的adb.exe绝对路径'`。工具只安装专用辅助 APK，运行专属场景配置并以普通身份检查结果，移除本次新装的辅助程序；不修改日程记录、不打开日历页面、不操作其它应用。`-Mode Status`可查询当前状态。
 
 关闭该专属场景：
 
 ```powershell
-pwsh -File .\Configure-VivoAtomicScene.ps1 -Device '手机IP:连接端口' -Mode Disable -TestApk .\Chrona-device-checks.apk
+pwsh -File .\Configure-VivoAtomicScene.ps1 -Mode Disable
 ```
 
 关闭会使自有场景和包开关变为 false，保留一条停用的自有场景配置。配置失败不能当成已启用，工具会报错。成功注册也不单独证明已显示原子岛，仍应观察设备实际通知。

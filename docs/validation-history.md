@@ -1,5 +1,14 @@
 # 验证记录
 
+## 原子岛首次配置说明与一键工具 — 2026-10-24
+
+- 主应用仍为0.15.42／204。本轮只增加文档、配置脚本及独立辅助APK；辅助包`com.donglan.chrona.vivo.setup`以正式包为目标，仅编译`app/src/vivoSetup`，不包含通用测试套件。操作固定为本包`CHRONA_AGENDA`，默认runner模式只读，写入时临时采用shell权限并立即释放，普通身份前后读回；失败尝试恢复原可用状态。
+- `build/vivo-setup-offline.txt`：脚本25个模拟ADB场景通过，包含自动选机、未授权／离线／多机／非vivo／未安装目标前置、安装拒绝与无成功回执、三种操作、严格回执、辅助程序清理及WhatIf；实际CMD入口在含中文空格路径下成功／失败退出码两项通过。旧配置分支4项回归继续通过。
+- `build/vivo-setup-helper-check.txt`：原辅助程序源码以框架替身编译执行16场景，覆盖默认只读、模式与包名／厂商边界、无权限／初读失败不写、幂等、启用／关闭、未确认及写入异常恢复、shell身份始终释放。模拟框架证据不作为其它固件通过证明。
+- `build/vivo-setup-build.txt`：受限release AndroidTest最终构建通过；专用APK仅包含runner、Java集合回移与生成R／BuildConfig，不包含测试夹具。签名与既有正式版证书一致，目标包`com.donglan.chrona`，安装显示名“拾时原子岛配置”。
+- 实体vivo V2527A／PD2527_A_16.0.19.3.W10：Status与最终Enable均普通身份读回`before=true, enabled=true, changed=false`，没有关闭既有场景；实际脚本完成辅助程序安装／运行／卸载。日志`build/vivo-setup-device-status.txt`和`build/vivo-setup-device-enable-final.txt`。本轮没有在未配置手机上首次注册，也没有关闭现有通知或新增日程；写入接口沿用此前初次配置的已验证调用，新增恢复路径以替身检查覆盖。
+- README、用户指南与功能文档明确：逐机首次需ADB、不随APK分发、配置后日常无需电脑或保持USB调试；工具只配置通知，不启用拖放直达名单。不同固件仍可能拒绝隐藏接口，保留普通提醒。
+
 ## 时间确定性审计、主动排程及设置／通知收尾 — 2026-10-23
 
 - 同批新增重新解析自动清理：原生与网页统一 `CaptureReparser`，先校验再删除本收件独占的系统事件；共享／永久归档引用、源输入及历史审计保留。查询旧候选、状态和清空操作处于同一SQLite事务，提交后才调度；外部部分删除无法回滚，失败不排队并允许重试，调度失败另标FAILED。

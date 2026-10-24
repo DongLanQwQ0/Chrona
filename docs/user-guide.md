@@ -183,7 +183,9 @@ API 密钥默认不包含在备份中；如果主动勾选了包含密钥，请�
 
 ### vivo 原子岛日程提醒
 
-在「设置」开启开始前30分钟提醒；是否包含系统日程可单独选择。个人开发设备的原子岛需要完成一次本机配置，之后日常发送不需要连接电脑，详见 [vivo 原子岛设置](features/reminders/vivo-atomic-setup.md)。
+**目前每台支持的 vivo / iQOO 手机首次启用拾时原子岛通知，都需要用电脑通过 ADB 配置一次；仅安装 APK 不会自动完成。** 下载并解压[一键配置包](https://github.com/DongLanQwQ0/Chrona/releases/download/vivo-setup-0.15.42/Chrona-vivo-setup-0.15.42.zip)，按[操作步骤](../tools/vivo/README.md)授权手机并双击 `Enable-VivoAtomic.cmd`。Windows 需 PowerShell 7，配置包已包含 ADB。
+
+配置后在「通知与提醒」开启原子岛提醒；是否包含系统日程可单独选择。日常使用无需连接电脑，也无需保持 USB 调试。配置存于手机系统，更换手机需重新配置；不同固件可能不支持，失败时保留普通通知提醒。详见 [vivo 原子岛设置](features/reminders/vivo-atomic-setup.md)。
 
 ### 想重新看一遍教程
 

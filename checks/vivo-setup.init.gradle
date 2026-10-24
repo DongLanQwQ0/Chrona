@@ -1,0 +1,12 @@
+// Build a restricted setup APK without the general-purpose device test suite.
+allprojects {
+    plugins.withId('com.android.application') {
+        extensions.getByName('androidComponents').finalizeDsl { android ->
+            android.testBuildType = 'release'
+            android.defaultConfig.testApplicationId = 'com.donglan.chrona.vivo.setup'
+            android.defaultConfig.testInstrumentationRunner = 'com.donglan.chrona.VivoAtomicSetupInstrumentation'
+            android.sourceSets.androidTest.java.setSrcDirs([file('src/vivoSetup/java')])
+            android.sourceSets.androidTest.manifest.srcFile file('src/vivoSetup/AndroidManifest.xml')
+        }
+    }
+}
