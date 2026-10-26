@@ -29,12 +29,17 @@ final class TimetableGrid extends FrameLayout {
     private final float[] dayLeft = new float[8];
     private final float[] dayWidth = new float[7];
     private final float density, fontScale;
+    private final java.util.Map<Timetable.Block,TextView> courses=new java.util.LinkedHashMap<>();
+    private final TextView[] headings=new TextView[7];
 
     TimetableGrid(Context context, Timetable table, int widthPx, Consumer<Timetable.Block> selected) {
+        this(context,table.blocks,widthPx,selected);
+    }
+    TimetableGrid(Context context, java.util.List<Timetable.Block> blocks, int widthPx, Consumer<Timetable.Block> selected) {
         super(context);
         density = getResources().getDisplayMetrics().density;
         fontScale = getResources().getConfiguration().fontScale;
-        geometry = new TimetableLayout(table.blocks);
+        geometry = new TimetableLayout(blocks);
         palette = UiStyle.colors(context);
         setWillNotDraw(false);
         setClipChildren(true);
@@ -50,6 +55,7 @@ final class TimetableGrid extends FrameLayout {
             dayWidth[day] = unit * geometry.dayColumns[day];
             dayLeft[day + 1] = dayLeft[day] + dayWidth[day];
             TextView heading = new TextView(context);
+            headings[day]=heading;
             heading.setText(DAYS[day]);
             heading.setTextSize(12);
             heading.setTypeface(null, Typeface.BOLD);
@@ -62,6 +68,7 @@ final class TimetableGrid extends FrameLayout {
         for (TimetableLayout.Placement placement : geometry.placements) {
             Timetable.Block block = placement.block;
             TextView course = new TextView(context);
+            courses.put(block,course);
             String label = block.title + (block.location.isEmpty() ? "" : "\n" + block.location);
             SpannableString styled = new SpannableString(label);
             styled.setSpan(new StyleSpan(Typeface.BOLD), 0, block.title.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -84,7 +91,7 @@ final class TimetableGrid extends FrameLayout {
             course.setElevation(0);
             course.setPadding(dp(4), dp(6), dp(4), dp(6));
             course.setContentDescription(block.title + "，" + DAYS[block.day] + "，"
-                    + (block.allDay ? "全天" : Timetable.time(block.startMinute) + " 至 " + Timetable.time(block.endMinute))
+                    + (block.allDay ? "全天" : block.startOnly()?Timetable.time(block.startMinute)+" 开始":Timetable.time(block.startMinute) + " 至 " + Timetable.time(block.endMinute))
                     + (block.location.isEmpty() ? "" : "，" + block.location) + "，查看课程详情");
             course.setFocusable(true);
             UiStyle.pressable(course);
@@ -95,6 +102,9 @@ final class TimetableGrid extends FrameLayout {
         }
         setLayoutParams(new FrameLayout.LayoutParams(width, dp(geometry.height())));
     }
+
+    void dayLabels(String[] labels){for(int day=0;day<7;day++)headings[day].setText(labels[day]);}
+    void bindCourses(java.util.function.BiConsumer<Timetable.Block,TextView> bind){courses.forEach(bind);}
 
     private void place(View view, float left, float top, float width, float height) {
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(Math.round(width), Math.round(height));

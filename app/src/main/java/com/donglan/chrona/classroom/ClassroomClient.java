@@ -80,6 +80,11 @@ public final class ClassroomClient implements Closeable {
         return materials(lesson,true,stage);
     }
     public okhttp3.WebSocket liveTranscript(ClassroomLesson lesson,okhttp3.WebSocketListener listener)throws IOException {
+        String source=liveAddress(lesson);return source==null?null:school.classroomTranscriptSocket(source,listener);
+    }
+    /** Revalidate this exact lecture without opening or replacing its healthy socket. */
+    public boolean liveNow(ClassroomLesson lesson)throws IOException {return liveAddress(lesson)!=null;}
+    private String liveAddress(ClassroomLesson lesson)throws IOException {
         try {
             // Catalogue authorization remains mandatory even if a live URL was cached previously.
             boolean accessible=false,live=false;
@@ -92,7 +97,7 @@ public final class ClassroomClient implements Closeable {
             if(data.has("course_id")&&!lesson.courseId.equals(identity(data,"course_id"))||data.has("sub_id")&&!lesson.id.equals(identity(data,"sub_id")))throw new IOException("实时字幕与课堂不匹配");
             if(data.has("sub_status")&&!"1".equals(identity(data,"sub_status")))return null;
             JSONObject content=data.optJSONObject("content");String source=content==null?"":content.optString("trans_socket_url");
-            return source.isEmpty()?null:school.classroomTranscriptSocket(source,listener);
+            return source.isEmpty()?null:source;
         }catch(JSONException failure){throw new IOException("实时字幕信息无法识别",failure);}
     }
     private JSONObject materials(ClassroomLesson lesson, boolean monitoring) throws IOException {

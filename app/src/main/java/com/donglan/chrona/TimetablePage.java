@@ -595,6 +595,7 @@ final class TimetablePage extends SchedulePage {
             int available = gridWidth > 0 ? gridWidth : getResources().getDisplayMetrics().widthPixels - dp(40);
             AcademicTerms.View overview = new AcademicTerms.View(table.occurrences, table.zone, Collections.emptyMap());
             TimetableGrid grid = new TimetableGrid(this, overview.regular, available, block -> showCourse(block, false));
+            grid.bindCourses((block,view)->view.setOnLongClickListener(v->{ClassroomMonitorUi.fromTimetable(activity,block);return true;}));
             FrameLayout gridContent = new FrameLayout(activity);
             int edgeX = PressFeedback.edgeSpace(grid.getLayoutParams().width);
             // Course cells scale individually; the full day's height is not a pressed surface.
@@ -928,6 +929,7 @@ final class TimetablePage extends SchedulePage {
             save(session.library.classify(term, block.occurrences(), special));
         });
         if (!school) UiStyle.addSpaced(panel, classify, 12, 0);
+        if(school)UiDialogs.addMenuItem(panel,"课堂监视",false,()->{dialog.dismiss();ClassroomMonitorUi.fromTimetable(activity,block);});
         Button close = action("关闭", false, dialog::dismiss);
         LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(-2, -2);
         closeParams.gravity = Gravity.END;

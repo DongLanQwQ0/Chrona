@@ -16,7 +16,7 @@ public final class ClassroomLesson {
         this.room=room; this.status=status; this.startsAt=startsAt;
     }
     public boolean selectable(long now) { return startsAt > 0 && startsAt <= now && "6".equals(status); }
-    public String state(long now) { return startsAt > now ? "未开始" : "6".equals(status) ? "可回看" : "准备中"; }
+    public String state(long now) { return startsAt > now ? "未开始" : "6".equals(status) ? "可回看" : "1".equals(status)?"上课中":"准备中"; }
     public LocalDate date() { return Instant.ofEpochMilli(startsAt).atZone(ZONE).toLocalDate(); }
     public JSONObject json() throws JSONException {
         return new JSONObject().put("course_id",courseId).put("id",id).put("course",course).put("title",title)

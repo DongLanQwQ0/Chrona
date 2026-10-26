@@ -67,6 +67,17 @@ public final class Timetable {
             allDay = entry.allDay;
         }
 
+        /** A catalogue position with no asserted duration, separate from imported occurrences. */
+        private Block(String title, String location, int day, int minute) {
+            this.title=title;this.location=location;this.day=day;startMinute=endMinute=minute;
+            description="";allDay=false;
+        }
+        public static Block startingAt(String title,String location,int day,int minute) {
+            if(day<0||day>6||minute<0||minute>=1440)throw new IllegalArgumentException("Invalid classroom start");
+            return new Block(title,location,day,minute);
+        }
+        public boolean startOnly(){return !allDay&&startMinute==endMinute;}
+
         void add(Occurrence entry) {
             String key = entry.key() + "/" + entry.description + "/" + entry.recurrence;
             if (seen.add(key)) entries.add(entry);

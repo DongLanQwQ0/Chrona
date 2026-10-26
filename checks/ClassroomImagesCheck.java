@@ -71,6 +71,14 @@ public final class ClassroomImagesCheck {
             JSONObject empty=new JSONObject().put("segments",new JSONArray()).put("images",new JSONArray());
             merged=ClassroomMaterialUpdates.merge(merged,empty);
             check(merged.getJSONArray("segments").length()==2&&merged.getJSONArray("images").length()==2,"empty observation preserves previous subtitle and image chunks");
+            JSONObject finalRecording=new JSONObject().put("segments",new JSONArray().put(new JSONObject().put("start",.2).put("end",2).put("text","authoritative sentence")))
+                    .put("images",new JSONArray().put(new JSONObject().put("url","fixture-earlier").put("second",.5))).put("raw_images",1);
+            JSONObject complete=ClassroomMaterialUpdates.complete(merged,finalRecording);
+            check(complete.getJSONArray("segments").toString().equals(finalRecording.getJSONArray("segments").toString()),"processed transcript replaces all provisional timing and text");
+            check(complete.getJSONArray("images").length()==1&&complete.getJSONArray("images").getJSONObject(0).getDouble("second")==.5&&complete.getInt("raw_images")==1,"processed image manifest matches direct download and removes provisional-only slides");
+            check(complete.getJSONArray("images").getJSONObject(0).getInt("cache_index")==1,"processed recording reuses matching image cache identity");
+            before=client.downloads;ClassroomImages.prepare(dir,complete,client,control,p->{});check(client.downloads==before,"final material preparation reuses downloaded matching PPT");
+            check(!finalRecording.getJSONArray("images").getJSONObject(0).has("cache_index"),"completion preserves authoritative input");
             old.getJSONArray("images").getJSONObject(0).put("cache_index",-1);
             try{ClassroomMaterialUpdates.merge(old,empty);throw new AssertionError("negative cache index");}
             catch(IllegalArgumentException expected){checks++;}

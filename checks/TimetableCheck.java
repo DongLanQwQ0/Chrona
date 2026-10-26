@@ -237,6 +237,14 @@ public class TimetableCheck {
         }
     }
 
+    public void startOnlyClassroomMarkersNeverInventEndBoundaries() {
+        Timetable.Block a=Timetable.Block.startingAt("课堂甲","东1",0,480),b=Timetable.Block.startingAt("课堂乙","东2",0,480),c=Timetable.Block.startingAt("课堂丙","东3",0,490),d=Timetable.Block.startingAt("课堂丁","东4",6,1439);
+        TimetableLayout layout=new TimetableLayout(List.of(a,b,c,d));
+        assertEquals(3,layout.minutes.length);assertEquals(480,layout.minutes[0]);assertEquals(490,layout.minutes[1]);assertEquals(1439,layout.minutes[2]);
+        assertEquals(2,layout.dayColumns[0]);assertTrue(a.startOnly());assertEquals(a.startMinute,a.endMinute);
+        assertTrue(layout.y(490)-layout.y(480)>=TimetableLayout.START_MARKER_HEIGHT);
+        assertTrue(layout.height()>=layout.placements.get(3).top+TimetableLayout.START_MARKER_HEIGHT);
+    }
     private static void assertTrue(boolean value) { if (!value) throw new AssertionError("Expected true"); }
     private static void assertFalse(boolean value) { assertTrue(!value); }
     private static void fail(String message) { throw new AssertionError(message); }

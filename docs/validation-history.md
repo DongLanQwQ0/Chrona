@@ -1,5 +1,17 @@
 # 验证记录
 
+## 0.15.45候选 — 课堂阅读、自动总结与移除胶囊无障碍 — 2026-10-26
+
+- 当前为已验证的本地候选，源码已本地提交，尚未创建正式标签或Release，手机仍是中间版0.15.44/206。正常更新所需ADB重新失联，重连被拒绝且未发现mDNS端点；用户要求无人值守、不再询问连接。原生整堂学校流及新包的vivo退出/亮屏行为仍待真机验证。源码推送的凭据助手无响应，已停止本次推送进程；gh auth status确认现有GitHub token无效，未推送成功。
+- `build/classroom-client-final.txt`：生产学校客户端95、网络错误44；`build/classroom-images-final.txt`：29项，包含完整回放替换临时字幕/图片清单、保留正确raw编号、匹配图片免重复下载。最终清单与直接下载一致，不把暂存直播片段混入完整字幕。
+- `build/classroom-final-auto.txt`：真实持久队列与Session受控generator36项；完整材料后入队、默认文字、显式图片授权快照、去重、配置失败、未知结果不重发、范围/账号取消及timeout/凭据更新时的停止准入均通过。`build/classroom-final-pipeline.txt`：19项增量材料/PPT迟到/空观察/完整升级与自动队列；无真实付费AI调用。
+- `build/classroom-final-live.txt`：10项真实Android控制器＋受控传输；陈旧stage2且材料请求阻塞时仍连接，熄屏34秒连续追加且PPT不重连，断线恢复、fresh非直播关闭、旧listener迟到消息不写入、再次恢复及停止后清理线程通过。学校真实短时WSS已验证可用，不扩大为本候选整堂后台证据。
+- 实体旧版诊断找到 `ClassroomMonitorService.onDestroy → Slot.close → ZjuClient.close → TLS evictAll` 主线程网络崩溃，曾导致胶囊辅助服务enabled但未绑定。新候选的live客户端清理改独立线程；`RequestControl`取消同步置标记和摘连接、后台断连。离线 `AiRequestCheck`494、LinkFetcher、NetworkSafety线程/慢断连/身份及手动与monitor的WorkService合同通过。独立backend补审关闭原两项停止/取消缺陷。
+- 课堂UI：400dp/1.0深浅、320dp/1.5浅完整各767项；最终图片可见边缘圆角修正后，这三组reader各补44项。320dp/1.5深最终完整768项。真实输入覆盖搜索/返回/重建、两字段双向排序/分页、字幕追加/修订保持Y、切换动画、PPT日期栏与图片横滑、底部Dock长按/甩动、既有全屏缩放/保存及UUID附件入口、图片上传授权默认关和持久化。中间WindowManager锁等待ANR保留在诊断，不作通过证据；恢复重跑成功。
+- `build/classroom-polish-evidence/previews`为压缩渲染证据，原PNG保留未用于上传。主代理亲看窄屏大字，独立UI审核亲看四组合并签收本轮课堂范围。
+- 按最新决定删除生产胶囊无障碍服务/身份编码/manifest声明/XML/字符串和设置入口；只移除点击60秒延长，保留新通知/亮屏30秒，并由自有Activity生命周期增加退出拾时30秒。不监听其它应用，不能保证其它应用回桌面的单独触发。控制器41、5秒变体16、生命周期6、提醒工厂80、vivo协议111、通知状态650和后台提醒检查通过。设置页四组合各31项真实Activity断言与压缩图独立UI复审通过。
+- `build/release-0.15.45-build.txt`：assembleRelease、lintDebug、lintRelease通过。固定候选 `build/candidates/0.15.45/Chrona-0.15.45.apk`，3169902字节，包名com.donglan.chrona、207/0.15.45、不可调试、原签名；最终manifest无BIND_ACCESSIBILITY_SERVICE。该文件尚未安装/发布，不分发旧0.15.44产物。
+
 ## 0.15.43 — 连堂显示与课堂持续监视 — 2026-10-26
 
 - 真实账号只读缓存证实线性代数与数字音视频的两段安排分别为13:25–14:10、14:15–15:50，同日同地且日期集合一致。展示合并不改Occurrence、学校缓存、源事件或统计。Timetable20场景与学校投影检查通过，新增覆盖短课间、不同周／地点、真实重叠、午休、缺课及课间其它课程的真实日期。

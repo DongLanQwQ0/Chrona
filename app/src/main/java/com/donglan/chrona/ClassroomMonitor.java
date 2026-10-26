@@ -40,12 +40,21 @@ final class ClassroomMonitor {
         Context app=context.getApplicationContext();
         if(observed==null){observed=new ZjuSettingsStore(app).prefs;changes=(p,key)->{
             if("account".equals(key)||"enabled".equals(key)||"credentials".equals(key)){
-                cancel();app.stopService(new Intent(app,ClassroomMonitorService.class));schedule(app);
+                ClassroomMonitorService.ownerStopping();cancel();ClassroomAutoSummary.dispatch(app);app.stopService(new Intent(app,ClassroomMonitorService.class));schedule(app);
             }
         };observed.registerOnSharedPreferenceChangeListener(changes);}
-        schedule(app);
+        schedule(app);ClassroomAutoSummary.dispatch(app);
     }
     static boolean allowed(Context app,String account){ZjuSettingsStore s=new ZjuSettingsStore(app);return s.enabled()&&s.configured()&&account.equals(s.account());}
+    /** A visible Activity can legally restore a registered monitor after process/update interruption. */
+    static void foreground(Context app){
+        if(ClassroomMonitorService.running())return;
+        try{String account=new ZjuSettingsStore(app).account();if(!allowed(app,account))return;
+            JSONObject state=new ClassroomMonitorStore(app,account).read();
+            if(ClassroomMonitorStore.autoWork(state)){promote(app);return;}
+            for(ClassroomLesson lesson:ClassroomMonitorStore.pending(state))if(lesson.startsAt<=System.currentTimeMillis()){promote(app);return;}
+        }catch(Exception failure){android.util.Log.w("ChronaClassroomMonitor","resume: "+failure.getClass().getSimpleName());}
+    }
     static void start(Context app,ClassroomLesson lesson,boolean repeat)throws Exception {
         ZjuSettingsStore settings=new ZjuSettingsStore(app);
         if(!allowed(app,settings.account()))throw new java.io.IOException("学校账号已停用或更换");
@@ -62,7 +71,7 @@ final class ClassroomMonitor {
         }
     }
     static void cancel(){RequestControl c=control;if(c!=null)c.cancel();ClassroomClient network=client;if(network!=null)network.cancel();}
-    static void changed(Context app){cancel();app.stopService(new Intent(app,ClassroomMonitorService.class));schedule(app);}
+    static void changed(Context app){cancel();ClassroomAutoSummary.dispatch(app);schedule(app);try{if(new ClassroomMonitorStore(app,new ZjuSettingsStore(app).account()).hasRules())promote(app);else app.stopService(new Intent(app,ClassroomMonitorService.class));}catch(Exception ignored){}}
     static void schedule(Context context) {
         Context app=context.getApplicationContext();
         JobScheduler jobs=app.getSystemService(JobScheduler.class);AlarmManager alarms=app.getSystemService(AlarmManager.class);
@@ -126,8 +135,9 @@ final class ClassroomMonitor {
                         if(previous!=null){JSONArray keep=new JSONArray(),old=previous.getJSONArray("segments");
                             for(int i=0;i<old.length();i++)if(!authoritative&&!"live".equals(old.getJSONObject(i).optString("origin")))keep.put(old.getJSONObject(i));
                             previous.put("segments",keep);}
-                        if(observation.getJSONArray("segments").length()==0&&received.length()>0)observation.put("segments",received);
-                        JSONObject merged=ClassroomMaterialUpdates.merge(previous,observation).put("updated",System.currentTimeMillis());
+                        if(!authoritative&&observation.getJSONArray("segments").length()==0&&received.length()>0)observation.put("segments",received);
+                        JSONObject merged=(authoritative?ClassroomMaterialUpdates.complete(previous,observation)
+                                :ClassroomMaterialUpdates.merge(previous,observation)).put("updated",System.currentTimeMillis());
                         ClassroomStore.write(new File(dir,"monitor-materials.json"),merged);
                         JSONArray images=ClassroomImages.prepare(dir,merged,client,control,p->{});
                         check(app,account);if(!ClassroomMonitorStore.matches(store.read(),lesson))continue;
@@ -155,7 +165,9 @@ final class ClassroomMonitor {
             }finally{
                 ClassroomClient c=client;if(c!=null)c.close();client=null;RequestControl request=control;if(request!=null)request.close();control=null;
                 try{if(allowed(app,account))for(ClassroomLesson lesson:ClassroomMonitorStore.pending(store.read()))if(lesson.startsAt<=System.currentTimeMillis())active=true;}catch(Exception ignored){}
-                boolean keep=active;main.post(()->{synchronized(ClassroomMonitor.class){busy=false;}finished.accept(keep);});
+                boolean keep=active;main.post(()->{synchronized(ClassroomMonitor.class){busy=false;}ClassroomAutoSummary.dispatch(app);
+                    boolean automatic=false;try{automatic=allowed(app,account)&&ClassroomMonitorStore.autoWork(store.read());}catch(Exception ignored){}
+                    finished.accept(keep||automatic);});
             }
         });return true;
     }

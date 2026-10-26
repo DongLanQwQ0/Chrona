@@ -11,6 +11,7 @@ import android.os.Bundle;
  */
 public final class ChronaApp extends Application {
     private android.database.ContentObserver calendarObserver;
+    private int startedActivities;
 
     private void observeCalendar() {
         if (calendarObserver != null || checkSelfPermission(android.Manifest.permission.READ_CALENDAR)
@@ -54,9 +55,10 @@ public final class ChronaApp extends Application {
                 LanPairingActivity.activityPaused(activity);
             }
 
-            @Override public void onActivityStarted(Activity activity) { }
+            @Override public void onActivityStarted(Activity activity) { startedActivities++; }
 
             @Override public void onActivityResumed(Activity activity) {
+                ClassroomMonitor.foreground(activity);
                 LauncherShortcuts.requestRefresh(activity);
                 PressFeedback.install(activity.getWindow().getDecorView());
                 AgendaReminderJobService.schedule(ChronaApp.this);
@@ -75,7 +77,11 @@ public final class ChronaApp extends Application {
 
             @Override public void onActivityPaused(Activity activity) { DuplicateScheduleReview.paused(activity); LanPairingActivity.activityPaused(activity); ZjuSync.background(); }
 
-            @Override public void onActivityStopped(Activity activity) { }
+            @Override public void onActivityStopped(Activity activity) {
+                startedActivities--;
+                if (startedActivities == 0 && !activity.isChangingConfigurations())
+                    AtomicCapsuleController.appExited(ChronaApp.this, android.os.SystemClock.elapsedRealtime());
+            }
 
             @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) { }
         });

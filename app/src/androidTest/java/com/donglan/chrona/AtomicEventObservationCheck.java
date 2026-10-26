@@ -184,7 +184,6 @@ final class AtomicEventObservationCheck {
         return new JSONObject().put("id", String.valueOf(node.getViewIdResourceName()))
                 .put("class", String.valueOf(node.getClassName())).put("bounds", bounds.toShortString())
                 .put("clickable", node.isClickable())
-                .put("identityMarker", AtomicCapsuleIdentity.read(node.getText()) != null)
                 .put("probeTitle", TITLE.contentEquals(node.getText() == null ? "" : node.getText()));
     }
     private static void emit(Instrumentation test, String text) {

@@ -9,6 +9,7 @@ import java.util.TreeSet;
 /** Pure geometry: shared time boundaries, compressed empty gaps and disjoint conflict columns. */
 public final class TimetableLayout {
     public static final float MIN_BLOCK_HEIGHT = 52;
+    public static final float START_MARKER_HEIGHT = 96;
     // Four 11sp Chinese glyphs plus the course gap and horizontal padding.
     public static final float MIN_COLUMN_WIDTH = 56;
     public static final float TIME_GUTTER = 42;
@@ -58,11 +59,15 @@ public final class TimetableLayout {
             offsets[i] = offsets[i - 1] + gap;
             // A short class still has a full touch target, without overlapping the next boundary.
             for (Timetable.Block b : blocks) {
-                if (!b.allDay && b.endMinute == minutes[i])
+                if (!b.allDay && !b.startOnly() && b.endMinute == minutes[i])
                     offsets[i] = Math.max(offsets[i], y(b.startMinute) + MIN_BLOCK_HEIGHT);
+                if(b.startOnly()&&b.startMinute==minutes[i-1])
+                    offsets[i]=Math.max(offsets[i],offsets[i-1]+START_MARKER_HEIGHT);
             }
         }
-        bodyHeight = minutes.length == 0 ? 0 : offsets[offsets.length - 1] + 12;
+        float bottom=minutes.length==0?0:offsets[offsets.length-1];
+        for(Timetable.Block block:blocks)if(block.startOnly())bottom=Math.max(bottom,y(block.startMinute)+START_MARKER_HEIGHT);
+        bodyHeight = minutes.length == 0 ? 0 : bottom + 12;
         for (int day = 0; day < 7; day++) {
             ArrayList<Timetable.Block> timed = new ArrayList<>();
             int allDayRow = 0;
@@ -77,11 +82,12 @@ public final class TimetableLayout {
             for (Timetable.Block b : timed) {
                 int column = 0;
                 while (column < columnEnds.size() && columnEnds.get(column) > b.startMinute) column++;
-                if (column == columnEnds.size()) columnEnds.add(b.endMinute);
-                else columnEnds.set(column, b.endMinute);
+                int end=b.startOnly()?b.startMinute+1:b.endMinute;
+                if (column == columnEnds.size()) columnEnds.add(end);
+                else columnEnds.set(column, end);
                 dayColumns[day] = Math.max(dayColumns[day], columnEnds.size());
                 placements.add(new Placement(b, column, HEADER_HEIGHT + allDayHeight + y(b.startMinute),
-                        y(b.endMinute) - y(b.startMinute)));
+                        b.startOnly()?START_MARKER_HEIGHT:y(b.endMinute) - y(b.startMinute)));
             }
         }
     }

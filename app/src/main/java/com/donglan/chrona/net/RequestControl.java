@@ -5,6 +5,7 @@ import java.io.InterruptedIOException;
 import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -13,6 +14,11 @@ import java.util.concurrent.TimeUnit;
 public final class RequestControl implements AutoCloseable {
     private static final ScheduledExecutorService TIMER = Executors.newSingleThreadScheduledExecutor(
             runnable -> { Thread thread = new Thread(runnable, "chrona-network-deadline");
+                thread.setDaemon(true); return thread; });
+    // HTTPS disconnect may perform TLS I/O or wait for a blocked reader. Never run it on a UI
+    // caller, the deadline timer, or the request worker whose read it needs to interrupt.
+    private static final ExecutorService CANCELLATIONS = Executors.newCachedThreadPool(
+            runnable -> { Thread thread = new Thread(runnable, "chrona-network-cancel");
                 thread.setDaemon(true); return thread; });
     private final long deadline;
     private final ScheduledFuture<?> timeout;
@@ -51,9 +57,11 @@ public final class RequestControl implements AutoCloseable {
     }
 
     public void register(HttpURLConnection connection) throws IOException {
-        synchronized (this) { active = connection; }
-        try { check(); }
-        catch (IOException exception) { connection.disconnect(); throw exception; }
+        synchronized (this) {
+            active = connection;
+            try { check(); }
+            catch (IOException exception) { active = null; disconnect(connection); throw exception; }
+        }
     }
 
     public synchronized void unregister(HttpURLConnection connection) {
@@ -67,8 +75,15 @@ public final class RequestControl implements AutoCloseable {
 
     private void disconnectActive() {
         HttpURLConnection connection;
-        synchronized (this) { connection = active; }
-        if (connection != null) connection.disconnect();
+        synchronized (this) { connection = active; active = null; }
+        if (connection != null) disconnect(connection);
+    }
+
+    private static void disconnect(HttpURLConnection connection) {
+        CANCELLATIONS.execute(() -> {
+            try { connection.disconnect(); }
+            catch (RuntimeException ignored) { /* Cancellation remains signalled even if teardown fails. */ }
+        });
     }
 
     @Override public void close() { timeout.cancel(false); }

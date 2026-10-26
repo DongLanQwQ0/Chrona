@@ -13,6 +13,9 @@ public final class ClassroomMonitorService extends Service {
     private PowerManager.WakeLock wake;
     private ClassroomLiveTranscripts live;
     private boolean stopped;
+    private static volatile boolean running;
+    static boolean running(){return running;}
+    static void ownerStopping(){running=false;ClassroomAutoSummary.ownerStopped();}
     private final Runnable tick=()->{
         if(stopped)return;
         if(live!=null)live.refresh();
@@ -31,7 +34,7 @@ public final class ClassroomMonitorService extends Service {
         manager.createNotificationChannel(new NotificationChannel(CHANNEL,"课堂监视",NotificationManager.IMPORTANCE_LOW));
         String text="正在获取课堂资料";
         try{String value=new ClassroomMonitorStore(this,new ZjuSettingsStore(this).account()).read().optString("message");if(!value.isEmpty())text=value;}catch(Exception ignored){}
-        PendingIntent open=PendingIntent.getActivity(this,NOTICE,new Intent(this,ClassroomSummaryActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent open=PendingIntent.getActivity(this,NOTICE,new Intent(this,ClassroomSummaryActivity.class).putExtra("classroom_mode",2),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getBroadcast(this,NOTICE,new Intent(this,ClassroomMonitorReceiver.class).setAction(ClassroomMonitorReceiver.STOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_chrona_foreground)
                 .setContentTitle("课堂监视中").setContentText(text).setStyle(new Notification.BigTextStyle().bigText(text))
@@ -43,13 +46,14 @@ public final class ClassroomMonitorService extends Service {
             if(Build.VERSION.SDK_INT>=29)startForeground(NOTICE,notice(),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
             else startForeground(NOTICE,notice());
         }catch(RuntimeException denied){ClassroomMonitor.schedule(this);stopSelf();return START_NOT_STICKY;}
+        running=true;
         if(wake==null){wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"Chrona:ClassroomMonitor");wake.setReferenceCounted(false);}
         if(live==null)live=new ClassroomLiveTranscripts(this);
         // Network and decoding must finish even if the screen turns off during this first pass.
         if(!wake.isHeld())wake.acquire(6*60*60_000L);
         main.removeCallbacks(tick);main.post(tick);return START_STICKY;
     }
-    @Override public void onTimeout(int startId,int type){ClassroomMonitor.cancel();ClassroomMonitor.schedule(this);stopSelf();}
-    @Override public void onDestroy(){stopped=true;main.removeCallbacks(tick);if(live!=null)live.close();ClassroomMonitor.cancel();if(wake!=null&&wake.isHeld())wake.release();stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();}
+    @Override public void onTimeout(int startId,int type){stopped=true;main.removeCallbacks(tick);ownerStopping();ClassroomMonitor.cancel();ClassroomMonitor.schedule(this);stopSelf();}
+    @Override public void onDestroy(){stopped=true;main.removeCallbacks(tick);ownerStopping();if(live!=null)live.close();ClassroomMonitor.cancel();if(wake!=null&&wake.isHeld())wake.release();stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();}
     @Override public IBinder onBind(Intent intent){return null;}
 }

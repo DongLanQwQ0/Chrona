@@ -13,6 +13,9 @@ import android.widget.LinearLayout;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.EditText;
+import android.text.Editable;
+import android.text.TextWatcher;
 import com.donglan.chrona.classroom.ClassroomClient;
 import com.donglan.chrona.classroom.ClassroomLesson;
 import com.donglan.chrona.classroom.ClassroomStore;
@@ -39,7 +42,17 @@ final class ClassroomSummaryPage extends SchedulePage {
     private LinearLayout content, browseBody, listBody;
     private TextView status;
     private DockNavigationLayout navigation;
+    private TextView compactMode;
+    private static final String[] MODES={"课表","课堂","监视","历史"};
     private ImageButton refresh;
+    private EditText search;
+    private LinearLayout historyTools;
+    private TextView historyOrder;
+    private ImageButton historyDirection;
+    private static final String[] HISTORY_ORDERS={"课程时间","总结时间"};
+    private String shownQuery="";
+    private int shownHistoryOrder=-1;
+    private boolean shownHistoryAscending;
     private DateIntervalBar weekBar;
     private ScrollView scroll, listScroll;
     private FrameLayout weekViewport;
@@ -50,6 +63,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     private int shownMode = -1, shownPage=-1;
     private List<ClassroomLesson> shownCatalog;
     private List<JSONObject> shownHistory;
+    private JSONObject shownMonitoring;
     private LocalDate shownWeek;
     private boolean active, gated;
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
@@ -79,7 +93,11 @@ final class ClassroomSummaryPage extends SchedulePage {
         String message = "";
         List<ClassroomLesson> catalog = new ArrayList<>();
         List<JSONObject> history = new ArrayList<>();
+        JSONObject monitoring=new JSONObject();
         int mode, page, scrollY;
+        String query="";
+        int historyOrder=1;
+        boolean historyAscending;
         LocalDate week = LocalDate.now(ClassroomLesson.ZONE).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         boolean initialized;
         Session(Context app, String account) { this.app = app; this.account = account; }
@@ -96,6 +114,8 @@ final class ClassroomSummaryPage extends SchedulePage {
             for(ClassroomLesson lesson:loaded)after.put(lesson.json());
             if(!before.toString().equals(after.toString()))catalog=loaded;
             if(!history.toString().equals(savedHistory.toString()))history=savedHistory;
+            JSONObject next=new ClassroomMonitorStore(app,account).read();
+            if(!monitoring.toString().equals(next.toString()))monitoring=next;
             initialized=true;
         }
         void load(Load kind) {
@@ -141,17 +161,19 @@ final class ClassroomSummaryPage extends SchedulePage {
         if (s == null && settings.enabled() && settings.configured()) {
             s = new Session(getApplicationContext(), settings.account());
             if (state != null) {
-                s.mode = Math.max(0, Math.min(2, state.getInt("mode")));
+                s.mode = Math.max(0, Math.min(3, state.getInt("mode")));
                 s.page = Math.max(0, state.getInt("page", 0)); s.scrollY = state.getInt("scroll_y");
+                s.query=state.getString("query","");s.historyOrder=state.getInt("history_order",1)==0?0:1;s.historyAscending=state.getBoolean("history_ascending",false);
                 s.week = LocalDate.parse(state.getString("week", s.week.toString()));
             }
+            else s.mode=Math.max(0,Math.min(3,getIntent().getIntExtra("classroom_mode",0)));
         }
         if (s != null) s.owner = new WeakReference<>(this);
         LinearLayout root = SettingsPageLayout.content(activity);
         root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(12));
         navigation = new DockNavigationLayout(activity, this::selectMode, () -> { });
         navigation.setPadding(dp(6), dp(6), dp(6), dp(6));
-        String[] modes = {"课表", "课堂", "历史"};
+        String[] modes = MODES;
         for (int i = 0; i < modes.length; i++) {
             final int index = i;
             TextView item = label(modes[i], 15); item.setGravity(Gravity.CENTER); UiStyle.title(item);
@@ -161,7 +183,15 @@ final class ClassroomSummaryPage extends SchedulePage {
         refresh = WorkspacePageHeader.icon(activity, R.drawable.ic_refresh, "刷新课堂", () -> {
             if (s != null) { if (s.busy) s.cancel(); else s.load(Load.REFRESH); }
         });
-        UiStyle.addSpaced(root, new WorkspacePageHeader(activity, navigation.headerMotionHost(), refresh), 0, 8);
+        FrameLayout dockHost=navigation.headerMotionHost();
+        compactMode=new TextView(activity);UiStyle.fieldTrigger(compactMode);
+        compactMode.setOnClickListener(v->{if(s!=null)UiDialogs.choiceDialog(activity,"课堂",MODES,s.mode,this::selectMode);});
+        FrameLayout adaptive=new FrameLayout(activity){@Override protected void onMeasure(int w,int h){
+            float widest=0;for(String label:MODES)widest=Math.max(widest,compactMode.getPaint().measureText(label));
+            boolean compact=View.MeasureSpec.getSize(w)<dp(12)+Math.ceil(widest)*MODES.length;
+            dockHost.setVisibility(compact?View.GONE:View.VISIBLE);compactMode.setVisibility(compact?View.VISIBLE:View.GONE);super.onMeasure(w,h);
+        }};adaptive.setClipChildren(false);adaptive.setClipToPadding(false);adaptive.addView(dockHost,new FrameLayout.LayoutParams(-1,-2));adaptive.addView(compactMode,new FrameLayout.LayoutParams(-1,-2));
+        UiStyle.addSpaced(root, new WorkspacePageHeader(activity, adaptive, refresh), 0, 8);
         weekBar = new DateIntervalBar(activity, () -> {
             if (s != null) UiDialogs.dateDialog(activity, "选择日期", s.week, value -> {
                 setWeek(value.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
@@ -173,6 +203,20 @@ final class ClassroomSummaryPage extends SchedulePage {
         status = label("", 14); root.addView(status);
         LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(-1, -2);
         dateParams.bottomMargin = dp(8); root.addView(weekBar, dateParams);
+        search=new EditText(activity);UiStyle.input(search);search.setSingleLine(true);search.setHint("搜索课堂");search.setContentDescription("搜索课堂");
+        search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        if(s!=null)search.setText(s.query);
+        UiStyle.addSpaced(root,search,0,8);
+        search.addTextChangedListener(new TextWatcher(){
+            public void beforeTextChanged(CharSequence text,int start,int count,int after){}
+            public void onTextChanged(CharSequence text,int start,int before,int count){if(s==null)return;s.query=text.toString();s.page=0;s.scrollY=0;update();listScroll.scrollTo(0,0);}
+            public void afterTextChanged(Editable text){}
+        });
+        historyTools=new LinearLayout(activity);historyTools.setGravity(Gravity.CENTER_VERTICAL);
+        historyOrder=new TextView(activity);UiStyle.fieldTrigger(historyOrder);historyOrder.setOnClickListener(v->{if(s!=null)UiDialogs.choiceDialog(activity,"排序",HISTORY_ORDERS,s.historyOrder,index->{if(s.historyOrder!=index){s.historyOrder=index;resetListOrder();}});});
+        historyTools.addView(historyOrder,new LinearLayout.LayoutParams(0,-2,1));
+        historyDirection=UiStyle.navigationIcon(activity,R.drawable.ic_arrow_down,"切换排序方向",()->{if(s!=null){s.historyAscending=!s.historyAscending;resetListOrder();}});
+        LinearLayout.LayoutParams directionParams=new LinearLayout.LayoutParams(dp(48),dp(48));directionParams.leftMargin=dp(8);historyTools.addView(historyDirection,directionParams);UiStyle.addSpaced(root,historyTools,0,8);
         content = new LinearLayout(activity); content.setOrientation(LinearLayout.VERTICAL);
         scroll = listScroll = SettingsPageLayout.viewport(activity, content, false);
         FrameLayout body = new FrameLayout(activity);
@@ -214,6 +258,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             weekViewport.setVisibility(View.GONE); listScroll.setVisibility(View.VISIBLE); scroll = listScroll;
             refresh.setEnabled(false);
             status.setVisibility(View.GONE);
+            search.setVisibility(View.GONE);historyTools.setVisibility(View.GONE);
             if (!gated) {
                 gated = true; browseBody = null; content.removeAllViews();
                 button(content, "设置学校账号", () -> startActivity(new Intent(activity, ZjuSettingsActivity.class)));
@@ -221,6 +266,10 @@ final class ClassroomSummaryPage extends SchedulePage {
             return;
         }
         gated = false;
+        search.setVisibility(s.mode==1?View.VISIBLE:View.GONE);historyTools.setVisibility(s.mode==3?View.VISIBLE:View.GONE);
+        historyOrder.setText(HISTORY_ORDERS[s.historyOrder]);historyOrder.setContentDescription("排序："+HISTORY_ORDERS[s.historyOrder]);
+        historyDirection.setRotation(s.historyAscending?180f:0f);
+        historyDirection.setContentDescription(s.historyAscending?"当前升序，切换为降序":"当前降序，切换为升序");historyDirection.setTooltipText(s.historyAscending?"升序":"降序");
         weekBar.setVisibility(s.mode == 0 ? View.VISIBLE : View.GONE);
         weekViewport.setVisibility(s.mode == 0 ? View.VISIBLE : View.GONE);
         listScroll.setVisibility(s.mode == 0 ? View.GONE : View.VISIBLE);
@@ -231,13 +280,15 @@ final class ClassroomSummaryPage extends SchedulePage {
             browseBody = new LinearLayout(activity); browseBody.setOrientation(LinearLayout.VERTICAL); content.addView(browseBody);
         }
         navigation.finishPageSelection(s.mode);
+        compactMode.setText(MODES[s.mode]);compactMode.setContentDescription("课堂视图："+MODES[s.mode]+"，选择视图");
         refresh.setEnabled(true);
         refresh.setImageResource(s.busy ? R.drawable.ic_x : R.drawable.ic_refresh);
         refresh.setContentDescription(s.busy ? "停止刷新" : "刷新课堂");
         refresh.setTooltipText(s.busy ? "停止刷新" : "刷新课堂");
         if (s.mode == 0) weekBar.setText(s.week + " — " + s.week.plusDays(6));
         if (weekTransition && s.mode == 0) return;
-        boolean changed = shownMode != s.mode || shownPage!=s.page || shownCatalog != s.catalog || shownHistory != s.history || !s.week.equals(shownWeek);
+        boolean changed = shownMode != s.mode || shownPage!=s.page || shownCatalog != s.catalog || shownHistory != s.history || s.mode==2&&shownMonitoring!=s.monitoring || !s.week.equals(shownWeek)
+                ||s.mode==1&&!shownQuery.equals(s.query)||s.mode==3&&(shownHistoryOrder!=s.historyOrder||shownHistoryAscending!=s.historyAscending);
         if (changed) {
             if (s.mode == 0 && shownMode == 0 && s.week.equals(shownWeek) && weekPicker != null
                     && weekPicker.refreshLessons(s.catalog)) {
@@ -248,10 +299,12 @@ final class ClassroomSummaryPage extends SchedulePage {
                     && !s.week.equals(shownWeek) && active && UiMotion.isEnabled();
             LocalDate previousWeek = shownWeek;
             int oldScroll=scroll.getScrollY();
-            boolean retainScroll=s.mode!=0&&shownMode==s.mode&&shownPage==s.page;
+            boolean retainScroll=s.mode!=0&&shownMode==s.mode&&shownPage==s.page
+                    &&(s.mode!=1||shownQuery.equals(s.query))&&(s.mode!=3||shownHistoryOrder==s.historyOrder&&shownHistoryAscending==s.historyAscending);
             if (s.mode != 0) { finishWeekMotion(); browseBody.removeAllViews(); }
             listBody = null;
-            shownMode = s.mode; shownPage=s.page; shownCatalog = s.catalog; shownHistory = s.history; shownWeek = s.week;
+            shownMode = s.mode; shownPage=s.page; shownCatalog = s.catalog; shownHistory = s.history; shownMonitoring=s.monitoring; shownWeek = s.week;
+            shownQuery=s.query;shownHistoryOrder=s.historyOrder;shownHistoryAscending=s.historyAscending;
             if (s.mode == 0) {
                 showWeek(animateWeek, previousWeek);
             } else {
@@ -324,25 +377,27 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private void renderPage(){
             listBody=new LinearLayout(activity);listBody.setOrientation(LinearLayout.VERTICAL);browseBody.addView(listBody);
+            if(s.mode==2){ClassroomMonitorUi.overview(activity,listBody,s.monitoring);return;}
             List<ClassroomLesson> recent = new ArrayList<>();
             java.util.Set<String> saved=new java.util.HashSet<>();
             for(JSONObject record:s.history){JSONObject lesson=record.optJSONObject("lesson");
                 if(lesson!=null)saved.add(lesson.optString("course_id")+"/"+lesson.optString("id"));}
             for (ClassroomLesson lesson : s.catalog) if (lesson.startsAt <= System.currentTimeMillis()
-                    && !saved.contains(lesson.courseId+"/"+lesson.id)) recent.add(lesson);
+                    && !saved.contains(lesson.courseId+"/"+lesson.id)&&matchesQuery(lesson,s.query)) recent.add(lesson);
             recent.sort((a,b) -> Long.compare(b.startsAt, a.startsAt));
-            int count=s.mode==1?recent.size():s.history.size(),pages=Math.max(1,(count+PAGE_SIZE-1)/PAGE_SIZE);
+            List<JSONObject> orderedHistory=new ArrayList<>(s.history);orderedHistory.sort(historyComparator(s.historyOrder,s.historyAscending));
+            int count=s.mode==1?recent.size():orderedHistory.size(),pages=Math.max(1,(count+PAGE_SIZE-1)/PAGE_SIZE);
             s.page=Math.min(s.page,pages-1);shownPage=s.page;
             for (int i = s.page*PAGE_SIZE; i < Math.min((s.page+1)*PAGE_SIZE,count); i++) {
               if(s.mode==1){ClassroomLesson lesson = recent.get(i);
                 Button item = button(listBody, lesson.date() + " " + clock(lesson) + " · " + lesson.state(System.currentTimeMillis())
                         + "\n" + lesson.course + " · " + lesson.title, () -> open(lesson));
-                item.setOnLongClickListener(view->{ClassroomMonitorUi.choose(activity,lesson);return true;});
-              }else try{JSONObject record=s.history.get(i);ClassroomLesson lesson=ClassroomLesson.fromJson(record.getJSONObject("lesson"));
+                item.setOnLongClickListener(view->{ClassroomMonitorUi.open(activity,lesson);return true;});
+              }else try{JSONObject record=orderedHistory.get(i);ClassroomLesson lesson=ClassroomLesson.fromJson(record.getJSONObject("lesson"));
                 button(listBody,lesson.course+"\n"+lesson.date()+" · "+(record.optBoolean("complete")?"已完成":record.optBoolean("downloaded")?"已下载":"未完成"),()->openSaved(lesson));
               }catch(Exception ignored){}
             }
-            if(count==0)listBody.addView(label(s.mode==1?"暂无课堂":"暂无历史记录",16));
+            if(count==0)listBody.addView(label(s.mode==1?(s.query.trim().isEmpty()?"暂无课堂":"未找到课堂"):"暂无历史记录",16));
             if(pages>1){LinearLayout paging=new LinearLayout(activity);paging.setGravity(Gravity.CENTER_VERTICAL);
                 ImageButton previous=UiStyle.navigationIcon(activity,R.drawable.ic_chevron_left,"上一页",()->changePage(-1));previous.setEnabled(s.page>0);paging.addView(previous,new LinearLayout.LayoutParams(dp(48),dp(48)));
                 TextView number=label((s.page+1)+" / "+pages,15);number.setGravity(Gravity.CENTER);paging.addView(number,new LinearLayout.LayoutParams(0,-2,1));
@@ -350,11 +405,31 @@ final class ClassroomSummaryPage extends SchedulePage {
                 UiStyle.addSpaced(browseBody,paging,8,8);
             }
     }
+    static boolean matchesQuery(ClassroomLesson lesson,String query){
+        String value=java.text.Normalizer.normalize(query,java.text.Normalizer.Form.NFKC).trim().toLowerCase(java.util.Locale.ROOT);
+        String text=lesson.course+"\n"+lesson.title+"\n"+lesson.room+"\n"+lesson.date()+" "+clock(lesson);
+        return java.text.Normalizer.normalize(text,java.text.Normalizer.Form.NFKC).toLowerCase(java.util.Locale.ROOT).contains(value);
+    }
+    /** history() returns summary.json unchanged; downloaded-only rows reuse 'updated' for material time. */
+    private static long summaryTime(JSONObject record){return record.optBoolean("downloaded")?0:Math.max(0,record.optLong("updated"));}
+    static java.util.Comparator<JSONObject> historyComparator(int order,boolean ascending){
+        return (a,b)->{
+            JSONObject left=a.optJSONObject("lesson"),right=b.optJSONObject("lesson");
+            long leftStart=left==null?0:left.optLong("starts_at"),rightStart=right==null?0:right.optLong("starts_at");
+            long l=order==0?leftStart:summaryTime(a),r=order==0?rightStart:summaryTime(b);
+            if(order==1&&(l==0||r==0)&&l!=r)return l==0?1:-1;
+            int result=ascending?Long.compare(l,r):Long.compare(r,l);if(result!=0)return result;
+            result=Long.compare(leftStart,rightStart);if(result!=0)return result;
+            String leftKey=left==null?"":left.optString("course_id")+"/"+left.optString("id"),rightKey=right==null?"":right.optString("course_id")+"/"+right.optString("id");
+            return leftKey.compareTo(rightKey);
+        };
+    }
+    private void resetListOrder(){s.page=0;s.scrollY=0;update();listScroll.post(()->listScroll.scrollTo(0,0));}
     private void changePage(int delta){s.page=Math.max(0,s.page+delta);update();scroll.post(()->scroll.scrollTo(0,0));}
     private void open(ClassroomLesson lesson) {
         if (s == null || !s.allowed()) return;
         if(lesson.selectable(System.currentTimeMillis()))openSaved(lesson);
-        else ClassroomMonitorUi.choose(activity,lesson);
+        else ClassroomMonitorUi.open(activity,lesson);
     }
     private void openSaved(ClassroomLesson lesson) {
         if(s == null || !s.allowed())return;
@@ -396,6 +471,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         if (s == null) return;
         state.putInt("mode", s.mode); state.putInt("page", s.page); state.putString("week", s.week.toString());
         state.putInt("scroll_y", scroll.getScrollY());
+        state.putString("query",s.query);state.putInt("history_order",s.historyOrder);state.putBoolean("history_ascending",s.historyAscending);
     }
     private TextView label(String text, int sp) {
         TextView view = new TextView(activity); view.setText(text); view.setTextSize(sp); view.setTextColor(UiStyle.colors(activity).text); return view;

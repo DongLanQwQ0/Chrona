@@ -1,58 +1,31 @@
 # 当前工作单
 
-## 当前交付与唯一下一步
+## 当前状态与唯一下一步
 
-当前交付（2026-10-26）：①调查课表截图中线性代数、数字音视频上下拆块，先核对实际日期、起止和周次，保留真实冲突及学校原始数据；②课堂页新增监视，用户已明确同时保留「单次课堂／该课程多次」选择，上课后复用现有截图下载与校验、自动获取／追加字幕，后台持续执行并持久化恢复，提供停止入口，不自动付费调用AI。
+2026-10-26：**0.15.45 / 207候选已构建、受控功能及UI审核通过，尚未安装手机或创建Release。** 用户已转无人值守，ADB断开不得再询问。新端点曾连通，正式包就绪前又失联；重连被拒绝、mDNS无服务，目前仅模拟器在线。
 
-验收：未来／进行中课堂可选择单次与多次监视；单次不扩展到其它课堂，多次按真实courseId包含后续实际课堂。用户追加明确：字幕必须整堂课持续连接，提供可实时阅读全部已收字幕的阅读页，默认跟随最新、上翻暂停跟随、可回到最新，离开页面继续连接／落盘；不能以回放轮询替代。PPT复用现有下载／校验／去重，分页及增量不漏图、不重下；空结果／错误不清旧资料，账号更换／停用立即停止并隔离。退出页面、熄屏、进程中断和重启需验证恢复；系统强停和Android前台服务限制如实记录。用户要求两项都完成、验证后直接更新手机。专门只读UI审核与手机更新已完成，证据范围及发布状态见下。
+唯一下一步：设备自然恢复后，对同一固定候选执行正常保留数据覆盖升级；核对实际服务/字幕落盘增长、后台无新崩溃及胶囊退出拾时/亮屏恢复详细。不要重测一分钟、不要重做已有效的UI矩阵。未恢复前不把设备缺口当通过，不创建正式标签/Release。
 
-已实现并通过本地验收：连堂按相同实际日期及逐日期地点、0–20分钟课间合并；真实重叠、午休、异地和日期不同保留分块，学校源数据不变。课堂保留单次／后续多次监视，复用原PPT下载校验，独立持续WSS接收并落盘全部实时字幕，阅读页可上翻和回到最新，离页继续执行。隔离Android36原生41项、客户端95项／网络错误44项、图片及实时帧24项、整理管线166项通过；正常／窄屏大字深浅四组渲染通过，专门UI审核已复审签收。后台受控连接熄屏34秒持续追加且PPT轮询不重建socket，断线重连及停止已验证；学校真实WSS短时证据另列，不混同为主包真机整堂验收。
+固定APK：build/candidates/0.15.45/Chrona-0.15.45.apk，3169902字节，原证书，com.donglan.chrona、207/0.15.45、不可调试、manifest无BIND_ACCESSIBILITY_SERVICE。旧0.15.44候选已过时，手机当前仍0.15.44/206。上次正式公开版0.15.43/205；本轮源码仅本地提交。Git推送停在凭据助手，本次推送进程已停止；gh auth status明确现有GitHub token无效，未绕过或查取凭据，待账号正常重新授权后再推送。完整证据见docs/validation-history.md最新候选节。
 
-固定候选：0.15.43／205，正式assembleRelease和双lint通过；build/candidates/0.15.43/Chrona-0.15.43.apk为3156422字节，包名及原签名已核对。生产源码未晚于正式APK；后续仅检查工具与工作记录变化。13:02已正常保留数据覆盖手机，实际版本205／0.15.43、首页已有日程与辅助服务正常，无安装后新crash。决定验收的日志和范围见docs/validation-history.md的0.15.43段。
+## 当前交付合同
 
-接口实证：build/classroom-readonly-probe.txt核对到两门课实际为同日同地13:25–14:10、14:15–15:50，原始缓存未改。上周一10月19日大英status=6，回放字幕502条；PPT total61默认rows10，官方living-room.js明确page／per_page，生产已实现分页。当天10月26日大英status=1，回放接口10002「未查询到语音数据」；/courseapi/v3/portal-home-setting/get-sub-info返回content.trans_socket_url。官方公开HTML内置Glue1.9.1，WSS地址为HTTPS升级后的qlite2.cmc.zju.edu.cn/<课流标识>/glue/ws；in初始化、pi/po心跳、cd长度&频道m的JSON；sourcetext为当前句累积文本，end_time=1定句，text_begin_time/text_end_time为epoch毫秒。真机已安全WSS初始化，20秒收到46／37帧；不记录实际课流URL或Cookie。公开静态代码位于build/classroom-public-assets（adb pull产生嵌套同名目录）；living-room.js、living-common.js、public-entry.html可检索原接口，非此前被撤销的GitHub参考。实时探针日志build/classroom-live-{socket,clock}-probe.txt。手机只读辅助包及本轮外部公开文件已清理。
+- 课堂周表复用学校课表网格；缺结束时只画真实开始标记。顶部四视图，单节专用监视页，右上后续课程复选框/底部字幕-PPT选择栏；设置集中监视总览。两个课表入口保留。
+- 课堂可搜索；历史按课程/总结时间双向排序。字幕追加/修订保持Y；首次/点击回最新才末尾。公共动效、可见图片圆角、图片横滑/DateIntervalBar、复用全屏缩放保存。
+- 下课处理完毕重新获取完整字幕/PPT，与直接下载内容一致后自动总结。默认文字，用户明确勾选才上传图片，每课入队快照。完整结果不重复调用，未知请求结果不自动重发。
+- 最新胶囊决定覆盖旧30/60合同：移除敏感无障碍服务及入口，仅取消点击后60秒延长。新通知/亮屏30秒保留；退出拾时由自有Activity生命周期开启30秒详细窗口。内部跳转/旋转不续期，普通/秒级更新/点击不续时；系统展开收回不变。不监听其它应用，因此其它应用回桌面不具有单独触发保证。
+- 基本页面语言、禁止未经允许拼凑样式及无人值守例外已进入两份现有UI规范，业务与开发文档同步。
 
-交付状态：源码c1e6d37b0fa7950a12df24bb9f1ba9aa15a31ef3及标签v0.15.43已推送，正式Release已成为latest，公开APK为3156422字节、HTTP200，和已装手机候选一致。发布：https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.43 。当前无待实现代码；下一次真实课堂使用时仍需核对实体主包整堂流／后台表现，更新页手动检查也未实测，不混同已有受控证据。当前10.196.4.142:43615已完成安装，本轮15个公开静态文件和探针均清理；用户正使用手机，不再操作界面。模拟器emulator-5554／AVD Chrona_Classroom_36仍可用。用户明确允许之前账号，仅通过手机ZjuSettingsStore正常认证，不读account.txt／.env／Cookie；不付费调用AI。FastCtx未提供，使用PowerShell7。原生CLI启用PSNativeCommandUseErrorActionPreference。
+## 决定性证据
 
-前项筛选调查已结束：433属于作业，按截止11月6日分组、不是执行10月27日；用户已理解，未修改分类逻辑。
+- client95+网络错误44；images29含正式清单替换和raw缓存身份。
+- Android auto36含停止准入/timeout/凭据更新竞态，pipeline19，live10含陈旧stage2/熄屏34秒/断线恢复/late帧拒绝/停止清理。受控传输，无付费AI。
+- 课堂UI四组合767/768及最终受影响reader各44；设置删除四组合各31，主代理和独立UI审核通过。实际PNG保留，查看使用build/classroom-polish-evidence/previews及F:/Temp/chrona-no-accessibility压缩图。
+- 正式release+双lint通过；后台和取消缺陷独立复审通过。原真机崩溃为服务停止时main线程TLS清理，现独立清理线程；RequestControl同步取消标记/后台断连，停止owner先封闭新AI准入。
+- 未验：新候选真机覆盖、真实整堂后台流、vivo退出/亮屏详细。辅助classroom.probe仍在手机，设备恢复后的最终清理需卸载它并删除已知临时chrona文件，不动真实资料。
 
-## 前次交付
+## 环境与边界
 
-已交付：README、用户指南、原子岛文档及Release说明明确逐机首次需ADB配置、安装APK不会自动完成、日常无需连接电脑。Windows一键配置包已发布，源码提交9b4078dc818ba0f8b1f6da052bb437fef82080af，独立标签／Release为`vivo-setup-0.15.42`；主应用功能、版本及原APK不变，应用latest保持`v0.15.42`。
+FastCtx未提供，使用PowerShell7；JDK D:/Minecraft/java21、SDK F:/Android/Sdk、Gradle F:/Android/GradleCache、ANDROID_USER_HOME F:/Android/user-home。产物留项目，图片先压缩再查看。设备此前地址仅在本地工作记录/用户对话中，不进入公开文档。已完成代理无待写，UI审核代理ui_review可按新增范围复用。
 
-脚本25场景、双击入口2场景、受限辅助源码16场景及旧配置4项检查通过，最终release AndroidTest构建成功；手机普通身份Status／Enable读回true且changed=false，没有关闭既有场景。ZIP共11个必要文件、4520720字节，原签名辅助APK仅含专用runner与生成支持类，内置ADB可运行，脚本WhatIf正常；公开下载HTTP200，SOURCE.txt关联同一工具提交。证据及范围见docs/validation-history.md。当前无待实施事项；使用者安装PowerShell7、连接授权手机后双击Enable-VivoAtomic.cmd。未在未配置手机上新增注册，不承诺其它固件兼容。
-
-下载：https://github.com/DongLanQwQ0/Chrona/releases/download/vivo-setup-0.15.42/Chrona-vivo-setup-0.15.42.zip
-
-此前拖放调查已按用户要求仅说明结论：手机拖放直达4.0.9.1由服务配置管理目标名单，未找到普通ADB新增接口；相关签名权限不属于shell，模拟更新广播仅重读厂商配置。不继续改拖放入口。
-
-独立已交付项：`tools/Clean-Project.ps1`默认预览、`-Apply`才删除，实际预览61624文件／约5.01 GiB，由用户自行执行；本聊天未执行删除。本地日志与截图经用户清理后不再保证历史路径存在，安装包、依赖、备份及源码保留。
-
-0.15.42／204已正式发布为GitHub latest，DB16、schedule-v17，源码提交823f86d，标签v0.15.42固定同一提交。原生／网页重新解析确认正文统一为「这将替换已有日程」。正式包已核验原签名、正确版本及30／60秒计时；公开APK3134070字节、下载HTTP200。实体手机已通过ADB保留数据覆盖安装成功，按用户要求未继续启动或验证交互。
-
-发布：https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.42
-
-## 已交付行为
-
-- AI时间审计：确定和不确定均返回七字段的依据／规则／短原因；模型原依据与实际归一化结果、字段校验、存疑及调整分别保留。每次请求尝试独立runId，日程历史ID＋稳定身份、run＋plan关联落库；重解析不覆盖旧记录。TaskStore与已认证LAN /api/parse-audit支持分页查询，完整备份包含审计；旧日程不补造依据，删除源收件才级联清理。
-- 用户已撤销截止日22:00–23:00专用默认，提示词和执行分支均已删除。单项及较大任务利用整个可用周期；更主动给具体建议和时长，较大工作分阶段并预留修改提交。自由建议保留高存疑；只有实际保存且能唯一应用的明确时间偏好可确定补全。不改用户模型思考强度，不自动重排已保存事项。
-- AI服务退出保护：八字段脏表单统一保存／取消／放弃；取消与外部关闭保留输入、放弃不写、校验失败留页，Activity重建保留草稿及原基线。图片重新允许仍是独立即时动作。
-- 已确认后只清通知栏解析结果：READY且非空批次全部settled时移除，自动全确认不再发无须处理的通知；mixed、失败／处理中／排队／空结果及未关联草稿保留。不删除原文／日程／审计，不影响其它通知频道，复用后台刷新。
-- 重新解析统一CaptureReparser：状态、版本、旧候选读取和替换在同一SQLite事务；先验证再清独占旧系统事件，共享及永久合并引用保留，提交排队后才启动请求。清理失败不解析，部分已删外部事件不回滚；调度失败标FAILED可重试。原生后台执行绑定SaveSession，网页不再因已关联而禁用。公共actionRow在窄屏／大字放不下完整按钮文字时纵排，保留字号与点击语义。
-
-## 决定验收的证据
-
-- build/time-audit-ai-final.txt：请求494、归一化59、排期418、时间审计35、自动写入16通过。合成模型响应，未付费调用，不宣称测得真实模型准确率。
-- build/time-audit-persistence-final.txt：生产TaskStore＋真实SQLite32项，含v15→v16保留数据、历史关联、去重、回滚、查询、中断／重试／恢复及快照。关联合并336、双类型102、快照16、审核45继续有效；实际GET分支13项。
-- 配置偏好22、备份恢复104、作业取消与生命周期恢复、quick 8/8通过；不重复未变职责整套。具体日志见docs/validation-history.md。
-- 设置退出：隔离Android16的400dp／1.0、320dp／1.5深浅四组各63断言，专门UI审核通过；主代理已查看窄屏大字压缩图。
-- build/result-notifications-device.txt：实际NotificationManager＋SQLite64项，通知清理及原文／候选／审计保留通过；标题专项6项。通知无样式改动，独立交互补审已通过。
-- 时间审计独立审查发现的两项P2（本地字段依据、中断日志状态）已修并补审关闭，包括继承日期存疑不误传仅钟点存疑。
-- 重新解析：build/reparse-device.txt真实SQLite／CalendarProvider／MediaStore84断言；build/reparse-ui-library-check.txt公共方法1530断言。最终短文案四组原生各23断言及网页四组通过，取消／确认／失败刷新有效。生产清理器＋SQLite211、LAN安全83及job／lifecycle通过。专门UI审核已亲看最新原生／网页八图，业务、公共行与短文案均通过。
-- build/reparse-final-build.txt：最终assembleDebug／assembleRelease／lintDebug／lintRelease成功。build/release-0.15.42-artifact-check.txt：正确包名204／0.15.42、不可调试、原证书、正式30／60常量；资产build/candidates/0.15.42/Chrona-0.15.42.apk为3134070字节。
-
-## 边界与保留状态
-
-- 功能验收在隔离v33包、合成记录中进行，无真实账号／付费模型请求；实体手机随后仅完成正式0.15.42保留数据覆盖安装。旧Android、真实边缘手势及进程死亡恢复未设备实测，Activity重建和中断持久化分别已有有效证据。
-- 30／60秒正式胶囊窗口不变；当前OriginOS约200ms系统收起过渡按用户接受保留，不修改宿主或全局动画。无待清理临时活动，用户关闭的后台更新通知频道保留。
-- 本地AGENTS.md、角色toml、.backups及.local-backups不纳入业务提交。FastCtx未提供时使用PowerShell7；Java D:/Minecraft/java21、SDK F:/Android/Sdk、Gradle缓存F:/Android/GradleCache、Android用户目录F:/Android/user-home。
+AGENTS.md、角色toml、.backups/.local-backups及tools/Clean-Project.ps1为既有独立修改，不入业务提交。保留所有真实日程、账号及用户关闭的通知频道。不写secure settings、不绕过权限；用户已明确不要无障碍方案。

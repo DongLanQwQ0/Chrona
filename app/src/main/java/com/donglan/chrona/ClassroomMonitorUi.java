@@ -1,88 +1,96 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
-import android.app.AlarmManager;
 import android.content.Context;
-import android.content.Intent;
-import android.os.Build;
-import android.net.Uri;
-import android.provider.Settings;
-import com.donglan.chrona.classroom.ClassroomLesson;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import java.util.ArrayList;
-import java.util.List;
+import android.widget.*;
+import com.donglan.chrona.classroom.*;
+import com.donglan.chrona.timetable.Timetable;
+import org.json.*;
+import java.util.*;
+import java.util.concurrent.Executors;
 
-/** Existing menu rows carry scope and stop actions; no second downloader or monitoring page. */
+/** All entry points lead to the dedicated monitor screen; no nested scope menus. */
 final class ClassroomMonitorUi {
+    private static final java.util.concurrent.ExecutorService IO=Executors.newSingleThreadExecutor();
     static boolean watching(Context context,ClassroomLesson lesson){
         try{ZjuSettingsStore s=new ZjuSettingsStore(context);return s.enabled()&&ClassroomMonitorStore.matches(new ClassroomMonitorStore(context,s.account()).read(),lesson);}catch(Exception ignored){return false;}
     }
-    static void choose(Activity activity,ClassroomLesson lesson){
-        ZjuSettingsStore settings=new ZjuSettingsStore(activity);
-        if(!ClassroomMonitor.allowed(activity,settings.account()))return;
-        try {
-            String account=settings.account();
-            ClassroomMonitorStore store=new ClassroomMonitorStore(activity,settings.account());
-            JSONArray rules=store.read().getJSONArray("rules");List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
-            labels.add("监视本节课堂");actions.add(()->start(activity,account,lesson,false));
-            labels.add("监视该课程后续课堂");actions.add(()->start(activity,account,lesson,true));
-            labels.add("查看字幕");actions.add(()->{try{if(ClassroomMonitor.allowed(activity,account))ClassroomTranscriptActivity.open(activity,account,lesson);}catch(Exception failure){Feedback.show(activity,"无法打开字幕");}});
-            for(int i=0;i<rules.length();i++){
-                JSONObject rule=rules.getJSONObject(i);ClassroomLesson selected=ClassroomLesson.fromJson(rule.getJSONObject("lesson"));boolean repeat=rule.getBoolean("repeat");
-                if(repeat?selected.courseId.equals(lesson.courseId):ClassroomMonitorStore.key(selected).equals(ClassroomMonitorStore.key(lesson))){
-                    final JSONObject captured=new JSONObject(rule.toString());
-                    labels.add(repeat?"停止课程监视":"停止本节监视");actions.add(()->remove(activity,account,captured));
+    static void open(Activity activity,ClassroomLesson lesson){
+        String account=new ZjuSettingsStore(activity).account();
+        if(!ClassroomMonitor.allowed(activity,account))return;
+        try{ClassroomTranscriptActivity.open(activity,account,lesson);}catch(Exception failure){Feedback.show(activity,"无法打开课堂监视");}
+    }
+    static void fromTimetable(Activity activity,Timetable.Block block){
+        String account=new ZjuSettingsStore(activity).account();if(!ClassroomMonitor.allowed(activity,account))return;
+        IO.execute(()->{
+            List<ClassroomLesson> found;String error="";
+            try{
+                ClassroomStore store=new ClassroomStore(activity.getApplicationContext(),account);found=matching(store.catalog(),block);
+                if(found.isEmpty()&&ClassroomMonitor.allowed(activity,account)){
+                    activity.runOnUiThread(()->{if(!activity.isFinishing())Feedback.show(activity,"正在匹配课堂");});
+                    String[] pair=new ZjuSettingsStore(activity).credentials();ClassroomClient client;
+                    try{client=ClassroomMonitor.clients.apply(pair[0],pair[1]);}finally{Arrays.fill(pair,"");}
+                    try(client){List<ClassroomLesson> catalog=client.lessons();if(!ClassroomMonitor.allowed(activity,account))return;store.catalog(catalog);found=matching(catalog,block);}
                 }
-            }
-            if(rules.length()>0){labels.add("监视列表");actions.add(()->manage(activity));}
-            UiDialogs.choiceDialog(activity,"课堂监视",labels.toArray(new String[0]),-1,index->actions.get(index).run());
-        }catch(Exception failure){Feedback.show(activity,"无法读取课堂监视");}
+            }catch(Exception failure){found=new ArrayList<>();error=com.donglan.chrona.net.NetworkFailure.hasDetails(failure)?com.donglan.chrona.net.NetworkFailure.describe(failure):"课堂匹配失败，请稍后重试";}
+            List<ClassroomLesson> matches=found;String failure=error;
+            matches.sort(java.util.Comparator.comparingLong(l->l.startsAt));
+            activity.runOnUiThread(()->{
+                if(activity.isFinishing()||activity.isDestroyed()||!ClassroomMonitor.allowed(activity,account))return;
+                if(matches.isEmpty()){Feedback.show(activity,failure.isEmpty()?"尚无对应课堂":failure);return;}
+                if(matches.size()==1){open(activity,matches.get(0));return;}
+                String[] labels=new String[matches.size()];int chosen=0;long now=System.currentTimeMillis();
+                for(int i=0;i<matches.size();i++){ClassroomLesson l=matches.get(i);labels[i]=l.date()+" "+clock(l)+" · "+l.title+(l.room.isEmpty()?"":" · "+l.room);if(l.startsAt<=now)chosen=i;}
+                UiDialogs.choiceDialog(activity,"选择课堂",labels,chosen,i->open(activity,matches.get(i)));
+            });
+        });
     }
-    private static void start(Activity activity,String account,ClassroomLesson lesson,boolean repeat){
-        try{if(!ClassroomMonitor.allowed(activity,account))return;ClassroomNotifications.requestPermission(activity);ClassroomMonitor.start(activity,lesson,repeat);ClassroomTranscriptActivity.open(activity,account,lesson);}
-        catch(Exception failure){Feedback.show(activity,"无法添加课堂监视");}
+    private static List<ClassroomLesson> matching(List<ClassroomLesson> catalog,Timetable.Block block){
+        List<ClassroomLesson> matches=new ArrayList<>();for(ClassroomLesson lesson:catalog){if(!name(lesson.course).equals(name(block.title)))continue;
+            for(Timetable.Occurrence entry:block.occurrences())if(entry.start.atZone(ClassroomLesson.ZONE).toInstant().toEpochMilli()==lesson.startsAt){matches.add(lesson);break;}}
+        return matches;
     }
-    private static void remove(Activity activity,String account,JSONObject captured){
-        try {
-            if(!ClassroomMonitor.allowed(activity,account))return;
-            ClassroomMonitorStore store=new ClassroomMonitorStore(activity,new ZjuSettingsStore(activity).account());
-            // Resolve the identity again: background completion may have removed/reordered a rule.
-            synchronized(ClassroomMonitorStore.LOCK){JSONArray rules=store.read().getJSONArray("rules");
-                for(int i=0;i<rules.length();i++)if(rules.getJSONObject(i).toString().equals(captured.toString())){store.remove(i);break;}}
-            ClassroomMonitor.changed(activity);Feedback.show(activity,"已停止监视");
-        }catch(Exception failure){Feedback.show(activity,"无法停止课堂监视");}
-    }
-    static void manage(Activity activity){
-        try {
-            ClassroomMonitorStore store=new ClassroomMonitorStore(activity,new ZjuSettingsStore(activity).account());
-            JSONObject state=store.read();JSONArray rules=state.getJSONArray("rules");
-            if(rules.length()==0){Feedback.show(activity,state.optString("message","暂无监视"));return;}
-            List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
+    private static String name(String text){return java.text.Normalizer.normalize(text,java.text.Normalizer.Form.NFKC).replaceAll("\\s+","");}
+    static String clock(ClassroomLesson lesson){return java.time.Instant.ofEpochMilli(lesson.startsAt).atZone(ClassroomLesson.ZONE).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));}
+    static void overview(Activity activity,LinearLayout parent,JSONObject state){
+        try{
+            JSONArray rules=state.getJSONArray("rules");List<ClassroomLesson> pending=ClassroomMonitorStore.pending(state);
             for(int i=0;i<rules.length();i++){
-                JSONObject captured=new JSONObject(rules.getJSONObject(i).toString());ClassroomLesson lesson=ClassroomLesson.fromJson(captured.getJSONObject("lesson"));
-                labels.add(lesson.course+" · "+(captured.getBoolean("repeat")?"后续每次":lesson.date()+" "+java.time.Instant.ofEpochMilli(lesson.startsAt).atZone(ClassroomLesson.ZONE).toLocalTime()));
-                actions.add(()->showStatus(activity,lesson,captured));
+                JSONObject rule=rules.getJSONObject(i);ClassroomLesson anchor=ClassroomLesson.fromJson(rule.getJSONObject("lesson")),selected=anchor;
+                if(rule.getBoolean("repeat")){
+                    List<ClassroomLesson> course=new ArrayList<>();for(ClassroomLesson lesson:pending)if(lesson.courseId.equals(anchor.courseId))course.add(lesson);
+                    if(!course.isEmpty()){selected=course.get(0);for(ClassroomLesson lesson:course)if(lesson.startsAt<=System.currentTimeMillis())selected=lesson;}
+                }
+                ClassroomLesson target=selected;LinearLayout card=new LinearLayout(activity);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(activity,16),dp(activity,12),dp(activity,16),dp(activity,12));UiStyle.card(card);
+                TextView title=new TextView(activity);title.setText(target.course);title.setTextSize(16);UiStyle.title(title);card.addView(title);
+                TextView detail=new TextView(activity);detail.setText(target.date()+" "+clock(target)+" · "+(rule.getBoolean("repeat")?"含后续课堂":"单次"));detail.setTextSize(13);UiStyle.muted(detail);UiStyle.addSpaced(card,detail,4,0);
+                JSONObject statuses=state.optJSONObject("statuses");String phase=statuses==null?"等待上课":statuses.optString((rule.getBoolean("repeat")?"course:"+target.courseId:"lesson:"+ClassroomMonitorStore.key(target)),"等待上课");
+                if(phase.startsWith(target.course+" · "))phase=phase.substring(target.course.length()+3);
+                TextView status=new TextView(activity);status.setText(phase);status.setTextSize(13);UiStyle.muted(status);UiStyle.addSpaced(card,status,4,0);
+                card.setContentDescription(target.course+"，"+detail.getText()+"，"+phase+"，打开课堂监视");card.setOnClickListener(v->open(activity,target));UiStyle.pressable(card);UiStyle.addSpaced(parent,card,0,8);
             }
-            AlarmManager alarms=activity.getSystemService(AlarmManager.class);
-            if(Build.VERSION.SDK_INT>=31&&alarms!=null&&!alarms.canScheduleExactAlarms()){
-                labels.add("允许准时启动");actions.add(()->activity.startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:"+activity.getPackageName()))));
-            }
-            labels.add("后台运行设置");actions.add(()->activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+activity.getPackageName()))));
-            UiDialogs.choiceDialog(activity,"监视列表",labels.toArray(new String[0]),-1,index->actions.get(index).run());
+            if(rules.length()==0){TextView empty=new TextView(activity);empty.setText("暂无监视");empty.setTextSize(16);UiStyle.muted(empty);parent.addView(empty);}
+            LinearLayout actions=new LinearLayout(activity);actions.setGravity(android.view.Gravity.END);
+            actions.addView(UiStyle.navigationIcon(activity,R.drawable.ic_settings,"监视运行设置",()->runtimeSettings(activity)),new LinearLayout.LayoutParams(dp(activity,48),dp(activity,48)));
+            UiStyle.addSpaced(parent,actions,4,0);
         }catch(Exception failure){Feedback.show(activity,"无法读取课堂监视");}
     }
-    private static void showStatus(Activity activity,ClassroomLesson lesson,JSONObject rule){
-        try {
-            JSONObject state=new ClassroomMonitorStore(activity,new ZjuSettingsStore(activity).account()).read();
-            JSONObject statuses=state.optJSONObject("statuses");String key=rule.getBoolean("repeat")?"course:"+lesson.courseId:"lesson:"+ClassroomMonitorStore.key(lesson);
-            String message=statuses==null?"等待上课":statuses.optString(key,"等待上课");
-            android.app.Dialog dialog=new android.app.Dialog(activity);android.widget.LinearLayout panel=UiDialogs.dialogPanel(activity,lesson.course);
-            android.widget.TextView status=new android.widget.TextView(activity);status.setText(message);status.setTextSize(15);UiStyle.muted(status);
-            UiStyle.addSpaced(panel,status,0,12);
-            String account=new ZjuSettingsStore(activity).account();
-            UiDialogs.addMenuItem(panel,"停止监视",false,()->{dialog.dismiss();remove(activity,account,rule);});
-            UiDialogs.showFloatingDialog(dialog,panel);
-        }catch(Exception failure){Feedback.show(activity,"无法读取监视状态");}
+    private static void runtimeSettings(Activity activity){
+        String account=new ZjuSettingsStore(activity).account();if(!ClassroomMonitor.allowed(activity,account))return;
+        ClassroomMonitorStore store=new ClassroomMonitorStore(activity,account);
+        android.app.Dialog dialog=new android.app.Dialog(activity);LinearLayout panel=UiDialogs.dialogPanel(activity,"监视运行设置");
+        LinearLayout body=new LinearLayout(activity);body.setOrientation(LinearLayout.VERTICAL);
+        CheckBox images=new CheckBox(activity);images.setText("自动总结上传图片");images.setTextSize(15);images.setMinHeight(dp(activity,48));UiStyle.toggle(images);
+        try{images.setChecked(store.summaryImages());}catch(Exception failure){Feedback.show(activity,"无法读取监视运行设置");return;}
+        images.setOnClickListener(view->{try{if(!ClassroomMonitor.allowed(activity,account))throw new IllegalStateException("学校账号已停用");store.summaryImages(images.isChecked());}catch(Exception failure){images.setChecked(!images.isChecked());Feedback.show(activity,"无法保存监视运行设置");}});
+        UiStyle.addSpaced(body,images,0,8);
+        List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
+        android.app.AlarmManager alarms=activity.getSystemService(android.app.AlarmManager.class);
+        if(android.os.Build.VERSION.SDK_INT>=31&&alarms!=null&&!alarms.canScheduleExactAlarms()){labels.add("允许准时启动");actions.add(()->activity.startActivity(new android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+activity.getPackageName()))));}
+        labels.add("后台运行设置");actions.add(()->activity.startActivity(new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:"+activity.getPackageName()))));
+        LinearLayout choices=new LinearLayout(activity);choices.setOrientation(LinearLayout.VERTICAL);
+        for(int i=0;i<labels.size();i++){final int index=i;UiDialogs.addMenuItem(choices,labels.get(i),false,()->{dialog.dismiss();actions.get(index).run();});}
+        body.addView(choices);UiDialogs.dialogBody(panel,body);UiDialogs.showFloatingDialog(dialog,panel);
     }
+    private static int dp(Context c,int n){return Math.round(n*c.getResources().getDisplayMetrics().density);}
 }

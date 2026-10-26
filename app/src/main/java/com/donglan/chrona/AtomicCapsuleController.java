@@ -18,7 +18,6 @@ import java.util.Locale;
 /** Presentation deadlines only. Never changes reminder expiry, completion or unread state. */
 public final class AtomicCapsuleController extends BroadcastReceiver {
     static final long WAKE_MILLIS = BuildConfig.CAPSULE_DESKTOP_MILLIS;
-    static final long CLICK_MILLIS = BuildConfig.CAPSULE_CLICK_MILLIS;
     private static final String PREFS = "atomic_capsule", PREFIX = "notification.superx.";
     private static final String META = "chrona.atomic.", EXPIRE = "capsule_expire";
     private static final Handler HANDLER = new Handler(Looper.getMainLooper());
@@ -39,7 +38,7 @@ public final class AtomicCapsuleController extends BroadcastReceiver {
                 .anyMatch(item -> item.getKey().startsWith("until:") && (Long) item.getValue() > now);
         // A recovered process cannot receive a screen-on broadcast sent while it was absent.
         // Restore one reading window, but never extend an already-running window.
-        if (!AtomicCapsuleAccessibilityService.enabled(context) && interactive(context)
+        if (interactive(context)
                 && prefs.getLong("wake_until", 0) <= now && !pendingWindow) {
             prefs.edit().putLong("wake_until", now + WAKE_MILLIS).commit();
             refresh(context);
@@ -49,26 +48,19 @@ public final class AtomicCapsuleController extends BroadcastReceiver {
 
     static void screenOn(Context context, long receivedAt) {
         if (!VivoAtomicNotification.supportedManufacturer()) return;
-        if (AtomicCapsuleAccessibilityService.enabled(context)) return;
-        desktopEntered(context, receivedAt);
+        showReadingWindow(context, receivedAt);
     }
 
-    static void desktopEntered(Context context, long receivedAt) {
-        if (!VivoAtomicNotification.supportedManufacturer()) return;
+    /** Our own last activity stopped; no other app or launcher is inspected. */
+    static void appExited(Context context, long receivedAt) {
+        if (!VivoAtomicNotification.supportedManufacturer() || !interactive(context)) return;
+        showReadingWindow(context, receivedAt);
+    }
+
+    private static void showReadingWindow(Context context, long receivedAt) {
         prefs(context).edit().putLong("wake_until", receivedAt + WAKE_MILLIS).commit();
         refresh(context);
         schedule(context);
-    }
-
-    static boolean capsuleClicked(Context context, int id, String identity, long clickedAt) {
-        SharedPreferences prefs = prefs(context);
-        if (!identity.equals(prefs.getString("identity:" + id, ""))) return false;
-        long now = SystemClock.elapsedRealtime();
-        if (clickedAt > now || now - clickedAt > 2000) return false;
-        prefs.edit().putLong("until:" + id, clickedAt + CLICK_MILLIS).commit();
-        refresh(context);
-        schedule(context);
-        return true;
     }
 
     static void screenOff(Context context) {
@@ -99,7 +91,6 @@ public final class AtomicCapsuleController extends BroadcastReceiver {
         data.putString(META + "left", island.getBundle("island.superx.leftInfo")
                 .getCharSequence("island.superx.leftInfo.content").toString());
         data.putString(META + "capsule", capsule.getString(PREFIX + "capsule.content", ""));
-        AtomicCapsuleIdentity.attach(island, id, identity, data.getString(META + "title", ""));
         // Preserve the native expand/dismiss gesture and the existing detail action.
         // Force-show blocks immediate outside-tap dismissal on vivo; never use it here.
         apply(context, data);

@@ -35,6 +35,22 @@ public final class ClassroomWorkService extends Service {
         }
     }
 
+    /** The monitor already owns a visible dataSync FGS; do not start another service. */
+    static void submitMonitor(ClassroomLessonActivity.Session session,Runnable work){
+        if(!ClassroomAutoSummary.hasForegroundOwner()){session.startFailed();return;}
+        if(find(session.account,session.selected)!=null){session.startFailed();return;}
+        jobs.put(session,null);work.run();
+    }
+    static void cancelMonitored(){
+        for(ClassroomLessonActivity.Session session:new ArrayList<>(jobs.keySet()))if(session.monitorOwned)session.cancel();
+    }
+    static void reconcileMonitored(android.content.Context app){
+        for(ClassroomLessonActivity.Session session:new ArrayList<>(jobs.keySet()))if(session.monitorOwned){
+            try{if(!session.allowed()||ClassroomMonitorStore.ruleFor(new ClassroomMonitorStore(app,session.account).read(),session.selected)==null)session.cancel();}
+            catch(Exception failure){session.cancel();}
+        }
+    }
+
     static void finished(ClassroomLessonActivity.Session session) {
         jobs.remove(session);
         if (instance != null) { instance.owned.remove(session); instance.refreshOrStop(); }

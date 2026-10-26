@@ -24,11 +24,13 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private String requestedDate;
     private boolean assets;
     private boolean cleanup;
+    private boolean audit;
     @Override public void onCreate(Bundle args) {
         network = args != null && "true".equals(args.getString("network"));
         requestedDate = args == null ? null : args.getString("date");
         assets = args != null && "true".equals(args.getString("assets"));
         cleanup = args != null && "true".equals(args.getString("cleanup"));
+        audit = args != null && "true".equals(args.getString("audit"));
         super.onCreate(args); start();
     }
     @Override public void onStart() {
@@ -38,6 +40,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             if(cleanup){result.putInt("removed_public_assets",cleanupPublicAssets());finish(-1,result);return;}
             ZjuSettingsStore settings = new ZjuSettingsStore(getTargetContext());
             if (!settings.enabled() || !settings.configured()) throw new IllegalStateException("School account unavailable");
+            if(audit){result.putString("monitor_audit",auditMonitor(settings).toString());finish(-1,result);return;}
             Map<String, List<ZjuSnapshot.Lesson>> groups = new LinkedHashMap<>();
             for (ZjuSnapshot.Lesson lesson : new ZjuTimetableStore(getTargetContext()).load(settings.account())) {
                 if (!(lesson.title.contains("线性代数") || lesson.title.contains("数字音视频"))) continue;
@@ -95,6 +98,23 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             // Never log exceptions from authentication/HTTP with URLs, account data or response bodies.
             result.putString("error_type", failure.getClass().getSimpleName()); finish(0, result);
         }
+    }
+    private JSONObject auditMonitor(ZjuSettingsStore settings)throws Exception {
+        JSONObject state=new ClassroomMonitorStore(getTargetContext(),settings.account()).read(),report=new JSONObject();JSONArray rows=new JSONArray();
+        JSONArray rules=state.getJSONArray("rules");report.put("now",System.currentTimeMillis()).put("rules",rules.length());
+        for(int i=0;i<rules.length();i++){ClassroomLesson selected=ClassroomLesson.fromJson(rules.getJSONObject(i).getJSONObject("lesson"));
+            java.io.File dir=new com.donglan.chrona.classroom.ClassroomStore(getTargetContext(),settings.account()).localLesson(selected);
+            JSONObject row=new JSONObject().put("course",selected.course).put("id",selected.id).put("status",selected.status).put("starts",selected.startsAt).put("repeat",rules.getJSONObject(i).getBoolean("repeat"));
+            for(String file:new String[]{"live-status.json","monitor-stage.json","live-transcript.json","live-current.json","monitor-materials.json","monitor-candidates.json"}){
+                java.io.File path=new java.io.File(dir,file);JSONObject saved=com.donglan.chrona.classroom.ClassroomStore.read(path);JSONObject detail=new JSONObject().put("exists",path.isFile()).put("mtime",path.lastModified());
+                if(saved!=null){if(saved.has("state"))detail.put("state",saved.optString("state"));if(saved.has("status"))detail.put("status",saved.optString("status"));for(String list:new String[]{"segments","images"})if(saved.optJSONArray(list)!=null)detail.put(list,saved.getJSONArray(list).length());if(saved.optJSONObject("current")!=null)detail.put("current_chars",saved.getJSONObject("current").optString("text").length());}row.put(file,detail);
+            }
+            if(network){String[] pair=settings.credentials();try(ClassroomClient catalog=new ClassroomClient(pair[0],pair[1]);ZjuClient transport=new ZjuClient(pair[0],pair[1])){Arrays.fill(pair,"");
+                for(ClassroomLesson fresh:catalog.courseLessons(selected))if(fresh.id.equals(selected.id)){row.put("fresh_status",fresh.status).put("fresh_starts",fresh.startsAt);break;}
+                JSONObject info=transport.classroomJson("https://yjapi.cmc.zju.edu.cn/courseapi/v3/portal-home-setting/get-sub-info?course_id="+selected.courseId+"&sub_id="+selected.id);row.put("info_code",info.optInt("code"));JSONObject data=info.optJSONObject("data"),content=data==null?null:data.optJSONObject("content");if(data!=null)row.put("sub_status",data.opt("sub_status"));if(content!=null){String address=content.optString("trans_socket_url");row.put("live_address",!address.isEmpty());if(!address.isEmpty()&&"1".equals(row.optString("fresh_status"))&&selected.startsAt<=System.currentTimeMillis()&&(data==null||!data.has("sub_status")||"1".equals(data.optString("sub_status"))))row.put("socket_probe",socketProbe(transport,address));}
+            }finally{Arrays.fill(pair,"");}}
+            rows.put(row);
+        }report.put("lessons",rows);return report;
     }
     private static JSONObject counts(JSONObject source, boolean transcript) throws Exception {
         JSONArray rows = source.optJSONArray("list"); int segments = 0; double last = 0;

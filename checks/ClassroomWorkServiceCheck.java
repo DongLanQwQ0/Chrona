@@ -31,6 +31,28 @@ public final class ClassroomWorkServiceCheck {
         var failure=new ClassroomLessonActivity.Session("account","promotion");var failedService=new ClassroomWorkService();failedService.rejectPromotion=true;
         ClassroomWorkService.submit(failure,()->{throw new AssertionError("unprotected work ran");});failedService.onStartCommand(null,0,4);
         require(failure.failed&&failedService.stopped,"promotion failure prevents work");failedService.onDestroy();
-        System.out.println("ClassroomWorkServiceCheck PASS: promotion, multiple lessons, reopen, account isolation, rejection, timeout, no redelivery");
+        monitorOwnership();
+        System.out.println("ClassroomWorkServiceCheck PASS: manual promotion/reopen/isolation/rejection/timeout/no redelivery; monitor owner gate, no extra FGS, duplicate guard, selective scope/account cancellation");
+    }
+    private static void monitorOwnership(){
+        int[] runs={0};var denied=new ClassroomLessonActivity.Session("account","no-owner");denied.monitorOwned=true;
+        ClassroomAutoSummary.foreground=false;ClassroomWorkService.submitMonitor(denied,()->runs[0]++);
+        require(denied.failed&&runs[0]==0&&denied.app.starts==0,"monitor cannot bypass missing foreground owner");
+        var manual=new ClassroomLessonActivity.Session("account","manual");var service=new ClassroomWorkService();
+        ClassroomWorkService.submit(manual,()->runs[0]++);service.onStartCommand(null,0,5);
+        var monitored=new ClassroomLessonActivity.Session("account","monitored");monitored.monitorOwned=true;
+        ClassroomAutoSummary.foreground=true;ClassroomWorkService.submitMonitor(monitored,()->runs[0]++);
+        require(runs[0]==2&&monitored.app.starts==0,"monitor uses existing FGS without another start");
+        var duplicate=new ClassroomLessonActivity.Session("account","monitored");duplicate.monitorOwned=true;
+        ClassroomWorkService.submitMonitor(duplicate,()->runs[0]++);
+        require(duplicate.failed&&runs[0]==2&&ClassroomWorkService.find("account",monitored.selected)==monitored,"duplicate automatic submit retains original Session");
+        ClassroomWorkService.cancelMonitored();require(monitored.cancelled&&!manual.cancelled,"monitor owner stop does not cancel manual work");
+        monitored.cancelled=false;ClassroomMonitorStore.stopped.add("monitored");ClassroomWorkService.reconcileMonitored(manual.app);
+        require(monitored.cancelled&&!manual.cancelled,"scope stop only cancels its monitored Session");
+        ClassroomMonitorStore.stopped.clear();monitored.cancelled=false;monitored.allowed=false;ClassroomWorkService.reconcileMonitored(manual.app);
+        require(monitored.cancelled&&!manual.cancelled,"account gate cancels automatic but preserves independent manual work");
+        ClassroomWorkService.finished(monitored);ClassroomWorkService.finished(manual);service.onDestroy();
+        require(service.stopped,"mixed registry stops when all work completes");
+        ClassroomAutoSummary.foreground=false;
     }
 }

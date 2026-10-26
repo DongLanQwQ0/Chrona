@@ -19,6 +19,7 @@
 | 日期区间／滚轮选择器 | `DateIntervalBar`、`GlassDateTimePickerView` |
 | 选择栏／底部导航 | `DockNavigationLayout`、`DockSpring`、`DashboardDockChrome` |
 | 页面背景／短时结果消息 | `GlassBackdropView`、`Feedback` |
+| 学校课表／课堂周表 | `TimetableGrid`、`TimetableLayout`；同一绘制及冲突分列，课堂仅有开始时间时使用开始标记，不推算结束 |
 
 二级页面使用`SettingsPageLayout.content/header/show`。自带独立滚动视口、需要固定标题的阅读页改用`showFixed`承载内容，背景与安全区仍由同一公共实现负责；浮动操作通过`InteractionLayers.pin`保持高于可选择正文的焦点分支。
 

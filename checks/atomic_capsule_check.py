@@ -24,26 +24,28 @@ def configured_durations(block):
     return {
         name: int(value)
         for name, value in re.findall(
-            r"buildConfigField\s+'long',\s*'(CAPSULE_(?:DESKTOP|CLICK)_MILLIS)',\s*'(\d+)L'", block
+            r"buildConfigField\s+'long',\s*'(CAPSULE_DESKTOP_MILLIS)',\s*'(\d+)L'", block
         )
     }
 
 
 release_durations = configured_durations(gradle_block('defaultConfig'))
 short_durations = configured_durations(gradle_block('capsuleTest'))
-assert release_durations == {'CAPSULE_DESKTOP_MILLIS': 30000, 'CAPSULE_CLICK_MILLIS': 60000}
-assert short_durations == {'CAPSULE_DESKTOP_MILLIS': 5000, 'CAPSULE_CLICK_MILLIS': 10000}
+assert release_durations == {'CAPSULE_DESKTOP_MILLIS': 30000}
+assert short_durations == {'CAPSULE_DESKTOP_MILLIS': 5000}
 test_build = gradle_block('capsuleTest')
 assert re.search(r'\binitWith\s+release\b', test_build)
-assert "versionNameSuffix '-capsule-test-5s-10s'" in test_build
+assert "versionNameSuffix '-capsule-test-5s'" in test_build
 assert not re.search(r'\b(?:applicationId|applicationIdSuffix|signingConfig)\b', test_build)
 assert not configured_durations(gradle_block('release'))
-assert len(re.findall(r"buildConfigField\s+'long',\s*'CAPSULE_(?:DESKTOP|CLICK)_MILLIS'", gradle)) == 4
+assert len(re.findall(r"buildConfigField\s+'long',\s*'CAPSULE_DESKTOP_MILLIS'", gradle)) == 2
+assert 'CAPSULE_CLICK_MILLIS' not in gradle
 assert 'buildConfig true' in gradle
 assert 'signingConfig signingConfigs.debug' in gradle_block('release')
 source = (root / 'app/src/main/java/com/donglan/chrona/AtomicCapsuleController.java').read_text(encoding='utf-8')
 assert 'WAKE_MILLIS = BuildConfig.CAPSULE_DESKTOP_MILLIS' in source
-assert 'CLICK_MILLIS = BuildConfig.CAPSULE_CLICK_MILLIS' in source
+assert 'CLICK_MILLIS' not in source and 'capsuleClicked' not in source
+assert 'AtomicCapsuleIdentity' not in source and 'AtomicCapsuleAccessibilityService' not in source
 source = re.sub(r'^package .*;\s*|^import .*;\s*', '', source, flags=re.M)
 source = source.replace('public final class AtomicCapsuleController', 'final class AtomicCapsuleController')
 source = source.replace('android.os.Build.VERSION.SDK_INT', '36').replace('android.util.Log', 'Log')
@@ -69,8 +71,6 @@ class VivoAtomicNotification{static boolean vivo=true;static boolean supportedMa
 class HomeworkNotice{static int forced;static void refreshCapsule(Context c){forced++;}}
 class AgendaReminder{static java.util.concurrent.Executor WORKER=Runnable::run;static int requests,refreshes;static Runnable onRefresh=()->{};static void requestRefresh(Context c){requests++;}static void refreshSafely(Context c,Intent i){refreshes++;onRefresh.run();}}
 class Log{static void w(String a,String b,Exception e){}}
-class AtomicCapsuleAccessibilityService{static boolean on;static boolean enabled(Context c){return on;}}
-class AtomicCapsuleIdentity{static void attach(Bundle island,int id,String identity,String title){}}
 __SOURCE__
 public class AtomicCapsuleCheck{
  static int checks;static String P="notification.superx.",M="chrona.atomic.";
@@ -100,21 +100,20 @@ public class AtomicCapsuleCheck{
   new AtomicCapsuleController().onReceive(c,new Intent(c,AtomicCapsuleController.class).setAction("capsule_expire"));check(AgendaReminder.refreshes==refreshes+1,"expiry still refreshes real notifications");
   Settings.Global.boot++;SystemClock.now=5;AtomicCapsuleController.initialize(c);check(!c.prefs.contains("identity:11")&&c.prefs.getLong("wake_until",0)==30005,"reboot invalidates old monotonic timestamps");
   check(AtomicCapsuleController.shortTitle("").isEmpty()&&AtomicCapsuleController.shortTitle("课").equals("课")&&AtomicCapsuleController.shortTitle("课程").equals("课程"),"zero to two characters unchanged");check(AtomicCapsuleController.shortTitle("😀课表").equals("😀课"),"surrogate pair not split");check(AtomicCapsuleController.shortTitle("a\u0301bc").equals("a\u0301b"),"combining mark remains attached");
-  AtomicCapsuleAccessibilityService.on=true;
-  SystemClock.now=100000;decorate(c,20,"desktop-A");
-  long wake=c.prefs.getLong("wake_until",0);AtomicCapsuleController.screenOn(c,SystemClock.now);
-  check(c.prefs.getLong("wake_until",0)==wake,"enabled auxiliary route does not mistake screen-on for desktop");
-  AtomicCapsuleController.desktopEntered(c,SystemClock.now);check(c.prefs.getLong("wake_until",0)==130000,"desktop starts 30 seconds");
-  SystemClock.now=110000;check(AtomicCapsuleController.capsuleClicked(c,20,"desktop-A",SystemClock.now),"native expansion accepts matching live identity");
-  check(c.prefs.getLong("until:20",0)==170000&&c.alarms.at==170000,"click replaces 30 seconds with 60 seconds");
-  SystemClock.now=140000;check(!AtomicCapsuleController.capsuleClicked(c,20,"obsolete",SystemClock.now),"stale card cannot extend replacement");
-  check(!AtomicCapsuleController.capsuleClicked(c,20,"desktop-A",SystemClock.now-2001),"expired native event rejected");
-  check(!AtomicCapsuleController.capsuleClicked(c,20,"desktop-A",SystemClock.now+1),"future event rejected");
-  AtomicCapsuleController.initialize(c);check(c.prefs.getLong("until:20",0)==170000&&c.prefs.getLong("wake_until",0)==130000,"restore never invents a desktop event");
-  SystemClock.now=169999;Bundle clicked=decorate(c,20,"desktop-A");check(right(clicked).endsWith("长标题"),"full capsule survives earlier desktop deadline and refreshes");
-  SystemClock.now=170000;AtomicCapsuleController.apply(c,clicked);check(right(clicked).equals("数字"),"click capsule contracts exactly at 60 seconds");
-  check(!clicked.getBundle(P+"island").containsKey("island.superx.forceShowCard"),"click timing never controls native card");
-  AtomicCapsuleController.clear(c,20);check(!AtomicCapsuleController.capsuleClicked(c,20,"desktop-A",SystemClock.now),"ended notice cannot be revived by delayed event");
+  SystemClock.now=100000;decorate(c,20,"exit-A");
+  SystemClock.now=140000;Bundle exited=decorate(c,20,"exit-A");check(right(exited).equals("数字"),"existing notice is compact before leaving app");
+  AtomicCapsuleController.appExited(c,SystemClock.now);AtomicCapsuleController.apply(c,exited);
+  check(c.prefs.getLong("wake_until",0)==170000&&right(exited).endsWith("长标题"),"leaving Chrona restores full capsule for 30 seconds");
+  SystemClock.now=150000;new AtomicCapsuleController().onReceive(c,new Intent(c,AtomicCapsuleController.class).setAction("capsule_click"));
+  check(c.prefs.getLong("wake_until",0)==170000&&c.prefs.getLong("until:20",0)==130000,"native click has no app timer and cannot renew either window");
+  AtomicCapsuleController.initialize(c);check(c.prefs.getLong("wake_until",0)==170000,"recovery preserves app exit window");
+  SystemClock.now=169999;AtomicCapsuleController.apply(c,exited);check(right(exited).endsWith("长标题"),"app exit remains full just before 30 seconds");
+  SystemClock.now=170000;AtomicCapsuleController.apply(c,exited);check(right(exited).equals("数字"),"app exit contracts exactly at 30 seconds");
+  c.power.awake=false;AtomicCapsuleController.screenOff(c);SystemClock.now=180000;AtomicCapsuleController.appExited(c,SystemClock.now);
+  check(c.prefs.getLong("wake_until",0)==170000&&c.alarms.at==0,"screen-off activity stop does not create a reading window");
+  c.power.awake=true;VivoAtomicNotification.vivo=false;AtomicCapsuleController.appExited(c,SystemClock.now);
+  check(c.prefs.getLong("wake_until",0)==170000,"other manufacturers do not create capsule windows");
+  VivoAtomicNotification.vivo=true;AtomicCapsuleController.clear(c,20);
   System.out.println("Atomic capsule: PASS ("+checks+" production-controller checks; OEM display pending)");
  }
 }
@@ -122,31 +121,30 @@ class AtomicCapsuleShortCheck{
  static int checks;
  static void check(boolean value,String message){checks++;if(!value)throw new AssertionError(message);}
  public static void main(String[]args){
-  check(AtomicCapsuleController.WAKE_MILLIS==5000&&AtomicCapsuleController.CLICK_MILLIS==10000,"short variant BuildConfig reaches actual controller");
-  Context c=new Context();AtomicCapsuleAccessibilityService.on=true;SystemClock.now=1000;AtomicCapsuleController.initialize(c);
+  check(AtomicCapsuleController.WAKE_MILLIS==5000,"short variant BuildConfig reaches actual controller");
+  Context c=new Context();SystemClock.now=1000;AtomicCapsuleController.initialize(c);
   Bundle data=AtomicCapsuleCheck.decorate(c,50,"short-A");
   check(c.prefs.getLong("until:50",0)==6000&&c.alarms.at==6000,"new capsule receives five seconds");
-  SystemClock.now=2000;AtomicCapsuleController.desktopEntered(c,SystemClock.now);
-  check(c.prefs.getLong("wake_until",0)==7000&&c.alarms.at==7000,"desktop receives five seconds");
+  SystemClock.now=2000;AtomicCapsuleController.appExited(c,SystemClock.now);
+  check(c.prefs.getLong("wake_until",0)==7000&&c.alarms.at==7000,"app exit receives five seconds");
   SystemClock.now=4000;AtomicCapsuleCheck.decorate(c,50,"short-A");
   check(c.prefs.getLong("until:50",0)==6000&&c.prefs.getLong("wake_until",0)==7000&&c.alarms.at==7000,"ordinary refresh renews neither deadline");
-  SystemClock.now=6999;AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).endsWith("长标题"),"desktop remains expanded before five-second boundary");
-  SystemClock.now=7000;AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).equals("数字")&&AtomicCapsuleCheck.left(data).isEmpty(),"desktop contracts exactly at five seconds");
-  SystemClock.now=8000;check(AtomicCapsuleController.capsuleClicked(c,50,"short-A",SystemClock.now),"matching native click accepted");
-  check(c.prefs.getLong("until:50",0)==18000&&c.alarms.at==18000,"click replaces deadline with ten seconds from click");
-  AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).endsWith("长标题"),"click restores full capsule");
-  SystemClock.now=9000;AtomicCapsuleController.desktopEntered(c,SystemClock.now);
-  check(c.prefs.getLong("wake_until",0)==14000&&c.alarms.at==18000,"later desktop deadline cannot shorten click window");
+  SystemClock.now=6999;AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).endsWith("长标题"),"app exit remains expanded before five-second boundary");
+  SystemClock.now=7000;AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).equals("数字")&&AtomicCapsuleCheck.left(data).isEmpty(),"app exit contracts exactly at five seconds");
+  SystemClock.now=8000;new AtomicCapsuleController().onReceive(c,new Intent(c,AtomicCapsuleController.class).setAction("capsule_click"));
+  check(c.prefs.getLong("until:50",0)==6000&&c.prefs.getLong("wake_until",0)==7000,"click does not renew short window");
+  AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).equals("数字"),"click leaves expired capsule compact");
+  SystemClock.now=9000;AtomicCapsuleController.screenOn(c,SystemClock.now);
+  check(c.prefs.getLong("wake_until",0)==14000&&c.alarms.at==14000,"screen on restores five seconds");
   SystemClock.now=12000;AtomicCapsuleCheck.decorate(c,50,"short-A");
-  check(c.prefs.getLong("until:50",0)==18000&&c.prefs.getLong("wake_until",0)==14000,"refresh cannot renew click or desktop window");
-  AtomicCapsuleController.initialize(c);check(c.prefs.getLong("until:50",0)==18000,"recovery preserves ten-second click deadline");
-  SystemClock.now=17999;AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).endsWith("长标题"),"click remains full just before ten seconds");
-  SystemClock.now=18000;AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).equals("数字"),"click contracts exactly at ten seconds");
+  check(c.prefs.getLong("until:50",0)==6000&&c.prefs.getLong("wake_until",0)==14000,"refresh cannot renew item or reading window");
+  AtomicCapsuleController.initialize(c);check(c.prefs.getLong("wake_until",0)==14000,"recovery preserves five-second screen window");
+  SystemClock.now=13999;AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).endsWith("长标题"),"screen window remains full before five seconds");
+  SystemClock.now=14000;AtomicCapsuleController.apply(c,data);check(AtomicCapsuleCheck.right(data).equals("数字"),"screen window contracts exactly at five seconds");
   check(data.getBundle(AtomicCapsuleCheck.P+"island").getString("card").equals("full-card-unchanged"),"native expanded card stays complete after contraction");
   check(!data.getBundle(AtomicCapsuleCheck.P+"island").containsKey("island.superx.forceShowCard"),"timing never forces native card open or closed");
   AtomicCapsuleController.clear(c,50);
   check(!c.prefs.contains("identity:50")&&!c.prefs.contains("until:50")&&c.alarms.at==0&&Handler.delayed==null,"ended notice clears identity, deadline and scheduled work");
-  check(!AtomicCapsuleController.capsuleClicked(c,50,"short-A",SystemClock.now),"ended short notice cannot be revived");
   System.out.println("Atomic capsule capsuleTest: PASS ("+checks+" short-duration production-controller checks; OEM display pending)");
  }
 }
@@ -167,7 +165,7 @@ for variant, durations, main in (
     file.write_text(harness.replace('__BUILD_CONFIG__', config), encoding='utf-8')
     subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file)], check=True)
     subprocess.run([str(java / 'java.exe'), '-cp', str(out), main], check=True)
-print('Build variants: PASS (release 30s/60s; isolated capsuleTest 5s/10s and version suffix; source contracts)', flush=True)
+print('Build variants: PASS (release 30s; isolated capsuleTest 5s and version suffix; source contracts)', flush=True)
 
 # The host doubles above execute the controller; these contracts verify every production publisher.
 def read(name):
@@ -180,3 +178,74 @@ assert 'putBoolean("island.superx.forceShowCard", false)' in updates
 assert 'AtomicCapsuleController.clear(context, id)' in read('VivoAtomicNotification.java')
 assert 'HomeworkNotice.activeAtomic(context)' in read('AgendaReminderLiveService.java')
 print('Publisher/seconds/cleanup/liveness wiring: PASS (source contracts, not device interaction)')
+
+# Execute the actual app-local lifecycle methods, including internal navigation and rotation.
+app = read('ChronaApp.java')
+assert 'private int startedActivities;' in app
+
+
+def lifecycle_method(name):
+    start = app.index('public void ' + name + '(')
+    brace = app.index('{', start)
+    depth, end = 1, brace + 1
+    while depth:
+        depth += (app[end] == '{') - (app[end] == '}')
+        end += 1
+    return app[start:end].replace('android.os.SystemClock', 'SystemClock')
+
+
+lifecycle = r'''
+class Activity { boolean rotating; boolean isChangingConfigurations(){return rotating;} }
+class SystemClock { static long elapsedRealtime(){return 12345;} }
+class AtomicCapsuleController { static int exits; static long at; static void appExited(ChronaApp app,long time){exits++;at=time;} }
+class ChronaApp {
+ private int startedActivities;
+ class Lifecycle {
+ __STARTED__
+ __STOPPED__
+ }
+}
+public class AtomicCapsuleLifecycleCheck {
+ static int checks;
+ static void check(boolean value,String message){checks++;if(!value)throw new AssertionError(message);}
+ public static void main(String[] args){
+  ChronaApp app=new ChronaApp();ChronaApp.Lifecycle lifecycle=app.new Lifecycle();
+  Activity first=new Activity(),second=new Activity();
+  lifecycle.onActivityStarted(first);lifecycle.onActivityStarted(second);lifecycle.onActivityStopped(first);
+  check(AtomicCapsuleController.exits==0,"internal navigation does not renew capsule");
+  lifecycle.onActivityStopped(second);
+  check(AtomicCapsuleController.exits==1&&AtomicCapsuleController.at==12345,"last stopped activity starts one monotonic exit window");
+  Activity rotating=new Activity();rotating.rotating=true;lifecycle.onActivityStarted(rotating);lifecycle.onActivityStopped(rotating);
+  check(AtomicCapsuleController.exits==1,"configuration change does not renew capsule");
+  Activity replacement=new Activity();lifecycle.onActivityStarted(replacement);lifecycle.onActivityStopped(replacement);
+  check(AtomicCapsuleController.exits==2,"real exit after rotation still detected");
+  lifecycle.onActivityStarted(first);lifecycle.onActivityStarted(second);lifecycle.onActivityStopped(second);
+  check(AtomicCapsuleController.exits==2,"return within app does not renew capsule");
+  lifecycle.onActivityStopped(first);check(AtomicCapsuleController.exits==3,"returning to external screen detected");
+  System.out.println("Atomic capsule app lifecycle: PASS ("+checks+" production-method checks)");
+ }
+}
+'''.replace('__STARTED__', lifecycle_method('onActivityStarted')).replace('__STOPPED__', lifecycle_method('onActivityStopped'))
+out = root / 'build/atomic-capsule-30s/check/lifecycle'
+out.mkdir(parents=True, exist_ok=True)
+file = out / 'AtomicCapsuleLifecycleCheck.java'
+file.write_text(lifecycle, encoding='utf-8')
+subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file)], check=True)
+subprocess.run([str(java / 'java.exe'), '-cp', str(out), 'AtomicCapsuleLifecycleCheck'], check=True)
+
+manifest = (root / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
+settings = read('NotificationSettingsActivity.java')
+assert 'BIND_ACCESSIBILITY_SERVICE' not in manifest and 'android.accessibilityservice' not in manifest
+assert 'android.intent.category.HOME' not in manifest
+assert 'ACTION_ACCESSIBILITY_SETTINGS' not in settings and '胶囊计时' not in settings
+for name in ('AtomicCapsuleAccessibilityService.java', 'AtomicCapsuleIdentity.java'):
+    assert not (root / 'app/src/main/java/com/donglan/chrona' / name).exists()
+assert not (root / 'app/src/main/res/xml/atomic_capsule_accessibility.xml').exists()
+for path in (root / 'app/src/main/java').rglob('*.java'):
+    text = path.read_text(encoding='utf-8')
+    assert 'AtomicCapsuleAccessibilityService' not in text and 'AtomicCapsuleIdentity' not in text, path
+assert 'PACKAGE_USAGE_STATS' not in manifest
+assert all(term not in app for term in ('UsageStatsManager', 'CATEGORY_HOME', 'getRunningTasks'))
+for title in ('Chrona 日程', '系统日程', '使用壁纸背景', '胶囊显示倒计时', '显示秒数', '原子通知权限'):
+    assert title in settings
+print('Privacy/settings removal: PASS (no production accessibility service, launcher query or usage access; other atomic controls retained)')

@@ -12,6 +12,21 @@ import java.util.Map;
 public final class ClassroomMaterialUpdates {
     private ClassroomMaterialUpdates() { }
 
+    /** The processed recording replaces live observations, retaining only matching raw-file identities. */
+    public static JSONObject complete(JSONObject previous, JSONObject recording) throws Exception {
+        JSONObject merged=merge(previous,recording);
+        Map<String,Integer> cached=new LinkedHashMap<>();
+        JSONArray rows=merged.getJSONArray("images");
+        for(int i=0;i<rows.length();i++)cached.put(rows.getJSONObject(i).getString("url"),rows.getJSONObject(i).getInt("cache_index"));
+        JSONArray images=new JSONArray();rows=recording.getJSONArray("images");
+        for(int i=0;i<rows.length();i++){
+            JSONObject image=new JSONObject(rows.getJSONObject(i).toString());
+            image.put("cache_index",cached.get(image.getString("url")));images.put(image);
+        }
+        return merged.put("segments",new JSONArray(recording.getJSONArray("segments").toString()))
+                .put("images",images).put("raw_images",recording.optInt("raw_images",images.length()));
+    }
+
     public static JSONObject merge(JSONObject previous, JSONObject observation) throws Exception {
         Map<String, JSONObject> segments = new LinkedHashMap<>();
         Map<String, JSONObject> images = new LinkedHashMap<>();

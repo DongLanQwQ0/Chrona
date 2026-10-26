@@ -119,7 +119,7 @@ final class WeekTimetableDeviceCheck {
             }finally{test.runOnMainSync(()->{try{setScale.invoke(null,scale);}catch(Exception e){throw new IllegalStateException(e);}});}
             waitFor(()->monday.equals(field(page,"shownWeek"))&&!Boolean.TRUE.equals(field(page,"weekTransition"))
                     &&((View)field(page,"weekPicker")).getWidth()>0,"stable current-week tree");
-            require(((TextView)((ViewGroup)table((HorizontalScrollView)field(page,"weekPicker")).getChildAt(0)).getChildAt(1)).getText().toString()
+            require(((TextView)table((HorizontalScrollView)field(page,"weekPicker")).getChildAt(0)).getText().toString()
                     .startsWith(monday.format(java.time.format.DateTimeFormatter.ofPattern("M/d"))),"header and grid show the same settled week");
             shot(test,"classroom-week-"+args.getString("theme","light"));
             if("viewport_status".equals(args.getString("scope")))viewportStatus(test,args,host,page,session,store,lessons,monday);
@@ -150,19 +150,19 @@ final class WeekTimetableDeviceCheck {
         test.runOnMainSync(()->{set(session,"catalog",changed);set(session,"nextRemoteAt",SystemClock.elapsedRealtime()+300000);invoke(page,"update",new Class<?>[]{});invoke(page,"scheduleRefresh",new Class<?>[]{});});
         View body=(View)field(page,"weekPicker");
         TextView timed=(TextView)findText(body,"自动状态");TextView remote=(TextView)findText(body,"远端状态");
-        require(timed!=null&&!timed.isEnabled()&&timed.getText().toString().contains("未开始"),"future cell begins disabled");
+        require(timed!=null&&timed.isEnabled()&&timed.getText().toString().contains("未开始"),"future cell offers monitoring before replay is available");
         waitFor(()->timed.isEnabled()&&timed.getText().toString().contains("可回看"),"time boundary updates without a tap or rebuilding");
         require(body==field(page,"weekPicker"),"timer preserves the table instance");
         test.runOnMainSync(()->((HorizontalScrollView)body).scrollTo(150,0));int pan=body.getScrollX();
         List<ClassroomLesson> refreshed=new ArrayList<>(changed);refreshed.remove(processing);
         refreshed.add(new ClassroomLesson(processing.courseId,processing.id,processing.course,processing.title,processing.room,"6",processing.startsAt));
         test.runOnMainSync(()->{set(session,"catalog",refreshed);invoke(session,"publish",new Class<?>[]{});});
-        waitFor(()->remote.isEnabled(),"remote preparation status updates existing cell");
+        waitFor(()->remote.getText().toString().contains("可回看"),"remote preparation status updates existing cell");
         require(body==field(page,"weekPicker")&&body.getScrollX()==pan,"status-only refresh retains table and horizontal offset");
         require(((ClassroomLesson)remote.getTag()).selectable(System.currentTimeMillis()),"new clickable lesson uses the refreshed record");
         android.os.Handler handler=(android.os.Handler)field(page,"refreshHandler");Runnable tick=(Runnable)field(page,"refreshTick");
         test.runOnMainSync(()->invoke(page,"selectMode",new Class<?>[]{int.class},1));
-        require(!handler.hasCallbacks(tick),"automatic catalogue work stops outside the table mode");
+        require(handler.hasCallbacks(tick),"local monitoring and history checks remain scheduled outside the table mode");
         test.runOnMainSync(()->invoke(page,"selectMode",new Class<?>[]{int.class},0));
         require(handler.hasCallbacks(tick),"table mode resumes automatic work");
         test.runOnMainSync(()->host.selectPage(0));
@@ -204,7 +204,7 @@ final class WeekTimetableDeviceCheck {
         require(!handler.hasCallbacks(tick),"account disable removes timer");
     }
     private static int[] position(View view){int[] p=new int[2];view.getLocationOnScreen(p);return p;}
-    private static ViewGroup table(HorizontalScrollView picker){return (ViewGroup)((android.widget.ScrollView)picker.getChildAt(0)).getChildAt(0);}
+    private static ViewGroup table(HorizontalScrollView picker){return findType(picker,TimetableGrid.class);}
     private static void smoothVerticalDrag(Instrumentation test,HorizontalScrollView picker,android.widget.ScrollView scroll)throws Exception{
         require(scroll.getParent()==picker,"week agenda hierarchy: stationary horizontal owner outside native vertical viewport");
         test.runOnMainSync(()->scroll.scrollTo(0,0));SystemClock.sleep(80);

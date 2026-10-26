@@ -3,6 +3,7 @@ package com.donglan.chrona;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Matrix;
+import android.graphics.BitmapFactory;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
@@ -18,7 +19,11 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.donglan.chrona.image.ImageStore;
+import com.donglan.chrona.classroom.ClassroomLesson;
+import com.donglan.chrona.classroom.ClassroomStore;
+import org.json.JSONObject;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -26,11 +31,14 @@ import java.io.OutputStream;
 /** Full-screen attachment viewer with pinch zoom and Android's document save picker. */
 public final class AttachmentViewerActivity extends Activity {
     static final String EXTRA_IMAGE_NAME = "image_name";
+    private static final String EXTRA_CLASSROOM_ACCOUNT="classroom_image_account",EXTRA_CLASSROOM_LESSON="classroom_image_lesson",EXTRA_CLASSROOM_RAW="classroom_image_raw";
     private static final int CREATE_IMAGE_DOCUMENT = 1;
     private final Matrix imageMatrix = new Matrix();
     private final Matrix fitMatrix = new Matrix();
     private ImageView image;
     private String imageName;
+    private String classroomAccount,rawName,imageMime="image/jpeg",exportName;
+    private ClassroomLesson classroomLesson;
     private float scale = 1f;
     private float lastX;
     private float lastY;
@@ -39,55 +47,45 @@ public final class AttachmentViewerActivity extends Activity {
     private ScaleGestureDetector scaleDetector;
     private GestureDetector gestureDetector;
 
+    static void openClassroom(Activity activity,String account,ClassroomLesson lesson,String raw){
+        if(!ClassroomMonitor.allowed(activity,account)||raw==null||!raw.matches("raw-[0-9]+\\.img"))return;
+        try{activity.startActivity(new Intent(activity,AttachmentViewerActivity.class).putExtra(EXTRA_CLASSROOM_ACCOUNT,account)
+                .putExtra(EXTRA_CLASSROOM_LESSON,lesson.json().toString()).putExtra(EXTRA_CLASSROOM_RAW,raw));}
+        catch(Exception failure){Feedback.show(activity,"无法打开课堂图片");}
+    }
+
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
-        imageName = getIntent().getStringExtra(EXTRA_IMAGE_NAME);
-        if (imageName == null || !ImageStore.isStoredName(imageName)) {
-            finish();
-            return;
-        }
+        File source;
+        try{
+            if(getIntent().hasExtra(EXTRA_CLASSROOM_ACCOUNT)||getIntent().hasExtra(EXTRA_CLASSROOM_LESSON)||getIntent().hasExtra(EXTRA_CLASSROOM_RAW)){
+                classroomAccount=getIntent().getStringExtra(EXTRA_CLASSROOM_ACCOUNT);rawName=getIntent().getStringExtra(EXTRA_CLASSROOM_RAW);
+                classroomLesson=ClassroomLesson.fromJson(new JSONObject(getIntent().getStringExtra(EXTRA_CLASSROOM_LESSON)));
+                source=sourceFile();BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.getPath(),bounds);
+                if(bounds.outWidth<=0||bounds.outHeight<=0||bounds.outMimeType==null)throw new java.io.IOException("课堂图片无法读取");
+                imageMime=bounds.outMimeType;String extension=android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(imageMime);
+                if(extension==null||!imageMime.startsWith("image/"))throw new java.io.IOException("课堂图片格式无效");
+                exportName="课堂PPT-"+classroomLesson.date()+"-"+rawName.substring(0,rawName.length()-4)+"."+extension;
+            }else{
+                imageName=getIntent().getStringExtra(EXTRA_IMAGE_NAME);if(!ImageStore.isStoredName(imageName))throw new java.io.IOException("图片附件无效");
+                source=sourceFile();exportName="Chrona-"+imageName;
+            }
+        }catch(Exception failure){finish();return;}
         FrameLayout stage = new FrameLayout(this);
-        stage.setBackgroundColor(0xFF090A0C);
+        stage.addView(new GlassBackdropView(this),new FrameLayout.LayoutParams(-1,-1));
+        FrameLayout safeArea=new FrameLayout(this);stage.addView(safeArea,new FrameLayout.LayoutParams(-1,-1));
         image = new ImageView(this);
         image.setScaleType(ImageView.ScaleType.MATRIX);
-        image.setImageURI(Uri.fromFile(new ImageStore(this).fileFor(imageName)));
-        stage.addView(image, new FrameLayout.LayoutParams(-1, -1));
-
-        LinearLayout shell = new LinearLayout(this);
-        shell.setOrientation(LinearLayout.VERTICAL);
-        shell.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(10));
-        ImageButton back = UiStyle.navigationIcon(this, R.drawable.ic_arrow_left, "返回图片附件", this::finish);
-        LinearLayout header = UiStyle.headerRow(this);
-        header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        TextView title = new TextView(this);
-        title.setText("图片附件");
-        title.setTextSize(17);
-        UiStyle.title(title);
-        title.setGravity(Gravity.CENTER);
-        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView save = new TextView(this);
-        save.setText("保存");
-        save.setTextSize(15);
-        save.setGravity(Gravity.CENTER);
-        save.setTextColor(UiStyle.colors(this).primary);
-        save.setMinHeight(dp(48));
-        save.setMinWidth(dp(56));
-        UiStyle.pill(save, false);
-        save.setOnClickListener(view -> saveImage());
-        header.addView(save, new LinearLayout.LayoutParams(dp(56), dp(48)));
-        shell.addView(header, new LinearLayout.LayoutParams(-1, -2));
-        View spacer = new View(this);
-        shell.addView(spacer, new LinearLayout.LayoutParams(-1, 0, 1));
-        TextView hint = new TextView(this);
-        hint.setText("双指缩放 · 双击放大");
-        hint.setTextSize(12);
-        hint.setGravity(Gravity.CENTER);
-        hint.setTextColor(0xCCFFFFFF);
-        shell.addView(hint, new LinearLayout.LayoutParams(-1, dp(34)));
-        FrameLayout.LayoutParams shellParams = new FrameLayout.LayoutParams(-1, -1);
-        stage.addView(shell, shellParams);
-        UiStyle.applyInsets(stage, shell);
+        image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大":"课堂PPT，双指缩放或双击放大");
+        if(classroomLesson==null)image.setImageURI(Uri.fromFile(source));
+        else{BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.getPath(),options);options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>2048)options.inSampleSize*=2;options.inJustDecodeBounds=false;image.setImageBitmap(BitmapFactory.decodeFile(source.getPath(),options));}
+        safeArea.addView(image, new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout shell=SettingsPageLayout.content(this);
+        ImageButton save=UiStyle.navigationIcon(this,R.drawable.ic_week_export,"保存图片",this::saveImage);
+        SettingsPageLayout.header(this,shell,classroomLesson==null?"图片附件":"课堂PPT",save);
+        safeArea.addView(shell,new FrameLayout.LayoutParams(-1,-1));
+        UiStyle.applyInsets(stage, safeArea);
         setContentView(stage);
 
         scaleDetector = new ScaleGestureDetector(this,
@@ -164,18 +162,19 @@ public final class AttachmentViewerActivity extends Activity {
     }
 
     private void saveImage() {
+        try{sourceFile();}catch(Exception failure){Feedback.show(this,"图片已不可用");return;}
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("image/jpeg");
-        intent.putExtra(Intent.EXTRA_TITLE, "Chrona-" + imageName);
-        startActivityForResult(intent, CREATE_IMAGE_DOCUMENT);
+        intent.setType(imageMime);
+        intent.putExtra(Intent.EXTRA_TITLE, exportName);
+        try{startActivityForResult(intent, CREATE_IMAGE_DOCUMENT);}catch(Exception failure){Feedback.show(this,"无法打开文件保存器");}
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != CREATE_IMAGE_DOCUMENT || resultCode != RESULT_OK || data == null
                 || data.getData() == null) return;
-        try (InputStream input = new FileInputStream(new ImageStore(this).fileFor(imageName));
+        try (InputStream input = new FileInputStream(sourceFile());
                 OutputStream output = getContentResolver().openOutputStream(data.getData())) {
             if (output == null) throw new IllegalStateException("无法打开保存位置");
             byte[] buffer = new byte[8192];
@@ -186,6 +185,16 @@ public final class AttachmentViewerActivity extends Activity {
             Feedback.showLong(this, "保存图片失败：" + exception.getMessage());
         }
     }
+
+    private File sourceFile()throws Exception{
+        File file;
+        if(classroomLesson!=null){
+            if(!ClassroomMonitor.allowed(this,classroomAccount)||rawName==null||!rawName.matches("raw-[0-9]+\\.img"))throw new SecurityException("课堂账号已不可用");
+            file=new File(new ClassroomStore(this,classroomAccount).localLesson(classroomLesson),rawName);
+        }else{if(!ImageStore.isStoredName(imageName))throw new SecurityException("图片附件无效");file=new ImageStore(this).fileFor(imageName);}
+        if(!file.isFile())throw new java.io.IOException("图片已不存在");return file;
+    }
+    @Override protected void onResume(){super.onResume();if(classroomLesson!=null&&!ClassroomMonitor.allowed(this,classroomAccount))finish();}
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);

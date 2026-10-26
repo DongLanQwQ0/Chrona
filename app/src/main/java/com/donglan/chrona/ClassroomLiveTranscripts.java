@@ -13,6 +13,9 @@ import java.util.concurrent.Executors;
 
 /** Service-owned continuous sockets. Polling PPT/materials never closes or recreates these sockets. */
 final class ClassroomLiveTranscripts {
+    // TLS pool eviction may write close_notify. Service destruction must never perform it on main.
+    private static final java.util.concurrent.ExecutorService cleanup=Executors.newSingleThreadExecutor();
+    private static void release(ClassroomClient client){if(client!=null)cleanup.execute(client::close);}
     private final Context app;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final java.util.concurrent.ExecutorService connector=Executors.newSingleThreadExecutor();
@@ -27,8 +30,8 @@ final class ClassroomLiveTranscripts {
             Map<String,ClassroomLesson> wanted=new LinkedHashMap<>();
             if(ClassroomMonitor.allowed(app,account))for(ClassroomLesson lesson:ClassroomMonitorStore.pending(new ClassroomMonitorStore(app,account).read()))
                 if(lesson.startsAt<=System.currentTimeMillis()){
-                    File dir=new ClassroomStore(app,account).localLesson(lesson);JSONObject stage=ClassroomStore.read(new File(dir,"monitor-stage.json"));
-                    if(stage==null||"1".equals(stage.optString("status")))wanted.put(account+":"+ClassroomMonitorStore.key(lesson),lesson);
+                    // PPT/replay state may lag behind the live service. It cannot authorize or block a socket.
+                    wanted.put(account+":"+ClassroomMonitorStore.key(lesson),lesson);
                 }
             for(String key:new ArrayList<>(slots.keySet()))if(!wanted.containsKey(key)){slots.remove(key).close();}
             for(var entry:wanted.entrySet()) {
@@ -36,6 +39,7 @@ final class ClassroomLiveTranscripts {
                 int failures=0;
                 if(old!=null&&old.failedAt>0&&System.currentTimeMillis()-old.failedAt>=old.retryDelay){failures=old.failures;old.close();slots.remove(entry.getKey());old=null;}
                 if(old==null){Slot slot=new Slot(account,entry.getValue());slot.failures=failures;slots.put(entry.getKey(),slot);connector.execute(slot::connect);}
+                else old.verifyCurrent();
             }
         }catch(Exception failure){android.util.Log.w("ChronaClassroomMonitor","live refresh: "+failure.getClass().getSimpleName());}
     }
@@ -52,22 +56,34 @@ final class ClassroomLiveTranscripts {
         int failures;long retryDelay=5_000;
         volatile ClassroomClient client;volatile WebSocket socket;
         File dir;JSONObject state;long savedAt;
-        private final Runnable heartbeat=new Runnable(){public void run(){if(!stopped&&socket!=null){socket.send("pi");main.postDelayed(this,30_000);}}};
+        volatile long verifiedAt;volatile boolean checking;
+        private final Runnable heartbeat=new Runnable(){public void run(){synchronized(Slot.this){if(!stopped&&failedAt==0&&socket!=null){socket.send("pi");main.postDelayed(this,30_000);}}}};
         Slot(String account,ClassroomLesson lesson){this.account=account;this.lesson=lesson;}
         void connect(){
             try {
                 if(stopped||!ClassroomMonitor.allowed(app,account))return;
                 dir=new ClassroomStore(app,account).localLesson(lesson);state=read(dir);status("连接中");
-                String[] pair=new ZjuSettingsStore(app).credentials();try{client=ClassroomMonitor.clients.apply(pair[0],pair[1]);}finally{Arrays.fill(pair,"");}
-                WebSocket connected=client.liveTranscript(lesson,this);socket=connected;
-                if(stopped){close();return;}
-                if(connected==null){failedAt=System.currentTimeMillis();status("等待实时字幕");client.close();client=null;}
+                String[] pair=new ZjuSettingsStore(app).credentials();ClassroomClient owner;try{owner=ClassroomMonitor.clients.apply(pair[0],pair[1]);}finally{Arrays.fill(pair,"");}
+                synchronized(this){if(stopped){release(owner);return;}client=owner;}
+                WebSocket connected=owner.liveTranscript(lesson,this);
+                synchronized(this){
+                    if(stopped||failedAt>0){if(connected!=null)connected.cancel();release(owner);return;}
+                    socket=connected;verifiedAt=System.currentTimeMillis();
+                    if(connected==null){failedAt=System.currentTimeMillis();status("等待实时字幕");client=null;release(owner);}
+                }
             }catch(Exception failure){fail();}
         }
-        @Override public void onOpen(WebSocket ws,Response response){
-            if(stopped){ws.cancel();return;}socket=ws;ws.send("in{\"version\":\"1.9.1\"}");
+        void verifyCurrent(){
+            if(stopped||failedAt>0||checking||socket==null||System.currentTimeMillis()-verifiedAt<30_000)return;
+            checking=true;connector.execute(()->{try{ClassroomClient current=client;if(stopped||current==null)return;
+                if(!current.liveNow(lesson)){fail();return;}verifiedAt=System.currentTimeMillis();
+            }catch(Exception failure){fail();}finally{checking=false;}});
         }
-        @Override public void onMessage(WebSocket ws,String frame){
+        @Override public synchronized void onOpen(WebSocket ws,Response response){
+            if(stopped||failedAt>0){ws.cancel();return;}socket=ws;ws.send("in{\"version\":\"1.9.1\"}");
+        }
+        @Override public synchronized void onMessage(WebSocket ws,String frame){
+            if(failedAt>0)return;
             if(stopped||!ClassroomMonitor.allowed(app,account)){close();return;}
             try {
                 if(frame.startsWith("pi")){ws.send("po");status("实时连接");return;}
@@ -86,10 +102,10 @@ final class ClassroomLiveTranscripts {
                 }
             }catch(Exception failure){fail();}
         }
-        private void status(String value){
+        private synchronized void status(String value){
             try{if(dir!=null)ClassroomStore.write(new File(dir,"live-status.json"),new JSONObject().put("state",value).put("at",System.currentTimeMillis()));}catch(Exception ignored){}
         }
-        private void fail(){
+        private synchronized void fail(){
             if(stopped||failedAt>0)return;failedAt=System.currentTimeMillis();retryDelay=Math.min(60_000,5_000L<<Math.min(failures++,4));main.removeCallbacks(heartbeat);status("连接中断，正在重连");
             ClassroomClient current=client;if(current!=null)current.close();client=null;socket=null;
             // A live connection recovers independently of the slower PPT polling cadence.
@@ -100,7 +116,7 @@ final class ClassroomLiveTranscripts {
         synchronized void close(){
             if(stopped)return;stopped=true;main.removeCallbacks(heartbeat);
             try{if(state!=null&&dir!=null)ClassroomStore.write(new File(dir,"live-current.json"),new JSONObject().put("base_count",state.getJSONArray("segments").length()).put("current",state.opt("current")));}catch(Exception ignored){}
-            WebSocket ws=socket;if(ws!=null)ws.close(1000,"monitor stopped");ClassroomClient current=client;if(current!=null)current.close();client=null;socket=null;status("连接已暂停");
+            WebSocket ws=socket;if(ws!=null)ws.close(1000,"monitor stopped");ClassroomClient current=client;client=null;socket=null;release(current);status("连接已暂停");
         }
     }
 }

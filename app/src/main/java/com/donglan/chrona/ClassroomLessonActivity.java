@@ -48,6 +48,8 @@ public final class ClassroomLessonActivity extends Activity {
         volatile ClassroomProgress progress;
         ClassroomNotifications notifications;
         volatile boolean notifyWork;
+        boolean monitorOwned;
+        Runnable completed;
         boolean updateQueued, detached;
         long startedAt;
         ClassroomLesson selected;File dir;JSONObject summary,materials,prepared;int imageLimit=ClassroomSummary.DEFAULT_IMAGES;
@@ -65,9 +67,9 @@ public final class ClassroomLessonActivity extends Activity {
             try{if(!allowed())return;if(dir!=null){ClassroomStore.begin(dir);leased=dir;}control=new RequestControl(60*60*1000L);if(cancelRequested)control.cancel();control.check();work.run();success=true;}
             catch(Exception e){message=cancelRequested||control!=null&&control.isCancelled()?"已停止，已完成内容已保存":NetworkFailure.hasDetails(e)?NetworkFailure.describe(e):(e.getMessage()==null?"操作失败，请重试":e.getMessage());}
             finally{if(leased!=null)ClassroomStore.end(leased);if(client!=null){client.close();client=null;}if(control!=null){control.close();control=null;}if(exportInFlight){exportUri=null;exportInFlight=false;}boolean completed=success;main.post(()->{busy=false;
-                if(notices&&notifications!=null){if(allowed())notifications.finished(message,completed);else notifications.clear();}notifyWork=false;if(notices)ClassroomWorkService.finished(this);publish();disposeIfDetached();});}
+                if(notices&&notifications!=null){if(allowed())notifications.finished(message,completed);else notifications.clear();}notifyWork=false;if(notices)ClassroomWorkService.finished(this);publish();if(this.completed!=null)this.completed.run();disposeIfDetached();});}
         });
-            if(notices)ClassroomWorkService.submit(this,execute);else execute.run();
+            if(notices){if(monitorOwned)ClassroomWorkService.submitMonitor(this,execute);else ClassroomWorkService.submit(this,execute);}else execute.run();
         }
         void startFailed(){busy=false;notifyWork=false;message="后台处理无法启动，请返回课堂重试";if(notifications!=null)notifications.finished(message,false);publish();disposeIfDetached();}
         void disposeIfDetached(){if(!busy&&detached&&owner.get()==null){preferences.unregisterOnSharedPreferenceChangeListener(changes);worker.shutdown();}}
@@ -133,6 +135,8 @@ public final class ClassroomLessonActivity extends Activity {
             job.summary=ClassroomStore.read(new File(job.dir,"summary.json"));
             job.materials=ClassroomStore.read(new File(job.dir,"materials.json"));
             JSONObject candidates=ClassroomStore.read(new File(job.dir,"candidates.json"));
+            JSONObject automatic=ClassroomMonitorStore.auto(new ClassroomMonitorStore(job.app,job.account).read(),job.selected);
+            if(automatic!=null)job.imageLimit=automatic.optInt("imageLimit",0);
             job.prepared=job.materials!=null&&candidates!=null
                     ? new JSONObject().put("segments",job.materials.getJSONArray("segments").length())
                         .put("raw",job.materials.optInt("raw_images"))
@@ -166,7 +170,7 @@ public final class ClassroomLessonActivity extends Activity {
         LinearLayout heading=new LinearLayout(this);heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView courseTitle=new TextView(this);courseTitle.setText(s.selected.course);courseTitle.setTextSize(21);UiStyle.title(courseTitle);
         heading.addView(courseTitle,new LinearLayout.LayoutParams(0,-2,1));
-        heading.addView(UiStyle.navigationIcon(this,R.drawable.ic_eye,"课堂监视",()->ClassroomMonitorUi.choose(this,s.selected)),new LinearLayout.LayoutParams(dp(48),dp(48)));
+        heading.addView(UiStyle.navigationIcon(this,R.drawable.ic_eye,"课堂监视",()->ClassroomMonitorUi.open(this,s.selected)),new LinearLayout.LayoutParams(dp(48),dp(48)));
         content.addView(heading);text(content,s.selected.date()+" "+clock(s.selected)+" · "+s.selected.title,14,false);
         completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"获取素材",this::prepare);generate=action(actions,"生成总结",this::confirmGeneration);content.addView(actions);
         cancel=button(content,"停止",()->s.cancel(),false);

@@ -35,7 +35,8 @@ public final class NetworkSafetyCheck {
         cancelWhileModelReading();
         totalDeadlineStopsDrip();
         remainingTimeoutAndConnectionIdentity();
-        System.out.println("NetworkSafetyCheck passed: preview append/reasoning/close, pre-send cancellation, blocked links/model, drip deadline, remaining timeout and connection identity");
+        cancellationNeverBlocksCaller();
+        System.out.println("NetworkSafetyCheck passed: preview failures, pre-send/blocked cancellation, drip deadline, identity, asynchronous daemon teardown and independent cancellations");
     }
 
     private static ParseResult parse(RequestControl control, ChatCompletionClient.PreviewSink sink,
@@ -95,6 +96,7 @@ public final class NetworkSafetyCheck {
             worker.join(1000);
             check(!worker.isAlive() && connection.disconnected && posts.get() == 0
                     && failure.get() instanceof InterruptedIOException, "link cancellation prevents AI");
+            cancelledOffCaller(connection,Thread.currentThread());
         }
     }
 
@@ -112,6 +114,7 @@ public final class NetworkSafetyCheck {
             control.cancel(); worker.join(1000);
             check(!worker.isAlive() && connection.disconnected && posts.get() == 1
                     && failure.get() instanceof InterruptedIOException, "model cancellation");
+            cancelledOffCaller(connection,Thread.currentThread());
         }
     }
 
@@ -137,18 +140,55 @@ public final class NetworkSafetyCheck {
             FakeConnection old = new FakeConnection(new URL("https://offline.test/old"), "success");
             FakeConnection fresh = new FakeConnection(new URL("https://offline.test/new"), "success");
             control.register(old); control.register(fresh); control.unregister(old); control.cancel();
+            check(fresh.disconnectStarted.await(1,TimeUnit.SECONDS),"asynchronous cancellation runs");
             check(fresh.disconnected && !old.disconnected, "old cleanup preserves new connection");
+            cancelledOffCaller(fresh,Thread.currentThread());
         }
+    }
+
+    private static void cancellationNeverBlocksCaller()throws Exception{
+        Thread caller=Thread.currentThread();
+        FakeConnection blocked=new FakeConnection(new URL("https://offline.test/blocked-disconnect"),"slow-disconnect");
+        try(RequestControl control=new RequestControl(2000);RequestControl other=new RequestControl(2000)){
+            control.register(blocked);control.cancel();
+            check(control.isCancelled(),"cancel flag is synchronous");
+            check(blocked.disconnectStarted.await(1,TimeUnit.SECONDS),"network teardown starts independently");
+            check(!blocked.disconnected,"caller returns while HTTPS teardown is blocked");
+            FakeConnection fresh=new FakeConnection(new URL("https://offline.test/independent"),"success");
+            other.register(fresh);other.cancel();check(fresh.disconnectStarted.await(1,TimeUnit.SECONDS),"another request cancellation is not queued behind blocked TLS");
+            cancelledOffCaller(blocked,caller);cancelledOffCaller(fresh,caller);
+        }finally{blocked.allowDisconnect.countDown();}
+        FakeConnection expired=new FakeConnection(new URL("https://offline.test/deadline"),"success");
+        try(RequestControl control=new RequestControl(60)){
+            control.register(expired);check(expired.disconnectStarted.await(1,TimeUnit.SECONDS),"deadline uses async teardown");
+            cancelledOffCaller(expired,caller);
+            check(!expired.firstDisconnect.get().getName().equals("chrona-network-deadline"),"deadline scheduler performs no TLS teardown");
+        }
+        FakeConnection late=new FakeConnection(new URL("https://offline.test/late-register"),"success");
+        try(RequestControl control=new RequestControl(2000)){
+            control.cancel();try{control.register(late);throw new AssertionError("late registration accepted");}catch(InterruptedIOException expected){}
+            check(late.disconnectStarted.await(1,TimeUnit.SECONDS),"cancelled registration tears down asynchronously");cancelledOffCaller(late,caller);
+        }
+    }
+    private static void cancelledOffCaller(FakeConnection connection,Thread caller){
+        Thread actual=connection.firstDisconnect.get();
+        check(actual!=null&&actual!=caller&&actual.isDaemon()&&actual.getName().equals("chrona-network-cancel"),"cancel disconnect uses independent daemon network executor");
     }
 
     private static final class FakeConnection extends HttpURLConnection {
         final String behavior;
         volatile boolean disconnected;
         final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch disconnectStarted = new CountDownLatch(1),allowDisconnect=new CountDownLatch(1);
+        final AtomicReference<Thread> firstDisconnect=new AtomicReference<>();
         FakeConnection(URL url, String behavior) { super(url); this.behavior = behavior; }
         public void connect() { }
         public boolean usingProxy() { return false; }
-        public void disconnect() { disconnected = true; release.countDown(); }
+        public void disconnect() {
+            firstDisconnect.compareAndSet(null,Thread.currentThread());
+            if(behavior.equals("slow-disconnect")){disconnectStarted.countDown();try{allowDisconnect.await();}catch(InterruptedException e){Thread.currentThread().interrupt();}}
+            disconnected = true;release.countDown();disconnectStarted.countDown();
+        }
         public OutputStream getOutputStream() { posts.incrementAndGet(); return new ByteArrayOutputStream(); }
         public int getResponseCode() { return 200; }
         public String getContentType() {

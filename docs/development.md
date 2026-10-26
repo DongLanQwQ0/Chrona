@@ -9,7 +9,7 @@
 | 项目 | 配置来源与当前值 |
 | --- | --- |
 | 应用 | 原生 Android Java，`com.donglan.chrona` |
-| 版本 | `app/build.gradle`：0.15.43 / 205 |
+| 版本 | `app/build.gradle`：0.15.45 / 207 |
 | Android | minSdk 26，compileSdk / targetSdk 36 |
 | 语言与构建 | Java 源码 17，AGP 9.4.1，Gradle Wrapper 9.6.0 |
 | 数据库 | `TaskStore.DATABASE_VERSION`：16 |
@@ -34,7 +34,7 @@
 
 ## 本机构建
 
-胶囊计时快速复验使用 `:app:assembleCapsuleTest`：独立构建变体将桌面窗口设为5秒、点击窗口设为10秒，版本名带 `-capsule-test-5s-10s`。同包同签名可保留数据覆盖安装；测试结束用正式release覆盖恢复。debug/release的BuildConfig始终为30／60秒，发布不得选用capsuleTest产物。离线 `python checks/atomic_capsule_check.py` 同时检查两种配置。
+胶囊计时快速复验使用 `:app:assembleCapsuleTest`：独立构建变体将新提醒、亮屏和退出拾时的阅读窗口设为5秒，版本名带 `-capsule-test-5s`。同包同签名可保留数据覆盖安装；测试结束用正式release覆盖恢复。debug/release的BuildConfig始终为30秒，点击不延长窗口；发布不得选用capsuleTest产物。离线 `python checks/atomic_capsule_check.py` 检查两种配置、投影、应用生命周期及无障碍移除合同。
 
 本机使用 PowerShell 7。SDK、用户数据和 Gradle 缓存在 F 盘；新增或更换工具链先经用户确认，不修改全局 Java 配置。
 
@@ -82,7 +82,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Build or lint failed' }
 
 `RepeatDeviceCheck`、`BrowserDeviceCheck` 与 `BackupRestoreDeviceCheck` 的写入前置统一由 `FixtureIsolation` 检查：仅官方模拟器上的 `com.donglan.chrona.followup.validation.v33`，学校功能停用且无真实账号、无外部同步配置或自动同步、无运行中或正在启动的 LAN 会话。旧 `.validation` 包及实体手机均拒绝运行。离线 `fixture_isolation_check.py` 检查拒绝条件和入口顺序；重复系列删除专项使用 `check=ui / phase=repeat / scope=delete_only`。备份往返使用 `check=backup_restore`，数据库、文件与偏好另设隔离目录／命名空间，校验大课堂正文及提交后维护失败；仅使用合成数据。
 
-胶囊设置行渲染使用同一隔离守卫，入口`check=capsule_settings`，参数`theme=light|dark`、`widthDp=320..600`、`font=1..2`。宽度与字体仅覆盖测试Activity资源，不更改模拟器全局设置。真实页面和行监听器参与测试，OEM能力及状态值使用展示夹具；该检查不能替代vivo权限启停、胶囊事件或原生大卡片验收。
+胶囊设置渲染使用同一隔离守卫，入口`check=capsule_settings`，参数`theme=light|dark`、`widthDp=320..600`、`font=1..2`。宽度与字体仅覆盖测试Activity资源，不更改模拟器全局设置。真实页面检查「胶囊计时」入口已移除、其它原子岛设置仍保留及权限行可达；OEM能力使用展示夹具。vivo上的退出拾时／亮屏阅读窗口、点击不续时与原生大卡片开关单独验收。
 
 自动重复提示隔离夹具入口为`check=compact_detail_atomic / scope=automatic_merge`，同样支持`theme/widthDp/font`的Activity级覆盖。实际进入前后台、插入合成来源、取消及选择提交，验证真实候选仅删除所选组；沿用`FixtureIsolation`，拒绝实体手机及有真实学校／同步配置的环境。截图存目标应用外部files目录，报告输出`compact_report`。浏览器专项`node checks/lan_web_check.cjs --merge-only`使用模拟API，数据选择安全性另由`python checks/candidate_merge_check.py`验证生产事务与SQLite。
 

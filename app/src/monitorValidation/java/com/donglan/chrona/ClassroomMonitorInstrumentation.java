@@ -23,6 +23,8 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     private Activity activity;private int assertions;private volatile int phase;private volatile int downloads;
     private long starts;private ClassroomLesson selected,future;private byte[] red,blue;
     private volatile boolean liveFixture;private volatile int socketOpens;private volatile FakeSocket lastSocket;
+    private volatile List<ClassroomLesson> lookupCatalog;
+    private volatile CountDownLatch materialGate;
     @Override public void onCreate(Bundle input){args=input==null?new Bundle():input;super.onCreate(input);start();}
     @Override public Activity newActivity(ClassLoader loader,String name,Intent intent)throws InstantiationException,IllegalAccessException,ClassNotFoundException {
         Activity result=super.newActivity(loader,name,intent);
@@ -43,9 +45,13 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         selected=new ClassroomLesson("10","20","示例课程 · 实时课堂","课堂一","教室A","2",starts);future=new ClassroomLesson("10","21",selected.course,"课堂二","教室A","2",starts+3_600_000);
         red=png(android.graphics.Color.RED);blue=png(android.graphics.Color.BLUE);ClassroomMonitor.clients=(u,p)->client();
         new ClassroomStore(app,account).catalog(List.of(selected,future));
-        if("core".equals(args.getString("mode","ui"))){storeChecks();pipelineChecks();}
-        readerChecks();scopeChecks();tableChecks();
-        if("core".equals(args.getString("mode","ui")))backgroundChecks();
+        String mode=args.getString("mode","polish");
+        if("live".equals(mode))backgroundChecks();
+        else if("pipeline".equals(mode))pipelineChecks();
+        else if("auto".equals(mode))assertions+=ClassroomAutoSummaryChecks.run(this,args);
+        else if("table".equals(mode))tableChecks();
+        else if("workspace".equals(mode))workspaceChecks();
+        else assertions+=ClassroomUiPolishChecks.run(this,args);
         report.putString("monitor_report","PASS: "+assertions+" assertions; "+args.getString("mode","ui")+" "+args.getString("widthDp","400")+"/"+args.getString("font","1")+" "+args.getString("theme","light"));finish(-1,report);
     }catch(Throwable failure){report.putString("failure",android.util.Log.getStackTraceString(failure));finish(0,report);}
     finally{try{new ClassroomMonitorStore(app,account).stopAll();ClassroomMonitor.changed(app);settings.options(false,false);getUiAutomation().executeShellCommand("input keyevent 224").close();}catch(Exception ignored){}if(activity!=null)runOnMainSync(activity::finish);}}
@@ -58,9 +64,11 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         ClassroomClient result=new ClassroomClient("fixture","fixture");ZjuClient school=(ZjuClient)field(result,"school");field(school,"classroomLoggedIn",true);
         field(school,"classroomSocketFactory",(java.util.function.BiFunction<Request,WebSocketListener,WebSocket>)(request,listener)->{FakeSocket socket=new FakeSocket(request,listener);lastSocket=socket;return socket;});
         OkHttpClient http=(OkHttpClient)field(school,"http");field(school,"http",http.newBuilder().addInterceptor(chain->{Request request=chain.request();String path=request.url().encodedPath();try{
+            if(path.endsWith("catalogue")&&materialGate!=null&&Arrays.stream(Thread.currentThread().getStackTrace()).anyMatch(frame->frame.getClassName().equals(ClassroomClient.class.getName())&&frame.getMethodName().equals("materials")))try{if(!materialGate.await(15,TimeUnit.SECONDS))throw new IOException("Material fixture blocked");}catch(InterruptedException failure){throw new IOException(failure);}
             if(request.url().host().equals("video.cmc.zju.edu.cn")){downloads++;return response(request,"image/png",request.url().encodedPath().contains("first")?red:blue);}
             JSONObject json;
-            if(path.endsWith("catalogue")){JSONArray rows=new JSONArray();for(ClassroomLesson lesson:List.of(selected,future))rows.put(new JSONObject().put("course_id",10).put("sub_id",lesson.id).put("start_at",lesson.startsAt/1000).put("title",lesson.title).put("status",liveFixture?"1":phase==4?"6":"2"));json=new JSONObject().put("success",true).put("result",new JSONObject().put("code",200).put("data",rows));}
+            if(path.endsWith("/course")&&lookupCatalog!=null){ClassroomLesson target=lookupCatalog.get(0);json=new JSONObject().put("code",1000).put("params",new JSONObject().put("result",new JSONObject().put("page",1).put("per-page",100).put("total",1).put("data",new JSONArray().put(new JSONObject().put("Id",target.courseId).put("Title",target.course)))));}
+            else if(path.endsWith("catalogue")){JSONArray rows=new JSONArray();for(ClassroomLesson lesson:lookupCatalog==null?List.of(selected,future):lookupCatalog)rows.put(new JSONObject().put("course_id",lesson.courseId).put("sub_id",lesson.id).put("start_at",lesson.startsAt/1000).put("title",lesson.title).put("status",liveFixture?"1":phase==4?"6":"2"));json=new JSONObject().put("success",true).put("result",new JSONObject().put("code",200).put("data",rows));}
             else if(path.endsWith("get-sub-info"))json=new JSONObject().put("code",0).put("data",new JSONObject().put("sub_status",liveFixture?"1":"2").put("content",new JSONObject().put("trans_socket_url",liveFixture?"https://qlite2.cmc.zju.edu.cn/fixture":"")));
             else if(path.endsWith("search-trans-result")){JSONArray segments=new JSONArray();if(!liveFixture&&phase>0&&phase!=3){segments.put(new JSONObject().put("BeginSec",1).put("EndSec",2).put("Text","第一句"));if(phase>=2)segments.put(new JSONObject().put("BeginSec",3).put("EndSec",4).put("Text","第二句"));}
                 json=new JSONObject().put("code",liveFixture||phase==0?10002:0).put("total",1).put("list",new JSONArray().put(new JSONObject().put("sub_id",20).put("all_content",segments)));}
@@ -74,7 +82,7 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);store.add(selected,false);store.catalog(List.of(selected,future),System.currentTimeMillis());
         check(ClassroomMonitorStore.pending(store.read()).size()==1,"single registration does not expand to future lesson");
         store.add(selected,true);check(ClassroomMonitorStore.pending(store.read()).size()==2,"course registration includes its future actual lesson");
-        check(new ClassroomMonitorStore(app,account).read().getJSONArray("rules").length()==2,"registration survives a new store instance");
+        check(new ClassroomMonitorStore(app,account).read().getJSONArray("rules").length()==1,"scope replacement survives a new store instance without overlapping registrations");
         store.finished(selected);check(store.read().getJSONArray("rules").length()==1&&ClassroomMonitorStore.pending(store.read()).size()==1,"finishing current lesson retains only course rule and next lesson");
         ClassroomMonitor.schedule(app);JobInfo job=app.getSystemService(JobScheduler.class).getPendingJob(ClassroomMonitor.JOB);check(job!=null&&job.isPersisted(),"future work persisted in Android JobScheduler");
         store.stopAll();ClassroomMonitor.schedule(app);check(app.getSystemService(JobScheduler.class).getPendingJob(ClassroomMonitor.JOB)==null,"stopping removes recovery job");
@@ -89,10 +97,13 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         phase=2;pass();observed=ClassroomStore.read(new File(dir,"monitor-materials.json"));check(observed.getJSONArray("segments").length()==2&&downloads==2,"incremental subtitle and late earlier slide preserve previous cache");
         JSONObject candidates=ClassroomStore.read(new File(dir,"monitor-candidates.json"));check(candidates.getJSONArray("images").getJSONObject(0).getString("raw").equals("raw-1.img"),"late earlier slide cannot alias previously downloaded raw-0");
         phase=3;pass();check(ClassroomStore.read(new File(dir,"monitor-materials.json")).getJSONArray("segments").length()==2&&downloads==2,"empty observation preserves saved text and images");
-        phase=4;pass();check(!store.hasRules()&&!ClassroomStore.read(new File(dir,"materials.json")).getBoolean("monitoring"),"ready replay atomically promotes full materials and finishes single watch");check(new ClassroomStore(app,account).history().size()==1,"finished monitored class appears in existing download history");
+        phase=4;pass();check(ClassroomMonitorStore.pending(store.read()).isEmpty()&&!ClassroomStore.read(new File(dir,"materials.json")).getBoolean("monitoring"),"ready replay atomically promotes full materials and finishes material monitoring");check(new ClassroomStore(app,account).history().size()==1,"finished monitored class appears in existing download history");
+        check(ClassroomMonitorStore.auto(store.read(),selected)!=null,"formal completed recording registers automatic summary once");
     }
     private void readerChecks()throws Exception{
         File dir=new ClassroomStore(app,account).localLesson(selected);new File(dir,"materials.json").delete();new File(dir,"monitor-materials.json").delete();
+        ClassroomStore.writeBytes(new File(dir,"raw-0.img"),red);ClassroomStore.writeBytes(new File(dir,"raw-1.img"),blue);
+        ClassroomStore.write(new File(dir,"monitor-candidates.json"),new JSONObject().put("updated",System.currentTimeMillis()).put("images",new JSONArray().put(new JSONObject().put("raw","raw-0.img").put("second",1)).put(new JSONObject().put("raw","raw-1.img").put("second",20))));
         JSONArray segments=new JSONArray();for(int i=0;i<80;i++)segments.put(new JSONObject().put("start",i).put("end",i+1).put("origin","live").put("text","第"+i+"句：这里记录课堂知识点，向上翻看时保持当前位置。"));
         ClassroomStore.write(new File(dir,"live-transcript.json"),new JSONObject().put("segments",segments));ClassroomStore.write(new File(dir,"live-status.json"),new JSONObject().put("state","实时连接").put("at",System.currentTimeMillis()));
         activity=startActivitySync(new Intent(app,ClassroomTranscriptActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("account",account).putExtra("lesson",selected.json().toString()));
@@ -105,18 +116,66 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         ActivityMonitor recreated=addMonitor(ClassroomTranscriptActivity.class.getName(),null,false);runOnMainSync(activity::recreate);Activity replacement=waitForMonitorWithTimeout(recreated,5000);removeMonitor(recreated);check(replacement!=null,"reader recreation returns an actual new Activity");activity=replacement;idle(800);viewport=(ScrollView)field(activity,"scroll");
         check(!(Boolean)field(activity,"follow")&&Math.abs(viewport.getScrollY()-before)<=3,"history scroll restores after asynchronous text layout");capture("reader-restored-history");
         tap((View)field(activity,"latest"));idle(650);capture("reader-return-latest");check((Boolean)field(activity,"follow")&&viewport.getScrollY()>before,"back-to-latest resumes follow: follow="+field(activity,"follow")+" y="+viewport.getScrollY()+" old="+before+" visibility="+((View)field(activity,"latest")).getVisibility());
-        runOnMainSync(()->ClassroomMonitorUi.choose(activity,selected));idle(400);capture("monitor-scopes");getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);idle(200);
+        tapText("PPT");idle(450);check(((Integer)field(activity,"mode"))==1&&((ImageView)field(activity,"slideImage")).getDrawable()!=null,"PPT tab shows a verified cached image without network download");capture("monitor-ppt");
+        DockNavigationLayout sectionDock=(DockNavigationLayout)field(activity,"sections");holdOut(sectionDock.itemAt(1),"monitor-section-held");idle(300);check(field(activity,"sections")==sectionDock,"PPT section survives hold and drag-out");
+        tap((View)field(activity,"nextSlide"));idle(350);check(((Integer)field(activity,"pictureIndex"))==1,"PPT next button selects next cached frame");
+        ActivityMonitor pptRestore=addMonitor(ClassroomTranscriptActivity.class.getName(),null,false);runOnMainSync(activity::recreate);Activity restored=waitForMonitorWithTimeout(pptRestore,5000);removeMonitor(pptRestore);check(restored!=null,"PPT recreation returns a real Activity");activity=restored;idle(700);body=(LinearLayout)field(activity,"rows");check(((Integer)field(activity,"mode"))==1&&((Integer)field(activity,"pictureIndex"))==1,"PPT mode and selected frame survive recreation");capture("monitor-ppt-restored");
+        tap((View)field(activity,"slideImage"));idle(350);capture("monitor-ppt-large");getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);idle(250);
+        tapText("字幕");idle(250);check((Boolean)field(activity,"follow")&&body.getChildCount()==81,"subtitle state remains intact after viewing PPT");
         runOnMainSync(activity::finish);activity=null;
     }
     private void scopeChecks()throws Exception{
-        activity=startActivitySync(new Intent(app,ClassroomTranscriptActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("account",account).putExtra("lesson",selected.json().toString()));idle(600);
-        runOnMainSync(()->ClassroomMonitorUi.choose(activity,future));idle(350);ActivityMonitor opening=addMonitor(ClassroomTranscriptActivity.class.getName(),null,false);tapText("监视本节课堂");Activity next=waitForMonitorWithTimeout(opening,5000);removeMonitor(opening);check(next!=null,"single menu action opens subtitle reader");activity=next;idle(700);
-        ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);check(store.read().getJSONArray("rules").length()==1&&!store.read().getJSONArray("rules").getJSONObject(0).getBoolean("repeat"),"actual single menu writes single-only registration");capture("monitor-single");
-        runOnMainSync(()->ClassroomMonitorUi.choose(activity,future));idle(300);tapText("停止本节监视");idle(400);check(!store.hasRules(),"actual single stop menu removes registration");
-        runOnMainSync(()->ClassroomMonitorUi.choose(activity,future));idle(300);Activity retained=activity;tapText("监视该课程后续课堂");idle(600);
-        check(activity==retained&&store.read().getJSONArray("rules").getJSONObject(0).getBoolean("repeat"),"course menu writes recurring scope without stacking the same reader");
-        runOnMainSync(()->ClassroomMonitorUi.choose(activity,future));idle(300);capture("monitor-course-stop");tapText("停止课程监视");idle(400);check(!store.hasRules(),"actual course stop menu removes registration");runOnMainSync(activity::finish);activity=null;
+        ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);store.stopAll();
+        activity=startActivitySync(new Intent(app,ClassroomTranscriptActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("account",account).putExtra("lesson",future.json().toString()));idle(500);
+        check(!store.hasRules(),"opening monitor is read-only until start");
+        CheckBox repeat=(CheckBox)field(activity,"repeat");check(!repeat.isChecked(),"single monitoring is the default");
+        tap((View)field(activity,"action"));idle(500);
+        check(store.read().getJSONArray("rules").length()==1&&!store.read().getJSONArray("rules").getJSONObject(0).getBoolean("repeat"),"actual start writes one single registration");
+        tap(repeat);idle(500);
+        check(store.read().getJSONArray("rules").length()==1&&store.read().getJSONArray("rules").getJSONObject(0).getBoolean("repeat"),"checkbox atomically replaces single with subsequent-course scope");capture("monitor-course-checkbox");
+        tap(repeat);idle(400);check(store.read().getJSONArray("rules").length()==1&&!store.read().getJSONArray("rules").getJSONObject(0).getBoolean("repeat"),"unchecking restores a single scope");
+        ClassroomLesson other=new ClassroomLesson("11","99","另一门课程","下一节","教室B","2",future.startsAt);store.add(other,false);
+        tap((View)field(activity,"action"));idle(400);check(store.read().getJSONArray("rules").length()==1&&ClassroomMonitorStore.matches(store.read(),other),"stop only removes the selected scope and preserves other course");
+        store.stopAll();ClassroomMonitor.changed(app);runOnMainSync(activity::finish);activity=null;
     }
+    private void workspaceChecks()throws Exception{
+        java.time.LocalDate monday=java.time.LocalDate.now(ClassroomLesson.ZONE).with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+        List<ClassroomLesson> catalog=new ArrayList<>(List.of(selected,future));
+        for(int i=0;i<5;i++)catalog.add(new ClassroomLesson(""+(100+i),""+(200+i),new String[]{"大学英语Ⅲ","线性代数（甲）","数字音视频基础与制作","微积分（甲）Ⅰ","大学生思想文化素养"}[i],"第"+i+"讲","东2-203","6",monday.plusDays(i).atTime(8+i,0).atZone(ClassroomLesson.ZONE).toInstant().toEpochMilli()));
+        catalog.add(new ClassroomLesson("110","210","同刻另一堂课","重叠","东4-201","2",catalog.get(2).startsAt));
+        new ClassroomStore(app,account).catalog(catalog);activity=startActivitySync(new Intent(app,ClassroomSummaryActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));idle(900);
+        Object page=((ScheduleWorkspaceActivity)activity).currentPage();ClassroomLessonPickerView picker=(ClassroomLessonPickerView)field(page,"weekPicker");TimetableGrid grid=(TimetableGrid)field(picker,"grid");
+        check(grid!=null&&grid.getChildCount()>=7+catalog.size(),"classroom uses shared timetable renderer without dropping same-start lessons");
+        capture("classroom-shared-grid");
+        runOnMainSync(()->picker.refreshStates(System.currentTimeMillis()));check(field(picker,"grid")==grid,"state updates preserve shared grid instance");
+        runOnMainSync(()->picker.scrollTo(100000,0));idle(120);capture("classroom-shared-grid-right");
+        runOnMainSync(()->picker.scrollTo(0,0));
+        runOnMainSync(()->picker.scrollTo(100,0));int retainedX=picker.getScrollX();
+        View bar=(View)field(page,"weekBar");horizontalSwipe(bar,.8f,.2f);idle(600);Object session=field(page,"s");
+        check(monday.plusWeeks(1).equals(field(session,"week"))&&((ScheduleWorkspaceActivity)activity).selectedPage()==1,"real date-bar swipe changes week without leaving classroom workspace");
+        ClassroomLessonPickerView empty=(ClassroomLessonPickerView)field(page,"weekPicker");check(!empty.verticalViewport().canScrollVertically(1)&&empty.getScrollX()==retainedX,"empty shared week has no extra vertical scroll and retains horizontal position");capture("classroom-empty-week");
+        horizontalSwipe(bar,.2f,.8f);idle(600);check(monday.equals(field(session,"week"))&&bar==field(page,"weekBar"),"reverse week swipe retains date-bar instance");
+        ClassroomLessonPickerView settled=(ClassroomLessonPickerView)field(page,"weekPicker");TimetableGrid settledGrid=(TimetableGrid)field(settled,"grid");
+        check(settled.getScrollX()==retainedX,"returning to populated week retains horizontal position");
+        View futureCell=findLesson(settledGrid,ClassroomMonitorStore.key(future));check(futureCell!=null,"future classroom remains represented in the shared grid");
+        runOnMainSync(()->{settled.scrollTo(0,0);settled.verticalViewport().fullScroll(View.FOCUS_DOWN);});idle(250);capture("classroom-last-reachable");
+        ActivityMonitor direct=addMonitor(ClassroomTranscriptActivity.class.getName(),null,false);tap(futureCell);Activity dedicated=waitForMonitorWithTimeout(direct,5000);removeMonitor(direct);
+        check(dedicated!=null,"classroom grid goes straight to dedicated monitor");Activity hostActivity=activity;activity=dedicated;idle(300);capture("monitor-from-classroom-grid");runOnMainSync(activity::finish);activity=hostActivity;idle(250);
+        ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);store.add(future,true);store.message(future,"等待上课");
+        TextView compact=(TextView)field(page,"compactMode");
+        DockNavigationLayout headerDock=(DockNavigationLayout)field(page,"navigation");
+        if(compact.getVisibility()!=View.VISIBLE){holdOut(headerDock.itemAt(0),"classroom-header-first-held");holdOut(headerDock.itemAt(3),"classroom-header-last-held");horizontalSwipe(headerDock,.15f,.85f);idle(350);check(field(page,"navigation")==headerDock,"header keeps its instance across first/last holds, drag-out and fling");}
+        if(compact.getVisibility()==View.VISIBLE){tap(compact);idle(250);tapText("监视");}else tapText("监视");
+        idle(500);check(((Integer)field(field(page,"s"),"mode"))==2,"top monitor entry selects dedicated overview");
+        capture("monitor-overview");
+        // Opening a registration leads straight to the dedicated page, not another menu.
+        View card=((LinearLayout)field(page,"listBody")).getChildAt(0);ActivityMonitor opening=addMonitor(ClassroomTranscriptActivity.class.getName(),null,false);tap(card);
+        Activity next=waitForMonitorWithTimeout(opening,5000);removeMonitor(opening);check(next!=null,"overview directly opens selected monitor");Activity workspace=activity;activity=next;idle(400);
+        check(((CheckBox)field(activity,"repeat")).isChecked(),"overview retains registered course scope");capture("monitor-dedicated");
+        runOnMainSync(activity::finish);activity=workspace;store.stopAll();ClassroomMonitor.changed(app);runOnMainSync(activity::finish);activity=null;
+        new ClassroomStore(app,account).catalog(List.of(selected,future));
+    }
+    private static View findLesson(View root,String key){if(root.getTag() instanceof ClassroomLesson lesson&&ClassroomMonitorStore.key(lesson).equals(key))return root;if(root instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){View value=findLesson(group.getChildAt(i),key);if(value!=null)return value;}return null;}
     private void tapText(String text){android.view.accessibility.AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();if(root==null)throw new AssertionError("No active menu");for(var node:root.findAccessibilityNodeInfosByText(text))if(text.contentEquals(node.getText())){android.graphics.Rect bounds=new android.graphics.Rect();node.getBoundsInScreen(bounds);long at=SystemClock.uptimeMillis();pointer(at,at,MotionEvent.ACTION_DOWN,bounds.exactCenterX(),bounds.exactCenterY());SystemClock.sleep(50);pointer(at,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,bounds.exactCenterX(),bounds.exactCenterY());return;}throw new AssertionError("Menu action absent: "+text);}
     private void tableChecks()throws Exception{
         List<ZjuSnapshot.Lesson> lessons=new ArrayList<>();java.time.LocalDate day=java.time.LocalDate.now(ClassroomLesson.ZONE).with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
@@ -124,18 +183,36 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
             long begin=day.plusWeeks(w).plusDays(d).atTime(part==0?13:14,part==0?25:15).atZone(ClassroomLesson.ZONE).toInstant().toEpochMilli();long end=day.plusWeeks(w).plusDays(d).atTime(part==0?14:15,part==0?10:50).atZone(ClassroomLesson.ZONE).toInstant().toEpochMilli();
             lessons.add(new ZjuSnapshot.Lesson("fixture/"+w+"/"+d+"/"+part,d==0?"线性代数（甲）":"数字音视频基础与制作",d==0?"东2-203":w%2==0?"北4-211":"东4-322","验证秋学期",begin,end));}
         new ZjuTimetableStore(app).save(account,lessons,List.of("验证秋学期"));settings.prefs.edit().putLong("timetable_attempt",System.currentTimeMillis()).commit();settings.options(true,true);
+        ClassroomLesson linked=new ClassroomLesson("72","86","线性代数（甲）","对应课堂","东2-203","1",lessons.get(0).start);new ClassroomStore(app,account).catalog(List.of(linked));
         activity=startActivitySync(new Intent(app,TimetableActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));idle(1000);capture("timetable-consecutive");
+        Object page=((ScheduleWorkspaceActivity)activity).currentPage();View grid=findType(((SchedulePage)page).content(),TimetableGrid.class);View course=null;for(int i=0;i<((ViewGroup)grid).getChildCount();i++){View item=((ViewGroup)grid).getChildAt(i);if(item.getContentDescription()!=null&&item.getContentDescription().toString().startsWith("线性代数")){course=item;break;}}
+        check(course!=null,"school timetable monitor entry has a real course block");View courseView=course;runOnMainSync(()->courseView.requestRectangleOnScreen(new android.graphics.Rect(0,0,courseView.getWidth(),courseView.getHeight()),true));idle(200);
+        ActivityMonitor opening=addMonitor(ClassroomTranscriptActivity.class.getName(),null,false);longTap(courseView);Activity next=waitForMonitorWithTimeout(opening,5000);removeMonitor(opening);check(next!=null,"school timetable long-press opens its actual matched classroom");
+        Activity table=activity;activity=next;idle(400);check(ClassroomMonitorStore.key((ClassroomLesson)field(activity,"lesson")).equals("72/86"),"timetable monitor binding uses actual date and start identity");capture("monitor-from-school-grid");runOnMainSync(activity::finish);activity=table;idle(250);
+        lookupCatalog=List.of(linked);new ClassroomStore(app,account).catalog(List.of());
+        tap(courseView);idle(300);ActivityMonitor detail=addMonitor(ClassroomTranscriptActivity.class.getName(),null,false);tapText("课堂监视");next=waitForMonitorWithTimeout(detail,5000);removeMonitor(detail);check(next!=null,"school course detail refreshes an uncached catalogue and directly opens monitor");activity=next;idle(300);check(new ClassroomStore(app,account).catalog().size()==1,"matched catalogue is saved through the existing authenticated client");runOnMainSync(activity::finish);activity=table;lookupCatalog=null;
         runOnMainSync(activity::finish);activity=null;settings.options(true,false);
     }
+    private static View findType(View root,Class<?> type){if(type.isInstance(root))return root;if(root instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){View found=findType(group.getChildAt(i),type);if(found!=null)return found;}return null;}
+    private void horizontalSwipe(View view,float start,float end){int[] xy=new int[2];runOnMainSync(()->view.getLocationOnScreen(xy));float y=xy[1]+view.getHeight()/2f;long now=SystemClock.uptimeMillis();pointer(now,now,MotionEvent.ACTION_DOWN,xy[0]+view.getWidth()*start,y);for(int i=1;i<=12;i++){SystemClock.sleep(18);pointer(now,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,xy[0]+view.getWidth()*(start+(end-start)*i/12),y);}pointer(now,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,xy[0]+view.getWidth()*end,y);}
+    private void holdOut(View view,String screenshot)throws Exception{int[] xy=new int[2];runOnMainSync(()->view.getLocationOnScreen(xy));float x=xy[0]+view.getWidth()/2f,y=xy[1]+view.getHeight()/2f;long now=SystemClock.uptimeMillis();pointer(now,now,MotionEvent.ACTION_DOWN,x,y);SystemClock.sleep(450);capture(screenshot);pointer(now,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,x,y+100);pointer(now,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,x,y+100);idle(450);}
+    private void longTap(View view){android.graphics.Rect rect=new android.graphics.Rect();runOnMainSync(()->view.getGlobalVisibleRect(rect));long now=SystemClock.uptimeMillis();pointer(now,now,MotionEvent.ACTION_DOWN,rect.exactCenterX(),rect.exactCenterY());SystemClock.sleep(700);pointer(now,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,rect.exactCenterX(),rect.exactCenterY());}
     private void backgroundChecks()throws Exception{
-        activity=startActivitySync(new Intent(app,DashboardActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));idle(400);
-        ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);store.stopAll();phase=0;liveFixture=true;socketOpens=0;runOnMainSync(()->{try{ClassroomMonitor.start(app,selected,false);}catch(Exception failure){throw new RuntimeException(failure);}});
-        idle(3500);check(running()&&socketOpens==1,"monitor owns one continuous socket in an actual Android foreground service");
+        ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);store.stopAll();phase=0;liveFixture=true;socketOpens=0;materialGate=new CountDownLatch(1);
+        File initial=new ClassroomStore(app,account).localLesson(selected);ClassroomStore.write(new File(initial,"monitor-stage.json"),new JSONObject().put("status","2"));store.add(selected,false);
+        activity=startActivitySync(new Intent(app,DashboardActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));idle(3500);
+        check(running()&&socketOpens==1,"foreground Dashboard restores registered owner; stale stage2 and blocked materials cannot suppress live connection");materialGate.countDown();materialGate=null;
         File dir=new ClassroomStore(app,account).localLesson(selected);int before=ClassroomTranscript.snapshot(ClassroomLiveTranscripts.read(dir)).length();
         getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME);getUiAutomation().executeShellCommand("input keyevent 223").close();SystemClock.sleep(34_000);
         int received=ClassroomTranscript.snapshot(ClassroomLiveTranscripts.read(dir)).length();check(received>before+10&&socketOpens==1,"socket keeps appending while screen off; PPT polling never recreates connection");check(running(),"foreground owner survives screen-off interval");
         getUiAutomation().executeShellCommand("input keyevent 224").close();lastSocket.abort();idle(7000);check(socketOpens==2&&ClassroomTranscript.snapshot(ClassroomLiveTranscripts.read(dir)).length()>received,"real controller reconnects and appends after stream interruption");
+        FakeSocket old=lastSocket;liveFixture=false;field(old.listener,"verifiedAt",0L);java.lang.reflect.Method verify=old.listener.getClass().getDeclaredMethod("verifyCurrent");verify.setAccessible(true);runOnMainSync(()->{try{verify.invoke(old.listener);}catch(Exception failure){throw new RuntimeException(failure);}});
+        long limit=SystemClock.elapsedRealtime()+4000;while(!old.closed&&SystemClock.elapsedRealtime()<limit)SystemClock.sleep(20);check(old.closed,"fresh non-live qualification closes the old classroom stream");
+        synchronized(old.listener){String saved=((JSONObject)field(old.listener,"state")).toString();old.listener.onOpen(old,response(old.request,"text/plain",new byte[0]));old.listener.onMessage(old,"in{\"socketID\":\"late\"}");old.listener.onMessage(old,"pi");old.listener.onMessage(old,"cd1&m"+new JSONObject().put("sourcetext","结束后的迟到帧").put("end_time","1").put("text_begin_time",System.currentTimeMillis()).put("text_end_time",System.currentTimeMillis()));check(saved.equals(((JSONObject)field(old.listener,"state")).toString()),"invalidated old listener cannot append late captions or change its snapshot");}
+        check(!"实时连接".equals(ClassroomStore.read(new File(dir,"live-status.json")).optString("state")),"late handshake cannot restore realtime status after qualification loss");
+        liveFixture=true;idle(7500);check(socketOpens==3&&!lastSocket.closed,"independent live retry recovers without a PPT cache-state change");
         store.stopAll();runOnMainSync(()->ClassroomMonitor.changed(app));idle(500);check(!running()&&lastSocket.closed,"stop releases foreground owner and continuous socket");liveFixture=false;
+        Field closing=ClassroomLiveTranscripts.class.getDeclaredField("cleanup");closing.setAccessible(true);java.util.concurrent.ExecutorService closeWorker=(java.util.concurrent.ExecutorService)closing.get(null);check(closeWorker.submit(()->Looper.myLooper()!=Looper.getMainLooper()).get(5,TimeUnit.SECONDS),"service TLS cleanup queue drains outside the main thread");
     }
     private boolean running(){for(ActivityManager.RunningServiceInfo service:app.getSystemService(ActivityManager.class).getRunningServices(100))if(service.service.getClassName().equals(ClassroomMonitorService.class.getName()))return service.foreground;return false;}
     private final class FakeSocket implements WebSocket {

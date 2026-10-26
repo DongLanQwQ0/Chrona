@@ -7,7 +7,7 @@ root = Path(__file__).resolve().parents[1]
 out = root / 'build/classroom-work-service-check'
 stubs = {
 'android/content/Context.java': '''package android.content; public class Context {
-public boolean reject; public Object startForegroundService(Intent i){if(reject)throw new IllegalStateException();return null;}
+public boolean reject;public int starts; public Object startForegroundService(Intent i){starts++;if(reject)throw new IllegalStateException();return null;}
 public <T>T getSystemService(Class<T> type){return null;}}''',
 'android/content/Intent.java': 'package android.content; public class Intent {public Intent(Context c,Class<?> type){}}',
 'android/content/pm/ServiceInfo.java': 'package android.content.pm; public class ServiceInfo {public static final int FOREGROUND_SERVICE_TYPE_DATA_SYNC=1;}',
@@ -27,9 +27,15 @@ public class ClassroomLesson {public String courseId="course",id;public Classroo
 'com/donglan/chrona/ClassroomLessonActivity.java': '''package com.donglan.chrona;
 public class ClassroomLessonActivity {static class Session {
 final android.content.Context app=new android.content.Context();final String account;
-final com.donglan.chrona.classroom.ClassroomLesson selected;boolean failed,cancelled;
+final com.donglan.chrona.classroom.ClassroomLesson selected;boolean failed,cancelled,monitorOwned,allowed=true;
 Session(String a,String id){account=a;selected=new com.donglan.chrona.classroom.ClassroomLesson(id);}
-void startFailed(){failed=true;}void cancel(){cancelled=true;}}}''',
+boolean allowed(){return allowed;}void startFailed(){failed=true;}void cancel(){cancelled=true;}}}''',
+'com/donglan/chrona/ClassroomAutoSummary.java': '''package com.donglan.chrona;
+class ClassroomAutoSummary {static boolean foreground;static boolean hasForegroundOwner(){return foreground;}}''',
+'com/donglan/chrona/ClassroomMonitorStore.java': '''package com.donglan.chrona;
+class ClassroomMonitorStore {static final java.util.Set<String> stopped=new java.util.HashSet<>();
+ClassroomMonitorStore(android.content.Context c,String a){}Object read(){return this;}
+static Object ruleFor(Object state,com.donglan.chrona.classroom.ClassroomLesson lesson){return stopped.contains(lesson.id)?null:state;}}''',
 'com/donglan/chrona/ClassroomNotifications.java': '''package com.donglan.chrona;
 class ClassroomNotifications {static android.app.Notification foreground(android.content.Context c,int n){return new android.app.Notification();}}''',
 }
