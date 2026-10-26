@@ -46,6 +46,7 @@ abstract class SchedulePage extends ContextWrapper {
     final View content() { return content; }
     final void setBottomOverlayInset(int inset) { reserveBottom(content, inset); }
     private void reserveBottom(View view, int inset) {
+        if(SettingsPageLayout.isToolsViewport(view))return;
         if(view instanceof android.widget.ScrollView scroll && scroll.getChildCount()>0) {
             View child=scroll.getChildAt(0);
             int base=bottomPadding.computeIfAbsent(child,key->key.getPaddingBottom());

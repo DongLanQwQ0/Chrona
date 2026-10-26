@@ -280,22 +280,15 @@ public final class RepeatScheduleActivity extends Activity {
     }
 
     private void occurrenceActions(EventCandidate item) {
-        String[] options = item.isTask() ? new String[]{"改单次时间", "跳过这一次", item.completed() ? "恢复待完成" : "标记已完成"}
-                : new String[]{"改单次时间", "跳过这一次"};
+        String[] options = item.isTask() ? new String[]{"编辑本次日程", "跳过这一次", item.completed() ? "恢复待完成" : "标记已完成"}
+                : new String[]{"编辑本次日程", "跳过这一次"};
         UiDialogs.choiceDialog(this, format(item.anchor()), options, -1, choice -> {
             if (busy) return;
-            if (choice == 0) pickDateTime(item);
+            if (choice == 0) startActivity(new android.content.Intent(this,TaskDetailActivity.class).putExtra("task_id",item.taskId)
+                    .putExtra("candidate_id",item.id).putExtra("occurrence_at",item.occurrenceAtMillis.longValue()));
             else if (choice == 1) UiDialogs.confirmDialog(this, "跳过这一次", format(item.anchor()), "跳过",
                     () -> change("skip", item.occurrenceAtMillis, null, null));
             else change(item.completed() ? "reopen" : "complete", item.occurrenceAtMillis, null, null);
-        });
-    }
-
-    private void pickDateTime(EventCandidate item) {
-        LocalDateTime seed = Instant.ofEpochMilli(item.anchor()).atZone(zone()).toLocalDateTime();
-        picker("改单次时间", seed, item.allDay, value -> {
-            long moved = (item.allDay ? value.toLocalDate().atStartOfDay(ZoneOffset.UTC) : value.atZone(zone())).toInstant().toEpochMilli();
-            change("move", item.occurrenceAtMillis, moved, null);
         });
     }
 

@@ -19,6 +19,7 @@ public final class ClassroomTranscriptActivity extends Activity {
     private CheckBox repeat;private ImageButton action;private boolean binding;private int mode;
     private ScrollView slidesScroll;private LinearLayout slides;private String pictureSignature="";
     private TextView slidesLabel;private DockNavigationLayout sections;
+    private boolean sideNavigation;
     private final List<TextView> paragraphs=new ArrayList<>();
     private final Handler main=new Handler(Looper.getMainLooper());
     private final java.util.concurrent.ExecutorService reader=Executors.newSingleThreadExecutor();
@@ -34,26 +35,34 @@ public final class ClassroomTranscriptActivity extends Activity {
         ThemeStore.apply(this);super.onCreate(state);
         try{account=getIntent().getStringExtra("account");lesson=ClassroomLesson.fromJson(new JSONObject(getIntent().getStringExtra("lesson")));if(!ClassroomMonitor.allowed(this,account)){finish();return;}}
         catch(Exception failure){finish();return;}
-        if(state!=null){follow=state.getBoolean("follow",true);mode=state.getInt("mode",0);pictureIndex=state.getInt("picture",0);pendingLatest=false;pendingRestore=state.getInt("scroll",0);}
+        if(state!=null){follow=state.getBoolean("follow",true);mode=state.getInt("mode",0);pictureIndex=state.getInt("picture",0);restoredRaw=state.getString("picture_raw","");pendingLatest=state.getBoolean("pending_latest",false);pendingRestore=pendingLatest?-1:state.getInt("scroll",0);}
         LinearLayout root=SettingsPageLayout.content(this);
         root.setClipChildren(false);root.setClipToPadding(false);
         action=UiStyle.navigationIcon(this,R.drawable.ic_play,"开始监视",this::toggleMonitoring);
         SettingsPageLayout.header(this,root,"课堂监视",action);
+        LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.VERTICAL);
         LinearLayout information=new LinearLayout(this);information.setGravity(Gravity.TOP);
         LinearLayout description=new LinearLayout(this);description.setOrientation(LinearLayout.VERTICAL);
         TextView title=new TextView(this);title.setText(lesson.course);title.setTextSize(16);UiStyle.title(title);UiStyle.addSpaced(description,title,0,4);
         TextView when=new TextView(this);when.setText(lesson.date()+" "+ClassroomMonitorUi.clock(lesson)+(lesson.room.isEmpty()?"":" · "+lesson.room));when.setTextSize(13);UiStyle.muted(when);description.addView(when);
         information.addView(description,new LinearLayout.LayoutParams(0,-2,1));
         repeat=new CheckBox(this);repeat.setText("后续课程");repeat.setContentDescription("监视后续课程");repeat.setTextSize(15);repeat.setMinHeight(dp(48));UiStyle.toggle(repeat);
-        LinearLayout.LayoutParams scopeParams=new LinearLayout.LayoutParams(-2,-2);scopeParams.leftMargin=dp(8);information.addView(repeat,scopeParams);UiStyle.addSpaced(root,information,0,4);
+        LinearLayout.LayoutParams scopeParams=new LinearLayout.LayoutParams(-2,-2);scopeParams.leftMargin=dp(8);information.addView(repeat,scopeParams);UiStyle.addSpaced(tools,information,0,4);
         refreshScope();if(state!=null&&!monitoring())repeat.setChecked(state.getBoolean("repeat",false));
         repeat.setOnCheckedChangeListener((button,checked)->{if(binding||!monitoring())return;try{ClassroomMonitor.start(this,lesson,checked);signature="";}catch(Exception failure){Feedback.show(this,"无法更改监视范围");refreshScope();}});
-        status=new TextView(this);status.setTextSize(13);UiStyle.muted(status);status.setText("未开始监视");UiStyle.addSpaced(root,status,0,4);
+        status=new TextView(this);status.setTextSize(13);UiStyle.muted(status);status.setText("未开始监视");UiStyle.addSpaced(tools,status,0,4);
+        root.addView(SettingsPageLayout.toolsViewport(this,tools),new LinearLayout.LayoutParams(-1,-2));
+        sideNavigation=SettingsPageLayout.shortWindow(this);
         sections=new DockNavigationLayout(this,this::setMode,()->{});sections.setPadding(dp(6),dp(6),dp(6),dp(6));
-        for(int i=0;i<2;i++){final int index=i;TextView item=new TextView(this);item.setText(i==0?"字幕":"PPT");item.setTextSize(15);item.setGravity(Gravity.CENTER);UiStyle.title(item);item.setOnClickListener(v->setMode(index));sections.addItem(item,new LinearLayout.LayoutParams(0,dp(48),1));if(i==1)slidesLabel=item;}
-        FrameLayout dockHost=sections.motionHost();
+        if(sideNavigation)sections.setOrientation(LinearLayout.VERTICAL);
+        for(int i=0;i<2;i++){final int index=i;TextView item=new TextView(this);item.setText(i==0?"字幕":"PPT");item.setTextSize(15);item.setGravity(Gravity.CENTER);UiStyle.title(item);item.setOnClickListener(v->setMode(index));sections.addItem(item,sideNavigation?new LinearLayout.LayoutParams(-1,dp(48)):new LinearLayout.LayoutParams(0,dp(48),1));if(i==1)slidesLabel=item;}
+        FrameLayout dockHost;
+        if(sideNavigation){dockHost=new FrameLayout(this);dockHost.setClipChildren(false);dockHost.setClipToPadding(false);dockHost.addView(sections,new FrameLayout.LayoutParams(dp(72),-2,Gravity.CENTER));}
+        else dockHost=sections.motionHost();
         FrameLayout body=new FrameLayout(this);body.setClipChildren(false);body.setClipToPadding(false);
-        FrameLayout transitionHost=new FrameLayout(this);readingBody=new FrameLayout(this);transitionHost.addView(readingBody,new FrameLayout.LayoutParams(-1,-1));body.addView(transitionHost,new FrameLayout.LayoutParams(-1,-1));
+        FrameLayout readingArea=body;
+        if(sideNavigation){LinearLayout columns=new LinearLayout(this);columns.setClipChildren(false);columns.setClipToPadding(false);readingArea=new FrameLayout(this);columns.addView(dockHost,new LinearLayout.LayoutParams(dp(getResources().getConfiguration().screenWidthDp>=SettingsPageLayout.NAVIGATION_RAIL_MIN_WIDTH_DP?120:96),-1));columns.addView(readingArea,new LinearLayout.LayoutParams(0,-1,1));body.addView(columns,new FrameLayout.LayoutParams(-1,-1));}
+        FrameLayout transitionHost=new FrameLayout(this);readingBody=new FrameLayout(this);transitionHost.addView(readingBody,new FrameLayout.LayoutParams(-1,-1));readingArea.addView(transitionHost,new FrameLayout.LayoutParams(-1,-1));
         scroll=new ScrollView(this){@Override public void computeScroll(){scrollingMotion=true;try{super.computeScroll();}finally{scrollingMotion=false;}}
             @Override public boolean dispatchTouchEvent(MotionEvent event){
             int action=event.getActionMasked();if(action==MotionEvent.ACTION_DOWN){touching=true;pendingLatest=false;pendingRestore=getScrollY();follow=false;updateFollow();}
@@ -61,20 +70,23 @@ public final class ClassroomTranscriptActivity extends Activity {
             if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){touching=false;follow=atBottom();updateFollow();}
             return handled;
         }};scroll.setVerticalScrollBarEnabled(false);scroll.setClipToPadding(true);
+        // Selectable paragraphs remain focusable on touch; initial layout must not focus the first one.
+        scroll.setFocusableInTouchMode(true);scroll.setDescendantFocusability(ViewGroup.FOCUS_BEFORE_DESCENDANTS);scroll.requestFocus();
         rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         readingBody.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         slidesScroll=new ScrollView(this);slidesScroll.setVerticalScrollBarEnabled(false);slides=new LinearLayout(this);slides.setOrientation(LinearLayout.VERTICAL);slidesScroll.addView(slides);readingBody.addView(slidesScroll,new FrameLayout.LayoutParams(-1,-1));
         latest=UiStyle.navigationIcon(this,R.drawable.ic_arrow_down,"回到最新",()->{pendingRestore=-1;pendingLatest=true;positionCaptions();});
-        FrameLayout.LayoutParams jump=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.BOTTOM|Gravity.END);body.addView(latest,jump);
+        FrameLayout.LayoutParams jump=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.BOTTOM|Gravity.END);readingArea.addView(latest,jump);
         InteractionLayers.pin(latest);
-        body.addView(dockHost,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));InteractionLayers.pin(dockHost);
+        if(!sideNavigation)body.addView(dockHost,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));InteractionLayers.pin(dockHost);
         dockHost.addOnLayoutChangeListener((view,l,t,r,b,oldL,oldT,oldR,oldB)->{
-            int clearance=view.getHeight();
+            int clearance=sideNavigation?0:view.getHeight();
             if(rows.getPaddingBottom()!=clearance+dp(64)){rows.setPadding(0,0,0,clearance+dp(64));slides.setPadding(0,0,0,clearance+dp(12));
                 FrameLayout.LayoutParams position=(FrameLayout.LayoutParams)latest.getLayoutParams();position.bottomMargin=clearance+dp(8);latest.setLayoutParams(position);}
         });
         scroll.setOnScrollChangeListener((view,x,y,oldX,oldY)->{if((touching||scrollingMotion)&&pendingRestore>=0)pendingRestore=y;follow=atBottom();updateFollow();});
         root.addView(body,new LinearLayout.LayoutParams(-1,0,1));SettingsPageLayout.showFixed(this,root);setMode(mode);
+        if(state==null)root.post(()->UiMotion.enterPage(root));
     }
     private boolean atBottom(){return scroll.getScrollY()>=Math.max(0,rows.getHeight()-scroll.getHeight()-dp(48));}
     private void updateFollow(){if(latest!=null)latest.setVisibility(mode!=0||follow?View.GONE:View.VISIBLE);}
@@ -120,50 +132,43 @@ public final class ClassroomTranscriptActivity extends Activity {
     }
     private int pictureIndex,slideGeneration;
     private JSONArray shownPictures=new JSONArray();private File pictureDirectory;
-    private ImageView slideImage;private FrameLayout slideFrame;private DateIntervalBar slidesBar;private ImageButton previousSlide,nextSlide;private String decodedRaw="";
-    private final CalendarSwipe imageSwipe=new CalendarSwipe();
+    private ImageView slideImage;private FrameLayout slideFrame;private DateIntervalBar slidesBar;private ImageButton previousSlide,nextSlide;private String restoredRaw="";
+    private ImageSlidePager slidePager;
     private void renderSlides(File directory,JSONArray pictures){
+        JSONArray valid=new JSONArray();for(int i=0;i<pictures.length();i++){JSONObject picture=pictures.optJSONObject(i);if(picture!=null&&picture.optString("raw").matches("raw-[0-9]+\\.img"))valid.put(picture);}pictures=valid;
         String next=pictures.toString();if(next.equals(pictureSignature))return;
-        String current=shownPictures.optJSONObject(pictureIndex)==null?"":shownPictures.optJSONObject(pictureIndex).optString("raw");
+        String current=shownPictures.optJSONObject(pictureIndex)==null?restoredRaw:shownPictures.optJSONObject(pictureIndex).optString("raw");restoredRaw="";
         boolean last=shownPictures.length()>0&&pictureIndex==shownPictures.length()-1;
         pictureSignature=next;shownPictures=pictures;pictureDirectory=directory;
-        if(pictures.length()==0){slides.removeAllViews();slidesBar=null;slideImage=null;decodedRaw="";TextView empty=new TextView(this);empty.setText("暂无PPT");empty.setTextSize(16);UiStyle.muted(empty);UiStyle.addSpaced(slides,empty,8,0);return;}
+        if(pictures.length()==0){if(slidePager!=null)slidePager.close();slidePager=null;slides.removeAllViews();slidesBar=null;slideImage=null;TextView empty=new TextView(this);empty.setText("暂无PPT");empty.setTextSize(16);UiStyle.muted(empty);UiStyle.addSpaced(slides,empty,8,0);return;}
         if(last)pictureIndex=pictures.length()-1;else for(int i=0;i<pictures.length();i++)if(current.equals(pictures.optJSONObject(i).optString("raw")))pictureIndex=i;
         pictureIndex=Math.max(0,Math.min(pictureIndex,pictures.length()-1));
         if(slidesBar==null){
             slides.removeAllViews();previousSlide=nextSlide=null;slidesBar=new DateIntervalBar(this,this::pickSlide,this::shiftSlide);slidesBar.setContentDescription("PPT，左右滑动切换，点击选择图片");UiStyle.addSpaced(slides,slidesBar,0,8);
             for(int i=0;i<slidesBar.getChildCount();i++)if(slidesBar.getChildAt(i) instanceof ImageButton arrow){if(previousSlide==null){previousSlide=arrow;arrow.setContentDescription("上一张PPT");}else{nextSlide=arrow;arrow.setContentDescription("下一张PPT");}}
-            slideFrame=new FrameLayout(this);slideFrame.setClipToOutline(true);slideFrame.setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View view,android.graphics.Outline outline){outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),dp(UiStyle.radius(ClassroomTranscriptActivity.this,UiStyle.RADIUS_CARD)));}});slideFrame.setBackgroundColor(UiStyle.colors(this).surfaceAlt);slides.addView(slideFrame,new LinearLayout.LayoutParams(-1,dp(280)));
-            UiStyle.registerDynamicSurface(slideFrame,()->{slideFrame.setBackgroundColor(UiStyle.colors(this).surfaceAlt);slideFrame.invalidateOutline();if(slideImage!=null)slideImage.invalidateOutline();});
-            slideImage=new ImageView(this);slideImage.setAdjustViewBounds(true);slideImage.setScaleType(ImageView.ScaleType.FIT_CENTER);slideFrame.addView(slideImage,new FrameLayout.LayoutParams(-1,-1));
-            slideImage.setClipToOutline(true);slideImage.setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View view,android.graphics.Outline outline){
-                android.graphics.drawable.Drawable drawable=((ImageView)view).getDrawable();if(drawable==null||drawable.getIntrinsicWidth()<=0||drawable.getIntrinsicHeight()<=0){outline.setEmpty();return;}
-                float fit=Math.min(view.getWidth()/(float)drawable.getIntrinsicWidth(),view.getHeight()/(float)drawable.getIntrinsicHeight());int width=Math.round(drawable.getIntrinsicWidth()*fit),height=Math.round(drawable.getIntrinsicHeight()*fit),left=(view.getWidth()-width)/2,top=(view.getHeight()-height)/2;
-                outline.setRoundRect(left,top,left+width,top+height,dp(UiStyle.radius(ClassroomTranscriptActivity.this,UiStyle.RADIUS_CARD)));
-            }});
+            slidePager=new ImageSlidePager(this,true);slideFrame=slidePager;slideFrame.setClipToOutline(true);slideFrame.setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View view,android.graphics.Outline outline){outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),dp(UiStyle.radius(ClassroomTranscriptActivity.this,UiStyle.RADIUS_CARD)));}});slides.addView(slideFrame,new LinearLayout.LayoutParams(-1,-2));
+            UiStyle.registerDynamicSurface(slideFrame,()->slideFrame.invalidateOutline());
+            slideImage=slidePager.image();
             slideImage.setOnClickListener(v->openSlide());
-            slideImage.setOnTouchListener(new View.OnTouchListener(){float x,y;final int slop=ViewConfiguration.get(ClassroomTranscriptActivity.this).getScaledTouchSlop();
-                public boolean onTouch(View view,MotionEvent event){int action=event.getActionMasked();
-                    if(action==MotionEvent.ACTION_DOWN){x=event.getX();y=event.getY();imageSwipe.begin(x,y,true);return true;}
-                    if(action==MotionEvent.ACTION_POINTER_DOWN||action==MotionEvent.ACTION_CANCEL)imageSwipe.cancel();
-                    if(action==MotionEvent.ACTION_MOVE&&imageSwipe.move(event.getX(),event.getY(),slop,false))view.getParent().requestDisallowInterceptTouchEvent(true);
-                    if(action==MotionEvent.ACTION_UP){boolean claimed=imageSwipe.claimed();int direction=imageSwipe.finish(event.getX(),event.getY(),Math.max(dp(48),view.getWidth()*.15f));view.getParent().requestDisallowInterceptTouchEvent(false);if(direction!=0)shiftSlide(direction);else if(!claimed&&Math.abs(event.getX()-x)<=slop&&Math.abs(event.getY()-y)<=slop)view.performClick();}
-                    if(action==MotionEvent.ACTION_CANCEL)view.getParent().requestDisallowInterceptTouchEvent(false);return true;
-                }
-            });
+            slidePager.setListener((selected,image)->{pictureIndex=selected;updateSlideLabel();});
         }
-        showSlide();
+        List<String> names=new ArrayList<>();for(int i=0;i<shownPictures.length();i++)names.add(shownPictures.optJSONObject(i).optString("raw"));
+        slidePager.setImages(names,pictureIndex,new ImageSlidePager.Source(){
+            public File file(String name)throws Exception{if(!allowed()||!name.matches("raw-[0-9]+\\.img"))throw new SecurityException("课堂图片无效");return new File(new ClassroomStore(ClassroomTranscriptActivity.this,account).localLesson(lesson),name);}
+            public boolean allowed(){return ClassroomMonitor.allowed(ClassroomTranscriptActivity.this,account);}
+        });
     }
-    private void pickSlide(){String[] labels=new String[shownPictures.length()];for(int i=0;i<labels.length;i++)labels[i]=(i+1)+" · "+ClassroomExport.time(shownPictures.optJSONObject(i).optDouble("second"));UiDialogs.choiceDialog(this,"PPT",labels,pictureIndex,i->{pictureIndex=i;showSlide();});}
-    private boolean shiftSlide(int direction){int next=pictureIndex+direction;if(next<0||next>=shownPictures.length())return false;pictureIndex=next;showSlide();return true;}
-    private void openSlide(){if(slideImage==null||slideImage.getDrawable()==null||!ClassroomMonitor.allowed(this,account))return;JSONObject picture=shownPictures.optJSONObject(pictureIndex);if(picture==null)return;AttachmentViewerActivity.openClassroom(this,account,lesson,picture.optString("raw"));}
+    private void pickSlide(){String[] labels=new String[shownPictures.length()];for(int i=0;i<labels.length;i++)labels[i]=(i+1)+" · "+ClassroomExport.time(shownPictures.optJSONObject(i).optDouble("second"));UiDialogs.choiceDialog(this,"PPT",labels,pictureIndex,i->slidePager.select(i));}
+    private boolean shiftSlide(int direction){return slidePager!=null&&slidePager.select(pictureIndex+direction);}
+    private void openSlide(){if(slidePager==null||!slidePager.ready()||!ClassroomMonitor.allowed(this,account))return;JSONObject picture=shownPictures.optJSONObject(pictureIndex);if(picture==null)return;ArrayList<String> names=new ArrayList<>();for(int i=0;i<shownPictures.length();i++)names.add(shownPictures.optJSONObject(i).optString("raw"));AttachmentViewerActivity.openClassroom(this,account,lesson,names,picture.optString("raw"));}
     private void showSlide(){
+        if(slidePager!=null)slidePager.select(pictureIndex);
+    }
+    private void updateSlideLabel(){
         if(shownPictures.length()==0||slideImage==null)return;pictureIndex=Math.max(0,Math.min(pictureIndex,shownPictures.length()-1));JSONObject picture=shownPictures.optJSONObject(pictureIndex);
         slidesBar.setText((pictureIndex+1)+" / "+shownPictures.length()+" · "+ClassroomExport.time(picture.optDouble("second")));
         previousSlide.setEnabled(pictureIndex>0);nextSlide.setEnabled(pictureIndex+1<shownPictures.length());
         slideImage.setContentDescription("PPT "+(pictureIndex+1)+"，点击全屏查看并保存");
-        String name=picture.optString("raw");if(!name.matches("raw-[0-9]+\\.img"))return;File file=new File(pictureDirectory,name);int token=++slideGeneration;ImageView target=slideImage;String key=file.getPath();if(key.equals(decodedRaw)&&target.getDrawable()!=null)return;
-        reader.execute(()->{android.graphics.BitmapFactory.Options options=new android.graphics.BitmapFactory.Options();options.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeFile(file.getPath(),options);options.inSampleSize=Math.max(1,Math.max(options.outWidth,options.outHeight)/1200);options.inJustDecodeBounds=false;android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(file.getPath(),options);main.post(()->{if(token==slideGeneration&&target.isAttachedToWindow()&&ClassroomMonitor.allowed(this,account)){if(bitmap!=null){decodedRaw=key;UiMotion.swap(target,()->{target.setImageBitmap(bitmap);target.invalidateOutline();});}else{target.setImageDrawable(null);target.setContentDescription("PPT缓存暂不可用");}}else if(bitmap!=null)bitmap.recycle();});});
     }
     private void render(JSONArray segments,String label){
         status.setText(label);
@@ -184,8 +189,14 @@ public final class ClassroomTranscriptActivity extends Activity {
         };scroll.getViewTreeObserver().addOnPreDrawListener(restore);scroll.invalidate();
     }
     @Override protected void onResume(){super.onResume();if(lesson==null)return;if(!ClassroomMonitor.allowed(this,account)){finish();return;}active=true;generation++;signature="";main.post(poll);}
-    @Override protected void onPause(){active=false;generation++;main.removeCallbacks(poll);imageSwipe.cancel();if(readingBody!=null)UiMotion.finishSwap(readingBody);if(slideImage!=null)UiMotion.finishSwap(slideImage);super.onPause();}
-    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putBoolean("follow",follow);state.putInt("mode",mode);state.putInt("picture",pictureIndex);if(repeat!=null)state.putBoolean("repeat",repeat.isChecked());if(scroll!=null)state.putInt("scroll",pendingRestore>=0?pendingRestore:scroll.getScrollY());}
-    @Override protected void onDestroy(){if(restore!=null&&scroll!=null)scroll.getViewTreeObserver().removeOnPreDrawListener(restore);reader.shutdownNow();super.onDestroy();}
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);
+        if(request!=AttachmentViewerActivity.CLASSROOM_GALLERY_REQUEST||result!=RESULT_OK||data==null)return;
+        String selected=data.getStringExtra(AttachmentViewerActivity.EXTRA_SELECTED_RAW);
+        for(int i=0;i<shownPictures.length();i++)if(shownPictures.optJSONObject(i).optString("raw").equals(selected)){if(slidePager!=null)slidePager.select(i);break;}
+    }
+    @Override protected void onPause(){active=false;generation++;main.removeCallbacks(poll);if(slidePager!=null)slidePager.stop();if(readingBody!=null)UiMotion.finishSwap(readingBody);super.onPause();}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putBoolean("follow",follow);state.putBoolean("pending_latest",pendingLatest);state.putInt("mode",mode);state.putInt("picture",pictureIndex);JSONObject picture=shownPictures.optJSONObject(pictureIndex);state.putString("picture_raw",picture==null?restoredRaw:picture.optString("raw"));if(repeat!=null)state.putBoolean("repeat",repeat.isChecked());if(scroll!=null)state.putInt("scroll",pendingRestore>=0?pendingRestore:scroll.getScrollY());}
+    @Override protected void onDestroy(){if(slidePager!=null)slidePager.close();if(restore!=null&&scroll!=null)scroll.getViewTreeObserver().removeOnPreDrawListener(restore);reader.shutdownNow();super.onDestroy();}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
 }

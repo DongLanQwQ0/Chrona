@@ -62,6 +62,7 @@ public final class BulkCalendarPublisher {
                             EventCandidate current = store.getCandidatesByIds(Collections.singleton(item.id))
                                     .stream().filter(value -> value.taskId == item.taskId).findFirst().orElse(null);
                             TaskRecord task = store.getTask(item.taskId);
+                            if(current!=null&&com.donglan.chrona.OccurrenceUpdates.held(store,current.id)){result.skipped++;continue;}
                             if (task == null || TaskRecord.QUEUED.equals(task.status)
                                     || TaskRecord.PROCESSING.equals(task.status)) {
                                 result.skipped++; continue;

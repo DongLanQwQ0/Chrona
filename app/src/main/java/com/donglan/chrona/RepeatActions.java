@@ -14,6 +14,37 @@ import java.util.List;
 /** One series mutation shared by native and LAN clients; provider failures leave local content intact. */
 final class RepeatActions {
     private RepeatActions() { }
+    static EventCandidate edit(Context context,long taskId,long id,String baseline,long original,JSONObject fields)throws Exception{
+        synchronized(AndroidSync.LOCK){try(TaskStore store=new TaskStore(context);
+                LinkedCalendarEvents writes=new LinkedCalendarEvents(store,new CalendarStore(context))){
+            store.getWritableDatabase().beginTransaction();EventCandidate changed;
+            try{
+                EventCandidate current=store.getCandidatesByIds(List.of(id)).stream().filter(item->item.taskId==taskId).findFirst().orElse(null);
+                CandidateEditBaseline.require(current,baseline);
+                changed=editLocked(store,writes,current,original,fields,null);
+                store.getWritableDatabase().setTransactionSuccessful();
+            }finally{store.getWritableDatabase().endTransaction();}
+            writes.committed();return changed;
+        }}
+    }
+    /** Caller owns the sync lock and transaction so an announcement outcome commits with this edit. */
+    static EventCandidate editLocked(TaskStore store,LinkedCalendarEvents writes,EventCandidate current,long original,
+            JSONObject fields,JSONObject source)throws Exception{
+        TaskRecord task=store.getTask(current.taskId);
+        if(task==null||TaskRecord.PROCESSING.equals(task.status)||TaskRecord.QUEUED.equals(task.status))throw new IllegalStateException("请等待解析完成");
+        if(store.isManagedHomework(current.id,current.taskId))throw new IllegalArgumentException("同步作业由学在浙大管理");
+        EventCandidate before=RepeatOccurrences.at(current,original),changed=RepeatOccurrences.edit(current,original,fields);
+        JSONObject exceptions=RepeatOccurrences.exceptions(changed),entry=exceptions.getJSONObject(Long.toString(original));
+        org.json.JSONArray history=entry.optJSONArray("history");if(history==null)history=new org.json.JSONArray();
+        JSONObject audit=new JSONObject().put("at",System.currentTimeMillis()).put("action","edit")
+                .put("before",OccurrenceUpdates.snapshot(before)).put("after",OccurrenceUpdates.snapshot(RepeatOccurrences.at(changed,original)));
+        if(source!=null)audit.put("source",new JSONObject(source.toString()));
+        entry.put("history",history.put(audit));changed=changed.withRepeatState(exceptions.toString(),changed.repeatStoppedAtMillis);
+        if(!store.updateCandidate(changed))throw new IllegalStateException("原占位已不存在");
+        store.updateReviewStatus(changed.taskId);
+        if(changed.calendarEventId!=null&&!writes.update(changed,input(changed)))throw new IllegalStateException("系统日历日程已不存在，请重新关联后操作");
+        return store.getCandidatesByIds(List.of(changed.id)).get(0);
+    }
     static EventCandidate change(Context context, long taskId, long id, String baseline,
             String action, Long original, Long moved, RepeatRule rule) throws Exception {
         synchronized (AndroidSync.LOCK) {
@@ -57,7 +88,7 @@ final class RepeatActions {
                                 throw new IllegalArgumentException("已停止的系列不能改到停止时间之后");
                             edit.put("start", moved);
                         } else if ("complete".equals(action) || "reopen".equals(action)) {
-                            if (!current.isTask()) throw new IllegalArgumentException("只有待办和作业可以完成");
+                            if (!occurrence.isTask()) throw new IllegalArgumentException("只有待办和作业可以完成");
                             edit.put("completed", "complete".equals(action) ? System.currentTimeMillis() : JSONObject.NULL);
                         } else throw new IllegalArgumentException("不支持的重复日程操作");
                         exceptions.put(key, edit);

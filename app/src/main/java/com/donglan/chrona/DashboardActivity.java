@@ -3620,7 +3620,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private void openCandidate(EventCandidate candidate) {
-        Intent intent = new Intent(this, candidate.repeatRule == null ? TaskDetailActivity.class : RepeatScheduleActivity.class)
+        Intent intent = new Intent(this, candidate.repeatRule == null || candidate.occurrenceAtMillis!=null ? TaskDetailActivity.class : RepeatScheduleActivity.class)
                 .putExtra("task_id", candidate.taskId)
                 .putExtra(TaskDetailActivity.EXTRA_CANDIDATE_ID, candidate.id);
         if (candidate.occurrenceAtMillis != null) intent.putExtra("occurrence_at", candidate.occurrenceAtMillis.longValue());

@@ -17,6 +17,11 @@ fixtures = {
  'android/content/Context.java': 'package android.content; public class Context {}',
  'android/util/Log.java': 'package android.util; public class Log {public static void w(String tag,String text,Throwable error){}}',
  'com/donglan/chrona/AndroidSync.java': 'package com.donglan.chrona; public class AndroidSync {public static final Object LOCK=new Object();}',
+ 'com/donglan/chrona/OccurrenceUpdates.java': '''package com.donglan.chrona;
+public class OccurrenceUpdates {
+ public static final java.util.Set<Long> held=new java.util.HashSet<>();
+ public static boolean held(com.donglan.chrona.data.TaskStore store,long id){return held.contains(id);}
+}''',
  'com/donglan/chrona/data/TaskStore.java': '''package com.donglan.chrona.data;
 import java.util.*;
 public class TaskStore implements AutoCloseable {
@@ -81,6 +86,9 @@ public class AutoPublishCheck {
   check(!AutoCalendarPublisher.eligible(new EventCandidate(1,1,"bad",1L,2L,"bad-zone","","",null,false)),"invalid zone rejected");
   check(!AutoCalendarPublisher.eligible(new EventCandidate(1,1,"bad",null,2L,"UTC","","",null,false)),"missing time rejected");
   reset(item(1,0),item(2,0));r=publish();check(r.published==2&&r.pending==0&&r.summary().contains("已自动确认"),"certain overlapping events both written");
+  reset(item(1,0));com.donglan.chrona.OccurrenceUpdates.held.add(1L);r=publish();
+  check(r.published==0&&CalendarStore.events.isEmpty(),"held occurrence proposal cannot auto-insert even with certainty zero");
+  com.donglan.chrona.OccurrenceUpdates.held.clear();
   System.out.println("Automatic publication: "+checks+" checks passed; actual coordinator with calendar/persistence stand-ins");
  }
 }'''

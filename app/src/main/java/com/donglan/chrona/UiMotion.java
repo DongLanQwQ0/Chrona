@@ -27,6 +27,8 @@ public final class UiMotion {
     private static final WeakHashMap<View, Boolean> SCROLL_SEEN = new WeakHashMap<>();
     private static final WeakHashMap<View, java.lang.ref.WeakReference<Runnable>> ACTIVE =
             new WeakHashMap<>();
+    private static final WeakHashMap<View, java.lang.ref.WeakReference<Runnable>> PENDING_ENTRANCES =
+            new WeakHashMap<>();
     private static final WeakHashMap<ScrollView, java.lang.ref.WeakReference<ScrollRevealObserver>>
             SCROLLS = new WeakHashMap<>();
 
@@ -165,6 +167,54 @@ public final class UiMotion {
         view.post(() -> UiMotion.reveal(view, index));
     }
 
+    /** Explicit first presentation of a whole page; its scrollable descendants stay intact. */
+    static void enterPage(View view) {
+        finishSwap(view);
+        if (!isEnabled()) return;
+        android.view.ViewTreeObserver.OnPreDrawListener[] firstFrame = new android.view.ViewTreeObserver.OnPreDrawListener[1];
+        Runnable[] start = new Runnable[1];
+        Runnable[] cancel = new Runnable[1];
+        View.OnAttachStateChangeListener cleanup = new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View attached) { }
+            @Override public void onViewDetachedFromWindow(View detached) {
+                if (view.getViewTreeObserver().isAlive()) view.getViewTreeObserver().removeOnPreDrawListener(firstFrame[0]);
+                view.removeCallbacks(start[0]);
+                finishSwap(view); view.removeOnAttachStateChangeListener(this);
+            }
+        };
+        cancel[0] = () -> {
+            PENDING_ENTRANCES.remove(view);
+            if (view.getViewTreeObserver().isAlive()) view.getViewTreeObserver().removeOnPreDrawListener(firstFrame[0]);
+            view.removeCallbacks(start[0]);
+            view.removeOnAttachStateChangeListener(cleanup);
+        };
+        PENDING_ENTRANCES.put(view, new java.lang.ref.WeakReference<>(cancel[0]));
+        view.addOnAttachStateChangeListener(cleanup);
+        view.setAlpha(0f);
+        view.setTranslationY(8f * view.getResources().getDisplayMetrics().density);
+        start[0] = () -> {
+            cancel[0].run();
+            if (!view.isAttachedToWindow() || !isEnabled()) {
+                finishSwap(view); view.removeOnAttachStateChangeListener(cleanup); return;
+            }
+            view.addOnAttachStateChangeListener(cleanup);
+            view.animate().alpha(1f).translationY(0f).setStartDelay(0).setDuration(ENTER)
+                .setInterpolator(SETTLE).setUpdateListener(animation -> {
+                    if (!isEnabled()) finishSwap(view);
+                }).withEndAction(() -> {
+                    view.animate().setUpdateListener(null); view.removeOnAttachStateChangeListener(cleanup);
+                }).start();
+        };
+        // The entrance clock starts after layout has produced a drawable frame, not while a
+        // cold activity or resized window is still being attached by WindowManager.
+        firstFrame[0] = () -> {
+            view.getViewTreeObserver().removeOnPreDrawListener(firstFrame[0]);
+            view.postOnAnimation(start[0]);
+            return true;
+        };
+        view.getViewTreeObserver().addOnPreDrawListener(firstFrame[0]);
+    }
+
     /**
      * Staggers a card list into view. Only for a screen that is being opened: rebuilding a screen
      * for another reason (theme change, returning from another page) must not look like a reload.
@@ -190,7 +240,10 @@ public final class UiMotion {
 
     /** Explicit lifecycle/focus completion for a composed in-page transition. */
     static void finishSwap(View container) {
-        container.animate().setListener(null).setUpdateListener(null).cancel();
+        java.lang.ref.WeakReference<Runnable> pending = PENDING_ENTRANCES.remove(container);
+        Runnable cancel = pending == null ? null : pending.get();
+        if (cancel != null) cancel.run();
+        container.animate().setListener(null).setUpdateListener(null).withEndAction(null).cancel();
         if (container.getParent() instanceof FrameLayout host && hostsSeveralChildren(host)) dropSwapGhosts(host);
         container.setAlpha(1f); container.setTranslationX(0f); container.setTranslationY(0f);
     }
@@ -202,11 +255,17 @@ public final class UiMotion {
      * ghost covers the whole visual, background included.
      */
     public static void swap(View snapshotOf, View container, Runnable rebuild) {
+        swap(snapshotOf, container, rebuild, 0);
+    }
+
+    /** Positive direction advances leftwards; zero retains the established cross-fade. */
+    static void swap(View snapshotOf, View container, Runnable rebuild, int direction) {
         // Capture the currently composed frame, including an unfinished previous cross-fade.
         Snapshot outgoing = UiMotion.isEnabled() && snapshotOf.getParent() instanceof FrameLayout candidate
-                && hostsSeveralChildren(candidate) ? snapshot(snapshotOf) : null;
-        container.animate().cancel();
+                && hostsSeveralChildren(candidate) ? snapshot(snapshotOf, direction != 0) : null;
+        container.animate().setUpdateListener(null).withEndAction(null).cancel();
         container.setAlpha(1f);
+        container.setTranslationX(0f); container.setTranslationY(0f);
         if (snapshotOf.getParent() instanceof FrameLayout previousHost
                 && hostsSeveralChildren(previousHost)) dropSwapGhosts(previousHost);
         if (!ValueAnimator.areAnimatorsEnabled()) {
@@ -241,8 +300,8 @@ public final class UiMotion {
                 ghost.setImageDrawable(null);
                 outgoing.bitmap.recycle();
                 ghost.removeOnAttachStateChangeListener(this);
-                container.animate().cancel();
-                container.setAlpha(1f);
+                container.animate().setUpdateListener(null).withEndAction(null).cancel();
+                container.setAlpha(1f); container.setTranslationX(0f); container.setTranslationY(0f);
             }
         });
         // Added after the snapshot source so it draws on top of it.
@@ -256,10 +315,14 @@ public final class UiMotion {
         }
         container.animate().cancel();
         container.setAlpha(0f);
-        container.animate().alpha(1f).setStartDelay(0).setDuration(SWAP_MILLIS)
+        float distance = Integer.signum(direction) * snapshotOf.getWidth();
+        container.setTranslationX(distance);
+        container.animate().alpha(1f).translationX(0f).setStartDelay(0).setDuration(SWAP_MILLIS)
                 .setInterpolator(UiMotion.SETTLE)
+                .setUpdateListener(animation -> { if (!isEnabled()) finishSwap(container); })
+                .withEndAction(() -> container.animate().setUpdateListener(null))
                 .start();
-        ghost.animate().alpha(0f).setDuration(SWAP_MILLIS)
+        ghost.animate().alpha(0f).translationX(-distance).setDuration(SWAP_MILLIS)
                 .setInterpolator(UiMotion.SETTLE)
                 .withEndAction(() -> host.removeView(ghost)).start();
     }
@@ -284,10 +347,18 @@ public final class UiMotion {
     }
 
     /** Only the visible viewport; bounded to 2 MiB even for very long settings pages. */
-    private static Snapshot snapshot(View container) {
+    private static Snapshot snapshot(View container, boolean fixedViewport) {
         android.graphics.Rect bounds = new android.graphics.Rect();
-        if (!container.isAttachedToWindow() || !container.getLocalVisibleRect(bounds)) return null;
-        bounds.offset(-container.getScrollX(), -container.getScrollY());
+        if (!container.isAttachedToWindow()) return null;
+        if (fixedViewport && container.getParent() instanceof ViewGroup parent) {
+            // A reverse mid-slide captures the entire composed viewport, not just the portion
+            // of the incoming (currently translated) child that happens to be visible.
+            if (!parent.getLocalVisibleRect(bounds)) return null;
+            bounds.offset(-parent.getScrollX() - container.getLeft(), -parent.getScrollY() - container.getTop());
+        } else {
+            if (!container.getLocalVisibleRect(bounds)) return null;
+            bounds.offset(-container.getScrollX(), -container.getScrollY());
+        }
         if (!bounds.intersect(0, 0, container.getWidth(), container.getHeight())) return null;
         int width = bounds.width(), height = bounds.height();
         float scale = (float) Math.min(.5, Math.min(

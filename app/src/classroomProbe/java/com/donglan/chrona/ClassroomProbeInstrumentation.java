@@ -25,12 +25,14 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean assets;
     private boolean cleanup;
     private boolean audit;
+    private boolean parseAudit;
     @Override public void onCreate(Bundle args) {
         network = args != null && "true".equals(args.getString("network"));
         requestedDate = args == null ? null : args.getString("date");
         assets = args != null && "true".equals(args.getString("assets"));
         cleanup = args != null && "true".equals(args.getString("cleanup"));
         audit = args != null && "true".equals(args.getString("audit"));
+        parseAudit = args != null && "true".equals(args.getString("parseAudit"));
         super.onCreate(args); start();
     }
     @Override public void onStart() {
@@ -38,6 +40,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         try {
             if (!getTargetContext().getPackageName().equals("com.donglan.chrona")) throw new IllegalStateException();
             if(cleanup){result.putInt("removed_public_assets",cleanupPublicAssets());finish(-1,result);return;}
+            if(parseAudit){result.putString("parse_audit",recentParseAudits().toString());finish(-1,result);return;}
             ZjuSettingsStore settings = new ZjuSettingsStore(getTargetContext());
             if (!settings.enabled() || !settings.configured()) throw new IllegalStateException("School account unavailable");
             if(audit){result.putString("monitor_audit",auditMonitor(settings).toString());finish(-1,result);return;}
@@ -99,15 +102,50 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             result.putString("error_type", failure.getClass().getSimpleName()); finish(0, result);
         }
     }
+    private JSONArray recentParseAudits()throws Exception {
+        JSONArray result=new JSONArray();
+        try(com.donglan.chrona.data.TaskStore store=new com.donglan.chrona.data.TaskStore(getTargetContext());
+            android.database.Cursor rows=store.getReadableDatabase().query("parse_runs",new String[]{"id","task_id"},null,null,null,null,"started_at DESC,id DESC","12")){
+            while(rows.moveToNext()){
+                JSONObject run=store.getParseAudits(rows.getLong(1),null,rows.getString(0),null,0,1).getJSONObject(0);
+                JSONObject request=run.getJSONObject("request"),detail=pick(run,"runId","taskId","startedAt","finishedAt","status","error");
+                detail.put("request",pick(request,"image_count","attempt","model","reasoning_effort","reference_epoch_millis","time_zone_id"));
+                JSONObject parsed=run.optJSONObject("result");if(parsed!=null)detail.put("result",pick(parsed,"prompt_version","reference_epoch_millis","scheduling_epoch_millis","time_zone_id","work_start_minutes","work_end_minutes","usage"));
+                JSONArray entries=run.getJSONArray("entries"),safe=new JSONArray();
+                for(int i=0;i<entries.length();i++){
+                    JSONObject entry=entries.getJSONObject(i),evidence=entry.getJSONObject("evidence");
+                    JSONObject item=pick(entry,"candidateId","candidateSyncId").put("evidence",pick(evidence,"position","plan_group","source_time_validation","resolved_time_assessment","adjustments","normalization_note"));
+                    for(String key:new String[]{"model","resolved"})if(evidence.optJSONObject(key)!=null)item.getJSONObject("evidence").put(key,pick(evidence.getJSONObject(key),"title","type","kind","category","start","end","start_at","end_at","due_at","deadline","all_day","uncertain","uncertainty_reason","time_assessment"));
+                    safe.put(item);
+                }
+                result.put(detail.put("entries",safe));
+            }
+        }return result;
+    }
+    private static JSONObject pick(JSONObject input,String... keys)throws Exception{
+        JSONObject result=new JSONObject();for(String key:keys)if(input.has(key))result.put(key,input.get(key));return result;
+    }
     private JSONObject auditMonitor(ZjuSettingsStore settings)throws Exception {
         JSONObject state=new ClassroomMonitorStore(getTargetContext(),settings.account()).read(),report=new JSONObject();JSONArray rows=new JSONArray();
-        JSONArray rules=state.getJSONArray("rules");report.put("now",System.currentTimeMillis()).put("rules",rules.length());
+        JSONArray rules=state.getJSONArray("rules");report.put("now",System.currentTimeMillis()).put("rules",rules.length())
+                .put("done",state.getJSONArray("done")).put("message",state.optString("message"))
+                .put("automatic",new JSONArray(ClassroomMonitorStore.autoTasks(state)))
+                .put("summary_images",state.optBoolean("summaryImages"));
+        com.donglan.chrona.ai.AiSettings ai=new com.donglan.chrona.ai.AiSettingsStore(getTargetContext()).load();
+        report.put("ai_configured",ai!=null);if(ai!=null)report.put("model",ai.model);
         for(int i=0;i<rules.length();i++){ClassroomLesson selected=ClassroomLesson.fromJson(rules.getJSONObject(i).getJSONObject("lesson"));
             java.io.File dir=new com.donglan.chrona.classroom.ClassroomStore(getTargetContext(),settings.account()).localLesson(selected);
             JSONObject row=new JSONObject().put("course",selected.course).put("id",selected.id).put("status",selected.status).put("starts",selected.startsAt).put("repeat",rules.getJSONObject(i).getBoolean("repeat"));
-            for(String file:new String[]{"live-status.json","monitor-stage.json","live-transcript.json","live-current.json","monitor-materials.json","monitor-candidates.json"}){
+            for(String file:new String[]{"live-status.json","monitor-stage.json","live-transcript.json","live-current.json","monitor-materials.json","monitor-candidates.json","materials.json","candidates.json","summary.json","run.json"}){
                 java.io.File path=new java.io.File(dir,file);JSONObject saved=com.donglan.chrona.classroom.ClassroomStore.read(path);JSONObject detail=new JSONObject().put("exists",path.isFile()).put("mtime",path.lastModified());
-                if(saved!=null){if(saved.has("state"))detail.put("state",saved.optString("state"));if(saved.has("status"))detail.put("status",saved.optString("status"));for(String list:new String[]{"segments","images"})if(saved.optJSONArray(list)!=null)detail.put(list,saved.getJSONArray(list).length());if(saved.optJSONObject("current")!=null)detail.put("current_chars",saved.getJSONObject("current").optString("text").length());}row.put(file,detail);
+                if(saved!=null){if(saved.has("state"))detail.put("state",saved.optString("state"));if(saved.has("status"))detail.put("status",saved.optString("status"));for(String list:new String[]{"segments","images"})if(saved.optJSONArray(list)!=null)detail.put(list,saved.getJSONArray(list).length());if(saved.optJSONObject("current")!=null)detail.put("current_chars",saved.getJSONObject("current").optString("text").length());
+                    for(String flag:new String[]{"complete","monitoring","portable"})if(saved.has(flag))detail.put(flag,saved.optBoolean(flag));
+                    if(saved.has("run"))detail.put("run",saved.optString("run"));
+                    if(file.equals("run.json")){detail.put("has_draft",saved.has("draft")).put("has_final",saved.has("final")).put("selected",saved.optJSONArray("selected"));
+                        JSONObject draft=saved.optJSONObject("draft");if(draft!=null)detail.put("image_requests",draft.optJSONArray("image_requests"));
+                        String[] config=saved.optString("config").split("\\n",-1);if(config.length>=4)detail.put("image_limit",config[3]);}
+                    if(file.equals("summary.json"))detail.put("referenced_images",com.donglan.chrona.classroom.ClassroomDocument.referencedImages(saved).size());
+                }row.put(file,detail);
             }
             if(network){String[] pair=settings.credentials();try(ClassroomClient catalog=new ClassroomClient(pair[0],pair[1]);ZjuClient transport=new ZjuClient(pair[0],pair[1])){Arrays.fill(pair,"");
                 for(ClassroomLesson fresh:catalog.courseLessons(selected))if(fresh.id.equals(selected.id)){row.put("fresh_status",fresh.status).put("fresh_starts",fresh.startsAt);break;}

@@ -70,12 +70,9 @@ final class ClassroomMonitorUi {
                 card.setContentDescription(target.course+"，"+detail.getText()+"，"+phase+"，打开课堂监视");card.setOnClickListener(v->open(activity,target));UiStyle.pressable(card);UiStyle.addSpaced(parent,card,0,8);
             }
             if(rules.length()==0){TextView empty=new TextView(activity);empty.setText("暂无监视");empty.setTextSize(16);UiStyle.muted(empty);parent.addView(empty);}
-            LinearLayout actions=new LinearLayout(activity);actions.setGravity(android.view.Gravity.END);
-            actions.addView(UiStyle.navigationIcon(activity,R.drawable.ic_settings,"监视运行设置",()->runtimeSettings(activity)),new LinearLayout.LayoutParams(dp(activity,48),dp(activity,48)));
-            UiStyle.addSpaced(parent,actions,4,0);
         }catch(Exception failure){Feedback.show(activity,"无法读取课堂监视");}
     }
-    private static void runtimeSettings(Activity activity){
+    static void runtimeSettings(Activity activity){
         String account=new ZjuSettingsStore(activity).account();if(!ClassroomMonitor.allowed(activity,account))return;
         ClassroomMonitorStore store=new ClassroomMonitorStore(activity,account);
         android.app.Dialog dialog=new android.app.Dialog(activity);LinearLayout panel=UiDialogs.dialogPanel(activity,"监视运行设置");

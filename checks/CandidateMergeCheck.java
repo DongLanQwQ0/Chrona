@@ -238,6 +238,17 @@ public final class CandidateMergeCheck {
         identityChecks();
         broadMatchingChecks();
         boundedDistanceChecks();
+        try(TaskStore store=new TaskStore(new Context(new File(base,"occurrence-hold")))){
+            long first=task(store,"announcement",0);task(store,"ordinary one",0);task(store,"ordinary two",0);
+            long candidate=store.getCandidates(first).get(0).id;
+            for(String state:List.of("pending","invalid","applied")){
+                store.getWritableDatabase().execSQL("UPDATE event_candidates SET occurrence_update=? WHERE id=?",new Object[]{new JSONObject().put("state",state).toString(),candidate});
+                CandidateMerges.Preview preview=CandidateMerges.scan(store);
+                check(preview.removed()==1&&preview.groups.stream().flatMap(List::stream).noneMatch(item->item.id==candidate),"held announcement excluded from generic merge: "+state);
+            }
+            store.getWritableDatabase().execSQL("UPDATE event_candidates SET occurrence_update=? WHERE id=?",new Object[]{new JSONObject().put("state","new").toString(),candidate});
+            check(CandidateMerges.scan(store).removed()==2,"explicit new returns to ordinary merge contract");
+        }
         try(TaskStore store=new TaskStore(new Context(new File(base,"selected-groups")))){
             task(store,"first source",0);task(store,"second source",0);
             task(store,"other first",1);task(store,"other second",1);

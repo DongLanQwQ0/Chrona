@@ -68,14 +68,26 @@ final class ClassroomMonitorStore {
         }
         return false;
     }
-    static List<ClassroomLesson> pending(JSONObject state) throws Exception {
+    private static List<ClassroomLesson> knownLessons(JSONObject state)throws Exception{
         java.util.LinkedHashMap<String,ClassroomLesson> known=new java.util.LinkedHashMap<>();
         JSONArray rules=state.getJSONArray("rules"),catalog=state.getJSONArray("catalog");
         for(int i=0;i<rules.length();i++){ClassroomLesson l=ClassroomLesson.fromJson(rules.getJSONObject(i).getJSONObject("lesson"));known.put(key(l),l);}
         for(int i=0;i<catalog.length();i++){ClassroomLesson l=ClassroomLesson.fromJson(catalog.getJSONObject(i));known.put(key(l),l);}
+        return new ArrayList<>(known.values());
+    }
+    static List<ClassroomLesson> pending(JSONObject state) throws Exception {
         List<ClassroomLesson> result=new ArrayList<>();
-        for(ClassroomLesson lesson:known.values())if(matches(state,lesson))result.add(lesson);
+        for(ClassroomLesson lesson:knownLessons(state))if(matches(state,lesson))result.add(lesson);
         result.sort(java.util.Comparator.comparingLong(lesson->lesson.startsAt));return result;
+    }
+    private static boolean downloaded(JSONObject state,ClassroomLesson lesson)throws Exception{
+        JSONArray done=state.getJSONArray("done");for(int i=0;i<done.length();i++)if(key(lesson).equals(done.getString(i)))return true;return false;
+    }
+    /** Only identities already recorded by the active registration/catalogue are recoverable. */
+    static List<ClassroomLesson> recoverableFinished(JSONObject state)throws Exception{
+        List<ClassroomLesson> result=new ArrayList<>();
+        for(ClassroomLesson lesson:knownLessons(state))if(downloaded(state,lesson)&&ruleFor(state,lesson)!=null&&auto(state,lesson)==null)result.add(lesson);
+        return result;
     }
     void catalog(List<ClassroomLesson> lessons,long now) throws Exception {
         synchronized(LOCK){JSONObject state=read();JSONArray rows=new JSONArray();for(ClassroomLesson lesson:lessons)rows.put(lesson.json());state.put("catalog",rows).put("checked",now);save(state);}
@@ -89,11 +101,21 @@ final class ClassroomMonitorStore {
     void finished(ClassroomLesson lesson) throws Exception {
         synchronized(LOCK){JSONObject state=read();if(!matches(state,lesson))return;
             state.getJSONArray("done").put(key(lesson));
-            JSONObject tasks=state.optJSONObject("summaries");if(tasks==null)tasks=new JSONObject();
-            if(!tasks.has(key(lesson)))tasks.put(key(lesson),new JSONObject().put("lesson",lesson.json()).put("state","queued")
-                    .put("imageLimit",state.optBoolean("summaryImages")?com.donglan.chrona.classroom.ClassroomSummary.MAX_IMAGES:0).put("updated",System.currentTimeMillis()));
-            state.put("summaries",tasks).put("message",lesson.course+" · 素材已下载，等待自动总结");save(state);
+            enqueue(state,lesson);save(state);
         }
+    }
+    /** Recover an old completed download without recreating registrations or resetting AI outcomes. */
+    boolean recoverFinished(ClassroomLesson lesson)throws Exception{
+        synchronized(LOCK){JSONObject state=read();
+            if(!downloaded(state,lesson)||ruleFor(state,lesson)==null||auto(state,lesson)!=null)return false;
+            enqueue(state,lesson);save(state);return true;
+        }
+    }
+    private static void enqueue(JSONObject state,ClassroomLesson lesson)throws Exception{
+        JSONObject tasks=state.optJSONObject("summaries");if(tasks==null)tasks=new JSONObject();
+        if(!tasks.has(key(lesson)))tasks.put(key(lesson),new JSONObject().put("lesson",lesson.json()).put("state","queued")
+                .put("imageLimit",state.optBoolean("summaryImages")?com.donglan.chrona.classroom.ClassroomSummary.MAX_IMAGES:0).put("updated",System.currentTimeMillis()));
+        state.put("summaries",tasks).put("message",lesson.course+" · 素材已下载，等待自动总结");
     }
     boolean summaryImages()throws Exception{return read().optBoolean("summaryImages");}
     void summaryImages(boolean enabled)throws Exception{synchronized(LOCK){JSONObject state=read();state.put("summaryImages",enabled);save(state);}}

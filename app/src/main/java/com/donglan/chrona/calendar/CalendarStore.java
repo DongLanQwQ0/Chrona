@@ -19,6 +19,7 @@ import android.provider.CalendarContract.Events;
 import android.provider.CalendarContract.Reminders;
 import com.donglan.chrona.ScheduleSources;
 import com.donglan.chrona.data.EventCandidate;
+import com.donglan.chrona.data.RepeatOccurrences;
 import com.donglan.chrona.data.RepeatRule;
 import biweekly.component.VEvent;
 import biweekly.util.Frequency;
@@ -356,7 +357,7 @@ public final class CalendarStore {
                         operations.add(ContentProviderOperation.newDelete(syncUri(Reminders.CONTENT_URI))
                                 .withSelection(Reminders.EVENT_ID + "=?", new String[]{Long.toString(exceptionId)}).build());
                         if (completed || !cursor.isNull(2) && cursor.getInt(2) == Events.STATUS_CANCELED) continue;
-                        for (int minute : minutes) operations.add(ContentProviderOperation.newInsert(syncUri(Reminders.CONTENT_URI))
+                        for (int minute : occurrenceReminders(change, minutes)) operations.add(ContentProviderOperation.newInsert(syncUri(Reminders.CONTENT_URI))
                                 .withValue(Reminders.EVENT_ID, exceptionId).withValue(Reminders.MINUTES, minute)
                                 .withValue(Reminders.METHOD, Reminders.METHOD_ALERT).build());
                     }
@@ -527,23 +528,39 @@ public final class CalendarStore {
         if (input.rrule == null) return;
         try {
             JSONObject exceptions = new JSONObject(input.repeatExceptions);
+            // EventInput deliberately contains provider bounds, not a second copy of source task fields.
+            EventCandidate providerSeries = new EventCandidate(1, 1, input.title, input.startMillis,
+                    input.endMillis, input.timeZoneId, input.location, input.description,
+                    input.reminderMinutes.isEmpty() ? null : input.reminderMinutes.get(0), false)
+                    .withRepeat(RepeatRule.fromJson(new JSONObject(input.repeatRuleJson)))
+                    .withRepeatState(input.repeatExceptions, null);
             java.util.Iterator<String> keys = exceptions.keys();
             while (keys.hasNext()) {
                 String key = keys.next();
                 long original = Long.parseLong(key);
                 JSONObject change = exceptions.getJSONObject(key);
-                long actual = change.has("start") ? change.getLong("start") : original;
+                EventCandidate occurrence = RepeatOccurrences.at(providerSeries, original);
+                long actual = occurrence == null ? change.optLong("start", original) : occurrence.calendarStart();
                 boolean canceled = change.optBoolean("skipped")
                         || input.repeatStoppedAtMillis != null && actual >= input.repeatStoppedAtMillis;
                 // A completed occurrence stays visible, with an exception suppressing its alerts.
                 boolean completed = !change.isNull("completed");
-                if (!canceled && !completed && actual == original) continue;
+                JSONObject fields = change.optJSONObject("fields");
+                if (!canceled && !completed && actual == original && (fields == null || fields.length() == 0)) continue;
                 ContentValues values = eventValues(calendarId, input);
                 values.putNull(Events._SYNC_ID);
                 values.putNull(Events.SYNC_DATA1); values.putNull(Events.SYNC_DATA2); values.putNull(Events.SYNC_DATA3);
                 values.putNull(Events.RRULE); values.putNull(Events.DURATION);
                 values.put(Events.DTSTART, actual);
-                values.put(Events.DTEND, Math.addExact(actual, input.endMillis - input.startMillis));
+                values.put(Events.DTEND, occurrence == null
+                        ? Math.addExact(actual, input.endMillis - input.startMillis) : occurrence.calendarEnd());
+                if (occurrence != null) {
+                    values.put(Events.TITLE, occurrence.title);
+                    values.put(Events.EVENT_TIMEZONE, occurrence.timeZoneId);
+                    values.put(Events.ALL_DAY, occurrence.allDay ? 1 : 0);
+                    values.put(Events.DESCRIPTION, occurrence.description);
+                    values.put(Events.EVENT_LOCATION, occurrence.location);
+                }
                 values.put(Events.ORIGINAL_SYNC_ID, input.syncId);
                 values.put(Events.ORIGINAL_INSTANCE_TIME, original);
                 values.put(Events.ORIGINAL_ALL_DAY, input.allDay ? 1 : 0);
@@ -554,7 +571,7 @@ public final class CalendarStore {
                 else builder.withValue(Events.ORIGINAL_ID, eventId);
                 int exceptionIndex = operations.size();
                 operations.add(builder.build());
-                if (!canceled && !completed) for (int minutes : input.reminderMinutes) {
+                if (!canceled && !completed) for (int minutes : occurrenceReminders(change, input.reminderMinutes)) {
                     operations.add(ContentProviderOperation.newInsert(syncUri(Reminders.CONTENT_URI))
                             .withValueBackReference(Reminders.EVENT_ID, exceptionIndex)
                             .withValue(Reminders.MINUTES, minutes).withValue(Reminders.METHOD, Reminders.METHOD_ALERT).build());
@@ -563,6 +580,15 @@ public final class CalendarStore {
         } catch (org.json.JSONException | NumberFormatException invalid) {
             throw new IllegalArgumentException("Invalid repeat exceptions", invalid);
         }
+    }
+
+    /** Series alert updates preserve an occurrence's explicit override, including a cleared alert. */
+    private static List<Integer> occurrenceReminders(JSONObject change, List<Integer> inherited)
+            throws org.json.JSONException {
+        JSONObject fields = change == null ? null : change.optJSONObject("fields");
+        if (fields == null || !fields.has("reminder_minutes_before")) return inherited;
+        return fields.isNull("reminder_minutes_before") ? Collections.emptyList()
+                : Collections.singletonList(fields.getInt("reminder_minutes_before"));
     }
 
     private Uri syncUri(Uri uri) {

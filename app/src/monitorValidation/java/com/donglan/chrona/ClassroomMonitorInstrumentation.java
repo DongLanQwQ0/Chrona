@@ -25,18 +25,43 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     private volatile boolean liveFixture;private volatile int socketOpens;private volatile FakeSocket lastSocket;
     private volatile List<ClassroomLesson> lookupCatalog;
     private volatile CountDownLatch materialGate;
+    final List<String> entryCreates=new ArrayList<>();
+    final Map<String,Integer> entryFrameCounts=new HashMap<>();
+    volatile Activity lastResumed;
+    @Override public void callActivityOnCreate(Activity screen,Bundle state){
+        entryCreates.add(screen.getClass().getSimpleName()+": restored="+(state!=null));
+        screen.setRequestedOrientation("landscape".equals(args.getString("orientation"))?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        super.callActivityOnCreate(screen,state);
+        if(args.containsKey("heightDp")){float density=screen.getResources().getDisplayMetrics().density;screen.getWindow().setLayout(Math.round(Integer.parseInt(args.getString("widthDp","400"))*density),Math.round(Integer.parseInt(args.getString("heightDp"))*density));}
+    }
+    final Set<String> enteredPages=new HashSet<>();
+    @Override public void callActivityOnResume(Activity screen){
+        super.callActivityOnResume(screen);lastResumed=screen;View decor=screen.getWindow().getDecorView();
+        android.view.ViewTreeObserver.OnPreDrawListener observer=()->{entryFrameCounts.merge(screen.getClass().getSimpleName(),1,Integer::sum);if(entryFrame(decor))enteredPages.add(screen.getClass().getSimpleName());return true;};
+        decor.getViewTreeObserver().addOnPreDrawListener(observer);decor.postDelayed(()->{if(decor.getViewTreeObserver().isAlive())decor.getViewTreeObserver().removeOnPreDrawListener(observer);},3000);
+    }
+    private static boolean entryFrame(View view){
+        if(view instanceof ViewGroup&&view.getAlpha()>0&&view.getAlpha()<1&&view.getTranslationY()>0)return true;
+        if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++)if(entryFrame(group.getChildAt(i)))return true;
+        return false;
+    }
     @Override public void onCreate(Bundle input){args=input==null?new Bundle():input;super.onCreate(input);start();}
     @Override public Activity newActivity(ClassLoader loader,String name,Intent intent)throws InstantiationException,IllegalAccessException,ClassNotFoundException {
         Activity result=super.newActivity(loader,name,intent);
         if(name.startsWith("com.donglan.chrona.")){
             var metrics=getTargetContext().getResources().getDisplayMetrics();int width=Integer.parseInt(args.getString("widthDp","400"));
             Configuration config=new Configuration();config.densityDpi=Math.round(metrics.widthPixels*160f/width);config.screenWidthDp=width;config.smallestScreenWidthDp=width;
-            config.screenHeightDp=Math.round(metrics.heightPixels*160f/config.densityDpi);config.fontScale=Float.parseFloat(args.getString("font","1"));result.applyOverrideConfiguration(config);
+            config.screenHeightDp=Math.round(metrics.heightPixels*160f/config.densityDpi);
+            if("landscape".equals(args.getString("orientation"))){config.orientation=Configuration.ORIENTATION_LANDSCAPE;config.densityDpi=Math.round(Math.max(metrics.widthPixels,metrics.heightPixels)*160f/width);config.screenHeightDp=Math.round(Math.min(metrics.widthPixels,metrics.heightPixels)*160f/config.densityDpi);config.smallestScreenWidthDp=config.screenHeightDp;}
+            else{config.orientation=Configuration.ORIENTATION_PORTRAIT;config.densityDpi=Math.round(Math.min(metrics.widthPixels,metrics.heightPixels)*160f/width);config.screenHeightDp=Math.round(Math.max(metrics.widthPixels,metrics.heightPixels)*160f/config.densityDpi);}
+            if(args.containsKey("heightDp")){config.densityDpi=metrics.densityDpi;config.screenHeightDp=Integer.parseInt(args.getString("heightDp"));config.smallestScreenWidthDp=Math.min(width,config.screenHeightDp);}
+            config.fontScale=Float.parseFloat(args.getString("font","1"));result.applyOverrideConfiguration(config);
         }return result;
     }
     @Override public void onStart(){Bundle report=new Bundle();try{
         app=getTargetContext();if(!app.getPackageName().equals("com.donglan.chrona.monitor.validation"))throw new SecurityException("Fixture package required");
         if(!android.os.Build.HARDWARE.contains("ranchu"))throw new SecurityException("Owned emulator required");
+        getUiAutomation().setRotation("landscape".equals(args.getString("orientation"))?UiAutomation.ROTATION_FREEZE_90:UiAutomation.ROTATION_FREEZE_0);SystemClock.sleep(800);
         for(String permission:List.of(android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR,android.Manifest.permission.POST_NOTIFICATIONS))getUiAutomation().grantRuntimePermission(app.getPackageName(),permission);
         getUiAutomation().executeShellCommand("input keyevent 224").close();getUiAutomation().executeShellCommand("wm dismiss-keyguard").close();SystemClock.sleep(300);
         app.getSharedPreferences("chrona_classroom_monitor",0).edit().clear().commit();app.getSharedPreferences("chrona_zju",0).edit().clear().commit();

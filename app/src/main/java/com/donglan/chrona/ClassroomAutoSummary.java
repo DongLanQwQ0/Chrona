@@ -39,6 +39,7 @@ final class ClassroomAutoSummary {
             }
             if(!ClassroomMonitor.allowed(app,account))return;
             ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);
+            recoverFinished(app,store);
             for(JSONObject task:ClassroomMonitorStore.autoTasks(store.read())){
                 ClassroomLesson lesson=ClassroomLesson.fromJson(task.getJSONObject("lesson"));String state=task.optString("state");
                 if(!"queued".equals(state)&&!"running".equals(state))continue;
@@ -69,6 +70,21 @@ final class ClassroomAutoSummary {
                 job.run("自动整理课堂",true,()->execute(store,job));
             }
         }catch(Exception failure){android.util.Log.w("ChronaClassroomMonitor","auto summary: "+failure.getClass().getSimpleName());}
+    }
+    private static void recoverFinished(Context app,ClassroomMonitorStore store)throws Exception{
+        for(ClassroomLesson lesson:ClassroomMonitorStore.recoverableFinished(store.read())){
+            File dir=new ClassroomStore(app,store.account).localLesson(lesson);if(ClassroomStore.active(dir))continue;
+            try{
+                JSONObject materials=ClassroomStore.read(new File(dir,"materials.json")),candidates=ClassroomStore.read(new File(dir,"candidates.json"));
+                if(materials==null||candidates==null||materials.optBoolean("monitoring")||materials.optBoolean("portable")
+                        ||candidates.optBoolean("monitoring")||candidates.optBoolean("portable")||materials.optJSONArray("segments")==null
+                        ||materials.getJSONArray("segments").length()==0||candidates.optJSONArray("images")==null||candidates.optJSONObject("lesson")==null)continue;
+                ClassroomLesson cached=ClassroomLesson.fromJson(candidates.getJSONObject("lesson"));
+                if(!ClassroomMonitorStore.key(lesson).equals(ClassroomMonitorStore.key(cached)))continue;
+                if(!ClassroomMonitor.allowed(app,store.account))return;
+                store.recoverFinished(lesson);
+            }catch(Exception invalid){android.util.Log.w("ChronaClassroomMonitor","completed material recovery: "+invalid.getClass().getSimpleName());}
+        }
     }
     private static void execute(ClassroomMonitorStore store,ClassroomLessonActivity.Session job)throws Exception{
         boolean requested=false;

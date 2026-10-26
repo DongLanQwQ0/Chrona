@@ -115,12 +115,13 @@ public final class ParseAuditStoreCheck {
             store.appendCandidate(candidate(legacyTask,"升级前日程",0));
             store.getWritableDatabase().execSQL("DROP TABLE parse_time_entries");
             store.getWritableDatabase().execSQL("DROP TABLE parse_runs");
+            store.getWritableDatabase().execSQL("ALTER TABLE event_candidates DROP COLUMN occurrence_update");
             store.getWritableDatabase().setVersion(15);
         }
         try (TaskStore upgraded = new TaskStore(legacy)) {
             check(upgraded.getTask(legacyTask).rawText.equals("升级前原文")
                     && upgraded.getCandidates(legacyTask).get(0).title.equals("升级前日程"),
-                    "actual v15-to-v16 upgrade preserves existing source and schedule");
+                    "actual v15 upgrade preserves existing source and schedule");
             check(upgraded.getParseAudits(legacyTask,null,null,null,0,10).length()==0,
                     "v15 upgrade creates audit storage without inventing historical evidence");
         }

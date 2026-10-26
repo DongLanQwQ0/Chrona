@@ -37,6 +37,8 @@ final class AutoCalendarPublisher {
                 boolean permitted = calendar.hasReadPermission() && calendar.hasWritePermission();
                 for (EventCandidate item : store.getCandidates(taskId)) {
                     control.check();
+                    try{if(com.donglan.chrona.OccurrenceUpdates.held(store,item.id))continue;}
+                    catch(Exception invalid){throw new IOException("占位匹配无法读取，草稿已保留",invalid);}
                     if (!eligible(item)) continue;
                     if (!permitted) { result.warning = "明确日程已保留；请授予日历读写权限后写入"; continue; }
                     long created = 0;
@@ -47,7 +49,7 @@ final class AutoCalendarPublisher {
                             // Refresh under the database write lock; deleted/edited candidates are never resurrected.
                             EventCandidate current = store.getCandidatesByIds(Collections.singleton(item.id)).stream()
                                     .filter(value -> value.taskId == taskId).findFirst().orElse(null);
-                            if (current == null || !eligible(current)) continue;
+                            if (current == null || !eligible(current)||com.donglan.chrona.OccurrenceUpdates.held(store,current.id)) continue;
                             control.check();
                             created = calendar.insertEvent(new CalendarStore.EventInput(current.title,
                                     current.calendarStart(), current.calendarEnd(), current.timeZoneId, current.allDay,

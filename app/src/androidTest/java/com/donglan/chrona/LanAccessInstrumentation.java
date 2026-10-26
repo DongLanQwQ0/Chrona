@@ -19,11 +19,24 @@ public final class LanAccessInstrumentation extends Instrumentation {
         this.arguments = arguments == null ? new Bundle() : new Bundle(arguments);
         super.onCreate(arguments); start();
     }
+    @Override public void callActivityOnCreate(android.app.Activity activity,Bundle state){
+        super.callActivityOnCreate(activity,state);
+        if("responsive_workspace".equals(arguments.getString("check"))&&arguments.containsKey("windowWidthDp")){
+            float density=activity.getResources().getDisplayMetrics().density;
+            activity.getWindow().setLayout(Math.round(Integer.parseInt(arguments.getString("windowWidthDp"))*density),Math.round(Integer.parseInt(arguments.getString("windowHeightDp"))*density));
+        }
+    }
     @Override public android.app.Activity newActivity(ClassLoader loader, String name, Intent intent)
             throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         android.app.Activity activity = super.newActivity(loader, name, intent);
+        if("responsive_workspace".equals(arguments.getString("check"))){
+            var config=new android.content.res.Configuration();config.fontScale=Float.parseFloat(arguments.getString("font","1.0"));
+            if(arguments.containsKey("windowWidthDp")){config.screenWidthDp=Integer.parseInt(arguments.getString("windowWidthDp"));config.screenHeightDp=Integer.parseInt(arguments.getString("windowHeightDp"));config.smallestScreenWidthDp=Math.min(config.screenWidthDp,config.screenHeightDp);}
+            activity.applyOverrideConfiguration(config);
+        }
         if (("capsule_settings".equals(arguments.getString("check"))
                 && NotificationSettingsActivity.class.getName().equals(name))
+                || ("occurrence_updates".equals(arguments.getString("check")) && TaskDetailActivity.class.getName().equals(name))
                 || ("compact_detail_atomic".equals(arguments.getString("check"))
                 && (TaskDetailActivity.class.getName().equals(name) || CandidateMergeActivity.class.getName().equals(name)))) {
             FixtureIsolation.require(getTargetContext());
@@ -45,6 +58,16 @@ public final class LanAccessInstrumentation extends Instrumentation {
     }
     @Override public void onStart() {
         android.util.Log.i("ChronaDeviceCheck", "onStart phase=" + arguments.getString("phase"));
+        if("responsive_workspace".equals(arguments.getString("check"))){
+            Bundle report=new Bundle();try{report.putString("responsive_report",ResponsiveWorkspaceDeviceCheck.run(this,arguments));finish(-1,report);}
+            catch(Throwable error){report.putString("error",android.util.Log.getStackTraceString(error));finish(0,report);}return;
+        }
+        if("occurrence_updates".equals(arguments.getString("check"))){
+            Bundle report=new Bundle();
+            try{report.putString("occurrence_report",OccurrenceUpdateDeviceCheck.run(this,arguments));finish(-1,report);}
+            catch(Throwable error){report.putString("error",android.util.Log.getStackTraceString(error));finish(0,report);}
+            return;
+        }
         if ("compact_detail_atomic".equals(arguments.getString("check"))) {
             Bundle report = new Bundle();
             try { report.putString("compact_report", CompactDetailAtomicCheck.run(this, arguments)); finish(-1, report); }

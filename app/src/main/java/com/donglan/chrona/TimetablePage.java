@@ -81,6 +81,7 @@ final class TimetablePage extends SchedulePage {
     private int semesterDirection;
     private Dialog floating, nested;
     private boolean resumed;
+    private boolean restoringScroll;
     private int gridWidth;
     private final Runnable schoolWatch = new Runnable() {
         @Override public void run() {
@@ -127,7 +128,7 @@ final class TimetablePage extends SchedulePage {
         setContentView(stage);
         body.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left > 0 && gridWidth != right - left) {
-                rememberScroll();
+                if(!restoringScroll)rememberScroll();
                 render();
             }
         });
@@ -397,6 +398,7 @@ final class TimetablePage extends SchedulePage {
                 && term.id().equals(animatedSemester) && resumed;
         if (!session.busy) animatedSemester = null;
         if (term == null) {
+            restoringScroll=false;
             LinearLayout empty = new LinearLayout(activity);
             empty.setOrientation(LinearLayout.VERTICAL);
             empty.setGravity(Gravity.CENTER);
@@ -619,6 +621,7 @@ final class TimetablePage extends SchedulePage {
     /** A new grid must never be drawn at x=0 before restoring its retained position. */
     private void restoreScrollBeforeDraw(ScrollView scroll, HorizontalScrollView sideways,
             int x, int y, Runnable ready) {
+        restoringScroll=true;
         body.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
             @Override public boolean onPreDraw() {
                 if (vertical != scroll) {
@@ -637,6 +640,7 @@ final class TimetablePage extends SchedulePage {
                     return false;
                 }
                 body.getViewTreeObserver().removeOnPreDrawListener(this);
+                restoringScroll=false;
                 ready.run();
                 return true;
             }
@@ -674,6 +678,21 @@ final class TimetablePage extends SchedulePage {
     }
 
     private void addSemesterControls(LinearLayout parent, TimetableStore.Semester selected) {
+        if(SettingsPageLayout.shortWindow(activity)){
+            LinearLayout controls=new LinearLayout(activity);controls.setGravity(Gravity.CENTER_VERTICAL);
+            TextView semester=label(selected.document.plan.groupLabel()+" · "+selected.document.plan.label(selected.index),16,true);
+            UiStyle.fieldTrigger(semester);
+            semester.setOnClickListener(v->{
+                List<TimetableStore.Semester> available=session.library.semesters;
+                String[] names=new String[available.size()];int chosen=0;
+                for(int i=0;i<names.length;i++){TimetableStore.Semester term=available.get(i);names[i]=term.document.plan.groupLabel()+" · "+term.document.plan.label(term.index);if(term.id().equals(selected.id()))chosen=i;}
+                UiDialogs.choiceDialog(activity,"学期",names,chosen,index->selectSemester(available.get(index).id()));
+            });
+            controls.addView(semester,new LinearLayout.LayoutParams(0,-2,1));
+            View manage=action("管理",false,()->manageSemester(selected));
+            LinearLayout.LayoutParams actionParams=new LinearLayout.LayoutParams(-2,-2);actionParams.leftMargin=dp(8);controls.addView(manage,actionParams);
+            UiStyle.addSpaced(parent,controls,0,8);return;
+        }
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(12), dp(12), dp(12), dp(12));
@@ -826,6 +845,10 @@ final class TimetablePage extends SchedulePage {
         if (session.busy) return;
         Dialog dialog = new Dialog(activity);
         LinearLayout panel = panel(term.document.plan.groupLabel() + " · " + term.document.plan.label(term.index));
+        if(SettingsPageLayout.shortWindow(activity)){
+            UiStyle.addSpaced(panel,label(term.view.courseCount+" 门课程 · "+duration(term.view.minutes),16,true),0,8);
+            UiStyle.addSpaced(panel,label(DATE.format(term.document.plan.from(term.index))+"–"+DATE.format(term.document.plan.until(term.index).minusDays(1)),13,false),0,12);
+        }
         UiStyle.addSpaced(panel, action("恢复自动分类", false, () -> {
             dialog.dismiss(); save(session.library.classify(term, term.view.all, null));
         }), 0, 8);
@@ -1026,6 +1049,7 @@ final class TimetablePage extends SchedulePage {
         Feedback.show(activity, "这条课程安排已更新或删除");
     }
     private void rememberScroll() {
+        if(restoringScroll)return;
         if (vertical != null) session.scrollY = vertical.getScrollY();
         if (horizontal != null) session.scrollX = horizontal.getScrollX();
     }

@@ -9,10 +9,10 @@
 | 项目 | 配置来源与当前值 |
 | --- | --- |
 | 应用 | 原生 Android Java，`com.donglan.chrona` |
-| 版本 | `app/build.gradle`：0.15.45 / 207 |
+| 版本 | `app/build.gradle`：0.15.47 / 209 |
 | Android | minSdk 26，compileSdk / targetSdk 36 |
 | 语言与构建 | Java 源码 17，AGP 9.4.1，Gradle Wrapper 9.6.0 |
-| 数据库 | `TaskStore.DATABASE_VERSION`：16 |
+| 数据库 | `TaskStore.DATABASE_VERSION`：17 |
 
 版本和数据库格式以源码为准，发布后更新本表和交接页；历史文档的旧值不作为配置依据。
 

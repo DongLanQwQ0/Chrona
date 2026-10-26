@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Matrix;
 import android.graphics.BitmapFactory;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
@@ -27,17 +28,22 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 
 /** Full-screen attachment viewer with pinch zoom and Android's document save picker. */
 public final class AttachmentViewerActivity extends Activity {
     static final String EXTRA_IMAGE_NAME = "image_name";
-    private static final String EXTRA_CLASSROOM_ACCOUNT="classroom_image_account",EXTRA_CLASSROOM_LESSON="classroom_image_lesson",EXTRA_CLASSROOM_RAW="classroom_image_raw";
+    static final int CLASSROOM_GALLERY_REQUEST=3214;
+    static final String EXTRA_SELECTED_RAW="selected_raw";
+    private static final String EXTRA_CLASSROOM_ACCOUNT="classroom_image_account",EXTRA_CLASSROOM_LESSON="classroom_image_lesson",EXTRA_CLASSROOM_RAW="classroom_image_raw",EXTRA_CLASSROOM_IMAGES="classroom_image_list";
     private static final int CREATE_IMAGE_DOCUMENT = 1;
     private final Matrix imageMatrix = new Matrix();
     private final Matrix fitMatrix = new Matrix();
     private ImageView image;
+    private ImageSlidePager pager;
+    private final ArrayList<String> gallery=new ArrayList<>();
     private String imageName;
-    private String classroomAccount,rawName,imageMime="image/jpeg",exportName;
+    private String classroomAccount,rawName,imageMime="image/jpeg",exportName,savingRaw;
     private ClassroomLesson classroomLesson;
     private float scale = 1f;
     private float lastX;
@@ -48,9 +54,13 @@ public final class AttachmentViewerActivity extends Activity {
     private GestureDetector gestureDetector;
 
     static void openClassroom(Activity activity,String account,ClassroomLesson lesson,String raw){
+        openClassroom(activity,account,lesson,new ArrayList<>(java.util.Collections.singletonList(raw)),raw);
+    }
+
+    static void openClassroom(Activity activity,String account,ClassroomLesson lesson,ArrayList<String> images,String raw){
         if(!ClassroomMonitor.allowed(activity,account)||raw==null||!raw.matches("raw-[0-9]+\\.img"))return;
-        try{activity.startActivity(new Intent(activity,AttachmentViewerActivity.class).putExtra(EXTRA_CLASSROOM_ACCOUNT,account)
-                .putExtra(EXTRA_CLASSROOM_LESSON,lesson.json().toString()).putExtra(EXTRA_CLASSROOM_RAW,raw));}
+        try{activity.startActivityForResult(new Intent(activity,AttachmentViewerActivity.class).putExtra(EXTRA_CLASSROOM_ACCOUNT,account)
+                .putExtra(EXTRA_CLASSROOM_LESSON,lesson.json().toString()).putExtra(EXTRA_CLASSROOM_RAW,raw).putStringArrayListExtra(EXTRA_CLASSROOM_IMAGES,images),CLASSROOM_GALLERY_REQUEST);}
         catch(Exception failure){Feedback.show(activity,"无法打开课堂图片");}
     }
 
@@ -59,28 +69,29 @@ public final class AttachmentViewerActivity extends Activity {
         super.onCreate(state);
         File source;
         try{
-            if(getIntent().hasExtra(EXTRA_CLASSROOM_ACCOUNT)||getIntent().hasExtra(EXTRA_CLASSROOM_LESSON)||getIntent().hasExtra(EXTRA_CLASSROOM_RAW)){
+            if(getIntent().hasExtra(EXTRA_CLASSROOM_ACCOUNT)||getIntent().hasExtra(EXTRA_CLASSROOM_LESSON)||getIntent().hasExtra(EXTRA_CLASSROOM_RAW)||getIntent().hasExtra(EXTRA_CLASSROOM_IMAGES)){
                 classroomAccount=getIntent().getStringExtra(EXTRA_CLASSROOM_ACCOUNT);rawName=getIntent().getStringExtra(EXTRA_CLASSROOM_RAW);
                 classroomLesson=ClassroomLesson.fromJson(new JSONObject(getIntent().getStringExtra(EXTRA_CLASSROOM_LESSON)));
-                source=sourceFile();BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.getPath(),bounds);
-                if(bounds.outWidth<=0||bounds.outHeight<=0||bounds.outMimeType==null)throw new java.io.IOException("课堂图片无法读取");
-                imageMime=bounds.outMimeType;String extension=android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(imageMime);
-                if(extension==null||!imageMime.startsWith("image/"))throw new java.io.IOException("课堂图片格式无效");
-                exportName="课堂PPT-"+classroomLesson.date()+"-"+rawName.substring(0,rawName.length()-4)+"."+extension;
+                ArrayList<String> supplied=getIntent().getStringArrayListExtra(EXTRA_CLASSROOM_IMAGES);
+                if(supplied==null)throw new java.io.IOException("课堂图片清单无效");
+                for(String name:supplied)if(name!=null&&name.matches("raw-[0-9]+\\.img")&&!gallery.contains(name))gallery.add(name);
+                if(!gallery.contains(rawName))throw new java.io.IOException("课堂图片无效");
+                if(state!=null&&gallery.contains(state.getString("selected_raw")))rawName=state.getString("selected_raw");
+                source=sourceFile();updateExportFormat();
             }else{
                 imageName=getIntent().getStringExtra(EXTRA_IMAGE_NAME);if(!ImageStore.isStoredName(imageName))throw new java.io.IOException("图片附件无效");
                 source=sourceFile();exportName="Chrona-"+imageName;
             }
         }catch(Exception failure){finish();return;}
+        if(state!=null)savingRaw=state.getString("saving_raw");
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this),new FrameLayout.LayoutParams(-1,-1));
         FrameLayout safeArea=new FrameLayout(this);stage.addView(safeArea,new FrameLayout.LayoutParams(-1,-1));
-        image = new ImageView(this);
+        pager=new ImageSlidePager(this,false);
+        image = pager.image();
         image.setScaleType(ImageView.ScaleType.MATRIX);
         image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大":"课堂PPT，双指缩放或双击放大");
-        if(classroomLesson==null)image.setImageURI(Uri.fromFile(source));
-        else{BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;BitmapFactory.decodeFile(source.getPath(),options);options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>2048)options.inSampleSize*=2;options.inJustDecodeBounds=false;image.setImageBitmap(BitmapFactory.decodeFile(source.getPath(),options));}
-        safeArea.addView(image, new FrameLayout.LayoutParams(-1, -1));
+        safeArea.addView(pager, new FrameLayout.LayoutParams(-1, -1));
         LinearLayout shell=SettingsPageLayout.content(this);
         ImageButton save=UiStyle.navigationIcon(this,R.drawable.ic_week_export,"保存图片",this::saveImage);
         SettingsPageLayout.header(this,shell,classroomLesson==null?"图片附件":"课堂PPT",save);
@@ -99,6 +110,11 @@ public final class AttachmentViewerActivity extends Activity {
                 });
         gestureDetector = new GestureDetector(this,
                 new GestureDetector.SimpleOnGestureListener() {
+                    @Override public boolean onDown(MotionEvent event) { return true; }
+                    @Override public boolean onSingleTapConfirmed(MotionEvent event) {
+                        if (!insideImage(event.getX(),event.getY())) finish();
+                        return true;
+                    }
                     @Override public boolean onDoubleTap(MotionEvent event) {
                         if (!matrixReady) return false;
                         float next = scale > 1.05f ? 1f : 2.5f;
@@ -107,21 +123,41 @@ public final class AttachmentViewerActivity extends Activity {
                     }
                 });
         image.setOnTouchListener((view, event) -> onImageTouch(event));
-        image.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
-            if (matrixReady || image.getWidth() <= 0 || image.getHeight() <= 0) return;
-            Drawable drawable = image.getDrawable();
-            if (drawable == null || drawable.getIntrinsicWidth() <= 0
-                    || drawable.getIntrinsicHeight() <= 0) return;
-            float fit = Math.min(image.getWidth() / (float) drawable.getIntrinsicWidth(),
-                    image.getHeight() / (float) drawable.getIntrinsicHeight());
-            float left = (image.getWidth() - drawable.getIntrinsicWidth() * fit) / 2f;
-            float top = (image.getHeight() - drawable.getIntrinsicHeight() * fit) / 2f;
-            imageMatrix.setScale(fit, fit);
-            imageMatrix.postTranslate(left, top);
-            fitMatrix.set(imageMatrix);
-            image.setImageMatrix(imageMatrix);
-            matrixReady = true;
+        image.getViewTreeObserver().addOnGlobalLayoutListener(this::fitImage);
+        pager.setPagingAllowed(()->scale<=1.001f&&!scaleDetector.isInProgress());
+        pager.setListener((selected,current)->{
+            if(classroomLesson!=null){rawName=gallery.get(selected);setResult(RESULT_OK,new Intent().putExtra(EXTRA_SELECTED_RAW,rawName));}
+            scale=1f;matrixReady=false;dragReady=false;fitImage();
+            image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大":"课堂PPT "+(selected+1)+" / "+gallery.size()+"，双指缩放或双击放大");
         });
+        ArrayList<String> items=new ArrayList<>();if(classroomLesson==null)items.add(imageName);else items.addAll(gallery);
+        pager.setImages(items,classroomLesson==null?0:gallery.indexOf(rawName),new ImageSlidePager.Source(){
+            public File file(String name)throws Exception{return classroomLesson==null?sourceFile():classroomSource(name);}
+            public boolean allowed(){return classroomLesson==null||ClassroomMonitor.allowed(AttachmentViewerActivity.this,classroomAccount);}
+        });
+        if(state==null){shell.post(()->UiMotion.enterPage(shell));pager.post(()->UiMotion.enterPage(pager));}
+    }
+
+    private void fitImage(){
+        if(matrixReady||image.getWidth()<=0||image.getHeight()<=0)return;
+        Drawable drawable=image.getDrawable();if(drawable==null||drawable.getIntrinsicWidth()<=0||drawable.getIntrinsicHeight()<=0)return;
+        float fit=Math.min(image.getWidth()/(float)drawable.getIntrinsicWidth(),image.getHeight()/(float)drawable.getIntrinsicHeight());
+        imageMatrix.setScale(fit,fit);imageMatrix.postTranslate((image.getWidth()-drawable.getIntrinsicWidth()*fit)/2f,(image.getHeight()-drawable.getIntrinsicHeight()*fit)/2f);
+        fitMatrix.set(imageMatrix);image.setImageMatrix(imageMatrix);matrixReady=true;
+    }
+
+    private boolean insideImage(float x,float y){
+        Drawable drawable=image.getDrawable();if(!matrixReady||drawable==null)return false;
+        RectF bounds=new RectF(0,0,drawable.getIntrinsicWidth(),drawable.getIntrinsicHeight());imageMatrix.mapRect(bounds);
+        return bounds.contains(x,y);
+    }
+
+    private void updateExportFormat()throws Exception{
+        BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(sourceFile().getPath(),bounds);
+        if(bounds.outWidth<=0||bounds.outHeight<=0||bounds.outMimeType==null)throw new java.io.IOException("课堂图片无法读取");
+        imageMime=bounds.outMimeType;String extension=android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(imageMime);
+        if(extension==null||!imageMime.startsWith("image/"))throw new java.io.IOException("课堂图片格式无效");
+        exportName="课堂PPT-"+classroomLesson.date()+"-"+rawName.substring(0,rawName.length()-4)+"."+extension;
     }
 
     private boolean onImageTouch(MotionEvent event) {
@@ -162,7 +198,7 @@ public final class AttachmentViewerActivity extends Activity {
     }
 
     private void saveImage() {
-        try{sourceFile();}catch(Exception failure){Feedback.show(this,"图片已不可用");return;}
+        try{sourceFile();if(classroomLesson!=null)updateExportFormat();savingRaw=rawName;}catch(Exception failure){Feedback.show(this,"图片已不可用");return;}
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(imageMime);
@@ -174,7 +210,7 @@ public final class AttachmentViewerActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != CREATE_IMAGE_DOCUMENT || resultCode != RESULT_OK || data == null
                 || data.getData() == null) return;
-        try (InputStream input = new FileInputStream(sourceFile());
+        try (InputStream input = new FileInputStream(classroomLesson==null?sourceFile():classroomSource(savingRaw));
                 OutputStream output = getContentResolver().openOutputStream(data.getData())) {
             if (output == null) throw new IllegalStateException("无法打开保存位置");
             byte[] buffer = new byte[8192];
@@ -189,12 +225,19 @@ public final class AttachmentViewerActivity extends Activity {
     private File sourceFile()throws Exception{
         File file;
         if(classroomLesson!=null){
-            if(!ClassroomMonitor.allowed(this,classroomAccount)||rawName==null||!rawName.matches("raw-[0-9]+\\.img"))throw new SecurityException("课堂账号已不可用");
-            file=new File(new ClassroomStore(this,classroomAccount).localLesson(classroomLesson),rawName);
+            file=classroomSource(rawName);
         }else{if(!ImageStore.isStoredName(imageName))throw new SecurityException("图片附件无效");file=new ImageStore(this).fileFor(imageName);}
         if(!file.isFile())throw new java.io.IOException("图片已不存在");return file;
     }
+    private File classroomSource(String name)throws Exception{
+        if(!ClassroomMonitor.allowed(this,classroomAccount)||name==null||!name.matches("raw-[0-9]+\\.img")||!gallery.contains(name))throw new SecurityException("课堂账号或图片已不可用");
+        File file=new File(new ClassroomStore(this,classroomAccount).localLesson(classroomLesson),name);
+        if(!file.isFile())throw new java.io.IOException("图片已不存在");return file;
+    }
     @Override protected void onResume(){super.onResume();if(classroomLesson!=null&&!ClassroomMonitor.allowed(this,classroomAccount))finish();}
+    @Override protected void onPause(){if(pager!=null)pager.stop();super.onPause();}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("selected_raw",rawName);state.putString("saving_raw",savingRaw);}
+    @Override protected void onDestroy(){if(pager!=null)pager.close();super.onDestroy();}
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);

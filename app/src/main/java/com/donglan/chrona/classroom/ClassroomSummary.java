@@ -50,12 +50,21 @@ public final class ClassroomSummary {
         if(materials==null||materials.optBoolean("portable")||refreshed){
             progress.update(ClassroomProgress.waiting("获取课堂字幕与截图清单","正在连接课堂服务"));control.check();JSONObject fresh=client.materials(lesson);
             JSONObject cache=observed?observation:materials!=null&&materials.optBoolean("monitoring")?materials:null;
-            if(cache!=null){materials=ClassroomMaterialUpdates.merge(cache,fresh);materials.put("segments",fresh.getJSONArray("segments")).put("monitoring",true).put("updated",System.currentTimeMillis());}
-            else materials=fresh;
-            ClassroomStore.write(new File(dir,"materials.json"),materials);
+            return prepareComplete(dir,lesson,fresh,cache,client,control,progress);
         }
+        return finishPreparation(dir,lesson,materials,ClassroomStore.read(new File(dir,"candidates.json")),client,control,progress);
+    }
+    /** Both direct download and post-monitor completion publish the same authoritative material bundle. */
+    public static JSONObject prepareComplete(File dir,ClassroomLesson lesson,JSONObject fresh,JSONObject cache,
+            ClassroomClient client,RequestControl control,ClassroomImages.Progress progress)throws Exception {
+        control.check();
+        JSONObject materials=ClassroomMaterialUpdates.complete(cache,fresh).put("monitoring",true).put("updated",System.currentTimeMillis());
+        ClassroomStore.write(new File(dir,"materials.json"),materials);
+        return finishPreparation(dir,lesson,materials,null,client,control,progress);
+    }
+    private static JSONObject finishPreparation(File dir,ClassroomLesson lesson,JSONObject materials,JSONObject candidates,
+            ClassroomClient client,RequestControl control,ClassroomImages.Progress progress)throws Exception {
         progress.update(ClassroomProgress.waiting("字幕已就绪",materials.getJSONArray("segments").length()+" 条字幕 · "+materials.getInt("raw_images")+" 张原始截图"));
-        JSONObject candidates=refreshed?null:ClassroomStore.read(new File(dir,"candidates.json"));
         if(candidates==null){
             candidates=new JSONObject().put("images",ClassroomImages.prepare(dir,materials,client,control,progress))
                     .put("lesson",lesson.json()).put("updated",System.currentTimeMillis());

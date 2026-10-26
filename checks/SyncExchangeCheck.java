@@ -1,6 +1,7 @@
 package com.donglan.chrona;
 
 import com.donglan.chrona.sync.*;
+import com.donglan.chrona.data.*;
 import com.sun.net.httpserver.HttpServer;
 import org.json.*;
 import java.net.*;
@@ -21,7 +22,110 @@ public final class SyncExchangeCheck {
                 .put("createdAt",100).put("status","ready").put("linkText","")
                 .put("candidates",new JSONArray()).put("attachments",new JSONArray());
     }
+    private interface Invalid { void run() throws Exception; }
+    private static void rejects(Invalid action, String label) throws Exception {
+        try { action.run(); } catch (java.io.IOException expected) { checks++; return; }
+        throw new AssertionError(label);
+    }
+    private static void candidate(JSONObject candidate) throws Exception {
+        TaskCodec.validate(task("codec fixture").put("candidates", new JSONArray().put(candidate)));
+    }
+    private static void codecChecks() throws Exception {
+        long start=java.time.Instant.parse("2026-01-01T09:00:00Z").toEpochMilli(),original=start+86_400_000L;
+        String key=Long.toString(original);
+        EventCandidate series=new EventCandidate(1,1,"Template",start,start+3_600_000L,"UTC","A","Notes",10,false)
+                .withRepeat(new RepeatRule("daily",1,List.of(),null,3));
+        JSONObject fields=new JSONObject().put("title","This week").put("location",JSONObject.NULL)
+                .put("start",original+60_000L).put("end",original+5_400_000L).put("reminder_minutes_before",25);
+        EventCandidate edited=RepeatOccurrences.edit(series,original,fields);
+        JSONObject exceptions=RepeatOccurrences.exceptions(edited);
+        JSONObject history=new JSONObject().put("action","edit").put("at",start)
+                .put("before",new JSONObject().put("reminder_minutes_before",10).put("title","Template"))
+                .put("after",new JSONObject().put("reminder_minutes_before",25).put("title","This week"))
+                .put("source",new JSONObject().put("raw","private fixture").put("nested",new JSONArray()
+                        .put(new JSONObject().put("reminder_minutes_before",20).put("source_id",A))));
+        exceptions.getJSONObject(key).put("history",new JSONArray().put(history));
+        edited=edited.withRepeatState(exceptions.toString(),null);
+        JSONObject portable=TaskCodec.candidate(edited);
+        check(!portable.toString().contains("reminder_minutes_before"),"all nested recurrence reminder settings must remain local");
+        check(edited.repeatExceptions.contains("reminder_minutes_before"),"portable export must not mutate stored exceptions");
+        candidate(portable);
+        EventCandidate restored=TaskCodec.event(portable),occurrence=RepeatOccurrences.at(restored,original);
+        check(occurrence.title.equals("This week")&&occurrence.location==null
+                &&occurrence.startAtMillis==original+60_000L&&occurrence.endAtMillis==original+5_400_000L,
+                "single-occurrence fields survive portable validation and event decoding");
+        check(occurrence.reminderMinutesBefore==null&&restored.reminderMinutesBefore==null,"sync does not restore device-local alerts");
+        check(RepeatOccurrences.exceptions(restored).getJSONObject(key).getJSONArray("history")
+                .getJSONObject(0).getJSONObject("source").getString("raw").equals("private fixture"),"opaque audit source is retained");
+        JSONObject skipped=new JSONObject(portable.toString());
+        skipped.getJSONObject("repeatExceptions").getJSONObject(key).put("skipped",true).put("completed",start);
+        skipped.put("repeatStoppedAt",start);
+        candidate(skipped);
+        check(TaskCodec.event(skipped).repeatStoppedAtMillis==start,"later skip/stop/completion do not invalidate prior field edits");
+        for(JSONObject badFields:List.of(new JSONObject().put("bogus",true),new JSONObject().put("title",12),
+                new JSONObject().put("start",original+7_200_000L),new JSONObject().put("all_day",true),
+                new JSONObject().put("time_zone_id","No/Zone"),new JSONObject().put("reminder_minutes_before",10))) {
+            JSONObject bad=new JSONObject(portable.toString());
+            bad.getJSONObject("repeatExceptions").getJSONObject(key).put("fields",badFields);
+            rejects(()->candidate(bad),"invalid occurrence fields accepted");
+        }
+        for(Object badHistory:List.of("bad",new JSONArray().put(10),JSONObject.NULL)) {
+            JSONObject bad=new JSONObject(portable.toString());
+            bad.getJSONObject("repeatExceptions").getJSONObject(key).put("history",badHistory);
+            rejects(()->candidate(bad),"invalid history structure accepted");
+        }
+        JSONObject nonmember=new JSONObject(portable.toString());
+        JSONObject entry=nonmember.getJSONObject("repeatExceptions").getJSONObject(key);
+        nonmember.put("repeatExceptions",new JSONObject().put(Long.toString(original+1),entry));
+        rejects(()->candidate(nonmember),"nonmember original identity accepted");
+        JSONObject deep=new JSONObject(),cursor=deep;
+        for(int i=0;i<33;i++){JSONObject next=new JSONObject();cursor.put("nested",next);cursor=next;}
+        JSONObject tooDeep=new JSONObject(portable.toString());
+        tooDeep.getJSONObject("repeatExceptions").getJSONObject(key).put("history",new JSONArray().put(deep));
+        rejects(()->candidate(tooDeep),"unbounded nested audit accepted");
+        JSONObject huge=new JSONObject(portable.toString());
+        huge.getJSONObject("repeatExceptions").getJSONObject(key).put("history",new JSONArray()
+                .put(new JSONObject().put("source","x".repeat(TaskCodec.MAX_TASK_BYTES+1))));
+        rejects(()->TaskCodec.event(huge),"oversized direct event audit accepted");
+
+        JSONObject proposal=new JSONObject().put("state","pending").put("runId","parse-run").put("position",0)
+                .put("series_id",A).put("original",original).put("fields",new JSONObject().put("location","B"))
+                .put("before",new JSONObject().put("title","Template"))
+                .put("preview",new JSONObject().put("title","This week"))
+                .put("target_snapshot",new JSONObject().put("start",original)).put("applications",new JSONArray());
+        for(String state:List.of("pending","invalid","new","applied")) {
+            JSONObject operational=new JSONObject(proposal.toString()).put("state",state);
+            candidate(new JSONObject(portable.toString()).put("occurrenceUpdate",operational));
+            check(operational.getString("state").equals(state),"operational state accepted intact");
+        }
+        candidate(new JSONObject(portable.toString()).put("occurrenceUpdate",JSONObject.NULL));
+        candidate(new JSONObject(portable.toString()).put("occurrenceUpdate",new JSONObject()
+                .put("state","invalid").put("runId","parse-run").put("position",0)));
+        JSONObject noTarget=new JSONObject(proposal.toString());noTarget.remove("series_id");
+        JSONObject noOriginal=new JSONObject(proposal.toString());noOriginal.remove("original");
+        JSONObject noRun=new JSONObject(proposal.toString());noRun.remove("runId");
+        for(JSONObject bad:List.of(new JSONObject(proposal.toString()).put("state","unknown"),noTarget,noOriginal,noRun,
+                new JSONObject(proposal.toString()).put("position",-1),new JSONObject(proposal.toString()).put("position","0"),
+                new JSONObject(proposal.toString()).put("runId",12),new JSONObject(proposal.toString()).put("series_id","bad"),
+                new JSONObject(proposal.toString()).put("series_id","1-1-1-1-1"),
+                new JSONObject(proposal.toString()).put("original",JSONObject.NULL),
+                new JSONObject(proposal.toString()).put("original",253_402_300_800_000L),
+                new JSONObject(proposal.toString()).put("fields",new JSONObject().put("reminder_minutes_before",10)),
+                new JSONObject(proposal.toString()).put("applications",new JSONArray().put("bad"))))
+            rejects(()->candidate(new JSONObject(portable.toString()).put("occurrenceUpdate",bad)),"invalid operational update accepted");
+        JSONObject local=new JSONObject(proposal.toString()).put("fields",new JSONObject().put("reminder_minutes_before",10))
+                .put("applications",new JSONArray().put(new JSONObject().put("after",new JSONObject().put("reminder_minutes_before",15))))
+                .put("target_snapshot",new JSONObject().put("reminder_minutes_before",5));
+        JSONObject exported=TaskCodec.portableOccurrenceUpdate(local);
+        check(!exported.toString().contains("reminder_minutes_before")&&local.toString().contains("reminder_minutes_before"),
+                "operational portability strips nested alerts without mutating the audit");
+        candidate(new JSONObject(portable.toString()).put("occurrenceUpdate",exported));
+        check(TaskCodec.portableOccurrenceUpdate(null)==null,"optional operational metadata stays absent");
+        System.out.println("TaskCodec recurrence/operational checks passed: "+checks);
+    }
     public static void main(String[] args) throws Exception {
+        codecChecks();
+        if(args.length>0&&args[0].equals("codec-only"))return;
         for(boolean strong:new boolean[]{false,true}) exchange(strong);
         System.out.println("Sync exchange checks passed: "+checks+" (real HTTP, missing/strong ETag, repeated and two-device exchange, merge markers)");
     }

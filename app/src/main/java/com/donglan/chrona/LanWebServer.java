@@ -195,7 +195,16 @@ final class LanWebServer extends NanoHTTPD {
                 try(TaskStore store=new TaskStore(context)) {
                     if(whole(body,"revision",0,Long.MAX_VALUE)!=store.dataRevision())throw new Conflict();
                 }
-                EventCandidate changed=RepeatActions.change(context,positive(body.getString("id")),positive(body.getString("candidateId")),
+                EventCandidate changed;
+                if("edit".equals(body.optString("action"))){
+                    EventCandidate current;long taskId=positive(body.getString("id"));
+                    try(TaskStore store=new TaskStore(context)){current=store.getCandidatesByIds(Collections.singleton(positive(body.getString("candidateId")))).stream()
+                            .filter(item->item.taskId==taskId).findFirst().orElseThrow(Conflict::new);}
+                    long original=whole(body,"original",0,MAX_DATE_MILLIS);EventCandidate before=RepeatOccurrences.at(current,original);
+                    if(before==null)throw new Conflict();
+                    EventCandidate detached=OccurrenceUpdates.copy(before,before.id,before.taskId,before.calendarEventId,before.needsConfirmation,before.uncertaintyLevel,false,original);
+                    changed=RepeatActions.edit(context,current.taskId,current.id,string(body,"baseline",10000,true),original,OccurrenceUpdates.diff(before,edited(body,detached)));
+                }else changed=RepeatActions.change(context,positive(body.getString("id")),positive(body.getString("candidateId")),
                         string(body,"baseline",10000,true),string(body,"action",20,true),
                         body.has("original")?nullableLong(body,"original"):null,body.has("moved")?nullableLong(body,"moved"):null,
                         body.has("rule")?RepeatRule.fromJson(body.getJSONObject("rule")):null);
@@ -410,6 +419,10 @@ final class LanWebServer extends NanoHTTPD {
             android.app.NotificationManager manager=context.getSystemService(android.app.NotificationManager.class); if(manager!=null)manager.cancel((int)id);
         } else if(path.equals("/api/task/edit")) {
             editable(record); if(!store.updateRawText(id,string(body,"text",100000,true)))throw new Conflict();
+        } else if(path.equals("/api/candidate/choose-new")) {
+            editable(record);long candidateId=positive(body.getString("candidateId"));
+            if(store.getCandidates(id).stream().noneMatch(item->item.id==candidateId))throw new Conflict();
+            OccurrenceUpdates.chooseNewLocked(store,candidateId,string(body,"baseline",10000,true));
         } else if(path.equals("/api/candidate/create")) {
             editable(record); if(store.isHomeworkCapture(id))throw new IllegalArgumentException();
             EventCandidate initial=new EventCandidate(0,id,"",null,null,ZoneId.systemDefault().getId(),"","",null,true);
@@ -424,6 +437,15 @@ final class LanWebServer extends NanoHTTPD {
             else {
                 EventCandidate edited=edited(body,old); boolean publish=path.endsWith("publish");
                 store.requireCandidateEditAllowed(edited);
+                if(OccurrenceUpdates.held(store,old.id)){
+                    CandidateEditBaseline.require(old,string(body,"baseline",10000,true));
+                    if(publish)OccurrenceUpdates.applyLocked(store,calendarWrites,edited,body.getString("baseline"));
+                    else {
+                        store.saveOccurrenceDraft(old.id,OccurrenceUpdates.diff(old,edited));
+                        if(!store.updateCandidate(OccurrenceUpdates.copy(edited,edited.id,edited.taskId,null,true,edited.uncertaintyLevel,false,null)))throw new Conflict();
+                    }
+                    store.updateReviewStatus(id);return new JSONObject().put("ok",true).put("id",id);
+                }
                 if (publish && edited.isRecord) throw new IllegalArgumentException();
                 if(old.calendarEventId!=null&&edited.calendarStart()==null&&!edited.isRecord)calendarWrites.detach(old);
                 if((publish||old.calendarEventId!=null) && edited.calendarStart()!=null && !edited.isRecord){
@@ -452,7 +474,7 @@ final class LanWebServer extends NanoHTTPD {
         if(allDay&&(start!=null&&start%86400000L!=0||end!=null&&end%86400000L!=0))throw new IllegalArgumentException();
         if(!body.has("reminder"))throw new IllegalArgumentException();
         Integer reminder=body.isNull("reminder")?null:(int)whole(body,"reminder",0,525600);
-        Long due=body.has("due")?nullableLong(body,"due"):old.dueAtMillis;
+        Long due=EventCategory.isTaskLike(category)?body.has("due")?nullableLong(body,"due"):old.dueAtMillis:null;
         boolean needs=((EventCategory.EVENT.equals(category)&&(start==null||end==null))||bool(body,"needsConfirmation"));
         return new EventCandidate(old.id,old.taskId,title,start,end,zone,string(body,"location",2000,false),string(body,"description",100000,false),reminder,needs,old.calendarEventId,category,allDay,false,needs?EventCandidate.DOUBTFUL:EventCandidate.CERTAIN,due,EventCategory.isTaskLike(category)?old.completedAtMillis:null,false).withRepeatFrom(old);
     }
@@ -516,7 +538,17 @@ final class LanWebServer extends NanoHTTPD {
         long until=anchor==null?0:item.endAtMillis!=null&&item.endAtMillis>anchor?item.endAtMillis:anchor+60_000L;
         EventCandidate series=item;
         if(item.occurrenceAtMillis!=null)try(TaskStore store=new TaskStore(context)){List<EventCandidate> rows=store.getCandidatesByIds(Collections.singleton(item.id));if(!rows.isEmpty())series=rows.get(0);}
-        return candidateBase(item).put("recurrence",item.repeatRule==null?JSONObject.NULL:item.repeatRule.toJson()).put("repeatLabel",item.repeatRule==null?"":item.repeatRule.label())
+        JSONObject proposal;
+        try(TaskStore store=new TaskStore(context)){
+            proposal=store.occurrenceProposal(item.id);
+            if(proposal!=null&&"applied".equals(proposal.optString("state")))try{
+                EventCandidate target=OccurrenceUpdates.series(store,proposal.getString("series_id"));
+                proposal.put("targetTaskId",target.taskId).put("targetCandidateId",target.id);
+            }catch(IllegalArgumentException missing){/* The saved outcome remains readable after target deletion. */}
+        }
+        JSONArray history=null;
+        if(item.occurrenceAtMillis!=null){JSONObject edit=RepeatOccurrences.exceptions(series).optJSONObject(Long.toString(item.occurrenceAtMillis));if(edit!=null)history=edit.optJSONArray("history");}
+        return candidateBase(item).put("occurrenceHistory",history==null?new JSONArray():history).put("occurrenceUpdate",proposal==null?JSONObject.NULL:proposal).put("recurrence",item.repeatRule==null?JSONObject.NULL:item.repeatRule.toJson()).put("repeatLabel",item.repeatRule==null?"":item.repeatRule.label())
                 .put("repeatStoppedAt",item.repeatStoppedAtMillis==null?JSONObject.NULL:item.repeatStoppedAtMillis).put("occurrenceAt",item.occurrenceAtMillis==null?JSONObject.NULL:item.occurrenceAtMillis)
                 .put("baseline",CandidateEditBaseline.of(series)).put("canAcknowledge",!item.isRecord&&!item.isTask()&&until>System.currentTimeMillis())
                 .put("acknowledged",AgendaAcknowledgement.isAcknowledged(context,AgendaAcknowledgement.key(item)));

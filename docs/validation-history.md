@@ -1,5 +1,23 @@
 # 验证记录
 
+## 0.15.47候选 — 单次占位、课堂阅读与短窗口 — 2026-10-27
+
+- 单次编辑与AI公告更新均使用稳定系列身份及原始日期。`build/occurrence-device-final-backend.txt`真实SQLite/CalendarProvider33项、`build/occurrence-merge-final.txt`合并340项通过，覆盖异常提案同事务持有、确认后更新、本地审计、模板与其它实例不变、重复确认和失败回滚；未调用付费AI。
+- `build/occurrence-device-short-ime.txt`实际320dp/150%/500dp窗口及键盘15项；`build/occurrence-web-final.txt`网页18项及四组合渲染通过。单次编辑器继续复用普通表单，深浅主题对比和窄窗口操作已独立复审。
+- `build/responsive-accepted-400-300-dark.txt`、`build/responsive-accepted-320-420-light.txt`、`build/responsive-accepted-landscape-dark.txt`和`build/responsive-medium-600.txt`验证首页/日历/课表的数据滚动、短窗口工具区、侧边导航、日期完整性及恢复。925dp为真实横屏，320/400/600dp为实际有界窗口，不能代替实体手机OS分屏验证；压缩图在`build/responsive-evidence/previews`。
+- 课堂实际925dp横屏reader65项通过（`build/classroom-transition-diagnostic.txt`），横屏列表/搜索/双字段排序/分页/共享设置1130项通过（`build/classroom-accepted-landscape-browse.txt`）。400×420dp/150%浅色整套reader最终65项通过（`build/classroom-final-bounded-reader.txt`），包括追加和修订保持Y、切换和重建恢复、实际MOVE邻图跟手、双击/双指/放大平移、系统文档保存、空白关闭及UUID图片入口。
+- 普通400dp深色和短窗口最初均完成读取/图库行为，但入场帧断言失败；公共`enterPage`改为首次布局绘制就绪后启动，时长、距离及曲线不变。两个尺寸的真实入场专项各6项通过（`build/classroom-first-frame-{bounded,portrait}-entry.txt`），短窗口随后完成上述整套65项。旧失败保留，不宣称旧报告通过。压缩静态证据为`build/current-classroom-ui-evidence/previews`，PNG原图未用于视觉工具或上传。
+- 独立审核指出待首帧入场不能被`finishSwap`取消，已用统一pending撤销修正。真实附着窗口测试覆盖首帧前取消和PreDraw后取消已排队start；普通竖屏8项通过（`build/classroom-final-cancel-portrait-entry.txt`）。最终短窗口完整67项通过（`build/classroom-final-reader-accepted.txt`）；中途一次系统保存器仍持焦点的注入拒绝保留，夹具改为等待真实Viewer恢复焦点，不向其它窗口补发触摸。
+- `build/ui-library-first-frame.txt`公共库1530项通过；专门UI审核亲看三档压缩JPEG，取消P2修复后复审签收，受检范围无剩余确定缺陷。Debug lint及初次Release lint通过；正式209/0.15.47构建与资产检查见后续记录。用户要求的全局图片压缩规则已写授权记忆更新，未改写历史PNG。
+- `build/release-0.15.47-build.txt`正式release和最终lintRelease通过。固定资产`build/candidates/0.15.47/Chrona-0.15.47.apk`为3196266字节、com.donglan.chrona、209/0.15.47、不可调试、原证书，manifest不含无障碍服务，正式胶囊30秒；`build/release-0.15.47-artifact-check.json`记录资产检查。安装点ADB只有模拟器、没有手机；GitHub正常认证仍报告token无效，因此没有宣称真机更新或远端发布成功。
+
+## 0.15.46 — 课后补全与自动总结恢复 — 2026-10-26
+
+- 正式素材完整且仍在当前监视范围的旧完成记录，缺少自动总结任务时补入队；已有完整总结不再调用AI。停止范围、其它账号和未知请求结果保持原边界。
+- 手动与监视共用`prepareComplete`，正式字幕/PPT清单替换临时观察，匹配缓存后执行同一校验及去重。离线整理186、隔离原生auto51/pipeline19通过，独立后端复审通过；未调用付费AI。
+- release与lintRelease通过，固定`build/candidates/0.15.46/Chrona-0.15.46.apk`为3170426字节、208/0.15.46、原签名。19:31经正常安装覆盖实体手机并读回版本；已保留三条监视规则，两条已有总结读回complete。未声称验证整堂真实后台课流。
+- 只读近期日程审计：49条收件、9轮解析、17候选、4次图片输入。原始私有数据只保存在build，不提交。两份课堂总结均未请求或选中图片，实际图片分析为零；没有因此更改上传授权。
+
 ## 0.15.45候选 — 课堂阅读、自动总结与移除胶囊无障碍 — 2026-10-26
 
 - 当前为已验证的本地候选，源码已本地提交，尚未创建正式标签或Release，手机仍是中间版0.15.44/206。正常更新所需ADB重新失联，重连被拒绝且未发现mDNS端点；用户要求无人值守、不再询问连接。原生整堂学校流及新包的vivo退出/亮屏行为仍待真机验证。源码推送的凭据助手无响应，已停止本次推送进程；gh auth status确认现有GitHub token无效，未推送成功。

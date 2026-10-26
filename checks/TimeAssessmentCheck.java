@@ -58,7 +58,7 @@ public final class TimeAssessmentCheck {
         check(entry.getJSONObject("model").getJSONObject("due").isNull("time"), "audit retains missing original clock");
         check(entry.getJSONObject("resolved").getLong("start") == item.startAtMillis, "audit retains actual normalized instant");
         check(entry.getJSONArray("adjustments").toString().contains("整个可用周期"), "local scheduling recorded separately from model evidence");
-        check(audit.getLong("reference_epoch_millis") == NOW && audit.getString("prompt_version").equals("schedule-v17"), "parse context version and time anchor recorded");
+        check(audit.getLong("reference_epoch_millis") == NOW && audit.getString("prompt_version").equals(SchedulePrompt.VERSION), "parse context version and time anchor recorded");
         check(entry.getJSONObject("resolved_time_assessment").getJSONObject("due").getString("certainty").equals("rule_based")
                 && entry.getJSONObject("resolved_time_assessment").getJSONObject("start").getString("certainty").equals("uncertain"),
                 "clear due and free execution have independent final certainty");

@@ -23,7 +23,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
-    public static final int DATABASE_VERSION = 16;
+    public static final int DATABASE_VERSION = 17;
 
     private final Context context;
     private final LiveDatabaseAccess.Lease liveAccess;
@@ -205,7 +205,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         return mergeRepeats(result, begin, end, allDayBegin, allDayEnd, WIDGET_ITEM_LIMIT);
     }
 
-    private List<EventCandidate> repeatingCandidates() {
+    public List<EventCandidate> repeatingCandidates() {
         List<EventCandidate> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null,
                 "repeat_rule IS NOT NULL AND is_record=0", null, null, null, "id ASC")) {
@@ -271,6 +271,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         addHomeworkAttention(db);
         addRecurrence(db);
         addParseAudits(db);
+        addOccurrenceUpdates(db);
     }
 
     /**
@@ -310,6 +311,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 14) addRecurrence(db);
         if (oldVersion < 15) addHomeworkAttention(db);
         if (oldVersion < 16) addParseAudits(db);
+        if (oldVersion < 17) addOccurrenceUpdates(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
 
@@ -411,6 +413,81 @@ public final class TaskStore extends SQLiteOpenHelper {
         int index = cursor.getColumnIndexOrThrow(name);
         if (cursor.isNull(index)) return org.json.JSONObject.NULL;
         return name.equals("finished_at") ? cursor.getLong(index) : cursor.getString(index);
+    }
+
+    /** The current candidate's exact parse evidence; never mixes historical reused identities. */
+    public org.json.JSONObject latestParseEvidence(long candidateId) throws org.json.JSONException {
+        String stable=stableCandidateId(candidateId);
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT e.run_id,e.position,e.evidence_json,r.request_json FROM parse_time_entries e JOIN parse_runs r ON r.id=e.run_id WHERE e.candidate_id=? AND e.candidate_sync_id=? ORDER BY r.started_at DESC,r.id DESC,e.position LIMIT 1",
+                new String[]{Long.toString(candidateId),stable})){
+            if(!row.moveToFirst())return null;
+            org.json.JSONObject request=new org.json.JSONObject(row.getString(3));
+            return new org.json.JSONObject().put("runId",row.getString(0)).put("position",row.getInt(1))
+                    .put("evidence",new org.json.JSONObject(row.getString(2)))
+                    .put("placeholders",request.optJSONArray("recurring_placeholders"));
+        }
+    }
+    private static void addOccurrenceUpdates(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE event_candidates ADD COLUMN occurrence_update TEXT");
+    }
+    public org.json.JSONObject occurrenceProposal(long candidateId) throws org.json.JSONException {
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT occurrence_update FROM event_candidates WHERE id=?",new String[]{Long.toString(candidateId)})){
+            return row.moveToFirst()&&!row.isNull(0)?new org.json.JSONObject(row.getString(0)):null;
+        }
+    }
+    public boolean occurrenceMatchesAgree(long candidateId,String runId)throws org.json.JSONException{
+        String expected=null;
+        try(Cursor rows=getReadableDatabase().rawQuery("SELECT evidence_json FROM parse_time_entries WHERE candidate_id=? AND candidate_sync_id=? AND run_id=? ORDER BY position",
+                new String[]{Long.toString(candidateId),stableCandidateId(candidateId),runId})){
+            while(rows.moveToNext()){
+                org.json.JSONObject match=new org.json.JSONObject(rows.getString(0)).getJSONObject("model").optJSONObject("occurrence_update");
+                String key="null";
+                if(match!=null){java.util.TreeSet<String> fields=new java.util.TreeSet<>();org.json.JSONArray provided=match.getJSONArray("provided_fields");
+                    for(int i=0;i<provided.length();i++)fields.add(provided.getString(i));
+                    key=match.getString("series_id")+"\n"+match.getString("original_date")+"\n"+fields;
+                }
+                if(expected!=null&&!expected.equals(key))return false;expected=key;
+            }
+        }return true;
+    }
+    /** Append application state beside the immutable model/resolution evidence, inside the caller's transaction. */
+    public void recordOccurrenceProposal(long candidateId, org.json.JSONObject proposal) throws org.json.JSONException {
+        if(!getWritableDatabase().inTransaction())throw new IllegalStateException("Occurrence audit requires a transaction");
+        org.json.JSONObject audit=latestParseEvidence(candidateId);if(audit==null)throw new IllegalArgumentException("解析审计不存在");
+        org.json.JSONObject evidence=audit.getJSONObject("evidence");
+        if(evidence.has("occurrence_update"))throw new IllegalStateException("占位匹配已保存");
+        proposal=new org.json.JSONObject(proposal.toString()).put("runId",audit.getString("runId")).put("position",audit.getInt("position"));
+        evidence.put("occurrence_update",proposal);saveParseEvidence(audit,evidence);saveOccurrenceProposal(candidateId,proposal);
+    }
+    public void appendOccurrenceApplication(long candidateId, org.json.JSONObject application) throws org.json.JSONException {
+        if(!getWritableDatabase().inTransaction())throw new IllegalStateException("Occurrence audit requires a transaction");
+        org.json.JSONObject proposal=occurrenceProposal(candidateId);if(proposal==null)throw new IllegalArgumentException("占位匹配不存在");
+        org.json.JSONArray history=proposal.optJSONArray("applications");if(history==null)history=new org.json.JSONArray();
+        proposal.put("applications",history.put(application)).put("state",application.getString("action"));
+        saveOccurrenceProposal(candidateId,proposal);
+        org.json.JSONObject audit=latestParseEvidence(candidateId);
+        if(audit!=null){org.json.JSONObject evidence=audit.getJSONObject("evidence");evidence.put("occurrence_update",proposal);saveParseEvidence(audit,evidence);}
+    }
+    public void saveOccurrenceDraft(long candidateId,org.json.JSONObject changes)throws org.json.JSONException{
+        if(!getWritableDatabase().inTransaction())throw new IllegalStateException("Occurrence draft requires a transaction");
+        org.json.JSONObject proposal=occurrenceProposal(candidateId);if(proposal==null||"applied".equals(proposal.optString("state")))throw new IllegalStateException("公告已应用");
+        org.json.JSONObject fields=proposal.optJSONObject("fields");if(fields==null){fields=new org.json.JSONObject();proposal.put("fields",fields);}
+        for(java.util.Iterator<String> keys=changes.keys();keys.hasNext();){String key=keys.next();fields.put(key,changes.get(key));}
+        org.json.JSONArray history=proposal.optJSONArray("applications");if(history==null)history=new org.json.JSONArray();
+        proposal.put("applications",history.put(new org.json.JSONObject().put("action","draft").put("at",System.currentTimeMillis()).put("fields",changes)));
+        saveOccurrenceProposal(candidateId,proposal);
+        org.json.JSONObject audit=latestParseEvidence(candidateId);
+        if(audit!=null){org.json.JSONObject evidence=audit.getJSONObject("evidence");evidence.put("occurrence_update",proposal);saveParseEvidence(audit,evidence);}
+    }
+    private void saveOccurrenceProposal(long candidateId,org.json.JSONObject proposal){
+        ContentValues values=new ContentValues();values.put("occurrence_update",proposal.toString());
+        if(getWritableDatabase().update("event_candidates",values,"id=?",new String[]{Long.toString(candidateId)})!=1)
+            throw new IllegalStateException("公告已不存在");
+    }
+    private void saveParseEvidence(org.json.JSONObject audit,org.json.JSONObject evidence)throws org.json.JSONException{
+        ContentValues values=new ContentValues();values.put("evidence_json",evidence.toString());
+        if(getWritableDatabase().update("parse_time_entries",values,"run_id=? AND position=?",new String[]{audit.getString("runId"),Integer.toString(audit.getInt("position"))})!=1)
+            throw new IllegalStateException("解析审计已变化");
     }
 
     private static void addRecurrence(SQLiteDatabase db) {
@@ -1382,6 +1459,14 @@ public final class TaskStore extends SQLiteOpenHelper {
                         values.put("plan_group", evidence.isNull("plan_group") ? null : evidence.getString("plan_group"));
                         values.put("evidence_json", evidence.toString());
                         db.insertOrThrow("parse_time_entries", null, values);
+                        org.json.JSONObject model=evidence.getJSONObject("model");
+                        if(model.has("occurrence_update")&&!model.isNull("occurrence_update")){
+                            // Hold in the same commit as parsing, even if projection is interrupted next.
+                            org.json.JSONObject waiting=new org.json.JSONObject().put("state","invalid").put("validation","pending_projection")
+                                    .put("reason","占位匹配尚未完成，请重新解析或明确选择新建").put("runId",runId).put("position",i);
+                            ContentValues held=new ContentValues();held.put("occurrence_update",waiting.toString());held.put("needs_confirmation",1);held.put("uncertainty_level",2);
+                            db.update("event_candidates",held,"id=?",new String[]{Long.toString(savedId)});
+                        }
                     }
                     audit.remove("entries");
                     ContentValues values = new ContentValues(); values.put("status", "succeeded");

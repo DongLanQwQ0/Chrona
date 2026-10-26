@@ -122,7 +122,7 @@ public final class AndroidSyncData {
     'static boolean busy(', 'boolean linked(', 'boolean taskDifferent(',
     'static final class StagedTask', 'static final class Snapshot', 'void requireRevision(',
     'void prepareTaskApply(SyncState state, Snapshot snapshot, String calendarApprovedId, String onlyId)',
-    'void applyMergeRecords(', 'void applyTask(', 'private static Map<String, Long> clock(', 'private String changed('
+    'void applyMergeRecords(', 'void applyTask(', 'private static String localOccurrenceReminders(', 'private static Map<String, Long> clock(', 'private String changed('
 ]) + '\n}')
 write('com/donglan/chrona/WebDavSettingsStore.java', '''package com.donglan.chrona;public final class WebDavSettingsStore {WebDavSettingsStore(android.content.Context context){}boolean automatic(){return false;}}''')
 write('com/donglan/chrona/SyncJobService.java', '''package com.donglan.chrona;public final class SyncJobService {static void schedule(android.content.Context context){}}''')

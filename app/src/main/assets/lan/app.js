@@ -431,10 +431,14 @@ function detailCandidate(item,id,busy){
  result.append(node('span','status-label',categories[item.category]+(item.completed?' · 已完成':item.calendarLinked?' · 已写入日历':item.needsConfirmation?' · 待确认':'')),node('h2','',item.title),node('p','subtle',executionWhen(item,true)));
  if(item.effectiveDue!=null)result.append(node('p','subtle',`截止 · ${fmt(item.effectiveDue,false,true,item.zone)}`));
  if(item.location)result.append(node('p','subtle',item.location));if(item.description)result.append(node('p','raw-text',item.description));
- const controls=node('div','detail-actions'),modify=action(item.recurrence?'重复日程':item.category==='homework'?'修改作业':'修改日程',()=>item.recurrence?repeatDialog(item):candidateEditor(item,$('.detail-reader')));modify.disabled=busy;controls.append(modify);
- if(!item.recurrence&&!item.managed){const repeat=action('设置重复',()=>repeatRuleDialog(item));repeat.disabled=busy||item.start==null&&item.effectiveDue==null;controls.append(repeat);}
+ const proposal=item.occurrenceUpdate,held=proposal&&proposal.state!=='new',controls=node('div','detail-actions');
+ if(held)result.append(node('span','tag',proposal.state==='applied'?'已更新本次':proposal.state==='pending'?'更新本次 · '+proposal.original_date:'占位匹配待重新确认'));
+ if(!item.record){const modify=action(item.recurrence?'重复日程':item.category==='homework'?'修改作业':'修改日程',()=>item.recurrence?repeatDialog(item):candidateEditor(item,$('.detail-reader')));modify.disabled=busy;controls.append(modify);}
+ if(held&&proposal.state!=='applied'){const independent=action('另建日程',()=>confirmAction('另建日程','保留原占位，另建一条日程',async()=>{await api('/api/candidate/choose-new',{id:String(id),candidateId:String(item.id),baseline:item.baseline,revision});await render();}));independent.disabled=busy;controls.append(independent);}
+ if(proposal?.state==='applied'&&proposal.targetTaskId)controls.append(action('查看本次日程',()=>openOccurrence(proposal.targetTaskId,proposal.targetCandidateId,proposal.original)));
+ if(!item.record&&!held&&!item.recurrence&&!item.managed){const repeat=action('设置重复',()=>repeatRuleDialog(item));repeat.disabled=busy||item.start==null&&item.effectiveDue==null;controls.append(repeat);}
  if(item.recurrence)result.append(node('span','tag',item.repeatLabel+(item.repeatStoppedAt?' · 已停止':'')));
- const state=completionAction(item);if(state){state.disabled=busy;controls.append(state);}appendHomeworkLinks(result,item);
+ const state=held?null:completionAction(item);if(state){state.disabled=busy;controls.append(state);}appendHomeworkLinks(result,item);
  for(const source of item.mergedSources||[]){if(source.taskId===Number(id))continue;if(source.taskId)result.append(action('合并来源 · '+source.source,()=>navigate('task/'+source.taskId)));else result.append(node('p','raw-text',source.source+'\n'+source.text));}
  return {result,controls};
 }
@@ -529,27 +533,29 @@ function candidateForm(item,finish,cancel){
  if(item.managed){title.readOnly=true;category.disabled=true;due.readOnly=true;description.readOnly=true;}
  fields.append(basic,timing,notes);
  const feedback=node('p','form-feedback');feedback.hidden=true;feedback.setAttribute('role','alert');
- const buttons=node('div','actions editor-actions'),cancelButton=action('取消',cancel),save=node('button','primary','保存');save.type='submit';let publishButton=null,submitting=false;
- if(item.id)buttons.append(action('删除',()=>{const message='手机系统日历中关联的事件也将删除，原文保留。';if(dialogEditor?.form===form)confirmEditorAction(dialogEditor,'删除日程',message,'确认',remove);else confirmAction('删除日程',message,remove);},'danger'));
+ const occurrence=item.occurrenceEdit,held=item.occurrenceUpdate&&item.occurrenceUpdate.state!=='new';
+ const buttons=node('div','actions editor-actions'),cancelButton=action('取消',cancel),save=node('button','primary',occurrence?'更新本次':held?'保存草稿':'保存');save.type='submit';let publishButton=null,submitting=false;
+ if(item.id)buttons.append(action(occurrence?'跳过这次':'删除',()=>{const message=occurrence?item.title:'手机系统日历中关联的事件也将删除，原文保留。';if(dialogEditor?.form===form)confirmEditorAction(dialogEditor,occurrence?'跳过这次':'删除日程',message,'确认',remove);else confirmAction(occurrence?'跳过这次':'删除日程',message,remove);},'danger'));
  buttons.append(cancelButton,save);
- if(item.id){publishButton=action(item.calendarLinked?'更新手机日历':'写入手机日历',()=>commit(true));publishButton.disabled=!session.calendarAllowed;buttons.append(publishButton);}
+ if(item.id&&!occurrence){publishButton=action(held?'更新本次':item.calendarLinked?'更新手机日历':'写入手机日历',()=>commit(true));publishButton.disabled=!session.calendarAllowed||held&&item.occurrenceUpdate.state!=='pending';buttons.append(publishButton);}
  form.append(fields,feedback,buttons);
  const setWorking=value=>{fields.inert=value;for(const button of buttons.querySelectorAll('button')){if(value){button.dataset.wasDisabled=String(button.disabled);button.disabled=true;}else{button.disabled=button.dataset.wasDisabled==='true';delete button.dataset.wasDisabled;}}};
  const values=()=>JSON.stringify([...form.querySelectorAll('input,textarea,select')].map(input=>[input.id,input.value,input.checked,input.disabled]));
  const original=values();
  async function remove(){
   if(submitting)return;submitting=true;setWorking(true);const confirmation=$('.editor-confirmation');if(confirmation)confirmation.inert=true;
-  try{await api('/api/candidate/delete',{id:String(item.taskId),candidateId:String(item.id),revision:baseline});if(form.isConnected)await finish();}
+  try{if(occurrence)await changeRepeat(item,'skip',{original:item.occurrenceAt});else await api('/api/candidate/delete',{id:String(item.taskId),candidateId:String(item.id),revision:baseline});if(form.isConnected)await finish();}
   finally{submitting=false;setWorking(false);if(confirmation)confirmation.inert=false;}
  }
  async function commit(publish){
   if(submitting||!form.reportValidity())return;
   feedback.hidden=true;
   try{
-   const result={id:String(item.taskId),candidateId:String(item.id),revision:baseline,title:title.value,category:category.value,start:instant(start.value,allDay.checked,zone.value),end:instant(end.value,allDay.checked,zone.value),zone:zone.value,allDay:allDay.checked,location:location.value,description:description.value,reminder:reminder.value===''?null:Number(reminder.value),needsConfirmation:review.checked,due:due.value?instant(due.value,false,zone.value):null,record:false};
+   const result={id:String(item.taskId),candidateId:String(item.id),baseline:item.baseline,revision:baseline,title:title.value,category:category.value,start:instant(start.value,allDay.checked,zone.value),end:instant(end.value,allDay.checked,zone.value),zone:zone.value,allDay:allDay.checked,location:location.value,description:description.value,reminder:reminder.value===''?null:Number(reminder.value),needsConfirmation:review.checked,due:taskLike(category.value)&&due.value?instant(due.value,false,zone.value):null,record:false};
    if(result.end!==null&&(result.start===null||result.end<=result.start))throw new Error('结束时间须晚于开始时间');
    submitting=true;setWorking(true);
-   await api(item.id?(publish?'/api/candidate/publish':'/api/candidate/save'):'/api/candidate/create',result);
+   if(occurrence){result.action='edit';result.original=item.occurrenceAt;await api('/api/candidate/repeat',result);}
+   else await api(item.id?(publish?'/api/candidate/publish':'/api/candidate/save'):'/api/candidate/create',result);
    if(form.isConnected)await finish();
   }catch(error){if(form.isConnected){feedback.textContent=error.message||'保存未完成，请重试';feedback.hidden=false;feedback.scrollIntoView({block:'nearest'});}}
   finally{if(submitting)setWorking(false);submitting=false;}
@@ -634,12 +640,15 @@ async function repeatDialog(item,month){
  const from=month||(item.occurrenceAt!=null?phoneDate(item.occurrenceAt):phoneDate()).slice(0,8)+'01',until=monthAfter(from);
  const owner=showDialog('重复日程',body=>body.append(node('p','loading','正在读取…'))),data=await dialogData(`/api/candidate/occurrences?id=${item.taskId}&candidateId=${item.id}&from=${from}&until=${until}`,owner,()=>repeatDialog(item,from));if(!data||!ownsDialog(owner))return;
  revision=data.revision;const series=data.series,body=$('#dialog-body');body.replaceChildren();body.append(node('h3','',series.title),node('p','filter-summary',series.repeatLabel+(series.repeatStoppedAt?' · 已停止':'')));const controls=node('div','range-step');controls.append(action('上个月',()=>repeatDialog(series,monthAfter(from,-1))),node('span','',from.slice(0,7)),action('下个月',()=>repeatDialog(series,until)));body.append(controls);
- for(const occurrence of data.items){const row=node('section','repeat-occurrence');row.append(node('h3','',`${itemDate(occurrence)} · ${executionWhen(occurrence)}`));const buttons=node('div','actions'),complete=completionAction(occurrence,result=>repeatDialog(result.candidate||series,from));if(complete)buttons.append(complete);buttons.append(action('仅改期这次',()=>moveOccurrence(occurrence,from)),action('跳过这次',()=>confirmAction('跳过这次',`${itemDate(occurrence)} · ${occurrence.title}`,async()=>{const changed=await changeRepeat(occurrence,'skip',{original:occurrence.occurrenceAt});await render({local:true});await repeatDialog(changed.candidate,from);})));row.append(buttons);body.append(row);}
+ for(const occurrence of data.items){const row=node('section','repeat-occurrence');row.append(node('h3','',`${itemDate(occurrence)} · ${executionWhen(occurrence)}`));const buttons=node('div','actions'),complete=completionAction(occurrence,result=>repeatDialog(result.candidate||series,from));if(complete)buttons.append(complete);buttons.append(action('编辑本次日程',()=>candidateEditor({...occurrence,recurrence:null,occurrenceEdit:true})),action('跳过这次',()=>confirmAction('跳过这次',`${itemDate(occurrence)} · ${occurrence.title}`,async()=>{const changed=await changeRepeat(occurrence,'skip',{original:occurrence.occurrenceAt});await render({local:true});await repeatDialog(changed.candidate,from);})));row.append(buttons);body.append(row);}
  if(!data.items.length)empty(body,'本月没有安排');if(session.calendarAllowed&&!series.calendarLinked)body.append(action('写入手机日历',async()=>{const result=await api('/api/calendar/publish-selected',{ids:[String(series.id)],inbox:false,revision});revision=result.revision;await render({local:true});await repeatDialog(series,from);toast(result.summary);},'primary'));if(!series.repeatStoppedAt)body.append(action('停止重复',()=>confirmAction('停止重复','停止之后尚未开始的日程及提醒，保留历史记录',async()=>{await changeRepeat(series,'stop');await render({local:true});}),'danger'));icons();
 }
-function moveOccurrence(item,month){showDialog('仅改期这次',(body,owner)=>{
- const value=field(body,item.allDay?'日期':'开始时间',localValue(item.start??item.effectiveDue,item.allDay,item.zone),item.allDay?'date':'datetime-local','repeat-move');body.append(action('保存改期',async()=>{if(!value.value)throw new Error('请选择时间');const changed=await changeRepeat(item,'move',{original:item.occurrenceAt,moved:instant(value.value,item.allDay,item.zone)});closeDialog(false,owner);await render({local:true});await repeatDialog(changed.candidate,month);},'primary'));
-});}
+async function openOccurrence(taskId,candidateId,original){
+ const from=new Date(original-2*86400000).toISOString().slice(0,10),until=new Date(original+3*86400000).toISOString().slice(0,10);
+ const data=await api(`/api/candidate/occurrences?id=${taskId}&candidateId=${candidateId}&from=${from}&until=${until}`);revision=data.revision;
+ const item=data.items.find(value=>value.occurrenceAt===original);if(!item)throw new Error('这一次日程已跳过或停止');
+ await candidateEditor({...item,recurrence:null,occurrenceEdit:true});
+}
 function appendHomeworkLinks(parent,item){
  const row=node('div','homework-links');for(const [url,label]of [[item.mobileUrl,'雪灾浙大M'],[item.desktopUrl,'雪灾浙大']]){if(!url)continue;const parsed=new URL(url);if(parsed.protocol!=='https:'||!['courses.zju.edu.cn','mcourses.zju.edu.cn'].includes(parsed.hostname))continue;const link=node('a','link-button',label);link.href=parsed.href;link.target='_blank';link.rel='noopener noreferrer';row.append(link);}if(row.childElementCount)parent.append(row);
 }

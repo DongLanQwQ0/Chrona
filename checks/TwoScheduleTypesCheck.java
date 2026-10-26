@@ -318,7 +318,7 @@ public final class TwoScheduleTypesCheck {
             db.execSQL("UPDATE event_candidates SET category='deadline',calendar_event_id=71 WHERE id=?",new Object[]{deadline});
             db.execSQL("UPDATE event_candidates SET category='note',calendar_event_id=72 WHERE id=?",new Object[]{note});
             db.execSQL("DROP INDEX candidates_by_due");db.execSQL("DROP INDEX candidates_by_anchor");
-            for(String column:new String[]{"due_at_millis","completed_at_millis","is_record","repeat_rule","repeat_exceptions","repeat_stopped_at"})db.execSQL("ALTER TABLE event_candidates DROP COLUMN "+column);
+            for(String column:new String[]{"due_at_millis","completed_at_millis","is_record","repeat_rule","repeat_exceptions","repeat_stopped_at","occurrence_update"})db.execSQL("ALTER TABLE event_candidates DROP COLUMN "+column);
             // Reconstruct the v10 schema, including absence of the later school tables/triggers.
             db.execSQL("DROP TABLE parse_time_entries");
             db.execSQL("DROP TABLE parse_runs");

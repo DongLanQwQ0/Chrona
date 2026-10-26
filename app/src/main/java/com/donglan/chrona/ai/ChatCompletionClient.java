@@ -72,7 +72,7 @@ public final class ChatCompletionClient {
         return parseInternal(taskId, rawText, imageJpeg == null
                         ? Collections.emptyList() : Collections.singletonList(imageJpeg),
                 linkText, null, nowMillis, timeZoneId,
-                null, false);
+                null, false, null);
     }
 
     public interface PreviewSink {
@@ -86,7 +86,7 @@ public final class ChatCompletionClient {
         return parseInternal(taskId, rawText, imageJpeg == null
                         ? Collections.emptyList() : Collections.singletonList(imageJpeg),
                 linkText, null, nowMillis, timeZoneId,
-                preview, true);
+                preview, true, null);
     }
 
     public ParseResult parseWithoutStreaming(long taskId, String rawText, byte[] imageJpeg,
@@ -95,7 +95,7 @@ public final class ChatCompletionClient {
         return parseInternal(taskId, rawText, imageJpeg == null
                         ? Collections.emptyList() : Collections.singletonList(imageJpeg),
                 linkText, null, nowMillis, timeZoneId,
-                preview, false);
+                preview, false, null);
     }
 
     public ParseResult parseImages(long taskId, String rawText, List<byte[]> imagesJpeg,
@@ -108,13 +108,20 @@ public final class ChatCompletionClient {
     public ParseResult parseImages(long taskId, String rawText, List<byte[]> imagesJpeg,
             String linkText, String attachmentMetadata, long nowMillis, String timeZoneId,
             PreviewSink preview, boolean streaming) throws IOException {
+        return parseImages(taskId, rawText, imagesJpeg, linkText, attachmentMetadata,
+                nowMillis, timeZoneId, preview, streaming, null);
+    }
+
+    public ParseResult parseImages(long taskId, String rawText, List<byte[]> imagesJpeg,
+            String linkText, String attachmentMetadata, long nowMillis, String timeZoneId,
+            PreviewSink preview, boolean streaming, JSONArray recurringPlaceholders) throws IOException {
         return parseInternal(taskId, rawText, imagesJpeg, linkText, attachmentMetadata,
-                nowMillis, timeZoneId, preview, streaming);
+                nowMillis, timeZoneId, preview, streaming, recurringPlaceholders);
     }
 
     private ParseResult parseInternal(long taskId, String rawText, List<byte[]> imagesJpeg,
             String linkText, String attachmentMetadata, long nowMillis, String timeZoneId,
-            PreviewSink preview, boolean streaming) throws IOException {
+            PreviewSink preview, boolean streaming, JSONArray recurringPlaceholders) throws IOException {
         RequestControl.check(control);
         boolean hasText = rawText != null && !rawText.trim().isEmpty();
         boolean hasImages = imagesJpeg != null && !imagesJpeg.isEmpty();
@@ -128,7 +135,7 @@ public final class ChatCompletionClient {
             body.put("model", settings.model);
             long schedulingNowMillis = System.currentTimeMillis();
             JSONArray messages = SchedulePrompt.requestMessages(scheduleSystem, rawText, linkText,
-                    attachmentMetadata, nowMillis, schedulingNowMillis, timeZoneId);
+                    attachmentMetadata, nowMillis, schedulingNowMillis, timeZoneId, recurringPlaceholders);
             JSONArray content = messages.getJSONObject(1).getJSONArray("content");
             if (hasImages) {
                 for (byte[] imageJpeg : imagesJpeg) {

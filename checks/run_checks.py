@@ -57,6 +57,7 @@ GROUPS = {
 # Explicit evidence/browser tools stay outside these dependency-bounded suites:
 # interaction_acceptance_check.py needs two candidate-specific Android reports.
 # web_parity_check.py launches installed Edge, beyond full's Node-only JS checks.
+# lan_occurrence_check.cjs likewise uses the shared persistent Edge profile for rendered occurrence editing.
 SUITES = {"quick": ("python",), "full": tuple(GROUPS)}
 
 

@@ -34,6 +34,8 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
     private float position, dragStart;
     private boolean resumed;
     private FrameLayout dockHost;
+    private boolean navigationRail, compactNavigation;
+    private TextView compactNavigationLabel;
     protected abstract int initialPage();
 
     @Override protected void onCreate(Bundle state) {
@@ -50,6 +52,9 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
         LinearLayout shell = new LinearLayout(this); shell.setOrientation(LinearLayout.VERTICAL);
+        int windowWidth=getResources().getConfiguration().screenWidthDp;
+        boolean shortWindow=SettingsPageLayout.shortWindow(this);
+        navigationRail=shortWindow&&windowWidth>=SettingsPageLayout.NAVIGATION_RAIL_MIN_WIDTH_DP;compactNavigation=shortWindow&&!navigationRail;
         pager = new SwipePagerLayout(this, new SwipePagerLayout.Listener() {
             @Override public void onStart() {
                 cancelTransition(); dragStart = position; navigation.beginBodyDrag();
@@ -73,7 +78,6 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
         });
         pager.setFramePacingEnabled(true);
         pager.setHorizontalEdgeHandoffEnabled(true);
-        shell.addView(pager, new LinearLayout.LayoutParams(-1, 0, 1));
         navigation = new DockNavigationLayout(this, index -> selectPage(visiblePages[index]), () -> { });
         navigation.setPadding(dp(6), dp(6), dp(6), dp(6));
         for (int id : visiblePages) {
@@ -82,15 +86,31 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
             item.setPadding(dp(8), 0, dp(8), 0);
             if ("课堂".equals(label)) item.setContentDescription("课堂总结");
             item.setGravity(Gravity.CENTER); UiStyle.title(item);
-            navigation.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
+            navigation.addItem(item, navigationRail?new LinearLayout.LayoutParams(-1,0,1):new LinearLayout.LayoutParams(0, dp(48), 1));
         }
-        dockHost = navigation.motionHost();
+        if(navigationRail){
+            shell.setOrientation(LinearLayout.HORIZONTAL);shell.setClipChildren(false);shell.setClipToPadding(false);
+            navigation.setOrientation(LinearLayout.VERTICAL);
+            dockHost=new FrameLayout(this);dockHost.setClipChildren(false);dockHost.setClipToPadding(false);
+            dockHost.addView(navigation,new FrameLayout.LayoutParams(dp(72),dp(visiblePages.length*56+12),Gravity.CENTER));
+            shell.addView(dockHost,new LinearLayout.LayoutParams(dp(120),-1));
+            shell.addView(pager,new LinearLayout.LayoutParams(0,-1,1));
+        }else{
+            shell.addView(pager,new LinearLayout.LayoutParams(-1,0,1));
+            if(compactNavigation){
+                dockHost=new FrameLayout(this);compactNavigationLabel=new TextView(this);UiStyle.fieldTrigger(compactNavigationLabel);
+                compactNavigationLabel.setGravity(Gravity.CENTER);compactNavigationLabel.setTextSize(15);
+                compactNavigationLabel.setOnClickListener(v->{String[] labels=new String[visiblePages.length];for(int i=0;i<labels.length;i++)labels[i]=new String[]{"课表","课堂","日程"}[visiblePages[i]];
+                    UiDialogs.choiceDialog(this,"页面",labels,slot(selected),choice->selectPage(visiblePages[choice]));});
+                dockHost.addView(compactNavigationLabel,new FrameLayout.LayoutParams(dp(120),dp(48),Gravity.END));
+            }else dockHost=navigation.motionHost();
+        }
         InteractionLayers.pin(dockHost);
         FrameLayout.LayoutParams dockParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         dockParams.setMargins(dp(20), 0, dp(20), dp(4));
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
-        stage.addView(dockHost, dockParams);
-        UiStyle.applyInsets(stage, shell, dockHost); setContentView(stage);
+        if(!navigationRail)stage.addView(dockHost, dockParams);
+        UiStyle.applyInsets(stage, shell, navigationRail?null:dockHost); setContentView(stage);
         page(selected); renderPosition(); navigation.setSelectedIndex(slot(selected));
         pager.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> renderPosition());
         pager.getViewTreeObserver().addOnGlobalLayoutListener(this::updateGesturePriority);
@@ -120,6 +140,7 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
     }
     private float width() { return Math.max(1, pager.getWidth()); }
     private void renderPosition() {
+        if(compactNavigationLabel!=null){String value=new String[]{"课表","课堂","日程"}[selected];compactNavigationLabel.setText(value);compactNavigationLabel.setContentDescription("当前页面："+value+"，选择页面");}
         int lower = visiblePages[Math.max(0, Math.min(visiblePages.length - 1, (int)Math.floor(position)))];
         int upper = visiblePages[Math.max(0, Math.min(visiblePages.length - 1, (int)Math.ceil(position)))];
         page(lower); page(upper);
@@ -164,7 +185,7 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
     private void updateGesturePriority() {
         ArrayList<View> children = new ArrayList<>();
         pager.setHorizontalEdgeHandoffEnabled(selected == 0);
-        if(dockHost!=null)for(SchedulePage page:pages)if(page!=null)page.setBottomOverlayInset(dockHost.getHeight()+dp(12));
+        if(dockHost!=null)for(SchedulePage page:pages)if(page!=null)page.setBottomOverlayInset(navigationRail?0:dockHost.getHeight()+dp(12));
         if (pages[selected] != null) pages[selected].collectGesturePriority(children);
         pager.setGesturePriorityChildren(children);
     }

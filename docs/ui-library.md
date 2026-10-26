@@ -23,6 +23,10 @@
 
 二级页面使用`SettingsPageLayout.content/header/show`。自带独立滚动视口、需要固定标题的阅读页改用`showFixed`承载内容，背景与安全区仍由同一公共实现负责；浮动操作通过`InteractionLayers.pin`保持高于可选择正文的焦点分支。
 
+短窗口的固定工具组使用`SettingsPageLayout.toolsViewport`，限制工具区占用并保留可滚动操作；`SchedulePage`只给正文增加底部浮动导航的末尾留白，不给工具视口重复加空白。表单的键盘和系统安全区由滚动视口外层承担，焦点按真实可见高度滚动。
+
+`UiMotion.enterPage`用于首次子页面呈现，方向`swap`用于工作区子视图和分页；轮询不重播入场。`DateIntervalBar`保持实例并负责箭头、滑动与点击选择入口。课堂图片的`ImageSlidePager`只负责有界手势和当前/相邻帧位置，解码、原图比例、缩放和保存留在现有图片页面。
+
 页面调用样式和组合组件，不自行创建另一份亚克力 Drawable、弹窗层级管理或快照切换。渲染状态由 `UiSurfaces` 管理；浮层登记窗口模糊根，渲染层无需依赖浮层生命周期实现。
 `CalendarVisibilityToggle` 只管理开关图标及连续颜色变化；按压通过 `UiStyle.pressable` 使用 `UiSurfaces` 的公共填充遮罩，随 `HeaderActionGroup` 胶囊边界裁切。调用方不叠加专用圆形涟漪或选中底色。
 

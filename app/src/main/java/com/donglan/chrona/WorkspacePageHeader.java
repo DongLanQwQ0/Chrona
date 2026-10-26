@@ -13,14 +13,20 @@ import android.widget.LinearLayout;
 final class WorkspacePageHeader extends LinearLayout {
     private final View title;
     private final View action;
+    private final int actionWidthDp;
     private ValueAnimator actionMotion;
     private float actionProgress = 1f;
     private boolean actionVisible = true;
 
     WorkspacePageHeader(Activity activity, View title, View action) {
+        this(activity, title, action, 48);
+    }
+
+    WorkspacePageHeader(Activity activity, View title, View action, int actionWidthDp) {
         super(activity);
         this.title = title;
         this.action = action;
+        this.actionWidthDp = actionWidthDp;
         setGravity(Gravity.CENTER_VERTICAL);
         setClipChildren(false); setClipToPadding(false);
         setChildrenDrawingOrderEnabled(true);
@@ -30,7 +36,7 @@ final class WorkspacePageHeader extends LinearLayout {
         LinearLayout.LayoutParams center = new LinearLayout.LayoutParams(0, -2, 1);
         center.setMargins(dp(8), 0, action == null ? 0 : dp(8), 0);
         addView(title, center);
-        if (action != null) addView(action, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        if (action != null) addView(action, new LinearLayout.LayoutParams(dp(actionWidthDp), dp(48)));
     }
 
     void setActionVisible(boolean visible) {
@@ -60,7 +66,7 @@ final class WorkspacePageHeader extends LinearLayout {
         action.setScaleX(.85f + .15f * progress);
         action.setScaleY(.85f + .15f * progress);
         LinearLayout.LayoutParams slot = (LinearLayout.LayoutParams) action.getLayoutParams();
-        slot.width = Math.round(dp(48) * progress);
+        slot.width = Math.round(dp(actionWidthDp) * progress);
         action.setLayoutParams(slot);
         LinearLayout.LayoutParams center = (LinearLayout.LayoutParams) title.getLayoutParams();
         center.rightMargin = Math.round(dp(8) * progress);

@@ -42,7 +42,7 @@ class Page{
  async screenshot(options){const result=await this.cdp.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:!!options.fullPage});fs.writeFileSync(options.path,Buffer.from(result.data,'base64'));}
 }
 module.exports={chromium:{launch:async options=>{
- const port=await freePort(),directory=path.resolve(__dirname,'../build/lan-web-checks/browser-profile-'+Date.now());fs.mkdirSync(directory,{recursive:true});
+ const port=await freePort(),directory=path.resolve(__dirname,'../build/lan-web-checks/browser-profile');fs.mkdirSync(directory,{recursive:true});
  const process=child.spawn(options.executablePath,['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-extensions',`--remote-debugging-port=${port}`,`--user-data-dir=${directory}`,'about:blank'],{windowsHide:true,stdio:'ignore'});
  let tabs;for(let i=0;i<100;i++){try{tabs=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();if(tabs.some(tab=>tab.type==='page'))break;}catch{}await delay(100);}if(!tabs)throw new Error('Edge debugging endpoint unavailable');
  const ws=new WebSocket(tabs.find(tab=>tab.type==='page').webSocketDebuggerUrl);await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true});});

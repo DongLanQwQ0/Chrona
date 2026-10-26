@@ -51,6 +51,7 @@ final class ClassroomAutoSummaryChecks {
                 ClassroomStore.write(new File(job.dir,"summary.json"),result);return result;
             };
             checks.materialGate();checks.queueAndDedup();checks.savedAndMissing();checks.unknownAndScope();checks.accountCancellation();
+            checks.legacyFinishedRecovery();
             checks.ownerLossBeforeDestroy(false);checks.ownerLossBeforeDestroy(true);
             return checks.assertions;
         }finally{
@@ -128,6 +129,46 @@ final class ClassroomAutoSummaryChecks {
         owner=false;ClassroomLesson queued=lesson();prepared(queued);ZjuSettingsStore school=new ZjuSettingsStore(app);
         try{school.prefs.edit().putString("account","different-fixture-account").commit();dispatch();check("interrupted".equals(state(queued)),"Account switch interrupts queued work without requesting AI");}
         finally{school.prefs.edit().putString("account",account).commit();}
+    }
+    private void legacyFinished(ClassroomMonitorStore target,ClassroomLesson lesson)throws Exception{
+        target.add(lesson,false);target.finished(lesson);
+        synchronized(ClassroomMonitorStore.LOCK){JSONObject state=target.read();state.getJSONObject("summaries").remove(ClassroomMonitorStore.key(lesson));
+            if(!app.getSharedPreferences("chrona_classroom_monitor",0).edit().putString(target.account,state.toString()).commit())throw new IOException("Fixture legacy state write failed");}
+    }
+    private void legacyFinishedRecovery()throws Exception{
+        owner=false;int before=calls.get();ClassroomLesson saved=lesson();prepared(saved);legacyFinished(store,saved);
+        File savedDir=new ClassroomStore(app,account).localLesson(saved);ClassroomStore.write(new File(savedDir,"summary.json"),new JSONObject().put("complete",true));
+        owner=true;dispatch();waitFor(saved,"complete");check(calls.get()==before,"Old done without task adopts existing manual summary without AI");
+        owner=false;ClassroomLesson fresh=lesson();prepared(fresh);legacyFinished(store,fresh);store.summaryImages(true);dispatch();
+        check("queued".equals(state(fresh))&&ClassroomMonitorStore.auto(store.read(),fresh).getInt("imageLimit")==40,"Old completed material recovers one queued request with current explicit image permission");
+        long queuedAt=ClassroomMonitorStore.auto(store.read(),fresh).getLong("updated");store.summaryImages(false);dispatch();
+        check(!store.recoverFinished(fresh)&&ClassroomMonitorStore.auto(store.read(),fresh).getLong("updated")==queuedAt
+                &&ClassroomMonitorStore.auto(store.read(),fresh).getInt("imageLimit")==40,"Recovery reentry cannot reset queued work or its permission snapshot");
+        owner=true;dispatch();waitFor(fresh,"complete");dispatch();check(calls.get()==before+1,"Recovered no-summary lesson requests AI once");
+        owner=false;ClassroomLesson stopped=lesson();prepared(stopped);legacyFinished(store,stopped);store.stop(stopped);dispatch();
+        check(state(stopped).isEmpty()&&!store.recoverFinished(stopped),"Stopped monitor range is never recreated for recovery");
+        ClassroomLesson missing=lesson();legacyFinished(store,missing);dispatch();check(state(missing).isEmpty(),"Old done with no formal material is not queued");
+        for(String invalid:new String[]{"monitoring","portable","empty","identity","candidates"}){
+            ClassroomLesson lesson=lesson();prepared(lesson);legacyFinished(store,lesson);File dir=new ClassroomStore(app,account).localLesson(lesson);
+            JSONObject materials=ClassroomStore.read(new File(dir,"materials.json")),candidates=ClassroomStore.read(new File(dir,"candidates.json"));
+            if(invalid.equals("monitoring")||invalid.equals("portable")){materials.put(invalid,true);ClassroomStore.write(new File(dir,"materials.json"),materials);}
+            else if(invalid.equals("empty")){materials.put("segments",new JSONArray());ClassroomStore.write(new File(dir,"materials.json"),materials);}
+            else if(invalid.equals("identity")){candidates.getJSONObject("lesson").put("id",saved.id);ClassroomStore.write(new File(dir,"candidates.json"),candidates);}
+            else new android.util.AtomicFile(new File(dir,"candidates.json")).delete();
+            dispatch();check(state(lesson).isEmpty(),"Recovery rejects incomplete or mismatched formal material: "+invalid);store.stop(lesson);
+        }
+        ClassroomMonitorStore other=new ClassroomMonitorStore(app,"auto-recovery-other-account");ClassroomLesson foreign=lesson();
+        File foreignDir=new ClassroomStore(app,other.account).localLesson(foreign);
+        ClassroomStore.write(new File(foreignDir,"materials.json"),new JSONObject().put("monitoring",false).put("segments",new JSONArray().put(new JSONObject().put("text","other account"))));
+        ClassroomStore.write(new File(foreignDir,"candidates.json"),new JSONObject().put("lesson",foreign.json()).put("images",new JSONArray()));
+        legacyFinished(other,foreign);legacyFinished(store,foreign);dispatch();
+        check(ClassroomMonitorStore.auto(other.read(),foreign)==null&&state(foreign).isEmpty(),"Recovery never queues inactive-account history or borrows its material");
+        store.stop(foreign);other.stop(foreign);
+        ClassroomLesson unknown=lesson(),base=lesson();prepared(unknown);legacyFinished(store,unknown);store.stop(unknown);
+        ClassroomLesson anchor=new ClassroomLesson(base.courseId,base.id,base.course,base.title,base.room,base.status,unknown.startsAt-60_000);store.add(anchor,true);
+        check(ClassroomMonitorStore.ruleFor(store.read(),unknown)!=null,"Unmapped fixture remains inside the real course scope");
+        dispatch();check(state(unknown).isEmpty(),"Unmapped done identities are not found by scanning material directories");store.stop(anchor);
+        check(calls.get()==before+1,"Invalid, stopped and cross-account legacy entries never invoke AI");
     }
     /** Exercise the actual timeout and credential listener, keeping destroy deliberately absent. */
     private void ownerLossBeforeDestroy(boolean credentials)throws Exception{

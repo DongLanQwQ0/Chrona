@@ -403,6 +403,8 @@ public final class UiStyle {
         int bottom = safeContent.getPaddingBottom();
         int floatBottom = floating == null ? 0
                 : ((FrameLayout.LayoutParams) floating.getLayoutParams()).bottomMargin;
+        int floatLeft=floating==null?0:((FrameLayout.LayoutParams)floating.getLayoutParams()).leftMargin;
+        int floatRight=floating==null?0:((FrameLayout.LayoutParams)floating.getLayoutParams()).rightMargin;
         stage.setOnApplyWindowInsetsListener((view, insets) -> {
             android.graphics.Insets bars = insets.getInsets(
                     WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
@@ -414,7 +416,8 @@ public final class UiStyle {
                 FrameLayout.LayoutParams params =
                         (FrameLayout.LayoutParams) floating.getLayoutParams();
                 params.bottomMargin = floatBottom + bars.bottom;
-                params.rightMargin = Math.max(params.rightMargin, bars.right);
+                params.leftMargin=floatLeft+bars.left;
+                params.rightMargin=floatRight+bars.right;
                 floating.setLayoutParams(params);
             }
             return insets;
@@ -422,13 +425,13 @@ public final class UiStyle {
         stage.requestApplyInsets();
     }
 
-    /** Insets the viewport, clipping scrolling text and controls safely away from system bars. */
+    /** Insets outside the viewport so focus scrolling uses the actual visible height above IME. */
     static void applyScrollableInsets(View stage, View scrollContent) {
         if (Build.VERSION.SDK_INT < 35) return;
         enableEdgeToEdge(stage);
         ScrollView viewport = scrollContent.getParent() instanceof ScrollView scrollView
                 ? scrollView : null;
-        View insetTarget = viewport == null ? scrollContent : viewport;
+        View insetTarget = viewport!=null&&viewport.getParent() instanceof View parent?parent:scrollContent;
         insetTarget.setFitsSystemWindows(false);
         scrollContent.setFitsSystemWindows(false);
         int left = insetTarget.getPaddingLeft();

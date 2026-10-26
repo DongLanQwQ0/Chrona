@@ -100,6 +100,7 @@ final class CalendarOverviewPage extends SchedulePage {
     private boolean renderedSystem;
     private CalendarDayCounts dayCounts;
     private View monthDates;
+    private TextView compactViewMode;
     private LinearLayout monthDetails;
     private long lastScrollAt;
     private AgendaRepository.Snapshot deferredSnapshot;
@@ -216,12 +217,13 @@ final class CalendarOverviewPage extends SchedulePage {
         controls.finish();
         header.addView(controls, new LinearLayout.LayoutParams(-2, dp(44)));
         root.addView(header);
+        LinearLayout calendarTools=column();calendarTools.setClipChildren(false);calendarTools.setClipToPadding(false);
         LinearLayout navigation = row();
         dateTitle = new DateIntervalBar(activity, this::pickDate, direction -> { shift(direction); return true; });
         navigation.addView(dateTitle, new LinearLayout.LayoutParams(0, -2, 1));
         TextView today = action("今天", () -> navigateDate(LocalDate.now()));
         LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(-2, dp(44));todayParams.leftMargin=dp(8);
-        navigation.addView(today, todayParams); UiStyle.addSpaced(root,navigation,12,8);
+        navigation.addView(today, todayParams);
         tabs = new DockNavigationLayout(this, this::changeMode, () -> { });
         tabs.setPadding(dp(3), dp(3), dp(3), dp(3));
         String[] labels = {"年", "月", "周", "日", "日程"};
@@ -236,7 +238,23 @@ final class CalendarOverviewPage extends SchedulePage {
         // Equal cells fill the plate; preserve the approved outward highlight motion.
         LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(-1, -2);
         tabParams.gravity = Gravity.CENTER_HORIZONTAL; tabParams.bottomMargin = dp(8);
-        root.addView(tabs.fullWidthMotionHost(), tabParams);
+        boolean shortWindow=SettingsPageLayout.shortWindow(this);
+        if(shortWindow){
+            LinearLayout compactTools=row();compactTools.setGravity(Gravity.CENTER_VERTICAL);
+            View choice;
+            if(getResources().getConfiguration().screenWidthDp>=SettingsPageLayout.NAVIGATION_RAIL_MIN_WIDTH_DP){
+                compactTools.addView(navigation,new LinearLayout.LayoutParams(0,-2,1));choice=tabs.fullWidthMotionHost();LinearLayout.LayoutParams slot=new LinearLayout.LayoutParams(0,-2,1);slot.leftMargin=dp(12);compactTools.addView(choice,slot);
+            }
+            else{compactViewMode=new TextView(activity);UiStyle.fieldTrigger(compactViewMode);compactViewMode.setText(labels[mode]);
+                compactViewMode.setOnClickListener(v->UiDialogs.choiceDialog(activity,"日历视图",labels,mode,this::changeMode));
+                // Give the date a whole row before assigning room to the two independent actions.
+                navigation.removeView(today);UiStyle.addSpaced(calendarTools,navigation,8,0);
+                compactTools.addView(compactViewMode,new LinearLayout.LayoutParams(0,-2,1));
+                compactTools.addView(today,todayParams);}
+            UiStyle.addSpaced(calendarTools,compactTools,8,8);
+        }else{UiStyle.addSpaced(calendarTools,navigation,12,8);calendarTools.addView(tabs.fullWidthMotionHost(),tabParams);}
+        ScrollView toolsViewport=SettingsPageLayout.toolsViewport(activity,calendarTools);toolsViewport.setClipChildren(false);toolsViewport.setClipToPadding(false);
+        root.addView(toolsViewport,new LinearLayout.LayoutParams(-1,-2));
         bodyStage = new FrameLayout(activity);
         body = createCalendarBody();
         bodyViewport = new FrameLayout(activity);
@@ -419,6 +437,7 @@ final class CalendarOverviewPage extends SchedulePage {
     }
 
     private void updateTabSemantics() {
+        if(compactViewMode!=null)compactViewMode.setText(new String[]{"年","月","周","日","日程"}[mode]);
         for (int i = 0; i < tabs.itemCount(); i++) {
             View tab = tabs.itemAt(i); tab.setSelected(i == mode);
             tab.setContentDescription(((TextView) tab).getText() + "视图" + (i == mode ? "，已选中" : ""));

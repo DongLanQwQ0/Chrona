@@ -132,12 +132,16 @@ final class ClassroomMonitor {
                         if(previous!=null&&previous.optBoolean("portable"))previous=null;
                         JSONArray received=ClassroomTranscript.snapshot(ClassroomLiveTranscripts.read(dir));
                         boolean authoritative="6".equals(observation.optString("status"))&&!observation.optBoolean("pending");
+                        if(authoritative){
+                            ClassroomSummary.prepareComplete(dir,lesson,observation,previous,client,control,p->{});
+                            check(app,account);if(ClassroomMonitorStore.matches(store.read(),lesson))store.finished(lesson);
+                            continue;
+                        }
                         if(previous!=null){JSONArray keep=new JSONArray(),old=previous.getJSONArray("segments");
-                            for(int i=0;i<old.length();i++)if(!authoritative&&!"live".equals(old.getJSONObject(i).optString("origin")))keep.put(old.getJSONObject(i));
+                            for(int i=0;i<old.length();i++)if(!"live".equals(old.getJSONObject(i).optString("origin")))keep.put(old.getJSONObject(i));
                             previous.put("segments",keep);}
-                        if(!authoritative&&observation.getJSONArray("segments").length()==0&&received.length()>0)observation.put("segments",received);
-                        JSONObject merged=(authoritative?ClassroomMaterialUpdates.complete(previous,observation)
-                                :ClassroomMaterialUpdates.merge(previous,observation)).put("updated",System.currentTimeMillis());
+                        if(observation.getJSONArray("segments").length()==0&&received.length()>0)observation.put("segments",received);
+                        JSONObject merged=ClassroomMaterialUpdates.merge(previous,observation).put("updated",System.currentTimeMillis());
                         ClassroomStore.write(new File(dir,"monitor-materials.json"),merged);
                         JSONArray images=ClassroomImages.prepare(dir,merged,client,control,p->{});
                         check(app,account);if(!ClassroomMonitorStore.matches(store.read(),lesson))continue;
@@ -148,13 +152,6 @@ final class ClassroomMonitor {
                         if(subtitleError!=0&&received.length()==0)detail+=subtitleError==10002?" · 等待字幕":" · 字幕请求失败（"+subtitleError+"）";
                         if(slideError!=0)detail+=" · PPT请求失败（"+slideError+"）";
                         store.message(lesson,lesson.course+" · "+detail);
-                        if("6".equals(observation.getString("status"))&&!observation.getBoolean("pending")) {
-                            // Publish only complete, validated materials into the original manual pipeline.
-                            merged.put("monitoring",true);ClassroomStore.write(new File(dir,"materials.json"),merged);
-                            ClassroomStore.write(new File(dir,"candidates.json"),candidates);
-                            merged.put("monitoring",false);ClassroomStore.write(new File(dir,"materials.json"),merged);
-                            store.finished(lesson);
-                        }
                     }catch(Exception failure){
                         check(app,account);
                         store.message(lesson,lesson.course+" · "+(NetworkFailure.hasDetails(failure)?NetworkFailure.describe(failure):safeFailure(failure)));

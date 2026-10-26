@@ -84,7 +84,7 @@ final class AgendaRepository {
     }
     static Intent details(Context context, AgendaEntry entry) {
         if (!entry.system) {
-            Intent intent = new Intent(context, entry.occurrenceAtMillis == null ? TaskDetailActivity.class : RepeatScheduleActivity.class)
+            Intent intent = new Intent(context, TaskDetailActivity.class)
                     .putExtra("task_id", entry.taskId).putExtra("candidate_id", entry.id);
             if (entry.occurrenceAtMillis != null) intent.putExtra("occurrence_at", entry.occurrenceAtMillis.longValue());
             return intent;

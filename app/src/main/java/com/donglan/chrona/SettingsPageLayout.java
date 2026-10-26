@@ -10,7 +10,10 @@ import android.widget.*;
 public final class SettingsPageLayout {
     static final int GUTTER_DP = 20;
     static final int HEADER_CONTENT_GAP_DP = 16;
+    static final int SHORT_WINDOW_HEIGHT_DP=480;
+    static final int NAVIGATION_RAIL_MIN_WIDTH_DP=600;
     private SettingsPageLayout() { }
+    static boolean shortWindow(android.content.Context context){return context.getResources().getConfiguration().screenHeightDp<=SHORT_WINDOW_HEIGHT_DP;}
     public static LinearLayout content(Activity activity) {
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -41,6 +44,20 @@ public final class SettingsPageLayout {
     public static void show(Activity activity, LinearLayout root, boolean animatePresentation) {
         ScrollView viewport = viewport(activity, root, animatePresentation);
         showFixed(activity, viewport);
+    }
+    /** Keep page tools reachable without allowing them to consume the whole short window. */
+    static ScrollView toolsViewport(Activity activity,android.view.View controls){
+        ScrollView viewport=new ToolsViewport(activity);
+        viewport.setVerticalScrollBarEnabled(false);viewport.addView(controls);return viewport;
+    }
+    static boolean isToolsViewport(android.view.View view){return view instanceof ToolsViewport;}
+    private static final class ToolsViewport extends ScrollView{
+        ToolsViewport(Activity activity){super(activity);}
+        @Override protected void onMeasure(int widthSpec,int heightSpec){
+            if(android.view.View.MeasureSpec.getMode(heightSpec)!=android.view.View.MeasureSpec.UNSPECIFIED)
+                heightSpec=android.view.View.MeasureSpec.makeMeasureSpec(android.view.View.MeasureSpec.getSize(heightSpec)/2,android.view.View.MeasureSpec.AT_MOST);
+            super.onMeasure(widthSpec,heightSpec);
+        }
     }
     /** Secondary readers with their own scrolling content retain the common backdrop and safe area. */
     public static void showFixed(Activity activity, android.view.View viewport) {

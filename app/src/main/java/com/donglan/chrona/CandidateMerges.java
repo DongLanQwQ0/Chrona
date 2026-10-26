@@ -21,7 +21,12 @@ final class CandidateMerges {
         List<EventCandidate> all=new ArrayList<>();Map<Long,TaskRecord> tasks=new LinkedHashMap<>();
         for(TaskRecord task:store.listTasks())if(!AndroidSyncData.busy(task)){
             tasks.put(task.id,task);store.stableTaskId(task.id);
-            for(EventCandidate candidate:store.getCandidates(task.id)){store.stableCandidateId(candidate.id);all.add(candidate);}
+            for(EventCandidate candidate:store.getCandidates(task.id)){
+                // A pending/applied announcement owns its target and audit; a generic merge cannot erase them.
+                try{JSONObject proposal=store.occurrenceProposal(candidate.id);if(proposal!=null&&!"new".equals(proposal.optString("state")))continue;}
+                catch(JSONException invalid){throw new IllegalStateException("公告匹配数据无效，请先重新解析",invalid);}
+                store.stableCandidateId(candidate.id);all.add(candidate);
+            }
         }
         List<List<EventCandidate>> groups=DuplicateCandidates.groups(all);
         for(List<EventCandidate> group:groups)group.sort(Comparator.comparing(candidate->store.stableCandidateId(candidate.id)));

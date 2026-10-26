@@ -285,6 +285,8 @@ public final class TaskDetailActivity extends Activity {
     private String observedStatus;
     private int observedCandidates = -1;
     private long observedDataRevision = -1;
+    private Long occurrenceOriginal;
+    private EventCandidate occurrenceSeries;
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
     private final Runnable refreshPoll = this::pollForResult;
 
@@ -299,6 +301,7 @@ public final class TaskDetailActivity extends Activity {
         taskId = state == null ? getIntent().getLongExtra("task_id", -1)
                 : state.getLong("task_id", getIntent().getLongExtra("task_id", -1));
         initialCandidateId = state == null ? getIntent().getLongExtra(EXTRA_CANDIDATE_ID, 0) : 0;
+        if(getIntent().hasExtra("occurrence_at"))occurrenceOriginal=getIntent().getLongExtra("occurrence_at",0);
         if (state != null) exportFileName = state.getString("export_file_uri");
         page = new ScrollView(this);
         // The detail page reads as a stack of cards; a scrollbar down the right edge just cuts
@@ -589,6 +592,17 @@ public final class TaskDetailActivity extends Activity {
             }
             addDetailHeader();
             List<EventCandidate> savedEntries = store.getCandidates(taskId);
+            if(occurrenceOriginal!=null){
+                long selected=getIntent().getLongExtra(EXTRA_CANDIDATE_ID,0);
+                occurrenceSeries=savedEntries.stream().filter(item->item.id==selected).findFirst().orElseThrow(()->new IllegalStateException("原占位已不存在"));
+                EventCandidate actual=com.donglan.chrona.data.RepeatOccurrences.at(occurrenceSeries,occurrenceOriginal);
+                if(actual==null)throw new IllegalStateException("这一次日程已跳过或停止");
+                EventCandidate editable=OccurrenceUpdates.copy(actual,actual.id,actual.taskId,actual.calendarEventId,actual.needsConfirmation,actual.uncertaintyLevel,false,occurrenceOriginal);
+                observedStatus=task.status;observedCandidates=savedEntries.size();observedDataRevision=store.dataRevision();
+                label("本次 · "+format(actual.anchor()),16);
+                Button save=addCandidateEditor(editable,1,true);showCompletionAction(save,editable);
+                finishRender(renderedPage,renderedTaskId,previousScroll);return;
+            }
             List<EventCandidate> candidates = savedEntries.stream().filter(value -> !value.isRecord).collect(java.util.stream.Collectors.toList());
             if (initialCandidateId > 0) {
                 candidatePageIndex = CandidateSelection.indexOf(candidates, initialCandidateId,
@@ -610,7 +624,7 @@ public final class TaskDetailActivity extends Activity {
             long outputBytes = new StreamingOutputStore(this).length(taskId);
             if (previewExpanded == null) previewExpanded = false;
             if (candidates.isEmpty()) {
-                button("手动添加日程", () -> addManualCandidate());
+                if(!addAppliedOccurrences(store,savedEntries))button("手动添加日程", () -> addManualCandidate());
             } else {
                 if (candidates.size() == 1) {
                     EventCandidate candidate = candidates.get(0);
@@ -619,6 +633,7 @@ public final class TaskDetailActivity extends Activity {
                 } else {
                     addCandidateCarousel(candidates);
                 }
+                addAppliedOccurrences(store,savedEntries);
             }
 
             if (!store.isHomeworkCapture(taskId)) {
@@ -629,6 +644,10 @@ public final class TaskDetailActivity extends Activity {
         } catch (Exception exception) {
             showError(exception);
         }
+        finishRender(renderedPage,renderedTaskId,previousScroll);
+    }
+
+    private void finishRender(ScrollView renderedPage,long renderedTaskId,int previousScroll){
         renderedPage.post(() -> renderedPage.scrollTo(0, previousScroll));
         page.setOnScrollChangeListener((View view, int x, int y, int oldX, int oldY) ->
                 taskScrollPositions.put(renderedTaskId, y));
@@ -673,6 +692,19 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.pill(badge, true);
         row.addView(badge, new LinearLayout.LayoutParams(-2, -2));
         UiStyle.addSpaced(content, row, 2, 5);
+    }
+
+    private boolean addAppliedOccurrences(TaskStore store,List<EventCandidate> entries)throws Exception{
+        boolean found=false;
+        for(EventCandidate item:entries){org.json.JSONObject proposal=store.occurrenceProposal(item.id);
+            if(proposal==null||!"applied".equals(proposal.optString("state")))continue;
+            EventCandidate target;
+            try{target=OccurrenceUpdates.series(store,proposal.getString("series_id"));}
+            catch(IllegalArgumentException missing){label("已更新本次 · "+item.title,16);found=true;continue;}
+            long original=proposal.getLong("original");
+            button("已更新本次 · "+item.title,()->startActivity(new Intent(this,TaskDetailActivity.class).putExtra("task_id",target.taskId)
+                    .putExtra(EXTRA_CANDIDATE_ID,target.id).putExtra("occurrence_at",original)));found=true;
+        }return found;
     }
 
     private void addCandidateCarousel(List<EventCandidate> candidates) {
@@ -817,7 +849,7 @@ public final class TaskDetailActivity extends Activity {
         ImageButton back = UiStyle.navigationIcon(this, R.drawable.ic_arrow_left, "返回", this::requestExit);
         row.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         TextView title = new TextView(this);
-        title.setText("任务详情");
+        title.setText(occurrenceOriginal==null?"任务详情":"本次日程");
         title.setTag("detail_item_title");
         title.setTextSize(20);
         UiStyle.title(title);
@@ -834,6 +866,7 @@ public final class TaskDetailActivity extends Activity {
         View actionDivider = headerActions.getChildAt(1);
         actionDivider.setVisibility(View.GONE);
         completionAction.setTag(actionDivider);
+        if(occurrenceOriginal!=null){more.setVisibility(View.GONE);completionAction.setTag(null);}
         headerActions.finish();
         row.addView(headerActions, new LinearLayout.LayoutParams(-2, dp(48)));
         UiStyle.addSpaced(content, row, 0, 2);
@@ -888,7 +921,9 @@ public final class TaskDetailActivity extends Activity {
             divider.setVisibility(View.VISIBLE);
         completionAction.setEnabled(true);
         int remaining = (int)candidates.stream().filter(c -> !c.settled()).count();
-        completionAction.setContentDescription((candidate.isTask() ? "保存待办：" : candidate.calendarEventId == null
+        boolean updating=occurrenceOriginal!=null;
+        if(!updating)try(TaskStore store=new TaskStore(this)){updating=OccurrenceUpdates.held(store,candidate.id);}catch(Exception error){showError(error);}
+        completionAction.setContentDescription((updating?"更新本次：":candidate.isTask() ? "保存待办：" : candidate.calendarEventId == null
                 ? "确认并写入日历：" : "保存并更新日历：") + candidate.title
                 + (remaining > 0 ? "。本任务还有 " + remaining + " 项待确认。" : ""));
         completionAction.setOnClickListener(view -> action.run());
@@ -1141,6 +1176,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private boolean hasTaskPage(int direction) {
+        if(occurrenceOriginal!=null)return false;
         try (TaskStore store = new TaskStore(this)) {
             List<TaskRecord> tasks = store.listTasks();
             int current = -1;
@@ -2261,9 +2297,13 @@ public final class TaskDetailActivity extends Activity {
     private Button addCandidateEditor(EventCandidate candidate, int number,
             boolean dockSaveAction, LinearLayout destination, int pageWidth) {
         final boolean managedHomework;
+        org.json.JSONObject proposed;
         try (TaskStore store = new TaskStore(this)) {
             managedHomework = store.isManagedHomework(candidate.id, candidate.taskId);
+            try{proposed=store.occurrenceProposal(candidate.id);}catch(Exception invalid){proposed=null;}
         }
+        final org.json.JSONObject updateProposal=proposed;
+        final boolean updatingOccurrence=updateProposal!=null&&!"new".equals(updateProposal.optString("state"))&&!"applied".equals(updateProposal.optString("state"));
         EventCandidate defaulted = EventTimeDefaults.completeInterval(candidate);
         boolean[] autoEnd = {CandidateFeedback.automaticEnd(candidate.endAtMillis,
                 defaulted.endAutoGenerated, candidate.isTask())};
@@ -2293,6 +2333,7 @@ public final class TaskDetailActivity extends Activity {
         Button createCandidate = compactActionButton("新建", R.drawable.ic_add,
                 this::addManualCandidate);
         createCandidate.setContentDescription("新建事项");
+        if(occurrenceOriginal!=null)createCandidate.setVisibility(View.GONE);
         LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(-2, dp(48));
         createParams.setMarginEnd(dp(8));
         cardHeader.addView(createCandidate, createParams);
@@ -2313,7 +2354,7 @@ public final class TaskDetailActivity extends Activity {
             complete.setOnClickListener(view -> changeTaskCompletion(candidate));
             LinearLayout.LayoutParams completeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             completeParams.setMarginEnd(dp(8));
-            cardHeader.addView(complete, completeParams);
+            if(!updatingOccurrence)cardHeader.addView(complete, completeParams);
         } else {
             acknowledgement = new ImageButton(this);
             acknowledgement.setTag(new AcknowledgementAction(candidate));
@@ -2337,7 +2378,10 @@ public final class TaskDetailActivity extends Activity {
         }
         ImageButton removeCandidate = new ImageButton(this);
         removeCandidate.setContentDescription("删除" + candidate.itemLabel() + " " + candidate.title);
-        removeCandidate.setOnClickListener(view -> confirmRemoveCandidate(candidate, number));
+        removeCandidate.setOnClickListener(view -> {
+            if(occurrenceOriginal==null)confirmRemoveCandidate(candidate, number);
+            else UiDialogs.confirmDialog(this,"跳过这一次",candidate.title,"跳过",()->skipEditedOccurrence());
+        });
         removeCandidate.setPadding(0, 0, 0, 0);
         Drawable deleteIcon = getDrawable(R.drawable.ic_delete);
         if (deleteIcon != null) deleteIcon.setTint(UiStyle.colors(this).primary);
@@ -2351,14 +2395,16 @@ public final class TaskDetailActivity extends Activity {
         TextView publication = new TextView(this);
         publication.setTextSize(13);
         UiStyle.muted(publication);
-        Runnable refreshPublication = () -> publication.setText(candidate.isTask() ? candidate.taskState(System.currentTimeMillis())+(dirtyCandidateIds.contains(candidate.id)?" · 修改待保存":"")
+        Runnable refreshPublication = () -> publication.setText(updatingOccurrence
+                ? ("pending".equals(updateProposal.optString("state"))?"更新本次 · "+updateProposal.optString("original_date"):"占位匹配待重新确认")
+                :occurrenceOriginal!=null?"仅修改本次":candidate.isTask() ? candidate.taskState(System.currentTimeMillis())+(dirtyCandidateIds.contains(candidate.id)?" · 修改待保存":"")
                 : CandidateFeedback.state(candidate.calendarEventId != null, dirtyCandidateIds.contains(candidate.id)));
         refreshPublication.run();
         UiStyle.addSpaced(card, publication, 2, 2);
         LinearLayout candidateActions = new LinearLayout(this);
         candidateActions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         candidateActions.setClipChildren(false); candidateActions.setClipToPadding(false);
-        if (!managedHomework) {
+        if (!managedHomework && occurrenceOriginal==null && !updatingOccurrence) {
             Button repeat = new Button(this);
             repeat.setText(candidate.repeatRule == null ? "设置重复" : candidate.repeatRule.label()
                     + (candidate.repeatStoppedAtMillis == null ? "" : " · 已停止"));
@@ -2374,6 +2420,8 @@ public final class TaskDetailActivity extends Activity {
             candidateActions.addView(repeat, repeatParams);
         }
         candidateActions.addView(removeCandidate, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        if(updatingOccurrence){Button independent=new Button(this);independent.setText("另建日程");UiStyle.button(independent,false);
+            independent.setOnClickListener(v->chooseIndependentCandidate(candidate));candidateActions.addView(independent,0,new LinearLayout.LayoutParams(0,-2,1f));}
         if (!candidate.settled()) {
             TextView uncertainty = new TextView(this);
             uncertainty.setText(UiStyle.uncertaintyLabel(candidate.uncertaintyLevel));
@@ -2582,7 +2630,7 @@ public final class TaskDetailActivity extends Activity {
                 "不填写", candidate.location, 1f);
         String[] currentDescription = {candidate.description == null ? "" : candidate.description};
         Bundle retainedDraft = candidateDrafts.get(candidate.id);
-        String[] baseline = {retainedDraft == null ? CandidateEditBaseline.of(candidate)
+        String[] baseline = {retainedDraft == null ? CandidateEditBaseline.of(occurrenceOriginal==null?candidate:occurrenceSeries)
                 : retainedDraft.getString("baseline", "")};
         LinearLayout noteRow = formRow(card, "备注", R.drawable.ic_notes);
         TextView notePreview = new TextView(this);
@@ -2702,7 +2750,7 @@ public final class TaskDetailActivity extends Activity {
             }
         }
         Button[] publish = new Button[1];
-        publish[0] = button(card, "保存", () -> {
+        publish[0] = button(card, updatingOccurrence?"更新本次":"保存", () -> {
             if (saveInFlight) return;
             try {
                 String titleText = managedHomework ? candidate.title : title.getText().toString().trim();
@@ -2726,14 +2774,15 @@ public final class TaskDetailActivity extends Activity {
                 EventCandidate edited = new EventCandidate(candidate.id, candidate.taskId, titleText,
                         candidate.repeatRule == null ? startAt : candidate.startAtMillis,
                         candidate.repeatRule == null ? endAt : candidate.endAtMillis,
-                        candidate.repeatRule == null ? effectiveAllDay ? "UTC" : zone.getId() : candidate.timeZoneId,
+                        candidate.repeatRule == null ? effectiveAllDay ? "UTC" : (occurrenceOriginal!=null||updatingOccurrence)&&!candidate.allDay?candidate.timeZoneId:zone.getId() : candidate.timeZoneId,
                         location.getText().toString().trim(),
                         managedHomework ? candidate.description : currentDescription[0].trim(), minutes, false,
                         candidate.calendarEventId,
                         EventCategory.VALUES[selectedCategory[0]], effectiveAllDay, autoEnd[0], EventCandidate.CERTAIN,
                         candidate.repeatRule == null ? dueAt : candidate.dueAtMillis,
                         taskKind ? candidate.completedAtMillis : null,false).withRepeatFrom(candidate);
-                if ((edited.calendarStart()!=null || candidate.calendarEventId!=null) && !requestCalendarPermission()) return;
+                if ((edited.calendarStart()!=null || candidate.calendarEventId!=null)
+                        && !(occurrenceOriginal!=null&&occurrenceSeries.calendarEventId==null) && !requestCalendarPermission()) return;
                 snapshotDrafts();
                 setSaving(true);
                 String expected = baseline[0];
@@ -2831,6 +2880,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void changeTaskCompletion(EventCandidate candidate) {
+        if(occurrenceOriginal!=null){changeEditedOccurrence(candidate.completed()?"reopen":"complete");return;}
         if (candidate.repeatRule != null) {
             startActivity(new Intent(this, RepeatScheduleActivity.class).putExtra("task_id", candidate.taskId)
                     .putExtra("candidate_id", candidate.id));
@@ -2854,6 +2904,23 @@ public final class TaskDetailActivity extends Activity {
             }
         }, "chrona-task-complete").start();
     }
+    private void skipEditedOccurrence(){changeEditedOccurrence("skip");}
+    private void changeEditedOccurrence(String action){
+        if(saveInFlight||occurrenceOriginal==null)return;
+        if(hasUnsavedEdits){Feedback.show(this,"请先保存当前修改");return;}
+        if(occurrenceSeries.calendarEventId!=null&&!requestCalendarPermission())return;
+        String baseline=CandidateEditBaseline.of(occurrenceSeries);setSaving(true);
+        new Thread(()->{try{
+            RepeatActions.change(this,taskId,occurrenceSeries.id,baseline,action,occurrenceOriginal,null,null);
+            deliverSave(owner->{owner.setSaving(false);if("skip".equals(action))owner.finish();else owner.render();});
+        }catch(Exception failure){deliverSave(owner->{owner.setSaving(false);owner.showError(failure);});}},"chrona-occurrence-state").start();
+    }
+    private void chooseIndependentCandidate(EventCandidate candidate){
+        if(saveInFlight)return;snapshotDrafts();setSaving(true);
+        new Thread(()->{try{OccurrenceUpdates.chooseNew(this,candidate.id,CandidateEditBaseline.of(candidate));
+            deliverSave(owner->{owner.setSaving(false);owner.render();});
+        }catch(Exception failure){deliverSave(owner->{owner.setSaving(false);owner.showError(failure);});}},"chrona-occurrence-new").start();
+    }
     private void saveUndatedTask(EventCandidate edited,String expected) {
         try {synchronized(AndroidSync.LOCK){try(TaskStore store=new TaskStore(this);
                 LinkedCalendarEvents writes=new LinkedCalendarEvents(store,new CalendarStore(this))) {
@@ -2872,6 +2939,19 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void publish(EventCandidate edited, String expected) {
+        if(occurrenceOriginal!=null){
+            try{
+                EventCandidate before=com.donglan.chrona.data.RepeatOccurrences.at(occurrenceSeries,occurrenceOriginal);
+                RepeatActions.edit(this,taskId,occurrenceSeries.id,expected,occurrenceOriginal,OccurrenceUpdates.diff(before,edited));
+                deliverSave(owner->{owner.setSaving(false);owner.candidateDrafts.remove(edited.id);owner.dirtyCandidateIds.remove(edited.id);owner.updateDirtyState();owner.render();Feedback.show(owner,"已保存本次日程");});
+            }catch(Exception failure){deliverSave(owner->{owner.setSaving(false);owner.showCandidateError(edited,failure);});}return;
+        }
+        try(TaskStore store=new TaskStore(this)){
+            if(OccurrenceUpdates.held(store,edited.id)){
+                OccurrenceUpdates.apply(this,edited,expected);
+                deliverSave(owner->{owner.setSaving(false);owner.candidateDrafts.remove(edited.id);owner.dirtyCandidateIds.remove(edited.id);owner.updateDirtyState();owner.render();Feedback.show(owner,"已更新本次安排");});return;
+            }
+        }catch(Exception failure){deliverSave(owner->{owner.setSaving(false);owner.showCandidateError(edited,failure);});return;}
         if (edited.calendarStart()==null) { saveUndatedTask(edited,expected); return; }
         EventCandidate retry = null;
         String retryBaseline = null;
@@ -2942,6 +3022,8 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void checkCalendarDuplicateThenPublish(EventCandidate edited, String expected) {
+        try(TaskStore store=new TaskStore(this)){if(occurrenceOriginal!=null||OccurrenceUpdates.held(store,edited.id)){publish(edited,expected);return;}}
+        catch(Exception failure){deliverSave(owner->{owner.setSaving(false);owner.showCandidateError(edited,failure);});return;}
         if (edited.calendarStart()==null || edited.calendarEventId != null) {
             publish(edited, expected);
             return;
@@ -3227,6 +3309,11 @@ public final class TaskDetailActivity extends Activity {
             if (saveInFlight) return;
             if (candidate.calendarEventId != null && !requestCalendarPermission()) return;
             String value = editor.getText().toString().trim();
+            try(TaskStore store=new TaskStore(this)){
+                if(occurrenceOriginal!=null||OccurrenceUpdates.held(store,candidate.id)){
+                    currentDescription[0]=value;preview.setText(shortNote(value));markCandidateDirty(candidate.id);snapshotDrafts();dialog.dismiss();return;
+                }
+            }catch(Exception failure){showError(failure);return;}
             snapshotDrafts();
             setSaving(true);
             save.setEnabled(false);

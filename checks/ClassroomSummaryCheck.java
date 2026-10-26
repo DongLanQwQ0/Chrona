@@ -322,8 +322,44 @@ public final class ClassroomSummaryCheck {
         File shared=new File(ClassroomStore.root(context),"shared/1-2");shared.mkdirs();ClassroomStore.write(new File(shared,"summary.json"),draft);
         check(store.history().size()==1,"shared and account summary deduplicate by course and lesson");
     }
+    private static void completeDownloadParity()throws Exception {
+        JSONObject fresh=new JSONObject().put("segments",new JSONArray().put(segment(0,"正式字幕一")).put(segment(12,"正式字幕二")))
+                .put("images",new JSONArray().put(new JSONObject().put("url","first").put("second",1))
+                        .put(new JSONObject().put("url","middle").put("second",4)).put(new JSONObject().put("url","last").put("second",9))).put("raw_images",3);
+        JSONObject partial=new JSONObject().put("segments",new JSONArray().put(segment(2,"直播临时修订")))
+                .put("images",new JSONArray().put(new JSONObject().put("url","removed").put("second",20))
+                        .put(new JSONObject().put("url","middle").put("second",3))).put("raw_images",2).put("updated",1).put("monitoring",true);
+        File base=new File(root,"complete-parity-"+System.nanoTime()),direct=new File(base,"direct"),watched=new File(base,"watched"),resumed=new File(base,"manual-after-monitor");
+        direct.mkdirs();watched.mkdirs();resumed.mkdirs();
+        ClassroomClient[] clients={new ClassroomClient(),new ClassroomClient(),new ClassroomClient()};
+        for(ClassroomClient client:clients){client.value=new JSONObject(fresh.toString());client.images.put("first",image(10));client.images.put("middle",image(11));client.images.put("last",image(100));}
+        for(File dir:List.of(watched,resumed)){
+            ClassroomStore.write(new File(dir,"monitor-materials.json"),partial);
+            ClassroomStore.writeBytes(new File(dir,"raw-0.img"),image(70));ClassroomStore.writeBytes(new File(dir,"raw-1.img"),image(11));
+        }
+        try(RequestControl control=new RequestControl(10000)){
+            ClassroomSummary.prepare(direct,LESSON,clients[0],control,p->{});
+            ClassroomSummary.prepareComplete(watched,LESSON,fresh,partial,clients[1],control,p->{});
+            ClassroomSummary.prepare(resumed,LESSON,clients[2],control,p->{});
+            for(File dir:List.of(watched,resumed)){
+                JSONObject material=ClassroomStore.read(new File(dir,"materials.json"));
+                check(material.getJSONArray("segments").toString().equals(fresh.getJSONArray("segments").toString()),"both completion entrances retain exactly the authoritative transcript");
+                check(!material.getBoolean("monitoring")&&material.getInt("raw_images")==3,"complete material only published after all formal images validate");
+                JSONArray images=material.getJSONArray("images");check(images.length()==3,"provisional-only PPT is excluded from final download");
+                for(int i=0;i<3;i++)check(images.getJSONObject(i).getString("url").equals(fresh.getJSONArray("images").getJSONObject(i).getString("url"))
+                        &&images.getJSONObject(i).getDouble("second")==fresh.getJSONArray("images").getJSONObject(i).getDouble("second"),"final PPT source and time match direct download");
+                JSONArray expected=ClassroomStore.read(new File(direct,"candidates.json")).getJSONArray("images"),actual=ClassroomStore.read(new File(dir,"candidates.json")).getJSONArray("images");
+                check(actual.length()==expected.length(),"direct and completed download use identical near-frame selection");
+                for(int i=0;i<actual.length();i++)check(actual.getJSONObject(i).getDouble("second")==expected.getJSONObject(i).getDouble("second")
+                        &&Arrays.equals(ClassroomStore.bytes(new File(dir,actual.getJSONObject(i).getString("raw"))),ClassroomStore.bytes(new File(direct,expected.getJSONObject(i).getString("raw")))),"selected PPT timing and actual bytes match despite stable different cache indexes");
+            }
+            check(clients[0].downloads==3&&clients[1].downloads==2&&clients[2].downloads==2,"completion reuses matching verified PPT and downloads only missing sources");
+            ClassroomSummary.prepare(watched,LESSON,clients[1],control,p->{});check(clients[1].downloads==2&&clients[1].materialReads==0,"completed formal cache does not redownload on direct reopen");
+        }
+    }
     public static void main(String[] args)throws Exception {
         root=new File(args[0]);root.mkdirs();HttpServer server=server();try {
+            test("direct and monitored download parity",ClassroomSummaryCheck::completeDownloadParity);
             test("downloaded classroom history",ClassroomSummaryCheck::downloadedHistory);
             test("subtitle compression",ClassroomSummaryCheck::subtitleCompression);
             test("inline images, portable document and safe retention",ClassroomSummaryCheck::retention);

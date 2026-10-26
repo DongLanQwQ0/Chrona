@@ -352,6 +352,7 @@ public final class ProcessingJobService extends JobService {
             }
             List<com.donglan.chrona.data.EventCandidate> candidates = CandidateRules.apply(result.candidates);
             store.replaceParsedCandidates(taskId, candidates, result.candidates, result.parseRunId, result.timeAuditJson);
+            com.donglan.chrona.OccurrenceUpdates.stage(this,taskId);
             store.updateUsage(taskId, result.promptTokens, result.completionTokens,
                     result.totalTokens, result.cachedTokens);
             AutoCalendarPublisher.Result publication = AutoCalendarPublisher.publish(this, taskId, control);
@@ -426,6 +427,9 @@ public final class ProcessingJobService extends JobService {
         final com.donglan.chrona.ai.SchedulePreferences schedulePreferences =
                 com.donglan.chrona.ai.SchedulePreferences.load(this);
         final String scheduleSystem = schedulePreferences.systemPrompt();
+        final org.json.JSONArray recurringPlaceholders;
+        try{recurringPlaceholders=com.donglan.chrona.OccurrenceUpdates.context(this);}
+        catch(Exception failure){throw new IOException("无法读取周日程占位，已保留原文，请重试",failure);}
         for (int attempt = 1; ; attempt++) {
             control.check();
             long attemptStartedAt = System.currentTimeMillis();
@@ -438,7 +442,7 @@ public final class ProcessingJobService extends JobService {
                         .put("attempt", attempt).put("model", settings.model)
                         .put("reasoning_effort", settings.reasoningEffort)
                         .put("preferences", schedulePreferences.toJson()).put("system", scheduleSystem)
-                        .put("image_count", images.size());
+                        .put("image_count", images.size()).put("recurring_placeholders",recurringPlaceholders);
                 runId = audit.beginParseRun(taskId, attemptStartedAt, request);
             } catch (org.json.JSONException invalid) { throw new IOException("Could not record parse context", invalid); }
             DiagLog.add(this, "parse audit task=" + taskId + " run=" + runId + " attempt=" + attempt);
@@ -456,7 +460,7 @@ public final class ProcessingJobService extends JobService {
                     ChatCompletionClient client = new ChatCompletionClient(settings, control, scheduleSystem,
                             schedulePreferences.workStartMinutes, schedulePreferences.workEndMinutes);
                     return client.parseImages(taskId, task.rawText, images, linkText,
-                            attachmentMetadata, referenceTime, referenceZone, preview, true).withRunId(runId);
+                            attachmentMetadata, referenceTime, referenceZone, preview, true,recurringPlaceholders).withRunId(runId);
                 }
             } catch (IOException exception) {
                 try (TaskStore audit = new TaskStore(this)) {
