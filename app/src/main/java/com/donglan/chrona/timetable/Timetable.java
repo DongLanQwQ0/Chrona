@@ -14,6 +14,8 @@ import java.util.TreeSet;
 /** Imported course occurrences projected onto a Monday-to-Sunday overview. */
 public final class Timetable {
     public static final int MAX_BLOCKS = 512;
+    /** Normal short teaching breaks may be included in a continuous display block, never a lunch gap. */
+    private static final int MAX_TEACHING_BREAK_MINUTES = 20;
     public final List<Block> blocks;
     public final List<Occurrence> occurrences;
     public final ZoneId zone;
@@ -130,9 +132,55 @@ public final class Timetable {
         sorted.sort(Comparator.comparingInt((Block b) -> b.day)
                 .thenComparingInt(b -> b.startMinute).thenComparingInt(b -> b.endMinute)
                 .thenComparing(b -> b.title));
+        joinConsecutive(sorted);
         for (Block block : sorted) block.entries.sort(Comparator.comparing(o -> o.start));
         blocks = Collections.unmodifiableList(sorted);
         courseCount = courses.size();
+    }
+
+    private static void joinConsecutive(ArrayList<Block> blocks) {
+        for (int i = 0; i < blocks.size(); i++) {
+            Block left = blocks.get(i);
+            if (left.allDay) continue;
+            for (int j = i + 1; j < blocks.size();) {
+                Block right = blocks.get(j);
+                if (right.day != left.day || right.startMinute - left.endMinute > MAX_TEACHING_BREAK_MINUTES) break;
+                if (!right.allDay && right.startMinute >= left.endMinute && left.title.equals(right.title)
+                        && sameMeetings(left, right) && clearBreak(blocks, left, right)) {
+                    Block joined = new Block(left.entries.get(0), left.day, left.startMinute, right.endMinute);
+                    for (Occurrence occurrence : left.entries) joined.add(occurrence);
+                    for (Occurrence occurrence : right.entries) joined.add(occurrence);
+                    blocks.set(i, joined); blocks.remove(j); left = joined;
+                } else j++;
+            }
+        }
+    }
+
+    /** Matching actual dates and per-date rooms prevent joining alternate-week or moving classes. */
+    private static boolean sameMeetings(Block left, Block right) {
+        Map<LocalDate, TreeSet<String>> a = meetings(left), b = meetings(right);
+        return a != null && a.equals(b);
+    }
+
+    private static Map<LocalDate, TreeSet<String>> meetings(Block block) {
+        Map<LocalDate, TreeSet<String>> dates = new LinkedHashMap<>();
+        for (Occurrence entry : block.entries) {
+            if (!entry.start.toLocalDate().equals(entry.end.toLocalDate())
+                    || entry.start.getDayOfWeek().getValue() - 1 != block.day) return null;
+            dates.computeIfAbsent(entry.start.toLocalDate(), ignored -> new TreeSet<>()).add(entry.location);
+        }
+        return dates;
+    }
+
+    private static boolean clearBreak(List<Block> blocks, Block left, Block right) {
+        if(left.endMinute==right.startMinute)return true;
+        java.util.Set<LocalDate> dates=meetings(left).keySet();
+        for (Block other : blocks) if (other != left && other != right && !other.allDay && other.day == left.day
+                && other.startMinute < right.startMinute && other.endMinute > left.endMinute)
+            for(Occurrence entry:other.entries)for(LocalDate date:dates)
+                if(entry.start.isBefore(date.atStartOfDay().plusMinutes(right.startMinute))
+                        &&date.atStartOfDay().plusMinutes(left.endMinute).isBefore(entry.end))return false;
+        return true;
     }
 
     public static String time(int minute) {

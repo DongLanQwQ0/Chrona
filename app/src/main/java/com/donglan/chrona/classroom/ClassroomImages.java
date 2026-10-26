@@ -28,7 +28,9 @@ public final class ClassroomImages {
         List<JSONObject> candidates=new ArrayList<>();int[] previous=null;
         for(int i=0;i<ordered.size();i++) {
             control.check();
-            JSONObject image=ordered.get(i);File raw=new File(dir,"raw-"+i+".img");
+            JSONObject image=ordered.get(i);int cacheIndex=image.optInt("cache_index",i);
+            if(cacheIndex<0)throw new IOException("截图缓存编号无效");
+            File raw=new File(dir,"raw-"+cacheIndex+".img");
             progress.update(new ClassroomProgress(raw.isFile()?"读取已缓存截图":"下载课堂截图",i,ordered.size(),
                     "当前第 "+(i+1)+" 张 · "+ClassroomExport.time(image.getDouble("second"))+"\n已保留 "+candidates.size()+" 张"));
             int[] pixels;
@@ -44,7 +46,7 @@ public final class ClassroomImages {
             for(int p=0;p<pixels.length;p++){int color=pixels[p];pixels[p]=(((color>>16)&255)*30+((color>>8)&255)*59+(color&255)*11)/100;}
             // Near-identical progressive frames keep the later, more complete state.
             boolean similar=previous!=null&&difference(previous,pixels)<3.0;
-            JSONObject candidate=new JSONObject().put("raw",raw.getName()).put("second",image.getDouble("second")).put("index",i);
+            JSONObject candidate=new JSONObject().put("raw",raw.getName()).put("second",image.getDouble("second")).put("index",cacheIndex);
             if(similar)candidates.set(candidates.size()-1,candidate);else candidates.add(candidate);
             previous=pixels;
             progress.update(new ClassroomProgress("截图去重",i+1,ordered.size(),

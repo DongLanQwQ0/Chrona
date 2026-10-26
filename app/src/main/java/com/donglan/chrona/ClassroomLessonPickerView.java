@@ -34,7 +34,7 @@ final class ClassroomLessonPickerView extends FreeCalendarScrollView {
         for(Map.Entry<String,List<ClassroomLesson>> slot:slots.entrySet()){
             TableRow row=new TableRow(context);row.setGravity(Gravity.TOP);TextView time=label(context,slot.getKey(),timeWidth);time.setSingleLine(true);row.addView(time);
             for(int d=0;d<7;d++){LinearLayout cell=new LinearLayout(context);cell.setOrientation(LinearLayout.VERTICAL);cell.setPadding(dp(4),dp(4),dp(4),dp(4));
-                for(ClassroomLesson l:slot.getValue())if(l.date().equals(monday.plusDays(d))){TextView item=label(context,"",courseWidth-dp(8));item.setGravity(Gravity.START);item.setTextSize(14);UiStyle.choice(item,false,UiStyle.RADIUS_FIELD);item.setTag(l);cells.add(item);item.setOnClickListener(v->select.accept((ClassroomLesson)v.getTag()));UiStyle.addSpaced(cell,item,0,6);}
+                for(ClassroomLesson l:slot.getValue())if(l.date().equals(monday.plusDays(d))){TextView item=label(context,"",courseWidth-dp(8));item.setGravity(Gravity.START);item.setTextSize(14);UiStyle.choice(item,false,UiStyle.RADIUS_FIELD);item.setTag(l);cells.add(item);item.setOnClickListener(v->select.accept((ClassroomLesson)v.getTag()));item.setOnLongClickListener(v->{if(context instanceof android.app.Activity)ClassroomMonitorUi.choose((android.app.Activity)context,(ClassroomLesson)v.getTag());return true;});UiStyle.addSpaced(cell,item,0,6);}
                 row.addView(cell,new TableRow.LayoutParams(courseWidth,-2));}table.addView(row);
         }
         if(slots.isEmpty()){
@@ -59,9 +59,10 @@ final class ClassroomLessonPickerView extends FreeCalendarScrollView {
     }
     void refreshStates(long now) {
         for(TextView view:cells){ClassroomLesson lesson=(ClassroomLesson)view.getTag();
-            String value=lesson.course+"\n"+lesson.title+"\n"+lesson.room+" · "+lesson.state(now);
+            String value=lesson.course+"\n"+lesson.title+"\n"+lesson.room+" · "+(ClassroomMonitorUi.watching(getContext(),lesson)?"监视中":lesson.state(now));
             if(!value.contentEquals(view.getText()))view.setText(value);
-            boolean ready=lesson.selectable(now);view.setEnabled(ready);view.setAlpha(ready?1f:.55f);
+            view.setEnabled(true);view.setAlpha(1f);
+            view.setContentDescription(value+"，"+(lesson.selectable(now)?"打开课堂":"选择课堂监视"));
         }
     }
     boolean refreshLessons(List<ClassroomLesson> lessons) {

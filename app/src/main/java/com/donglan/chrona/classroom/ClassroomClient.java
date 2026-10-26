@@ -55,6 +55,50 @@ public final class ClassroomClient implements Closeable {
         } catch(JSONException|ArithmeticException e) { throw new IOException("课堂目录数据格式无法识别",e); }
     }
     public JSONObject materials(ClassroomLesson lesson) throws IOException {
+        return materials(lesson, false);
+    }
+    public List<ClassroomLesson> courseLessons(ClassroomLesson selected) throws IOException {
+        try {
+            List<ClassroomLesson> result = new ArrayList<>();
+            JSONArray rows = catalogue(selected.courseId);
+            for(int i=0;i<rows.length();i++) {
+                JSONObject row=rows.getJSONObject(i);
+                if(!selected.courseId.equals(identity(row,"course_id")))throw new IOException("课堂与课程不匹配");
+                result.add(new ClassroomLesson(selected.courseId,identity(row,"sub_id"),selected.course,
+                        row.optString("title"),row.optString("room"),identity(row,"status"),
+                        Math.multiplyExact(row.getLong("start_at"),1000)));
+            }
+            result.sort(Comparator.comparingLong(lesson -> lesson.startsAt));
+            return result;
+        } catch(JSONException|ArithmeticException failure) { throw new IOException("课堂目录数据格式无法识别",failure); }
+    }
+    /** Live observation permits incomplete materials, but retains catalogue ownership checks. */
+    public JSONObject monitorMaterials(ClassroomLesson lesson) throws IOException {
+        return materials(lesson, true, null);
+    }
+    public JSONObject monitorMaterials(ClassroomLesson lesson,java.util.function.Consumer<String> stage) throws IOException {
+        return materials(lesson,true,stage);
+    }
+    public okhttp3.WebSocket liveTranscript(ClassroomLesson lesson,okhttp3.WebSocketListener listener)throws IOException {
+        try {
+            // Catalogue authorization remains mandatory even if a live URL was cached previously.
+            boolean accessible=false,live=false;
+            for(ClassroomLesson current:courseLessons(lesson))if(current.id.equals(lesson.id)&&current.startsAt>0&&current.startsAt<=System.currentTimeMillis()){accessible=true;live="1".equals(current.status);}
+            if(!accessible)throw new IOException("课堂尚未开始或已不可访问");
+            if(!live)return null;
+            JSONObject response=school.classroomJson(url(url("https://yjapi.cmc.zju.edu.cn/courseapi/v3/portal-home-setting/get-sub-info","course_id",lesson.courseId),"sub_id",lesson.id));
+            requireCode(response,0,"实时字幕信息读取失败，请检查课程权限");
+            JSONObject data=response.getJSONObject("data");
+            if(data.has("course_id")&&!lesson.courseId.equals(identity(data,"course_id"))||data.has("sub_id")&&!lesson.id.equals(identity(data,"sub_id")))throw new IOException("实时字幕与课堂不匹配");
+            if(data.has("sub_status")&&!"1".equals(identity(data,"sub_status")))return null;
+            JSONObject content=data.optJSONObject("content");String source=content==null?"":content.optString("trans_socket_url");
+            return source.isEmpty()?null:school.classroomTranscriptSocket(source,listener);
+        }catch(JSONException failure){throw new IOException("实时字幕信息无法识别",failure);}
+    }
+    private JSONObject materials(ClassroomLesson lesson, boolean monitoring) throws IOException {
+        return materials(lesson,monitoring,null);
+    }
+    private JSONObject materials(ClassroomLesson lesson, boolean monitoring,java.util.function.Consumer<String> stage) throws IOException {
         try {
             // Recheck the selected recording: a cached ready state can become stale.
             JSONArray catalogue=catalogue(lesson.courseId);JSONObject current=null;
@@ -66,16 +110,31 @@ public final class ClassroomClient implements Closeable {
             if(!lesson.courseId.equals(identity(current,"course_id")))throw new IOException("课堂与课程不匹配");
             requireAvailable(current);
             long startsAt=Math.multiplyExact(current.getLong("start_at"),1000);
-            if(!"6".equals(identity(current,"status"))||startsAt<=0||startsAt>System.currentTimeMillis())throw new IOException("这节课堂尚未就绪");
+            if((!monitoring&&!"6".equals(identity(current,"status")))||startsAt<=0||startsAt>System.currentTimeMillis())throw new IOException("这节课堂尚未就绪");
+            if(stage!=null)stage.accept(identity(current,"status"));
             JSONObject transcript=school.classroomJson(url("https://yjapi.cmc.zju.edu.cn/courseapi/v3/web-socket/search-trans-result?format=json","sub_id",lesson.id));
-            requireAvailable(transcript);
+            boolean pending = false;
+            int subtitleError = 0, slideError = 0;
+            try { requireAvailable(transcript); }
+            catch (MaterialsPendingException unavailable) {
+                if (!monitoring) throw unavailable;
+                pending = true;
+                transcript = new JSONObject().put("code",0).put("total",0).put("list",new JSONArray());
+            }
+            if (monitoring && transcript.getInt("code") != 0) {
+                subtitleError = transcript.getInt("code"); pending = true;
+                transcript = new JSONObject().put("code",0).put("total",0).put("list",new JSONArray());
+            }
             requireCode(transcript,0,"课堂字幕读取失败，请检查课程权限后重试");
             JSONArray sources=transcript.getJSONArray("list");List<JSONObject> orderedSegments=new ArrayList<>();
             if(transcript.getInt("total")!=sources.length())throw new IOException("课堂字幕未完整返回，请重试");
             for(int i=0;i<sources.length();i++) {
                 JSONObject source=sources.getJSONObject(i);
                 if(!lesson.id.equals(identity(source,"sub_id")))throw new IOException("字幕与课堂不匹配");
-                if(generating(source.opt("all_content")))throw new MaterialsPendingException();
+                if(generating(source.opt("all_content"))) {
+                    if(!monitoring)throw new MaterialsPendingException();
+                    pending = true; continue;
+                }
                 JSONArray rows=source.getJSONArray("all_content");
                 for(int n=0;n<rows.length();n++) {
                     JSONObject row=rows.getJSONObject(n);double start=row.getDouble("BeginSec"),end=row.getDouble("EndSec");
@@ -84,11 +143,23 @@ public final class ClassroomClient implements Closeable {
                     if(!text.isEmpty())orderedSegments.add(new JSONObject().put("start",start).put("end",end).put("text",text));
                 }
             }
-            if(orderedSegments.isEmpty())throw new MaterialsPendingException();
+            if(orderedSegments.isEmpty()) {
+                if(!monitoring)throw new MaterialsPendingException();
+                pending = true;
+            }
             orderedSegments.sort(Comparator.comparingDouble(o->o.optDouble("start")));
             JSONArray segments=new JSONArray();for(JSONObject segment:orderedSegments)segments.put(segment);
-            JSONObject slides=school.classroomJson(url(url("https://classroom.zju.edu.cn/pptnote/v1/schedule/search-ppt","course_id",lesson.courseId),"sub_id",lesson.id));
-            requireAvailable(slides);
+            JSONObject slides=pptPages(lesson);
+            try { requireAvailable(slides); }
+            catch (MaterialsPendingException unavailable) {
+                if (!monitoring) throw unavailable;
+                pending = true;
+                slides = new JSONObject().put("code",0).put("total",0).put("list",new JSONArray());
+            }
+            if (monitoring && slides.getInt("code") != 0) {
+                slideError = slides.getInt("code"); pending = true;
+                slides = new JSONObject().put("code",0).put("total",0).put("list",new JSONArray());
+            }
             requireCode(slides,0,"课堂截图读取失败，请检查课程权限后重试");
             JSONArray rows=slides.getJSONArray("list"), images=new JSONArray();
             if(slides.getInt("total")!=rows.length())throw new IOException("课堂截图未完整返回，请重试");
@@ -110,10 +181,32 @@ public final class ClassroomClient implements Closeable {
             }
             orderedImages.sort(Comparator.comparingDouble(o->o.optDouble("second")));
             for(JSONObject image:orderedImages)if(urls.add(image.getString("url")))images.put(image);
-            return new JSONObject().put("segments",segments).put("images",images).put("raw_images",orderedImages.size());
+            JSONObject result = new JSONObject().put("segments",segments).put("images",images).put("raw_images",orderedImages.size());
+            if(monitoring) result.put("pending",pending).put("status",identity(current,"status"))
+                    .put("subtitle_error",subtitleError).put("slide_error",slideError);
+            return result;
         } catch(JSONException|ArithmeticException e) { throw new IOException("课堂素材数据格式无法识别",e); }
     }
     public byte[] image(String url) throws IOException { return school.classroomImage(url); }
+    private JSONObject pptPages(ClassroomLesson lesson) throws IOException,JSONException {
+        String base=url(url("https://classroom.zju.edu.cn/pptnote/v1/schedule/search-ppt","course_id",lesson.courseId),"sub_id",lesson.id);
+        JSONArray all=new JSONArray();Set<String> seen=new HashSet<>();
+        for(int page=1;page<=200;page++) {
+            JSONObject response=school.classroomJson(url(url(base,"page",Integer.toString(page)),"per_page","100"));
+            if(generating(response.opt("message"))||generating(response.opt("msg"))||response.getInt("code")!=0)return response;
+            int total=response.getInt("total");JSONArray rows=response.getJSONArray("list");
+            if(total<0||total>20_000)throw new IOException("课堂截图数量无法识别");
+            for(int i=0;i<rows.length();i++) {
+                JSONObject row=rows.getJSONObject(i);
+                String identity=row.has("id")?row.get("id").toString():row.get("course_id")+"/"+row.get("sub_id")+"/"+row.get("created_sec")+"/"+row.get("content");
+                if(!seen.add(identity))throw new IOException("课堂截图分页重复，请重试");
+                all.put(row);
+            }
+            if(all.length()==total)return new JSONObject().put("code",0).put("total",all.length()).put("list",all);
+            if(rows.length()==0||all.length()>total)throw new IOException("课堂截图分页发生变化，请重试");
+        }
+        throw new IOException("课堂截图分页过多，请重试");
+    }
     static HttpUrl imageUrl(String source)throws IOException{
         String input=source.trim();
         if(input.startsWith("//"))input="https:"+input;

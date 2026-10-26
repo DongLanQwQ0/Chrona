@@ -27,9 +27,10 @@ public final class ClassroomClientCheck {
     static final class Fixture implements AutoCloseable {
         final ClassroomClient client=new ClassroomClient("fixture","password");
         final ZjuClient school;
-        String state="6",transcriptCode="0",slideCode="0",transcriptId="20",slideId="20",imageHost="video.cmc.zju.edu.cn";
+        String state="6",transcriptCode="0",slideCode="0",transcriptId="20",slideId="20",imageHost="video.cmc.zju.edu.cn",infoCourse="10";
         int totalTranscript=1,totalSlides=3,materialCalls,requests,imageStatus=200,imageBytes=4;
-        boolean emptySubtitles,repeatPages,future,imageHtml,unknownImageLength;
+        boolean emptySubtitles,repeatPages,future,imageHtml,unknownImageLength,pagedSlides,repeatSlidePage;
+        int slideCalls;
         String pendingField="",imagePrefix="https://";boolean emptyImage,objectContent;
         Fixture()throws Exception {
             school=(ZjuClient)field(client,"school");field(school,"classroomLoggedIn",true);
@@ -44,6 +45,7 @@ public final class ClassroomClientCheck {
                     }
                     if(p.endsWith("/catalogue")) return response(r,200,"application/json",new JSONObject().put("success",true).put("result",new JSONObject().put("code",200).put("data",new JSONArray().put(new JSONObject()
                             .put("course_id",10).put("sub_id",20).put("title","fixture").put("status",state).put("start_at",future?System.currentTimeMillis()/1000+3600:1)))).toString());
+                    if(p.endsWith("get-sub-info"))return response(r,200,"application/json",new JSONObject().put("code",0).put("data",new JSONObject().put("course_id",infoCourse).put("sub_id",20).put("sub_status",state).put("content",new JSONObject())).toString());
                     if(p.endsWith("search-trans-result")) {
                         materialCalls++;
                         if(pendingField.equals("message")||pendingField.equals("msg"))return response(r,200,"application/json",new JSONObject().put(pendingField,"字幕正在生成中").toString());
@@ -52,7 +54,14 @@ public final class ClassroomClientCheck {
                         return response(r,200,"application/json",new JSONObject().put("code",Integer.parseInt(transcriptCode)).put("total",totalTranscript).put("list",new JSONArray().put(new JSONObject().put("sub_id",transcriptId).put("all_content",pendingField.equals("all_content")?"正在生成中":segments))).toString());
                     }
                     if(p.endsWith("search-ppt")) {
+                        slideCalls++;
                         JSONArray images=new JSONArray();
+                        if(pagedSlides){
+                            int page=repeatSlidePage?1:Integer.parseInt(r.url().queryParameter("page"));
+                            for(int i=(page-1)*3;i<Math.min(7,page*3);i++)images.put(new JSONObject().put("id",i).put("course_id",10).put("sub_id",slideId).put("created_sec",i)
+                                    .put("content",new JSONObject().put("pptimgurl","https://video.cmc.zju.edu.cn/p"+i+".jpg")));
+                            return response(r,200,"application/json",new JSONObject().put("code",0).put("total",7).put("list",images).toString());
+                        }
                         for(int i=0;i<3;i++){
                             JSONObject content=new JSONObject().put("pptimgurl",emptyImage&&i==1?" ":imagePrefix+imageHost+"/"+(i==1?"b":"a")+".jpg");
                             images.put(new JSONObject().put("course_id",10).put("sub_id",slideId).put("created_sec",new int[]{9,2,1}[i])
@@ -107,6 +116,15 @@ public final class ClassroomClientCheck {
         }
         try(Fixture f=new Fixture()) {
             check(f.client.lessons().size()==1,"numeric course identity");
+            check(f.client.courseLessons(f.selected()).size()==1,"per-course catalogue uses verified classroom identities");
+            check(f.client.liveTranscript(f.selected(),new WebSocketListener(){})==null,"replay never subscribes to the room's next live teacher");
+            f.state="1";check(f.client.liveTranscript(f.selected(),new WebSocketListener(){})==null,"live metadata without a stream remains pending");
+            f.infoCourse="11";fails(()->f.client.liveTranscript(f.selected(),new WebSocketListener(){}),"live metadata course ownership checked");f.infoCourse="10";
+            f.state="3";java.util.concurrent.atomic.AtomicReference<String> stage=new java.util.concurrent.atomic.AtomicReference<>();f.client.monitorMaterials(f.selected(),stage::set);check("3".equals(stage.get()),"ended live stage is delivered before material handling");f.state="6";
+            int beforeUnsafe=f.requests;
+            for(String bad:List.of("https://attacker.example/session","http://qlite2.cmc.zju.edu.cn:444/session","https://user@qlite2.cmc.zju.edu.cn/session","https://qlite2.cmc.zju.edu.cn/session?token=secret"))
+                fails(()->f.school.classroomTranscriptSocket(bad,new WebSocketListener(){}),"untrusted live endpoint rejected");
+            check(f.requests==beforeUnsafe,"unsafe stream URLs never send credentials or network requests");
             JSONObject materials=f.client.materials(f.selected());
             check(materials.getJSONArray("segments").getJSONObject(0).getDouble("start")==1,"chronological subtitle ordering");
             check(materials.getJSONArray("images").length()==2,"duplicate image URLs collapse");
@@ -126,9 +144,23 @@ public final class ClassroomClientCheck {
             }
             f.imageHost="video.cmc.zju.edu.cn";
             f.state="2";int calls=f.materialCalls;fails(()->f.client.materials(f.selected()),"stale ready rejected");check(calls==f.materialCalls,"no material request before fresh ready check");
+            JSONObject observing=f.client.monitorMaterials(f.selected());
+            check(observing.getString("status").equals("2")&&observing.getJSONArray("segments").length()==2,"monitor reads started non-replay lesson");
+            f.emptySubtitles=true;
+            observing=f.client.monitorMaterials(f.selected());
+            check(observing.getBoolean("pending")&&observing.getJSONArray("segments").length()==0&&observing.getJSONArray("images").length()==2,"PPT remains available while live subtitles are empty");
+            f.emptySubtitles=false;
+            for(String pending:List.of("message","msg","all_content")) {
+                f.pendingField=pending;observing=f.client.monitorMaterials(f.selected());
+                check(observing.getBoolean("pending")&&observing.getJSONArray("images").length()==2,"PPT survives pending transcript "+pending);
+            }
+            f.pendingField="";
             f.state="6";f.future=true;fails(()->f.client.materials(f.selected()),"future recording rejected");f.future=false;
+            f.future=true;calls=f.materialCalls;fails(()->f.client.monitorMaterials(f.selected()),"monitor never fetches before actual start");check(calls==f.materialCalls,"future monitor has no materials side effects");f.future=false;
             f.transcriptCode="403";fails(()->f.client.materials(f.selected()),"subtitle denial rejected");f.transcriptCode="0";
+            f.transcriptCode="403";observing=f.client.monitorMaterials(f.selected());check(observing.getInt("subtitle_error")==403&&observing.getJSONArray("segments").length()==0&&observing.getJSONArray("images").length()==2,"monitor reports subtitle denial while independently obtaining PPT");f.transcriptCode="0";
             f.transcriptId="21";fails(()->f.client.materials(f.selected()),"subtitle identity checked");f.transcriptId="20";
+            f.transcriptId="21";fails(()->f.client.monitorMaterials(f.selected()),"monitor retains subtitle identity check");f.transcriptId="20";
             f.totalTranscript=2;fails(()->f.client.materials(f.selected()),"partial subtitle pagination rejected");f.totalTranscript=1;
             f.emptySubtitles=true;
             try { f.client.materials(f.selected());throw new AssertionError("empty subtitle pending"); }
@@ -142,8 +174,13 @@ public final class ClassroomClientCheck {
             }
             f.pendingField="";
             f.slideCode="403";fails(()->f.client.materials(f.selected()),"slide denial rejected");f.slideCode="0";
+            f.slideCode="403";observing=f.client.monitorMaterials(f.selected());check(observing.getInt("slide_error")==403&&observing.getJSONArray("images").length()==0&&observing.getJSONArray("segments").length()==2,"monitor reports PPT denial while independently obtaining subtitles");f.slideCode="0";
             f.slideId="21";fails(()->f.client.materials(f.selected()),"slide identity checked");f.slideId="20";
             f.totalSlides=4;fails(()->f.client.materials(f.selected()),"partial slides rejected");f.totalSlides=3;
+            f.pagedSlides=true;int pageCalls=f.slideCalls;
+            check(f.client.materials(f.selected()).getJSONArray("images").length()==7&&f.slideCalls-pageCalls==3,"PPT pagination follows actual returned page size through final partial page");
+            f.repeatSlidePage=true;fails(()->f.client.materials(f.selected()),"ignored page parameter never loops or claims a full download");
+            f.pagedSlides=false;f.repeatSlidePage=false;
             f.imageHost="evil.example";fails(()->f.client.materials(f.selected()),"untrusted image host rejected");f.imageHost="video.cmc.zju.edu.cn";
             f.repeatPages=true;fails(()->f.client.lessons(),"repeated course page rejected");
             check(f.client.image("https://video.cmc.zju.edu.cn/a.jpg").length==4,"media download");

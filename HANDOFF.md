@@ -2,6 +2,22 @@
 
 ## 当前交付与唯一下一步
 
+当前交付（2026-10-26）：①调查课表截图中线性代数、数字音视频上下拆块，先核对实际日期、起止和周次，保留真实冲突及学校原始数据；②课堂页新增监视，用户已明确同时保留「单次课堂／该课程多次」选择，上课后复用现有截图下载与校验、自动获取／追加字幕，后台持续执行并持久化恢复，提供停止入口，不自动付费调用AI。
+
+验收：未来／进行中课堂可选择单次与多次监视；单次不扩展到其它课堂，多次按真实courseId包含后续实际课堂。用户追加明确：字幕必须整堂课持续连接，提供可实时阅读全部已收字幕的阅读页，默认跟随最新、上翻暂停跟随、可回到最新，离开页面继续连接／落盘；不能以回放轮询替代。PPT复用现有下载／校验／去重，分页及增量不漏图、不重下；空结果／错误不清旧资料，账号更换／停用立即停止并隔离。退出页面、熄屏、进程中断和重启需验证恢复；系统强停和Android前台服务限制如实记录。用户要求两项都完成、验证后直接更新手机。专门只读UI审核与手机更新已完成，证据范围及发布状态见下。
+
+已实现并通过本地验收：连堂按相同实际日期及逐日期地点、0–20分钟课间合并；真实重叠、午休、异地和日期不同保留分块，学校源数据不变。课堂保留单次／后续多次监视，复用原PPT下载校验，独立持续WSS接收并落盘全部实时字幕，阅读页可上翻和回到最新，离页继续执行。隔离Android36原生41项、客户端95项／网络错误44项、图片及实时帧24项、整理管线166项通过；正常／窄屏大字深浅四组渲染通过，专门UI审核已复审签收。后台受控连接熄屏34秒持续追加且PPT轮询不重建socket，断线重连及停止已验证；学校真实WSS短时证据另列，不混同为主包真机整堂验收。
+
+固定候选：0.15.43／205，正式assembleRelease和双lint通过；build/candidates/0.15.43/Chrona-0.15.43.apk为3156422字节，包名及原签名已核对。生产源码未晚于正式APK；后续仅检查工具与工作记录变化。13:02已正常保留数据覆盖手机，实际版本205／0.15.43、首页已有日程与辅助服务正常，无安装后新crash。决定验收的日志和范围见docs/validation-history.md的0.15.43段。
+
+接口实证：build/classroom-readonly-probe.txt核对到两门课实际为同日同地13:25–14:10、14:15–15:50，原始缓存未改。上周一10月19日大英status=6，回放字幕502条；PPT total61默认rows10，官方living-room.js明确page／per_page，生产已实现分页。当天10月26日大英status=1，回放接口10002「未查询到语音数据」；/courseapi/v3/portal-home-setting/get-sub-info返回content.trans_socket_url。官方公开HTML内置Glue1.9.1，WSS地址为HTTPS升级后的qlite2.cmc.zju.edu.cn/<课流标识>/glue/ws；in初始化、pi/po心跳、cd长度&频道m的JSON；sourcetext为当前句累积文本，end_time=1定句，text_begin_time/text_end_time为epoch毫秒。真机已安全WSS初始化，20秒收到46／37帧；不记录实际课流URL或Cookie。公开静态代码位于build/classroom-public-assets（adb pull产生嵌套同名目录）；living-room.js、living-common.js、public-entry.html可检索原接口，非此前被撤销的GitHub参考。实时探针日志build/classroom-live-{socket,clock}-probe.txt。手机只读辅助包及本轮外部公开文件已清理。
+
+唯一下一步：提交推送并发布同一固定候选，核对公开APK及latest元数据。当前10.196.4.142:43615已完成安装；本轮15个公开静态文件和探针均清理。用户正使用手机，不再操作界面；实体主包整堂流／后台存活及更新页手动检查未实测，不能混同已有受控证据。模拟器emulator-5554／AVD Chrona_Classroom_36仍可用。用户明确允许之前账号，仅通过手机ZjuSettingsStore正常认证，不读account.txt／.env／Cookie；不付费调用AI。FastCtx未提供，使用PowerShell7。原生CLI启用PSNativeCommandUseErrorActionPreference。
+
+前项筛选调查已结束：433属于作业，按截止11月6日分组、不是执行10月27日；用户已理解，未修改分类逻辑。
+
+## 前次交付
+
 已交付：README、用户指南、原子岛文档及Release说明明确逐机首次需ADB配置、安装APK不会自动完成、日常无需连接电脑。Windows一键配置包已发布，源码提交9b4078dc818ba0f8b1f6da052bb437fef82080af，独立标签／Release为`vivo-setup-0.15.42`；主应用功能、版本及原APK不变，应用latest保持`v0.15.42`。
 
 脚本25场景、双击入口2场景、受限辅助源码16场景及旧配置4项检查通过，最终release AndroidTest构建成功；手机普通身份Status／Enable读回true且changed=false，没有关闭既有场景。ZIP共11个必要文件、4520720字节，原签名辅助APK仅含专用runner与生成支持类，内置ADB可运行，脚本WhatIf正常；公开下载HTTP200，SOURCE.txt关联同一工具提交。证据及范围见docs/validation-history.md。当前无待实施事项；使用者安装PowerShell7、连接授权手机后双击Enable-VivoAtomic.cmd。未在未配置手机上新增注册，不承诺其它固件兼容。

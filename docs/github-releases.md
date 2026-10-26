@@ -16,7 +16,7 @@
 
 首次配置要求与用户步骤维护在[配置包说明](../tools/vivo/README.md)。使用`checks/vivo-setup.init.gradle`构建受限辅助APK，再用`tools/vivo/Build-VivoSetupBundle.ps1`生成包含ADB及其NOTICE的一键配置ZIP。固定候选后核对辅助包仅包含配置runner、目标为正式包、签名一致，验证脚本失败路径及设备读回。
 
-工具使用独立标签`vivo-setup-0.15.42`和Release，发布时显式`--latest=false`；应用latest继续指向`v0.15.42`。工具包适配版本不意味着重建或替换原正式应用APK；附件的`SOURCE.txt`记录工具源码提交。发布后核对ZIP可下载、所需文件齐全、README及用户指南链接有效。
+工具使用独立标签`vivo-setup-0.15.42`和Release，发布时显式`--latest=false`；应用latest仅随正式应用版本更新，不指向工具Release。工具包适配版本不意味着重建或替换原正式应用APK；附件的`SOURCE.txt`记录工具源码提交。发布后核对ZIP可下载、所需文件齐全、README及用户指南链接有效。
 
 ## 更新说明面向使用者
 

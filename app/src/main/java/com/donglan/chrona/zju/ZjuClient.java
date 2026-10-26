@@ -44,6 +44,8 @@ public final class ZjuClient implements Closeable {
     private volatile boolean cancelled, closed;
     private boolean coursesLoggedIn, timetableLoggedIn;
     private boolean classroomLoggedIn, casAuthenticated;
+    private final java.util.Set<okhttp3.WebSocket> classroomSockets=new java.util.concurrent.CopyOnWriteArraySet<>();
+    private java.util.function.BiFunction<Request,okhttp3.WebSocketListener,okhttp3.WebSocket> classroomSocketFactory;
 
     /** Read-only classroom session; shares the verified CAS transport, never persists cookies. */
     public synchronized JSONObject classroomJson(String url) throws IOException {
@@ -83,6 +85,18 @@ public final class ZjuClient implements Closeable {
             catch (IOException e) { checkOpen(); throw NetworkFailure.transport("读取课堂截图", target.host(), e); }
         }
     }
+    /** The live endpoint is supplied by the authenticated official classroom metadata. HTTPS only. */
+    public synchronized okhttp3.WebSocket classroomTranscriptSocket(String source,okhttp3.WebSocketListener listener)throws IOException {
+        HttpUrl raw=HttpUrl.parse(source);
+        if(raw==null||!raw.host().matches("qlite[0-9]*\\.cmc\\.zju\\.edu\\.cn")||!raw.username().isEmpty()||!raw.password().isEmpty()
+                ||!(raw.isHttps()&&raw.port()==443||raw.scheme().equals("http")&&raw.port()==80)||raw.query()!=null||raw.fragment()!=null)
+            throw new SchoolException("实时字幕地址不受支持");
+        HttpUrl target=safeUrl(raw.newBuilder().scheme("https").port(443)
+                .encodedPath(raw.encodedPath().replaceAll("/+$","")+"/glue/ws").build().toString());
+        ensureClassroom();
+        okhttp3.WebSocket socket=classroomSocketFactory.apply(new Request.Builder().url(target).header("Origin","https://classroom.zju.edu.cn").build(),listener);
+        classroomSockets.add(socket);return socket;
+    }
 
     private void ensureClassroom() throws IOException {
         checkOpen();
@@ -103,6 +117,7 @@ public final class ZjuClient implements Closeable {
         http = new OkHttpClient.Builder().cookieJar(cookies).followRedirects(false)
                 .followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS).callTimeout(45, TimeUnit.SECONDS).build();
+        classroomSocketFactory=(request,listener)->this.http.newWebSocket(request,listener);
     }
 
     public synchronized ZjuSnapshot fetch(boolean homework, boolean timetable, Set<String> trackedCourses) throws IOException {
@@ -149,7 +164,7 @@ public final class ZjuClient implements Closeable {
         return new ZjuSnapshot(work, courses, lessons, warnings, completeTerms);
     }
 
-    public void cancel() { cancelled = true; http.dispatcher().cancelAll(); }
+    public void cancel() { cancelled = true;for(okhttp3.WebSocket socket:classroomSockets)socket.cancel();classroomSockets.clear();http.dispatcher().cancelAll(); }
 
     @Override public void close() {
         closed = true; cancel(); cookies.clear(); user = ""; password = "";

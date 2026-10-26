@@ -44,14 +44,24 @@ public final class ClassroomSummary {
     private ClassroomSummary() { }
     public static JSONObject prepare(File dir,ClassroomLesson lesson,ClassroomClient client,RequestControl control,ClassroomImages.Progress progress) throws Exception {
         JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));
-        if(materials==null||materials.optBoolean("portable")){progress.update(ClassroomProgress.waiting("获取课堂字幕与截图清单","正在连接课堂服务"));control.check();materials=client.materials(lesson);ClassroomStore.write(new File(dir,"materials.json"),materials);}
+        JSONObject observation=ClassroomStore.read(new File(dir,"monitor-materials.json"));
+        boolean observed=observation!=null&&(materials==null||observation.optLong("updated")>materials.optLong("updated"));
+        boolean refreshed=observed||materials!=null&&materials.optBoolean("monitoring");
+        if(materials==null||materials.optBoolean("portable")||refreshed){
+            progress.update(ClassroomProgress.waiting("获取课堂字幕与截图清单","正在连接课堂服务"));control.check();JSONObject fresh=client.materials(lesson);
+            JSONObject cache=observed?observation:materials!=null&&materials.optBoolean("monitoring")?materials:null;
+            if(cache!=null){materials=ClassroomMaterialUpdates.merge(cache,fresh);materials.put("segments",fresh.getJSONArray("segments")).put("monitoring",true).put("updated",System.currentTimeMillis());}
+            else materials=fresh;
+            ClassroomStore.write(new File(dir,"materials.json"),materials);
+        }
         progress.update(ClassroomProgress.waiting("字幕已就绪",materials.getJSONArray("segments").length()+" 条字幕 · "+materials.getInt("raw_images")+" 张原始截图"));
-        JSONObject candidates=ClassroomStore.read(new File(dir,"candidates.json"));
+        JSONObject candidates=refreshed?null:ClassroomStore.read(new File(dir,"candidates.json"));
         if(candidates==null){
             candidates=new JSONObject().put("images",ClassroomImages.prepare(dir,materials,client,control,progress))
                     .put("lesson",lesson.json()).put("updated",System.currentTimeMillis());
             ClassroomStore.write(new File(dir,"candidates.json"),candidates);
         }
+        if(materials.optBoolean("monitoring")){materials.put("monitoring",false);ClassroomStore.write(new File(dir,"materials.json"),materials);}
         return new JSONObject().put("segments",materials.getJSONArray("segments").length()).put("raw",materials.getInt("raw_images"))
                 .put("candidates",candidates.getJSONArray("images").length());
     }
@@ -69,6 +79,7 @@ public final class ClassroomSummary {
         JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));
         JSONObject candidates=ClassroomStore.read(new File(dir,"candidates.json"));
         if(materials==null||candidates==null)throw new IOException("请先获取课堂素材");
+        if(materials.optBoolean("monitoring"))throw new IOException("课堂素材尚未完成，请先获取完整素材");
         JSONObject full=lessonInput(materials.getJSONArray("segments"),new JSONArray());
         if(full.getJSONArray("segments").length()==0)throw new IOException("课堂字幕为空");
         String config=configKey(ai,imageLimit,classroomPrompt);

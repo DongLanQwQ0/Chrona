@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -36,7 +37,19 @@
         android:enableOnBackInvokedCallback="true">
         <activity android:name=".LanPairingActivity" android:exported="false" android:launchMode="singleTop" />
         <activity android:name=".ClassroomLessonActivity" android:exported="false" />
+        <activity android:name=".ClassroomTranscriptActivity" android:exported="false" />
         <service android:name=".ClassroomWorkService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".ClassroomMonitorService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".ClassroomMonitorJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver android:name=".ClassroomMonitorReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <activity android:name=".CalendarOverviewActivity" android:exported="false" />
         <activity android:name=".LauncherShortcutActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" />
         <receiver android:name=".WeekCalendarWidgetProvider" android:exported="false" android:label="本周日历">

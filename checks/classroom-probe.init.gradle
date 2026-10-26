@@ -1,0 +1,12 @@
+// Read-only, focused probe; never include the general-purpose device fixtures.
+allprojects {
+    plugins.withId('com.android.application') {
+        extensions.getByName('androidComponents').finalizeDsl { android ->
+            android.testBuildType = 'release'
+            android.defaultConfig.testApplicationId = 'com.donglan.chrona.classroom.probe'
+            android.defaultConfig.testInstrumentationRunner = 'com.donglan.chrona.ClassroomProbeInstrumentation'
+            android.sourceSets.androidTest.java.setSrcDirs([file('src/classroomProbe/java')])
+            android.sourceSets.androidTest.manifest.srcFile file('src/classroomProbe/AndroidManifest.xml')
+        }
+    }
+}

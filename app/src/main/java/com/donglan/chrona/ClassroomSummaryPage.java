@@ -337,7 +337,7 @@ final class ClassroomSummaryPage extends SchedulePage {
               if(s.mode==1){ClassroomLesson lesson = recent.get(i);
                 Button item = button(listBody, lesson.date() + " " + clock(lesson) + " · " + lesson.state(System.currentTimeMillis())
                         + "\n" + lesson.course + " · " + lesson.title, () -> open(lesson));
-                item.setEnabled(lesson.selectable(System.currentTimeMillis()));
+                item.setOnLongClickListener(view->{ClassroomMonitorUi.choose(activity,lesson);return true;});
               }else try{JSONObject record=s.history.get(i);ClassroomLesson lesson=ClassroomLesson.fromJson(record.getJSONObject("lesson"));
                 button(listBody,lesson.course+"\n"+lesson.date()+" · "+(record.optBoolean("complete")?"已完成":record.optBoolean("downloaded")?"已下载":"未完成"),()->openSaved(lesson));
               }catch(Exception ignored){}
@@ -352,8 +352,9 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private void changePage(int delta){s.page=Math.max(0,s.page+delta);update();scroll.post(()->scroll.scrollTo(0,0));}
     private void open(ClassroomLesson lesson) {
-        if (s == null || !s.allowed() || !lesson.selectable(System.currentTimeMillis())) return;
-        openSaved(lesson);
+        if (s == null || !s.allowed()) return;
+        if(lesson.selectable(System.currentTimeMillis()))openSaved(lesson);
+        else ClassroomMonitorUi.choose(activity,lesson);
     }
     private void openSaved(ClassroomLesson lesson) {
         if(s == null || !s.allowed())return;

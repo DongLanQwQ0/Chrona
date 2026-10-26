@@ -23,7 +23,7 @@ for name, body in fixtures.items():
     path.write_text(body, encoding='utf-8')
     sources.append(path)
 src = root / 'app/src/main/java/com/donglan/chrona'
-sources += [src / name for name in ['classroom/ClassroomImages.java', 'classroom/ClassroomProgress.java', 'classroom/ClassroomStore.java', 'classroom/ClassroomLesson.java', 'net/RequestControl.java']]
+sources += [src / name for name in ['classroom/ClassroomImages.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomTranscript.java', 'classroom/ClassroomProgress.java', 'classroom/ClassroomStore.java', 'classroom/ClassroomLesson.java', 'net/RequestControl.java']]
 sources.append(root / 'checks/ClassroomImagesCheck.java')
 sources.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java')
 sources.append(src / 'net/NetworkFailure.java')

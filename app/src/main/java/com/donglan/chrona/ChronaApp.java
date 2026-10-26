@@ -38,6 +38,7 @@ public final class ChronaApp extends Application {
         SyncJobService.schedule(this);
         ClassroomCleanupService.schedule(this);
         ClassroomCleanupService.foreground(this);
+        ClassroomMonitor.initialize(this);
         ZjuSyncJobService.schedule(this);
         AgendaReminderJobService.schedule(this);
         AgendaReminder.requestRefresh(this);

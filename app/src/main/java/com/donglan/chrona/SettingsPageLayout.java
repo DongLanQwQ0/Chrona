@@ -40,6 +40,10 @@ public final class SettingsPageLayout {
     }
     public static void show(Activity activity, LinearLayout root, boolean animatePresentation) {
         ScrollView viewport = viewport(activity, root, animatePresentation);
+        showFixed(activity, viewport);
+    }
+    /** Secondary readers with their own scrolling content retain the common backdrop and safe area. */
+    public static void showFixed(Activity activity, android.view.View viewport) {
         FrameLayout stage = new FrameLayout(activity);
         stage.addView(new GlassBackdropView(activity), new FrameLayout.LayoutParams(-1, -1));
         // Give ScrollView the actual visible height, so focused fields scroll above the IME.

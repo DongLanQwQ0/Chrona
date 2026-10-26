@@ -163,7 +163,11 @@ public final class ClassroomLessonActivity extends Activity {
     private static String clock(ClassroomLesson l){return Instant.ofEpochMilli(l.startsAt).atZone(ClassroomLesson.ZONE).toLocalTime().toString();}
 
     private void showDetail(){content.removeAllViews();rendered=0;
-        text(content,s.selected.course,21,true);text(content,s.selected.date()+" "+clock(s.selected)+" · "+s.selected.title,14,false);
+        LinearLayout heading=new LinearLayout(this);heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView courseTitle=new TextView(this);courseTitle.setText(s.selected.course);courseTitle.setTextSize(21);UiStyle.title(courseTitle);
+        heading.addView(courseTitle,new LinearLayout.LayoutParams(0,-2,1));
+        heading.addView(UiStyle.navigationIcon(this,R.drawable.ic_eye,"课堂监视",()->ClassroomMonitorUi.choose(this,s.selected)),new LinearLayout.LayoutParams(dp(48),dp(48)));
+        content.addView(heading);text(content,s.selected.date()+" "+clock(s.selected)+" · "+s.selected.title,14,false);
         completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"获取素材",this::prepare);generate=action(actions,"生成总结",this::confirmGeneration);content.addView(actions);
         cancel=button(content,"停止",()->s.cancel(),false);
         overview=text(content,"",17,false);notes=new LinearLayout(this);notes.setOrientation(LinearLayout.VERTICAL);content.addView(notes);

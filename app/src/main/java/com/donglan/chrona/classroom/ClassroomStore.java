@@ -33,6 +33,13 @@ public final class ClassroomStore {
         if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建课堂缓存");
         return dir;
     }
+    /** Monitoring writes stay in this account, never in a restored/shared summary directory. */
+    public File localLesson(ClassroomLesson lesson) throws IOException {
+        if(!lesson.courseId.matches("[0-9]+")||!lesson.id.matches("[0-9]+"))throw new IOException("课堂编号无效");
+        File dir=new File(root,lesson.courseId+"-"+lesson.id);
+        if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建课堂缓存");
+        return dir;
+    }
     public List<ClassroomLesson> catalog() throws IOException {
         JSONObject value=read(new File(root,"catalog.json"));List<ClassroomLesson> result=new ArrayList<>();
         if(value==null)return result;
@@ -54,7 +61,7 @@ public final class ClassroomStore {
                 if(value!=null){byLesson.put(dir.getName(),value);continue;}
                 if(source.equals(shared)||byLesson.containsKey(dir.getName()))continue;
                 JSONObject materials=read(new File(dir,"materials.json")), candidates=read(new File(dir,"candidates.json"));
-                if(materials==null||materials.optJSONArray("segments")==null||materials.optJSONArray("segments").length()==0
+                if(materials==null||materials.optBoolean("monitoring")||materials.optJSONArray("segments")==null||materials.optJSONArray("segments").length()==0
                         ||candidates==null||candidates.optJSONArray("images")==null)continue;
                 JSONObject lesson=candidates.optJSONObject("lesson");
                 if(lesson==null&&known.containsKey(dir.getName()))try{lesson=known.get(dir.getName()).json();}

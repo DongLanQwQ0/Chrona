@@ -20,6 +20,8 @@
 | 选择栏／底部导航 | `DockNavigationLayout`、`DockSpring`、`DashboardDockChrome` |
 | 页面背景／短时结果消息 | `GlassBackdropView`、`Feedback` |
 
+二级页面使用`SettingsPageLayout.content/header/show`。自带独立滚动视口、需要固定标题的阅读页改用`showFixed`承载内容，背景与安全区仍由同一公共实现负责；浮动操作通过`InteractionLayers.pin`保持高于可选择正文的焦点分支。
+
 页面调用样式和组合组件，不自行创建另一份亚克力 Drawable、弹窗层级管理或快照切换。渲染状态由 `UiSurfaces` 管理；浮层登记窗口模糊根，渲染层无需依赖浮层生命周期实现。
 `CalendarVisibilityToggle` 只管理开关图标及连续颜色变化；按压通过 `UiStyle.pressable` 使用 `UiSurfaces` 的公共填充遮罩，随 `HeaderActionGroup` 胶囊边界裁切。调用方不叠加专用圆形涟漪或选中底色。
 
