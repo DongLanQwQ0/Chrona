@@ -12,7 +12,7 @@
 
 接口实证：build/classroom-readonly-probe.txt核对到两门课实际为同日同地13:25–14:10、14:15–15:50，原始缓存未改。上周一10月19日大英status=6，回放字幕502条；PPT total61默认rows10，官方living-room.js明确page／per_page，生产已实现分页。当天10月26日大英status=1，回放接口10002「未查询到语音数据」；/courseapi/v3/portal-home-setting/get-sub-info返回content.trans_socket_url。官方公开HTML内置Glue1.9.1，WSS地址为HTTPS升级后的qlite2.cmc.zju.edu.cn/<课流标识>/glue/ws；in初始化、pi/po心跳、cd长度&频道m的JSON；sourcetext为当前句累积文本，end_time=1定句，text_begin_time/text_end_time为epoch毫秒。真机已安全WSS初始化，20秒收到46／37帧；不记录实际课流URL或Cookie。公开静态代码位于build/classroom-public-assets（adb pull产生嵌套同名目录）；living-room.js、living-common.js、public-entry.html可检索原接口，非此前被撤销的GitHub参考。实时探针日志build/classroom-live-{socket,clock}-probe.txt。手机只读辅助包及本轮外部公开文件已清理。
 
-唯一下一步：提交推送并发布同一固定候选，核对公开APK及latest元数据。当前10.196.4.142:43615已完成安装；本轮15个公开静态文件和探针均清理。用户正使用手机，不再操作界面；实体主包整堂流／后台存活及更新页手动检查未实测，不能混同已有受控证据。模拟器emulator-5554／AVD Chrona_Classroom_36仍可用。用户明确允许之前账号，仅通过手机ZjuSettingsStore正常认证，不读account.txt／.env／Cookie；不付费调用AI。FastCtx未提供，使用PowerShell7。原生CLI启用PSNativeCommandUseErrorActionPreference。
+交付状态：源码c1e6d37b0fa7950a12df24bb9f1ba9aa15a31ef3及标签v0.15.43已推送，正式Release已成为latest，公开APK为3156422字节、HTTP200，和已装手机候选一致。发布：https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.43 。当前无待实现代码；下一次真实课堂使用时仍需核对实体主包整堂流／后台表现，更新页手动检查也未实测，不混同已有受控证据。当前10.196.4.142:43615已完成安装，本轮15个公开静态文件和探针均清理；用户正使用手机，不再操作界面。模拟器emulator-5554／AVD Chrona_Classroom_36仍可用。用户明确允许之前账号，仅通过手机ZjuSettingsStore正常认证，不读account.txt／.env／Cookie；不付费调用AI。FastCtx未提供，使用PowerShell7。原生CLI启用PSNativeCommandUseErrorActionPreference。
 
 前项筛选调查已结束：433属于作业，按截止11月6日分组、不是执行10月27日；用户已理解，未修改分类逻辑。
 
