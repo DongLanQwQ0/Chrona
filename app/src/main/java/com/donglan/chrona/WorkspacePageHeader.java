@@ -17,6 +17,7 @@ final class WorkspacePageHeader extends LinearLayout {
     private ValueAnimator actionMotion;
     private float actionProgress = 1f;
     private boolean actionVisible = true;
+    private int expandedActionWidth;
 
     WorkspacePageHeader(Activity activity, View title, View action) {
         this(activity, title, action, 48);
@@ -27,6 +28,7 @@ final class WorkspacePageHeader extends LinearLayout {
         this.title = title;
         this.action = action;
         this.actionWidthDp = actionWidthDp;
+        expandedActionWidth = actionWidthDp>=0?dp(actionWidthDp):0;
         setGravity(Gravity.CENTER_VERTICAL);
         setClipChildren(false); setClipToPadding(false);
         setChildrenDrawingOrderEnabled(true);
@@ -36,7 +38,7 @@ final class WorkspacePageHeader extends LinearLayout {
         LinearLayout.LayoutParams center = new LinearLayout.LayoutParams(0, -2, 1);
         center.setMargins(dp(8), 0, action == null ? 0 : dp(8), 0);
         addView(title, center);
-        if (action != null) addView(action, new LinearLayout.LayoutParams(dp(actionWidthDp), dp(48)));
+        if (action != null) addView(action, new LinearLayout.LayoutParams(actionWidthDp<0?actionWidthDp:dp(actionWidthDp), dp(48)));
     }
 
     void setActionVisible(boolean visible) {
@@ -47,6 +49,7 @@ final class WorkspacePageHeader extends LinearLayout {
         if (actionVisible == visible && isLaidOut()) return;
         actionVisible = visible;
         if (actionMotion != null) { actionMotion.cancel(); actionMotion = null; }
+        if(actionWidthDp==LayoutParams.WRAP_CONTENT){action.measure(MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED),MeasureSpec.makeMeasureSpec(dp(48),MeasureSpec.EXACTLY));expandedActionWidth=action.getMeasuredWidth();}
         float target = visible ? 1f : 0f;
         if (!isAttachedToWindow() || !isLaidOut() || !UiMotion.isEnabled()) {
             applyActionProgress(target);
@@ -66,7 +69,7 @@ final class WorkspacePageHeader extends LinearLayout {
         action.setScaleX(.85f + .15f * progress);
         action.setScaleY(.85f + .15f * progress);
         LinearLayout.LayoutParams slot = (LinearLayout.LayoutParams) action.getLayoutParams();
-        slot.width = Math.round(dp(actionWidthDp) * progress);
+        slot.width = actionWidthDp==LayoutParams.WRAP_CONTENT&&progress==1f?LayoutParams.WRAP_CONTENT:Math.round(expandedActionWidth * progress);
         action.setLayoutParams(slot);
         LinearLayout.LayoutParams center = (LinearLayout.LayoutParams) title.getLayoutParams();
         center.rightMargin = Math.round(dp(8) * progress);

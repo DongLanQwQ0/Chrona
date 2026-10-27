@@ -62,7 +62,16 @@ public final class ClassroomSummaryCheck {
             else if(mode.equals("downgrade")&&body.has("stream_options")){status=400;type="application/json";payload="{\"error\":{\"message\":\"unsupported parameter stream_options\"}}";}
             else {
                 JSONObject generated=chunk==null?new JSONObject().put("overview","合并重点"):part(chunk);
-                if(chunk!=null&&!second&&!mode.equals("no-request"))generated.put("image_requests",new JSONArray().put(new JSONObject().put("start",mode.equals("no-match")?9999:0).put("end",10000)));
+                if(chunk!=null&&!second){
+                    JSONObject catalogue=chunk.optJSONObject("image_catalogue");String decision=catalogue==null||catalogue.optInt("limit")==0?"disabled":catalogue.optInt("count")==0?"unavailable":mode.equals("no-request")?"not_needed":"request";
+                    generated.put("image_assessment",new JSONObject().put("decision",decision).put("reason",decision.equals("request")?"字幕中矩阵推导依赖板书，需核对符号":"本次材料与上传策略足以确定是否需要图片"));
+                    JSONArray windows=new JSONArray();if(decision.equals("request"))windows.put(new JSONObject().put("start",mode.equals("no-match")?9999:0).put("end",10000).put("reason","核对矩阵板书中的列向量与运算步骤"));generated.put("image_requests",windows);
+                    if(mode.equals("missing-assessment"))generated.remove("image_assessment");
+                    if(mode.equals("missing-decision-reason"))generated.getJSONObject("image_assessment").put("reason","");
+                    if(mode.equals("missing-request-reason"))windows.getJSONObject(0).remove("reason");
+                    if(mode.equals("conflicting-decision"))generated.getJSONObject("image_assessment").put("decision","not_needed");
+                    if(mode.equals("unauthorized-request")){generated.getJSONObject("image_assessment").put("decision","request");windows.put(new JSONObject().put("start",0).put("end",60).put("reason","未授权请求"));}
+                }
                 if(chunk!=null&&mode.equals("invalid-window"))generated.put("image_requests",new JSONArray().put(new JSONObject().put("start",20).put("end",10)));
                 if(chunk!=null&&mode.equals("invalid-source"))generated.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(999));
                 if(chunk!=null&&mode.equals("invalid-image"))generated.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));
@@ -112,6 +121,18 @@ public final class ClassroomSummaryCheck {
         JSONArray continuous=new JSONArray();for(int i=0;i<40;i++)continuous.put(segment(i*3,"连续讲解").put("end",i*3+3));
         JSONArray timed=ClassroomSummary.uploadChunk(ClassroomSummary.lessonInput(continuous,new JSONArray())).getJSONArray("segments");
         check(timed.getJSONObject(20).getDouble("start")==60&&!timed.getJSONObject(19).has("start"),"continuous speech keeps sparse minute anchors for image requests");
+        JSONArray dense=new JSONArray();for(int i=999;i>=0;i--)dense.put(new JSONObject().put("second",i*.25).put("raw","private-"+i));
+        JSONObject denseCatalogue=ClassroomSummary.imageCatalogue(dense,40);JSONArray ranges=denseCatalogue.getJSONArray("ranges");
+        check(denseCatalogue.getInt("count")==1000&&ranges.length()==1&&ranges.getJSONArray(0).getInt(2)==1000,"dense screenshots collapse to one counted availability range");
+        check(ranges.getJSONArray(0).getLong(0)==0&&ranges.getJSONArray(0).getLong(1)==250,"catalogue rounds only displayed boundaries to integer seconds");
+        check(denseCatalogue.toString().length()<120&&!denseCatalogue.toString().contains("private"),"compact catalogue sends neither individual timestamps nor raw paths");
+        JSONArray sparse=new JSONArray();for(int i=0;i<200;i++)sparse.put(new JSONObject().put("second",i*120));
+        JSONObject sparseCatalogue=ClassroomSummary.imageCatalogue(sparse,40);ranges=sparseCatalogue.getJSONArray("ranges");int represented=0;long previous=-1;
+        for(int i=0;i<ranges.length();i++){JSONArray range=ranges.getJSONArray(i);represented+=range.getInt(2);check(range.getLong(0)>previous&&range.getLong(1)>=range.getLong(0),"compact ranges remain ordered and non-overlapping");previous=range.getLong(1);}
+        check(ranges.length()<=12&&represented==200,"even sparse catalogues have at most twelve ranges without losing counts");
+        check(ClassroomSummary.imageCatalogue(dense,0).getJSONArray("ranges").length()==0,"disabled upload adds no image timestamps");
+        JSONObject withCatalogue=ClassroomSummary.lessonInput(source,new JSONArray()).put("image_catalogue",denseCatalogue);
+        check(ClassroomSummary.uploadChunk(withCatalogue).getJSONObject("image_catalogue").toString().equals(denseCatalogue.toString()),"compressed transcript carries the compact availability catalogue");
     }
     private static void validation()throws Exception {
         JSONObject chunk=ClassroomSummary.lessonInput(new JSONArray().put(segment(0,"来源")),new JSONArray().put(picture(0,0)));
@@ -162,6 +183,11 @@ public final class ClassroomSummaryCheck {
         check(calls==3,"retry calls only failed second round");
         JSONArray firstMessages=requests.get(0).getJSONArray("messages");String firstPrompt=firstMessages.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
         check(firstMessages.getJSONObject(1).getJSONArray("content").length()==1,"first round sends no image bytes");
+        check(firstPrompt.contains("应主动请求相关时间范围")&&firstPrompt.contains("必须返回 image_assessment")&&!firstPrompt.contains("仅在确有需要时请求"),"first prompt requires explicit visual-gap review instead of optional image requests");
+        JSONObject imageAudit=result.getJSONObject("image_audit");
+        check(imageAudit.getJSONObject("assessment").getString("decision").equals("request")&&!imageAudit.getJSONObject("assessment").getString("reason").isBlank(),"summary preserves the model's reason for requesting images");
+        check(imageAudit.getInt("selected_count")==3&&imageAudit.getInt("analysed_count")==3&&checkpoint.getJSONObject("image_audit").getInt("analysed_count")==0,"audit distinguishes planned selection from actually analysed frames across failure");
+        check(ClassroomStore.read(new File(dir,"run.json")).getJSONObject("image_audit").getInt("analysed_count")==3,"final run log records actual analysed count");
         check(new JSONObject(firstPrompt.substring(firstPrompt.indexOf("资料：\n")+4)).getJSONArray("segments").length()==3,"first round includes entire long transcript without chunks");
         String secondPrompt=requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
         JSONObject context=new JSONObject(secondPrompt.substring(secondPrompt.indexOf("完整资料包：\n")+7));
@@ -224,7 +250,7 @@ public final class ClassroomSummaryCheck {
                 &&requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==41,"HTTP requests send zero then exactly forty images");
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
-        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n8\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
+        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n9\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
     }
     private static void textOnlyAndInvalidRetry()throws Exception {
         reset();File dir=materialDir("text-only-"+System.nanoTime());
@@ -241,12 +267,19 @@ public final class ClassroomSummaryCheck {
         check(calls==3,"invalid draft retried and successful full transcript sent once");
         for(String scenario:List.of("no-request","no-match")) {
             reset();mode=scenario;File empty=materialDir(scenario+System.nanoTime());
-            try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(empty,LESSON,AI,20,c,s->{},"保留英文术语");check(summary.getBoolean("complete")&&summary.getJSONArray("images").length()==0,"no requested matching image completes using draft: "+scenario);}
+            try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(empty,LESSON,AI,20,c,s->{},"保留英文术语");check(summary.getBoolean("complete")&&summary.getJSONArray("images").length()==0,"no requested matching image completes using draft: "+scenario);JSONObject audit=summary.getJSONObject("image_audit");check(audit.getString("selection").equals(scenario.equals("no-request")?"not_needed":"no_matching_frame")&&!audit.getJSONObject("assessment").getString("reason").isBlank(),"declined or unmatched image request retains its distinct audit reason: "+scenario);}
             check(calls==1,"no empty-image second round: "+scenario);
         }
         reset();mode="invalid-window";File window=materialDir("invalid-window"+System.nanoTime());
         try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(window,LESSON,AI,20,c,s->{},"保留英文术语"),"reversed window rejected before second round");}
         check(calls==1&&!ClassroomStore.read(new File(window,"run.json")).has("draft"),"invalid window never checkpoints successful draft");
+        for(String scenario:List.of("missing-assessment","missing-decision-reason","missing-request-reason","conflicting-decision","unauthorized-request")){
+            reset();mode=scenario;File malformed=materialDir(scenario+System.nanoTime());
+            try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(malformed,LESSON,AI,scenario.equals("unauthorized-request")?0:40,c,s->{},""),"invalid image assessment rejected: "+scenario);}
+            JSONObject evidence=ClassroomStore.read(new File(malformed,"run.json"));check(calls==1&&!evidence.has("draft")&&evidence.has("first_output"),"invalid decision has raw audit evidence but no successful draft or image upload: "+scenario);
+        }
+        reset();File noFrames=materialDir("unavailable"+System.nanoTime());ClassroomStore.write(new File(noFrames,"candidates.json"),new JSONObject().put("images",new JSONArray()));
+        try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(noFrames,LESSON,AI,40,c,s->{},"");check(calls==1&&summary.getJSONObject("image_audit").getString("selection").equals("unavailable"),"unavailable frames are audited without a second AI request");}
     }
     private static void retention()throws Exception {
         check(ClassroomDocument.exportMarkdown("![图](image-0.jpg) $x^2$").equals("![图](images/image-0.jpg) $x^2$"),"export canonicalizes bare image paths without changing math");

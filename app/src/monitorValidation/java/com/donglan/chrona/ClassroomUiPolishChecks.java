@@ -40,7 +40,7 @@ final class ClassroomUiPolishChecks {
         if(!"com.donglan.chrona.monitor.validation".equals(app.getPackageName()))throw new SecurityException("Fixture package required");
         if(!android.os.Build.HARDWARE.contains("ranchu"))throw new SecurityException("Owned emulator required");
         ClassroomUiPolishChecks checks=new ClassroomUiPolishChecks(test,args==null?new Bundle():args);
-        try{checks.seed();String scope=checks.args.getString("polish_scope","");if(!"reader".equals(scope))checks.browse();if(!"browse".equals(scope))checks.reader();if(UiMotion.isEnabled()&&test instanceof ClassroomMonitorInstrumentation monitor){if(!"browse".equals(scope)&&!"true".equals(checks.args.getString("entry_only")))checks.check(monitor.enteredPages.contains("ClassroomTranscriptActivity")&&monitor.enteredPages.contains("AttachmentViewerActivity"),"real reader and viewer entry render intermediate frames: "+monitor.enteredPages);if(!"reader".equals(scope))checks.check(monitor.enteredPages.contains("ClassroomSummaryActivity")&&monitor.enteredPages.contains("ClassroomLessonActivity"),"real catalogue and lesson entry render intermediate frames");}return checks.assertions;}
+        try{checks.seed();if("true".equals(checks.args.getString("header_only"))){checks.header();return checks.assertions;}String scope=checks.args.getString("polish_scope","");if(!"reader".equals(scope))checks.browse();if(!"browse".equals(scope))checks.reader();if(UiMotion.isEnabled()&&test instanceof ClassroomMonitorInstrumentation monitor){if(!"browse".equals(scope)&&!"true".equals(checks.args.getString("entry_only")))checks.check(monitor.enteredPages.contains("ClassroomTranscriptActivity")&&monitor.enteredPages.contains("AttachmentViewerActivity"),"real reader and viewer entry render intermediate frames: "+monitor.enteredPages);if(!"reader".equals(scope))checks.check(monitor.enteredPages.contains("ClassroomSummaryActivity")&&monitor.enteredPages.contains("ClassroomLessonActivity"),"real catalogue and lesson entry render intermediate frames");}return checks.assertions;}
         finally{if(checks.activity!=null)test.runOnMainSync(checks.activity::finish);}
     }
     private void seed()throws Exception{
@@ -71,6 +71,34 @@ final class ClassroomUiPolishChecks {
         Bitmap last=Bitmap.createBitmap(480,270,Bitmap.Config.ARGB_8888);last.eraseColor(android.graphics.Color.rgb(35,135,85));ByteArrayOutputStream lastBytes=new ByteArrayOutputStream();last.compress(Bitmap.CompressFormat.PNG,100,lastBytes);last.recycle();
         ClassroomStore.writeBytes(new File(dir,"raw-1.img"),portraitBytes.toByteArray());ClassroomStore.writeBytes(new File(dir,"raw-2.img"),lastBytes.toByteArray());
         ClassroomStore.write(new File(dir,"monitor-candidates.json"),new JSONObject().put("updated",now).put("images",new JSONArray().put(new JSONObject().put("raw","raw-0.img").put("second",20)).put(new JSONObject().put("raw","raw-1.img").put("second",40)).put(new JSONObject().put("raw","raw-2.img").put("second",60))));
+    }
+    private void header()throws Exception{
+        activity=test.startActivitySync(new Intent(app,ClassroomSummaryActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("classroom_mode",1));idle(700);
+        Object page=page(),session=field(page,"s");View settings=(View)field(page,"monitorSettings");HeaderActionGroup group=(HeaderActionGroup)field(page,"headerActions");View refresh=(View)field(page,"refresh");
+        float density=activity.getResources().getDisplayMetrics().density;boolean[] sawCancel={false},sawMotion={false};
+        android.view.ViewTreeObserver.OnPreDrawListener frames=()->{if("停止刷新".contentEquals(refresh.getContentDescription()))sawCancel[0]=true;if(group.getWidth()>48*density+1&&group.getWidth()<97*density-1)sawMotion[0]=true;return true;};
+        test.runOnMainSync(()->group.getViewTreeObserver().addOnPreDrawListener(frames));
+        for(int selected:new int[]{2,3,0,1,2}){
+            TextView compact=(TextView)field(page,"compactMode");DockNavigationLayout dock=(DockNavigationLayout)field(page,"navigation");
+            if(compact.getVisibility()==View.VISIBLE){tap(compact);idle(100);tapText(new String[]{"课表","课堂","监视","历史"}[selected]);}else tap(dock.itemAt(selected));idle(320);
+            check((Integer)field(session,"mode")==selected,"real mode selection reaches "+selected);
+            check(selected==2?settings.getVisibility()==View.VISIBLE&&settings.isClickable()&&settings.isEnabled():settings.getVisibility()==View.GONE&&!settings.isClickable()&&!settings.isEnabled(),"settings exists only in monitor mode "+selected);
+            check(Math.abs(group.getWidth()-Math.round((selected==2?97:48)*density))<=1,"header contracts button and separator without an empty slot "+selected);
+            check(!sawCancel[0],"local view changes never paint the cancel icon "+selected);capture("header-mode-"+selected);
+        }
+        check(!UiMotion.isEnabled()||sawMotion[0],"conditional settings paints intermediate shared-width animation");
+        java.util.concurrent.CountDownLatch held=new java.util.concurrent.CountDownLatch(1),ready=new java.util.concurrent.CountDownLatch(1);
+        ((java.util.concurrent.ExecutorService)field(session,"worker")).execute(()->{ready.countDown();try{held.await();}catch(InterruptedException failure){Thread.currentThread().interrupt();}});
+        check(ready.await(3,java.util.concurrent.TimeUnit.SECONDS),"owned local-read gate entered");
+        try{test.runOnMainSync(()->{try{Class<?> kind=Class.forName("com.donglan.chrona.ClassroomSummaryPage$Load");Object cache=java.lang.Enum.valueOf((Class)kind,"CACHE");method(session,"load",kind).invoke(session,cache);}catch(Exception failure){throw new RuntimeException(failure);}});idle(150);
+            check((Boolean)field(session,"busy")&&!(Boolean)field(session,"refreshing")&&"刷新课堂".contentEquals(refresh.getContentDescription())&&!sawCancel[0],"blocked real cache read remains refresh rather than flashing cancel");
+        }finally{held.countDown();}
+        idle(300);tap(settings);idle(200);check(findTextInWindow("自动总结上传图片")&&findTextInWindow("后台运行设置"),"monitor-only settings still opens existing runtime controls");capture("header-runtime-settings");
+        test.getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);idle(200);
+        test.runOnMainSync(()->{group.setActionVisible(settings,false);});SystemClock.sleep(55);test.runOnMainSync(()->{group.setActionVisible(settings,true);});idle(320);
+        check(settings.getVisibility()==View.VISIBLE&&Math.abs(group.getWidth()-Math.round(97*density))<=1,"rapid reversal settles at the requested full action group");
+        test.runOnMainSync(()->group.getViewTreeObserver().removeOnPreDrawListener(frames));
+        test.runOnMainSync(activity::finish);activity=null;
     }
     private void browse()throws Exception{
         activity=test.startActivitySync(new Intent(app,ClassroomSummaryActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("classroom_mode",1));idle(900);
@@ -287,7 +315,7 @@ final class ClassroomUiPolishChecks {
     private static View findDescription(View root,String text){if(root.getContentDescription()!=null&&text.contentEquals(root.getContentDescription()))return root;if(root instanceof ViewGroup g)for(int i=0;i<g.getChildCount();i++){View result=findDescription(g.getChildAt(i),text);if(result!=null)return result;}return null;}
     private boolean findTextInWindow(String text){var root=test.getUiAutomation().getRootInActiveWindow();return root!=null&&!root.findAccessibilityNodeInfosByText(text).isEmpty();}
     private boolean nodeChecked(String text){var root=test.getUiAutomation().getRootInActiveWindow();if(root!=null)for(var node:root.findAccessibilityNodeInfosByText(text))if(text.contentEquals(node.getText()))return node.isChecked();throw new AssertionError("Missing checkbox: "+text);}
-    private void tapText(String text){var root=test.getUiAutomation().getRootInActiveWindow();if(root!=null)for(var node:root.findAccessibilityNodeInfosByText(text))if(text.contentEquals(node.getText())){Rect r=new Rect();node.getBoundsInScreen(r);tap(r);return;}throw new AssertionError("Missing menu option: "+text);}
+    private void tapText(String text){var root=test.getUiAutomation().getRootInActiveWindow();if(root!=null)for(var node:root.findAccessibilityNodeInfosByText(text))if(text.contentEquals(node.getText())&&node.isClickable()&&node.isEnabled()&&node.isVisibleToUser()){Rect r=new Rect();node.getBoundsInScreen(r);tap(r);return;}throw new AssertionError("Missing clickable menu option: "+text);}
     private void tap(View view){tap(bounds(view));}
     private void tap(Rect rect){long down=SystemClock.uptimeMillis();pointer(down,down,MotionEvent.ACTION_DOWN,rect.exactCenterX(),rect.exactCenterY());SystemClock.sleep(60);pointer(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,rect.exactCenterX(),rect.exactCenterY());}
     private void doubleTap(View view){

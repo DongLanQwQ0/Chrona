@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.48候选 — 监视头部、图片判断与跨日时间 — 2026-10-27
+
+- 「监视」外仅刷新，设置与分隔连续收宽且隐藏起即停用。`build/classroom-header-{400-light,400-dark}.txt`、`build/classroom-header-final-320-{light,dark}.txt`四档各25项真实Activity/触摸/逐帧检查通过；包括48/97dp宽度、反向、阻塞本地读取无取消X和原运行设置入口。320初轮失败是夹具选择同名不可点击标题，修正为仅选可点击节点后通过，未据此改生产UI。压缩JPEG在`build/classroom-header-evidence/previews`，同一独立UI审核已亲看四档并签收。
+- `build/classroom-header-load-check.txt`生产加载方法20项通过，区分cache/local与真实remote、空缓存fallback、失败和取消；公共库1530、UI结构规范检查通过。模拟器证据不能代替本版本真机更新后的表现。
+- `build/classroom-image-policy-final.txt`真实生产整理管线、合成图片与本机HTTP响应221项及AI请求538项通过。覆盖最多12段时间范围、密集/稀疏图集、原文与时间锚保留、40张总上限、逐区间依据、请求/不请求/权限关闭/无图/无匹配、无效响应保留原始日志但不存成功草稿、两轮与失败续跑。没有调用真实收费模型，提示词语义效果尚无真实模型准确率证据。
+- `build/cross-day-time-audit-final.txt`请求538、归一化59、排期418、时间审计43、自动写入17项通过。复现原审计的11/21–22日期范围；保留结束日期及高存疑补钟点，明确钟点/全天/矛盾日期/夏令时回归通过，未修改用户历史数据。
+- 0.15.47已在V2527A正常覆盖升级至209，原首次安装时间保留、现有课堂历史可见，专用课堂探针已卸载。0.15.48最终`build/release-0.15.48-final-build.txt`的release及lintRelease通过；固定资产`build/candidates/0.15.48/Chrona-0.15.48.apk`为3200266字节、210/0.15.48、原签名、不可调试、30秒、无无障碍服务，检查在`build/release-0.15.48-artifact-check.json`。最后连接地址超时10060、ADB仅模拟器，gh认证仍token无效；尚未安装真机或发布远端，未宣称新包真机表现通过。
+
 ## 0.15.47候选 — 单次占位、课堂阅读与短窗口 — 2026-10-27
 
 - 单次编辑与AI公告更新均使用稳定系列身份及原始日期。`build/occurrence-device-final-backend.txt`真实SQLite/CalendarProvider33项、`build/occurrence-merge-final.txt`合并340项通过，覆盖异常提案同事务持有、确认后更新、本地审计、模板与其它实例不变、重复确认和失败回滚；未调用付费AI。

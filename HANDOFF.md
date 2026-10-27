@@ -2,30 +2,27 @@
 
 ## 当前交付与候选
 
-本批0.15.47/209：周日程单次完整编辑及AI公告更新占位；附属请假降级；课堂监视设置/刷新胶囊、子页及分页动画；PPT贴合原图与跟手大图；横屏、短窗口及键盘适配。受检功能与UI已签收，正式release及最终lint已通过；固定包`build/candidates/0.15.47/Chrona-0.15.47.apk`为3196266字节、原证书、非调试、30秒，无无障碍服务。手机仍为0.15.46/208。证据入口为`docs/validation-history.md`。
+当前0.15.48/210：修复设置仅在「监视」视图出现及切视图刷新闪X；按用户明确批准增强AI主动请求图片，并精简时间戳、记录判断和选图依据；修复只给日期的跨日范围被默认时长缩成同日。最终release与lintRelease通过，固定包build/candidates/0.15.48/Chrona-0.15.48.apk为3200266字节、原签名、非调试、30秒、无无障碍服务；尚未覆盖手机或远端发布。上轮0.15.47/209已正常安装实体V2527A，原首次安装时间保留，课堂历史可见，临时classroom.probe已清理。
 
-单次日程沿用普通编辑器，AI只建议更新本次并强制确认，未给字段继承，模板/其它实例不变。操作提案与解析同事务持有，关联稳定身份、原日期和应用前后审计；自动/批量新建不得绕过。跨设备操作保留，设备提醒不传，原始解析日志留本机。
+UI保持既有公共组件与动效：HeaderActionGroup条件设置及分隔连续收宽，退出即停触摸/无障碍，反向接续；WorkspacePageHeader自然包裹48/97dp操作组。Session.busy与实际refreshing分离，缓存/本地读取不显示取消X，真正远端刷新保留取消。
 
-UI复用现有规范与公共组件：PPT仅一层圆角、不裁字；大图缩放/保存继续可用，拖动中邻图跟手，空白关闭；监视设置并入刷新胶囊，分页DateIntervalBar。横屏宽短工作区侧置原Dock，窄短窗口公共页面选择，工具可滚动且不侵占全部正文；恢复搜索、页码和滚动。
+AI第一轮只提供去重截图总数、授权上限和最多12段紧凑时间范围，不逐张堆时间戳，字幕保留既有稀疏锚。image_assessment与逐请求reason必填，请求/无需/无权限/无图/未匹配分别审计；run.json与summary.image_audit保留选中/已分析计数，失败不冒充已分析。40张总上限、用户上传开关、两轮与续跑不变，管线升级9，未调用付费AI。
 
-## 验收与唯一下一步
+跨日补钟点保留原结束日期及高存疑；明确结束钟点、全天和不可唯一转换的DST钟点不覆盖。旧日程不自动改写，私有审计证据不提交。
 
-已通过：周占位真实SQLite/Provider33项、合并340项；短窗口IME15项；网页18交互及4渲染；AI/同步/投影相关离线检查。课堂925dp真实横屏列表1130项、读取65项；最终400×420dp/150%浅色读取67项，含首帧取消、实际手势、滚动恢复及保存；普通竖屏首帧与取消专项8项。最终独立UI审核已签收，压缩JPEG覆盖三档。Debug lint和初次Release lint通过。
+## 验收和唯一下一步
 
-当前唯一下一步：正常连接恢复后用上述固定包覆盖手机，GitHub正常认证恢复后推送并发布同一候选。安装点ADB仅emulator-5554，gh正常认证仍报告token无效；不绕过、不再询问无人值守用户连接。实际有界窗口不冒充OS分屏，学校整堂真实课流没有本候选新证据。公共首帧在首次绘制就绪后启动，并由finishSwap撤销待启动listener/callback；禁止恢复旧的立即计时实现。
+- UI：400dp深浅、320dp/150%深浅各25项真实Activity/触摸/逐帧通过；320旧失败是测试误点同名不可点击弹窗标题，夹具已修。load20、公共库1530、UI结构规范通过。压缩图在build/classroom-header-evidence/previews，同一ui_review独立亲看四档签收。
+- AI：build/classroom-image-policy-final.txt，生产管线+受控HTTP221、请求538通过。覆盖密集/稀疏目录压缩、最多12段、40图、依据必填/矛盾拒绝、未匹配、禁止上传、草稿/失败/两轮续跑与原始日志。
+- 时间：build/cross-day-time-audit-final.txt，请求538、归一化59、排期418、时间审计43、自动写入17通过。含实际审计日期11/21–22的合成复现、明确钟点/全天/倒置日期/DST回归。
 
-根持代码整合、Gradle、ADB和最终验收；实现代理已交回，禁止重叠写入。`ui_review`只读复用。工具无agent_type，不编造角色或模型选项。
+唯一下一步：正常设备连接恢复后安装上述固定APK并读回210；GitHub正常认证恢复后推送并发布同一候选。源代码本批本地提交，不再重建已验收内容。不能把模拟器验收称为真机新包验收；既有课堂总结不自动重跑，新策略对下一轮生成生效，原上传开关不变。
 
 ## 设备、发布与边界
 
-仅共享`F:/Android/Avd/Chrona_Classroom_36`、emulator-5554可用，未新建/克隆/清数据。真机ADB旧地址超时、mdns为空；按无人值守要求不再询问。模拟器验证不能宣称真机分屏或覆盖更新完成。手机恢复后正常安装、读回版本；不得绕过安装确认。
-
-FastCtx当前无工具，PowerShell7兜底。JDK `D:/Minecraft/java21`、SDK `F:/Android/Sdk`、Gradle `F:/Android/GradleCache`、ANDROID_USER_HOME `F:/Android/user-home`。输出在项目build，查看图片先压缩。测试包为隔离applicationId，不能当生产APK分发。
-
-手机已安装.46课堂自动总结恢复/正式素材补全修复；其有效原生auto51/pipeline19和离线186证据保留，不重复无关检查。0.15.46固定包在`build/candidates/0.15.46`。本批业务源码与0.15.47固定包为同一209候选，尚未远端发布；常规提交、推送与发布已获授权，凭据失效不绕过。
-
-保护既有独立修改：AGENTS.md、角色toml、.backups、.local-backups、tools/Clean-Project.ps1不进业务提交。保留真实账号、日程、通知频道选择；不恢复无障碍服务、不改secure settings、不做付费AI测试。手机测试helper classroom.probe尚待设备恢复时清理。
-
-## 独立未决项
-
-用户授权读取的近期审计显示一条11/21–22跨日活动被本地补时缩为11/21 15–16，尚未修归一化或改用户数据。私有原始证据`build/recent-parse-audit-private.json`不得提交。课堂总结两份既有日志未请求图片、实际选图为零；图片审计查看器仍属讨论，不强制上传图片。
+- 本轮最后真机连接10.195.39.39:41913超时10060，ADB仅emulator-5554，mDNS为空；按无人值守要求不再找用户。GitHub正常gh认证仍token无效，不绕过、不宣称推送成功。
+- 仅复用F:/Android/Avd/Chrona_Classroom_36，不新建/克隆/清数据，不终止其它任务。根持ADB与Gradle串行所有权。
+- FastCtx无工具，PowerShell7兜底。JAVA_HOME D:/Minecraft/java21，SDK F:/Android/Sdk，GRADLE_USER_HOME F:/Android/GradleCache，ANDROID_USER_HOME F:/Android/user-home。
+- 所有视觉工具只查看/上传更小压缩副本，严禁读PNG原图；报告/原图/预览留项目build，不提交私有数据。
+- 保护既有独立修改AGENTS.md、角色toml、.backups、.local-backups、tools/Clean-Project.ps1。主代理实现与整合，ui_review仅只读；工具无agent_type，不编造角色/模型。常规提交推送发布已授权，真实安装拒绝不绕过。
+- 旧版及更早功能证据见docs/validation-history.md，不重跑无关整套或重设计。

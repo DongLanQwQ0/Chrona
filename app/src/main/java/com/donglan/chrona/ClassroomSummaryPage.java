@@ -46,6 +46,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     private static final String[] MODES={"课表","课堂","监视","历史"};
     private ImageButton refresh;
     private ImageButton monitorSettings;
+    private HeaderActionGroup headerActions;
     private EditText search;
     private LinearLayout historyTools;
     private TextView historyOrder;
@@ -91,7 +92,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         final Handler main = new Handler(Looper.getMainLooper());
         WeakReference<ClassroomSummaryPage> owner = new WeakReference<>(null);
         volatile ClassroomClient client;
-        volatile boolean busy, cancelled;
+        volatile boolean busy, cancelled, refreshing;
         volatile long nextRemoteAt;
         String message = "";
         List<ClassroomLesson> catalog = new ArrayList<>();
@@ -125,7 +126,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             if (busy || !allowed()) return;
             boolean remote = kind == Load.REFRESH || kind == Load.AUTOMATIC;
             if (remote || nextRemoteAt == 0) nextRemoteAt = android.os.SystemClock.elapsedRealtime() + CATALOG_REFRESH_MILLIS;
-            busy = true; cancelled = false; message = ""; publish();
+            busy = true; refreshing = remote; cancelled = false; message = ""; publish();
             worker.execute(() -> {
                 try {
                     ClassroomStore store = new ClassroomStore(app, account);
@@ -136,6 +137,7 @@ final class ClassroomSummaryPage extends SchedulePage {
                             + Math.max(0, CATALOG_REFRESH_MILLIS - Math.max(0, System.currentTimeMillis() - store.catalogUpdatedAt()));
                     if(!cancelled&&allowed()){accept(loaded,savedHistory);publish();}
                     if ((remote || initial && loaded.isEmpty() && savedHistory.isEmpty()) && !cancelled && allowed()) {
+                        refreshing = true; publish();
                         nextRemoteAt = android.os.SystemClock.elapsedRealtime() + CATALOG_REFRESH_MILLIS;
                         String[] credentials = new ZjuSettingsStore(app).credentials();
                         try { client = new ClassroomClient(credentials[0], credentials[1]); }
@@ -154,7 +156,7 @@ final class ClassroomSummaryPage extends SchedulePage {
                             : error.getMessage() == null ? "课堂列表读取失败" : error.getMessage();
                 } finally {
                     ClassroomClient current = client; if (current != null) current.close(); client = null;
-                    busy = false; publish();
+                    refreshing = false; busy = false; publish();
                 }
             });
         }
@@ -186,12 +188,12 @@ final class ClassroomSummaryPage extends SchedulePage {
             navigation.addItem(item, new LinearLayout.LayoutParams(0, dp(48), 1));
         }
         refresh = WorkspacePageHeader.icon(activity, R.drawable.ic_refresh, "刷新课堂", () -> {
-            if (s != null) { if (s.busy) s.cancel(); else s.load(Load.REFRESH); }
+            if (s != null) { if (s.refreshing) s.cancel(); else if(!s.busy) s.load(Load.REFRESH); }
         });
         monitorSettings = WorkspacePageHeader.icon(activity, R.drawable.ic_settings, "监视运行设置",
                 () -> ClassroomMonitorUi.runtimeSettings(activity));
-        HeaderActionGroup actions = new HeaderActionGroup(activity, 48);
-        actions.addAction(refresh, 48); actions.addAction(monitorSettings, 48); actions.finish();
+        headerActions = new HeaderActionGroup(activity, 48);
+        headerActions.addAction(refresh, 48); headerActions.addAction(monitorSettings, 48); headerActions.finish();
         FrameLayout dockHost=navigation.headerMotionHost();
         compactMode=new TextView(activity);UiStyle.fieldTrigger(compactMode);
         compactMode.setOnClickListener(v->{if(s!=null)UiDialogs.choiceDialog(activity,"课堂",MODES,s.mode,this::selectMode);});
@@ -200,7 +202,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             boolean compact=View.MeasureSpec.getSize(w)<dp(12)+Math.ceil(widest)*MODES.length;
             dockHost.setVisibility(compact?View.GONE:View.VISIBLE);compactMode.setVisibility(compact?View.VISIBLE:View.GONE);super.onMeasure(w,h);
         }};adaptive.setClipChildren(false);adaptive.setClipToPadding(false);adaptive.addView(dockHost,new FrameLayout.LayoutParams(-1,-2));adaptive.addView(compactMode,new FrameLayout.LayoutParams(-1,-2));
-        UiStyle.addSpaced(root, new WorkspacePageHeader(activity, adaptive, actions, 97), 0, 8);
+        UiStyle.addSpaced(root, new WorkspacePageHeader(activity, adaptive, headerActions, LinearLayout.LayoutParams.WRAP_CONTENT), 0, 8);
         weekBar = new DateIntervalBar(activity, () -> {
             if (s != null) UiDialogs.dateDialog(activity, "选择日期", s.week, value -> {
                 setWeek(value.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
@@ -294,6 +296,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             weekViewport.setVisibility(View.GONE); listScroll.setVisibility(View.VISIBLE); scroll = listScroll;
             refresh.setEnabled(false);
             monitorSettings.setEnabled(false);
+            headerActions.setActionVisible(monitorSettings,false);
             status.setVisibility(View.GONE);
             search.setVisibility(View.GONE);historyTools.setVisibility(View.GONE);toolsViewport.setVisibility(View.GONE);
             if (!gated) {
@@ -321,10 +324,11 @@ final class ClassroomSummaryPage extends SchedulePage {
         navigation.finishPageSelection(s.mode);
         compactMode.setText(MODES[s.mode]);compactMode.setContentDescription("课堂视图："+MODES[s.mode]+"，选择视图");
         refresh.setEnabled(true);
-        monitorSettings.setEnabled(true);
-        refresh.setImageResource(s.busy ? R.drawable.ic_x : R.drawable.ic_refresh);
-        refresh.setContentDescription(s.busy ? "停止刷新" : "刷新课堂");
-        refresh.setTooltipText(s.busy ? "停止刷新" : "刷新课堂");
+        monitorSettings.setEnabled(s.mode==2);
+        headerActions.setActionVisible(monitorSettings,s.mode==2);
+        refresh.setImageResource(s.refreshing ? R.drawable.ic_x : R.drawable.ic_refresh);
+        refresh.setContentDescription(s.refreshing ? "停止刷新" : "刷新课堂");
+        refresh.setTooltipText(s.refreshing ? "停止刷新" : "刷新课堂");
         if (s.mode == 0) weekBar.setText(s.week + " — " + s.week.plusDays(6));
         if (weekTransition && s.mode == 0) return;
         boolean changed = shownMode != s.mode || shownPage!=s.page || shownCatalog != s.catalog || shownHistory != s.history || s.mode==2&&shownMonitoring!=s.monitoring || !s.week.equals(shownWeek)

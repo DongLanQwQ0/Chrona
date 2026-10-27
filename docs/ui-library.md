@@ -23,6 +23,8 @@
 
 二级页面使用`SettingsPageLayout.content/header/show`。自带独立滚动视口、需要固定标题的阅读页改用`showFixed`承载内容，背景与安全区仍由同一公共实现负责；浮动操作通过`InteractionLayers.pin`保持高于可选择正文的焦点分支。
 
+共享操作组中的条件入口使用`HeaderActionGroup.setActionVisible`，按钮和相邻分隔共同连续收宽；标题栏用`WRAP_CONTENT`包裹动作组，避免隐藏后留下固定宽度空槽。页面只决定入口所属视图，动画、触摸停用和脱离清理由公共组维护。
+
 短窗口的固定工具组使用`SettingsPageLayout.toolsViewport`，限制工具区占用并保留可滚动操作；`SchedulePage`只给正文增加底部浮动导航的末尾留白，不给工具视口重复加空白。表单的键盘和系统安全区由滚动视口外层承担，焦点按真实可见高度滚动。
 
 `UiMotion.enterPage`用于首次子页面呈现，方向`swap`用于工作区子视图和分页；轮询不重播入场。`DateIntervalBar`保持实例并负责箭头、滑动与点击选择入口。课堂图片的`ImageSlidePager`只负责有界手势和当前/相邻帧位置，解码、原图比例、缩放和保存留在现有图片页面。
