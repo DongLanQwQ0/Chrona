@@ -2,6 +2,7 @@
 
 ## 0.15.50候选 — 连续图片、公共高光与横屏高度 — 2026-10-27
 
+- 真机续交付：通过用户新地址10.195.39.39:37561正常覆盖更新211→212，读回0.15.50，原首次安装时间2026-09-26 18:54:37不变。未卸载、清数据或导航用户页面；安装前后均无活动服务，不启动此前未运行的服务。安装、版本、服务回执为`build/release-0.15.50-phone-*.txt`。GitHub认证仍失效，远端分发未完成。
 - 真实原生连续手势复现PPT第二次失效，修正图片轨道触摸接续、首个MOVE及过渡目的页计算。`build/ppt-burst-origin-final.txt`和`build/ui-final-rapid-dark.txt`各20项通过，包含24ms连续手势与双向翻页；正常与320dp/150%阅读检查各71项通过，见`build/ui-final-reader-light.txt`、`build/reader-compact-dark-narrow.txt`，覆盖追加／修订保持Y、重建、双击／双指缩放、保存、空白关闭和原附件入口。
 - 公共胶囊高光按完整祖先矩阵与圆角裁切，图标居中不再平移高光。`build/highlight-final-{light,dark}.txt`各254项、`build/highlight-conditional-header.txt`25项通过，覆盖五档圆角、48/44dp、单至三单元及整组缩放。公共设置布局74项、弹窗操作1530项通过，见`build/ui-0.15.50-{settings,library}-check.txt`。
 - 子代理盘点36个Manifest入口：32个有界面入口已在模拟器实际1920×768横屏窗口呈现；2个NoDisplay路由、1个debug入口及无待授权请求的LanPairing未作页面呈现。初轮亲看59张压缩JPEG，发现Guide工具残留状态栏，修复后补验；详情extra、测量主视口与触摸边界夹具错误均有定向重验，未绕过注入权限。入口记录为`build/all-pages-landscape-light-final/{review.md,report.json}`，后续有效补验为`build/all-pages-focused-recheck/report.json`。
