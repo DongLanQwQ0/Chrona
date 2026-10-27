@@ -342,8 +342,8 @@ function groupingDate(item,inbox=false){
  let value,allDay=false;
  if(inbox)value=item.created;
  else if(todoScope===2)value=item.overdueAt??candidateOverdueAt(item);
- else if(todoScope===1||item.category==='homework')value=item.effectiveDue??item.due;
- else{value=item.executionStart??item.start??item.due;allDay=executionAllDay(item)&&!taskLike(item.category)&&item.due==null;}
+ else if(todoScope===1||filter==='homework')value=item.effectiveDue??item.due;
+ else{value=item.executionStart??item.start??item.due;allDay=executionAllDay(item);}
  if(value==null)return '待安排';return allDay&&!item.system?new Date(value).toISOString().slice(0,10):phoneDate(value);
 }
 function locateHomework(id,ticket){
