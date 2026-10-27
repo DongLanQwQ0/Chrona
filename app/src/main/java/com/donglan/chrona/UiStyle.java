@@ -357,6 +357,20 @@ public final class UiStyle {
         return "明确";
     }
 
+    /** Selectable action labels keep native selection while exposing presses to our shared feedback. */
+    static TextView selectableActionText(Context context) {
+        TextView text = new TextView(context) {
+            @Override protected int[] onCreateDrawableState(int extraSpace) {
+                int[] state = super.onCreateDrawableState(extraSpace + 1);
+                if (isTextSelectable() && isPressed())
+                    mergeDrawableStates(state, new int[]{android.R.attr.state_pressed});
+                return state;
+            }
+        };
+        text.setTextIsSelectable(true);
+        pressable(text);
+        return text;
+    }
     static void pressable(View view) {
         PressFeedback.apply(view);
         UiSurfaces.installRipple(view);

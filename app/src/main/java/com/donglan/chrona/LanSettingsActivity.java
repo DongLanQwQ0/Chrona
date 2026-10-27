@@ -26,7 +26,9 @@ public final class LanSettingsActivity extends Activity {
         session.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
         enabled.setOnCheckedChangeListener((button, checked) -> { if (refreshing) return; if (!checked) LanAccessService.stop(this); else enable(); refresh(); });
         status = text("", 14); UiStyle.muted(status); add(session, status);
-        LinearLayout access = group(root, "浏览器配对"); address = text("", 16); address.setTextIsSelectable(true); add(access, address);
+        LinearLayout access = group(root, "浏览器配对"); address = UiStyle.selectableActionText(this);
+        address.setTextSize(16); address.setTextColor(UiStyle.colors(this).text);
+        address.setGravity(android.view.Gravity.CENTER); add(access, address);
         address.setOnClickListener(v -> copyAddress());
         qr = new ImageView(this); qr.setContentDescription("扫码连接手机");
         qr.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -96,7 +98,7 @@ public final class LanSettingsActivity extends Activity {
         android.content.ClipboardManager clipboard=getSystemService(android.content.ClipboardManager.class);
         if(clipboard==null){Feedback.show(this,"剪贴板暂时不可用");return;}
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("局域网访问地址",url));
-        if(Build.VERSION.SDK_INT<33)Feedback.show(this,"地址已复制");
+        Feedback.show(this,"已复制");
     }
     @Override protected void onResume() { super.onResume(); handler.post(poll); }
     @Override protected void onPause() { handler.removeCallbacks(poll); super.onPause(); }

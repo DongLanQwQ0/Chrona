@@ -50,6 +50,7 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     @Override public void onCreate(Bundle input){args=input==null?new Bundle():input;super.onCreate(input);start();}
     @Override public Activity newActivity(ClassLoader loader,String name,Intent intent)throws InstantiationException,IllegalAccessException,ClassNotFoundException {
         Activity result=super.newActivity(loader,name,intent);
+        if("true".equals(args.getString("nativeScreen")))return result;
         if(name.startsWith("com.donglan.chrona.")){
             var metrics=getTargetContext().getResources().getDisplayMetrics();int width=Integer.parseInt(args.getString("widthDp","400"));
             Configuration config=new Configuration();config.densityDpi=Math.round(metrics.widthPixels*160f/width);config.screenWidthDp=width;config.smallestScreenWidthDp=width;

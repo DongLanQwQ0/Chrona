@@ -4,7 +4,11 @@
 
 停止低分辨率、高DPI、大字体等极端场景测试；本轮仅正常屏幕、正常字号的竖屏与横屏。先保证常规布局和正文空间，再验关键操作。既有极端证据只存档，不再作为阻塞或继续测试理由。用户再次要求收紧网页纵向边距：标题操作同行、搜索筛选收拢、默认批量工具隐藏，工具间只有一份必要间隔；横屏工具可随上滑退出。不得靠缩字掩盖空间安排。
 
-## 当前交付：Android 0.15.56／218（日期分组局部修复；217已安装）
+## 当前交付：Android 0.15.57／219（配对链接居中与复制反馈；218已安装）
+
+用户新增明确UI要求：配对链接居中，点击有视觉响应，并提示精确「已复制」。已在原LanSettingsActivity居中，使用UiStyle新opt-in selectableActionText恢复平台可选文本屏蔽的pressed Drawable状态，沿用原PressFeedback/ripple与原生选字；成功始终Feedback「已复制」。其它控件不变。正常AVD原生12项通过，`build/lan-centered-native-state.txt`与`build/ui-0.15.57-review/lan-address-{pressed,copied}-light.jpg`；nativeScreen=true完全跳过density/font override。前两轮证明原生isPressed=true但drawable state屏蔽导致scale1，已核对AOSP源后修实际原因，未乱改公共动效。219在构建，原ui_review正在只读审该分项；之后安装补实际手机暗色复制反馈。218已22:49覆盖，首次安装保持；不重跑已通过Web/日期/AI。
+
+用户另问重复图被开始菜单／软件矩形遮挡如何处理：**当前仅只读审查与方案讨论，未授权这项实现**。classroom_occlusion_research已交接事实：48×48平均差<3的相邻图直接取较晚帧、无裁剪或像素拼接、无质量/遮挡评分和组成员索引；原raw仍留但候选/AI不可回选，完成7天清理可能删除raw。建议先同页分组＋择优保留／必要双帧，不能默认末帧优先；软件演示可能本身是教学内容，不能矩形即剔除。真正像素补全需可靠同版对齐与真实来源，不默认AI补画。完整出处在子代理交接，不改该业务代码。
 
 包含216已完成的课堂批量、图片审计、地址复制；新增三页轻量Web及横屏工作区Dock间距。用户新反馈后合并一次更新，不先推216的旧间距包。216仅为内部固定快照，不发布。
 
@@ -25,7 +29,9 @@
 
 根亲看真实数据发现日期分组P2：全部类型的作业被误按截止11/6分组，后面又10/27。原生Dashboard2197-2205按**查询类别**，已返原owner只改groupingDate两行，query filter==='homework'才用截止，默认全天统一executionAllDay；21项反例通过，源freeze。218 assembleRelease/lintRelease已通过（14s，`build/release-0.15.56-build.txt`），等AI终态再安装，只补同手机这条截图，由原ui_review关闭P2；其它有效证据沿用。
 
-**正在真实AI图片轮，禁止安装／重启**：22:40:53在既有微积分10/27 10:00草稿点继续并正常确认上传，1110字幕／275→72截图、实际31张附图，直接1/2“AI结合图片完成总结”，没重下载／重跑第一轮。ServiceRecord `6a68b3c`，ClassroomWorkService foreground2043；PID由下一次服务快照确认，单次RequestControl1小时，stream idle180s不等于整体失败。按该同轮服务/通知/页面观察，终态后读新具体错误/总结，勿盲重试付费。
+**真实AI轮已完成**：22:40:53原微积分草稿续跑，1110字幕／275→72截图、31附图直接第二轮；22:44后ServiceRecord6a68b3c结束，22:45页面明确「总结已完成」且真实正文已显示，图片白名单校验成功。证据`build/phone-20261027-analysis/217-calculus-result.xml`及`217-calculus-complete.jpg`。没重下载／重跑第一轮，也无新增付费重试。确认终态后才于22:49安装218。
+
+218真实LAN日期P2已复验并由原ui_review关闭：同一433条目全类型10/27组、作业查询11/6组，独立API字段oracle一致；`build/lan-live-218/report.json`与两张JPEG，浏览器正常关闭。其余三页成熟UI与217真实桥接证据沿用，不再重跑。
 
 主代码已本地提交，正常git push直连443失败（21059ms）；本轮只读诊断github.com:443不可达、api.github.com:443可达，Git未设proxy、Windows已有proxy保留未改。尚未推送／Release；不通过曾被工具拒绝的代理路由绕过，不重置鉴权。按当前218差异补最终构建和图片轮终态，再真实分组复验及发布。
 
