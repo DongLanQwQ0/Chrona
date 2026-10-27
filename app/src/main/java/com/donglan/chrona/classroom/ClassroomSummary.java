@@ -18,8 +18,8 @@ import java.util.Set;
 public final class ClassroomSummary {
     public static final int DEFAULT_IMAGES=40;
     public static final int MAX_IMAGES=40;
-    private static final int PIPELINE_VERSION=9;
-    private static final int MAX_IMAGE_TIME_RANGES=12;
+    private static final int PIPELINE_VERSION=10;
+    private static final int MAX_IMAGE_TIME_RANGES=40;
     private static final double IMAGE_RANGE_GAP_SECONDS=60;
     private static final double SUBTITLE_TIME_GAP_SECONDS=15;
     private static final double SUBTITLE_ANCHOR_INTERVAL_SECONDS=60;

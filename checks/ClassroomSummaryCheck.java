@@ -129,7 +129,7 @@ public final class ClassroomSummaryCheck {
         JSONArray sparse=new JSONArray();for(int i=0;i<200;i++)sparse.put(new JSONObject().put("second",i*120));
         JSONObject sparseCatalogue=ClassroomSummary.imageCatalogue(sparse,40);ranges=sparseCatalogue.getJSONArray("ranges");int represented=0;long previous=-1;
         for(int i=0;i<ranges.length();i++){JSONArray range=ranges.getJSONArray(i);represented+=range.getInt(2);check(range.getLong(0)>previous&&range.getLong(1)>=range.getLong(0),"compact ranges remain ordered and non-overlapping");previous=range.getLong(1);}
-        check(ranges.length()<=12&&represented==200,"even sparse catalogues have at most twelve ranges without losing counts");
+        check(ranges.length()==40&&represented==200,"sparse catalogues use the forty-range ceiling without losing counts");
         check(ClassroomSummary.imageCatalogue(dense,0).getJSONArray("ranges").length()==0,"disabled upload adds no image timestamps");
         JSONObject withCatalogue=ClassroomSummary.lessonInput(source,new JSONArray()).put("image_catalogue",denseCatalogue);
         check(ClassroomSummary.uploadChunk(withCatalogue).getJSONObject("image_catalogue").toString().equals(denseCatalogue.toString()),"compressed transcript carries the compact availability catalogue");
@@ -250,7 +250,7 @@ public final class ClassroomSummaryCheck {
                 &&requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==41,"HTTP requests send zero then exactly forty images");
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
-        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n9\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
+        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n10\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
     }
     private static void textOnlyAndInvalidRetry()throws Exception {
         reset();File dir=materialDir("text-only-"+System.nanoTime());
