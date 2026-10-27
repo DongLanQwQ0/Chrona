@@ -1,5 +1,16 @@
 # 验证记录
 
+## 0.15.58 — 折姜星辰考试查询 — 2026-10-27
+
+- 普通Git推送因github.com:443连接超时未完成，随后该端口TCP=False、api.github.com:443=True；未修改代理或重置登录。0.15.58已在手机可用，尚未发布GitHub。更新前原LAN服务已通过正常设置恢复，最后确认服务运行，未中断课堂／AI工作。
+
+- 考试安排复用已有教务CAS会话；普通及期中各自读取官方时间、考场与座位，不依据活跃学期删掉仍未进行的考试，不调用AI或写日历。完整分页后原子替换账号隔离缓存；异常时间保留原文、空成功清空旧列表、失败保留旧数据。缓存可由系统回收，退出账号清理。
+- 正常Android36隔离包实际HTTP拦截／AtomicFile／原生触摸41项通过：`build/exams-native-light.txt`，覆盖103条跨页、缺字段、期中、时区星期、失败与分页停滞、账号、空成功、手动刷新及旋转。正常横屏深色15项通过：`build/exams-native-landscape-dark.txt`，整页上滑移走标题，正文视口不被固定工具挤占；未调整DPI／字号／分辨率。压缩JPEG在`build/ui-exams-review/`，同一ui_review独立通过。
+- 连接构造时退出的具体竞态已收口：分配client后、首次HTTP前复验来源许可，失效即取消并关闭。定向真实Session检查`build/exams-native-final-lifecycle.txt`17项通过，含阻塞构造→退出→放行后零HTTP。纯错误文案只由Session按是否存在缓存追加一次保留状态。
+- 既有客户端及账号回归：`build/exams-zju-recovery-regression.txt`21项、`build/exams-client-regression.txt`95＋44项、`build/exams-planner-adapter-regression.txt`51项通过。JVM适配器新增模型依赖与考试缓存清理桩，实际AtomicFile仍由原生检查验证。
+- 源码7ebff9f，release＋lintRelease通过；最后三处纯错误文案收敛后定向assembleRelease通过，固定`build/candidates/0.15.58/Chrona-0.15.58.apk`3236982字节、220／0.15.58、原签名。USB正常覆盖于23:46:01成功，首次安装2026-09-26 18:54:37不变。回执`build/release-0.15.58-{final-build,fixed-assemble,signature,phone-package}.txt`。
+- **官方真机成功**：通过应用UI与已保存账号正常查询，显示7条未来考试及已结束分组；微积分期中11/7周六14:00–16:00、西2-101／121，线代期中11/15周日14:00–16:00、西2-104／53，大英1/6周三08:00–10:00；另有4门普通考试。实际点击刷新后结果一致，无错误。原XML及压缩JPEG为`build/ui-exams-phone/phone-exams-{loaded,refreshed}.{xml,jpg}`，主代理与原reviewer亲看通过。未读取或输出凭据，不以合成响应冒充官方数据。
+
 ## 0.15.57验收与真机更新 — 2026-10-27
 
 - 正式发布[v0.15.57](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.57)，标签目标0acf342与已安装候选一致，资产3231902字节且uploaded／非草稿，回执`build/release-0.15.57-published.json`。
