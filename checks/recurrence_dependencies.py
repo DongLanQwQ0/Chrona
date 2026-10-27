@@ -22,11 +22,16 @@ def recurrence_classpath():
 
 
 def recurrence_java(command):
-    """Add real model sources to javac and their cached dependencies to JVM commands."""
+    """Add real model dependencies and project-local JVM temporary storage."""
     command = list(command)
     executable = Path(command[0]).stem
     if executable not in ('javac', 'java'):
         return command
+    temporary_option = '-J-Djava.io.tmpdir=' if executable == 'javac' else '-Djava.io.tmpdir='
+    if not any(str(argument).startswith(temporary_option) for argument in command[1:]):
+        temporary = ROOT / 'build/tmp'
+        temporary.mkdir(parents=True, exist_ok=True)
+        command.insert(1, temporary_option + str(temporary))
     dependency_cp = recurrence_classpath()
     if '-cp' in command:
         index = command.index('-cp') + 1

@@ -59,7 +59,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Build or lint failed' }
 & 'E:\Programs\拾时 · Chrona\tools\Start-AndroidEmulator.ps1'
 ```
 
-脚本使用F盘现有 `Chrona_Classroom_36`，默认竖屏1080×2376并开启电脑键盘输入。没有实例时直接启动；已有窗口时复用；后台无窗口时先询问是否保留数据重启，不强制终止。修改硬件配置前在AVD原目录保存备份，启动日志位于 `F:\Android\user-home\emulator-logs`。屏幕像素与电脑上的窗口尺寸不同，窗口可缩放。
+脚本使用F盘现有 `Chrona_Classroom_36`，默认竖屏1080×2376并开启电脑键盘输入。没有实例时直接启动；已有窗口时复用；后台无窗口时先询问是否保留数据重启，不强制终止。修改硬件配置前在AVD原目录保存备份，启动日志位于本项目 `build/emulator-logs`。屏幕像素与电脑上的窗口尺寸不同，窗口可缩放。
 
 `-CheckOnly` 只读检查；`-RestartHeadless` 明确允许将已有后台实例重启为窗口；可用 `-Width 1080 -Height 2376` 调整像素。脚本不清数据、不重新安装Android、不操作真机。点击输入框后可使用电脑键盘；中文输入还需要模拟器内支持中文的输入法。
 
@@ -77,6 +77,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Build or lint failed' }
 2. 完成同一功能涉及的状态、数据、入口及恢复路径；保持用户授权范围和已确认交互。
 3. 开发后集中执行相关检查、构建及必要的实际交互验证。`checks/` 中各脚本说明自身依赖；`python checks/run_checks.py full --list` 可列出统一离线集合，`full` 执行该集合。浏览器、设备和真实服务验证单独进行。
 4. 实际结果写[验证记录](validation-history.md)，产品改动写对应功能文档及 `CHANGELOG.md`，当前限制写 `HANDOFF.md`。正式发布按发布指南核对有效 APK 和升级路径。
+
+使用 `recurrence_java` 的离线 runner 将 `java.io.tmpdir` 默认设在本项目 `build/tmp`；图片缓存、学期、同步核心、候选合并、附件上传及同步锁检查使用各自输出目录的 `tmp`。编译器使用对应 `-J-Djava.io.tmpdir`；只设置工作目录不能约束 JVM 临时文件。手动运行 Java 检查（包括尚无 runner 的 `ModelOutputCheck`）时，先创建项目内临时目录，再给 `java`／`javac` 传入同样的绝对路径参数。Python `tempfile` 同样应显式指定项目 `build` 内的 `dir`。公共 SDK、Gradle 缓存和统一 AVD 保持原位置。
 
 纯文档修改检查事实、链接和差异，无需重新打包 APK。仅相关输入或候选变化时补充验证，已有有效证据无需反复执行。归档保留历史证据，不当作当前要求或待办。
 

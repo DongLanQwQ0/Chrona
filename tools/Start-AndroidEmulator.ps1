@@ -68,7 +68,8 @@ if ($updated -cne $text) {
     Copy-Item -LiteralPath $config -Destination "$config.before-window-$(Get-Date -Format yyyyMMdd-HHmmss).bak"
     [IO.File]::WriteAllText($config, $updated, [Text.UTF8Encoding]::new($false))
 }
-$logs = Join-Path $env:ANDROID_USER_HOME 'emulator-logs'
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$logs = Join-Path $projectRoot 'build\emulator-logs'
 [IO.Directory]::CreateDirectory($logs) | Out-Null
 $stamp = Get-Date -Format yyyyMMdd-HHmmss
 $process = Start-Process -FilePath $emulator -ArgumentList @('-avd', $avd, '-port', '5580',
@@ -86,7 +87,7 @@ do {
     }
     Start-Sleep -Seconds 1
 } while ([DateTime]::UtcNow -lt $deadline)
-if ([DateTime]::UtcNow -ge $deadline) { throw '启动尚未完成，窗口保留；请查看模拟器窗口及F盘日志。' }
+if ([DateTime]::UtcNow -ge $deadline) { throw "启动尚未完成，窗口保留；请查看模拟器窗口及日志目录：$logs" }
 & $adb -s $serial shell wm size "${Width}x${Height}"
 if ($LASTEXITCODE -ne 0) { throw '虚拟机已启动，但分辨率设置失败。' }
 Write-Host '已就绪。点击输入框后使用电脑键盘；所有原有应用和数据均保留。'

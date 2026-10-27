@@ -7,6 +7,8 @@ import subprocess
 root = Path(__file__).resolve().parents[1]
 out = root / 'build/classroom-images-check'
 out.mkdir(parents=True, exist_ok=True)
+temporary = out / 'tmp'
+temporary.mkdir(parents=True, exist_ok=True)
 tree = ast.parse((root / 'checks/classroom_summary_check.py').read_text(encoding='utf-8-sig'))
 fixtures = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'fixtures' for t in node.targets))
 fixtures = {name: body for name, body in fixtures.items() if name.startswith('android/')}
@@ -29,5 +31,5 @@ sources.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/Classro
 sources.append(src / 'net/NetworkFailure.java')
 jar = root / 'build/ai-checks/json.jar'
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
-subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', str(jar), '-d', str(out), *map(str, sources)], check=True)
-subprocess.run([str(java / 'java.exe'), '-Djava.awt.headless=true', '-cp', str(out) + os.pathsep + str(jar), 'ClassroomImagesCheck'], check=True)
+subprocess.run([str(java / 'javac.exe'), f'-J-Djava.io.tmpdir={temporary}', '--release', '17', '-encoding', 'UTF-8', '-cp', str(jar), '-d', str(out), *map(str, sources)], check=True)
+subprocess.run([str(java / 'java.exe'), f'-Djava.io.tmpdir={temporary}', '-Djava.awt.headless=true', '-cp', str(out) + os.pathsep + str(jar), 'ClassroomImagesCheck'], check=True)

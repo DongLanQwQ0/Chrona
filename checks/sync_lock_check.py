@@ -9,6 +9,8 @@ OUT = ROOT / "build/sync-lock-check"
 SRC = OUT / "src"
 JAVA = Path(os.environ.get("JAVA_HOME", "D:/Minecraft/java21")) / "bin"
 JSON = ROOT / "build/ai-checks/json.jar"
+TEMPORARY = OUT / "tmp"
+TEMPORARY.mkdir(parents=True, exist_ok=True)
 
 def write(path, source):
     target = SRC / path
@@ -124,5 +126,5 @@ else {check(AndroidSyncData.text.equals("during HTTP"),"local edit lost");check(
 public static void main(String[] a)throws Exception {try{scenario(false,false);scenario(true,false);scenario(true,true);System.out.println("Sync lock: 3 latch scenarios passed (production coordinator, real SyncState; network/DB adapters)");}finally{java.lang.reflect.Field f=AndroidSync.class.getDeclaredField("WORKER");f.setAccessible(true);((ExecutorService)f.get(null)).shutdownNow();}}}
 ''')
 sources = [str(p) for p in SRC.rglob("*.java")]
-subprocess.run([str(JAVA / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-cp", str(JSON), "-d", str(OUT), *sources], check=True)
-subprocess.run([str(JAVA / "java.exe"), "-cp", str(OUT) + os.pathsep + str(JSON), "com.donglan.chrona.SyncLockCheck"], check=True, timeout=25)
+subprocess.run([str(JAVA / "javac.exe"), f"-J-Djava.io.tmpdir={TEMPORARY}", "--release", "17", "-encoding", "UTF-8", "-cp", str(JSON), "-d", str(OUT), *sources], check=True)
+subprocess.run([str(JAVA / "java.exe"), f"-Djava.io.tmpdir={TEMPORARY}", "-cp", str(OUT) + os.pathsep + str(JSON), "com.donglan.chrona.SyncLockCheck"], check=True, timeout=25)

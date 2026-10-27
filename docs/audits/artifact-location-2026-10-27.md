@@ -1,90 +1,72 @@
-# 项目衍生产物归属审计（2026-10-27）
+# 项目衍生产物归属与清理清单（2026-10-27）
 
-审计为只读；未移动、删除或清空任何文件。统计未追踪目录链接，未查看PNG原图；数字是审计时快照，构建过程中会变化。占用情况由执行脚本时重新检查。
+## 已准备好，未执行清理
 
-后续决定：用户已选择删除A1–A7全部指定内容；已在聊天提供不依赖原处理脚本的精确白名单PowerShell命令，由用户执行。尚无执行回执，以下清单仍是审计时快照，原保留建议不再作为这些条目的处理要求。
+正式删除白名单：[artifact-cleanup-candidates-2026-10-27.csv](artifact-cleanup-candidates-2026-10-27.csv)。共 **105项**，每行均给出精确绝对路径、类型、字节、理由、目录链接及排除边界，供用户自行执行；不使用通配符或整个公共父目录。
 
-## 建议先移回证据，再选择删除
+- F盘公共目录：**16项，153968683字节（146.84 MiB）**。
+- E盘项目内旧APK：**89个文件，221189936字节（210.94 MiB）**，单独分组，不计F盘收益。仅删列出的APK，保留同目录其余元数据。
+- 旧A1–A7（含本次补查的C盘A6）目前均不存在，不再沿用旧132.1 MiB作为现有可回收量。
 
-已确认有 **138,516,169字节（约132.1 MiB）** 的Chrona材料遗留在项目外。下列ID可交给脚本逐项选择；默认只预览，建议优先`Move`到本项目的`build/imported-external-20261027/`。
+本次未删除、搬迁或清空任何已有文件。后续执行前须复查存在性、链接与占用，盘点快照不等于删除时可用性检查。
 
-| ID | 外部绝对路径 | 文件数 | 字节 | 归属与建议 |
-| --- | --- | ---: | ---: | --- |
-| A1 | `F:\Android\ChronaBuildCheck\capsule-host` | 20 | 132034322 | SystemUI APK及反编译审计，验证记录明确引用；建议移回保留 |
-| A2 | `F:\Android\ChronaBuildCheck\com` | 14 | 80784 | Chrona历史class派生，可移回或删除 |
-| A3 | `F:\Android\ChronaHistoricalBuilds` | 198 | 4761530 | 0.5.0历史源码导出／APK／构建；建议移回，是否删除由你决定 |
-| A4 | `F:\Android\temp\reparse-web-evidence` | 4 | 57376 | 重新解析验收的四张压缩图，建议移回 |
-| A5 | `F:\Android\temp\settings-exit-evidence` | 10 | 1549904 | 设置退出验收PNG/JPEG，建议移回 |
-| A6 | `C:\Users\DongLan\AppData\Local\Temp\chrona-stores-review.txt` | 1 | 10973 | 存储代码检索审计，可移回或删除 |
-| A7 | 下列8个精确日志 | 8 | 21280 | 设置退出构建／验收日志，建议移回；脚本不使用通配符 |
+## F盘确认可删条目
 
-A7仅包含：
+以下目录树盘点时未发现junction/symlink/reparse point；不含当前运行数据、持久profile、签名和恢复材料。只认每行精确目标，不删除F:\Temp或F:\Android等父目录。
 
-```text
-F:\Android\temp\settings-exit-build.log
-F:\Android\temp\settings-exit-dark-320-1.5.log
-F:\Android\temp\settings-exit-dark-400-1.0.log
-F:\Android\temp\settings-exit-emulator-err.log
-F:\Android\temp\settings-exit-emulator-out.log
-F:\Android\temp\settings-exit-light-320-1.5.log
-F:\Android\temp\settings-exit-light.log
-F:\Android\temp\settings-exit-test-build.log
-```
+| 精确绝对路径 | 类型 | 字节 | 理由 |
+| --- | --- | ---: | --- |
+| `F:\Temp\chrona-island-drag` | 目录 | 98240390 | OEM APK/dex/smali/索引是历史灵动岛拖放静态分析材料；非安装运行目录，无当前HANDOFF路径依赖。 |
+| `F:\Temp\chrona-reparse-validation` | 目录 | 36387504 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-vivo-setup-distribution-check` | 目录 | 9870261 | 0.15.42分发包展开验证夹具（含复制到夹具的adb工具）；不是公共SDK，不含签名；当前候选0.15.53不引用。 |
+| `F:\Temp\chrona-classroom-workspace` | 目录 | 5393909 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-reparse-action-row-final` | 目录 | 1736142 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-reparse-short-copy-final` | 目录 | 1418478 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-no-accessibility` | 目录 | 244139 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-homework-filter` | 目录 | 131078 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-timetable` | 目录 | 105578 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-split` | 目录 | 47685 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-cap-close-now.jpg` | 文件 | 71343 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-cap-open-now.jpg` | 文件 | 69212 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-capsule-before.jpg` | 文件 | 93526 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-capsule-expanded.jpg` | 文件 | 72429 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-capsule-home.jpg` | 文件 | 33300 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
+| `F:\Temp\chrona-capsule-open.jpg` | 文件 | 53709 | 文件清单为历史渲染/验证/诊断产物；当前工作不依赖，无运行配置。 |
 
-证据出处：`docs/validation-history.md`中的胶囊宿主、重新解析、设置退出、0.5.0历史交付记录，以及文件内的Chrona源码路径。禁止把整个`F:\Android\ChronaBuildCheck`列删，其中`github-cli`是外部工具（2文件、42876281字节）。
+## E盘旧APK与保留版本
 
-## 项目内目录可另行选择，不在外部清理脚本中
+白名单的`E-old-apk`组逐个列出89个旧APK文件；不删除整个版本目录，不触及ZIP、工具脚本、元数据、密钥或备份。版本0.15.51、0.15.52、0.15.53的固定候选全部保留；手机已实测215／0.15.53，下一候选仍在开发。0.15.51／0.15.52使用旧数据库版本，保留它们用于历史与匹配备份，不承诺可直接覆盖降级；当前数据库版本18的恢复基线为0.15.53同源候选。
 
-以下均在`E:\Programs\拾时 · Chrona\`内，归属位置符合要求。
+旧分发包中的18个`vivo-setup`辅助APK副本（1315334字节）已从删除白名单排除，逐项位于[待确认工具副本清单](artifact-cleanup-pending-tools-2026-10-27.csv)，避免将工具副本按主应用版本淘汰规则处理。
 
-| 目录 | 文件数 | 字节 | 建议 |
-| --- | ---: | ---: | --- |
-| `build` | 12871 | 1789368985 | 混有证据、安装包、恢复材料及持久浏览器状态，不能整删 |
-| `app/build/intermediates` | 2985 | 100937989 | 可重建缓存，待选择 |
-| `app/build/tmp` | 41 | 982886 | 可重建临时文件，待选择 |
-| `app/build/generated` | 4 | 1821 | 可重建生成物，待选择 |
-| `app/build/outputs` | 23 | 19117912 | 各变体APK，需与固定候选分开选择 |
-| `.gradle` | 13 | 8486609 | 项目缓存，可重建，待选择 |
-| `.local-backups` | 1274 | 79905359 | 恢复备份，先保留 |
-| `.backups` | 15 | 742017 | 恢复备份，先保留 |
+## 保留及待确认项
 
-`build`内占用较大：`device-ui-audit`382020328字节、`candidate-merge-checks`174471352、`distributions`162618017、`promo-20261014`143702400、`classroom-header-evidence`136710419、`candidates`91134669、`backups`89536308、`current-classroom-ui-evidence`81887104、`lan-web-checks`58476448、`backup-restore-check`50488551、`distribution`47571058。
+| 精确路径 | 字节 | 决定 |
+| --- | ---: | --- |
+| `F:\Temp\chrona-monitor-review` | 1503776 | 保留：现有验证记录直接引用的已签收UI证据，需先明确历史证据保留决定 |
+| `F:\Temp\chrona-classroom-polish-input` | 391578 | 待确认，保留：三张JPEG尚未确认原始输入来源及项目内副本，未查看图片 |
+| `F:\Android\ChronaBuildCheck\github-cli` | 42876281 | 保留：旧共享工具副本，不归Chrona构建垃圾；当前统一使用`F:\Programs\GitHubCLI\bin\gh.exe` |
+| `F:\Android\user-home\emulator-logs` | 60799 | 保留：可能混有其它任务的共享日志 |
+| `F:\Android\temp\AndroidEmulator` | 5019229 | 保留：共享AVD诊断，不能按模拟器名称认领全部文件 |
+| `E:\Programs\拾时 · Chrona\build\lan-web-checks\browser-profile` | 58474641 | 保留：持久浏览器身份 |
+| `E:\Programs\拾时 · Chrona\build\ai-checks\json.jar` | 82710 | 保留：实际检查依赖 |
+| `E:\Programs\拾时 · Chrona\build\backups` | 89536308 | 保留：恢复材料 |
+| `E:\Programs\拾时 · Chrona\.backups` | 742017 | 保留：用户已有恢复材料 |
+| `E:\Programs\拾时 · Chrona\.local-backups` | 79905359 | 保留：用户已有恢复材料 |
 
-必须保留：源码、`.git`、工程配置；`build/ai-checks/json.jar`仍被检查入口当作依赖，`build/lan-web-checks/browser-profile`是统一持久浏览器身份。未经迁移不能把它们当普通缓存清掉。`.backups/`和`.local-backups/`目前未被gitignore覆盖，但属于用户已有未跟踪文件，本轮不改。
+公共SDK、Gradle/cache、统一`Chrona_Classroom_36` AVD/userdata、签名与登录状态保持原位；其它项目、原始输入和手机真实资料不纳入清理。目录及文件元数据详表在`build/artifact-path-repair-inventory.{csv,json}`及`build/artifact-path-repair-files.csv`。
 
-## 来源未确定的外部文件：默认保留，不纳入脚本
+## 已修正继续外写的入口
 
-| 路径 | 文件数／字节 | 原因 |
-| --- | --- | --- |
-| `F:\Android\user-home\emulator-logs` | 9／60799 | 本项目脚本会写此处，但共享模拟器日志可能属于其它任务 |
-| `F:\Android\temp\AndroidEmulator` | 4／5019229 | 共享模拟器bugreport／崩溃状态，不按AVD名称认定项目垃圾 |
-| `C:\Users\DongLan\Downloads\Chrona-demo-compatible.mp4` | 1／8164826 | 与项目视频同名同大小；用途待你确认，未计算hash |
-| `C:\Users\DongLan\Downloads\Chrona-2026-10-12.png`及` (1)`、` (2)` | 3／133502 | 可能是原始输入，不查看原图、不清理 |
+- `tools/Start-AndroidEmulator.ps1`：未来启动日志改写本项目`build/emulator-logs`，SDK、AVD与共享用户目录不搬；开发指南同步更新。未为验证启动或重置模拟器。
+- `checks/recurrence_dependencies.py`：共享Java/javac入口默认使用项目`build/tmp`，保留调用者已有显式临时路径。
+- `academic_terms_check.py`、`candidate_merge_check.py`、`classroom_images_check.py`、`lan_attachment_upload_check.py`、`sync_core_check.py`、`sync_lock_check.py`：编译器`-J-Djava.io.tmpdir`与运行时`-Djava.io.tmpdir`均指向各检查输出目录的`tmp`，不是仅改变cwd。
+- Python `tempfile`的现有调用已显式使用项目`build`父目录，未改全局TEMP/TMP或其它项目环境。
 
-本聊天附加可视化工作区`C:\Users\DongLan\.codex\visualizations\2026\10\23\01a16705-4388-7f81-93e7-4064b46f727b`存在但为空。旧`F:\Android\GitHubCLI`已不存在。
+有效证据：`build/artifact-path-repair-validation.json`。21条实际派发命令参数检查通过；7个临时根均用真实javac读取属性、真实JVM创建临时目录和文件验证实际落点。PowerShell语法、Python AST及diff检查通过。主代理新增图片引用定向测试亦经此共享Java入口通过33项，未额外重跑不相关业务。
 
-## 继续产生外部文件的入口，待你选择后整改
+直接手动调用仍需显式传临时路径：`ModelOutputCheck.java`没有受控runner或可更新执行命令，保留原入口，不凭空新增必填参数。开发指南已说明`java -Djava.io.tmpdir=...`／`javac -J-Djava.io.tmpdir=...`；绕过项目runner的任意手动调用不在自动强制范围内。
 
-1. `tools/Start-AndroidEmulator.ps1:71–76`将日志放入公共`ANDROID_USER_HOME/emulator-logs`；`docs/development.md:62`也记录该路径。建议改为项目`build/emulator-logs`，AVD／SDK仍外置。
-2. Java临时目录未指定项目父目录：`ClassroomImagesCheck.java:27`、`CourseAgendaCheck.java:26,81`、`ModelOutputCheck.java:11`、`SyncCoreCheck.java:81`、`SyncExchangeCheck.java:163`、`TimetableLibraryCheck.java:61`；`lan_attachment_upload_check.py:111`、`sync_lock_check.py:108`生成的Java夹具亦有此问题。`CandidateMergeCheck.java:40`直接依赖`java.io.tmpdir`。
-3. 对应runner未固定`-Djava.io.tmpdir`：`classroom_images_check.py`、`academic_terms_check.py`、`sync_core_check.py`、`candidate_merge_check.py`、`lan_attachment_upload_check.py`、`sync_lock_check.py`。仅设置cwd不改变JVM临时目录。建议统一到项目`build/tmp`，不搬公共运行库或Gradle缓存。
+## 汇总与执行边界
 
-本轮新增检查已使用项目内临时目录；以上历史入口只列问题，未借审计擅自重构。
-
-## 公共组件保留在外部
-
-`F:\Programs\GitHubCLI\bin\gh.exe`（现用且认证正常）、`F:\Android\Sdk`、`Avd`、`Gradle`、`GradleCache`、`Jdk`、`npm-cache`及公共用户目录保留。`F:\Android\Downloads`中的NDK／SDK安装材料约3.77GB，为工具链而非项目垃圾。pip/Kotlin/JNI/sqlite公共运行库、其它项目、GlobalSend收到的原图、Codex全局会话与记忆、手机与AVD用户数据均不处理。
-
-## 你选择后执行
-
-使用PowerShell 7，默认只预览：
-
-```powershell
-& 'E:\Programs\拾时 · Chrona\tools\Manage-ExternalArtifacts.ps1'
-# 建议：先把A1至A7移回本项目，保留证据
-& 'E:\Programs\拾时 · Chrona\tools\Manage-ExternalArtifacts.ps1' -Id A1,A2,A3,A4,A5,A6,A7 -Action Move -Execute
-# 若你只要删除旧class与存储审计文本，先看计划再加-Execute
-& 'E:\Programs\拾时 · Chrona\tools\Manage-ExternalArtifacts.ps1' -Id A2,A6 -Action Remove
-```
-
-脚本只接受上述精确白名单；执行前检查源／目标边界、目录链接、文件占用及目标冲突。发现异常停止，不删除公共父目录。实际操作记录留在项目`build/external-artifact-actions/`。
+本清单是用户手动清理的输入，未运行删除脚本。盘点时没有发现所列目录树链接；没有进行独占打开/占用锁检查，执行脚本必须重新检查，遇到新链接、文件占用或路径身份变化应停止。现有`Manage-ExternalArtifacts.ps1`只对应已不存在的旧A1–A7，不用于本次新白名单。

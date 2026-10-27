@@ -7,6 +7,8 @@ import sys
 root = Path(__file__).resolve().parents[1]
 out = root / 'build/academic-terms-check'
 out.mkdir(parents=True, exist_ok=True)
+temporary = out / 'tmp'
+temporary.mkdir(parents=True, exist_ok=True)
 fixtures = {
     'android/content/Intent.java': '''package android.content;
 public class Intent { public final Class<?> target; private final java.util.Map<String,String> extras=new java.util.HashMap<>();
@@ -57,9 +59,9 @@ sources += [root / 'app/src/main/java/com/donglan/chrona/TimetableStore.java',
             root / 'app/src/main/java/com/donglan/chrona/CourseAgenda.java',
             root / 'checks/CourseAgendaCheck.java',
             root / 'checks/AcademicTermsCheck.java', root / 'checks/TimetableLibraryCheck.java', *stubs]
-subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', classpath,
+subprocess.run([str(java / 'javac.exe'), f'-J-Djava.io.tmpdir={temporary}', '--release', '17', '-encoding', 'UTF-8', '-cp', classpath,
                 '-d', str(out), *map(str, sources)], check=True)
-run = [str(java / 'java.exe'), '-cp', str(out) + os.pathsep + classpath]
+run = [str(java / 'java.exe'), f'-Djava.io.tmpdir={temporary}', '-cp', str(out) + os.pathsep + classpath]
 subprocess.run([*run, 'com.donglan.chrona.timetable.AcademicTermsCheck', *sys.argv[1:]], check=True)
 subprocess.run([*run, 'com.donglan.chrona.TimetableLibraryCheck'], check=True)
 subprocess.run([*run, 'com.donglan.chrona.CourseAgendaCheck'], check=True)

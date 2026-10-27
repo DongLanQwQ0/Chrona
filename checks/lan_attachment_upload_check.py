@@ -9,6 +9,8 @@ OUT = ROOT / "build/lan-attachment-upload-check"
 SRC = OUT / "src"
 JAVA = Path(os.environ.get("JAVA_HOME", "D:/Minecraft/java21")) / "bin"
 JSON = ROOT / "build/ai-checks/json.jar"
+TEMPORARY = OUT / "tmp"
+TEMPORARY.mkdir(parents=True, exist_ok=True)
 
 def write(path, source):
     target = SRC / path
@@ -147,7 +149,7 @@ nativeSource.delete();System.out.println("PASS: production upload limits, short 
 ''')
 classes = OUT / "classes"
 classes.mkdir(parents=True, exist_ok=True)
-subprocess.run([str(JAVA / "javac"), "-encoding", "UTF-8", "-cp", str(JSON), "-d", str(classes),
+subprocess.run([str(JAVA / "javac"), f"-J-Djava.io.tmpdir={TEMPORARY}", "-encoding", "UTF-8", "-cp", str(JSON), "-d", str(classes),
                 *map(str, SRC.rglob("*.java"))], check=True)
-subprocess.run([str(JAVA / "java"), "-cp", str(classes) + os.pathsep + str(JSON),
+subprocess.run([str(JAVA / "java"), f"-Djava.io.tmpdir={TEMPORARY}", "-cp", str(classes) + os.pathsep + str(JSON),
                 "com.donglan.chrona.LanAttachmentUploadCheck"], check=True)

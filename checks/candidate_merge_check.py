@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'build/candidate-merge-checks'
 SRC = OUT / 'src'
 SRC.mkdir(parents=True, exist_ok=True)
+TEMPORARY = OUT / 'tmp'
+TEMPORARY.mkdir(parents=True, exist_ok=True)
 JAVA = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
 
 def write(path, text):
@@ -147,13 +149,13 @@ for group,module in [('net.sf.biweekly','biweekly'),('com.github.mangstadt','vin
     jars += sorted(path for path in (cache / group / module).glob('*/*/*.jar')
                    if not path.name.endswith(('-sources.jar', '-javadoc.jar')))[-1:]
 classpath = os.pathsep.join(map(str,jars))
-subprocess.run([str(JAVA / 'javac.exe'),'--release','17','-encoding','UTF-8','-cp',classpath,'-d',str(OUT),*map(str,sources)],check=True)
-subprocess.run([str(JAVA / 'java.exe'),'-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.SyncExchangeCheck'],check=True)
-subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.CandidateMergeCheck',str(OUT / 'databases')],check=True)
+subprocess.run([str(JAVA / 'javac.exe'),f'-J-Djava.io.tmpdir={TEMPORARY}','--release','17','-encoding','UTF-8','-cp',classpath,'-d',str(OUT),*map(str,sources)],check=True)
+subprocess.run([str(JAVA / 'java.exe'),f'-Djava.io.tmpdir={TEMPORARY}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.SyncExchangeCheck'],check=True)
+subprocess.run([str(JAVA / 'java.exe'),f'-Djava.io.tmpdir={TEMPORARY}',f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.CandidateMergeCheck',str(OUT / 'databases')],check=True)
 
-subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.TwoScheduleTypesCheck',str(OUT / 'databases')],check=True)
+subprocess.run([str(JAVA / 'java.exe'),f'-Djava.io.tmpdir={TEMPORARY}',f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.TwoScheduleTypesCheck',str(OUT / 'databases')],check=True)
 
-subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.SnapshotBackupCheck',str(OUT / 'databases')],check=True)
-subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.ParseAuditStoreCheck',str(OUT / 'databases')],check=True)
+subprocess.run([str(JAVA / 'java.exe'),f'-Djava.io.tmpdir={TEMPORARY}',f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.SnapshotBackupCheck',str(OUT / 'databases')],check=True)
+subprocess.run([str(JAVA / 'java.exe'),f'-Djava.io.tmpdir={TEMPORARY}',f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.ParseAuditStoreCheck',str(OUT / 'databases')],check=True)
 
-subprocess.run([str(JAVA / 'java.exe'),f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.ReviewStatusCheck',str(OUT / 'databases')],check=True)
+subprocess.run([str(JAVA / 'java.exe'),f'-Djava.io.tmpdir={TEMPORARY}',f'-Dpython={shutil.which("python") or "D:/Python/python.exe"}',f'-Dbridge={ROOT / "checks/sqlite_bridge.py"}','-cp',str(OUT)+os.pathsep+classpath,'com.donglan.chrona.ReviewStatusCheck',str(OUT / 'databases')],check=True)

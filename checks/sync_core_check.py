@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 JAVA = Path(os.environ.get("JAVA_HOME", "D:/Minecraft/java21")) / "bin"
 OUT = ROOT / "build" / "sync-core-checks"
 OUT.mkdir(parents=True, exist_ok=True)
+TEMPORARY = OUT / "tmp"
+TEMPORARY.mkdir(parents=True, exist_ok=True)
 classpath = os.environ.get("CHRONA_SYNC_CLASSPATH")
 if not classpath:
     cache = Path(os.environ.get("GRADLE_USER_HOME", "F:/Android/GradleCache")) / "caches/modules-2/files-2.1"
@@ -22,6 +24,6 @@ if not classpath:
         raise SystemExit("Set CHRONA_SYNC_CLASSPATH to existing org.json, okhttp, okio and Kotlin runtime jars")
     classpath = os.pathsep.join(map(str, jars))
 sources = [str(ROOT / "shared/src/main/java/com/donglan/chrona/sync" / name) for name in ("SyncState.java", "WebDavClient.java")]
-subprocess.run([str(JAVA / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-cp", classpath,
+subprocess.run([str(JAVA / "javac.exe"), f"-J-Djava.io.tmpdir={TEMPORARY}", "--release", "17", "-encoding", "UTF-8", "-cp", classpath,
                 "-d", str(OUT), *sources, str(ROOT / "checks/SyncCoreCheck.java")], check=True)
-subprocess.run([str(JAVA / "java.exe"), "-cp", str(OUT) + os.pathsep + classpath, "SyncCoreCheck"], check=True)
+subprocess.run([str(JAVA / "java.exe"), f"-Djava.io.tmpdir={TEMPORARY}", "-cp", str(OUT) + os.pathsep + classpath, "SyncCoreCheck"], check=True)
