@@ -1,5 +1,15 @@
 # 验证记录
 
+## 0.15.57验收与真机更新 — 2026-10-27
+
+- 正式发布[v0.15.57](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.57)，标签目标0acf342与已安装候选一致，资产3231902字节且uploaded／非草稿，回执`build/release-0.15.57-published.json`。
+
+- 配对地址居中；独立启用的可选文字控件恢复平台屏蔽的pressed drawable状态，继续复用公共PressFeedback及原生选字。正常Android36实际触摸、剪贴板、会话失效保护和精确「已复制」深浅各12项通过：`build/lan-centered-native-state.txt`、`build/lan-centered-native-dark.txt`。压缩JPEG在`build/ui-0.15.57-review/`，主代理与同一ui_review亲看通过。真机图只证明已安装布局及按压，短暂提示未捕获，不作真机提示证据。
+- assembleRelease及lintRelease通过；源码0acf342，固定`build/candidates/0.15.57/Chrona-0.15.57.apk`3231902字节、219／0.15.57、非debug、原签名。USB于23:10:21覆盖成功，首次安装2026-09-26 18:54:37保持，见`build/release-0.15.57-phone-package.txt`。源码已正常推送，未更改代理或重新鉴权。
+- 前序真实LAN已通过：`build/lan-live-217/report.json`覆盖实际三页及正常竖横屏、选择／筛选／返回；`build/lan-live-218/report.json`补验433条目全类型按执行10/27、作业查询按截止11/6，由同一reviewer关闭P2。219仅改变原生配对UI，不重跑已有效Web证据。
+- 真实微积分草稿于22:40:53继续31附图第二轮，22:45明确显示「总结已完成」及真实正文，严格图片引用校验通过。证据`build/phone-20261027-analysis/217-calculus-result.xml`及`217-calculus-complete.jpg`。未重下载或重跑第一轮；旧包未保存具体非法引用，不能将其原始错误直接归因于前缀。
+- 矩形遮挡仅完成只读审查，尚未改变去重：当前近似连续帧直接保留较晚帧，无质量评分或同组回选；讨论建议同页分组与内容完整度择优，不默认为像素补全或AI补画。
+
 ## 0.15.55候选 — 三页轻量Web、课堂批量与横屏间距 — 2026-10-27
 
 - 用户最新限定只验正常屏幕字号竖横屏，不再运行极端分辨率／DPI／字体矩阵。生产前端真实Edge鼠标／键盘／触摸检查`node checks/lan_daily_workspace_check.cjs`通过，模拟手机API；414×896首卡y340，896×414收紧至y270，上滑后y75，三页与选择控件、返回状态、焦点、全天日期及精确外部确认通过。JPEG和请求在`build/lan-daily-workspace/`，同一只读`ui_review`独立通过。
