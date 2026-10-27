@@ -26,6 +26,8 @@ import java.util.concurrent.Executors;
 final class ImageSlidePager extends FrameLayout {
     interface Source { File file(String name) throws Exception; boolean allowed(); }
     interface Listener { void selected(int index, ImageView image); }
+    /** Consume image panning first; return only horizontal travel left at its edge. */
+    interface PanHandler { float pan(float dx, float dy); }
     private final ImageView previous, current, next;
     private final android.app.Activity activity;
     private final int slop;
@@ -37,9 +39,12 @@ final class ImageSlidePager extends FrameLayout {
     private Source source;
     private Listener listener;
     private java.util.function.BooleanSupplier pagingAllowed = () -> true;
+    private PanHandler panHandler;
     private int index, requested = -1, settleTarget = -1, settleDirection;
     private volatile int generation;
     private boolean closed, tracking, blocked;
+    private boolean multiTouch;
+    private float panX, panY, gestureDownX;
     private float downX, downY, originX, offset, startOffset;
     private float ratio = 16f / 9f;
     private ValueAnimator animator;
@@ -67,6 +72,7 @@ final class ImageSlidePager extends FrameLayout {
     ImageView image() { return current; }
     void setListener(Listener listener) { this.listener = listener; }
     void setPagingAllowed(java.util.function.BooleanSupplier allowed) { pagingAllowed = allowed; }
+    void setPanHandler(PanHandler handler) { panHandler = handler; }
     boolean ready() { return index < names.size() && current.getDrawable() != null && cache.get(names.get(index)) != null; }
     int selection() { return requested >= 0 ? requested : settleTarget >= 0 ? settleTarget : index; }
 
@@ -199,16 +205,25 @@ final class ImageSlidePager extends FrameLayout {
         if (action == MotionEvent.ACTION_DOWN) {
             interruptMotion(); requested = -1;
             downX = event.getX(); downY = event.getY(); originX = downX; startOffset = offset;
+            panX=gestureDownX=downX;panY=downY;multiTouch=false;
             tracking = false; blocked = !ready()||!pagingAllowed.getAsBoolean();
         }
         if (action == MotionEvent.ACTION_POINTER_DOWN || event.getPointerCount() > 1) {
+            multiTouch=true;
             blocked = true;
             if (tracking) { settle(0); tracking = false; return true; }
         }
+        if(action==MotionEvent.ACTION_MOVE&&!tracking&&!multiTouch&&ready()&&panHandler!=null){
+            float dx=event.getX()-panX,dy=event.getY()-panY;
+            downX+=dx-panHandler.pan(dx,dy);
+            panX=event.getX();panY=event.getY();
+        }
         if (action == MotionEvent.ACTION_MOVE && !blocked && !tracking && names.size() > 1) {
             float dx = event.getX() - downX, dy = event.getY() - downY;
-            if (Math.abs(dy) > slop && Math.abs(dy) >= Math.abs(dx)) blocked = true;
-            else if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy) * 1.25f) {
+            // Image panning discounts page travel, not the user's actual gesture direction.
+            float gestureDx=event.getX()-gestureDownX;
+            if (Math.abs(dy) > slop && Math.abs(dy) >= Math.abs(gestureDx)) blocked = true;
+            else if (Math.abs(dx) > slop && Math.abs(gestureDx) > Math.abs(dy) * 1.25f) {
                 tracking = true; originX = downX + Math.copySign(slop, dx);
                 MotionEvent cancel = MotionEvent.obtain(event); cancel.setAction(MotionEvent.ACTION_CANCEL);
                 super.dispatchTouchEvent(cancel); cancel.recycle();

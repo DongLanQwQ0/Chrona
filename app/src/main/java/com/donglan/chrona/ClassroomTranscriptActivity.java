@@ -17,6 +17,7 @@ public final class ClassroomTranscriptActivity extends Activity {
     private ClassroomLesson lesson;private String account;
     private LinearLayout rows;private ScrollView scroll;private ImageButton latest;private TextView status;private FrameLayout readingBody;
     private CheckBox repeat;private ImageButton action;private boolean binding;private int mode;
+    private HeaderActionGroup headerActions;
     private ScrollView slidesScroll;private LinearLayout slides;private String pictureSignature="";
     private TextView slidesLabel;private DockNavigationLayout sections;
     private boolean sideNavigation;
@@ -41,7 +42,10 @@ public final class ClassroomTranscriptActivity extends Activity {
         // Match the workspace's floating-navigation baseline, not a form's end padding.
         root.setPadding(root.getPaddingLeft(),root.getPaddingTop(),root.getPaddingRight(),dp(4));
         action=UiStyle.navigationIcon(this,R.drawable.ic_play,"开始监视",this::toggleMonitoring);
-        SettingsPageLayout.header(this,root,lesson.course,action);
+        latest=UiStyle.navigationIcon(this,R.drawable.ic_arrow_down,"回到最新",()->{pendingRestore=-1;pendingLatest=true;positionCaptions();});
+        headerActions=new HeaderActionGroup(this,48);headerActions.addAction(action,48);headerActions.addAction(latest,48);headerActions.finish();
+        headerActions.setActionVisible(latest,false);
+        SettingsPageLayout.header(this,root,lesson.course,headerActions);
         LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.VERTICAL);
         LinearLayout information=new LinearLayout(this);information.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout description=new LinearLayout(this);description.setOrientation(LinearLayout.VERTICAL);
@@ -66,7 +70,7 @@ public final class ClassroomTranscriptActivity extends Activity {
         FrameLayout transitionHost=new FrameLayout(this);readingBody=new FrameLayout(this);transitionHost.addView(readingBody,new FrameLayout.LayoutParams(-1,-1));readingArea.addView(transitionHost,new FrameLayout.LayoutParams(-1,-1));
         scroll=new ScrollView(this){@Override public void computeScroll(){scrollingMotion=true;try{super.computeScroll();}finally{scrollingMotion=false;}}
             @Override public boolean dispatchTouchEvent(MotionEvent event){
-            int action=event.getActionMasked();if(action==MotionEvent.ACTION_DOWN){touching=true;pendingLatest=false;pendingRestore=getScrollY();follow=false;updateFollow();}
+            int action=event.getActionMasked();if(action==MotionEvent.ACTION_DOWN){touching=true;pendingLatest=false;pendingRestore=getScrollY();updateFollow();}
             boolean handled=super.dispatchTouchEvent(event);
             if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){touching=false;follow=atBottom();updateFollow();}
             return handled;
@@ -76,21 +80,17 @@ public final class ClassroomTranscriptActivity extends Activity {
         rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         readingBody.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         slidesScroll=new ScrollView(this);slidesScroll.setVerticalScrollBarEnabled(false);slides=new LinearLayout(this);slides.setOrientation(LinearLayout.VERTICAL);slidesScroll.addView(slides);readingBody.addView(slidesScroll,new FrameLayout.LayoutParams(-1,-1));
-        latest=UiStyle.navigationIcon(this,R.drawable.ic_arrow_down,"回到最新",()->{pendingRestore=-1;pendingLatest=true;positionCaptions();});
-        FrameLayout.LayoutParams jump=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.BOTTOM|Gravity.END);readingArea.addView(latest,jump);
-        InteractionLayers.pin(latest);
         if(!sideNavigation)body.addView(dockHost,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));InteractionLayers.pin(dockHost);
         dockHost.addOnLayoutChangeListener((view,l,t,r,b,oldL,oldT,oldR,oldB)->{
             int clearance=sideNavigation?0:view.getHeight();
-            if(rows.getPaddingBottom()!=clearance+dp(12)){rows.setPadding(0,0,0,clearance+dp(12));slides.setPadding(0,0,0,clearance+dp(12));
-                FrameLayout.LayoutParams position=(FrameLayout.LayoutParams)latest.getLayoutParams();position.bottomMargin=clearance+dp(8);latest.setLayoutParams(position);}
+            if(rows.getPaddingBottom()!=clearance+dp(12)){rows.setPadding(0,0,0,clearance+dp(12));slides.setPadding(0,0,0,clearance+dp(12));}
         });
         scroll.setOnScrollChangeListener((view,x,y,oldX,oldY)->{if((touching||scrollingMotion)&&pendingRestore>=0)pendingRestore=y;follow=atBottom();updateFollow();});
         root.addView(body,new LinearLayout.LayoutParams(-1,0,1));root.setScrollingBody(body);SettingsPageLayout.showFixed(this,root);setMode(mode);
         if(state==null)root.post(()->UiMotion.enterPage(root));
     }
     private boolean atBottom(){return scroll.getScrollY()>=Math.max(0,rows.getHeight()-scroll.getHeight()-dp(48));}
-    private void updateFollow(){if(latest!=null)latest.setVisibility(mode!=0||follow?View.GONE:View.VISIBLE);}
+    private void updateFollow(){if(headerActions!=null)headerActions.setActionVisible(latest,mode==0&&!follow);}
     private void setMode(int selected){int next=selected==1?1:0;boolean changed=mode!=next;if(changed&&mode==0&&scroll!=null&&!pendingLatest&&pendingRestore<0)pendingRestore=scroll.getScrollY();mode=next;
         Runnable switchBody=()->{scroll.setVisibility(mode==0?View.VISIBLE:View.GONE);slidesScroll.setVisibility(mode==1?View.VISIBLE:View.GONE);if(mode==0)positionCaptions();};
         if(scroll!=null){if(changed&&active&&readingBody.isLaidOut())UiMotion.swap(readingBody,switchBody);else switchBody.run();}

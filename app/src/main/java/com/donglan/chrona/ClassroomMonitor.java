@@ -121,9 +121,14 @@ final class ClassroomMonitor {
                     if(ClassroomStore.active(dir)){store.message(lesson,lesson.course+" · 等待当前处理完成");continue;}
                     ClassroomStore.begin(dir);
                     try {
-                        JSONObject observation=client.monitorMaterials(lesson,stage->{try{
-                            ClassroomStore.write(new File(dir,"monitor-stage.json"),new JSONObject().put("status",stage).put("at",System.currentTimeMillis()));
-                        }catch(Exception failure){throw new IllegalStateException(failure);}});
+                        java.util.function.Consumer<String> stage=progress->{try{
+                            ClassroomStore.write(new File(dir,"monitor-stage.json"),new JSONObject().put("status",progress).put("at",System.currentTimeMillis()));
+                        }catch(Exception failure){throw new IllegalStateException(failure);}};
+                        boolean ended=ClassroomMonitorTiming.ended(app,account,lesson);
+                        JSONObject observation=ended?client.completedMaterials(lesson,stage):client.monitorMaterials(lesson,stage);
+                        // A slow live request can return after the timetable boundary. Discard its
+                        // partial observation and enter the same strict completion path as a new pass.
+                        if(!ended&&ClassroomMonitorTiming.ended(app,account,lesson))observation=client.completedMaterials(lesson,stage);
                         check(app,account);if(!ClassroomMonitorStore.matches(store.read(),lesson))continue;
                         JSONObject previous=ClassroomStore.read(new File(dir,"monitor-materials.json"));
                         JSONObject ordinary=ClassroomStore.read(new File(dir,"materials.json"));
@@ -136,6 +141,9 @@ final class ClassroomMonitor {
                             ClassroomSummary.prepareComplete(dir,lesson,observation,previous,client,control,p->{});
                             check(app,account);if(ClassroomMonitorStore.matches(store.read(),lesson))store.finished(lesson);
                             continue;
+                        }
+                        if(ClassroomMonitorTiming.ended(app,account,lesson)){
+                            store.message(lesson,lesson.course+" · 等待课程处理");continue;
                         }
                         if(previous!=null){JSONArray keep=new JSONArray(),old=previous.getJSONArray("segments");
                             for(int i=0;i<old.length();i++)if(!"live".equals(old.getJSONObject(i).optString("origin")))keep.put(old.getJSONObject(i));
@@ -154,7 +162,7 @@ final class ClassroomMonitor {
                         store.message(lesson,lesson.course+" · "+detail);
                     }catch(Exception failure){
                         check(app,account);
-                        store.message(lesson,lesson.course+" · "+(NetworkFailure.hasDetails(failure)?NetworkFailure.describe(failure):safeFailure(failure)));
+                        store.message(lesson,lesson.course+" · "+(failure instanceof ClassroomClient.MaterialsPendingException?"等待课程处理":NetworkFailure.hasDetails(failure)?NetworkFailure.describe(failure):safeFailure(failure)));
                     }finally{ClassroomStore.end(dir);}
                 }
             }catch(Exception failure){

@@ -38,7 +38,6 @@ public final class AttachmentViewerActivity extends Activity {
     private static final String EXTRA_CLASSROOM_ACCOUNT="classroom_image_account",EXTRA_CLASSROOM_LESSON="classroom_image_lesson",EXTRA_CLASSROOM_RAW="classroom_image_raw",EXTRA_CLASSROOM_IMAGES="classroom_image_list";
     private static final int CREATE_IMAGE_DOCUMENT = 1;
     private final Matrix imageMatrix = new Matrix();
-    private final Matrix fitMatrix = new Matrix();
     private ImageView image;
     private ImageSlidePager pager;
     private final ArrayList<String> gallery=new ArrayList<>();
@@ -46,10 +45,7 @@ public final class AttachmentViewerActivity extends Activity {
     private String classroomAccount,rawName,imageMime="image/jpeg",exportName,savingRaw;
     private ClassroomLesson classroomLesson;
     private float scale = 1f;
-    private float lastX;
-    private float lastY;
     private boolean matrixReady;
-    private boolean dragReady;
     private boolean immersiveLandscape;
     private ScaleGestureDetector scaleDetector;
     private GestureDetector gestureDetector;
@@ -88,12 +84,18 @@ public final class AttachmentViewerActivity extends Activity {
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this),new FrameLayout.LayoutParams(-1,-1));
         FrameLayout safeArea=new FrameLayout(this);stage.addView(safeArea,new FrameLayout.LayoutParams(-1,-1));
+        immersiveLandscape=getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        if(immersiveLandscape&&android.os.Build.VERSION.SDK_INT>=28){
+            var attributes=getWindow().getAttributes();
+            attributes.layoutInDisplayCutoutMode=android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(attributes);
+        }
         pager=new ImageSlidePager(this,false);
         image = pager.image();
         image.setScaleType(ImageView.ScaleType.MATRIX);
         image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大":"课堂PPT，双指缩放或双击放大");
-        safeArea.addView(pager, new FrameLayout.LayoutParams(-1, -1));
-        immersiveLandscape=classroomLesson!=null&&getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        if(immersiveLandscape)stage.addView(pager,1,new FrameLayout.LayoutParams(-1,-1));
+        else safeArea.addView(pager, new FrameLayout.LayoutParams(-1, -1));
         ImageButton save=UiStyle.navigationIcon(this,R.drawable.ic_week_export,"保存图片",this::saveImage);
         View shell;
         if(immersiveLandscape){
@@ -138,10 +140,11 @@ public final class AttachmentViewerActivity extends Activity {
                 });
         image.setOnTouchListener((view, event) -> onImageTouch(event));
         image.getViewTreeObserver().addOnGlobalLayoutListener(this::fitImage);
-        pager.setPagingAllowed(()->scale<=1.001f&&!scaleDetector.isInProgress());
+        pager.setPagingAllowed(()->!scaleDetector.isInProgress());
+        pager.setPanHandler(this::panImage);
         pager.setListener((selected,current)->{
             if(classroomLesson!=null){rawName=gallery.get(selected);setResult(RESULT_OK,new Intent().putExtra(EXTRA_SELECTED_RAW,rawName));}
-            scale=1f;matrixReady=false;dragReady=false;fitImage();
+            scale=1f;matrixReady=false;fitImage();
             image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大":"课堂PPT "+(selected+1)+" / "+gallery.size()+"，双指缩放或双击放大");
         });
         ArrayList<String> items=new ArrayList<>();if(classroomLesson==null)items.add(imageName);else items.addAll(gallery);
@@ -165,11 +168,12 @@ public final class AttachmentViewerActivity extends Activity {
     }
 
     private void fitImage(){
+        if(image.getWidth()>0&&image.getHeight()>0)image.setClipBounds(new android.graphics.Rect(0,0,image.getWidth(),image.getHeight()));
         if(matrixReady||image.getWidth()<=0||image.getHeight()<=0)return;
         Drawable drawable=image.getDrawable();if(drawable==null||drawable.getIntrinsicWidth()<=0||drawable.getIntrinsicHeight()<=0)return;
         float fit=Math.min(image.getWidth()/(float)drawable.getIntrinsicWidth(),image.getHeight()/(float)drawable.getIntrinsicHeight());
         imageMatrix.setScale(fit,fit);imageMatrix.postTranslate((image.getWidth()-drawable.getIntrinsicWidth()*fit)/2f,(image.getHeight()-drawable.getIntrinsicHeight()*fit)/2f);
-        fitMatrix.set(imageMatrix);image.setImageMatrix(imageMatrix);matrixReady=true;
+        image.setImageMatrix(imageMatrix);matrixReady=true;
     }
 
     private boolean insideImage(float x,float y){
@@ -189,37 +193,30 @@ public final class AttachmentViewerActivity extends Activity {
     private boolean onImageTouch(MotionEvent event) {
         gestureDetector.onTouchEvent(event);
         scaleDetector.onTouchEvent(event);
-        int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_POINTER_UP) {
-            int remaining = event.getActionIndex() == 0 ? 1 : 0;
-            lastX = event.getX(remaining);
-            lastY = event.getY(remaining);
-            dragReady = true;
-            return true;
-        }
-        if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_UP
-                || action == MotionEvent.ACTION_CANCEL) dragReady = false;
-        if (event.getPointerCount() == 1 && scale > 1f && !scaleDetector.isInProgress()) {
-            if (action == MotionEvent.ACTION_DOWN || !dragReady) {
-                lastX = event.getX();
-                lastY = event.getY();
-                dragReady = true;
-            } else if (action == MotionEvent.ACTION_MOVE) {
-                float dx = event.getX() - lastX;
-                float dy = event.getY() - lastY;
-                imageMatrix.postTranslate(dx, dy);
-                image.setImageMatrix(imageMatrix);
-                lastX = event.getX();
-                lastY = event.getY();
-            }
-        }
         return true;
     }
 
+    private RectF imageBounds(){
+        Drawable drawable=image.getDrawable();if(!matrixReady||drawable==null)return new RectF();
+        RectF bounds=new RectF(0,0,drawable.getIntrinsicWidth(),drawable.getIntrinsicHeight());imageMatrix.mapRect(bounds);return bounds;
+    }
+    private void constrainImage(){
+        RectF bounds=imageBounds();if(bounds.isEmpty())return;
+        // Keep a smaller image where the gesture put it, only correcting uncovered edges.
+        float minX=Math.min(0,image.getWidth()-bounds.width()),maxX=Math.max(0,image.getWidth()-bounds.width());
+        float minY=Math.min(0,image.getHeight()-bounds.height()),maxY=Math.max(0,image.getHeight()-bounds.height());
+        imageMatrix.postTranslate(Math.max(minX,Math.min(maxX,bounds.left))-bounds.left,
+                Math.max(minY,Math.min(maxY,bounds.top))-bounds.top);
+    }
+    private float panImage(float dx,float dy){
+        if(!matrixReady||scale<=1.001f||scaleDetector.isInProgress())return dx;
+        RectF before=imageBounds();imageMatrix.postTranslate(dx,dy);constrainImage();image.setImageMatrix(imageMatrix);
+        return dx-(imageBounds().left-before.left);
+    }
     private void applyScale(float next, float focusX, float focusY) {
-        if (next <= 1f) imageMatrix.set(fitMatrix);
-        else imageMatrix.postScale(next / scale, next / scale, focusX, focusY);
+        imageMatrix.postScale(next / scale, next / scale, focusX, focusY);
         scale = next;
+        constrainImage();
         image.setImageMatrix(imageMatrix);
     }
 

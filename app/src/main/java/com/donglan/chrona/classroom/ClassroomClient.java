@@ -79,6 +79,11 @@ public final class ClassroomClient implements Closeable {
     public JSONObject monitorMaterials(ClassroomLesson lesson,java.util.function.Consumer<String> stage) throws IOException {
         return materials(lesson,true,stage);
     }
+    /** After the real lesson end, check readiness without polling partial subtitle/PPT feeds. */
+    public JSONObject completedMaterials(ClassroomLesson lesson,java.util.function.Consumer<String> stage) throws IOException {
+        try{return materials(lesson,false,stage,true).put("status","6").put("pending",false);}
+        catch(JSONException failure){throw new IOException("课堂素材数据格式无法识别",failure);}
+    }
     public okhttp3.WebSocket liveTranscript(ClassroomLesson lesson,okhttp3.WebSocketListener listener)throws IOException {
         String source=liveAddress(lesson);return source==null?null:school.classroomTranscriptSocket(source,listener);
     }
@@ -104,6 +109,9 @@ public final class ClassroomClient implements Closeable {
         return materials(lesson,monitoring,null);
     }
     private JSONObject materials(ClassroomLesson lesson, boolean monitoring,java.util.function.Consumer<String> stage) throws IOException {
+        return materials(lesson,monitoring,stage,false);
+    }
+    private JSONObject materials(ClassroomLesson lesson, boolean monitoring,java.util.function.Consumer<String> stage,boolean waitForCompletion) throws IOException {
         try {
             // Recheck the selected recording: a cached ready state can become stale.
             JSONArray catalogue=catalogue(lesson.courseId);JSONObject current=null;
@@ -115,8 +123,12 @@ public final class ClassroomClient implements Closeable {
             if(!lesson.courseId.equals(identity(current,"course_id")))throw new IOException("课堂与课程不匹配");
             requireAvailable(current);
             long startsAt=Math.multiplyExact(current.getLong("start_at"),1000);
-            if((!monitoring&&!"6".equals(identity(current,"status")))||startsAt<=0||startsAt>System.currentTimeMillis())throw new IOException("这节课堂尚未就绪");
+            if(startsAt<=0||startsAt>System.currentTimeMillis())throw new IOException("这节课堂尚未就绪");
             if(stage!=null)stage.accept(identity(current,"status"));
+            if(!monitoring&&!"6".equals(identity(current,"status"))){
+                if(waitForCompletion)throw new MaterialsPendingException();
+                throw new IOException("这节课堂尚未就绪");
+            }
             JSONObject transcript=school.classroomJson(url("https://yjapi.cmc.zju.edu.cn/courseapi/v3/web-socket/search-trans-result?format=json","sub_id",lesson.id));
             boolean pending = false;
             int subtitleError = 0, slideError = 0;

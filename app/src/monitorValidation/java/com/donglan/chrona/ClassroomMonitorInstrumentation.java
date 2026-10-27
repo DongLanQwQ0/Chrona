@@ -25,6 +25,8 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     private volatile boolean liveFixture;private volatile int socketOpens;private volatile FakeSocket lastSocket;
     private volatile List<ClassroomLesson> lookupCatalog;
     private volatile CountDownLatch materialGate;
+    private volatile CountDownLatch materialEntered;
+    private volatile int subtitleRequests,slideRequests;
     final List<String> entryCreates=new ArrayList<>();
     final Map<String,Integer> entryFrameCounts=new HashMap<>();
     volatile Activity lastResumed;
@@ -72,6 +74,7 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         new ClassroomStore(app,account).catalog(List.of(selected,future));
         String mode=args.getString("mode","polish");
         if("live".equals(mode))backgroundChecks();
+        else if("end".equals(mode))endChecks();
         else if("pipeline".equals(mode))pipelineChecks();
         else if("auto".equals(mode))assertions+=ClassroomAutoSummaryChecks.run(this,args);
         else if("table".equals(mode))tableChecks();
@@ -89,15 +92,16 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         ClassroomClient result=new ClassroomClient("fixture","fixture");ZjuClient school=(ZjuClient)field(result,"school");field(school,"classroomLoggedIn",true);
         field(school,"classroomSocketFactory",(java.util.function.BiFunction<Request,WebSocketListener,WebSocket>)(request,listener)->{FakeSocket socket=new FakeSocket(request,listener);lastSocket=socket;return socket;});
         OkHttpClient http=(OkHttpClient)field(school,"http");field(school,"http",http.newBuilder().addInterceptor(chain->{Request request=chain.request();String path=request.url().encodedPath();try{
-            if(path.endsWith("catalogue")&&materialGate!=null&&Arrays.stream(Thread.currentThread().getStackTrace()).anyMatch(frame->frame.getClassName().equals(ClassroomClient.class.getName())&&frame.getMethodName().equals("materials")))try{if(!materialGate.await(15,TimeUnit.SECONDS))throw new IOException("Material fixture blocked");}catch(InterruptedException failure){throw new IOException(failure);}
+            CountDownLatch gate=materialGate;
+            if(path.endsWith("catalogue")&&gate!=null&&Arrays.stream(Thread.currentThread().getStackTrace()).anyMatch(frame->frame.getClassName().equals(ClassroomClient.class.getName())&&frame.getMethodName().equals("materials")))try{CountDownLatch entered=materialEntered;if(entered!=null)entered.countDown();if(!gate.await(15,TimeUnit.SECONDS))throw new IOException("Material fixture blocked");}catch(InterruptedException failure){throw new IOException(failure);}
             if(request.url().host().equals("video.cmc.zju.edu.cn")){downloads++;return response(request,"image/png",request.url().encodedPath().contains("first")?red:blue);}
             JSONObject json;
             if(path.endsWith("/course")&&lookupCatalog!=null){ClassroomLesson target=lookupCatalog.get(0);json=new JSONObject().put("code",1000).put("params",new JSONObject().put("result",new JSONObject().put("page",1).put("per-page",100).put("total",1).put("data",new JSONArray().put(new JSONObject().put("Id",target.courseId).put("Title",target.course)))));}
-            else if(path.endsWith("catalogue")){JSONArray rows=new JSONArray();for(ClassroomLesson lesson:lookupCatalog==null?List.of(selected,future):lookupCatalog)rows.put(new JSONObject().put("course_id",lesson.courseId).put("sub_id",lesson.id).put("start_at",lesson.startsAt/1000).put("title",lesson.title).put("status",liveFixture?"1":phase==4?"6":"2"));json=new JSONObject().put("success",true).put("result",new JSONObject().put("code",200).put("data",rows));}
+            else if(path.endsWith("catalogue")){JSONArray rows=new JSONArray();for(ClassroomLesson lesson:lookupCatalog==null?List.of(selected,future):lookupCatalog)rows.put(new JSONObject().put("course_id",lesson.courseId).put("sub_id",lesson.id).put("start_at",lesson.startsAt/1000).put("title",lesson.title).put("status",liveFixture?"1":phase>=4?"6":"2"));json=new JSONObject().put("success",true).put("result",new JSONObject().put("code",200).put("data",rows));}
             else if(path.endsWith("get-sub-info"))json=new JSONObject().put("code",0).put("data",new JSONObject().put("sub_status",liveFixture?"1":"2").put("content",new JSONObject().put("trans_socket_url",liveFixture?"https://qlite2.cmc.zju.edu.cn/fixture":"")));
-            else if(path.endsWith("search-trans-result")){JSONArray segments=new JSONArray();if(!liveFixture&&phase>0&&phase!=3){segments.put(new JSONObject().put("BeginSec",1).put("EndSec",2).put("Text","第一句"));if(phase>=2)segments.put(new JSONObject().put("BeginSec",3).put("EndSec",4).put("Text","第二句"));}
+            else if(path.endsWith("search-trans-result")){subtitleRequests++;JSONArray segments=new JSONArray();if(!liveFixture&&phase>0&&phase!=3&&phase!=5){segments.put(new JSONObject().put("BeginSec",1).put("EndSec",2).put("Text","第一句"));if(phase>=2)segments.put(new JSONObject().put("BeginSec",3).put("EndSec",4).put("Text","第二句"));}
                 json=new JSONObject().put("code",liveFixture||phase==0?10002:0).put("total",1).put("list",new JSONArray().put(new JSONObject().put("sub_id",20).put("all_content",segments)));}
-            else if(path.endsWith("search-ppt")){JSONArray rows=new JSONArray();if(phase!=3){rows.put(new JSONObject().put("id",1).put("course_id",10).put("sub_id",20).put("created_sec",20).put("content",new JSONObject().put("pptimgurl","https://video.cmc.zju.edu.cn/first.png")));if(phase>=2)rows.put(new JSONObject().put("id",2).put("course_id",10).put("sub_id",20).put("created_sec",1).put("content",new JSONObject().put("pptimgurl","https://video.cmc.zju.edu.cn/earlier.png")));}json=new JSONObject().put("code",0).put("total",rows.length()).put("list",rows);}
+            else if(path.endsWith("search-ppt")){slideRequests++;JSONArray rows=new JSONArray();if(phase!=3){rows.put(new JSONObject().put("id",1).put("course_id",10).put("sub_id",20).put("created_sec",20).put("content",new JSONObject().put("pptimgurl","https://video.cmc.zju.edu.cn/first.png")));if(phase>=2)rows.put(new JSONObject().put("id",2).put("course_id",10).put("sub_id",20).put("created_sec",1).put("content",new JSONObject().put("pptimgurl","https://video.cmc.zju.edu.cn/earlier.png")));}json=new JSONObject().put("code",0).put("total",rows.length()).put("list",rows);}
             else throw new AssertionError("Unexpected external route: "+path);
             return response(request,"application/json",json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }catch(JSONException failure){throw new IOException(failure);}}).build());return result;
@@ -124,6 +128,84 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         phase=3;pass();check(ClassroomStore.read(new File(dir,"monitor-materials.json")).getJSONArray("segments").length()==2&&downloads==2,"empty observation preserves saved text and images");
         phase=4;pass();check(ClassroomMonitorStore.pending(store.read()).isEmpty()&&!ClassroomStore.read(new File(dir,"materials.json")).getBoolean("monitoring"),"ready replay atomically promotes full materials and finishes material monitoring");check(new ClassroomStore(app,account).history().size()==1,"finished monitored class appears in existing download history");
         check(ClassroomMonitorStore.auto(store.read(),selected)!=null,"formal completed recording registers automatic summary once");
+    }
+    private void endTimetable(long end)throws Exception{
+        new ZjuTimetableStore(app).save(account,List.of(
+                new ZjuSnapshot.Lesson("end/current",selected.course,"教室A","end",selected.startsAt,end),
+                new ZjuSnapshot.Lesson("end/future",future.course,"教室A","end",future.startsAt,future.startsAt+600_000)),List.of("end"));
+    }
+    private void endChecks()throws Exception{
+        starts=(System.currentTimeMillis()-600_000)/1000*1000;
+        selected=new ClassroomLesson("10","20","示例课程 · 实时课堂","课堂一","教室A","2",starts);
+        future=new ClassroomLesson("10","21",selected.course,"课堂二","教室A","2",starts+3_600_000);
+        new ClassroomStore(app,account).catalog(List.of(selected,future));
+        ClassroomLesson named=new ClassroomLesson("10","20"," Ａ 课（甲） ","","","2",starts);
+        ZjuSnapshot.Lesson match=new ZjuSnapshot.Lesson("matching","A课(甲)","","end",starts,starts+500_000);
+        check(ClassroomMonitorTiming.matchingEnd(named,List.of(match))==match.end,"end matches NFKC course name, ignored whitespace and exact start");
+        check(ClassroomMonitorTiming.matchingEnd(named,List.of(match,match))==match.end,"duplicate timetable entries with the same end stay unambiguous");
+        check(ClassroomMonitorTiming.matchingEnd(named,List.of(match,new ZjuSnapshot.Lesson("conflict",match.title,"","end",starts,match.end+1)))==0,"conflicting timetable ends do not guess a duration");
+        check(ClassroomMonitorTiming.matchingEnd(named,List.of(new ZjuSnapshot.Lesson("wrong-start",match.title,"","end",starts+1,match.end)))==0,"same course at a different start cannot end this lecture");
+        check(ClassroomMonitorTiming.matchingEnd(named,List.of(new ZjuSnapshot.Lesson("invalid",match.title,"","end",starts,starts)))==0,"invalid zero duration never becomes an end boundary");
+        long end=System.currentTimeMillis()+600_000;endTimetable(end);
+        check(ClassroomMonitorTiming.endsAt(app,account,selected)==end,"existing registrations resolve their real local timetable end");
+        new ZjuTimetableStore(app).save("another-account",List.of(new ZjuSnapshot.Lesson("other",selected.course,"","end",starts,end)),List.of("end"));
+        check(ClassroomMonitorTiming.endsAt(app,account,selected)==0,"another account's timetable cannot supply an end");
+        check(ClassroomMonitorTiming.endsAt(app,"another-account",selected)==end&&ClassroomMonitorTiming.endsAt(app,account,selected)==0,"timing cache is account isolated");
+        endTimetable(end);
+        ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);store.stopAll();store.add(selected,true);store.catalog(List.of(selected,future),System.currentTimeMillis());
+        File dir=new ClassroomStore(app,account).localLesson(selected);
+        for(String name:List.of("materials.json","candidates.json","monitor-materials.json","monitor-candidates.json","monitor-stage.json","raw-0.img","raw-1.img","live-transcript.json","live-current.json","live-status.json"))new File(dir,name).delete();
+        phase=1;downloads=0;subtitleRequests=0;slideRequests=0;liveFixture=false;pass();
+        check(downloads==1&&new File(dir,"monitor-materials.json").isFile(),"ongoing lesson still incrementally prepares its available PPT");
+        long observedAt=ClassroomStore.read(new File(dir,"monitor-materials.json")).getLong("updated");
+        liveFixture=true;socketOpens=0;final ClassroomLiveTranscripts[] owner={null};
+        try{
+            runOnMainSync(()->owner[0]=new ClassroomLiveTranscripts(app));
+            long limit=SystemClock.elapsedRealtime()+5000;while((lastSocket==null||socketOpens==0)&&SystemClock.elapsedRealtime()<limit)SystemClock.sleep(20);
+            check(socketOpens==1,"ongoing timetable lesson opens one real-controller fixture socket");
+            idle(300);FakeSocket socket=lastSocket;socket.sender.shutdownNow();
+            socket.listener.onMessage(socket,"cd1&m"+new JSONObject().put("sourcetext","下课前尚未定句的最后一句").put("end_time","0").put("text_begin_time",System.currentTimeMillis()).put("text_end_time",System.currentTimeMillis()));
+            endTimetable(System.currentTimeMillis()-1);runOnMainSync(owner[0]::refresh);
+            check(socket.closed,"real timetable end immediately closes the classroom socket");
+            check(ClassroomLiveTranscripts.read(dir).getJSONObject("current").getString("text").equals("下课前尚未定句的最后一句"),"natural end saves the latest uncommitted sentence");
+            check("等待课程处理".equals(ClassroomStore.read(new File(dir,"live-status.json")).getString("state")),"natural end exposes waiting-for-processing state");
+            socket.listener.onFailure(socket,new IOException("late disconnect after end"),null);idle(6200);runOnMainSync(owner[0]::refresh);
+            check(socketOpens==1,"late disconnect cannot reconnect a naturally ended lesson");
+            runOnMainSync(owner[0]::close);runOnMainSync(()->owner[0]=new ClassroomLiveTranscripts(app));idle(250);
+            check(socketOpens==1,"new controller restores ended registration without reopening live observation");
+        }finally{if(owner[0]!=null)runOnMainSync(owner[0]::close);liveFixture=false;}
+        int subtitles=subtitleRequests,slides=slideRequests;phase=2;pass();
+        check(subtitleRequests==subtitles&&slideRequests==slides&&downloads==1,"after end, processing status checks request neither subtitles, PPT nor new images");
+        check(!new File(dir,"materials.json").exists()&&ClassroomMonitorStore.auto(store.read(),selected)==null,"processing status creates neither complete data nor an automatic task");
+        check(store.read().getJSONArray("rules").length()==1&&ClassroomMonitorStore.pending(store.read()).size()==2,"natural end retains this completion owner and future recurring rule");
+        check(store.read().optString("message").contains("等待课程处理"),"monitor worker reports processing wait instead of a stopped task");
+
+        // A live HTTP request was already in flight when the real boundary became known.
+        endTimetable(System.currentTimeMillis()+600_000);materialGate=new CountDownLatch(1);materialEntered=new CountDownLatch(1);
+        CountDownLatch done=new CountDownLatch(1);final boolean[] submitted={false};
+        runOnMainSync(()->submitted[0]=ClassroomMonitor.run(app,active->done.countDown()));
+        try{
+            check(submitted[0]&&materialEntered.await(5,TimeUnit.SECONDS),"live observation reaches the controlled in-flight catalogue gate");
+            endTimetable(System.currentTimeMillis()-1);materialGate.countDown();
+            check(done.await(15,TimeUnit.SECONDS),"in-flight live request settles after the end boundary");
+        }finally{materialGate.countDown();materialGate=null;materialEntered=null;}
+        check(downloads==1&&!new File(dir,"raw-1.img").exists(),"late live response is discarded before downloading its new PPT");
+        check(ClassroomStore.read(new File(dir,"monitor-materials.json")).getLong("updated")==observedAt,"late live response cannot publish a post-end partial snapshot");
+
+        phase=5;subtitles=subtitleRequests;slides=slideRequests;pass();
+        check(subtitleRequests==subtitles+1&&slideRequests==slides&&downloads==1,"ready status with empty formal subtitles still waits before PPT acquisition");
+        check(!new File(dir,"materials.json").exists()&&ClassroomMonitorStore.auto(store.read(),selected)==null,"ready status alone cannot finish or summarize incomplete subtitles");
+        new ZjuTimetableStore(app).clear();liveFixture=true;
+        try{runOnMainSync(()->owner[0]=new ClassroomLiveTranscripts(app));idle(250);check(socketOpens==1,"official ready6 stage prevents live socket even when timetable end is unavailable");}
+        finally{runOnMainSync(owner[0]::close);liveFixture=false;}
+        endTimetable(System.currentTimeMillis()-1);phase=4;pass();
+        JSONObject complete=ClassroomStore.read(new File(dir,"materials.json"));
+        check(complete!=null&&!complete.optBoolean("monitoring")&&complete.getJSONArray("segments").length()==2,"formal ready materials use the shared complete preparation pipeline");
+        check(downloads==2&&ClassroomStore.read(new File(dir,"candidates.json")).getJSONArray("images").length()==2,"formal preparation reuses valid live images and downloads missing PPT");
+        check(ClassroomMonitorStore.pending(store.read()).size()==1&&store.read().getJSONArray("rules").length()==1,"only finished lecture leaves pending while later recurring lesson remains");
+        check(ClassroomMonitorStore.autoTasks(store.read()).size()==1,"formal completion registers one automatic-summary task");
+        subtitles=subtitleRequests;slides=slideRequests;pass();
+        check(ClassroomMonitorStore.autoTasks(store.read()).size()==1&&subtitleRequests==subtitles&&slideRequests==slides&&downloads==2,"later passes never re-enqueue or re-fetch the completed lecture");
     }
     private void readerChecks()throws Exception{
         File dir=new ClassroomStore(app,account).localLesson(selected);new File(dir,"materials.json").delete();new File(dir,"monitor-materials.json").delete();

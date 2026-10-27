@@ -41,7 +41,8 @@ public final class SettingsPageLayout {
         title.setText(label); title.setTextSize(24); UiStyle.title(title);
         title.setPadding(dp(activity, 12), 0, 0, 0);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        if (action != null) header.addView(action, new LinearLayout.LayoutParams(dp(activity,48), dp(activity,48)));
+        if (action != null) header.addView(action, new LinearLayout.LayoutParams(
+                action instanceof HeaderActionGroup ? LinearLayout.LayoutParams.WRAP_CONTENT : dp(activity,48), dp(activity,48)));
         LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(-1, -2);
         headerParams.bottomMargin = dp(activity, HEADER_CONTENT_GAP_DP);
         root.addView(header, headerParams);
