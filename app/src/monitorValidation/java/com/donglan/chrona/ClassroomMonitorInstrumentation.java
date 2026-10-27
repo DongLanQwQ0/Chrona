@@ -66,6 +66,11 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         getUiAutomation().setRotation("landscape".equals(args.getString("orientation"))?UiAutomation.ROTATION_FREEZE_90:UiAutomation.ROTATION_FREEZE_0);SystemClock.sleep(800);
         for(String permission:List.of(android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR,android.Manifest.permission.POST_NOTIFICATIONS))getUiAutomation().grantRuntimePermission(app.getPackageName(),permission);
         getUiAutomation().executeShellCommand("input keyevent 224").close();getUiAutomation().executeShellCommand("wm dismiss-keyguard").close();SystemClock.sleep(300);
+        if("lan_address_ui".equals(args.getString("mode"))){
+            assertions+=LanAddressUiChecks.run(this,args);
+            report.putString("monitor_report","PASS: "+assertions+" assertions; lan_address_ui "+args.getString("widthDp","400")+"/"+args.getString("font","1")+" "+args.getString("theme","light"));
+            finish(-1,report);return;
+        }
         if("homework_planning_ui".equals(args.getString("mode"))){
             assertions+=HomeworkPlanningUiChecks.run(this,args);
             report.putString("monitor_report","PASS: "+assertions+" assertions; homework_planning_ui "+args.getString("widthDp","400")+"/"+args.getString("font","1")+" "+args.getString("theme","light"));

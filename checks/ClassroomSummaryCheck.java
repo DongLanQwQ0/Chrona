@@ -76,6 +76,11 @@ public final class ClassroomSummaryCheck {
                 if(chunk!=null&&mode.equals("invalid-source"))generated.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(999));
                 if(chunk!=null&&mode.equals("invalid-image"))generated.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));
                 if(second&&mode.equals("invalid-final"))generated.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));
+                if(second&&mode.equals("prefixed-final")){
+                    JSONObject note=generated.getJSONArray("notes").getJSONObject(0);JSONArray prefixed=new JSONArray();
+                    for(int i=0;i<chunk.getJSONArray("images").length();i++)prefixed.put("images/"+chunk.getJSONArray("images").getJSONObject(i).getString("file"));
+                    note.put("images",prefixed).put("text","保留公式 $x^2$。![已上传的图]("+prefixed.getString(0)+")");
+                }
                 String result=chunk!=null&&!second?"```json\n"+generated.toString(2)+"\n```":generated.toString();
                 if(mode.equals("schedule"))result="{\"events\":[]}";
                 String finish=mode.equals("length")?"length":mode.equals("filter")?"content_filter":"stop";
@@ -141,6 +146,20 @@ public final class ClassroomSummaryCheck {
         JSONObject missing=new JSONObject(valid.toString());missing.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray());rejects(()->ClassroomSummary.validate(missing,chunk),"missing source rejected");
         JSONObject string=new JSONObject(valid.toString());string.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put("0"));rejects(()->ClassroomSummary.validate(string,chunk),"string source ID rejected");
         JSONObject unuploaded=new JSONObject(valid.toString());unuploaded.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("image-9.jpg"));rejects(()->ClassroomSummary.validate(unuploaded,chunk),"image not uploaded in this chunk rejected");
+        JSONObject prefixed=new JSONObject(valid.toString());prefixed.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("images/image-0.jpg"));ClassroomSummary.validate(prefixed,chunk);check(true,"actual uploaded image with canonical directory prefix accepted");
+        JSONObject sparse=ClassroomSummary.lessonInput(new JSONArray().put(segment(0,"来源")),new JSONArray().put(picture(17,20)).put(picture(42,40)));
+        JSONObject sparsePart=part(sparse);sparsePart.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("images/image-42.jpg")).put("text","![图](images/image-17.jpg)");
+        ClassroomSummary.validate(sparsePart,sparse);check(true,"sparse stable image identifiers share one array and markdown whitelist");
+        for(String name:List.of("image-1.jpg","image-2.jpg","images/image-999.jpg","raw-17.img","../image-17.jpg","https://example.com/image-17.jpg")){
+            JSONObject invalid=new JSONObject(sparsePart.toString());invalid.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put(name));rejects(()->ClassroomSummary.validate(invalid,sparse),"unuploaded ordinal or unsafe array reference rejected: "+name);
+        }
+        for(String field:List.of("overview","title","text","assignment")){
+            JSONObject invalid=new JSONObject(sparsePart.toString());String badImage="![不存在](images/image-999.jpg)";
+            if(field.equals("overview"))invalid.put(field,badImage);
+            else if(field.equals("assignment"))invalid.getJSONArray("assignments").getJSONObject(0).put("text",badImage);
+            else invalid.getJSONArray("notes").getJSONObject(0).put(field,badImage);
+            rejects(()->ClassroomSummary.validate(invalid,sparse),"unuploaded inline reference rejected in "+field);
+        }
         JSONObject assignment=new JSONObject(valid.toString());assignment.getJSONArray("assignments").getJSONObject(0).put("sources",new JSONArray().put(99));rejects(()->ClassroomSummary.validate(assignment,chunk),"assignment source is validated");
         check(ClassroomSummary.parseObject("```json\n{\"x\":1}\n```").getInt("x")==1,"fenced JSON accepted");
     }
@@ -243,14 +262,45 @@ public final class ClassroomSummaryCheck {
         try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,40,c,s->{},"保留英文术语"),"final image citation outside selected set rejected");}
         JSONObject partial=ClassroomStore.read(new File(dir,"summary.json"));
         check(!partial.getBoolean("complete")&&partial.getJSONArray("images").length()==0,"invalid final preserves unillustrated draft");
+        JSONObject failed=ClassroomStore.read(new File(dir,"run.json"));
+        check(failed.getString("final_output").contains("image-999.jpg")&&failed.getJSONObject("final_validation").getString("status").equals("failed"),"failed final preserves raw model output and explicit validation status");
+        check(failed.getJSONObject("final_validation").getString("error").contains("image-999.jpg")&&!failed.has("final"),"audit identifies the actual invalid filename without accepting a final summary");
+        check(failed.getString("final_prompt").contains("不能自行重编号")&&failed.getString("final_prompt").contains("notes.images仅填写")&&failed.getLong("final_finished_at")>=failed.getLong("final_started_at"),"final request records sparse-filename contract and response timing");
         mode="normal";JSONObject result;
         try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,40,c,s->{},"保留英文术语");}
         check(calls==3&&result.getJSONArray("images").length()==40,"final validation retry reuses first round and keeps forty-image cap");
         check(requests.get(0).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1
                 &&requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==41,"HTTP requests send zero then exactly forty images");
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
+        check(state.getJSONObject("final_validation").getString("status").equals("succeeded")&&!state.getString("final_output").contains("image-999.jpg"),"successful continuation replaces stale failed-final evidence with current response");
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
         check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n10\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
+    }
+    private static void prefixedFinal()throws Exception {
+        reset();mode="prefixed-final";File dir=materialDir("prefixed-final-"+System.nanoTime());JSONObject result;
+        try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"");}
+        check(calls==2&&result.getBoolean("complete"),"directory-prefixed actual image result completes without a paid repair request");
+        ByteArrayOutputStream zip=new ByteArrayOutputStream();ClassroomExport.write(dir,result,zip);Map<String,byte[]> entries=unzip(zip.toByteArray());
+        check(entries.keySet().stream().filter(name->name.startsWith("images/")).count()==3&&!entries.keySet().stream().anyMatch(name->name.contains("images/images/")),"prefixed arrays export original three images with one directory prefix");
+        String md=new String(entries.get("课堂总结.md"),StandardCharsets.UTF_8);
+        String first=result.getJSONArray("images").getJSONObject(0).getString("file");
+        check(md.contains("$x^2$")&&md.indexOf("images/"+first)==md.lastIndexOf("images/"+first),"inline image is not appended twice and math is preserved");
+        ClassroomDocument.validate(ClassroomDocument.portable(result,ClassroomStore.read(new File(dir,"materials.json"))));check(true,"prefixed references satisfy the shared portable contract");
+    }
+    private static void finalTransportAudit()throws Exception {
+        reset();File dir=materialDir("final-transport-audit-"+System.nanoTime());failCall=2;
+        try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},""),"second-round HTTP failure is preserved");}
+        JSONObject failed=ClassroomStore.read(new File(dir,"run.json"));
+        check(failed.getJSONObject("final_validation").getString("stage").equals("transport")&&failed.getJSONObject("final_validation").getString("status").equals("failed"),"transport failure is distinct from response validation failure");
+        check(!failed.has("final_output")&&!failed.has("final")&&failed.has("draft"),"failed transport never invents a model output or discards the existing draft");
+        check(failed.getLong("final_finished_at")>=failed.getLong("final_started_at"),"failed transport closes its own audit timing");
+        failCall=-1;mode="slow";
+        try(RequestControl c=new RequestControl(20000)){
+            Thread cancel=new Thread(()->{try{Thread.sleep(100);c.cancel();}catch(InterruptedException interrupted){Thread.currentThread().interrupt();}});cancel.start();
+            rejects(()->ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},""),"cancelled second-round request is not accepted");cancel.join();
+        }
+        JSONObject cancelled=ClassroomStore.read(new File(dir,"run.json"));
+        check(cancelled.getJSONObject("final_validation").getString("status").equals("cancelled")&&!cancelled.has("final_output"),"explicit cancellation is audited separately without stale model output");
     }
     private static void textOnlyAndInvalidRetry()throws Exception {
         reset();File dir=materialDir("text-only-"+System.nanoTime());
@@ -425,12 +475,15 @@ public final class ClassroomSummaryCheck {
         root=new File(args[0]);root.mkdirs();
         if(args.length>1&&"local-lifecycle".equals(args[1])){test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);System.out.println("LocalLessonLifecycle: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Local lifecycle check failed");return;}
         HttpServer server=server();try {
+            if(args.length>1&&"image-references".equals(args[1])){test("image reference validation",ClassroomSummaryCheck::validation);test("final validation evidence and continuation",ClassroomSummaryCheck::capAndFinalValidation);test("prefixed final and export",ClassroomSummaryCheck::prefixedFinal);test("final transport and cancellation audit",ClassroomSummaryCheck::finalTransportAudit);System.out.println("ImageReferences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Image reference check failed");return;}
             test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);
             test("direct and monitored download parity",ClassroomSummaryCheck::completeDownloadParity);
             test("downloaded classroom history",ClassroomSummaryCheck::downloadedHistory);
             test("subtitle compression",ClassroomSummaryCheck::subtitleCompression);
             test("inline images, portable document and safe retention",ClassroomSummaryCheck::retention);
             test("HTTP forty-image cap and final validation retry",ClassroomSummaryCheck::capAndFinalValidation);
+            test("prefixed final and export",ClassroomSummaryCheck::prefixedFinal);
+            test("final transport and cancellation audit",ClassroomSummaryCheck::finalTransportAudit);
             test("requested image windows",ClassroomSummaryCheck::windowSelection);test("reference validation",ClassroomSummaryCheck::validation);test("low-resolution dedup and budget",ClassroomSummaryCheck::images);test("transport options/cancel/deadline/SSE",ClassroomSummaryCheck::transport);test("checkpoint, retry and offline ZIP",ClassroomSummaryCheck::pipeline);test("text-only and invalid-response retry",ClassroomSummaryCheck::textOnlyAndInvalidRetry);test("anonymous account isolation",ClassroomSummaryCheck::isolation);
         }finally{server.stop(0);}System.out.println("ClassroomSummaryCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError(failures+" classroom regression failures");
     }

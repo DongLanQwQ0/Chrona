@@ -23,6 +23,7 @@ GROUPS = {
         "fixture_isolation_check.py",
         "ui_library_check.py",
         "classroom_header_check.py",
+        "classroom_batch_work_check.py",
         "inbox_query_check.py", "schedule_query_check.py", "detail_draft_check.py", "detail_editor_check.py", "detail_carousel_restore_check.py",
         "job_execution_check.py", "restore_concurrency_check.py", "result_notification_title_check.py", "dock_navigation_check.py", "acrylic_translation_check.py", "calendar_build_frame_check.py", "calendar_slide_check.py", "press_feedback_check.py", "carousel_motion_check.py", "choice_motion_check.py",
         "lan_security_check.py", "todo_due_default_check.py", "edit_conflict_check.py", "settings_layout_check.py", "attachment_remove_check.py",
@@ -42,7 +43,7 @@ GROUPS = {
     ),
     "cached_dependencies": (
         "vivo_setup_helper_check.py",
-        "classroom_summary_check.py", "classroom_client_check.py", "classroom_images_check.py", "classroom_work_service_check.py", "zju_timetable_view_check.py",
+        "classroom_summary_check.py", "classroom_client_check.py", "classroom_images_check.py", "classroom_work_service_check.py", "classroom_batch_export_check.py", "zju_timetable_view_check.py",
         "repeat_ai_check.py", "repeat_projection_check.py", "calendar_repeat_check.py",
         "config_backup_check.py", "backup_restore_check.py", "linked_calendar_events_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py",
         "parse_audit_api_check.py", "sync_core_check.py", "sync_lock_check.py", "lan_sync_api_check.py", "lan_sources_check.py", "lan_attachment_upload_check.py",

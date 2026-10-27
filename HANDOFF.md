@@ -1,45 +1,58 @@
 # 当前工作单
 
-## 当前交付（进行中）
+## 当前交付：Android 0.15.54／216（未安装、未发布）
 
-当前主工作：①新浙大作业可选AI自动排程，用户已确认直接应用可修改；官方截止、提醒、手工安排及同一作业身份不改，复用现有全周期时间建议及审计。后端owner homework_ai_execute（独占TaskStore/ZjuHomeworkStore/ZjuSync/ZjuSettingsStore及新planner），主代理负责设置UI、集成与最终验收。专用队列表v18，不重建已有parse_runs。②课堂单节右上按导出／监视／删除组成公共操作组；删除本节本地总结、内容和引用图，保护学校原课、其它课堂和未来监视，活动任务先停止。总结图片复用同一全屏viewer及长按拖放。③公共操作胶囊在只剩刷新按钮时高光圆形。classroom_ui_execute持有该连贯UI／图片源／删除／公共高光实现；不得与TaskStore owner冲突。同一ui_review最后独立验收。
+- 课堂列表／历史批量下载、导出、删除；按courseId筛选历次课堂，同名用完整ID消歧。复用抽取的`BatchSelectionUi`及原Dashboard批量语言；保留课堂长按监视。全选完整过滤结果跨页，筛选变更清选择、重建保留。
+- 用户已确认总ZIP每节独立目录：有总结／草稿导笔记、引用图、sources.md；仅素材导原PPT字节和sources.md。删除只删本地对应资料及同节共享副本，保护活动任务、学校原课、其它课及后续监视。
+- 下载复用原Session／prepare与同一FGS hold串行队列，不调用AI；取消／账号变更只停止本批拥有的任务，逐节统计。
+- 图片引用：合法images/前缀与裸名使用同一合同，严格拒绝真正未分析图片；第二轮明确稀疏file白名单与附图次序，校验前保存原响应、请求及实际失败。重新进入同轮失败草稿在原status恢复错误。
+- LAN设置地址文字点按复制当前普通URL，不带配对码；占位与已停会话不复制，不加按钮或高度。
 
-目录审计已交付`docs/audits/artifact-location-2026-10-27.md`。用户已选择删除A1–A7，已提供精确白名单PowerShell脚本供其自行执行，尚无执行回执，不宣称清理完成；主代理不代删。当前工具统一GitHubCLI为F:/Programs/GitHubCLI/bin/gh.exe，旧Android路径已由用户移除。所有新衍生产物留项目build，公共SDK/AVD/运行时/cache外置。
+## 唯一下一步
 
-USB 10AG5S1SR4005X7正常覆盖安装215/0.15.53成功，首次安装时间保持。真实既有总结正文打开共用全屏viewer、1→2翻图、正文及大图长按系统拖影通过，主代理和同一ui_review亲看压缩图；单刷新按住图对称圆形。未删除真实课堂、未向其它应用投递资料，新作业开关保持默认关闭。并行手机控制与接收浮层曾干扰验收，用户已确认暂停另一侧测试；首次刷新采集不作为有效证据。
+补原生夹具三处真实触摸诊断后只重验失败分支，由同一ui_review收尾，再USB覆盖和真机图片轮复验。`50561`已结束：短横屏17通过；大字长按在主线程繁忙时UP先于长按回调、Dashboard深色命中Dock缝、浅色持有已脱离旧行引用，原owner据真实dispatch修夹具，尚无生产手势缺陷证据。
 
-当前候选0.15.53／215，DB18。两位执行owner结果已集成；planner51、队列/备份/原作业回归、深浅原生自动排程各41、总结操作各21、总结拖放各129、单按钮高光各106通过。独立ui_review已消费精确拖放目标、四张压缩JPEG和原七张UI，整体签收本批受影响模拟器UI及交互，真机不在该证据范围。release与lintRelease通过，未改生产后重复构建。
+生产候选已固定：`build/candidates/0.15.54/Chrona-0.15.54.apk`，3232238字节，216／0.15.54，原签名；最终assembleRelease+lintRelease通过，`build/release-0.15.54-final-build.txt`。UiStyle新multiline变体仅用于课程选择值，默认调用单行不变，ui_review已关闭当前值P2；菜单末项完整露出仍需补滚动。测试源后续变化不影响此APK。不要在原生测试期间另开Gradle或抢ADB。
 
-当前微积分诊断：今天10:00课堂历史显示未完成、字幕草稿，1110条字幕、275→72截图，既往具体异常未持久化，不能归因。用户已明确允许继续并观察当前服务结果；正常UI点击继续整理后，已进入既有检查点的31张图片最终轮，ClassroomWorkService/2043实测运行，未重下载。主代理独占手机，禁止安装/重启中断该真实请求。
+## 已有有效证据与真实缺口
 
-唯一下一步：观察本次微积分请求的实际结果，保留具体错误或完成证据；有应用缺陷则修复并补验，完成后提交推送发布。0.15.53正式包已固定并验证原签名/非调试/无测试入口；构建和USB验收无需重复。GitHub CLI登录正常，但Git直连443失败，复用系统代理的命令被执行策略拒绝，不绕过，不重新鉴权；尚未推送或发布。
+- 图片引用及第二轮传输／取消／审计39项：`build/classroom-image-references-audit-final.txt`。原未知引用继续拒绝；前缀结果、稀疏编号、ZIP与便携合同通过。真实微积分修复后尚未复验。
+- LAN浅400／深320-150%各8项真实文字触摸→系统剪贴板；占位、新地址、停服竞态通过，同一ui_review已亲看两张JPEG并签收分项。证据`build/lan-address-ui-{light,dark}.txt`及`build/ui-0.15.54-review/lan-address-*.jpg`。没有打开网络Socket。
+- 批量离线Export／Store51、失败恢复9、重名label5、队列15、FGS hold及header20通过。
+- 真实后台缓存下载16项通过：3节在实际Activity.onPause后开始，逐节串行、同一OS前台服务，最终退出，意外网络计数0。`build/classroom-batch-native-background.txt`有效，不重复跑。
+- 真实系统保存器与自动分享通过：正常UI在55节合成历史上全选、DocumentsUI保存、自动Chooser、取消分享。拉回ZIP447641字节，55目录／3总结／55字幕／52原PPT／113条目，0失败，无双前缀／路径穿越；返回显示成功55。见`build/ui-0.15.54-review/batch-system-export-report.json`、对应XML及`batch-system-share.jpg`。未发送给外部目标；AVD Downloads有本轮新建`chrona-batch-ui-1793107316.zip`，宿主副本已在项目内。此输入使用旧等价授权mask表达式，三常量分支仍需最终lint。
+- 旧批量浅色15项通过，覆盖过滤、跨页、重建、active删除保护及终态；大字失败曾在长按后page为空，不能按测试问题先行定性。`build/classroom-batch-native-dark.txt`失败；原helper用整View中心，新夹具记录实际可见交集、Dock覆盖、真实事件路径及前后Activity／选择，等待50561结果。
+- Dashboard旧原生浅色复合几何断言失败、深色第二次点选失败，见`build/dashboard-batch-native-{light,dark}.txt`；生产尚未据猜测改动，新夹具拆分数值并保存事件证据。
+- ui_review已确认课程筛选大字硬裁P2；已按公共fieldTrigger multiline变体修复，必须补看完整长ID当前值与菜单。横屏工具可滚出并增加正文空间、Dashboard迁移仍待新证据，不能整体签收。
 
-## 上一已验收候选
+## 真机与基线
 
-**0.15.52／214已完成本地候选，尚未安装手机、未发布GitHub。** 固定安装包`build/candidates/0.15.52/Chrona-0.15.52.apk`，3208534字节、不可调试、原签名证书；release与lintRelease通过。
+USB `10AG5S1SR4005X7`：当前已正常覆盖到215／0.15.53，首次安装时间2026-09-26 18:54:37保持。该包的总结共用全屏、1→2翻图、正文／大图系统拖影及单刷新圆形高光均已真机验证；未删除用户课堂、未投递到外部应用。0.15.53源码`d831a86`已推main，但未Release。
 
-- 图片附件缩略图／大图、课堂大图与内嵌PPT统一长按拖放，保留缩放与跟手翻图。独立图片provider只精确授予所拖URI临时读取权限，不扩大syncblobs；课堂接收时重验账号。复用原图和真实MIME，不另存有损副本。
-- 作业／待办执行时段结束即逾期，只有开始时按开始；明确截止更早时按较早者。严格超过才逾期，完成项、活动、记录排除。截止、提醒锚点与默认显示区间保持原值，列表、首页、日历、网页及通知状态一致。修复重复实例向原首发之前改期漏出的问题；重复identity仍使用实际投影时刻，未改精度契约。
+今天10:00微积分1110字幕、275→72截图，旧历史仍未完成。用户明确授权继续后，实际31张图片轮约4分钟返回“AI引用了未分析的图片”；旧包未保存第二轮响应，无法判定真实文件名／是否只是前缀。回执`build/phone-20261027-analysis/calculus-resume-error.xml`及`calculus-failure-notification.txt`。已有确定的前缀误拒绝反例已修，不把候选机制当本次原始返回事实。新包后可在此次修复／诊断授权内续验一次图片轮，不重下载、不盲目反复付费。运行真实请求时禁止更新／重启应用。
 
-## 已验收的候选与证据
+手机曾被另一聊天及GlobalSend浮层干扰，用户已明确暂停另一侧测试后让本聊天继续，主代理独占；遇到前台切走先核对，不误点其它应用。
 
-- 图片真实触摸与跨UID：400dp浅色、320dp／150%深色各292项通过；标准`checks/classroom-monitor-validation.init.gradle`构建后的test APK runner同样292项通过。原缩放／跨边31项、Tile定向47项通过。权限前、写入、邻接URI、授权释放及账号停用均拒读；原字节与MIME正确，移动／多指、取消及拖后恢复通过。Tile证据限共享组件，不冒充完整Main／Task业务导航。
-- 逾期模型／SQLite、4008行分页、重复编辑42项、默认区间和真实LAN消费者通过；真实TaskStore浅色与窄屏大字深色各3711，通知factory83、提醒槽位63及原子卡契约通过。
-- 同一`ui_review`已亲看缩小JPEG并签收本轮受检UI，无未解决缺陷。回执与实际范围在`docs/validation-history.md`最新节，图在`build/image-drag-ui/`、`build/task-overdue-ui/`；正式包证据为`build/release-0.15.52-{build,badging,signature,manifest}.txt`。
-- 既有0.15.51下课收尾41、自动派发51及完整准备249等证据仍用于未变范围；不能替代微积分的真实课堂诊断。
+## 下一独立批：网页版三页收敛
 
-## 上一候选的手机依赖
+用户定位明确：其它设备快速查看与操作日程，只保留首页、日程、收件箱及其普通详情／编辑叶页；首页层级、筛选、多选、完成／编辑与App基本一致，不扩课堂或课表等高级管理。不能缩成只修截图按钮。
 
-此前用户将手机测试延后，现已重新提供USB并明确授权继续。手机最后确认**0.15.51／213**，既有安装回执为`build/release-0.15.51-phone-*`，不要把本地候选当作已安装。
+`web_core_research`只读已发现完成按钮缺等高约束、checkbox继承全局input内距、日期分组与排序字段不一致、详情返回清空选择等；正在补原生业务复用入口（刷新作业／未读／外部确认／重解析）。主代理已定：主题跟手机，断开保留页头轻量入口，系统日程开关跟原生；+仅首页；去掉高级UI路由但不擅删现有HTTP API／原生底层。参考压缩JPEG在`build/web-core-refresh-input`。
 
-下次用户允许测试时，先读取微积分监视注册、学校课表精确起止、官方课堂状态与自动任务日志，定位为何未结束／未总结，再完成0.15.52升级及图片拖放真机验证。先前36823、43579、41221正常连接及8765均超时，未读到真实日志，原因仍未确定；不将其归因于未经验证的课程处理延迟或时间匹配猜测。
+0.15.54 APK已固定，源提交后允许Web写active assets/API，避免混入当前候选；与真机最终验证并行做下一批。web_core_execute拥有前端及对应浏览器checks/LAN功能文档，root负责后端API与集成，启动只读准备，GO前不写active assets。浏览器必须串行复用`build/lan-web-checks/browser-profile`，不新建随机profile、不清登录／锁、不强关别人浏览器。根已正常关闭本次复现浏览器：完成按钮实测44x50；checkbox实际20x20/padding0，不能按继承内距猜测修复；320宽首记录被工具推到屏外。见`build/web-core-refresh-input/reproduction.json`及JPEG。下拉已真实鼠标打开，不代表连续选择及返回状态已验。
 
-GitHub认证已恢复：本轮通过统一路径`F:/Programs/GitHubCLI/bin/gh.exe auth status --hostname github.com`确认当前账号正常登录、授权可用（退出码0）。旧路径的失效结论已过期，不再作为阻塞，不重新登录或读取token。常规提交、推送、发布已有授权；当前主工作候选验收后直接复用当前登录发布。
+## 外写入口及清理清单已独立交付
 
-## 所有权与保护
+工具日志改项目build/emulator-logs，受控Java/javac runner实际tmp改到项目；21命令参数、7真实JVM落点验证通过。正式`docs/audits/artifact-location-2026-10-27.md`及`artifact-cleanup-candidates-2026-10-27.csv`共105项：F盘16项153968683字节，E盘旧APK89文件221189936字节。18个旧分发工具副本、monitor-review历史证据、polish-input来源疑义、共享工具／AVD／profile／签名／恢复资料排除。A1–A7当前均不存在，不再使用旧132.1MiB计数。
 
-主代理持有生产、ADB／Gradle及最终交付；image_drag_route只写本轮测试，ui_review只读签收，均已消费结果。GlobalSend误发需求不属于本项目。不恢复胶囊无障碍服务或点击计时，不重跑用户历史AI总结。
+用户要求本阶段不删不搬，由用户运行最终脚本。已核实汇总聊天真实userMessage授权，并向`01a17d32-03fb-7743-b04b-043c81a1d8eb`回报正式路径与限制；已交付，不把发送当作已执行删除。源提交`09e174d`已本地完成，随后正常Git push遇到间歇443失败，尚未推送；不重置已有GitHub认证。任意绕过runner的手动Java调用仍须显式tmp，ModelOutputCheck没有受控runner，边界写在开发指南。
 
-FastCtx未提供工具，PowerShell7兜底。JAVA_HOME=`D:/Minecraft/java21`，SDK=`F:/Android/Sdk`，GRADLE_USER_HOME=`F:/Android/GradleCache`，ANDROID_USER_HOME=`F:/Android/user-home`。只复用`F:/Android/Avd/Chrona_Classroom_36`，本轮仅操作隔离包，无新建／重置AVD；系统旋转已回自动、user_rotation=0，无残留系统drag。
+## 所有权／工具保护
 
-视觉只查看缩小压缩JPEG，PNG原件不直接查看／上传。保留独立修改`AGENTS.md`、角色toml、`.backups/`、`.local-backups/`及`tools/Clean-Project.ps1`，不纳入本轮提交。
+主代理：整体判断、Summary/reader/LAN、HANDOFF、版本／CHANGELOG、ADB／Gradle、最终验收／发布。classroom_batch_execute：课堂批量及相邻公共UI实现与原生夹具，修复回原owner；ui_review只读独立审核。web_core_research暂只读，不派生。
+
+共享AVD只用`F:/Android/Avd/Chrona_Classroom_36`、serial emulator-5554，不新建／克隆／清空／重置。FastCtx未提供，pwsh7兜底。JAVA_HOME=D:/Minecraft/java21，SDK=F:/Android/Sdk，GRADLE_USER_HOME=F:/Android/GradleCache，ANDROID_USER_HOME=F:/Android/user-home；TEMP/TMP及新增日志在本项目build。
+
+GH唯一`F:/Programs/GitHubCLI/bin/gh.exe`，当前登录正常，不读token、不重新鉴权。正常Git push曾成功也曾443失败；复用系统代理的命令曾被工具策略拒绝，不用其它工具绕过该拒绝。常规提交／推送／发布已授权，正式标签和资产只在候选验收后生成，不能传过时包。
+
+所有图先压缩再查看；仅JPEG派生图，不查看／上传PNG原图。保护用户独立修改AGENTS.md、角色toml、.backups、.local-backups、tools/Clean-Project.ps1，不纳入本轮提交。GlobalSend误发功能不属本项目。

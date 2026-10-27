@@ -248,13 +248,16 @@ public final class UiStyle {
      * edge however long the selected label is.
      */
     static void fieldTrigger(TextView view) {
+        fieldTrigger(view, false);
+    }
+    static void fieldTrigger(TextView view, boolean multiline) {
         Palette colors = colors(view.getContext());
         view.setTextColor(colors.text);
         view.setTextSize(16);
         view.setTypeface(null, Typeface.NORMAL);
         view.setLetterSpacing(0f);
         view.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        view.setSingleLine(true);
+        view.setSingleLine(!multiline);
         view.setMinHeight(dp(view, 52));
         view.setPadding(dp(view, 16), dp(view, 14), dp(view, 16), dp(view, 14));
         view.setCompoundDrawablePadding(dp(view, 8));

@@ -69,7 +69,7 @@
       for(const note of part.notes||[]){
         html+='<h2>'+md.renderInline(note.title||'')+'</h2>'+md.render(note.text||'');
         const inline=new Set([...String(note.text).matchAll(/!\[[^\]\r\n]*\]\((?:images\/)?(image-\d+\.jpg)\)/g)].map(m=>m[1]));
-        for(const image of note.images||[])if(!inline.has(image))html+=md.render(`![课堂截图](images/${image})`);
+        for(const image of note.images||[]){const name=String(image).replace(/^images\//,'');if(!inline.has(name))html+=md.render(`![课堂截图](images/${name})`);}
       }
       for(const task of part.assignments||[]){
         html+=`<h2>课堂安排</h2><div class="assignment" role="link" tabindex="0" data-task="${taskIndex++}" aria-label="提取课堂安排为日程">${md.render(task.text||'')}</div>`;

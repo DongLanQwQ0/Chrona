@@ -48,6 +48,8 @@ public final class ClassroomLessonActivity extends Activity {
         ClassroomNotifications notifications;
         volatile boolean notifyWork;
         boolean monitorOwned;
+        Object batchOwner;
+        boolean succeeded;
         Runnable completed;
         boolean updateQueued, detached;
         long startedAt;
@@ -59,18 +61,18 @@ public final class ClassroomLessonActivity extends Activity {
         void cancel(){cancelRequested=true;if(busy){progress=ClassroomProgress.waiting("正在停止","已完成内容会保留");publish();}RequestControl c=control;if(c!=null)c.cancel();ClassroomClient network=client;if(network!=null)network.cancel();}
         interface Work{void run()throws Exception;}
         void run(String stage,Work work){run(stage,false,work);}
-        void run(String stage,boolean notices,Work work){if(busy)return;busy=true;notifyWork=notices;cancelRequested=false;message="";startedAt=SystemClock.elapsedRealtime();progress=ClassroomProgress.waiting(stage,"");
+        void run(String stage,boolean notices,Work work){if(busy)return;busy=true;succeeded=false;notifyWork=notices;cancelRequested=false;message="";startedAt=SystemClock.elapsedRealtime();progress=ClassroomProgress.waiting(stage,"");
             if(notices){if(notifications==null)notifications=new ClassroomNotifications(app,account,selected);notifications.progress(progress,true);}
             publish();Runnable execute=()->worker.execute(()->{
             boolean success=false;File leased=null;
             try{if(!allowed())return;if(dir!=null){ClassroomStore.begin(dir);leased=dir;}control=new RequestControl(60*60*1000L);if(cancelRequested)control.cancel();control.check();work.run();success=true;}
             catch(Exception e){message=cancelRequested||control!=null&&control.isCancelled()?"已停止，已完成内容已保存":NetworkFailure.hasDetails(e)?NetworkFailure.describe(e):(e.getMessage()==null?"操作失败，请重试":e.getMessage());}
-            finally{if(leased!=null)ClassroomStore.end(leased);if(client!=null){client.close();client=null;}if(control!=null){control.close();control=null;}if(exportInFlight){exportUri=null;exportInFlight=false;}boolean completed=success;main.post(()->{busy=false;
+            finally{if(leased!=null)ClassroomStore.end(leased);if(client!=null){client.close();client=null;}if(control!=null){control.close();control=null;}if(exportInFlight){exportUri=null;exportInFlight=false;}boolean completed=success;main.post(()->{busy=false;succeeded=completed;
                 if(notices&&notifications!=null){if(allowed())notifications.finished(message,completed);else notifications.clear();}notifyWork=false;if(notices)ClassroomWorkService.finished(this);publish();if(this.completed!=null)this.completed.run();disposeIfDetached();});}
         });
-            if(notices){if(monitorOwned)ClassroomWorkService.submitMonitor(this,execute);else ClassroomWorkService.submit(this,execute);}else execute.run();
+            if(notices){if(batchOwner!=null)ClassroomWorkService.submitBatch(batchOwner,this,execute);else if(monitorOwned)ClassroomWorkService.submitMonitor(this,execute);else ClassroomWorkService.submit(this,execute);}else execute.run();
         }
-        void startFailed(){busy=false;notifyWork=false;message="后台处理无法启动，请返回课堂重试";if(notifications!=null)notifications.finished(message,false);publish();disposeIfDetached();}
+        void startFailed(){busy=false;succeeded=false;notifyWork=false;message="后台处理无法启动，请返回课堂重试";if(notifications!=null)notifications.finished(message,false);publish();if(completed!=null)completed.run();disposeIfDetached();}
         void disposeIfDetached(){if(!busy&&detached&&owner.get()==null){preferences.unregisterOnSharedPreferenceChangeListener(changes);worker.shutdown();}}
         ClassroomStore store()throws Exception{return new ClassroomStore(app,account);}
         ClassroomClient connect()throws Exception{if(!allowed())throw new IOException("学校账号已停用或更换");String[] pair=new ZjuSettingsStore(app).credentials();try{client=new ClassroomClient(pair[0],pair[1]);return client;}finally{Arrays.fill(pair,"");}}
@@ -143,8 +145,16 @@ public final class ClassroomLessonActivity extends Activity {
                     ? new JSONObject().put("segments",job.materials.getJSONArray("segments").length())
                         .put("raw",job.materials.optInt("raw_images"))
                         .put("candidates",candidates.getJSONArray("images").length()) : null;
-            job.localInitialized=true; job.message="";
+            job.localInitialized=true; job.message=restoredFailure(job.summary,ClassroomStore.read(new File(job.dir,"run.json")));
         });
+    }
+    static String restoredFailure(JSONObject summary,JSONObject run){
+        if(run==null||run.has("final"))return "";
+        JSONObject validation=run.optJSONObject("final_validation");if(validation==null)return "";
+        String status=validation.optString("status");
+        if(!status.equals("failed")&&!status.equals("cancelled"))return "";
+        if(summary!=null&&!summary.optString("run").equals(run.optString("run")))return "";
+        return validation.optString("error");
     }
 
     private void update() {
@@ -178,7 +188,7 @@ public final class ClassroomLessonActivity extends Activity {
         overview=text(content,"",17,false);notes=new LinearLayout(this);notes.setOrientation(LinearLayout.VERTICAL);content.addView(notes);
     }
     private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary==null?"生成总结":s.summary.optBoolean("complete")?"重新生成":"继续整理");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
-        delete.setEnabled(!s.deleting&&s.localInitialized&&(s.summary!=null||s.busy));cancel.setVisibility(s.busy&&!s.deleting?View.VISIBLE:View.GONE);
+        delete.setEnabled(!s.deleting&&s.localInitialized&&(s.summary!=null||s.materials!=null||s.busy));cancel.setVisibility(s.busy&&!s.deleting?View.VISIBLE:View.GONE);
         if(s.prepared!=null)completion.setText("字幕就绪 · "+s.prepared.optInt("segments")+" 条\n截图 "+s.prepared.optInt("raw")+" → "+s.prepared.optInt("candidates")+" 张");else completion.setText(s.selected.state(System.currentTimeMillis()));
         overview.setVisibility(View.GONE);
         JSONObject summary=s.summary;
@@ -227,8 +237,8 @@ public final class ClassroomLessonActivity extends Activity {
     private void confirmDelete(){
         if(!gate())return;
         if(s.busy||ClassroomLiveTranscripts.active(s.account,s.selected)){Feedback.show(this,"本节课堂正在处理，请先停止后再删除");return;}
-        if(s.summary==null)return;
-        UiDialogs.confirmDialog(this,"删除本地课堂总结","将删除本节已保存的总结、字幕和图片。学校原课堂及后续课堂监视保留。","删除",this::deleteLocal);
+        if(s.summary==null&&s.materials==null)return;
+        UiDialogs.confirmDialog(this,"删除本地课堂资料","将删除本节已保存的总结、字幕和图片。学校原课堂及后续课堂监视保留。","删除",this::deleteLocal);
     }
     private void deleteLocal(){
         if(!gate()||s.busy){Feedback.show(this,"本节课堂正在处理，请先停止后再删除");return;}

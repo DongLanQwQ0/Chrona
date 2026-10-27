@@ -27,6 +27,7 @@ public final class LanSettingsActivity extends Activity {
         enabled.setOnCheckedChangeListener((button, checked) -> { if (refreshing) return; if (!checked) LanAccessService.stop(this); else enable(); refresh(); });
         status = text("", 14); UiStyle.muted(status); add(session, status);
         LinearLayout access = group(root, "浏览器配对"); address = text("", 16); address.setTextIsSelectable(true); add(access, address);
+        address.setOnClickListener(v -> copyAddress());
         qr = new ImageView(this); qr.setContentDescription("扫码连接手机");
         qr.setScaleType(ImageView.ScaleType.FIT_CENTER);
         qrFrame = new FrameLayout(this);
@@ -71,7 +72,11 @@ public final class LanSettingsActivity extends Activity {
     private void refresh() {
         refreshing = true; enabled.setChecked(LanAccessService.running() || LanAccessService.starting()); refreshing = false;
         status.setText(LanAccessService.status());
-        address.setText(LanAccessService.running() ? LanAccessService.url() : "开启后显示访问地址");
+        String url=LanAccessService.running()?LanAccessService.url():"";
+        boolean available=!url.isEmpty();String label=available?url:"开启后显示访问地址";
+        if(!label.contentEquals(address.getText()))address.setText(label);
+        address.setClickable(available);address.setFocusable(available);
+        address.setContentDescription(available?"复制访问地址，"+url:null);
         String pairing = LanAccessService.pairing();
         code.setText(!LanAccessService.running() ? "开启后生成临时配对码"
                 : pairing.isEmpty() ? "配对码已过期，请重新配对" : pairing);
@@ -84,6 +89,14 @@ public final class LanSettingsActivity extends Activity {
             qrFrame.setVisibility(android.view.View.GONE);
             status.setText("无法生成二维码，请复制访问地址");
         }
+    }
+    private void copyAddress() {
+        String url=LanAccessService.running()?LanAccessService.url():"";
+        if(url.isEmpty())return;
+        android.content.ClipboardManager clipboard=getSystemService(android.content.ClipboardManager.class);
+        if(clipboard==null){Feedback.show(this,"剪贴板暂时不可用");return;}
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("局域网访问地址",url));
+        if(Build.VERSION.SDK_INT<33)Feedback.show(this,"地址已复制");
     }
     @Override protected void onResume() { super.onResume(); handler.post(poll); }
     @Override protected void onPause() { handler.removeCallbacks(poll); super.onPause(); }

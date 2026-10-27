@@ -76,7 +76,8 @@ public final class ClassroomStore {
                 if(active(target))throw new IOException("本节课堂正在处理，请先停止后再删除");
                 if(target.exists()){validateDeleteTree(target,target.getCanonicalFile());targets.add(target);}
             }
-            if(!new File(local,"summary.json").isFile()&&!new File(imported,"summary.json").isFile())throw new IOException("本节课堂尚无本地总结");
+            if(!new File(local,"summary.json").isFile()&&!new File(imported,"summary.json").isFile()
+                    &&!new File(local,"materials.json").isFile()&&!new File(local,"candidates.json").isFile())throw new IOException("本节课堂尚无本地资料");
             beforeDelete.run();
             for(File target:targets)deleteTree(target);
         }

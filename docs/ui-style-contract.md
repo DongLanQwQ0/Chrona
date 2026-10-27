@@ -23,6 +23,7 @@
 | 浮层、长内容和开合 | `UiDialogs.dialogPanel/dialogBody/showFloatingDialog` |
 | 选择与导航 | `DockNavigationLayout` 及其 motion host |
 | 日期区间切换与日期选择 | `DateIntervalBar`、`UiDialogs.dateDialog` 与公共自定义选择器 |
+| 列表批量选择 | `BatchSelectionUi`，复用主页日程／收件箱的同高计数行、短动作、圈勾与显隐 |
 
 公共实现的职责与接入见[公共 UI 库](ui-library.md)。`UiStyle` 管主题与控件语义，`UiSurfaces` 管渲染与采样，`UiDialogs` 管浮层，`UiMotion` 管内容动效；页面不复制这些机制。整理按功能等价验收，不改变本规范与交互基线。
 

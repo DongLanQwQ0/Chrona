@@ -2090,22 +2090,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private Button inboxSelectionAction(String label, Runnable action) {
-        Button control = new Button(this);
-        control.setText(label);
-        control.setAllCaps(false);
-        control.setSingleLine(true);
-        control.setTextSize(13);
-        control.setTextColor(UiStyle.colors(this).primary);
-        control.setIncludeFontPadding(false);
-        control.setMinWidth(0);
-        control.setMinimumWidth(0);
-        control.setMinHeight(0);
-        control.setMinimumHeight(0);
-        control.setPadding(dp(8), 0, dp(8), 0);
-        UiStyle.glassPill(control);
-        UiStyle.pressable(control);
-        control.setOnClickListener(view -> action.run());
-        return control;
+        return BatchSelectionUi.action(this, label, action);
     }
 
     private void addInboxResultsHeading(int count) {
@@ -2119,14 +2104,7 @@ public final class DashboardActivity extends Activity {
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         int height = Math.max(dp(40), (int) Math.ceil(title.getPaint().getFontSpacing()) + dp(8));
         heading.addView(title, new LinearLayout.LayoutParams(0, height, 1f));
-        ViewGroup previous = (ViewGroup) selectionBar.getParent();
-        if (previous != null) previous.removeView(selectionBar);
-        for (Button control : new Button[]{selectAllButton, deleteSelectedButton}) {
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, height);
-            params.setMargins(dp(6), 0, 0, 0);
-            control.setLayoutParams(params);
-        }
-        heading.addView(selectionBar, new LinearLayout.LayoutParams(-2, height));
+        BatchSelectionUi.attach(heading, selectionBar, height, selectAllButton, deleteSelectedButton);
         // This height exists before selection too, so entering selection never moves the cards.
         UiStyle.addSpaced(results, heading, 0, 4);
     }
@@ -3331,27 +3309,7 @@ public final class DashboardActivity extends Activity {
         if (selectionBar == null) return;
         Set<Long> selected = currentSelection();
         boolean active = !selected.isEmpty();
-        boolean wasVisible = selectionBar.getVisibility() == View.VISIBLE;
-        selectionBar.animate().cancel();
-        if (active && !wasVisible && android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            selectionBar.setAlpha(0f);
-            selectionBar.setTranslationY(-dp(5));
-            selectionBar.setVisibility(View.VISIBLE);
-            selectionBar.animate().alpha(1f).translationY(0f).setDuration(170).start();
-        } else if (!active && wasVisible
-                && android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            LinearLayout outgoingBar = selectionBar;
-            outgoingBar.animate().alpha(0f).translationY(-dp(4)).setDuration(120)
-                    .withEndAction(() -> {
-                        outgoingBar.setVisibility(View.GONE);
-                        outgoingBar.setAlpha(1f);
-                        outgoingBar.setTranslationY(0f);
-                    }).start();
-        } else {
-            selectionBar.setAlpha(1f);
-            selectionBar.setTranslationY(0f);
-            selectionBar.setVisibility(active ? View.VISIBLE : View.GONE);
-        }
+        BatchSelectionUi.visible(selectionBar, active);
         selectionCount.setText(selected.size() + "/" + matchingInboxIds.size());
         selectionCount.setContentDescription("已选 " + selected.size() + " 条，共 " + matchingInboxIds.size() + " 条");
         boolean all = !matchingInboxIds.isEmpty()
@@ -3374,14 +3332,7 @@ public final class DashboardActivity extends Activity {
         InboxRow row = inboxRows.get(taskId);
         if (row == null) return;
         boolean selected = currentSelection().contains(taskId);
-        row.marker.setVisibility(currentSelection().isEmpty() ? View.GONE : View.VISIBLE);
-        row.marker.setText("");
-        android.graphics.drawable.Drawable marker = getDrawable(selected ? R.drawable.ic_check : R.drawable.ic_circle).mutate();
-        marker.setBounds(0, 0, dp(22), dp(22));
-        marker.setTint(selected ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
-        row.marker.setCompoundDrawables(marker, null, null, null);
-        row.marker.setTextColor(selected ? UiStyle.colors(this).primary
-                : UiStyle.colors(this).muted);
+        BatchSelectionUi.marker(row.marker, !currentSelection().isEmpty(), selected);
         // Keep the acrylic card background; selection is already shown by the marker and toolbar.
         UiStyle.pressable(row.card);
     }

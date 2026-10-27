@@ -19,6 +19,7 @@
 | 工作区标题／共享操作胶囊 | `WorkspacePageHeader`、`HeaderActionGroup` |
 | 日期区间／滚轮选择器 | `DateIntervalBar`、`GlassDateTimePickerView` |
 | 选择栏／底部导航 | `DockNavigationLayout`、`DockSpring`、`DashboardDockChrome` |
+| 列表批量操作 | `BatchSelectionUi`；复用日程／收件箱的短动作、同高计数行、圈勾及进入／退出动画，业务选择与操作快照由页面持有 |
 | 页面背景／短时结果消息 | `GlassBackdropView`、`Feedback` |
 | 学校课表／课堂周表 | `TimetableGrid`、`TimetableLayout`；同一绘制及冲突分列，课堂仅有开始时间时使用开始标记，不推算结束 |
 
@@ -28,6 +29,8 @@
 
 操作组几何变化由 `HeaderActionGroup` 通知 `UiSurfaces` 使高光遮罩缓存失效；固定宽度的剩余单元也按当前父表面完整圆角裁切，不在页面替换圆形遮罩。
 
+字段选择入口复用`UiStyle.fieldTrigger`。默认保持单行；需要完整呈现课程名及身份等长值时，显式使用`fieldTrigger(view, true)`与`WRAP_CONTENT`自然换行，保留同一字号、箭头、表面及内距，不以最大行数或缩字隐藏值。
+
 短窗口的固定工具组使用`SettingsPageLayout.toolsViewport`，限制工具区占用并保留可滚动操作；`SchedulePage`只给正文增加底部浮动导航的末尾留白，不给工具视口重复加空白。表单的键盘和系统安全区由滚动视口外层承担，焦点按真实可见高度滚动。
 
 工作区的短窗口由`CollapsingPageLayout`接收纵向嵌套滚动，先移出正文上方工具，再把同等高度还给正文；回到正文开头后下拖恢复。`FreeCalendarScrollView`保留自身双向滚动、捏合及周切换，同时把纵向预消费和窗口偏移交给该父级。竖屏普通高度不折叠，键盘编辑时保留输入工具，不替换既有滚动监听。日期／时间轮使用`UiDialogs.fitPicker`按可见高度扣除标题与操作行，窄高时减少可见轮行而非缩小所选值字体。
@@ -35,6 +38,8 @@
 `UiMotion.enterPage`用于首次子页面呈现，方向`swap`用于工作区子视图和分页；轮询不重播入场。`DateIntervalBar`保持实例并负责箭头、滑动与点击选择入口。`ImageSlidePager`负责有界手势、当前／相邻帧缓存、原图比例及连续切页；`PanHandler`先消费放大图片内部平移，仅把横边余量交给翻页，方向仲裁仍按真实手指方向。权限和来源由调用页提供；全部图片入口共用`AttachmentViewerActivity`的焦点缩放、保存及横屏沉浸布局，媒体与操作安全区分离，不复制入口专属查看器。
 
 页面调用样式和组合组件，不自行创建另一份亚克力 Drawable、弹窗层级管理或快照切换。渲染状态由 `UiSurfaces` 管理；浮层登记窗口模糊根，渲染层无需依赖浮层生命周期实现。
+
+日程、收件箱和课堂批量模式直接调用`BatchSelectionUi.action/attach/visible/marker`。计数行在进入前后保留同一高度；课堂在动作放不下时用同款「操作」按钮打开公共选择面板，保留字号和操作范围。公共实现不持有选择、账号、分页或下载任务。
 `CalendarVisibilityToggle` 只管理开关图标及连续颜色变化；按压通过 `UiStyle.pressable` 使用 `UiSurfaces` 的公共填充遮罩，随 `HeaderActionGroup` 胶囊边界裁切。调用方不叠加专用圆形涟漪或选中底色。
 
 浮层背景缩放状态覆盖进入、持有和退出全过程；退出中重开复用最初基准，最终恢复后释放状态，视图脱离时清理。该边界由公共实现处理，调用方不补延时或手动重置缩放。

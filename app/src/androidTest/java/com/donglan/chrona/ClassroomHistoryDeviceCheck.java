@@ -58,7 +58,7 @@ final class ClassroomHistoryDeviceCheck {
             require(find(root,partial.course)!=null&&find(root,fresh.course)!=null,"incomplete and new classroom remain available");
             require(find(root,downloaded.course)==null&&find(root,complete.course)==null,"downloaded and summarized classrooms leave classroom list");
             capture(test,context,"classroom-list-"+args.getString("theme","light"));
-            require(((ViewGroup)field(workspace.currentPage(),"listBody")).getChildCount()==50,"filtered first page still contains fifty items");
+            require(((ViewGroup)field(workspace.currentPage(),"listBody")).getChildCount()==51,"filtered first page contains fifty items and stable count row");
             android.widget.ScrollView scrolling=(android.widget.ScrollView)field(workspace.currentPage(),"listScroll");
             test.runOnMainSync(()->scrolling.scrollTo(0,Math.round(160*context.getResources().getDisplayMetrics().density)));
             await(test,()->scrolling.getScrollY()>0,"nonzero list position");int savedY=scrolling.getScrollY();
@@ -67,7 +67,7 @@ final class ClassroomHistoryDeviceCheck {
             await(test,()->!busy(workspace.currentPage()),"local list refresh");
             require(scrolling.getScrollY()==savedY&&field(workspace.currentPage(),"listBody")==originalList,"local refresh preserves nonzero position and list instance");
             View visible=null;ViewGroup rows=(ViewGroup)originalList;
-            for(int i=0;i<rows.getChildCount();i++){View item=rows.getChildAt(i);android.graphics.Rect bounds=new android.graphics.Rect();
+            for(int i=1;i<rows.getChildCount();i++){View item=rows.getChildAt(i);android.graphics.Rect bounds=new android.graphics.Rect();
                 if(item.getGlobalVisibleRect(bounds)&&bounds.height()>=item.getHeight()){visible=item;break;}}
             tap(test,visible);detail=monitor.waitForActivityWithTimeout(10000);require(detail!=null,"visible list row opens by touch");
             Activity pending=detail;await(test,()->!busy(pending),"local pending classroom ready");
@@ -77,9 +77,9 @@ final class ClassroomHistoryDeviceCheck {
             require(scrolling.getScrollY()==savedY,"detail return preserves nonzero list position");
             View next=description(root,"下一页");test.runOnMainSync(()->next.requestRectangleOnScreen(new android.graphics.Rect(0,0,next.getWidth(),next.getHeight()),true));
             test.waitForIdleSync();tap(test,next);
-            await(test,()->((ViewGroup)field(workspace.currentPage(),"listBody")).getChildCount()==4,"filtered second page contains remaining four items");
+            await(test,()->((ViewGroup)field(workspace.currentPage(),"listBody")).getChildCount()==5,"filtered second page contains remaining four items and count row");
             require((int)field(field(workspace.currentPage(),"s"),"page")==1,"pagination uses filtered classroom count");
-            tap(test,dock.itemAt(2));await(test,()->!busy(workspace.currentPage()),"history ready");
+            tap(test,dock.itemAt(3));await(test,()->!busy(workspace.currentPage()),"history ready");
             View saved=find(root,downloaded.course);
             require(saved instanceof TextView&&((TextView)saved).getText().toString().contains("已下载"),"download-only classroom shown with accurate status");
             require(find(root,partial.course)==null&&find(root,fresh.course)==null,"incomplete downloads excluded from history");
