@@ -44,6 +44,8 @@ public final class AttachmentViewerActivity extends Activity {
     private String imageName;
     private String classroomAccount,rawName,imageMime="image/jpeg",exportName,savingRaw;
     private ClassroomLesson classroomLesson;
+    private boolean classroomSummary;
+    private static final String EXTRA_CLASSROOM_SUMMARY="classroom_summary_image";
     private float scale = 1f;
     private boolean matrixReady;
     private boolean immersiveLandscape;
@@ -60,6 +62,17 @@ public final class AttachmentViewerActivity extends Activity {
                 .putExtra(EXTRA_CLASSROOM_LESSON,lesson.json().toString()).putExtra(EXTRA_CLASSROOM_RAW,raw).putStringArrayListExtra(EXTRA_CLASSROOM_IMAGES,images),CLASSROOM_GALLERY_REQUEST);}
         catch(Exception failure){Feedback.show(activity,"无法打开课堂图片");}
     }
+    static void openClassroomSummary(Activity activity,String account,ClassroomLesson lesson,String name){
+        if(!ClassroomMonitor.allowed(activity,account))return;
+        try{
+            ClassroomStore store=new ClassroomStore(activity,account);store.summaryImage(lesson,name);
+            JSONObject summary=ClassroomStore.read(new File(store.lesson(lesson),"summary.json"));
+            ArrayList<String> images=new ArrayList<>(com.donglan.chrona.classroom.ClassroomDocument.referencedImages(summary));
+            activity.startActivity(new Intent(activity,AttachmentViewerActivity.class).putExtra(EXTRA_CLASSROOM_ACCOUNT,account)
+                    .putExtra(EXTRA_CLASSROOM_LESSON,lesson.json().toString()).putExtra(EXTRA_CLASSROOM_RAW,name)
+                    .putStringArrayListExtra(EXTRA_CLASSROOM_IMAGES,images).putExtra(EXTRA_CLASSROOM_SUMMARY,true));
+        }catch(Exception unavailable){Feedback.show(activity,"总结图片已不可用");}
+    }
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
@@ -68,10 +81,11 @@ public final class AttachmentViewerActivity extends Activity {
         try{
             if(getIntent().hasExtra(EXTRA_CLASSROOM_ACCOUNT)||getIntent().hasExtra(EXTRA_CLASSROOM_LESSON)||getIntent().hasExtra(EXTRA_CLASSROOM_RAW)||getIntent().hasExtra(EXTRA_CLASSROOM_IMAGES)){
                 classroomAccount=getIntent().getStringExtra(EXTRA_CLASSROOM_ACCOUNT);rawName=getIntent().getStringExtra(EXTRA_CLASSROOM_RAW);
+                classroomSummary=getIntent().getBooleanExtra(EXTRA_CLASSROOM_SUMMARY,false);
                 classroomLesson=ClassroomLesson.fromJson(new JSONObject(getIntent().getStringExtra(EXTRA_CLASSROOM_LESSON)));
                 ArrayList<String> supplied=getIntent().getStringArrayListExtra(EXTRA_CLASSROOM_IMAGES);
                 if(supplied==null)throw new java.io.IOException("课堂图片清单无效");
-                for(String name:supplied)if(name!=null&&name.matches("raw-[0-9]+\\.img")&&!gallery.contains(name))gallery.add(name);
+                for(String name:supplied)if(name!=null&&name.matches(classroomSummary?"image-[0-9]+\\.jpg":"raw-[0-9]+\\.img")&&!gallery.contains(name))gallery.add(name);
                 if(!gallery.contains(rawName))throw new java.io.IOException("课堂图片无效");
                 if(state!=null&&gallery.contains(state.getString("selected_raw")))rawName=state.getString("selected_raw");
                 source=sourceFile();updateExportFormat();
@@ -93,7 +107,7 @@ public final class AttachmentViewerActivity extends Activity {
         pager=new ImageSlidePager(this,false);
         image = pager.image();
         image.setScaleType(ImageView.ScaleType.MATRIX);
-        image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大，长按拖放":"课堂PPT，双指缩放或双击放大，长按拖放");
+        image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大，长按拖放":classroomSummary?"总结图片，双指缩放或双击放大，长按拖放":"课堂PPT，双指缩放或双击放大，长按拖放");
         if(immersiveLandscape)stage.addView(pager,1,new FrameLayout.LayoutParams(-1,-1));
         else safeArea.addView(pager, new FrameLayout.LayoutParams(-1, -1));
         ImageButton save=UiStyle.navigationIcon(this,R.drawable.ic_week_export,"保存图片",this::saveImage);
@@ -108,7 +122,7 @@ public final class AttachmentViewerActivity extends Activity {
             shell=overlay;
         }else{
             LinearLayout content=SettingsPageLayout.content(this);
-            SettingsPageLayout.header(this,content,classroomLesson==null?"图片附件":"课堂PPT",save);shell=content;
+            SettingsPageLayout.header(this,content,classroomLesson==null?"图片附件":classroomSummary?"总结图片":"课堂PPT",save);shell=content;
         }
         safeArea.addView(shell,new FrameLayout.LayoutParams(-1,-1));
         UiStyle.applyInsets(stage, safeArea);
@@ -143,11 +157,11 @@ public final class AttachmentViewerActivity extends Activity {
         image.getViewTreeObserver().addOnGlobalLayoutListener(this::fitImage);
         pager.setPagingAllowed(()->!scaleDetector.isInProgress());
         pager.setPanHandler(this::panImage);
-        pager.setDragAction(()->{try{sourceFile();return ImageDrag.start(this,image,classroomLesson==null?ImageTransferProvider.attachment(this,imageName):ImageTransferProvider.classroom(this,classroomAccount,classroomLesson,rawName));}catch(Exception unavailable){Feedback.show(this,"图片已不可用");return false;}});
+        pager.setDragAction(()->{try{sourceFile();return ImageDrag.start(this,image,classroomLesson==null?ImageTransferProvider.attachment(this,imageName):classroomSummary?ImageTransferProvider.classroomSummary(this,classroomAccount,classroomLesson,rawName):ImageTransferProvider.classroom(this,classroomAccount,classroomLesson,rawName));}catch(Exception unavailable){Feedback.show(this,"图片已不可用");return false;}});
         pager.setListener((selected,current)->{
             if(classroomLesson!=null){rawName=gallery.get(selected);setResult(RESULT_OK,new Intent().putExtra(EXTRA_SELECTED_RAW,rawName));}
             scale=1f;matrixReady=false;fitImage();
-            image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大，长按拖放":"课堂PPT "+(selected+1)+" / "+gallery.size()+"，双指缩放或双击放大，长按拖放");
+            image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大，长按拖放":(classroomSummary?"总结图片 ":"课堂PPT ")+(selected+1)+" / "+gallery.size()+"，双指缩放或双击放大，长按拖放");
         });
         ArrayList<String> items=new ArrayList<>();if(classroomLesson==null)items.add(imageName);else items.addAll(gallery);
         pager.setImages(items,classroomLesson==null?0:gallery.indexOf(rawName),new ImageSlidePager.Source(){
@@ -189,7 +203,7 @@ public final class AttachmentViewerActivity extends Activity {
         if(bounds.outWidth<=0||bounds.outHeight<=0||bounds.outMimeType==null)throw new java.io.IOException("课堂图片无法读取");
         imageMime=bounds.outMimeType;String extension=android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(imageMime);
         if(extension==null||!imageMime.startsWith("image/"))throw new java.io.IOException("课堂图片格式无效");
-        exportName="课堂PPT-"+classroomLesson.date()+"-"+rawName.substring(0,rawName.length()-4)+"."+extension;
+        exportName=(classroomSummary?"总结图片-":"课堂PPT-")+classroomLesson.date()+"-"+rawName.substring(0,rawName.lastIndexOf('.'))+"."+extension;
     }
 
     private boolean onImageTouch(MotionEvent event) {
@@ -255,7 +269,9 @@ public final class AttachmentViewerActivity extends Activity {
         if(!file.isFile())throw new java.io.IOException("图片已不存在");return file;
     }
     private File classroomSource(String name)throws Exception{
-        if(!ClassroomMonitor.allowed(this,classroomAccount)||name==null||!name.matches("raw-[0-9]+\\.img")||!gallery.contains(name))throw new SecurityException("课堂账号或图片已不可用");
+        if(!ClassroomMonitor.allowed(this,classroomAccount)||name==null||!gallery.contains(name))throw new SecurityException("课堂账号或图片已不可用");
+        if(classroomSummary)return new ClassroomStore(this,classroomAccount).summaryImage(classroomLesson,name);
+        if(!name.matches("raw-[0-9]+\\.img"))throw new SecurityException("课堂图片无效");
         File file=new File(new ClassroomStore(this,classroomAccount).localLesson(classroomLesson),name);
         if(!file.isFile())throw new java.io.IOException("图片已不存在");return file;
     }

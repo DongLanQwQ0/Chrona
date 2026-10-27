@@ -1,5 +1,17 @@
 # 验证记录
 
+## 0.15.53候选 — 新作业自动排程与课堂总结媒体 — 2026-10-27
+
+- 新作业授权路径复用现有AI请求、偏好和时间转换，仅应用原候选执行时段，不移动官方截止／提醒或覆写手工安排。DB18新增独立队列，原解析表不重建。`python checks/zju_homework_planner_check.py --planner-only`51项通过，包含生产`revokeHomeworkAutoPlan()`立即撤权、在途响应不应用、重新授权不重复请求；真实SQLite与受控提供方，不调用真实AI。解析审计32、备份16、同步节奏24、恢复20、作业更新68、双类型102项回归通过；旧夹具执行逾期预期更新为既定0.15.52行为，降级备份夹具先删除新增子表。
+- `build/homework-planning-ui-{light,dark}.txt`各41项真实原生检查通过，覆盖取消／确认开关、停用同步／撤权、原截止、AI建议提示及实际时间轮手改保存后撤除提示。隔离包夹具恢复原设置，不访问学校或真实AI。
+- 单节课堂头部导出／监视／删除按序合并；删除隔离课的总结、字幕和图片，同时保留未来监视规则。活动工作／字幕连接与删除共用锁。`build/summary-media-{light,dark}.txt`各21、`build/summary-delete-auto.txt`54项通过；正式准备／AI传输263／538与新增删除生命周期16项通过。未删除用户真实课堂，未重新生成微积分总结。
+- 总结正文和大图共用图片查看／拖放入口，Provider只开放已发布且被总结引用的准确文件，不扩大原raw路由。`build/summary-drag-{light,dark}.txt`各129项真实触摸和跨UID检查通过；DOM和原生HitTest都命中image-0，接收URI与预期相同、JPEG1120字节完整，邻接、写入、授权前及释放后均拒绝。证据`build/ui-0.15.53-review/image-drag-{summary-targets,drop-summary-inline,report}.json`及四张压缩JPEG。先前失败来自夹具CSS坐标换算错误，修正测试而未改生产权限边界。
+- 单刷新收宽后的高光`build/summary-header-{light,dark}.txt`各106项通过；公共操作／按压检查沿用本批有效1530／47项证据。深色为320dp／150%字体。主代理亲看缩小JPEG，同一只读`ui_review`复核七张UI与最后四张拖放图，整体签收本批受影响模拟器UI和图片交互，无剩余明确缺陷；不替代真机验收。
+- `build/release-0.15.53-build.txt`的assembleRelease与lintRelease通过；固定`build/candidates/0.15.53/Chrona-0.15.53.apk`为3218650字节、215／0.15.53、不可调试、原证书，正式清单不含隔离测试入口。版本、签名与清单回执为`build/release-0.15.53-{badging,signature,manifest}.txt`。
+- USB正常覆盖213→215成功，首次安装时间2026-09-26 18:54:37保持，安装前后均无课堂工作服务。回执`build/release-0.15.53-phone-*`。真实既有课堂总结头部按导出／监视／删除显示；正文图片打开`AttachmentViewerActivity`，1/35→2/35翻页正常，正文与全屏原生长按均出现系统拖影、松手取消。三张压缩图`build/phone-20261027-analysis/release-{viewer,drag-held,inline-drag-held}.jpg`由主代理及同一ui_review亲看，无新增确定视觉缺陷；首张带过渡叠影，不用于稳定标题栏。跨应用投递使用本批隔离模拟器证据，未向真机其它应用发送课堂图。
+- 单刷新真机按住图`build/phone-20261027-analysis/release-refresh-held-2.jpg`显示对称圆形高光；首次采集被通知和并行控制干扰，`release-refresh-held.jpg`不作有效验收。用户已确认暂停另一侧手机测试后再续测，不改其它应用通知设置。
+- 今天上午微积分的真实历史条目显示未完成，正文为字幕草稿，1110条字幕、275→72候选截图；无活动工作服务。源码确认草稿在最终图片轮之前先保存，既往具体异常未持久化，现有公开UI／正常ZIP不足以归因。用户随后明确授权用当前AI服务继续；已正常点击继续整理，服务2043运行，复用既有检查点并进入31张图片的最终分析，未重新下载学校资料。该次真实结果待补，不能将历史草稿当作修复完成。
+
 ## 0.15.52候选 — 图片长按拖放与执行逾期 — 2026-10-27
 
 - 图片附件缩略图／大图与课堂大图／内嵌PPT复用`ImageDrag`及独立只读`ImageTransferProvider`。`build/image-drag-native.txt`400dp浅色与`build/image-drag-native-dark.txt`320dp／150%深色各292项真实触摸检查通过；跨UID接收端读回完整原字节和精确JPEG／PNG，授权前、写入、邻接图片及授权释放后均拒绝，拾起后停用课堂账号也拒读。移动／多指不提起、取消及完成后浏览恢复、UP不误打开或移除均通过。Tile证据限生产共享组件，不代表完整Main／Task业务导航。

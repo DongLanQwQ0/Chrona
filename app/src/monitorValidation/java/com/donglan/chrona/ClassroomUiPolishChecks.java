@@ -42,6 +42,7 @@ final class ClassroomUiPolishChecks {
         ClassroomUiPolishChecks checks=new ClassroomUiPolishChecks(test,args==null?new Bundle():args);
         try{
             checks.seed();
+            if("true".equals(checks.args.getString("summary_media_only"))){checks.summaryMedia();return checks.assertions;}
             if("true".equals(checks.args.getString("week_gesture_only"))){checks.weekGestureAudit();return checks.assertions;}
             if("true".equals(checks.args.getString("all_pages")))return LandscapePageAuditChecks.run(test,checks.args,checks.account,checks.readerLesson);
             if("true".equals(checks.args.getString("height_only"))){checks.heightAudit();return checks.assertions;}
@@ -111,6 +112,27 @@ final class ClassroomUiPolishChecks {
         check(bounds((View)field(activity,"next")).bottom<=window.bottom-bars.bottom,"guide bottom step control remains inside usable window");
         pickerAudit();test.runOnMainSync(activity::finish);activity=null;
         ClassroomStore.write(new File(app.getExternalFilesDir(null),"monitor-validation/height-audit-"+args.getString("theme","light")+".json"),report);
+    }
+    private void summaryMedia()throws Exception{
+        ClassroomLesson lesson=new ClassroomLesson("8840","9300","总结图片验证","单节总结","合成教室","6",System.currentTimeMillis()-600_000);
+        ClassroomStore cache=new ClassroomStore(app,account);File dir=cache.localLesson(lesson);StringBuilder markdown=new StringBuilder();
+        for(int i=0;i<3;i++){Bitmap bitmap=Bitmap.createBitmap(320+i*80,180+i*45,Bitmap.Config.ARGB_8888);bitmap.eraseColor(android.graphics.Color.rgb(40+i*40,120,180-i*35));ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.JPEG,90,bytes);bitmap.recycle();ClassroomStore.writeBytes(new File(dir,"image-"+i+".jpg"),bytes.toByteArray());markdown.append("![总结图](images/image-").append(i).append(".jpg)\n\n");}
+        ClassroomStore.write(new File(dir,"summary.json"),new JSONObject().put("lesson",lesson.json()).put("complete",true).put("overview",markdown.toString()).put("parts",new JSONArray()).put("updated",System.currentTimeMillis()));
+        activity=test.startActivitySync(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));idle(700);
+        View export=findDescription(activity.findViewById(android.R.id.content),"导出课堂总结 ZIP"),monitor=findDescription(activity.findViewById(android.R.id.content),"课堂监视"),delete=findDescription(activity.findViewById(android.R.id.content),"删除本地课堂总结");
+        check(export!=null&&monitor!=null&&delete!=null&&export.getParent() instanceof HeaderActionGroup&&export.getParent()==monitor.getParent()&&monitor.getParent()==delete.getParent(),"lesson export, monitor and local delete share the public header");
+        check(bounds(export).left<bounds(monitor).left&&bounds(monitor).left<bounds(delete).left,"lesson header preserves export / monitor / delete order");capture("summary-detail-header");
+        Activity parent=activity;Instrumentation.ActivityMonitor opening=test.addMonitor(AttachmentViewerActivity.class.getName(),null,false);test.runOnMainSync(()->AttachmentViewerActivity.openClassroomSummary(parent,account,lesson,"image-1.jpg"));
+        Activity viewer=test.waitForMonitorWithTimeout(opening,5000);test.removeMonitor(opening);check(viewer!=null,"published summary opens the shared full-screen viewer");activity=viewer;idle(600);
+        check((Boolean)field(viewer,"classroomSummary")&&"image-1.jpg".equals(field(viewer,"rawName")),"summary gallery retains requested picture identity");
+        ImageSlidePager gallery=(ImageSlidePager)field(viewer,"pager");ImageView image=(ImageView)field(viewer,"image");doubleTap(image);idle(350);check((Float)field(viewer,"scale")>1.1f,"summary image uses the shared focused zoom");
+        doubleTap(image);idle(350);check((Float)field(viewer,"scale")<=1.001f,"summary focused zoom can return to base scale");galleryDrag(gallery,true);capture("summary-gallery");
+        saveThroughUi("image/jpeg",".jpg","summary-original.jpg");recreate();check("image-2.jpg".equals(field(activity,"rawName")),"summary gallery restores the selected identity after recreation");
+        test.runOnMainSync(activity::finish);activity=parent;idle(400);
+        tap(delete);idle(200);check(findTextInWindow("删除本地课堂总结"),"local deletion requires its explicit confirmation");tapText("取消");idle(200);check(new File(dir,"summary.json").isFile(),"cancel keeps the local summary and its referenced pictures");
+        tap(delete);idle(200);tapText("删除");long until=SystemClock.elapsedRealtime()+5000;while(dir.exists()&&SystemClock.elapsedRealtime()<until)idle(100);
+        check(!dir.exists()&&"deleted".equals(ClassroomMonitorStore.auto(new ClassroomMonitorStore(app,account).read(),lesson).optString("state")),"confirmed local deletion removes only this lesson and retains its terminal monitor decision");
+        check(new ClassroomStore(app,account).localLesson(readerLesson).isDirectory(),"deleting the summary leaves the unrelated reader lesson intact");activity=null;
     }
     private CollapsingPageLayout findCollapse(View root){if(root instanceof CollapsingPageLayout layout)return layout;if(root instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){CollapsingPageLayout found=findCollapse(group.getChildAt(i));if(found!=null)return found;}return null;}
     private void weekGestureAudit()throws Exception{
@@ -225,6 +247,7 @@ final class ClassroomUiPolishChecks {
             check(selected==2?settings.getVisibility()==View.VISIBLE&&settings.isClickable()&&settings.isEnabled():settings.getVisibility()==View.GONE&&!settings.isClickable()&&!settings.isEnabled(),"settings exists only in monitor mode "+selected);
             check(Math.abs(group.getWidth()-Math.round((selected==2?97:48)*density))<=1,"header contracts button and separator without an empty slot "+selected);
             check(!sawCancel[0],"local view changes never paint the cancel icon "+selected);capture("header-mode-"+selected);
+            if(selected!=2){assertSingleHeaderMask(refresh);holdOut(refresh,"header-single-held-"+selected);}
         }
         check(!UiMotion.isEnabled()||sawMotion[0],"conditional settings paints intermediate shared-width animation");
         java.util.concurrent.CountDownLatch held=new java.util.concurrent.CountDownLatch(1),ready=new java.util.concurrent.CountDownLatch(1);
@@ -237,9 +260,19 @@ final class ClassroomUiPolishChecks {
         test.getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);idle(200);
         test.runOnMainSync(()->{group.setActionVisible(settings,false);});SystemClock.sleep(55);test.runOnMainSync(()->{group.setActionVisible(settings,true);});idle(320);
         check(settings.getVisibility()==View.VISIBLE&&Math.abs(group.getWidth()-Math.round(97*density))<=1,"rapid reversal settles at the requested full action group");
+        test.runOnMainSync(()->group.setActionVisible(settings,false));idle(300);assertSingleHeaderMask(refresh);holdOut(refresh,"header-reversed-single-held");
+        test.runOnMainSync(()->group.setActionVisible(settings,true));SystemClock.sleep(55);test.runOnMainSync(()->group.setActionVisible(settings,false));idle(300);
+        assertSingleHeaderMask(refresh);check(!settings.isClickable()&&settings.getVisibility()==View.GONE&&!sawCancel[0],"reverse entry contracts cleanly without cancel or hidden touch target");holdOut(refresh,"header-entry-reversed-single-held");
         test.runOnMainSync(()->group.getViewTreeObserver().removeOnPreDrawListener(frames));
         test.runOnMainSync(activity::finish);activity=null;
     }
+    private void assertSingleHeaderMask(View refresh){test.runOnMainSync(()->{
+        var ripple=(android.graphics.drawable.RippleDrawable)refresh.getForeground();var mask=ripple.findDrawableByLayerId(android.R.id.mask);
+        Bitmap image=Bitmap.createBitmap(refresh.getWidth(),refresh.getHeight(),Bitmap.Config.ARGB_8888);mask.draw(new android.graphics.Canvas(image));
+        int w=image.getWidth(),h=image.getHeight();for(int y:new int[]{1,h/8,h/4,h/2})for(int x:new int[]{1,w/8,w/4,w/2}){
+            check(Math.abs(android.graphics.Color.alpha(image.getPixel(x,y))-android.graphics.Color.alpha(image.getPixel(w-1-x,y)))<40,"single header mask has symmetric left/right rounded edges");
+        }image.recycle();
+    });}
     private void browse()throws Exception{
         activity=test.startActivitySync(new Intent(app,ClassroomSummaryActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("classroom_mode",1));idle(900);
         Object page=page();Object session=field(page,"s");EditText input=(EditText)field(page,"search");

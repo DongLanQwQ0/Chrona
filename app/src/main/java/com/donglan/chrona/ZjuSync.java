@@ -114,6 +114,11 @@ final class ZjuSync {
                 result = String.join("\n", results);
             }
         } catch (Exception failure) { result = message(failure); }
+        // School results/notifications finish first; one optional AI item never holds AndroidSync.LOCK.
+        if (token == epoch) {
+            String planning = ZjuHomeworkPlanner.processOne(context);
+            if (!planning.isEmpty()) result += "\n" + planning;
+        }
         synchronized (ZjuSync.class) {
             client = null; settings.status(result);
             List<Consumer<String>> completed = new ArrayList<>(listeners); listeners.clear();
@@ -142,6 +147,7 @@ final class ZjuSync {
         ZjuClient active;
         synchronized (AndroidSync.LOCK) { epoch++; active = client; }
         if (active != null) active.cancel();
+        ZjuHomeworkPlanner.cancel();
     }
     private static String attemptKey(int source) { return source == HOMEWORK ? "homework_attempt" : "timetable_attempt"; }
     private static long remaining(ZjuSettingsStore settings, int source, long now) {

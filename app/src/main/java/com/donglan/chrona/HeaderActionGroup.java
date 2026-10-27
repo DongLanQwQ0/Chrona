@@ -38,6 +38,14 @@ final class HeaderActionGroup extends LinearLayout {
 
     void finish() { PressFeedback.group(this, 1.10f); }
 
+    @Override protected void onSizeChanged(int width,int height,int oldWidth,int oldHeight){
+        super.onSizeChanged(width,height,oldWidth,oldHeight);
+        // A fixed-width child does not resize when its conditional neighbour leaves.
+        // RippleDrawable caches its mask, so invalidate that cache with the plate geometry.
+        for(int i=0;i<getChildCount();i++)UiSurfaces.invalidateControlHighlight(getChildAt(i));
+        UiSurfaces.invalidateControlHighlight(this);
+    }
+
     void setActionVisible(View view,boolean visible) {
         Action action=actions.get(view);if(action==null)throw new IllegalArgumentException("Unknown header action");
         view.setClickable(visible);view.setFocusable(visible);

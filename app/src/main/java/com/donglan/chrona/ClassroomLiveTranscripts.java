@@ -13,6 +13,8 @@ import java.util.concurrent.Executors;
 
 /** Service-owned continuous sockets. Polling PPT/materials never closes or recreates these sockets. */
 final class ClassroomLiveTranscripts {
+    private static final Set<String> ACTIVE=new HashSet<>();
+    static boolean active(String account,ClassroomLesson lesson){synchronized(ClassroomStore.LOCK){return ACTIVE.contains(account+":"+ClassroomMonitorStore.key(lesson));}}
     private static final String WAITING="等待课程处理";
     // TLS pool eviction may write close_notify. Service destruction must never perform it on main.
     private static final java.util.concurrent.ExecutorService cleanup=Executors.newSingleThreadExecutor();
@@ -72,11 +74,12 @@ final class ClassroomLiveTranscripts {
         File dir;JSONObject state;long savedAt;
         volatile long verifiedAt;volatile boolean checking;
         private final Runnable heartbeat=new Runnable(){public void run(){synchronized(Slot.this){if(!stopped&&failedAt==0&&socket!=null){socket.send("pi");main.postDelayed(this,30_000);}}}};
-        Slot(String account,ClassroomLesson lesson){this.account=account;this.lesson=lesson;}
+        Slot(String account,ClassroomLesson lesson)throws Exception{this.account=account;this.lesson=lesson;
+            synchronized(ClassroomStore.LOCK){if(!ClassroomMonitorStore.matches(new ClassroomMonitorStore(app,account).read(),lesson))throw new java.io.IOException("课堂监视已结束");ACTIVE.add(account+":"+ClassroomMonitorStore.key(lesson));}}
         void connect(){
             try {
-                if(stopped||!ClassroomMonitor.allowed(app,account))return;
-                dir=new ClassroomStore(app,account).localLesson(lesson);state=read(dir);status("连接中");
+                synchronized(this){if(stopped||!ClassroomMonitor.allowed(app,account))return;
+                    dir=new ClassroomStore(app,account).localLesson(lesson);state=read(dir);status("连接中");}
                 if(complete(account,lesson)){close(WAITING);return;}
                 String[] pair=new ZjuSettingsStore(app).credentials();ClassroomClient owner;try{owner=ClassroomMonitor.clients.apply(pair[0],pair[1]);}finally{Arrays.fill(pair,"");}
                 synchronized(this){if(stopped){release(owner);return;}client=owner;}
@@ -137,6 +140,7 @@ final class ClassroomLiveTranscripts {
             if(stopped)return;stopped=true;main.removeCallbacks(heartbeat);
             try{if(state!=null&&dir!=null)ClassroomStore.write(new File(dir,"live-current.json"),new JSONObject().put("base_count",state.getJSONArray("segments").length()).put("current",state.opt("current")));}catch(Exception ignored){}
             WebSocket ws=socket;if(ws!=null)ws.close(1000,"monitor stopped");ClassroomClient current=client;client=null;socket=null;release(current);status(finalState);
+            synchronized(ClassroomStore.LOCK){ACTIVE.remove(account+":"+ClassroomMonitorStore.key(lesson));}
         }
     }
 }

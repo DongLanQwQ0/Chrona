@@ -45,6 +45,7 @@ import java.util.function.BooleanSupplier;
 /** Real touchscreen pickup/drop against the separately installed androidTest application UID. */
 final class ImageDragChecks {
     private static final String TILE_COMPONENT="attachment-tile-component";
+    private static final String SUMMARY_INLINE="summary-inline";
     private final Instrumentation test;
     private final Bundle args;
     private final Context app;
@@ -52,6 +53,8 @@ final class ImageDragChecks {
     private final List<File> files=new ArrayList<>();
     private final JSONArray outcomes=new JSONArray();
     private final JSONArray inputTimings=new JSONArray();
+    private final JSONArray summaryTargets=new JSONArray();
+    private final long runStartedAt=System.currentTimeMillis();
     private final Lifecycle lifecycle=new Lifecycle();
     private Activity activity;
     private ClassroomLesson lesson;
@@ -80,6 +83,7 @@ final class ImageDragChecks {
     }
     private void runPaths()throws Exception{
         Uri attachmentUri=ImageTransferProvider.attachment(app,attachment),otherAttachmentUri=ImageTransferProvider.attachment(app,otherAttachment);
+        if("summary".equals(args.getString("drag_scope"))){summaryPaths();writeReport();return;}
         if("tile".equals(args.getString("drag_scope"))){tileComponent(attachmentUri,otherAttachmentUri);writeReport();return;}
         activity=test.startActivitySync(new Intent(app,AttachmentViewerActivity.class).putExtra(AttachmentViewerActivity.EXTRA_IMAGE_NAME,attachment).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         ImageView image=readyImage("image");drop("attachment",image,attachmentUri,otherAttachmentUri,jpeg,"image/jpeg",false);close();
@@ -94,6 +98,57 @@ final class ImageDragChecks {
         new ZjuSettingsStore(app).prefs.edit().putBoolean("enabled",true).commit();
         writeReport();
     }
+    private void summaryPaths()throws Exception{
+        File dir=new ClassroomStore(app,account).localLesson(lesson);
+        write(new File(dir,"image-0.jpg"),jpeg);write(new File(dir,"image-1.jpg"),jpeg);
+        File summary=new File(dir,"summary.json");ClassroomStore.write(summary,new JSONObject().put("lesson",lesson.json()).put("complete",true).put("updated",System.currentTimeMillis())
+                .put("overview","![首图](images/image-0.jpg)\n\n![次图](images/image-1.jpg)").put("parts",new JSONArray()));files.add(summary);
+        Uri current=ImageTransferProvider.classroomSummary(app,account,lesson,"image-0.jpg"),other=ImageTransferProvider.classroomSummary(app,account,lesson,"image-1.jpg");
+        activity=test.startActivitySync(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        final ClassroomMarkdownView[] reader={null};waitFor(()->{try{reader[0]=(ClassroomMarkdownView)field(activity,"documentView");return reader[0]!=null&&reader[0].getHeight()>1;}catch(Exception pending){return false;}},"summary uses its real local Markdown reader");
+        long deadline=SystemClock.uptimeMillis()+10000;while(!"true".equals(script(reader[0],"window.classroomReady===true"))&&SystemClock.uptimeMillis()<deadline)SystemClock.sleep(100);
+        sourceReady("summary inline image ready");Rect picture=summaryBounds(reader[0]);check(picture.width()>0&&picture.height()>0,"actual referenced Markdown image is rendered and exposed");
+        drop(SUMMARY_INLINE,reader[0],current,other,jpeg,"image/jpeg",false,picture);
+        check(!(lifecycle.resumed instanceof AttachmentViewerActivity),"inline long pickup does not open a fullscreen page");
+        Activity parent=activity;picture=summaryBounds(reader[0]);long down=SystemClock.uptimeMillis();ownPointer(down,MotionEvent.ACTION_DOWN,picture.exactCenterX(),picture.exactCenterY());SystemClock.sleep(45);ownPointer(down,MotionEvent.ACTION_UP,picture.exactCenterX(),picture.exactCenterY());
+        waitFor(()->lifecycle.resumed instanceof AttachmentViewerActivity,"next actual Markdown image tap opens the shared full-screen viewer");activity=lifecycle.resumed;ImageView image=readyImage("image");
+        check("image-0.jpg".equals(field(activity,"rawName"))&&(Boolean)field(activity,"classroomSummary"),"summary tap retains selected published identity");
+        drop("summary-viewer",image,current,other,jpeg,"image/jpeg",false);close();test.runOnMainSync(parent::finish);
+        check(app.getContentResolver().getType(ImageTransferProvider.classroom(app,account,lesson,"image-0.jpg"))==null,"raw route is not broadened to summary images");
+        check(app.getContentResolver().getType(ImageTransferProvider.classroomSummary(app,account,lesson,"run.json"))==null,"summary route never exposes private checkpoint JSON");
+    }
+    private String script(ClassroomMarkdownView reader,String js)throws Exception{
+        CountDownLatch done=new CountDownLatch(1);String[] result={null};test.runOnMainSync(()->reader.evaluateJavascript(js,value->{result[0]=value;done.countDown();}));
+        check(done.await(4,TimeUnit.SECONDS),"local summary script responds");return result[0];
+    }
+    private Rect summaryBounds(ClassroomMarkdownView reader)throws Exception{
+        // CSS pixels need not equal resources.density-scaled pixels: WebView may
+        // choose another layout viewport. Measure that mapping, then remeasure
+        // after the outer ScrollView has exposed the target.
+        JSONObject before=summaryGeometry(reader);float scale=reader.getWidth()/(float)before.getDouble("viewportWidth");
+        Rect local=cssRect(before,scale);test.runOnMainSync(()->{local.offset(reader.getScrollX(),reader.getScrollY());reader.requestRectangleOnScreen(local,true);});
+        sourceReady("summary target scroll settled");
+        Rect previous=null,screen=null;JSONObject geometry=null;float mappedScale=0;int stable=0;
+        long deadline=SystemClock.uptimeMillis()+3000;
+        do{
+            frameBarrier(reader,2);geometry=summaryGeometry(reader);mappedScale=reader.getWidth()/(float)geometry.getDouble("viewportWidth");
+            screen=cssRect(geometry,mappedScale);int[] location=new int[2],window=new int[2];Rect visible=new Rect();
+            test.runOnMainSync(()->{reader.getLocationOnScreen(location);reader.getLocationInWindow(window);reader.getGlobalVisibleRect(visible);});
+            visible.offset(location[0]-window[0],location[1]-window[1]);screen.offset(location[0],location[1]);
+            check(screen.intersect(visible),"first Markdown image intersects the exposed native viewport");
+            stable=screen.equals(previous)?stable+1:0;previous=new Rect(screen);
+        }while(stable<2&&SystemClock.uptimeMillis()<deadline);
+        check(stable>=2,"summary target has stable native screen bounds after scrolling");
+        int[] origin=new int[2];test.runOnMainSync(()->reader.getLocationOnScreen(origin));
+        double cssX=(screen.exactCenterX()-origin[0])/mappedScale,cssY=(screen.exactCenterY()-origin[1])/mappedScale;
+        JSONObject hit=parseScriptObject(script(reader,"JSON.stringify((()=>{const e=document.elementFromPoint("+cssX+","+cssY+");const i=e&&(e.tagName==='IMG'?e:e.closest('a')?.querySelector('img'));return {tag:e?.tagName,src:i?.getAttribute('src')||'',x:"+cssX+",y:"+cssY+"}})())"));
+        JSONObject target=new JSONObject().put("geometry",geometry).put("scale",mappedScale).put("screenBounds",screen.toShortString()).put("elementFromPoint",hit);summaryTargets.put(target);saveSummaryTargets();
+        check("images/image-0.jpg".equals(hit.optString("src")),"actual pickup/tap centre hits the first referenced image in DOM");return screen;
+    }
+    private JSONObject summaryGeometry(ClassroomMarkdownView reader)throws Exception{return parseScriptObject(script(reader,"JSON.stringify((()=>{const i=[...document.images].find(i=>i.getAttribute('src')==='images/image-0.jpg');if(!i||!i.complete||!i.naturalWidth)throw Error('target not loaded');const r=i.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,viewportWidth:window.innerWidth,viewportHeight:window.innerHeight,scrollX:window.scrollX,scrollY:window.scrollY,devicePixelRatio:window.devicePixelRatio}})())"));}
+    private static JSONObject parseScriptObject(String json)throws Exception{return new JSONObject(new JSONArray("["+json+"]").getString(0));}
+    private static Rect cssRect(JSONObject r,float scale)throws Exception{return new Rect((int)Math.ceil(r.getDouble("x")*scale),(int)Math.ceil(r.getDouble("y")*scale),(int)Math.floor((r.getDouble("x")+r.getDouble("w"))*scale),(int)Math.floor((r.getDouble("y")+r.getDouble("h"))*scale));}
+    private void saveSummaryTargets()throws Exception{ClassroomStore.write(new File(app.getExternalFilesDir(null),"monitor-validation/image-drag-summary-targets.json"),new JSONObject().put("runStartedAt",runStartedAt).put("targets",summaryTargets));}
     private void writeReport()throws Exception{File output=new File(app.getExternalFilesDir(null),"monitor-validation/image-drag-report.json");ClassroomStore.write(output,new JSONObject().put("assertions",assertions).put("scope",args.getString("drag_scope","all")).put("paths",outcomes).put("receiverPackage",receiverPackage));}
     private void openClassroom()throws Exception{
         Bundle extras=new Bundle();extras.putString("classroom_image_account",account);extras.putString("classroom_image_lesson",lesson.json().toString());extras.putString("classroom_image_raw","raw-0.img");extras.putStringArrayList("classroom_image_list",new ArrayList<>(List.of("raw-0.img","raw-1.img")));
@@ -102,19 +157,27 @@ final class ImageDragChecks {
     private ImageView readyImage(String name)throws Exception{
         final ImageView[] result={null};waitFor(()->{try{result[0]=(ImageView)field(activity,name);return result[0]!=null&&result[0].getDrawable()!=null&&result[0].getWidth()>0&&result[0].getHeight()>0;}catch(Exception pending){return false;}},"decoded "+name);sourceReady("decoded "+name);return result[0];
     }
-    private void drop(String label,ImageView image,Uri uri,Uri other,byte[] expected,String mime,boolean disableAfterPickup)throws Exception{
+    private void drop(String label,View image,Uri uri,Uri other,byte[] expected,String mime,boolean disableAfterPickup)throws Exception{
+        drop(label,image,uri,other,expected,mime,disableAfterPickup,bounds(image));
+    }
+    private void drop(String label,View image,Uri uri,Uri other,byte[] expected,String mime,boolean disableAfterPickup,Rect source)throws Exception{
         Reports reports=new Reports();Intent receiver=new Intent().setComponent(new ComponentName(receiverPackage,"com.donglan.chrona.ImageDragReceiverActivity"))
                 .putExtra("expected_uri",uri.toString()).putExtra("other_uri",other.toString()).putExtra("expected_bytes",expected).putExtra("reports",remoteReports(reports))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
         // Start on the source first: a different UID's floating Activity legitimately blocks
         // a new DOWN through its task input sink. An already active system drag crosses apps.
-        Rect source=bounds(image);check(!source.isEmpty(),label+": source is exposed before pickup");
+        check(!source.isEmpty(),label+": source is exposed before pickup");
         float x=source.exactCenterX(),y=source.exactCenterY();DragObserver sourceDrag=observe(image);
         long down=SystemClock.uptimeMillis();pointer(down,MotionEvent.ACTION_DOWN,x,y);
         boolean released=false;
         try{
             waitFor(()->sourceDrag.starts>0,label+": real long press starts system drag in source window");
-            if(!TILE_COMPONENT.equals(label))check(((Boolean)field(pager(),"outboundDrag")),label+": source enters outbound state before switching apps");
+            if(SUMMARY_INLINE.equals(label)){
+                JSONObject hit=new JSONObject();test.runOnMainSync(()->{var result=((ClassroomMarkdownView)image).getHitTestResult();try{hit.put("type",result==null?-1:result.getType()).put("extra",result==null?JSONObject.NULL:result.getExtra());}catch(Exception failure){throw new RuntimeException(failure);}});
+                summaryTargets.put(new JSONObject().put("nativeHitTest",hit).put("screenX",x).put("screenY",y));saveSummaryTargets();
+                if(!hit.isNull("extra"))check(hit.optString("extra").endsWith("/image-0.jpg"),"real WebView touch hit-test identifies the first referenced image");
+            }
+            if(!TILE_COMPONENT.equals(label)&&!SUMMARY_INLINE.equals(label))check(((Boolean)field(pager(),"outboundDrag")),label+": source enters outbound state before switching apps");
             capture(label+"-picked-up");
             // Intentionally no data/ClipData/URI grant: the new receiver still cannot read
             // merely because it becomes visible during an active cross-application drag.
@@ -128,6 +191,8 @@ final class ImageDragChecks {
             for(int i=1;i<=18;i++){SystemClock.sleep(24);pointer(down,MotionEvent.ACTION_MOVE,x+(endX-x)*i/18f,y+(endY-y)*i/18f);}
             SystemClock.sleep(180);capture(label+"-held");pointer(down,MotionEvent.ACTION_UP,endX,endY);released=true;
             check(reports.dropped.await(8,TimeUnit.SECONDS),label+": real receiver ACTION_DROP");Bundle result=reports.dropData;
+            JSONObject row=new JSONObject().put("path",label).put("runStartedAt",runStartedAt).put("expectedUri",uri.toString()).put("otherUri",other.toString());for(String key:result.keySet())row.put(key,result.get(key));outcomes.put(row);
+            ClassroomStore.write(new File(app.getExternalFilesDir(null),"monitor-validation/image-drag-drop-"+label+".json"),row);
             check(result.getBoolean("permission")&&result.getBoolean("exact"),label+": exact URI temporary drop grant");
             if(disableAfterPickup)check(!result.getBoolean("read"),label+": disabled classroom account refuses a granted external read");
             else{
@@ -136,7 +201,6 @@ final class ImageDragChecks {
                 check(result.getBoolean("writeDenied"),label+": no external write permission");check(result.getBoolean("otherDenied"),label+": adjacent valid image URI remains private");
             }
             check(result.getBoolean("releasedDenied"),label+": release ends exact URI read access");
-            JSONObject row=new JSONObject().put("path",label);for(String key:result.keySet())row.put(key,result.get(key));outcomes.put(row);
             check(reports.drawn.await(3,TimeUnit.SECONDS),label+": receiver result text has drawn a frame");capture(label+"-result");
             if(!disableAfterPickup)verifyBrowsingAfterDrop(label,image);
         }finally{if(!released)pointer(down,MotionEvent.ACTION_CANCEL,x,y);}
@@ -145,10 +209,11 @@ final class ImageDragChecks {
         // Only framework Parcelable names may cross to the test APK's unrelated classloader.
         Parcel parcel=Parcel.obtain();try{reports.writeToParcel(parcel,0);parcel.setDataPosition(0);return ResultReceiver.CREATOR.createFromParcel(parcel);}finally{parcel.recycle();}
     }
-    private void verifyBrowsingAfterDrop(String label,ImageView image)throws Exception{
+    private void verifyBrowsingAfterDrop(String label,View image)throws Exception{
         sourceReady(label+": receiver transition finished");
         check(!activity.isFinishing(),label+": pickup UP does not close the source page");
         if(test instanceof ClassroomMonitorInstrumentation monitor)check(monitor.lastResumed==activity,label+": pickup UP does not open a second viewer");
+        if(SUMMARY_INLINE.equals(label))return;
         if(TILE_COMPONENT.equals(label)){
             check(tileOpens==0&&tileRemoves==0,"component pickup/drop UP does not invoke onOpen or onRemove");
             tap(image);waitFor(()->tileOpens==1,"component receives the next real preview tap");check(tileOpens==1&&tileRemoves==0,"component next real preview tap invokes only onOpen");
@@ -158,7 +223,7 @@ final class ImageDragChecks {
         if("attachment".equals(label)){
             doubleTap(image);check(((Float)field(activity,"scale"))>1.1f,label+": next real double tap zooms after drop");
         }else{
-            swipePage(image,true,false);awaitIndex(pager,1,label+": next real swipe browses after drop");
+            swipePage((ImageView)image,true,false);awaitIndex(pager,1,label+": next real swipe browses after drop");
         }
         check(!((Boolean)field(pager,"outboundDrag")),label+": next DOWN exits outbound-drag state");
     }
@@ -231,7 +296,7 @@ final class ImageDragChecks {
             check(((Integer)field(pager(),"index"))==0,label+": external drag movement does not page");
         }finally{if(!released)pointer(down,MotionEvent.ACTION_CANCEL,x,y);}
     }
-    private DragObserver observe(ImageView image){DragObserver observer=new DragObserver();test.runOnMainSync(()->image.setOnDragListener(observer));return observer;}
+    private DragObserver observe(View image){DragObserver observer=new DragObserver();test.runOnMainSync(()->image.setOnDragListener(observer));return observer;}
     private ImageSlidePager pager()throws Exception{return (ImageSlidePager)field(activity,activity instanceof AttachmentViewerActivity?"pager":"slidePager");}
     private Rect bounds(View view){Rect rect=new Rect();test.runOnMainSync(()->view.getGlobalVisibleRect(rect));return rect;}
     private void awaitIndex(ImageSlidePager pager,int index,String label)throws Exception{waitFor(()->{try{return ((Integer)field(pager,"index"))==index&&field(pager,"animator")==null;}catch(Exception failure){return false;}},label);check(pager.selection()==index,label);}
@@ -283,12 +348,17 @@ final class ImageDragChecks {
         check(done.await(3,TimeUnit.SECONDS),"requested display-frame barrier completed");
     }
     private void failureEvidence(Throwable failure){
+        JSONObject state=new JSONObject();
         try{
-            JSONObject state=new JSONObject().put("failure",failure.toString()).put("resumed",lifecycle.resumed==activity).put("activity",activity==null?"null":activity.getClass().getSimpleName()).put("inputTimings",inputTimings).put("completedPaths",outcomes);
+            state.put("runStartedAt",runStartedAt).put("failure",failure.toString()).put("resumed",lifecycle.resumed==activity).put("activity",activity==null?"null":activity.getClass().getSimpleName()).put("inputTimings",inputTimings).put("completedPaths",outcomes).put("summaryTargets",summaryTargets);
             if(activity!=null){final boolean[] focus={false};test.runOnMainSync(()->focus[0]=activity.hasWindowFocus());state.put("windowFocus",focus[0]).put("finishing",activity.isFinishing());
-                if(activity instanceof AttachmentViewerActivity)state.put("scale",field(activity,"scale"));ImageSlidePager p=pager();for(String name:List.of("outboundDrag","index","tracking","multiTouch","blocked","offset","animator"))state.put(name,String.valueOf(field(p,name)));}
-            android.util.Log.e("ChronaImageDragCheck",state.toString());ClassroomStore.write(new File(app.getExternalFilesDir(null),"monitor-validation/image-drag-failure.json"),state);capture("failure");
-        }catch(Exception evidenceFailure){android.util.Log.e("ChronaImageDragCheck","diagnostic failure",evidenceFailure);}
+                if(activity instanceof AttachmentViewerActivity)state.put("scale",field(activity,"scale"));
+                if(activity instanceof AttachmentViewerActivity||activity instanceof ClassroomTranscriptActivity){ImageSlidePager p=pager();for(String name:List.of("outboundDrag","index","tracking","multiTouch","blocked","offset","animator"))state.put(name,String.valueOf(field(p,name)));}
+            }
+        }catch(Exception evidenceFailure){try{state.put("diagnosticError",evidenceFailure.toString());}catch(Exception ignored){}android.util.Log.e("ChronaImageDragCheck","diagnostic details incomplete",evidenceFailure);}
+        try{android.util.Log.e("ChronaImageDragCheck",state.toString());ClassroomStore.write(new File(app.getExternalFilesDir(null),"monitor-validation/image-drag-failure.json"),state);}
+        catch(Exception writeFailure){android.util.Log.e("ChronaImageDragCheck","failure report write",writeFailure);}
+        try{capture("failure");}catch(Exception captureFailure){android.util.Log.e("ChronaImageDragCheck","failure JPEG capture",captureFailure);}
     }
     private void saveTimings(){try{ClassroomStore.write(new File(app.getExternalFilesDir(null),"monitor-validation/image-drag-input-timings.json"),new JSONObject().put("events",inputTimings));}catch(Exception failure){android.util.Log.e("ChronaImageDragCheck","timing write",failure);}}
     private void pinch(ImageView image)throws Exception{

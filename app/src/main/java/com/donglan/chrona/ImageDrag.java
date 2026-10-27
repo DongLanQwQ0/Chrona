@@ -17,10 +17,14 @@ import android.widget.ImageView;
 final class ImageDrag {
     static boolean start(Activity activity,ImageView image,Uri uri){
         if(!image.isAttachedToWindow()||!(image.getDrawable() instanceof BitmapDrawable picture))return false;
+        return start(activity,image,picture.getBitmap(),uri);
+    }
+    static boolean start(Activity activity,View image,Bitmap bitmap,Uri uri){
+        if(!image.isAttachedToWindow()||bitmap==null||bitmap.isRecycled())return false;
         try{
             if(activity.getContentResolver().getType(uri)==null)throw new java.io.IOException("图片不可用");
             ClipData clip=ClipData.newUri(activity.getContentResolver(),"图片",uri);
-            Bitmap bitmap=picture.getBitmap();int limit=Math.round(160*image.getResources().getDisplayMetrics().density);
+            int limit=Math.round(160*image.getResources().getDisplayMetrics().density);
             float ratio=Math.min(1f,limit/(float)Math.max(bitmap.getWidth(),bitmap.getHeight()));int width=Math.max(1,Math.round(bitmap.getWidth()*ratio)),height=Math.max(1,Math.round(bitmap.getHeight()*ratio));
             float radius=Math.min(UiStyle.radius(activity,UiStyle.RADIUS_CARD)*image.getResources().getDisplayMetrics().density,Math.min(width,height)/2f);
             View.DragShadowBuilder shadow=new View.DragShadowBuilder(image){

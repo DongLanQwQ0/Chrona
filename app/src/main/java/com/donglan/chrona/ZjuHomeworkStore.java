@@ -55,7 +55,7 @@ public final class ZjuHomeworkStore {
         }
     }
 
-    private static State state(SQLiteDatabase db) {
+    static State state(SQLiteDatabase db) {
         try (Cursor cursor = db.rawQuery("SELECT enabled,account,generation,capture_id FROM managed_zju_state WHERE id=1", null)) {
             if (!cursor.moveToFirst()) throw new IllegalStateException("作业同步状态缺失");
             return new State(cursor.getInt(0) != 0, cursor.getString(1), cursor.getLong(2), cursor.isNull(3) ? 0 : cursor.getLong(3));
@@ -190,6 +190,7 @@ public final class ZjuHomeworkStore {
                     String stable = store.stableCandidateId(candidateId);
                     db.execSQL("INSERT OR REPLACE INTO zju_homework_map(account,remote_key,capture_id,candidate_id,sync_id,ignored,snapshot,pending_calendar,unread) VALUES(?,?,?,?,?,0,?,?,?)",
                             new Object[]{account, key, current.captureId, candidateId, stable, after, pendingCalendar ? 1 : 0, unread ? 1 : 0});
+                    if (prior == null) ZjuHomeworkPlanner.enqueue(context, store, current, candidateId, stable, after);
                     if (!Objects.equals(before, after) || changed) {
                         ContentValues history = new ContentValues();
                         history.put("account", account); history.put("title", item.title);

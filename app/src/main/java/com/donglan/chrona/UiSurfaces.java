@@ -501,6 +501,13 @@ final class UiSurfaces {
                 alpha(colors(view.getContext()).primary, 32)), null,
                 new ControlHighlightMask(view)));
     }
+    static void invalidateControlHighlight(View view){
+        if(view.getForeground() instanceof RippleDrawable ripple){
+            Drawable mask=ripple.findDrawableByLayerId(android.R.id.mask);
+            if(mask!=null)mask.invalidateSelf();
+            ripple.invalidateSelf();
+        }
+    }
 
     private static int dp(View view, int value) {
         return (int) (value * view.getResources().getDisplayMetrics().density + 0.5f);

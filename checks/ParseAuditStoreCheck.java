@@ -113,6 +113,7 @@ public final class ParseAuditStoreCheck {
         try (TaskStore store = new TaskStore(legacy)) {
             legacyTask = store.insertTask("升级前原文",null,"test",1);
             store.appendCandidate(candidate(legacyTask,"升级前日程",0));
+            store.getWritableDatabase().execSQL("DROP TABLE zju_homework_plans");
             store.getWritableDatabase().execSQL("DROP TABLE parse_time_entries");
             store.getWritableDatabase().execSQL("DROP TABLE parse_runs");
             store.getWritableDatabase().execSQL("ALTER TABLE event_candidates DROP COLUMN occurrence_update");

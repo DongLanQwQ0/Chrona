@@ -41,6 +41,10 @@ for node in adapter_source.body:
 ''')
             write(call.args[0].value, text)
 write('android/util/Log.java', 'package android.util;public class Log {public static int w(String a,String b,Throwable c){return 0;}}')
+write('com/donglan/chrona/ZjuHomeworkPlanner.java', '''package com.donglan.chrona;
+class ZjuHomeworkPlanner {static void enqueue(android.content.Context c,com.donglan.chrona.data.TaskStore s,
+ ZjuHomeworkStore.State state,long id,String stable,String snapshot){}}
+''')
 # Use the real completion coordinator for removed deadlines and shared reminders.
 # Only its platform/preferences/unused repeating-action adapters are reused.
 completion_tree = ast.parse((root / 'checks/completion_alerts_check.py').read_text(encoding='utf-8'))

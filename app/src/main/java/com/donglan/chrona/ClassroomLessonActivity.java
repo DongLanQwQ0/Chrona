@@ -23,9 +23,8 @@ public final class ClassroomLessonActivity extends Activity {
     static final String EXTRA_LESSON = "classroom_lesson";
     static final String EXTRA_ACCOUNT = "classroom_account";
     private static final int EXPORT=2041;
-    private static final ExecutorService PICTURES=Executors.newFixedThreadPool(2);
     private Session s; private LinearLayout root,content,notes; private TextView status,overview,completion;
-    private Button prepare,generate,cancel;private ImageButton export;private int rendered,shownRevision=-1;private String detailKey="";
+    private Button prepare,generate,cancel;private ImageButton export,delete;private int rendered,shownRevision=-1;private String detailKey="";
     private ProgressBar progressBar;
     private LinearLayout progressPanel;
     private TextView progressStage,progressCount,progressTime,progressDetail;
@@ -43,7 +42,7 @@ public final class ClassroomLessonActivity extends Activity {
         final android.content.SharedPreferences.OnSharedPreferenceChangeListener changes;
         final Handler main=new Handler(Looper.getMainLooper());
         WeakReference<ClassroomLessonActivity> owner=new WeakReference<>(null);
-        volatile RequestControl control;volatile ClassroomClient client;volatile boolean busy,cancelRequested;
+        volatile RequestControl control;volatile ClassroomClient client;volatile boolean busy,cancelRequested,deleting;
         volatile String message="";
         volatile ClassroomProgress progress;
         ClassroomNotifications notifications;
@@ -101,7 +100,10 @@ public final class ClassroomLessonActivity extends Activity {
         }
         root=SettingsPageLayout.content(this);
         export=UiStyle.navigationIcon(this,R.drawable.ic_week_export,"导出课堂总结 ZIP",()->{if(gate())export();});
-        SettingsPageLayout.header(this,root,"课堂总结",export);
+        HeaderActionGroup headerActions=new HeaderActionGroup(this,48);headerActions.addAction(export,48);
+        headerActions.addAction(UiStyle.navigationIcon(this,R.drawable.ic_eye,"课堂监视",()->{if(gate())ClassroomMonitorUi.open(this,s.selected);}),48);
+        delete=UiStyle.navigationIcon(this,R.drawable.ic_delete,"删除本地课堂总结",this::confirmDelete);headerActions.addAction(delete,48);headerActions.finish();
+        SettingsPageLayout.header(this,root,"课堂总结",headerActions);
         status=text(root,"",14,false);
         progressPanel=new LinearLayout(this);progressPanel.setOrientation(LinearLayout.VERTICAL);
         progressPanel.setPadding(dp(16),dp(12),dp(16),dp(12));UiStyle.card(progressPanel);UiStyle.addSpaced(root,progressPanel,0,12);
@@ -170,13 +172,13 @@ public final class ClassroomLessonActivity extends Activity {
         LinearLayout heading=new LinearLayout(this);heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView courseTitle=new TextView(this);courseTitle.setText(s.selected.course);courseTitle.setTextSize(21);UiStyle.title(courseTitle);
         heading.addView(courseTitle,new LinearLayout.LayoutParams(0,-2,1));
-        heading.addView(UiStyle.navigationIcon(this,R.drawable.ic_eye,"课堂监视",()->ClassroomMonitorUi.open(this,s.selected)),new LinearLayout.LayoutParams(dp(48),dp(48)));
         content.addView(heading);text(content,s.selected.date()+" "+clock(s.selected)+" · "+s.selected.title,14,false);
         completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"获取素材",this::prepare);generate=action(actions,"生成总结",this::confirmGeneration);content.addView(actions);
         cancel=button(content,"停止",()->s.cancel(),false);
         overview=text(content,"",17,false);notes=new LinearLayout(this);notes.setOrientation(LinearLayout.VERTICAL);content.addView(notes);
     }
     private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary==null?"生成总结":s.summary.optBoolean("complete")?"重新生成":"继续整理");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
+        delete.setEnabled(!s.deleting&&s.localInitialized&&(s.summary!=null||s.busy));cancel.setVisibility(s.busy&&!s.deleting?View.VISIBLE:View.GONE);
         if(s.prepared!=null)completion.setText("字幕就绪 · "+s.prepared.optInt("segments")+" 条\n截图 "+s.prepared.optInt("raw")+" → "+s.prepared.optInt("candidates")+" 张");else completion.setText(s.selected.state(System.currentTimeMillis()));
         overview.setVisibility(View.GONE);
         JSONObject summary=s.summary;
@@ -189,7 +191,8 @@ public final class ClassroomLessonActivity extends Activity {
         try{
             documentView=new ClassroomMarkdownView(this,s.dir,summary,new ClassroomMarkdownView.Actions(){
                 @Override public void assignment(int index){extractAssignment(index);}
-                @Override public void image(String name){if(!gate())return;Dialog dialog=new Dialog(ClassroomLessonActivity.this);LinearLayout panel=UiDialogs.dialogPanel(ClassroomLessonActivity.this,"课堂截图");ClassroomLessonActivity.this.image(panel,name);button(panel,"关闭",dialog::dismiss,false);UiDialogs.showFloatingDialog(dialog,panel);}
+                @Override public void image(String name){if(gate())AttachmentViewerActivity.openClassroomSummary(ClassroomLessonActivity.this,s.account,s.selected,name);}
+                @Override public Uri imageUri(String name){return ImageTransferProvider.classroomSummary(ClassroomLessonActivity.this,s.account,s.selected,name);}
             });
             notes.addView(documentView);
         }catch(Exception error){text(notes,"课堂正文无法显示："+error.getMessage(),16,false);}
@@ -221,7 +224,29 @@ public final class ClassroomLessonActivity extends Activity {
             catch(ChatCompletionClient.RequestException e){if(limit>0&&e.rejectsImage()){new AiSettingsStore(job.app).markImageUnsupported(ai);throw new IOException("当前 AI 服务拒绝图片。可再次选择生成总结，以纯文字模式上传字幕。",e);}throw e;}
             finally{job.ignoredSummaryUpdated=-1;if(job.summary==null){job.summary=previousSummary;job.revision++;}}
             job.message="总结已完成";});}
-    private void image(LinearLayout parent,String name){try{ClassroomExport.safeImage(name);}catch(Exception e){return;}File file=new File(s.dir,name);ImageView view=new ImageView(this);view.setAdjustViewBounds(true);view.setContentDescription("课堂截图，点击放大");parent.addView(view,new LinearLayout.LayoutParams(-1,dp(190)));WeakReference<ImageView> target=new WeakReference<>(view);Session job=s;PICTURES.execute(()->{BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(file.getPath(),bounds);BitmapFactory.Options options=new BitmapFactory.Options();options.inSampleSize=Math.max(1,Math.max(bounds.outWidth,bounds.outHeight)/1200);Bitmap bitmap=BitmapFactory.decodeFile(file.getPath(),options);job.main.post(()->{ImageView v=target.get();if(v!=null&&job.allowed()&&v.isAttachedToWindow()){if(bitmap!=null)v.setImageBitmap(bitmap);else v.setContentDescription("截图读取失败");}else if(bitmap!=null)bitmap.recycle();});});view.setOnClickListener(v->{Dialog dialog=new Dialog(this);LinearLayout panel=UiDialogs.dialogPanel(this,"课堂截图");ImageView large=new ImageView(this);large.setAdjustViewBounds(true);large.setImageDrawable(view.getDrawable());panel.addView(large,new LinearLayout.LayoutParams(-1,-2));button(panel,"关闭",dialog::dismiss,false);UiDialogs.showFloatingDialog(dialog,panel);});}
+    private void confirmDelete(){
+        if(!gate())return;
+        if(s.busy||ClassroomLiveTranscripts.active(s.account,s.selected)){Feedback.show(this,"本节课堂正在处理，请先停止后再删除");return;}
+        if(s.summary==null)return;
+        UiDialogs.confirmDialog(this,"删除本地课堂总结","将删除本节已保存的总结、字幕和图片。学校原课堂及后续课堂监视保留。","删除",this::deleteLocal);
+    }
+    private void deleteLocal(){
+        if(!gate()||s.busy){Feedback.show(this,"本节课堂正在处理，请先停止后再删除");return;}
+        Session job=s;job.busy=true;job.deleting=true;job.message="";job.progress=ClassroomProgress.waiting("删除本地课堂","");job.startedAt=SystemClock.elapsedRealtime();update();
+        job.worker.execute(()->{
+            boolean removed=false;
+            try{
+                job.store().deleteLesson(job.selected,()->{
+                    if(!job.allowed())throw new IOException("学校账号已停用或更换");
+                    if(ClassroomLiveTranscripts.active(job.account,job.selected))throw new IOException("本节课堂正在处理，请先停止后再删除");
+                    new ClassroomMonitorStore(job.app,job.account).deleted(job.selected);
+                });removed=true;
+            }catch(Exception failure){job.message=failure.getMessage()==null?"删除失败，请重试":failure.getMessage();}
+            boolean success=removed;job.main.post(()->{job.busy=false;job.deleting=false;ClassroomLessonActivity a=job.owner.get();
+                if(success){job.summary=null;job.materials=null;job.prepared=null;if(a!=null&&!a.isDestroyed()){Feedback.show(a,"本地课堂总结已删除");a.setResult(RESULT_OK);a.finish();}}
+                else job.publish();job.disposeIfDetached();});
+        });
+    }
     private void export(){s.pendingExport=s.selected;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,"课堂总结-"+s.selected.date()+".zip");try{startActivityForResult(intent,EXPORT);}catch(Exception e){Feedback.show(this,"无法打开文件保存器");}}
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("share_uri",s.shareUri.toString());}catch(Exception ignored){}}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=EXPORT||result!=RESULT_OK||data==null||data.getData()==null||!gate())return;s.exportUri=data.getData();

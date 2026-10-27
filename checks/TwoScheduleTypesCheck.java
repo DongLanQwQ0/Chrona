@@ -107,7 +107,7 @@ public final class TwoScheduleTypesCheck {
                     "all-day UTC storage maps to the displayed local day");
 
             HomeTodoSummary summary=store.homeTodoSummary(now,zone,3);
-            check(summary.total==12&&summary.todayDue==4&&summary.overdue==6&&summary.unscheduled==1,
+            check(summary.total==12&&summary.todayDue==4&&summary.overdue==7&&summary.unscheduled==1,
                     "summary counts all unfinished tasks, today's deadlines, overdue work and completely undated tasks");
             check(ids(summary.focus).equals(List.of(overdueToday,planned,point)),
                     "focus is bounded and prioritizes today's deadlines before older overdue work");
@@ -119,8 +119,8 @@ public final class TwoScheduleTypesCheck {
                     "today scope uses explicit deadlines before execution end or start, excluding completed tasks");
             List<Long> overdue=store.queryScheduleIds(new ScheduleQuery(3,EventCategory.TASK,0,"",
                     null,null,now,zone,ScheduleQuery.TODO_OVERDUE));
-            Set<Long> expectedOverdue=new HashSet<>(old);expectedOverdue.add(overdueToday);
-            check(new HashSet<>(overdue).equals(expectedOverdue),"overdue scope includes old and same-day expired deadlines");
+            Set<Long> expectedOverdue=new HashSet<>(old);expectedOverdue.add(overdueToday);expectedOverdue.add(finishedExecution);
+            check(new HashSet<>(overdue).equals(expectedOverdue),"overdue scope includes expired deadlines and missed explicit execution despite a future deadline");
             check(store.queryScheduleIds(new ScheduleQuery(1,EventCategory.TASK,0,"",null,null,now,zone))
                     .equals(List.of(unscheduled)),"unscheduled summary routes to the existing undated task predicate");
             Set<Long> open=new HashSet<>(old);
@@ -133,7 +133,7 @@ public final class TwoScheduleTypesCheck {
             check(ids(deadlinePage).equals(List.of(overdueToday,planned,point,dueToday)),"deadline scope sorts by effective deadline rather than execution start");
             check(store.setCandidateCompleted(dueToday,source,true),"complete task from summary");
             HomeTodoSummary after=store.homeTodoSummary(now,zone,3);
-            check(after.total==11&&after.todayDue==3&&after.overdue==6&&after.unscheduled==1,
+            check(after.total==11&&after.todayDue==3&&after.overdue==7&&after.unscheduled==1,
                     "completion removes only the finished task from the relevant aggregate counts");
             long earlyDeadline=add(store,source,"明日执行但今日早截止",EventCategory.TASK,
                     time(today.plusDays(1),9,0,zone),time(today.plusDays(1),10,0,zone),
@@ -320,6 +320,7 @@ public final class TwoScheduleTypesCheck {
             db.execSQL("DROP INDEX candidates_by_due");db.execSQL("DROP INDEX candidates_by_anchor");
             for(String column:new String[]{"due_at_millis","completed_at_millis","is_record","repeat_rule","repeat_exceptions","repeat_stopped_at","occurrence_update"})db.execSQL("ALTER TABLE event_candidates DROP COLUMN "+column);
             // Reconstruct the v10 schema, including absence of the later school tables/triggers.
+            db.execSQL("DROP TABLE zju_homework_plans");
             db.execSQL("DROP TABLE parse_time_entries");
             db.execSQL("DROP TABLE parse_runs");
             db.execSQL("DROP TRIGGER zju_capture_deleted");

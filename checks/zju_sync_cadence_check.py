@@ -7,6 +7,7 @@ root = Path(__file__).resolve().parents[1]
 out = root / 'build/zju-sync-cadence-check'
 src = out / 'src'
 files = {
+'com/donglan/chrona/ZjuHomeworkPlanner.java': '''package com.donglan.chrona;class ZjuHomeworkPlanner {static String processOne(android.content.Context c){return "";}static void cancel(){}}''',
 'android/content/SharedPreferences.java': '''package android.content;public interface SharedPreferences {long getLong(String k,long d);Editor edit();interface Editor {Editor putLong(String k,long v);void apply();}}''',
 'android/content/Context.java': '''package android.content;public class Context {public Context getApplicationContext(){return this;}public <T>T getSystemService(Class<T> type){return type.cast(android.app.job.JobScheduler.INSTANCE);}}''',
 'android/content/ComponentName.java': '''package android.content;public class ComponentName {public ComponentName(Context c,Class<?> type){}}''',

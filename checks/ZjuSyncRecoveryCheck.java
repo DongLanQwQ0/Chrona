@@ -66,6 +66,8 @@ public final class ZjuSyncRecoveryCheck {
         }
         Security.addProvider(new Provider("AndroidKeyStore",1.0,"Fixture only"){{put("KeyStore.AndroidKeyStore",FixtureKeys.class.getName());}});
         android.content.Context context=new android.content.Context();ZjuSettingsStore settings=new ZjuSettingsStore(context);
+        check(!settings.homeworkAutoPlan(),"new homework automatic planning defaults off");
+        settings.homeworkAutoPlan(true);check(settings.homeworkAutoPlan(),"explicit authorization enables automatic planning");
         settings.save("fixture-user","first-password");String account=settings.account();
         context.prefs.putString("credentials","invalid-ciphertext");
         boolean failed=false;try{settings.save("fixture-user","");}catch(Exception expected){failed=true;}
@@ -78,6 +80,7 @@ public final class ZjuSyncRecoveryCheck {
         settings.save("other-user","other-password");check(!settings.account().equals(account),"different user has isolated account");
         context.prefs.putString("credentials","invalid-ciphertext");settings.clear();
         check(!settings.configured()&&settings.account().isEmpty(),"logout succeeds without decrypting corrupt credentials");
+        check(!settings.homeworkAutoPlan(),"logout removes homework AI authorization");
         settings.save("fixture-user","restored-password");check(settings.account().equals(account),"logout retains opaque historical identity mapping");
         System.out.println("PASS: "+checks+" production ZJU fetch/recovery checks (intercepted HTTP and isolated JCE key fixture)");
     }

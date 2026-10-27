@@ -118,6 +118,17 @@ final class ClassroomMonitorStore {
         state.put("summaries",tasks).put("message",lesson.course+" · 素材已下载，等待自动总结");
     }
     boolean summaryImages()throws Exception{return read().optBoolean("summaryImages");}
+    /** A local deletion is terminal for this lesson, not for its course's future rules. */
+    void deleted(ClassroomLesson lesson)throws Exception {
+        synchronized(LOCK){JSONObject state=read();
+            if(!downloaded(state,lesson))state.getJSONArray("done").put(key(lesson));
+            JSONObject tasks=state.optJSONObject("summaries");if(tasks==null)tasks=new JSONObject();
+            tasks.put(key(lesson),new JSONObject().put("lesson",lesson.json()).put("state","deleted").put("updated",System.currentTimeMillis()));
+            JSONArray rules=state.getJSONArray("rules");for(int i=rules.length()-1;i>=0;i--){JSONObject rule=rules.getJSONObject(i);
+                if(!rule.getBoolean("repeat")&&key(ClassroomLesson.fromJson(rule.getJSONObject("lesson"))).equals(key(lesson)))rules.remove(i);}
+            state.put("summaries",tasks);save(state);
+        }
+    }
     void summaryImages(boolean enabled)throws Exception{synchronized(LOCK){JSONObject state=read();state.put("summaryImages",enabled);save(state);}}
     static JSONObject auto(JSONObject state,ClassroomLesson lesson){JSONObject tasks=state.optJSONObject("summaries");return tasks==null?null:tasks.optJSONObject(key(lesson));}
     static List<JSONObject> autoTasks(JSONObject state)throws Exception{

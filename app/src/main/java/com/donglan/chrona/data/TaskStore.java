@@ -23,7 +23,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
-    public static final int DATABASE_VERSION = 17;
+    public static final int DATABASE_VERSION = 18;
 
     private final Context context;
     private final LiveDatabaseAccess.Lease liveAccess;
@@ -60,7 +60,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 for (String table : new String[]{"tasks", "event_candidates", "task_attachments",
                         "task_files", "candidate_merges", "sync_task_map", "sync_candidate_map",
                         "sync_meta", "managed_zju_state", "zju_homework_captures", "zju_homework_map",
-                        "zju_homework_history", "zju_homework_deleted_tasks", "parse_runs", "parse_time_entries", "data_revision", "sqlite_sequence"}) {
+                        "zju_homework_history", "zju_homework_deleted_tasks", "parse_runs", "parse_time_entries", "zju_homework_plans", "data_revision", "sqlite_sequence"}) {
                     // ALTER TABLE appends columns; upgraded databases need not share onCreate's order.
                     List<String> columns = new ArrayList<>();
                     try (Cursor cursor = source.rawQuery("PRAGMA main.table_info(" + table + ")", null)) {
@@ -272,6 +272,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         addRecurrence(db);
         addParseAudits(db);
         addOccurrenceUpdates(db);
+        addHomeworkPlans(db);
     }
 
     /**
@@ -312,11 +313,19 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 15) addHomeworkAttention(db);
         if (oldVersion < 16) addParseAudits(db);
         if (oldVersion < 17) addOccurrenceUpdates(db);
+        if (oldVersion < 18) addHomeworkPlans(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
 
     public static void addHomeworkAttention(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE zju_homework_map ADD COLUMN unread INTEGER NOT NULL DEFAULT 0 CHECK(unread IN (0,1))");
+    }
+
+    private static void addHomeworkPlans(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE zju_homework_plans (candidate_id INTEGER PRIMARY KEY REFERENCES event_candidates(id) ON DELETE CASCADE, "
+                + "task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, "
+                + "state TEXT NOT NULL CHECK(state IN ('queued','running','succeeded','failed','cancelled')), "
+                + "request_json TEXT NOT NULL, run_id TEXT REFERENCES parse_runs(id) ON DELETE SET NULL, error TEXT)");
     }
 
     private static void addParseAudits(SQLiteDatabase db) {
@@ -355,6 +364,49 @@ public final class TaskStore extends SQLiteOpenHelper {
         values.put("finished_at", System.currentTimeMillis()); values.put("error", error);
         db.update("parse_runs", values, taskId == null ? "status='running'" : "task_id=? AND status='running'",
                 taskId == null ? null : new String[]{Long.toString(taskId)});
+        // Restore also accepts older, not-yet-upgraded snapshots.
+        try (Cursor table = db.rawQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name='zju_homework_plans'", null)) {
+            if (!table.moveToFirst()) return;
+        }
+        // A started school request is never paid for again after an unknown process outcome.
+        ContentValues plans = new ContentValues(); plans.put("state", "failed"); plans.put("error", error);
+        db.update("zju_homework_plans", plans, taskId == null ? "state='running'" : "task_id=? AND state='running'",
+                taskId == null ? null : new String[]{Long.toString(taskId)});
+        if ("InterruptedByRestore".equals(error)) {
+            plans.put("state", "cancelled");
+            db.update("zju_homework_plans", plans, "state='queued'", null);
+        }
+    }
+
+    /** Single original homework, never candidate replacement; caller owns validation and transaction. */
+    public void saveHomeworkPlanAudit(long taskId, long candidateId, String runId,
+            String auditJson, boolean applied, String reason) throws org.json.JSONException {
+        SQLiteDatabase db = getWritableDatabase();
+        if (!db.inTransaction()) throw new IllegalStateException("Homework audit requires a transaction");
+        org.json.JSONObject audit = new org.json.JSONObject(auditJson);
+        org.json.JSONArray entries = audit.getJSONArray("entries");
+        if (entries.length() != 1) throw new IllegalArgumentException("Homework scheduling requires exactly one item");
+        org.json.JSONObject evidence = entries.getJSONObject(0);
+        EventCandidate saved = getCandidatesByIds(java.util.List.of(candidateId)).get(0);
+        org.json.JSONObject savedTimes = new org.json.JSONObject().put("title", saved.title).put("category", saved.category)
+                .put("start", saved.startAtMillis == null ? org.json.JSONObject.NULL : saved.startAtMillis)
+                .put("end", saved.endAtMillis == null ? org.json.JSONObject.NULL : saved.endAtMillis)
+                .put("due", saved.dueAtMillis == null ? org.json.JSONObject.NULL : saved.dueAtMillis)
+                .put("uncertainty_level", saved.uncertaintyLevel).put("needs_confirmation", saved.needsConfirmation);
+        evidence.put("application", new org.json.JSONObject().put("policy", "auto_authorized")
+                .put("applied", applied).put("reason", reason == null ? org.json.JSONObject.NULL : reason)
+                .put("applied_fields", applied ? new org.json.JSONArray().put("start").put("end") : new org.json.JSONArray())
+                .put("saved", savedTimes));
+        ContentValues entry = new ContentValues(); entry.put("run_id", runId); entry.put("position", 0);
+        entry.put("candidate_id", candidateId); entry.put("candidate_sync_id", stableCandidateId(candidateId));
+        entry.put("plan_group", evidence.isNull("plan_group") ? null : evidence.getString("plan_group"));
+        entry.put("evidence_json", evidence.toString()); db.insertOrThrow("parse_time_entries", null, entry);
+        audit.remove("entries");
+        ContentValues result = new ContentValues(); result.put("status", applied ? "succeeded" : "failed");
+        result.put("finished_at", System.currentTimeMillis()); result.put("result_json", audit.toString());
+        result.put("error", reason);
+        if (db.update("parse_runs", result, "id=? AND task_id=? AND status='running'",
+                new String[]{runId, Long.toString(taskId)}) != 1) throw new IllegalStateException("Homework parse run changed");
     }
 
     /** Does not overwrite a committed successful parse when later notification/calendar work fails. */

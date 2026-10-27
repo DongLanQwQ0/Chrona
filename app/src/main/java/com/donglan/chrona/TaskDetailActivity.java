@@ -2288,11 +2288,22 @@ public final class TaskDetailActivity extends Activity {
     private Button addCandidateEditor(EventCandidate candidate, int number,
             boolean dockSaveAction, LinearLayout destination, int pageWidth) {
         final boolean managedHomework;
+        boolean plannedHomeworkTime=false;
         org.json.JSONObject proposed;
         try (TaskStore store = new TaskStore(this)) {
             managedHomework = store.isManagedHomework(candidate.id, candidate.taskId);
             try{proposed=store.occurrenceProposal(candidate.id);}catch(Exception invalid){proposed=null;}
+            if(managedHomework&&candidate.startAtMillis!=null&&candidate.endAtMillis!=null)try{
+                org.json.JSONObject audit=store.latestParseEvidence(candidate.id);
+                org.json.JSONObject application=audit==null?null:audit.getJSONObject("evidence").optJSONObject("application");
+                org.json.JSONObject saved=application==null?null:application.optJSONObject("saved");
+                plannedHomeworkTime=application!=null&&"auto_authorized".equals(application.optString("policy"))
+                        &&application.optBoolean("applied")&&saved!=null
+                        &&saved.optLong("start",Long.MIN_VALUE)==candidate.startAtMillis
+                        &&saved.optLong("end",Long.MIN_VALUE)==candidate.endAtMillis;
+            }catch(org.json.JSONException invalid){plannedHomeworkTime=false;}
         }
+        final boolean showAiHomeworkTime=plannedHomeworkTime;
         final org.json.JSONObject updateProposal=proposed;
         final boolean updatingOccurrence=updateProposal!=null&&!"new".equals(updateProposal.optString("state"))&&!"applied".equals(updateProposal.optString("state"));
         EventCandidate defaulted = EventTimeDefaults.completeInterval(candidate);
@@ -2511,6 +2522,8 @@ public final class TaskDetailActivity extends Activity {
                     && end.getText().toString().trim().isEmpty();
             String text = noPersonalTime ? "" : CandidateFeedback.timeHint(start.getText().toString(),
                     end.getText().toString(), autoEnd[0], allDay.isChecked());
+            if(showAiHomeworkTime&&start.getText().toString().equals(format(candidate.startAtMillis))
+                    &&end.getText().toString().equals(format(candidate.endAtMillis)))text=text.isEmpty()?"AI建议":"AI建议 · "+text;
             timeHint.setText(text);
             timeHint.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
         };
@@ -2525,6 +2538,7 @@ public final class TaskDetailActivity extends Activity {
             @Override public void onTextChanged(CharSequence s, int st, int before, int count) { }
                 @Override public void afterTextChanged(Editable editable) {
                 markCandidateDirty(candidate.id);
+                refreshTimeHint.run();
                 if (syncingRange[0]) return;
                 if (candidate.isTask() && editable.toString().trim().isEmpty()) {
                     if (!end.getText().toString().isEmpty()) end.setText("");
@@ -2556,6 +2570,7 @@ public final class TaskDetailActivity extends Activity {
             @Override public void onTextChanged(CharSequence s, int st, int before, int count) { }
             @Override public void afterTextChanged(Editable editable) {
                 markCandidateDirty(candidate.id);
+                refreshTimeHint.run();
                 if (!syncingRange[0]) autoEnd[0] = false;
             }
         });

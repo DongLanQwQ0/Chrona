@@ -36,6 +36,8 @@
 
 ## 验证入口
 
+浙大新作业的可选排程由`ZjuHomeworkPlanner`串行处理：入库事务保存专用队列，正式学校同步与通知完成后至多处理一项，复用`ChatCompletionClient`与相同时间转换器。它不替换官方候选，成功时同事务更新执行起止与关联审计。开关显式授权直接应用，模型仍保留真实存疑；网络期间不持同步锁，提交时核对个人编辑／完成／删除、账号与官方快照。`checks/zju_homework_planner_check.py`使用真实SQLite和fake provider，不调用真实AI。
+
 请求契约使用 `checks/AiRequestCheck.java`，自动写入使用 `checks/ai_auto_publish_check.py`；时间语义入口见时间提取约定。它们不调用真实模型。各版实际执行结果见[验证记录](../../validation-history.md)，真实语义准确率、推理文本与缓存命中需独立服务证据。
 
 重新解析的设备检查为 `CaptureReparserInstrumentation`，通过 `checks/reparse-validation.init.gradle` 构建隔离测试包，校验真实SQLite和日历provider且不发AI请求；网页交互运行 `node checks/reparse_web_check.cjs`，使用已安装Edge及明确标记的模拟手机响应。

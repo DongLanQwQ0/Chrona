@@ -23,6 +23,8 @@ public final class ClassroomStore {
         if(!account.matches("[a-zA-Z0-9-]+"))throw new IOException("请先登录学校账号");
         root=new File(root(context),account);
         shared=new File(root(context),"shared");
+        if(Files.isSymbolicLink(root.toPath())||Files.isSymbolicLink(shared.toPath())
+                ||!root.getCanonicalFile().getParentFile().equals(root(context).getCanonicalFile()))throw new IOException("课堂目录无效");
         if(!root.isDirectory()&&!root.mkdirs())throw new IOException("无法创建课堂缓存");
     }
     public File lesson(ClassroomLesson lesson) throws IOException {
@@ -45,6 +47,52 @@ public final class ClassroomStore {
         if(!courseId.matches("[0-9]+")||!lessonId.matches("[0-9]+")||!raw.matches("raw-[0-9]+\\.img"))throw new IOException("课堂图片无效");
         File image=new File(new File(root,courseId+"-"+lessonId),raw);
         if(!image.isFile())throw new IOException("图片已不存在");return image;
+    }
+    /** Published images are readable only while this exact summary still references them. */
+    public File summaryImage(ClassroomLesson lesson,String name)throws Exception {
+        name=ClassroomDocument.imageName(name);
+        if(!lesson.courseId.matches("[0-9]+")||!lesson.id.matches("[0-9]+"))throw new IOException("课堂编号无效");
+        File dir=new File(root,lesson.courseId+"-"+lesson.id),imported=new File(shared,dir.getName());
+        if(!new File(dir,"summary.json").isFile()&&new File(imported,"summary.json").isFile())dir=imported;
+        JSONObject summary=read(new File(dir,"summary.json"));
+        File parent=dir.getCanonicalFile().getParentFile();
+        if(Files.isSymbolicLink(dir.toPath())||!parent.equals(root.getCanonicalFile())&&!parent.equals(shared.getCanonicalFile()))throw new IOException("课堂目录无效");
+        if(summary==null||!ClassroomDocument.key(summary.getJSONObject("lesson")).equals(lesson.courseId+"-"+lesson.id)
+                ||!ClassroomDocument.referencedImages(summary).contains(name))throw new IOException("总结图片已不可用");
+        File file=new File(dir,name);
+        if(!file.isFile()||Files.isSymbolicLink(file.toPath())||!file.getCanonicalFile().getParentFile().equals(dir.getCanonicalFile()))throw new IOException("图片已不存在");
+        return file;
+    }
+    @FunctionalInterface public interface BeforeDelete {void run()throws Exception;}
+    /** Delete only this lesson's local copies; never the catalogue or another account. */
+    public void deleteLesson(ClassroomLesson lesson,BeforeDelete beforeDelete)throws Exception {
+        if(!lesson.courseId.matches("[0-9]+")||!lesson.id.matches("[0-9]+"))throw new IOException("课堂编号无效");
+        synchronized(LOCK){
+            File local=new File(root,lesson.courseId+"-"+lesson.id),imported=new File(shared,local.getName());
+            java.util.List<File> targets=new ArrayList<>();
+            for(File parent:new File[]{root,shared})for(String suffix:new String[]{".previous",".incoming",""}){
+                File target=new File(parent,local.getName()+suffix);
+                if(!target.getCanonicalFile().getParentFile().equals(parent.getCanonicalFile())||Files.isSymbolicLink(target.toPath()))throw new IOException("课堂目录无效");
+                if(active(target))throw new IOException("本节课堂正在处理，请先停止后再删除");
+                if(target.exists()){validateDeleteTree(target,target.getCanonicalFile());targets.add(target);}
+            }
+            if(!new File(local,"summary.json").isFile()&&!new File(imported,"summary.json").isFile())throw new IOException("本节课堂尚无本地总结");
+            beforeDelete.run();
+            for(File target:targets)deleteTree(target);
+        }
+    }
+    private static void validateDeleteTree(File file,File boundary)throws IOException {
+        File canonical=file.getCanonicalFile();
+        if(Files.isSymbolicLink(file.toPath())||!canonical.toPath().startsWith(boundary.toPath()))throw new IOException("课堂目录包含无效引用");
+        if(file.isDirectory()){File[] children=file.listFiles();if(children==null)throw new IOException("课堂目录无法读取");for(File child:children)validateDeleteTree(child,boundary);}
+    }
+    private static void deleteTree(File file)throws IOException {
+        if(file.isDirectory()){File[] children=file.listFiles();if(children==null)throw new IOException("课堂目录无法读取");
+            // Keep the readable summary until all other content has been removed, so a
+            // filesystem failure remains visible and the same confirmed action can retry.
+            java.util.Arrays.sort(children,java.util.Comparator.comparing(child->child.getName().startsWith("summary.json")));
+            for(File child:children)deleteTree(child);}
+        if(!file.delete())throw new IOException("部分本地课堂资料无法删除，请重试");
     }
     public List<ClassroomLesson> catalog() throws IOException {
         JSONObject value=read(new File(root,"catalog.json"));List<ClassroomLesson> result=new ArrayList<>();
@@ -81,7 +129,7 @@ public final class ClassroomStore {
         entries.sort((a,b)->Long.compare(b.optLong("updated"),a.optLong("updated")));return entries;
     }
     public static void begin(File dir) throws IOException {
-        synchronized(LOCK){if(!ACTIVE.add(dir.getCanonicalPath()))throw new IOException("本节课堂正在处理");}
+        synchronized(LOCK){if(!dir.isDirectory())throw new IOException("本节本地课堂已删除，请重新打开");if(!ACTIVE.add(dir.getCanonicalPath()))throw new IOException("本节课堂正在处理");}
     }
     public static void end(File dir){synchronized(LOCK){try{ACTIVE.remove(dir.getCanonicalPath());}catch(IOException ignored){}}}
     public static boolean active(File dir)throws IOException{synchronized(LOCK){return ACTIVE.contains(dir.getCanonicalPath());}}

@@ -17,11 +17,22 @@ import org.json.JSONObject;
 /** Device-only school identity and encrypted credentials. Never exported by data sync. */
 final class ZjuSettingsStore {
     private static final String ALIAS = "chrona_zju_credentials";
+    private final Context context;
     final SharedPreferences prefs;
-    ZjuSettingsStore(Context context) { prefs=context.getSharedPreferences("chrona_zju",Context.MODE_PRIVATE); }
+    ZjuSettingsStore(Context context) { this.context=context.getApplicationContext();prefs=this.context.getSharedPreferences("chrona_zju",Context.MODE_PRIVATE); }
     boolean configured(){return prefs.contains("credentials");}
     boolean enabled(){return prefs.getBoolean("enabled",false);}
     boolean timetable(){return enabled() && prefs.getBoolean("timetable",false);}
+    boolean homeworkAutoPlan(){return prefs.getBoolean("homework_auto_plan",false);}
+    /** Revoke permission immediately; the sync worker may still be finishing an AI request. */
+    void revokeHomeworkAutoPlan(){prefs.edit().putBoolean("homework_auto_plan",false).apply();ZjuHomeworkPlanner.cancel();}
+    void homeworkAutoPlan(boolean enabled){
+        if(!enabled)revokeHomeworkAutoPlan();
+        synchronized(AndroidSync.LOCK){
+            prefs.edit().putBoolean("homework_auto_plan",enabled).apply();
+            if(!enabled)ZjuHomeworkPlanner.cancelPending(context);
+        }
+    }
     String account(){return prefs.getString("account","");}
     String status(){return prefs.getString("status","尚未同步");}
     void status(String status){prefs.edit().putString("status",status).apply();}
@@ -63,11 +74,12 @@ final class ZjuSettingsStore {
     void options(boolean enabled,boolean timetable){prefs.edit().putBoolean("enabled",enabled).putBoolean("timetable",timetable).apply();}
     static String identityKey(String salt,String user){return "identity:"+UUID.nameUUIDFromBytes((salt+"\0"+user.trim()).getBytes(StandardCharsets.UTF_8));}
     void clear()throws Exception{
+        ZjuHomeworkPlanner.cancelPending(context);
         // Keep opaque local identity mappings so signing back into the same account
         // reuses its capture and deletion markers. No username/password is retained here.
         SharedPreferences.Editor edit=prefs.edit();
         edit.remove("credentials").remove("iv").remove("account").remove("enabled").remove("timetable")
-                .remove("homework").remove("last_success").remove("homework_attempt").remove("timetable_attempt").remove("status");
+                .remove("homework").remove("homework_auto_plan").remove("last_success").remove("homework_attempt").remove("timetable_attempt").remove("status");
         if(!edit.commit())throw new java.io.IOException("无法清除登录信息");
     }
 }

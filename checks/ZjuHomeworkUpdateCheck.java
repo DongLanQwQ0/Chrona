@@ -116,10 +116,13 @@ public final class ZjuHomeworkUpdateCheck {
             long ordinary=store.appendCandidate(new EventCandidate(0,ordinaryCapture,"personal",null,null,"Asia/Shanghai","","",null,false,null,"task",false));
             store.getWritableDatabase().execSQL("UPDATE event_candidates SET category='task' WHERE id=?",new Object[]{aid});
             // Reconstruct the v12 schema before exercising every subsequent migration.
-            for (String column : new String[]{"repeat_rule", "repeat_exceptions", "repeat_stopped_at"})
+            store.getWritableDatabase().execSQL("DROP TABLE zju_homework_plans");
+            store.getWritableDatabase().execSQL("DROP TABLE parse_time_entries");
+            store.getWritableDatabase().execSQL("DROP TABLE parse_runs");
+            for (String column : new String[]{"repeat_rule", "repeat_exceptions", "repeat_stopped_at", "occurrence_update"})
                 store.getWritableDatabase().execSQL("ALTER TABLE event_candidates DROP COLUMN " + column);
             store.getWritableDatabase().execSQL("ALTER TABLE zju_homework_map DROP COLUMN unread");
-            store.onUpgrade(store.getWritableDatabase(),12,15);
+            store.onUpgrade(store.getWritableDatabase(),12,TaskStore.DATABASE_VERSION);
             check(row(c,aid).isHomework() && !row(c,ordinary).isHomework(), "existing managed homework upgrades without reclassifying ordinary tasks");
             check(row(c,aid).dueAtMillis.equals(DUE), "category upgrade preserves original deadline");
             check(!unread(c,aid)&&!unread(c,bid),"upgrading existing work does not fabricate new-work badges");

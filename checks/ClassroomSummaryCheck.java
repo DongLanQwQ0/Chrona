@@ -390,8 +390,42 @@ public final class ClassroomSummaryCheck {
             ClassroomSummary.prepare(watched,LESSON,clients[1],control,p->{});check(clients[1].downloads==2&&clients[1].materialReads==0,"completed formal cache does not redownload on direct reopen");
         }
     }
+    private static void localLessonLifecycle()throws Exception {
+        android.content.Context context=new android.content.Context(new File(root,"local-lifecycle-"+System.nanoTime()));
+        ClassroomStore cache=new ClassroomStore(context,"owner"),other=new ClassroomStore(context,"other");
+        File local=cache.localLesson(LESSON),foreign=other.localLesson(LESSON);
+        File shared=new File(ClassroomStore.root(context),"shared/1-2");shared.mkdirs();
+        JSONObject summary=new JSONObject().put("lesson",LESSON.json()).put("complete",true).put("overview","![原图](images/image-1.jpg)").put("parts",new JSONArray());
+        ClassroomStore.write(new File(local,"summary.json"),summary);ClassroomStore.write(new File(shared,"summary.json"),summary);
+        ClassroomStore.write(new File(foreign,"summary.json"),summary);ClassroomStore.writeBytes(new File(local,"image-1.jpg"),image(50));
+        ClassroomStore.writeBytes(new File(shared,"image-1.jpg"),image(60));ClassroomStore.writeBytes(new File(local,"image-2.jpg"),image(70));
+        ClassroomStore.writeBytes(new File(local,"raw-0.img"),image(80));ClassroomStore.write(new File(local,"run.json"),new JSONObject().put("private",true));
+        check(cache.summaryImage(LESSON,"image-1.jpg").equals(new File(local,"image-1.jpg")),"published image resolves actual reference in current local summary");
+        rejects(()->cache.summaryImage(LESSON,"image-2.jpg"),"unreferenced published image rejected");
+        rejects(()->cache.summaryImage(LESSON,"raw-0.img"),"summary route cannot read raw cache");
+        rejects(()->cache.summaryImage(LESSON,"run.json"),"summary route cannot read checkpoints");
+        rejects(()->cache.summaryImage(LESSON,"../image-1.jpg"),"summary traversal rejected");
+        boolean[] terminal={false};ClassroomStore.begin(local);
+        try{rejects(()->cache.deleteLesson(LESSON,()->terminal[0]=true),"active lesson cannot be deleted");check(!terminal[0]&&new File(local,"summary.json").isFile(),"active rejection leaves state and all content intact");}finally{ClassroomStore.end(local);}
+        ClassroomStore.begin(shared);try{rejects(()->cache.deleteLesson(LESSON,()->terminal[0]=true),"active restored lesson cannot be deleted");}finally{ClassroomStore.end(shared);}
+        rejects(()->cache.deleteLesson(LESSON,()->{throw new IOException("cannot record terminal state");}),"terminal persistence failure aborts deletion");
+        check(local.isDirectory()&&shared.isDirectory(),"terminal failure preserves both local copies");
+        new File(local,"summary.json").delete();check(cache.summaryImage(LESSON,"image-1.jpg").equals(new File(shared,"image-1.jpg")),"restored summary keeps the same published image source");
+        ClassroomStore.write(new File(local,"summary.json"),summary);File sibling=cache.localLesson(new ClassroomLesson("1","3","other","other","","6",1));
+        File previous=new File(shared.getParentFile(),"1-2.previous");previous.mkdirs();ClassroomStore.write(new File(previous,"summary.json"),summary);
+        ClassroomStore.write(new File(sibling,"summary.json"),summary);cache.catalog(List.of(LESSON));
+        cache.deleteLesson(LESSON,()->terminal[0]=true);
+        check(terminal[0]&&!local.exists()&&!shared.exists(),"confirmed deletion removes only both copies of the target lesson including references and checkpoints");
+        check(!previous.exists(),"old local restore backup cannot resurrect a deleted lesson");
+        rejects(()->ClassroomStore.begin(local),"a stale pending worker cannot lease the deleted directory");
+        check(foreign.isDirectory()&&sibling.isDirectory()&&cache.catalog().size()==1,"other account, other lesson and school catalogue retained");
+        rejects(()->cache.summaryImage(LESSON,"image-1.jpg"),"deleted published reference is immediately unavailable");
+    }
     public static void main(String[] args)throws Exception {
-        root=new File(args[0]);root.mkdirs();HttpServer server=server();try {
+        root=new File(args[0]);root.mkdirs();
+        if(args.length>1&&"local-lifecycle".equals(args[1])){test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);System.out.println("LocalLessonLifecycle: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Local lifecycle check failed");return;}
+        HttpServer server=server();try {
+            test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);
             test("direct and monitored download parity",ClassroomSummaryCheck::completeDownloadParity);
             test("downloaded classroom history",ClassroomSummaryCheck::downloadedHistory);
             test("subtitle compression",ClassroomSummaryCheck::subtitleCompression);

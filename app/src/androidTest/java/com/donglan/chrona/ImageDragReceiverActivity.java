@@ -43,6 +43,7 @@ public final class ImageDragReceiverActivity extends Activity {
             Bundle result=new Bundle();result.putBoolean("permission",permission!=null);result.putBoolean("beforeDenied",beforeDenied);result.putInt("uid",android.os.Process.myUid());
             try{
                 Uri received=event.getClipData().getItemAt(0).getUri();result.putBoolean("exact",expected.equals(received));
+                result.putString("receivedUri",received==null?null:received.toString());result.putString("expectedUri",expected.toString());
                 ByteArrayOutputStream bytes=new ByteArrayOutputStream();
                 try(InputStream input=getContentResolver().openInputStream(received)){if(input==null)throw new java.io.IOException();byte[] buffer=new byte[2048];int n;while((n=input.read(buffer))!=-1)bytes.write(buffer,0,n);}
                 result.putString("mime",getContentResolver().getType(received));result.putInt("bytes",bytes.size());result.putBoolean("complete",expectedBytes!=null&&Arrays.equals(expectedBytes,bytes.toByteArray()));

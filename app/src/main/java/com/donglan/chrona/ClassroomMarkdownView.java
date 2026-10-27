@@ -13,13 +13,14 @@ import java.util.*;
 /** A local-only document renderer; native code owns every document action. */
 final class ClassroomMarkdownView extends WebView {
     private static final String ORIGIN="https://classroom.chrona.local/";
-    interface Actions { void assignment(int index); void image(String name); }
+    interface Actions { void assignment(int index); void image(String name); Uri imageUri(String name); }
     private final Activity activity;
     private final File directory;
     private final Set<String> images;
     private final String document;
     private final Actions actions;
     private boolean disposed;
+    private boolean dragEligible;private float downX,downY;
     @android.annotation.SuppressLint({"SetJavaScriptEnabled","AddJavascriptInterface"})
     ClassroomMarkdownView(Activity activity,File directory,JSONObject summary,Actions actions) throws Exception {
         super(activity);this.activity=activity;this.directory=directory;this.actions=actions;
@@ -31,6 +32,30 @@ final class ClassroomMarkdownView extends WebView {
         getSettings().setBlockNetworkLoads(true);getSettings().setDomStorageEnabled(false);getSettings().setTextZoom(100);
         getSettings().setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
         getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        setOnTouchListener((view,event)->{
+            switch(event.getActionMasked()){
+                case android.view.MotionEvent.ACTION_DOWN -> {dragEligible=true;downX=event.getX();downY=event.getY();}
+                case android.view.MotionEvent.ACTION_MOVE -> {int slop=android.view.ViewConfiguration.get(activity).getScaledTouchSlop();if(Math.hypot(event.getX()-downX,event.getY()-downY)>slop)dragEligible=false;}
+                case android.view.MotionEvent.ACTION_POINTER_DOWN,android.view.MotionEvent.ACTION_UP,android.view.MotionEvent.ACTION_CANCEL -> dragEligible=false;
+            }
+            return false;
+        });
+        setOnLongClickListener(view->{
+            if(disposed||!dragEligible)return false;
+            HitTestResult hit=getHitTestResult();if(hit==null||hit.getType()!=HitTestResult.IMAGE_TYPE&&hit.getType()!=HitTestResult.SRC_IMAGE_ANCHOR_TYPE)return false;
+            try{
+                Uri source=Uri.parse(hit.getExtra());String path=source.getPath();
+                if(!"classroom.chrona.local".equals(source.getHost())||path==null||!path.startsWith("/images/"))return false;
+                String name=ClassroomDocument.imageName(path.substring(8));if(!images.contains(name))return false;
+                android.graphics.BitmapFactory.Options options=new android.graphics.BitmapFactory.Options();options.inJustDecodeBounds=true;
+                String file=new File(directory,name).getPath();android.graphics.BitmapFactory.decodeFile(file,options);
+                options.inJustDecodeBounds=false;options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>640)options.inSampleSize*=2;
+                android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(file,options);
+                boolean started=ImageDrag.start(activity,this,bitmap,actions.imageUri(name));dragEligible=false;
+                if(started){long now=android.os.SystemClock.uptimeMillis();android.view.MotionEvent cancel=android.view.MotionEvent.obtain(now,now,android.view.MotionEvent.ACTION_CANCEL,0,0,0);try{onTouchEvent(cancel);}finally{cancel.recycle();}}
+                if(!started&&bitmap!=null)bitmap.recycle();return started;
+            }catch(Exception unavailable){return false;}
+        });
         addJavascriptInterface(new Object(){@JavascriptInterface public void height(int cssPixels){
             if(cssPixels<0)return;
             post(()->{if(disposed)return;int height=Math.round(cssPixels*getResources().getDisplayMetrics().density);

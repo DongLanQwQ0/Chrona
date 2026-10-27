@@ -93,8 +93,9 @@ public final class SnapshotBackupCheck {
             db.execSQL("DELETE FROM zju_homework_history WHERE id=777");
             db.execSQL("INSERT INTO parse_runs VALUES('parse-run',7,123,456,'succeeded','{\"preferences\":\"合成偏好\"}','{\"prompt_version\":\"schedule-v17\"}',NULL)");
             db.execSQL("INSERT INTO parse_time_entries VALUES('parse-run',0,9,'stable-candidate','方案','{\"reason\":\"原文日期明确，按偏好补全\"}')");
+            db.execSQL("INSERT INTO zju_homework_plans VALUES(9,7,123,'succeeded','{\"source\":\"zju_homework_schedule\"}','parse-run',NULL)");
             expected = contents(db);
-            check(expected.size()==17, "all production tables including parse audit and sequence covered");
+            check(expected.size()==18, "all production tables including homework plans, parse audit and sequence covered");
             integrity(db);
             store.createSnapshot(snapshot);
             try (TaskStore snap = TaskStore.openSnapshot(liveContext,snapshot)) {

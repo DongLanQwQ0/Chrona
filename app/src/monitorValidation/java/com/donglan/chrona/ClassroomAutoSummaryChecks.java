@@ -52,6 +52,7 @@ final class ClassroomAutoSummaryChecks {
             };
             checks.materialGate();checks.queueAndDedup();checks.savedAndMissing();checks.unknownAndScope();checks.accountCancellation();
             checks.legacyFinishedRecovery();
+            checks.deletedLessonIsTerminal();
             checks.ownerLossBeforeDestroy(false);checks.ownerLossBeforeDestroy(true);
             return checks.assertions;
         }finally{
@@ -88,6 +89,16 @@ final class ClassroomAutoSummaryChecks {
         check(calls.get()==0,"Without foreground owner no generator or second FGS is started");
         check(ClassroomMonitorStore.next(store.read(),System.currentTimeMillis())>0,"Queued summary retains the existing recovery schedule");
         owner=true;dispatch();waitFor(lesson,"complete");check(calls.get()==1&&lastLimit==0,"Default automatic request uploads text only");
+    }
+    private void deletedLessonIsTerminal()throws Exception{
+        owner=false;ClassroomLesson removed=lesson();prepared(removed);
+        store.add(removed,true);ClassroomLesson future=new ClassroomLesson(removed.courseId,removed.id+"8",removed.course,"后续课堂","","6",removed.startsAt+3_600_000);
+        store.catalog(java.util.List.of(removed,future),System.currentTimeMillis());int before=calls.get();
+        store.deleted(removed);owner=true;dispatch();dispatch();
+        check("deleted".equals(state(removed))&&calls.get()==before,"deleted completed lesson never rebuilds its automatic summary");
+        check(!store.recoverFinished(removed)&&!ClassroomMonitorStore.matches(store.read(),removed),"deleted terminal state prevents download and legacy queue recovery");
+        check(ClassroomMonitorStore.matches(store.read(),future)&&ClassroomMonitorStore.ruleFor(store.read(),future)!=null,"deleting one lesson preserves course future monitoring");
+        store.stop(removed);
     }
     private void prepared(ClassroomLesson lesson)throws Exception{
         File dir=new ClassroomStore(app,account).localLesson(lesson);

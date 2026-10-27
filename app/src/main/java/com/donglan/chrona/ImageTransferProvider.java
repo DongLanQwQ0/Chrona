@@ -25,6 +25,9 @@ public final class ImageTransferProvider extends ContentProvider {
     static Uri classroom(Context app,String account,ClassroomLesson lesson,String raw){
         return base(app).appendPath("classroom").appendPath(account).appendPath(lesson.courseId).appendPath(lesson.id).appendPath(raw).build();
     }
+    static Uri classroomSummary(Context app,String account,ClassroomLesson lesson,String name){
+        return base(app).appendPath("classroom-summary").appendPath(account).appendPath(lesson.courseId).appendPath(lesson.id).appendPath(name).build();
+    }
     private static Uri.Builder base(Context app){return new Uri.Builder().scheme("content").authority(app.getPackageName()+".images");}
     @Override public boolean onCreate(){return true;}
     private File resolve(Uri uri)throws FileNotFoundException {
@@ -34,6 +37,10 @@ public final class ImageTransferProvider extends ContentProvider {
             if(parts.size()==2&&"attachment".equals(parts.get(0)))file=new ImageStore(app).fileFor(parts.get(1));
             else if(parts.size()==5&&"classroom".equals(parts.get(0))&&ClassroomMonitor.allowed(app,parts.get(1)))
                 file=new ClassroomStore(app,parts.get(1)).localImage(parts.get(2),parts.get(3),parts.get(4));
+            else if(parts.size()==5&&"classroom-summary".equals(parts.get(0))&&ClassroomMonitor.allowed(app,parts.get(1))){
+                ClassroomLesson lesson=new ClassroomLesson(parts.get(2),parts.get(3),"","","","",0);
+                file=new ClassroomStore(app,parts.get(1)).summaryImage(lesson,parts.get(4));
+            }
             else throw new FileNotFoundException();
             if(!file.isFile())throw new FileNotFoundException();return file;
         }catch(Exception unavailable){throw new FileNotFoundException("图片已不可用");}

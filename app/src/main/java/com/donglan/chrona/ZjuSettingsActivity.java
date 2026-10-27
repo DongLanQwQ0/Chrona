@@ -14,7 +14,7 @@ import android.widget.TextView;
 /** School integration is opt-in; account fields never enter instance state or exports. */
 public final class ZjuSettingsActivity extends Activity {
     private ZjuSettingsStore settings;
-    private Switch enabled, homework, timetable;
+    private Switch enabled, homework, autoPlan, timetable;
     private EditText user,password;
     private TextView status;
     private android.widget.ImageButton sync;
@@ -42,6 +42,7 @@ public final class ZjuSettingsActivity extends Activity {
         }));
         account.addView(accountActions);root.addView(account);
         homework=toggle(root,"作业同步与提醒");
+        autoPlan=toggle(root,"新作业自动排程");
         calendarPermission=button(root,"允许写入系统日历",()->requestPermissions(new String[]{
                 android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR},73113));
         timetable=toggle(root,"课表同步");
@@ -65,6 +66,12 @@ public final class ZjuSettingsActivity extends Activity {
                 settings.options(on,settings.prefs.getBoolean("timetable",false));});
         });
         homework.setOnCheckedChangeListener((v,on)->{if(!binding){if(!on)ZjuSync.cancel();change(()->{new ZjuHomeworkStore(this).configure(settings.account(),on&&settings.enabled());settings.prefs.edit().putBoolean("homework",on).apply();});}});
+        autoPlan.setOnCheckedChangeListener((v,on)->{
+            if(binding)return;
+            bind();
+            if(!on){settings.revokeHomeworkAutoPlan();change(()->settings.homeworkAutoPlan(false));return;}
+            UiDialogs.confirmDialog(this,"自动安排新作业？","作业标题、内容和截止时间将发送至当前AI服务，建议的执行时间会直接应用，可随时修改。已有安排不变。","开启",()->change(()->settings.homeworkAutoPlan(true)));
+        });
         timetable.setOnCheckedChangeListener((v,on)->{if(!binding){if(!on)ZjuSync.cancel();change(()->settings.options(settings.enabled(),on));}});
         SettingsPageLayout.show(this,root,state==null);bind();
     }
@@ -97,10 +104,10 @@ public final class ZjuSettingsActivity extends Activity {
             });
         });
     }
-    private void controls(boolean on){for(View v:new View[]{enabled,homework,timetable,save,logout,sync,user,password})v.setEnabled(on);}
+    private void controls(boolean on){for(View v:new View[]{enabled,homework,autoPlan,timetable,save,logout,sync,user,password})v.setEnabled(on);}
     private void bind(){
-        binding=true;enabled.setChecked(settings.enabled());timetable.setChecked(settings.prefs.getBoolean("timetable",false));binding=false;
-        controls(!busy);homework.setEnabled(!busy&&settings.enabled());timetable.setEnabled(!busy&&settings.enabled());
+        binding=true;enabled.setChecked(settings.enabled());autoPlan.setChecked(settings.homeworkAutoPlan());timetable.setChecked(settings.prefs.getBoolean("timetable",false));binding=false;
+        controls(!busy);homework.setEnabled(!busy&&settings.enabled());autoPlan.setEnabled(!busy&&settings.enabled()&&homework.isChecked());timetable.setEnabled(!busy&&settings.enabled());
         com.donglan.chrona.calendar.CalendarStore calendar=new com.donglan.chrona.calendar.CalendarStore(this);
         calendarPermission.setVisibility(calendar.hasReadPermission()&&calendar.hasWritePermission()?View.GONE:View.VISIBLE);
         sync.setEnabled(!busy&&settings.enabled()&&settings.configured());status.setText(settings.status());
@@ -108,7 +115,7 @@ public final class ZjuSettingsActivity extends Activity {
         classroom.setEnabled(!busy&&settings.enabled()&&settings.configured());
         ZjuSync.WORKER.execute(()->{
             boolean on; synchronized(AndroidSync.LOCK){on=new ZjuHomeworkStore(this).state().enabled;}
-            runOnUiThread(()->{if(isDestroyed()||busy)return;binding=true;homework.setChecked(on);binding=false;});
+            runOnUiThread(()->{if(isDestroyed()||busy)return;binding=true;homework.setChecked(on);autoPlan.setEnabled(settings.enabled()&&on);binding=false;});
         });
     }
     @Override protected void onResume(){super.onResume();if(settings!=null&&status!=null)bind();}

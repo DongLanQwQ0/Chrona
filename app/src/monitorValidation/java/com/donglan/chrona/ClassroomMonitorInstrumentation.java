@@ -66,6 +66,11 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         getUiAutomation().setRotation("landscape".equals(args.getString("orientation"))?UiAutomation.ROTATION_FREEZE_90:UiAutomation.ROTATION_FREEZE_0);SystemClock.sleep(800);
         for(String permission:List.of(android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR,android.Manifest.permission.POST_NOTIFICATIONS))getUiAutomation().grantRuntimePermission(app.getPackageName(),permission);
         getUiAutomation().executeShellCommand("input keyevent 224").close();getUiAutomation().executeShellCommand("wm dismiss-keyguard").close();SystemClock.sleep(300);
+        if("homework_planning_ui".equals(args.getString("mode"))){
+            assertions+=HomeworkPlanningUiChecks.run(this,args);
+            report.putString("monitor_report","PASS: "+assertions+" assertions; homework_planning_ui "+args.getString("widthDp","400")+"/"+args.getString("font","1")+" "+args.getString("theme","light"));
+            finish(-1,report);return;
+        }
         app.getSharedPreferences("chrona_classroom_monitor",0).edit().clear().commit();app.getSharedPreferences("chrona_zju",0).edit().clear().commit();
         app.getSharedPreferences("appearance",0).edit().putString("mode",args.getString("theme","light")).putBoolean("background_enabled",false).commit();
         settings=new ZjuSettingsStore(app);settings.save("fixture","fixture");settings.options(true,false);account=settings.account();starts=System.currentTimeMillis()-600_000;
@@ -84,7 +89,7 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         else assertions+=ClassroomUiPolishChecks.run(this,args);
         report.putString("monitor_report","PASS: "+assertions+" assertions; "+args.getString("mode","ui")+" "+args.getString("widthDp","400")+"/"+args.getString("font","1")+" "+args.getString("theme","light"));finish(-1,report);
     }catch(Throwable failure){report.putString("failure",android.util.Log.getStackTraceString(failure));finish(0,report);}
-    finally{try{new ClassroomMonitorStore(app,account).stopAll();ClassroomMonitor.changed(app);settings.options(false,false);getUiAutomation().executeShellCommand("input keyevent 224").close();}catch(Exception ignored){}if(activity!=null)runOnMainSync(activity::finish);}}
+    finally{try{if(settings!=null&&account!=null){new ClassroomMonitorStore(app,account).stopAll();ClassroomMonitor.changed(app);settings.options(false,false);}getUiAutomation().executeShellCommand("input keyevent 224").close();}catch(Exception ignored){}if(activity!=null)runOnMainSync(activity::finish);}}
     private static byte[] png(int color){Bitmap bitmap=Bitmap.createBitmap(48,48,Bitmap.Config.ARGB_8888);bitmap.eraseColor(color);ByteArrayOutputStream out=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,out);bitmap.recycle();return out.toByteArray();}
     private void check(boolean value,String label){assertions++;if(!value)throw new AssertionError(label);}
     private static Object field(Object value,String name)throws Exception{Field f=value.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(value);}
