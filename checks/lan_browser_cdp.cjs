@@ -47,6 +47,6 @@ module.exports={chromium:{launch:async options=>{
  let tabs;for(let i=0;i<100;i++){try{tabs=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();if(tabs.some(tab=>tab.type==='page'))break;}catch{}await delay(100);}if(!tabs)throw new Error('Edge debugging endpoint unavailable');
  const ws=new WebSocket(tabs.find(tab=>tab.type==='page').webSocketDebuggerUrl);await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true});});
  const protocol=new Protocol(ws);
- const browser={directory,newPage:async({viewport})=>{const page=new Page(browser,protocol);await page.init();await page.setViewportSize(viewport);return page;},close:async()=>{try{await protocol.send('Browser.close');}catch{}ws.close();process.kill();}};
+ const browser={directory,newPage:async({viewport})=>{const page=new Page(browser,protocol);await page.init();await page.setViewportSize(viewport);return page;},close:async()=>{try{await protocol.send('Browser.close');}catch{}ws.close();if(process.exitCode===null)await Promise.race([new Promise(resolve=>process.once('exit',resolve)),delay(5000)]);if(process.exitCode===null)throw new Error('Browser did not exit after normal Browser.close; leave its profile untouched');}};
  return browser;
 }}};

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 public abstract class ScheduleWorkspaceActivity extends Activity {
     private static final int PAGE_COUNT = 3;
     private static final int REQUEST_BITS = 12;
+    private static final int NAVIGATION_RAIL_WIDTH_DP = 96;
     private final SchedulePage[] pages = new SchedulePage[PAGE_COUNT];
     private final Bundle[] saved = new Bundle[PAGE_COUNT];
     // Page IDs stay stable for saved state and activity results; positions include visible pages only.
@@ -93,7 +94,7 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
             navigation.setOrientation(LinearLayout.VERTICAL);
             dockHost=new FrameLayout(this);dockHost.setClipChildren(false);dockHost.setClipToPadding(false);
             dockHost.addView(navigation,new FrameLayout.LayoutParams(dp(72),dp(visiblePages.length*56+12),Gravity.CENTER));
-            shell.addView(dockHost,new LinearLayout.LayoutParams(dp(120),-1));
+            shell.addView(dockHost,new LinearLayout.LayoutParams(dp(NAVIGATION_RAIL_WIDTH_DP),-1));
             shell.addView(pager,new LinearLayout.LayoutParams(0,-1,1));
         }else{
             shell.addView(pager,new LinearLayout.LayoutParams(-1,0,1));

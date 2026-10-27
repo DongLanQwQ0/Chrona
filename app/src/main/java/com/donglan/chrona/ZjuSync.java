@@ -34,6 +34,7 @@ final class ZjuSync {
 
     static boolean request(Context context, Consumer<String> callback) { return request(context, ALL, callback); }
     static boolean requestHomework(Context context, Consumer<String> callback) { return request(context, HOMEWORK, callback); }
+    static synchronized boolean homeworkRefreshing() { return ((runningScopes | queuedScopes) & HOMEWORK) != 0; }
     static boolean requestDue(Context context, Consumer<String> callback) {
         return request(context, dueScopes(context, System.currentTimeMillis()), callback);
     }

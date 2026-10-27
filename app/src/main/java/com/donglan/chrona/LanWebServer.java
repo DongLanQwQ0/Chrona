@@ -115,12 +115,23 @@ final class LanWebServer extends NanoHTTPD {
             }
             return data(result);
         }
+        // Request acceptance is immediate. Never hold AndroidSync.LOCK waiting for the fetch/apply callback.
+        if (method == Method.POST && path.equals("/api/homework/refresh")) {
+            body(request, 256);
+            if (!homeworkRefreshAvailable()) return json(Response.Status.CONFLICT, "请先在手机启用并配置作业同步");
+            boolean accepted = ZjuSync.requestHomework(context, null);
+            return data(new JSONObject().put("accepted", accepted).put("message", accepted ? "正在刷新作业" : "请检查手机作业同步设置"));
+        }
         if (method == Method.GET && path.equals("/api/session")) {
             UiStyle.Palette colors = UiStyle.colors(context);
+            boolean homeworkAvailable=homeworkRefreshAvailable();
             return data(new JSONObject().put("csrf", security.csrf()).put("zone", ZoneId.systemDefault().getId())
                     .put("palette", new JSONObject().put("background", hex(colors.background)).put("text", hex(colors.text)).put("muted", hex(colors.muted)).put("primary", hex(colors.primary)).put("surface", hex(colors.surface)).put("outline", hex(colors.outline)))
                     .put("calendarAllowed", new CalendarStore(context).hasWritePermission()).put("calendarReadable",new CalendarStore(context).hasReadPermission())
-                    .put("systemCalendarIncluded",HomeTimelinePreferences.includesSystemCalendar(context)).put("syncStatus", new WebDavSettingsStore(context).status()));
+                    .put("systemCalendarIncluded",HomeTimelinePreferences.includesSystemCalendar(context)).put("syncStatus", new WebDavSettingsStore(context).status())
+                    .put("homeworkRefreshAvailable",homeworkAvailable).put("homeworkRefreshing",ZjuSync.homeworkRefreshing())
+                    .put("homeworkStatus",homeworkAvailable?new ZjuSettingsStore(context).status():"请先在手机启用并配置作业同步")
+                    .put("acknowledgementRevision",AgendaReminderPreferences.prefs(context).getLong("acknowledgement_revision",0L)));
         }
         if (method == Method.POST && path.equals("/api/logout")) { security.logout(headers.get("cookie")); Response result = data(new JSONObject().put("ok",true)); result.addHeader("Set-Cookie", "chrona_session=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/"); return result; }
         if (method == Method.POST && path.equals("/api/candidate/complete")) {
@@ -140,6 +151,40 @@ final class LanWebServer extends NanoHTTPD {
         // Sync apply and browser mutations must not interleave their database/file snapshots.
         synchronized (AndroidSync.LOCK) {
             if (closed) return json(Response.Status.SERVICE_UNAVAILABLE, "局域网访问已关闭");
+            if (method == Method.POST && path.equals("/api/homework/seen")) {
+                JSONObject body = body(request, 256);
+                try (TaskStore store = new TaskStore(context)) {
+                    if (whole(body,"revision",0,Long.MAX_VALUE) != store.dataRevision()) throw new Conflict();
+                    long id = positive(body.getString("candidateId"));
+                    EventCandidate item = store.getCandidatesByIds(Collections.singleton(id)).stream().findFirst().orElseThrow(Conflict::new);
+                    ZjuHomeworkStore homework = new ZjuHomeworkStore(context);
+                    ZjuHomeworkStore.State managed = homework.state();
+                    if (!new ZjuSettingsStore(context).enabled() || !managed.enabled || managed.captureId != item.taskId
+                            || !EventCategory.HOMEWORK.equals(item.category) || item.completed()) throw new Conflict();
+                    homework.markSeen(id);
+                    return data(new JSONObject().put("ok",true).put("revision",store.dataRevision()));
+                }
+            }
+            if (method == Method.POST && path.equals("/api/agenda/acknowledge")) {
+                JSONObject body = body(request, 256);
+                String identity = string(body,"id",24,true);long id=Long.parseLong(identity);
+                if (id==0 || !Long.toString(id).equals(identity)) throw new IllegalArgumentException();
+                long start = whole(body,"start",0,MAX_DATE_MILLIS);
+                ZoneId zone = ZoneId.systemDefault();LocalDate date=Instant.ofEpochMilli(start).atZone(zone).toLocalDate();
+                long begin=date.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
+                long end=date.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli();
+                CalendarStore provider=new CalendarStore(context);List<CalendarOccurrence> system=Collections.emptyList();
+                if(HomeTimelinePreferences.includesSystemCalendar(context)&&provider.hasReadPermission())
+                    system=provider.listInstances(begin-86_400_000L,end+86_400_000L,null);
+                try(TaskStore store=new TaskStore(context)) {
+                    CalendarOccurrence occurrence=ExternalCourseAgenda.merge(context,system,begin,end,new HashSet<>(store.linkedCalendarIds())).stream()
+                            .filter(item->item.eventId==id&&item.displayStart(zone)==start).findFirst().orElseThrow(Conflict::new);
+                    long until=occurrence.displayEnd(zone);
+                    if(until<=System.currentTimeMillis())throw new Conflict();
+                    AgendaAcknowledgement.set(context,AgendaAcknowledgement.key(id,start),until,bool(body,"acknowledged"));
+                    return data(new JSONObject().put("ok",true).put("revision",store.dataRevision()));
+                }
+            }
             if (method == Method.POST && path.equals("/api/task/process")) {
                 JSONObject body = body(request, MAX_BODY);
                 long id = positive(body.getString("id"));
@@ -333,12 +378,17 @@ final class LanWebServer extends NanoHTTPD {
                 boolean oldestFirst=request.getParms().containsKey("oldestFirst")?Boolean.parseBoolean(request.getParms().get("oldestFirst")):ScheduleOrderPreferences.oldestFirst(context,tab);
                 visible.sort(Comparator.comparingLong((CalendarOccurrence event)->event.displayStart(zone)).thenComparingLong(event->event.eventId));if(!oldestFirst)Collections.reverse(visible);
                 page=Math.min(page,Math.max(0,(visible.size()-1)/ScheduleQuery.PAGE_SIZE));JSONArray items=new JSONArray();
-                for(int i=page*ScheduleQuery.PAGE_SIZE;i<Math.min(visible.size(),(page+1)*ScheduleQuery.PAGE_SIZE);i++){CalendarOccurrence item=visible.get(i);items.put(new JSONObject().put("id",item.eventId).put("title",item.title).put("location",item.location).put("description",item.description).put("allDay",item.allDay).put("start",item.displayStart(zone)).put("end",item.displayEnd(zone)).put("source",item.calendarName).put("system",true).put("category","event"));}
+                for(int i=page*ScheduleQuery.PAGE_SIZE;i<Math.min(visible.size(),(page+1)*ScheduleQuery.PAGE_SIZE);i++)items.put(externalCandidate(visible.get(i),zone));
                 return data(result.put("items",items).put("total",visible.size()).put("page",page).put("pageSize",ScheduleQuery.PAGE_SIZE).put("oldestFirst",oldestFirst).put("system",true).put("from",from.toString()).put("until",until.toString()));
             }
             ScheduleQuery query=new ScheduleQuery(tab,category,publication,search,from,until,System.currentTimeMillis(),ZoneId.systemDefault(),todo);
             boolean oldestFirst=request.getParms().containsKey("oldestFirst")?Boolean.parseBoolean(request.getParms().get("oldestFirst")):ScheduleOrderPreferences.oldestFirst(context,tab);
             List<Long> ids=store.queryScheduleIds(query);page=Math.min(page,Math.max(0,(ids.size()-1)/ScheduleQuery.PAGE_SIZE));
+            if(request.getParms().containsKey("locate")) {
+                long target=positive(request.getParms().get("locate"));int targetPage=store.schedulePageForCandidate(query,oldestFirst,target);
+                if(targetPage>=0)page=targetPage;
+                result.put("located",targetPage>=0?Long.toString(target):JSONObject.NULL);
+            }
             JSONArray entries=new JSONArray(); for(EventCandidate item:store.querySchedulePage(query,oldestFirst,page))entries.put(candidate(item));
             if("true".equals(request.getParms().get("includeIds")))result.put("ids",new JSONArray(ids));
             return data(result.put("items",entries).put("total",ids.size()).put("page",page).put("pageSize",ScheduleQuery.PAGE_SIZE).put("oldestFirst",oldestFirst));
@@ -369,12 +419,11 @@ final class LanWebServer extends NanoHTTPD {
                 catch(RuntimeException error){calendarState="系统日历暂时无法读取";}
             } else if(!HomeTimelinePreferences.includesSystemCalendar(context)) calendarState="手机已关闭系统日历时间线";
             for(CalendarOccurrence item:ExternalCourseAgenda.merge(context,systemEntries,start,end,new HashSet<>(store.linkedCalendarIds())))if(item.displayEnd(zone)>home.now)
-                calendar.put(new JSONObject().put("id",item.eventId).put("title",item.title).put("location",item.location)
-                        .put("source",item.calendarName).put("description",item.description).put("allDay",item.allDay)
-                        .put("start",item.displayStart(zone)).put("end",item.displayEnd(zone)));
+                calendar.put(externalCandidate(item,zone));
             HomeTodoSummary todos=home.todos;
             JSONArray focus=new JSONArray();for(EventCandidate item:todos.focus)focus.put(candidate(item));
             return data(result.put("items",entries).put("recent",recent).put("limit",home.limit).put("calendar",calendar).put("calendarState",calendarState).put("date",date.toString()).put("review",home.review).put("failed",home.failed)
+                    .put("unreadHomework",home.unreadHomework>0?Long.toString(home.unreadHomework):JSONObject.NULL)
                     .put("todos",new JSONObject().put("total",todos.total).put("todayDue",todos.todayDue).put("overdue",todos.overdue).put("unscheduled",todos.unscheduled).put("items",focus)));
         }
         return json(Response.Status.NOT_FOUND,"页面不存在");
@@ -531,7 +580,20 @@ final class LanWebServer extends NanoHTTPD {
                 .put("needsConfirmation",item.needsConfirmation).put("calendarLinked",item.calendarEventId!=null)
                 .put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis)
                 .put("effectiveDue",item.effectiveDueAtMillis()==null?JSONObject.NULL:item.effectiveDueAtMillis())
+                .put("overdueAt",item.overdueAtMillis()==null?JSONObject.NULL:item.overdueAtMillis())
                 .put("completed",item.completed()).put("record",item.isRecord);
+    }
+    private boolean homeworkRefreshAvailable() {
+        ZjuSettingsStore settings=new ZjuSettingsStore(context);
+        return settings.enabled()&&settings.configured()&&new ZjuHomeworkStore(context).state().enabled;
+    }
+    private JSONObject externalCandidate(CalendarOccurrence item,ZoneId zone) throws JSONException {
+        long start=item.displayStart(zone),end=item.displayEnd(zone);
+        return new JSONObject().put("id",item.eventId).put("externalId",Long.toString(item.eventId))
+                .put("title",item.title).put("location",item.location).put("description",item.description)
+                .put("allDay",item.allDay).put("start",start).put("end",end).put("source",item.calendarName)
+                .put("system",true).put("category","event").put("canAcknowledge",end>System.currentTimeMillis())
+                .put("acknowledged",AgendaAcknowledgement.isAcknowledged(context,AgendaAcknowledgement.key(item.eventId,start)));
     }
     private JSONObject candidate(EventCandidate item) throws JSONException {
         Long anchor=item.reminderAnchor();

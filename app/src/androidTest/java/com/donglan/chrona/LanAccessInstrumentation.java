@@ -118,7 +118,8 @@ public final class LanAccessInstrumentation extends Instrumentation {
         }
         Bundle result = new Bundle();
         try { check(); result.putString("stream", "LAN integration: PASS (real Android SQLite and HTTP)\n"); finish(-1, result); }
-        catch (Throwable error) { result.putString("stream", "LAN integration: FAIL " + error.getClass().getSimpleName() + ": " + error.getMessage()+"\n"); finish(0, result); }
+        catch (Throwable error) { result.putString("stream", "LAN integration: FAIL " + error.getClass().getSimpleName() + ": " + error.getMessage()+"\n");
+            if("web_core".equals(arguments.getString("check")))result.putString("error",android.util.Log.getStackTraceString(error));finish(0, result); }
     }
     private String cookie, csrf, lastSetCookie;
     private int port;
@@ -234,6 +235,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
             try(TaskStore store=new TaskStore(isolated)){require(store.getTask(id)==null,"delete must remove real row");require(store.getCandidates(id).isEmpty(),"candidate cascade");}
             checkRepeatAndOrder(isolated);
             checkDefaultExecution(isolated);
+            if ("web_core".equals(arguments.getString("check"))) checkWebCore(isolated);
             if ("linked_calendar".equals(arguments.getString("check"))) checkLinkedCalendar(isolated);
             expect(request("POST","/api/logout",new JSONObject(),origin()),200);expect(request("GET","/api/inbox",null,null),401);
             server.closeAccess();require(!server.security.authenticated(cookie),"closing revokes connections");
@@ -414,6 +416,71 @@ public final class LanAccessInstrumentation extends Instrumentation {
         expect(request("POST","/api/selection/delete",new JSONObject().put("revision",changed.body.getLong("revision"))
                 .put("inbox",true).put("ids",new org.json.JSONArray().put(Long.toString(taskId))),origin()),200);
         try(TaskStore store=new TaskStore(context)){require(store.getTask(taskId)==null,"HTTP batch delete persists");}
+    }
+    private void checkWebCore(Context context)throws Exception {
+        // Only this wrapper's files, preferences and SQLite are used; never contact school or AI services.
+        JSONObject session=request("GET","/api/session",null,null).body;
+        require(session.has("acknowledgementRevision")&&!session.getBoolean("homeworkRefreshAvailable"),"core session capabilities");
+        require(session.getString("homeworkStatus").contains("手机"),"unavailable refresh reports setup action, not an old success");
+        expect(request("POST","/api/homework/refresh",new JSONObject(),origin()),409);
+        require(!ZjuSync.homeworkRefreshing(),"unconfigured refresh does not enqueue network work");
+        long now=System.currentTimeMillis(),due=now+7*86400000L;
+        ZjuHomeworkStore homework=new ZjuHomeworkStore(context);homework.configure("web-core-fixture",true);
+        new ZjuSettingsStore(context).prefs.edit().putBoolean("enabled",true).apply();
+        long first,second;
+        try(TaskStore store=new TaskStore(context)){
+            long task=store.insertTask("web pagination",null,"fixture",now);
+            store.updateStatus(task,com.donglan.chrona.data.TaskRecord.READY,null);
+            for(int i=0;i<com.donglan.chrona.data.ScheduleQuery.PAGE_SIZE+1;i++)store.appendCandidate(
+                    new com.donglan.chrona.data.EventCandidate(0,task,"pagination "+i,null,null,"Asia/Shanghai","","",null,false,null,"homework",false,false,0,now+86400000L+i,null,false));
+        }
+        var incoming=java.util.List.of(
+                new com.donglan.chrona.zju.ZjuSnapshot.Homework("web-a","course","A","","","",due,false),
+                new com.donglan.chrona.zju.ZjuSnapshot.Homework("web-b","course","B","","","",due+60000L,false));
+        homework.apply("web-core-fixture",homework.state().generation,incoming);
+        try(TaskStore store=new TaskStore(context)){
+            var items=store.getCandidates(homework.state().captureId);first=items.get(0).id;second=items.get(1).id;
+        }
+        JSONObject home=request("GET","/api/home",null,null).body;
+        require(home.getString("unreadHomework").equals(Long.toString(second)),"home exposes newest unread identity");
+        String route="/api/schedule?tab=3&category=homework&todo=3&oldestFirst=true&locate="+second;
+        JSONObject located=request("GET",route,null,null).body;
+        require(located.getInt("page")>0&&located.getString("located").equals(Long.toString(second)),"same native ordering locates across pages");
+        require(request("GET","/api/schedule?category=event&locate="+second,null,null).body.isNull("located"),"locate never bypasses filters");
+        var rows=located.getJSONArray("items");boolean found=false;
+        for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getLong("id")==second){found=true;require(rows.getJSONObject(i).getLong("overdueAt")==due+60000L,"derived overdue boundary is supplied");}
+        require(found,"located page includes exact candidate");
+        JSONObject seen=new JSONObject().put("candidateId",Long.toString(second)).put("revision",located.getLong("revision"));
+        expect(request("POST","/api/homework/seen",seen,origin()),200);
+        require(request("GET","/api/home",null,null).body.getString("unreadHomework").equals(Long.toString(first)),"only located homework becomes read");
+        expect(request("POST","/api/homework/seen",seen.put("candidateId",Long.toString(first)),origin()),409);
+        homework.configure("web-core-fixture",false);
+        require(request("GET","/api/home",null,null).body.isNull("unreadHomework"),"disabled managed binding has no unread target");
+
+        HomeTimelinePreferences.setIncludesSystemCalendar(context,false);
+        var format=java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(java.time.ZoneOffset.UTC);
+        long start=now+3600000L,end=start+3600000L;
+        String ics="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:web-core-fixture\r\nDTSTART:"+format.format(java.time.Instant.ofEpochMilli(start))+"\r\nDTEND:"+format.format(java.time.Instant.ofEpochMilli(end))+"\r\nSUMMARY:Web external fixture\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        long timetableRevision=TimetableStore.revision();
+        expect(request("POST","/api/timetable",new JSONObject().put("action","import").put("revision",timetableRevision).put("name","web-core.ics").put("source",ics),origin()),200);
+        var calendar=request("GET","/api/home",null,null).body.getJSONArray("calendar");JSONObject external=null;
+        for(int i=0;i<calendar.length();i++)if(calendar.getJSONObject(i).getString("title").equals("Web external fixture"))external=calendar.getJSONObject(i);
+        require(external!=null,"imported occurrence appears in core home");
+        long identity=Long.parseLong(external.getString("externalId")),actualStart=external.getLong("start");
+        require(identity<0&&Math.abs(identity)>9007199254740991L&&external.getBoolean("canAcknowledge"),"large signed identity remains an exact string");
+        JSONObject ack=new JSONObject().put("id",external.getString("externalId")).put("start",actualStart).put("acknowledged",true).put("until",Long.MAX_VALUE).put("key","forged");
+        expect(request("POST","/api/agenda/acknowledge",ack,origin()),200);
+        String key=AgendaAcknowledgement.key(identity,actualStart);
+        require(AgendaReminderPreferences.prefs(context).getLong("hidden:"+key,0)==external.getLong("end")&&!AgendaAcknowledgement.isAcknowledged(context,"forged"),"server resolves exact lifetime and key");
+        long acknowledgedRevision=request("GET","/api/session",null,null).body.getLong("acknowledgementRevision");
+        require(acknowledgedRevision>session.getLong("acknowledgementRevision"),"ACK changes independent revision");
+        expect(request("POST","/api/agenda/acknowledge",ack.put("acknowledged",false),origin()),200);
+        require(!AgendaAcknowledgement.isAcknowledged(context,key),"external acknowledgement is reversible");
+        expect(request("POST","/api/agenda/acknowledge",ack.put("start",actualStart+1),origin()),409);
+        expect(request("POST","/api/agenda/acknowledge",ack.put("start",actualStart).put("id","0"),origin()),400);
+        expect(request("POST","/api/agenda/acknowledge",ack.put("id","0"+identity),origin()),400);
+        ack.put("id",Long.toString(identity));ScheduleSources.setImportedEnabled(context,false);
+        expect(request("POST","/api/agenda/acknowledge",ack,origin()),409);
     }
     private String origin(){return "http://127.0.0.1:"+port;}
     private Reply request(String method,String path,JSONObject body,String origin)throws Exception{

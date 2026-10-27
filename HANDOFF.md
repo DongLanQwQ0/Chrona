@@ -1,6 +1,15 @@
 # 当前工作单
 
-## 当前交付：Android 0.15.54／216（未安装、未发布）
+## 最新验收范围（用户2026-10-27明确）
+
+停止低分辨率、高DPI、大字体等极端场景测试；本轮仅正常屏幕、正常字号的竖屏与横屏。先保证常规布局和正文空间，再验关键操作。既有极端证据只存档，不再作为阻塞或继续测试理由。用户再次要求收紧网页纵向边距：标题操作同行、搜索筛选收拢、默认批量工具隐藏，工具间只有一份必要间隔；横屏工具可随上滑退出。不得靠缩字掩盖空间安排。
+
+## 当前交付：Android 0.15.55／217（待最终构建、USB安装与真实链路）
+
+包含216已完成的课堂批量、图片审计、地址复制；新增三页轻量Web及横屏工作区Dock间距。用户新反馈后合并一次更新，不先推216的旧间距包。216仅为内部固定快照，不发布。
+
+- Web仅首页／日程／收件箱及普通详情编辑，移除高级前端实现；紧凑工具、明确选择模式、圆形状态操作、同Section详情返回和10秒刷新保持输入／选择／滚动。按手机分组、作业定位后单项已读、异步原作业刷新及精确外部活动确认；外部全天使用phone display日期，本地全天UTC。
+- 共用横屏workspace侧栏120→96dp，72dp底板不变；安全区后外侧24→12dp，正文间隔44→32dp，正文左移24dp。按钮／竖屏／安全区／动效不变。
 
 - 课堂列表／历史批量下载、导出、删除；按courseId筛选历次课堂，同名用完整ID消歧。复用抽取的`BatchSelectionUi`及原Dashboard批量语言；保留课堂长按监视。全选完整过滤结果跨页，筛选变更清选择、重建保留。
 - 用户已确认总ZIP每节独立目录：有总结／草稿导笔记、引用图、sources.md；仅素材导原PPT字节和sources.md。删除只删本地对应资料及同节共享副本，保护活动任务、学校原课、其它课及后续监视。
@@ -10,9 +19,9 @@
 
 ## 唯一下一步
 
-补原生夹具三处真实触摸诊断后只重验失败分支，由同一ui_review收尾，再USB覆盖和真机图片轮复验。`50561`已结束：短横屏17通过；大字长按在主线程繁忙时UP先于长按回调、Dashboard深色命中Dock缝、浅色持有已脱离旧行引用，原owner据真实dispatch修夹具，尚无生产手势缺陷证据。
+最终release/lint通过（`build/release-0.15.55-final.txt`），源已固定。Web与原生Dock均已由同一ui_review只读通过；下一步正常USB覆盖217，再验证真实手机LAN三页与微积分图片轮，最后提交有效验收回执并发布。安装前确认无活跃课堂生成；当前手机仅LAN服务，覆盖后需正常重新启用LAN。
 
-生产候选已固定：`build/candidates/0.15.54/Chrona-0.15.54.apk`，3232238字节，216／0.15.54，原签名；最终assembleRelease+lintRelease通过，`build/release-0.15.54-final-build.txt`。UiStyle新multiline变体仅用于课程选择值，默认调用单行不变，ui_review已关闭当前值P2；菜单末项完整露出仍需补滚动。测试源后续变化不影响此APK。不要在原生测试期间另开Gradle或抢ADB。
+内部216快照：`build/candidates/0.15.54/Chrona-0.15.54.apk`，3232238字节，源码60b7b61，release/lint通过；不是最终217。UiStyle公共多行变体的当前值P2已关闭，极端菜单补证已按用户要求取消。原生夹具三处失败经dispatch定位为抬手早于长按回调、Dock缝命中及持有脱离旧行，已修夹具；Dashboard正常400/font1真实三分支55通过，无生产手势改动。
 
 ## 已有有效证据与真实缺口
 
@@ -21,9 +30,9 @@
 - 批量离线Export／Store51、失败恢复9、重名label5、队列15、FGS hold及header20通过。
 - 真实后台缓存下载16项通过：3节在实际Activity.onPause后开始，逐节串行、同一OS前台服务，最终退出，意外网络计数0。`build/classroom-batch-native-background.txt`有效，不重复跑。
 - 真实系统保存器与自动分享通过：正常UI在55节合成历史上全选、DocumentsUI保存、自动Chooser、取消分享。拉回ZIP447641字节，55目录／3总结／55字幕／52原PPT／113条目，0失败，无双前缀／路径穿越；返回显示成功55。见`build/ui-0.15.54-review/batch-system-export-report.json`、对应XML及`batch-system-share.jpg`。未发送给外部目标；AVD Downloads有本轮新建`chrona-batch-ui-1793107316.zip`，宿主副本已在项目内。此输入使用旧等价授权mask表达式，三常量分支仍需最终lint。
-- 旧批量浅色15项通过，覆盖过滤、跨页、重建、active删除保护及终态；大字失败曾在长按后page为空，不能按测试问题先行定性。`build/classroom-batch-native-dark.txt`失败；原helper用整View中心，新夹具记录实际可见交集、Dock覆盖、真实事件路径及前后Activity／选择，等待50561结果。
+- 批量正常浅色15项通过，覆盖过滤、跨页、重建、active删除保护及终态；Dashboard正常三分支55项通过，`build/dashboard-batch-native-light-dispatch.txt`。旧夹具失败已准确定位并修复，极端分支不再追加验收。
 - Dashboard旧原生浅色复合几何断言失败、深色第二次点选失败，见`build/dashboard-batch-native-{light,dark}.txt`；生产尚未据猜测改动，新夹具拆分数值并保存事件证据。
-- ui_review已确认课程筛选大字硬裁P2；已按公共fieldTrigger multiline变体修复，必须补看完整长ID当前值与菜单。横屏工具可滚出并增加正文空间、Dashboard迁移仍待新证据，不能整体签收。
+- 同一ui_review已关闭多行当前值P2并通过正常Dashboard、Web及原生侧Dock分项。极端菜单补证取消。原生正常横屏真实触摸body视口369→603→904px，回顶恢复369；证据`build/ui-0.15.54-review/root-history-landscape-{before,after,collapsed,restored}.xml`，横向新间距`rail-landscape-normal.jpg/xml`实测正文x487→426。旋转恢复1/0，wm size/density从未修改。
 
 ## 真机与基线
 
@@ -33,13 +42,15 @@ USB `10AG5S1SR4005X7`：当前已正常覆盖到215／0.15.53，首次安装时�
 
 手机曾被另一聊天及GlobalSend浮层干扰，用户已明确暂停另一侧测试后让本聊天继续，主代理独占；遇到前台切走先核对，不误点其它应用。
 
-## 下一独立批：网页版三页收敛
+## Web三页已实现并审核，待真实手机链路
 
 用户定位明确：其它设备快速查看与操作日程，只保留首页、日程、收件箱及其普通详情／编辑叶页；首页层级、筛选、多选、完成／编辑与App基本一致，不扩课堂或课表等高级管理。不能缩成只修截图按钮。
 
-`web_core_research`只读已发现完成按钮缺等高约束、checkbox继承全局input内距、日期分组与排序字段不一致、详情返回清空选择等；正在补原生业务复用入口（刷新作业／未读／外部确认／重解析）。主代理已定：主题跟手机，断开保留页头轻量入口，系统日程开关跟原生；+仅首页；去掉高级UI路由但不擅删现有HTTP API／原生底层。参考压缩JPEG在`build/web-core-refresh-input`。
+前端`web_core_execute`已完成并freeze，真实Edge＋模拟手机API的`checks/lan_daily_workspace_check.cjs`全通过，JPEG与请求记录在`build/lan-daily-workspace/`，同一ui_review亲看八图通过。414×896首卡y340，常规896×414由y397收紧至y270，上滑195后y75；没有极端DPI/字体矩阵。完成按钮原44×50已修48×48。checkbox原实测20×20/padding0，未按猜测打补丁；改为明确选择模式及圈勾。外部全天上海00:00反例、本地UTC日期、菜单尾勾、收件状态筛选与嵌套选择面板都已覆盖。
 
-0.15.54 APK已固定，源提交后允许Web写active assets/API，避免混入当前候选；与真机最终验证并行做下一批。web_core_execute拥有前端及对应浏览器checks/LAN功能文档，root负责后端API与集成，启动只读准备，GO前不写active assets。浏览器必须串行复用`build/lan-web-checks/browser-profile`，不新建随机profile、不清登录／锁、不强关别人浏览器。根已正常关闭本次复现浏览器：完成按钮实测44x50；checkbox实际20x20/padding0，不能按继承内距猜测修复；320宽首记录被工具推到屏外。见`build/web-core-refresh-input/reproduction.json`及JPEG。下拉已真实鼠标打开，不代表连续选择及返回状态已验。
+root后端真实Android SQLite＋HTTP检查通过：`build/web-core-android-http.txt`，使用`checks/lan-core-validation.init.gradle`与LanAccessInstrumentation的web_core模式，数据为隔离Context/SQLite，未访问学校或AI。覆盖原分页定位／单条已读／禁用刷新不联网／真实导入课的精确负long身份确认与撤销／禁用源拒绝／真实截止／独立ACK revision；不信客户端key/until。缺配置时session给真实设置动作，避免显示旧成功状态。API旧共享高级能力保留，重解析旧文档门槛已删除。
+
+浏览器必须串行复用`build/lan-web-checks/browser-profile`，不新建随机profile、不清登录／锁、不强关别人浏览器。当前browser均正常关闭，profile无占用；共用CDP已移除Browser.close后的强杀。真实手机LAN前端链路待217安装后验，模拟API和设备HTTP不互相冒充。普通AI/附件/重复叶页原有效行为保留，本轮未重跑无关全矩阵。
 
 ## 外写入口及清理清单已独立交付
 
@@ -49,7 +60,7 @@ USB `10AG5S1SR4005X7`：当前已正常覆盖到215／0.15.53，首次安装时�
 
 ## 所有权／工具保护
 
-主代理：整体判断、Summary/reader/LAN、HANDOFF、版本／CHANGELOG、ADB／Gradle、最终验收／发布。classroom_batch_execute：课堂批量及相邻公共UI实现与原生夹具，修复回原owner；ui_review只读独立审核。web_core_research暂只读，不派生。
+主代理：整体判断、Summary/reader/LAN后端、HANDOFF、版本／CHANGELOG、ADB／Gradle、最终验收／发布。classroom_batch_execute与web_core_execute已完成各自源交接，范围内修复回原owner；ui_review只读独立审核，已通过当前Web和侧Dock范围。无需重新调查或重复已有效检查。
 
 共享AVD只用`F:/Android/Avd/Chrona_Classroom_36`、serial emulator-5554，不新建／克隆／清空／重置。FastCtx未提供，pwsh7兜底。JAVA_HOME=D:/Minecraft/java21，SDK=F:/Android/Sdk，GRADLE_USER_HOME=F:/Android/GradleCache，ANDROID_USER_HOME=F:/Android/user-home；TEMP/TMP及新增日志在本项目build。
 

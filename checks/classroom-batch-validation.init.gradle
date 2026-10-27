@@ -1,0 +1,10 @@
+allprojects {
+    plugins.withId('com.android.application') {
+        extensions.getByName('androidComponents').finalizeDsl { android ->
+            android.defaultConfig.applicationId = 'com.donglan.chrona.batch.validation'
+            android.defaultConfig.testApplicationId = 'com.donglan.chrona.batch.validation.test'
+            android.defaultConfig.testInstrumentationRunner = 'com.donglan.chrona.ClassroomBatchInstrumentation'
+            android.sourceSets.androidTest.java.setSrcDirs([file('src/classroomBatch/java')])
+        }
+    }
+}

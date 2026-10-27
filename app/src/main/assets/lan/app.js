@@ -15,6 +15,11 @@ const ICONS={
  'sun-moon':'<path d="M12 3a6.5 6.5 0 1 0 9 9 9 9 0 1 1-9-9M19 3v4M17 5h4"/>',
  'settings':'<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
  'check':'<path d="m20 6-11 11-5-5"/>',
+ 'clock':'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ 'list-checks':'<path d="m3 6 2 2 3-3M11 6h10M3 13h18M3 19h18"/>',
+ 'search':'<circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/>',
+ 'filter':'<path d="M4 7h16M7 12h10M10 17h4"/>',
+ 'log-out':'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
  'circle':'<circle cx="12" cy="12" r="9"/>',
  'clock-alert':'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2M21 3v3M21 8h.01"/>',
  'file-text':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h6"/>'
@@ -34,7 +39,7 @@ function enhanceSelects(){
   const show=(last=false)=>{
    if(closingSelect?.trigger===trigger&&closingSelect.menu.isConnected){openSelect=closingSelect;closingSelect=null;const menu=openSelect.menu;menu.inert=false;trigger.setAttribute('aria-expanded','true');motion(menu,[{opacity:0,transform:'translateY(-6px)'},{opacity:1,transform:'translateY(0)'}],180);menu.querySelector('[aria-selected="true"]')?.focus({preventScroll:true});return;}
    closeSelect(false,true);const menu=node('div','select-menu');menu.popover='manual';menu.id='select-menu-'+(++selectId);menu.setAttribute('role','listbox');menu.setAttribute('aria-label',trigger.getAttribute('aria-label'));trigger.setAttribute('aria-controls',menu.id);trigger.setAttribute('aria-expanded','true');
-   const options=[...select.options].map((option,index)=>{const button=node('button','',option.textContent);button.type='button';button.setAttribute('role','option');button.setAttribute('aria-selected',String(index===select.selectedIndex));button.disabled=option.disabled;button.tabIndex=-1;button.addEventListener('click',()=>{select.value=option.value;closeSelect(true);sync();select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}));});menu.append(button);return button;});
+   const options=[...select.options].map((option,index)=>{const button=node('button','',option.textContent);button.type='button';button.setAttribute('role','option');button.setAttribute('aria-selected',String(index===select.selectedIndex));if(index===select.selectedIndex)button.append(icon('check'));button.disabled=option.disabled;button.tabIndex=-1;button.addEventListener('click',()=>{select.value=option.value;closeSelect(true);sync();select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}));});menu.append(button);return button;});
    (select.closest('dialog')||document.body).append(menu);menu.showPopover();const bounds=trigger.getBoundingClientRect(),height=Math.min(menu.scrollHeight,280,innerHeight-24),below=innerHeight-bounds.bottom-8;menu.style.width=Math.min(Math.max(bounds.width,180),innerWidth-24)+'px';menu.style.maxHeight=height+'px';menu.style.left=Math.max(12,Math.min(bounds.left,innerWidth-parseFloat(menu.style.width)-12))+'px';menu.style.top=Math.max(12,below>=height?bounds.bottom+6:bounds.top-height-6)+'px';
    openSelect={menu,trigger};motion(menu,[{opacity:0,transform:'translateY(-6px)'},{opacity:1,transform:'translateY(0)'}],180);
    const enabled=options.filter(option=>!option.disabled);(last?enabled.at(-1):options[select.selectedIndex]&&!options[select.selectedIndex].disabled?options[select.selectedIndex]:enabled[0])?.focus({preventScroll:true});
@@ -47,7 +52,7 @@ document.addEventListener('pointerdown',event=>{if(openSelect&&!openSelect.menu.
 window.addEventListener('resize',()=>closeSelect());document.addEventListener('scroll',event=>{if(openSelect&&!openSelect.menu.contains(event.target))closeSelect();},true);
 function action(label,handler,cls=''){const button=node('button',cls,label);button.type='button';button.addEventListener('click',()=>guard(handler));return button;}
 function guard(work){const owner=dialogGeneration;return Promise.resolve().then(work).catch(error=>toast(error.message||'操作未完成，请重试',owner));}
-let csrf='',session=null,revision=0,termRevision=0,route='home',page=0,search='',filter='',selectedTerm='',week=new Date(),sequence=0,currentTask=null,themeOverride=false;
+let csrf='',session=null,revision=0,route='home',page=0,search='',filter='',sequence=0,currentTask=null;
 let pending=0;
 async function api(path,body){pending++;try{const response=await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json','X-Chrona-CSRF':csrf}:{},body:body?JSON.stringify(body):undefined});const value=await response.json();if(response.status===401){disconnect();const error=new Error('连接已失效，请重新连接');error.status=401;throw error;}if(!response.ok){const error=new Error(value.error||'手机暂时无法响应');error.status=response.status;throw error;}return value;}catch(error){if(error instanceof TypeError)throw new Error('无法连接手机，请检查手机局域网访问及网络');throw error;}finally{pending--;}}
 const activeMotion=new WeakMap(),runningMotions=new Set(),reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
@@ -60,7 +65,9 @@ function motion(element,frames,duration=180){
 let dialogGeneration=0;
 let inlineEditor=null;
 let dialogEditor=null;
+let choiceReturn=null;
 function requestDialogClose(){
+ if(choiceReturn){const restore=choiceReturn;choiceReturn=null;restore();return;}
  const editor=dialogEditor;
  if(!editor||!editor.form.isConnected){closeDialog();return;}
  if(editor.working()){toast('正在保存，请稍候');return;}
@@ -83,7 +90,7 @@ async function leaveInlineEditor(){
 }
 function ownsDialog(owner){return owner===dialogGeneration&&$('#dialog').open&&!$('#dialog').inert;}
 function closeDialog(immediate=false,owner=dialogGeneration){
- if(owner!==dialogGeneration)return;dialogEditor=null;closeSelect(false,true);const dialog=$('#dialog');clearDialogFeedback();if(!dialog.open)return;dialog.inert=true;
+ if(owner!==dialogGeneration)return;dialogEditor=null;choiceReturn=null;closeSelect(false,true);const dialog=$('#dialog');clearDialogFeedback();if(!dialog.open)return;dialog.inert=true;
  const finish=()=>{if(owner===dialogGeneration){dialog.close();dialog.inert=false;}};
  if(immediate){activeMotion.get(dialog)?.cancel();finish();return;}
  const animation=motion(dialog,[{opacity:1,transform:'translateY(0) scale(1)'},{opacity:0,transform:'translateY(6px) scale(.99)'}],140);
@@ -107,7 +114,7 @@ function readableAccent(value,surface){
  return '#'+fromLightness(light+(target-light)*high).map(channel=>Math.round(channel*255).toString(16).padStart(2,'0')).join('');
 }
 let phonePalette=null;
-function applyPalette(palette=phonePalette){if(!palette)return;phonePalette=palette;if(!themeOverride)document.body.classList.toggle('dark',parseInt(palette.background.slice(1,3),16)<100);document.documentElement.style.colorScheme=document.body.classList.contains('dark')?'dark':'light';document.documentElement.style.setProperty('--phone-accent',readableAccent(palette.primary,getComputedStyle(document.body).getPropertyValue('--surface').trim()));}
+function applyPalette(palette=phonePalette){if(!palette)return;phonePalette=palette;document.body.classList.toggle('dark',parseInt(palette.background.slice(1,3),16)<100);document.documentElement.style.colorScheme=document.body.classList.contains('dark')?'dark':'light';document.documentElement.style.setProperty('--phone-accent',readableAccent(palette.primary,getComputedStyle(document.body).getPropertyValue('--surface').trim()));}
 
 async function connect(){session=await api('/api/session');csrf=session.csrf;applyPalette(session.palette);$('#pair').hidden=true;$('#workspace').hidden=false;await navigate(location.hash.slice(1)||'home',false);}
 let approvalId='',approvalTimer=null,approvalSequence=0;
@@ -142,33 +149,36 @@ function card(title){const result=node('section','card glass');if(title){const h
 function empty(parent,label){parent.append(node('p','empty',label));}
 function fmt(value,allDay=false,full=false,zone){if(value===null||value===undefined)return '待确认时间';if(allDay)return new Date(value).toISOString().slice(0,10)+' · 全天';return new Intl.DateTimeFormat('zh-CN',{...(full?{month:'numeric',day:'numeric'}:{}),hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone||session?.zone}).format(new Date(value));}
 function statusLabel(status){return {queued:'排队中',processing:'正在处理',needs_review:'待确认',ready:'已就绪',failed:'处理失败'}[status]||status;}
-let scheduleTab=0,publication=0,todoScope=0,inboxCategory='',rangeFrom='',rangeUntil='',calendarView='week',calendarDate=new Date(),calendarDensity='standard',selectedRows=new Set();
+let scheduleTab=0,publication=0,todoScope=0,inboxCategory='',rangeFrom='',rangeUntil='',selectedRows=new Set(),selectionMode=false,homeworkLocate=null;
 let rangePreset=0,listSource=0,inboxOldest=false;
 const scheduleOrders=new Map();
 const selectionObservers=new Set();
 const routeState=new Map();
-function listState(){return {page,search,filter,scheduleTab,publication,todoScope,inboxCategory,rangeFrom,rangeUntil,rangePreset,listSource,scroll:scrollY};}
-function restoreList(value={}){page=value.page??0;search=value.search??'';filter=value.filter??'';scheduleTab=value.scheduleTab??0;publication=value.publication??0;todoScope=value.todoScope??0;inboxCategory=value.inboxCategory??'';rangeFrom=value.rangeFrom??'';rangeUntil=value.rangeUntil??'';rangePreset=value.rangePreset??0;listSource=value.listSource??0;selectedRows.clear();}
+function listState(){return {page,search,filter,scheduleTab,publication,todoScope,inboxCategory,rangeFrom,rangeUntil,rangePreset,listSource,selected:[...selectedRows],selectionMode,scroll:scrollY};}
+function restoreList(value={}){page=value.page??0;search=value.search??'';filter=value.filter??'';scheduleTab=value.scheduleTab??0;publication=value.publication??0;todoScope=value.todoScope??0;inboxCategory=value.inboxCategory??'';rangeFrom=value.rangeFrom??'';rangeUntil=value.rangeUntil??'';rangePreset=value.rangePreset??0;listSource=value.listSource??0;selectedRows=new Set(value.selected||[]);selectionMode=!!value.selectionMode;}
 const categories={event:'活动',task:'待办',homework:'作业'};
 function taskLike(category){return category==='task'||category==='homework';}
 const SHIFTED_START_INTERVAL_MILLIS=5*60*1000;
 function executionStart(item){return item.executionStart??item.start??item.effectiveDue;}
 function executionEnd(item){return item.executionEnd??item.end;}
 function executionAllDay(item){return item.executionAllDay??item.allDay;}
+// System instances already carry phone-zone display boundaries; candidate all-day values remain UTC civil dates.
+function displayTime(item,value,full=false,exclusiveEnd=false){if(item.system&&executionAllDay(item)&&value!=null)return phoneDate(value-(exclusiveEnd&&value>item.start?1:0))+' · 全天';return fmt(value,executionAllDay(item),full,item.zone);}
 function executionWhen(item,full=false){
  const start=executionStart(item),end=executionEnd(item),allDay=executionAllDay(item);
  if(start==null)return '待安排时间';
- const first=fmt(start,allDay,full,item.zone);
+ const first=displayTime(item,start,full);
+ if(item.system&&allDay&&end!=null&&end>start&&phoneDate(start)!==phoneDate(end-1))return first+' — '+displayTime(item,end,full,true);
  return !allDay&&end!=null&&end>start?first+' — '+fmt(end,false,full&&phoneDate(start)!==phoneDate(end),item.zone):first;
 }
 function entry(item,click,source='',scope=''){
- const button=action('',click,'entry'),time=node('span','entry-time',fmt(executionStart(item),executionAllDay(item)));
+ const button=action('',click,'entry'),time=node('span','entry-time',displayTime(item,executionStart(item)));
  const main=node('span','entry-main');main.append(node('span','entry-title',item.title),node('span','entry-detail',[item.effectiveDue!=null?`截止 · ${fmt(item.effectiveDue,false,true,item.zone)}`:'',item.location,source||categories[item.category],item.needsConfirmation?'待确认':''].filter(Boolean).join(' · ')));
  button.dataset.key=`entry-${scope}-${item.kind||item.category}-${item.taskId||0}-${item.id||item.start}-${item.start}`;button.dataset.content=JSON.stringify(item);
- button.append(time,main,icon('chevron-right'));const complete=source||item.system?null:completionAction(item);if(!complete)return button;const row=node('div','entry-row');row.dataset.key=button.dataset.key;button.removeAttribute('data-key');row.append(button,complete);return row;
+ button.append(time,main,icon('chevron-right'));const complete=completionAction(item,null,true);if(!complete)return button;const row=node('div','entry-row');row.dataset.key=button.dataset.key;button.removeAttribute('data-key');row.append(button,complete);return row;
 }
 function taskRoute(item){return `task/${item.taskId}?candidate_id=${item.id}${item.occurrenceAt!=null?'&occurrenceAt='+item.occurrenceAt:''}`;}
-function itemDate(item){const value=executionStart(item)??item.created;if(value==null)return '待安排';return executionAllDay(item)?new Date(value).toISOString().slice(0,10):phoneDate(value);}
+function itemDate(item){const value=executionStart(item)??item.created;if(value==null)return '待安排';return executionAllDay(item)&&!item.system?new Date(value).toISOString().slice(0,10):phoneDate(value);}
 function appendGrouped(parent,items,build,minimumDate=''){let previous=null;for(const item of items){const raw=itemDate(item),date=minimumDate&&raw<minimumDate?minimumDate:raw;if(date!==previous){parent.append(node('h3','list-day',date));previous=date;}parent.append(build(item));}}
 function timelineTime(item){const time=executionStart(item)??Infinity;return executionAllDay(item)&&item.kind==='event'?phoneDayStart(new Date(time).toISOString().slice(0,10)):time;}
 function dateISO(date){const year=date.getFullYear(),month=String(date.getMonth()+1).padStart(2,'0'),day=String(date.getDate()).padStart(2,'0');return `${year}-${month}-${day}`;}
@@ -187,7 +197,8 @@ function phoneDayStart(date){
 }
 // AgendaRepository already projects all-day entries onto phone-zone day boundaries.
 function agendaDayEntries(items,date){const start=phoneDayStart(date),end=phoneDayStart(addCivilDays(date,1));return items.filter(item=>item.start<end&&Math.max(item.end??item.start,item.start+1)>start);}
-const pageOrder=['home','schedule','inbox','timetable','settings'];
+const pageOrder=['home','schedule','inbox'];
+let mainSection='home';
 const dockHighlight=node('span','dock-highlight');dockHighlight.hidden=true;dockHighlight.setAttribute('aria-hidden','true');$('.bottom nav').prepend(dockHighlight);
 const dockNav=$('.bottom nav'),dockState={p:0,v:0,target:0,w:0,wv:0,wt:0,s:1,sv:0,st:1,bar:1,bv:0,bt:1,stretch:1,xv:0};
 let dockFrame=0,dockTime=0,dockTouch=null,dockSuppressClick=false,dockCoasting=false;
@@ -256,14 +267,17 @@ async function navigate(next,updateHash=true,initialState=null){
  rememberDetailScroll();
  const [path,query]=next.split('?');
  if(path==='schedule'&&query){const params=new URLSearchParams(query);initialState=history.state?.schedule??{filter:params.get('category')||'',scheduleTab:Number(params.get('tab')||0),todoScope:Number(params.get('todo')||0)};next=path;}
+ if(!['home','schedule','inbox'].includes(next)&&!next.startsWith('task/'))next='home';
  const previous=route,changed=previous!==next;
+ const nextSection=pageOrder.includes(next)?next:mainSection,sectionChanged=nextSection!==mainSection;
+ if(sectionChanged){selectedRows.clear();selectionMode=false;for(const saved of routeState.values()){saved.selected=[];saved.selectionMode=false;}mainSection=nextSection;}
  if(changed){routeState.delete(previous);routeState.set(previous,listState());while(routeState.size>10)routeState.delete(routeState.keys().next().value);}
- route=next;restoreList(initialState??(changed?routeState.get(next):listState()));currentTask=null;
+ route=next;restoreList(initialState??(changed?routeState.get(next):listState()));if(sectionChanged){selectedRows.clear();selectionMode=false;}currentTask=null;homeworkLocate=initialState?.locate??null;
  if(next.startsWith('task/')&&new URLSearchParams(query||'').has('candidate_id'))detailPosition(Number(path.split('/')[1])).detailOpen=true;
  const destination=next==='schedule'&&initialState?`schedule?${new URLSearchParams({category:filter,tab:scheduleTab,todo:todoScope})}`:next;
  if(updateHash&&location.hash!==`#${destination}`)history.pushState(next==='schedule'?{schedule:listState()}:null,'',`#${destination}`);
- document.querySelectorAll('[data-page]').forEach(button=>{const selected=button.dataset.page===next;button.classList.toggle('active',selected);if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
- updateDock();const direction=next.startsWith('task/')?1:previous.startsWith('task/')?-1:Math.sign(pageOrder.indexOf(next)-pageOrder.indexOf(previous));
+ document.querySelectorAll('[data-page]').forEach(button=>{const selected=button.dataset.page===mainSection;button.classList.toggle('active',selected);if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
+ updateCapture();updateDock();const direction=next.startsWith('task/')?1:previous.startsWith('task/')?-1:Math.sign(pageOrder.indexOf(next)-pageOrder.indexOf(previous));
  await render(changed?{direction,detail:next.startsWith('task/')}:false);
  if(changed)window.scrollTo(0,routeState.get(next)?.scroll??0);
 }
@@ -272,106 +286,144 @@ async function render(animate=false){if(inlineEditor?.form.isConnected)return;co
  if(route.startsWith('task/'))content=await taskPage(Number(route.split('/')[1].split('?')[0]),ticket);
  else if(route==='home')content=await homePage(ticket);
  else if(route==='inbox'||route==='schedule')content=await listPage(ticket);
- else if(route==='timetable')content=await timetablePage(ticket);
- else if(route==='calendar')content=await calendarPage(ticket);
- else if(route==='settings')content=settingsPage();
  else{route='home';content=await homePage(ticket);}
  if(ticket===sequence){const active=document.activeElement,label=host.contains(active)?active.getAttribute('aria-label'):null,selection=label&&'selectionStart' in active?[active.selectionStart,active.selectionEnd]:null,scrollY=window.scrollY;
-  clearReveals();for(const observer of selectionObservers)observer.disconnect();selectionObservers.clear();
+  clearReveals();
   const previous=new Map([...host.querySelectorAll('[data-key]')].map(element=>[element.dataset.key,{element,rect:element.getBoundingClientRect()}]));
   const incoming=document.createDocumentFragment();incoming.append(...content);
   const local=!animate||animate.local;
   const reused=new Set();
-  if(local)for(const element of incoming.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(old&&!reused.has(old.element)&&!element.querySelector('input')&&old.element.isEqualNode(element)){element.replaceWith(old.element);reused.add(old.element);}}
-  $('#workspace').classList.toggle('task-mode',route.startsWith('task/'));
-  host.replaceChildren(incoming);icons();
+  if(local)for(const element of incoming.querySelectorAll('[data-preserve]')){const old=host.querySelector(`[data-preserve="${element.dataset.preserve}"]`);if(old&&old.dataset.state===element.dataset.state)element.replaceWith(old);}
+  if(local)for(const element of incoming.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(old&&!reused.has(old.element)&&!element.matches('.selectable-result')&&!element.querySelector('input')&&old.element.isEqualNode(element)){element.replaceWith(old.element);reused.add(old.element);}}
+  $('#workspace').classList.toggle('task-mode',route.startsWith('task/'));host.classList.toggle('list-mode',route==='schedule'||route==='inbox');
+  host.replaceChildren(incoming);icons();for(const observer of selectionObservers)if(!observer.host?.isConnected){observer.disconnect();selectionObservers.delete(observer);}if(route==='schedule'&&homeworkLocate)locateHomework(homeworkLocate,ticket);
   if(route==='schedule')history.replaceState({schedule:listState()},'',`#schedule?${new URLSearchParams({category:filter,tab:scheduleTab,todo:todoScope})}`);
   if(local){window.scrollTo(0,scrollY);for(const element of host.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(!old)continue;const rect=element.getBoundingClientRect(),x=old.rect.x-rect.x,y=old.rect.y-rect.y;if(Math.abs(x)+Math.abs(y)>1)motion(element,[{transform:`translate(${x}px,${y}px)`},{transform:'translate(0,0)'}],280);}}
   if(label&&local){const replacement=[...host.querySelectorAll('[aria-label]')].find(element=>element.getAttribute('aria-hidden')!=='true'&&element.getAttribute('aria-label')===label);replacement?.focus({preventScroll:true});if(selection&&replacement?.setSelectionRange)replacement.setSelectionRange(...selection);}
   if(animate&&!animate.local){motion(host,[{opacity:.55,transform:`translateX(${(animate.direction||1)*(animate.detail?20:12)}px)`},{opacity:1,transform:'translateX(0)'}],240);observeCards(host);}
  }}
+function iconAction(name,label,work,pressed){const button=action('',work,'icon-button');button.append(icon(name));button.setAttribute('aria-label',label);button.title=label;if(pressed!==undefined)button.setAttribute('aria-pressed',String(pressed));return button;}
+function actionGroup(buttons){const group=node('div','header-action-group');group.append(...buttons);return group;}
+function preserve(element,key,state){element.dataset.preserve=key;element.dataset.state=JSON.stringify(state);return element;}
+function updateCapture(){const shown=route==='home',button=$('#capture');button.inert=!shown;button.setAttribute('aria-hidden',String(!shown));$('.bottom').classList.toggle('without-capture',!shown);}
+async function refreshHomework(){
+ if(!session.homeworkRefreshAvailable){toast(session.homeworkStatus||'请先在手机启用折姜星辰并登录');return;}
+ if(session.homeworkRefreshing)return;
+ const response=await api('/api/homework/refresh',{});toast(response.message);
+ if(response.accepted){homeworkRefreshPending=true;session.homeworkRefreshing=true;updateHomeworkRefresh();}
+}
+function updateHomeworkRefresh(){for(const button of document.querySelectorAll('[data-homework-refresh]')){button.disabled=!!session?.homeworkRefreshing;button.classList.toggle('refreshing',!!session?.homeworkRefreshing);button.setAttribute('aria-label',session?.homeworkRefreshing?'正在刷新作业':'刷新作业');}}
+async function openHomework(){scheduleOrders.set(3,true);await navigate('schedule',true,{filter:'homework',scheduleTab:3,todoScope:3,locate:unreadHomework});}
+let unreadHomework=null,homeworkRefreshPending=false;
 async function homePage(ticket){
- const data=await api('/api/home');if(ticket!==sequence)return [];revision=data.revision;
- const columns=node('div','columns'),agenda=card('时间线'),list=node('div','timeline');
+ const data=await api('/api/home');if(ticket!==sequence)return [];revision=data.revision;unreadHomework=data.unreadHomework??null;
+ const homework=iconAction('list-checks','作业',openHomework);if(unreadHomework)homework.classList.add('has-unread');
+ const system=iconAction('calendar-days','包含系统其他日程',async()=>{await api('/api/preferences',{systemCalendarIncluded:!session.systemCalendarIncluded});session.systemCalendarIncluded=!session.systemCalendarIncluded;await render();},!!session.systemCalendarIncluded);
+ system.classList.add('system-toggle');
+ const head=heading('首页',data.date,[actionGroup([homework,system])]),columns=node('div','columns home-columns'),primary=node('div','home-primary'),secondary=node('div','home-secondary');
  const events=[...data.items.map(item=>({...item,kind:'event'})),...data.calendar.map(item=>({...item,kind:'calendar'}))].sort((a,b)=>timelineTime(a)-timelineTime(b));
- const future=events.slice(0,data.limit??30);
- appendGrouped(list,future,item=>entry(item,()=>item.kind==='event'?navigate(taskRoute(item)):showReadOnly(item),item.kind==='calendar'?item.source||'日历':'','home-timeline'),data.date);
- if(!future.length)empty(list,'暂无未来安排');agenda.append(list);
- const summary=card();summary.classList.add('summary');const date=new Date(data.date+'T12:00:00');
- summary.append(node('div','eyebrow','TODAY'),node('p','date-large',String(date.getDate()).padStart(2,'0')),node('p','date-label',new Intl.DateTimeFormat('zh-CN',{month:'long',weekday:'long'}).format(date)));
- const stats=node('div','stat-row');for(const [value,label,status]of [[data.review,'待确认','1'],[data.failed,'处理失败','3']]){const button=action('',async()=>{await navigate('inbox');filter=status;page=0;await render();},'stat');button.append(node('strong','',String(value)),node('span','',label));stats.append(button);}summary.append(stats);
- const shortcuts=node('div','detail-actions');shortcuts.append(action('查看日历',()=>navigate('calendar')),action('最近作业',()=>openSchedule({filter:'homework',scheduleTab:3,todoScope:3})),action('记录',capture,'primary'));summary.append(shortcuts);columns.append(agenda,summary);
- const result=[heading('首页',data.date),columns];
- const recentItems=[...(data.recent||[]).map(item=>({...item,kind:'event'})),...data.calendar.map(item=>({...item,kind:'calendar'}))].sort((a,b)=>timelineTime(a)-timelineTime(b)).slice(0,5);if(recentItems.length){const recent=card('最近事项');appendGrouped(recent,recentItems,item=>entry(item,()=>item.kind==='event'?navigate(taskRoute(item)):showReadOnly(item),item.kind==='calendar'?item.source||'日历':'','home-recent'),data.date);result.push(recent);}
+ const future=events.slice(0,data.limit??30),next=future[0],nextCard=card('下一件事');
+ if(next)nextCard.append(entry(next,()=>next.kind==='event'?navigate(taskRoute(next)):showReadOnly(next),next.kind==='calendar'?next.source||'日历':'','home-next'));else empty(nextCard,'暂无未来安排');primary.append(nextCard);
  if(data.todos){const todo=card('待办 · '+data.todos.total),counts=node('div','stat-row');
-  for(const [value,label,scope,tab]of [[data.todos.todayDue,'今日截止',1,3],[data.todos.overdue,'已逾期',2,3],[data.todos.unscheduled,'待安排',3,1]]){const b=action('',()=>openSchedule({scheduleTab:tab,todoScope:scope}),'stat');b.append(node('strong','',String(value)),node('span','',label));counts.append(b);}todo.append(counts);
+  for(const [value,label,scope,tab]of [[data.todos.todayDue,'今日截止',1,3],[data.todos.overdue,'已逾期',2,3],[data.todos.unscheduled,'待安排',3,1]]){const button=action('',()=>openSchedule({scheduleTab:tab,todoScope:scope}),'stat');button.append(node('strong','',String(value)),node('span','',label));counts.append(button);}todo.append(counts);
   for(const item of data.todos.items)todo.append(entry(item,()=>navigate(taskRoute(item)),'','home-todos'));
-  todo.append(action('全部待办',()=>openSchedule({scheduleTab:3,todoScope:3}),'quick-action'));result.push(todo);
+  todo.append(action('全部待办',()=>openSchedule({scheduleTab:3,todoScope:3}),'quick-action'));primary.append(todo);
  }
- return result;
+ const agenda=card('时间线'),list=node('div','timeline');appendGrouped(list,future,item=>entry(item,()=>item.kind==='event'?navigate(taskRoute(item)):showReadOnly(item),item.kind==='calendar'?item.source||'日历':'','home-timeline'),data.date);if(!future.length)empty(list,'暂无未来安排');agenda.append(list);secondary.append(agenda);
+ const stats=node('div','stat-row');for(const [value,label,status]of [[data.review,'待确认','1'],[data.failed,'处理失败','3']]){const button=action('',()=>navigate('inbox',true,{filter:status}),'stat');button.append(node('strong','',String(value)),node('span','',label));stats.append(button);}secondary.append(stats);columns.append(primary,secondary);return [head,columns];
 }
 async function openSchedule(values){await navigate('schedule',true,values);}
 function showReadOnly(item){showDialog(item.title,body=>{
- body.append(node('p','subtle',`${fmt(item.start,item.allDay,true)} — ${fmt(item.end,item.allDay,true)}`));
+ body.append(node('p','subtle',`${displayTime(item,item.start,true)} — ${displayTime(item,item.end,true,true)}`));
  if(item.source)body.append(node('span','tag',item.source));if(item.location)body.append(node('p','raw-text',item.location));if(item.description)body.append(node('p','raw-text',item.description));
+ const state=completionAction(item,()=>{closeDialog();});if(state){const controls=node('div','detail-actions');controls.append(state);body.append(controls);}
 });}
+function groupingDate(item,inbox=false){
+ let value,allDay=false;
+ if(inbox)value=item.created;
+ else if(todoScope===2)value=item.overdueAt??candidateOverdueAt(item);
+ else if(todoScope===1||item.category==='homework')value=item.effectiveDue??item.due;
+ else{value=item.executionStart??item.start??item.due;allDay=executionAllDay(item)&&!taskLike(item.category)&&item.due==null;}
+ if(value==null)return '待安排';return allDay&&!item.system?new Date(value).toISOString().slice(0,10):phoneDate(value);
+}
+function locateHomework(id,ticket){
+ const row=[...document.querySelectorAll('.selectable-result')].find(row=>row.dataset.id===String(id));if(!row)return;
+ const locate=()=>{if(ticket!==sequence||!row.isConnected||document.hidden)return;const dock=$('.bottom').getBoundingClientRect(),height=Math.max(1,dock.top),bounds=row.getBoundingClientRect(),top=window.scrollY+bounds.top-(height-bounds.height)/2;
+ const needed=Math.max(0,top+innerHeight-document.documentElement.scrollHeight);if(needed){const spacer=node('div','locate-space');spacer.style.height=needed+'px';$('#content').append(spacer);}window.scrollTo(0,Math.max(0,top));row.classList.add('homework-located');
+ requestAnimationFrame(()=>{if(ticket!==sequence||document.hidden||!row.isConnected)return;const visible=row.getBoundingClientRect();if(visible.top>=0&&visible.bottom<=dock.top+1){homeworkLocate=null;const candidate=String(id);api('/api/homework/seen',{candidateId:candidate,revision}).then(()=>{if(unreadHomework===candidate)unreadHomework=null;}).catch(error=>toast(error.message));}setTimeout(()=>row.classList.remove('homework-located'),2240);});
+ };
+ if(document.hidden){document.addEventListener('visibilitychange',locate,{once:true});return;}requestAnimationFrame(locate);
+}
+
 function searchForm(inbox){
- const form=node('form','filters'),input=node('input');input.type='search';input.placeholder=inbox?'搜索收件':'搜索日程';input.setAttribute('aria-label',input.placeholder);input.value=search;input.maxLength=256;
+ const form=node('form','filters list-search'),input=node('input');input.type='search';input.placeholder=inbox?'搜索收件':'搜索日程';input.setAttribute('aria-label',input.placeholder);input.value=search;input.maxLength=256;
  const select=node('select');select.setAttribute('aria-label',inbox?'收件状态':'日程类型');
  for(const [value,label]of (inbox?[['','全部状态'],['1','待确认'],['2','处理中'],['3','失败'],['4','已写入日历']]:[['','全部类型'],...Object.entries(categories)])){const option=node('option','',label);option.value=value;select.append(option);}select.value=filter;
  select.addEventListener('change',()=>{filter=select.value;if(!inbox&&!taskLike(filter))todoScope=0;search=input.value.trim();refreshList();});
- const submit=node('button','','搜索');submit.type='submit';form.append(input,select,submit,action('筛选',()=>filterDialog(inbox)),action('清除筛选',()=>{restoreList();return render({local:true});}));
- form.addEventListener('submit',event=>{event.preventDefault();search=input.value.trim();filter=select.value;refreshList();});return form;
+ const submit=node('button','icon-button');submit.type='submit';submit.setAttribute('aria-label','搜索');submit.append(icon('search'));
+ form.append(input,select,actionGroup([submit,iconAction('filter','筛选',()=>filterDialog(inbox)),iconAction('x','清除筛选',()=>{restoreList();return render({local:true});})]));
+ form.addEventListener('submit',event=>{event.preventDefault();search=input.value.trim();filter=select.value;refreshList();});return preserve(form,'list-search',{inbox,search,filter});
 }
-function refreshList(){page=0;selectedRows.clear();return guard(()=>render({local:true,direction:1}));}
+function refreshList(){page=0;selectedRows.clear();selectionMode=false;homeworkLocate=null;return guard(()=>render({local:true,direction:1}));}
+function choicePanel(label,choices,value,change){
+ const dialog=$('#dialog'),body=$('#dialog-body'),title=$('#dialog-title'),parent=dialog.open&&!dialog.inert?{nodes:[...body.childNodes],title:title.textContent,scroll:dialog.scrollTop,editor:dialogEditor}:null;
+ const restore=()=>{if(!parent)return;choiceReturn=null;body.replaceChildren(...parent.nodes);title.textContent=parent.title;dialogEditor=parent.editor;dialog.scrollTop=parent.scroll;};
+ const build=(body,owner)=>{const list=node('div','choice-list');for(const [key,text]of choices){const button=action('',()=>{if(parent)restore();else closeDialog(false,owner);return change(key);});button.append(node('span','',text));button.setAttribute('aria-pressed',String(String(key)===String(value)));if(String(key)===String(value))button.append(icon('check'));list.append(button);}body.replaceChildren(list);};
+ if(parent){choiceReturn=restore;dialogEditor=null;title.textContent=label;build(body,dialogGeneration);dialog.scrollTop=0;body.querySelector('button')?.focus({preventScroll:true});}else showDialog(label,build);
+}
 function selectionBar(label,choices,value,change){
  const host=node('div','selection-host'),bar=node('div','selection-bar');bar.setAttribute('role','group');bar.setAttribute('aria-label',label);
- const highlight=node('span','selection-highlight');bar.append(highlight);
- let active;
+ const highlight=node('span','selection-highlight');bar.append(highlight);let active;
  for(const [key,text]of choices){const button=action(text,()=>{active=button;bar.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));position();change(key);});button.setAttribute('aria-pressed',String(String(key)===String(value)));if(String(key)===String(value))active=button;bar.append(button);}
- const position=()=>{if(active){highlight.style.width=active.offsetWidth+'px';highlight.style.transform=`translateX(${active.offsetLeft}px)`;}};
- host.append(bar);requestAnimationFrame(()=>{if(!bar.isConnected)return;position();const observer=new ResizeObserver(position);selectionObservers.add(observer);observer.observe(bar);});return host;
+ const compact=action('',()=>choicePanel(label,choices,value,change),'selection-current');compact.append(node('span','',choices.find(([key])=>String(key)===String(value))?.[1]||''),icon('chevron-right'));compact.setAttribute('aria-label',label);compact.hidden=true;
+ const position=()=>{if(active){highlight.style.width=active.offsetWidth+'px';highlight.style.transform=`translateX(${active.offsetLeft}px)`;}const buttons=[...bar.querySelectorAll('button')],required=buttons.reduce((sum,button)=>{const style=getComputedStyle(button),canvas=selectionBar.canvas||(selectionBar.canvas=document.createElement('canvas')),context=canvas.getContext('2d');context.font=style.font;return sum+context.measureText(button.textContent).width+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight);},10);const small=required>host.clientWidth;bar.classList.toggle('selection-measure',small);compact.hidden=!small;};
+ host.append(bar,compact);requestAnimationFrame(()=>{if(!bar.isConnected)return;position();const observer=new ResizeObserver(position);observer.host=host;selectionObservers.add(observer);observer.observe(host);});return host;
 }
+
 function monthAfter(date,amount=1){const d=new Date(date.slice(0,8)+'01T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+amount);return d.toISOString().slice(0,10);}
 function presetWindow(value){const today=phoneDate();if(value===1)return [today,addCivilDays(today,1)];if(value===2){const from=addCivilDays(today,-(civilWeekday(today)+6)%7);return [from,addCivilDays(from,7)];}if(value===3){const from=today.slice(0,8)+'01';return [from,monthAfter(from)];}return ['',''];}
 function filterDialog(inbox){showDialog('筛选'+(inbox?'收件':'日程'),(body,owner)=>{
- let type=inbox?inboxCategory:filter,pub=publication,todo=todoScope,from=rangeFrom,until=rangeUntil,preset=rangePreset,source=listSource,tab=scheduleTab;
+ let type=inbox?inboxCategory:filter,status=filter,pub=publication,todo=todoScope,from=rangeFrom,until=rangeUntil,preset=rangePreset,source=listSource,tab=scheduleTab;
  const draw=()=>{body.replaceChildren();const add=(label,choices,value,change,disabled=false)=>{const bar=selectionBar(label,choices,value,value=>{change(value);draw();});if(disabled)bar.querySelectorAll('button').forEach(button=>button.disabled=true);body.append(node('h3','filter-label',label),bar);};
  if(!inbox){add('日期',[[0,'全部'],[1,'今天'],[2,'本周'],[3,'本月'],[5,'自选']],preset,value=>{preset=Number(value);if(preset!==5)[from,until]=presetWindow(preset);if(preset)tab=3;});
  if(from&&until){const row=node('div','range-step');const shift=direction=>{if(preset===3){from=monthAfter(from,direction);until=monthAfter(from);}else{const count=Math.round((Date.parse(until)-Date.parse(from))/86400000);from=addCivilDays(from,direction*count);until=addCivilDays(until,direction*count);preset=5;}tab=3;draw();};row.append(action('上一段',()=>shift(-1)),node('span','',`${from} — ${addCivilDays(until,-1)}`),action('下一段',()=>shift(1)));body.append(row);}
  if(preset===5){const dates=node('div','two-fields'),a=node('div'),b=node('div'),start=field(a,'起始日期',from,'date','range-from'),end=field(b,'结束日期',until?addCivilDays(until,-1):'','date','range-until');dates.append(a,b);body.append(dates);start.addEventListener('change',()=>{from=start.value;tab=3;});end.addEventListener('change',()=>{until=end.value?addCivilDays(end.value,1):'';tab=3;});}}
+ if(inbox)add('状态',[['','全部状态'],['1','待确认'],['2','处理中'],['3','失败'],['4','已写入日历']],status,value=>status=value);
  add('类型',[['','全部'],...Object.entries(categories)],source&&!inbox?'event':type,value=>{type=value;if(!taskLike(type))todo=0;},!inbox&&source===1);
  if(!inbox){add('待办',[[0,'不限'],[1,'今日截止'],[2,'已逾期'],[3,'未完成']],source?0:todo,value=>{todo=Number(value);if(todo){if(type!=='homework')type='task';tab=3;}},source===1);add('日历状态',[[0,'全部'],[3,'未写入'],[1,'待确认'],[2,'已写入']],source?2:pub,value=>pub=Number(value),source===1);add('来源',[[0,'拾时'],[1,'系统日程']],source,value=>{source=Number(value);if(source){type='';pub=todo=0;}});}
- const buttons=node('div','actions');buttons.append(action('应用筛选',()=>{if(!inbox&&((!from)!==(!until)||from&&until<=from))throw new Error('请选择完整且有效的日期范围');if(inbox)inboxCategory=type;else{filter=type;publication=pub;todoScope=todo;rangeFrom=from;rangeUntil=until;rangePreset=preset;listSource=source;scheduleTab=tab;}closeDialog(false,owner);return refreshList();},'primary'));body.append(buttons);icons();};draw();
+ const buttons=node('div','actions');buttons.append(action('应用筛选',()=>{if(!inbox&&((!from)!==(!until)||from&&until<=from))throw new Error('请选择完整且有效的日期范围');if(inbox){inboxCategory=type;filter=status;}else{filter=type;publication=pub;todoScope=todo;rangeFrom=from;rangeUntil=until;rangePreset=preset;listSource=source;scheduleTab=tab;}closeDialog(false,owner);return refreshList();},'primary'));body.append(buttons);icons();};draw();
 });}
+function listParams(inbox,includeIds=false){const params=new URLSearchParams({page,search});const remembered=inbox?inboxOldest:scheduleOrders.get(scheduleTab);if(remembered!==undefined)params.set('oldestFirst',remembered);if(filter)params.set(inbox?'status':'category',filter);if(inbox){if(inboxCategory)params.set('category',inboxCategory);}else{params.set('tab',scheduleTab);params.set('publication',publication);params.set('todo',todoScope);params.set('source',listSource);if(rangeFrom&&rangeUntil){params.set('from',rangeFrom);params.set('until',rangeUntil);}if(homeworkLocate)params.set('locate',homeworkLocate);}if(includeIds)params.set('includeIds','true');return params;}
 async function listPage(ticket){
- const inbox=route==='inbox',params=new URLSearchParams({page,search});
- const remembered=inbox?inboxOldest:scheduleOrders.get(scheduleTab);if(remembered!==undefined)params.set('oldestFirst',remembered);
- if(filter)params.set(inbox?'status':'category',filter);
- if(inbox){if(inboxCategory)params.set('category',inboxCategory);}else{params.set('tab',scheduleTab);params.set('publication',publication);params.set('todo',todoScope);params.set('source',listSource);if(rangeFrom&&rangeUntil){params.set('from',rangeFrom);params.set('until',rangeUntil);}}
- const path=`/api/${route}?${params}`,data=await api(path);if(ticket!==sequence)return [];revision=data.revision;page=data.page;
+ const inbox=route==='inbox',path=`/api/${route}?${listParams(inbox)}`,data=await api(path);if(ticket!==sequence)return [];revision=data.revision;page=data.page;if(homeworkLocate&&data.located!==homeworkLocate)homeworkLocate=null;
  if(inbox)inboxOldest=data.oldestFirst;else scheduleOrders.set(scheduleTab,data.oldestFirst);
- const toolbar=node('div','bulk-toolbar'),selection=node('span','subtle'),write=action('写入所选',()=>confirmAction('批量写入日历','只写入信息完整的事项，其余保留。',async()=>{const result=await api('/api/calendar/publish-selected',{ids:[...selectedRows].map(String),inbox,revision});selectedRows.clear();await render({local:true});toast(result.summary);}), 'primary');
- const remove=action('删除所选',()=>confirmAction('删除所选',inbox?'删除所选原文、日程及关联日历事件，公共 Downloads 文件保留。':'删除所选日程及关联日历事件；重复日程会删除整个系列，收件原文保留。',async()=>{await api('/api/selection/delete',{ids:[...selectedRows].map(String),inbox,revision});selectedRows.clear();await render({local:true});}),'danger');
- const update=()=>{selection.textContent=`已选 ${selectedRows.size} 条`;write.disabled=!selectedRows.size||!session.calendarAllowed;remove.disabled=!selectedRows.size;};
- const all=action('选择本页',()=>{const ids=data.items.map(item=>item.id),full=ids.every(id=>selectedRows.has(id));for(const id of ids){if(full)selectedRows.delete(id);else selectedRows.add(id);}for(const box of list.querySelectorAll('input[type=checkbox]'))box.checked=selectedRows.has(Number(box.value));update();});
- const matching=action('全选筛选结果',async()=>{const snapshot=await api(path+'&includeIds=true');if(snapshot.revision!==revision)throw new Error('数据已更新，请刷新后重试');selectedRows=new Set(snapshot.ids);for(const box of list.querySelectorAll('input[type=checkbox]'))box.checked=selectedRows.has(Number(box.value));update();});
- toolbar.append(all,matching,selection,write,remove);update();
- const list=node('div','result-list');
- let day='';for(const item of data.items){const date=itemDate(item);if(date!==day){list.append(node('h3','list-day',date));day=date;}const row=node('article','selectable-result'),box=node('input');row.dataset.key=`${inbox?'task':'candidate'}-${item.id}`;box.type='checkbox';box.value=item.id;box.checked=selectedRows.has(item.id);box.setAttribute('aria-label','选择 '+(inbox?item.text.slice(0,40):item.title));box.addEventListener('change',()=>{if(box.checked)selectedRows.add(item.id);else selectedRows.delete(item.id);update();});
- const button=action('',()=>data.system?showReadOnly(item):navigate(inbox?`task/${item.id}`:taskRoute(item)),'card glass');
+ const list=node('div','result-list'),toolbar=node('div','bulk-toolbar'),count=node('span','list-count'),controls=node('div','selection-actions');
+ const clear=()=>{selectedRows.clear();selectionMode=false;return render({local:true});};
+ const update=()=>{count.textContent=selectionMode?`已选 ${selectedRows.size} 条`:`共 ${data.total} 条${inbox?'收件':'日程'}`;toolbar.classList.toggle('selecting',selectionMode);for(const row of list.querySelectorAll('.selectable-result')){const selected=selectedRows.has(Number(row.dataset.id));row.classList.toggle('selected',selected);const circle=row.querySelector('.selection-circle');if(circle){circle.hidden=!selectionMode;circle.replaceChildren(icon(selected?'check':'circle'));circle.setAttribute('aria-pressed',String(selected));}row.querySelector('.completion-action')?.toggleAttribute('hidden',selectionMode);}drawActions();};
+ const selectPage=()=>{const ids=data.items.map(item=>item.id),full=ids.length&&ids.every(id=>selectedRows.has(id));for(const id of ids){if(full)selectedRows.delete(id);else selectedRows.add(id);}update();};
+ const selectMatching=async()=>{const snapshot=await api(path+'&includeIds=true');if(ticket!==sequence)return;if(snapshot.revision!==revision)throw new Error('数据已更新，请刷新后重试');if(snapshot.ids.length>500)throw new Error('每次最多选择 500 条，请缩小筛选范围');selectedRows=new Set(snapshot.ids);update();};
+ const publish=()=>{if(!selectedRows.size)throw new Error('请先选择记录');confirmAction('批量写入日历','只写入信息完整的事项，其余保留。',async()=>{const result=await api('/api/calendar/publish-selected',{ids:[...selectedRows].map(String),inbox,revision});selectedRows.clear();selectionMode=false;await render({local:true});toast(result.summary);});};
+ const remove=()=>{if(!selectedRows.size)throw new Error('请先选择记录');confirmAction('删除所选',inbox?'删除所选原文、日程及关联日历事件，公共 Downloads 文件保留。':'删除所选日程及关联日历事件；重复日程会删除整个系列，收件原文保留。',async()=>{await api('/api/selection/delete',{ids:[...selectedRows].map(String),inbox,revision});selectedRows.clear();selectionMode=false;await render({local:true});});};
+ function drawActions(){controls.replaceChildren();if(data.system)return;if(!selectionMode){controls.append(action('选择',()=>{selectionMode=true;update();}));return;}const choices=[['page','本页'],['all','全选'],['write','写入'],['delete','删除']],work={page:selectPage,all:selectMatching,write:publish,delete:remove};const actions=action('操作',()=>choicePanel('操作',choices,'',key=>work[key]()),'batch-menu');controls.append(actions);const direct=node('div','batch-direct');for(const [key,label]of choices){const button=action(label,work[key],key==='delete'?'danger':'');if(key==='write')button.disabled=!selectedRows.size||!session.calendarAllowed;if(key==='delete')button.disabled=!selectedRows.size;direct.append(button);}controls.append(direct,action('取消',clear));}
+ toolbar.append(count,controls);
+ let day='';for(const item of data.items){const date=groupingDate(item,inbox);if(date!==day){list.append(node('h3','list-day',date));day=date;}const row=node('article','selectable-result');row.dataset.key=`${inbox?'task':'candidate'}-${item.id}`;row.dataset.id=String(item.id);
+ const toggle=()=>{selectionMode=true;if(selectedRows.has(item.id))selectedRows.delete(item.id);else{if(selectedRows.size>=500)throw new Error('每次最多选择 500 条');selectedRows.add(item.id);}update();};
+ const button=action('',()=>{if(suppress)return;if(selectionMode&&!data.system){toggle();return;}return data.system?showReadOnly(item):navigate(inbox?`task/${item.id}`:taskRoute(item));},'card glass');
+ let press=null,suppress=false;const cancelPress=()=>{clearTimeout(press?.timer);press=null;};if(!data.system){button.addEventListener('pointerdown',event=>{if(event.button!==0||selectionMode)return;cancelPress();press={x:event.clientX,y:event.clientY,timer:setTimeout(()=>{suppress=true;guard(toggle);press=null;},500)};});button.addEventListener('pointermove',event=>{if(press&&Math.hypot(event.clientX-press.x,event.clientY-press.y)>8)cancelPress();});button.addEventListener('pointerup',()=>{cancelPress();if(suppress)setTimeout(()=>suppress=false,0);});button.addEventListener('pointercancel',()=>{cancelPress();suppress=false;});button.addEventListener('contextmenu',event=>event.preventDefault());}
  if(inbox){button.append(node('span','status-label',statusLabel(item.status)),node('h3','',item.text.slice(0,120)||'附件记录'),node('p','subtle',item.error||item.source));const meta=node('div','meta');meta.append(node('span','',fmt(item.created,false,true)),icon('chevron-right'));button.append(meta);}
- else{button.append(node('span','status-label',categories[item.category]+(item.completed?' · 已完成':item.calendarLinked?' · 已写入日历':item.needsConfirmation?' · 待确认':'')),node('h3','',item.title),node('p','subtle',executionWhen(item,true)));if(item.effectiveDue!=null)button.append(node('p','subtle',`截止 · ${fmt(item.effectiveDue,false,true,item.zone)}`));if(item.location)button.append(node('p','subtle',item.location));}
- if(item.recurrence)button.append(node('span','tag',item.repeatLabel));row.append(button);if(!data.system){row.append(box);if(!inbox){const state=completionAction(item);if(state)row.append(state);}}list.append(row);}
- if(!data.items.length)empty(list,inbox?'没有符合条件的收件':'没有符合条件的日程');
+ else{button.append(node('span','status-label',(data.system?item.source||'系统日程':categories[item.category])+(item.completed?' · 已完成':item.calendarLinked?' · 已写入日历':item.needsConfirmation?' · 待确认':'')),node('h3','',item.title),node('p','subtle',executionWhen(item,true)));if(item.effectiveDue!=null)button.append(node('p','subtle',`截止 · ${fmt(item.effectiveDue,false,true,item.zone)}`));if(item.location)button.append(node('p','subtle',item.location));}
+ if(item.recurrence)button.append(node('span','tag',item.repeatLabel));row.append(button);if(!data.system){const circle=iconAction('circle','选择 '+(inbox?item.text.slice(0,40):item.title),toggle);circle.classList.add('selection-circle');row.append(circle);}if(!inbox){const state=completionAction(item,null,true);if(state)row.append(state);}list.append(row);}
+ update();if(!data.items.length)empty(list,inbox?'没有符合条件的收件':'没有符合条件的日程');
  const order=action(data.oldestFirst?'最早优先':'最近优先',()=>{if(inbox)inboxOldest=!data.oldestFirst;else scheduleOrders.set(scheduleTab,!data.oldestFirst);return refreshList();});
- const result=[heading(inbox?'收件箱':'日程',`共 ${data.total} 条${inbox?'收件':'日程'}`,[order,...(inbox?[]:[action('查看日历',()=>navigate('calendar'))])]),searchForm(inbox)];
- if(!inbox)result.push(selectionBar('日程范围',[[0,'待处理'],[1,'待安排'],[2,'历史'],[3,'全部']],scheduleTab,value=>{scheduleTab=Number(value);refreshList();}));
+ const refresh=iconAction('refresh-cw','刷新作业',refreshHomework);refresh.dataset.homeworkRefresh='';refresh.disabled=!!session.homeworkRefreshing;refresh.classList.toggle('refreshing',!!session.homeworkRefreshing);
+ const result=[heading(inbox?'收件箱':'日程','',[order,...(!inbox&&filter==='homework'?[refresh]:[])]),searchForm(inbox)];
+ if(!inbox)result.push(preserve(selectionBar('日程范围',[[0,'待处理'],[1,'待安排'],[2,'历史'],[3,'全部']],scheduleTab,value=>{scheduleTab=Number(value);refreshList();}),'schedule-tabs',scheduleTab));
  const tags=[inbox?categories[inboxCategory]:categories[filter],!inbox&&listSource?'系统日程':'',!inbox&&['','待确认','已写入','未写入'][publication],!inbox&&['','今日截止','已逾期','未完成'][todoScope],!inbox&&(rangeFrom||data.from)&&`${rangeFrom||data.from} — ${addCivilDays(rangeUntil||data.until,-1)}`].filter(Boolean);
- if(tags.length)result.push(node('p','filter-summary',tags.join(' · ')));if(!data.system)result.push(toolbar);result.push(list,pagination(data));return result;
+ if(tags.length)result.push(node('p','filter-summary',tags.join(' · ')));result.push(toolbar,list,pagination(data));return result;
 }
+
 function pagination(data){const total=Math.max(1,Math.ceil(data.total/data.pageSize)),row=node('div','pagination'),turn=async direction=>{page+=direction;await render({local:true,direction});window.scrollTo({top:0,behavior:reducedMotion.matches?'instant':'smooth'});},previous=action('',()=>turn(-1)),next=action('',()=>turn(1));previous.append(icon('chevron-left'));next.append(icon('chevron-right'));previous.setAttribute('aria-label','上一页');next.setAttribute('aria-label','下一页');previous.disabled=page<=0;next.disabled=page+1>=total;row.append(previous,node('span','',`${page+1} / ${total}`),next);return row;}
-function showDialog(title,build){const owner=++dialogGeneration;dialogEditor=null;closeSelect(false,true);clearDialogFeedback();const dialog=$('#dialog'),wasOpen=dialog.open;dialog.inert=false;$('#dialog-title').textContent=title;$('#dialog-body').replaceChildren();build($('#dialog-body'),owner);if(!dialog.open)dialog.showModal();else dialog.querySelector('input,textarea,button')?.focus({preventScroll:true});icons();motion(dialog,[{opacity:wasOpen?1:0,transform:wasOpen?'translateY(0) scale(1)':'translateY(10px) scale(.99)'},{opacity:1,transform:'translateY(0) scale(1)'}]);return owner;}
+function showDialog(title,build){const owner=++dialogGeneration;dialogEditor=null;choiceReturn=null;closeSelect(false,true);clearDialogFeedback();const dialog=$('#dialog'),wasOpen=dialog.open;dialog.inert=false;$('#dialog-title').textContent=title;$('#dialog-body').replaceChildren();build($('#dialog-body'),owner);if(!dialog.open)dialog.showModal();else dialog.querySelector('input,textarea,button')?.focus({preventScroll:true});icons();motion(dialog,[{opacity:wasOpen?1:0,transform:wasOpen?'translateY(0) scale(1)':'translateY(10px) scale(.99)'},{opacity:1,transform:'translateY(0) scale(1)'}]);return owner;}
 $('#close-dialog').addEventListener('click',requestDialogClose);$('#dialog').addEventListener('cancel',event=>{event.preventDefault();requestDialogClose();});
 // Only a gesture that starts and ends on the actual backdrop dismisses the dialog.
 let backdropPointer=null;
@@ -400,7 +452,7 @@ function capture(){showDialog('记录',(body,owner)=>{
   if(stale){saved.revision=(await api(`/api/task?id=${saved.id}`)).revision;stale=false;}saved.revision=await attachments.upload(saved.id,saved.revision);
   if(checkbox.checked)await api('/api/task/process',{id:String(saved.id),revision:saved.revision});
   if(ownsDialog(owner)){closeDialog(false,owner);await navigate(`task/${saved.id}`);}
- }catch(error){if(error.status===409)stale=true;if(saved&&ownsDialog(owner)&&!buttons.querySelector('.view-saved'))buttons.append(action('查看已保存记录',async()=>{closeDialog(false,owner);await navigate(`task/${saved.id}`);},'view-saved'));throw error;}finally{working=false;attachmentWork--;submit.disabled=false;attachments.lock(false);}});});body.append(form);
+ }catch(error){if(error.status===409)stale=true;if(saved&&ownsDialog(owner)&&!buttons.querySelector('.view-saved'))buttons.append(action('查看已保存记录',async()=>{closeDialog(false,owner);await navigate(`task/${saved.id}`);},'view-saved'));throw error;}finally{working=false;attachmentWork--;submit.disabled=false;attachments.lock(false);}});});dialogEditor={form,dirty:()=>!saved&&!!input.value.trim()||attachments.chosen.some(item=>!item.done),working:()=>working};body.append(form);
 });}
 function appendAttachments(id,version){showDialog('添加附件',(body,owner)=>{const attachments=attachmentPicker(body),save=action('上传附件',async()=>{if(!attachments.chosen.some(item=>!item.done))throw new Error('请先选择附件');save.disabled=true;attachments.lock(true);attachmentWork++;try{version=await attachments.upload(id,version);if(ownsDialog(owner)){closeDialog(false,owner);await render();}}finally{attachmentWork--;save.disabled=false;attachments.lock(false);}},'primary');const buttons=node('div','actions');buttons.append(save);body.append(buttons);});}
 function disclosure(label,text){const details=node('details'),summary=node('summary','subtle',label),panel=node('div','disclosure-body');panel.append(node('p','raw-text',text));details.append(summary,panel);let expanded=false;summary.addEventListener('click',event=>{event.preventDefault();const start=details.open?panel.getBoundingClientRect().height:0;expanded=!expanded;details.open=true;summary.setAttribute('aria-expanded',String(expanded));const end=expanded?panel.scrollHeight:0,animation=motion(panel,[{height:start+'px',opacity:start?1:0,overflow:'hidden'},{height:end+'px',opacity:expanded?1:0,overflow:'hidden'}],160);if(!animation){details.open=expanded;return;}animation.finished.then(()=>{if(activeMotion.get(panel)===animation&&!expanded)details.open=false;}).catch(()=>{});});return details;}
@@ -409,7 +461,7 @@ const detailPositions=new Map();
 function detailPosition(id){if(!detailPositions.has(id)){detailPositions.set(id,{candidate:null,scroll:new Map()});if(detailPositions.size>10)detailPositions.delete(detailPositions.keys().next().value);}return detailPositions.get(id);}
 function rememberDetailScroll(){const workspace=$('.task-workspace');if(!workspace)return;const saved=detailPosition(Number(workspace.dataset.task));saved.listScroll=workspace.querySelector('.master-list')?.scrollTop||0;saved.scroll.set(saved.candidate,window.scrollY);}
 function candidateDeadline(item){return item.effectiveDue??item.due??executionStart(item)??null;}
-function candidateOverdueAt(item){if(!taskLike(item.category)||item.record)return null;const execution=item.end??item.start??null,due=candidateDeadline(item);return execution===null?due:due===null?execution:Math.min(execution,due);}
+function candidateOverdueAt(item){if(item.overdueAt!=null)return item.overdueAt;if(!taskLike(item.category)||item.record)return null;const execution=item.end??item.start??null,due=candidateDeadline(item);return execution===null?due:due===null?execution:Math.min(execution,due);}
 function urgencyCandidates(items){return [...items].sort((a,b)=>{const complete=Number(!!a.completed)-Number(!!b.completed);if(complete)return complete;const first=candidateDeadline(a)??Infinity,second=candidateDeadline(b)??Infinity;return(first===second?0:first-second)||a.id-b.id;});}
 function candidateStatus(item){const due=candidateDeadline(item),overdue=candidateOverdueAt(item);if(item.completed)return {key:'done',text:'已完成',icon:'check'};if(overdue!==null&&overdue<Date.now())return {key:'overdue',text:'已逾期',icon:'clock-alert'};if(taskLike(item.category)&&due!==null&&due-Date.now()<=86400000)return {key:'soon',text:'即将截止',icon:'clock-alert'};return {key:'open',text:item.needsConfirmation?'待确认':taskLike(item.category)?'未完成':due===null?'待安排':'已安排',icon:'circle'};}
 function taskOriginal(data,id){
@@ -490,10 +542,10 @@ async function taskPage(id,ticket){
  if(saved.detailOpen??params.has('candidate_id'))workspace.classList.add('show-detail');
  workspace.append(master,reader);
  requestAnimationFrame(()=>{if(!workspace.isConnected||ticket!==sequence)return;sync();const selected=rows.get(active?.id);if(selected){list.scrollTop=saved.listScroll||0;const top=selected.offsetTop-list.offsetTop;if(top<list.scrollTop||top+selected.offsetHeight>list.scrollTop+list.clientHeight)list.scrollTop=top-(list.clientHeight-selected.offsetHeight)/2;}});
- const back=action('',()=>{const previous=[...routeState.keys()].reverse().find(key=>['home','inbox','schedule','calendar'].includes(key));return navigate(previous||'inbox');},'icon-button');back.append(icon('arrow-left'));back.setAttribute('aria-label','返回列表');
+ const back=action('',()=>{const previous=[...routeState.keys()].reverse().find(key=>['home','inbox','schedule'].includes(key));return navigate(previous||'inbox');},'icon-button');back.append(icon('arrow-left'));back.setAttribute('aria-label','返回列表');
  return[heading('记录详情',task.source+' · '+fmt(task.created,false,true),[back]),workspace];
 }
-function editRaw(task){showDialog('修改原文',(body,owner)=>{const form=node('form'),input=field(form,'原文',task.text,'textarea','text');input.required=true;input.maxLength=100000;const actions=node('div','actions'),submit=node('button','primary','保存');submit.type='submit';actions.append(submit);form.append(actions);form.addEventListener('submit',event=>{event.preventDefault();guard(async()=>{submit.disabled=true;try{await api('/api/task/edit',{id:String(task.id),revision,text:input.value});closeDialog(false,owner);await render();}finally{submit.disabled=false;}});});body.append(form);});}
+function editRaw(task){showDialog('修改原文',(body,owner)=>{const form=node('form'),input=field(form,'原文',task.text,'textarea','text');input.required=true;input.maxLength=100000;const actions=node('div','actions'),submit=node('button','primary','保存');submit.type='submit';actions.append(submit);form.append(actions);form.addEventListener('submit',event=>{event.preventDefault();guard(async()=>{submit.disabled=true;try{await api('/api/task/edit',{id:String(task.id),revision,text:input.value});closeDialog(false,owner);await render();}finally{submit.disabled=false;}});});dialogEditor={form,dirty:()=>input.value!==task.text,working:()=>submit.disabled};body.append(form);});}
 function alignEndAfterStart(start,end,allDay,zone){
  if(allDay||!start.value||!end.value||!start.validity.valid||!end.validity.valid)return;
  try{const begin=instant(start.value,false,zone),finish=instant(end.value,false,zone);if(finish<=begin)end.value=localValue(begin+SHIFTED_START_INTERVAL_MILLIS,false,zone);}catch{ /* Keep incomplete or DST-gap values for explicit validation on save. */ }
@@ -564,70 +616,14 @@ function candidateForm(item,finish,cancel){
  form.addEventListener('submit',event=>{event.preventDefault();guard(()=>commit(false));});
  return {form,dirty:()=>values()!==original,working:()=>submitting};
 }
-async function timetablePage(ticket){const data=await api(`/api/timetable?date=${dateISO(week)}`);if(ticket!==sequence)return [];termRevision=data.revision;selectedTerm=data.selected;const filters=node('div','filters timetable-filters');filters.append(action('上一周',()=>{week.setDate(week.getDate()-7);return render({local:true,direction:-1});}),action('本周',()=>{week=new Date();return render({local:true,direction:1});}),action('下一周',()=>{week.setDate(week.getDate()+7);return render({local:true,direction:1});}));const wrapper=node('div','week-wrapper'),grid=node('div','week-grid'),monday=new Date(week);monday.setDate(monday.getDate()-(monday.getDay()+6)%7);for(let i=0;i<7;i++){const date=new Date(monday);date.setDate(date.getDate()+i);const day=node('section','week-day');day.append(node('h3','day-label',['周一','周二','周三','周四','周五','周六','周日'][i]+` · ${date.getDate()}`));for(const item of data.items.filter(item=>item.start.slice(0,10)===dateISO(date)).sort((a,b)=>a.start.localeCompare(b.start))){const button=action('',()=>showDialog(item.title,body=>body.append(node('p','subtle',`${item.start.replace('T',' ')} — ${item.end.replace('T',' ')}`),node('p','raw-text',item.location),node('p','raw-text',item.description))),'course');button.append(node('small','',item.allDay?'全天':item.start.slice(11,16)+' — '+item.end.slice(11,16)),node('strong','',item.title),node('small','',item.location));day.append(button);}grid.append(day);}wrapper.append(grid);const actions=[action('导入 ICS',importIcs,'primary')];if(data.terms.length){actions.push(action('下载原始 ICS',()=>{const link=node('a');link.href='/api/ics?term='+encodeURIComponent(selectedTerm);link.download='chrona-timetable.ics';link.click();}),action('删除学期',()=>confirmAction('删除学期','此学期课表将从手机及下一次同步中移除。',async()=>{await api('/api/timetable',{action:'delete',term:selectedTerm,revision:termRevision});selectedTerm='';await render();}),'danger'));}const content=[heading(data.terms.find(term=>term.id===selectedTerm)?.name||'课表','',actions),filters];if(data.terms.length)content.push(wrapper);else content.push(node('p','empty','导入 ICS 课表，安排随手机同步'));return content;}
-function importIcs(){
- showDialog('导入课表',(body,owner)=>{
-  const form=node('form'),name=field(form,'名称','导入的课表','text','name');name.maxLength=160;name.required=true;
-  const input=field(form,'ICS 文件','','file','file');input.accept='.ics,text/calendar';input.required=true;
-  const actions=node('div','actions'),submit=node('button','primary','导入');submit.type='submit';actions.append(submit);form.append(actions);
-  form.addEventListener('submit',event=>{
-   event.preventDefault();guard(async()=>{
-    const file=input.files[0];if(!file||file.size>900000)throw new Error('请选择小于 900 KB 的 ICS 文件');submit.disabled=true;
-    try{
-     const incoming={action:'preview',name:name.value,source:await file.text(),revision:termRevision};
-     const preview=await api('/api/timetable',incoming);
-     if(!ownsDialog(owner))return;const commit=async(commitOwner=owner)=>{await api('/api/timetable',{...incoming,action:'import'});closeDialog(false,commitOwner);await render();};
-     if(preview.replaced.length)confirmAction('替换已有学期',`将替换 ${preview.replaced.join('、')} 的课表；其他学期保留。`,commit);
-     else await commit();
-    }finally{submit.disabled=false;}
-   });
-  });body.append(form);
- });
-}
-let mergeChecking=false;
-const shownMergeGroups=new Set(JSON.parse(sessionStorage.getItem('chrona-shown-merges')||'[]'));
-const mergeSignature=group=>{const {canAcknowledge,acknowledged,...candidate}=group.candidate;return JSON.stringify({...group,candidate});};
-async function detectMerges(){
- if(mergeChecking||!session||pending||attachmentWork||$('#dialog').open||document.hidden)return;
- mergeChecking=true;
- const requestedDialog=dialogGeneration,requestedRoute=route;
- try{
-  const preview=await api('/api/merge/preview');
-  if(requestedDialog!==dialogGeneration||requestedRoute!==route||$('#dialog').open||document.hidden)return;
-  const fresh=preview.groups.filter(group=>!shownMergeGroups.has(mergeSignature(group)));
-  if(!fresh.length)return;
-  for(const group of fresh)shownMergeGroups.add(mergeSignature(group));
-  sessionStorage.setItem('chrona-shown-merges',JSON.stringify([...shownMergeGroups]));
-  showMergePreview({...preview,groups:fresh,removed:fresh.reduce((count,group)=>count+group.sources.length-1,0)},true);
- }finally{mergeChecking=false;}
-}
-async function previewMerges(){
- const requestedDialog=dialogGeneration,requestedRoute=route;
- const preview=await api('/api/merge/preview');
- if(requestedDialog!==dialogGeneration||requestedRoute!==route)return;
- showMergePreview(preview,false);
-}
-function showMergePreview(preview,automatic){
- let submitting=false;
- const selected=new Set(),pageSize=12,show=(index=0)=>showDialog(automatic?'发现重复日程':'合并重复日程',(body,owner)=>{
-  if(!preview.groups.length){body.append(node('p','empty','没有可合并的重复日程'));return;}
-  body.append(node('h3','',`${preview.groups.length} 组 · 合并 ${preview.removed} 份重复日程`));
-  for(const group of preview.groups.slice(index*pageSize,(index+1)*pageSize)){const candidate=group.candidate,block=card(candidate.title),label=node('label','checkbox'),choice=node('input');choice.type='checkbox';choice.checked=selected.has(String(candidate.id));choice.setAttribute('aria-label','选择合并 '+candidate.title);choice.addEventListener('change',()=>{if(choice.checked)selected.add(String(candidate.id));else selected.delete(String(candidate.id));update();});label.append(choice,document.createTextNode('合并此组'));block.prepend(label);block.append(node('p','subtle',`${fmt(candidate.start,candidate.allDay,true,candidate.zone)} — ${fmt(candidate.end,candidate.allDay,true,candidate.zone)} · ${candidate.zone}`),node('p','raw-text',candidate.location),node('p','raw-text',candidate.description),node('p','subtle',`${categories[candidate.category]}${candidate.allDay?' · 全天':''} · 提醒 ${candidate.reminder??'关闭'}${candidate.needsConfirmation?' · 待确认':' · 已确认'}`));
-   for(const source of group.sources)block.append(action(`${String(source.candidateId)===String(candidate.id)?'保留':'合并'} · ${source.title}\n${source.source}${source.location?' · '+source.location:''}`,()=>{closeDialog();return navigate('task/'+source.taskId+'?candidate_id='+encodeURIComponent(source.candidateId));}));body.append(block);
-  }
-  if(preview.groups.length>pageSize){const pages=node('div','pagination'),previous=action('上一页',()=>show(index-1)),next=action('下一页',()=>show(index+1));previous.disabled=index===0;next.disabled=(index+1)*pageSize>=preview.groups.length;pages.append(previous,node('span','',`${index+1} / ${Math.ceil(preview.groups.length/pageSize)}`),next);body.append(pages);}
-  const actions=node('div','actions'),confirm=action('合并所选',async()=>{if(submitting)return;submitting=true;body.querySelectorAll('button,input').forEach(control=>control.disabled=true);try{const result=await api('/api/candidate/merge',{revision:preview.revision,groups:[...selected]});closeDialog(false,owner);toast(`已合并 ${result.removed} 份重复日程`,owner);await render();}catch(error){actions.append(action('重新扫描',previewMerges));throw error;}},'primary');
-  const update=()=>{const count=preview.groups.filter(group=>selected.has(String(group.candidate.id))).reduce((sum,group)=>sum+group.sources.length-1,0);confirm.textContent=count?`确认合并 ${count} 份`:'合并所选';confirm.disabled=submitting||!count;};update();actions.append(action('暂不合并',()=>closeDialog(false,owner)),confirm);body.append(actions);
- });show();
-}
 
-function completionAction(item,after=null){
+function completionAction(item,after=null,cardOnly=false){
  if(item.recurrence&&item.occurrenceAt==null)return null;
- if(item.record||!taskLike(item.category)&&!item.canAcknowledge)return null;
+ if(item.record||!taskLike(item.category)&&(!item.canAcknowledge||cardOnly&&item.needsConfirmation))return null;
  const task=taskLike(item.category),selected=task?item.completed:item.acknowledged;
  const label=task?(selected?'恢复'+categories[item.category]:'标记完成'):(selected?'取消确认活动':'确认活动');
- const button=action('',async()=>{const result=item.recurrence&&task?await changeRepeat(item,selected?'reopen':'complete',{original:item.occurrenceAt}):await api(task?'/api/candidate/complete':'/api/candidate/acknowledge',{id:String(item.taskId),candidateId:String(item.id),revision,...(item.occurrenceAt!=null?{occurrenceAt:item.occurrenceAt}:{}),...(task?{completed:!selected}:{acknowledged:!selected})});await render({local:true});if(after)await after(result);if(result.warning)toast(result.warning);},'icon-button completion-action');
- button.setAttribute('aria-label',label);button.title=label;button.setAttribute('aria-pressed',String(!!selected));button.append(icon('check'));button.disabled=!!item.submitted&&!!item.completed;return button;
+ const button=action('',async()=>{button.disabled=true;try{const result=item.system?await api('/api/agenda/acknowledge',{id:item.externalId,start:item.start,acknowledged:!selected}):item.recurrence&&task?await changeRepeat(item,selected?'reopen':'complete',{original:item.occurrenceAt}):await api(task?'/api/candidate/complete':'/api/candidate/acknowledge',{id:String(item.taskId),candidateId:String(item.id),revision,...(item.occurrenceAt!=null?{occurrenceAt:item.occurrenceAt}:{}),...(task?{completed:!selected}:{acknowledged:!selected})});await render({local:true});if(after)await after(result);if(result.warning)toast(result.warning);}finally{button.disabled=false;}},'icon-button completion-action');
+ button.setAttribute('aria-label',label);button.title=label;button.setAttribute('aria-pressed',String(!!selected));button.append(icon(selected?'check':task?((item.overdueAt??candidateOverdueAt(item))<Date.now()&&(item.overdueAt??candidateOverdueAt(item))!=null?'clock-alert':'clock'):'check'));button.disabled=!!item.submitted&&!!item.completed;return button;
 }
 async function changeRepeat(item,action,extra={}){const result=await api('/api/candidate/repeat',{id:String(item.taskId),candidateId:String(item.id),baseline:item.baseline,revision,action,...extra});revision=result.revision;return result;}
 function repeatRuleDialog(item){showDialog('设置重复',(body,owner)=>{
@@ -637,6 +633,7 @@ function repeatRuleDialog(item){showDialog('设置重复',(body,owner)=>{
  const ending=field(form,'结束方式','','select','repeat-ending');for(const [value,label]of [['never','持续重复'],['until','截止日期'],['count','重复次数']]){const option=node('option','',label);option.value=value;ending.append(option);}const extra=node('div');form.append(extra);let until=null,count=null;const endFields=()=>{extra.replaceChildren();until=count=null;if(ending.value==='until')until=field(extra,'截止日期','','date','repeat-until');if(ending.value==='count'){count=field(extra,'次数',10,'number','repeat-count');count.min='1';count.max='100000';count.required=true;}};ending.addEventListener('change',endFields);
  const save=node('button','primary','保存重复');save.type='submit';form.append(save);form.addEventListener('submit',event=>{event.preventDefault();guard(async()=>{if(!form.reportValidity())return;if(until&&!until.value)throw new Error('请选择截止日期');save.disabled=true;try{await changeRepeat(item,'rule',{rule:{frequency:frequency.value,interval:Number(interval.value),weekdays:frequency.value==='weekly'?days.filter(box=>box.checked).map(box=>Number(box.value)):[],until:until?.value||null,count:count?Number(count.value):null}});closeDialog(false,owner);await render({local:true});}finally{save.disabled=false;}});});body.append(form);
 });}
+async function dialogData(path,owner,retry){try{return await api(path);}catch(error){if(ownsDialog(owner)){$('#dialog-body').replaceChildren(action('重新读取',retry,'quick-action'));toast(error.message,owner);}return null;}}
 async function repeatDialog(item,month){
  const from=month||(item.occurrenceAt!=null?phoneDate(item.occurrenceAt):phoneDate()).slice(0,8)+'01',until=monthAfter(from);
  const owner=showDialog('重复日程',body=>body.append(node('p','loading','正在读取…'))),data=await dialogData(`/api/candidate/occurrences?id=${item.taskId}&candidateId=${item.id}&from=${from}&until=${until}`,owner,()=>repeatDialog(item,from));if(!data||!ownsDialog(owner))return;
@@ -653,71 +650,18 @@ async function openOccurrence(taskId,candidateId,original){
 function appendHomeworkLinks(parent,item){
  const row=node('div','homework-links');for(const [url,label]of [[item.mobileUrl,'雪灾浙大M'],[item.desktopUrl,'雪灾浙大']]){if(!url)continue;const parsed=new URL(url);if(parsed.protocol!=='https:'||!['courses.zju.edu.cn','mcourses.zju.edu.cn'].includes(parsed.hostname))continue;const link=node('a','link-button',label);link.href=parsed.href;link.target='_blank';link.rel='noopener noreferrer';row.append(link);}if(row.childElementCount)parent.append(row);
 }
-async function exportAgendaImage(items,from){
- const canvas=document.createElement('canvas'),context=canvas.getContext('2d'),column=184,gap=12,margin=28;
- const style=getComputedStyle(document.body),surface=style.getPropertyValue('--surface').trim(),text=style.color,muted=style.getPropertyValue('--muted').trim(),accent=session.palette.primary;
- canvas.width=margin*2+7*column+6*gap;
- const wrap=(value,width)=>{const lines=[];let line='';for(const char of value){if(char==='\n'||context.measureText(line+char).width>width){lines.push(line);line=char==='\n'?'':char;}else line+=char;}if(line)lines.push(line);return lines;};
- context.font='16px "Microsoft YaHei", sans-serif';
- const days=Array.from({length:7},(_,index)=>{const day=addCivilDays(from,index);return {day,entries:agendaDayEntries(items,day).map(item=>{const lines=wrap(item.title,column-24),location=wrap(item.location||'',column-24);return {item,lines,location,height:58+(lines.length+location.length)*23};})};});
- const height=180+Math.max(60,...days.map(day=>day.entries.reduce((sum,entry)=>sum+entry.height+gap,0)));
- if(height>16000)throw new Error('本周内容过多，图片尺寸超出浏览器限制');canvas.height=height;
- context.fillStyle=style.backgroundColor;context.fillRect(0,0,canvas.width,canvas.height);context.fillStyle=text;context.font='600 26px "Microsoft YaHei",sans-serif';context.fillText('拾时 · 本周日历',margin,46);context.fillStyle=muted;context.font='15px "Microsoft YaHei",sans-serif';context.fillText(from,margin,76);
- days.forEach(({day,entries},index)=>{const x=margin+index*(column+gap);context.fillStyle=accent;context.font='600 16px "Microsoft YaHei",sans-serif';context.fillText(['周一','周二','周三','周四','周五','周六','周日'][index]+' · '+Number(day.slice(8)),x,120);let y=140;
-  for(const {item,lines,location,height}of entries){context.beginPath();context.roundRect(x,y,column,height,18);context.fillStyle=surface;context.fill();context.strokeStyle=style.getPropertyValue('--outline').trim();context.stroke();context.font='13px "Microsoft YaHei",sans-serif';context.fillStyle=accent;context.fillText(item.allDay?'全天':(item.due&&item.start===item.due?'截止 ':'')+fmt(item.start)+(item.end>item.start?' — '+fmt(item.end):''),x+12,y+24);let lineY=y+49;context.font='16px "Microsoft YaHei",sans-serif';context.fillStyle=text;for(const line of lines){context.fillText(line,x+12,lineY);lineY+=23;}context.fillStyle=muted;for(const line of location){context.fillText(line,x+12,lineY);lineY+=23;}y+=height+gap;}
- });
- const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw new Error('图片生成失败');const url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=`Chrona-${from}.png`;link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
-}
-async function calendarPage(ticket){
- const anchor=civilDate(calendarDate);calendarDate=anchor;let from=anchor,until;
- if(calendarView==='year'){from=anchor.slice(0,4)+'-01-01';until=String(Number(anchor.slice(0,4))+1).padStart(4,'0')+'-01-01';}else if(calendarView==='month'){from=anchor.slice(0,8)+'01';const next=new Date(from+'T00:00:00Z');next.setUTCMonth(next.getUTCMonth()+1);until=next.toISOString().slice(0,10);}else if(calendarView==='day')until=addCivilDays(from,1);else{from=addCivilDays(anchor,-(civilWeekday(anchor)+6)%7);until=addCivilDays(from,7);}
- const data=await api(`/api/agenda?from=${from}&until=${until}`);if(ticket!==sequence)return [];revision=data.revision;
- const openDate=(day,view='day')=>{calendarDate=day;calendarView=view;return render({local:true});};
- const controls=node('div','calendar-controls'),date=node('input');date.type='date';date.value=anchor;date.setAttribute('aria-label','日历日期');date.addEventListener('change',()=>{if(date.value){calendarDate=date.value;guard(()=>render({local:true}));}});
- const shift=direction=>{if(calendarView==='year')calendarDate=String(Number(anchor.slice(0,4))+direction).padStart(4,'0')+'-01-01';else if(calendarView==='month'){const next=new Date(anchor.slice(0,8)+'01T00:00:00Z');next.setUTCMonth(next.getUTCMonth()+direction);calendarDate=next.toISOString().slice(0,10);}else calendarDate=addCivilDays(anchor,direction*(calendarView==='day'?1:7));return render({local:true,direction});};
- const unit={year:'年',month:'月',day:'天',week:'周'}[calendarView];controls.append(action('上一'+unit,()=>shift(-1)),date,action('今天',()=>{calendarDate=phoneDate();return render({local:true});}),action('下一'+unit,()=>shift(1)));
- if(calendarView==='day')controls.append(action('返回月',()=>openDate(anchor,'month')));
- const views=selectionBar('日历视图',[['day','日'],['week','周'],['month','月'],['year','年']],calendarView,value=>{calendarView=value;guard(()=>render({local:true}));});
- const wrapper=node('div',calendarView==='day'?'agenda-day':calendarView==='year'?'agenda-year':'week-wrapper'),grid=node('div',calendarView==='year'?'year-grid':calendarView==='month'?'month-grid':calendarView==='day'?'day-grid':'week-grid');
- if(calendarView==='week'){grid.dataset.density=calendarDensity;const density=node('select');density.setAttribute('aria-label','周视图密度');for(const [value,label]of [['compact','紧凑'],['standard','标准'],['relaxed','宽松']]){const option=node('option','',label);option.value=value;density.append(option);}density.value=calendarDensity;density.addEventListener('change',()=>{calendarDensity=density.value;grid.dataset.density=calendarDensity;});const densityControl=node('div','calendar-density');densityControl.append(density);controls.append(densityControl);}
- if(calendarView==='month'){for(const label of ['周一','周二','周三','周四','周五','周六','周日'])grid.append(node('span','month-weekday',label));for(let i=0;i<(civilWeekday(from)+6)%7;i++)grid.append(node('span','month-blank'));}
- const today=phoneDate();if(calendarView==='year'){for(let month=1;month<=12;month++){const first=from.slice(0,4)+'-'+String(month).padStart(2,'0')+'-01',next=month===12?until:from.slice(0,4)+'-'+String(month+1).padStart(2,'0')+'-01',section=node('section','year-month');section.dataset.month=first.slice(0,7);section.append(action(month+'月',()=>openDate(first,'month'),'year-month-title'));const days=node('div','mini-month');for(const label of ['一','二','三','四','五','六','日'])days.append(node('span','mini-weekday',label));for(let i=0;i<(civilWeekday(first)+6)%7;i++)days.append(node('span'));for(let day=first;day<next;day=addCivilDays(day,1)){const count=agendaDayEntries(data.items,day).length,button=action(String(Number(day.slice(8))),()=>openDate(day),'mini-date');button.dataset.date=day;button.classList.toggle('today',day===today);button.classList.toggle('has-events',count>0);button.setAttribute('aria-label',day+(count?' · '+count+' 条'+(data.truncated?'已加载日程':'日程'):''));if(day===today)button.setAttribute('aria-current','date');days.append(button);}section.append(days);grid.append(section);}}else for(let day=from;day<until;day=addCivilDays(day,1)){const section=node('section','week-day');section.dataset.date=day;section.classList.toggle('today',day===today);const label=new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',weekday:'short',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z'));if(calendarView==='month'){const title=action(label,()=>openDate(day),'day-label day-link');title.setAttribute('aria-label',day+' · 日视图');section.append(title);}else section.append(node('h3','day-label',label));
- for(const item of agendaDayEntries(data.items,day)){const button=action('',()=>item.system?showReadOnly(item):navigate(taskRoute(item)),'course');button.append(node('small','',item.allDay?'全天':(item.due&&item.start===item.due?'截止 · ':'')+fmt(item.start)+(item.end>item.start?' — '+fmt(item.end):'')),node('strong','',item.title));if(item.location)button.append(node('small','',item.location));if(item.category==='homework')button.append(node('span','tag','作业'));section.append(button);}grid.append(section);}wrapper.append(grid);
- const actions=[action('导入课表',()=>navigate('timetable'))];if(calendarView==='week'&&!data.truncated)actions.push(action('导出周图片',()=>exportAgendaImage(data.items,from)));
- const result=[heading('日历',`${from} — ${addCivilDays(until,-1)}`,actions),views,controls];
- if(data.truncated)result.push(node('p','calendar-notice',calendarView==='year'?'仅显示部分日程，请进入月份查看':'日程较多，请缩小日期范围'));result.push(wrapper);
- if(!data.items.length&&!data.truncated)result.push(node('p','empty','这段时间没有安排'));if(data.systemUnavailable)result.push(node('p','subtle','系统日历读取权限需在手机授予'));return result;
-}
 
-async function dialogData(path,owner,retry){try{return await api(path);}catch(error){if(ownsDialog(owner)){$('#dialog-body').replaceChildren(action('重新读取',retry,'quick-action'));toast(error.message,owner);}return null;}}
-async function sourcesDialog(){
- const owner=showDialog('日程来源',body=>body.append(node('p','loading','正在读取来源…'))),data=await dialogData('/api/sources',owner,sourcesDialog);if(!data||!ownsDialog(owner))return;
- const body=$('#dialog-body');body.replaceChildren();const primary=field(body,'主来源','','select','primary-source');for(const source of [{id:'all',name:'不优先'},...data.sources]){const option=node('option','',source.name);option.value=source.id;primary.append(option);}primary.value=data.primary;primary.addEventListener('change',()=>guard(async()=>{primary.disabled=true;primary.parentElement.querySelector('.select-trigger').disabled=true;try{await api('/api/sources',{revision:data.revision,primary:primary.value});if(ownsDialog(owner))await sourcesDialog();}catch(error){primary.value=data.primary;primary.parentElement.querySelector('.select-trigger span').textContent=primary.selectedOptions[0]?.textContent||'';throw error;}finally{primary.disabled=false;primary.parentElement.querySelector('.select-trigger').disabled=false;icons();}}));
- const list=node('div','source-list');for(const source of data.sources){const row=node('div','source-row'),view=action('',()=>sourceContents(source.id,source.name),'source-view');view.append(node('strong','',source.name),node('span','subtle',String(source.count)+' 条'),icon('chevron-right'));const label=node('label','source-switch'),toggle=node('input');toggle.type='checkbox';toggle.checked=source.enabled;toggle.setAttribute('aria-label','启用'+source.name);toggle.addEventListener('change',()=>guard(async()=>{toggle.disabled=true;try{await api('/api/sources',{revision:data.revision,source:source.id,enabled:toggle.checked});if(ownsDialog(owner))await sourcesDialog();}catch(error){toggle.checked=source.enabled;throw error;}finally{toggle.disabled=false;}}));label.append(toggle);row.append(view,label);list.append(row);}body.append(list);if(!data.systemReadable)body.append(node('p','subtle','系统日历读取权限需在手机侧授予'));icons();
+document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>guard(()=>navigate(button.dataset.page))));$('#capture').addEventListener('click',capture);$('#logout').addEventListener('click',()=>confirmAction('断开连接','断开当前浏览器与手机的连接？',async()=>{await api('/api/logout',{});disconnect();}));$('#refresh').addEventListener('click',()=>guard(()=>refreshSession(true)));
+async function refreshSession(manual=false){
+ if(inlineEditor?.form.isConnected||dialogEditor?.form.isConnected)return;
+ const ticket=sequence,latest=await api('/api/session');if(!session||ticket!==sequence)return;
+ const changed=latest.revision!==session.revision||latest.acknowledgementRevision!==session.acknowledgementRevision,finished=homeworkRefreshPending&&!latest.homeworkRefreshing;session=latest;csrf=latest.csrf;applyPalette(latest.palette);updateHomeworkRefresh();
+ if(finished){homeworkRefreshPending=false;toast(latest.homeworkStatus||'作业刷新已结束');}
+ if(manual||finished||changed||pageOrder.includes(route)||currentTask&&['queued','processing'].includes(currentTask.task.status))await render();
 }
-async function sourceContents(id,name,index=0){
- const owner=showDialog(name,body=>body.append(node('p','loading','正在读取日程…'))),data=await dialogData('/api/sources?source='+encodeURIComponent(id)+'&page='+index,owner,()=>sourceContents(id,name,index));if(!data||!ownsDialog(owner))return;
- const body=$('#dialog-body');body.replaceChildren();const list=node('div','source-items');for(const item of data.items)list.append(entry(item,()=>showReadOnly({...item,source:name})));if(!data.items.length)empty(list,'此来源暂无日程');body.append(list);const buttons=node('div','actions');buttons.append(action('全部来源',sourcesDialog));if(index>0)buttons.append(action('上一页',()=>sourceContents(id,name,index-1)));if(data.hasMore)buttons.append(action('下一页',()=>sourceContents(id,name,index+1)));body.append(buttons);
-}
-async function syncDialog(index=0,started=false){
- const owner=showDialog('跨设备同步',body=>body.append(node('p','loading','正在读取同步状态…')));let waiting=started;
- async function load(){const data=await api('/api/sync?page='+index);if(!ownsDialog(owner))return;const body=$('#dialog-body');body.replaceChildren();body.append(node('p','sync-status',data.running||waiting?'处理中…':data.status||'尚未同步'));const automaticLabel=node('label','checkbox'),automatic=node('input');automatic.type='checkbox';automatic.checked=!!data.automatic;automatic.disabled=!data.configured&&!data.automatic;automatic.addEventListener('change',()=>guard(async()=>{automatic.disabled=true;try{const result=await api('/api/sync/preferences',{automatic:automatic.checked});data.automatic=!!result.automatic;automatic.checked=data.automatic;}catch(error){automatic.checked=!!data.automatic;throw error;}finally{automatic.disabled=!data.configured&&!data.automatic;}}));automaticLabel.append(automatic,document.createTextNode('自动同步'));body.append(automaticLabel);
-  const run=action(data.running||waiting?'处理中…':'立即同步',async()=>{run.disabled=true;try{await api('/api/sync/run',{});waiting=true;body.querySelector('.sync-status').textContent='处理中…';setTimeout(()=>guard(poll),800);}catch(error){run.disabled=false;throw error;}},'primary');run.disabled=!data.configured||data.running||waiting;body.append(run);if(!data.configured)body.append(node('p','subtle','请在手机设置 WebDAV 账号'));
-  for(const conflict of data.pending){const row=node('section','sync-conflict');const resolve=action('处理冲突',()=>syncConflict(conflict));resolve.disabled=data.running||waiting;row.append(node('h3','',conflict.title),resolve);body.append(row);}if(!data.pending.length&&!data.running&&!waiting)body.append(node('p','empty','暂无待处理冲突'));
-  const pages=node('div','actions');if(index>0)pages.append(action('上一页',()=>syncDialog(index-1)));if(data.hasMore)pages.append(action('下一页',()=>syncDialog(index+1)));body.append(pages);if(data.running||waiting)setTimeout(()=>guard(poll),1000);
- }
- async function poll(){if(!ownsDialog(owner))return;waiting=false;try{await load();}catch(error){if(ownsDialog(owner)){$('#dialog-body .sync-status').textContent='状态读取失败';$('#dialog-body').append(action('重新读取',()=>syncDialog(index),'quick-action'));}throw error;}}
- try{await load();}catch(error){if(ownsDialog(owner)){$('#dialog-body').replaceChildren(action('重新读取',()=>syncDialog(index),'quick-action'));toast(error.message,owner);}}
-}
-function syncConflict(conflict){showDialog('处理冲突',(body,owner)=>{
- body.append(node('h3','',conflict.title));const choice=field(body,'保留版本','','select','sync-version'),local=node('option','','保留本机');local.value='-1';choice.append(local);for(const version of conflict.versions){const option=node('option','','版本 '+(version.index+1)+(version.deleted?'（已删除）':''));option.value=String(version.index);choice.append(option);}choice.value='-1';
- const preview=node('div','sync-version-preview');preview.tabIndex=0;preview.setAttribute('role','region');preview.setAttribute('aria-label','版本完整内容');body.append(preview);
- const consent=node('label','checkbox'),remove=node('input');remove.type='checkbox';consent.append(remove,document.createTextNode('移除本机旧日历事件，再应用所选版本'));body.append(consent);const update=()=>{const version=conflict.versions.find(item=>String(item.index)===choice.value);preview.textContent=version?version.description||(version.deleted?'此版本已删除记录':'此版本无正文'):'保留当前本机记录';preview.scrollTop=0;consent.hidden=!conflict.calendar||choice.value==='-1';remove.checked=false;clearDialogFeedback();};choice.addEventListener('change',update);update();
- const buttons=node('div','actions'),save=action('应用版本',async()=>{const index=Number(choice.value);if(conflict.calendar&&index!==-1&&!remove.checked)throw new Error('请确认移除本机旧日历事件');save.disabled=true;try{await api('/api/sync/resolve',{id:conflict.id,signature:conflict.signature,index,removeCalendar:index!==-1&&remove.checked});if(ownsDialog(owner)){await syncDialog(0,true);}}finally{save.disabled=false;}},'primary');buttons.append(action('返回',()=>syncDialog()),save);body.append(buttons);
-});}
-function settingsPage(){const group=card('服务与数据');group.append(action('日程来源',sourcesDialog,'quick-action'),action('跨设备同步',()=>syncDialog(),'quick-action'));for(const [title,text]of [['AI 服务','浏览器使用手机已有 AI 配置，账号与密钥仅保留在手机'],['权限与提醒','系统日历授权、通知、后台运行及小组件设置请在手机操作'],['局域网访问','在手机关闭服务或重新配对，会撤销当前浏览器连接']]){const row=node('div','settings-row');row.append(node('h3','',title),node('p','subtle',text));group.append(row);}const include=node('label','checkbox'),checkbox=node('input');checkbox.type='checkbox';checkbox.checked=!!session.systemCalendarIncluded;checkbox.addEventListener('change',()=>guard(async()=>{checkbox.disabled=true;try{await api('/api/preferences',{systemCalendarIncluded:checkbox.checked});session.systemCalendarIncluded=checkbox.checked;}catch(error){checkbox.checked=!!session.systemCalendarIncluded;throw error;}finally{checkbox.disabled=false;}}));include.append(checkbox,document.createTextNode('包含系统其他日程'));group.append(include,action('合并重复日程',previewMerges,'quick-action'));group.append(action('断开当前浏览器',async()=>{await api('/api/logout',{});disconnect();},'quick-action'));return[heading('设置'),group];}
-document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>guard(()=>navigate(button.dataset.page))));$('#capture').addEventListener('click',capture);$('#settings').addEventListener('click',()=>guard(()=>navigate('settings')));$('#refresh').addEventListener('click',()=>guard(async()=>{session=await api('/api/session');applyPalette(session.palette);await render();}));$('#theme').addEventListener('click',()=>{themeOverride=true;document.body.classList.toggle('dark');applyPalette();});
-// Refresh the session and actively processing record; never replace an open editor.
-setInterval(()=>{if(!session||pending||attachmentWork||$('#dialog').open||document.hidden)return;guard(async()=>{const latest=await api('/api/session');session=latest;csrf=latest.csrf;applyPalette(latest.palette);if(route==='home'||currentTask&&['queued','processing'].includes(currentTask.task.status))await render();});},10000);
-setInterval(()=>{detectMerges().catch(()=>{});},2500);
+let pagePointerCount=0;
+document.addEventListener('pointerdown',()=>pagePointerCount++,true);
+const releasePagePointer=()=>{pagePointerCount=Math.max(0,pagePointerCount-1);};document.addEventListener('pointerup',releasePagePointer,true);document.addEventListener('pointercancel',releasePagePointer,true);window.addEventListener('blur',()=>pagePointerCount=0);
+setInterval(()=>{if(!session||pending||attachmentWork||pagePointerCount||inlineEditor?.form.isConnected||$('#dialog').open||openSelect||document.hidden)return;guard(()=>refreshSession());},10000);
+
 icons();guard(async()=>{const code=scannedPairing;scannedPairing=null;if(code!==null){if(!code){disconnect();throw new Error('配对二维码无效，请重新扫码或手动输入');}try{await api('/api/pair',{code});await connect();}catch(error){disconnect();throw new Error('扫码配对未完成，请重新扫码或手动输入');}return;}try{await connect();}catch(error){if(!csrf){disconnect();if(error.status===401)await requestApproval();else approvalStatus(error.message,true);}else throw error;}});
