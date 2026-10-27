@@ -8,6 +8,7 @@ import android.widget.LinearLayout;
 /** Related header actions share one surface, separators and one press response. */
 final class HeaderActionGroup extends LinearLayout {
     private final int height;
+    private final java.util.Map<View, int[]> contentPadding = new java.util.IdentityHashMap<>();
     private final java.util.Map<View, Action> actions = new java.util.IdentityHashMap<>();
     private static final class Action {
         final View view, separator;final int width;
@@ -65,16 +66,20 @@ final class HeaderActionGroup extends LinearLayout {
     @Override protected boolean drawChild(android.graphics.Canvas canvas,View child,long drawingTime) {
         View first=null,last=null;
         for(int i=0;i<getChildCount();i++){View item=getChildAt(i);if(item.getVisibility()!=GONE&&item.getWidth()>dp(1)){if(first==null)first=item;last=item;}}
-        if(first==last||child!=first&&child!=last)return super.drawChild(canvas,child,drawingTime);
         // Rounded end cells have less visible area at their outer corners. Centre the
-        // glyph on that visible area; keep the full rectangular touch cell unchanged.
+        // content, not the View: its foreground must stay on the full touch cell.
         double radius=Math.min(getHeight()/2.0,dp(UiStyle.radius(getContext(),UiStyle.RADIUS_PILL)));
         double width=child.getWidth(),area=width*getHeight();
         double cutArea=(2-Math.PI/2)*radius*radius;
         double cutMoment=(5.0/3-Math.PI/2)*radius*radius*radius;
-        float shift=area>cutArea?(float)((area*width/2-cutMoment)/(area-cutArea)-width/2):0;
-        int saved=canvas.save();canvas.translate(child==first?shift:-shift,0);
-        boolean result=super.drawChild(canvas,child,drawingTime);canvas.restoreToCount(saved);return result;
+        int shift=first!=last&&(child==first||child==last)&&area>cutArea
+                ?Math.round((float)((area*width/2-cutMoment)/(area-cutArea)-width/2))*(child==first?1:-1):0;
+        if(child.getWidth()>dp(1)){
+            int[] padding=contentPadding.computeIfAbsent(child,view->new int[]{view.getPaddingLeft(),view.getPaddingTop(),view.getPaddingRight(),view.getPaddingBottom()});
+            if(child.getPaddingLeft()!=padding[0]+shift||child.getPaddingRight()!=padding[2]-shift)
+                child.setPadding(padding[0]+shift,padding[1],padding[2]-shift,padding[3]);
+        }
+        return super.drawChild(canvas,child,drawingTime);
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }

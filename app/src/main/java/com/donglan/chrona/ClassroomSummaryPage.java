@@ -176,7 +176,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             else s.mode=Math.max(0,Math.min(3,getIntent().getIntExtra("classroom_mode",0)));
         }
         if (s != null) s.owner = new WeakReference<>(this);
-        LinearLayout root = SettingsPageLayout.content(activity);
+        CollapsingPageLayout root = SettingsPageLayout.workspaceContent(activity);
         root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(12));
         navigation = new DockNavigationLayout(activity, this::selectMode, () -> { });
         navigation.setPadding(dp(6), dp(6), dp(6), dp(6));
@@ -256,7 +256,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         FrameLayout transitionHost = new FrameLayout(activity);
         PressFeedback.protectViewport(transitionHost);
         transitionHost.addView(bodyHost, new FrameLayout.LayoutParams(-1, -1));
-        root.addView(transitionHost, new LinearLayout.LayoutParams(-1, 0, 1)); setContentView(root);
+        root.addView(transitionHost, new LinearLayout.LayoutParams(-1, 0, 1)); root.setScrollingBody(transitionHost); setContentView(root);
         update();
         if (s != null) scroll.post(() -> scroll.scrollTo(0, s.scrollY));
     }

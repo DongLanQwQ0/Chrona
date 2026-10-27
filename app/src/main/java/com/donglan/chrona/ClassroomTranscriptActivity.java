@@ -36,21 +36,22 @@ public final class ClassroomTranscriptActivity extends Activity {
         try{account=getIntent().getStringExtra("account");lesson=ClassroomLesson.fromJson(new JSONObject(getIntent().getStringExtra("lesson")));if(!ClassroomMonitor.allowed(this,account)){finish();return;}}
         catch(Exception failure){finish();return;}
         if(state!=null){follow=state.getBoolean("follow",true);mode=state.getInt("mode",0);pictureIndex=state.getInt("picture",0);restoredRaw=state.getString("picture_raw","");pendingLatest=state.getBoolean("pending_latest",false);pendingRestore=pendingLatest?-1:state.getInt("scroll",0);}
-        LinearLayout root=SettingsPageLayout.content(this);
+        CollapsingPageLayout root=SettingsPageLayout.workspaceContent(this);
         root.setClipChildren(false);root.setClipToPadding(false);
+        // Match the workspace's floating-navigation baseline, not a form's end padding.
+        root.setPadding(root.getPaddingLeft(),root.getPaddingTop(),root.getPaddingRight(),dp(4));
         action=UiStyle.navigationIcon(this,R.drawable.ic_play,"开始监视",this::toggleMonitoring);
-        SettingsPageLayout.header(this,root,"课堂监视",action);
+        SettingsPageLayout.header(this,root,lesson.course,action);
         LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout information=new LinearLayout(this);information.setGravity(Gravity.TOP);
+        LinearLayout information=new LinearLayout(this);information.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout description=new LinearLayout(this);description.setOrientation(LinearLayout.VERTICAL);
-        TextView title=new TextView(this);title.setText(lesson.course);title.setTextSize(16);UiStyle.title(title);UiStyle.addSpaced(description,title,0,4);
-        TextView when=new TextView(this);when.setText(lesson.date()+" "+ClassroomMonitorUi.clock(lesson)+(lesson.room.isEmpty()?"":" · "+lesson.room));when.setTextSize(13);UiStyle.muted(when);description.addView(when);
+        TextView when=new TextView(this);when.setText(lesson.date()+" "+ClassroomMonitorUi.clock(lesson)+(lesson.room.isEmpty()?"":" · "+lesson.room));when.setTextSize(12);when.setIncludeFontPadding(false);UiStyle.muted(when);description.addView(when);
+        status=new TextView(this);status.setTextSize(12);status.setIncludeFontPadding(false);UiStyle.muted(status);status.setText("未开始监视");UiStyle.addSpaced(description,status,2,0);
         information.addView(description,new LinearLayout.LayoutParams(0,-2,1));
-        repeat=new CheckBox(this);repeat.setText("后续课程");repeat.setContentDescription("监视后续课程");repeat.setTextSize(15);repeat.setMinHeight(dp(48));UiStyle.toggle(repeat);
+        repeat=new CheckBox(this);repeat.setText("后续课程");repeat.setContentDescription("监视后续课程");repeat.setTextSize(12);repeat.setMinHeight(dp(48));repeat.setIncludeFontPadding(false);UiStyle.toggle(repeat);
         LinearLayout.LayoutParams scopeParams=new LinearLayout.LayoutParams(-2,-2);scopeParams.leftMargin=dp(8);information.addView(repeat,scopeParams);UiStyle.addSpaced(tools,information,0,4);
         refreshScope();if(state!=null&&!monitoring())repeat.setChecked(state.getBoolean("repeat",false));
         repeat.setOnCheckedChangeListener((button,checked)->{if(binding||!monitoring())return;try{ClassroomMonitor.start(this,lesson,checked);signature="";}catch(Exception failure){Feedback.show(this,"无法更改监视范围");refreshScope();}});
-        status=new TextView(this);status.setTextSize(13);UiStyle.muted(status);status.setText("未开始监视");UiStyle.addSpaced(tools,status,0,4);
         root.addView(SettingsPageLayout.toolsViewport(this,tools),new LinearLayout.LayoutParams(-1,-2));
         sideNavigation=SettingsPageLayout.shortWindow(this);
         sections=new DockNavigationLayout(this,this::setMode,()->{});sections.setPadding(dp(6),dp(6),dp(6),dp(6));
@@ -81,11 +82,11 @@ public final class ClassroomTranscriptActivity extends Activity {
         if(!sideNavigation)body.addView(dockHost,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));InteractionLayers.pin(dockHost);
         dockHost.addOnLayoutChangeListener((view,l,t,r,b,oldL,oldT,oldR,oldB)->{
             int clearance=sideNavigation?0:view.getHeight();
-            if(rows.getPaddingBottom()!=clearance+dp(64)){rows.setPadding(0,0,0,clearance+dp(64));slides.setPadding(0,0,0,clearance+dp(12));
+            if(rows.getPaddingBottom()!=clearance+dp(12)){rows.setPadding(0,0,0,clearance+dp(12));slides.setPadding(0,0,0,clearance+dp(12));
                 FrameLayout.LayoutParams position=(FrameLayout.LayoutParams)latest.getLayoutParams();position.bottomMargin=clearance+dp(8);latest.setLayoutParams(position);}
         });
         scroll.setOnScrollChangeListener((view,x,y,oldX,oldY)->{if((touching||scrollingMotion)&&pendingRestore>=0)pendingRestore=y;follow=atBottom();updateFollow();});
-        root.addView(body,new LinearLayout.LayoutParams(-1,0,1));SettingsPageLayout.showFixed(this,root);setMode(mode);
+        root.addView(body,new LinearLayout.LayoutParams(-1,0,1));root.setScrollingBody(body);SettingsPageLayout.showFixed(this,root);setMode(mode);
         if(state==null)root.post(()->UiMotion.enterPage(root));
     }
     private boolean atBottom(){return scroll.getScrollY()>=Math.max(0,rows.getHeight()-scroll.getHeight()-dp(48));}
@@ -159,7 +160,7 @@ public final class ClassroomTranscriptActivity extends Activity {
         });
     }
     private void pickSlide(){String[] labels=new String[shownPictures.length()];for(int i=0;i<labels.length;i++)labels[i]=(i+1)+" · "+ClassroomExport.time(shownPictures.optJSONObject(i).optDouble("second"));UiDialogs.choiceDialog(this,"PPT",labels,pictureIndex,i->slidePager.select(i));}
-    private boolean shiftSlide(int direction){return slidePager!=null&&slidePager.select(pictureIndex+direction);}
+    private boolean shiftSlide(int direction){return slidePager!=null&&slidePager.select(slidePager.selection()+direction);}
     private void openSlide(){if(slidePager==null||!slidePager.ready()||!ClassroomMonitor.allowed(this,account))return;JSONObject picture=shownPictures.optJSONObject(pictureIndex);if(picture==null)return;ArrayList<String> names=new ArrayList<>();for(int i=0;i<shownPictures.length();i++)names.add(shownPictures.optJSONObject(i).optString("raw"));AttachmentViewerActivity.openClassroom(this,account,lesson,names,picture.optString("raw"));}
     private void showSlide(){
         if(slidePager!=null)slidePager.select(pictureIndex);

@@ -40,7 +40,23 @@ final class ClassroomUiPolishChecks {
         if(!"com.donglan.chrona.monitor.validation".equals(app.getPackageName()))throw new SecurityException("Fixture package required");
         if(!android.os.Build.HARDWARE.contains("ranchu"))throw new SecurityException("Owned emulator required");
         ClassroomUiPolishChecks checks=new ClassroomUiPolishChecks(test,args==null?new Bundle():args);
-        try{checks.seed();if("true".equals(checks.args.getString("header_only"))){checks.header();return checks.assertions;}String scope=checks.args.getString("polish_scope","");if(!"reader".equals(scope))checks.browse();if(!"browse".equals(scope))checks.reader();if(UiMotion.isEnabled()&&test instanceof ClassroomMonitorInstrumentation monitor){if(!"browse".equals(scope)&&!"true".equals(checks.args.getString("entry_only")))checks.check(monitor.enteredPages.contains("ClassroomTranscriptActivity")&&monitor.enteredPages.contains("AttachmentViewerActivity"),"real reader and viewer entry render intermediate frames: "+monitor.enteredPages);if(!"reader".equals(scope))checks.check(monitor.enteredPages.contains("ClassroomSummaryActivity")&&monitor.enteredPages.contains("ClassroomLessonActivity"),"real catalogue and lesson entry render intermediate frames");}return checks.assertions;}
+        try{
+            checks.seed();
+            if("true".equals(checks.args.getString("week_gesture_only"))){checks.weekGestureAudit();return checks.assertions;}
+            if("true".equals(checks.args.getString("all_pages")))return LandscapePageAuditChecks.run(test,checks.args,checks.account,checks.readerLesson);
+            if("true".equals(checks.args.getString("height_only"))){checks.heightAudit();return checks.assertions;}
+            if("true".equals(checks.args.getString("dashboard_dock_only"))){checks.dashboardDock();return checks.assertions;}
+            if("true".equals(checks.args.getString("highlight_only"))){checks.highlights();return checks.assertions;}
+            if("true".equals(checks.args.getString("header_only"))){checks.header();return checks.assertions;}
+            String scope=checks.args.getString("polish_scope","");
+            if(!"reader".equals(scope))checks.browse();if(!"browse".equals(scope))checks.reader();
+            if(UiMotion.isEnabled()&&test instanceof ClassroomMonitorInstrumentation monitor){
+                if("true".equals(checks.args.getString("landscape_only")))checks.check(monitor.enteredPages.contains("AttachmentViewerActivity"),"landscape viewer renders intermediate entry frames");
+                else if(!"browse".equals(scope)&&!"true".equals(checks.args.getString("entry_only"))&&!"true".equals(checks.args.getString("rapid_only")))checks.check(monitor.enteredPages.contains("ClassroomTranscriptActivity")&&monitor.enteredPages.contains("AttachmentViewerActivity"),"real reader and viewer entry render intermediate frames: "+monitor.enteredPages);
+                if(!"reader".equals(scope))checks.check(monitor.enteredPages.contains("ClassroomSummaryActivity")&&monitor.enteredPages.contains("ClassroomLessonActivity"),"real catalogue and lesson entry render intermediate frames");
+            }
+            return checks.assertions;
+        }
         finally{if(checks.activity!=null)test.runOnMainSync(checks.activity::finish);}
     }
     private void seed()throws Exception{
@@ -71,6 +87,130 @@ final class ClassroomUiPolishChecks {
         Bitmap last=Bitmap.createBitmap(480,270,Bitmap.Config.ARGB_8888);last.eraseColor(android.graphics.Color.rgb(35,135,85));ByteArrayOutputStream lastBytes=new ByteArrayOutputStream();last.compress(Bitmap.CompressFormat.PNG,100,lastBytes);last.recycle();
         ClassroomStore.writeBytes(new File(dir,"raw-1.img"),portraitBytes.toByteArray());ClassroomStore.writeBytes(new File(dir,"raw-2.img"),lastBytes.toByteArray());
         ClassroomStore.write(new File(dir,"monitor-candidates.json"),new JSONObject().put("updated",now).put("images",new JSONArray().put(new JSONObject().put("raw","raw-0.img").put("second",20)).put(new JSONObject().put("raw","raw-1.img").put("second",40)).put(new JSONObject().put("raw","raw-2.img").put("second",60))));
+    }
+    private void heightAudit()throws Exception{
+        activity=test.startActivitySync(new Intent(app,ClassroomSummaryActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK).putExtra("classroom_mode",1));idle(700);
+        JSONObject report=new JSONObject();
+        for(int selected:new int[]{1,3,2,0}){
+            mode(selected);Object page=page();View scroll=selected==0?((ClassroomLessonPickerView)field(page,"weekPicker")).verticalViewport():(View)field(page,"listScroll");
+            auditCollapse("classroom-"+selected,(CollapsingPageLayout)((SchedulePage)page).content(),scroll,report);
+        }
+        test.runOnMainSync(activity::finish);activity=null;
+        activity=test.startActivitySync(new Intent(app,CalendarOverviewActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));idle(800);
+        for(int selected:new int[]{1,0,2,3,4}){
+            Object page=page();int mode=selected;test.runOnMainSync(()->{try{method(page,"changeMode",int.class).invoke(page,mode);}catch(Exception failure){throw new RuntimeException(failure);}});idle(600);
+            auditCollapse("calendar-"+selected,findCollapse(((SchedulePage)page).content()),(View)field(page,"verticalViewport"),report);
+        }
+        test.runOnMainSync(activity::finish);activity=null;
+        try(var writer=new com.donglan.chrona.processing.StreamingOutputStore(app).begin(882011)){writer.append("模型输出正文，用于横屏连续阅读与工具联动验收。\n".repeat(180));}
+        activity=test.startActivitySync(new Intent(app,ModelOutputActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK).putExtra("task_id",882011L));idle(450);
+        auditCollapse("model-output",findCollapse(activity.findViewById(android.R.id.content)),(View)field(activity,"scroll"),report);test.runOnMainSync(activity::finish);activity=null;
+        activity=test.startActivitySync(new Intent(app,GuideActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));idle(400);
+        auditCollapse("guide",findCollapse(activity.findViewById(android.R.id.content)),(View)field(activity,"page"),report);
+        var bars=activity.getWindow().getDecorView().getRootWindowInsets().getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());Rect window=bounds(activity.findViewById(android.R.id.content));
+        check(bounds((View)field(activity,"next")).bottom<=window.bottom-bars.bottom,"guide bottom step control remains inside usable window");
+        pickerAudit();test.runOnMainSync(activity::finish);activity=null;
+        ClassroomStore.write(new File(app.getExternalFilesDir(null),"monitor-validation/height-audit-"+args.getString("theme","light")+".json"),report);
+    }
+    private CollapsingPageLayout findCollapse(View root){if(root instanceof CollapsingPageLayout layout)return layout;if(root instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){CollapsingPageLayout found=findCollapse(group.getChildAt(i));if(found!=null)return found;}return null;}
+    private void weekGestureAudit()throws Exception{
+        activity=test.startActivitySync(new Intent(app,CalendarOverviewActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));idle(600);
+        Object page=page();test.runOnMainSync(()->{try{method(page,"changeMode",int.class).invoke(page,2);}catch(Exception failure){throw new RuntimeException(failure);}});idle(600);
+        FreeCalendarScrollView grid=(FreeCalendarScrollView)field(page,"horizontalViewport");View vertical=(View)field(page,"verticalViewport");Object date=field(page,"date");
+        int maxX=grid.getChildAt(0).getWidth()-grid.getWidth();check(maxX>0,"week fixture has a genuinely horizontally scrollable grid");
+        test.runOnMainSync(()->grid.scrollTo(maxX/2,0));idle(100);int initialX=grid.getScrollX();
+        auditCollapse("week-gesture",findCollapse(((SchedulePage)page).content()),vertical,new JSONObject());
+        check(grid.getScrollX()==initialX&&date.equals(field(page,"date")),"collapse and reverse restore preserve horizontal position and week");
+        test.runOnMainSync(()->grid.scrollTo(maxX,0));idle(100);Rect r=bounds(vertical);long down=SystemClock.uptimeMillis();float start=r.left+r.width()*.8f,end=r.left+r.width()*.2f,y=r.centerY();
+        pointer(down,down,MotionEvent.ACTION_DOWN,start,y);for(int i=1;i<=10;i++){SystemClock.sleep(20);pointer(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,start+(end-start)*i/10,y);}pointer(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_CANCEL,end,y);idle(350);
+        check(date.equals(field(page,"date")),"cancelled week-edge gesture never switches week");
+        down=SystemClock.uptimeMillis();pointer(down,down,MotionEvent.ACTION_DOWN,start,y);
+        MotionEvent.PointerProperties[] properties={new MotionEvent.PointerProperties(),new MotionEvent.PointerProperties()};for(int i=0;i<2;i++){properties[i].id=i;properties[i].toolType=MotionEvent.TOOL_TYPE_FINGER;}
+        for(int step=0;step<=6;step++){
+            MotionEvent.PointerCoords[] points={new MotionEvent.PointerCoords(),new MotionEvent.PointerCoords()};for(int i=0;i<2;i++){points[i].x=start+(end-start)*Math.min(step,5)/5+(i==0?0:30);points[i].y=y;points[i].pressure=1;points[i].size=1;}
+            int action=step==0?MotionEvent.ACTION_POINTER_DOWN|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT):step==6?MotionEvent.ACTION_POINTER_UP|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT):MotionEvent.ACTION_MOVE;
+            MotionEvent event=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,2,properties,points,0,0,1,1,0,0,InputDevice.SOURCE_TOUCHSCREEN,0);try{test.sendPointerSync(event);}finally{event.recycle();}SystemClock.sleep(25);
+        }
+        pointer(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,end,y);idle(350);check(date.equals(field(page,"date")),"two-finger week gesture never commits a single-finger edge switch");
+        test.runOnMainSync(activity::finish);activity=null;
+    }
+    private void auditCollapse(String name,CollapsingPageLayout root,View viewport,JSONObject report)throws Exception{
+        check(root!=null&&viewport!=null,"height audit has actual viewport for "+name);idle(150);
+        int before=viewport.getHeight();capture("height-"+name+"-before");
+        JSONArray progress=new JSONArray();for(int attempt=0;attempt<4&&(Integer)field(root,"hidden")<(Integer)field(root,"range");attempt++){verticalSwipe(viewport,true);idle(100);progress.put(new JSONObject().put("hidden",field(root,"hidden")).put("y",viewport.getScrollY()));}
+        int after=viewport.getHeight(),range=(Integer)field(root,"range"),hidden=(Integer)field(root,"hidden");
+        report.put(name,new JSONObject().put("usable_height_px",root.getHeight()).put("initial_body_px",before).put("expanded_body_px",after).put("tools_px",range).put("hidden_px",hidden).put("progress",progress));
+        check(range>0&&hidden==range,"real upward content gesture removes every top tool for "+name+": "+report.opt(name));
+        check(after>=before+range-3,"content viewport grows by the reclaimed tool height for "+name+": "+report.opt(name));capture("height-"+name+"-after");
+        check(root.getClipBounds()!=null&&root.getClipBounds().top==root.getPaddingTop(),"collapsed tools cannot remain in the system-safe top padding for "+name);
+        for(int attempt=0;attempt<12&&(Integer)field(root,"hidden")>0;attempt++){verticalSwipe(viewport,false);idle(80);}
+        check((Integer)field(root,"hidden")==0,"downward gestures restore tools at content start for "+name);capture("height-"+name+"-restored");
+    }
+    private void pickerAudit()throws Exception{
+        for(boolean time:new boolean[]{false,true}){
+            String[] chosen={null};
+            test.runOnMainSync(()->{if(time)UiDialogs.timeDialog(activity,"横屏时间",623,value->chosen[0]=Integer.toString(value));else UiDialogs.dateDialog(activity,"横屏日期",java.time.LocalDate.of(2026,10,27),value->chosen[0]=value.toString());});idle(350);
+            var root=test.getUiAutomation().getRootInActiveWindow();String action=time?"保存":"确定";var nodes=root.findAccessibilityNodeInfosByText(action);check(!nodes.isEmpty(),"short-window picker exposes confirmation");Rect confirm=new Rect();nodes.get(0).getBoundsInScreen(confirm);Rect actual=new Rect();root.getBoundsInScreen(actual);check(actual.contains(confirm),"picker confirmation is inside the real dialog window");
+            var wheels=root.findAccessibilityNodeInfosByText(time?"10:23":"2026-10-27");check(!wheels.isEmpty(),"wheel exposes the selected value without truncation");Rect wheel=new Rect();wheels.get(0).getBoundsInScreen(wheel);check(wheel.height()>=48*activity.getResources().getDisplayMetrics().density,"short-window picker reserves a readable selected wheel row");
+            capture(time?"height-time-picker":"height-date-picker");tapText(action);idle(220);check((time?"623":"2026-10-27").equals(chosen[0]),"bounded picker preserves the selected date/time");
+        }
+    }
+    private void verticalSwipe(View viewport,boolean up){
+        Rect area=bounds(viewport);float x=area.centerX(),start=area.top+area.height()*(up?.85f:.2f),end=area.top+area.height()*(up?.2f:.85f);long time=SystemClock.uptimeMillis();pointer(time,time,MotionEvent.ACTION_DOWN,x,start);
+        for(int i=1;i<=12;i++){SystemClock.sleep(20);pointer(time,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,x,start+(end-start)*i/12);}
+        SystemClock.sleep(100);pointer(time,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,x,end);
+    }
+    private void dashboardDock()throws Exception{
+        activity=test.startActivitySync(new Intent(app,DashboardActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));idle(800);
+        DockNavigationLayout dock=(DockNavigationLayout)field(activity,"navigation");View highlight=(View)field(dock,"highlightView");
+        assertDockSpacing(dock);
+        check(dock.getPaddingTop()==dock.getPaddingBottom()&&dock.getPaddingLeft()==dock.getPaddingRight(),"landscape Dock has symmetric horizontal and vertical static insets");
+        for(int selected:new int[]{0,2}){
+            Rect rect=bounds(dock.itemAt(selected));long time=SystemClock.uptimeMillis();pointer(time,time,MotionEvent.ACTION_DOWN,rect.centerX(),rect.centerY());idle(500);
+            android.graphics.RectF painted=new android.graphics.RectF(0,0,highlight.getWidth(),highlight.getHeight());android.graphics.Matrix matrix=new android.graphics.Matrix();highlight.transformMatrixToGlobal(matrix);matrix.mapRect(painted);
+            Rect board=bounds(dock);check(selected==0?painted.top<board.top:painted.bottom>board.bottom,"held first/last highlight extends outside the landscape plate: "+painted+" / "+board);
+            for(android.view.ViewParent parent=dock.getParent();parent instanceof ViewGroup group&&group!=activity.getWindow().getDecorView();parent=group.getParent())check(!group.getClipChildren()&&!group.getClipToPadding(),"Dock ancestor permits motion: "+group.getClass().getSimpleName());
+            capture("dashboard-dock-held-"+selected);pointer(time,SystemClock.uptimeMillis(),MotionEvent.ACTION_CANCEL,rect.centerX(),rect.centerY());idle(350);
+        }
+        tap(dock.itemAt(1));idle(600);assertDockSpacing(dock);capture("dashboard-dock-adjacent-spacing");
+        test.runOnMainSync(activity::finish);activity=null;
+    }
+    private void assertDockSpacing(DockNavigationLayout dock)throws Exception{
+        View page=(View)field(activity,"content");float density=activity.getResources().getDisplayMetrics().density;Rect board=bounds(dock),body=bounds(page);
+        check(Math.abs(page.getPaddingLeft()-20*density)<2&&Math.abs(page.getPaddingRight()-20*density)<2,"main and adjacent sections share the 20dp content gutters");
+        check(Math.abs(body.left+page.getPaddingLeft()-board.right-33*density)<4,"actual Dock-to-content gap is 33dp, without a second centred-column gutter");
+    }
+    private void highlights()throws Exception{
+        activity=test.startActivitySync(new Intent(app,ClassroomSummaryActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));idle(500);
+        FrameLayout root=new FrameLayout(activity);test.runOnMainSync(()->{root.setBackgroundColor(UiStyle.colors(activity).surface);activity.setContentView(root);});
+        float density=activity.getResources().getDisplayMetrics().density;
+        for(int level=1;level<=5;level++)for(int extent:new int[]{44,48})for(int rowCount=1;rowCount<=3;rowCount++){
+            int corner=level,count=rowCount;HeaderActionGroup[] ref={null};List<View> cells=new ArrayList<>();int[] clicks={0};
+            test.runOnMainSync(()->{
+                ThemeStore.setCornerLevel(activity,corner);root.removeAllViews();HeaderActionGroup group=new HeaderActionGroup(activity,extent);ref[0]=group;
+                for(int i=0;i<count;i++){View action=i==1?new CalendarVisibilityToggle(activity):UiStyle.navigationIcon(activity,R.drawable.ic_refresh,"测试操作",()->clicks[0]++);if(action instanceof CheckBox)action.setOnClickListener(v->clicks[0]++);group.addAction(action,extent);cells.add(action);}group.finish();
+                FrameLayout.LayoutParams slot=new FrameLayout.LayoutParams(-2,Math.round(extent*density));slot.leftMargin=Math.round(40*density);slot.topMargin=Math.round(160*density);root.addView(group,slot);
+            });idle(90);
+            for(int i=0;i<count;i++){
+                View cell=cells.get(i);int position=i;
+                for(float scale:new float[]{1f,1.10f}){
+                    test.runOnMainSync(()->{
+                        ref[0].setScaleX(scale);ref[0].setScaleY(scale);
+                        var mask=((android.graphics.drawable.RippleDrawable)cell.getForeground()).findDrawableByLayerId(android.R.id.mask);
+                        Bitmap bitmap=Bitmap.createBitmap(cell.getWidth(),cell.getHeight(),Bitmap.Config.ARGB_8888);mask.draw(new android.graphics.Canvas(bitmap));
+                        int middle=bitmap.getHeight()/2;
+                        check(android.graphics.Color.alpha(bitmap.getPixel(0,middle))>240&&android.graphics.Color.alpha(bitmap.getPixel(bitmap.getWidth()-1,middle))>240,"mask fills both cell edges at level/size/count/position/scale "+corner+"/"+extent+"/"+count+"/"+position+"/"+scale);
+                        if(count>1){int x=position==0?bitmap.getWidth()-2:position==count-1?1:bitmap.getWidth()/2;check(android.graphics.Color.alpha(bitmap.getPixel(x,1))>240,"inner separator has square continuous highlight corners");}
+                        bitmap.recycle();
+                    });
+                }
+                test.runOnMainSync(()->{ref[0].setScaleX(1f);ref[0].setScaleY(1f);});
+                if(level==4&&count==2){Rect rect=bounds(cell);long down=SystemClock.uptimeMillis();pointer(down,down,MotionEvent.ACTION_DOWN,rect.centerX(),rect.centerY());idle(250);capture("highlight-"+extent+"-"+position);pointer(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_CANCEL,rect.centerX(),rect.centerY());idle(180);check(clicks[0]==0,"cancelled hold does not invoke action");}
+            }
+            tap(cells.get(0));idle(120);check(clicks[0]==1,"full action remains clickable");
+        }
+        test.runOnMainSync(()->ThemeStore.setCornerLevel(activity,4));
+        test.runOnMainSync(activity::finish);activity=null;
     }
     private void header()throws Exception{
         activity=test.startActivitySync(new Intent(app,ClassroomSummaryActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("classroom_mode",1));idle(700);
@@ -173,14 +313,19 @@ final class ClassroomUiPolishChecks {
         View root=activity.findViewById(android.R.id.content);CheckBox repeat=(CheckBox)field(activity,"repeat");
         check("后续课程".contentEquals(repeat.getText())&&"监视后续课程".contentEquals(repeat.getContentDescription()),"scope checkbox keeps its short label and full accessible meaning");
         check(findDescription(root,"监视运行设置")==null,"dedicated monitor page removes the settings gear");
-        View title=findText(root,readerLesson.course);Rect titleBounds=bounds(title),scopeBounds=bounds(repeat);check(!Rect.intersects(titleBounds,scopeBounds)&&Math.abs(titleBounds.top-scopeBounds.top)<repeat.getHeight(),"course information and scope checkbox share the top area without overlap");
+        View title=findText(root,readerLesson.course);Rect titleBounds=bounds(title),scopeBounds=bounds(repeat),statusBounds=bounds((View)field(activity,"status"));
+        check(findText(root,"课堂监视")==null&&titleBounds.bottom<=scopeBounds.top,"course name is the only page title above compact metadata");
+        check(!Rect.intersects(statusBounds,scopeBounds)&&statusBounds.top<scopeBounds.bottom&&statusBounds.bottom>scopeBounds.top,"connection metadata and following-course checkbox share one compact row");
         DockNavigationLayout dock=(DockNavigationLayout)field(activity,"sections");View host=(View)dock.getParent();ScrollView captions=(ScrollView)field(activity,"scroll");LinearLayout rows=(LinearLayout)field(activity,"rows");
         capture("reader-before-dock-check");
         boolean side=(Boolean)field(activity,"sideNavigation");
         check(side?bounds(host).right<=bounds(captions).left:bounds(host).bottom<=bounds(captions).bottom+1&&bounds(host).top>bounds(captions).centerY(),"subtitle/PPT dock occupies its actual reader edge: host="+bounds(host)+", viewport="+bounds(captions));
-        check(side?rows.getPaddingBottom()>=48*app.getResources().getDisplayMetrics().density:rows.getPaddingBottom()>host.getHeight(),"caption content reserves the measured floating actions");capture("reader-bottom-dock");
+        if(!side){int safe=activity.getWindow().getDecorView().getRootWindowInsets().getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout()).bottom;check(Math.abs(bounds(root).bottom-bounds(host).bottom-safe-4*activity.getResources().getDisplayMetrics().density)<3,"reader Dock uses workspace 4dp plus system-bottom baseline, without form end padding");}
+        check(Math.abs(rows.getPaddingBottom()-(side?0:host.getHeight())-12*activity.getResources().getDisplayMetrics().density)<2,"caption end reserves only the measured Dock plus 12dp, without a phantom action row");capture("reader-bottom-dock");
         entranceCancellation(root);
         if("true".equals(args.getString("entry_only"))){ClassroomMonitorInstrumentation monitor=(ClassroomMonitorInstrumentation)test;check(monitor.enteredPages.contains("ClassroomTranscriptActivity"),"reader entry frames="+monitor.enteredPages+", creates="+monitor.entryCreates+", frames="+monitor.entryFrameCounts);test.runOnMainSync(activity::finish);activity=null;return;}
+        if("true".equals(args.getString("landscape_only"))){tap(dock.itemAt(1));idle(500);landscapeViewer();test.runOnMainSync(activity::finish);activity=null;return;}
+        if("true".equals(args.getString("rapid_only"))){tap(dock.itemAt(1));idle(500);rapidGallery();test.runOnMainSync(activity::finish);activity=null;return;}
         if("true".equals(args.getString("gallery_only"))){tap(dock.itemAt(1));idle(500);tap((View)field(activity,"nextSlide"));idle(400);openViewerAndSave();test.runOnMainSync(activity::finish);activity=null;return;}
         int initialY=captions.getScrollY();check(initialY>0,"first opening performs its one latest-caption position: rows="+rows.getChildCount()+"/"+rows.getHeight()+", viewport="+captions.getHeight()+", destroyed="+activity.isDestroyed()+", config="+activity.getResources().getConfiguration()+", pending="+field(activity,"pendingLatest")+"/"+field(activity,"pendingRestore"));
         appendCaption("首次进入后的追加不拉动偏移");idle(500);check(captions.getScrollY()==initialY,"appending even at the initial latest position preserves exact Y");
@@ -210,8 +355,8 @@ final class ClassroomUiPolishChecks {
         View rail=(View)field(activity,"slidesBar");check(rail instanceof DateIntervalBar,"PPT navigation uses the shared date-interval component");horizontalSwipe(rail,.7f,.3f);idle(450);check((Integer)field(activity,"pictureIndex")==1,"real left swipe on the common control selects next PPT");
         horizontalSwipe(slide,.75f,.25f);idle(450);check((Integer)field(activity,"pictureIndex")==2,"real left swipe on the picture selects the same next direction");
         horizontalSwipe(slide,.25f,.75f);idle(450);check((Integer)field(activity,"pictureIndex")==1,"picture right swipe returns to previous frame");
-        tap((View)field(activity,"previousSlide"));idle(350);check((Integer)field(activity,"pictureIndex")==0,"common arrow and image gestures share the same selected frame");
-        Rect railBounds=bounds(rail);tap(new Rect(railBounds.centerX()-4,railBounds.centerY()-4,railBounds.centerX()+4,railBounds.centerY()+4));idle(200);tapText("2 · "+ClassroomExport.time(40));idle(400);check((Integer)field(activity,"pictureIndex")==1,"control centre opens existing choice menu and selects a frame");
+        tap((View)field(activity,"previousSlide"));idle(500);check((Integer)field(activity,"pictureIndex")==0,"common arrow and image gestures share the same selected frame");
+        Rect railBounds=bounds(rail);tap(new Rect(railBounds.centerX()-4,railBounds.centerY()-4,railBounds.centerX()+4,railBounds.centerY()+4));idle(200);tapText("2 · "+ClassroomExport.time(40));idle(550);check((Integer)field(activity,"pictureIndex")==1,"control centre opens existing choice menu and selects a frame");
         openViewerAndSave();
         recreate();check((Integer)field(activity,"mode")==1&&(Integer)field(activity,"pictureIndex")==2&&((ImageView)field(activity,"slideImage")).getDrawable()!=null,"PPT reading and cached decoding restore after recreation");
         dock=(DockNavigationLayout)field(activity,"sections");Rect dockBounds=bounds(dock);long down=SystemClock.uptimeMillis();pointer(down,down,MotionEvent.ACTION_DOWN,dockBounds.left+dockBounds.width()*.2f,dockBounds.centerY());SystemClock.sleep(20);pointer(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,dockBounds.right-dockBounds.width()*.15f,dockBounds.centerY());pointer(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,dockBounds.right-dockBounds.width()*.15f,dockBounds.centerY());idle(400);check(field(activity,"sections")==dock,"fast dock fling preserves the original dock instance");capture("reader-after-fling");
@@ -238,12 +383,73 @@ final class ClassroomUiPolishChecks {
         String originalRaw=(String)field(viewer,"rawName");horizontalSwipe(full,.75f,.25f);idle(300);check(originalRaw.equals(field(viewer,"rawName")),"zoomed image pan does not switch gallery");
         doubleTap(full);idle(400);check((Float)field(viewer,"scale")<=1.001f&&!viewer.isFinishing(),"double tap within the panned picture resets zoom");String pinchTrace=pinch(full);idle(250);check(full.isAttachedToWindow()&&!viewer.isFinishing()&&(Float)field(viewer,"scale")>1.1f&&originalRaw.equals(field(viewer,"rawName")),"two-finger pinch zooms the attached viewer without paging: scale="+field(viewer,"scale")+", raw="+field(viewer,"rawName")+", trace="+pinchTrace);
         capture("viewer-after-pinch");doubleTap(full);idle(400);check((Float)field(viewer,"scale")<=1.001f,"double tap resets zoom before a separate paging gesture: "+field(viewer,"scale"));galleryDrag((ImageSlidePager)field(viewer,"pager"),true);
+        ImageSlidePager gallery=(ImageSlidePager)field(viewer,"pager");fastSwipe(gallery,false);fastSwipe(gallery,false);idle(550);check((Integer)field(gallery,"index")==0,"full-screen consecutive reverse gestures reach the first frame");fastSwipe(gallery,true);fastSwipe(gallery,true);idle(550);check((Integer)field(gallery,"index")==2,"full-screen consecutive forward gestures reach the last frame");
         saveThroughUi("image/png",".png","ppt-original.png");
         viewer=activity;
         full=(ImageView)field(viewer,"image");Rect fullBounds=bounds(full);android.graphics.RectF actual=new android.graphics.RectF(0,0,full.getDrawable().getIntrinsicWidth(),full.getDrawable().getIntrinsicHeight());full.getImageMatrix().mapRect(actual);
         float emptyX=actual.left>16?actual.left/2:full.getWidth()/2f,emptyY=actual.left>16?full.getHeight()/2f:(actual.bottom+full.getHeight())/2f;
         tap(new Rect(fullBounds.left+(int)emptyX-4,fullBounds.top+(int)emptyY-4,fullBounds.left+(int)emptyX+4,fullBounds.top+(int)emptyY+4));idle(450);
         check(viewer.isFinishing(),"blank outside actual image closes existing viewer");idle(400);activity=((ClassroomMonitorInstrumentation)test).lastResumed;check(activity instanceof ClassroomTranscriptActivity&&(Integer)field(activity,"pictureIndex")==2,"return keeps the image selected in full screen");
+    }
+    private void landscapeViewer()throws Exception{
+        Activity parent=activity;Instrumentation.ActivityMonitor opening=test.addMonitor(AttachmentViewerActivity.class.getName(),null,false);tap((View)field(activity,"slideImage"));Activity viewer=test.waitForMonitorWithTimeout(opening,5000);test.removeMonitor(opening);check(viewer!=null,"landscape uses existing classroom viewer");activity=viewer;idle(500);
+        long readyBy=SystemClock.uptimeMillis()+4000;
+        do{Activity resumed=((ClassroomMonitorInstrumentation)test).lastResumed;if(resumed instanceof AttachmentViewerActivity&&!resumed.isDestroyed())viewer=resumed;if(!viewer.isDestroyed()&&!viewer.isFinishing()&&viewer.hasWindowFocus()&&viewer.getWindow().getDecorView().getRootWindowInsets()!=null)break;idle(100);}while(SystemClock.uptimeMillis()<readyBy);
+        activity=viewer;check(!viewer.isDestroyed()&&!viewer.isFinishing()&&viewer.getWindow().getDecorView().getRootWindowInsets()!=null,"landscape viewer remains attached after configuration recovery");
+        View root=viewer.findViewById(android.R.id.content),back=findDescription(root,"返回"),save=findDescription(root,"保存图片");float density=viewer.getResources().getDisplayMetrics().density;
+        var insets=viewer.getWindow().getDecorView().getRootWindowInsets();var safe=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());Rect window=bounds(root),left=bounds(back),right=bounds(save);
+        check(!insets.isVisible(android.view.WindowInsets.Type.statusBars()),"landscape PPT hides system status bar");
+        check(findText(root,"课堂PPT")==null,"landscape has no overlaid PPT title");
+        check(Math.abs(left.left-window.left-safe.left-20*density)<3&&Math.abs(window.right-safe.right-right.right-20*density)<3&&Math.abs(left.top-window.top-safe.top-16*density)<3&&left.top==right.top,"return and save occupy safe upper corners");
+        capture("landscape-ppt-corners");
+        ImageSlidePager gallery=(ImageSlidePager)field(viewer,"pager");burstSwipes(gallery,true);idle(800);check((Integer)field(gallery,"index")==2,"landscape image retains rapid paging");
+        saveThroughUi("image/png",".png","landscape-ppt.png");
+        check(!activity.getWindow().getDecorView().getRootWindowInsets().isVisible(android.view.WindowInsets.Type.statusBars()),"return from save restores landscape immersive status");
+        tap(findDescription(activity.findViewById(android.R.id.content),"返回"));idle(450);activity=((ClassroomMonitorInstrumentation)test).lastResumed;
+        check(activity instanceof ClassroomTranscriptActivity&&activity.getWindow().getDecorView().getRootWindowInsets().isVisible(android.view.WindowInsets.Type.statusBars()),"leaving the viewer restores the current reader system status bar");
+    }
+    private void rapidGallery()throws Exception{
+        ImageSlidePager pager=(ImageSlidePager)field(activity,"slidePager");
+        for(int pass=0;pass<3;pass++){
+            fastSwipe(pager,true);fastSwipe(pager,true);idle(500);
+            check((Integer)field(pager,"index")==2,"two consecutive left swipes reach last image, pass="+pass+", index="+field(pager,"index"));
+            fastSwipe(pager,false);fastSwipe(pager,false);idle(500);
+            check((Integer)field(pager,"index")==0,"two consecutive right swipes return to first image, pass="+pass);
+        }
+        burstSwipes(pager,true);idle(700);check((Integer)field(pager,"index")==2,"two short swipes without synchronous UP waits reach the last image: index="+field(pager,"index")+", requested="+field(pager,"requested")+", offset="+field(pager,"offset"));
+        burstSwipes(pager,false);idle(700);check((Integer)field(pager,"index")==0,"two short reverse swipes without synchronous UP waits reach the first image");
+        boolean[] animated={false};android.view.ViewTreeObserver.OnPreDrawListener frames=()->{if(Math.abs(pager.image().getTranslationX())>1)animated[0]=true;return true;};
+        test.runOnMainSync(()->pager.getViewTreeObserver().addOnPreDrawListener(frames));
+        tap((View)field(activity,"nextSlide"));idle(450);
+        check((Integer)field(pager,"index")==1,"arrow selects the next image");
+        if(UiMotion.isEnabled())check(animated[0],"arrow paints intermediate image translation frames");
+        capture("rapid-gallery-arrow");
+        tap((View)field(activity,"previousSlide"));idle(450);
+        tap((View)field(activity,"nextSlide"));tap((View)field(activity,"nextSlide"));idle(450);
+        check((Integer)field(pager,"index")==2,"two quick arrow taps advance twice");
+        holdOut((View)field(activity,"previousSlide"),"date-arrow-highlight");
+        test.runOnMainSync(()->pager.getViewTreeObserver().removeOnPreDrawListener(frames));
+    }
+    private void fastSwipe(ImageSlidePager pager,boolean forward)throws Exception{
+        Rect area=bounds(pager);float y=Math.min(area.centerY(),bounds(activity.findViewById(android.R.id.content)).bottom-100);
+        float start=area.left+area.width()*(forward?.8f:.2f),sign=forward?-1:1;long time=SystemClock.uptimeMillis();
+        pointer(time,time,MotionEvent.ACTION_DOWN,start,y);
+        pointer(time,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,start+sign*area.width()*.08f,y);
+        pointer(time,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,start+sign*area.width()*.58f,y);
+        pointer(time,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,start+sign*area.width()*.58f,y);
+    }
+    private void burstSwipes(ImageSlidePager pager,boolean forward){
+        Rect area=bounds(pager);float y=area.top+area.height()*.4f,start=area.left+area.width()*(forward?.8f:.2f),sign=forward?-1:1;
+        for(int gesture=0;gesture<2;gesture++){
+            long down=SystemClock.uptimeMillis();
+            for(int step=0;step<4;step++){
+                long remaining=down+step*8-SystemClock.uptimeMillis();if(remaining>0)SystemClock.sleep(remaining);
+                MotionEvent event=MotionEvent.obtain(down,SystemClock.uptimeMillis(),step==0?MotionEvent.ACTION_DOWN:step==3?MotionEvent.ACTION_UP:MotionEvent.ACTION_MOVE,start+sign*area.width()*(step==0?0:step==1?.08f:.4f),y,0);event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+                try{if(!test.getUiAutomation().injectInputEvent(event,false))throw new AssertionError("Owned burst swipe rejected");}finally{event.recycle();}
+            }
+            SystemClock.sleep(8);
+        }
+        test.waitForIdleSync();
     }
     private void galleryDrag(ImageSlidePager pager,boolean full)throws Exception{
         Rect area=bounds(pager),picture=imageTouchBounds(pager.image());int before=full?1:0;long time=SystemClock.uptimeMillis();float y=picture.centerY(),start=picture.left+picture.width()*.8f;

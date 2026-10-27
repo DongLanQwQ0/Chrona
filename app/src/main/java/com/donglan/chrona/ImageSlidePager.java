@@ -37,7 +37,7 @@ final class ImageSlidePager extends FrameLayout {
     private Source source;
     private Listener listener;
     private java.util.function.BooleanSupplier pagingAllowed = () -> true;
-    private int index, requested = -1;
+    private int index, requested = -1, settleTarget = -1, settleDirection;
     private volatile int generation;
     private boolean closed, tracking, blocked;
     private float downX, downY, originX, offset, startOffset;
@@ -68,6 +68,7 @@ final class ImageSlidePager extends FrameLayout {
     void setListener(Listener listener) { this.listener = listener; }
     void setPagingAllowed(java.util.function.BooleanSupplier allowed) { pagingAllowed = allowed; }
     boolean ready() { return index < names.size() && current.getDrawable() != null && cache.get(names.get(index)) != null; }
+    int selection() { return requested >= 0 ? requested : settleTarget >= 0 ? settleTarget : index; }
 
     void setImages(List<String> images, int selected, Source source) {
         String previousName=index<names.size()?names.get(index):null;
@@ -85,15 +86,38 @@ final class ImageSlidePager extends FrameLayout {
 
     boolean select(int selected) {
         if (selected < 0 || selected >= names.size() || !source.allowed()) return false;
-        if (selected == index) return true;
+        if (selected == selection()) return true;
         if (cache.containsKey(names.get(selected))&&cache.get(names.get(selected))==null){Feedback.show(activity,"图片缓存暂不可用");return false;}
         if (cache.get(names.get(selected))!=null) {
-            stop(); index = selected; requested = -1; prune(); bind(); loadWindow();
+            requested = -1; animateTo(selected);
         } else {
             requested = selected;
             load(selected);
         }
         return true;
+    }
+
+    private void animateTo(int selected) {
+        interruptMotion();
+        if (selected == index) { settle(0); return; }
+        int direction = selected > index ? 1 : -1;
+        (direction > 0 ? next : previous).setImageBitmap(bitmap(selected));
+        settle(direction, selected);
+    }
+
+    /** A new gesture owns the already committed destination, without snapping its pixels. */
+    private void interruptMotion() {
+        if (animator == null) return;
+        ValueAnimator running = animator; animator = null; running.cancel();
+        int target = settleTarget, direction = settleDirection;
+        settleTarget = -1; settleDirection = 0;
+        if (target >= 0 && target != index) {
+            Bitmap departing = bitmap(index);
+            float distance = offset + direction * getWidth();
+            index = target; bind();
+            (direction > 0 ? previous : next).setImageBitmap(departing);
+            transform(distance); prune(); loadWindow();
+        }
     }
 
     private void bind() {
@@ -143,7 +167,7 @@ final class ImageSlidePager extends FrameLayout {
                     cache.put(name, result);
                     if(result==null){if(names.get(index).equals(name))current.setContentDescription("图片缓存暂不可用");if(requested>=0&&names.get(requested).equals(name)){requested=-1;Feedback.show(activity,"图片缓存暂不可用");}return;}
                     if (requested >= 0 && names.get(requested).equals(name)) {
-                        stop(); index = requested; requested = -1; prune(); bind(); loadWindow();
+                        int selected = requested; requested = -1; animateTo(selected);
                     } else if (names.get(index).equals(name)) bind();
                     else { previous.setImageBitmap(bitmap(index - 1)); next.setImageBitmap(bitmap(index + 1)); }
                 });
@@ -173,7 +197,7 @@ final class ImageSlidePager extends FrameLayout {
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
-            if (animator != null) { ValueAnimator running = animator; animator = null; running.cancel(); }
+            interruptMotion(); requested = -1;
             downX = event.getX(); downY = event.getY(); originX = downX; startOffset = offset;
             tracking = false; blocked = !ready()||!pagingAllowed.getAsBoolean();
         }
@@ -185,7 +209,7 @@ final class ImageSlidePager extends FrameLayout {
             float dx = event.getX() - downX, dy = event.getY() - downY;
             if (Math.abs(dy) > slop && Math.abs(dy) >= Math.abs(dx)) blocked = true;
             else if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy) * 1.25f) {
-                tracking = true; originX = event.getX();
+                tracking = true; originX = downX + Math.copySign(slop, dx);
                 MotionEvent cancel = MotionEvent.obtain(event); cancel.setAction(MotionEvent.ACTION_CANCEL);
                 super.dispatchTouchEvent(cancel); cancel.recycle();
                 if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
@@ -199,11 +223,13 @@ final class ImageSlidePager extends FrameLayout {
                 return true;
             }
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                int direction = offset < 0 ? 1 : -1;
-                boolean commit = action == MotionEvent.ACTION_UP && Math.abs(offset) >= Math.max(dp(48), getWidth() * .15f)
-                        && index + direction >= 0 && index + direction < names.size()
-                        && cache.get(names.get(index + direction))!=null;
-                tracking = false; settle(commit ? direction : 0);
+                float travel = event.getX() - originX;
+                int direction = travel < 0 ? 1 : -1;
+                boolean commit = action == MotionEvent.ACTION_UP && Math.abs(travel) >= Math.max(dp(48), getWidth() * .15f)
+                        && index + direction >= 0 && index + direction < names.size();
+                tracking = false;
+                if (commit && bitmap(index + direction) == null) { settle(0); select(index + direction); }
+                else settle(commit ? direction : 0);
                 if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
                 return true;
             }
@@ -214,10 +240,17 @@ final class ImageSlidePager extends FrameLayout {
             if (offset != 0 && animator == null) settle(0);
             if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
         }
-        return handled;
+        // The moving current ImageView can leave a non-clickable neighbour under DOWN.
+        // Keep the viewport in the touch stream so the next MOVE can still start paging.
+        return handled || !blocked;
     }
 
     private void settle(int direction) {
+        settle(direction, direction == 0 ? -1 : index + direction);
+    }
+    private void settle(int direction, int selected) {
+        if (animator != null) { ValueAnimator running = animator; animator = null; running.cancel(); }
+        settleTarget = selected; settleDirection = direction;
         float target = -direction * getWidth();
         if (!ValueAnimator.areAnimatorsEnabled() || offset == target) { finishSettle(direction); return; }
         ValueAnimator animation = ValueAnimator.ofFloat(offset, target); animator = animation;
@@ -230,10 +263,11 @@ final class ImageSlidePager extends FrameLayout {
         animation.start();
     }
     private void finishSettle(int direction) {
-        if (direction != 0) { index += direction; requested = -1; prune(); bind(); loadWindow(); }
+        int selected = settleTarget; settleTarget = -1; settleDirection = 0;
+        if (direction != 0) { index = selected; prune(); bind(); loadWindow(); }
         else transform(0);
     }
-    void stop() { if (animator != null) { ValueAnimator running = animator; animator = null; running.cancel(); } tracking = false; transform(0); }
+    void stop() { interruptMotion(); settleTarget = -1; settleDirection = 0; tracking = false; transform(0); }
     void close() { closed = true; generation++; stop(); decoder.shutdownNow(); cache.clear(); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 }

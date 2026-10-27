@@ -49,14 +49,19 @@ final class GlassDateTimePickerView extends View {
     private float dp(float value) { return value * getResources().getDisplayMetrics().density; }
     private float sp(float value) { return value * getResources().getDisplayMetrics().scaledDensity; }
     private float header() { return Math.min(dp(30), getHeight() * .18f); }
-    private float rowHeight() { return Math.max(1, (getHeight() - header()) / 5f); }
+    private int visibleRows() {
+        int rows=5;
+        while(rows>1&&(getHeight()-header())/rows<sp(20)/.54f)rows-=2;
+        return rows;
+    }
+    private float rowHeight() { return Math.max(1, (getHeight() - header()) / visibleRows()); }
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         setMeasuredDimension(resolveSize((int) dp(300), widthSpec), resolveSize((int) dp(240), heightSpec));
     }
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         UiStyle.Palette colors = UiStyle.colors(getContext());
-        float row = rowHeight(), center = header() + row * 2.5f;
+        float row = rowHeight(), center = header() + row * visibleRows() / 2f;
         float width = getWidth() / (float) columns();
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(withAlpha(colors.primary, 24));

@@ -15,6 +15,7 @@
 | 普通按压与组合操作反馈 | `PressFeedback`；Dock 继续独立管理按压、拖动与惯性 |
 | 按压／焦点绘制优先级与固定导航 | `InteractionLayers`；提升祖先绘制分支，保留布局顺序并恢复原 Z 值；由公共反馈与 Dock 接入 |
 | 设置页结构／安全区 | `SettingsPageLayout`；底层安全区接口保留在 `UiStyle` |
+| 横屏／短窗口工具与正文联动滚动 | `CollapsingPageLayout`；使用 `SettingsPageLayout.workspaceContent` 后明确登记 `setScrollingBody`，保持现有滚动监听和页面实例 |
 | 工作区标题／共享操作胶囊 | `WorkspacePageHeader`、`HeaderActionGroup` |
 | 日期区间／滚轮选择器 | `DateIntervalBar`、`GlassDateTimePickerView` |
 | 选择栏／底部导航 | `DockNavigationLayout`、`DockSpring`、`DashboardDockChrome` |
@@ -27,7 +28,9 @@
 
 短窗口的固定工具组使用`SettingsPageLayout.toolsViewport`，限制工具区占用并保留可滚动操作；`SchedulePage`只给正文增加底部浮动导航的末尾留白，不给工具视口重复加空白。表单的键盘和系统安全区由滚动视口外层承担，焦点按真实可见高度滚动。
 
-`UiMotion.enterPage`用于首次子页面呈现，方向`swap`用于工作区子视图和分页；轮询不重播入场。`DateIntervalBar`保持实例并负责箭头、滑动与点击选择入口。课堂图片的`ImageSlidePager`只负责有界手势和当前/相邻帧位置，解码、原图比例、缩放和保存留在现有图片页面。
+工作区的短窗口由`CollapsingPageLayout`接收纵向嵌套滚动，先移出正文上方工具，再把同等高度还给正文；回到正文开头后下拖恢复。`FreeCalendarScrollView`保留自身双向滚动、捏合及周切换，同时把纵向预消费和窗口偏移交给该父级。竖屏普通高度不折叠，键盘编辑时保留输入工具，不替换既有滚动监听。日期／时间轮使用`UiDialogs.fitPicker`按可见高度扣除标题与操作行，窄高时减少可见轮行而非缩小所选值字体。
+
+`UiMotion.enterPage`用于首次子页面呈现，方向`swap`用于工作区子视图和分页；轮询不重播入场。`DateIntervalBar`保持实例并负责箭头、滑动与点击选择入口。课堂图片的`ImageSlidePager`负责有界手势、当前／相邻帧缓存、原图比例及连续切页；权限和图片来源由调用页提供，缩放、保存及横屏沉浸工具留在既有图片查看页。
 
 页面调用样式和组合组件，不自行创建另一份亚克力 Drawable、弹窗层级管理或快照切换。渲染状态由 `UiSurfaces` 管理；浮层登记窗口模糊根，渲染层无需依赖浮层生命周期实现。
 `CalendarVisibilityToggle` 只管理开关图标及连续颜色变化；按压通过 `UiStyle.pressable` 使用 `UiSurfaces` 的公共填充遮罩，随 `HeaderActionGroup` 胶囊边界裁切。调用方不叠加专用圆形涟漪或选中底色。

@@ -48,7 +48,7 @@ final class CalendarVisibilityToggle extends CheckBox {
         float density = getResources().getDisplayMetrics().density;
         icon.setTint((Integer)tint.evaluate(checkedFraction, palette.muted, palette.primary));
         int size = Math.round(24 * density * (1f + .08f * (float)Math.sin(Math.PI * checkedFraction)));
-        int left = (getWidth() - size) / 2, top = (getHeight() - size) / 2;
+        int left = (getWidth() - size + getPaddingLeft() - getPaddingRight()) / 2, top = (getHeight() - size) / 2;
         icon.setBounds(left, top, left + size, top + size);
         icon.draw(canvas);
     }

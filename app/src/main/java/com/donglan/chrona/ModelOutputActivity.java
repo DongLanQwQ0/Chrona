@@ -36,13 +36,8 @@ public final class ModelOutputActivity extends Activity {
         if (state != null) index = state.getInt("page_index");
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this), new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout root = SettingsPageLayout.content(this);
+        CollapsingPageLayout root = SettingsPageLayout.workspaceContent(this);
         SettingsPageLayout.header(this, root, "模型完整输出");
-        TextView note = new TextView(this);
-        note.setText("按页浏览长输出。解析过程中点刷新可查看新内容。");
-        note.setTextSize(14);
-        UiStyle.muted(note);
-        UiStyle.addSpaced(root, note, 6, 12);
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -77,6 +72,7 @@ public final class ModelOutputActivity extends Activity {
         actions.addView(reload, new LinearLayout.LayoutParams(0, dp(50), 1));
         card.addView(actions);
         root.addView(card, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.setScrollingBody(card);
         stage.addView(root, new FrameLayout.LayoutParams(-1, -1));
         UiStyle.applyInsets(stage, root);
         setContentView(stage);

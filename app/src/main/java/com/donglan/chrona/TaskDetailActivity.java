@@ -1004,10 +1004,8 @@ public final class TaskDetailActivity extends Activity {
         text.setTypeface(android.graphics.Typeface.MONOSPACE);
         text.setTextIsSelectable(true);
         UiStyle.muted(text);
-        ScrollView scroll = new ScrollView(this);
+        ScrollView scroll = UiDialogs.dialogBody(panel,text,320);
         scroll.setFillViewport(false);
-        scroll.addView(text);
-        panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(320)));
         UiDialogs.showFloatingDialog(dialog, panel);
         long[] lastLength = {-1};
         StreamingOutputStore previewStore = new StreamingOutputStore(this);
@@ -1046,7 +1044,7 @@ public final class TaskDetailActivity extends Activity {
                     + " 输入 token", 14);
         Dialog dialog = new Dialog(this);
         LinearLayout panel = floatingDialogPanel("解析用量");
-        addScrollableDialogBody(panel, body, 180);
+        UiDialogs.dialogBody(panel, body, 180);
         UiDialogs.showFloatingDialog(dialog, panel);
         sizeFloatingDialog(dialog, dp(420), Gravity.CENTER);
     }
@@ -1081,7 +1079,7 @@ public final class TaskDetailActivity extends Activity {
         }
         Dialog dialog = new Dialog(this);
         LinearLayout panel = floatingDialogPanel("来源与检索");
-        addScrollableDialogBody(panel, body, 320);
+        UiDialogs.dialogBody(panel, body, 320);
         UiDialogs.showFloatingDialog(dialog, panel);
         sizeFloatingDialog(dialog, dp(460), Gravity.CENTER);
     }
@@ -1098,13 +1096,6 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.title(heading);
         UiStyle.addSpaced(panel, heading, 0, 10);
         return panel;
-    }
-
-    private void addScrollableDialogBody(LinearLayout panel, View body, int heightDp) {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(false);
-        scroll.addView(body);
-        panel.addView(scroll, new LinearLayout.LayoutParams(-1, dp(heightDp)));
     }
 
     private void sizeFloatingDialog(Dialog dialog, int maxWidth, int gravity) {

@@ -69,7 +69,7 @@ final class TimetablePage extends SchedulePage {
     }
 
     private Session session;
-    private LinearLayout shell;
+    private CollapsingPageLayout shell;
     private FrameLayout body;
     private ImageButton refreshButton;
     private WorkspacePageHeader pageHeader;
@@ -102,7 +102,7 @@ final class TimetablePage extends SchedulePage {
         }
         FrameLayout stage = new FrameLayout(activity);
 
-        shell = new LinearLayout(activity);
+        shell = new CollapsingPageLayout(activity);
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(12));
         UiStyle.page(activity, shell);
@@ -123,6 +123,7 @@ final class TimetablePage extends SchedulePage {
         UiStyle.addSpaced(shell, pageHeader, 0, 8);
         body = new FrameLayout(activity);
         shell.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
+        shell.setScrollingBody(body);
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
         shell.setFitsSystemWindows(false);
         setContentView(stage);
@@ -418,8 +419,8 @@ final class TimetablePage extends SchedulePage {
                 params.topMargin = dp(20);
                 empty.addView(open, params);
             }
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-            body.addView(empty, params);
+            vertical=new ScrollView(activity);vertical.setVerticalScrollBarEnabled(false);vertical.addView(empty);
+            body.addView(vertical,new FrameLayout.LayoutParams(-1,-1));
         } else {
             vertical = new ScrollView(activity);
             vertical.setVerticalScrollBarEnabled(false);

@@ -22,9 +22,12 @@ class FreeCalendarScrollView extends HorizontalScrollView {
     private final ScaleGestureDetector detector;
     private VelocityTracker velocity;
     private final int slop, maxVelocity;
+    private final int[] nestedConsumed = new int[2], nestedOffset = new int[2];
+    private int nestedYOffset;
     FreeCalendarScrollView(Context context) {
         super(context); ViewConfiguration config = ViewConfiguration.get(context);
         setOverScrollMode(OVER_SCROLL_NEVER);
+        setNestedScrollingEnabled(true);
         slop = config.getScaledTouchSlop(); maxVelocity = config.getScaledMaximumFlingVelocity();
         detector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override public boolean onScaleBegin(ScaleGestureDetector d) { return true; }
@@ -47,12 +50,14 @@ class FreeCalendarScrollView extends HorizontalScrollView {
             if (vertical != null) vertical.onTouchEvent(event);
             MotionEvent cancel = MotionEvent.obtain(event); cancel.setAction(MotionEvent.ACTION_CANCEL);
             super.onTouchEvent(cancel); if (vertical != null) vertical.onTouchEvent(cancel); cancel.recycle();
+            nestedYOffset = 0; startNestedScroll(SCROLL_AXIS_VERTICAL);
             detector.onTouchEvent(event);
             // This viewport applies both axes itself; keep ancestors from taking the first move.
             getParent().requestDisallowInterceptTouchEvent(true);
             return super.dispatchTouchEvent(event);
         }
         if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            stopNestedScroll();
             multiTouch = true; edgeSwipe.cancel(); cancelChild(event); recycleVelocity();
             getParent().requestDisallowInterceptTouchEvent(true);
         }
@@ -63,7 +68,10 @@ class FreeCalendarScrollView extends HorizontalScrollView {
             }
             return true;
         }
-        if (velocity != null) velocity.addMovement(event);
+        if (velocity != null) {
+            MotionEvent movement=MotionEvent.obtain(event);movement.offsetLocation(0,nestedYOffset);
+            velocity.addMovement(movement);movement.recycle();
+        }
         if (!dragging && action == MotionEvent.ACTION_MOVE && (Math.abs(event.getX() - downX) > slop || Math.abs(event.getY() - downY) > slop)) {
             // Dispatch owns arbitration even when the nested vertical view disallows interception.
             cancelChild(event);
@@ -72,7 +80,7 @@ class FreeCalendarScrollView extends HorizontalScrollView {
         if (dragging) return onTouchEvent(event);
         boolean handled = super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            recycleVelocity(); getParent().requestDisallowInterceptTouchEvent(false);
+            stopNestedScroll(); recycleVelocity(); getParent().requestDisallowInterceptTouchEvent(false);
         }
         return handled;
     }
@@ -90,23 +98,30 @@ class FreeCalendarScrollView extends HorizontalScrollView {
                 if (edgeDirection == 0) {
                     edgeDirection = direction;
                     // Only the unconsumed part beyond the edge counts toward changing weeks.
-                    edgeSwipe.begin(event.getX() - outside, lastY, true);
+                    edgeSwipe.begin(event.getX() - outside, lastY+nestedYOffset, true);
                 }
-                edgeSwipe.move(event.getX(), event.getY(), slop, false);
+                edgeSwipe.move(event.getX(), event.getY()+nestedYOffset, slop, false);
             }
-            if (vertical != null) vertical.scrollBy(0, Math.round(lastY - event.getY()));
-            lastX = event.getX(); lastY = event.getY(); return true;
+            int dy=Math.round(lastY-event.getY()),windowOffset=0;
+            nestedConsumed[0]=nestedConsumed[1]=nestedOffset[0]=nestedOffset[1]=0;
+            if(dispatchNestedPreScroll(0,dy,nestedConsumed,nestedOffset)){dy-=nestedConsumed[1];windowOffset+=nestedOffset[1];}
+            int beforeY=vertical==null?0:vertical.getScrollY();
+            if(vertical!=null)vertical.scrollBy(0,dy);
+            int movedY=vertical==null?0:vertical.getScrollY()-beforeY;
+            nestedOffset[0]=nestedOffset[1]=0;
+            dispatchNestedScroll(0,movedY,0,dy-movedY,nestedOffset);windowOffset+=nestedOffset[1];nestedYOffset+=windowOffset;
+            lastX = event.getX(); lastY = event.getY()-windowOffset; return true;
         }
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             if (action == MotionEvent.ACTION_CANCEL) edgeSwipe.cancel();
-            int direction = edgeSwipe.finish(event.getX(), event.getY(), Math.max(48 * getResources().getDisplayMetrics().density, getWidth() * .15f));
+            int direction = edgeSwipe.finish(event.getX(), event.getY()+nestedYOffset, Math.max(48 * getResources().getDisplayMetrics().density, getWidth() * .15f));
             if (direction != edgeDirection) direction = 0;
             if (direction != 0 && changeWeek != null) changeWeek.accept(direction);
             else if (action == MotionEvent.ACTION_UP && velocity != null) {
                 velocity.computeCurrentVelocity(1000, maxVelocity); fling(Math.round(-velocity.getXVelocity()));
                 if (vertical != null) vertical.fling(Math.round(-velocity.getYVelocity()));
             }
-            recycleVelocity();
+            stopNestedScroll(); recycleVelocity();
             dragging = false; getParent().requestDisallowInterceptTouchEvent(false); return true;
         }
         return true;
@@ -116,5 +131,5 @@ class FreeCalendarScrollView extends HorizontalScrollView {
         super.dispatchTouchEvent(cancel); cancel.recycle();
     }
     private void recycleVelocity() { if (velocity != null) { velocity.recycle(); velocity = null; } }
-    @Override protected void onDetachedFromWindow() { recycleVelocity(); super.onDetachedFromWindow(); }
+    @Override protected void onDetachedFromWindow() { stopNestedScroll(); recycleVelocity(); super.onDetachedFromWindow(); }
 }

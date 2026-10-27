@@ -1,5 +1,15 @@
 # 验证记录
 
+## 0.15.50候选 — 连续图片、公共高光与横屏高度 — 2026-10-27
+
+- 真实原生连续手势复现PPT第二次失效，修正图片轨道触摸接续、首个MOVE及过渡目的页计算。`build/ppt-burst-origin-final.txt`和`build/ui-final-rapid-dark.txt`各20项通过，包含24ms连续手势与双向翻页；正常与320dp/150%阅读检查各71项通过，见`build/ui-final-reader-light.txt`、`build/reader-compact-dark-narrow.txt`，覆盖追加／修订保持Y、重建、双击／双指缩放、保存、空白关闭和原附件入口。
+- 公共胶囊高光按完整祖先矩阵与圆角裁切，图标居中不再平移高光。`build/highlight-final-{light,dark}.txt`各254项、`build/highlight-conditional-header.txt`25项通过，覆盖五档圆角、48/44dp、单至三单元及整组缩放。公共设置布局74项、弹窗操作1530项通过，见`build/ui-0.15.50-{settings,library}-check.txt`。
+- 子代理盘点36个Manifest入口：32个有界面入口已在模拟器实际1920×768横屏窗口呈现；2个NoDisplay路由、1个debug入口及无待授权请求的LanPairing未作页面呈现。初轮亲看59张压缩JPEG，发现Guide工具残留状态栏，修复后补验；详情extra、测量主视口与触摸边界夹具错误均有定向重验，未绕过注入权限。入口记录为`build/all-pages-landscape-light-final/{review.md,report.json}`，后续有效补验为`build/all-pages-focused-recheck/report.json`。
+- `build/all-pages-height-dark.txt`66项通过：900dp/150%深色、课堂四视图、日历五视图、模型输出、Guide正反联动滚动，以及日期／时间弹窗。课堂正文232→601px、Guide226→439px，工具退出后正文实际增高，底部步骤可达；真实OS分屏、真实学校满课表及未触发的弹窗业务状态不在该证据范围。`build/ui-week-gesture-final.txt`9项补验横向位置和日期保持、边缘取消、多指不误切周。
+- 主导航横屏底板自然高度、四周内距与竖屏一致，侧栏104dp、正文20dp，实际间隔33dp。实图发现主入口仍保留旧居中留白后补齐，与切页副本一并用真实测量断言验证；`build/ui-final-dock-spacing.txt`17项通过，包含首尾按住越过底板。压缩实图在`build/ui-0.15.50-review/`。
+- `build/ui-final-landscape-ppt.txt`22项通过：横屏隐藏系统状态栏、无重复标题、公共返回／保存在安全区左右上角、真实系统文档保存、返回继续沉浸和退出恢复正常系统栏。专门ui_review亲看压缩JPEG并复核原生回执，本轮受检UI范围最终通过，无剩余确定缺陷。
+- `build/release-0.15.50-final-build.txt`的release和lintRelease通过。正式候选`build/candidates/0.15.50/Chrona-0.15.50.apk`为3202822字节、212/0.15.50、不可调试、原证书；badging与签名回执同版本前缀。手机地址10.195.39.39:39173连接超时10060，未覆盖安装，手机最后确认仍211/0.15.49；GitHub正常认证token无效，未推送或发布。按无人值守要求未要求用户重连，未调用付费模型或操作真实课程数据。
+
 ## 0.15.49 — PPT目录40段与真机覆盖更新 — 2026-10-27
 
 - 用户指定目录上限40段；`MAX_IMAGE_TIME_RANGES`改40，管线10避免复用旧目录检查点。密集截图仍合并为少量范围，字幕稀疏时间锚、上传开关与40张图片上限不变。

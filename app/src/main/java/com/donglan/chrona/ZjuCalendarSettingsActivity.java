@@ -39,17 +39,17 @@ public final class ZjuCalendarSettingsActivity extends Activity {
     }
     private void term(ZjuCalendarConfig.Term original){
         ZjuCalendarConfig.Term t=new ZjuCalendarConfig.Term(original.year,original.name,original.start.toString(),original.end.toString(),original.teachingEnd.toString());
-        Dialog d=new Dialog(this);LinearLayout panel=panel(t.name+"学期");
-        button(panel,"开始 · "+t.start,()->date("开始日期",t.start,v->{t.start=v;d.dismiss();term(t);}));
-        button(panel,"结束 · "+t.end,()->date("学期结束",t.end,v->{t.end=v;d.dismiss();term(t);}));
-        button(panel,"普通授课截止 · "+t.teachingEnd,()->date("普通授课截止",t.teachingEnd,v->{t.teachingEnd=v;d.dismiss();term(t);}));
-        button(panel,"保存",()->{try{ZjuCalendarConfig next=copy();next.terms.removeIf(x->x.year.equals(t.year)&&x.name.equals(t.name));next.terms.add(t);commit(next);d.dismiss();}catch(Exception e){error(e);}});
-        button(panel,"删除学期",()->{try{ZjuCalendarConfig next=copy();next.terms.removeIf(x->x.year.equals(t.year)&&x.name.equals(t.name));next.closed.removeIf(x->!x.isBefore(t.start)&&!x.isAfter(t.end));next.makeup.entrySet().removeIf(x->!x.getValue().isBefore(t.start)&&!x.getValue().isAfter(t.end));if(next.selectedTerm.equals(t.name))next.selectedTerm="";commit(next);d.dismiss();}catch(Exception e){error(e);}});
-        button(panel,"取消",d::dismiss);UiDialogs.showFloatingDialog(d,panel);
+        Dialog d=new Dialog(this);LinearLayout panel=panel(t.name+"学期"),fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);
+        button(fields,"开始 · "+t.start,()->date("开始日期",t.start,v->{t.start=v;d.dismiss();term(t);}));
+        button(fields,"结束 · "+t.end,()->date("学期结束",t.end,v->{t.end=v;d.dismiss();term(t);}));
+        button(fields,"普通授课截止 · "+t.teachingEnd,()->date("普通授课截止",t.teachingEnd,v->{t.teachingEnd=v;d.dismiss();term(t);}));
+        button(fields,"保存",()->{try{ZjuCalendarConfig next=copy();next.terms.removeIf(x->x.year.equals(t.year)&&x.name.equals(t.name));next.terms.add(t);commit(next);d.dismiss();}catch(Exception e){error(e);}});
+        button(fields,"删除学期",()->{try{ZjuCalendarConfig next=copy();next.terms.removeIf(x->x.year.equals(t.year)&&x.name.equals(t.name));next.closed.removeIf(x->!x.isBefore(t.start)&&!x.isAfter(t.end));next.makeup.entrySet().removeIf(x->!x.getValue().isBefore(t.start)&&!x.getValue().isAfter(t.end));if(next.selectedTerm.equals(t.name))next.selectedTerm="";commit(next);d.dismiss();}catch(Exception e){error(e);}});
+        button(fields,"取消",d::dismiss);UiDialogs.dialogBody(panel,fields);UiDialogs.showFloatingDialog(d,panel);
     }
-    private void date(String title,LocalDate initial,java.util.function.Consumer<LocalDate> save){Dialog d=new Dialog(this);LinearLayout p=panel(title);GlassDateTimePickerView picker=new GlassDateTimePickerView(this,initial.atStartOfDay());picker.showTime(false);p.addView(picker,new LinearLayout.LayoutParams(-1,dp(220)));button(p,"确定",()->{save.accept(picker.value().toLocalDate());d.dismiss();});button(p,"取消",d::dismiss);UiDialogs.showFloatingDialog(d,p);}
+    private void date(String title,LocalDate initial,java.util.function.Consumer<LocalDate> save){UiDialogs.dateDialog(this,title,initial,save);}
     private interface Save{void run(String s)throws Exception;}
-    private void edit(String title,String initial,boolean multiline,Save save){Dialog d=new Dialog(this);LinearLayout p=panel(title);EditText input=new EditText(this);input.setText(initial);input.setSingleLine(!multiline);if(multiline){input.setMinLines(5);input.setMaxLines(10);}UiStyle.input(input);p.addView(input);button(p,"保存",()->{try{save.run(input.getText().toString().trim());d.dismiss();}catch(Exception e){error(e);}});button(p,"取消",d::dismiss);UiDialogs.showFloatingDialog(d,p);}
+    private void edit(String title,String initial,boolean multiline,Save save){Dialog d=new Dialog(this);LinearLayout p=panel(title),fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);EditText input=new EditText(this);input.setText(initial);input.setSingleLine(!multiline);if(multiline){input.setMinLines(5);input.setMaxLines(10);}UiStyle.input(input);fields.addView(input);button(fields,"保存",()->{try{save.run(input.getText().toString().trim());d.dismiss();}catch(Exception e){error(e);}});button(fields,"取消",d::dismiss);UiDialogs.dialogBody(p,fields);UiDialogs.showFloatingDialog(d,p);}
     private ZjuCalendarConfig copy(){return ZjuCalendarConfig.parse(config.json().toString());}
     private void commit(ZjuCalendarConfig next){next.validate();ZjuCalendarStore.save(this,next);config=next;render();}
     private void persist(){try{commit(config);}catch(Exception e){error(e);}}

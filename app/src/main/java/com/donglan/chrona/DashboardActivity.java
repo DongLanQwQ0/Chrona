@@ -379,8 +379,7 @@ public final class DashboardActivity extends Activity {
         targetScroll.setVerticalScrollBarEnabled(false);
         LinearLayout targetContent = new LinearLayout(this);
         targetContent.setOrientation(LinearLayout.VERTICAL);
-        int horizontal = wide ? Math.max(32,
-                (getResources().getConfiguration().screenWidthDp - 90 - 720) / 2) : 20;
+        int horizontal = 20;
         targetContent.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
         FrameLayout targetHost = new FrameLayout(this);
@@ -1051,6 +1050,7 @@ public final class DashboardActivity extends Activity {
         stage.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        shell.setClipChildren(false); shell.setClipToPadding(false);
         UiStyle.page(this, shell);
         shell.setBackgroundColor(Color.TRANSPARENT);
         scroll = new ScrollView(this);
@@ -1058,8 +1058,7 @@ public final class DashboardActivity extends Activity {
         scroll.setVerticalScrollBarEnabled(false);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        int horizontal = wide ? Math.max(32,
-                (getResources().getConfiguration().screenWidthDp - 90 - 720) / 2) : 20;
+        int horizontal = 20;
         content.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
         // The cross-fade of a section switch drops a snapshot of the outgoing body next to it, so
@@ -1076,15 +1075,14 @@ public final class DashboardActivity extends Activity {
                 index -> switchTo(SECTION_ORDER[index]), this::drawNavigation);
         navigation.setHighlightMovementSpeed(1f);
         navigation.setOrientation(wide ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-        navigation.setPadding(dp(wide ? 8 : 8), dp(wide ? 24 : 6),
-                dp(wide ? 8 : 8), dp(wide ? 10 : 6));
+        navigation.setPadding(dp(8), dp(6), dp(8), dp(6));
         FrameLayout mobileBottomArea = null;
         if (wide) {
             FrameLayout rail = new FrameLayout(this); rail.setClipChildren(false); rail.setClipToPadding(false);
             InteractionLayers.pin(rail);
-            FrameLayout.LayoutParams railDock = new FrameLayout.LayoutParams(dp(78), dp(290), Gravity.CENTER);
+            FrameLayout.LayoutParams railDock = new FrameLayout.LayoutParams(dp(78), LinearLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
             rail.addView(navigation, railDock);
-            shell.addView(rail, new LinearLayout.LayoutParams(dp(110), -1));
+            shell.addView(rail, new LinearLayout.LayoutParams(dp(104), -1));
             shell.addView(pager, new LinearLayout.LayoutParams(0, -1, 1));
         } else {
             shell.addView(pager, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -1279,7 +1277,7 @@ public final class DashboardActivity extends Activity {
                 dot.setAlpha(unreadHomeworkId > 0 ? 255 : 0);
                 homework.getOverlay().add(dot); homeworkDots.put(homework, dot);
                 homework.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> {
-                    int x = view.getWidth() / 2 + dp(9), y = view.getHeight() / 2 - dp(9), radius = dp(4);
+                    int x = (view.getWidth()+view.getPaddingLeft()-view.getPaddingRight()) / 2 + dp(9), y = view.getHeight() / 2 - dp(9), radius = dp(4);
                     dot.setBounds(x - radius, y - radius, x + radius, y + radius);
                 });
                 homework.setContentDescription(unreadHomeworkId > 0 ? "最近作业，有新作业" : "最近作业");
@@ -3689,8 +3687,7 @@ public final class DashboardActivity extends Activity {
             LinearLayout.LayoutParams params = wide
                     ? new LinearLayout.LayoutParams(-1, dp(78))
                     : new LinearLayout.LayoutParams(0, -1, 1);
-            params.setMargins(dp(wide ? 3 : 4), dp(wide ? 5 : 0),
-                    dp(wide ? 3 : 4), 0);
+            params.setMargins(dp(4), 0, dp(4), 0);
             navigation.addItem(destination == INBOX && attentionCount() > 0
                     ? withInboxBadge(item, destination) : (View) item, params);
         }

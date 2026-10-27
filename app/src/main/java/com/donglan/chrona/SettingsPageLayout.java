@@ -15,7 +15,12 @@ public final class SettingsPageLayout {
     private SettingsPageLayout() { }
     static boolean shortWindow(android.content.Context context){return context.getResources().getConfiguration().screenHeightDp<=SHORT_WINDOW_HEIGHT_DP;}
     public static LinearLayout content(Activity activity) {
-        LinearLayout root = new LinearLayout(activity);
+        return content(activity,new LinearLayout(activity));
+    }
+    static CollapsingPageLayout workspaceContent(Activity activity) {
+        return content(activity,new CollapsingPageLayout(activity));
+    }
+    private static <T extends LinearLayout> T content(Activity activity,T root) {
         root.setOrientation(LinearLayout.VERTICAL);
         UiStyle.page(activity, root);
         // page() enables fitsSystemWindows: disable it before Android dispatches insets.

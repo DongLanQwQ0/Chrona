@@ -50,6 +50,7 @@ public final class AttachmentViewerActivity extends Activity {
     private float lastY;
     private boolean matrixReady;
     private boolean dragReady;
+    private boolean immersiveLandscape;
     private ScaleGestureDetector scaleDetector;
     private GestureDetector gestureDetector;
 
@@ -92,12 +93,25 @@ public final class AttachmentViewerActivity extends Activity {
         image.setScaleType(ImageView.ScaleType.MATRIX);
         image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大":"课堂PPT，双指缩放或双击放大");
         safeArea.addView(pager, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout shell=SettingsPageLayout.content(this);
+        immersiveLandscape=classroomLesson!=null&&getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;
         ImageButton save=UiStyle.navigationIcon(this,R.drawable.ic_week_export,"保存图片",this::saveImage);
-        SettingsPageLayout.header(this,shell,classroomLesson==null?"图片附件":"课堂PPT",save);
+        View shell;
+        if(immersiveLandscape){
+            FrameLayout overlay=new FrameLayout(this);overlay.setClipChildren(false);overlay.setClipToPadding(false);
+            ImageButton back=UiStyle.navigationIcon(this,R.drawable.ic_arrow_left,"返回",this::finish);
+            for(ImageButton control:new ImageButton[]{back,save}){
+                FrameLayout.LayoutParams slot=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.TOP|(control==back?Gravity.START:Gravity.END));
+                slot.setMargins(dp(20),dp(16),dp(20),0);overlay.addView(control,slot);InteractionLayers.pin(control);
+            }
+            shell=overlay;
+        }else{
+            LinearLayout content=SettingsPageLayout.content(this);
+            SettingsPageLayout.header(this,content,classroomLesson==null?"图片附件":"课堂PPT",save);shell=content;
+        }
         safeArea.addView(shell,new FrameLayout.LayoutParams(-1,-1));
         UiStyle.applyInsets(stage, safeArea);
         setContentView(stage);
+        updateSystemBars();
 
         scaleDetector = new ScaleGestureDetector(this,
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -136,6 +150,18 @@ public final class AttachmentViewerActivity extends Activity {
             public boolean allowed(){return classroomLesson==null||ClassroomMonitor.allowed(AttachmentViewerActivity.this,classroomAccount);}
         });
         if(state==null){shell.post(()->UiMotion.enterPage(shell));pager.post(()->UiMotion.enterPage(pager));}
+    }
+
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)updateSystemBars();}
+    private void updateSystemBars(){
+        if(android.os.Build.VERSION.SDK_INT>=30){
+            var controller=getWindow().getInsetsController();if(controller==null)return;
+            if(immersiveLandscape){controller.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);controller.hide(android.view.WindowInsets.Type.statusBars());}
+            else controller.show(android.view.WindowInsets.Type.statusBars());
+        }else{
+            int flags=getWindow().getDecorView().getSystemUiVisibility();
+            getWindow().getDecorView().setSystemUiVisibility(immersiveLandscape?flags|View.SYSTEM_UI_FLAG_FULLSCREEN:flags&~View.SYSTEM_UI_FLAG_FULLSCREEN);
+        }
     }
 
     private void fitImage(){

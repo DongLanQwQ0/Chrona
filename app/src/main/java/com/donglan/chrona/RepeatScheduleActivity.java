@@ -327,15 +327,7 @@ public final class RepeatScheduleActivity extends Activity {
         });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(52), 1); params.leftMargin = dp(8);
         actions.addView(confirm, params); UiStyle.addSpaced(panel, actions, 12, 0);
-        android.graphics.Rect visible = new android.graphics.Rect();
-        getWindow().getDecorView().getWindowVisibleDisplayFrame(visible);
-        int available = visible.height() > 0 ? visible.height() : getResources().getDisplayMetrics().heightPixels;
-        int width = Math.max(1, Math.min(dp(420), getResources().getDisplayMetrics().widthPixels - dp(40)));
-        panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        int overhead = panel.getMeasuredHeight() - picker.getMeasuredHeight();
-        picker.getLayoutParams().height = Math.max(1, Math.min(dp(240), available - overhead - dp(32)));
-        picker.requestLayout();
+        UiDialogs.fitPicker(this,panel,picker,240);
         UiDialogs.showFloatingDialog(dialog, panel);
     }
 

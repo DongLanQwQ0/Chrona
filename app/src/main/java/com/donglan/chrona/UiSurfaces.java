@@ -420,26 +420,30 @@ final class UiSurfaces {
         private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
         private final android.graphics.Path path = new android.graphics.Path();
         private final android.graphics.RectF rect = new android.graphics.RectF();
-        private final int[] hostLocation = new int[2], parentLocation = new int[2];
+        private final android.graphics.Matrix hostMatrix = new android.graphics.Matrix(), parentMatrix = new android.graphics.Matrix(), toHost = new android.graphics.Matrix();
         ControlHighlightMask(View host) { this.host = host; paint.setColor(Color.WHITE); }
         @Override public void draw(Canvas canvas) {
             int save = canvas.save();
-            host.getLocationInWindow(hostLocation);
+            hostMatrix.reset(); transformToRoot(host, hostMatrix);
+            boolean invertible = hostMatrix.invert(toHost), enclosed = false;
             for (android.view.ViewParent ancestor = host.getParent(); ancestor instanceof View parent;
                     ancestor = parent.getParent()) {
                 if (!(parent.getBackground() instanceof AcrylicSurfaceDrawable surface)) continue;
-                parent.getLocationInWindow(parentLocation);
-                float x = parentLocation[0] - hostLocation[0], y = parentLocation[1] - hostLocation[1];
-                rect.set(x, y, x + parent.getWidth(), y + parent.getHeight());
+                if (!invertible) break;
+                parentMatrix.reset(); transformToRoot(parent, parentMatrix);
+                parentMatrix.setConcat(toHost, parentMatrix);
+                rect.set(0, 0, parent.getWidth(), parent.getHeight());
                 path.reset();
                 float corner = dp(parent, radius(parent.getContext(), surface.radius));
                 path.addRoundRect(rect, corner, corner, android.graphics.Path.Direction.CW);
+                path.transform(parentMatrix);
                 canvas.clipPath(path);
+                enclosed = true;
                 break;
             }
             rect.set(getBounds());
             float radius = host.getBackground() instanceof AcrylicSurfaceDrawable surface
-                    ? dp(host, radius(host.getContext(), surface.radius)) : dp(host, 6);
+                    ? dp(host, radius(host.getContext(), surface.radius)) : enclosed ? 0 : dp(host, 6);
             canvas.drawRoundRect(rect, radius, radius, paint);
             canvas.restoreToCount(save);
         }

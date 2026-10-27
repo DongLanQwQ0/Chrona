@@ -86,7 +86,7 @@ public final class GuideActivity extends Activity {
         getSharedPreferences("usage_guide", MODE_PRIVATE).edit()
                 .putBoolean("shown", true).putInt("version", GUIDE_VERSION).apply();
         if (state != null) currentStep = Math.max(0, Math.min(STEPS.length - 1, state.getInt("step")));
-        LinearLayout shell = new LinearLayout(this);
+        CollapsingPageLayout shell = new CollapsingPageLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
         UiStyle.page(this, shell);
         shell.setFitsSystemWindows(false);
@@ -120,6 +120,7 @@ public final class GuideActivity extends Activity {
         FrameLayout pageHost = new FrameLayout(this);
         pageHost.addView(page, new FrameLayout.LayoutParams(-1, -1));
         shell.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1f));
+        shell.setScrollingBody(pageHost);
         LinearLayout controls = new LinearLayout(this);
         previous = new Button(this);
         previous.setText("上一步");

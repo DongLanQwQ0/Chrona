@@ -48,7 +48,7 @@ final class CalendarOverviewPage extends SchedulePage {
     private android.os.CancellationSignal readCancellation;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AgendaRepository.Snapshot snapshot = new AgendaRepository.Snapshot();
-    private LinearLayout root;
+    private CollapsingPageLayout root;
     private DockNavigationLayout tabs;
     private int presentationGeneration;
     private boolean bodyTransitionRunning, loadingStale, bodyTouchActive;
@@ -176,7 +176,7 @@ final class CalendarOverviewPage extends SchedulePage {
             if (keys != null && xs != null && ys != null && keys.length == xs.length && keys.length == ys.length)
                 for (int i = 0; i < Math.min(12, keys.length); i++) positions.put(keys[i], new int[]{xs[i], ys[i]});
         }
-        root = column(); root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), 0); UiStyle.page(activity, root);
+        root = new CollapsingPageLayout(activity); root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), 0); UiStyle.page(activity, root);
         root.setClipChildren(false); root.setClipToPadding(false);
         root.setFitsSystemWindows(false); root.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout header = UiStyle.headerRow(activity);
@@ -262,6 +262,7 @@ final class CalendarOverviewPage extends SchedulePage {
         bodyViewport.addView(body, new FrameLayout.LayoutParams(-1, -1));
         bodyStage.addView(bodyViewport, new FrameLayout.LayoutParams(-1, -1));
         root.addView(bodyStage, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.setScrollingBody(bodyStage);
         FrameLayout stage = new FrameLayout(activity);
 
         stage.addView(root, new FrameLayout.LayoutParams(-1, -1));  setContentView(stage);

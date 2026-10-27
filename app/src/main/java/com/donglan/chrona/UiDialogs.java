@@ -59,7 +59,7 @@ final class UiDialogs {
         LinearLayout actions = actionRow(activity, dialog, "确定", () -> {
             dialog.dismiss(); onSave.accept(picker.value().toLocalDate());
         });
-        UiStyle.addSpaced(panel, actions, 12, 0); showFloatingDialog(dialog, panel);
+        UiStyle.addSpaced(panel, actions, 12, 0); fitPicker(activity,panel,picker,220); showFloatingDialog(dialog, panel);
     }
 
     static void timeDialog(Activity activity, String title, int minutes, IntConsumer onSave) {
@@ -75,7 +75,21 @@ final class UiDialogs {
             onSave.accept(value.getHour() * 60 + value.getMinute());
         });
         UiStyle.addSpaced(panel, actions, 12, 0);
+        fitPicker(activity,panel,picker,220);
         showDialog(dialog, panel);
+    }
+
+    /** Budget the wheel after measuring the title and real action-row height. */
+    static void fitPicker(Activity activity,LinearLayout panel,View picker,int preferredDp) {
+        android.graphics.Rect visible=new android.graphics.Rect();
+        activity.getWindow().getDecorView().getWindowVisibleDisplayFrame(visible);
+        int available=visible.height()>0?visible.height():activity.getResources().getDisplayMetrics().heightPixels;
+        int availableWidth=visible.width()>0?visible.width():activity.getResources().getDisplayMetrics().widthPixels;
+        int width=Math.max(1,Math.min(Math.round(availableWidth*.90f),dp(panel,460)));
+        panel.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
+        int overhead=panel.getMeasuredHeight()-picker.getMeasuredHeight();
+        picker.getLayoutParams().height=Math.max(1,Math.min(dp(panel,preferredDp),available-overhead-dp(panel,32)));
+        picker.requestLayout();
     }
 
     /** Borderless menu rows share one surface; only adjacent items have a divider. */
@@ -266,10 +280,14 @@ final class UiDialogs {
     }
 
     /** Long modal content scrolls; actions remain outside the scrolling area. */
-    static void dialogBody(LinearLayout panel, View body) {
+    static ScrollView dialogBody(LinearLayout panel, View body) { return dialogBody(panel,body,null); }
+    static ScrollView dialogBody(LinearLayout panel, View body,Integer preferredHeightDp) {
         ScrollView scroll = new ScrollView(panel.getContext()) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
-                int limit = Math.round(getResources().getDisplayMetrics().heightPixels * .52f);
+                android.graphics.Rect visible=new android.graphics.Rect();getWindowVisibleDisplayFrame(visible);
+                int available=visible.height()>0?visible.height():getResources().getDisplayMetrics().heightPixels;
+                int limit = Math.round(available * .52f);
+                if(preferredHeightDp!=null)limit=Math.min(limit,dp(this,preferredHeightDp));
                 if (View.MeasureSpec.getMode(heightSpec) != View.MeasureSpec.UNSPECIFIED)
                     limit = Math.min(limit, View.MeasureSpec.getSize(heightSpec));
                 super.onMeasure(widthSpec, View.MeasureSpec.makeMeasureSpec(limit, View.MeasureSpec.AT_MOST));
@@ -278,6 +296,7 @@ final class UiDialogs {
         scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(body);
         UiStyle.addSpaced(panel, scroll, 0, 12);
+        return scroll;
     }
 
     private static void showDialog(Dialog dialog, View content) {
