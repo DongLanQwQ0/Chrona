@@ -1,5 +1,15 @@
 # 验证记录
 
+## 0.15.55候选 — 三页轻量Web、课堂批量与横屏间距 — 2026-10-27
+
+- 用户最新限定只验正常屏幕字号竖横屏，不再运行极端分辨率／DPI／字体矩阵。生产前端真实Edge鼠标／键盘／触摸检查`node checks/lan_daily_workspace_check.cjs`通过，模拟手机API；414×896首卡y340，896×414收紧至y270，上滑后y75，三页与选择控件、返回状态、焦点、全天日期及精确外部确认通过。JPEG和请求在`build/lan-daily-workspace/`，同一只读`ui_review`独立通过。
+- 新接口真实Android SQLite＋HTTP通过，`build/web-core-android-http.txt`：复用原作业同步、同排序跨页定位、单项已读、精确负long外部实例确认及撤销、禁用来源拒绝、独立确认revision、派生逾期边界。隔离Context/数据库，不请求真实学校或AI；缺配置的刷新不联网，并给设置动作而非旧成功状态。
+- 课堂正常批量15、Dashboard三个选择调用路径55、批量Export/Store51、失败恢复9、课程消歧5、队列15、FGS20项通过。实际离页后3节缓存下载16项、同一个OS前台服务且意外联网0；系统保存器写55节总ZIP并自动打开分享，113条目、55字幕、52原PPT、3笔记，0失败。分别见`build/classroom-batch-native-background.txt`、`build/dashboard-batch-native-light-dispatch.txt`、`build/ui-0.15.54-review/batch-system-export-report.json`。未发送给外部目标，本轮临时QA导出及自建batch测试包已清，项目副本保留。
+- 总结图片路径与第二轮响应／失败审计39项通过，`build/classroom-image-references-audit-final.txt`。真实旧微积分轮曾返回未分析图片，旧包未保存具体引用；已修复合法images/前缀误拒绝反例及稀疏文件名合同，真正未知文件继续拒绝。新包真实图片轮尚未续验，不将具体旧响应猜测为前缀。
+- 原生横屏workspace侧栏120→96dp，72dp底板、按钮和动效不变；安全区后外侧12dp、正文间隔32dp。正常实屏正文x487→426，压缩图`build/ui-0.15.54-review/rail-landscape-normal.jpg`由主代理与同一reviewer通过。真实上滑正文视口369→603→904px、回顶恢复369；未修改wm size/density，最后旋转恢复原1/0。
+- 源32c3db9的最终assembleRelease＋lintRelease通过，`build/release-0.15.55-final.txt`；固定`build/candidates/0.15.55/Chrona-0.15.55.apk`3231638字节、217／0.15.55、非debug、原证书、无instrumentation类。USB于22:21正常覆盖215→217成功，首次安装时间2026-09-26 18:54:37保持。
+- 安装后前台连续被LocalSend切走，已停止点按；随后USB离线且mDNS无已发现手机。真实LAN浏览器及微积分续验待设备空闲恢复，未宣称通过。普通Git push直连github.com:443失败（21059ms），源码已本地提交但尚未推送／发布；不重置鉴权或绕过既有工具拒绝。
+
 ## 0.15.53候选 — 新作业自动排程与课堂总结媒体 — 2026-10-27
 
 - 新作业授权路径复用现有AI请求、偏好和时间转换，仅应用原候选执行时段，不移动官方截止／提醒或覆写手工安排。DB18新增独立队列，原解析表不重建。`python checks/zju_homework_planner_check.py --planner-only`51项通过，包含生产`revokeHomeworkAutoPlan()`立即撤权、在途响应不应用、重新授权不重复请求；真实SQLite与受控提供方，不调用真实AI。解析审计32、备份16、同步节奏24、恢复20、作业更新68、双类型102项回归通过；旧夹具执行逾期预期更新为既定0.15.52行为，降级备份夹具先删除新增子表。

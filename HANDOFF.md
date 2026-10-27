@@ -31,9 +31,9 @@
 - LAN浅400／深320-150%各8项真实文字触摸→系统剪贴板；占位、新地址、停服竞态通过，同一ui_review已亲看两张JPEG并签收分项。证据`build/lan-address-ui-{light,dark}.txt`及`build/ui-0.15.54-review/lan-address-*.jpg`。没有打开网络Socket。
 - 批量离线Export／Store51、失败恢复9、重名label5、队列15、FGS hold及header20通过。
 - 真实后台缓存下载16项通过：3节在实际Activity.onPause后开始，逐节串行、同一OS前台服务，最终退出，意外网络计数0。`build/classroom-batch-native-background.txt`有效，不重复跑。
-- 真实系统保存器与自动分享通过：正常UI在55节合成历史上全选、DocumentsUI保存、自动Chooser、取消分享。拉回ZIP447641字节，55目录／3总结／55字幕／52原PPT／113条目，0失败，无双前缀／路径穿越；返回显示成功55。见`build/ui-0.15.54-review/batch-system-export-report.json`、对应XML及`batch-system-share.jpg`。未发送给外部目标；AVD Downloads有本轮新建`chrona-batch-ui-1793107316.zip`，宿主副本已在项目内。此输入使用旧等价授权mask表达式，三常量分支仍需最终lint。
+- 真实系统保存器与自动分享通过：正常UI在55节合成历史上全选、DocumentsUI保存、自动Chooser、取消分享。拉回ZIP447641字节，55目录／3总结／55字幕／52原PPT／113条目，0失败，无双前缀／路径穿越；返回显示成功55。见`build/ui-0.15.54-review/batch-system-export-report.json`及JPEG/XML。未发外部目标；仅本轮QA ZIP和新建batch隔离包已清理，项目证据副本保留。URI三常量分支最终lint已通过。
 - 批量正常浅色15项通过，覆盖过滤、跨页、重建、active删除保护及终态；Dashboard正常三分支55项通过，`build/dashboard-batch-native-light-dispatch.txt`。旧夹具失败已准确定位并修复，极端分支不再追加验收。
-- Dashboard旧原生浅色复合几何断言失败、深色第二次点选失败，见`build/dashboard-batch-native-{light,dark}.txt`；生产尚未据猜测改动，新夹具拆分数值并保存事件证据。
+- 旧Dashboard夹具失败已据真实事件修复，无生产猜测补丁；当前正常三分支55已通过。历史失败日志只用于追溯，不再作为当前待办。
 - 同一ui_review已关闭多行当前值P2并通过正常Dashboard、Web及原生侧Dock分项。极端菜单补证取消。原生正常横屏真实触摸body视口369→603→904px，回顶恢复369；证据`build/ui-0.15.54-review/root-history-landscape-{before,after,collapsed,restored}.xml`，横向新间距`rail-landscape-normal.jpg/xml`实测正文x487→426。旋转恢复1/0，wm size/density从未修改。
 
 ## 真机与基线
