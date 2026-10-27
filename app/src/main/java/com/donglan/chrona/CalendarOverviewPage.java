@@ -965,7 +965,7 @@ final class CalendarOverviewPage extends SchedulePage {
     }
     private void updateStatus(EntryStatus status) {
         long now = System.currentTimeMillis(); AgendaEntry e = status.entry;
-        String label = e.isTask() ? e.dueAtMillis!=null&&e.dueAtMillis<now ? "已逾期" : "待完成" : e.finish() <= now ? "已结束" : e.start <= now ? "现在" : e.start - now <= 24 * 60 * 60_000L
+        String label = e.isTask() ? e.overdue(now) ? "已逾期" : "待完成" : e.finish() <= now ? "已结束" : e.start <= now ? "现在" : e.start - now <= 24 * 60 * 60_000L
                 ? Math.max(1, (e.start - now + 59_999) / 60_000) + "分钟后开始" : "";
         status.title.setTextColor(UiStyle.colors(this).text);
         status.time.setText(time(e) + (label.isEmpty() ? "" : "  ·  " + label));

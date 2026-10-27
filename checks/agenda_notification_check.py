@@ -129,7 +129,7 @@ public class AgendaNotificationCheck {
    check(before.actions.get(0).intent.intent.data.value.equals("chrona://reminder/"+notice.key())&&(before.actions.get(0).intent.flags&PendingIntent.FLAG_IMMUTABLE)!=0);
    check(before.actions.get(1).label.equals("5 分钟后提醒")&&before.actions.get(1).intent.intent.action.equals("snooze"));
    Notification started=notification(c,notice,notice.start,false);
-   check(started.timeout==180000&&started.text.startsWith(dueStatus)&&started.extras.remaining.equals(dueStatus)&&started.extras.capsuleText.equals(dueStatus));
+   check(started.timeout==180000&&started.text.startsWith("待完成")&&started.extras.remaining.equals("待完成")&&started.extras.capsuleText.equals("待完成"));
    check(notification(c,notice,notice.start+179000,false).timeout==1000);
    Notification ordinaryBefore=notification(c,notice,notice.start-120000,false,NOTIFICATION_ID,now,"",false);
    check(ordinaryBefore.big.running&&ordinaryBefore.big.countdown&&ordinaryBefore.big.format.equals(hasDue?"距截止 %s":"距提醒 %s"));
@@ -142,6 +142,13 @@ public class AgendaNotificationCheck {
    check(snoozed.timeout==180000&&!snoozed.big.running&&snoozed.big.texts.get(R.id.agenda_countdown).equals(dueStatus));
    c.preferences.values.clear();
   }
+  // Execution is already over, while the reminder/deadline anchor remains in the future.
+  AgendaEntry early=new AgendaEntry(91,3,now+600000,now+600000,"执行已结束","","","拾时",false,false,true,null,"task",null,now+600000,null,now-1);
+  Notification earlyAtomic=notification(c,early,now,false);
+  check(earlyAtomic.text.startsWith("已逾期")&&earlyAtomic.extras.remaining.equals("已逾期")&&earlyAtomic.extras.capsuleText.equals("已逾期"));
+  Notification earlyOrdinary=notification(c,early,now,false,NOTIFICATION_ID,now,"",false);
+  check(!earlyOrdinary.big.running&&!earlyOrdinary.big.countdown&&earlyOrdinary.big.texts.get(R.id.agenda_countdown).equals("已逾期"));
+  check(early.start==now+600000&&early.dueAtMillis==now+600000&&earlyAtomic.timeout==780000);
   c.manager.channel=new NotificationChannel(NotificationManager.IMPORTANCE_NONE);
   check(notification(c,entry,now,false).extras==null);
   c.manager.channel=new NotificationChannel(4);check(notification(c,entry,now,false).extras!=null);

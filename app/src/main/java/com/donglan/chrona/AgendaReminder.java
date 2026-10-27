@@ -131,11 +131,11 @@ public final class AgendaReminder {
                 if (!local.isTask() || local.completed() || local.needsConfirmation || local.reminderAnchor()==null || !store.allowsReminder(local.id)) continue;
                 String key=AgendaAcknowledgement.key(local);
                 if (snoozeUntil.containsKey(key)) entries.add(new AgendaEntry(local.id,local.taskId,local.reminderAnchor(),local.reminderAnchor(),local.title,
-                        local.location,local.description,"拾时",false,false,true,null,local.category,local.reminderMinutesBefore,local.effectiveDueAtMillis(),local.occurrenceAtMillis));
+                        local.location,local.description,"拾时",false,false,true,null,local.category,local.reminderMinutesBefore,local.effectiveDueAtMillis(),local.occurrenceAtMillis,local.overdueAtMillis()));
             }
             for (EventCandidate local : store.nextReminderCandidates(now, excluded)) entries.add(new AgendaEntry(local.id, local.taskId, local.reminderAnchor(),
                     local.isTask() ? local.reminderAnchor() : local.calendarEnd(), local.title,
-                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.effectiveDueAtMillis(),local.occurrenceAtMillis));
+                    local.location, local.description, "拾时", false, false, true, null, local.category, local.reminderMinutesBefore,local.effectiveDueAtMillis(),local.occurrenceAtMillis,local.overdueAtMillis()));
             List<CalendarOccurrence> other = new ArrayList<>();
             java.util.Set<Long> linkedIds = new HashSet<>(store.linkedCalendarIds());
             long horizon = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).plusYears(1).toInstant().toEpochMilli();
@@ -229,12 +229,12 @@ public final class AgendaReminder {
 
     private static Notification notification(Context context, AgendaEntry e, long now, boolean same,
             int notificationId, long notifiedAt, String nextTitle, boolean atomic) {
-        String status = e.isTask() ? now<e.start ? e.dueAtMillis!=null ? "即将截止" : "homework".equals(e.category) ? "作业提醒" : "待办提醒" : e.dueAtMillis!=null ? "已逾期" : "待完成"
+        String status = e.isTask() ? e.overdue(now) ? "已逾期" : now<e.start ? e.dueAtMillis!=null ? "即将截止" : "homework".equals(e.category) ? "作业提醒" : "待办提醒" : "待完成"
                 : now < e.start ? "即将开始" : "进行中";
         long remaining = ReminderTimeline.remainingMillis(e, now);
-        boolean startedNotice = now >= e.start && !"event".equals(e.category);
+        boolean startedNotice = e.overdue(now) || now >= e.start && !"event".equals(e.category);
         String targetAction = e.isTask() ? e.dueAtMillis != null ? "截止" : "提醒" : "开始";
-        String remainingText = startedNotice ? status : remaining < 60_000L ? (now < e.start ? "即将" + targetAction : "即将结束")
+        String remainingText = startedNotice || e.overdue(now) ? status : remaining < 60_000L ? (now < e.start ? "即将" + targetAction : "即将结束")
                 : (now < e.start ? ((remaining + 59_999L) / 60_000L) + "分钟后" + targetAction
                         : "还剩" + ((remaining + 59_999L) / 60_000L) + "分钟");
         ZoneId zone = ZoneId.systemDefault();

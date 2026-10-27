@@ -12,6 +12,7 @@ public final class ScheduleQuery {
     public static final int PAGE_SIZE = 24;
     public static final String CATEGORY_HOMEWORK = "homework";
     public static final String TASK_DUE_SQL = "COALESCE(due_at_millis,end_at_millis,start_at_millis)";
+    public static final String TASK_OVERDUE_SQL = "MIN(" + TASK_DUE_SQL + ",COALESCE(end_at_millis,start_at_millis,due_at_millis))";
     public static final String DEFAULT_EXECUTION_SQL = "(is_record=0 AND category='task' AND start_at_millis IS NULL AND end_at_millis IS NULL AND due_at_millis IS NOT NULL)";
     public static final String EXECUTION_START_SQL = "(CASE WHEN " + DEFAULT_EXECUTION_SQL
             + " THEN due_at_millis-" + EventCandidate.DEFAULT_EXECUTION_DURATION_MILLIS + " ELSE COALESCE(start_at_millis,due_at_millis) END)";
@@ -72,7 +73,7 @@ public final class ScheduleQuery {
                 values.add(Long.toString(today.atStartOfDay(zone).toInstant().toEpochMilli()));
                 values.add(Long.toString(today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()));
             } else if (todoScope == TODO_OVERDUE) {
-                clauses.add(TASK_DUE_SQL + "<CAST(? AS INTEGER)");
+                clauses.add(TASK_OVERDUE_SQL + "<CAST(? AS INTEGER)");
                 values.add(Long.toString(now));
             }
         }
@@ -110,6 +111,8 @@ public final class ScheduleQuery {
 
     public String orderBy(boolean oldestFirst) {
         String direction = oldestFirst ? " ASC" : " DESC";
+        if (todoScope == TODO_OVERDUE)
+            return TASK_OVERDUE_SQL + direction + ", id" + direction;
         if (homeworkOnly)
             return TASK_DUE_SQL + " IS NULL ASC, " + TASK_DUE_SQL + direction + ", id" + direction;
         if (todoScope == TODO_TODAY_DUE || todoScope == TODO_OVERDUE)
@@ -131,6 +134,11 @@ public final class ScheduleQuery {
                 .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli() : now;
         long begin = from == null ? executionBegin(series) : from.atStartOfDay(boundsZone).toInstant().toEpochMilli();
         long end = until == null ? 253_402_300_799_999L : until.atStartOfDay(boundsZone).toInstant().toEpochMilli();
+        List<EventCandidate> edited = RepeatOccurrences.overrides(series);
+        for (EventCandidate occurrence:edited) {
+            if (from==null) begin=Math.min(begin,executionBegin(occurrence));
+        }
+        long dateBegin=begin,dateEnd=end;
         if (tab == 0 && !series.isTask()) begin = Math.max(begin, current - Math.max(60000, series.calendarEnd() - series.anchor()));
         if (tab == 2 && !series.isTask()) end = Math.min(end, current);
         if (todoScope != TODO_ANY && !series.isTask()) return null;
@@ -140,7 +148,7 @@ public final class ScheduleQuery {
             long lead = series.hasDefaultExecutionInterval() ? EventCandidate.DEFAULT_EXECUTION_DURATION_MILLIS : 0;
             begin = Math.max(begin, today.atStartOfDay(zone).toInstant().toEpochMilli() - dueOffset - lead);
             end = Math.min(end, today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - dueOffset);
-        } else if (todoScope == TODO_OVERDUE) end = Math.min(end, now - (series.effectiveDueAtMillis() - series.anchor()));
+        } else if (todoScope == TODO_OVERDUE) end = Math.min(end, now - (series.overdueAtMillis() - series.anchor()));
         if (tab == 2 && series.isTask()) {
             org.json.JSONObject changes = RepeatOccurrences.exceptions(series);
             java.util.Iterator<String> keys = changes.keys();
@@ -158,9 +166,16 @@ public final class ScheduleQuery {
             return completed.isEmpty() || todoScope != TODO_ANY ? null : completed.get(0);
         }
         int changed = RepeatOccurrences.exceptions(series).length();
-        for (EventCandidate occurrence : RepeatOccurrences.between(series, begin, end, changed + 2)) {
+        List<EventCandidate> projected = new ArrayList<>(RepeatOccurrences.between(series, begin, end, changed + 2));
+        if (todoScope==TODO_OVERDUE) for (EventCandidate occurrence:edited) {
+            long finish=occurrence.hasDefaultExecutionInterval()?occurrence.executionEndAtMillis():occurrence.calendarEnd();
+            if (occurrence.overdue(now)&&executionBegin(occurrence)<dateEnd&&finish>dateBegin
+                    && projected.stream().noneMatch(existing->existing.occurrenceKey().equals(occurrence.occurrenceKey()))) projected.add(occurrence);
+        }
+        projected.sort(java.util.Comparator.comparing(ScheduleQuery::executionBegin));
+        for (EventCandidate occurrence : projected) {
             if (tab == 0 && occurrence.completed() || todoScope != TODO_ANY && occurrence.completed()) continue;
-            if (todoScope == TODO_OVERDUE && occurrence.effectiveDueAtMillis() >= now) continue;
+            if (todoScope == TODO_OVERDUE && !occurrence.overdue(now)) continue;
             if (todoScope == TODO_TODAY_DUE && !java.time.Instant.ofEpochMilli(occurrence.effectiveDueAtMillis())
                     .atZone(zone).toLocalDate().equals(java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate())) continue;
             if (tab == 2 && series.isTask() && !occurrence.completed()) continue;
@@ -175,7 +190,10 @@ public final class ScheduleQuery {
         java.util.Comparator<Long> times = oldestFirst ? java.util.Comparator.naturalOrder() : java.util.Comparator.reverseOrder();
         java.util.Comparator<LocalDate> dates = oldestFirst ? java.util.Comparator.naturalOrder() : java.util.Comparator.reverseOrder();
         java.util.Comparator<EventCandidate> result;
-        if (homeworkOnly || todoScope == TODO_TODAY_DUE || todoScope == TODO_OVERDUE)
+        if (todoScope == TODO_OVERDUE)
+            result = java.util.Comparator.comparing(EventCandidate::overdueAtMillis,
+                    java.util.Comparator.nullsLast(times));
+        else if (homeworkOnly || todoScope == TODO_TODAY_DUE)
             result = java.util.Comparator.comparing(EventCandidate::effectiveDueAtMillis,
                     java.util.Comparator.nullsLast(times));
         else result = java.util.Comparator.comparing((EventCandidate e) -> executionBegin(e) == null ? null

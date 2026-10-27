@@ -93,7 +93,7 @@ public final class AttachmentViewerActivity extends Activity {
         pager=new ImageSlidePager(this,false);
         image = pager.image();
         image.setScaleType(ImageView.ScaleType.MATRIX);
-        image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大":"课堂PPT，双指缩放或双击放大");
+        image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大，长按拖放":"课堂PPT，双指缩放或双击放大，长按拖放");
         if(immersiveLandscape)stage.addView(pager,1,new FrameLayout.LayoutParams(-1,-1));
         else safeArea.addView(pager, new FrameLayout.LayoutParams(-1, -1));
         ImageButton save=UiStyle.navigationIcon(this,R.drawable.ic_week_export,"保存图片",this::saveImage);
@@ -137,15 +137,17 @@ public final class AttachmentViewerActivity extends Activity {
                         applyScale(next, event.getX(), event.getY());
                         return true;
                     }
+                    @Override public void onLongPress(MotionEvent event){if(insideImage(event.getX(),event.getY()))image.performLongClick();}
                 });
         image.setOnTouchListener((view, event) -> onImageTouch(event));
         image.getViewTreeObserver().addOnGlobalLayoutListener(this::fitImage);
         pager.setPagingAllowed(()->!scaleDetector.isInProgress());
         pager.setPanHandler(this::panImage);
+        pager.setDragAction(()->{try{sourceFile();return ImageDrag.start(this,image,classroomLesson==null?ImageTransferProvider.attachment(this,imageName):ImageTransferProvider.classroom(this,classroomAccount,classroomLesson,rawName));}catch(Exception unavailable){Feedback.show(this,"图片已不可用");return false;}});
         pager.setListener((selected,current)->{
             if(classroomLesson!=null){rawName=gallery.get(selected);setResult(RESULT_OK,new Intent().putExtra(EXTRA_SELECTED_RAW,rawName));}
             scale=1f;matrixReady=false;fitImage();
-            image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大":"课堂PPT "+(selected+1)+" / "+gallery.size()+"，双指缩放或双击放大");
+            image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大，长按拖放":"课堂PPT "+(selected+1)+" / "+gallery.size()+"，双指缩放或双击放大，长按拖放");
         });
         ArrayList<String> items=new ArrayList<>();if(classroomLesson==null)items.add(imageName);else items.addAll(gallery);
         pager.setImages(items,classroomLesson==null?0:gallery.indexOf(rawName),new ImageSlidePager.Source(){

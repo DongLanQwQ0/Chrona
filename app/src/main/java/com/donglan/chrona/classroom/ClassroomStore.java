@@ -40,6 +40,12 @@ public final class ClassroomStore {
         if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建课堂缓存");
         return dir;
     }
+    /** Resolve only an existing local raw image; never a portable/shared import or arbitrary path. */
+    public File localImage(String courseId,String lessonId,String raw)throws IOException {
+        if(!courseId.matches("[0-9]+")||!lessonId.matches("[0-9]+")||!raw.matches("raw-[0-9]+\\.img"))throw new IOException("课堂图片无效");
+        File image=new File(new File(root,courseId+"-"+lessonId),raw);
+        if(!image.isFile())throw new IOException("图片已不存在");return image;
+    }
     public List<ClassroomLesson> catalog() throws IOException {
         JSONObject value=read(new File(root,"catalog.json"));List<ClassroomLesson> result=new ArrayList<>();
         if(value==null)return result;

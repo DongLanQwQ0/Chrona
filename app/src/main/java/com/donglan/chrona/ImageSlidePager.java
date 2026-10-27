@@ -40,6 +40,8 @@ final class ImageSlidePager extends FrameLayout {
     private Listener listener;
     private java.util.function.BooleanSupplier pagingAllowed = () -> true;
     private PanHandler panHandler;
+    private java.util.function.BooleanSupplier dragAction;
+    private boolean outboundDrag;
     private int index, requested = -1, settleTarget = -1, settleDirection;
     private volatile int generation;
     private boolean closed, tracking, blocked;
@@ -73,6 +75,13 @@ final class ImageSlidePager extends FrameLayout {
     void setListener(Listener listener) { this.listener = listener; }
     void setPagingAllowed(java.util.function.BooleanSupplier allowed) { pagingAllowed = allowed; }
     void setPanHandler(PanHandler handler) { panHandler = handler; }
+    void setDragAction(java.util.function.BooleanSupplier action){dragAction=action;current.setOnLongClickListener(view->beginDrag());}
+    private boolean beginDrag(){
+        if(outboundDrag||multiTouch||tracking||!ready()||animator!=null||Math.abs(offset)>.5f||dragAction==null||!dragAction.getAsBoolean())return false;
+        outboundDrag=true;blocked=true;tracking=false;
+        long now=android.os.SystemClock.uptimeMillis();MotionEvent cancel=MotionEvent.obtain(now,now,MotionEvent.ACTION_CANCEL,0,0,0);
+        super.dispatchTouchEvent(cancel);cancel.recycle();return true;
+    }
     boolean ready() { return index < names.size() && current.getDrawable() != null && cache.get(names.get(index)) != null; }
     int selection() { return requested >= 0 ? requested : settleTarget >= 0 ? settleTarget : index; }
 
@@ -203,11 +212,13 @@ final class ImageSlidePager extends FrameLayout {
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
+            outboundDrag=false;
             interruptMotion(); requested = -1;
             downX = event.getX(); downY = event.getY(); originX = downX; startOffset = offset;
             panX=gestureDownX=downX;panY=downY;multiTouch=false;
             tracking = false; blocked = !ready()||!pagingAllowed.getAsBoolean();
         }
+        if(outboundDrag)return true;
         if (action == MotionEvent.ACTION_POINTER_DOWN || event.getPointerCount() > 1) {
             multiTouch=true;
             blocked = true;

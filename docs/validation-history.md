@@ -1,5 +1,16 @@
 # 验证记录
 
+## 0.15.52候选 — 图片长按拖放与执行逾期 — 2026-10-27
+
+- 图片附件缩略图／大图与课堂大图／内嵌PPT复用`ImageDrag`及独立只读`ImageTransferProvider`。`build/image-drag-native.txt`400dp浅色与`build/image-drag-native-dark.txt`320dp／150%深色各292项真实触摸检查通过；跨UID接收端读回完整原字节和精确JPEG／PNG，授权前、写入、邻接图片及授权释放后均拒绝，拾起后停用课堂账号也拒读。移动／多指不提起、取消及完成后浏览恢复、UP不误打开或移除均通过。Tile证据限生产共享组件，不代表完整Main／Task业务导航。
+- 压缩900px JPEG及结构化回执在`build/image-drag-ui/`与`dark/`。主代理和同一专门`ui_review`亲看，拖影比例、公共圆角、窄屏大字及当前受检交互通过，无剩余规范缺陷。共享Tile多指疑点经两指持续和抬回单指持续的47项定向检查未复现，关闭该源码推断，未新增无依据的闸门。
+- 新测试沿用`checks/classroom-monitor-validation.init.gradle`，其androidTest源集合纳入既有测试目录以包含独立UID接收器；`build/image-drag-reproducible-build.txt`与`build/image-drag-standard-runner.txt`证明从受控源码构建后，标准test APK runner同样292项通过。命令为`./gradlew -I checks/classroom-monitor-validation.init.gradle :app:assembleDebug :app:assembleDebugAndroidTest`，仅安装到共享AVD隔离包，再运行`adb -s emulator-5554 shell am instrument -w -e mode image_drag com.donglan.chrona.monitor.validation.test/com.donglan.chrona.ClassroomMonitorInstrumentation`。
+- 前期失败均保留诊断：跨APK ResultReceiver先经框架Parcel重建；源窗口先拾起后跨应用，避免不同UID任务InputSink的正常穿透限制；恢复触摸等待系统窗口过渡，双击复用原固定事件时间流。未关闭系统输入安全策略、未用反射调用代替触摸。一次意外长按遗留的本fixture系统drag由原拖动流的CANCEL清除后再验，不把该次未开始的检查算通过。原缩放与跨边31项回归通过，见`build/image-drag-zoom-regression.txt`。
+- 逾期使用执行结束／仅开始及明确截止的较早时刻，严格超过才计入；完成项排除，提醒与真实截止不改。`build/task-overdue-sql-final.txt`覆盖模型、69条SQLite隔离记录和4008行分页；重复编辑42项、默认执行区间回归及真实LAN消费者交互通过。真实TaskStore深浅各3711项通过，包含改期到原首发前、完成、重复实例、计数与清理，见`build/task-overdue-native-{light-final,dark}.txt`；图在`build/task-overdue-ui/`。初次重复夹具使用非投影的毫秒identity，修正为真实occurrence身份，未改变生产身份精度。逾期显示经独立UI复审通过。
+- 通知factory83、真实refresh决策63和原子卡契约通过，见`build/task-overdue-{notification-check,reminder-slots,atomic-contract}.txt`；即使明确截止仍未来，已过执行时段的通知也显示已逾期，不继续倒计时；显式提醒时间与原过期／延后时长保留。
+- release与lintRelease通过，固定`build/candidates/0.15.52/Chrona-0.15.52.apk`为3208534字节、214／0.15.52、不可调试、原证书；新provider不导出，只允许精确临时授权，测试接收器未进入正式APK。回执`build/release-0.15.52-{build,badging,signature,manifest}.txt`。
+- 用户明确「下次测试手机」，本轮后续未再连接、安装或操作真机；手机最后确认0.15.51／213。微积分未停止／未总结的真实原因仍待下次设备日志，不能以合成课堂测试替代该诊断。GitHub认证已有阻塞，未发布远端资产。
+
 ## 0.15.51候选 — 共用图片查看、监视操作与下课收尾 — 2026-10-27
 
 - 手机续交付：首次拒绝后用户明确授权重试，正常覆盖安装212→213成功，读回0.15.51，原首次安装时间2026-09-26 18:54:37保持。回执`build/release-0.15.51-phone-{install-retry,version,services-before,services-after}.txt`；未卸载、清数据或导航用户页面，安装前后均无活动服务。

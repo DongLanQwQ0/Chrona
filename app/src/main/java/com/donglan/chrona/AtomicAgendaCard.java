@@ -65,11 +65,12 @@ final class AtomicAgendaCard {
         float remainingSize = remainingTime.length() > 3 ? 14 : 17;
         views.setTextViewTextSize(R.id.atomic_remaining, android.util.TypedValue.COMPLEX_UNIT_SP, remainingSize);
         views.setTextViewTextSize(R.id.atomic_top_countdown, android.util.TypedValue.COMPLEX_UNIT_SP, remainingSize);
-        views.setViewVisibility(R.id.atomic_top_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
-        views.setViewVisibility(R.id.atomic_remaining_label, now < to ? android.view.View.VISIBLE : android.view.View.GONE);
-        if (now >= to) {
-            views.setTextViewText(R.id.atomic_remaining, active ? "已结束" : entry.dueAtMillis!=null ? "已逾期" : entry.isTask() ? "待完成" : "已开始");
-            views.setTextViewText(R.id.atomic_top_countdown, active ? "已结束" : entry.dueAtMillis!=null ? "已逾期" : entry.isTask() ? "待完成" : "已开始");
+        views.setViewVisibility(R.id.atomic_top_remaining_label, now < to&&!entry.overdue(now) ? android.view.View.VISIBLE : android.view.View.GONE);
+        views.setViewVisibility(R.id.atomic_remaining_label, now < to&&!entry.overdue(now) ? android.view.View.VISIBLE : android.view.View.GONE);
+        if (entry.overdue(now)||now >= to) {
+            String ended=entry.overdue(now)?"已逾期":active?"已结束":entry.isTask()?"待完成":"已开始";
+            views.setTextViewText(R.id.atomic_remaining,ended);
+            views.setTextViewText(R.id.atomic_top_countdown,ended);
         }
         views.setTextViewText(R.id.atomic_from, CLOCK.format(Instant.ofEpochMilli(from).atZone(zone)));
         views.setTextViewText(R.id.atomic_to, CLOCK.format(Instant.ofEpochMilli(to).atZone(zone)));

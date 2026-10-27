@@ -150,6 +150,7 @@ public final class ClassroomTranscriptActivity extends Activity {
             slidePager=new ImageSlidePager(this,true);slideFrame=slidePager;slideFrame.setClipToOutline(true);slideFrame.setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View view,android.graphics.Outline outline){outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),dp(UiStyle.radius(ClassroomTranscriptActivity.this,UiStyle.RADIUS_CARD)));}});slides.addView(slideFrame,new LinearLayout.LayoutParams(-1,-2));
             UiStyle.registerDynamicSurface(slideFrame,()->slideFrame.invalidateOutline());
             slideImage=slidePager.image();
+            slidePager.setDragAction(()->{JSONObject selected=shownPictures.optJSONObject(pictureIndex);return selected!=null&&ImageDrag.start(this,slideImage,ImageTransferProvider.classroom(this,account,lesson,selected.optString("raw")));});
             slideImage.setOnClickListener(v->openSlide());
             slidePager.setListener((selected,image)->{pictureIndex=selected;updateSlideLabel();});
         }

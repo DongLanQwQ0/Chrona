@@ -8,6 +8,7 @@ final class AgendaEntry {
     final Integer calendarColor;
     final Integer reminderMinutesBefore;
     final Long dueAtMillis;
+    final Long overdueAtMillis;
     final Long occurrenceAtMillis;
     AgendaEntry(long id, long taskId, long start, long end, String title, String location,
             String description, String source, boolean system, boolean allDay, boolean confirmed) {
@@ -32,7 +33,11 @@ final class AgendaEntry {
         this(id,taskId,start,end,title,location,description,source,system,allDay,confirmed,calendarColor,category,reminderMinutesBefore,dueAtMillis,null);
     }
     AgendaEntry(long id,long taskId,long start,long end,String title,String location,String description,String source,boolean system,boolean allDay,boolean confirmed,Integer calendarColor,String category,Integer reminderMinutesBefore,Long dueAtMillis,Long occurrenceAtMillis) {
+        this(id,taskId,start,end,title,location,description,source,system,allDay,confirmed,calendarColor,category,reminderMinutesBefore,dueAtMillis,occurrenceAtMillis,dueAtMillis);
+    }
+    AgendaEntry(long id,long taskId,long start,long end,String title,String location,String description,String source,boolean system,boolean allDay,boolean confirmed,Integer calendarColor,String category,Integer reminderMinutesBefore,Long dueAtMillis,Long occurrenceAtMillis,Long overdueAtMillis) {
         this.dueAtMillis=dueAtMillis;
+        this.overdueAtMillis=overdueAtMillis;
         this.occurrenceAtMillis=occurrenceAtMillis;
         this.id = id; this.taskId = taskId; this.start = start; this.end = Math.max(start, end);
         this.title = title; this.location = location == null ? "" : location;
@@ -44,6 +49,7 @@ final class AgendaEntry {
     }
     String key() { return (system ? "system:" : "chrona:") + id + ":" + (occurrenceAtMillis == null ? start : occurrenceAtMillis); }
     boolean isTask() { return com.donglan.chrona.data.EventCategory.isTaskLike(category); }
+    boolean overdue(long now) { return isTask()&&overdueAtMillis!=null&&overdueAtMillis<now; }
     long finish() { return end > start ? end : start + (isTask() ? 1L : 60_000L); }
     boolean overlaps(long begin, long until) { return start < until && finish() > begin; }
     @Override public boolean equals(Object other) {
@@ -54,11 +60,12 @@ final class AgendaEntry {
                 && java.util.Objects.equals(title, e.title) && java.util.Objects.equals(location, e.location)
                 && java.util.Objects.equals(description, e.description) && java.util.Objects.equals(source, e.source)
                 && java.util.Objects.equals(dueAtMillis,e.dueAtMillis)
+                && java.util.Objects.equals(overdueAtMillis,e.overdueAtMillis)
                 && java.util.Objects.equals(category, e.category)
                 && java.util.Objects.equals(reminderMinutesBefore, e.reminderMinutesBefore)
                 && java.util.Objects.equals(calendarColor, e.calendarColor);
     }
     @Override public int hashCode() {
-        return java.util.Objects.hash(id, taskId, start, end, system, allDay, confirmed, title, location, description, source, calendarColor, category, reminderMinutesBefore,dueAtMillis,occurrenceAtMillis);
+        return java.util.Objects.hash(id, taskId, start, end, system, allDay, confirmed, title, location, description, source, calendarColor, category, reminderMinutesBefore,dueAtMillis,occurrenceAtMillis,overdueAtMillis);
     }
 }

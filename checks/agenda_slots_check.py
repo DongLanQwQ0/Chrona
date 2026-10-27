@@ -14,6 +14,8 @@ while depth:
     end += 1
 refresh = source[start:end].replace("android.widget.Toast", "Toast").replace("com.donglan.chrona.data.RepeatOccurrences.at", "RepeatOccurrences.at")
 pure = '\n'.join((src / f'{name}.java').read_text(encoding='utf-8').replace('package com.donglan.chrona;', '').replace('import java.util.*;', '').replace('import java.util.List;', '') for name in ('AgendaEntry', 'ReminderTimeline', 'ReminderSlots'))
+# Keep the transport double aligned with the status metadata now carried by refresh().
+overdue_method = '''Long overdueAtMillis(){if(!isTask())return null;Long execution=endAtMillis!=null?endAtMillis:startAtMillis;return dueAtMillis==null?execution:execution==null?dueAtMillis:Math.min(execution,dueAtMillis);}'''
 harness = r'''
 import java.util.*;import java.time.*;
 class Context {SharedPreferences prefs=new SharedPreferences();NotificationManager manager=new NotificationManager();<T>T getSystemService(Class<T> type){return type.cast(manager);}}
@@ -141,7 +143,7 @@ public class AgendaSlotsCheck {
   System.out.println("Production reminder refresh passed: "+checks+" checks; stable slots, restart restoration, stale actions, independent snooze/hide, permission, disabled and platform limits");
  }
 }
-'''.replace('__PURE__', pure).replace('__REFRESH__', refresh)
+'''.replace('__PURE__', pure).replace('__REFRESH__', refresh).replace('Long reminderAnchor(){', overdue_method+'Long reminderAnchor(){')
 out = root / 'build/agenda-slots-check'
 out.mkdir(parents=True, exist_ok=True)
 file = out / 'AgendaSlotsCheck.java'

@@ -81,6 +81,59 @@ assert ids('homeworkOpen') == [9003, 9002, 9001]
 assert ids('homeworkToday') == [9002]
 db.execute('DELETE FROM event_candidates WHERE id>=9001')
 
+# Missed execution is independent of submission deadline. Keep this fixture bounded
+# and remove it before the pre-existing 4008-row pagination/schema assertions.
+now = ms('2026-09-28T12:00+08:00')
+hour = 3_600_000
+day = 24 * hour
+overdue_cases = [
+    # id, category, start, end, due, completed, record, expected overdue
+    (9101, 'task', now-2*hour, now-hour, now+day, None, 0, True),
+    (9102, 'homework', now-2*hour, now-hour, now+day, None, 0, True),
+    (9103, 'task', now-hour, now+hour, now+day, None, 0, False),
+    (9104, 'task', now-hour, None, now+day, None, 0, True),
+    (9105, 'homework', None, now-hour, now+day, None, 0, True),
+    (9106, 'task', now+hour, now+2*hour, now-hour, None, 0, True),
+    (9107, 'task', None, None, now+10*60_000, None, 0, False),
+    (9108, 'homework', None, None, now-hour, None, 0, True),
+    (9109, 'task', None, None, None, None, 0, False),
+    (9110, 'task', now-2*hour, now-hour, now-hour, now, 0, False),
+    (9111, 'event', now-2*hour, now-hour, now-hour, None, 0, False),
+    (9112, 'task', now-2*hour, now-hour, now-hour, None, 1, False),
+    (9113, 'task', now-hour, now, now+day, None, 0, False),
+    (9114, 'homework', None, None, now, None, 0, False),
+    (9115, 'task', now-2*hour, now-hour, None, None, 0, True),
+    (9116, 'task', None, now-hour, None, None, 0, True),
+]
+overdue_cases.extend((i, 'homework' if i % 2 else 'task', now-2*hour,
+                      now-hour, now+2*day, None, 0, True) for i in range(9200, 9253))
+for item, category, start, end, due, completed, record, expected in overdue_cases:
+    db.execute('INSERT INTO event_candidates(id,title,category,start_at_millis,end_at_millis,'
+               'due_at_millis,completed_at_millis,is_record,all_day) VALUES(?,?,?,?,?,?,?,?,0)',
+               (item, '逾期筛选验收', category, start, end, due, completed, record))
+fixture_ids = {row[0] for row in overdue_cases}
+expected = {row[0] for row in overdue_cases if row[-1]}
+selected = [item for item in ids('overdue') if item in fixture_ids]
+assert set(selected) == expected, (set(selected), expected)
+assert {item for item in ids('homeworkOverdue') if item in fixture_ids} == {
+    row[0] for row in overdue_cases if row[1] == 'homework' and row[-1]}
+# Ordering must use the missed-execution boundary, not the later explicit deadline.
+boundary = {row[0]: min(value for value in (row[4], row[3] if row[3] is not None else row[2])
+                             if value is not None) for row in overdue_cases if row[-1]}
+assert selected == sorted(expected, key=lambda item: (boundary[item], item))
+assert [item for item in ids('overdueReverse') if item in fixture_ids] == list(reversed(selected))
+where, order, *args = queries['overdue']
+count = db.execute('SELECT COUNT(*) FROM event_candidates WHERE ' + where, args).fetchone()[0]
+paged = []
+for offset in range(0, count, 24):
+    paged.extend(row[0] for row in db.execute('SELECT id FROM event_candidates WHERE ' + where
+                 + ' ORDER BY ' + order + ' LIMIT ? OFFSET ?', [*args, 24, offset]))
+assert paged == ids('overdue') and len(set(paged)) == count
+assert db.execute('SELECT start_at_millis,end_at_millis,due_at_millis FROM event_candidates '
+                  'WHERE id=9107').fetchone() == (None, None, now+10*60_000)
+db.execute('DELETE FROM event_candidates WHERE id>=9100 AND id<9300')
+print('Overdue model/SQLite checks passed: execution vs deadline, strict boundary, recurrence, IDs/count/pages')
+
 # Identical timestamps must retain stable unique IDs across every page boundary.
 db.executemany(INSERT_SQL, [
     (i, '大量同刻日程', '', '', 'event', 0, ms('2026-10-01T09:00+08:00'),

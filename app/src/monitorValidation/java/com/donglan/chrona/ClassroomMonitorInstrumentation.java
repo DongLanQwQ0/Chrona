@@ -74,6 +74,8 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         new ClassroomStore(app,account).catalog(List.of(selected,future));
         String mode=args.getString("mode","polish");
         if("live".equals(mode))backgroundChecks();
+        else if("overdue".equals(mode))assertions+=TaskOverdueChecks.run(this,args);
+        else if("image_drag".equals(mode))assertions+=ImageDragChecks.run(this,args);
         else if("end".equals(mode))endChecks();
         else if("pipeline".equals(mode))pipelineChecks();
         else if("auto".equals(mode))assertions+=ClassroomAutoSummaryChecks.run(this,args);

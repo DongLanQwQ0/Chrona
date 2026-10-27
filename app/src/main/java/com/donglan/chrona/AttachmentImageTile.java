@@ -41,8 +41,9 @@ final class AttachmentImageTile extends FrameLayout {
         preview = new ImageView(activity);
         preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
         preview.setBackgroundColor(UiStyle.colors(activity).surfaceAlt);
-        preview.setContentDescription("查看图片原图，可放大并保存：" + imageName);
+        preview.setContentDescription("查看图片原图，可放大、保存或长按拖放：" + imageName);
         preview.setOnClickListener(view -> onOpen.run());
+        preview.setOnLongClickListener(view -> ImageDrag.start(activity,preview,ImageTransferProvider.attachment(activity,imageName)));
         addView(preview, new FrameLayout.LayoutParams(-1, -1));
 
         ImageButton remove = new ImageButton(activity);

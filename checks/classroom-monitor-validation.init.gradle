@@ -4,7 +4,7 @@ allprojects {
             android.defaultConfig.applicationId = 'com.donglan.chrona.monitor.validation'
             android.defaultConfig.testApplicationId = 'com.donglan.chrona.monitor.validation.test'
             android.defaultConfig.testInstrumentationRunner = 'com.donglan.chrona.ClassroomMonitorInstrumentation'
-            android.sourceSets.androidTest.java.setSrcDirs([file('src/monitorValidation/java')])
+            android.sourceSets.androidTest.java.setSrcDirs([file('src/monitorValidation/java'), file('src/androidTest/java')])
         }
     }
 }

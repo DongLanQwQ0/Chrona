@@ -139,6 +139,18 @@ public final class EventCandidate {
         return !isTask() ? null : dueAtMillis != null ? dueAtMillis
                 : endAtMillis != null ? endAtMillis : startAtMillis;
     }
+    /** Missed execution and missed submission are independent reasons to be overdue. */
+    public Long overdueAtMillis() {
+        if (!isTask()) return null;
+        Long execution = endAtMillis != null ? endAtMillis : startAtMillis;
+        if (execution==null) return dueAtMillis;
+        if (dueAtMillis==null) return execution;
+        return Math.min(execution,dueAtMillis);
+    }
+    public boolean overdue(long now) {
+        Long boundary=overdueAtMillis();
+        return !completed() && boundary!=null && boundary<now;
+    }
     public Long reminderAnchor() { return isTask() ? effectiveDueAtMillis() : anchor(); }
     /** Read-only execution default; source fields, deadline and recurrence identity stay intact. */
     public boolean hasDefaultExecutionInterval() {
@@ -161,8 +173,7 @@ public final class EventCandidate {
     }
     public String taskState(long now) {
         if (completed()) return "已完成";
-        Long due = effectiveDueAtMillis();
-        return due != null && due < now ? "已逾期" : "待完成";
+        return overdue(now) ? "已逾期" : "待完成";
     }
     public boolean settled() {
         return isRecord || completed() || (!needsConfirmation && (isTask() || calendarEventId != null));

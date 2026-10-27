@@ -43,12 +43,7 @@ public final class RepeatOccurrences {
                 if (result.size() >= limit) break;
             }
         }
-        java.util.Iterator<String> keys = exceptions.keys();
-        while (keys.hasNext()) {
-            String key = keys.next();
-            EventCandidate occurrence = project(series, Long.parseLong(key), exceptions.optJSONObject(key));
-            if (occurrence != null && overlaps(occurrence, begin, end)) result.add(occurrence);
-        }
+        for (EventCandidate occurrence:overrides(series)) if (overlaps(occurrence,begin,end)) result.add(occurrence);
         result.sort(Comparator.comparingLong(RepeatOccurrences::executionBegin));
         return result.size() <= limit ? result : new ArrayList<>(result.subList(0, limit));
     }
@@ -60,6 +55,16 @@ public final class RepeatOccurrences {
         if (!iterator.hasNext() || iterator.next().getTime() != original)
             throw new IllegalArgumentException("这一次日程已不存在");
         return project(series, original, exceptions(series).optJSONObject(Long.toString(original)));
+    }
+    /** Read projections use the same stored overrides as the bounded occurrence iterator. */
+    public static List<EventCandidate> overrides(EventCandidate series) {
+        List<EventCandidate> result=new ArrayList<>();JSONObject changes=exceptions(series);
+        java.util.Iterator<String> keys=changes.keys();
+        while(keys.hasNext()){
+            String key=keys.next();EventCandidate occurrence=project(series,Long.parseLong(key),changes.optJSONObject(key));
+            if(occurrence!=null)result.add(occurrence);
+        }
+        return result;
     }
 
     /** Merge only supplied fields into one original occurrence; neither its identity nor template changes. */

@@ -2219,7 +2219,8 @@ public final class DashboardActivity extends Activity {
             boolean deadlineScope = scheduleTodoScope == ScheduleQuery.TODO_TODAY_DUE
                     || scheduleTodoScope == ScheduleQuery.TODO_OVERDUE
                     || scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
-            Long dateMillis = deadlineScope ? item.effectiveDueAtMillis()
+            Long dateMillis = scheduleTodoScope == ScheduleQuery.TODO_OVERDUE ? item.overdueAtMillis()
+                    : deadlineScope ? item.effectiveDueAtMillis()
                     : item.hasDefaultExecutionInterval() ? item.executionStartAtMillis() : item.anchor();
             String date = dateMillis == null ? "待安排" : item.executionAllDay() && !deadlineScope
                     ? AllDayDates.displayStart(dateMillis)
@@ -2902,8 +2903,7 @@ public final class DashboardActivity extends Activity {
     private ImageButton taskCompletionButton(EventCandidate candidate) {
         ImageButton done = new ImageButton(this);
         long now = System.currentTimeMillis();
-        Long deadline = candidate.effectiveDueAtMillis();
-        boolean overdue = !candidate.completed() && deadline != null && deadline < now;
+        boolean overdue = candidate.overdue(now);
         done.setImageResource(candidate.completed() ? R.drawable.ic_todo_check
                 : overdue ? R.drawable.ic_todo_alert : R.drawable.ic_todo_clock);
         done.setImageTintList(ColorStateList.valueOf(candidate.completed() || overdue

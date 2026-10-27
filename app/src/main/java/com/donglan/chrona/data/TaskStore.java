@@ -737,10 +737,11 @@ public final class TaskStore extends SQLiteOpenHelper {
         long dayEnd = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
         String open = "repeat_rule IS NULL AND is_record=0 AND category IN ('task','homework') AND completed_at_millis IS NULL";
         String due = ScheduleQuery.TASK_DUE_SQL;
+        String overdueAt = ScheduleQuery.TASK_OVERDUE_SQL;
         int total = 0, todayDue = 0, overdue = 0, unscheduled = 0;
         try (Cursor cursor = getReadableDatabase().rawQuery("SELECT COUNT(*),"
                 + " SUM(CASE WHEN " + due + ">=CAST(? AS INTEGER) AND " + due + "<CAST(? AS INTEGER) THEN 1 ELSE 0 END),"
-                + " SUM(CASE WHEN " + due + "<CAST(? AS INTEGER) THEN 1 ELSE 0 END),"
+                + " SUM(CASE WHEN " + overdueAt + "<CAST(? AS INTEGER) THEN 1 ELSE 0 END),"
                 + " SUM(CASE WHEN " + due + " IS NULL THEN 1 ELSE 0 END)"
                 + " FROM event_candidates WHERE " + open,
                 new String[]{Long.toString(dayStart), Long.toString(dayEnd), Long.toString(now)})) {
@@ -752,7 +753,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         List<EventCandidate> focus = new ArrayList<>();
         // Today's deadlines first, then overdue work, then the remaining dated and undated tasks.
         String priority = "CASE WHEN " + due + ">=" + dayStart + " AND " + due + "<" + dayEnd
-                + " THEN 0 WHEN " + due + "<" + now + " THEN 1 WHEN " + due + " IS NOT NULL"
+                + " THEN 0 WHEN " + overdueAt + "<" + now + " THEN 1 WHEN " + due + " IS NOT NULL"
                 + " THEN 2 ELSE 3 END";
         try (Cursor cursor = getReadableDatabase().query("event_candidates", null, open, null,
                 null, null, priority + ", " + due + " ASC, id ASC",
@@ -766,12 +767,12 @@ public final class TaskStore extends SQLiteOpenHelper {
             total++;
             Long deadline = row.effectiveDueAtMillis();
             if (deadline != null && deadline >= dayStart && deadline < dayEnd) todayDue++;
-            if (deadline != null && deadline < now) overdue++;
+            if (row.overdue(now)) overdue++;
             focus.add(row);
         }
         focus.sort(java.util.Comparator.comparingInt((EventCandidate e) -> {
             Long deadline = e.effectiveDueAtMillis();
-            return deadline == null ? 3 : deadline >= dayStart && deadline < dayEnd ? 0 : deadline < now ? 1 : 2;
+            return deadline == null ? 3 : deadline >= dayStart && deadline < dayEnd ? 0 : e.overdue(now) ? 1 : 2;
         }).thenComparing(EventCandidate::effectiveDueAtMillis, java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
                 .thenComparingLong(e -> e.id));
         if (focus.size() > focusLimit) focus = new ArrayList<>(focus.subList(0, Math.max(0, focusLimit)));
