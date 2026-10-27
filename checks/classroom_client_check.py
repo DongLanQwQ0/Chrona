@@ -33,7 +33,7 @@ src = root / 'app/src/main/java/com/donglan/chrona'
 sources = [stub, root / 'checks/ClassroomClientCheck.java']
 sources.append(src / 'net/NetworkFailure.java')
 sources.append(root / 'checks/NetworkFailureCheck.java')
-sources += [src / ('zju/' + name + '.java') for name in ['ZjuClient', 'ZjuSnapshot', 'ZjuCalendarConfig', 'ZjuAcademicCalendar']]
+sources += [src / ('zju/' + name + '.java') for name in ['ZjuClient', 'ZjuExam', 'ZjuSnapshot', 'ZjuCalendarConfig', 'ZjuAcademicCalendar']]
 sources += [src / ('classroom/' + name + '.java') for name in ['ClassroomClient', 'ClassroomLesson']]
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
 subprocess.run([str(java / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', cp, '-d', str(out), *map(str, sources)], check=True)

@@ -80,6 +80,7 @@ public final class ZjuSyncRecoveryCheck {
         settings.save("other-user","other-password");check(!settings.account().equals(account),"different user has isolated account");
         context.prefs.putString("credentials","invalid-ciphertext");settings.clear();
         check(!settings.configured()&&settings.account().isEmpty(),"logout succeeds without decrypting corrupt credentials");
+        check(ZjuExamStore.cleared==1,"logout also clears local exam cache");
         check(!settings.homeworkAutoPlan(),"logout removes homework AI authorization");
         settings.save("fixture-user","restored-password");check(settings.account().equals(account),"logout retains opaque historical identity mapping");
         System.out.println("PASS: "+checks+" production ZJU fetch/recovery checks (intercepted HTTP and isolated JCE key fixture)");

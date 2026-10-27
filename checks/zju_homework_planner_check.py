@@ -46,7 +46,7 @@ write('android/content/SharedPreferences.java', completion_sources['android/cont
 (src / 'com/donglan/chrona/ZjuSettingsStore.java').unlink(missing_ok=True)
 recovery_tree = ast.parse((root / 'checks/zju_sync_recovery_check.py').read_text(encoding='utf-8'))
 crypto_adapters = {'android/util/Base64.java', 'android/security/keystore/KeyProperties.java',
-                   'android/security/keystore/KeyGenParameterSpec.java'}
+                   'android/security/keystore/KeyGenParameterSpec.java', 'com/donglan/chrona/ZjuExamStore.java'}
 for node in recovery_tree.body:
     if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == 'write':
         call = node.value

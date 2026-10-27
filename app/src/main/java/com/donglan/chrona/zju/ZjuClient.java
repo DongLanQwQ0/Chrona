@@ -281,12 +281,62 @@ public final class ZjuClient implements Closeable {
 
     private void readTimetable(List<ZjuSnapshot.Lesson> lessons, List<String> warnings,
                                List<String> completeTerms) throws IOException, JSONException {
+        ensureAcademic();
+        readAcademicTimetable(lessons, warnings, completeTerms);
+    }
+
+    private void ensureAcademic() throws IOException, JSONException {
+        checkOpen();
         if (!timetableLoggedIn) {
             follow(new Request.Builder().url(ZDBK + "/xtgl/login_cxSsoLoginUrl.html")
                     .post(new FormBody.Builder().build()).build(), false);
             follow(new Request.Builder().url(loginService(ZDBK + "/xtgl/login_ssologin.html")).get().build(), false);
             timetableLoggedIn = true;
         }
+    }
+
+    /** Official personal exam query; independent of course-calendar expansion and AI. */
+    public synchronized List<ZjuExam> exams() throws IOException {
+        checkOpen();
+        try {
+            ensureAcademic();
+            HttpUrl endpoint = safeUrl(ZDBK + "/xskscx/kscx_cxXsgrksIndex.html").newBuilder()
+                    .addQueryParameter("gnmkdm", "N509070").addQueryParameter("layout", "default")
+                    .addQueryParameter("su", user).build();
+            follow(new Request.Builder().url(endpoint).get().build(), false);
+            String query = endpoint.newBuilder().addQueryParameter("doType", "query").build().toString();
+            JSONArray rows = new JSONArray();
+            Set<String> seen = new HashSet<>();
+            for (int page = 1; ; page++) {
+                checkOpen();
+                JSONObject data = json(query, new FormBody.Builder().add("_search", "false")
+                        .add("queryModel.showCount", Integer.toString(PAGE_SIZE))
+                        .add("queryModel.currentPage", Integer.toString(page))
+                        .add("queryModel.sortName", "xkkh").add("queryModel.sortOrder", "desc")
+                        .add("time", "0").build());
+                JSONArray items = requiredArray(data, "items");
+                int added = 0;
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject item = items.getJSONObject(i);
+                    if (seen.add(item.toString())) { rows.put(item); added++; }
+                }
+                int pages = data.optInt("totalPage", -1), total = data.optInt("totalResult", -1);
+                if (pages >= 0 && page >= pages) {
+                    if(total >= 0 && rows.length() < total)
+                        throw new SchoolException("考试分页数量不完整");
+                    break;
+                }
+                if (total >= 0 && rows.length() >= total) break;
+                if (pages < 0 && total < 0 && items.length() < PAGE_SIZE) break;
+                if (added == 0 || page >= 200) throw new SchoolException("考试分页未完整返回");
+            }
+            checkOpen();
+            return ZjuExam.parse(rows);
+        } catch (JSONException e) { throw new SchoolException("教务考试数据格式无法识别"); }
+    }
+
+    private void readAcademicTimetable(List<ZjuSnapshot.Lesson> lessons, List<String> warnings,
+                               List<String> completeTerms) throws IOException, JSONException {
         if(calendar.campus.equals("ordinary")) {
             try {
                 String official=follow(new Request.Builder().url(ZDBK+"/xtgl/index_cxXiaoLi.html").get().build(),false);

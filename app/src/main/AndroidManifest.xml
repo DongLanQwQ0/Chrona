@@ -107,6 +107,7 @@
         <activity android:name=".ClassroomSummaryActivity" android:exported="false" />
         <activity android:name=".RepeatScheduleActivity" android:exported="false" />
         <activity android:name=".ZjuHomeworkHistoryActivity" android:exported="false" />
+        <activity android:name=".ZjuExamsActivity" android:exported="false" />
         <activity android:name=".ZjuCalendarSettingsActivity" android:exported="false" />
         <activity android:name=".CourseSourceMatchingActivity" android:exported="false" />
         <activity android:name=".ScheduleSourceSettingsActivity" android:exported="false" />

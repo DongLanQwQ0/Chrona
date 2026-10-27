@@ -75,6 +75,7 @@ final class ZjuSettingsStore {
     static String identityKey(String salt,String user){return "identity:"+UUID.nameUUIDFromBytes((salt+"\0"+user.trim()).getBytes(StandardCharsets.UTF_8));}
     void clear()throws Exception{
         ZjuHomeworkPlanner.cancelPending(context);
+        new ZjuExamStore(context).clear();
         // Keep opaque local identity mappings so signing back into the same account
         // reuses its capture and deletion markers. No username/password is retained here.
         SharedPreferences.Editor edit=prefs.edit();

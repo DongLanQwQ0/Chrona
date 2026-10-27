@@ -17,6 +17,7 @@ def write(path, content):
 
 write('com/donglan/chrona/AndroidSync.java', 'package com.donglan.chrona;class AndroidSync {static final Object LOCK=new Object();}')
 write('com/donglan/chrona/ZjuHomeworkPlanner.java', 'package com.donglan.chrona;class ZjuHomeworkPlanner {static void cancel(){}static void cancelPending(android.content.Context c){}}')
+write('com/donglan/chrona/ZjuExamStore.java', 'package com.donglan.chrona;class ZjuExamStore {static int cleared;ZjuExamStore(android.content.Context c){}void clear(){cleared++;}}')
 
 write('android/text/Html.java', '''package android.text;public class Html {public static final int FROM_HTML_MODE_LEGACY=0;public static String fromHtml(String s,int flags){return s.replaceAll("<[^>]*>","");}}''')
 write('android/content/SharedPreferences.java', '''package android.content;public interface SharedPreferences {boolean contains(String k);boolean getBoolean(String k,boolean d);String getString(String k,String d);long getLong(String k,long d);Editor edit();interface Editor {Editor putString(String k,String v);Editor putBoolean(String k,boolean v);Editor putLong(String k,long v);Editor remove(String k);boolean commit();void apply();}}''')
@@ -35,7 +36,7 @@ if len(jars) != 4 or not all(p.is_file() for p in jars):
 classpath = os.pathsep.join(map(str, jars))
 production = root / 'app/src/main/java/com/donglan/chrona'
 sources = list(src.rglob('*.java')) + [production / p for p in
-    ['ZjuSettingsStore.java', 'zju/ZjuClient.java', 'zju/ZjuCalendarConfig.java', 'zju/ZjuAcademicCalendar.java', 'zju/ZjuSnapshot.java']]
+    ['ZjuSettingsStore.java', 'zju/ZjuClient.java', 'zju/ZjuExam.java', 'zju/ZjuCalendarConfig.java', 'zju/ZjuAcademicCalendar.java', 'zju/ZjuSnapshot.java']]
 sources += [root / 'checks/ZjuSyncRecoveryCheck.java']
 sources += [production / 'net/NetworkFailure.java']
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'

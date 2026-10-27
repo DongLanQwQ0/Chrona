@@ -18,7 +18,7 @@ public final class ZjuSettingsActivity extends Activity {
     private EditText user,password;
     private TextView status;
     private android.widget.ImageButton sync;
-    private Button save,logout,calendarPermission,classroom;
+    private Button save,logout,calendarPermission,classroom,exams;
     private boolean binding,busy;
     @Override protected void onCreate(Bundle state){
         ThemeStore.apply(this);super.onCreate(state);settings=new ZjuSettingsStore(this);
@@ -46,6 +46,7 @@ public final class ZjuSettingsActivity extends Activity {
         calendarPermission=button(root,"允许写入系统日历",()->requestPermissions(new String[]{
                 android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR},73113));
         timetable=toggle(root,"课表同步");
+        exams=button(root,"考试安排",()->startActivity(new Intent(this,ZjuExamsActivity.class)));
         button(root,"校历",()->startActivity(new Intent(this,ZjuCalendarSettingsActivity.class)));
         button(root,"日程来源",()->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));
         button(root,"作业更新记录",()->startActivity(new Intent(this,ZjuHomeworkHistoryActivity.class)));
@@ -113,6 +114,8 @@ public final class ZjuSettingsActivity extends Activity {
         sync.setEnabled(!busy&&settings.enabled()&&settings.configured());status.setText(settings.status());
         classroom.setVisibility(settings.enabled()?View.VISIBLE:View.GONE);
         classroom.setEnabled(!busy&&settings.enabled()&&settings.configured());
+        exams.setVisibility(settings.enabled()?View.VISIBLE:View.GONE);
+        exams.setEnabled(!busy&&settings.enabled()&&settings.configured());
         ZjuSync.WORKER.execute(()->{
             boolean on; synchronized(AndroidSync.LOCK){on=new ZjuHomeworkStore(this).state().enabled;}
             runOnUiThread(()->{if(isDestroyed()||busy)return;binding=true;homework.setChecked(on);autoPlan.setEnabled(settings.enabled()&&on);binding=false;});
