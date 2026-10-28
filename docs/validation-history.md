@@ -1,5 +1,16 @@
 # 验证记录
 
+## 0.15.62 本地候选与Release整理 — 2026-10-28
+
+- 用户确认按版本节点保留Release。原110条中实际存在的节点为v0.14.0、v0.15.0；另保留latest v0.15.61及vivo-setup-0.15.42。其余106条的126个附件247405993字节已完整归档到`build/release-cleanup/`，逐项检查传输、字节长度及APK／ZIP可读性或视频头。元数据、正文、恢复输入及资产均在项目内；删除前重新比对远端ID、标签、资产ID／名称／大小，删除后四条保留记录与附件不变，latest仍v0.15.61。没有删除Git标签或源码。证据archive-manifest.json、restore-input.json、delete-results.jsonl、post-delete-{releases,latest}.json。旧下载链接按已确认范围失效。
+- 本周日历实测范围10/26–11/1，无读取失败／截断提示。正常横屏展开全部七天，周六实际有06:30–07:00校运会方阵集合、07:30–08:00校运会入场式，以及06:30–09:00云峰阳光长跑方阵及校运会开幕式。任一日占用00–08即保留整周凌晨轴，符合既有规则；未修改压缩条件。证据`build/ui-review-20261028-week-{landscape,early-scroll2}.{jpg,xml}`。
+- 展开卡片新增MM:SS／H:MM:SS；最初原生Chronometer试验经独立审核和Android原始实现确认存在过零负数，已撤回。最终普通TextView复用秒更新服务、固定baseline克隆，开启秒时覆盖完整未来窗口；compact仍只在最后两分钟显示秒。没有新增服务、权限、网络请求或唤醒锁，不重查日历、不累计RemoteViews动作、不重置30秒胶囊期限。逾期条目deadline=0，避免未来执行时间覆写逾期状态。
+- 按压控制器保留90／160ms原始时长，由Android按每次播放时的当前动画比例控制。同一控件在关闭动画时创建，再开启后仍是原StateListAnimator；真实AVD触摸DOWN／UP记录按钮1.05、卡片1.08及操作组1.10的实际preDraw中间帧、目标与回到1，`build/press-feedback-device.txt`。手机新隔离包首轮Activity启动未完成，中止且清理该自有安装；该轮不作为通过证据，系统动画比例读回1.0。
+- 真实AVD正常竖屏浅色／横屏深色，实际生产RemoteViews apply／reapply与固定模板tick验证03:05→03:04、小时文字完整、关闭秒静态、活动开始／结束、待完成／逾期、延迟跨零仍保留非负文字及late tick归零。证据`build/atomic-seconds-device-{light,dark}.txt`及`build/atomic-seconds-check/atomic-{seconds,hours}-{light,dark}.jpg`。夹具不访问真实学校或AI、不创建用户日程。host生产方法170项、vivo协议116项、原子卡资源及胶囊期限检查通过。
+- debug／release及两组lint通过；正式构建签名与原安装一致，224／0.15.62、非debug，`build/release-0.15.62-{build,signature,package}.txt`。固定APK`build/candidates/0.15.62/Chrona-0.15.62.apk`3246046字节，正常覆盖手机223。版本读回224，主进程7121，原收件52条保留；没有触发AI、学校下载或日程删除，原后台提醒服务恢复。手机旋转1／0、动画比例1.0。
+- 真机V2527A使用原有进行中C程序设计基础提醒，无临时日程／通知：通知中心展开卡实际显示1:29:31→1:28:58；从桌面真实胶囊点击展开，原子岛宿主显示1:28:14→1:27:54→1:27:51，更新期间保持展开、小时秒数不截断。证据`build/phone-0.15.62-oem-{1,2}.jpg`及`phone-0.15.62-island-expanded-{1,2,3}.jpg`，均先压缩并裁掉无关通知。两种宿主实际显示已由主代理与持续复用的只读ui_review亲看签收。跨零的刻意延迟仅在AVD受控验证，不等待真实课程结束。
+- 本批仅本地安装与源码同步，不创建v0.15.62 Release或正式标签；公共latest保留v0.15.61。后续小修合并为有意义的一批再发布，保留节点＋latest＋仍使用的独立工具。
+
 ## 0.15.61 — 正文首次可见性交接与真机收尾 — 2026-10-28
 
 - 对0.15.60补充具体源码反例：reader先写入HTML、等待公式，原生WebView默认可见，最终ready才将alpha压到0开始入场；公式处理跨帧时可能提前露出再淡入。ui_review独立确认P2，原静态签收不足以排除此窗口。

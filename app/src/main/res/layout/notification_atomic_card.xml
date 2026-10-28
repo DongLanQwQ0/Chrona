@@ -50,9 +50,9 @@
                 android:textSize="18sp"
                 android:textStyle="bold" />
             <TextView android:id="@+id/atomic_camera_space" android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:visibility="gone" android:importantForAccessibility="no" />
-            <LinearLayout android:id="@+id/atomic_top_remaining" android:layout_width="56dp" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center_horizontal" android:visibility="gone">
+            <LinearLayout android:id="@+id/atomic_top_remaining" android:layout_width="wrap_content" android:minWidth="56dp" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center_horizontal" android:visibility="gone">
                 <TextView android:id="@+id/atomic_top_remaining_label" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:maxLines="1" android:textSize="10sp" />
-                <TextView android:id="@+id/atomic_top_countdown" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:maxLines="1" android:textSize="17sp" />
+                <TextView android:id="@+id/atomic_top_countdown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center" android:maxLines="1" android:textSize="17sp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -85,7 +85,8 @@
 
             <LinearLayout
                 android:id="@+id/atomic_bottom_remaining"
-                android:layout_width="56dp"
+                android:layout_width="wrap_content"
+                android:minWidth="56dp"
                 android:layout_height="wrap_content"
                 android:gravity="center_horizontal"
                 android:orientation="vertical">
@@ -100,7 +101,7 @@
 
                 <TextView
                     android:id="@+id/atomic_remaining"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:gravity="center"
                     android:maxLines="1"

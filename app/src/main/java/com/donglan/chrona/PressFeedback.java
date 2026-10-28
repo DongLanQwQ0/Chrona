@@ -94,7 +94,9 @@ final class PressFeedback {
         pair.playTogether(ObjectAnimator.ofFloat(view, View.SCALE_X, value),
                 ObjectAnimator.ofFloat(view, View.SCALE_Y, value),
                 ObjectAnimator.ofFloat(view, InteractionLayers.PRESSED, pressed ? 1f : 0f));
-        pair.setDuration(UiMotion.isEnabled() ? duration : 0);
+        // ValueAnimator applies the current system duration scale when each run starts.
+        // Baking zero into a reused StateListAnimator would survive re-enabling motion.
+        pair.setDuration(duration);
         pair.setInterpolator(UiMotion.SETTLE);
         return pair;
     }

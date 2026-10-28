@@ -14,7 +14,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
-/** Host-owned animations: the app still wakes only at reminder boundaries/minute updates. */
+/** Host-owned animations; countdown text shares the existing reminder update worker. */
 final class AtomicAgendaCard {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
     private static final int BACKGROUND_WIDTH = 320, BACKGROUND_HEIGHT = 180;
@@ -59,19 +59,9 @@ final class AtomicAgendaCard {
         views.setTextViewText(R.id.atomic_top_remaining_label, active ? "距结束" : entry.dueAtMillis!=null ? "距截止" : "距开始");
         views.setTextColor(R.id.atomic_top_remaining_label, palette.muted);
         views.setTextColor(R.id.atomic_top_countdown, palette.primary);
-        String remainingTime = remainingText(to - now, AgendaReminderPreferences.showSeconds(context));
-        views.setTextViewText(R.id.atomic_remaining, remainingTime);
-        views.setTextViewText(R.id.atomic_top_countdown, remainingTime);
-        float remainingSize = remainingTime.length() > 3 ? 14 : 17;
-        views.setTextViewTextSize(R.id.atomic_remaining, android.util.TypedValue.COMPLEX_UNIT_SP, remainingSize);
-        views.setTextViewTextSize(R.id.atomic_top_countdown, android.util.TypedValue.COMPLEX_UNIT_SP, remainingSize);
+        applyRemaining(views, entry, now, to, active, AgendaReminderPreferences.showSeconds(context));
         views.setViewVisibility(R.id.atomic_top_remaining_label, now < to&&!entry.overdue(now) ? android.view.View.VISIBLE : android.view.View.GONE);
         views.setViewVisibility(R.id.atomic_remaining_label, now < to&&!entry.overdue(now) ? android.view.View.VISIBLE : android.view.View.GONE);
-        if (entry.overdue(now)||now >= to) {
-            String ended=entry.overdue(now)?"已逾期":active?"已结束":entry.isTask()?"待完成":"已开始";
-            views.setTextViewText(R.id.atomic_remaining,ended);
-            views.setTextViewText(R.id.atomic_top_countdown,ended);
-        }
         views.setTextViewText(R.id.atomic_from, CLOCK.format(Instant.ofEpochMilli(from).atZone(zone)));
         views.setTextViewText(R.id.atomic_to, CLOCK.format(Instant.ofEpochMilli(to).atZone(zone)));
         views.setTextColor(R.id.atomic_title, palette.text);
@@ -114,6 +104,19 @@ final class AtomicAgendaCard {
                 R.id.atomic_background_first, R.id.atomic_background_second);
         return views;
     }
+    static void applyRemaining(RemoteViews views, AgendaEntry entry, long now, long to,
+            boolean active, boolean showSeconds) {
+        boolean ended = entry.overdue(now) || now >= to;
+        boolean seconds = showSeconds && !ended;
+        String remaining = seconds ? expandedRemainingText(to - now) : remainingText(to - now);
+        String text = ended ? entry.overdue(now) ? "已逾期" : active ? "已结束"
+                : entry.isTask() ? "待完成" : "已开始" : remaining;
+        float size = seconds || remaining.length() > 3 ? 14 : 17;
+        for (int id : new int[]{R.id.atomic_remaining, R.id.atomic_top_countdown}) {
+            views.setTextViewText(id, text);
+            views.setTextViewTextSize(id, android.util.TypedValue.COMPLEX_UNIT_SP, size);
+        }
+    }
     static void applyBackground(Context context, RemoteViews views, int flipper, int first, int second) {
         UiStyle.Palette palette = UiStyle.colors(context);
         Bitmap wallpaper = AgendaReminderPreferences.atomicWallpaper(context)
@@ -136,6 +139,13 @@ final class AtomicAgendaCard {
         if (showSeconds && millis > 0 && millis <= ReminderTimeline.CAPSULE_COUNTDOWN_WINDOW)
             return ((millis + 999) / 1000) + "秒";
         return remainingText(millis);
+    }
+    static String expandedRemainingText(long millis) {
+        long positive = Math.max(0, millis);
+        long seconds = positive / 1000 + (positive % 1000 > 0 ? 1 : 0);
+        return seconds >= 3600
+                ? String.format(java.util.Locale.ROOT, "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
+                : String.format(java.util.Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60);
     }
     static int cameraTopPadding(Context context) {
         if (android.os.Build.VERSION.SDK_INT < 30) return 0;

@@ -29,7 +29,7 @@ class PowerManager {boolean interactive=true;boolean isInteractive(){return inte
 class Context {PowerManager power=new PowerManager();NotificationManager manager=new NotificationManager();int permission=PackageManager.PERMISSION_GRANTED;int checkSelfPermission(String p){return permission;}String getPackageName(){return "com.donglan.chrona";}<T>T getSystemService(Class<T> c){return c.cast(c==PowerManager.class?power:manager);}}
 class PendingIntent {}
 class RemoteViews {int actions;Map<Integer,String> texts=new HashMap<>();public RemoteViews clone(){RemoteViews v=new RemoteViews();v.actions=actions;v.texts.putAll(texts);return v;}void setTextViewText(int id,String text){actions++;texts.put(id,text);}void setTextViewTextSize(int id,int unit,float size){actions++;}}
-class AgendaEntry {long deadline;AgendaEntry(long deadline){this.deadline=deadline;}}
+class AgendaEntry {long deadline;AgendaEntry(long deadline){this.deadline=deadline;}boolean overdue(long now){return false;}}
 class AgendaReminderPreferences {static boolean seconds=true,capsule=true,enabled=true;static boolean enabled(Context c){return enabled;}static boolean showSeconds(Context c){return seconds;}static boolean capsuleCountdown(Context c){return capsule;}}
 class AgendaReminder {static final String CHANNEL="upcoming_agenda";static int refreshes;static void requestRefresh(Context c){refreshes++;}}
 class Bitmap {static class Config {static Object ARGB_8888=new Object();}static Bitmap createBitmap(int w,int h,Object config){if(w!=1||h!=1)throw new AssertionError();return new Bitmap();}}
@@ -88,7 +88,8 @@ public class VivoAtomicCheck {
  for(int frame=0;frame<5;frame++){
   TestClock.now=deadline-119000+frame*1000;AtomicCountdownUpdates.tick(tickingContext);
   Notification frameNotice=tickingContext.manager.posted.get(99);
-  check(((RemoteViews)frameNotice.extras.get("notification.superx.customTemplate")).texts.get(R.id.atomic_remaining).equals((119-frame)+"秒"));
+  check(((RemoteViews)frameNotice.extras.get("notification.superx.customTemplate")).texts.get(R.id.atomic_remaining).equals(String.format(java.util.Locale.ROOT,"01:%02d",59-frame)));
+  check(((RemoteViews)((Bundle)frameNotice.extras.get("notification.superx.island")).get("island.superx.customTemplate")).texts.get(R.id.atomic_top_countdown).equals(String.format(java.util.Locale.ROOT,"01:%02d",59-frame)));
   check(((Bundle)frameNotice.extras.get("notification.superx.capsule")).get("notification.superx.capsule.content").toString().startsWith((119-frame)+"秒 "));
   check(((Bundle)frameNotice.extras.get("notification.superx.baseInfos")).get("notification.superx.baseInfos.content").equals((119-frame)+"秒\nrange"));
   check(((Bundle)frameNotice.extras.get("notification.superx.shortInfos")).get("notification.superx.shortInfos.coreInfoShort").equals((119-frame)+"秒"));
@@ -104,7 +105,7 @@ public class VivoAtomicCheck {
  tagged.tag="VIVO_SUPERX_TAG";strippedCountdown.when++;AtomicCountdownUpdates.tick(tickingContext);check(tickingContext.manager.posted.isEmpty());
  tickingContext.manager.active=new StatusBarNotification[]{new StatusBarNotification(99,baseline)};
  check(AtomicCountdownUpdates.nextDelay(tickingContext)==1000);
- check(rendered.texts.get(R.id.atomic_remaining).endsWith("秒"));
+ check(rendered.texts.get(R.id.atomic_remaining).equals("01:55"));
  Bundle updatedIsland=(Bundle)updated.extras.get("notification.superx.island");
  check(((Bundle)updatedIsland.get("island.superx.leftInfo")).get("island.superx.leftInfo.content").toString().endsWith("秒"));
  check(((Bundle)baseline.extras.get("notification.superx.island")).get("island.superx.leftInfo")!=updatedIsland.get("island.superx.leftInfo"));

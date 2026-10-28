@@ -102,7 +102,10 @@ public class PressFeedbackCheck {
   for(int extent:new int[]{128,320,640,1080,1440,2400,4000}){int edge=PressFeedback.edgeSpace(extent);double growth=(extent-2*edge)*.08/2;check(edge>=growth&&extent-edge+growth<=extent);}
   check(viewport.clipBounds.right==320&&viewport.clipBounds.bottom==600);viewport.layout(640,360);check(viewport.clipBounds.right==640&&viewport.clipBounds.bottom==360);int updates=viewport.clipUpdates;PressFeedback.protectViewport(viewport);check(viewport.clipUpdates==updates&&viewport.layouts.size()==1);
   ScrollView empty=new ScrollView();root.add(empty);root.observer.layout();check(empty.clipBounds!=null);ViewGroup pane=new ViewGroup();pane.width=pane.height=0;PressFeedback.protectViewport(pane);check(pane.clipBounds==null);pane.layout(250,400);check(pane.clipBounds.right==250&&pane.clipBounds.bottom==400);
-  UiMotion.enabled=false;View reduced=new View();PressFeedback.apply(reduced);check(reduced.states.animations.get(0).duration==0&&reduced.states.animations.get(1).duration==0);
+  UiMotion.enabled=false;View reduced=new View();PressFeedback.apply(reduced);
+  check(reduced.states.animations.get(0).duration==90&&reduced.states.animations.get(1).duration==160);
+  UiMotion.enabled=true;PressFeedback.apply(reduced);
+  check(reduced.installs==1&&reduced.states.animations.get(0).duration==90&&reduced.states.animations.get(1).duration==160);
   System.out.println("Press feedback passed: "+checks+" (production controller with View/animator doubles)");
  }
 }

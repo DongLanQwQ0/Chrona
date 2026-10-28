@@ -37,7 +37,7 @@ GROUPS = {
         "zju_sync_cadence_check.py",
         "agenda_features_check.py", "agenda_notification_check.py", "agenda_slots_check.py", "reminder_preferences_check.py", "live_reminder_service_check.py", "completion_alerts_check.py", "notification_delivery_status_check.py",
         "calendar_review_check.py", "week_calendar_check.py", "week_time_scale_check.py", "week_export_check.py", "launcher_shortcuts_check.py",
-        "dashboard_switch_check.py", "dashboard_dock_chrome_check.py", "schedule_refresh_frame_check.py", "review_badge_check.py", "vivo_atomic_check.py", "atomic_capsule_check.py", "calendar_event_build_check.py",
+        "dashboard_switch_check.py", "dashboard_dock_chrome_check.py", "schedule_refresh_frame_check.py", "review_badge_check.py", "vivo_atomic_check.py", "atomic_capsule_check.py", "atomic_seconds_check.py", "calendar_event_build_check.py",
         "calendar_visibility_toggle_check.py", "course_matching_check.py",
         "completion_card_motion_check.py", "schedule_filter_layout_check.py", "source_contents_check.py", "zju_ui_style_check.py",
     ),

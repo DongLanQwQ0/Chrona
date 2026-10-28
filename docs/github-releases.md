@@ -5,6 +5,10 @@
 
 ## 发布约定
 
+小修正常提交并推送源码，不为每次补丁创建Release。累积成一批有意义、已验收且需要APK分发的更新时再发布正式版；版本仍使用三个数字段，不重命名旧版本。
+
+Release列表保留实际存在的`v0.<次版本>.0`节点、当前最新正式版及仍被使用的独立工具包。当前节点为`v0.14.0`、`v0.15.0`；不存在的早期节点不补造。新正式版成为latest后，上一小版本按同一策略归档清理。清理前将Release元数据与全部待删附件保存到项目`build/release-cleanup/`，核对下载完成、大小及APK／ZIP可读，再删除Release记录；保留Git标签、源码与CHANGELOG。旧附件下载链接会失效，本地归档可恢复内容，不能恢复原Release ID、下载次数或原链接。
+
 1. 同步 `app/build.gradle`、README、开发指南的技术基线、HANDOFF 和 CHANGELOG。每次递增 `versionCode`，`versionName` 使用三个数字段，如 `0.13.71`。
 2. 使用已批准的工具链运行 `:app:assembleDebug :app:assembleRelease :app:lintDebug :app:lintRelease --no-daemon --console=plain`，再执行下述离线检查。正式分发使用 release 构建；它关闭调试、保持不混淆，并复用 `chronaDebugKeystore` 指向的原有密钥。保留 debug 构建用于开发。现有用户必须能覆盖升级，不生成或更换密钥，也不卸载或清除用户数据。
 3. 使用现有 Android SDK 的 `apksigner verify --verbose --print-certs` 分别检查新 debug、release 和可取得的上一版 APK。证书 SHA-256 均须为 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`。正式产物为 `app/build/outputs/apk/release/app-release.apk`。使用 SDK 的 `apkanalyzer manifest debuggable` 检查 release 必须输出 `false`；或使用 `aapt dump badging` 确认无 `application-debuggable`，并核对包名、versionCode 与 versionName。只查看 Gradle 配置不算 APK 验证。
