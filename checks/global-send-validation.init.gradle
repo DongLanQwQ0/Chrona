@@ -1,0 +1,12 @@
+allprojects {
+    plugins.withId('com.android.application') {
+        extensions.getByName('androidComponents').finalizeDsl { android ->
+            if (!providers.gradleProperty('chronaIntegrationReal').isPresent()) {
+                android.defaultConfig.applicationId = 'com.donglan.chrona.lanbridge.validation'
+                android.defaultConfig.testApplicationId = 'com.donglan.chrona.lanbridge.validation.test'
+            }
+            android.defaultConfig.testInstrumentationRunner = 'com.donglan.chrona.GlobalSendInstrumentation'
+            android.sourceSets.androidTest.java.setSrcDirs([file('src/globalSend/java')])
+        }
+    }
+}

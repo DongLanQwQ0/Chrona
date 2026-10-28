@@ -1,5 +1,15 @@
 # 验证记录
 
+## 0.15.65 — GlobalSend局域网地址联动 — 2026-10-28
+
+- `GlobalSendLink`显式绑定真实包／服务，核对系统UID、每次RPC的arg1和意图UUID。首次关联使用GlobalSend提供的同UID不可变PendingIntent；页面恢复、刷新、未知结果和迟到发送回包均不重发，120秒后恢复设备操作。实际地址只从当前`LanAccessService.url()`取得，保持网页配对边界；正式ABI由GlobalSend的`docs/INTEGRATION_ABI_V1.md`维护。
+- 设备组在精简授权提示下方，菜单行16dp内距；稳定deviceId复用节点，名字／状态刷新和增删其它设备保持原行及焦点。首轮原生检查发现刷新时禁用行会丢焦点，已移除该禁用；只在无授权、目标不可用或发送未决时禁用。客户端本地假Messenger检查正常竖浅／横暗各16项通过，`build/global-send/native-protocol-{light,dark}.txt`；之后最新布局单独7／8项通过，`native-visual-{light,dark}.txt`，含真实横屏上滑把标题和工具滚出屏幕。假提供者只证明客户端，不代表远端可用。
+- 真实GlobalSend1.0.30/39 x64与普通Chrona包通过4项Binder／首次关联检查，`native-real.txt`的localFakeRequests为0。用户点击路径真实打开GlobalSend关联页并允许，回到原Chrona会话；没有读取组凭据或批准网页。最初普通包运行隔离协议模式被身份保护拒绝，随后改用隔离applicationId，不清空已有学校／同步配置。AVD冷启动时Wi-Fi未连接，经正常命令连接既有AndroidWifi后运行；未改屏幕分辨率／DPI。
+- GlobalSend所有者提供隔离中心1507和独立协议发送器，AVD经正常GlobalSend界面连接测试组。真实Android接收端`73e9d333-e67a-4924-bd06-30e885aab256`收到请求`9f469f5d-c90f-4476-9ce7-854d43701f9e`，后台返回needs_tap并出现「拾时请求打开网页」通知；点击后返回launch_accepted，系统默认WebView Browser Tester实际加载`http://10.0.2.16:8765/`的Chrona手机确认页，未自动配对。证据`real-{send,needs-tap,launch-accepted}.txt`、`real-browser-ui.xml`和压缩`real-browser.jpg`。该发送端是隔离协议工具，目标浏览器访问AVD自身服务，不代替完整Chrona→真实Windows验收。
+- 对端的正式ARM64包无法装入x64 AVD，使用同源码x64验证包，未改模拟器。首次关联截图暴露提供者原生安全区问题，对端修为1.0.31/40；已正常覆盖，经设置→本机应用联动观察标题／关闭及关联行均处于安全区，`provider-40-safearea.{jpg,xml}`。外部ABI未变，原Binder证据复用。真实Windows组、登录和配置未改。
+- LAN二维码检查、LAN安全83项、设置布局74项、公共UI1530项通过，结果在`build/global-send/`；普通debug／release与双lint通过`build-final.txt`。最终包`build/candidates/0.15.65/Chrona-0.15.65.apk`3264338字节、227／0.15.65、非debug、原签名，见`package.txt`／`signature.txt`，已覆盖共享AVD。主代理和持续复用的只读ui_review亲看最新布局、实际关联／浏览器JPEG，签收受检UI范围；不发布小修Release，公共latest仍v0.15.61。
+- 真机`10.196.4.142:36241`本轮10060超时，mDNS无设备；未更新手机。完整Chrona点击真实Windows设备、接收浏览器访问手机8765及网页批准仍待设备可达后验证。已有原生绑定、Android接收／浏览器与布局证据继续有效，不重复跑整组。所有输出均在项目内，模型只查看压缩JPEG。
+
 ## 0.15.64 — 下载后自动总结与批量总结 — 2026-10-28
 
 - 历史工具行先扣48dp方向按钮和两份8dp间隔，课程与排序字段等分余宽，保留完整字号与多行字段；菜单新增「未总结」。课堂／历史长按多选的动作统一为「总结」，正常下载完成后直接进入AI整理，已有完整总结跳过。

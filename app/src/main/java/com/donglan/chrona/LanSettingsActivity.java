@@ -14,13 +14,28 @@ public final class LanSettingsActivity extends Activity {
     private ImageView qr;
     private FrameLayout qrFrame;
     private boolean refreshing;
+    private GlobalSendLink globalSend;
+    private LinearLayout devicesArea, deviceRows;
+    private TextView deviceStatus, sendStatus;
+    private Button associate;
+    private ImageButton refreshDevices;
+    private HeaderActionGroup headerActions;
+    private String shownDevices="";
+    private boolean shownDeviceContent;
+    private final java.util.Map<android.view.View,GlobalSendLink.Device> deviceViews=new java.util.LinkedHashMap<>();
+    private final java.util.Map<String,TextView> deviceItems=new java.util.LinkedHashMap<>();
+    private final java.util.Map<TextView,android.view.View> deviceSeparators=new java.util.HashMap<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable poll = new Runnable() { public void run() { refresh(); handler.postDelayed(this, 1000); } };
     @Override protected void onCreate(Bundle saved) {
         ThemeStore.apply(this); super.onCreate(saved);
+        globalSend=getLastNonConfigurationInstance() instanceof GlobalSendLink retained?retained:new GlobalSendLink(this,saved);
         LinearLayout root = SettingsPageLayout.content(this);
-        SettingsPageLayout.header(this, root, "局域网访问");
-        LinearLayout session = group(root, "连接");
+        headerActions=new HeaderActionGroup(this,48);
+        refreshDevices=UiStyle.navigationIcon(this,R.drawable.ic_refresh,"刷新设备",()->globalSend.refresh());
+        headerActions.addAction(refreshDevices,48);headerActions.finish();headerActions.setActionVisible(refreshDevices,false);
+        SettingsPageLayout.header(this, root, "局域网访问",headerActions);
+        LinearLayout session = group(root, "连接",0);
         enabled = new Switch(this); enabled.setText("允许电脑浏览器访问"); enabled.setTextSize(16);
         enabled.setTextColor(UiStyle.colors(this).text); enabled.setPadding(dp(16), dp(12), dp(16), dp(12)); UiStyle.toggle(enabled);
         session.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
@@ -49,9 +64,16 @@ public final class LanSettingsActivity extends Activity {
         code.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
         Button rotate = new Button(this); rotate.setText("重新配对所有浏览器"); UiStyle.button(rotate, false);
         rotate.setOnClickListener(v -> { LanAccessService.stop(this); enable(); }); UiStyle.addSpaced(root, rotate, 16, 0);
-        TextView note = text("打开网页后在手机确认授权，也可扫码或使用配对码。HTTP 仅适合可信网络；关闭或网络变化会撤销连接。", 13);
+        TextView note = text("可通过手机确认/扫码/配对码授权", 13);
         UiStyle.muted(note); UiStyle.addSpaced(root, note, 18, 0);
+        devicesArea=new LinearLayout(this);devicesArea.setOrientation(LinearLayout.VERTICAL);devicesArea.setVisibility(android.view.View.GONE);root.addView(devicesArea,new LinearLayout.LayoutParams(-1,-2));
+        LinearLayout devices=group(devicesArea,"发送到设备");
+        deviceStatus=text("",14);UiStyle.muted(deviceStatus);add(devices,deviceStatus);
+        associate=new Button(this);associate.setText("关联 GlobalSend");UiStyle.button(associate,true);associate.setOnClickListener(v->associateGlobalSend());devices.addView(associate,new LinearLayout.LayoutParams(-1,-2));
+        deviceRows=new LinearLayout(this);deviceRows.setOrientation(LinearLayout.VERTICAL);devices.addView(deviceRows,new LinearLayout.LayoutParams(-1,-2));
+        sendStatus=text("",14);UiStyle.muted(sendStatus);add(devices,sendStatus);
         SettingsPageLayout.show(this, root, saved == null);
+        globalSend.observe(this::renderDevices);
     }
     private void enable() {
         java.util.ArrayList<String> permissions = new java.util.ArrayList<>();
@@ -76,6 +98,10 @@ public final class LanSettingsActivity extends Activity {
         status.setText(LanAccessService.status());
         String url=LanAccessService.running()?LanAccessService.url():"";
         boolean available=!url.isEmpty();String label=available?url:"开启后显示访问地址";
+        boolean showDevices=available&&GlobalSendLink.installed(this);
+        devicesArea.setVisibility(showDevices?android.view.View.VISIBLE:android.view.View.GONE);
+        headerActions.setActionVisible(refreshDevices,showDevices);
+        globalSend.activate(showDevices?url:"");
         if(!label.contentEquals(address.getText()))address.setText(label);
         address.setClickable(available);address.setFocusable(available);
         address.setContentDescription(available?"复制访问地址，"+url:null);
@@ -91,6 +117,45 @@ public final class LanSettingsActivity extends Activity {
             qrFrame.setVisibility(android.view.View.GONE);
             status.setText("无法生成二维码，请复制访问地址");
         }
+        renderDevices();
+    }
+    private void renderDevices(){
+        if(isDestroyed())return;
+        refreshDevices.setEnabled(!globalSend.connecting&&!globalSend.loading);
+        String message=globalSend.message;
+        deviceStatus.setText(message);deviceStatus.setVisibility(message.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
+        associate.setVisibility(globalSend.association!=null?android.view.View.VISIBLE:android.view.View.GONE);
+        String result=globalSend.operationText();sendStatus.setText(result);sendStatus.setVisibility(result.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
+        String next=globalSend.authorized+"|"+globalSend.devices.toString();
+        if(!next.equals(shownDevices)){
+            shownDevices=next;java.util.List<GlobalSendLink.Device> snapshot=java.util.List.copyOf(globalSend.devices);
+            java.util.Set<String> ids=new java.util.HashSet<>();if(globalSend.authorized)for(GlobalSendLink.Device device:snapshot)ids.add(device.id());
+            boolean membershipChanged=!deviceItems.keySet().equals(ids);
+            Runnable update=()->updateDeviceRows(globalSend.authorized?snapshot:java.util.List.of());
+            if(shownDeviceContent&&membershipChanged)UiMotion.swap(deviceRows,update);else{update.run();if(!shownDeviceContent&&!snapshot.isEmpty()){shownDeviceContent=true;UiMotion.enterPage(deviceRows);}}
+        }
+        for(java.util.Map.Entry<android.view.View,GlobalSendLink.Device> entry:deviceViews.entrySet())setDeviceEnabled(entry.getKey(),entry.getValue());
+    }
+    private void updateDeviceRows(java.util.List<GlobalSendLink.Device> values){
+        java.util.Set<String> ids=new java.util.HashSet<>();for(GlobalSendLink.Device device:values)ids.add(device.id());
+        for(String id:new java.util.ArrayList<>(deviceItems.keySet()))if(!ids.contains(id)){TextView row=deviceItems.remove(id);android.view.View line=deviceSeparators.remove(row);if(line!=null)deviceRows.removeView(line);deviceRows.removeView(row);deviceViews.remove(row);}
+        if(!deviceItems.isEmpty()){TextView first=deviceItems.values().iterator().next();android.view.View line=deviceSeparators.remove(first);if(line!=null)deviceRows.removeView(line);}
+        for(GlobalSendLink.Device device:values){
+            String platform=switch(device.platform()){case "windows"->"Windows";case "android"->"Android";default->device.platform();};String detail=platform+(device.online()?"":" · 离线")+(device.supported()?"":" · 不支持打开网页");String label=device.name()+"\n"+detail;
+            TextView row=deviceItems.get(device.id());
+            if(row==null){int before=deviceRows.getChildCount();row=UiDialogs.addMenuItem(deviceRows,label,false,()->globalSend.send(device));deviceItems.put(device.id(),row);if(deviceRows.getChildAt(before)!=row)deviceSeparators.put(row,deviceRows.getChildAt(before));}
+            else if(!label.contentEquals(row.getText()))row.setText(label);
+            row.setPadding(dp(16),row.getPaddingTop(),dp(16),row.getPaddingBottom());row.setOnClickListener(v->globalSend.send(device));deviceViews.put(row,device);setDeviceEnabled(row,device);
+        }
+    }
+    private void setDeviceEnabled(android.view.View view,GlobalSendLink.Device device){boolean sending=globalSend.inFlight()&&System.currentTimeMillis()<globalSend.operationExpires;view.setEnabled(globalSend.authorized&&!sending&&device.sendable()&&device.supported());view.setAlpha(view.isEnabled()?1f:.5f);}
+    private void associateGlobalSend(){
+        android.app.PendingIntent approval=globalSend.association;if(approval==null)return;
+        globalSend.association=null;globalSend.message="等待 GlobalSend 授权";renderDevices();
+        android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic();
+        if(Build.VERSION.SDK_INT>=36)options.setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE);
+        else if(Build.VERSION.SDK_INT>=34)options.setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+        try{approval.send(this,0,null,null,null,null,options.toBundle());}catch(android.app.PendingIntent.CanceledException unavailable){Feedback.show(this,"关联已失效，请刷新设备");globalSend.refresh();}
     }
     private void copyAddress() {
         String url=LanAccessService.running()?LanAccessService.url():"";
@@ -100,10 +165,16 @@ public final class LanSettingsActivity extends Activity {
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("局域网访问地址",url));
         Feedback.show(this,"已复制");
     }
-    @Override protected void onResume() { super.onResume(); handler.post(poll); }
-    @Override protected void onPause() { handler.removeCallbacks(poll); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); globalSend.foreground(true);handler.post(poll);if(!globalSend.url.isEmpty())globalSend.refresh(); }
+    @Override protected void onPause() { handler.removeCallbacks(poll);globalSend.foreground(false);super.onPause(); }
+    @Override protected void onSaveInstanceState(Bundle out){globalSend.save(out);super.onSaveInstanceState(out);}
+    @Override public Object onRetainNonConfigurationInstance(){return globalSend;}
+    @Override protected void onDestroy(){handler.removeCallbacks(poll);globalSend.observe(null);if(!isChangingConfigurations())globalSend.close();super.onDestroy();}
     private LinearLayout group(LinearLayout root, String name) {
-        TextView title = text(name, 12); UiStyle.muted(title); title.setPadding(dp(4),0,dp(4),0); if (Build.VERSION.SDK_INT >= 28) title.setAccessibilityHeading(true); UiStyle.addSpaced(root,title,16,7);
+        return group(root,name,16);
+    }
+    private LinearLayout group(LinearLayout root,String name,int top) {
+        TextView title = text(name, 12); UiStyle.muted(title); title.setPadding(dp(4),0,dp(4),0); if (Build.VERSION.SDK_INT >= 28) title.setAccessibilityHeading(true); UiStyle.addSpaced(root,title,top,7);
         LinearLayout group = new LinearLayout(this); group.setOrientation(LinearLayout.VERTICAL); UiStyle.glass(group); root.addView(group,new LinearLayout.LayoutParams(-1,-2)); return group;
     }
     private void add(LinearLayout root, TextView view) { view.setPadding(dp(16),dp(12),dp(16),dp(12)); root.addView(view,new LinearLayout.LayoutParams(-1,-2)); }
