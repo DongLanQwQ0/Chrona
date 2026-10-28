@@ -71,6 +71,7 @@ public final class SettingsHubActivity extends Activity {
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
+        if (state == null) UiMotion.enterPage(root);
         if (state != null) {
             int scrollY = state.getInt("scroll_y");
             page.post(() -> page.scrollTo(0, scrollY));

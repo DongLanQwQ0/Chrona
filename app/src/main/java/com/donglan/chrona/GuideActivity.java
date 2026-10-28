@@ -142,6 +142,7 @@ public final class GuideActivity extends Activity {
         UiStyle.applyInsets(stage, shell);
         setContentView(stage);
         renderStep(currentStep);
+        if (state == null) UiMotion.enterPage(shell);
         if (state != null) page.post(() -> page.scrollTo(0, state.getInt("scroll_y")));
     }
 

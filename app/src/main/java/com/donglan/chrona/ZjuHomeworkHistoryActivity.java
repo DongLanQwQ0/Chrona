@@ -20,7 +20,8 @@ import org.json.JSONObject;
 /** Read-only paginated history, with shared settings cards and modal surfaces. */
 public final class ZjuHomeworkHistoryActivity extends Activity {
     private static final int PAGE_SIZE = 50;
-    private LinearLayout root;
+    private LinearLayout root,content;
+    private boolean firstDataPresentation;
     private Button more;
     private long beforeId = Long.MAX_VALUE;
     private boolean loading;
@@ -28,12 +29,16 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this); super.onCreate(state);
+        firstDataPresentation=state==null||state.getBoolean("first_data_presentation",false);
         root = SettingsPageLayout.content(this);
         SettingsPageLayout.header(this, root, "作业更新记录");
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);root.addView(content);
         more = new Button(this); UiStyle.button(more, false);
         root.addView(more); more.setOnClickListener(v -> loadMore());
         SettingsPageLayout.show(this, root, state == null); loadMore();
     }
+
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_data_presentation",firstDataPresentation);super.onSaveInstanceState(state);}
 
     private void loadMore() {
         if (loading) return;
@@ -44,17 +49,18 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
             try { rows = new ZjuHomeworkStore(this).history(PAGE_SIZE, cursor); }
             catch (Exception error) {
                 runOnUiThread(() -> {
-                    if (isDestroyed()) return;
+                    if (isDestroyed()||isFinishing()) return;
                     loading = false; more.setEnabled(true); more.setText("读取失败，重试");
                 });
                 return;
             }
             runOnUiThread(() -> {
-                if (isDestroyed()) return;
+                if (isDestroyed()||isFinishing()) return;
                 root.removeView(more);
                 if (rows.isEmpty() && cursor == Long.MAX_VALUE)
-                    root.addView(text("暂无更新记录", 15, false));
+                    content.addView(text("暂无更新记录", 15, false));
                 for (ZjuHomeworkStore.History row : rows) addRecord(row);
+                if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(content);}
                 if (!rows.isEmpty()) beforeId = rows.get(rows.size() - 1).id;
                 loading = false;
                 if (rows.size() == PAGE_SIZE) {
@@ -68,7 +74,7 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
         LocalDate day = Instant.ofEpochMilli(record.at).atZone(ZoneId.systemDefault()).toLocalDate();
         if (!day.equals(lastDay)) {
             String date = DateTimeFormatter.ofPattern("M月d日").format(day);
-            UiStyle.addSpaced(root, text(day.equals(LocalDate.now()) ? "今天 · " + date : date, 13, false),
+            UiStyle.addSpaced(content, text(day.equals(LocalDate.now()) ? "今天 · " + date : date, 13, false),
                     lastDay == null ? 0 : 8, 8);
             lastDay = day;
         }
@@ -88,7 +94,7 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
         icon.setMarginStart(dp(12)); card.addView(arrow, icon);
         card.setContentDescription(record.title + "，" + record.change + "，查看变更");
         card.setOnClickListener(v -> showRecord(record)); UiStyle.pressable(card);
-        UiStyle.addSpaced(root, card, 0, 8);
+        UiStyle.addSpaced(content, card, 0, 8);
     }
 
     private void showRecord(ZjuHomeworkStore.History record) {

@@ -9,6 +9,7 @@ import android.content.res.ColorStateList;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -32,6 +33,8 @@ public final class ScheduleSourceContentsActivity extends Activity {
     private LinearLayout navigation;
     private Button mode, more;
     private List<Entry> localSnapshot;
+    private boolean firstDataPresentation;
+    private int loadDirection;
 
     static Intent intent(Context context, String source, String name) {
         return new Intent(context, ScheduleSourceContentsActivity.class)
@@ -40,6 +43,7 @@ public final class ScheduleSourceContentsActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this); super.onCreate(state);
+        firstDataPresentation=state==null||state.getBoolean("first_data_presentation",false);
         source = getIntent().getStringExtra("source");
         if (hiddenZju()) { finish(); return; }
         week = state != null && state.containsKey("week") ? LocalDate.ofEpochDay(state.getLong("week"))
@@ -48,13 +52,14 @@ public final class ScheduleSourceContentsActivity extends Activity {
         String name = getIntent().getStringExtra("source_name");
         SettingsPageLayout.header(this, root, name == null ? "来源内容" : name);
         all = state == null || state.getBoolean("all", true);
-        mode = navigationButton("", () -> { all = !all; load(); });
+        mode = navigationButton("", () -> { all = !all; load(1); });
         UiStyle.addSpaced(root, mode, 0, 12);
         navigation = new LinearLayout(this); navigation.setGravity(Gravity.CENTER_VERTICAL);
         Button previous = navigationButton("上周", () -> changeWeek(-1));
         navigation.addView(previous, new LinearLayout.LayoutParams(0, -2, 1));
         Button current = navigationButton("本周", () -> {
-            week = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)); load();
+            LocalDate target=LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            int direction=target.compareTo(week);week=target;load(direction);
         });
         LinearLayout.LayoutParams middle = new LinearLayout.LayoutParams(0, -2, 1);
         middle.setMargins(dp(8), 0, dp(8), 0); navigation.addView(current, middle);
@@ -62,7 +67,8 @@ public final class ScheduleSourceContentsActivity extends Activity {
         UiStyle.addSpaced(root, navigation, 0, 12);
         range = text(root, "", 13); UiStyle.muted(range);
         rows = new LinearLayout(this); rows.setOrientation(LinearLayout.VERTICAL);
-        UiStyle.addSpaced(root, rows, 12, 0);
+        FrameLayout rowsHost=new FrameLayout(this);rowsHost.addView(rows,new FrameLayout.LayoutParams(-1,-2));
+        UiStyle.addSpaced(root, rowsHost, 12, 0);
         more = navigationButton("加载更多", this::loadPage);
         more.setVisibility(android.view.View.GONE);
         UiStyle.addSpaced(root, more, 8, 0);
@@ -71,16 +77,19 @@ public final class ScheduleSourceContentsActivity extends Activity {
 
     @Override protected void onResume() { super.onResume(); if (!isFinishing()) load(); }
     @Override protected void onSaveInstanceState(Bundle state) {
-        state.putLong("week", week.toEpochDay()); state.putBoolean("all", all); super.onSaveInstanceState(state);
+        state.putLong("week", week.toEpochDay()); state.putBoolean("all", all);state.putBoolean("first_data_presentation",firstDataPresentation); super.onSaveInstanceState(state);
     }
     @Override protected void onDestroy() { generation++; super.onDestroy(); }
-    private void changeWeek(int direction) { week = week.plusWeeks(direction); load(); }
+    private void changeWeek(int direction) { week = week.plusWeeks(direction); load(direction); }
     private boolean hiddenZju() { return "zju".equals(source) && !new ZjuSettingsStore(this).enabled(); }
 
     private void load() {
+        load(0);
+    }
+    private void load(int direction) {
+        loadDirection=direction;
         ++generation; loading = false; offset = 0; localSnapshot = null;
         afterStart = Long.MIN_VALUE; afterId = -1;
-        rows.removeAllViews();
         more.setVisibility(android.view.View.GONE);
         if (hiddenZju()) { finish(); return; }
         mode.setText(all ? "全部日程 · 切换按周查看" : "按周查看 · 切换全部日程");
@@ -93,6 +102,7 @@ public final class ScheduleSourceContentsActivity extends Activity {
     private void loadPage() {
         if (loading || hiddenZju()) return;
         int request = generation, pageOffset = offset;
+        int direction=loadDirection;
         boolean entireSource = all;
         long cursorStart = afterStart, cursorId = afterId;
         List<Entry> retained = localSnapshot;
@@ -103,10 +113,10 @@ public final class ScheduleSourceContentsActivity extends Activity {
                 checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
             Button permission = navigationButton("允许读取系统日历", () -> requestPermissions(
                     new String[]{Manifest.permission.READ_CALENDAR}, READ_PERMISSION));
-            rows.addView(permission, new LinearLayout.LayoutParams(-1, -2)); return;
+            rows.removeAllViews();rows.addView(permission, new LinearLayout.LayoutParams(-1, -2)); return;
         }
         loading = true; more.setEnabled(false);
-        if (pageOffset == 0) text(rows, "正在读取日程…", 16);
+        if (pageOffset == 0&&rows.getChildCount()==0) text(rows, "正在读取日程…", 16);
         new Thread(() -> {
             try {
                 boolean system = source != null && source.startsWith("system:");
@@ -117,11 +127,17 @@ public final class ScheduleSourceContentsActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed() || generation != request) return;
                     loading = false; localSnapshot = snapshot;
-                    if (pageOffset == 0) rows.removeAllViews();
                     if (hiddenZju()) { finish(); return; }
-                    if (result.isEmpty() && pageOffset == 0) text(rows, entireSource ? "暂无日程" : "本周暂无日程", 16);
                     int count = Math.min(PAGE_SIZE, result.size());
-                    for (int i = 0; i < count; i++) addEntry(result.get(i));
+                    Runnable bind=()->{
+                        if(pageOffset==0)rows.removeAllViews();
+                        if(result.isEmpty()&&pageOffset==0)text(rows,entireSource?"暂无日程":"本周暂无日程",16);
+                        for(int i=0;i<count;i++)addEntry(result.get(i));
+                    };
+                    boolean entering=firstDataPresentation;
+                    if(pageOffset==0)firstDataPresentation=false;
+                    if(pageOffset==0&&direction!=0)UiMotion.swap(rows,rows,bind,direction);
+                    else{bind.run();if(entering)UiMotion.enterPage(rows);}
                     offset += count;
                     if (count > 0) { Entry last = result.get(count - 1); afterStart = last.start; afterId = last.providerId; }
                     more.setText("加载更多"); more.setEnabled(true);
@@ -139,6 +155,7 @@ public final class ScheduleSourceContentsActivity extends Activity {
             }
         }, "chrona-source-contents").start();
     }
+    @Override protected void onPause(){if(rows!=null)UiMotion.finishSwap(rows);super.onPause();}
 
     private List<Entry> read(long begin, long end, ZoneId zone, boolean entireSource) throws Exception {
         return entries(ScheduleSourceRepository.local(this, source, begin, end, zone, entireSource));

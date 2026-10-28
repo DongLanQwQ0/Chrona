@@ -24,6 +24,9 @@ public final class ModelOutputActivity extends Activity {
     private Button next;
     private Button reload;
     private ScrollView scroll;
+    private boolean pageLoaded;
+    private boolean firstDataPresentation;
+    private int shownIndex;
     private StreamingOutputStore outputStore;
     private final ExecutorService reader = Executors.newSingleThreadExecutor();
     private int readGeneration;
@@ -31,6 +34,7 @@ public final class ModelOutputActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
+        firstDataPresentation = state == null || state.getBoolean("first_data_presentation", false);
         taskId = getIntent().getLongExtra("task_id", -1);
         outputStore = new StreamingOutputStore(this);
         if (state != null) index = state.getInt("page_index");
@@ -56,7 +60,9 @@ public final class ModelOutputActivity extends Activity {
         scroll.addView(output);
         LinearLayout.LayoutParams body = new LinearLayout.LayoutParams(-1, 0, 1);
         body.setMargins(0, dp(10), 0, dp(12));
-        card.addView(scroll, body);
+        FrameLayout outputHost = new FrameLayout(this);
+        outputHost.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        card.addView(outputHost, body);
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         actions.setPadding(0, dp(8), 0, dp(8));
@@ -82,6 +88,7 @@ public final class ModelOutputActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
         state.putInt("page_index", index);
+        state.putBoolean("first_data_presentation", firstDataPresentation);
     }
 
     private Button action(String text, Runnable onClick) {
@@ -117,10 +124,13 @@ public final class ModelOutputActivity extends Activity {
                 previous.setEnabled(index > 0);
                 next.setEnabled(index + 1 < pages);
                 reload.setEnabled(true);
-                boolean first = output.getText().length() == 0;
-                output.setText(text);
-                scroll.scrollTo(0, 0);
-                if (!first) UiMotion.pop(output);
+                Runnable bind = () -> { output.setText(text); scroll.scrollTo(0, 0); };
+                if (pageLoaded) UiMotion.swap(scroll, scroll, bind, Integer.compare(loadedIndex, shownIndex));
+                else {
+                    bind.run();
+                    if (firstDataPresentation) { firstDataPresentation = false; UiMotion.enterPage(scroll); }
+                }
+                pageLoaded = true; shownIndex = loadedIndex;
             });
         } catch (Exception exception) {
             runOnUiThread(() -> {
@@ -136,6 +146,11 @@ public final class ModelOutputActivity extends Activity {
         ++readGeneration;
         reader.shutdownNow();
         super.onDestroy();
+    }
+
+    @Override protected void onPause() {
+        if (scroll != null) UiMotion.finishSwap(scroll);
+        super.onPause();
     }
 
     private int dp(int value) {

@@ -93,7 +93,7 @@ public final class SystemAgendaDetailActivity extends Activity {
             try { startActivity(external); }
             catch (android.content.ActivityNotFoundException failure) { Feedback.show(this, "未找到可打开日程的日历应用"); }
         });
-        SettingsPageLayout.show(this, root, true);
+        SettingsPageLayout.show(this, root, state == null);
         new Thread(() -> {
             try (Cursor cursor = getContentResolver().query(
                     ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id),

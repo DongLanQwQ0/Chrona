@@ -87,6 +87,6 @@
       try{const metrics=MathJax.getMetricsFor(element,formula.block);const output=await MathJax.tex2svgPromise(formula.tex,metrics);if(turn!==generation)return;sizeMath(output,element,formula.block);element.replaceChildren(output);}
       catch(error){element.classList.add('formula-error');element.textContent=(formula.block?'$$':'$')+formula.tex+(formula.block?'$$':'$');}
     }
-    window.classroomReady=true;resize();
+    window.classroomReady=true;resize();window.ChronaSize?.ready();
   };
 })();

@@ -89,6 +89,7 @@ public final class BackupRestoreActivity extends Activity {
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
+        if (state == null) UiMotion.enterPage(root);
         if (OPERATION_IN_PROGRESS.get()) setBusy(true, "备份或恢复仍在进行，请稍候…");
     }
 

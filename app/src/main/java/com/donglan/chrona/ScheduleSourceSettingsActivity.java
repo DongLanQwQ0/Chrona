@@ -27,9 +27,12 @@ public final class ScheduleSourceSettingsActivity extends Activity {
     private Button primary;
     private List<Source> sources = new ArrayList<>();
     private int loadGeneration;
+    private boolean firstBuiltins,firstCalendars;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this); super.onCreate(state);
+        firstBuiltins=state==null||state.getBoolean("first_builtins",false);
+        firstCalendars=state==null||state.getBoolean("first_calendars",false);
         LinearLayout root = SettingsPageLayout.content(this);
         SettingsPageLayout.header(this, root, "日程来源");
         builtins = new LinearLayout(this); builtins.setOrientation(LinearLayout.VERTICAL);
@@ -54,6 +57,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
         loadCalendars();
         loadBuiltins(loadGeneration);
     }
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_builtins",firstBuiltins);state.putBoolean("first_calendars",firstCalendars);super.onSaveInstanceState(state);}
 
     private void loadBuiltins(int generation) {
         builtins.removeAllViews();
@@ -74,6 +78,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
                 if (new ZjuSettingsStore(this).enabled() && schoolCount != 0)
                     toggle(builtins, "浙大课表", countLabel(schoolCount), ScheduleSources.zjuEnabled(this),
                             checked -> ScheduleSources.setZjuEnabled(this, checked), "zju");
+                if(firstBuiltins){firstBuiltins=false;UiMotion.enterPage(builtins);}
             });
         }, "chrona-source-counts").start();
     }
@@ -177,6 +182,7 @@ public final class ScheduleSourceSettingsActivity extends Activity {
                         toggle(calendars, source.name, info, ScheduleSources.allowsCalendar(this, source.id),
                                 checked -> ScheduleSources.setCalendarEnabled(this, source.id, checked), "system:" + source.id);
                     }
+                    if(firstCalendars){firstCalendars=false;UiMotion.enterPage(calendars);}
                 });
             } catch (Exception failure) {
                 android.util.Log.w("Chrona", "Unable to enumerate schedule calendars", failure);

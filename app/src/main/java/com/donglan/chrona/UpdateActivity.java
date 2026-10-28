@@ -77,6 +77,7 @@ public final class UpdateActivity extends Activity {
         root.setFitsSystemWindows(false);
         UiStyle.applyInsets(stage, page);
         setContentView(stage);
+        if (state == null) UiMotion.enterPage(root);
         check();
     }
 

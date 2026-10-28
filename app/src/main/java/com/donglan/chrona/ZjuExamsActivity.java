@@ -25,6 +25,7 @@ public final class ZjuExamsActivity extends Activity {
     private TextView status;
     private ImageButton refresh;
     private List<ZjuExam> shown;
+    private boolean firstDataPresentation;
 
     /** A rotation retains exactly one query; leaving the page cancels its owned request. */
     static final class Session {
@@ -93,6 +94,7 @@ public final class ZjuExamsActivity extends Activity {
 
     @Override protected void onCreate(Bundle saved){
         ThemeStore.apply(this);super.onCreate(saved);
+        firstDataPresentation=saved==null||saved.getBoolean("first_data_presentation",false);
         Object retained=getLastNonConfigurationInstance();
         session=retained instanceof Session value?value:new Session(this);
         LinearLayout root=SettingsPageLayout.content(this);
@@ -105,13 +107,14 @@ public final class ZjuExamsActivity extends Activity {
         if(retained==null)session.load();
     }
     @Override public Object onRetainNonConfigurationInstance(){return session;}
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_data_presentation",firstDataPresentation);super.onSaveInstanceState(state);}
     @Override protected void onResume(){super.onResume();if(session!=null)render();}
     @Override protected void onDestroy(){
         session.listener=null;if(!isChangingConfigurations())session.dispose();
         super.onDestroy();
     }
     private void render(){
-        if(isDestroyed())return;
+        if(isDestroyed()||isFinishing())return;
         boolean allowed=session.allowed();
         refresh.setEnabled(allowed&&!session.busy);
         String note=allowed?session.message:"请重新进入已启用的学校账号";
@@ -120,7 +123,7 @@ public final class ZjuExamsActivity extends Activity {
         if(shown==rows&&content.getChildCount()>0)return;
         shown=rows;content.removeAllViews();
         if(rows==null){if(!session.busy&&allowed)content.addView(text("尚未获取考试安排",15,false));return;}
-        if(rows.isEmpty()){content.addView(text("暂无已公布考试",15,false));return;}
+        if(rows.isEmpty()){content.addView(text("暂无已公布考试",15,false));presentData();return;}
         long now=System.currentTimeMillis();boolean past=false;
         for(ZjuExam exam:ZjuExam.ordered(rows,now)){
             if(exam.ended(now)&&!past){past=true;UiStyle.addSpaced(content,text("已结束",13,false),0,8);}
@@ -134,7 +137,9 @@ public final class ZjuExamsActivity extends Activity {
             TextView location=text(place+" · "+seat,13,false);location.setTextIsSelectable(true);
             UiStyle.addSpaced(card,location,4,0);UiStyle.addSpaced(content,card,0,8);
         }
+        presentData();
     }
+    private void presentData(){if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(content);}}
     private TextView text(String value,int size,boolean primary){
         TextView text=new TextView(this);text.setText(value);text.setTextSize(size);text.setIncludeFontPadding(false);
         if(primary)UiStyle.title(text);else UiStyle.muted(text);return text;

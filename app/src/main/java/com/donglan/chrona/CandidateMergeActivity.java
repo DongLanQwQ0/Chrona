@@ -22,13 +22,24 @@ public final class CandidateMergeActivity extends Activity {
     }
     private Session session;
     private boolean animatePresentation;
-    @Override protected void onCreate(Bundle state){ThemeStore.apply(this);super.onCreate(state);Object retained=getLastNonConfigurationInstance();animatePresentation=state==null&&retained==null;session=retained instanceof Session?(Session)retained:new Session();session.owner=this;draw();if(session.preview==null&&!session.busy&&session.message.isEmpty())scan();}
+    private LinearLayout body;
+    @Override protected void onCreate(Bundle state){
+        ThemeStore.apply(this);super.onCreate(state);Object retained=getLastNonConfigurationInstance();
+        animatePresentation=state==null?retained==null:state.getBoolean("first_preview",false);
+        session=retained instanceof Session?(Session)retained:new Session();session.owner=this;
+        LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"合并重复日程");
+        body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout host=new FrameLayout(this);host.addView(body,new FrameLayout.LayoutParams(-1,-2));root.addView(host);
+        SettingsPageLayout.show(this,root,state==null);draw();if(session.preview==null&&!session.busy&&session.message.isEmpty())scan();
+    }
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_preview",animatePresentation);super.onSaveInstanceState(state);}
+    @Override protected void onPause(){UiMotion.finishSwap(body);super.onPause();}
     @Override public Object onRetainNonConfigurationInstance(){return session;}
     @Override protected void onDestroy(){if(session.owner==this)session.owner=null;super.onDestroy();}
     private TextView text(String value,int size){TextView view=new TextView(this);view.setText(value);view.setTextSize(size);view.setTextColor(UiStyle.colors(this).text);return view;}
     private Button button(String label,boolean primary,Runnable action){Button button=new Button(this);button.setText(label);UiStyle.button(button,primary);button.setOnClickListener(view->action.run());button.setEnabled(!session.busy);return button;}
     private void draw(){
-        LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"合并重复日程");
+        LinearLayout root=body;root.removeAllViews();
         if(session.busy)UiStyle.addSpaced(root,text("正在处理…",14),0,16);
         if(!session.message.isEmpty())UiStyle.addSpaced(root,text(session.message,14),0,16);
         UiStyle.addSpaced(root,button("重新扫描",false,this::scan),0,16);
@@ -45,15 +56,14 @@ public final class CandidateMergeActivity extends Activity {
             }
             if(preview.groups.size()>PREVIEW_PAGE_SIZE){
                 LinearLayout pages=new LinearLayout(this);pages.setOrientation(LinearLayout.HORIZONTAL);
-                if(session.page>0)pages.addView(button("上一页",false,()->{session.page--;draw();}),new LinearLayout.LayoutParams(0,-2,1));
-                if(end<preview.groups.size())pages.addView(button("下一页",false,()->{session.page++;draw();}),new LinearLayout.LayoutParams(0,-2,1));
+                if(session.page>0)pages.addView(button("上一页",false,()->{session.page--;UiMotion.swap(body,body,this::draw,-1);}),new LinearLayout.LayoutParams(0,-2,1));
+                if(end<preview.groups.size())pages.addView(button("下一页",false,()->{session.page++;UiMotion.swap(body,body,this::draw,1);}),new LinearLayout.LayoutParams(0,-2,1));
                 UiStyle.addSpaced(root,pages,0,12);
             }
             if(!preview.groups.isEmpty()){Button confirm=button("合并所选",true,this::merge);confirm.setTag("merge_selected_confirm");UiStyle.addSpaced(root,confirm,0,8);}
         }
-        SettingsPageLayout.show(this,root,animatePresentation);
         updateConfirmation();
-        animatePresentation=false;
+        if(preview!=null&&animatePresentation){animatePresentation=false;UiMotion.enterPage(body);}
     }
     private void updateConfirmation(){Button confirm=getWindow().getDecorView().findViewWithTag("merge_selected_confirm");if(confirm==null)return;int count=0;if(session.preview!=null)for(List<EventCandidate> group:session.preview.groups)if(session.selected.contains(group.get(0).id))count+=group.size()-1;confirm.setText(count==0?"合并所选":"确认合并 "+count+" 份");confirm.setEnabled(!session.busy&&count>0);}
     static String summary(EventCandidate candidate){

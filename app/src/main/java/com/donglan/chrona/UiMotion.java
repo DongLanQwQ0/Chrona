@@ -263,6 +263,9 @@ public final class UiMotion {
         // Capture the currently composed frame, including an unfinished previous cross-fade.
         Snapshot outgoing = UiMotion.isEnabled() && snapshotOf.getParent() instanceof FrameLayout candidate
                 && hostsSeveralChildren(candidate) ? snapshot(snapshotOf, direction != 0) : null;
+        java.lang.ref.WeakReference<Runnable> pending = PENDING_ENTRANCES.remove(container);
+        Runnable cancel = pending == null ? null : pending.get();
+        if (cancel != null) cancel.run();
         container.animate().setUpdateListener(null).withEndAction(null).cancel();
         container.setAlpha(1f);
         container.setTranslationX(0f); container.setTranslationY(0f);

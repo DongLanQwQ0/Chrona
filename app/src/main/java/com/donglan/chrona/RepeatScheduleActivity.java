@@ -54,10 +54,12 @@ public final class RepeatScheduleActivity extends Activity {
     private LinearLayout occurrenceBody;
     private TextView seriesState;
     private ImageButton headerAction;
+    private boolean firstPresentation;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this);
         super.onCreate(state);
+        firstPresentation = state == null || state.getBoolean("first_presentation", false);
         taskId = getIntent().getLongExtra("task_id", -1);
         candidateId = getIntent().getLongExtra("candidate_id", -1);
         if (getIntent().hasExtra("occurrence_at")) selectedOriginal = getIntent().getLongExtra("occurrence_at", 0);
@@ -75,6 +77,7 @@ public final class RepeatScheduleActivity extends Activity {
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean("first_presentation", firstPresentation);
         snapshotForm();
         if (selectedOriginal != null) state.putLong("selected", selectedOriginal);
         if (month != null) state.putString("month", month.toString());
@@ -153,7 +156,9 @@ public final class RepeatScheduleActivity extends Activity {
             else renderSeries();
         }
         if (busy) setEnabled(root, false);
-        SettingsPageLayout.show(this, root, false);
+        boolean entering = firstPresentation && !busy;
+        SettingsPageLayout.show(this, root, entering);
+        if (entering) firstPresentation = false;
     }
 
     private void renderForm() {

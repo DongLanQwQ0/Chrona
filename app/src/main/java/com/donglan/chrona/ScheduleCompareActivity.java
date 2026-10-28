@@ -118,6 +118,7 @@ public final class ScheduleCompareActivity extends Activity {
         stage.addView(root, new FrameLayout.LayoutParams(-1, -1));
         UiStyle.applyInsets(stage, root);
         setContentView(stage);
+        if (state == null) UiMotion.enterPage(root);
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback = this::navigateBack;
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(

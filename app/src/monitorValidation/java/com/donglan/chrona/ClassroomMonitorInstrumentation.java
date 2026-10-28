@@ -29,17 +29,18 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     private volatile int subtitleRequests,slideRequests;
     final List<String> entryCreates=new ArrayList<>();
     final Map<String,Integer> entryFrameCounts=new HashMap<>();
+    final Map<Activity,Integer> entranceFrames=new WeakHashMap<>();
     volatile Activity lastResumed;
     @Override public void callActivityOnCreate(Activity screen,Bundle state){
         entryCreates.add(screen.getClass().getSimpleName()+": restored="+(state!=null));
-        screen.setRequestedOrientation("landscape".equals(args.getString("orientation"))?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        if(!"page_motion".equals(args.getString("mode")))screen.setRequestedOrientation("landscape".equals(args.getString("orientation"))?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         super.callActivityOnCreate(screen,state);
         if(args.containsKey("heightDp")){float density=screen.getResources().getDisplayMetrics().density;screen.getWindow().setLayout(Math.round(Integer.parseInt(args.getString("widthDp","400"))*density),Math.round(Integer.parseInt(args.getString("heightDp"))*density));}
     }
     final Set<String> enteredPages=new HashSet<>();
     @Override public void callActivityOnResume(Activity screen){
         super.callActivityOnResume(screen);lastResumed=screen;View decor=screen.getWindow().getDecorView();
-        android.view.ViewTreeObserver.OnPreDrawListener observer=()->{entryFrameCounts.merge(screen.getClass().getSimpleName(),1,Integer::sum);if(entryFrame(decor))enteredPages.add(screen.getClass().getSimpleName());return true;};
+        android.view.ViewTreeObserver.OnPreDrawListener observer=()->{entryFrameCounts.merge(screen.getClass().getSimpleName(),1,Integer::sum);if(entryFrame(decor)){enteredPages.add(screen.getClass().getSimpleName());entranceFrames.merge(screen,1,Integer::sum);}return true;};
         decor.getViewTreeObserver().addOnPreDrawListener(observer);decor.postDelayed(()->{if(decor.getViewTreeObserver().isAlive())decor.getViewTreeObserver().removeOnPreDrawListener(observer);},3000);
     }
     private static boolean entryFrame(View view){
@@ -67,6 +68,11 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         getUiAutomation().setRotation("landscape".equals(args.getString("orientation"))?UiAutomation.ROTATION_FREEZE_90:UiAutomation.ROTATION_FREEZE_0);SystemClock.sleep(800);
         for(String permission:List.of(android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR,android.Manifest.permission.POST_NOTIFICATIONS))getUiAutomation().grantRuntimePermission(app.getPackageName(),permission);
         getUiAutomation().executeShellCommand("input keyevent 224").close();getUiAutomation().executeShellCommand("wm dismiss-keyguard").close();SystemClock.sleep(300);
+        if("page_motion".equals(args.getString("mode"))){
+            assertions+=PageMotionChecks.run(this,args);
+            report.putString("monitor_report","PASS: "+assertions+" assertions; page_motion "+args.getString("orientation","portrait")+" "+args.getString("theme","light"));
+            finish(-1,report);return;
+        }
         if("zju_exam_schedule".equals(args.getString("mode"))){
             assertions+=ZjuExamScheduleChecks.run(this,args);
             report.putString("monitor_report","PASS: "+assertions+" assertions; zju_exam_schedule "+args.getString("orientation","portrait")+" "+args.getString("theme","light"));

@@ -15,6 +15,7 @@ import java.util.List;
 public final class ExternalCourseDetailActivity extends Activity {
     private boolean schoolSource;
     private String examAccount;
+    private boolean firstDataPresentation;
     private boolean resumed;
     private long acknowledgementUntil;
     private Runnable bindAcknowledgement;
@@ -26,12 +27,13 @@ public final class ExternalCourseDetailActivity extends Activity {
     }
     @Override protected void onCreate(Bundle state){
         ThemeStore.apply(this);super.onCreate(state);
+        firstDataPresentation=state==null||state.getBoolean("first_data_presentation",false);
         if("exam".equals(getIntent().getStringExtra("source"))){showExam(state);return;}
         schoolSource="zju".equals(getIntent().getStringExtra("source"));
         if(schoolSource&&!new ZjuSettingsStore(this).enabled()){finish();return;}
         LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"课程详情");
         TextView content=new TextView(this);content.setText("正在读取");content.setTextSize(18);content.setTextColor(UiStyle.colors(this).text);root.addView(content);
-        SettingsPageLayout.show(this,root,false);
+        SettingsPageLayout.show(this,root,state==null);
         long id=getIntent().getLongExtra("event_id",0),start=getIntent().getLongExtra("begin",System.currentTimeMillis()),end=getIntent().getLongExtra("end",start+60_000L);
         new Thread(()->{
             CalendarOccurrence found=null;
@@ -48,7 +50,7 @@ public final class ExternalCourseDetailActivity extends Activity {
             catch(Exception error){failed=true;}
             CalendarOccurrence item=found;
             boolean readFailed=failed;
-            runOnUiThread(()->{if(isDestroyed())return;
+            runOnUiThread(()->{if(isDestroyed()||isFinishing())return;
                 if(item==null||item.calendarId==CourseSourceMatching.ZJU&&!new ZjuSettingsStore(this).enabled()){
                     content.setText(readFailed?"读取课程失败，请返回后重试":"zju".equals(getIntent().getStringExtra("source"))?"来源不可用":"课程已更新或该来源已关闭");return;
                 }
@@ -69,6 +71,7 @@ public final class ExternalCourseDetailActivity extends Activity {
                 refreshAcknowledgement();confirm.setOnClickListener(v->{if(item.endMillis<=System.currentTimeMillis()){refreshAcknowledgement();return;}AgendaAcknowledgement.set(this,key,item.endMillis,!AgendaAcknowledgement.isAcknowledged(this,key));refreshAcknowledgement();});UiStyle.addSpaced(root,confirm,16,8);
                 Button source=new Button(this);source.setText("日程来源");UiStyle.button(source,false);source.setOnClickListener(v->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));UiStyle.addSpaced(root,source,20,8);
                 if("导入课表".equals(item.calendarName)){Button table=new Button(this);table.setText("查看课表");UiStyle.button(table,false);table.setOnClickListener(v->startActivity(new Intent(this,TimetableActivity.class)));root.addView(table);}
+                if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(card);}
             });
         },"course-detail-local-reader").start();
     }
@@ -84,7 +87,7 @@ public final class ExternalCourseDetailActivity extends Activity {
             com.donglan.chrona.zju.ZjuExam exam=null;
             try{exam=ScheduleListing.find(this,id);}catch(Exception ignored){}
             var selected=exam;runOnUiThread(()->{
-                if(isDestroyed())return;
+                if(isDestroyed()||isFinishing())return;
                 if(!ScheduleListing.schoolCurrent(this,examAccount)){finish();return;}
                 if(selected==null){status.setText("考试已更新，请返回刷新");return;}
                 root.removeView(status);
@@ -94,10 +97,12 @@ public final class ExternalCourseDetailActivity extends Activity {
                 detail(card,selected.kind+" · "+selected.displayTime());detail(card,ScheduleListing.location(selected));detail(card,"折姜星辰 · 教务");
                 Button exams=new Button(this);exams.setText("考试安排");UiStyle.button(exams,false);
                 exams.setOnClickListener(v->startActivity(new Intent(this,ZjuExamsActivity.class)));UiStyle.addSpaced(root,exams,16,8);
+                if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(card);}
             });
         },"exam-detail-local-reader").start();
     }
     @Override protected void onPause(){resumed=false;expiryHandler.removeCallbacks(expiryRefresh);super.onPause();}
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_data_presentation",firstDataPresentation);super.onSaveInstanceState(state);}
     private void refreshAcknowledgement(){
         expiryHandler.removeCallbacks(expiryRefresh);
         if(bindAcknowledgement==null)return;

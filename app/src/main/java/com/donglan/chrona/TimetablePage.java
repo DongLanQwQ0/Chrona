@@ -122,8 +122,10 @@ final class TimetablePage extends SchedulePage {
         pageHeader = new WorkspacePageHeader(activity, sourceDock.headerMotionHost(), refreshButton);
         UiStyle.addSpaced(shell, pageHeader, 0, 8);
         body = new FrameLayout(activity);
-        shell.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
-        shell.setScrollingBody(body);
+        FrameLayout bodyHost = new FrameLayout(activity);
+        bodyHost.addView(body, new FrameLayout.LayoutParams(-1, -1));
+        shell.addView(bodyHost, new LinearLayout.LayoutParams(-1, 0, 1));
+        shell.setScrollingBody(bodyHost);
         stage.addView(shell, new FrameLayout.LayoutParams(-1, -1));
         shell.setFitsSystemWindows(false);
         setContentView(stage);
@@ -482,10 +484,12 @@ final class TimetablePage extends SchedulePage {
     private void selectSource(int index) {
         boolean school = index == 0;
         if (session.schoolSource != null && session.schoolSource == school) return;
-        session.schoolSource = school;
-        session.scrollX = session.scrollY = 0;
         // Keep the navigation view alive while its highlight is still moving.
-        render();
+        UiMotion.swap(body, body, () -> {
+            session.schoolSource = school;
+            session.scrollX = session.scrollY = 0;
+            render();
+        }, school ? -1 : 1);
     }
 
     private void refreshSchool(boolean force) {
@@ -665,9 +669,11 @@ final class TimetablePage extends SchedulePage {
         for (String term : session.schoolTerms.keySet())
             UiStyle.addSpaced(rows, action(term.isEmpty() ? "未标注学期" : term, term.equals(session.schoolTerm), () -> {
                 rememberScroll();
-                session.schoolTerm = term;
                 dialog.dismiss();
-                render();
+                if (term.equals(session.schoolTerm)) return;
+                List<String> terms = new ArrayList<>(session.schoolTerms.keySet());
+                int direction = Integer.compare(terms.indexOf(term), terms.indexOf(session.schoolTerm));
+                UiMotion.swap(body, body, () -> { session.schoolTerm = term; render(); }, direction);
             }), 0, 8);
         boundedContent(panel, rows, .55f);
         floating = dialog;
@@ -1071,6 +1077,7 @@ final class TimetablePage extends SchedulePage {
         resumed = false;
         MAIN.removeCallbacks(schoolWatch);
         animatedSemester = null;
+        UiMotion.finishSwap(body);
         settleSemesterContent();
         rememberScroll();
         super.onPause();

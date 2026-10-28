@@ -16,14 +16,17 @@ public final class CourseSourceMatchingActivity extends Activity {
     private int generation;
     private boolean limited;
     private boolean schoolEnabled;
+    private boolean firstDataPresentation;
     @Override protected void onCreate(Bundle state){
         ThemeStore.apply(this);super.onCreate(state);
+        firstDataPresentation=state==null||state.getBoolean("first_data_presentation",false);
         LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"课程关联");
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);root.addView(content);
         schoolEnabled=new ZjuSettingsStore(this).enabled();
         SettingsPageLayout.show(this,root,state==null);load();
     }
     @Override protected void onResume(){super.onResume();boolean enabled=new ZjuSettingsStore(this).enabled();if(schoolEnabled!=enabled){schoolEnabled=enabled;load();}}
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_data_presentation",firstDataPresentation);super.onSaveInstanceState(state);}
     private void load(){
         int current=++generation;content.removeAllViews();text("正在比对最近两周与未来六周的课程…");
         new Thread(()->{
@@ -50,7 +53,8 @@ public final class CourseSourceMatchingActivity extends Activity {
                         unique.values().removeIf(c->c.calendarId==CourseSourceMatching.ZJU);
                         candidates.removeIf(p->p[0].calendarId==CourseSourceMatching.ZJU||p[1].calendarId==CourseSourceMatching.ZJU);
                     }
-                    rows=data.rows;courses=new ArrayList<>(unique.values());suggestions=candidates;limited=data.limited;render();});
+                    rows=data.rows;courses=new ArrayList<>(unique.values());suggestions=candidates;limited=data.limited;render();
+                    if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(content);}});
             }catch(Exception failure){android.util.Log.w("Chrona","Course source probe failed",failure);
                 runOnUiThread(()->{if(isFinishing()||isDestroyed()||generation!=current)return;
                     content.removeAllViews();button("读取课程失败 · 重试",this::load);});}

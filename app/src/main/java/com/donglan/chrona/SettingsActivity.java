@@ -155,7 +155,7 @@ public final class SettingsActivity extends Activity {
         UiStyle.addSpaced(imageCard, allowImages, 5, 5);
         UiStyle.addSpaced(root, imageCard, 0, 8);
 
-        SettingsPageLayout.show(this, root, true);
+        SettingsPageLayout.show(this, root, state == null);
         try {
             AiSettings existing = new AiSettingsStore(this).load();
             if (existing != null) {

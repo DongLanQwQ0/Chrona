@@ -15,6 +15,7 @@ public final class SyncSettingsActivity extends Activity {
     private TextView status;
     private LinearLayout pending;
     private int pendingLoad;
+    private boolean firstPending;
     private final android.os.Handler refresh = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable poll = new Runnable() {
         @Override public void run() {
@@ -25,6 +26,7 @@ public final class SyncSettingsActivity extends Activity {
     };
     @Override protected void onCreate(Bundle saved) {
         ThemeStore.apply(this); super.onCreate(saved);
+        firstPending=saved==null||saved.getBoolean("first_pending",false);
         WebDavSettingsStore settings = new WebDavSettingsStore(this);
         LinearLayout root = SettingsPageLayout.content(this);
         SettingsPageLayout.header(this, root, "跨设备同步");
@@ -86,6 +88,7 @@ public final class SyncSettingsActivity extends Activity {
             return test ? "连接成功" : "同步设置已保存";
         })) status.setText(test ? "同步正在进行，请稍后测试" : "同步正在进行，请稍后保存");
     }
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_pending",firstPending);super.onSaveInstanceState(state);}
     private void loadPending() {
         int generation = ++pendingLoad;
         WeakReference<SyncSettingsActivity> owner = new WeakReference<>(this);
@@ -112,6 +115,7 @@ public final class SyncSettingsActivity extends Activity {
                 }
                 else for (AndroidSync.Pending record : result) activity.button(activity.pending, record.title, () -> activity.choose(record));
                 activity.updatePendingButtons();
+                if(activity.firstPending){activity.firstPending=false;UiMotion.enterPage(activity.pending);}
             }); reader.shutdown();
         });
     }

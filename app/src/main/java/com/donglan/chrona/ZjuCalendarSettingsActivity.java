@@ -15,9 +15,17 @@ public final class ZjuCalendarSettingsActivity extends Activity {
     private static final int IMPORT=41, EXPORT=42;
     private ZjuCalendarConfig config;
     private String year;
-    @Override protected void onCreate(Bundle state){ThemeStore.apply(this);super.onCreate(state);try{config=ZjuCalendarStore.load(this);}catch(Exception e){Feedback.show(this,"校历读取失败，请重新导入");finish();return;}year=config.selectedYear.isEmpty()?"2026-2027":config.selectedYear;render();}
-    private void render(){
+    private LinearLayout body;
+    @Override protected void onCreate(Bundle state){
+        ThemeStore.apply(this);super.onCreate(state);try{config=ZjuCalendarStore.load(this);}catch(Exception e){Feedback.show(this,"校历读取失败，请重新导入");finish();return;}
+        year=config.selectedYear.isEmpty()?"2026-2027":config.selectedYear;
         LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"校历");
+        body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);FrameLayout host=new FrameLayout(this);
+        host.addView(body,new FrameLayout.LayoutParams(-1,-2));root.addView(host);render();SettingsPageLayout.show(this,root,state==null);
+    }
+    @Override protected void onPause(){if(body!=null)UiMotion.finishSwap(body);super.onPause();}
+    private void render(){
+        LinearLayout root=body;root.removeAllViews();
         button(root,"校区 · "+(config.campus.equals("ordinary")?"普通本科":config.campus.equals("haining")?"海宁国际校区":"自定义"),()->UiDialogs.choiceDialog(this,"校区",new String[]{"普通本科","海宁国际校区","自定义"},config.campus.equals("ordinary")?0:config.campus.equals("haining")?1:2,i->{
             String selected=List.of("ordinary","haining","custom").get(i);if(selected.equals(config.campus))return;
             UiDialogs.choiceDialog(this,"切换校区并载入对应校历？",new String[]{"取消","载入"},0,n->{if(n==1){config=i==0?ZjuCalendarConfig.ordinary():i==1?ZjuCalendarConfig.haining():new ZjuCalendarConfig();config.campus=selected;persist();}});
@@ -35,7 +43,6 @@ public final class ZjuCalendarSettingsActivity extends Activity {
         if(config.campus.equals("ordinary")){TextView note=new TextView(this);note.setText("2027年调休待学校公布，请核对停课与补课安排");UiStyle.muted(note);UiStyle.addSpaced(root,note,12,12);}
         button(root,"导入校历 JSON",()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE),IMPORT));
         button(root,"导出校历 JSON",()->startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").putExtra(Intent.EXTRA_TITLE,"Chrona-校历.json").addCategory(Intent.CATEGORY_OPENABLE),EXPORT));
-        SettingsPageLayout.show(this,root,false);
     }
     private void term(ZjuCalendarConfig.Term original){
         ZjuCalendarConfig.Term t=new ZjuCalendarConfig.Term(original.year,original.name,original.start.toString(),original.end.toString(),original.teachingEnd.toString());
@@ -51,7 +58,7 @@ public final class ZjuCalendarSettingsActivity extends Activity {
     private interface Save{void run(String s)throws Exception;}
     private void edit(String title,String initial,boolean multiline,Save save){Dialog d=new Dialog(this);LinearLayout p=panel(title),fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);EditText input=new EditText(this);input.setText(initial);input.setSingleLine(!multiline);if(multiline){input.setMinLines(5);input.setMaxLines(10);}UiStyle.input(input);fields.addView(input);button(fields,"保存",()->{try{save.run(input.getText().toString().trim());d.dismiss();}catch(Exception e){error(e);}});button(fields,"取消",d::dismiss);UiDialogs.dialogBody(p,fields);UiDialogs.showFloatingDialog(d,p);}
     private ZjuCalendarConfig copy(){return ZjuCalendarConfig.parse(config.json().toString());}
-    private void commit(ZjuCalendarConfig next){next.validate();ZjuCalendarStore.save(this,next);config=next;render();}
+    private void commit(ZjuCalendarConfig next){next.validate();ZjuCalendarStore.save(this,next);config=next;UiMotion.swap(body,body,this::render);}
     private void persist(){try{commit(config);}catch(Exception e){error(e);}}
     private void error(Exception e){Feedback.show(this,e instanceof IllegalArgumentException?e.getMessage():"校历保存失败，请检查填写内容");}
     private String periodText(){List<String> l=new ArrayList<>();for(int i=0;i<config.starts.size();i++)l.add(config.starts.get(i)+"-"+config.ends.get(i));return String.join("\n",l);}

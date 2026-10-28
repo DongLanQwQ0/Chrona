@@ -288,7 +288,10 @@ async function render(animate=false){if(inlineEditor?.form.isConnected)return;co
  else if(route==='home')content=await homePage(ticket);
  else if(route==='inbox'||route==='schedule')content=await listPage(ticket);
  else{route='home';content=await homePage(ticket);}
- if(ticket===sequence){const active=document.activeElement,label=host.contains(active)?active.getAttribute('aria-label'):null,selection=label&&'selectionStart' in active?[active.selectionStart,active.selectionEnd]:null,scrollY=window.scrollY;
+ if(ticket===sequence){
+  const switching=animate?.local&&animate.direction&&host.querySelector('.result-list');
+  if(switching){const exit=motion(switching,[{opacity:1,transform:'translateX(0)'},{opacity:0,transform:`translateX(${-Math.sign(animate.direction)*12}px)`}],120);if(exit)await exit.finished.catch(()=>{});if(ticket!==sequence)return;}
+  const active=document.activeElement,label=host.contains(active)?active.getAttribute('aria-label'):null,selection=label&&'selectionStart' in active?[active.selectionStart,active.selectionEnd]:null,scrollY=window.scrollY;
   clearReveals();
   const previous=new Map([...host.querySelectorAll('[data-key]')].map(element=>[element.dataset.key,{element,rect:element.getBoundingClientRect()}]));
   const incoming=document.createDocumentFragment();incoming.append(...content);
@@ -302,6 +305,7 @@ async function render(animate=false){if(inlineEditor?.form.isConnected)return;co
   if(local){window.scrollTo(0,scrollY);for(const element of host.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(!old)continue;const rect=element.getBoundingClientRect(),x=old.rect.x-rect.x,y=old.rect.y-rect.y;if(Math.abs(x)+Math.abs(y)>1)motion(element,[{transform:`translate(${x}px,${y}px)`},{transform:'translate(0,0)'}],280);}}
   if(label&&local){const replacement=[...host.querySelectorAll('[aria-label]')].find(element=>element.getAttribute('aria-hidden')!=='true'&&element.getAttribute('aria-label')===label);replacement?.focus({preventScroll:true});if(selection&&replacement?.setSelectionRange)replacement.setSelectionRange(...selection);}
   if(animate&&!animate.local){motion(host,[{opacity:.55,transform:`translateX(${(animate.direction||1)*(animate.detail?20:12)}px)`},{opacity:1,transform:'translateX(0)'}],240);observeCards(host);}
+  else if(switching){const list=host.querySelector('.result-list');if(list)motion(list,[{opacity:0,transform:`translateX(${Math.sign(animate.direction)*12}px)`},{opacity:1,transform:'translateX(0)'}],180);}
  }}
 function iconAction(name,label,work,pressed){const button=action('',work,'icon-button');button.append(icon(name));button.setAttribute('aria-label',label);button.title=label;if(pressed!==undefined)button.setAttribute('aria-pressed',String(pressed));return button;}
 function actionGroup(buttons){const group=node('div','header-action-group');group.append(...buttons);return group;}

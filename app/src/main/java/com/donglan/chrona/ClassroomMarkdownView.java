@@ -20,6 +20,8 @@ final class ClassroomMarkdownView extends WebView {
     private final String document;
     private final Actions actions;
     private boolean disposed;
+    private boolean ready;
+    private Runnable readyAction;
     private boolean dragEligible;private float downX,downY;
     @android.annotation.SuppressLint({"SetJavaScriptEnabled","AddJavascriptInterface"})
     ClassroomMarkdownView(Activity activity,File directory,JSONObject summary,Actions actions) throws Exception {
@@ -56,7 +58,9 @@ final class ClassroomMarkdownView extends WebView {
                 if(!started&&bitmap!=null)bitmap.recycle();return started;
             }catch(Exception unavailable){return false;}
         });
-        addJavascriptInterface(new Object(){@JavascriptInterface public void height(int cssPixels){
+        addJavascriptInterface(new Object(){
+        @JavascriptInterface public void ready(){post(()->{if(disposed)return;ready=true;if(readyAction!=null)readyAction.run();});}
+        @JavascriptInterface public void height(int cssPixels){
             if(cssPixels<0)return;
             post(()->{if(disposed)return;int height=Math.round(cssPixels*getResources().getDisplayMetrics().density);
                 android.view.ViewGroup.LayoutParams p=getLayoutParams();if(p!=null&&p.height!=height){p.height=height;setLayoutParams(p);}});
@@ -103,5 +107,6 @@ final class ClassroomMarkdownView extends WebView {
     }
     private static String hex(int color){return String.format(Locale.ROOT,"#%06x",color&0xffffff);}
     private static WebResourceResponse blocked(){return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));}
-    void dispose(){disposed=true;stopLoading();removeJavascriptInterface("ChronaSize");destroy();}
+    void onReady(Runnable action){readyAction=action;if(ready&&action!=null)action.run();}
+    void dispose(){disposed=true;readyAction=null;stopLoading();removeJavascriptInterface("ChronaSize");destroy();}
 }

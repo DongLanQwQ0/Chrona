@@ -28,13 +28,14 @@ def production(name):
 
 
 style = (JAVA / 'UiMotion.java').read_text(encoding='utf-8')
-snapshot = method(style, 'private static Snapshot snapshot(View container)')
+snapshot = method(style, 'private static Snapshot snapshot(View container, boolean fixedViewport)')
 snapshot = snapshot.replace('android.graphics.Rect', 'Rect')
 snapshot_type = method(style, 'private static final class Snapshot')
 snapshot_type = snapshot_type.replace('android.graphics.Rect', 'Rect')
 limits = '\n'.join(re.findall(r'    private static final int SNAPSHOT_MAX_.*;', style))
 swap = '\n'.join(method(style, marker) for marker in (
     'public static void swap(View snapshotOf, View container, Runnable rebuild)',
+    'static void swap(View snapshotOf, View container, Runnable rebuild, int direction)',
     'static void finishSwap(View container)',
     'private static boolean hostsSeveralChildren(ViewGroup host)',
     'private static void dropSwapGhosts(ViewGroup host)')).replace('android.widget.HorizontalScrollView', 'HorizontalScrollView')
@@ -68,6 +69,7 @@ class Animator {
  View view; int starts,cancels; float alpha,y; Runnable end; Consumer<ValueAnimator> update;
  Animator(View v){view=v;}
  Animator alpha(float x){alpha=x;return this;} Animator translationY(float x){y=x;return this;}
+ Animator translationX(float x){return this;}
  Animator setStartDelay(long x){return this;} Animator setDuration(long x){return this;}
  Animator setInterpolator(Interpolator x){return this;} Animator withEndAction(Runnable x){end=x;return this;}
  Animator setUpdateListener(Consumer<ValueAnimator> x){update=x;return this;}
@@ -96,7 +98,7 @@ class View {
  void frame(){List<Runnable> q=new ArrayList<>(frames);frames.clear();q.forEach(Runnable::run);}
  void detach(){attached=false;for(var l:new ArrayList<>(listeners))l.onViewDetachedFromWindow(this);}
  int getWidth(){return width;} int getHeight(){return height;} int getScrollX(){return scrollX;} int getScrollY(){return scrollY;}
- int getLeft(){return left;} int getTop(){return top;} ViewGroup getParent(){return parent;}
+ int getLeft(){return left;} int getTop(){return top;} Object getParent(){return parent;}
  void invalidate(){} void draw(Canvas c){}
  Object getContext(){return null;} void setTag(Object x){tag=x;} Object getTag(){return tag;}
 }
@@ -126,6 +128,8 @@ class Bitmap {
 class Canvas { static float dx,dy;static int drawnChildren;Canvas(Bitmap b){}void scale(float x,float y){}void translate(float x,float y){dx=x;dy=y;} }
 public class NativeMotionCoreCheck {
  static final Object SWAP_GHOST=new Object();static final long SWAP_MILLIS=220;
+ static final WeakHashMap<View,java.lang.ref.WeakReference<Runnable>> PENDING_ENTRANCES=new WeakHashMap<>();
+ static boolean isEnabled(){return ValueAnimator.areAnimatorsEnabled();}
  @@LIMITS@@
  @@TYPE@@
  @@SNAPSHOT@@
@@ -163,7 +167,9 @@ public class NativeMotionCoreCheck {
   longPage.scrollY=9000;longPage.height=2000;shot=snapshot(longPage);check(shot.bounds.top==0&&shot.bounds.height()==2000,"scroll viewport local offset");
   longPage.visible=false;check(snapshot(longPage)==null,"invisible snapshot skipped");longPage.visible=true;Bitmap.oom=true;check(snapshot(longPage)==null,"allocation failure retains synchronous path");
   Bitmap.oom=false;FrameLayout stage=new FrameLayout();View body=new View();stage.add(body);
+  int[] cancelledEntrance={0};PENDING_ENTRANCES.put(body,new java.lang.ref.WeakReference<>(()->cancelledEntrance[0]++));
   swap(body,body,()->{});check(stage.getChildCount()==2&&body.alpha==0,"cross-fade creates one ghost");
+  check(cancelledEntrance[0]==1&&!PENDING_ENTRANCES.containsKey(body),"switch cancels a pending first entrance before composing motion");
   ImageView old=(ImageView)stage.getChildAt(1);Bitmap oldBitmap=old.bitmap;
   body.alpha=.6f;old.alpha=.4f;swap(body,body,()->{});
   check(Canvas.drawnChildren==2&&oldBitmap.recycled&&old.bitmap==null&&stage.getChildCount()==2,"rapid reversal captures composite and releases old ghost");
@@ -190,6 +196,7 @@ public class NativeMotionCoreCheck {
  }
 }
 '''.replace('@@LIMITS@@', limits).replace('@@TYPE@@', snapshot_type).replace('@@SNAPSHOT@@', snapshot).replace('@@SWAP@@', swap)
+harness = re.sub(r'snapshot\((longPage)\)', r'snapshot(\1,false)', harness)
 # Append the unmodified observer and motion implementations, only replacing Android imports.
 harness += '\n' + production('UiMotion.java') + '\n' + production('ScrollRevealObserver.java')
 directory = ROOT / 'build/native-motion-core-check'

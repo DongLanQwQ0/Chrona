@@ -20,6 +20,7 @@ import java.util.concurrent.*;
 
 /** Retained, account-bound single-lesson study workspace. */
 public final class ClassroomLessonActivity extends Activity {
+    private boolean firstDocumentPresentation;
     static final String EXTRA_LESSON = "classroom_lesson";
     static final String EXTRA_ACCOUNT = "classroom_account";
     private static final int EXPORT=2041;
@@ -79,7 +80,7 @@ public final class ClassroomLessonActivity extends Activity {
         void checkpoint(ClassroomProgress value){if(!allowed()){cancel();return;}progress=value;message=value.text();if(notifyWork&&notifications!=null)notifications.progress(value,false);try{if(dir!=null){JSONObject next=ClassroomStore.read(new File(dir,"summary.json"));if(next==null||next.optLong("updated")!=ignoredSummaryUpdated)summary=next;materials=ClassroomStore.read(new File(dir,"materials.json"));}}catch(Exception ignored){}publish();}
     }
     @Override protected void onCreate(Bundle state) {
-        ThemeStore.apply(this); super.onCreate(state); settings=new ZjuSettingsStore(this);
+        ThemeStore.apply(this); super.onCreate(state); firstDocumentPresentation=state==null||state.getBoolean("first_document_presentation",false);settings=new ZjuSettingsStore(this);
         String notificationAccount=getIntent().getStringExtra(EXTRA_ACCOUNT);
         if(notificationAccount!=null&&!notificationAccount.equals(settings.account())){ClassroomNotifications.clearInactive(this);finish();return;}
         Object retained=getLastNonConfigurationInstance();
@@ -205,6 +206,12 @@ public final class ClassroomLessonActivity extends Activity {
                 @Override public Uri imageUri(String name){return ImageTransferProvider.classroomSummary(ClassroomLessonActivity.this,s.account,s.selected,name);}
             });
             notes.addView(documentView);
+            ClassroomMarkdownView presented=documentView;
+            presented.onReady(()->{
+                if(documentView==presented&&firstDocumentPresentation&&!isFinishing()&&!isDestroyed()){
+                    firstDocumentPresentation=false;UiMotion.enterPage(presented);
+                }
+            });
         }catch(Exception error){text(notes,"课堂正文无法显示："+error.getMessage(),16,false);}
     }
     private void extractAssignment(int index){
@@ -258,7 +265,7 @@ public final class ClassroomLessonActivity extends Activity {
         });
     }
     private void export(){s.pendingExport=s.selected;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,"课堂总结-"+s.selected.date()+".zip");try{startActivityForResult(intent,EXPORT);}catch(Exception e){Feedback.show(this,"无法打开文件保存器");}}
-    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("share_uri",s.shareUri.toString());}catch(Exception ignored){}}
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_document_presentation",firstDocumentPresentation);super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("share_uri",s.shareUri.toString());}catch(Exception ignored){}}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=EXPORT||result!=RESULT_OK||data==null||data.getData()==null||!gate())return;s.exportUri=data.getData();
         boolean read=(data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION)!=0,write=(data.getFlags()&Intent.FLAG_GRANT_WRITE_URI_PERMISSION)!=0;
         try{if(read&&write)getContentResolver().takePersistableUriPermission(s.exportUri,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);

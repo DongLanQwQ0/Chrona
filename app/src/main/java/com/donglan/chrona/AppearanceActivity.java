@@ -46,6 +46,7 @@ public final class AppearanceActivity extends Activity {
         ThemeStore.apply(this);
         super.onCreate(state);
         buildAppearance(state == null ? 0 : state.getInt("scroll_y"));
+        if (state == null) UiMotion.enterPage(page);
     }
 
     /** Updates the appearance page in place, keeping its scroll position. */
