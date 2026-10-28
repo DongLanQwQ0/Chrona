@@ -8,6 +8,7 @@
 - 压缩JPEG：`build/exam-schedule-{portrait-light,landscape-dark}-{filter,list,detail}.jpg`及`build/lan-daily-workspace/{phone-official-exam-dark,phone-official-exam-detail,landscape-official-exam-dark}.jpg`。主代理及持续复用的只读`ui_review`亲看签收本轮受检范围；最初横屏详情过渡帧已由稳定帧替换。
 - release＋lintRelease成功，`build/release-0.15.59-build.txt`；固定APK`build/candidates/0.15.59/Chrona-0.15.59.apk`3241802字节、221／0.15.59、非debug、原签名，证书和包元信息见`build/release-0.15.59-{signature,package}.txt`。
 - 当前USB未发现手机，最后无线地址10.195.39.39:46721连接超时，未覆盖安装；不把模拟器或模拟API证据称为新版本真机验收。0.15.58的真实官方查询证据仍适用于未改变的考试获取协议。
+- 源提交6405dc5；普通推送因github.com:443无法连接于21107ms后失败，`build/release-0.15.59-push.txt`。未改代理／鉴权，0.15.59尚未发布，最新正式版本仍v0.15.57。
 
 ## 0.15.58 — 折姜星辰考试查询 — 2026-10-27
 
