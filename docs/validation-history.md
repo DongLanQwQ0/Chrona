@@ -28,7 +28,7 @@
 - 原生压缩JPEG在`build/page-motion-evidence/page-motion-{portrait-light,landscape-dark}-*.jpg`，概览`portrait-contact.jpg`、`landscape-contact.jpg`。主代理和持续复用的只读`ui_review`亲看入场／中间帧／终态后签收受检范围，无剩余明确缺陷。所有图先下采样压缩，无直接读取PNG原图。
 - release＋lintRelease成功；固定包`build/candidates/0.15.60/Chrona-0.15.60.apk`，3245674字节，222／0.15.60，非debug、原签名。证据`build/release-0.15.60-{build,package,signature}.txt`。
 - 源码6ea8e5e已普通推送并正式发布[v0.15.60](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.60)；远端标签精确6ea8e5e5b77a5b52813912ef7f9fce3fab2bb1ed，资产3245674字节、uploaded、非草稿／非预发布，latest读回v0.15.60。证据`build/release-0.15.60-{push,create}.txt`、`build/release-0.15.60-published.json`与tag／latest读回记录。
-- USB仍仅见模拟器，手机未覆盖更新；不把AVD与模拟API称为真机验收。下一次手机可用时，正常覆盖固定包并核对实际导航／课堂正文与分页。
+- 发布时USB仅见模拟器；随后用户提供10.197.86.81:40627，硬件序号10AG5S1SR4005X7，固定222包正常覆盖安装成功，版本读回0.15.60，进程存活并实际打开首页。安装前无Chrona运行服务或活动Job，LAN原先未运行。证据`build/phone-0.15.60-{install,package}.txt`及压缩首页JPEG／XML。手机前台先后切到QQ／微信（第二次发生于用户允许继续之后），前台guard停止后续点击；导航／课堂正文与分页的该机复验仍待稳定前台，不把AVD与模拟API称为真机验收。
 
 ## 0.15.59 — 日程教务考试类型 — 2026-10-28
 
