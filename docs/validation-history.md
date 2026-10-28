@@ -9,6 +9,7 @@
 - 对端的正式ARM64包无法装入x64 AVD，使用同源码x64验证包，未改模拟器。首次关联截图暴露提供者原生安全区问题，对端修为1.0.31/40；已正常覆盖，经设置→本机应用联动观察标题／关闭及关联行均处于安全区，`provider-40-safearea.{jpg,xml}`。外部ABI未变，原Binder证据复用。真实Windows组、登录和配置未改。
 - LAN二维码检查、LAN安全83项、设置布局74项、公共UI1530项通过，结果在`build/global-send/`；普通debug／release与双lint通过`build-final.txt`。最终包`build/candidates/0.15.65/Chrona-0.15.65.apk`3264338字节、227／0.15.65、非debug、原签名，见`package.txt`／`signature.txt`，已覆盖共享AVD。主代理和持续复用的只读ui_review亲看最新布局、实际关联／浏览器JPEG，签收受检UI范围；不发布小修Release，公共latest仍v0.15.61。
 - 真机`10.196.4.142:36241`本轮10060超时，mDNS无设备；未更新手机。完整Chrona点击真实Windows设备、接收浏览器访问手机8765及网页批准仍待设备可达后验证。已有原生绑定、Android接收／浏览器与布局证据继续有效，不重复跑整组。所有输出均在项目内，模型只查看压缩JPEG。
+- 随后用户接入USB，V2527A／`10AG5S1SR4005X7`由226正常覆盖固定227包，版本读回0.15.65，进程存活。按GlobalSend所有者的交付及既定覆盖授权，一并从其1.0.28/37正常更新正式ARM64至1.0.31/40并启动，组连接保留。Chrona LAN页实际hello提供关联入口，精简提示和下方设备组位置正常，`phone-lan-layout.{jpg,xml}`；未代用户点击首次关联或发送。证据`phone-{install,package}.txt`、`phone-globalsend-{install,package}.txt`及`phone-globalsend-ui.xml`。验前无Chrona活动服务，临时LAN已恢复关闭，`phone-{before,after}-services.txt`；未改手机旋转／分辨率／DPI，不操作Windows。ADB已释放并回传对端；完整手机→Windows链路的首次授权及在线目标验收保留。
 
 ## 0.15.64 — 下载后自动总结与批量总结 — 2026-10-28
 
