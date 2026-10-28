@@ -9,7 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import org.json.JSONObject;
 
-/** Once-only dispatch of fully downloaded monitor lessons through the existing Session registry. */
+/** Shared download-to-summary work and once-only monitored dispatch through the Session registry. */
 final class ClassroomAutoSummary {
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
     interface Generator { JSONObject generate(ClassroomLessonActivity.Session job,AiSettings ai,String prompt)throws Exception; }
@@ -18,6 +18,57 @@ final class ClassroomAutoSummary {
     static Settings settings=app->new AiSettingsStore(app).load();
     static java.util.function.BooleanSupplier foreground=ClassroomMonitorService::running;
     static boolean hasForegroundOwner(){return foreground.getAsBoolean();}
+
+    static int imageLimit(Context app,String account)throws Exception {
+        return new ClassroomMonitorStore(app,account).summaryImages()?ClassroomSummary.MAX_IMAGES:0;
+    }
+    static boolean needsAuthorization(JSONObject summary,JSONObject run){
+        return (summary==null||!summary.optBoolean("complete"))&&(summary!=null||run!=null);
+    }
+    /** Called only by an explicit download/summary action; never by page loading or polling. */
+    static void downloadAndSummarize(ClassroomLessonActivity.Session job)throws Exception {
+        JSONObject saved=ClassroomStore.read(new File(job.store().lesson(job.selected),"summary.json"));
+        if(saved!=null&&saved.optBoolean("complete")){job.summary=saved;job.message="总结已完成";return;}
+        job.summary=saved;
+        job.prepareMaterials();
+        summarize(job,null,SchedulePreferences.load(job.app).classroomPrompt,false);
+    }
+    /** The same checkpoint, image permission and failure contract for single, batch and monitored work. */
+    static void summarize(ClassroomLessonActivity.Session job,AiSettings selected,String prompt,boolean regenerate)throws Exception {
+        JSONObject previous=job.summary;
+        boolean authorized=job.summaryAuthorized;job.summaryAuthorized=false;
+        if(!regenerate&&previous!=null&&previous.optBoolean("complete")){job.message="总结已完成";return;}
+        if(!regenerate&&!authorized&&needsAuthorization(previous,ClassroomStore.read(new File(job.dir,"run.json"))))
+            throw new IOException("本节总结尚未完成，请手动授权继续");
+        AiSettings ai=selected;
+        try {
+            execution(job,"running","");job.retryRequired=true;
+            if(ai==null)ai=settings.load(job.app);
+            if(ai==null)throw new IOException("请先在 AI 设置中配置服务，素材已保留");
+            if(job.imageLimit>0&&new AiSettingsStore(job.app).isImageUnsupported(ai))throw new IOException("当前 AI 服务不支持图片，请手动选择文字模式继续");
+            job.control.check();if(!job.allowed())throw new IOException("学校账号已停用或更换");
+            JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));
+            if(prior==null||!ClassroomSummary.configKey(ai,job.imageLimit,prompt).equals(prior.optString("config"))||prior.has("final")){
+                job.ignoredSummaryUpdated=previous==null?-1:previous.optLong("updated");job.summary=null;job.revision++;job.publish();
+            }
+            job.summary=generator.generate(job,ai,prompt);
+            execution(job,"complete","");job.retryRequired=false;job.message="总结已完成";
+        }catch(Exception failure){
+            if(failure instanceof ChatCompletionClient.RequestException rejected&&job.imageLimit>0&&rejected.rejectsImage()&&ai!=null)
+                new AiSettingsStore(job.app).markImageUnsupported(ai);
+            try{execution(job,job.cancelRequested?"interrupted":"failed","总结未完成，请手动授权继续");}
+            catch(Exception recording){failure.addSuppressed(recording);}
+            throw failure;
+        }finally{
+            job.ignoredSummaryUpdated=-1;
+            if(job.summary==null&&previous!=null){job.summary=previous;job.revision++;}
+        }
+    }
+    private static void execution(ClassroomLessonActivity.Session job,String state,String detail)throws Exception {
+        File file=new File(job.dir,"run.json");JSONObject run=ClassroomStore.read(file);if(run==null)run=new JSONObject();
+        run.put("execution",new JSONObject().put("state",state).put("detail",detail).put("imageLimit",job.imageLimit).put("updated",System.currentTimeMillis()));
+        ClassroomStore.write(file,run);
+    }
 
     /** Called on service loss, timeout and account changes. Never restarts requests. */
     static void ownerStopped(){
@@ -55,6 +106,9 @@ final class ClassroomAutoSummary {
                 if(saved!=null&&saved.optBoolean("complete")){
                     store.summaryState(lesson,state,"complete",lesson.course+" · 总结已完成");continue;
                 }
+                if(needsAuthorization(saved,ClassroomStore.read(new File(dir,"run.json")))){
+                    store.summaryState(lesson,state,"interrupted",lesson.course+" · 上次总结未完成，请手动授权继续");continue;
+                }
                 if("running".equals(state)){
                     store.summaryState(lesson,"running","interrupted",lesson.course+" · 上次 AI 结果未知，请手动继续");continue;
                 }
@@ -82,7 +136,8 @@ final class ClassroomAutoSummary {
                 ClassroomLesson cached=ClassroomLesson.fromJson(candidates.getJSONObject("lesson"));
                 if(!ClassroomMonitorStore.key(lesson).equals(ClassroomMonitorStore.key(cached)))continue;
                 if(!ClassroomMonitor.allowed(app,store.account))return;
-                store.recoverFinished(lesson);
+                if(store.recoverFinished(lesson)&&needsAuthorization(ClassroomStore.read(new File(dir,"summary.json")),ClassroomStore.read(new File(dir,"run.json"))))
+                    store.summaryState(lesson,"queued","interrupted",lesson.course+" · 上次总结未完成，请手动授权继续");
             }catch(Exception invalid){android.util.Log.w("ChronaClassroomMonitor","completed material recovery: "+invalid.getClass().getSimpleName());}
         }
     }
@@ -99,12 +154,9 @@ final class ClassroomAutoSummary {
             job.control.check();
             if(!store.summaryState(job.selected,"queued","running",job.selected.course+" · AI 正在整理"))throw new IOException("自动总结已停止");requested=true;
             job.control.check();if(!job.allowed())throw new IOException("学校账号已停用或更换");
-            job.summary=generator.generate(job,ai,prompt);
+            summarize(job,ai,prompt,false);
             store.summaryState(job.selected,"running","complete",job.selected.course+" · 总结已完成");job.message="总结已完成";
         }catch(Exception failure){
-            if(failure instanceof ChatCompletionClient.RequestException rejected&&job.imageLimit>0&&rejected.rejectsImage()){
-                AiSettings ai=settings.load(job.app);if(ai!=null)new AiSettingsStore(job.app).markImageUnsupported(ai);
-            }
             String detail=job.cancelRequested||!job.allowed()?"自动总结已停止，可手动继续":
                     requested?"自动总结未完成，请手动继续":"自动总结未启动："+(failure.getMessage()==null?"请重试":failure.getMessage());
             store.summaryState(job.selected,requested?"running":"queued",job.cancelRequested||!job.allowed()?"interrupted":"failed",job.selected.course+" · "+detail);

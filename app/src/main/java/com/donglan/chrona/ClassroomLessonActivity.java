@@ -51,6 +51,8 @@ public final class ClassroomLessonActivity extends Activity {
         boolean monitorOwned;
         Object batchOwner;
         boolean succeeded;
+        boolean retryRequired;
+        boolean summaryAuthorized;
         Runnable completed;
         boolean updateQueued, detached;
         long startedAt;
@@ -77,6 +79,7 @@ public final class ClassroomLessonActivity extends Activity {
         void disposeIfDetached(){if(!busy&&detached&&owner.get()==null){preferences.unregisterOnSharedPreferenceChangeListener(changes);worker.shutdown();}}
         ClassroomStore store()throws Exception{return new ClassroomStore(app,account);}
         ClassroomClient connect()throws Exception{if(!allowed())throw new IOException("学校账号已停用或更换");String[] pair=new ZjuSettingsStore(app).credentials();try{client=new ClassroomClient(pair[0],pair[1]);return client;}finally{Arrays.fill(pair,"");}}
+        void prepareMaterials()throws Exception{prepared=ClassroomSummary.prepare(dir,selected,connect(),control,this::checkpoint);materials=ClassroomStore.read(new File(dir,"materials.json"));}
         void checkpoint(ClassroomProgress value){if(!allowed()){cancel();return;}progress=value;message=value.text();if(notifyWork&&notifications!=null)notifications.progress(value,false);try{if(dir!=null){JSONObject next=ClassroomStore.read(new File(dir,"summary.json"));if(next==null||next.optLong("updated")!=ignoredSummaryUpdated)summary=next;materials=ClassroomStore.read(new File(dir,"materials.json"));}}catch(Exception ignored){}publish();}
     }
     @Override protected void onCreate(Bundle state) {
@@ -146,11 +149,18 @@ public final class ClassroomLessonActivity extends Activity {
                     ? new JSONObject().put("segments",job.materials.getJSONArray("segments").length())
                         .put("raw",job.materials.optInt("raw_images"))
                         .put("candidates",candidates.getJSONArray("images").length()) : null;
-            job.localInitialized=true; job.message=restoredFailure(job.summary,ClassroomStore.read(new File(job.dir,"run.json")));
+            JSONObject run=ClassroomStore.read(new File(job.dir,"run.json"));
+            if(run!=null&&run.optJSONObject("image_catalogue")!=null)job.imageLimit=Math.max(0,Math.min(ClassroomSummary.MAX_IMAGES,run.getJSONObject("image_catalogue").optInt("limit",job.imageLimit)));
+            if(run!=null&&run.optJSONObject("execution")!=null)job.imageLimit=Math.max(0,Math.min(ClassroomSummary.MAX_IMAGES,run.getJSONObject("execution").optInt("imageLimit",job.imageLimit)));
+            job.retryRequired=ClassroomAutoSummary.needsAuthorization(job.summary,run)||(job.summary==null||!job.summary.optBoolean("complete"))&&automatic!=null&&java.util.Set.of("failed","interrupted").contains(automatic.optString("state"));
+            job.localInitialized=true; job.message=restoredFailure(job.summary,run);
         });
     }
     static String restoredFailure(JSONObject summary,JSONObject run){
-        if(run==null||run.has("final"))return "";
+        if(run==null)return "";
+        JSONObject execution=run.optJSONObject("execution");
+        if(execution!=null&&!"complete".equals(execution.optString("state")))return execution.optString("detail").isBlank()?"上次总结未完成，请手动授权继续":execution.optString("detail");
+        if(run.has("final"))return "";
         JSONObject validation=run.optJSONObject("final_validation");if(validation==null)return "";
         String status=validation.optString("status");
         if(!status.equals("failed")&&!status.equals("cancelled"))return "";
@@ -184,11 +194,12 @@ public final class ClassroomLessonActivity extends Activity {
         TextView courseTitle=new TextView(this);courseTitle.setText(s.selected.course);courseTitle.setTextSize(21);UiStyle.title(courseTitle);
         heading.addView(courseTitle,new LinearLayout.LayoutParams(0,-2,1));
         content.addView(heading);text(content,s.selected.date()+" "+clock(s.selected)+" · "+s.selected.title,14,false);
-        completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"获取素材",this::prepare);generate=action(actions,"生成总结",this::confirmGeneration);content.addView(actions);
+        completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"总结",this::prepare);generate=action(actions,"生成总结",()->{if(s.retryRequired||s.summary!=null)confirmGeneration();else prepare();});content.addView(actions);
         cancel=button(content,"停止",()->s.cancel(),false);
         overview=text(content,"",17,false);notes=new LinearLayout(this);notes.setOrientation(LinearLayout.VERTICAL);content.addView(notes);
     }
     private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary==null?"生成总结":s.summary.optBoolean("complete")?"重新生成":"继续整理");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
+        prepare.setVisibility(s.prepared==null?View.VISIBLE:View.GONE);generate.setVisibility(s.prepared!=null?View.VISIBLE:View.GONE);
         delete.setEnabled(!s.deleting&&s.localInitialized&&(s.summary!=null||s.materials!=null||s.busy));cancel.setVisibility(s.busy&&!s.deleting?View.VISIBLE:View.GONE);
         if(s.prepared!=null)completion.setText("字幕就绪 · "+s.prepared.optInt("segments")+" 条\n截图 "+s.prepared.optInt("raw")+" → "+s.prepared.optInt("candidates")+" 张");else completion.setText(s.selected.state(System.currentTimeMillis()));
         overview.setVisibility(View.GONE);
@@ -226,22 +237,18 @@ public final class ClassroomLessonActivity extends Activity {
             UiDialogs.confirmDialog(this,"提取课堂安排",prefill,"继续",()->startActivity(new Intent(this,MainActivity.class).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,prefill)));return;
         }
     }
-    private void prepare(){ClassroomNotifications.requestPermission(this);Session job=s;job.run("获取课堂素材",true,()->{job.prepared=ClassroomSummary.prepare(job.dir,job.selected,job.connect(),job.control,job::checkpoint);job.materials=ClassroomStore.read(new File(job.dir,"materials.json"));job.message="素材已就绪";});}
-    private void confirmGeneration(){Session job=s;job.run("检查 AI 服务配置",()->{AiSettingsStore store=new AiSettingsStore(job.app);AiSettings ai=store.load();if(ai==null)throw new IOException("请先在 AI 设置中配置服务");boolean unsupported=store.isImageUnsupported(ai);job.message="";job.main.post(()->{ClassroomLessonActivity a=job.owner.get();if(a!=null&&job.allowed())a.generationDialog(ai,unsupported);});});}
+    private void prepare(){if(s.retryRequired){confirmGeneration();return;}ClassroomNotifications.requestPermission(this);Session job=s;try{job.imageLimit=ClassroomAutoSummary.imageLimit(job.app,job.account);}catch(Exception failure){Feedback.show(this,"无法读取总结图片设置");return;}job.run("下载并总结课堂",true,()->ClassroomAutoSummary.downloadAndSummarize(job));}
+    private void confirmGeneration(){Session job=s;job.run("检查 AI 服务配置",()->{AiSettingsStore store=new AiSettingsStore(job.app);AiSettings ai=ClassroomAutoSummary.settings.load(job.app);if(ai==null)throw new IOException("请先在 AI 设置中配置服务");boolean unsupported=store.isImageUnsupported(ai);job.message="";job.main.post(()->{ClassroomLessonActivity a=job.owner.get();if(a!=null&&job.allowed())a.generationDialog(ai,unsupported);});});}
     private void generationDialog(AiSettings ai,boolean unsupported){
         Dialog dialog=new Dialog(this);LinearLayout panel=UiDialogs.dialogPanel(this,"生成课堂总结");LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);
         text(body,ai.model+"\n"+ai.baseUrl,15,false);
         CheckBox upload=new CheckBox(this);upload.setText("上传图片 · 最多 "+ClassroomSummary.MAX_IMAGES+" 张");UiStyle.toggle(upload);upload.setChecked(!unsupported&&s.imageLimit>0);upload.setEnabled(!unsupported);body.addView(upload);
         if(unsupported)text(body,"当前模型仅支持文字",14,false);
-        button(body,"上传并生成",()->{dialog.dismiss();startGeneration(ai,upload.isChecked()?ClassroomSummary.MAX_IMAGES:0);},true);
-        button(body,"取消",dialog::dismiss,false);UiDialogs.dialogBody(panel,body);UiDialogs.showFloatingDialog(dialog,panel);
+        UiDialogs.dialogBody(panel,body);
+        panel.addView(UiDialogs.actionRow(this,dialog,"上传并生成",()->{dialog.dismiss();startGeneration(ai,upload.isChecked()?ClassroomSummary.MAX_IMAGES:0);}));
+        UiDialogs.showFloatingDialog(dialog,panel);
     }
-    private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;String classroomPrompt=SchedulePreferences.load(this).classroomPrompt;s.imageLimit=limit;job.run("准备整理课堂",true,()->{JSONObject previousSummary=job.summary;JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));String config=ClassroomSummary.configKey(ai,limit,classroomPrompt);if(prior==null||!config.equals(prior.optString("config"))||prior.has("final")){job.ignoredSummaryUpdated=job.summary==null?-1:job.summary.optLong("updated");job.summary=null;job.revision++;job.publish();}
-            try{if(!new File(job.dir,"candidates.json").isFile()){job.prepared=ClassroomSummary.prepare(job.dir,job.selected,job.connect(),job.control,job::checkpoint);job.materials=ClassroomStore.read(new File(job.dir,"materials.json"));}
-                job.summary=ClassroomSummary.generate(job.dir,job.selected,ai,limit,job.control,job::checkpoint,classroomPrompt);}
-            catch(ChatCompletionClient.RequestException e){if(limit>0&&e.rejectsImage()){new AiSettingsStore(job.app).markImageUnsupported(ai);throw new IOException("当前 AI 服务拒绝图片。可再次选择生成总结，以纯文字模式上传字幕。",e);}throw e;}
-            finally{job.ignoredSummaryUpdated=-1;if(job.summary==null){job.summary=previousSummary;job.revision++;}}
-            job.message="总结已完成";});}
+    private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;String prompt=SchedulePreferences.load(this).classroomPrompt;job.imageLimit=limit;job.run("准备整理课堂",true,()->{if(!new File(job.dir,"candidates.json").isFile())job.prepareMaterials();ClassroomAutoSummary.summarize(job,ai,prompt,true);});}
     private void confirmDelete(){
         if(!gate())return;
         if(s.busy||ClassroomLiveTranscripts.active(s.account,s.selected)){Feedback.show(this,"本节课堂正在处理，请先停止后再删除");return;}

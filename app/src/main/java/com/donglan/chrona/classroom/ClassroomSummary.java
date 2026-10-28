@@ -16,7 +16,7 @@ import java.util.Set;
 
 /** Sequential, checkpointed single-lesson pipeline. Only explicitly selected images leave the device. */
 public final class ClassroomSummary {
-    public static final int DEFAULT_IMAGES=40;
+    public static final int DEFAULT_IMAGES=0;
     public static final int MAX_IMAGES=40;
     private static final int PIPELINE_VERSION=10;
     private static final int MAX_IMAGE_TIME_RANGES=40;

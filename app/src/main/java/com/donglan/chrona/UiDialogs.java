@@ -209,7 +209,7 @@ final class UiDialogs {
     }
 
     /** One geometry for paired modal actions; each caller owns its value and dismiss order. */
-    private static LinearLayout actionRow(Activity activity, Dialog dialog, String positive, Runnable action) {
+    static LinearLayout actionRow(Activity activity, Dialog dialog, String positive, Runnable action) {
         LinearLayout actions = new LinearLayout(activity) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
                 int available = View.MeasureSpec.getSize(widthSpec) - getPaddingLeft() - getPaddingRight();

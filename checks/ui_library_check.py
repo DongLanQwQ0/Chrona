@@ -32,7 +32,7 @@ assert 'setDialogBlurRoot(content, true)' in (JAVA / 'UiDialogs.java').read_text
 dialogs = (JAVA / 'UiDialogs.java').read_text(encoding='utf-8')
 assert dialogs.count('actionRow(activity, dialog,') == 4, 'Date/time/confirm/editor share paired actions'
 assert 'originalRenderEffect' not in dialogs, 'Always-null state should not survive as an abstraction'
-start = dialogs.index('    private static LinearLayout actionRow(')
+start = dialogs.index('    static LinearLayout actionRow(')
 end = dialogs.index('{', start) + 1
 depth = 1
 while depth:

@@ -29,18 +29,21 @@ static String current="account";static boolean enabled=true;static final android
 final android.content.SharedPreferences prefs=shared;ZjuSettingsStore(android.content.Context c){}boolean enabled(){return enabled;}boolean configured(){return true;}String account(){return current;}}''',
 'com/donglan/chrona/classroom/ClassroomLesson.java': '''package com.donglan.chrona.classroom;public class ClassroomLesson {
 public final String courseId="1",id,course="Fixture",title="Class";public ClassroomLesson(String id){this.id=id;}public String date(){return "2026-10-27";}}''',
+'org/json/JSONObject.java': '''package org.json;public class JSONObject {public boolean optBoolean(String name){return false;}}''',
 'com/donglan/chrona/classroom/ClassroomStore.java': '''package com.donglan.chrona.classroom;public class ClassroomStore {
+public ClassroomStore(){}public ClassroomStore(android.content.Context c,String a){}
+public java.io.File lesson(ClassroomLesson l)throws Exception{return localLesson(l);}
 public java.io.File localLesson(ClassroomLesson l)throws Exception{if(l.id.equals("bad-dir"))throw new java.io.IOException("bad directory");return new java.io.File("fixture-"+l.id);}
-public static Object read(java.io.File f){return null;}}''',
-'com/donglan/chrona/classroom/ClassroomSummary.java': '''package com.donglan.chrona.classroom;public class ClassroomSummary {
-public static int calls;public static Object prepare(java.io.File f,ClassroomLesson l,Object c,Object control,java.util.function.Consumer<Object> p)throws Exception{
-calls++;if(l.id.equals("fail"))throw new java.io.IOException("素材失败");return new Object();}}''',
+public static org.json.JSONObject read(java.io.File f){return null;}}''',
+'com/donglan/chrona/ClassroomAutoSummary.java': '''package com.donglan.chrona;class ClassroomAutoSummary {
+static int calls;static boolean hasForegroundOwner(){return true;}static int imageLimit(android.content.Context c,String a){return 0;}
+static void downloadAndSummarize(ClassroomLessonActivity.Session s)throws Exception{calls++;if(s.selected.id.equals("fail"))throw new java.io.IOException("素材失败");s.message="总结已完成";}}''',
 'com/donglan/chrona/ClassroomLiveTranscripts.java': '''package com.donglan.chrona;class ClassroomLiveTranscripts {
 static final java.util.Set<String> active=new java.util.HashSet<>();static boolean active(String a,com.donglan.chrona.classroom.ClassroomLesson l){return active.contains(l.id);}}''',
 'com/donglan/chrona/ClassroomLessonActivity.java': '''package com.donglan.chrona;public class ClassroomLessonActivity {static class Session {
 final android.content.Context app;final String account;com.donglan.chrona.classroom.ClassroomLesson selected;
 ClassroomNotifications notifications;
-boolean failed,cancelled,monitorOwned,busy,cancelRequested,succeeded,detached;Object batchOwner,prepared,materials,control;java.io.File dir;boolean localInitialized;
+boolean failed,cancelled,monitorOwned,busy,cancelRequested,succeeded,detached,summaryAuthorized;int imageLimit;Object batchOwner,prepared,materials,control;java.io.File dir;boolean localInitialized;
 String message="";Runnable completed;Work pending;static Session active;Progress progress=new Progress();static class Progress{String stage="fixture";}
 Session(String a,String id){this(new android.content.Context(),a);selected=new com.donglan.chrona.classroom.ClassroomLesson(id);}
 Session(android.content.Context c,String a){app=c;account=a;}

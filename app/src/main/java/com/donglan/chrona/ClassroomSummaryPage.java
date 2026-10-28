@@ -60,7 +60,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     private TextView historyCourse;
     private String shownHistoryCourse="";
     private ImageButton historyDirection;
-    private static final String[] HISTORY_ORDERS={"课程时间","总结时间"};
+    private static final String[] HISTORY_ORDERS={"课程时间","总结时间","未总结"};
     private String shownQuery="";
     private int shownHistoryOrder=-1;
     private boolean shownHistoryAscending;
@@ -197,7 +197,7 @@ final class ClassroomSummaryPage extends SchedulePage {
                 s.mode = Math.max(0, Math.min(3, state.getInt("mode")));
                 s.page = Math.max(0, state.getInt("page", 0)); s.scrollY = state.getInt("scroll_y");
                 s.weekScrollX = state.getInt("week_scroll_x", 0);
-                s.query=state.getString("query","");s.historyOrder=state.getInt("history_order",1)==0?0:1;s.historyAscending=state.getBoolean("history_ascending",false);
+                s.query=state.getString("query","");s.historyOrder=Math.max(0,Math.min(2,state.getInt("history_order",1)));s.historyAscending=state.getBoolean("history_ascending",false);
                 s.historyCourse=state.getString("history_course","");s.selecting=state.getBoolean("selecting",false);
                 ArrayList<String> selected=state.getStringArrayList("selected");if(selected!=null)s.selected.addAll(selected);
                 ArrayList<String> exports=state.getStringArrayList("batch_export_lessons");if(exports!=null)for(String value:exports)try{s.pendingExport.add(ClassroomLesson.fromJson(new JSONObject(value)));}catch(Exception ignored){}
@@ -268,12 +268,10 @@ final class ClassroomSummaryPage extends SchedulePage {
         historyCourse=new TextView(activity);UiStyle.fieldTrigger(historyCourse,true);historyCourse.setOnClickListener(v->pickHistoryCourse());
         historyTools=new LinearLayout(activity);historyTools.setGravity(Gravity.CENTER_VERTICAL);
         historyTools.addView(historyCourse,new LinearLayout.LayoutParams(0,-2,1));
-        LinearLayout orderTools=new LinearLayout(activity);orderTools.setGravity(Gravity.CENTER_VERTICAL);orderTools.setPadding(dp(8),0,0,0);
-        historyTools.addView(orderTools,new LinearLayout.LayoutParams(0,-2,1));
-        historyOrder=new TextView(activity);UiStyle.fieldTrigger(historyOrder);historyOrder.setOnClickListener(v->{if(s!=null)UiDialogs.choiceDialog(activity,"排序",HISTORY_ORDERS,s.historyOrder,index->{if(s.historyOrder!=index){s.historyOrder=index;resetListOrder();}});});
-        orderTools.addView(historyOrder,new LinearLayout.LayoutParams(0,-2,1));
+        historyOrder=new TextView(activity);UiStyle.fieldTrigger(historyOrder,true);historyOrder.setOnClickListener(v->{if(s!=null)UiDialogs.choiceDialog(activity,"排序与筛选",HISTORY_ORDERS,s.historyOrder,index->{if(s.historyOrder!=index){s.historyOrder=index;clearSelection();resetListOrder();}});});
+        LinearLayout.LayoutParams orderParams=new LinearLayout.LayoutParams(0,-2,1);orderParams.leftMargin=dp(8);historyTools.addView(historyOrder,orderParams);
         historyDirection=UiStyle.navigationIcon(activity,R.drawable.ic_arrow_down,"切换排序方向",()->{if(s!=null){s.historyAscending=!s.historyAscending;resetListOrder();}});
-        LinearLayout.LayoutParams directionParams=new LinearLayout.LayoutParams(dp(48),dp(48));directionParams.leftMargin=dp(8);orderTools.addView(historyDirection,directionParams);UiStyle.addSpaced(browserTools,historyTools,0,8);
+        LinearLayout.LayoutParams directionParams=new LinearLayout.LayoutParams(dp(48),dp(48));directionParams.leftMargin=dp(8);historyTools.addView(historyDirection,directionParams);UiStyle.addSpaced(browserTools,historyTools,0,8);
         pageBar = new DateIntervalBar(activity, this::pickPage, this::changePage);
         pageBar.getChildAt(1).setContentDescription("上一页");
         pageBar.getChildAt(2).setContentDescription("下一页");
@@ -477,7 +475,7 @@ final class ClassroomSummaryPage extends SchedulePage {
             for (ClassroomLesson lesson : s.catalog) if (lesson.startsAt <= System.currentTimeMillis()
                     && !saved.contains(lesson.courseId+"/"+lesson.id)&&matchesQuery(lesson,s.query)) recent.add(lesson);
             recent.sort((a,b) -> Long.compare(b.startsAt, a.startsAt));
-            List<JSONObject> orderedHistory=new ArrayList<>();for(JSONObject record:s.history){JSONObject lesson=record.optJSONObject("lesson");if(lesson!=null&&(s.historyCourse.isEmpty()||s.historyCourse.equals(lesson.optString("course_id"))))orderedHistory.add(record);}orderedHistory.sort(historyComparator(s.historyOrder,s.historyAscending));
+            List<JSONObject> orderedHistory=new ArrayList<>();for(JSONObject record:s.history){JSONObject lesson=record.optJSONObject("lesson");if(lesson!=null&&(s.historyCourse.isEmpty()||s.historyCourse.equals(lesson.optString("course_id")))&&(s.historyOrder!=2||!record.optBoolean("complete")))orderedHistory.add(record);}orderedHistory.sort(historyComparator(s.historyOrder==2?0:s.historyOrder,s.historyAscending));
             int count=s.mode==1?recent.size():orderedHistory.size(),pages=Math.max(1,(count+PAGE_SIZE-1)/PAGE_SIZE);
             if(s.mode==1)matchingLessons.addAll(recent);else for(JSONObject record:orderedHistory)try{matchingLessons.add(ClassroomLesson.fromJson(record.getJSONObject("lesson")));}catch(Exception ignored){}
             if(s.initialized){java.util.Set<String> valid=new java.util.HashSet<>();for(ClassroomLesson lesson:matchingLessons)valid.add(ClassroomBatchWork.key(lesson));s.selected.retainAll(valid);}
@@ -518,7 +516,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         selectionBar.setGravity(Gravity.CENTER_VERTICAL);selectionBar.setClipChildren(false);selectionBar.setClipToPadding(false);
         selectionCount=label("0/0",12);selectionCount.setSingleLine(true);selectionBar.addView(selectionCount);
         selectAll=BatchSelectionUi.action(activity,"全选",this::toggleAll);
-        batchDownload=BatchSelectionUi.action(activity,"下载",this::downloadSelected);
+        batchDownload=BatchSelectionUi.action(activity,"总结",this::downloadSelected);batchDownload.setContentDescription("下载并总结所选课堂");
         batchExport=BatchSelectionUi.action(activity,"导出",this::exportSelected);
         batchDelete=BatchSelectionUi.action(activity,"删除",this::confirmDeleteSelected);
         batchMenu=BatchSelectionUi.action(activity,"操作",this::chooseBatchAction);
@@ -579,7 +577,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     private void chooseBatchAction(){
         if(s==null)return;ClassroomBatchWork batch=ClassroomBatchWork.find(s.account);boolean actionable=!s.selected.isEmpty()&&!s.localWork&&(batch==null||!batch.running);
         if(!actionable)return;
-        String[] actions=new String[]{"下载素材","导出 ZIP","删除本地资料"};
+        String[] actions=new String[]{"总结","导出 ZIP","删除本地资料"};
         UiDialogs.choiceDialog(activity,"已选 "+s.selected.size()+" 节课堂",actions,-1,index->{if(index==0)downloadSelected();else if(index==1)exportSelected();else confirmDeleteSelected();});
     }
     private String historyCourseTitle(){
@@ -600,11 +598,22 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private boolean canStartBatch(){
         if(s==null||!s.allowed()||s.localWork)return false;
-        ClassroomBatchWork batch=ClassroomBatchWork.find(s.account);if(batch!=null&&batch.running){Feedback.show(activity,"已有批量下载正在处理");return false;}return true;
+        ClassroomBatchWork batch=ClassroomBatchWork.find(s.account);if(batch!=null&&batch.running){Feedback.show(activity,"已有批量总结正在处理");return false;}return true;
     }
     private void downloadSelected(){
         if(!canStartBatch())return;List<ClassroomLesson> snapshot=selectionSnapshot();if(snapshot.isEmpty())return;
-        ClassroomNotifications.requestPermission(activity);s.operationMessage="";ClassroomBatchWork.start(getApplicationContext(),s.account,snapshot);clearSelection();updateBatchStatus();updateSelectionUi();scheduleRefresh();
+        Session owner=s;owner.localWork=true;updateSelectionUi();
+        owner.worker.execute(()->{
+            LinkedHashSet<String> retry=new LinkedHashSet<>();String error="";
+            try{ClassroomStore store=owner.storeForBatch();JSONObject monitor=new ClassroomMonitorStore(owner.app,owner.account).read();for(ClassroomLesson lesson:snapshot){File dir=store.lesson(lesson);JSONObject summary=ClassroomStore.read(new File(dir,"summary.json")),automatic=ClassroomMonitorStore.auto(monitor,lesson);if(ClassroomAutoSummary.needsAuthorization(summary,ClassroomStore.read(new File(dir,"run.json")))||(summary==null||!summary.optBoolean("complete"))&&automatic!=null&&java.util.Set.of("failed","interrupted").contains(automatic.optString("state")))retry.add(ClassroomBatchWork.key(lesson));}}
+            catch(Exception failure){error="无法读取课堂资料";}
+            java.util.Set<String> retries=java.util.Set.copyOf(retry);String failure=error;
+            owner.main.post(()->{owner.localWork=false;if(s!=owner||!owner.allowed()||isDestroyed())return;updateSelectionUi();
+                if(!failure.isEmpty()){Feedback.show(activity,failure);return;}
+                Runnable start=()->{if(s!=owner||!canStartBatch())return;try{ClassroomNotifications.requestPermission(activity);owner.operationMessage="";ClassroomBatchWork.start(getApplicationContext(),owner.account,snapshot,retries);clearSelection();updateBatchStatus();updateSelectionUi();scheduleRefresh();}catch(Exception unavailable){Feedback.show(activity,"无法启动课堂总结");}};
+                if(!retries.isEmpty())UiDialogs.confirmDialog(activity,"继续总结 "+retries.size()+" 节课堂","将使用当前 AI 服务继续未完成的总结。","总结",start);else start.run();
+            });
+        });
     }
     private void confirmDeleteSelected(){
         if(!canStartBatch())return;List<ClassroomLesson> snapshot=selectionSnapshot();if(snapshot.isEmpty())return;
@@ -670,7 +679,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private void showBatchResult(){
         if(s==null)return;ClassroomBatchWork batch=ClassroomBatchWork.find(s.account);
-        if(batch!=null&&batch.running){UiDialogs.confirmDialog(activity,"批量下载",batch.details(),"停止下载",()->{batch.cancel("已取消");updateBatchStatus();scheduleRefresh();});return;}
+        if(batch!=null&&batch.running){UiDialogs.confirmDialog(activity,"批量总结",batch.details(),"停止总结",()->{batch.cancel("已取消");updateBatchStatus();scheduleRefresh();});return;}
         String result=!s.operationMessage.isEmpty()?s.operationMessage:batch==null?"":batch.details();if(result.isEmpty())return;
         android.app.Dialog dialog=new android.app.Dialog(activity);LinearLayout panel=UiDialogs.dialogPanel(activity,"批量处理结果");LinearLayout body=new LinearLayout(activity);body.setOrientation(LinearLayout.VERTICAL);body.addView(label(result,15));button(body,"关闭",dialog::dismiss);UiDialogs.dialogBody(panel,body);UiDialogs.showFloatingDialog(dialog,panel);
     }

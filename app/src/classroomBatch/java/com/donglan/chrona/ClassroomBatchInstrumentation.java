@@ -18,10 +18,6 @@ import java.util.function.BooleanSupplier;
 public final class ClassroomBatchInstrumentation extends Instrumentation {
     private Bundle args;private Activity lastResumed;private int assertions;
     private boolean manualSeed;
-    private Activity backgroundGateScreen;
-    private volatile boolean backgroundObserved;
-    private volatile long backgroundAt;
-    private Runnable backgroundGateReady;
     private int gestureNumber;
     @Override public void onCreate(Bundle args){this.args=args==null?new Bundle():args;super.onCreate(args);start();}
     @Override public Activity newActivity(ClassLoader loader,String name,Intent intent)throws InstantiationException,IllegalAccessException,ClassNotFoundException {
@@ -34,13 +30,12 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         super.callActivityOnCreate(screen,state);
     }
     @Override public void callActivityOnResume(Activity screen){super.callActivityOnResume(screen);lastResumed=screen;}
-    @Override public void callActivityOnPause(Activity screen){super.callActivityOnPause(screen);if(screen==backgroundGateScreen){backgroundAt=SystemClock.elapsedRealtime();backgroundObserved=true;Runnable ready=backgroundGateReady;backgroundGateReady=null;if(ready!=null)new Handler(Looper.getMainLooper()).post(ready);}}
     @Override public void onStart(){Bundle report=new Bundle();Activity opened=null;try{
         Context app=getTargetContext();if(!"com.donglan.chrona.batch.validation".equals(app.getPackageName())||!"ranchu".equals(Build.HARDWARE))throw new SecurityException("Synthetic batch package on shared official emulator required");
         ZjuSettingsStore settings=new ZjuSettingsStore(app);if(settings.configured()&&!settings.account().equals("00000000-0000-0000-0000-000000000036"))throw new SecurityException("Fixture refuses another account");
         WebDavSettingsStore sync=new WebDavSettingsStore(app);if(sync.configured()||sync.automatic())throw new SecurityException("Fixture refuses external sync");
+        if("auto_summary".equals(args.getString("mode"))){ThemeStore.setMode(app,args.getString("theme","light"));report.putString("auto_summary_report",ClassroomAutoWorkChecks.run(this,args));finish(-1,report);return;}
         if("dashboard_batch".equals(args.getString("mode"))){ThemeStore.setMode(app,args.getString("theme","light"));report.putString("dashboard_batch_report",dashboardBatch(app));finish(-1,report);return;}
-        if("cached_background".equals(args.getString("mode"))){ThemeStore.setMode(app,args.getString("theme","light"));report.putString("cached_background_report",cachedBackground(app,settings));finish(-1,report);return;}
         settings.prefs.edit().putString("account","00000000-0000-0000-0000-000000000036").putString("credentials","synthetic-not-a-login").putBoolean("enabled",true).commit();
         ThemeStore.setMode(app,args.getString("theme","light"));ClassroomStore store=new ClassroomStore(app,settings.account());
         if("fixture_cleanup".equals(args.getString("mode"))){report.putString("fixture_cleanup_report",ClassroomWorkDeviceCheck.cleanupOwnedResults(this));cleanupSelectionResults(app,settings.account());finish(-1,report);return;}
@@ -116,7 +111,7 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
             capture("selection-back-restored");
             tapText("历史");await(()->(int)field(session(),"mode")==3&&!busy(),"history ready");
             LinearLayout tools=(LinearLayout)field(page(),"historyTools");View course=(View)field(page(),"historyCourse"),order=(View)field(page(),"historyOrder"),direction=(View)field(page(),"historyDirection"),refresh=(View)field(page(),"refresh");
-            require(Math.abs(course.getWidth()*2-tools.getWidth())<=1,"course filter occupies half row");
+            require(Math.abs(course.getWidth()-order.getWidth())<=1,"course and order equally share width after fixed direction and gaps");
             require(direction.getWidth()==refresh.getWidth()&&direction.getHeight()==refresh.getHeight(),"direction matches refresh 48dp geometry");
             int[] c=new int[2],o=new int[2],d=new int[2];runOnMainSync(()->{course.getLocationInWindow(c);order.getLocationInWindow(o);direction.getLocationInWindow(d);});
             require(c[0]+course.getWidth()<o[0]&&o[0]+order.getWidth()<d[0],"course order direction stay left-to-right with gaps");
@@ -173,60 +168,6 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         if(peak!=null){float scale=Math.min(1f,1200f/Math.max(peak.getWidth(),peak.getHeight()));Bitmap small=Bitmap.createScaledBitmap(peak,Math.round(peak.getWidth()*scale),Math.round(peak.getHeight()*scale),true);try(OutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"batch-"+imageName+"-"+args.getString("theme","light")+"-font1.jpg"))){small.compress(Bitmap.CompressFormat.JPEG,75,out);}if(small!=peak)small.recycle();peak.recycle();}
     }
 
-    private String cachedBackground(Context app,ZjuSettingsStore settings)throws Exception {
-        require(staticField(ClassroomWorkService.class,"instance")==null,"cache fixture refuses an existing classroom foreground owner");
-        settings.save("chrona-local-cache-fixture","synthetic-no-network");settings.prefs.edit().putString("account","00000000-0000-0000-0000-000000000036").putBoolean("enabled",true).putBoolean("timetable",false).commit();
-        String account=settings.account();ClassroomStore store=new ClassroomStore(app,account);List<ClassroomLesson> lessons=new ArrayList<>();List<File> owned=new ArrayList<>();String run=Long.toUnsignedString(System.nanoTime());
-        for(int i=0;i<3;i++){ClassroomLesson lesson=new ClassroomLesson("703",run+i,"后台缓存课程","完整缓存 "+(i+1),"","6",System.currentTimeMillis()-3600000L);lessons.add(lesson);File dir=store.localLesson(lesson);owned.add(dir);fixture(dir,lesson,false,false);}
-        List<ClassroomLesson> previousCatalog=store.catalog();store.catalog(lessons);
-        java.net.ProxySelector previousProxy=java.net.ProxySelector.getDefault();java.util.concurrent.atomic.AtomicInteger attempts=new java.util.concurrent.atomic.AtomicInteger();
-        java.net.ProxySelector rejectNetwork=new java.net.ProxySelector(){public List<java.net.Proxy> select(java.net.URI uri){attempts.incrementAndGet();throw new SecurityException("Native cache fixture rejects all network routes");}public void connectFailed(java.net.URI uri,java.net.SocketAddress address,IOException failure){throw new SecurityException("Native cache fixture has no network routes");}};
-        Activity screen=null;ClassroomBatchWork[] batch={null};JSONArray events=new JSONArray();Object[] service={null};boolean[] promoted={false};
-        try{
-            java.net.ProxySelector.setDefault(rejectNetwork);
-            String[] credentials=settings.credentials();try(ClassroomClient probe=new ClassroomClient(credentials[0],credentials[1])){Object school=field(probe,"school");okhttp3.OkHttpClient http=(okhttp3.OkHttpClient)field(school,"http");require(http.proxy()==null&&http.proxySelector()==rejectNetwork,"same production transport captures rejecting route selector before requests");}finally{Arrays.fill(credentials,"");}
-            screen=startActivitySync(new Intent(app,ClassroomSummaryActivity.class).putExtra("classroom_mode",3).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));Activity owner=screen;
-            await(()->lastResumed==owner&&page()!=null&&!busy()&&owner.hasWindowFocus(),"cached catalogue foreground before real batch start");
-            backgroundGateScreen=owner;backgroundObserved=false;backgroundAt=0;
-            runOnMainSync(()->{
-                batch[0]=ClassroomBatchWork.start(app,account,lessons);
-                // Gate only this fixture's held ready callback. No Store lock is held: Store's
-                // constructor also takes LOCK, so a worker-begin gate would block main-thread next().
-                Map<?,?> holds=(Map<?,?>)staticField(ClassroomWorkService.class,"batches");Object hold=holds.get(batch[0]);if(hold==null)throw new AssertionError("Batch foreground hold missing");
-                Runnable original=(Runnable)field(hold,"ready");setField(hold,"ready",(Runnable)()->{
-                    service[0]=staticField(ClassroomWorkService.class,"instance");
-                    promoted[0]=classroomForeground(app);
-                    Runnable ready=()->{original.run();observeBatchHandoff(batch[0],service[0],events);};
-                    if(backgroundObserved)ready.run();else backgroundGateReady=ready;
-                });
-                if(!owner.moveTaskToBack(true))throw new AssertionError("Could not move cache owner to background");
-            });
-            await(()->backgroundObserved,"real Activity onPause precedes cached prepare work");
-            await(()->!batch[0].running,"real cached batch completes while Activity remains in background");
-            require(!owner.hasWindowFocus()&&backgroundAt>0,"cached queue completed without restoring the Activity");
-            require(promoted[0],"OS reports the real batch service foreground before its ready callback");
-            require(batch[0].success==3&&batch[0].failures.isEmpty()&&batch[0].skipped==0&&batch[0].cancelledCount==0,"three independent prepare results succeed");
-            require(events.length()==6,"all three real Session handoffs observed");
-            long priorEnd=backgroundAt;for(int i=0;i<events.length();i+=2){JSONObject start=events.getJSONObject(i),end=events.getJSONObject(i+1);require(start.getString("event").equals("start")&&end.getString("event").equals("complete")&&start.getString("lesson").equals(end.getString("lesson")),"each start pairs with its own completion");require(start.getLong("at")>=priorEnd&&start.getLong("at")>=backgroundAt&&start.getBoolean("sameService")&&start.getBoolean("registered"),"sequential prepare starts after prior completion and actual background under same FGS");require(end.getBoolean("success")&&end.getBoolean("sameService"),"real Session finishes successfully before its batch hold releases");priorEnd=end.getLong("at");}
-            require(attempts.get()==0,"cached prepare makes zero network-route attempts and no AI request");
-            await(()->staticField(ClassroomWorkService.class,"instance")==null&&!classroomForeground(app),"final batch hold releases and OS foreground service exits");
-            return new JSONObject().put("assertions",assertions).put("success",batch[0].success).put("networkAttempts",attempts.get()).put("actualBackgroundAt",backgroundAt).put("events",events).put("osForeground",promoted[0]).put("sameForegroundService",true).put("serviceExited",true).toString();
-        }finally{
-            if(batch[0]!=null&&batch[0].running){runOnMainSync(()->batch[0].cancel("Fixture cleanup"));await(()->!batch[0].running,"owned cache batch cancellation cleanup");}
-            backgroundGateReady=null;backgroundGateScreen=null;java.net.ProxySelector.setDefault(previousProxy);
-            if(screen!=null){Activity close=screen;runOnMainSync(close::finish);waitForIdleSync();}
-            store.catalog(previousCatalog);for(int i=0;i<owned.size();i++){File dir=owned.get(i);ClassroomLesson lesson=lessons.get(i);if(!dir.getName().equals(lesson.courseId+"-"+lesson.id))throw new SecurityException("Unowned fixture directory");store.deleteLesson(lesson,()->{});}
-        }
-    }
-    private void observeBatchHandoff(ClassroomBatchWork batch,Object service,JSONArray events){
-        ClassroomLessonActivity.Session job=batch.current;if(job==null)return;
-        events.put(batchEvent("start",job,service));Runnable completed=job.completed;
-        job.completed=()->{events.put(batchEvent("complete",job,service));completed.run();observeBatchHandoff(batch,service,events);};
-    }
-    private JSONObject batchEvent(String event,ClassroomLessonActivity.Session job,Object service){try{return new JSONObject().put("event",event).put("lesson",job.selected.courseId+"/"+job.selected.id).put("at",event.equals("start")?job.startedAt:SystemClock.elapsedRealtime()).put("sameService",service!=null&&staticField(ClassroomWorkService.class,"instance")==service).put("registered",ClassroomWorkService.find(job.account,job.selected)==job).put("success",job.succeeded);}catch(Exception failure){throw new IllegalStateException(failure);}}
-    private static boolean classroomForeground(Context app){ActivityManager manager=app.getSystemService(ActivityManager.class);for(ActivityManager.RunningServiceInfo service:manager.getRunningServices(16))if(service.service.getClassName().equals(ClassroomWorkService.class.getName())&&service.foreground)return true;return false;}
-    private static Object staticField(Class<?> type,String name){try{Field field=type.getDeclaredField(name);field.setAccessible(true);return field.get(null);}catch(Exception failure){throw new IllegalStateException(failure);}}
-    private static void setField(Object owner,String name,Object value){try{Field field=owner.getClass().getDeclaredField(name);field.setAccessible(true);field.set(owner,value);}catch(Exception failure){throw new IllegalStateException(failure);}}
     private String dashboardBatch(Context app)throws Exception {
         List<Long> owned=new ArrayList<>();long[] candidates=new long[4];String token="批量调用者"+SystemClock.elapsedRealtime();
         SharedPreferences[] preferences={app.getSharedPreferences("usage_guide",0),app.getSharedPreferences("startup_permissions",0),ReleaseUpdates.preferences(app),AgendaReminderPreferences.prefs(app),new ZjuSettingsStore(app).prefs};

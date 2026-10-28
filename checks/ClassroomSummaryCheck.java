@@ -304,7 +304,7 @@ public final class ClassroomSummaryCheck {
     }
     private static void textOnlyAndInvalidRetry()throws Exception {
         reset();File dir=materialDir("text-only-"+System.nanoTime());
-        check(ClassroomSummary.DEFAULT_IMAGES==40,"default image budget is forty");
+        check(ClassroomSummary.DEFAULT_IMAGES==0&&ClassroomSummary.MAX_IMAGES==40,"default image upload is disabled; authorized budget remains forty");
         try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"保留英文术语");check(summary.getBoolean("complete")&&summary.getJSONArray("images").length()==0,"zero-budget pipeline completes without images");}
         check(calls==1,"text-only performs exactly one model request");
         for(JSONObject request:requests)check(request.getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1,"text-only HTTP request has no image_url item");
