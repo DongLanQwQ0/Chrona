@@ -7,7 +7,7 @@
 - 固定APK：build/candidates/0.15.60/Chrona-0.15.60.apk，3245674字节，222／0.15.60，非debug、原签名；release＋lintRelease成功。生产源码在最终构建后未变。
 - 正常共享AVD原生竖屏浅色／横屏深色各93项通过，真实Edge生产网页＋模拟手机API回归通过；公共方法替身37／1530／74及生命周期检查通过。详见build/page-motion-*及build/release-0.15.60-*。
 - 主代理及持续复用ui_review亲看压缩JPEG，受检范围签收。build/page-motion-evidence/的最终portrait-light、landscape-dark证据有效，历史failure帧不是通过证据。未改DPI或分辨率，旋转恢复accelerometer1／user0，动画比例恢复1。
-- 0.15.59已发布基线记录保留在验证历史。0.15.60待普通提交／推送／正式发布，验收已满足，唯一下一步为发布该固定候选。
+- 0.15.60已提交、推送并正式发布：https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.60 。标签精确指向源码6ea8e5e5b77a5b52813912ef7f9fce3fab2bb1ed，APK资产3245674字节、uploaded、非草稿／非预发布，latest已读回v0.15.60。证据build/release-0.15.60-{push,create,published.json,tag,latest}；不重复上传。唯一下一步为设备恢复后的正常升级及该机验收。
 
 ## 手机依赖
 
