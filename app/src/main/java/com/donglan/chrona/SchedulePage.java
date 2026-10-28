@@ -31,6 +31,9 @@ abstract class SchedulePage extends ContextWrapper {
     protected void onPause() { }
     protected void onDestroy() { destroyed = true; }
     protected void onSaveInstanceState(Bundle state) { }
+    boolean hasBackAction() { return false; }
+    boolean handleBack() { return false; }
+    protected final void updateBackAction() { activity.updatePageBack(); }
     public Object onRetainNonConfigurationInstance() { return null; }
     protected void onActivityResult(int request, int result, Intent data) { }
     public void onRequestPermissionsResult(int request, String[] permissions, int[] results) { }

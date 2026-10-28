@@ -92,6 +92,15 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         getUiAutomation().setRotation("landscape".equals(args.getString("orientation"))?UiAutomation.ROTATION_FREEZE_90:UiAutomation.ROTATION_FREEZE_0);SystemClock.sleep(800);
         for(String permission:List.of(android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR,android.Manifest.permission.POST_NOTIFICATIONS))getUiAutomation().grantRuntimePermission(app.getPackageName(),permission);
         getUiAutomation().executeShellCommand("input keyevent 224").close();getUiAutomation().executeShellCommand("wm dismiss-keyguard").close();SystemClock.sleep(300);
+        if("attachment_page_motion".equals(args.getString("mode"))){
+            report.putString("attachment_motion_report","PASS: "+AttachmentPageMotionChecks.run(this,args)+" native attachment checks");finish(-1,report);return;
+        }
+        if("page_recovery".equals(args.getString("mode"))){
+            report.putString("page_recovery_report","PASS: "+PageRecoveryDeviceChecks.run(this,args)+" native recovery checks");finish(-1,report);return;
+        }
+        if("dashboard_pagination".equals(args.getString("mode"))){
+            report.putString("dashboard_pagination_report","PASS: "+DashboardPaginationChecks.run(this,args)+" native pagination checks");finish(-1,report);return;
+        }
         if("page_motion".equals(args.getString("mode"))){
             assertions+=PageMotionChecks.run(this,args);
             report.putString("monitor_report","PASS: "+assertions+" assertions; page_motion "+args.getString("orientation","portrait")+" "+args.getString("theme","light"));

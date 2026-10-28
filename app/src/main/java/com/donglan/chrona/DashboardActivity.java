@@ -103,6 +103,8 @@ public final class DashboardActivity extends Activity {
     private LocalDate scheduleDate = LocalDate.now(), scheduleUntil = LocalDate.now();
     private LinearLayout scheduleControls;
     private int inboxPage;
+    private DateIntervalBar inboxPagination, schedulePagination;
+    private int inboxPageCount = 1, schedulePageCount = 1;
     private String inboxIdCacheKey = "";
     private long inboxIdCacheRevision = -1;
     private List<Long> inboxIdCache = new ArrayList<>();
@@ -2052,42 +2054,53 @@ public final class DashboardActivity extends Activity {
     }
 
     private void inboxPageControls(int total) {
-        if (total <= InboxQuery.PAGE_SIZE) return;
-        int pages = (total + InboxQuery.PAGE_SIZE - 1) / InboxQuery.PAGE_SIZE;
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        ImageButton previous = pageArrow(R.drawable.ic_chevron_left, () -> changeInboxPage(-1));
-        previous.setContentDescription("上一页收件");
-        previous.setEnabled(inboxPage > 0);
-        row.addView(previous, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        TextView label = text((inboxPage + 1) + " / " + pages, 13, false);
-        label.setGravity(Gravity.CENTER);
-        row.addView(label, new LinearLayout.LayoutParams(0, dp(48), 1));
-        ImageButton next = pageArrow(R.drawable.ic_chevron_right, () -> changeInboxPage(1));
-        next.setContentDescription("下一页收件");
-        next.setEnabled(inboxPage + 1 < pages);
-        row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        UiStyle.addSpaced(results, row, 12, 0);
+        inboxPageCount = Math.max(1, (total + InboxQuery.PAGE_SIZE - 1) / InboxQuery.PAGE_SIZE);
+        if (inboxPagination == null) inboxPagination = new DateIntervalBar(this,
+                () -> chooseListPage(false), this::changeInboxPage);
+        bindListPagination(inboxPagination, false, inboxPage, inboxPageCount);
     }
 
-    private ImageButton pageArrow(int resource, Runnable action) {
-        ImageButton button = new ImageButton(this);
-        button.setMinimumWidth(0);
-        button.setMinimumHeight(0);
-        UiStyle.glassPill(button);
-        button.setPadding(dp(14), dp(14), dp(14), dp(14));
-        button.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        button.setImageResource(resource);
-        button.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
-        UiStyle.pressable(button);
-        button.setOnClickListener(view -> action.run());
-        return button;
+    private void bindListPagination(DateIntervalBar bar, boolean schedule, int page, int pages) {
+        String kind = schedule ? "日程" : "收件";
+        bar.setTag(schedule ? "schedule_pagination" : "inbox_pagination");
+        bar.setText((page + 1) + " / " + pages);
+        bar.setContentDescription(kind + "页码，左右滑动切换，点击选择页码");
+        // DateIntervalBar owns the common arrow geometry and feedback; only semantics differ.
+        for (int i = 1; i < bar.getChildCount(); i++) {
+            View arrow = bar.getChildAt(i);
+            arrow.setContentDescription((i == 1 ? "上一页" : "下一页") + kind);
+            arrow.setEnabled(i == 1 ? page > 0 : page + 1 < pages);
+        }
+        bar.setVisibility(pages > 1 ? View.VISIBLE : View.GONE);
+        // Keep the rail outside the rebuilt rows: detaching it cancels its own text motion.
+        // This is still the same scrolling footer, with the existing twelve-dp top gap.
+        if (bar.getParent() != content) {
+            if (bar.getParent() instanceof ViewGroup old) old.removeView(bar);
+            UiStyle.addSpaced(content, bar, 12, 0);
+        }
+        if (!strips.contains(bar)) strips.add(bar);
+        if (!previewRender && pager != null) pager.addGesturePriorityChild(bar);
     }
 
-    private void changeInboxPage(int delta) {
-        inboxPage = Math.max(0, inboxPage + delta);
+    private void chooseListPage(boolean schedule) {
+        int pages = schedule ? schedulePageCount : inboxPageCount;
+        int current = schedule ? schedulePage : inboxPage;
+        String[] choices = new String[pages];
+        for (int i = 0; i < pages; i++) choices[i] = "第 " + (i + 1) + " 页";
+        UiDialogs.choiceDialog(this, "选择页码", choices, current, chosen -> {
+            // Counts can change while the menu is open; the change methods clamp again.
+            if (schedule) changeSchedulePage(chosen - schedulePage);
+            else changeInboxPage(chosen - inboxPage);
+        });
+    }
+
+    private boolean changeInboxPage(int delta) {
+        int next = Math.max(0, Math.min(inboxPageCount - 1, inboxPage + delta));
+        if (next == inboxPage) return false;
+        inboxPage = next;
         updateResultsWithEntrance();
         scroll.scrollTo(0, Math.max(0, results.getTop() - dp(8)));
+        return true;
     }
 
     private Button inboxSelectionAction(String label, Runnable action) {
@@ -2436,28 +2449,19 @@ public final class DashboardActivity extends Activity {
     }
 
     private void schedulePageControls(int total) {
-        if (total <= ScheduleQuery.PAGE_SIZE) return;
-        int pages = (total + ScheduleQuery.PAGE_SIZE - 1) / ScheduleQuery.PAGE_SIZE;
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        ImageButton previous = pageArrow(R.drawable.ic_chevron_left, () -> changeSchedulePage(-1));
-        previous.setContentDescription("上一页日程");
-        previous.setEnabled(schedulePage > 0);
-        row.addView(previous, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        TextView label = text((schedulePage + 1) + " / " + pages, 13, false);
-        label.setGravity(Gravity.CENTER);
-        row.addView(label, new LinearLayout.LayoutParams(0, dp(48), 1));
-        ImageButton next = pageArrow(R.drawable.ic_chevron_right, () -> changeSchedulePage(1));
-        next.setContentDescription("下一页日程");
-        next.setEnabled(schedulePage + 1 < pages);
-        row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        UiStyle.addSpaced(results, row, 12, 0);
+        schedulePageCount = Math.max(1, (total + ScheduleQuery.PAGE_SIZE - 1) / ScheduleQuery.PAGE_SIZE);
+        if (schedulePagination == null) schedulePagination = new DateIntervalBar(this,
+                () -> chooseListPage(true), this::changeSchedulePage);
+        bindListPagination(schedulePagination, true, schedulePage, schedulePageCount);
     }
 
-    private void changeSchedulePage(int delta) {
-        schedulePage = Math.max(0, schedulePage + delta);
+    private boolean changeSchedulePage(int delta) {
+        int next = Math.max(0, Math.min(schedulePageCount - 1, schedulePage + delta));
+        if (next == schedulePage) return false;
+        schedulePage = next;
         updateResultsWithEntrance();
         scroll.scrollTo(0, Math.max(0, scheduleControls.getTop() - dp(8)));
+        return true;
     }
 
     private Button scheduleAction(String title, Runnable action) {

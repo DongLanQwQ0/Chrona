@@ -34,6 +34,8 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
     private int selected;
     private float position, dragStart;
     private boolean resumed;
+    private boolean pageBackRegistered;
+    private android.window.OnBackInvokedCallback pageBack;
     private FrameLayout dockHost;
     private boolean navigationRail, compactNavigation;
     private TextView compactNavigationLabel;
@@ -181,7 +183,7 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
             selected = index;
             if (resumed) page(selected).onResume();
         }
-        position = slot(index); renderPosition(); navigation.finishPageSelection(slot(index)); updateGesturePriority();
+        position = slot(index); renderPosition(); navigation.finishPageSelection(slot(index)); updateGesturePriority(); updatePageBack();
     }
     private void updateGesturePriority() {
         ArrayList<View> children = new ArrayList<>();
@@ -194,6 +196,7 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
         super.onResume();
         if (refreshAvailability()) return;
         resumed = true; page(selected).onResume();
+        updatePageBack();
     }
     private boolean refreshAvailability() {
         if (classroomEnabled == schoolSettings.enabled()) return false;
@@ -201,10 +204,11 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
         return true;
     }
     @Override protected void onPause() {
-        resumed = false; page(selected).onPause(); cancelTransition();
+        resumed = false; updatePageBack(); page(selected).onPause(); cancelTransition();
         position = slot(selected); renderPosition(); navigation.finishPageSelection(slot(selected)); super.onPause();
     }
     @Override protected void onDestroy() {
+        resumed = false; updatePageBack();
         schoolSettings.prefs.unregisterOnSharedPreferenceChangeListener(schoolPreference);
         cancelTransition(); for (SchedulePage page : pages) if (page != null) page.onDestroy(); super.onDestroy();
     }
@@ -242,4 +246,22 @@ public abstract class ScheduleWorkspaceActivity extends Activity {
         if (slot(index) >= 0) page(index).onRequestPermissionsResult(request & ((1 << REQUEST_BITS) - 1), permissions, results);
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    final void updatePageBack() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return;
+        boolean intercept = resumed && pages[selected] != null && pages[selected].hasBackAction();
+        if (intercept == pageBackRegistered) return;
+        if (intercept) {
+            if (pageBack == null) pageBack = this::onBackPressed;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, pageBack);
+        } else getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(pageBack);
+        pageBackRegistered = intercept;
+    }
+
+    @android.annotation.SuppressLint("GestureBackNavigation") // API 33+ uses pageBack; keep legacy keys and header back.
+    @Override public void onBackPressed() {
+        if (pages[selected] != null && pages[selected].handleBack()) { updatePageBack(); return; }
+        super.onBackPressed();
+    }
 }

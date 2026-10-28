@@ -54,7 +54,7 @@ public final class CourseSourceMatchingActivity extends Activity {
                         candidates.removeIf(p->p[0].calendarId==CourseSourceMatching.ZJU||p[1].calendarId==CourseSourceMatching.ZJU);
                     }
                     rows=data.rows;courses=new ArrayList<>(unique.values());suggestions=candidates;limited=data.limited;render();
-                    if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(content);}});
+                    if(firstDataPresentation)UiMotion.enterPage(content,()->firstDataPresentation=false);});
             }catch(Exception failure){android.util.Log.w("Chrona","Course source probe failed",failure);
                 runOnUiThread(()->{if(isFinishing()||isDestroyed()||generation!=current)return;
                     content.removeAllViews();button("读取课程失败 · 重试",this::load);});}

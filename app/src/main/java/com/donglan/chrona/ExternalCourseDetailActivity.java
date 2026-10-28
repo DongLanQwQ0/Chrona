@@ -71,7 +71,7 @@ public final class ExternalCourseDetailActivity extends Activity {
                 refreshAcknowledgement();confirm.setOnClickListener(v->{if(item.endMillis<=System.currentTimeMillis()){refreshAcknowledgement();return;}AgendaAcknowledgement.set(this,key,item.endMillis,!AgendaAcknowledgement.isAcknowledged(this,key));refreshAcknowledgement();});UiStyle.addSpaced(root,confirm,16,8);
                 Button source=new Button(this);source.setText("日程来源");UiStyle.button(source,false);source.setOnClickListener(v->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));UiStyle.addSpaced(root,source,20,8);
                 if("导入课表".equals(item.calendarName)){Button table=new Button(this);table.setText("查看课表");UiStyle.button(table,false);table.setOnClickListener(v->startActivity(new Intent(this,TimetableActivity.class)));root.addView(table);}
-                if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(card);}
+                if(firstDataPresentation)UiMotion.enterPage(card,()->firstDataPresentation=false);
             });
         },"course-detail-local-reader").start();
     }
@@ -97,7 +97,7 @@ public final class ExternalCourseDetailActivity extends Activity {
                 detail(card,selected.kind+" · "+selected.displayTime());detail(card,ScheduleListing.location(selected));detail(card,"折姜星辰 · 教务");
                 Button exams=new Button(this);exams.setText("考试安排");UiStyle.button(exams,false);
                 exams.setOnClickListener(v->startActivity(new Intent(this,ZjuExamsActivity.class)));UiStyle.addSpaced(root,exams,16,8);
-                if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(card);}
+                if(firstDataPresentation)UiMotion.enterPage(card,()->firstDataPresentation=false);
             });
         },"exam-detail-local-reader").start();
     }

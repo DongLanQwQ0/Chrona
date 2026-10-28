@@ -13,6 +13,11 @@ tmp.mkdir(exist_ok=True)
 tree = ast.parse((root / 'checks/classroom_work_service_check.py').read_text(encoding='utf-8'))
 stubs = ast.literal_eval(next(node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'stubs' for t in node.targets)))
 stubs.update({
+'com/donglan/chrona/ClassroomNotifications.java': '''package com.donglan.chrona;class ClassroomNotifications {
+void repost(){ClassroomWorkService.updateProgress(this);}
+static android.app.Notification foreground(android.content.Context c,int count){return new android.app.Notification("initial:"+count);}
+static android.app.Notification foreground(android.content.Context c,java.util.List<ClassroomLessonActivity.Session> sessions){
+return new android.app.Notification(String.join("|",sessions.stream().map(s->s.selected.id).toList()));}}''',
 'android/content/SharedPreferences.java': '''package android.content;public class SharedPreferences {
 public interface OnSharedPreferenceChangeListener{void onSharedPreferenceChanged(SharedPreferences p,String k);}
 public final java.util.List<OnSharedPreferenceChangeListener> listeners=new java.util.ArrayList<>();
@@ -34,6 +39,7 @@ calls++;if(l.id.equals("fail"))throw new java.io.IOException("素材失败");ret
 static final java.util.Set<String> active=new java.util.HashSet<>();static boolean active(String a,com.donglan.chrona.classroom.ClassroomLesson l){return active.contains(l.id);}}''',
 'com/donglan/chrona/ClassroomLessonActivity.java': '''package com.donglan.chrona;public class ClassroomLessonActivity {static class Session {
 final android.content.Context app;final String account;com.donglan.chrona.classroom.ClassroomLesson selected;
+ClassroomNotifications notifications;
 boolean failed,cancelled,monitorOwned,busy,cancelRequested,succeeded,detached;Object batchOwner,prepared,materials,control;java.io.File dir;boolean localInitialized;
 String message="";Runnable completed;Work pending;static Session active;Progress progress=new Progress();static class Progress{String stage="fixture";}
 Session(String a,String id){this(new android.content.Context(),a);selected=new com.donglan.chrona.classroom.ClassroomLesson(id);}
@@ -42,7 +48,7 @@ boolean allowed(){return ZjuSettingsStore.enabled&&ZjuSettingsStore.current.equa
 com.donglan.chrona.classroom.ClassroomStore store(){return new com.donglan.chrona.classroom.ClassroomStore();}
 void cancel(){cancelled=true;cancelRequested=true;}void disposeIfDetached(){}
 interface Work{void run()throws Exception;}
-void run(String stage,boolean notices,Work work){busy=true;pending=work;ClassroomWorkService.submitBatch(batchOwner,this,()->active=this);}
+void run(String stage,boolean notices,Work work){busy=true;pending=work;if(notices&&notifications==null)notifications=new ClassroomNotifications();ClassroomWorkService.submitBatch(batchOwner,this,()->active=this);}
 void complete(){try{if(!cancelRequested){pending.run();succeeded=true;}}catch(Exception e){message=e.getMessage();}busy=false;ClassroomWorkService.finished(this);if(completed!=null)completed.run();}
 void startFailed(){failed=true;busy=false;message="start failed";if(completed!=null)completed.run();}
 }}''',

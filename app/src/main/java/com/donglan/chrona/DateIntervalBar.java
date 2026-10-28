@@ -106,7 +106,9 @@ final class DateIntervalBar extends FrameLayout {
         value.animate().translationX(direction>0?-value.getWidth():value.getWidth()).alpha(0f).setDuration(110).withEndAction(()->{
             if(token!=generation)return;
             value.setText(displayText());value.setTranslationX(direction>0?value.getWidth():-value.getWidth());value.setAlpha(0f);
-            value.animate().translationX(0f).alpha(1f).setDuration(180).withEndAction(()->{if(token==generation)moving=false;}).start();
+            value.animate().translationX(0f).alpha(1f).setDuration(180).withEndAction(()->{
+                if(token==generation){moving=false;value.setText(displayText());}
+            }).start();
         }).start();
     }
     @Override protected void onDetachedFromWindow(){cancelMotion();super.onDetachedFromWindow();}

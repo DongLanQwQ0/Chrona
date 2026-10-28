@@ -36,12 +36,15 @@ final class ClassroomNotificationDeviceCheck {
         };
         prefs.edit().putString("account", id).putString("credentials", "synthetic-unused")
                 .putBoolean("enabled", true).commit();
-        ClassroomLesson lesson = new ClassroomLesson("fixture", "lesson", "测试课堂", "测试", "", "6", 1);
+        long firstStart=java.time.ZonedDateTime.of(2026,10,28,9,0,0,0,ClassroomLesson.ZONE).toInstant().toEpochMilli();
+        long secondStart=java.time.ZonedDateTime.of(2026,10,29,13,30,0,0,ClassroomLesson.ZONE).toInstant().toEpochMilli();
+        ClassroomLesson lesson = new ClassroomLesson("fixture", "lesson", "测试课堂", "第 3 讲", "", "6", firstStart);
         String tag = "classroom:" + id + ":fixture:lesson";
         // Preserve the production observer if this process already created one.
         Field observed = field("observedPreferences"), changes = field("accountChanges");
         Object priorPreferences = observed.get(null), priorChanges = changes.get(null);
         ClassroomNotifications notices = null;
+        ClassroomNotifications other = null, unknown = null;
         boolean postable = manager.areNotificationsEnabled() && (Build.VERSION.SDK_INT < 33
                 || target.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
         try {
@@ -59,13 +62,27 @@ final class ClassroomNotificationDeviceCheck {
             require((result.flags & Notification.FLAG_ONGOING_EVENT) == 0
                     && (result.flags & Notification.FLAG_AUTO_CANCEL) != 0, "result flags");
             require(result.contentIntent != null, "saved detail link");
+            require("课堂处理完成 · 测试课堂".contentEquals(result.extras.getCharSequence(Notification.EXTRA_TITLE)),"result course title");
+            require("2026-10-28 09:00 · 第 3 讲\n总结已完成".contentEquals(result.extras.getCharSequence(Notification.EXTRA_TEXT))
+                    &&result.extras.getCharSequence(Notification.EXTRA_TEXT).equals(result.extras.getCharSequence(Notification.EXTRA_BIG_TEXT)),"result date/start/lesson in compact and expanded content");
+            require(result.visibility==Notification.VISIBILITY_PRIVATE,"result lockscreen privacy");
             require(!running.getChannelId().equals(result.getChannelId()), "result alert channel");
             if (postable) require(active(manager, tag) == 1, "result replaces progress");
+            other=new ClassroomNotifications(fixture,id,new ClassroomLesson("fixture","lesson-two","测试课堂","第 4 讲","","6",secondStart));
+            other.finished("素材已就绪",true);
+            notices.finished("素材已就绪",true);
+            require("2026-10-28 09:00 · 第 3 讲\n素材已就绪".contentEquals(latest(notices).extras.getCharSequence(Notification.EXTRA_TEXT))
+                    &&"2026-10-29 13:30 · 第 4 讲\n素材已就绪".contentEquals(latest(other).extras.getCharSequence(Notification.EXTRA_TEXT)),"same-name download results identify distinct dates and lessons");
+            if(postable)require(active(manager,tag)==1&&active(manager,"classroom:"+id+":fixture:lesson-two")==1,"same-name results coexist independently");
+            unknown=new ClassroomNotifications(fixture,id,new ClassroomLesson("fixture","unknown-start","测试课堂","已知标题","","6",0));
+            unknown.finished("素材已就绪",true);
+            require("已知标题\n素材已就绪".contentEquals(latest(unknown).extras.getCharSequence(Notification.EXTRA_TEXT)),"unknown start adds no invented date or periods");
+            other.clear();unknown.clear();
             for (String outcome : new String[]{"已停止，已完成内容已保存", "操作失败，请重试"}) {
                 notices.progress(ClassroomProgress.waiting("整理课堂", ""), true);
                 notices.finished(outcome, false);
-                require("课堂处理已结束".contentEquals(latest(notices).extras.getCharSequence(Notification.EXTRA_TITLE)), "no false success");
-                require(outcome.contentEquals(latest(notices).extras.getCharSequence(Notification.EXTRA_TEXT)), "terminal outcome");
+                require("课堂处理已结束 · 测试课堂".contentEquals(latest(notices).extras.getCharSequence(Notification.EXTRA_TITLE)), "no false success");
+                require(("2026-10-28 09:00 · 第 3 讲\n"+outcome).contentEquals(latest(notices).extras.getCharSequence(Notification.EXTRA_TEXT)), "terminal identity and original outcome");
             }
             notices.clear();
             if (Build.VERSION.SDK_INT >= 33) {
@@ -83,9 +100,11 @@ final class ClassroomNotificationDeviceCheck {
             require(active(manager, tag) == 0 && latest(notices) == null, "account switch blocks stale repost");
             return new JSONObject().put("synthetic", true).put("lifecycle", true)
                     .put("systemPostingVerified", postable).put("permissionDenialVerified", Build.VERSION.SDK_INT >= 33)
-                    .put("accountSwitch", true).toString();
+                    .put("accountSwitch", true).put("resultLessonIdentity",true).put("sameNameDownloadsDistinct",true).put("unknownStartNotInvented",true).toString();
         } finally {
             if (notices != null) notices.clear();
+            if (other != null) other.clear();
+            if (unknown != null) unknown.clear();
             if (priorPreferences == null && observed.get(null) == prefs) {
                 prefs.unregisterOnSharedPreferenceChangeListener((SharedPreferences.OnSharedPreferenceChangeListener) changes.get(null));
                 observed.set(null, priorPreferences); changes.set(null, priorChanges);

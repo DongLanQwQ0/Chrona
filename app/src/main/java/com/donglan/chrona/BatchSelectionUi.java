@@ -11,6 +11,8 @@ import android.widget.TextView;
 /** Shared schedule/inbox/classroom selection chrome. Selection ownership stays with each page. */
 final class BatchSelectionUi {
     private BatchSelectionUi() { }
+    private static final java.util.WeakHashMap<View,Boolean> visibilityTargets = new java.util.WeakHashMap<>();
+    private static final java.util.WeakHashMap<View,java.lang.ref.WeakReference<View>> replacementHeadings = new java.util.WeakHashMap<>();
     private static int dp(Context c,int value){return Math.round(value*c.getResources().getDisplayMetrics().density);}
     static Button action(Context context,String label,Runnable action){
         Button control=new Button(context);control.setText(label);control.setAllCaps(false);control.setSingleLine(true);
@@ -26,15 +28,28 @@ final class BatchSelectionUi {
         heading.addView(bar,new LinearLayout.LayoutParams(-2,height));
     }
     static void visible(View bar,boolean active){
-        boolean wasVisible=bar.getVisibility()==View.VISIBLE;bar.animate().cancel();
-        if(active&&!wasVisible&&android.animation.ValueAnimator.areAnimatorsEnabled()){
-            bar.setAlpha(0f);bar.setTranslationY(-dp(bar.getContext(),5));bar.setVisibility(View.VISIBLE);
+        visible(bar,active,null);
+    }
+    /** Replacement headings keep their own full-width layout while the selection row exits. */
+    static void visible(View bar,boolean active,View normalHeading){
+        boolean wasVisible=bar.getVisibility()==View.VISIBLE;
+        if(normalHeading!=null)replacementHeadings.put(bar,new java.lang.ref.WeakReference<>(normalHeading));
+        if(normalHeading!=null)normalHeading.setVisibility(active||wasVisible?View.INVISIBLE:View.VISIBLE);
+        Boolean previous=visibilityTargets.put(bar,active);
+        if(previous!=null&&previous==active)return;
+        bar.animate().withEndAction(null).cancel();
+        bar.setImportantForAccessibility(active?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        if(active&&android.animation.ValueAnimator.areAnimatorsEnabled()){
+            if(!wasVisible){bar.setAlpha(0f);bar.setTranslationY(-dp(bar.getContext(),5));}
+            bar.setVisibility(View.VISIBLE);
             bar.animate().alpha(1f).translationY(0f).setDuration(170).start();
         }else if(!active&&wasVisible&&android.animation.ValueAnimator.areAnimatorsEnabled()){
             bar.animate().alpha(0f).translationY(-dp(bar.getContext(),4)).setDuration(120).withEndAction(()->{
                 bar.setVisibility(View.GONE);bar.setAlpha(1f);bar.setTranslationY(0f);
+                java.lang.ref.WeakReference<View> reference=replacementHeadings.get(bar);
+                View replacement=reference==null?null:reference.get();if(replacement!=null)replacement.setVisibility(View.VISIBLE);
             }).start();
-        }else{bar.setAlpha(1f);bar.setTranslationY(0f);bar.setVisibility(active?View.VISIBLE:View.GONE);}
+        }else{bar.setAlpha(1f);bar.setTranslationY(0f);bar.setVisibility(active?View.VISIBLE:View.GONE);if(normalHeading!=null)normalHeading.setVisibility(active?View.INVISIBLE:View.VISIBLE);}
     }
     static void marker(TextView marker,boolean active,boolean selected){
         marker.setGravity(Gravity.CENTER);marker.setVisibility(active?View.VISIBLE:View.GONE);marker.setText("");

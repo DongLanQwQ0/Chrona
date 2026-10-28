@@ -691,11 +691,35 @@ public final class MainActivity extends Activity {
         return String.format(Locale.ROOT, "%.1f MB", bytes / (1024f * 1024));
     }
 
-    /** Rebuilds the visible image list for the next unsaved input. */
+    /** Reconcile by stored image identity; unchanged previews keep their drawable and focus. */
     private void showPendingImages() {
         if (pendingImagesContainer == null) return;
-        pendingImagesContainer.removeAllViews();
-        for (String imageName : new ArrayList<>(pendingImages)) {
+        java.util.Map<String, View> existing = new java.util.HashMap<>();
+        boolean changed = pendingImagesContainer.getChildCount() != pendingImages.size();
+        for (int i = 0; i < pendingImagesContainer.getChildCount(); i++) {
+            View tile = pendingImagesContainer.getChildAt(i);
+            existing.put((String) tile.getTag(), tile);
+            if (i >= pendingImages.size() || !pendingImages.get(i).equals(tile.getTag())) changed = true;
+        }
+        if (changed && pendingImagesContainer.isLaidOut() && UiMotion.isEnabled()) {
+            android.transition.TransitionSet motion = new android.transition.TransitionSet();
+            motion.setOrdering(android.transition.TransitionSet.ORDERING_TOGETHER);
+            motion.addTransition(new android.transition.Fade(android.transition.Fade.OUT));
+            motion.addTransition(new android.transition.ChangeBounds());
+            motion.addTransition(new android.transition.Fade(android.transition.Fade.IN));
+            motion.setDuration(UiMotion.ENTER);
+            motion.setInterpolator(UiMotion.SETTLE);
+            android.transition.TransitionManager.beginDelayedTransition(pendingImagesContainer, motion);
+        } else if (!UiMotion.isEnabled()) {
+            android.transition.TransitionManager.endTransitions(pendingImagesContainer);
+        }
+        for (int i = pendingImagesContainer.getChildCount() - 1; i >= 0; i--) {
+            if (!pendingImages.contains(pendingImagesContainer.getChildAt(i).getTag()))
+                pendingImagesContainer.removeViewAt(i);
+        }
+        for (int i = 0; i < pendingImages.size(); i++) {
+            String imageName = pendingImages.get(i);
+            if (existing.containsKey(imageName)) continue;
             AttachmentImageTile tile = new AttachmentImageTile(this,
                     Uri.fromFile(new ImageStore(this).fileFor(imageName)), imageName,
                     () -> startActivity(new Intent(this, AttachmentViewerActivity.class)
@@ -709,7 +733,17 @@ public final class MainActivity extends Activity {
                             }));
             LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(-1, dp(160));
             tileParams.setMargins(0, dp(4), 0, dp(4));
-            pendingImagesContainer.addView(tile, tileParams);
+            tile.setTag(imageName);
+            pendingImagesContainer.addView(tile, i, tileParams);
+            existing.put(imageName, tile);
+        }
+        // Reorder without detaching existing previews or losing their focus.
+        for (int i = 0; i < pendingImages.size(); i++) {
+            if (!pendingImages.get(i).equals(pendingImagesContainer.getChildAt(i).getTag())) {
+                for (String imageName : pendingImages)
+                    pendingImagesContainer.bringChildToFront(existing.get(imageName));
+                break;
+            }
         }
         pickImage.setEnabled(pendingImages.isEmpty() && pendingFiles.isEmpty());
         saveDraft();

@@ -33,7 +33,32 @@ public final class ClassroomWorkServiceCheck {
         require(failure.failed&&failedService.stopped,"promotion failure prevents work");failedService.onDestroy();
         monitorOwnership();
         batchOwnership();
+        notificationOwnership();
         System.out.println("ClassroomWorkServiceCheck PASS: manual promotion/reopen/isolation/rejection/timeout/no redelivery; monitor owner gate, no extra FGS, duplicate guard, selective scope/account cancellation");
+    }
+    private static void notificationOwnership(){
+        var service=new ClassroomWorkService();
+        var a=new ClassroomLessonActivity.Session("account","notice-a");a.notifications=new ClassroomNotifications();a.notifications.latest=new android.app.Notification("2 / 5");
+        var b=new ClassroomLessonActivity.Session("account","notice-b");b.notifications=new ClassroomNotifications();b.notifications.latest=new android.app.Notification("waiting AI");
+        var manager=android.app.NotificationManager.INSTANCE;
+        require(!ClassroomWorkService.updateProgress(a.notifications),"no owner cannot swallow progress");
+        ClassroomWorkService.submit(a,()->{});
+        require(!ClassroomWorkService.updateProgress(a.notifications),"queued but unpromoted cannot swallow progress");
+        service.onStartCommand(null,0,10);
+        require(a.notifications.reposts==1&&manager.latest.text.equals("notice-a:2 / 5"),"promotion claims initial detailed progress");
+        a.notifications.latest=new android.app.Notification("3 / 5");int before=manager.posts;
+        require(ClassroomWorkService.updateProgress(a.notifications)&&manager.posts==before,"worker progress is queued to main");
+        android.os.Handler.drain();require(manager.latest.text.equals("notice-a:3 / 5"),"main receives progress");
+        ClassroomWorkService.submit(b,()->{});service.onStartCommand(null,0,11);
+        require(manager.latest.text.contains("notice-a:3 / 5")&&manager.latest.text.contains("notice-b:waiting AI"),"all active owned lessons included");
+        var monitor=new ClassroomLessonActivity.Session("account","notice-monitor");monitor.monitorOwned=true;monitor.notifications=new ClassroomNotifications();
+        ClassroomAutoSummary.foreground=true;ClassroomWorkService.submitMonitor(monitor,()->{});
+        require(!ClassroomWorkService.updateProgress(monitor.notifications),"independent monitor progress is not swallowed");
+        ClassroomWorkService.finished(a);require(manager.latest.text.equals("notice-b:waiting AI"),"ending one retains remaining detailed progress");
+        require(!ClassroomWorkService.updateProgress(a.notifications),"completed lesson no longer owned");
+        ClassroomWorkService.updateProgress(b.notifications);ClassroomWorkService.finished(b);before=manager.posts;
+        android.os.Handler.drain();require(service.stopped&&!service.promoted&&manager.posts==before,"late progress cannot revive foreground; monitor does not hold manual owner");
+        ClassroomWorkService.finished(monitor);service.onDestroy();ClassroomAutoSummary.foreground=false;
     }
     private static void batchOwnership(){
         Object batch=new Object();var app=new android.content.Context();var service=new ClassroomWorkService();int[] state={0,0};

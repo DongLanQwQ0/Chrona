@@ -36,13 +36,13 @@
 
 工作区的短窗口由`CollapsingPageLayout`接收纵向嵌套滚动，先移出正文上方工具，再把同等高度还给正文；回到正文开头后下拖恢复。`FreeCalendarScrollView`保留自身双向滚动、捏合及周切换，同时把纵向预消费和窗口偏移交给该父级。竖屏普通高度不折叠，键盘编辑时保留输入工具，不替换既有滚动监听。日期／时间轮使用`UiDialogs.fitPicker`按可见高度扣除标题与操作行，窄高时减少可见轮行而非缩小所选值字体。
 
-`UiMotion.enterPage`用于首次子页面呈现，方向`swap`用于工作区子视图和分页；轮询不重播入场。`DateIntervalBar`保持实例并负责箭头、滑动与点击选择入口。`ImageSlidePager`负责有界手势、当前／相邻帧缓存、原图比例及连续切页；`PanHandler`先消费放大图片内部平移，仅把横边余量交给翻页，方向仲裁仍按真实手指方向。权限和来源由调用页提供；全部图片入口共用`AttachmentViewerActivity`的焦点缩放、保存及横屏沉浸布局，媒体与操作安全区分离，不复制入口专属查看器。
+`UiMotion.enterPage(view,onPresented)`在真实布局后的启动帧确认首次呈现；调用方在回调才消费首次标记，取消、脱离及切换接管不消费。单参数入口及既有时长保持。`UiMotion.enterPage`用于首次子页面呈现，方向`swap`用于工作区子视图和分页；轮询不重播入场。`DateIntervalBar`保持实例并负责箭头、滑动与点击选择入口；异步结果在过渡中更新时，结束帧必须发布最新文字，可见页码与当前内容一致，不只更新内部目标值。`ImageSlidePager`负责有界手势、当前／相邻帧缓存、原图比例及连续切页；`PanHandler`先消费放大图片内部平移，仅把横边余量交给翻页，方向仲裁仍按真实手指方向。权限和来源由调用页提供；全部图片入口共用`AttachmentViewerActivity`的焦点缩放、保存及横屏沉浸布局，媒体与操作安全区分离，不复制入口专属查看器。
 
 异步页面在首次有效内容就绪时对实际内容调用`enterPage`，不能以加载壳的动画代替。`ClassroomMarkdownView.onReady`在本地正文及公式完成后，再经`postVisualStateCallback`确认可绘制；首次容器保持`INVISIBLE`，在回调内转为`VISIBLE`并交给公共入场，避免提前露出和空画面耗尽动效。已呈现内容恢复或更新不重复隐藏，销毁清理回调。附着与可见性交接遵循[Android WebView 合同](https://developer.android.com/reference/android/webkit/WebView#postVisualStateCallback(long,%20android.webkit.WebView.VisualStateCallback))。`swap`接管同一容器时取消尚未启动的入场，继续复用当前画面；分页快照放在独立`FrameLayout`宿主，不能放进将被重建清空的正文或单子项ScrollView。
 
 页面调用样式和组合组件，不自行创建另一份亚克力 Drawable、弹窗层级管理或快照切换。渲染状态由 `UiSurfaces` 管理；浮层登记窗口模糊根，渲染层无需依赖浮层生命周期实现。
 
-日程、收件箱和课堂批量模式直接调用`BatchSelectionUi.action/attach/visible/marker`。计数行在进入前后保留同一高度；课堂在动作放不下时用同款「操作」按钮打开公共选择面板，保留字号和操作范围。公共实现不持有选择、账号、分页或下载任务。
+日程、收件箱和课堂批量模式直接调用`BatchSelectionUi.action/attach/visible/marker`。课堂的替换计数行使用独立全宽层，退出动画结束才恢复原计数；重复局部刷新不重启动画，反向从当前进度续接。计数行在进入前后保留同一高度；课堂在动作放不下时用同款「操作」按钮打开公共选择面板，保留字号和操作范围。公共实现不持有选择、账号、分页或下载任务。
 `CalendarVisibilityToggle` 只管理开关图标及连续颜色变化；按压通过 `UiStyle.pressable` 使用 `UiSurfaces` 的公共填充遮罩，随 `HeaderActionGroup` 胶囊边界裁切。调用方不叠加专用圆形涟漪或选中底色。
 
 浮层背景缩放状态覆盖进入、持有和退出全过程；退出中重开复用最初基准，最终恢复后释放状态，视图脱离时清理。该边界由公共实现处理，调用方不补延时或手动重置缩放。

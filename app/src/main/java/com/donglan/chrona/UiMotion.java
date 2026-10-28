@@ -169,11 +169,17 @@ public final class UiMotion {
 
     /** Explicit first presentation of a whole page; its scrollable descendants stay intact. */
     static void enterPage(View view) {
+        enterPage(view, null);
+    }
+
+    /** A caller consumes its first-presentation marker only after layout reaches a drawable frame. */
+    static void enterPage(View view, Runnable onPresented) {
         finishSwap(view);
-        if (!isEnabled()) return;
+        if (!isEnabled() && onPresented == null) return;
         android.view.ViewTreeObserver.OnPreDrawListener[] firstFrame = new android.view.ViewTreeObserver.OnPreDrawListener[1];
         Runnable[] start = new Runnable[1];
         Runnable[] cancel = new Runnable[1];
+        boolean[] pending = { true };
         View.OnAttachStateChangeListener cleanup = new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View attached) { }
             @Override public void onViewDetachedFromWindow(View detached) {
@@ -183,6 +189,7 @@ public final class UiMotion {
             }
         };
         cancel[0] = () -> {
+            pending[0] = false;
             PENDING_ENTRANCES.remove(view);
             if (view.getViewTreeObserver().isAlive()) view.getViewTreeObserver().removeOnPreDrawListener(firstFrame[0]);
             view.removeCallbacks(start[0]);
@@ -190,13 +197,18 @@ public final class UiMotion {
         };
         PENDING_ENTRANCES.put(view, new java.lang.ref.WeakReference<>(cancel[0]));
         view.addOnAttachStateChangeListener(cleanup);
-        view.setAlpha(0f);
-        view.setTranslationY(8f * view.getResources().getDisplayMetrics().density);
+        if (isEnabled()) {
+            view.setAlpha(0f);
+            view.setTranslationY(8f * view.getResources().getDisplayMetrics().density);
+        }
         start[0] = () -> {
+            if (!pending[0]) return;
             cancel[0].run();
-            if (!view.isAttachedToWindow() || !isEnabled()) {
+            if (!view.isAttachedToWindow()) {
                 finishSwap(view); view.removeOnAttachStateChangeListener(cleanup); return;
             }
+            if (onPresented != null) onPresented.run();
+            if (!isEnabled()) { finishSwap(view); return; }
             view.addOnAttachStateChangeListener(cleanup);
             view.animate().alpha(1f).translationY(0f).setStartDelay(0).setDuration(ENTER)
                 .setInterpolator(SETTLE).setUpdateListener(animation -> {
@@ -209,7 +221,7 @@ public final class UiMotion {
         // cold activity or resized window is still being attached by WindowManager.
         firstFrame[0] = () -> {
             view.getViewTreeObserver().removeOnPreDrawListener(firstFrame[0]);
-            view.postOnAnimation(start[0]);
+            if (pending[0]) view.postOnAnimation(start[0]);
             return true;
         };
         view.getViewTreeObserver().addOnPreDrawListener(firstFrame[0]);

@@ -84,6 +84,20 @@ public final class SettingsPageLayout {
         else UiMotion.settleScroll(viewport, root);
         return viewport;
     }
+    /** A full-width list viewport: reuse the page gutter to carry held-card drawing bounds. */
+    static ScrollView motionViewport(Activity activity, LinearLayout root) {
+        ScrollView viewport = viewport(activity, root, false);
+        viewport.setClipChildren(false);
+        viewport.setClipToPadding(false);
+        PressFeedback.protectViewport(viewport);
+        viewport.addOnLayoutChangeListener((view,l,t,r,b,ol,ot,or,ob) -> {
+            int edge = Math.max(dp(activity,20), PressFeedback.edgeSpace(r-l));
+            if (viewport.getPaddingLeft()!=edge)
+                viewport.setPadding(edge,dp(activity,8),edge,dp(activity,8));
+        });
+        viewport.setPadding(dp(activity,20),dp(activity,8),dp(activity,20),dp(activity,8));
+        return viewport;
+    }
     private static int dp(Activity activity, int value) {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
     }

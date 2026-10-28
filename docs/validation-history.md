@@ -1,5 +1,16 @@
 # 验证记录
 
+## 0.15.63 — 卡片裁切、批量交互与迟到内容 — 2026-10-28
+
+- 用户三图中的课堂／历史／监视卡片在按压放大时被正文子边界平切。`motionViewport`复用20dp沟槽、8dp纵向空间，宽屏只取完整1.08峰值所需最小边距；关闭视口children／padding裁切，以独立clipBounds保护实际外边界。首次仅验证矩阵能落入外视口仍漏掉ScrollView对子内容的裁切；主代理与ui_review亲看失败图后定位此层并修正，旧22项不能作为视觉通过。最终正常竖浅／横暗真实DOWN峰值与逐层裁切共45×2项通过，课堂／历史／监视及全选按钮圆角完整，`build/page-audit-next/selection_navigation-{light,dark}.txt`和`visual/batch/`。未缩小动效、改字号或修改课表网格。
+- 两列表长按即选中本条，无选择／完成入口；系统返回先退选择、清勾并保留页面、行实例和滚动，下一次返回才离页。启动完整缓存下载后退出选择，夹具断网验证零学校／AI请求。历史课程筛选严格半宽，排序居中、48dp方向在右、相邻8dp，真实几何通过；独立全宽计数／选择层避免退出横跳。
+- 来源内容返回保留同一行与已加载100条；来源及作业更新历史重建恢复100条及可达阅读偏移。首次标记由公共onPresented真实布局启动帧消费，取消／脱离／接管前不消费，恢复不重播。正常原生竖浅／横暗各15项，`page_recovery-native-{light,dark}.txt`及`visual/monitor/page-recovery/`；稳态焦点、两次preDraw和650ms系统转场后再次断言，横屏来源saved/actual为15213/15213、历史13846/13846。早期重建截图和立即clamp断言不足，已由稳定实值与截图替换。
+- 附件首图迟到700ms及呈现前重建不提前耗尽入场，实际图片就绪才入场；已显示恢复和系统减少动画不重播。追加／删除保留其它图片节点、Drawable和焦点，草稿同步保持；五档公共圆角与详情单层裁切通过。正常原生两档各17项，`attachment_page_motion-native-{light,dark}.txt`和`visual/monitor/attachment-page-motion/`。monitor新检查均显式`nativeScreen=true`，不改变分辨率／DPI；早期漏参形成的400dp横屏与临时实例失焦只记为夹具失败，不作为正常屏幕验收。
+- 日程／收件箱分页复用持久DateIntervalBar，保留查询、顺序、焦点、跨页选择及正文原入退场。真机发现内部目标已到2/5而可见页码仍1/5：异步结果在110ms退出后的180ms进入期间到达，旧结束回调未发布最新desired。公共结束帧按原token发布最新文字，不更改时长；生产方法host11项通过，移除修复的对照在170ms断言确切失败。正常原生两档各68项，覆盖真实箭头／滑动／选页、边界、附着不重建、搜索与实际TextView文字／alpha／位移，含170ms迟到结果。`dashboard_pagination-native-{light,dark}.txt`、`pagination/date-interval-{motion,old-regression}-result.txt`及对应JSON。
+- 手动／批量处理统一沿用WorkService前台2043，不再叠加逐课运行通知；单课保留详细进度与原入口，多课保留各课进度与目录入口，结果另发。完成结果显示课程、实际日期开始时间与课堂标题，未知时间不编造。实际系统Work检查一／多课、退出继续、剩余课入口与停止全部通过；独立通知检查投递、权限拒绝、账号切换、同名不同课堂及完成身份全部true，`classroom_work-light.txt`、`classroom_notifications-light.txt`。夹具仅按固定假账号／课ID清理自己的结果通知，未削弱无活动通知guard。
+- 相关host检查通过：settings_layout、ui_library、classroom_header、classroom_batch_work、section_motion、classroom_foreground_notification、dashboard_pagination、calendar_slide；各owner的native_motion_core46、page_recovery16、attachment_page_motion27、attachment_remove及原查询检查有效。新增检查已纳入`checks/run_checks.py`。debug／release及两组lint通过，新增legacy返回lint按既有模式注明API33+原生pageBack回调与旧按键路径；不是关闭现代返回。最终`build/candidates/0.15.63/Chrona-0.15.63.apk`3252478字节、225／0.15.63、非debug、原签名，证据`build/release-0.15.63-{build,signature,package}.txt`。
+- V2527A实际正常覆盖225；主代理真实按住三类列表及监视横屏，实际边缘返回手势先退选择且保留48条课堂；历史仍15条，收件仍52条。最终手机确认可见页码1/5→2/5→公共选页→1/5与内容一致，`build/phone-0.15.63-{classroom-held,history-held,monitor-held,monitor-landscape-held,history-landscape,selection,gesture-return,final-inbox-footer1,final-inbox-footer2,final-inbox-page-menu,final-inbox-restored}.jpg`及`selection-result.json`／`pagination.txt`。首个225测试候选暴露的旧页码问题不作完成证据，最终包已再次同签名正常覆盖。没有点击实际课堂下载／生成／删除，没有学校或AI用量；首页与原提醒恢复，旋转1／0、三项动画1.0。所有图先压缩JPEG，输出均在本项目build内。本批只推源码，不创建Release或标签，public latest仍v0.15.61。
+
 ## 0.15.62 本地候选与Release整理 — 2026-10-28
 
 - 用户确认按版本节点保留Release。原110条中实际存在的节点为v0.14.0、v0.15.0；另保留latest v0.15.61及vivo-setup-0.15.42。其余106条的126个附件247405993字节已完整归档到`build/release-cleanup/`，逐项检查传输、字节长度及APK／ZIP可读性或视频头。元数据、正文、恢复输入及资产均在项目内；删除前重新比对远端ID、标签、资产ID／名称／大小，删除后四条保留记录与附件不变，latest仍v0.15.61。没有删除Git标签或源码。证据archive-manifest.json、restore-input.json、delete-results.jsonl、post-delete-{releases,latest}.json。旧下载链接按已确认范围失效。

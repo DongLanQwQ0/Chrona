@@ -47,6 +47,15 @@ final class ClassroomWorkDeviceCheck {
             test.runOnMainSync(()->sessions[0].run("后台验收 A",true,()->hold(sessions[0],enteredA,releaseA)));
             require(enteredA.await(10,TimeUnit.SECONDS),"first worker entered");
             await(test,()->serviceRunning(context,true),"foreground service active");
+            NotificationManager manager=context.getSystemService(NotificationManager.class);
+            boolean postable=manager.areNotificationsEnabled()&&(Build.VERSION.SDK_INT<33||context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED);
+            if(postable){
+                await(test,()->foreground(manager)!=null&&foreground(manager).extras.getInt(Notification.EXTRA_PROGRESS_MAX)==2,"single foreground receives measured progress");
+                Notification only=foreground(manager);
+                require("课堂总结处理中".contentEquals(only.extras.getCharSequence(Notification.EXTRA_TITLE))
+                        &&only.visibility==Notification.VISIBILITY_PRIVATE&&only.contentIntent!=null,"detailed private foreground and lesson entry");
+                require(tagCount(manager,lessonA)==0,"no duplicate single lesson running tag");
+            }
             test.runOnMainSync(screens[0]::finish);
             await(test,()->screens[0].isDestroyed(),"detail finished");
             SystemClock.sleep(500);
@@ -58,20 +67,31 @@ final class ClassroomWorkDeviceCheck {
             await(test,()->sessions[1].localInitialized&&!sessions[1].busy,"second local load");
             test.runOnMainSync(()->sessions[1].run("后台验收 B",true,()->hold(sessions[1],enteredB,releaseB)));
             require(enteredB.await(10,TimeUnit.SECONDS),"second worker entered");
+            if(postable){
+                await(test,()->foreground(manager)!=null&&foreground(manager).extras.getCharSequence(Notification.EXTRA_BIG_TEXT,"").toString().contains(lessonB.course),"combined foreground contains second lesson");
+                String detail=foreground(manager).extras.getCharSequence(Notification.EXTRA_BIG_TEXT,"").toString();
+                require(detail.contains(lessonA.course)&&detail.contains(lessonB.course),"combined foreground retains both active lessons");
+                require(tagCount(manager,lessonA)==0&&tagCount(manager,lessonB)==0,"no duplicate running tags with multiple lessons");
+            }
             releaseA.countDown();
             await(test,()->!sessions[0].busy&&ClassroomWorkService.find(ACCOUNT,lessonA)==null,"first completion released registry");
             test.runOnMainSync(()->require(sessions[1].busy&&!sessions[1].control.isCancelled()
                     &&ClassroomWorkService.find(ACCOUNT,lessonB)==sessions[1]&&serviceRunning(context,true),"second lesson keeps foreground service"));
+            if(postable){
+                await(test,()->foreground(manager)!=null&&foreground(manager).extras.getInt(Notification.EXTRA_PROGRESS_MAX)==2,"remaining lesson regains detailed foreground");
+                Notification detail=(Notification)field(ClassroomNotifications.class,"latest").get(sessions[1].notifications);
+                require(foreground(manager).contentIntent.equals(detail.contentIntent),"remaining foreground opens remaining lesson");
+                require(tagCount(manager,lessonB)==0,"remaining progress has no tagged duplicate");
+            }
             releaseB.countDown();
             await(test,()->!sessions[1].busy&&ClassroomWorkService.find(ACCOUNT,lessonB)==null&&!serviceRunning(context,false),"last completion stops service");
             Notification result=(Notification)field(ClassroomNotifications.class,"latest").get(sessions[0].notifications);
             require(result!=null&&result.contentIntent!=null&&(result.flags&Notification.FLAG_ONGOING_EVENT)==0
-                    &&"课堂处理完成".contentEquals(result.extras.getCharSequence(Notification.EXTRA_TITLE)),"completion notification and detail link");
-            NotificationManager manager=context.getSystemService(NotificationManager.class);
-            boolean postable=manager.areNotificationsEnabled()&&(Build.VERSION.SDK_INT<33||context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED);
+                    &&("课堂处理完成 · "+lessonA.course).contentEquals(result.extras.getCharSequence(Notification.EXTRA_TITLE)),"completion notification course and detail link");
             if(postable)require(java.util.Arrays.stream(manager.getActiveNotifications()).anyMatch(n->("classroom:"+ACCOUNT+":"+lessonA.courseId+":"+lessonA.id).equals(n.getTag())),"result present in system notifications");
             return new JSONObject().put("synthetic",true).put("returnContinues",true).put("reopenSameSession",true)
                     .put("multipleLessons",true).put("foregroundLifecycle",true).put("completionNotification",true)
+                    .put("oneRunningNotification",postable).put("combinedProgress",postable).put("remainingLessonDetail",postable)
                     .put("systemPostingVerified",postable).put("permissionDenialTest","classroom_notifications separate phase").toString();
         } finally {
             releaseA.countDown();releaseB.countDown();
@@ -80,6 +100,11 @@ final class ClassroomWorkDeviceCheck {
             finally {
                 test.runOnMainSync(()->{for(var s:sessions)if(s!=null){if(s.notifications!=null)s.notifications.clear();s.detached=true;s.owner.clear();s.disposeIfDetached();}});
                 restore(settings.prefs,before);
+                test.waitForIdleSync();
+                // Confirm OS removal after callbacks and preference restoration, using only this run's exact tags.
+                NotificationManager manager=context.getSystemService(NotificationManager.class);
+                manager.cancel(lessonTag(lessonA),0);manager.cancel(lessonTag(lessonB),0);
+                await(test,()->tagCount(manager,lessonA)==0&&tagCount(manager,lessonB)==0,"owned result notifications removed");
                 // loadLocal creates only these unique empty directories; never remove pre-existing fixtures.
                 for(ClassroomLesson l:new ClassroomLesson[]{lessonA,lessonB}){
                     java.io.File dir=new java.io.File(context.getNoBackupFilesDir(),"classroom/"+ACCOUNT+"/"+l.courseId+"-"+l.id);
@@ -88,7 +113,58 @@ final class ClassroomWorkDeviceCheck {
             }
         }
     }
+
+    /** Explicit recovery for earlier runs of this fixture; never clears unrelated classroom notifications. */
+    static String cleanupOwnedResults(Instrumentation test) throws Exception {
+        Context context=test.getTargetContext();
+        require("com.donglan.chrona.batch.validation".equals(context.getPackageName())
+                &&"ranchu".equals(Build.HARDWARE),"Exact synthetic batch package and shared emulator required");
+        require(ACCOUNT.equals(new ZjuSettingsStore(context).account()),"Exact synthetic account required");
+        require(!serviceRunning(context,false),"Active classroom service; fixture cleanup refused");
+        Field jobs=field(ClassroomWorkService.class,"jobs"),batches=field(ClassroomWorkService.class,"batches"),pending=field(ClassroomWorkService.class,"pendingStarts");
+        test.runOnMainSync(()->{
+            try {
+                require(((Map<?,?>)jobs.get(null)).isEmpty()&&((Map<?,?>)batches.get(null)).isEmpty()
+                        &&pending.getInt(null)==0,"Active or queued classroom work; fixture cleanup refused");
+            } catch(IllegalAccessException failure){throw new AssertionError(failure);}
+        });
+        NotificationManager manager=context.getSystemService(NotificationManager.class);
+        java.util.ArrayList<String> ownedTags=new java.util.ArrayList<>();
+        for(var notice:manager.getActiveNotifications()){
+            if(!ownedResultTag(notice.getTag()))continue;
+            Notification notification=notice.getNotification();
+            require(notice.getId()==0&&"chrona_classroom_results".equals(notification.getChannelId())
+                    &&(notification.flags&Notification.FLAG_ONGOING_EVENT)==0,"Unexpected owned-prefix notification; cleanup refused");
+            ownedTags.add(notice.getTag());
+        }
+        for(String tag:ownedTags)manager.cancel(tag,0);
+        await(test,()->java.util.Arrays.stream(manager.getActiveNotifications()).noneMatch(n->ownedTags.contains(n.getTag())),"prior owned result notifications removed");
+        return new JSONObject().put("synthetic",true).put("ownedResultNotificationsRemoved",ownedTags.size())
+                .put("scope","account 00000000-0000-0000-0000-000000000036; courses 990036/990037; results only").toString();
+    }
+
+    private static boolean ownedResultTag(String tag){
+        if(tag==null)return false;
+        for(String course:new String[]{"990036","990037"}){
+            String prefix="classroom:"+ACCOUNT+":"+course+":";
+            if(tag.startsWith(prefix)&&tag.substring(prefix.length()).matches("[0-9]+"))return true;
+        }
+        return false;
+    }
+
+    private static String lessonTag(ClassroomLesson lesson){return "classroom:"+ACCOUNT+":"+lesson.courseId+":"+lesson.id;}
+
+    private static Notification foreground(NotificationManager manager){
+        for(var notice:manager.getActiveNotifications())if(notice.getTag()==null&&notice.getId()==2043)return notice.getNotification();
+        return null;
+    }
+    private static long tagCount(NotificationManager manager,ClassroomLesson lesson){
+        String tag=lessonTag(lesson);
+        return java.util.Arrays.stream(manager.getActiveNotifications()).filter(n->tag.equals(n.getTag())).count();
+    }
     private static void hold(ClassroomLessonActivity.Session session,CountDownLatch entered,CountDownLatch release)throws Exception{
+        // Cross the real one-second posting throttle before the measured checkpoint.
+        SystemClock.sleep(1100);
         session.checkpoint(new ClassroomProgress("合成后台任务",1,2,"等待测试释放"));entered.countDown();
         while(!release.await(100,TimeUnit.MILLISECONDS))session.control.check();
         session.control.check();session.message="合成课堂处理完成";

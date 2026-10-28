@@ -12,6 +12,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -35,6 +36,10 @@ public final class ScheduleSourceContentsActivity extends Activity {
     private List<Entry> localSnapshot;
     private boolean firstDataPresentation;
     private int loadDirection;
+    private ScrollView viewport;
+    private boolean initialized, calendarReadable, dataReady;
+    private String schoolAccount;
+    private int restoreCount, restoreScroll = -1;
 
     static Intent intent(Context context, String source, String name) {
         return new Intent(context, ScheduleSourceContentsActivity.class)
@@ -45,7 +50,10 @@ public final class ScheduleSourceContentsActivity extends Activity {
         ThemeStore.apply(this); super.onCreate(state);
         firstDataPresentation=state==null||state.getBoolean("first_data_presentation",false);
         source = getIntent().getStringExtra("source");
+        schoolAccount = new ZjuSettingsStore(this).account();
         if (hiddenZju()) { finish(); return; }
+        restoreCount = state == null ? 0 : state.getInt("loaded_count", 0);
+        restoreScroll = state == null ? -1 : state.getInt("scroll_y", 0);
         week = state != null && state.containsKey("week") ? LocalDate.ofEpochDay(state.getLong("week"))
                 : LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LinearLayout root = SettingsPageLayout.content(this);
@@ -72,21 +80,50 @@ public final class ScheduleSourceContentsActivity extends Activity {
         more = navigationButton("加载更多", this::loadPage);
         more.setVisibility(android.view.View.GONE);
         UiStyle.addSpaced(root, more, 8, 0);
-        SettingsPageLayout.show(this, root, state == null);
+        viewport = SettingsPageLayout.viewport(this, root, state == null);
+        viewport.setOnTouchListener((view,event)->{
+            if(event.getActionMasked()==android.view.MotionEvent.ACTION_DOWN)restoreScroll=-1;
+            return false;
+        });
+        viewport.setOnScrollChangeListener((view,x,y,oldX,oldY)->{if(y!=oldY)restoreScroll=-1;});
+        SettingsPageLayout.showFixed(this, viewport);
     }
 
-    @Override protected void onResume() { super.onResume(); if (!isFinishing()) load(); }
+    @Override protected void onResume() {
+        super.onResume();
+        if (isFinishing()) return;
+        if (hiddenZju()) { rows.removeAllViews(); finish(); return; }
+        boolean readable = ScheduleSourceRepository.systemReadable(this);
+        if (!initialized || systemSource() && calendarReadable != readable) {
+            if(initialized){restoreCount=0;restoreScroll=-1;rows.removeAllViews();}
+            load();
+        } else if(firstDataPresentation && dataReady) {
+            UiMotion.enterPage(rows,()->firstDataPresentation=false);
+        }
+    }
     @Override protected void onSaveInstanceState(Bundle state) {
-        state.putLong("week", week.toEpochDay()); state.putBoolean("all", all);state.putBoolean("first_data_presentation",firstDataPresentation); super.onSaveInstanceState(state);
+        state.putLong("week", week.toEpochDay()); state.putBoolean("all", all);state.putBoolean("first_data_presentation",firstDataPresentation);
+        state.putInt("loaded_count",Math.max(offset,restoreCount));
+        state.putInt("scroll_y",restoreScroll>=0?restoreScroll:viewport.getScrollY());
+        super.onSaveInstanceState(state);
     }
     @Override protected void onDestroy() { generation++; super.onDestroy(); }
     private void changeWeek(int direction) { week = week.plusWeeks(direction); load(direction); }
-    private boolean hiddenZju() { return "zju".equals(source) && !new ZjuSettingsStore(this).enabled(); }
+    private boolean hiddenZju() {
+        ZjuSettingsStore settings = new ZjuSettingsStore(this);
+        return "zju".equals(source) && (!settings.enabled() || !Objects.equals(schoolAccount,settings.account()));
+    }
+    private boolean systemSource(){return source!=null&&source.startsWith("system:");}
 
     private void load() {
-        load(0);
+        beginLoad(0);
     }
     private void load(int direction) {
+        restoreCount=0;restoreScroll=-1;
+        beginLoad(direction);
+    }
+    private void beginLoad(int direction) {
+        initialized=true;dataReady=false;calendarReadable=ScheduleSourceRepository.systemReadable(this);
         loadDirection=direction;
         ++generation; loading = false; offset = 0; localSnapshot = null;
         afterStart = Long.MIN_VALUE; afterId = -1;
@@ -128,6 +165,7 @@ public final class ScheduleSourceContentsActivity extends Activity {
                     if (isFinishing() || isDestroyed() || generation != request) return;
                     loading = false; localSnapshot = snapshot;
                     if (hiddenZju()) { finish(); return; }
+                    if(systemSource()&&!ScheduleSourceRepository.systemReadable(this)){load();return;}
                     int count = Math.min(PAGE_SIZE, result.size());
                     Runnable bind=()->{
                         if(pageOffset==0)rows.removeAllViews();
@@ -135,13 +173,15 @@ public final class ScheduleSourceContentsActivity extends Activity {
                         for(int i=0;i<count;i++)addEntry(result.get(i));
                     };
                     boolean entering=firstDataPresentation;
-                    if(pageOffset==0)firstDataPresentation=false;
-                    if(pageOffset==0&&direction!=0)UiMotion.swap(rows,rows,bind,direction);
-                    else{bind.run();if(entering)UiMotion.enterPage(rows);}
+                    dataReady=true;
+                    if(pageOffset==0&&direction!=0&&!entering)UiMotion.swap(rows,rows,bind,direction);
+                    else{bind.run();if(entering)UiMotion.enterPage(rows,()->firstDataPresentation=false);}
                     offset += count;
                     if (count > 0) { Entry last = result.get(count - 1); afterStart = last.start; afterId = last.providerId; }
                     more.setText("加载更多"); more.setEnabled(true);
                     more.setVisibility(result.size() > PAGE_SIZE ? android.view.View.VISIBLE : android.view.View.GONE);
+                    if(offset<restoreCount&&result.size()>PAGE_SIZE)loadPage();
+                    else restoreReadingPosition();
                 });
             } catch (Exception failure) {
                 runOnUiThread(() -> {
@@ -156,6 +196,19 @@ public final class ScheduleSourceContentsActivity extends Activity {
         }, "chrona-source-contents").start();
     }
     @Override protected void onPause(){if(rows!=null)UiMotion.finishSwap(rows);super.onPause();}
+
+    private void restoreReadingPosition(){
+        restoreCount=0;
+        if(restoreScroll<0)return;
+        android.view.ViewTreeObserver.OnPreDrawListener listener=new android.view.ViewTreeObserver.OnPreDrawListener(){
+            @Override public boolean onPreDraw(){
+                viewport.getViewTreeObserver().removeOnPreDrawListener(this);
+                if(restoreScroll>=0){int y=restoreScroll;restoreScroll=-1;viewport.scrollTo(0,y);}
+                return true;
+            }
+        };
+        viewport.getViewTreeObserver().addOnPreDrawListener(listener);
+    }
 
     private List<Entry> read(long begin, long end, ZoneId zone, boolean entireSource) throws Exception {
         return entries(ScheduleSourceRepository.local(this, source, begin, end, zone, entireSource));

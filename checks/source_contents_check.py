@@ -37,7 +37,8 @@ assert 'if (importedCount != 0)' in settings
 assert "generation != request" in browser
 assert 'SettingsPageLayout.content(this)' in browser
 assert 'SettingsPageLayout.header(this, root' in browser
-assert 'SettingsPageLayout.show(this, root, state == null)' in browser
+assert 'SettingsPageLayout.viewport(this, root, state == null)' in browser
+assert 'SettingsPageLayout.showFixed(this, viewport)' in browser
 assert 'UiStyle.card(card)' in browser
 assert 'title.setMaxLines(2)' in browser
 assert 'setPadding(dp(16), dp(12), dp(16), dp(12))' in browser

@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -26,19 +27,34 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
     private long beforeId = Long.MAX_VALUE;
     private boolean loading;
     private LocalDate lastDay;
+    private ScrollView viewport;
+    private int loadedCount,restoreCount,restoreScroll=-1;
 
     @Override protected void onCreate(Bundle state) {
         ThemeStore.apply(this); super.onCreate(state);
         firstDataPresentation=state==null||state.getBoolean("first_data_presentation",false);
+        restoreCount=state==null?0:state.getInt("loaded_count",0);
+        restoreScroll=state==null?-1:state.getInt("scroll_y",0);
         root = SettingsPageLayout.content(this);
         SettingsPageLayout.header(this, root, "作业更新记录");
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);root.addView(content);
         more = new Button(this); UiStyle.button(more, false);
         root.addView(more); more.setOnClickListener(v -> loadMore());
-        SettingsPageLayout.show(this, root, state == null); loadMore();
+        viewport=SettingsPageLayout.viewport(this,root,state==null);
+        viewport.setOnTouchListener((view,event)->{
+            if(event.getActionMasked()==android.view.MotionEvent.ACTION_DOWN)restoreScroll=-1;
+            return false;
+        });
+        viewport.setOnScrollChangeListener((view,x,y,oldX,oldY)->{if(y!=oldY)restoreScroll=-1;});
+        SettingsPageLayout.showFixed(this,viewport);loadMore();
     }
 
-    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_data_presentation",firstDataPresentation);super.onSaveInstanceState(state);}
+    @Override protected void onSaveInstanceState(Bundle state){
+        state.putBoolean("first_data_presentation",firstDataPresentation);
+        state.putInt("loaded_count",Math.max(loadedCount,restoreCount));
+        state.putInt("scroll_y",restoreScroll>=0?restoreScroll:viewport.getScrollY());
+        super.onSaveInstanceState(state);
+    }
 
     private void loadMore() {
         if (loading) return;
@@ -60,14 +76,30 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
                 if (rows.isEmpty() && cursor == Long.MAX_VALUE)
                     content.addView(text("暂无更新记录", 15, false));
                 for (ZjuHomeworkStore.History row : rows) addRecord(row);
-                if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(content);}
+                loadedCount+=rows.size();
+                if(firstDataPresentation)UiMotion.enterPage(content,()->firstDataPresentation=false);
                 if (!rows.isEmpty()) beforeId = rows.get(rows.size() - 1).id;
                 loading = false;
                 if (rows.size() == PAGE_SIZE) {
                     more.setEnabled(true); more.setText("加载更多"); root.addView(more);
                 }
+                if(loadedCount<restoreCount&&rows.size()==PAGE_SIZE)loadMore();
+                else restoreReadingPosition();
             });
         });
+    }
+
+    private void restoreReadingPosition(){
+        restoreCount=0;
+        if(restoreScroll<0)return;
+        android.view.ViewTreeObserver.OnPreDrawListener listener=new android.view.ViewTreeObserver.OnPreDrawListener(){
+            @Override public boolean onPreDraw(){
+                viewport.getViewTreeObserver().removeOnPreDrawListener(this);
+                if(restoreScroll>=0){int y=restoreScroll;restoreScroll=-1;viewport.scrollTo(0,y);}
+                return true;
+            }
+        };
+        viewport.getViewTreeObserver().addOnPreDrawListener(listener);
     }
 
     private void addRecord(ZjuHomeworkStore.History record) {

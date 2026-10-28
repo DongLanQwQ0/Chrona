@@ -80,9 +80,9 @@ final class ClassroomSummaryPage extends SchedulePage {
     private LocalDate shownWeek;
     private boolean active, gated, firstPresentation;
     private static final int BATCH_EXPORT=2046;
-    private LinearLayout selectionBar;
+    private LinearLayout selectionBar, resultsHeading;
     private TextView selectionCount,resultsCount,batchStatus;
-    private Button selectAll,selectModeButton,batchDownload,batchExport,batchDelete,batchMenu,batchDone;
+    private Button selectAll,batchDownload,batchExport,batchDelete,batchMenu;
     private final LinkedHashMap<String,TextView> selectionMarkers=new LinkedHashMap<>();
     private List<ClassroomLesson> matchingLessons=new ArrayList<>();
     private final Handler refreshHandler = new Handler(Looper.getMainLooper());
@@ -189,7 +189,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         }
     }
     @Override protected void onCreate(Bundle state) {
-        firstPresentation = state == null && getLastNonConfigurationInstance() == null;
+        firstPresentation = state == null ? getLastNonConfigurationInstance() == null : state.getBoolean("first_presentation",false);
         s = getLastNonConfigurationInstance() instanceof Session value ? value : null;
         if (s == null && settings.enabled() && settings.configured()) {
             s = new Session(getApplicationContext(), settings.account());
@@ -266,12 +266,14 @@ final class ClassroomSummaryPage extends SchedulePage {
             public void afterTextChanged(Editable text){}
         });
         historyCourse=new TextView(activity);UiStyle.fieldTrigger(historyCourse,true);historyCourse.setOnClickListener(v->pickHistoryCourse());
-        UiStyle.addSpaced(browserTools,historyCourse,0,8);
         historyTools=new LinearLayout(activity);historyTools.setGravity(Gravity.CENTER_VERTICAL);
+        historyTools.addView(historyCourse,new LinearLayout.LayoutParams(0,-2,1));
+        LinearLayout orderTools=new LinearLayout(activity);orderTools.setGravity(Gravity.CENTER_VERTICAL);orderTools.setPadding(dp(8),0,0,0);
+        historyTools.addView(orderTools,new LinearLayout.LayoutParams(0,-2,1));
         historyOrder=new TextView(activity);UiStyle.fieldTrigger(historyOrder);historyOrder.setOnClickListener(v->{if(s!=null)UiDialogs.choiceDialog(activity,"排序",HISTORY_ORDERS,s.historyOrder,index->{if(s.historyOrder!=index){s.historyOrder=index;resetListOrder();}});});
-        historyTools.addView(historyOrder,new LinearLayout.LayoutParams(0,-2,1));
+        orderTools.addView(historyOrder,new LinearLayout.LayoutParams(0,-2,1));
         historyDirection=UiStyle.navigationIcon(activity,R.drawable.ic_arrow_down,"切换排序方向",()->{if(s!=null){s.historyAscending=!s.historyAscending;resetListOrder();}});
-        LinearLayout.LayoutParams directionParams=new LinearLayout.LayoutParams(dp(48),dp(48));directionParams.leftMargin=dp(8);historyTools.addView(historyDirection,directionParams);UiStyle.addSpaced(browserTools,historyTools,0,8);
+        LinearLayout.LayoutParams directionParams=new LinearLayout.LayoutParams(dp(48),dp(48));directionParams.leftMargin=dp(8);orderTools.addView(historyDirection,directionParams);UiStyle.addSpaced(browserTools,historyTools,0,8);
         pageBar = new DateIntervalBar(activity, this::pickPage, this::changePage);
         pageBar.getChildAt(1).setContentDescription("上一页");
         pageBar.getChildAt(2).setContentDescription("下一页");
@@ -279,7 +281,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         batchStatus=label("",14);batchStatus.setOnClickListener(v->showBatchResult());UiStyle.addSpaced(browserTools,batchStatus,0,4);
         buildSelectionBar();
         content = new LinearLayout(activity); content.setOrientation(LinearLayout.VERTICAL);
-        scroll = listScroll = SettingsPageLayout.viewport(activity, content, false);
+        scroll = listScroll = SettingsPageLayout.motionViewport(activity, content);
         bodyHost = new FrameLayout(activity);
         bodyHost.addView(listScroll, new FrameLayout.LayoutParams(-1, -1));
         weekViewport = new FrameLayout(activity) {
@@ -288,11 +290,13 @@ final class ClassroomSummaryPage extends SchedulePage {
             }
         };
         PressFeedback.protectViewport(weekViewport);
-        bodyHost.addView(weekViewport, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout.LayoutParams weekParams=new FrameLayout.LayoutParams(-1,-1);weekParams.leftMargin=weekParams.rightMargin=dp(20);
+        bodyHost.addView(weekViewport, weekParams);
         FrameLayout transitionHost = new FrameLayout(activity);
         PressFeedback.protectViewport(transitionHost);
         transitionHost.addView(bodyHost, new FrameLayout.LayoutParams(-1, -1));
-        root.addView(transitionHost, new LinearLayout.LayoutParams(-1, 0, 1)); root.setScrollingBody(transitionHost); setContentView(root);
+        LinearLayout.LayoutParams bodyParams=new LinearLayout.LayoutParams(-1,0,1);bodyParams.leftMargin=bodyParams.rightMargin=-dp(20);
+        root.addView(transitionHost,bodyParams); root.setScrollingBody(transitionHost); setContentView(root);
         update();
         if (s != null) scroll.post(() -> scroll.scrollTo(0, s.scrollY));
     }
@@ -504,12 +508,11 @@ final class ClassroomSummaryPage extends SchedulePage {
         selectionBar=new LinearLayout(activity){@Override protected void onMeasure(int width,int height){
             if(s!=null&&s.selecting){
                 selectionCount.measure(View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED),height);int wanted=selectionCount.getMeasuredWidth();
-                for(Button control:new Button[]{selectAll,batchDownload,batchExport,batchDelete,batchDone}){
+                for(Button control:new Button[]{selectAll,batchDownload,batchExport,batchDelete}){
                     control.measure(View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED),height);wanted+=control.getMeasuredWidth()+dp(6);
                 }
                 boolean compact=wanted>View.MeasureSpec.getSize(width);
                 batchDownload.setVisibility(compact?View.GONE:View.VISIBLE);batchExport.setVisibility(compact?View.GONE:View.VISIBLE);batchDelete.setVisibility(compact?View.GONE:View.VISIBLE);batchMenu.setVisibility(compact?View.VISIBLE:View.GONE);
-                batchDone.setVisibility(compact?View.GONE:View.VISIBLE);
             }super.onMeasure(width,height);
         }};
         selectionBar.setGravity(Gravity.CENTER_VERTICAL);selectionBar.setClipChildren(false);selectionBar.setClipToPadding(false);
@@ -519,18 +522,21 @@ final class ClassroomSummaryPage extends SchedulePage {
         batchExport=BatchSelectionUi.action(activity,"导出",this::exportSelected);
         batchDelete=BatchSelectionUi.action(activity,"删除",this::confirmDeleteSelected);
         batchMenu=BatchSelectionUi.action(activity,"操作",this::chooseBatchAction);
-        batchDone=BatchSelectionUi.action(activity,"完成",()->{clearSelection();updateSelectionUi();});
-        for(Button control:new Button[]{selectAll,batchDownload,batchExport,batchDelete,batchMenu,batchDone})selectionBar.addView(control);
+        for(Button control:new Button[]{selectAll,batchDownload,batchExport,batchDelete,batchMenu})selectionBar.addView(control);
         selectionBar.setVisibility(View.GONE);
     }
     private void addResultsHeading(int count){
         LinearLayout heading=new LinearLayout(activity);heading.setGravity(Gravity.CENTER_VERTICAL);heading.setClipChildren(false);heading.setClipToPadding(false);
+        resultsHeading=heading;
         resultsCount=label("共 "+count+" 节课堂",19);UiStyle.title(resultsCount);resultsCount.setSingleLine(true);resultsCount.setEllipsize(android.text.TextUtils.TruncateAt.END);
         int height=BatchSelectionUi.headingHeight(resultsCount);heading.addView(resultsCount,new LinearLayout.LayoutParams(0,height,1));
-        selectModeButton=BatchSelectionUi.action(activity,"选择",()->{if(s!=null){s.selecting=true;updateSelectionUi();}});
-        LinearLayout.LayoutParams entry=new LinearLayout.LayoutParams(-2,height);entry.leftMargin=dp(6);heading.addView(selectModeButton,entry);
-        BatchSelectionUi.attach(heading,selectionBar,height,selectAll,batchDownload,batchExport,batchDelete,batchMenu,batchDone);
-        UiStyle.addSpaced(listBody,heading,0,4);
+        LinearLayout selectionHeading=new LinearLayout(activity);selectionHeading.setClipChildren(false);selectionHeading.setClipToPadding(false);
+        BatchSelectionUi.attach(selectionHeading,selectionBar,height,selectAll,batchDownload,batchExport,batchDelete,batchMenu);
+        ((LinearLayout.LayoutParams)selectionBar.getLayoutParams()).width=-1;
+        FrameLayout chrome=new FrameLayout(activity){@Override public boolean onInterceptTouchEvent(android.view.MotionEvent event){return s==null||!s.selecting&&selectionBar.getVisibility()==View.VISIBLE||super.onInterceptTouchEvent(event);}};
+        chrome.setClipChildren(false);chrome.setClipToPadding(false);
+        chrome.addView(heading,new FrameLayout.LayoutParams(-1,height));chrome.addView(selectionHeading,new FrameLayout.LayoutParams(-1,height));
+        UiStyle.addSpaced(listBody,chrome,0,4);
     }
     private void lessonRow(ClassroomLesson lesson,String text,boolean history){
         LinearLayout row=new LinearLayout(activity);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(16),dp(12),dp(16),dp(12));UiStyle.card(row);UiStyle.pressable(row);
@@ -538,26 +544,28 @@ final class ClassroomSummaryPage extends SchedulePage {
         TextView marker=label("",22);row.addView(marker,new LinearLayout.LayoutParams(dp(34),dp(34)));selectionMarkers.put(ClassroomBatchWork.key(lesson),marker);
         row.setContentDescription(text);
         row.setOnClickListener(v->{if(s!=null&&s.selecting)toggleSelection(lesson);else if(history)openSaved(lesson);else open(lesson);});
-        row.setOnLongClickListener(v->{if(s==null)return true;if(history||s.selecting){s.selecting=true;s.selected.add(ClassroomBatchWork.key(lesson));updateSelectionUi();}else ClassroomMonitorUi.open(activity,lesson);return true;});
+        row.setOnLongClickListener(v->{if(s!=null){s.selecting=true;s.selected.add(ClassroomBatchWork.key(lesson));updateSelectionUi();}return true;});
         UiStyle.addSpaced(listBody,row,4,6);
     }
     private void clearSelection(){if(s!=null){s.selecting=false;s.selected.clear();}}
+    @Override boolean hasBackAction(){return s!=null&&s.selecting;}
+    @Override boolean handleBack(){if(!hasBackAction())return false;clearSelection();updateSelectionUi();return true;}
     private void toggleSelection(ClassroomLesson lesson){String key=ClassroomBatchWork.key(lesson);if(!s.selected.remove(key))s.selected.add(key);updateSelectionUi();}
     private void toggleAll(){
         if(s==null)return;java.util.Set<String> keys=new LinkedHashSet<>();for(ClassroomLesson lesson:matchingLessons)keys.add(ClassroomBatchWork.key(lesson));
         if(!keys.isEmpty()&&s.selected.containsAll(keys))s.selected.removeAll(keys);else s.selected.addAll(keys);updateSelectionUi();
     }
     private void updateSelectionUi(){
+        updateBackAction();
         if(s==null||selectionBar==null||resultsCount==null||s.mode!=1&&s.mode!=3)return;
-        boolean selecting=s.selecting;resultsCount.setVisibility(selecting?View.GONE:View.VISIBLE);selectModeButton.setVisibility(selecting?View.GONE:View.VISIBLE);
-        BatchSelectionUi.visible(selectionBar,selecting);
-        LinearLayout.LayoutParams bar=(LinearLayout.LayoutParams)selectionBar.getLayoutParams();if(bar!=null){bar.width=selecting?-1:-2;selectionBar.setLayoutParams(bar);}
+        boolean selecting=s.selecting;resultsCount.setVisibility(selecting?View.GONE:View.VISIBLE);
+        BatchSelectionUi.visible(selectionBar,selecting,resultsHeading);
         selectionCount.setText(s.selected.size()+"/"+matchingLessons.size());selectionCount.setContentDescription("已选 "+s.selected.size()+" 节，共 "+matchingLessons.size()+" 节");
         boolean all=!matchingLessons.isEmpty();for(ClassroomLesson lesson:matchingLessons)all&=s.selected.contains(ClassroomBatchWork.key(lesson));
         selectAll.setText(all?"取消":"全选");selectAll.setContentDescription(all?"取消本筛选的全部选择":"选中本筛选的全部课堂，包含其它分页");
         ClassroomBatchWork running=ClassroomBatchWork.find(s.account);boolean enabled=!s.localWork&&(running==null||!running.running)&&!s.selected.isEmpty();
         for(Button action:new Button[]{batchDownload,batchExport,batchDelete})action.setEnabled(enabled);
-        batchMenu.setEnabled(true);
+        batchMenu.setEnabled(enabled);
         for(java.util.Map.Entry<String,TextView> marker:selectionMarkers.entrySet()){boolean selected=s.selected.contains(marker.getKey());BatchSelectionUi.marker(marker.getValue(),selecting,selected);((View)marker.getValue().getParent()).setSelected(selected);}
         selectionBar.requestLayout();
     }
@@ -570,8 +578,9 @@ final class ClassroomSummaryPage extends SchedulePage {
     private List<ClassroomLesson> selectionSnapshot(){List<ClassroomLesson> result=new ArrayList<>();if(s!=null)for(ClassroomLesson lesson:allLessons().values())if(s.selected.contains(ClassroomBatchWork.key(lesson)))result.add(lesson);return result;}
     private void chooseBatchAction(){
         if(s==null)return;ClassroomBatchWork batch=ClassroomBatchWork.find(s.account);boolean actionable=!s.selected.isEmpty()&&!s.localWork&&(batch==null||!batch.running);
-        String[] actions=actionable?new String[]{"下载素材","导出 ZIP","删除本地资料","完成选择"}:new String[]{"完成选择"};
-        UiDialogs.choiceDialog(activity,"已选 "+s.selected.size()+" 节课堂",actions,-1,index->{if(!actionable||index==3){clearSelection();updateSelectionUi();}else if(index==0)downloadSelected();else if(index==1)exportSelected();else confirmDeleteSelected();});
+        if(!actionable)return;
+        String[] actions=new String[]{"下载素材","导出 ZIP","删除本地资料"};
+        UiDialogs.choiceDialog(activity,"已选 "+s.selected.size()+" 节课堂",actions,-1,index->{if(index==0)downloadSelected();else if(index==1)exportSelected();else confirmDeleteSelected();});
     }
     private String historyCourseTitle(){
         if(s==null||s.historyCourse.isEmpty())return "全部课程";
@@ -595,7 +604,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private void downloadSelected(){
         if(!canStartBatch())return;List<ClassroomLesson> snapshot=selectionSnapshot();if(snapshot.isEmpty())return;
-        ClassroomNotifications.requestPermission(activity);s.operationMessage="";ClassroomBatchWork.start(getApplicationContext(),s.account,snapshot);updateBatchStatus();updateSelectionUi();scheduleRefresh();
+        ClassroomNotifications.requestPermission(activity);s.operationMessage="";ClassroomBatchWork.start(getApplicationContext(),s.account,snapshot);clearSelection();updateBatchStatus();updateSelectionUi();scheduleRefresh();
     }
     private void confirmDeleteSelected(){
         if(!canStartBatch())return;List<ClassroomLesson> snapshot=selectionSnapshot();if(snapshot.isEmpty())return;
@@ -725,7 +734,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         active = true; settings.prefs.registerOnSharedPreferenceChangeListener(preference); checkAccount();
         if (firstPresentation) bodyHost.post(() -> {
             if (!isDestroyed() && active && firstPresentation) {
-                firstPresentation = false; UiMotion.enterPage(bodyHost);
+                UiMotion.enterPage(bodyHost,()->firstPresentation=false);
             }
         });
         if (s != null && s.initialized && !s.busy) s.load(Load.CACHE);
@@ -748,6 +757,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     @Override public Object onRetainNonConfigurationInstance() { return s != null && s.allowed() ? s : null; }
     @Override protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean("first_presentation",firstPresentation);
         if (s == null) return;
         state.putInt("mode", s.mode); state.putInt("page", s.page); state.putString("week", s.week.toString());
         state.putInt("scroll_y", scroll.getScrollY());

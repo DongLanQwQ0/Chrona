@@ -49,6 +49,8 @@ public final class AttachmentViewerActivity extends Activity {
     private float scale = 1f;
     private boolean matrixReady;
     private boolean immersiveLandscape;
+    private boolean firstImagePending;
+    private boolean imageEntranceScheduled;
     private ScaleGestureDetector scaleDetector;
     private GestureDetector gestureDetector;
 
@@ -95,6 +97,7 @@ public final class AttachmentViewerActivity extends Activity {
             }
         }catch(Exception failure){finish();return;}
         if(state!=null)savingRaw=state.getString("saving_raw");
+        firstImagePending=state==null||state.getBoolean("first_image_pending",false);
         FrameLayout stage = new FrameLayout(this);
         stage.addView(new GlassBackdropView(this),new FrameLayout.LayoutParams(-1,-1));
         FrameLayout safeArea=new FrameLayout(this);stage.addView(safeArea,new FrameLayout.LayoutParams(-1,-1));
@@ -105,6 +108,7 @@ public final class AttachmentViewerActivity extends Activity {
             getWindow().setAttributes(attributes);
         }
         pager=new ImageSlidePager(this,false);
+        if(firstImagePending)pager.setVisibility(View.INVISIBLE);
         image = pager.image();
         image.setScaleType(ImageView.ScaleType.MATRIX);
         image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大，长按拖放":classroomSummary?"总结图片，双指缩放或双击放大，长按拖放":"课堂PPT，双指缩放或双击放大，长按拖放");
@@ -162,13 +166,18 @@ public final class AttachmentViewerActivity extends Activity {
             if(classroomLesson!=null){rawName=gallery.get(selected);setResult(RESULT_OK,new Intent().putExtra(EXTRA_SELECTED_RAW,rawName));}
             scale=1f;matrixReady=false;fitImage();
             image.setContentDescription(classroomLesson==null?"图片附件，双指缩放或双击放大，长按拖放":(classroomSummary?"总结图片 ":"课堂PPT ")+(selected+1)+" / "+gallery.size()+"，双指缩放或双击放大，长按拖放");
+            if(firstImagePending&&!imageEntranceScheduled&&pager.ready()){
+                imageEntranceScheduled=true;
+                pager.setVisibility(View.VISIBLE);
+                UiMotion.enterPage(pager,()->firstImagePending=false);
+            }
         });
         ArrayList<String> items=new ArrayList<>();if(classroomLesson==null)items.add(imageName);else items.addAll(gallery);
         pager.setImages(items,classroomLesson==null?0:gallery.indexOf(rawName),new ImageSlidePager.Source(){
             public File file(String name)throws Exception{return classroomLesson==null?sourceFile():classroomSource(name);}
             public boolean allowed(){return classroomLesson==null||ClassroomMonitor.allowed(AttachmentViewerActivity.this,classroomAccount);}
         });
-        if(state==null){shell.post(()->UiMotion.enterPage(shell));pager.post(()->UiMotion.enterPage(pager));}
+        if(state==null)shell.post(()->UiMotion.enterPage(shell));
     }
 
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)updateSystemBars();}
@@ -277,7 +286,7 @@ public final class AttachmentViewerActivity extends Activity {
     }
     @Override protected void onResume(){super.onResume();if(classroomLesson!=null&&!ClassroomMonitor.allowed(this,classroomAccount))finish();}
     @Override protected void onPause(){if(pager!=null)pager.stop();super.onPause();}
-    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("selected_raw",rawName);state.putString("saving_raw",savingRaw);}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("selected_raw",rawName);state.putString("saving_raw",savingRaw);state.putBoolean("first_image_pending",firstImagePending);}
     @Override protected void onDestroy(){if(pager!=null)pager.close();super.onDestroy();}
 
     private int dp(int value) {

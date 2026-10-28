@@ -1545,12 +1545,6 @@ public final class TaskDetailActivity extends Activity {
             FrameLayout galleryViewport = new FrameLayout(this);
             galleryViewport.setClipChildren(true);
             galleryViewport.setClipToPadding(true);
-            galleryViewport.setClipToOutline(true);
-            galleryViewport.setOutlineProvider(new ViewOutlineProvider() {
-                @Override public void getOutline(View view, Outline outline) {
-                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(12));
-                }
-            });
             HorizontalScrollView gallery = new HorizontalScrollView(this);
             gallery.setHorizontalScrollBarEnabled(false);
             gallery.setClipChildren(true);

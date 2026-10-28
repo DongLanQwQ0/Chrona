@@ -33,7 +33,8 @@ final class AttachmentImageTile extends FrameLayout {
         setClipToOutline(true);
         setOutlineProvider(new ViewOutlineProvider() {
             @Override public void getOutline(View view, Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(12));
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(),
+                        dp(UiStyle.radius(activity, UiStyle.RADIUS_CARD)));
             }
         });
 

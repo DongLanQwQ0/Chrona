@@ -27,6 +27,7 @@ final class ClassroomNotifications {
     private static SharedPreferences observedPreferences;
     private static SharedPreferences.OnSharedPreferenceChangeListener accountChanges;
     private Notification latest;
+    private boolean running;
     private long lastPosted;
 
     ClassroomNotifications(Context context, String account, ClassroomLesson lesson) {
@@ -74,23 +75,55 @@ final class ClassroomNotifications {
         PendingIntent open = PendingIntent.getActivity(context, 2043,
                 new Intent(context, ClassroomSummaryActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(context, RUNNING).setSmallIcon(R.drawable.ic_chrona_foreground)
-                .setContentTitle("课堂后台处理").setContentText("正在处理 " + count + " 节课堂")
+                .setContentTitle("课堂后台处理").setContentText(count == 0 ? "正在准备课堂任务" : "正在处理 " + count + " 节课堂")
                 .setVisibility(Notification.VISIBILITY_PRIVATE).setOngoing(true).setOnlyAlertOnce(true)
                 .setContentIntent(open).setCategory(Notification.CATEGORY_PROGRESS).build();
     }
+
+    static Notification foreground(Context context, java.util.List<ClassroomLessonActivity.Session> sessions) {
+        if (sessions.size() == 1) {
+            ClassroomNotifications notices = sessions.get(0).notifications;
+            Notification detail = notices == null ? null : notices.runningSnapshot();
+            if (detail != null) return detail;
+        }
+        Notification base = foreground(context, sessions.size());
+        if (sessions.isEmpty()) return base;
+        StringBuilder detail = new StringBuilder();
+        for (ClassroomLessonActivity.Session session : sessions) {
+            if (detail.length() > 0) detail.append("\n\n");
+            detail.append(session.selected.course).append(" · ").append(session.selected.title);
+            Notification progress = session.notifications == null ? null : session.notifications.runningSnapshot();
+            if (progress != null) detail.append('\n').append(progress.extras.getCharSequence(Notification.EXTRA_TEXT));
+        }
+        return Notification.Builder.recoverBuilder(context, base).setContentTitle("课堂总结处理中")
+                .setStyle(new Notification.BigTextStyle().bigText(detail)).build();
+    }
+
+    synchronized Notification runningSnapshot() { return running ? latest : null; }
 
     synchronized void progress(ClassroomProgress value, boolean force) {
         try {
         String text = value.text();
         latest = builder(RUNNING, "课堂总结处理中", text).setOngoing(true).setOnlyAlertOnce(true)
                 .setContentIntent(openLesson()).setProgress(value.total, value.completed, value.total == 0).build();
+        running = true;
         if (force || SystemClock.elapsedRealtime() - lastPosted >= 1000) repost();
         } catch (Exception unavailable) { /* Notification failure is independent of classroom work. */ }
     }
 
     synchronized void finished(String result, boolean success) {
         try {
-        latest = builder(RESULTS, success ? "课堂处理完成" : "课堂处理已结束", result)
+        running = false;
+        String title = (success ? "课堂处理完成" : "课堂处理已结束")
+                + (lesson.course.isEmpty() ? "" : " · " + lesson.course);
+        String identity = lesson.title;
+        if (lesson.startsAt > 0) {
+            String time = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", java.util.Locale.ROOT)
+                    .withZone(ClassroomLesson.ZONE).format(java.time.Instant.ofEpochMilli(lesson.startsAt));
+            identity = time + (identity.isEmpty() ? "" : " · " + identity);
+        }
+        String text = identity.isEmpty() ? result : identity + "\n" + result;
+        latest = builder(RESULTS, title, text)
                 .setAutoCancel(true).setOngoing(false).setContentIntent(openLesson()).build();
         repost();
         } catch (Exception unavailable) { clear(); }
@@ -116,6 +149,9 @@ final class ClassroomNotifications {
         try {
         ZjuSettingsStore settings = new ZjuSettingsStore(app);
         if (!settings.enabled() || !settings.configured() || !account.equals(settings.account())) { clear(); return; }
+        if (latest != null && running && ClassroomWorkService.updateProgress(this)) {
+            cancelTag(); lastPosted = SystemClock.elapsedRealtime(); return;
+        }
         if (latest == null || Build.VERSION.SDK_INT >= 33 && app.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) return;
         NotificationManager manager = app.getSystemService(NotificationManager.class);
@@ -128,6 +164,12 @@ final class ClassroomNotifications {
 
     synchronized void clear() {
         latest = null;
+        running = false;
+        ClassroomWorkService.updateProgress(this);
+        cancelTag();
+    }
+
+    private void cancelTag() {
         try {
         NotificationManager manager = app.getSystemService(NotificationManager.class);
         if (manager != null) manager.cancel(tag, 0);

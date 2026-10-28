@@ -43,6 +43,10 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         if("cached_background".equals(args.getString("mode"))){ThemeStore.setMode(app,args.getString("theme","light"));report.putString("cached_background_report",cachedBackground(app,settings));finish(-1,report);return;}
         settings.prefs.edit().putString("account","00000000-0000-0000-0000-000000000036").putString("credentials","synthetic-not-a-login").putBoolean("enabled",true).commit();
         ThemeStore.setMode(app,args.getString("theme","light"));ClassroomStore store=new ClassroomStore(app,settings.account());
+        if("fixture_cleanup".equals(args.getString("mode"))){report.putString("fixture_cleanup_report",ClassroomWorkDeviceCheck.cleanupOwnedResults(this));cleanupSelectionResults(app,settings.account());finish(-1,report);return;}
+        if("selection_navigation".equals(args.getString("mode"))){report.putString("selection_navigation_report",selectionNavigation(app,store));finish(-1,report);return;}
+        if("classroom_work".equals(args.getString("mode"))){report.putString("classroom_work_report",ClassroomWorkDeviceCheck.run(this));finish(-1,report);return;}
+        if("classroom_notifications".equals(args.getString("mode"))){if(Build.VERSION.SDK_INT>=33)getUiAutomation().grantRuntimePermission(app.getPackageName(),android.Manifest.permission.POST_NOTIFICATIONS);report.putString("classroom_notifications_report",ClassroomNotificationDeviceCheck.run(this));finish(-1,report);return;}
         List<ClassroomLesson> catalog=new ArrayList<>();long now=System.currentTimeMillis();
         for(int i=0;i<54;i++){ClassroomLesson lesson=new ClassroomLesson("701",Integer.toString(71000+i),"批量课程甲","第 "+(i+1)+" 讲","教室A","6",now-(i+1)*3600000L);catalog.add(lesson);fixture(store.localLesson(lesson),lesson,i<2,i==1);}
         ClassroomLesson offline=new ClassroomLesson("702","72000","批量课程甲","离线共享课堂","","6",now-3600000L);
@@ -55,7 +59,7 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         require(((List<?>)field(session(),"history")).size()==56,"complete history includes offline shared, draft and downloaded-only");
         tap((View)field(page(),"historyCourse"));tapText("批量课程甲（701）");await(()->"701".equals(field(session(),"historyCourse")),"courseId filter selected");
         require(((List<?>)field(page(),"matchingLessons")).size()==54,"filter applies to complete history before pagination");
-        capture("history-filter");tap((View)field(page(),"selectModeButton"));tap((View)field(page(),"selectAll"));require(((Set<?>)field(session(),"selected")).size()==54,"all selects across two pages");
+        capture("history-filter");enterSelectionByLongPress();tap((View)field(page(),"selectAll"));require(((Set<?>)field(session(),"selected")).size()==54,"all selects across two pages");
         capture("selection-all");DateIntervalBar pages=(DateIntervalBar)field(page(),"pageBar");tap(pages.getChildAt(2));await(()->(int)field(session(),"page")==1,"second page reached by real tap");
         require(((Map<?,?>)field(page(),"selectionMarkers")).size()==4,"remaining four rows retain selection");
         Object retained=session();Activity previous=lastResumed;runOnMainSync(previous::recreate);await(()->lastResumed!=previous&&session()==retained&&!busy(),"rotation/recreate retains selection owner");require(((Set<?>)field(session(),"selected")).size()==54,"recreate keeps cross-page selection");
@@ -78,6 +82,97 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
     }catch(Throwable failure){try{capture("failure-"+args.getString("mode","classroom"));}catch(Exception captureFailure){failure.addSuppressed(captureFailure);}report.putString("error",android.util.Log.getStackTraceString(failure));finish(0,report);}finally{
         if(!manualSeed){if(lastResumed!=null)runOnMainSync(()->lastResumed.finish());if(!"dashboard_batch".equals(args.getString("mode")))new ZjuSettingsStore(getTargetContext()).prefs.edit().putBoolean("enabled",false).commit();}
     }}
+    private String selectionNavigation(Context app,ClassroomStore store)throws Exception {
+        if(Build.VERSION.SDK_INT>=33)getUiAutomation().grantRuntimePermission(app.getPackageName(),android.Manifest.permission.POST_NOTIFICATIONS);
+        List<ClassroomLesson> previous=store.catalog(),catalog=new ArrayList<>();
+        String identity=Long.toUnsignedString(System.nanoTime());long now=System.currentTimeMillis();
+        for(int i=0;i<24;i++)catalog.add(new ClassroomLesson("777171",identity+i,"选择导航课程","第 "+i+" 讲","教室A","6",now-(i+1)*3600000L));
+        ClassroomLesson cached=new ClassroomLesson("777172",identity,"选择导航历史","完整缓存","教室A","6",now-3600000L);
+        catalog.add(cached);fixture(store.localLesson(cached),cached,false,false);store.catalog(catalog);
+        java.net.ProxySelector proxy=java.net.ProxySelector.getDefault();java.util.concurrent.atomic.AtomicInteger network=new java.util.concurrent.atomic.AtomicInteger();
+        java.net.ProxySelector.setDefault(new java.net.ProxySelector(){public List<java.net.Proxy> select(java.net.URI uri){network.incrementAndGet();throw new SecurityException("Selection fixture forbids network");}public void connectFailed(java.net.URI uri,java.net.SocketAddress at,IOException error){}});
+        try {
+            Activity owner=startActivitySync(new Intent(app,ClassroomSummaryActivity.class).putExtra("classroom_mode",1).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            await(()->lastResumed==owner&&page()!=null&&!busy()&&((List<?>)field(page(),"matchingLessons")).size()==24,"classroom list ready");
+            ClassroomSummaryPage selectedPage=(ClassroomSummaryPage)page();Object ownerSession=session();
+            View firstCard=(View)((Map<?,TextView>)field(page(),"selectionMarkers")).values().iterator().next().getParent();
+            assertHeldEnvelope(firstCard,"classroom-card-held");
+            View originalBody=(View)field(page(),"listBody");TextView count=(TextView)field(page(),"resultsCount");
+            int[] originalAt=new int[2];runOnMainSync(()->count.getLocationInWindow(originalAt));
+            enterSelectionByLongPress();require((boolean)field(session(),"selecting")&&((Set<?>)field(session(),"selected")).size()==1,"long press enters mode and selects held lesson");
+            assertHeldEnvelope((View)field(page(),"selectAll"),"selection-action-held");
+            require(findText(owner.getWindow().getDecorView(),"完成")==null&&findText(owner.getWindow().getDecorView(),"选择")==null,"explicit selection buttons removed");
+            ScrollView scroll=(ScrollView)field(page(),"listScroll");runOnMainSync(()->scroll.scrollTo(0,160));waitForIdleSync();int before=scroll.getScrollY();
+            List<Integer> restoredX=new ArrayList<>();android.view.ViewTreeObserver.OnPreDrawListener observer=()->{if(count.isShown()){int[] at=new int[2];count.getLocationInWindow(at);restoredX.add(at[0]);}return true;};
+            runOnMainSync(()->count.getViewTreeObserver().addOnPreDrawListener(observer));
+            sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+            await(()->!(boolean)field(ownerSession,"selecting")&&count.isShown(),"back exits selection only");
+            require(lastResumed==owner&&!owner.isFinishing()&&page()==selectedPage&&session()==ownerSession,"back retains page and session");
+            require(((Set<?>)field(ownerSession,"selected")).isEmpty()&&field(page(),"listBody")==originalBody,"back clears selection without rebuilding rows");
+            require(scroll.getScrollY()==before,"back retains reading offset");
+            runOnMainSync(()->count.getViewTreeObserver().removeOnPreDrawListener(observer));
+            require(!restoredX.isEmpty()&&restoredX.stream().allMatch(x->Math.abs(x-originalAt[0])<=1),"normal count never shifts horizontally "+restoredX);
+            for(int i=0;i<3;i++){enterSelectionByLongPress();sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);await(count::isShown,"rapid selection returns to stable heading");}
+            capture("selection-back-restored");
+            tapText("历史");await(()->(int)field(session(),"mode")==3&&!busy(),"history ready");
+            LinearLayout tools=(LinearLayout)field(page(),"historyTools");View course=(View)field(page(),"historyCourse"),order=(View)field(page(),"historyOrder"),direction=(View)field(page(),"historyDirection"),refresh=(View)field(page(),"refresh");
+            require(Math.abs(course.getWidth()*2-tools.getWidth())<=1,"course filter occupies half row");
+            require(direction.getWidth()==refresh.getWidth()&&direction.getHeight()==refresh.getHeight(),"direction matches refresh 48dp geometry");
+            int[] c=new int[2],o=new int[2],d=new int[2];runOnMainSync(()->{course.getLocationInWindow(c);order.getLocationInWindow(o);direction.getLocationInWindow(d);});
+            require(c[0]+course.getWidth()<o[0]&&o[0]+order.getWidth()<d[0],"course order direction stay left-to-right with gaps");
+            capture("history-one-row-tools");
+            View historyCard=(View)((Map<?,TextView>)field(page(),"selectionMarkers")).values().iterator().next().getParent();assertHeldEnvelope(historyCard,"history-card-held");
+            tap(course);tapText("选择导航历史");await(()->"777172".equals(field(session(),"historyCourse"))&&!busy(),"cached history filter");
+            enterSelectionByLongPress();
+            View download=(View)field(page(),"batchDownload");if(download.isShown())tap(download);else{tap((View)field(page(),"batchMenu"));tapText("下载素材");}
+            await(()->!(boolean)field(session(),"selecting")&&((Set<?>)field(session(),"selected")).isEmpty(),"download exits selection");
+            await(()->{ClassroomBatchWork work=ClassroomBatchWork.find(new ZjuSettingsStore(app).account());return work==null||!work.running;},"cached download settles");
+            require(network.get()==0,"cached download uses no network or AI");capture("download-exits-selection");
+            tapText("监视");await(()->(int)field(session(),"mode")==2&&!busy(),"monitor overview ready");
+            runOnMainSync(()->{try{Object ownerState=session();Field monitoring=ownerState.getClass().getDeclaredField("monitoring");monitoring.setAccessible(true);monitoring.set(ownerState,new JSONObject().put("rules",new JSONArray().put(new JSONObject().put("lesson",cached.json()).put("repeat",false))).put("catalog",new JSONArray()).put("done",new JSONArray()));invoke(page(),"update");}catch(Exception error){throw new AssertionError(error);}});
+            assertHeldEnvelope(((LinearLayout)field(page(),"listBody")).getChildAt(0),"monitor-card-held");
+            sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);await(owner::isFinishing,"next back leaves workspace normally");
+            return "PASS: "+assertions+" assertions; classroom/history long-press/back, stable heading, half-width tools and download exits; zero network";
+        } finally {java.net.ProxySelector.setDefault(proxy);store.catalog(previous);store.deleteLesson(cached,()->{});app.getSystemService(android.app.NotificationManager.class).cancel("classroom:"+new ZjuSettingsStore(app).account()+":"+cached.courseId+":"+cached.id,0);}
+    }
+    private static void cleanupSelectionResults(Context app,String account){
+        if(!"00000000-0000-0000-0000-000000000036".equals(account)||ClassroomBatchWork.find(account)!=null)throw new SecurityException("Owned idle selection fixture required");
+        android.app.NotificationManager manager=app.getSystemService(android.app.NotificationManager.class);
+        String prefix="classroom:"+account+":777172:";
+        for(android.service.notification.StatusBarNotification notice:manager.getActiveNotifications()){
+            String tag=notice.getTag();android.app.Notification notification=notice.getNotification();
+            if(notice.getId()==0&&tag!=null&&tag.startsWith(prefix)&&tag.substring(prefix.length()).matches("[0-9]+")&&"chrona_classroom_results".equals(notification.getChannelId())&&(notification.flags&android.app.Notification.FLAG_ONGOING_EVENT)==0)manager.cancel(tag,0);
+        }
+    }
+    private static TextView findText(View root,String value){if(root instanceof TextView text&&value.contentEquals(text.getText()))return text;if(root instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){TextView text=findText(group.getChildAt(i),value);if(text!=null)return text;}return null;}
+    private void enterSelectionByLongPress(){View row=(View)((Map<?,TextView>)field(page(),"selectionMarkers")).values().iterator().next().getParent();longPress(row,()->(boolean)field(session(),"selecting"));}
+    private void assertHeldEnvelope(View target,String imageName)throws Exception {
+        boolean selectingBefore=(boolean)field(session(),"selecting");
+        runOnMainSync(()->target.requestRectangleOnScreen(new Rect(0,0,target.getWidth(),target.getHeight()),true));waitForIdleSync();
+        int[] at=new int[2];runOnMainSync(()->target.getLocationOnScreen(at));long down=SystemClock.uptimeMillis();
+        MotionEvent event=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,at[0]+target.getWidth()/2f,at[1]+target.getHeight()/2f,0);
+        try{sendPointerSync(event);}finally{event.recycle();}
+        Bitmap peak=null;
+        try{
+            SystemClock.sleep(180);
+            runOnMainSync(()->{
+                require(target.getScaleX()>1.04f,"real held feedback reaches original scale");
+                Matrix matrix=new Matrix();target.transformMatrixToGlobal(matrix);RectF bounds=new RectF(0,0,target.getWidth(),target.getHeight());matrix.mapRect(bounds);
+                ScrollView viewport=(ScrollView)field(page(),"listScroll");int[] origin=new int[2];viewport.getLocationOnScreen(origin);
+                for(android.view.ViewParent parent=target.getParent();parent instanceof android.view.ViewGroup group;parent=parent.getParent()){
+                    require(!group.getClipChildren()&&!group.getClipToPadding(),"held drawing traverses unclipped intermediate "+group.getClass().getSimpleName());
+                    if(group==viewport)break;
+                }
+                require(viewport.getClipBounds()!=null,"actual viewport still protects outer bounds");
+                require(bounds.left>=origin[0]-.5f&&bounds.right<=origin[0]+viewport.getWidth()+.5f,"held horizontal envelope fits real viewport "+bounds);
+                require(bounds.top>=origin[1]-.5f&&bounds.bottom<=origin[1]+viewport.getHeight()+.5f,"held vertical envelope fits real viewport "+bounds);
+            });
+            peak=getUiAutomation().takeScreenshot();
+        }finally{MotionEvent cancel=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_CANCEL,at[0]+target.getWidth()/2f,at[1]+target.getHeight()/2f,0);try{sendPointerSync(cancel);}finally{cancel.recycle();}SystemClock.sleep(200);}
+        if(!selectingBefore&&(boolean)field(session(),"selecting"))runOnMainSync(()->page().handleBack());
+        if(peak!=null){float scale=Math.min(1f,1200f/Math.max(peak.getWidth(),peak.getHeight()));Bitmap small=Bitmap.createScaledBitmap(peak,Math.round(peak.getWidth()*scale),Math.round(peak.getHeight()*scale),true);try(OutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"batch-"+imageName+"-"+args.getString("theme","light")+"-font1.jpg"))){small.compress(Bitmap.CompressFormat.JPEG,75,out);}if(small!=peak)small.recycle();peak.recycle();}
+    }
+
     private String cachedBackground(Context app,ZjuSettingsStore settings)throws Exception {
         require(staticField(ClassroomWorkService.class,"instance")==null,"cache fixture refuses an existing classroom foreground owner");
         settings.save("chrona-local-cache-fixture","synthetic-no-network");settings.prefs.edit().putString("account","00000000-0000-0000-0000-000000000036").putBoolean("enabled",true).putBoolean("timetable",false).commit();

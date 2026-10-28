@@ -37,8 +37,10 @@ swap = '\n'.join(method(style, marker) for marker in (
     'public static void swap(View snapshotOf, View container, Runnable rebuild)',
     'static void swap(View snapshotOf, View container, Runnable rebuild, int direction)',
     'static void finishSwap(View container)',
+    'static void enterPage(View view)',
+    'static void enterPage(View view, Runnable onPresented)',
     'private static boolean hostsSeveralChildren(ViewGroup host)',
-    'private static void dropSwapGhosts(ViewGroup host)')).replace('android.widget.HorizontalScrollView', 'HorizontalScrollView')
+    'private static void dropSwapGhosts(ViewGroup host)')).replace('android.widget.HorizontalScrollView', 'HorizontalScrollView').replace('android.view.ViewTreeObserver', 'ViewTreeObserver')
 
 harness = r'''
 import java.util.*;
@@ -56,14 +58,19 @@ class Rect {
 class Resources { Display getDisplayMetrics(){return new Display();} }
 class Display { float density=1; }
 class ViewTreeObserver {
+ interface OnPreDrawListener{boolean onPreDraw();}
  interface OnScrollChangedListener{void onScrollChanged();}
  interface OnGlobalLayoutListener{void onGlobalLayout();}
  List<OnScrollChangedListener> scroll=new ArrayList<>(); List<OnGlobalLayoutListener> layout=new ArrayList<>();
+ List<OnPreDrawListener> preDraw=new ArrayList<>();
  boolean isAlive(){return true;}
  void addOnScrollChangedListener(OnScrollChangedListener x){scroll.add(x);}
  void removeOnScrollChangedListener(OnScrollChangedListener x){scroll.remove(x);}
  void addOnGlobalLayoutListener(OnGlobalLayoutListener x){layout.add(x);}
  void removeOnGlobalLayoutListener(OnGlobalLayoutListener x){layout.remove(x);}
+ void addOnPreDrawListener(OnPreDrawListener x){preDraw.add(x);}
+ void removeOnPreDrawListener(OnPreDrawListener x){preDraw.remove(x);}
+ void draw(){for(var x:new ArrayList<>(preDraw))x.onPreDraw();}
 }
 class Animator {
  View view; int starts,cancels; float alpha,y; Runnable end; Consumer<ValueAnimator> update;
@@ -128,6 +135,7 @@ class Bitmap {
 class Canvas { static float dx,dy;static int drawnChildren;Canvas(Bitmap b){}void scale(float x,float y){}void translate(float x,float y){dx=x;dy=y;} }
 public class NativeMotionCoreCheck {
  static final Object SWAP_GHOST=new Object();static final long SWAP_MILLIS=220;
+ static final long ENTER=240;static final Interpolator SETTLE=new Interpolator();
  static final WeakHashMap<View,java.lang.ref.WeakReference<Runnable>> PENDING_ENTRANCES=new WeakHashMap<>();
  static boolean isEnabled(){return ValueAnimator.areAnimatorsEnabled();}
  @@LIMITS@@
@@ -137,6 +145,23 @@ public class NativeMotionCoreCheck {
  static int count;
  static void check(boolean ok,String label){count++;if(!ok)throw new AssertionError(label);}
  public static void main(String[] args){
+  int[] presented={0};View firstPage=new View();enterPage(firstPage,()->presented[0]++);
+  check(presented[0]==0&&firstPage.alpha==0,"first data remains pending before pre-draw");
+  firstPage.tree.draw();check(presented[0]==0&&firstPage.frames.size()==1,"pre-draw does not consume the marker before the start frame");
+  Runnable staleStart=firstPage.frames.get(0);finishSwap(firstPage);staleStart.run();
+  check(presented[0]==0&&firstPage.alpha==1&&firstPage.frames.isEmpty(),"cancel before start preserves first presentation even for a dequeued stale callback");
+  enterPage(firstPage,()->presented[0]++);firstPage.tree.draw();firstPage.frame();firstPage.frame();
+  check(presented[0]==1&&firstPage.animator.starts==1,"attached drawable frame confirms exactly once");
+  View detachedPage=new View();enterPage(detachedPage,()->presented[0]++);detachedPage.tree.draw();detachedPage.detach();detachedPage.frame();
+  check(presented[0]==1&&detachedPage.alpha==1&&detachedPage.tree.preDraw.isEmpty(),"detach before first frame never confirms");
+  ValueAnimator.enabled=false;View reducedPage=new View();enterPage(reducedPage,()->presented[0]++);
+  check(presented[0]==1&&reducedPage.alpha==1,"reduced motion keeps final pixels but waits for layout confirmation");
+  reducedPage.tree.draw();reducedPage.frame();
+  check(presented[0]==2&&reducedPage.animator.starts==0&&reducedPage.y==0,"reduced motion confirms at the drawable frame without animation");
+  View legacyReduced=new View();enterPage(legacyReduced);check(legacyReduced.tree.preDraw.isEmpty(),"single-argument reduced-motion behavior stays immediate");
+  ValueAnimator.enabled=true;FrameLayout firstHost=new FrameLayout();View superseded=new View();firstHost.add(superseded);
+  enterPage(superseded,()->presented[0]++);superseded.tree.draw();swap(superseded,superseded,()->{});superseded.frame();
+  check(presented[0]==2,"directional swap cancels an unpresented data entrance without confirmation");finishSwap(superseded);
   ScrollView viewport=new ScrollView();ViewGroup content=new ViewGroup();View a=new View(),b=new View();b.visible=false;content.add(a);content.add(b);
   UiMotion.observeScroll(viewport,content);UiMotion.observeScroll(viewport,content);
   check(viewport.frames.size()==1&&viewport.tree.scroll.size()==1,"binding and frame coalescing");
@@ -199,7 +224,7 @@ public class NativeMotionCoreCheck {
 harness = re.sub(r'snapshot\((longPage)\)', r'snapshot(\1,false)', harness)
 # Append the unmodified observer and motion implementations, only replacing Android imports.
 harness += '\n' + production('UiMotion.java') + '\n' + production('ScrollRevealObserver.java')
-directory = ROOT / 'build/native-motion-core-check'
+directory = Path(os.environ.get('CHECK_OUTPUT_DIR', ROOT / 'build/native-motion-core-check'))
 directory.mkdir(parents=True, exist_ok=True)
 java_file = directory / 'NativeMotionCoreCheck.java'
 java_file.write_text(harness, encoding='utf-8')

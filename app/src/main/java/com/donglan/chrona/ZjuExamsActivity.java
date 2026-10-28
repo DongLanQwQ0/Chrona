@@ -139,7 +139,7 @@ public final class ZjuExamsActivity extends Activity {
         }
         presentData();
     }
-    private void presentData(){if(firstDataPresentation){firstDataPresentation=false;UiMotion.enterPage(content);}}
+    private void presentData(){if(firstDataPresentation)UiMotion.enterPage(content,()->firstDataPresentation=false);}
     private TextView text(String value,int size,boolean primary){
         TextView text=new TextView(this);text.setText(value);text.setTextSize(size);text.setIncludeFontPadding(false);
         if(primary)UiStyle.title(text);else UiStyle.muted(text);return text;

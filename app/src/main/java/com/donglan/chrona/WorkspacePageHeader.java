@@ -33,7 +33,8 @@ final class WorkspacePageHeader extends LinearLayout {
         setClipChildren(false); setClipToPadding(false);
         setChildrenDrawingOrderEnabled(true);
         setMinimumHeight(dp(UiStyle.HEADER_HEIGHT_DP));
-        addView(icon(activity, R.drawable.ic_arrow_left, "返回", activity::finish),
+        Runnable back = activity instanceof ScheduleWorkspaceActivity workspace ? workspace::onBackPressed : activity::finish;
+        addView(icon(activity, R.drawable.ic_arrow_left, "返回", back),
                 new LinearLayout.LayoutParams(dp(48), dp(48)));
         LinearLayout.LayoutParams center = new LinearLayout.LayoutParams(0, -2, 1);
         center.setMargins(dp(8), 0, action == null ? 0 : dp(8), 0);

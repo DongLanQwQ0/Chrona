@@ -28,7 +28,7 @@ def method(text, marker):
 
 files = {
     'android/app/Activity.java': '''package android.app; public class Activity {
-public android.content.res.Resources resources=new android.content.res.Resources();
+public int cornerLevel=4;public android.content.res.Resources resources=new android.content.res.Resources();
 public android.content.res.Resources getResources(){return resources;}}''',
     'android/content/res/Resources.java': '''package android.content.res; public class Resources {
 public Metrics metrics=new Metrics();public Metrics getDisplayMetrics(){return metrics;}
@@ -36,7 +36,7 @@ public static class Metrics {public float density=1,scaledDensity=1;}}''',
     'android/content/res/ColorStateList.java': '''package android.content.res; public class ColorStateList {
 public int color;public static ColorStateList valueOf(int c){ColorStateList s=new ColorStateList();s.color=c;return s;}}''',
     'android/net/Uri.java': 'package android.net; public class Uri {}',
-    'android/graphics/Outline.java': 'package android.graphics; public class Outline {public void setRoundRect(int a,int b,int c,int d,int e){}}',
+    'android/graphics/Outline.java': 'package android.graphics; public class Outline {public int radius;public void setRoundRect(int a,int b,int c,int d,int e){radius=e;}}',
     'android/view/Gravity.java': 'package android.view; public class Gravity {public static final int TOP=48,END=8388613;}',
     'android/view/ViewOutlineProvider.java': 'package android.view; public abstract class ViewOutlineProvider {public abstract void getOutline(View v,android.graphics.Outline o);}',
     'android/view/View.java': '''package android.view; public class View {
@@ -45,10 +45,11 @@ public View(android.app.Activity a){activity=a;}public android.content.res.Resou
 public int getWidth(){return 36;}public int getHeight(){return 36;}public void setPadding(int a,int c,int d,int e){l=a;t=c;r=d;b=e;}
 public void setMinimumWidth(int v){minW=v;}public void setMinimumHeight(int v){minH=v;}
 public void setBackgroundColor(int v){}public void setContentDescription(String v){description=v;}
-public interface Click {void call(View v);}public void setOnClickListener(Click c){listener=c;}}''',
+public interface Click {void call(View v);}public void setOnClickListener(Click c){listener=c;}
+public interface LongClick {boolean call(View v);}public void setOnLongClickListener(LongClick c){}}''',
     'android/widget/FrameLayout.java': '''package android.widget;public class FrameLayout extends android.view.View {
 public java.util.List<android.view.View> children=new java.util.ArrayList<>();public java.util.List<LayoutParams> params=new java.util.ArrayList<>();
-public FrameLayout(android.app.Activity a){super(a);}public void setClipChildren(boolean b){}public void setClipToPadding(boolean b){}public void setClipToOutline(boolean b){}public void setOutlineProvider(android.view.ViewOutlineProvider p){}
+public android.view.ViewOutlineProvider outline;public FrameLayout(android.app.Activity a){super(a);}public void setClipChildren(boolean b){}public void setClipToPadding(boolean b){}public void setClipToOutline(boolean b){}public void setOutlineProvider(android.view.ViewOutlineProvider p){outline=p;}
 public void addView(android.view.View v,LayoutParams p){children.add(v);params.add(p);}
 public static class LayoutParams {public int width,height,gravity,topMargin,rightMargin;public LayoutParams(int w,int h){width=w;height=h;}public LayoutParams(int w,int h,int g){this(w,h);gravity=g;}public void setMargins(int l,int t,int r,int b){topMargin=t;rightMargin=r;}}}''',
     'android/widget/ImageView.java': '''package android.widget;public class ImageView extends android.view.View {
@@ -56,8 +57,11 @@ public enum ScaleType {CENTER_CROP,CENTER_INSIDE}public ScaleType scale;public i
 public ImageView(android.app.Activity a){super(a);}public void setScaleType(ScaleType s){scale=s;}public void setImageResource(int r){resource=r;}public void setImageTintList(android.content.res.ColorStateList c){tint=c;}}''',
     'android/widget/ImageButton.java': 'package android.widget;public class ImageButton extends ImageView {public ImageButton(android.app.Activity a){super(a);}}',
     'com/donglan/chrona/R.java': 'package com.donglan.chrona;class R {static class drawable {static final int ic_x=7;}}',
-    'com/donglan/chrona/UiStyle.java': '''package com.donglan.chrona;class UiStyle {static class Colors {int primary=0x553388,surfaceAlt=0xffffff;}static Colors colors(android.app.Activity a){return new Colors();}static void glass(android.view.View v){v.glass=true;}static void pressable(android.view.View v){v.pressable=true;}}''',
+    'com/donglan/chrona/UiStyle.java': '''package com.donglan.chrona;class UiStyle {static final int RADIUS_CARD=CornerScale.CARD;static int radius(android.app.Activity a,int token){return CornerScale.radius(token,a.cornerLevel);}static class Colors {int primary=0x553388,surfaceAlt=0xffffff;}static Colors colors(android.app.Activity a){return new Colors();}static void glass(android.view.View v){v.glass=true;}static void pressable(android.view.View v){v.pressable=true;}}''',
+    'com/donglan/chrona/ImageDrag.java': 'package com.donglan.chrona;class ImageDrag {static boolean start(android.app.Activity a,android.widget.ImageView v,android.net.Uri u){return true;}}',
+    'com/donglan/chrona/ImageTransferProvider.java': 'package com.donglan.chrona;class ImageTransferProvider {static android.net.Uri attachment(android.app.Activity a,String n){return new android.net.Uri();}}',
 }
+files['com/donglan/chrona/CornerScale.java'] = (ROOT/'app/src/main/java/com/donglan/chrona/CornerScale.java').read_text(encoding='utf-8')
 text = SOURCE.read_text(encoding='utf-8')
 files['com/donglan/chrona/AttachmentImageTile.java'] = '''package com.donglan.chrona;
 import android.app.Activity;import android.net.Uri;import android.view.*;import android.graphics.Outline;import android.widget.*;
@@ -69,6 +73,7 @@ for(float density:new float[]{1,1.5f,2,2.625f,3,3.5f})for(float font:new float[]
 android.app.Activity a=new android.app.Activity();a.resources.metrics.density=density;a.resources.metrics.scaledDensity=density*font;
 int[] calls={0,0};AttachmentImageTile tile=new AttachmentImageTile(a,new android.net.Uri(),"photo",()->calls[0]++,()->calls[1]++);
 check(tile.children.size()==2,"preview/remove hierarchy");check(tile.children.get(1) instanceof ImageButton,"vector image button");
+for(int level=1;level<=5;level++){a.cornerLevel=level;android.graphics.Outline o=new android.graphics.Outline();tile.outline.getOutline(tile,o);check(o.radius==Math.round(CornerScale.radius(CornerScale.CARD,level)*density),"live public card radius level "+level);}a.cornerLevel=4;
 ImageButton b=(ImageButton)tile.children.get(1);FrameLayout.LayoutParams p=tile.params.get(1);
 check(p.width==Math.round(36*density)&&p.height==p.width&&b.minW==p.width&&b.minH==p.height,"preserved 36dp control");
 check(p.gravity==(android.view.Gravity.TOP|android.view.Gravity.END)&&p.topMargin==Math.round(6*density)&&p.rightMargin==p.topMargin,"preserved placement");
@@ -134,4 +139,5 @@ for line in sorted(set(result.stdout.splitlines())):
         mask.save(OUT/'x-visible-mask-3x.png')
     print(f'density={density:g}: button={size}px visible bounds={bounds}, center error <=0.5px')
 print('18 actual constructor executions passed across density/font scales; offline rasterization, no Android rendering.')
+print('All five public card radius levels execute through the actual outline provider, including live level changes.')
 print('Asymmetric padding regression rejected while outer button placement remains unchanged.')
