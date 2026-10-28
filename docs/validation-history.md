@@ -1,5 +1,14 @@
 # 验证记录
 
+## 0.15.59 — 日程教务考试类型 — 2026-10-28
+
+- 用户明确考试仅来自教务系统。日程增加只读考试投影，原生与Web共用`ScheduleListing`；全部类型也包含考试，手动与AI仍保留原三类。按官方时间／星期、考场、座位显示，复用只读详情；不创建候选或系统副本，不参与完成、确认或批量写入／删除。
+- 正常Android36隔离包`build/exams-schedule-native-light.txt`46项通过：真实SQLite混合59行／3页正反序与跨页定位、只读全选ID隔离、四种范围、日期／搜索／日历状态、缓存刷新及账号／停用／损坏，真实LAN配对与只读API，原生实际触摸筛选、详情、旋转、取消草稿与清除。`build/exams-schedule-native-landscape.txt`6项通过，补拍等待旋转完成后的稳定横屏详情。未覆盖DPI或分辨率；临时测试数据只在隔离包内。
+- `checks/schedule_query_check.py`通过，原三类SQL／逾期／重复／4008行分页合同不变，见`build/exams-schedule-query.txt`。生产Web资产在真实Edge＋模拟手机API的原日常回归和新增考试操作通过，见`build/exams-schedule-web.txt`；414竖屏通过公共筛选选择考试，桌面混合全选仅38条可编辑本地项；编辑类别仍为3。手机竖屏原本隐藏独立类型下拉框，新增检查使用实际筛选入口，未为测试改变产品布局。
+- 压缩JPEG：`build/exam-schedule-{portrait-light,landscape-dark}-{filter,list,detail}.jpg`及`build/lan-daily-workspace/{phone-official-exam-dark,phone-official-exam-detail,landscape-official-exam-dark}.jpg`。主代理及持续复用的只读`ui_review`亲看签收本轮受检范围；最初横屏详情过渡帧已由稳定帧替换。
+- release＋lintRelease成功，`build/release-0.15.59-build.txt`；固定APK`build/candidates/0.15.59/Chrona-0.15.59.apk`3241802字节、221／0.15.59、非debug、原签名，证书和包元信息见`build/release-0.15.59-{signature,package}.txt`。
+- 当前USB未发现手机，最后无线地址10.195.39.39:46721连接超时，未覆盖安装；不把模拟器或模拟API证据称为新版本真机验收。0.15.58的真实官方查询证据仍适用于未改变的考试获取协议。
+
 ## 0.15.58 — 折姜星辰考试查询 — 2026-10-27
 
 - 普通Git推送因github.com:443连接超时未完成，随后该端口TCP=False、api.github.com:443=True；未修改代理或重置登录。0.15.58已在手机可用，尚未发布GitHub。更新前原LAN服务已通过正常设置恢复，最后确认服务运行，未中断课堂／AI工作。

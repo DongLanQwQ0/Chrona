@@ -357,7 +357,7 @@ final class LanWebServer extends NanoHTTPD {
         }
         if (path.equals("/api/schedule")) {
             int page=integer(request.getParms().get("page"),0,0,100000); String search=request.getParms().getOrDefault("search",""); if(search.length()>256) throw new IllegalArgumentException();
-            String category=request.getParms().get("category"); if(category!=null&&!Arrays.asList(EventCategory.VALUES).contains(category))throw new IllegalArgumentException();
+            String category=request.getParms().get("category"); if(category!=null&&!Arrays.asList(EventCategory.VALUES).contains(category)&&!com.donglan.chrona.data.ScheduleFilterState.EXAM.equals(category))throw new IllegalArgumentException();
             int tab=integer(request.getParms().get("tab"),0,0,3), publication=integer(request.getParms().get("publication"),0,0,3), todo=integer(request.getParms().get("todo"),0,0,3);
             LocalDate from=request.getParms().containsKey("from")?LocalDate.parse(request.getParms().get("from")):null;
             LocalDate until=request.getParms().containsKey("until")?LocalDate.parse(request.getParms().get("until")):null;
@@ -383,15 +383,14 @@ final class LanWebServer extends NanoHTTPD {
             }
             ScheduleQuery query=new ScheduleQuery(tab,category,publication,search,from,until,System.currentTimeMillis(),ZoneId.systemDefault(),todo);
             boolean oldestFirst=request.getParms().containsKey("oldestFirst")?Boolean.parseBoolean(request.getParms().get("oldestFirst")):ScheduleOrderPreferences.oldestFirst(context,tab);
-            List<Long> ids=store.queryScheduleIds(query);page=Math.min(page,Math.max(0,(ids.size()-1)/ScheduleQuery.PAGE_SIZE));
-            if(request.getParms().containsKey("locate")) {
-                long target=positive(request.getParms().get("locate"));int targetPage=store.schedulePageForCandidate(query,oldestFirst,target);
-                if(targetPage>=0)page=targetPage;
-                result.put("located",targetPage>=0?Long.toString(target):JSONObject.NULL);
-            }
-            JSONArray entries=new JSONArray(); for(EventCandidate item:store.querySchedulePage(query,oldestFirst,page))entries.put(candidate(item));
-            if("true".equals(request.getParms().get("includeIds")))result.put("ids",new JSONArray(ids));
-            return data(result.put("items",entries).put("total",ids.size()).put("page",page).put("pageSize",ScheduleQuery.PAGE_SIZE).put("oldestFirst",oldestFirst));
+            long focus=request.getParms().containsKey("locate")?positive(request.getParms().get("locate")):0;
+            ScheduleListing.Page listing=ScheduleListing.load(context,store,query,oldestFirst,page,focus);
+            if(focus>0)result.put("located",listing.ids.contains(focus)?Long.toString(focus):JSONObject.NULL);
+            JSONArray entries=new JSONArray();
+            for(ScheduleListing.Row row:listing.rows)entries.put(row.exam==null?candidate(row.candidate):examCandidate(row));
+            if("true".equals(request.getParms().get("includeIds")))result.put("ids",new JSONArray(listing.ids));
+            return data(result.put("items",entries).put("total",listing.total).put("selectableTotal",listing.ids.size())
+                    .put("examWarning",listing.warning).put("examsLoaded",listing.examsLoaded).put("page",listing.page).put("pageSize",ScheduleQuery.PAGE_SIZE).put("oldestFirst",oldestFirst));
         }
         if (path.equals("/api/agenda")) {
             ZoneId zone=ZoneId.systemDefault();
@@ -594,6 +593,14 @@ final class LanWebServer extends NanoHTTPD {
                 .put("allDay",item.allDay).put("start",start).put("end",end).put("source",item.calendarName)
                 .put("system",true).put("category","event").put("canAcknowledge",end>System.currentTimeMillis())
                 .put("acknowledged",AgendaAcknowledgement.isAcknowledged(context,AgendaAcknowledgement.key(item.eventId,start)));
+    }
+    private JSONObject examCandidate(ScheduleListing.Row row)throws JSONException{
+        EventCandidate item=row.candidate;var exam=row.exam;
+        return new JSONObject().put("id","exam:"+item.id).put("title",exam.title).put("category","exam")
+                .put("start",item.startAtMillis==null?JSONObject.NULL:item.startAtMillis).put("end",item.endAtMillis==null?JSONObject.NULL:item.endAtMillis)
+                .put("zone","Asia/Shanghai").put("allDay",false).put("readOnly",true).put("canAcknowledge",false)
+                .put("source","折姜星辰 · 教务").put("location",ScheduleListing.location(exam))
+                .put("description",exam.kind+" · "+exam.displayTime()).put("officialTime",exam.displayTime());
     }
     private JSONObject candidate(EventCandidate item) throws JSONException {
         Long anchor=item.reminderAnchor();

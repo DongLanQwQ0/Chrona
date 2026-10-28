@@ -268,10 +268,7 @@ final class ScheduleFilterSheet {
     }
 
     private String[] categoryOptions() {
-        String[] options = new String[EventCategory.LABELS.length + 1];
-        options[0] = "全部";
-        System.arraycopy(EventCategory.LABELS, 0, options, 1, EventCategory.LABELS.length);
-        return options;
+        return ScheduleFilterState.categoryOptions();
     }
     private String[] publicationOptions() { return new String[]{"全部", "未写入", "待确认", "已写入"}; }
     private int dp(int value) {

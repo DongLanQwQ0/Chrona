@@ -12,6 +12,7 @@ final class DashboardSectionData {
     List<Long> ids = java.util.Collections.emptyList(), linked = java.util.Collections.emptyList();
     List<TaskRecord> tasks = java.util.Collections.emptyList();
     List<EventCandidate> candidates = java.util.Collections.emptyList();
+    ScheduleListing.Page schedule;
     static DashboardSectionData load(Context context, int destination, InboxQuery inbox,
             ScheduleQuery schedule, boolean oldestFirst, int requestedPage, boolean system, long focusCandidate) {
         DashboardSectionData data = new DashboardSectionData();
@@ -32,13 +33,10 @@ final class DashboardSectionData {
                         data.tasks = store.queryInboxPage(inbox, oldestFirst, data.page, data.ids);
                     } else if (system) data.linked = store.linkedCalendarIds();
                     else {
-                        data.ids = store.queryScheduleIds(schedule);
-                        if (focusCandidate > 0) {
-                            int page = store.schedulePageForCandidate(schedule, oldestFirst, focusCandidate);
-                            if (page >= 0) requestedPage = page;
-                        }
-                        data.page = Math.max(0, Math.min(requestedPage, (Math.max(1, data.ids.size()) - 1) / ScheduleQuery.PAGE_SIZE));
-                        data.candidates = store.querySchedulePage(schedule, oldestFirst, data.page);
+                        data.schedule=ScheduleListing.load(context,store,schedule,oldestFirst,requestedPage,focusCandidate);
+                        data.ids=data.schedule.ids;data.page=data.schedule.page;
+                        data.candidates=new java.util.ArrayList<>();
+                        for(ScheduleListing.Row row:data.schedule.rows)if(row.exam==null)data.candidates.add(row.candidate);
                     }
                 }
                 db.setTransactionSuccessful();

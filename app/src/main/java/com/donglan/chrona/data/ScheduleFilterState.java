@@ -9,6 +9,17 @@ public final class ScheduleFilterState {
     public static final int ALL = 0, TODAY = 1, WEEK = 2, MONTH = 3, DATE = 4, CUSTOM = 5;
     /** One-based selector index of the persisted homework category. */
     public static final int HOMEWORK_CATEGORY = 3;
+    /** Read-only official source selector; never a persisted/editable EventCategory. */
+    public static final String EXAM = ScheduleQuery.CATEGORY_EXAM;
+    public static final int EXAM_CATEGORY = EventCategory.VALUES.length + 1;
+    public static String categoryValue(int index){
+        return index==EXAM_CATEGORY?EXAM:index>0&&index<=EventCategory.VALUES.length?EventCategory.VALUES[index-1]:null;
+    }
+    public static String[] categoryOptions(){
+        String[] result=new String[EventCategory.LABELS.length+2];result[0]="全部";
+        System.arraycopy(EventCategory.LABELS,0,result,1,EventCategory.LABELS.length);
+        result[EXAM_CATEGORY]="考试";return result;
+    }
     public int range, category, publication, source, tab, todoScope;
     public LocalDate date, until;
 

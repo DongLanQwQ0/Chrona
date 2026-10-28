@@ -14,6 +14,7 @@ import java.util.List;
 
 public final class ExternalCourseDetailActivity extends Activity {
     private boolean schoolSource;
+    private String examAccount;
     private boolean resumed;
     private long acknowledgementUntil;
     private Runnable bindAcknowledgement;
@@ -25,6 +26,7 @@ public final class ExternalCourseDetailActivity extends Activity {
     }
     @Override protected void onCreate(Bundle state){
         ThemeStore.apply(this);super.onCreate(state);
+        if("exam".equals(getIntent().getStringExtra("source"))){showExam(state);return;}
         schoolSource="zju".equals(getIntent().getStringExtra("source"));
         if(schoolSource&&!new ZjuSettingsStore(this).enabled()){finish();return;}
         LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"课程详情");
@@ -70,7 +72,31 @@ public final class ExternalCourseDetailActivity extends Activity {
             });
         },"course-detail-local-reader").start();
     }
-    @Override protected void onResume(){super.onResume();resumed=true;if(schoolSource&&!new ZjuSettingsStore(this).enabled())finish();refreshAcknowledgement();}
+    @Override protected void onResume(){super.onResume();resumed=true;if(schoolSource&&!new ZjuSettingsStore(this).enabled()||examAccount!=null&&!ScheduleListing.schoolCurrent(this,examAccount))finish();refreshAcknowledgement();}
+    private void showExam(Bundle saved){
+        examAccount=new ZjuSettingsStore(this).account();schoolSource=true;
+        if(!ScheduleListing.schoolCurrent(this,examAccount)){finish();return;}
+        LinearLayout root=SettingsPageLayout.content(this);SettingsPageLayout.header(this,root,"考试详情");
+        TextView status=new TextView(this);status.setText("正在读取");UiStyle.muted(status);root.addView(status);
+        SettingsPageLayout.show(this,root,saved==null);
+        long id=getIntent().getLongExtra("event_id",0);
+        new Thread(()->{
+            com.donglan.chrona.zju.ZjuExam exam=null;
+            try{exam=ScheduleListing.find(this,id);}catch(Exception ignored){}
+            var selected=exam;runOnUiThread(()->{
+                if(isDestroyed())return;
+                if(!ScheduleListing.schoolCurrent(this,examAccount)){finish();return;}
+                if(selected==null){status.setText("考试已更新，请返回刷新");return;}
+                root.removeView(status);
+                LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);UiStyle.card(card);
+                card.setPadding(dp(16),dp(12),dp(16),dp(12));root.addView(card,new LinearLayout.LayoutParams(-1,-2));
+                TextView title=new TextView(this);title.setText(selected.title);title.setTextSize(17);UiStyle.title(title);card.addView(title);
+                detail(card,selected.kind+" · "+selected.displayTime());detail(card,ScheduleListing.location(selected));detail(card,"折姜星辰 · 教务");
+                Button exams=new Button(this);exams.setText("考试安排");UiStyle.button(exams,false);
+                exams.setOnClickListener(v->startActivity(new Intent(this,ZjuExamsActivity.class)));UiStyle.addSpaced(root,exams,16,8);
+            });
+        },"exam-detail-local-reader").start();
+    }
     @Override protected void onPause(){resumed=false;expiryHandler.removeCallbacks(expiryRefresh);super.onPause();}
     private void refreshAcknowledgement(){
         expiryHandler.removeCallbacks(expiryRefresh);

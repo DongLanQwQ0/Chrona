@@ -237,7 +237,7 @@ public final class DashboardActivity extends Activity {
             homeworkFocusBottom = state.getInt("homework_focus_bottom", 0);
             homeworkFocusFilter = state.getString("homework_focus_filter", "");
             scheduleRange = state.getInt("schedule_range");
-            scheduleCategory = Math.max(0, Math.min(com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY,
+            scheduleCategory = Math.max(0, Math.min(com.donglan.chrona.data.ScheduleFilterState.EXAM_CATEGORY,
                     state.getInt("schedule_category")));
             schedulePublication = state.getInt("schedule_publication");
             scheduleSource = state.getInt("schedule_source");
@@ -1037,6 +1037,7 @@ public final class DashboardActivity extends Activity {
                 + ":" + HomeTimelinePreferences.getItemLimit(this)
                 + ":" + HomeTimelinePreferences.includesSystemCalendar(this)
                 + ":" + ExternalCourseAgenda.revision(this)
+                + ":" + ZjuExamStore.revision() + ":" + new ZjuSettingsStore(this).configured()
                 + ":" + AgendaReminderPreferences.prefs(this).getLong("acknowledgement_revision", 0L)
                 + ":" + ZoneId.systemDefault()
                 + ":" + new CalendarStore(this).hasReadPermission();
@@ -2180,20 +2181,29 @@ public final class DashboardActivity extends Activity {
         long now = System.currentTimeMillis();
         ScheduleQuery query = buildScheduleQuery(now, ZoneId.systemDefault());
         inboxRows.clear();
-        matchingInboxIds = preparedSection == null ? store.queryScheduleIds(query) : preparedSection.ids;
+        ScheduleListing.Page listing=preparedSection==null?ScheduleListing.load(this,store,query,scheduleOldestFirst,schedulePage,0):preparedSection.schedule;
+        matchingInboxIds = listing.ids;
         selectedScheduleIds.retainAll(matchingInboxIds);
-        int total = matchingInboxIds.size();
+        int total = listing.total;
         schedulePage = Math.min(schedulePage, Math.max(0, (total - 1) / ScheduleQuery.PAGE_SIZE));
-        if (preparedSection != null) schedulePage = preparedSection.page;
-        List<EventCandidate> visible = preparedSection == null ? store.querySchedulePage(query, scheduleOldestFirst, schedulePage) : preparedSection.candidates;
+        schedulePage = listing.page;
+        List<ScheduleListing.Row> visible = listing.rows;
         addInboxResultsHeading(total);
         updateSelectionUi();
+        if(!listing.warning.isEmpty())message(results,listing.warning);
         if (visible.isEmpty()) {
-            empty(results, "这里空空\n换个日期或筛选看看");
+            empty(results, query.officialExamOnly()&&!listing.examsLoaded?"尚未获取考试安排":"这里空空\n换个日期或筛选看看");
+            if(query.officialExamOnly()){
+                ZjuSettingsStore settings=new ZjuSettingsStore(this);
+                boolean school=settings.enabled()&&settings.configured();
+                Button exams=scheduleAction(school?"查看考试安排":"启用折姜星辰",()->startActivity(new Intent(this,school?ZjuExamsActivity.class:ZjuSettingsActivity.class)));
+                UiStyle.addSpaced(results,exams,4,4);
+            }
         }
         String previousDate = "";
         for (int i = 0; i < visible.size(); i++) {
-            EventCandidate item = visible.get(i);
+            ScheduleListing.Row row=visible.get(i);
+            EventCandidate item = row.candidate;
             boolean deadlineScope = scheduleTodoScope == ScheduleQuery.TODO_TODAY_DUE
                     || scheduleTodoScope == ScheduleQuery.TODO_OVERDUE
                     || scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY;
@@ -2208,7 +2218,16 @@ public final class DashboardActivity extends Activity {
             final int index = i;
             enqueueScheduleResult(() -> {
                 if (newDay) scheduleDayHeading(date);
-                candidateRow(results, item, index);
+                if(row.exam==null)candidateRow(results, item, index);
+                else if(ScheduleListing.schoolCurrent(this,listing.account)){
+                    LinearLayout card=card();
+                    card.setTag(item.id);
+                    addScheduleCardContent(card,item,null,true,false,null,row.exam);
+                    completionRows.row(card,"exam:"+item.id,row.exam.time+":"+row.exam.room+":"+row.exam.seat);
+                    card.setOnClickListener(v->startActivity(new Intent(this,ExternalCourseDetailActivity.class)
+                            .putExtra("source","exam").putExtra("event_id",item.id)));
+                    UiStyle.pressable(card);UiStyle.addSpaced(results,card,4,7);
+                }
             });
         }
         enqueueScheduleResult(() -> { schedulePageControls(total); queueHomeworkFocus(); });
@@ -2228,7 +2247,7 @@ public final class DashboardActivity extends Activity {
     private ScheduleQuery buildScheduleQuery(long now, ZoneId zone) {
         LocalDate[] window = scheduleWindow(false);
         return new ScheduleQuery(scheduleTab,
-                scheduleCategory == 0 ? null : EventCategory.VALUES[scheduleCategory - 1],
+                com.donglan.chrona.data.ScheduleFilterState.categoryValue(scheduleCategory),
                 schedulePublication, scheduleQuery, window[0], window[1], now, zone, scheduleTodoScope);
     }
 
@@ -2606,6 +2625,7 @@ public final class DashboardActivity extends Activity {
             }
             refresh.post(() -> {
                 if (!scheduleResultCurrent(token, target)) return;
+                if(data.schedule!=null&&!data.schedule.scope.equals(ScheduleListing.scope(this))){requestScheduleResults(animate);return;}
                 scheduleBuildTarget = target;
                 Runnable build = () -> {
                 if (!scheduleResultCurrent(token, target)) return;
@@ -2761,10 +2781,15 @@ public final class DashboardActivity extends Activity {
     /** Shared hierarchy for the timeline, upcoming strip and schedule results. */
     private void addScheduleCardContent(LinearLayout card, EventCandidate candidate,
             CalendarOccurrence systemEvent, boolean showTime, boolean home, TextView selection) {
+        addScheduleCardContent(card,candidate,systemEvent,showTime,home,selection,null);
+    }
+    private void addScheduleCardContent(LinearLayout card, EventCandidate candidate,
+            CalendarOccurrence systemEvent, boolean showTime, boolean home, TextView selection,
+            com.donglan.chrona.zju.ZjuExam exam) {
         String category = candidate == null ? EventCategory.EVENT : candidate.category;
         String titleText = candidate == null ? systemEvent.title : candidate.title;
         String location = candidate == null ? systemEvent.location : candidate.location;
-        String source = candidate == null ? systemEvent.calendarName : "拾时";
+        String source = exam!=null?"折姜星辰 · 教务":candidate == null ? systemEvent.calendarName : "拾时";
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
         LinearLayout body = card;
         FrameLayout interval = null;
@@ -2798,7 +2823,7 @@ public final class DashboardActivity extends Activity {
         heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         if (!home) {
             LinearLayout type = scheduleAttribute(categoryIcon(category),
-                    EventCategory.label(category), "类型", 12, 1, true);
+                    exam!=null?"考试":EventCategory.label(category), "类型", 12, 1, true);
             LinearLayout.LayoutParams typeParams = new LinearLayout.LayoutParams(-2, -2);
             typeParams.leftMargin = dp(8);
             heading.addView(type, typeParams);
@@ -2811,7 +2836,7 @@ public final class DashboardActivity extends Activity {
             addHomeTimeNode(body, interval, homeCardBoundary(candidate, systemEvent, false, showTime),
                     candidate != null && HomeTimelineEntry.deadlineOnly(candidate) ? "作业截止时间" : "起始时间");
         } else if (showTime) {
-            String when = candidate == null ? homeEntryWhen(new HomeTimelineEntry(systemEvent))
+            String when = exam!=null?exam.kind+" · "+exam.displayTime():candidate == null ? homeEntryWhen(new HomeTimelineEntry(systemEvent))
                     : candidate.anchor() == null ? "尚未安排时间" : formatWhen(candidate);
             UiStyle.addSpaced(body, scheduleAttribute(candidate != null && candidate.isHomework() ? R.drawable.ic_homework : R.drawable.ic_schedule, when,
                     "时间", 14, 2, false), 6, 0);
@@ -2848,7 +2873,7 @@ public final class DashboardActivity extends Activity {
             footer.addView(new View(this), new LinearLayout.LayoutParams(0, 0, 1));
         }
         // A published item is settled even if its original AI uncertainty flag remains set.
-        boolean written = candidate == null || candidate.calendarEventId != null;
+        boolean written = exam!=null || candidate == null || candidate.calendarEventId != null;
         boolean confirmation = candidate != null && !written && candidate.needsConfirmation;
         boolean calendarTime = candidate != null && candidate.calendarStart() != null
                 && (candidate.isTask() || candidate.endAtMillis != null);
@@ -2862,7 +2887,7 @@ public final class DashboardActivity extends Activity {
         }
         if(candidate!=null&&candidate.isTask()) {
             footer.addView(taskCompletionButton(candidate), new LinearLayout.LayoutParams(dp(48), dp(48)));
-        } else if ((candidate == null || !candidate.isRecord && !candidate.needsConfirmation)
+        } else if (exam==null && (candidate == null || !candidate.isRecord && !candidate.needsConfirmation)
                 && "event".equals(category)) {
             Long anchor = candidate == null ? systemEvent.displayStart(ZoneId.systemDefault()) : candidate.reminderAnchor();
             Long finish = candidate == null ? systemEvent.displayEnd(ZoneId.systemDefault()) : candidate.endAtMillis;
@@ -2995,7 +3020,8 @@ public final class DashboardActivity extends Activity {
             }
             refresh.post(() -> {
                 if (isDestroyed() || isFinishing()) return;
-                boolean filtersChanged = destination == SCHEDULE && !filterKey.equals(completionFilterKey());
+                boolean filtersChanged = destination == SCHEDULE && (!filterKey.equals(completionFilterKey())
+                        || data.schedule!=null&&!data.schedule.scope.equals(ScheduleListing.scope(this)));
                 if (section != destination || viewport != scroll || !completingCandidates.isEmpty()
                         || pageTransitionRunning || dragTargetLoaded || scheduleResultLoading || filtersChanged) {
                     completionRefreshRunning = false;

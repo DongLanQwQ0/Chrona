@@ -11,6 +11,7 @@ import java.util.Locale;
 public final class ScheduleQuery {
     public static final int PAGE_SIZE = 24;
     public static final String CATEGORY_HOMEWORK = "homework";
+    public static final String CATEGORY_EXAM = "exam";
     public static final String TASK_DUE_SQL = "COALESCE(due_at_millis,end_at_millis,start_at_millis)";
     public static final String TASK_OVERDUE_SQL = "MIN(" + TASK_DUE_SQL + ",COALESCE(end_at_millis,start_at_millis,due_at_millis))";
     public static final String DEFAULT_EXECUTION_SQL = "(is_record=0 AND category='task' AND start_at_millis IS NULL AND end_at_millis IS NULL AND due_at_millis IS NOT NULL)";
@@ -119,6 +120,18 @@ public final class ScheduleQuery {
             return TASK_DUE_SQL + direction + ", id" + direction;
         return EXECUTION_START_SQL + " IS NULL ASC, " + DAY_SQL + direction
                 + ", " + EXECUTION_ALL_DAY_SQL + " DESC, " + EXECUTION_START_SQL + direction + ", id" + direction;
+    }
+
+    public boolean includesOfficialExams(){return category==null||CATEGORY_EXAM.equals(category);}
+    public boolean officialExamOnly(){return CATEGORY_EXAM.equals(category);}
+    /** Same range/status semantics as ordinary timed events; no task or publication side effects. */
+    public boolean matchesOfficialExam(EventCandidate exam,String searchable){
+        if(!includesOfficialExams()||todoScope!=TODO_ANY||publication==1||publication==2)return false;
+        boolean dated=exam.startAtMillis!=null&&exam.endAtMillis!=null;
+        if(tab==1&&dated||tab==0&&(!dated||exam.endAtMillis<=now)||tab==2&&(!dated||exam.endAtMillis>now))return false;
+        if(from!=null&&until!=null&&(!dated||exam.startAtMillis>=until.atStartOfDay(zone).toInstant().toEpochMilli()
+                ||exam.endAtMillis<=from.atStartOfDay(zone).toInstant().toEpochMilli()))return false;
+        return searchable.toLowerCase(Locale.ROOT).contains(keyword);
     }
 
     /** Lists retain one selectable row per series; its occurrence opens the complete series history. */

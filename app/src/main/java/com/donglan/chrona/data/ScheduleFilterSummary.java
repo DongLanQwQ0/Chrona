@@ -16,8 +16,8 @@ public final class ScheduleFilterSummary {
             LocalDate end = window[1].minusDays(1);
             parts.add(window[0].equals(end) ? window[0].toString() : window[0] + " 至 " + end);
         }
-        if (state.category > 0 && state.category <= EventCategory.LABELS.length)
-            parts.add(EventCategory.LABELS[state.category - 1]);
+        if (state.category > 0 && state.category <= ScheduleFilterState.EXAM_CATEGORY)
+            parts.add(ScheduleFilterState.categoryOptions()[state.category]);
         if (state.todoScope == ScheduleQuery.TODO_TODAY_DUE) parts.add("今日截止");
         else if (state.todoScope == ScheduleQuery.TODO_OVERDUE) parts.add("已逾期");
         else if (state.todoScope == ScheduleQuery.TODO_OPEN) parts.add("未完成");

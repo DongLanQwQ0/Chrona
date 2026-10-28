@@ -67,6 +67,11 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         getUiAutomation().setRotation("landscape".equals(args.getString("orientation"))?UiAutomation.ROTATION_FREEZE_90:UiAutomation.ROTATION_FREEZE_0);SystemClock.sleep(800);
         for(String permission:List.of(android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR,android.Manifest.permission.POST_NOTIFICATIONS))getUiAutomation().grantRuntimePermission(app.getPackageName(),permission);
         getUiAutomation().executeShellCommand("input keyevent 224").close();getUiAutomation().executeShellCommand("wm dismiss-keyguard").close();SystemClock.sleep(300);
+        if("zju_exam_schedule".equals(args.getString("mode"))){
+            assertions+=ZjuExamScheduleChecks.run(this,args);
+            report.putString("monitor_report","PASS: "+assertions+" assertions; zju_exam_schedule "+args.getString("orientation","portrait")+" "+args.getString("theme","light"));
+            finish(-1,report);return;
+        }
         if("zju_exams".equals(args.getString("mode"))){
             assertions+=ZjuExamsChecks.run(this,args);
             report.putString("monitor_report","PASS: "+assertions+" assertions; zju_exams "+args.getString("orientation","portrait")+" "+args.getString("theme","light"));

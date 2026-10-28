@@ -738,6 +738,9 @@ public final class TaskStore extends SQLiteOpenHelper {
     public List<EventCandidate> queryScheduleFirst(ScheduleQuery query, int limit) {
         return scheduleRows(query, true, Math.max(1, limit));
     }
+    public List<EventCandidate> queryScheduleFirst(ScheduleQuery query, boolean oldestFirst, int limit) {
+        return scheduleRows(query, oldestFirst, Math.max(1, limit));
+    }
 
     private List<EventCandidate> scheduleRows(ScheduleQuery query, boolean oldestFirst, int limit) {
         List<EventCandidate> items = new ArrayList<>();
