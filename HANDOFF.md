@@ -1,20 +1,13 @@
-# 当前交付：页面动效审计完成，0.15.61／223
+# 当前交付：README 项目介绍精简完成
 
-用户要求新页面进入／退出／切换动画审核后全部修复。0.15.60完成路径审计及补齐；真机收尾又发现正文先显示再淡入的P2，0.15.61以首次INVISIBLE→公式及可绘制ready→VISIBLE＋公共入场修复。已呈现内容恢复／更新不重复隐藏，退出沿用Android系统转场。完整审计与边界证据见docs/validation-history.md的0.15.60及0.15.61节。
+README保留品牌与下载入口，改为简短介绍、六项核心功能及三步上手；具体操作链接到使用指南。AI服务与资料发送、提醒权限、支持机型原子岛首次ADB配置和一键包入口保留，原项目署名不变。
 
-## 已验收、已安装、已发布
+全文已按新读者顺序复读，五个本地目标均存在，diff检查通过；检查记录build/readme-intro-check.json。仅同步README与工作单源码，不改应用功能，不构建或另发APK。发布后的README通过GitHub API按正文核对，记录build/readme-intro-remote-check.txt。
 
-- 固定包build/candidates/0.15.61/Chrona-0.15.61.apk，3245950字节，223／0.15.61、非debug、原签名，release＋lintRelease成功。最终生产源在构建后未变；后续只改测试采帧与文档。
-- 受控真实WebView正常竖浅／横深各9项通过：DOM先就绪、公式promise延迟700ms时仍不可见，释放后首次入场；恢复、同内容更新、关闭动画正常。0.15.60未改路径的原生深浅各93项／Web／公共库证据继续有效。没有新建、重置或改DPI／分辨率。
-- 真机10.197.86.81:40627／10AG5S1SR4005X7已从220依次正常升级至223。设置进入返回、课表来源、课堂历史、真实52条课堂分页1→2→1、微积分正文、正常横屏上滑通过；最终223再次打开真实完成笔记并返回原历史10条正常模式。build/phone-0.15.61-*及phone-0.15.60-pagination.txt、相关JPEG/XML/MP4为实际证据。未生成／下载／删除课堂或调用AI。
-- 主代理和持续复用ui_review亲看并最终签收受检范围。空白早期窗口过渡帧、错拍的batch/lesson-*不作为正文终态证据。所有图片先压缩JPEG，原旋转1/0及动画比例1已恢复，原LAN未运行无需恢复。
+## 已完成的应用基线
 
-## 发布与接续
-
-已普通提交、推送并正式发布：https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.61 。远端标签精确指向149e7264e7e1806cdc426a42d03468aa10ec674a，唯一APK资产3245950字节、uploaded、非草稿／非预发布，latest已读回v0.15.61。证据build/release-0.15.61-{push,create,tag,latest}.txt及published.json。手机升级及复验已完成，本轮交付无剩余项，不再重装或重跑已有证据。GlobalSend同机冲突已获用户授权跨聊天协调：让出请求与完成后的恢复通知均已送达，另一任务当前转做不占手机的Web工作；本聊天已释放手机，不再抢前台。后续按用户新需求接续。
+0.15.61／223已发布且已安装手机，页面动效、真实课堂分页／正文／返回已验收。固定包、签名、源码及所有证据见docs/validation-history.md的0.15.61节；不因文档改动重跑或重装。GlobalSend同机控制已释放，无待处理的设备占用。
 
 ## 工具与保护
 
-FastCtx不可用，PowerShell7兜底。JAVA_HOME=D:/Minecraft/java21，SDK=F:/Android/Sdk，GRADLE_USER_HOME=F:/Android/GradleCache，ANDROID_USER_HOME=F:/Android/user-home；TEMP/TMP及全部衍生物留项目build。公共gh仅F:/Programs/GitHubCLI/bin/gh.exe，保留登录。共享AVD仅F:/Android/Avd/Chrona_Classroom_36，不克隆／重置／清数据；截图只查看压缩JPEG。
-
-用户AGENTS.md、角色toml、.backups、.local-backups和tools/Clean-Project.ps1不纳入提交。不清公共工具／SDK／AVD／profile／签名。GlobalSend业务误发不属本项目；重复截图遮挡仅完成讨论，未授权实现，不擅自改变去重；既有CommonMark中文标点强调呈现不在本轮动效修改范围。
+FastCtx当前不可用，PowerShell7兜底；公共GitHub CLI为F:/Programs/GitHubCLI/bin/gh.exe，保留既有登录。衍生物留项目build；用户AGENTS.md、角色toml、.backups、.local-backups及tools/Clean-Project.ps1不纳入本轮提交。
