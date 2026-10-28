@@ -27,7 +27,7 @@ final class PageMotionChecks {
         if(!c.app.getPackageName().equals("com.donglan.chrona.monitor.validation")||!Build.HARDWARE.contains("ranchu"))throw new SecurityException("Owned AVD only");
         ZjuTimetableStore tables=new ZjuTimetableStore(c.app);JSONObject previous=tables.snapshot();
         File examFile=new File(c.app.getCacheDir(),"zju-exams.json");byte[] previousExams=examFile.isFile()?java.nio.file.Files.readAllBytes(examFile.toPath()):null;
-        try{c.seed(tables);c.bootstrap();c.pages();c.slowDetails();c.classroomDocument();c.timetable();c.interruption();c.returnNavigation();c.reduced();c.supplementary();return c.checks;}
+        try{c.seed(tables);c.bootstrap();if("markdown".equals(args.getString("scope"))){c.classroomDocument();return c.checks;}c.pages();c.slowDetails();c.classroomDocument();c.timetable();c.interruption();c.returnNavigation();c.reduced();c.supplementary();return c.checks;}
         catch(Throwable failure){c.capture("failure");throw failure;}
         finally{
             t.runOnMainSync(()->{if(c.screen!=null)c.screen.finish();if(c.anchor!=null)c.anchor.finish();});
@@ -104,10 +104,35 @@ final class PageMotionChecks {
         motionLesson=new com.donglan.chrona.classroom.ClassroomLesson("882777",Long.toUnsignedString(System.nanoTime()),"课堂入场验收","公式和正文","验收教室","6",System.currentTimeMillis()-600000);
         File dir=new com.donglan.chrona.classroom.ClassroomStore(app,"page-motion").localLesson(motionLesson);
         com.donglan.chrona.classroom.ClassroomStore.write(new File(dir,"summary.json"),new JSONObject().put("lesson",motionLesson.json()).put("complete",true).put("overview","## 课堂动效验收\n\n真实本地正文就绪后显示，公式 $x^2+y^2=z^2$。\n\n".repeat(4)).put("parts",new JSONArray()).put("updated",System.currentTimeMillis()));
-        open(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,motionLesson.json().toString()));
+        open(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,motionLesson.json().toString()).putExtra("hold_markdown_ready",true));
+        await(()->{currentScreen();Object view=get(screen,"documentView");return view!=null&&"true".equals(js((ClassroomMarkdownView)view,"Boolean(window.chronaReleaseReady&&document.querySelector('main').children.length)"));});
+        ClassroomMarkdownView held=(ClassroomMarkdownView)get(screen,"documentView");SystemClock.sleep(700);
+        check(!(Boolean)get(held,"ready")&&held.getVisibility()==View.INVISIBLE,"real HTML remains invisible while formula startup is delayed");capture("classroom-document-held");
+        js(held,"window.chronaReleaseReady()");
         await(()->{currentScreen();Object view=get(screen,"documentView");return view!=null&&(Boolean)get(view,"ready")&&hasEntrance((View)view);});ClassroomMarkdownView document=(ClassroomMarkdownView)get(screen,"documentView");check(!(Boolean)get(screen,"firstDocumentPresentation"),"actual WebView document readiness consumes only its first entrance");capture("classroom-document-entered");SystemClock.sleep(950);currentScreen();document=(ClassroomMarkdownView)get(screen,"documentView");capture("classroom-document-settled");
         test.runOnMainSync(()->invoke(screen,"updateDetail"));check(get(screen,"documentView")==document,"unchanged classroom update retains the document and does not replay entry");
+        check(document.getVisibility()==View.VISIBLE&&document.getAlpha()==1f,"unchanged update never hides the displayed document");
+        Activity previous=screen;test.runOnMainSync(previous::recreate);await(()->test.lastResumed!=previous);screen=test.lastResumed;
+        await(()->get(screen,"documentView")!=null);ClassroomMarkdownView restored=(ClassroomMarkdownView)get(screen,"documentView");
+        check(restored.getVisibility()==View.VISIBLE,"restoration does not hide an already presented document");
+        await(()->"true".equals(js(restored,"Boolean(window.chronaReleaseReady)")));js(restored,"window.chronaReleaseReady()");await(()->(Boolean)get(restored,"ready"));SystemClock.sleep(300);
+        check(!hasEntrance(restored),"restored document does not replay entrance");
         test.runOnMainSync(screen::finish);SystemClock.sleep(500);
+        String scale=android.provider.Settings.Global.getString(app.getContentResolver(),"animator_duration_scale");
+        try{
+            test.getUiAutomation().executeShellCommand("settings put global animator_duration_scale 0").close();await(()->!UiMotion.isEnabled());
+            open(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,motionLesson.json().toString()).putExtra("hold_markdown_ready",true));await(()->get(screen,"documentView")!=null);
+            ClassroomMarkdownView reduced=(ClassroomMarkdownView)get(screen,"documentView");await(()->"true".equals(js(reduced,"Boolean(window.chronaReleaseReady)")));
+            check(reduced.getVisibility()==View.INVISIBLE,"reduced animation still waits for valid first content");js(reduced,"window.chronaReleaseReady()");await(()->(Boolean)get(reduced,"ready"));
+            check(reduced.getVisibility()==View.VISIBLE&&reduced.getAlpha()==1f&&reduced.getTranslationY()==0f,"reduced animation presents ready content at its final state");test.waitForIdleSync();SystemClock.sleep(150);capture("classroom-document-reduced-initial");
+            report.put(new JSONObject().put("phase","reduced-native-ready").put("width",reduced.getWidth()).put("height",reduced.getHeight()).put("shown",reduced.isShown()).put("windowFocus",reduced.hasWindowFocus()).put("dom",js(reduced,"JSON.stringify({ready:window.classroomReady,text:document.querySelector('main').innerText.length,height:document.querySelector('main').getBoundingClientRect().height})")));
+            SystemClock.sleep(500);capture("classroom-document-reduced");test.runOnMainSync(screen::finish);SystemClock.sleep(350);
+        }finally{test.getUiAutomation().executeShellCommand("settings put global animator_duration_scale "+(scale==null?"1":scale)).close();}
+    }
+    private String js(ClassroomMarkdownView document,String script)throws Exception{
+        java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);String[] value={null};
+        test.runOnMainSync(()->document.evaluateJavascript(script,result->{value[0]=result;done.countDown();}));
+        if(!done.await(3,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("JavaScript callback timeout");return value[0];
     }
     private void reduced()throws Exception{
         String scale=android.provider.Settings.Global.getString(app.getContentResolver(),"animator_duration_scale");

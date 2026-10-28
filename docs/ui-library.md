@@ -38,7 +38,7 @@
 
 `UiMotion.enterPage`用于首次子页面呈现，方向`swap`用于工作区子视图和分页；轮询不重播入场。`DateIntervalBar`保持实例并负责箭头、滑动与点击选择入口。`ImageSlidePager`负责有界手势、当前／相邻帧缓存、原图比例及连续切页；`PanHandler`先消费放大图片内部平移，仅把横边余量交给翻页，方向仲裁仍按真实手指方向。权限和来源由调用页提供；全部图片入口共用`AttachmentViewerActivity`的焦点缩放、保存及横屏沉浸布局，媒体与操作安全区分离，不复制入口专属查看器。
 
-异步页面在首次有效内容就绪时对实际内容调用`enterPage`，不能以加载壳的动画代替。`ClassroomMarkdownView.onReady`由本地正文和公式渲染完成信号触发，页面自行限定首次；销毁清理回调。`swap`接管同一容器时取消尚未启动的入场，继续复用当前画面；分页快照放在独立`FrameLayout`宿主，不能放进将被重建清空的正文或单子项ScrollView。
+异步页面在首次有效内容就绪时对实际内容调用`enterPage`，不能以加载壳的动画代替。`ClassroomMarkdownView.onReady`在本地正文及公式完成后，再经`postVisualStateCallback`确认可绘制；首次容器保持`INVISIBLE`，在回调内转为`VISIBLE`并交给公共入场，避免提前露出和空画面耗尽动效。已呈现内容恢复或更新不重复隐藏，销毁清理回调。附着与可见性交接遵循[Android WebView 合同](https://developer.android.com/reference/android/webkit/WebView#postVisualStateCallback(long,%20android.webkit.WebView.VisualStateCallback))。`swap`接管同一容器时取消尚未启动的入场，继续复用当前画面；分页快照放在独立`FrameLayout`宿主，不能放进将被重建清空的正文或单子项ScrollView。
 
 页面调用样式和组合组件，不自行创建另一份亚克力 Drawable、弹窗层级管理或快照切换。渲染状态由 `UiSurfaces` 管理；浮层登记窗口模糊根，渲染层无需依赖浮层生命周期实现。
 

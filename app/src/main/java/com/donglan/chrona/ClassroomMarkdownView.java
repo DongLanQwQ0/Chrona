@@ -59,7 +59,13 @@ final class ClassroomMarkdownView extends WebView {
             }catch(Exception unavailable){return false;}
         });
         addJavascriptInterface(new Object(){
-        @JavascriptInterface public void ready(){post(()->{if(disposed)return;ready=true;if(readyAction!=null)readyAction.run();});}
+        @JavascriptInterface public void ready(){post(()->{
+            if(disposed)return;
+            postVisualStateCallback(0,new VisualStateCallback(){@Override public void onComplete(long requestId){
+                if(disposed)return;
+                ready=true;if(readyAction!=null)readyAction.run();
+            }});
+        });}
         @JavascriptInterface public void height(int cssPixels){
             if(cssPixels<0)return;
             post(()->{if(disposed)return;int height=Math.round(cssPixels*getResources().getDisplayMetrics().density);

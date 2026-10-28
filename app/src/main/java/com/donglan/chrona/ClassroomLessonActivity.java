@@ -205,11 +205,12 @@ public final class ClassroomLessonActivity extends Activity {
                 @Override public void image(String name){if(gate())AttachmentViewerActivity.openClassroomSummary(ClassroomLessonActivity.this,s.account,s.selected,name);}
                 @Override public Uri imageUri(String name){return ImageTransferProvider.classroomSummary(ClassroomLessonActivity.this,s.account,s.selected,name);}
             });
+            if(firstDocumentPresentation)documentView.setVisibility(View.INVISIBLE);
             notes.addView(documentView);
             ClassroomMarkdownView presented=documentView;
             presented.onReady(()->{
                 if(documentView==presented&&firstDocumentPresentation&&!isFinishing()&&!isDestroyed()){
-                    firstDocumentPresentation=false;UiMotion.enterPage(presented);
+                    firstDocumentPresentation=false;presented.setVisibility(View.VISIBLE);UiMotion.enterPage(presented);
                 }
             });
         }catch(Exception error){text(notes,"课堂正文无法显示："+error.getMessage(),16,false);}

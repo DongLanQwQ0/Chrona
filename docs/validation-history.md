@@ -1,5 +1,16 @@
 # 验证记录
 
+## 0.15.61 — 正文首次可见性交接与真机收尾 — 2026-10-28
+
+- 对0.15.60补充具体源码反例：reader先写入HTML、等待公式，原生WebView默认可见，最终ready才将alpha压到0开始入场；公式处理跨帧时可能提前露出再淡入。ui_review独立确认P2，原静态签收不足以排除此窗口。
+- 首次正文在加入前设为INVISIBLE；本地正文／公式完成后，通过WebView的postVisualStateCallback确认可绘制，再在该回调中转为VISIBLE并交给原240ms／8dp入场。恢复已呈现正文和更新同一内容不重复隐藏；销毁检查与实例身份保护保留。没有改笔记数据、Markdown解析、AI或下载流程。
+- 受控真实WebView检查深浅／竖横各9项通过，`build/markdown-ready-native-{light,dark}.txt`。测试侧在子View加入时包装原WebViewClient，仅延迟真实MathJax startup promise：DOM已含正文后继续等待700ms，ready前仍INVISIBLE，释放后呈现；覆盖同实例更新、recreate不隐藏／不重播及系统关闭动画。初版减少动画截图早于OS窗口过渡结束，补充宽978高1028、shown／focus、真实DOM187字及650ms终态后确认可见；证据`build/markdown-ready-evidence/native-ready-report.json`与最终classroom-document-{held,entered,settled,reduced}.jpg。先前空白早帧不作为终态证据。
+- 真实V2527A／10AG5S1SR4005X7检查：设置→外观→返回、学校→导入、课堂→历史、已有10/27微积分完成笔记、正常横屏上滑收起全部上部工具；真实52条课堂按1→2→1翻页。`build/phone-0.15.60-{settings.mp4,source-switch.mp4,pagination.mp4,pagination.txt}`、对应JPEG/XML及note-landscape-scrolled.jpg。源及分页在223未变，复用有效证据，不重跑成熟矩阵。
+- 最终固定223包正常覆盖222，版本读回0.15.61，进程26640存活；实际重新打开已有微积分正文并系统返回原历史10条、正常选择模式。证据`build/phone-0.15.61-{install,package,final}.txt`及`phone-0.15.61-note-{initial,ready,return}.{jpg,xml}`。未点击素材下载、重新生成、导出或删除，未调用AI；临时测试批量选择已退出。原旋转1／0恢复，未改分辨率／DPI／通知设置，原LAN未运行无需恢复。
+- 录屏证实微信横幅覆盖顶部按钮后曾误入微信；测试工具增加横幅等待及前台保护。另有GlobalSend由shell UID2000启动抢占前台，经用户明确授权已向「设计跨设备传输与同步系统」发送暂让出通知；其当前Web任务声明不动手机，完成后恢复通知已送达。未停止另一任务或其它应用。与Chrona无关的聊天视频段及其派生帧已清除，只保留本项目UI片段；手机端本次录屏／层级临时文件已移出到本项目并清理。
+- 主代理与持续复用的只读ui_review亲看实际真机、受控延迟及减少动画终态，最终签收，无剩余明确动画缺陷。0.15.60的其他原生93项／Web及公共库证据继续适用于未改路径。
+- release＋lintRelease成功，固定`build/candidates/0.15.61/Chrona-0.15.61.apk`3245950字节，223／0.15.61、非debug、原签名，见`build/release-0.15.61-{build,package,signature}.txt`。当前唯一收尾是普通提交、推送、正式发布该候选；不重复安装已验证包。
+
 ## 0.15.60 — 页面动效审计与补齐 — 2026-10-28
 
 ### 审计结论与修复范围

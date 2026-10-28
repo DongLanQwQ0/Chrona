@@ -35,7 +35,31 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         entryCreates.add(screen.getClass().getSimpleName()+": restored="+(state!=null));
         if(!"page_motion".equals(args.getString("mode")))screen.setRequestedOrientation("landscape".equals(args.getString("orientation"))?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         super.callActivityOnCreate(screen,state);
+        if(screen instanceof ClassroomLessonActivity&&screen.getIntent().getBooleanExtra("hold_markdown_ready",false)){
+            try{
+                Field field=ClassroomLessonActivity.class.getDeclaredField("notes");field.setAccessible(true);
+                ViewGroup notes=(ViewGroup)field.get(screen);
+                notes.setOnHierarchyChangeListener(new ViewGroup.OnHierarchyChangeListener(){
+                    @Override public void onChildViewAdded(View parent,View child){if(child instanceof ClassroomMarkdownView document)holdMarkdown(document);}
+                    @Override public void onChildViewRemoved(View parent,View child){}
+                });
+                for(int i=0;i<notes.getChildCount();i++)if(notes.getChildAt(i) instanceof ClassroomMarkdownView document)holdMarkdown(document);
+            }catch(ReflectiveOperationException error){throw new AssertionError(error);}
+        }
         if(args.containsKey("heightDp")){float density=screen.getResources().getDisplayMetrics().density;screen.getWindow().setLayout(Math.round(Integer.parseInt(args.getString("widthDp","400"))*density),Math.round(Integer.parseInt(args.getString("heightDp"))*density));}
+    }
+    private static void holdMarkdown(ClassroomMarkdownView document){
+        android.webkit.WebViewClient original=document.getWebViewClient();
+        document.setWebViewClient(new android.webkit.WebViewClient(){
+            @Override public android.webkit.WebResourceResponse shouldInterceptRequest(android.webkit.WebView view,android.webkit.WebResourceRequest request){return original.shouldInterceptRequest(view,request);}
+            @Override public boolean shouldOverrideUrlLoading(android.webkit.WebView view,android.webkit.WebResourceRequest request){return original.shouldOverrideUrlLoading(view,request);}
+            @Override public void onPageFinished(android.webkit.WebView view,String url){
+                if(!url.endsWith("/reader.html")){original.onPageFinished(view,url);return;}
+                // Hold only the real local formula startup promise; HTML, resources and the
+                // production ready bridge still run unmodified after explicit release.
+                view.evaluateJavascript("MathJax.startup.promise=Promise.all([MathJax.startup.promise,new Promise(resolve=>window.chronaReleaseReady=resolve)]);",value->original.onPageFinished(view,url));
+            }
+        });
     }
     final Set<String> enteredPages=new HashSet<>();
     @Override public void callActivityOnResume(Activity screen){
