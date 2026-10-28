@@ -9,7 +9,7 @@
 - 最终固定223包正常覆盖222，版本读回0.15.61，进程26640存活；实际重新打开已有微积分正文并系统返回原历史10条、正常选择模式。证据`build/phone-0.15.61-{install,package,final}.txt`及`phone-0.15.61-note-{initial,ready,return}.{jpg,xml}`。未点击素材下载、重新生成、导出或删除，未调用AI；临时测试批量选择已退出。原旋转1／0恢复，未改分辨率／DPI／通知设置，原LAN未运行无需恢复。
 - 录屏证实微信横幅覆盖顶部按钮后曾误入微信；测试工具增加横幅等待及前台保护。另有GlobalSend由shell UID2000启动抢占前台，经用户明确授权已向「设计跨设备传输与同步系统」发送暂让出通知；其当前Web任务声明不动手机，完成后恢复通知已送达。未停止另一任务或其它应用。与Chrona无关的聊天视频段及其派生帧已清除，只保留本项目UI片段；手机端本次录屏／层级临时文件已移出到本项目并清理。
 - 主代理与持续复用的只读ui_review亲看实际真机、受控延迟及减少动画终态，最终签收，无剩余明确动画缺陷。0.15.60的其他原生93项／Web及公共库证据继续适用于未改路径。
-- release＋lintRelease成功，固定`build/candidates/0.15.61/Chrona-0.15.61.apk`3245950字节，223／0.15.61、非debug、原签名，见`build/release-0.15.61-{build,package,signature}.txt`。当前唯一收尾是普通提交、推送、正式发布该候选；不重复安装已验证包。
+- release＋lintRelease成功，固定`build/candidates/0.15.61/Chrona-0.15.61.apk`3245950字节，223／0.15.61、非debug、原签名，见`build/release-0.15.61-{build,package,signature}.txt`。源码149e726已普通推送并正式发布[v0.15.61](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.61)，远端标签精确149e7264e7e1806cdc426a42d03468aa10ec674a；唯一资产uploaded、3245950字节、非草稿／非预发布，latest读回v0.15.61。证据`build/release-0.15.61-{push,create,tag,latest}.txt`及published.json。本轮交付与真机复验均已完成，不重复安装已验证包。
 
 ## 0.15.60 — 页面动效审计与补齐 — 2026-10-28
 
