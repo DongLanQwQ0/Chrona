@@ -4,7 +4,7 @@
 
 固定候选**0.15.66/228**：`build/candidates/0.15.66/Chrona-0.15.66.apk`3268369字节，原签名；release与lintRelease、真实Edge正常横竖屏／主题刷新／重载／恢复跟随和LAN安全83项通过，持续复用的只读ui_review已审核4张压缩JPEG，无具体UI缺陷。证据`build/lan-theme/`及`build/lan-daily-workspace/`，详见`docs/validation-history.md`。真实Edge使用模拟手机API，不替代当前手机资源加载。
 
-**唯一下一步**：设备可达时直接覆盖228并核对真实LAN加载的矢量与主题。本轮adb无设备，手机最后已确认227；不索要重连、不发小修Release，public latest仍v0.15.61。
+**当前交付已安装**：用户提供`10.195.91.186:38241`后，V2527A正常从227覆盖228，版本读回0.15.66。实际LAN的icons.js、brand.svg和新app.js均200且MIME正确，见`build/lan-theme/phone-resources.json`。安装前LAN原已开启，更新后通过正常设置恢复开启，现地址`http://10.195.91.186:8765`；旧浏览器会话失效，需重新配对。ADB已释放，不发小修Release，public latest仍v0.15.61。后续无必须的重复安装或检查。
 
 ## 前批：Chrona × GlobalSend 局域网地址联动
 
