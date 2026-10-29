@@ -2,7 +2,7 @@
 const fs=require('fs'),path=require('path'),http=require('http'),assert=require('assert');
 const {chromium}=require('./lan_browser_cdp.cjs');
 const root=path.resolve(__dirname,'..'),web=path.join(root,'app/src/main/assets/lan');
-const server=http.createServer((req,res)=>{const file={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[req.url];if(!file)return res.writeHead(404).end();res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(web,file)));});
+const server=http.createServer((req,res)=>{const file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[req.url];if(!file)return res.writeHead(404).end();res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(path.join(web,file)));});
 const at=hour=>Date.parse(`2026-10-18T${hour}:00:00+08:00`);
 const base={taskId:1,category:'task',zone:'Asia/Shanghai',location:'',description:'',allDay:false,reminder:null,needsConfirmation:false,calendarLinked:false,completed:false,record:false};
 const items=[{...base,id:1,title:'结束作为截止',start:at('10'),end:at('11'),due:null,effectiveDue:at('11')},{...base,id:2,title:'明确截止优先',category:'homework',start:at('10'),end:at('11'),due:at('15'),effectiveDue:at('15')},{...base,id:3,title:'开始作为截止',start:at('13'),end:null,due:null,effectiveDue:at('13')}];

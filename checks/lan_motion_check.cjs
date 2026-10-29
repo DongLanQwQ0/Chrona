@@ -9,7 +9,7 @@ const source=http.createServer((req,res)=>{
  if(url.pathname==='/api/session')return json({csrf:'test',zone:'Asia/Shanghai',palette:{background:'#f4f6f8',primary:'#486a85'},calendarAllowed:true});
  if(url.pathname==='/api/home'){const send=()=>json({revision:1,items:[],calendar:[],date:'2026-10-05',review:0,failed:0});if(holdHome){heldHome=send;return;}return send();}
  if(['/api/schedule','/api/inbox'].includes(url.pathname))return json({revision:2,total:60,pageSize:30,items:Array.from({length:30},(_,i)=>({id:i+1,taskId:i+1,title:'日程 '+(i+1),text:'原始记录 '+(i+1),status:'ready',category:'event',start:1791072000000,created:1791072000000,zone:'Asia/Shanghai',location:'图书馆'}))});
- const file={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[url.pathname];if(!file){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,file)));
+ const file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[url.pathname];if(!file){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(path.join(root,file)));
 });
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn){for(let i=0;i<100;i++){if(await fn())return;await delay(25);}throw new Error('Condition timed out');}

@@ -2,28 +2,6 @@
 // A QR fragment never enters the HTTP request/referrer; consume it before any API call.
 function takePairingFragment(){if(!location.hash.startsWith('#pair='))return null;const value=location.hash.slice(6);history.replaceState(null,'',location.pathname+location.search);return /^[0-9]{6}$/.test(value)?value:'';}
 let scannedPairing=takePairingFragment();
-// Lucide icon paths, ISC license (lucide.dev). Kept in the APK; no CDN or remote assets.
-const ICONS={
- 'house':'<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7H10v7H4a1 1 0 0 1-1-1z"/>',
- 'calendar-days':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h.01M12 15h.01M16 15h.01M8 18h.01M12 18h.01M16 18h.01"/>',
- 'inbox':'<path d="M4 4h16l2 12v4H2v-4zM2 16h6l2 3h4l2-3h6"/>',
- 'grid-2x2':'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 12h18M12 3v18"/>',
- 'plus':'<path d="M12 5v14M5 12h14"/>', 'x':'<path d="m18 6-12 12M6 6l12 12"/>',
- 'chevron-right':'<path d="m9 18 6-6-6-6"/>','chevron-left':'<path d="m15 18-6-6 6-6"/>',
- 'arrow-left':'<path d="m12 19-7-7 7-7M5 12h14"/>',
- 'refresh-cw':'<path d="M3 12a9 9 0 0 1 15.4-6.4L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.4 6.4L3 16M8 16H3v5"/>',
- 'sun-moon':'<path d="M12 3a6.5 6.5 0 1 0 9 9 9 9 0 1 1-9-9M19 3v4M17 5h4"/>',
- 'settings':'<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
- 'check':'<path d="m20 6-11 11-5-5"/>',
- 'clock':'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
- 'list-checks':'<path d="m3 6 2 2 3-3M11 6h10M3 13h18M3 19h18"/>',
- 'search':'<circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/>',
- 'filter':'<path d="M4 7h16M7 12h10M10 17h4"/>',
- 'log-out':'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
- 'circle':'<circle cx="12" cy="12" r="9"/>',
- 'clock-alert':'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2M21 3v3M21 8h.01"/>',
- 'file-text':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h6"/>'
-};
 const $=selector=>document.querySelector(selector);
 function node(tag,cls,text){const element=document.createElement(tag);if(cls)element.className=cls;if(text!==undefined)element.textContent=text;return element;}
 function icon(name){const element=node('span');element.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]||ICONS['file-text']}</svg>`;return element;}
@@ -114,7 +92,30 @@ function readableAccent(value,surface){
  return '#'+fromLightness(light+(target-light)*high).map(channel=>Math.round(channel*255).toString(16).padStart(2,'0')).join('');
 }
 let phonePalette=null;
-function applyPalette(palette=phonePalette){if(!palette)return;phonePalette=palette;document.body.classList.toggle('dark',parseInt(palette.background.slice(1,3),16)<100);document.documentElement.style.colorScheme=document.body.classList.contains('dark')?'dark':'light';document.documentElement.style.setProperty('--phone-accent',readableAccent(palette.primary,getComputedStyle(document.body).getPropertyValue('--surface').trim()));}
+const appearanceKey='chrona.web.appearance';
+let webAppearance={mode:'phone',accent:''};
+try{const saved=JSON.parse(localStorage.getItem(appearanceKey));if(saved&&['phone','light','dark'].includes(saved.mode))webAppearance={mode:saved.mode,accent:/^#[0-9a-f]{6}$/i.test(saved.accent)?saved.accent:''};}catch{}
+function applyPalette(palette=phonePalette){
+ if(!palette)return;phonePalette=palette;
+ const follow=webAppearance.mode==='phone',dark=follow?colorLuminance(colorRGB(palette.background))<.5:webAppearance.mode==='dark';
+ document.body.classList.toggle('dark',dark);const style=document.documentElement.style;style.colorScheme=dark?'dark':'light';
+ for(const name of ['background','surface','text','muted','outline']){if(follow&&/^#[0-9a-f]{6}$/i.test(palette[name]))style.setProperty('--'+name,palette[name]);else style.removeProperty('--'+name);}
+ // Set on body as well: the native dark CSS tokens are declared there.
+ for(const name of ['background','surface','text','muted','outline']){if(follow&&/^#[0-9a-f]{6}$/i.test(palette[name]))document.body.style.setProperty('--'+name,palette[name]);else document.body.style.removeProperty('--'+name);}
+ const surface=getComputedStyle(document.body).getPropertyValue('--surface').trim();
+ style.setProperty('--phone-accent',readableAccent(follow?palette.primary:webAppearance.accent||palette.primary,surface));
+}
+function saveAppearance(){try{if(webAppearance.mode==='phone')localStorage.removeItem(appearanceKey);else localStorage.setItem(appearanceKey,JSON.stringify(webAppearance));}catch{toast('浏览器未允许保存外观设置');}applyPalette();}
+function appearancePanel(){
+ showDialog('网页外观',body=>{
+  const mode=node('select');mode.id='web-appearance-mode';mode.setAttribute('aria-label','主题');
+  for(const [value,label]of [['phone','跟随手机'],['light','浅色'],['dark','深色']]){const option=node('option','',label);option.value=value;mode.append(option);}mode.value=webAppearance.mode;
+  const label=node('label','','主题色');label.htmlFor='web-appearance-accent';const accent=node('input');accent.type='color';accent.id=label.htmlFor;accent.value=webAppearance.accent||phonePalette?.primary||'#426b5d';
+  const update=()=>{label.hidden=accent.hidden=mode.value==='phone';};update();
+  mode.addEventListener('change',()=>{webAppearance={mode:mode.value,accent:mode.value==='phone'?'':accent.value};saveAppearance();update();});
+  accent.addEventListener('input',()=>{webAppearance.accent=accent.value;saveAppearance();});body.append(mode,label,accent);
+ });
+}
 
 async function connect(){session=await api('/api/session');csrf=session.csrf;applyPalette(session.palette);$('#pair').hidden=true;$('#workspace').hidden=false;await navigate(location.hash.slice(1)||'home',false);}
 let approvalId='',approvalTimer=null,approvalSequence=0;
@@ -657,7 +658,7 @@ function appendHomeworkLinks(parent,item){
  const row=node('div','homework-links');for(const [url,label]of [[item.mobileUrl,'雪灾浙大M'],[item.desktopUrl,'雪灾浙大']]){if(!url)continue;const parsed=new URL(url);if(parsed.protocol!=='https:'||!['courses.zju.edu.cn','mcourses.zju.edu.cn'].includes(parsed.hostname))continue;const link=node('a','link-button',label);link.href=parsed.href;link.target='_blank';link.rel='noopener noreferrer';row.append(link);}if(row.childElementCount)parent.append(row);
 }
 
-document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>guard(()=>navigate(button.dataset.page))));$('#capture').addEventListener('click',capture);$('#logout').addEventListener('click',()=>confirmAction('断开连接','断开当前浏览器与手机的连接？',async()=>{await api('/api/logout',{});disconnect();}));$('#refresh').addEventListener('click',()=>guard(()=>refreshSession(true)));
+document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>guard(()=>navigate(button.dataset.page))));$('#capture').addEventListener('click',capture);$('#theme').addEventListener('click',appearancePanel);$('#logout').addEventListener('click',()=>confirmAction('断开连接','断开当前浏览器与手机的连接？',async()=>{await api('/api/logout',{});disconnect();}));$('#refresh').addEventListener('click',()=>guard(()=>refreshSession(true)));
 async function refreshSession(manual=false){
  if(inlineEditor?.form.isConnected||dialogEditor?.form.isConnected)return;
  const ticket=sequence,latest=await api('/api/session');if(!session||ticket!==sequence)return;

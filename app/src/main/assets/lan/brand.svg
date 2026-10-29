@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="22 22 64 64" role="img" aria-labelledby="title">
+  <title id="title">拾时 · Chrona</title>
+  <g fill="none" stroke="#ff9800" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M54 28.1 A25.9 25.9 0 1 1 54 79.9 A25.9 25.9 0 1 1 54 28.1"/>
+    <path d="M54 41.7 L54 54 L62.6 59"/>
+  </g>
+  <circle cx="54" cy="54" r="5" fill="#ff9800"/>
+</svg>

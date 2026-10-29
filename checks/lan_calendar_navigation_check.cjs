@@ -3,7 +3,7 @@ const fs=require('fs'),path=require('path'),http=require('http'),assert=require(
 const {chromium}=require('./lan_browser_cdp.cjs');
 const root=path.resolve(__dirname,'../app/src/main/assets/lan'),out=path.resolve(__dirname,'../build/lan-calendar-checks');
 fs.mkdirSync(out,{recursive:true});
-const server=http.createServer((req,res)=>{const file={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[new URL(req.url,'http://localhost').pathname];if(!file){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,file)));});
+const server=http.createServer((req,res)=>{const file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[new URL(req.url,'http://localhost').pathname];if(!file){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(path.join(root,file)));});
 const requests=[],errors=[];let truncated=false;
 const items=[{title:'闰日清晨',start:Date.parse('2024-02-29T08:00:00+08:00'),end:Date.parse('2024-02-29T09:00:00+08:00'),system:true,location:'教室'}, {title:'跨日讨论',start:Date.parse('2024-02-29T23:30:00+08:00'),end:Date.parse('2024-03-01T00:30:00+08:00'),system:true}];
 async function mock(route){const url=new URL(route.request().url());requests.push(Object.fromEntries(url.searchParams));let data;

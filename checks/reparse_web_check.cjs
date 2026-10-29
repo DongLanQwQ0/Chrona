@@ -7,7 +7,7 @@ let revision=12,posts=0,status='ready',failure=false;
 const task=()=>({id:1,text:'测试原文保留',status,error:'',created:1792713600000,source:'模拟手机数据'});
 const palette={background:'#f4f6f8',surface:'#ffffff',text:'#202c36',muted:'#70808e',primary:'#486a85',outline:'#d7e0e7'};
 const server=http.createServer(async(req,res)=>{
- const url=new URL(req.url,'http://localhost'),file={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[url.pathname];
+ const url=new URL(req.url,'http://localhost'),file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[url.pathname];
  if(file){res.setHeader('Content-Type',file.endsWith('js')?'text/javascript':file.endsWith('css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,file)));return;}
  let data={},code=200;
  if(url.pathname==='/api/session')data={csrf:'test-csrf',zone:'Asia/Shanghai',palette,calendarAllowed:true,calendarReadable:true};

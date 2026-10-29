@@ -3,7 +3,7 @@ const fs=require('fs'),path=require('path'),http=require('http'),assert=require(
 const {chromium}=require('./lan_browser_cdp.cjs');
 const root=path.resolve(__dirname,'../app/src/main/assets/lan'),out=path.resolve(__dirname,'../build/lan-parity-checks');
 fs.mkdirSync(out,{recursive:true});
-const server=http.createServer((req,res)=>{const file={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[new URL(req.url,'http://localhost').pathname];if(!file){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,file)));});
+const server=http.createServer((req,res)=>{const file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[new URL(req.url,'http://localhost').pathname];if(!file){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(path.join(root,file)));});
 let revision=5,phoneZone='Asia/Shanghai',agendaItems=null;const errors=[],requests=[];
 const tomorrow=Date.parse('2026-10-18T14:00:00+08:00');
 const tasks=[{id:1,text:'学习安排',status:'ready',source:'手动记录',created:tomorrow-86400000},{id:2,text:'作业',status:'ready',source:'学在浙大',created:tomorrow-86400000}];

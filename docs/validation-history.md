@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.66 — 网页共享矢量与主题 — 2026-10-29
+
+- 网页原先仅从手机palette推断深浅色并读取primary，背景／表面／正文／次要色／描边仍固定。现默认完整应用手机六色，轮询继续更新；右上「网页外观」复用既有浮层和选择器，独立深浅色／主题色仅存当前浏览器localStorage，恢复跟随清除覆盖。保持内容节点、输入和滚动，不向手机提交设置。
+- 移除JS重复手绘ICONS，`:app:generateLanVectors`以原生VectorDrawable为唯一图标源，输出icons.js；品牌SVG直接复制docs/assets/chrona-icon.svg，替换配对页文字占位并用于页首／favicon。任务接入preBuild，无新工具依赖。原生已有filled图标保留填充，stroke图标保留透明；检查发现`@android:color/transparent`不能当作实心颜色，已修正并加入真实DOM断言。HTTP仅扩展两个精确静态白名单，保留Host／Origin／CSP边界。
+- `checks/lan_daily_workspace_check.cjs`真实Edge生产资产＋模拟手机API通过：原三页操作与正常横竖屏、原生home路径及透明clock、独立深浅色、手机颜色变化不覆盖独立设置、主题色重载保留、恢复后完整surface/text和零手机写入。所有静态资源夹具补齐icons.js／brand.svg与SVG MIME；未恢复旧的高级网页功能。首次检查使用不存在的driver.reload且被浏览器退出错误掩盖，改用真实CDP Page.reload；最终两轮结果通过，以`build/lan-theme/browser.txt`为准。未终止浏览器或改profile。
+- release及lintRelease通过`build/lan-theme/build.txt`，LAN安全83项通过`security.txt`。固定包`build/candidates/0.15.66/Chrona-0.15.66.apk`3268369字节、228／0.15.66、原签名，见package.txt／signature.txt。主代理和持续复用的只读ui_review亲看appearance-independent-dark／appearance-follow-phone／phone-schedule-dark／landscape-schedule-dark四张压缩JPEG，受检UI无具体缺陷。截图位于`build/lan-daily-workspace/`，未读取PNG原图，不测极端DPI／低分辨率。
+- 本轮adb无设备，未覆盖手机，真实LAN的228资产加载待设备可达；手机最后确认227。只同步源码，不创建Release／标签，public latest仍v0.15.61。先前GlobalSend真实Binder与Android接收／浏览器证据仍有效，完整手机→Windows首次关联链继续保留。
+
 ## 0.15.65 — GlobalSend局域网地址联动 — 2026-10-28
 
 - `GlobalSendLink`显式绑定真实包／服务，核对系统UID、每次RPC的arg1和意图UUID。首次关联使用GlobalSend提供的同UID不可变PendingIntent；页面恢复、刷新、未知结果和迟到发送回包均不重发，120秒后恢复设备操作。实际地址只从当前`LanAccessService.url()`取得，保持网页配对边界；正式ABI由GlobalSend的`docs/INTEGRATION_ABI_V1.md`维护。

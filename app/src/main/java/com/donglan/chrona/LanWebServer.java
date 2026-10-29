@@ -58,9 +58,9 @@ final class LanWebServer extends NanoHTTPD {
         if (fetchSite != null && !(fetchSite.equals("same-origin") || fetchSite.equals("none"))) return json(Response.Status.FORBIDDEN, "来源无效");
         String path = request.getUri(); Method method = request.getMethod();
         if (method != Method.GET && method != Method.POST) return json(Response.Status.METHOD_NOT_ALLOWED, "请求方法无效");
-        if (method == Method.GET && (path.equals("/") || path.equals("/app.js") || path.equals("/style.css"))) {
+        if (method == Method.GET && (path.equals("/") || path.equals("/app.js") || path.equals("/icons.js") || path.equals("/brand.svg") || path.equals("/style.css"))) {
             String name = path.equals("/") ? "index.html" : path.substring(1);
-            return newChunkedResponse(Response.Status.OK, path.endsWith(".js") ? "text/javascript; charset=utf-8" : path.endsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8", context.getAssets().open("lan/" + name));
+            return newChunkedResponse(Response.Status.OK, path.endsWith(".js") ? "text/javascript; charset=utf-8" : path.endsWith(".css") ? "text/css; charset=utf-8" : path.endsWith(".svg") ? "image/svg+xml" : "text/html; charset=utf-8", context.getAssets().open("lan/" + name));
         }
         if (method == Method.POST && path.equals("/api/pair")) {
             if (!security.origin(origin)) return json(Response.Status.FORBIDDEN, "来源无效");

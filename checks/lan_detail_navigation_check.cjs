@@ -16,9 +16,9 @@ function createServer(){
  const task=id=>({id,text:'一条记录包含多项安排，原文与附件仍可查看。',source:'浏览器隔离测试',created:start-86400000,status:'ready'});
  const server=http.createServer(async(req,res)=>{
   try{
-   const url=new URL(req.url,'http://localhost'),file={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[url.pathname];
+   const url=new URL(req.url,'http://localhost'),file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[url.pathname];
    res.setHeader('Cache-Control','no-store');
-   if(file){res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,file)));return;}
+   if(file){res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(path.join(root,file)));return;}
    let raw='';for await(const chunk of req)raw+=chunk;const body=raw?JSON.parse(raw):null;
    requests.push({path:url.pathname,query:Object.fromEntries(url.searchParams),body});let data;
    if(url.pathname==='/api/session')data={csrf:'isolated-fixture',zone:'Asia/Shanghai',calendarAllowed:true,palette:{background:'#f4f6f8',surface:'#ffffff',text:'#202c36',muted:'#70808e',primary:'#008582',outline:'#d7e0e7'}};

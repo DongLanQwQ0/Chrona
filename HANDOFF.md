@@ -1,4 +1,12 @@
-# 当前交付：Chrona × GlobalSend 局域网地址联动
+# 当前交付：网页版共享矢量与主题
+
+2026-10-29：已完成网页默认跟随手机完整配色，以及仅当前浏览器保存的独立深浅色／主题色设置，恢复跟随清除覆盖；不写手机外观配置。图标由原生VectorDrawable生成，品牌复用docs/assets/chrona-icon.svg，移除重复手绘路径和文字占位。保留三页范围、紧凑布局、配对与刷新状态。
+
+固定候选**0.15.66/228**：`build/candidates/0.15.66/Chrona-0.15.66.apk`3268369字节，原签名；release与lintRelease、真实Edge正常横竖屏／主题刷新／重载／恢复跟随和LAN安全83项通过，持续复用的只读ui_review已审核4张压缩JPEG，无具体UI缺陷。证据`build/lan-theme/`及`build/lan-daily-workspace/`，详见`docs/validation-history.md`。真实Edge使用模拟手机API，不替代当前手机资源加载。
+
+**唯一下一步**：设备可达时直接覆盖228并核对真实LAN加载的矢量与主题。本轮adb无设备，手机最后已确认227；不索要重连、不发小修Release，public latest仍v0.15.61。
+
+## 前批：Chrona × GlobalSend 局域网地址联动
 
 ## 当前候选与验收范围
 
@@ -11,7 +19,7 @@
 
 实现入口：`GlobalSendLink`、`LanSettingsActivity`。业务合同见`docs/features/connectivity/lan-access.md`；有效证据、复现方法及局限见`docs/validation-history.md`的0.15.65节。此前0.15.64课堂自动／批量总结候选及证据继续有效，不重复成熟管线检查。
 
-## 唯一下一步
+## 前批联动的剩余验收
 
 用户首次在「关联GlobalSend」完成显式授权、有真实Windows目标在线后，验证手机列表→点击发送→默认浏览器访问手机8765→原手机确认。USB真机`10AG5S1SR4005X7`已正常从226覆盖227；GlobalSend按其所有者交付正常从1.0.28/37覆盖1.0.31/40并启动，原组连接保留。LAN真机显示正确短句、设备组顺序及关联入口，未代用户批准跨应用权限，完整手机→Windows链路仍待验证。验布局临时开启的LAN已恢复原关闭状态，ADB已释放并通知GlobalSend所有者。
 

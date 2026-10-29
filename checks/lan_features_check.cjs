@@ -2,7 +2,7 @@
 const fs=require('fs'),path=require('path'),http=require('http'),assert=require('assert');
 const {chromium}=require('./lan_browser_cdp.cjs');
 const root=path.resolve(__dirname,'../app/src/main/assets/lan'),out=path.resolve(__dirname,'../build/lan-feature-checks');fs.mkdirSync(out,{recursive:true});
-const server=http.createServer((req,res)=>{const file={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[req.url];if(!file)return res.writeHead(404).end();res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,file)));});
+const server=http.createServer((req,res)=>{const file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[req.url];if(!file)return res.writeHead(404).end();res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(path.join(root,file)));});
 const requests=[],errors=[];let revision=5,failUpload=true,created=0,running=0,resolved=false,enabled=true,primary='all',managedHomeworkCapture=false,automatic=true,failPreference=false,conflictUpload=true;
 const longVersion=Array.from({length:24},(_,i)=>`第${i+1}段：周三下午在紫金港校区讨论项目进展。请携带整理后的会议材料，逐项确认课程作业、执行时间与提醒。\n参考：https://example.com/`+'course-material-'.repeat(8)).join('\n\n');
 const task={id:30,text:'files',status:'ready',source:'浏览器',created:Date.now()};
