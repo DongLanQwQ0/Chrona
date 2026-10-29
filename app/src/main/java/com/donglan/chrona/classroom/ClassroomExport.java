@@ -56,11 +56,12 @@ public final class ClassroomExport {
         String transcript=transcript(segments);
         for(String image:images)if(!new File(dir,image).isFile())throw new IOException("总结引用的图片缺失："+image);
         {
-            int total=images.size()+2,done=0;
+            String corrected=summary.optString("corrected_transcript");int total=images.size()+2+(corrected.isBlank()?0:1),done=0;
             progress.update(new ClassroomProgress("写入 ZIP",done,total,"课堂总结.md"));
             entry(zip,prefix+"课堂总结.md",md.toString().getBytes(StandardCharsets.UTF_8));done++;
             progress.update(new ClassroomProgress("写入 ZIP",done,total,"sources.md"));
             entry(zip,prefix+"sources.md",transcript.getBytes(StandardCharsets.UTF_8));done++;
+            if(!corrected.isBlank()){entry(zip,prefix+"更正文稿.md",ClassroomDocument.normalizeMarkdown(corrected).getBytes(StandardCharsets.UTF_8));done++;}
             for(String image:images){progress.update(new ClassroomProgress("写入 ZIP",done,total,image));entry(zip,prefix+"images/"+image,ClassroomStore.bytes(new File(dir,image)));done++;}
             progress.update(new ClassroomProgress("ZIP 内容已写入",done,total,images.size()+" 张图片"));
         }

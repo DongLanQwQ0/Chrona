@@ -57,7 +57,7 @@ for name, content in fixtures.items():
     path.write_text(content, encoding='utf-8')
     paths.append(path)
 relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java',
-            'classroom/ClassroomImages.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomExport.java', 'classroom/ClassroomProgress.java',
+            'classroom/ClassroomImages.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomConversation.java', 'classroom/ClassroomEnhancedSummary.java', 'classroom/ClassroomExport.java', 'classroom/ClassroomProgress.java',
             'ai/AiSettings.java', 'ai/ChatCompletionClient.java', 'ai/ParseResult.java', 'ai/SchedulePrompt.java',
             'ai/SemanticEventNormalizer.java', 'ai/TimeAssessment.java', 'ai/RequestOptions.java', 'ai/StreamChunkContent.java',
             'data/EventCandidate.java', 'data/EventCategory.java', 'data/EventTimeDefaults.java',

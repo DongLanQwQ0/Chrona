@@ -52,7 +52,7 @@ public final class ClassroomLessonActivity extends Activity {
         Object batchOwner;
         boolean succeeded;
         boolean retryRequired;
-        boolean summaryAuthorized;
+        boolean summaryAuthorized;Boolean enhancedClassroom;
         Runnable completed;
         boolean updateQueued, detached;
         long startedAt;
@@ -248,7 +248,7 @@ public final class ClassroomLessonActivity extends Activity {
         panel.addView(UiDialogs.actionRow(this,dialog,"上传并生成",()->{dialog.dismiss();startGeneration(ai,upload.isChecked()?ClassroomSummary.MAX_IMAGES:0);}));
         UiDialogs.showFloatingDialog(dialog,panel);
     }
-    private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;String prompt=SchedulePreferences.load(this).classroomPrompt;job.imageLimit=limit;job.run("准备整理课堂",true,()->{if(!new File(job.dir,"candidates.json").isFile())job.prepareMaterials();ClassroomAutoSummary.summarize(job,ai,prompt,true);});}
+    private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;SchedulePreferences preferences=SchedulePreferences.load(this);String prompt=preferences.classroomPrompt;job.enhancedClassroom=preferences.enhancedClassroom;job.imageLimit=limit;job.run("准备整理课堂",true,()->{if(!new File(job.dir,"candidates.json").isFile())job.prepareMaterials();ClassroomAutoSummary.summarize(job,ai,prompt,true);});}
     private void confirmDelete(){
         if(!gate())return;
         if(s.busy||ClassroomLiveTranscripts.active(s.account,s.selected)){Feedback.show(this,"本节课堂正在处理，请先停止后再删除");return;}

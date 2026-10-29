@@ -75,6 +75,7 @@
         html+=`<h2>课堂安排</h2><div class="assignment" role="link" tabindex="0" data-task="${taskIndex++}" aria-label="提取课堂安排为日程">${md.render(task.text||'')}</div>`;
       }
     }
+    if(summary.corrected_transcript)html+='<details><summary>更正文稿</summary>'+md.render(summary.corrected_transcript)+'</details>';
     const main=document.querySelector('main');main.innerHTML=html;resize();
     main.querySelectorAll('.assignment').forEach(el=>{
       const activate=event=>{if(event.target.closest('a'))return;location.href='action/task/'+el.dataset.task;};

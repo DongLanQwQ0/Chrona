@@ -13,6 +13,7 @@ tmp.mkdir(exist_ok=True)
 tree = ast.parse((root / 'checks/classroom_work_service_check.py').read_text(encoding='utf-8'))
 stubs = ast.literal_eval(next(node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'stubs' for t in node.targets)))
 stubs.update({
+'com/donglan/chrona/ai/SchedulePreferences.java': '''package com.donglan.chrona.ai;public class SchedulePreferences {public boolean enhancedClassroom;public static SchedulePreferences load(android.content.Context c){return new SchedulePreferences();}}''',
 'com/donglan/chrona/ClassroomNotifications.java': '''package com.donglan.chrona;class ClassroomNotifications {
 void repost(){ClassroomWorkService.updateProgress(this);}
 static android.app.Notification foreground(android.content.Context c,int count){return new android.app.Notification("initial:"+count);}
@@ -43,7 +44,7 @@ static final java.util.Set<String> active=new java.util.HashSet<>();static boole
 'com/donglan/chrona/ClassroomLessonActivity.java': '''package com.donglan.chrona;public class ClassroomLessonActivity {static class Session {
 final android.content.Context app;final String account;com.donglan.chrona.classroom.ClassroomLesson selected;
 ClassroomNotifications notifications;
-boolean failed,cancelled,monitorOwned,busy,cancelRequested,succeeded,detached,summaryAuthorized;int imageLimit;Object batchOwner,prepared,materials,control;java.io.File dir;boolean localInitialized;
+boolean failed,cancelled,monitorOwned,busy,cancelRequested,succeeded,detached,summaryAuthorized;Boolean enhancedClassroom;int imageLimit;Object batchOwner,prepared,materials,control;java.io.File dir;boolean localInitialized;
 String message="";Runnable completed;Work pending;static Session active;Progress progress=new Progress();static class Progress{String stage="fixture";}
 Session(String a,String id){this(new android.content.Context(),a);selected=new com.donglan.chrona.classroom.ClassroomLesson(id);}
 Session(android.content.Context c,String a){app=c;account=a;}

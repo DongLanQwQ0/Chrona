@@ -22,7 +22,7 @@ final class ClassroomBatchWork {
         return batch;
     }
     final Context app;final String account;final List<ClassroomLesson> lessons;
-    final int imageLimit;
+    final int imageLimit;final boolean enhancedClassroom;
     final java.util.Set<String> authorizedRetries;
     final LinkedHashMap<String,String> failures=new LinkedHashMap<>();
     final android.content.SharedPreferences preferences;
@@ -34,6 +34,7 @@ final class ClassroomBatchWork {
         this.app=app;this.account=account;
         this.authorizedRetries=java.util.Set.copyOf(authorizedRetries);
         imageLimit=ClassroomAutoSummary.imageLimit(app,account);
+        enhancedClassroom=com.donglan.chrona.ai.SchedulePreferences.load(app).enhancedClassroom;
         LinkedHashMap<String,ClassroomLesson> unique=new LinkedHashMap<>();for(ClassroomLesson lesson:selection)unique.put(key(lesson),lesson);
         lessons=new ArrayList<>(unique.values());preferences=new ZjuSettingsStore(app).prefs;
         changes=(p,k)->{if(!allowed())cancel("学校账号已停用或更换");};
@@ -61,6 +62,7 @@ final class ClassroomBatchWork {
             ClassroomLessonActivity.Session job=new ClassroomLessonActivity.Session(app,account);current=job;
             job.selected=lesson;job.batchOwner=this;job.detached=true;
             job.imageLimit=imageLimit;
+            job.enhancedClassroom=enhancedClassroom;
             job.summaryAuthorized=authorizedRetries.contains(key(lesson));
             job.completed=()->{
                 job.completed=null;current=null;

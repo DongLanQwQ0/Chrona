@@ -7,6 +7,7 @@ import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import com.donglan.chrona.ai.AiSettings;
@@ -26,6 +27,7 @@ public final class SettingsActivity extends Activity {
     private TextView effortChoice;
     private EditText customPrompt;
     private EditText classroomPrompt;
+    private Switch enhancedClassroom;
     private int workStartMinutes;
     private int workEndMinutes;
     private TextView workStart;
@@ -123,6 +125,20 @@ public final class SettingsActivity extends Activity {
         classroomPrompt.setGravity(Gravity.TOP | Gravity.START);
         classroomPrompt.setText(state == null ? preferences.classroomPrompt
                 : state.getString("classroomPrompt", preferences.classroomPrompt));
+        enhancedClassroom = new Switch(this);
+        enhancedClassroom.setText("增强整理");
+        enhancedClassroom.setTextSize(16);
+        enhancedClassroom.setChecked(state == null ? preferences.enhancedClassroom
+                : state.getBoolean("enhancedClassroom", preferences.enhancedClassroom));
+        enhancedClassroom.setSwitchPadding(dp(12));
+        UiStyle.toggle(enhancedClassroom);
+        enhancedClassroom.setMinHeight(dp(54));
+        UiStyle.addSpaced(form, enhancedClassroom, 8, 0);
+        TextView enhancedNote = new TextView(this);
+        enhancedNote.setText("更正字幕后分段总结，耗时和Token用量更高");
+        enhancedNote.setTextSize(13);
+        UiStyle.muted(enhancedNote);
+        UiStyle.addSpaced(form, enhancedNote, 0, 4);
         Button save = new Button(this);
         save.setText("保存设置");
         save.setOnClickListener(view -> save());
@@ -214,7 +230,7 @@ public final class SettingsActivity extends Activity {
         return new String[]{baseUrl.getText().toString(), model.getText().toString(),
                 apiKey.getText().toString(), reasoningEffort, Integer.toString(workStartMinutes),
                 Integer.toString(workEndMinutes), customPrompt.getText().toString(),
-                classroomPrompt.getText().toString()};
+                classroomPrompt.getText().toString(), Boolean.toString(enhancedClassroom.isChecked())};
     }
 
     private void restoreForm(String[] values) {
@@ -227,6 +243,7 @@ public final class SettingsActivity extends Activity {
         workEndMinutes = Integer.parseInt(values[5]);
         customPrompt.setText(values[6]);
         classroomPrompt.setText(values[7]);
+        enhancedClassroom.setChecked(Boolean.parseBoolean(values[8]));
         refreshWorkTime();
     }
 
@@ -277,7 +294,8 @@ public final class SettingsActivity extends Activity {
     private void save() {
         try {
             SchedulePreferences preferences = new SchedulePreferences(workStartMinutes, workEndMinutes,
-                    customPrompt.getText().toString(), classroomPrompt.getText().toString());
+                    customPrompt.getText().toString(), classroomPrompt.getText().toString(),
+                    enhancedClassroom.isChecked());
             AiSettingsStore store = new AiSettingsStore(this);
             String key = apiKey.getText().toString().trim();
             if (key.isEmpty()) {
@@ -315,6 +333,7 @@ public final class SettingsActivity extends Activity {
         state.putInt("workEndMinutes", workEndMinutes);
         state.putString("customPrompt", customPrompt.getText().toString());
         state.putString("classroomPrompt", classroomPrompt.getText().toString());
+        state.putBoolean("enhancedClassroom", enhancedClassroom.isChecked());
         super.onSaveInstanceState(state);
     }
 

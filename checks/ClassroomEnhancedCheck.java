@@ -1,0 +1,335 @@
+package com.donglan.chrona.classroom;
+
+import com.donglan.chrona.ai.AiSettings;
+import com.donglan.chrona.net.RequestControl;
+import com.sun.net.httpserver.HttpServer;
+import org.json.*;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.regex.*;
+
+/** Production classes, synthetic material and model output, real loopback HTTP. */
+public final class ClassroomEnhancedCheck {
+    private static final ClassroomLesson LESSON=new ClassroomLesson("1","2","合成课程","合成课堂","教室","6",1);
+    private static final AiSettings AI=new AiSettings("https://api.openai.com/v1","gpt-5.1","synthetic-only-key","high");
+    private static final List<JSONObject> requests=new ArrayList<>(), replies=new ArrayList<>();
+    private static final List<String> stages=new ArrayList<>();
+    private static File root;private static int checks,failures,failCall=-1,slowCall=-1;
+    private static String mode="normal",lastStage="";private static boolean images;
+    private static CountDownLatch requestSeen=new CountDownLatch(1);
+    interface Task{void run()throws Exception;}
+    private static void check(boolean ok,String message){checks++;if(!ok){failures++;System.err.println("FAIL: "+message);}}
+    private static void test(String label,Task task){try{task.run();System.out.println("DONE: "+label);}catch(Throwable error){failures++;System.err.println("ERROR: "+label);error.printStackTrace();}}
+    private static void rejects(Task task,String label)throws Exception{try{task.run();check(false,label);}catch(IOException|JSONException expected){check(true,label);}}
+    private static void reset(String value,boolean withImages){requests.clear();replies.clear();stages.clear();mode=value;images=withImages;lastStage="";failCall=-1;slowCall=-1;requestSeen=new CountDownLatch(1);}
+    private static String prompt(JSONObject request)throws Exception{JSONArray messages=request.getJSONArray("messages");return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");}
+    private static String stage(String prompt){
+        Matcher correction=Pattern.compile("更正文稿第 (\\d+)/").matcher(prompt);if(correction.find())return "correct-"+(Integer.parseInt(correction.group(1))-1);
+        Matcher draft=Pattern.compile("现在只整理第 (\\d+) 段").matcher(prompt);if(draft.find())return "draft-"+(Integer.parseInt(draft.group(1))-1);
+        Matcher fin=Pattern.compile("只核实并完善第 (\\d+) 段").matcher(prompt);if(fin.find())return "final-"+(Integer.parseInt(fin.group(1))-1);
+        if(prompt.contains("唯一一次格式修复"))return lastStage+"-repair";
+        if(prompt.contains("接续上一条"))return lastStage+"-continue";
+        if(prompt.contains("用户授权继续当前板块"))return lastStage+"-user-retry";
+        return "legacy";
+    }
+    private static JSONObject part(int id,boolean draft,String prompt)throws Exception{
+        JSONArray pictures=new JSONArray();Matcher names=Pattern.compile("\\\"file\\\":\\\"(image-[0-9]+\\.jpg)\\\"").matcher(prompt);
+        if(!draft)while(names.find())if(!pictures.toString().contains(names.group(1)))pictures.put(names.group(1));
+        if(!draft&&mode.equals("reuse-images")&&id==1)pictures.put("image-0.jpg");
+        if(!draft&&mode.equals("final-retry")&&prompt.contains("用户授权继续当前板块"))pictures.put("image-0.jpg");
+        JSONObject value=new JSONObject().put("overview","合成概览 "+id)
+                .put("notes",new JSONArray().put(new JSONObject().put("title","题目条件与评分线索 "+id)
+                    .put("text","题干 5 kg；步骤分 2 分；待核对 $\\nabla x$。\\n \\n下一段")
+                    .put("sources",new JSONArray().put(mode.equals("invalid-source")||(!draft&&mode.equals("invalid-final-source"))?999:id))
+                    .put("images",mode.equals("invalid-image")||(!draft&&mode.equals("invalid-final-image"))?new JSONArray().put("image-999.jpg"):pictures)))
+                .put("assignments",new JSONArray());
+        if(draft)value.put("image_assessment",new JSONObject().put("decision",images?"request":"disabled").put("reason","合成板书需核对题目条件"))
+                .put("image_requests",images?new JSONArray().put(new JSONObject().put("start",mode.equals("reuse-images")?0:id*100).put("end",mode.equals("reuse-images")?120:id*100+20).put("reason","核对题干数字与步骤分")):new JSONArray());
+        return value;
+    }
+    private static HttpServer server()throws Exception{
+        HttpServer server=HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(),0),0);
+        server.setExecutor(Executors.newCachedThreadPool(r->{Thread t=new Thread(r);t.setDaemon(true);return t;}));
+        server.createContext("/",exchange->{try{
+            JSONObject body=new JSONObject(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
+            requests.add(body);String text=prompt(body),current=stage(text);stages.add(current);int call=requests.size();
+            if(!current.contains("continue")&&!current.contains("repair")&&!current.contains("user-retry"))lastStage=current;
+            if(call==slowCall){requestSeen.countDown();Thread.sleep(1200);}
+            if(call==failCall){byte[] error="{\"error\":{\"message\":\"synthetic unavailable\"}}".getBytes(StandardCharsets.UTF_8);replies.add(null);exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(503,error.length);exchange.getResponseBody().write(error);return;}
+            String output,finish="stop";int id=current.matches(".*-[01].*")?Integer.parseInt(current.replaceAll(".*?-(\\d+).*","$1")):0;
+            if(current.startsWith("correct")){
+                if(current.contains("continue"))output=" 后半；条件 5 kg，步骤分 2 分。";
+                else output="# 更正文稿\n["+id+"] 完整题干、改卷细节与 $\\nabla x$。";
+                if(mode.startsWith("length")&&current.equals("correct-0")){output="# 更正文稿\n[0] 前半";finish="length";}
+            }else if(mode.equals("bad-json")&&current.equals("draft-0"))output="{\"overview\":";
+            else if(mode.equals("bad-repair")&&(current.equals("draft-0")||current.endsWith("repair")))output="{\"overview\":";
+            else if(mode.equals("bad-manual")&&current.endsWith("user-retry"))output="{\"overview\":";
+            else output="  ```json\n"+part(id,current.startsWith("draft")||current.equals("legacy"),text).toString(2)+"\n```  ";
+            JSONObject reply=new JSONObject().put("role","assistant").put("content",output).put("reasoning_content","合成推理\ncall="+call);
+            replies.add(reply);
+            JSONObject usage=new JSONObject().put("prompt_tokens",1000+call).put("completion_tokens",100)
+                    .put("total_tokens",1100+call).put("prompt_tokens_details",new JSONObject().put("cached_tokens",700+call)).put("prompt_cache_hit_tokens",600+call);
+            String payload,type;
+            if(mode.equals("json-envelope")){
+                reply.put("provider_extension",new JSONObject().put("opaque","unchanged"));
+                payload=new JSONObject().put("choices",new JSONArray().put(new JSONObject().put("message",reply).put("finish_reason",finish))).put("usage",usage).toString();type="application/json";
+            }else{
+                JSONObject delta=new JSONObject(reply.toString());delta.remove("role");
+                JSONObject frame=new JSONObject().put("choices",new JSONArray().put(new JSONObject().put("delta",delta).put("finish_reason",finish)));
+                payload="data: "+frame+"\n\ndata: "+new JSONObject().put("choices",new JSONArray()).put("usage",usage)+"\n\ndata: [DONE]\n\n";type="text/event-stream";
+            }
+            byte[] bytes=payload.getBytes(StandardCharsets.UTF_8);exchange.getResponseHeaders().set("Content-Type",type);exchange.sendResponseHeaders(200,bytes.length);exchange.getResponseBody().write(bytes);
+        }catch(Exception error){if(!(error instanceof IOException))error.printStackTrace();}finally{exchange.close();}});
+        server.start();
+        URL.setURLStreamHandlerFactory(protocol->protocol.equals("https")?new URLStreamHandler(){protected URLConnection openConnection(URL url)throws IOException{
+            if(!url.getHost().equals("api.openai.com"))throw new IOException("Non-loopback destination forbidden");
+            return new URL("http://127.0.0.1:"+server.getAddress().getPort()+url.getFile()).openConnection();
+        }}:null);return server;
+    }
+    private static File materials(String name,boolean longText)throws Exception{
+        File dir=new File(root,name+"-"+System.nanoTime());dir.mkdirs();JSONArray segments=new JSONArray(),candidates=new JSONArray();
+        for(int i=0;i<(longText?2:1);i++){
+            segments.put(new JSONObject().put("start",i*100).put("end",i*100+20).put("text","题干 5 kg，步骤分 2 分。"+(longText?"甲".repeat(3500):"完整短字幕")));
+            BufferedImage pic=new BufferedImage(48,48,BufferedImage.TYPE_INT_RGB);var g=pic.createGraphics();g.setColor(new java.awt.Color(i*60+30,i*60+30,i*60+30));g.fillRect(0,0,48,48);g.dispose();
+            File raw=new File(dir,"raw-"+i+".img");ImageIO.write(pic,"png",raw);
+            candidates.put(new JSONObject().put("raw",raw.getName()).put("index",i).put("second",i*100));
+        }
+        ClassroomStore.write(new File(dir,"materials.json"),new JSONObject().put("segments",segments).put("raw_images",candidates.length()));
+        ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject().put("images",candidates));return dir;
+    }
+    private static JSONObject generate(File dir,boolean enhanced)throws Exception{try(RequestControl c=new RequestControl(20000)){return ClassroomSummary.generate(dir,LESSON,AI,images?2:0,c,p->{},"保留题干条件及步骤分",enhanced);}}
+    private static JSONObject state(File dir)throws Exception{return ClassroomStore.read(new File(dir,"run.json"));}
+    private static void evidence(String name,File dir)throws Exception{
+        JSONArray req=new JSONArray(),rep=new JSONArray();for(JSONObject value:requests)req.put(value);for(JSONObject value:replies)rep.put(value==null?JSONObject.NULL:value);
+        ClassroomStore.write(new File(root,name+"-http.json"),new JSONObject().put("synthetic",true).put("fixture",dir.getName()).put("stages",stages).put("requests",req).put("replies",rep));
+    }
+    private static void appendOnly(File dir)throws Exception{
+        JSONObject firstOptions=new JSONObject(requests.get(0).toString());firstOptions.remove("messages");
+        for(int n=0;n<requests.size();n++){
+            JSONObject options=new JSONObject(requests.get(n).toString());options.remove("messages");
+            check(options.similar(firstOptions),"frozen options for request "+n);
+            if(n==0)continue;
+            JSONArray before=requests.get(n-1).getJSONArray("messages"),after=requests.get(n).getJSONArray("messages");
+            check(after.length()>=before.length(),"history never shrinks "+n);
+            for(int i=0;i<before.length();i++)check(before.getJSONObject(i).toString().equals(after.getJSONObject(i).toString()),"exact message prefix "+n+":"+i);
+            if(replies.get(n-1)!=null){check(after.length()==before.length()+2,"one assistant and user appended "+n);check(after.getJSONObject(before.length()).similar(replies.get(n-1)),"raw assistant including reasoning preserved "+n);}
+            else check(after.toString().equals(before.toString()),"unknown network outcome manually retries unchanged pending request "+n);
+        }
+        JSONObject conversation=state(dir).getJSONObject("conversation");JSONArray turns=conversation.getJSONArray("turns");
+        check(turns.length()==requests.size(),"every sent attempt retained in turns");
+        for(int n=0;n<turns.length();n++)if(replies.get(n)!=null){JSONObject usage=turns.getJSONObject(n).getJSONObject("usage");check(usage.getJSONObject("prompt_tokens_details").getInt("cached_tokens")==701+n&&usage.getInt("prompt_cache_hit_tokens")==601+n,"synthetic cache usage retained verbatim "+n);}
+        check(!state(dir).toString().contains(AI.apiKey),"run excludes API credential");
+    }
+    private static void multiBlock()throws Exception{
+        reset("normal",true);File dir=materials("multi",true);JSONObject result=generate(dir,true);evidence("multi",dir);appendOnly(dir);
+        check(stages.equals(List.of("correct-0","correct-1","draft-0","draft-1","final-0","final-1")),"all corrected Markdown precedes every draft and image stage");
+        check(result.getBoolean("complete")&&result.getInt("total_parts")==2&&result.getJSONArray("parts").length()==2,"more than 6000 subtitle characters produces two complete parts");
+        check(result.getString("corrected_transcript").contains("[0]")&&result.getString("corrected_transcript").contains("[1]"),"all corrected transcript blocks published");
+        for(int i=0;i<4;i++)check(requests.get(i).getJSONArray("messages").getJSONObject(requests.get(i).getJSONArray("messages").length()-1).getJSONArray("content").length()==1,"no image upload before drafts finish "+i);
+        check(result.getJSONArray("images").length()==2&&state(dir).getJSONObject("image_audit").getInt("selected_count")==2,"image budget and analysed inventory");
+        check(state(dir).getJSONArray("drafts").getJSONObject(0).has("image_assessment")&&state(dir).getJSONArray("drafts").getJSONObject(1).getJSONArray("image_requests").length()==1,"per-block image assessment and requests persisted");
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").contains("。\n\n下一段"),"parsed Markdown normalizes escaped paragraph breaks");
+    }
+    private static void manualResume()throws Exception{
+        reset("normal",true);File dir=materials("network",true);failCall=4;rejects(()->generate(dir,true),"network failure propagated without automatic resubmit");
+        check(requests.size()==4,"network failure made exactly one attempt");JSONObject failed=state(dir);String run=failed.getString("run");
+        check(failed.getJSONArray("corrected").length()==2&&failed.getJSONArray("drafts").length()==1,"successful stages checkpointed before failure");
+        check(failed.getJSONObject("conversation").getString("pending").equals("draft-1"),"failed stage remains pending");
+        failCall=-1;JSONObject result=generate(dir,true);check(requests.size()==7&&result.getString("run").equals(run),"manual resume only retries failed draft then remaining image stages");
+        appendOnly(dir);evidence("network-resume",dir);
+    }
+    private static void repair()throws Exception{
+        reset("bad-json",false);File dir=materials("repair",false);check(generate(dir,true).getBoolean("complete"),"single local JSON repair completes");
+        check(stages.equals(List.of("correct-0","draft-0","draft-0-repair")),"one repair appends without recomputing transcript");appendOnly(dir);evidence("repair",dir);
+        reset("bad-repair",false);File bad=materials("repair-limit",false);rejects(()->generate(bad,true),"invalid single repair fails");
+        check(requests.size()==3,"repair budget is one");mode="bad-manual";rejects(()->generate(bad,true),"manual retry may fail but does not loop on another automatic repair");check(requests.size()==4,"explicit manual continue appends exactly one new request after failed repair");evidence("repair-limit",bad);
+    }
+    private static void whitelist()throws Exception{
+        for(String invalid:List.of("invalid-source","invalid-image")){
+            reset(invalid,false);File dir=materials(invalid,false);rejects(()->generate(dir,true),invalid+" rejected");
+            check(requests.size()==2&&!state(dir).has("final"),"semantic invalid reference never triggers structural repair or publication");
+            check(state(dir).getJSONObject("conversation").getJSONObject("outputs").has("draft-0"),"invalid raw output retained");evidence(invalid,dir);
+        }
+        for(String invalid:List.of("invalid-final-source","invalid-final-image")){
+            reset(invalid,true);File dir=materials(invalid,false);rejects(()->generate(dir,true),invalid+" rejected after actual image upload");
+            JSONObject failed=state(dir);check(requests.size()==3&&!failed.has("final")&&failed.getJSONArray("parts").length()==0,"invalid final neither published nor automatically resent");
+            check(failed.getJSONArray("corrected").length()==1&&failed.getJSONArray("drafts").length()==1,"invalid final retains successful transcript and draft");
+            check(failed.getJSONObject("conversation").getJSONObject("outputs").has("final-0"),"invalid final raw output retained");evidence(invalid,dir);
+        }
+    }
+    private static void lengthResume()throws Exception{
+        reset("length-resume",false);File dir=materials("length",true);failCall=2;rejects(()->generate(dir,true),"length continuation transport failure stops");check(requests.size()==2,"no automatic retry after continuation failure");
+        String run=state(dir).getString("run");failCall=-1;JSONObject result=generate(dir,true);
+        check(result.getString("run").equals(run)&&result.getString("corrected_transcript").contains("前半 后半"),"manual resume joins original length output and remaining continuation");
+        check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"correct-0-continue")==2,"length reply not resent; failed continuation alone retried");appendOnly(dir);evidence("length-resume",dir);
+    }
+    private static void cancellation()throws Exception{
+        reset("normal",false);File dir=materials("cancel",true);slowCall=2;
+        try(RequestControl control=new RequestControl(20000)){
+            Thread cancel=new Thread(()->{try{if(requestSeen.await(5,TimeUnit.SECONDS))control.cancel();}catch(InterruptedException error){Thread.currentThread().interrupt();}});cancel.start();
+            rejects(()->ClassroomSummary.generate(dir,LESSON,AI,0,control,p->{},"保留题干条件及步骤分",true),"in-flight cancellation stops pipeline");cancel.join();
+        }
+        check(requests.size()==2&&state(dir).getJSONArray("corrected").length()==1&&!state(dir).has("final"),"cancel preserves completed correction without publication");
+        // Wait for the synthetic slow handler to leave; no unrelated operation is stopped.
+        Thread.sleep(1300);slowCall=-1;String run=state(dir).getString("run");JSONObject result=generate(dir,true);
+        check(result.getBoolean("complete")&&result.getString("run").equals(run),"cancelled pipeline resumes its own checkpoint");
+        check(Collections.frequency(stages,"correct-0")==1,"cancel resume does not repeat successful stage");evidence("cancel-resume",dir);
+    }
+    private static void defaultFlow()throws Exception{
+        reset("normal",false);File dir=materials("default",true);JSONObject result;
+        try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,p->{},"保留题干条件及步骤分");}
+        check(requests.size()==1&&stages.get(0).equals("legacy")&&!result.has("corrected_transcript"),"seven-argument default remains one whole-lesson draft stage");
+        reset("normal",false);check(generate(materials("explicit-false",true),false).getBoolean("complete")&&requests.size()==1,"explicit false preserves default stage count");
+        reset("normal",true);File illustrated=materials("default-images",true);
+        try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(illustrated,LESSON,AI,2,c,p->{},"保留题干条件及步骤分");}
+        check(result.getBoolean("complete")&&requests.size()==2&&!result.has("corrected_transcript"),"seven-argument illustrated default keeps original two stages over whole lesson");
+        appendOnly(illustrated);evidence("default-images",illustrated);
+    }
+    private static void jsonEnvelope()throws Exception{
+        reset("json-envelope",false);File dir=materials("json-envelope",false);check(generate(dir,true).getBoolean("complete"),"non-streaming JSON service response accepted");appendOnly(dir);evidence("json-envelope",dir);
+        check(state(dir).getJSONObject("conversation").getJSONArray("messages").getJSONObject(2).has("provider_extension"),"JSON assistant extra fields preserved");
+    }
+    private static void markdown(){
+        String actual="# 标题\n\n正文\n下一行";check(ClassroomDocument.normalizeMarkdown(actual).equals(actual),"real newlines remain exact");
+        check(ClassroomDocument.normalizeMarkdown("甲\\n\\n乙").equals("甲\n\n乙"),"literal double escaped newline repaired");
+        check(ClassroomDocument.normalizeMarkdown("甲\\n \\n乙").equals("甲\n\n乙"),"whitespace-separated escaped paragraph repaired");
+        for(String protectedText:List.of("$\\nabla x$","$$\\nabla f \\n \\n x$$","`a\\n\\nb`","```java\nString x=\"\\n \\n\";\n```"))check(ClassroomDocument.normalizeMarkdown(protectedText).equals(protectedText),"math/code escape preserved: "+protectedText);
+    }
+    private static void oversizedSubtitle()throws Exception{
+        String text="甲".repeat(5999)+"\uD83D\uDE00"+"乙".repeat(6200);
+        JSONObject original=new JSONObject().put("id",7).put("start",12.5).put("end",70.25).put("text",text);String snapshot=original.toString();
+        JSONArray split=ClassroomEnhancedSummary.blocks(new JSONArray().put(original));StringBuilder joined=new StringBuilder();
+        check(split.length()>=3,"one oversized subtitle is split into bounded output blocks");
+        for(int i=0;i<split.length();i++){
+            JSONArray rows=split.getJSONArray(i);int chars=0;
+            for(int n=0;n<rows.length();n++){
+                JSONObject row=rows.getJSONObject(n);String fragment=row.getString("text");chars+=fragment.length();joined.append(fragment);
+                check(row.getInt("id")==7&&row.getDouble("start")==12.5&&row.getDouble("end")==70.25,"split retains original source id and timing "+i+":"+n);
+                check(!fragment.isEmpty()&&!Character.isLowSurrogate(fragment.charAt(0))&&!Character.isHighSurrogate(fragment.charAt(fragment.length()-1)),"split does not cut surrogate pairs "+i+":"+n);
+            }
+            check(chars<=6000,"each split block within 6000 UTF-16 characters "+i);
+        }
+        check(joined.toString().equals(text),"split fragments reconstruct complete original subtitle text");
+        check(original.toString().equals(snapshot),"splitting never mutates original subtitle object");
+    }
+    private static void reuseImages()throws Exception{
+        reset("reuse-images",true);File dir=materials("reuse-images",true);JSONObject result=generate(dir,true);
+        JSONArray first=requests.get(4).getJSONArray("messages"),second=requests.get(5).getJSONArray("messages");
+        check(first.getJSONObject(first.length()-1).getJSONArray("content").length()==3,"first final stage uploads both requested images");
+        check(second.getJSONObject(second.length()-1).getJSONArray("content").length()==1,"later overlapping image request uploads no image again");
+        check(result.getJSONArray("images").length()==2&&state(dir).getJSONArray("analysed").length()==2,"analysed inventory retains two unique images");
+        check(result.getJSONArray("parts").getJSONObject(1).getJSONArray("notes").getJSONObject(0).getJSONArray("images").getString(0).equals("image-0.jpg"),"later block may cite image actually supplied in earlier message");
+        appendOnly(dir);evidence("reuse-images",dir);
+    }
+    private static void validationResume()throws Exception{
+        reset("invalid-source",false);File draft=materials("draft-validation-resume",false);
+        rejects(()->generate(draft,true),"invalid draft source stops without automatic retry");String run=state(draft).getString("run");
+        check(requests.size()==2&&state(draft).getInt("draft-0_attempt")==1,"draft semantic failure persists one manual retry generation");
+        check(!state(draft).getString("draft-0_error").isBlank(),"draft semantic failure retains actual validation reason");
+        mode="normal";JSONObject result=generate(draft,true);
+        check(result.getBoolean("complete")&&result.getString("run").equals(run),"draft manual continue succeeds in same run");
+        check(stages.equals(List.of("correct-0","draft-0","draft-0-user-retry")),"draft continue appends only failed-stage correction request");
+        check(state(draft).getJSONObject("conversation").getJSONArray("turns").getJSONObject(2).getString("stage").equals("draft-0-user-retry-1"),"draft retry has separate persisted stage identity");
+        appendOnly(draft);evidence("draft-validation-resume",draft);
+
+        reset("invalid-final-image",true);File fin=materials("final-validation-resume",false);
+        rejects(()->generate(fin,true),"invalid final image stops without automatic retry");run=state(fin).getString("run");
+        check(requests.size()==3&&state(fin).getInt("final-0_attempt")==1,"final semantic failure advances only final retry generation");
+        JSONArray imageRequest=requests.get(2).getJSONArray("messages");check(imageRequest.getJSONObject(imageRequest.length()-1).getJSONArray("content").length()==2,"first final request really supplies one image");
+        mode="final-retry";result=generate(fin,true);JSONArray retried=requests.get(3).getJSONArray("messages");
+        check(retried.getJSONObject(retried.length()-1).getJSONArray("content").length()==1,"manual final retry appends text without uploading image again");
+        check(stages.equals(List.of("correct-0","draft-0","final-0","final-0-user-retry")),"final retry does not recompute corrected transcript or draft");
+        check(result.getBoolean("complete")&&result.getString("run").equals(run)&&result.getJSONArray("images").length()==1,"valid final retry publishes original selected image in same run");
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getJSONArray("images").getString(0).equals("image-0.jpg"),"retry may cite image retained in original message");
+        appendOnly(fin);evidence("final-validation-resume",fin);
+
+        reset("bad-repair",false);File repaired=materials("repair-validation-resume",false);
+        rejects(()->generate(repaired,true),"initial malformed draft and its sole automatic repair both fail");run=state(repaired).getString("run");
+        check(requests.size()==3&&state(repaired).getInt("draft-0_attempt")==1,"failed automatic repair leaves resumable manual generation");
+        mode="bad-manual";rejects(()->generate(repaired,true),"malformed manual retry stops without second automatic repair");
+        check(requests.size()==4&&state(repaired).getInt("draft-0_attempt")==2,"manual bad JSON uses exactly one request and increments retry generation");
+        check(Collections.frequency(stages,"draft-0-repair")==1,"automatic repair budget remains one across manual attempts");
+        mode="normal";result=generate(repaired,true);
+        check(requests.size()==5&&result.getBoolean("complete")&&result.getString("run").equals(run),"next explicit manual continue completes without revisiting failed raw output");
+        check(state(repaired).getJSONObject("conversation").getJSONArray("turns").getJSONObject(4).getString("stage").equals("draft-0-user-retry-2"),"second manual retry retains its own append-only stage identity");
+        check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"draft-0-repair")==1,"manual attempts never repeat successful transcript or automatic repair");
+        appendOnly(repaired);evidence("repair-validation-resume",repaired);
+    }
+    private static void markdownFences()throws Exception{
+        String literal="甲\\n \\n乙",paragraph="甲\n\n乙";
+        String tilde="~~~java\n"+literal+"\n`inline` and ```backticks```\n~~~\n";
+        String longer="~~~\n"+literal+"\n~~~~\n";
+        String indented="   ~~~text\n"+literal+"\n   ~~~\n";
+        String shortClose="~~~~\n"+literal+"\n~~~\n"+literal+"\n~~~~\n";
+        String wrongMarker="~~~\n"+literal+"\n```\n"+literal+"\n~~~\n";
+        String suffixMarker="~~~\n"+literal+"\n~~~not-a-close\n"+literal+"\n~~~\n";
+        String whitespaceClose="~~~\n"+literal+"\n~~~ \t\r\n";
+        String spaceCode="    "+literal+" `literal` $\\nabla$\n";
+        String tabCode="\t"+literal+" ```literal``` $\\nabla$\n";
+        String backticks="```java\n"+literal+"\n~~~\n"+literal+"\n```\n";
+        String longBackticks="```java\n"+literal+"\n````\n";
+        String quotedBackticks="```java\nString marker=\"```\";\n"+literal+"\n```\n";
+        String backtickSuffix="```java\n"+literal+"\n```not-a-close\n"+literal+"\n```\n";
+        String tripleInline="正文 ```"+literal+" and `single` inside``` ";
+        String inline="`"+literal+"`";
+        String math="$\\nabla x \\n \\n y$",display="$$\\nabla f \\n \\n x$$";
+        String[][] cases={
+            {"tilde code and inner backticks stay exact",tilde,tilde},
+            {"paragraph resumes after tilde close",tilde+literal,tilde+paragraph},
+            {"longer tilde marker closes fence",longer+literal,longer+paragraph},
+            {"three-space indented tilde markers",indented+literal,indented+paragraph},
+            {"shorter tilde marker does not close",shortClose+literal,shortClose+paragraph},
+            {"backticks never close tilde fence",wrongMarker+literal,wrongMarker+paragraph},
+            {"tilde marker with text suffix cannot close",suffixMarker+literal,suffixMarker+paragraph},
+            {"tilde close permits whitespace suffix",whitespaceClose+literal,whitespaceClose+paragraph},
+            {"four-space code line stays exact",spaceCode,spaceCode},
+            {"body resumes after four-space code line",spaceCode+literal,spaceCode+paragraph},
+            {"tab-indented code line stays exact",tabCode,tabCode},
+            {"body resumes after tab-indented code line",tabCode+literal,tabCode+paragraph},
+            {"four-space tilde line cannot open fence","    ~~~\n"+literal,"    ~~~\n"+paragraph},
+            {"tilde marker never closes backtick fence",backticks+literal,backticks+paragraph},
+            {"longer backtick close retains protection",longBackticks+literal,longBackticks+paragraph},
+            {"backticks in quoted source string cannot close fence",quotedBackticks,quotedBackticks},
+            {"body resumes after quoted-backtick fenced code",quotedBackticks+literal,quotedBackticks+paragraph},
+            {"backtick marker with text suffix cannot close",backtickSuffix+literal,backtickSuffix+paragraph},
+            {"inline triple backticks close within text",tripleInline+literal,tripleInline+paragraph},
+            {"inline code escapes stay exact",inline,inline},
+            {"paragraph resumes after inline code",inline+literal,inline+paragraph},
+            {"inline TeX escapes stay exact",math,math},
+            {"display TeX escapes stay exact",display,display},
+            {"paragraph resumes after inline math",math+literal,math+paragraph},
+            {"paragraph resumes after display math",display+literal,display+paragraph},
+            {"single nabla command stays exact","\\nabla x","\\nabla x"},
+            {"literal paired newline remains recoverable","甲\\n\\n乙",paragraph},
+            {"ordinary actual newlines stay exact","# 标题\n\n正文\n下一行","# 标题\n\n正文\n下一行"}
+        };
+        JSONArray evidence=new JSONArray();
+        for(String[] item:cases){String actual=ClassroomDocument.normalizeMarkdown(item[1]);check(actual.equals(item[2]),item[0]);evidence.put(new JSONObject().put("case",item[0]).put("input",item[1]).put("expected",item[2]).put("actual",actual).put("passed",actual.equals(item[2])));}
+        ClassroomStore.write(new File(root,"markdown-fences.json"),new JSONObject().put("cases",evidence).put("assertions",cases.length).put("failures",failures));
+    }
+    public static void main(String[] args)throws Exception{
+        root=new File(args[0]);root.mkdirs();
+        if(args.length>1&&args[1].equals("markdown-fences")){
+            test("Markdown fences preserve code and TeX escapes",ClassroomEnhancedCheck::markdownFences);
+            System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
+        }
+        HttpServer server=server();
+        if(args.length>1&&args[1].equals("validation-resume")){
+            try{test("semantic validation and repair manual continuation",ClassroomEnhancedCheck::validationResume);}
+            finally{server.stop(0);}System.out.println("ClassroomEnhancedValidationResume: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced validation resume checks failed");return;
+        }
+        if(args.length>1&&args[1].equals("edge-cases")){
+            try{test("oversized single subtitle preserves text and identity",ClassroomEnhancedCheck::oversizedSubtitle);test("reuse earlier image without reupload",ClassroomEnhancedCheck::reuseImages);}
+            finally{server.stop(0);}System.out.println("ClassroomEnhancedEdges: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced edge checks failed");return;
+        }
+        try{test("multi-block immutable-prefix pipeline",ClassroomEnhancedCheck::multiBlock);test("network manual checkpoint resume",ClassroomEnhancedCheck::manualResume);test("one structural repair",ClassroomEnhancedCheck::repair);test("source and image whitelist",ClassroomEnhancedCheck::whitelist);test("length continuation and resume",ClassroomEnhancedCheck::lengthResume);test("cancel and resume",ClassroomEnhancedCheck::cancellation);test("default stage preservation",ClassroomEnhancedCheck::defaultFlow);test("raw JSON assistant envelope",ClassroomEnhancedCheck::jsonEnvelope);test("Markdown paragraph and TeX/code guards",ClassroomEnhancedCheck::markdown);test("oversized single subtitle preserves text and identity",ClassroomEnhancedCheck::oversizedSubtitle);test("reuse earlier image without reupload",ClassroomEnhancedCheck::reuseImages);test("semantic validation and repair manual continuation",ClassroomEnhancedCheck::validationResume);test("Markdown fences preserve code and TeX escapes",ClassroomEnhancedCheck::markdownFences);}
+        finally{server.stop(0);}System.out.println("ClassroomEnhancedCheck: "+checks+" assertions, "+failures+" failures; usage is synthetic, not provider cache-hit evidence");
+        if(failures>0)throw new AssertionError(failures+" enhanced pipeline failures");
+    }
+}

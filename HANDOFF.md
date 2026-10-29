@@ -1,31 +1,27 @@
-# 当前交付：网页版共享矢量与主题
+# 当前交付：课堂增强整理代码候选
 
-2026-10-29：已完成网页默认跟随手机完整配色，以及仅当前浏览器保存的独立深浅色／主题色设置，恢复跟随清除覆盖；不写手机外观配置。图标由原生VectorDrawable生成，品牌复用docs/assets/chrona-icon.svg，移除重复手绘路径和文字占位。保留三页范围、紧凑布局、配对与刷新状态。
+## 范围与已实现
 
-固定候选**0.15.66/228**：`build/candidates/0.15.66/Chrona-0.15.66.apk`3268369字节，原签名；release与lintRelease、真实Edge正常横竖屏／主题刷新／重载／恢复跟随和LAN安全83项通过，持续复用的只读ui_review已审核4张压缩JPEG，无具体UI缺陷。证据`build/lan-theme/`及`build/lan-daily-workspace/`，详见`docs/validation-history.md`。真实Edge使用模拟手机API，不替代当前手机资源加载。
+**0.15.67 / 229**。用户授权实施默认关闭的「增强整理」：先完整更正文稿，再分块笔记／视觉缺口判断、按原权限核图及本地组装。单节、批量、监视沿用相同入口；开关纳入保存、退出保护、旋转草稿和备份。更正文稿可在原阅读器折叠查看并随原ZIP导出。
 
-**当前交付已安装**：用户提供`10.195.91.186:38241`后，V2527A正常从227覆盖228，版本读回0.15.66。实际LAN的icons.js、brand.svg和新app.js均200且MIME正确，见`build/lan-theme/phone-resources.json`。安装前LAN原已开启，更新后通过正常设置恢复开启，现地址`http://10.195.91.186:8765`；旧浏览器会话失效，需重新配对。ADB已释放，不发小修Release，public latest仍v0.15.61。后续无必须的重复安装或检查。
+两种模式均冻结选项，保留已发送system、user、assistant及图片原位置，后续仅追加，不重构资料包、不摘要或裁剪历史。每次实际响应、usage、阶段及错误保存在run.json；未返回usage不声称缓存命中。增强模式每块一次格式修复，来源／图片校验失败需手动授权后追加校正；未知网络结果不自动重发。新增分段与检查点，强化改卷线索，公共段落修复保护公式及代码。业务合同见`docs/features/zju/classroom-summary.md`。
 
-## 前批：Chrona × GlobalSend 局域网地址联动
+## 当前证据
 
-## 当前候选与验收范围
+- 离线回环初组277项，超长字幕／复用历史图片75项，非法引用／手动续跑116项，Markdown围栏／公式28项分别通过；原请求与合成响应在`build/classroom-enhanced-check/fixtures/`。默认CI已包含这些分组。
+- 默认管线受影响图片／续跑39项、批量队列15项、偏好／备份含35项及reader.js语法检查通过；早期失败及修复范围见`docs/validation-history.md`，没有伪报整轮通过。
+- 持续复用的只读ui_review审查源码；两项围栏保护P2已修复并复审闭合。尚无本候选实际UI渲染证据。
+- 固定229源码的debug／AndroidTest编译、release与lintRelease通过，见`build/classroom-enhanced/candidate-229-build.txt`。安装包`build/candidates/0.15.67/Chrona-0.15.67.apk`为3274457字节，229／0.15.67、签名验证通过且与228一致；元数据及签名证据在同目录前缀`candidate-229-`。所有衍生输出留在项目内。
 
-**0.15.65 / 227**：`build/candidates/0.15.65/Chrona-0.15.65.apk`，3264338字节，原签名、非debug。普通debug／release与双lint通过，已正常覆盖共享AVD和USB真机V2527A；不创建Release／标签，公共latest仍v0.15.61。
+## 用户决定与唯一下一步
 
-- 已实现GlobalSend精确安装查询、Messenger ABI v1、本机首次显式关联、真实组设备列表、点击指定设备发送当前普通LAN地址和原请求状态查询。刷新／恢复不发送；120秒UUID意图不因迟到回复或未知结果重复打开；不传配对码、Cookie或账号凭据，保留Chrona网页授权。
-- 用户最新布局已落地：授权短句为「可通过手机确认/扫码/配对码授权」，「发送到设备」整组位于其下方，设备行左右16dp内距，复用公共设置、菜单和动效。正常竖浅／横暗渲染及整页滚动通过，持续复用的只读ui_review已审核，无剩余具体UI缺陷。
-- 客户端本地假Messenger协议16×2项、最新布局7／8项通过；它们只证明客户端。真实GlobalSend1.0.30/39跨应用Binder和首次关联另有4项通过。真实Android后台接收返回needs_tap，点击系统通知后返回launch_accepted；默认浏览器实际加载Chrona的手机确认页，没有自动配对。发送端为对端的隔离协议工具，不冒充完整Chrona→Windows链路。
-- GlobalSend所有者交付1.0.31/40修复原生关联页安全区；AVD已覆盖其x64验证包，经正常设置进入管理页观察正常。正式ARM64包不适用于x64 AVD，未改AVD架构或复制模拟器。协议／Binder既有证据继续有效。
+用户最新要求：**今晚只完成代码，明天上机测试**。今晚不再使用ADB、不安装或运行手机／模拟器测试、不调用真实AI、不发Release。源码同步不等于真机验收；手机最后确认仍为**0.15.66 / 228**，公共latest仍v0.15.61。
 
-实现入口：`GlobalSendLink`、`LanSettingsActivity`。业务合同见`docs/features/connectivity/lan-access.md`；有效证据、复现方法及局限见`docs/validation-history.md`的0.15.65节。此前0.15.64课堂自动／批量总结候选及证据继续有效，不重复成熟管线检查。
+下一步在明天获得手机使用窗口后，安装固定229候选，在普通屏幕完成增强开关保存／取消／放弃／返回／旋转及深浅竖横检查，再按真实课程授权验证更正文稿、分段核图、失败续跑与服务usage。保留此前消息前缀不变的离线证据，不重复无变化的完整矩阵。只有真实服务返回缓存字段才记录命中。
 
-## 前批联动的剩余验收
+## 独立依赖与边界
 
-用户首次在「关联GlobalSend」完成显式授权、有真实Windows目标在线后，验证手机列表→点击发送→默认浏览器访问手机8765→原手机确认。USB真机`10AG5S1SR4005X7`已正常从226覆盖227；GlobalSend按其所有者交付正常从1.0.28/37覆盖1.0.31/40并启动，原组连接保留。LAN真机显示正确短句、设备组顺序及关联入口，未代用户批准跨应用权限，完整手机→Windows链路仍待验证。验布局临时开启的LAN已恢复原关闭状态，ADB已释放并通知GlobalSend所有者。
-
-## 所有权与执行边界
-
-- GlobalSend对端：`01a16e6f-f1c5-7081-adc4-1792a0a5d7db`「设计跨设备传输与同步系统」，项目`F:/Codes/Java/GlobalSend`。用户已授权协商／消息。本聊天拥有Chrona与本轮ADB；对端拥有身份、传输、服务端及Windows／Android接收。唯一ABI文档是其`docs/INTEGRATION_ABI_V1.md`，不复制协议。
-- 根代理已回传真实接收、浏览器及40安全区证据的实际消费结果，测试中心由对端关闭。真实Windows组、登录及应用数据未改；不终止对端进程。临时reverse1507只由本聊天清除。
-- FastCtx本轮未提供，使用pwsh7。共享AVD仅`F:/Android/Avd/Chrona_Classroom_36`，不克隆／清空／重置。所有测试输出在本项目`build/global-send/`，图片先缩小压缩JPEG，不查看PNG原图；不调分辨率／DPI。
-- 用户修改的`AGENTS.md`、角色toml、`.backups/`、`.local-backups/`及`tools/Clean-Project.ps1`保留，不提交。GitHub CLI只使用`F:/Programs/GitHubCLI/bin/gh.exe`，不重复鉴权。
+- 上一批网页SVG／跟随手机及浏览器独立主题已在228真机资源加载验证，证据`build/lan-theme/`和验证记录；无需重复修订成熟布局。
+- GlobalSend对端为「设计跨设备传输与同步系统」`01a16e6f-f1c5-7081-adc4-1792a0a5d7db`，用户已授权协调。ADB／共享AVD已让出。完整手机→真实Windows联动仍需用户首次显式关联及在线目标，原Binder／Android接收证据保留；不代用户授权，不改对端组、凭据或软件。ABI唯一出处为对端`docs/INTEGRATION_ABI_V1.md`。
+- FastCtx未提供时使用pwsh7；AVD仅复用`F:/Android/Avd/Chrona_Classroom_36`，不克隆、清空或重置。视觉图片先压缩JPEG，不读PNG原图，不调极端分辨率／DPI。GitHub CLI只用`F:/Programs/GitHubCLI/bin/gh.exe`，保留原鉴权。
+- 用户的`AGENTS.md`、角色toml、`.backups/`、`.local-backups/`及`tools/Clean-Project.ps1`不提交、不清理。

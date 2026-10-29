@@ -14,6 +14,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.Switch;
 import android.widget.TextView;
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
@@ -39,6 +40,7 @@ public final class SettingsExitInstrumentation extends Instrumentation {
         Activity activity = super.newActivity(loader, name, intent);
         if (SettingsActivity.class.getName().equals(name)) {
             FixtureIsolation.require(getTargetContext());
+            if(Boolean.parseBoolean(arguments.getString("nativeScreen","false")))return activity;
             int width = Integer.parseInt(arguments.getString("widthDp", "400"));
             float font = Float.parseFloat(arguments.getString("font", "1.0"));
             if (width < 320 || width > 600 || font < 1 || font > 2)
@@ -59,7 +61,7 @@ public final class SettingsExitInstrumentation extends Instrumentation {
         try {
             check();
             report.putString("settings_exit_report", "PASS: " + assertions
-                    + " assertions; all 8 form fields, reverted values, title/system back, cancel,"
+                    + " assertions; all 9 form fields, enhanced classroom draft/save/discard, reverted values, title/system back, cancel,"
                     + " dialog back/outside, discard, validation failures, save, recreation, immediate image reset");
             finish(-1, report);
         } catch (Throwable error) {
@@ -83,10 +85,12 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             open(); systemBack(); require(current.isFinishing(), "pristine system back exits");
             open();
             String[] original = values();
+            require(original.length == 9 && "false".equals(original[8]),
+                    "enhanced classroom defaults off and participates in form baseline");
             for (int i = 0; i < original.length; i++) {
                 final int index = i;
                 runOnMainSync(() -> edit(index, index == 4 ? "660" : index == 5 ? "1380"
-                        : index == 3 ? "high" : original[index] + " changed"));
+                        : index == 3 ? "high" : index == 8 ? "true" : original[index] + " changed"));
                 if (i % 2 == 0) titleBack(); else systemBack();
                 if (!prompt()) {
                     capture("failed-field-" + i);
@@ -96,23 +100,33 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                 }
                 assertions++;
                 click("取消"); require(!current.isFinishing(), "cancel retains field " + i);
+                if (i == 8) {
+                    require("true".equals(values()[8]), "cancel retains enhanced classroom draft");
+                    require(!SchedulePreferences.load(getTargetContext()).enhancedClassroom,
+                            "changing and cancelling enhanced classroom does not persist");
+                }
                 runOnMainSync(() -> edit(index, original[index]));
             }
             titleBack(); require(current.isFinishing(), "all values reverted exits without prompt");
 
-            open(); runOnMainSync(() -> edit(6, "未保存日程"));
+            open(); runOnMainSync(() -> { edit(6, "未保存日程"); edit(8, "true"); });
             titleBack(); capture("exit-dialog");
             systemBack(); require(!current.isFinishing() && !prompt(), "dialog back keeps editing");
             titleBack(); tap(4, getTargetContext().getResources().getDisplayMetrics().heightPixels * .8f);
             settle(); require(!current.isFinishing() && !prompt(), "outside closes dialog without saving");
             require(SchedulePreferences.load(getTargetContext()).customPrompt.equals("初始日程"), "cancel does not persist");
+            require("true".equals(values()[8]) && !SchedulePreferences.load(getTargetContext()).enhancedClassroom,
+                    "dialog back and outside dismissal retain unsaved enhanced classroom draft");
             titleBack(); click("放弃"); require(current.isFinishing(), "discard exits");
             require(SchedulePreferences.load(getTargetContext()).customPrompt.equals("初始日程"), "discard leaves preferences");
+            require(!SchedulePreferences.load(getTargetContext()).enhancedClassroom,
+                    "discard leaves enhanced classroom disabled");
 
             open(); runOnMainSync(() -> {
                 edit(0, "https://new.synthetic.invalid/v1"); edit(1, "new-synthetic-model");
                 edit(2, "replacement-synthetic-key"); edit(3, "high"); edit(4, "660");
                 edit(5, "1380"); edit(6, "重建日程"); edit(7, "重建课堂");
+                edit(8, "true");
             });
             String[] draft = values();
             ActivityMonitor monitor = addMonitor(SettingsActivity.class.getName(), null, false);
@@ -121,10 +135,15 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             removeMonitor(monitor);
             require(current != null, "recreated activity delivered"); settle();
             require(java.util.Arrays.equals(draft, values()), "all draft fields survive recreation");
+            require("false".equals(((String[]) field(current, "savedForm"))[8])
+                    && !SchedulePreferences.load(getTargetContext()).enhancedClassroom,
+                    "recreation retains original enhanced classroom baseline without saving draft");
             titleBack(); require(prompt(), "original baseline survives recreation"); click("取消");
             runOnMainSync(() -> edit(5, "660")); titleBack(); click("保存");
             require(!current.isFinishing(), "invalid hours stay on page");
             require(SchedulePreferences.load(getTargetContext()).workStartMinutes == 600, "invalid save leaves preferences");
+            require(!SchedulePreferences.load(getTargetContext()).enhancedClassroom,
+                    "invalid save does not persist enhanced classroom draft");
             runOnMainSync(() -> { edit(5, "1380"); edit(0, "http://invalid.invalid"); });
             titleBack(); click("保存"); require(!current.isFinishing(), "invalid endpoint stays on page");
             require(new AiSettingsStore(getTargetContext()).load().model.equals("synthetic-model"), "invalid endpoint leaves connection");
@@ -135,12 +154,20 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                     && saved.apiKey.equals("replacement-synthetic-key"), "connection saved");
             SchedulePreferences prefs = SchedulePreferences.load(getTargetContext());
             require(prefs.workStartMinutes == 660 && prefs.workEndMinutes == 1380
-                    && prefs.customPrompt.equals("重建日程") && prefs.classroomPrompt.equals("重建课堂"), "all preferences saved");
+                    && prefs.customPrompt.equals("重建日程") && prefs.classroomPrompt.equals("重建课堂")
+                    && prefs.enhancedClassroom, "all preferences including enhanced classroom saved");
             new AiSettingsStore(getTargetContext()).markImageUnsupported(saved);
             open();
             runOnMainSync(() -> ((View) field(current, "allowImages")).performClick());
             require(!new AiSettingsStore(getTargetContext()).isImageUnsupported(saved), "image reset remains immediate");
             titleBack(); require(current.isFinishing(), "immediate image reset not a dirty form");
+            open();
+            require("true".equals(values()[8]), "reopened form reflects saved enhanced classroom");
+            runOnMainSync(() -> edit(8, "false"));
+            titleBack(); require(prompt(), "disabling enhanced classroom protects exit");
+            click("保存"); require(current.isFinishing(), "saving disabled enhanced classroom exits");
+            require(!SchedulePreferences.load(getTargetContext()).enhancedClassroom,
+                    "explicit save persists enhanced classroom disabled");
         } finally {
             if (current != null && !current.isDestroyed()) runOnMainSync(() -> {
                 try { method("restoreForm", String[].class).invoke(current, (Object) field(current, "savedForm")); }
@@ -206,8 +233,9 @@ public final class SettingsExitInstrumentation extends Instrumentation {
     private void edit(int index, String value) {
         try {
             String[] fields = {"baseUrl", "model", "apiKey", "reasoningEffort", "workStartMinutes",
-                    "workEndMinutes", "customPrompt", "classroomPrompt"};
+                    "workEndMinutes", "customPrompt", "classroomPrompt", "enhancedClassroom"};
             if (index == 3) method("setEffort", String.class).invoke(current, value);
+            else if (index == 8) ((Switch) field(current, fields[index])).setChecked(Boolean.parseBoolean(value));
             else if (index == 4 || index == 5) {
                 Field target = SettingsActivity.class.getDeclaredField(fields[index]); target.setAccessible(true);
                 target.setInt(current, Integer.parseInt(value)); method("refreshWorkTime").invoke(current);

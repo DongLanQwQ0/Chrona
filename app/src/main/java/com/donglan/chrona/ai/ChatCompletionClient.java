@@ -174,6 +174,22 @@ public final class ChatCompletionClient {
     }
 
     /** General completion uses the same cancellation, options and HTTP transport as capture parsing. */
+    public JSONObject classroomOptions() throws IOException {
+        try {
+            JSONObject body=new JSONObject().put("model",settings.model);RequestOptions.apply(body,settings);
+            body.remove("response_format");
+            if(body.has("prompt_cache_key"))body.put("prompt_cache_key","chrona-classroom-v11");
+            return body.put("stream",true).put("stream_options",new JSONObject().put("include_usage",true));
+        }catch(JSONException e){throw new IOException("无法编码课堂请求",e);}
+    }
+    /** The caller owns the frozen options and append-only messages. Never downgrade this request. */
+    public JSONObject completeConversation(JSONObject request) throws IOException {
+        try {
+            boolean images=request.getJSONArray("messages").toString().contains("\"image_url\"");
+            return new JSONObject(executeEnvelope(new JSONObject(request.toString()),images,null,false));
+        }catch(JSONException e){throw new ResponseException("无法读取课堂响应",e);}
+    }
+
     public String complete(String system, String prompt, List<byte[]> imagesJpeg) throws IOException {
         boolean hasImages = imagesJpeg != null && !imagesJpeg.isEmpty();
         try {
@@ -347,9 +363,11 @@ public final class ChatCompletionClient {
         if (completion.length() == 0) throw new ResponseException("AI stream returned no content");
         JSONObject envelope = new JSONObject();
         try {
+            JSONObject message=new JSONObject().put("content",completion.toString());
+            if(reasoning.length()>0)message.put("reasoning_content",reasoning.toString());
             envelope.put("choices", new JSONArray().put(new JSONObject()
                     .put("finish_reason", finishReason)
-                    .put("message", new JSONObject().put("content", completion.toString()))));
+                    .put("message", message)));
             if (usage != null) envelope.put("usage", usage);
         } catch (JSONException exception) {
             throw new IOException("Could not assemble AI response", exception);

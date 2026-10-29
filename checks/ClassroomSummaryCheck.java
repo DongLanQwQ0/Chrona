@@ -46,14 +46,13 @@ public final class ClassroomSummaryCheck {
         server.setExecutor(Executors.newCachedThreadPool(r->{Thread t=new Thread(r);t.setDaemon(true);return t;}));
         server.createContext("/",exchange->{try {
             JSONObject body=new JSONObject(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
-            calls++;requests.add(body);String prompt=body.getJSONArray("messages").getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
-            boolean second=prompt.contains("完整资料包：\n");
+            calls++;requests.add(body);JSONArray history=body.getJSONArray("messages");String prompt=history.getJSONObject(history.length()-1).getJSONArray("content").getJSONObject(0).getString("text");
+            boolean second=prompt.contains("本次images清单：\n")||prompt.contains("上一条最终总结未通过校验");
             JSONObject chunk=null;
             if(second) {
-                JSONObject context=new JSONObject(prompt.substring(prompt.indexOf("完整资料包：\n")+7));
-                String first=context.getString("first_prompt");
-                chunk=new JSONObject(first.substring(first.indexOf("资料：\n")+4)).put("images",context.getJSONArray("images"));
-            } else if(prompt.contains("资料：\n"))chunk=new JSONObject(prompt.substring(prompt.indexOf("资料：\n")+4));
+                String first=history.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
+                chunk=new JSONObject(first.substring(first.indexOf("资料：\n")+4)).put("images",new JSONArray((prompt.contains("本次images清单：\n")?prompt:history.getJSONObject(3).getJSONArray("content").getJSONObject(0).getString("text")).split("本次images清单：\n",2)[1]));
+            } else if(prompt.contains("资料：\n"))chunk=new JSONObject(prompt.substring(prompt.indexOf("资料：\n")+4)); else if(prompt.contains("上一条总结校验失败")){String original=history.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");chunk=new JSONObject(original.substring(original.indexOf("资料：\n")+4));}
             if(chunk!=null){int id=chunk.getJSONArray("segments").getJSONObject(0).getInt("id");chunkCalls.merge(id,1,Integer::sum);}
             if(mode.equals("slow"))Thread.sleep(500);
             if(mode.equals("silent-reasoning"))Thread.sleep(31_000);
@@ -208,9 +207,10 @@ public final class ClassroomSummaryCheck {
         check(imageAudit.getInt("selected_count")==3&&imageAudit.getInt("analysed_count")==3&&checkpoint.getJSONObject("image_audit").getInt("analysed_count")==0,"audit distinguishes planned selection from actually analysed frames across failure");
         check(ClassroomStore.read(new File(dir,"run.json")).getJSONObject("image_audit").getInt("analysed_count")==3,"final run log records actual analysed count");
         check(new JSONObject(firstPrompt.substring(firstPrompt.indexOf("资料：\n")+4)).getJSONArray("segments").length()==3,"first round includes entire long transcript without chunks");
-        String secondPrompt=requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
-        JSONObject context=new JSONObject(secondPrompt.substring(secondPrompt.indexOf("完整资料包：\n")+7));
-        check(context.getString("first_system").equals(firstMessages.getJSONObject(0).getString("content"))&&context.getString("first_prompt").equals(firstPrompt),"second round contains exact full first system and prompt");
+        JSONArray secondMessages=requests.get(2).getJSONArray("messages");
+        JSONObject context=new JSONObject().put("first_system",secondMessages.getJSONObject(0).getString("content"));
+        check(secondMessages.length()==4&&secondMessages.getJSONObject(1).toString().equals(firstMessages.getJSONObject(1).toString()),"second round preserves exact first message rather than repackaging");
+
         check(context.getString("first_system").contains("保留英文术语"),"classroom custom prompt reaches both rounds");
         check(context.getString("first_system").contains("数学符号与记法偏好中国大陆教材的常用风格。"),"general Chinese mathematical notation style reaches both rounds");
         for(String topic:List.of("评分规则","考试与测试安排","考核范围与题型","重点与透题线索","作业、实验与报告",
@@ -220,9 +220,9 @@ public final class ClassroomSummaryCheck {
                 &&context.getString("first_system").contains("不补猜时间、比例、范围或承诺"),"priority and uncertainty are explicit");
         check(requests.get(2).getJSONArray("messages").getJSONObject(0).getString("content").equals(context.getString("first_system")),"final image round retains the same Chinese math style instructions");
         check(!ClassroomSummary.configKey(AI,20,"other").equals(ClassroomSummary.configKey(AI,20,"保留英文术语")),"custom prompt changes invalidate the previous run");
-        check(context.getString("first_output").equals(checkpoint.getString("first_output")),"second round contains exact raw first response");
-        JSONArray secondContent=requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content");
-        check(secondContent.length()==4&&context.getJSONArray("images").length()==3,"second round includes matching inventory and three actual images");
+        check(secondMessages.getJSONObject(2).getString("content").equals(checkpoint.getString("first_output")),"second round contains exact raw first response");
+        JSONArray secondContent=secondMessages.getJSONObject(3).getJSONArray("content");
+        check(secondContent.length()==4&&checkpoint.getJSONArray("selected").length()==3,"second round includes matching inventory and three actual images");
         for(int i=0;i<3;i++)check(secondContent.getJSONObject(i+1).getJSONObject("image_url").getString("url").equals("data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(ClassroomStore.bytes(new File(dir,"image-"+i+".jpg")))),"second-round actual JPEG matches inventory "+i);
         check(result.getString("run").equals(partial.getString("run")),"resumed run keeps identity for UI replacement");
         int before=calls;JSONObject regenerated;
@@ -270,11 +270,11 @@ public final class ClassroomSummaryCheck {
         try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,40,c,s->{},"保留英文术语");}
         check(calls==3&&result.getJSONArray("images").length()==40,"final validation retry reuses first round and keeps forty-image cap");
         check(requests.get(0).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1
-                &&requests.get(2).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==41,"HTTP requests send zero then exactly forty images");
+                &&requests.get(2).getJSONArray("messages").getJSONObject(3).getJSONArray("content").length()==41&&requests.get(2).getJSONArray("messages").getJSONObject(5).getJSONArray("content").length()==1,"HTTP requests send zero then exactly forty images");
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
         check(state.getJSONObject("final_validation").getString("status").equals("succeeded")&&!state.getString("final_output").contains("image-999.jpg"),"successful continuation replaces stale failed-final evidence with current response");
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
-        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n10\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
+        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n11\nfalse\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
     }
     private static void prefixedFinal()throws Exception {
         reset();mode="prefixed-final";File dir=materialDir("prefixed-final-"+System.nanoTime());JSONObject result;

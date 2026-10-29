@@ -28,7 +28,7 @@ final class ClassroomMarkdownView extends WebView {
         super(activity);this.activity=activity;this.directory=directory;this.actions=actions;
         images=ClassroomDocument.referencedImages(summary);
         JSONArray names=new JSONArray();for(String name:images)names.put(name);
-        document=new JSONObject().put("summary",summary).put("images",names).toString();
+        document=new JSONObject().put("summary",ClassroomDocument.normalized(summary)).put("images",names).toString();
         setBackgroundColor(Color.TRANSPARENT);setVerticalScrollBarEnabled(false);setHorizontalScrollBarEnabled(false);
         getSettings().setJavaScriptEnabled(true);getSettings().setAllowFileAccess(false);getSettings().setAllowContentAccess(false);
         getSettings().setBlockNetworkLoads(true);getSettings().setDomStorageEnabled(false);getSettings().setTextZoom(100);
