@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.75 — 长课堂首屏、按需公式与真机附图 — 2026-10-30
+
+- 用户提供39137后，与GlobalSend串行使用同一原手机。真实C程序设计基础9/23已完成总结，等待20秒仍空白；236安全诊断证实HTML已生成、原生高度44559px，但全页4651公式尚在串行处理，425→1638→3201→4651后才visual ready。原因是全部隐藏文稿排版阻塞首次呈现，非AI未完成。`build/enhanced-document/phone-236-{phase,file-probe}.txt`及`build/phone-enhanced-229/phone-236-final-render.jpg`保留边界；系统日志输出关闭，临时安全计数仅写app-owned诊断文件，不读生产私有缓存或原始AI审计。
+- 237改为首屏公式就绪后沿用原入场；屏外笔记16项一批让出事件循环，折叠文稿展开加入同一MathJax串行队列、已排节点复用。完整源文稿／AI历史／图片清单／导出均不改，本轮没有AI请求。临时计数桥接与文件写入已从最终包移除，并精确删除手机该诊断文件。
+- 生产release／lintRelease通过`reader-237-final-build.txt`。固定237／0.15.75、3277629字节、非debug、原签名，证据`candidate-237-{package,signature}.txt`。最终手机17:19:01正常覆盖，首次安装时间仍9/26；`phone-237-final-install.txt`。真机JPEG `build/phone-enhanced-229/phone-237-{final-body,reading,picture,viewer}.jpg`亲见正文、实际滚动、两张真实引用图及点击后的共用全屏查看。采集包括dump与截图，不据此宣称精确3秒性能。
+- 正常原AVD横竖屏、不改DPI：同一排版代码原生阅读、开合公式／代码／滚动、单节与批量ZIP、失败恢复29项各通过；最终代码后台覆盖／恢复与4651折叠公式8项通过。`native-reader-237-{portrait,landscape,long-hidden}.txt`，JPEG／report在`reader-237-final-evidence/`。长文检查最初断言误将JS字符串的JSON引号当作数字比较，改用数值返回后通过，未改生产行为。原ui_review独立亲看实际渲染与源码后签收本轮范围，未扩展为AI质量或真实服务usage。
+- 恢复LAN至`http://10.195.59.196:8765`，4项静态资源200、SVG MIME正确，`phone-237-lan-http.json`。不代替用户配对、不重复设备发送。已明确向GlobalSend归还手机，后续不并行触控；不发布小版本Release。真实usage／缓存命中仍未读回，记录于当前HANDOFF，不声称已测实际节省。
+
 ## 0.15.73 — 真机恢复、完整图片规划schema与原模式续跑 — 2026-10-30
 
 - 用户提供10.195.59.196:38711，正常ADB连接后核对原V2527A序列身份。与GlobalSend明确单一手机控制者后，从正常页面读取原C程序设计基础2026-09-23第7–8节：实际错误`No value for image_requests`，923条字幕、282→140截图及未完成入口保留；`build/global-send-link/phone-233-real-failure.txt`及同名压缩JPEG/XML。不把它描述为后台被杀或擅自断言已用几次修复。

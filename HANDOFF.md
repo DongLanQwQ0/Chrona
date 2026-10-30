@@ -1,29 +1,26 @@
-# 当前交付：0.15.73已更新，真实AI已结束，正文稳定显示待复核
+# 当前交付：0.15.75已更新，长课堂正文与引用图片已复核
 
-## 已完成
+## 当前状态
 
-- 源码ff2d4ff已推送，手机0.15.73/235于14:52:25正常覆盖并读回，原首次安装时间不变。固定包`build/candidates/0.15.73/Chrona-0.15.73.apk`3276349字节，正式包名、非debug、原签名；正常debug/AndroidTest编译/release/lintRelease通过。
-- 图片草稿完整五字段JSON示例在默认、增强和手动/有限修复间共用；未完成检查点保留原管线模式，全局开关不会将继续整理误变为新管线。已发送历史不改、重试预算不增。真实回环与helper341项、默认管线292项、同次请求538项通过。
-- 全局增强已通过正常设置保存恢复原false，新包重进确认。LAN已恢复http://10.195.59.196:8765，四个静态资源200且SVG MIME正确；未代替用户网页授权，未重复Windows发送。233设备动态列表实现未改，原14×2/可达2×2/回归32证据继续有效。
-- 原只读ui_review亲看235真机设置、LAN和运行阶段3张压缩JPEG，签收这些呈现；没有签收尚未出现的最终正文。
-- GlobalSend原所有者报告1.0.56/code67于15:02:33覆盖成功，Windows也已更新；已明确归还触控窗口，未动Chrona任务/网络/LAN。真实iPad收件仍留用户验证，不猜目标。
+- 手机`10.195.59.196:39137`，V2527A／原序列`10AG5S1SR4005X7`。最终237／0.15.75于2026-10-30 17:19:01正常覆盖，首次安装仍2026-09-26 18:54:37；固定包`build/candidates/0.15.75/Chrona-0.15.75.apk`3277629字节、非debug、原签名。Release／lintRelease通过，不发小版本Release。
+- 真实C程序设计基础2026-09-23 14:15第7–8节（course87476／lesson1972361）AI已完成；本轮未调用AI、未重生成、未读生产私有缓存。原文稿、总结、40张图片许可、消息历史和检查点保留。全局增强偏好仍沿用此前保存的false。
+- 空白原因已查明：旧阅读器先串行排完全页4651个公式才显示；安全计数425→1638→3201→4651及最终visual ready证明持续运行，先前等待20秒并不足以区分长排版与永久失败。237首屏公式就绪即呈现，屏外笔记每16项让出事件循环，折叠文稿展开才排版；不改变字体、图片、导出和原入场参数。
+- 237真机已亲见正文、真实滚动、两张实际引用图，并点击进入共用全屏大图。`build/phone-enhanced-229/phone-237-{final-body,reading,picture,viewer}.jpg`均为先压缩JPEG，外部输入窗口区域已遮蔽。采集耗时含UI dump／截图，不宣称精确3秒。
+- 临时阶段计数文件仅在应用专属files/diagnostics写入，现已精确删除；临时文件写入和逐公式桥接代码已移除，最终包不再生成它。手机公共根目录没有测试写入。
 
-## 真实AI与未结项
+## 验收证据
 
-C程序设计基础2026-09-23 14:15第7–8节，course87476/lesson1972361，923条字幕、282→140截图，原最多40张授权。235从旧检查点的核图计划0/5继续，未重做文稿5/5；实际依次推进核图计划1/5、2/5、分段笔记0/5、3/5、4/5，见`build/enhanced-document/phone-235-ai-notification-{1..5}.txt`。
+- `build/enhanced-document/reader-237-final-build.txt`：正常生产release及lintRelease通过；`candidate-237-{package,signature}.txt`、`phone-237-final-install.txt`及固定APK对应同一候选。
+- 同一原AVD正常横竖屏、未调DPI：原生阅读／折叠／公式／代码／滚动／单节与批量ZIP／失败恢复29项各通过；长文后台Activity覆盖与恢复、4651隐藏公式按需排版8项通过。`native-reader-237-{portrait,landscape,long-hidden}.txt`，实际JPEG及report在`reader-237-final-evidence/`。长文检查最初失败是测试把JS字符串的JSON引号当数字比较，改为数字返回后通过，未修改生产实现掩盖失败。
+- 原只读`/root/ui_review`亲看真机正文／图片／共用查看页及AVD长文／横屏证据，本轮受检阅读器范围通过，无新增明确缺陷；结论不扩大到模型内容质量或服务缓存usage。
+- 既有341项原模式恢复与schema检查、292项默认管线、538项同次请求前缀、GlobalSend清单动态更新14×2及协议32项不受本轮影响，继续复用；历史入口见`docs/validation-history.md`。
 
-随后2043和ClassroomWorkService均已消失，详情显示“重新生成”且无错误，后台生成已结束。一次刚进入结果页的JPEG未见正文，不能将其判作最终渲染通过，也未证明是永久空白。之后用户切出Chrona，前台守卫拒绝截图，未触控。需在手机可用时复核稳定正文、实际附图和只读导出；不重新生成、不再付费。真实服务usage/缓存命中尚未读回，不声称已验证实际节省。
+## 设备归还与下一步
 
-## 独立排查证据
+已恢复升级前开启的局域网访问`http://10.195.59.196:8765`；`/`、`/app.js`、`/icons.js`、`/brand.svg`均200且SVG MIME正确（`phone-237-lan-http.json`）。浏览器按正常流程重新授权，不代替用户确认，不重复发送链接。
 
-既有共享Chrona_Classroom_36新增`enhanced_document / background-ready / nativeScreen=true`专项：实际Activity遮挡期间释放公式ready，返回后5个笔记块与长更正文稿原生可见，visibility0/alpha1、高23160px、无溢出、20处公式无错误，6项通过。`build/enhanced-document/native-background-ready.txt`、`background-ready-portrait-light/report.json`及压缩JPEG。仅修改隔离测试，没有改生产渲染或拿AVD结果替代真实课堂。该检查未复现后台ready死锁，因此不凭单帧空白修改成熟实现。
+GlobalSend原所有者已先完成1.0.57/code68及真实系统图片拖入待发区检查。Chrona本轮已明确归还手机，之后不触控／安装；对方可继续自己的定向实收等剩余测试，不改Chrona／网络／LAN。Windows远程浏览器联动沿用用户亲自确认成功，不重复发送；真实iPad实收仍由用户后续验证。
 
-## 当前设备边界与下一步
+真实服务usage／缓存命中未读回：原始审计保存在本机run.json，现无已批准的外部只读入口，不绕过私有缓存权限，也不声称实际缓存节省。后续如继续该项，走应用正常审计／导出能力；无需重新生成已完成课堂。
 
-用户给过新端口10.195.59.196:38975（旧38711已拒绝），已核对原序列10AG5S1SR4005X7。正常导航期间前台离开，本应用事件是pauseBackTasks/userLeaving、进程9197仍活着，不能判作本轮崩溃，也不应仅凭此归因用户操作。后来亲见顶部悬浮通知盖住历史切换栏，说明仅有应用焦点不足以证明目标可点击。已清理两张自有、误含非项目通知的newlease JPEG，不作验收证据；后续先核对遮挡再输入。历史监视TLS关闭异常的对应Slot.close在当前源码已走cleanup executor，未凭旧堆栈新增修复；事件/历史日志见`phone-235-own-activity-events.txt`和`phone-235-owned-crash.txt`。
-
-GlobalSend曾明确归还两分钟窗口，本轮未重做生成或安装。随后ADB已返回device offline；GlobalSend转达用户明确说手机将断开，已停止手机操作且57仅更新Windows并保留APK。当前不再重连、索要端口或为对端保留手机窗口。没有仍运行的课堂AI任务，不因观察超时重启或付费。正文稳定显示、实际附图及真实usage仍待设备恢复后核对，原始日志、消息历史及检查点保留。
-
-不发小版本Release。产物只放本项目build，手机测试XML仅专属/data/local/tmp/chrona-validation并finally清理；只查看压缩JPEG，配对码/QR及密码遮蔽。不读凭据或绕过生产私有缓存权限。AVD只复用原实例，不克隆/清空/重置，专项已清理自己的合成课堂并结束。
-
-用户的AGENTS.md、角色toml、.backups/、.local-backups/及tools/Clean-Project.ps1不提交、不清理。
+项目衍生产物留本项目build；GitHub CLI使用F盘公共安装。用户的AGENTS.md、角色toml、.backups/、.local-backups/、tools/Clean-Project.ps1不提交、不清理。

@@ -22,6 +22,11 @@ final class ClassroomMarkdownView extends WebView {
     private boolean disposed;
     private boolean ready;
     private Runnable readyAction;
+    private final Runnable readinessProbe=()->{
+        if(disposed||ready)return;
+        evaluateJavascript("JSON.stringify({state:document.readyState,renderer:typeof renderClassroom,math:typeof MathJax,stage:window.classroomRenderStage||'',children:document.querySelector('main')?.childElementCount||0,formulas:document.querySelectorAll('[data-formula]').length,rendered:document.querySelectorAll('mjx-container').length})",
+                value->android.util.Log.w("ChronaReader","readiness "+value));
+    };
     private boolean dragEligible;private float downX,downY;
     @android.annotation.SuppressLint({"SetJavaScriptEnabled","AddJavascriptInterface"})
     ClassroomMarkdownView(Activity activity,File directory,JSONObject summary,Actions actions) throws Exception {
@@ -59,10 +64,17 @@ final class ClassroomMarkdownView extends WebView {
             }catch(Exception unavailable){return false;}
         });
         addJavascriptInterface(new Object(){
+        @JavascriptInterface public void failure(String type,String location){post(()->{
+            if(disposed)return;
+            String safeType=Set.of("Error","TypeError","SyntaxError","ReferenceError","RangeError").contains(type)?type:"Error";
+            String safeLocation=location!=null&&location.matches("reader\\.js:[0-9]+(?::[0-9]+)?")?location:"render-entry";
+            android.util.Log.e("ChronaReader",safeType+" at "+safeLocation);
+        });}
         @JavascriptInterface public void ready(){post(()->{
             if(disposed)return;
             postVisualStateCallback(0,new VisualStateCallback(){@Override public void onComplete(long requestId){
                 if(disposed)return;
+                removeCallbacks(readinessProbe);
                 ready=true;if(readyAction!=null)readyAction.run();
             }});
         });}
@@ -103,8 +115,11 @@ final class ClassroomMarkdownView extends WebView {
                     UiStyle.Palette palette=UiStyle.colors(activity);
                     JSONObject theme=new JSONObject().put("text",hex(palette.text)).put("muted",hex(palette.muted))
                             .put("link",ThemeStore.dark(activity)?"#80baff":"#1468c8").put("line",hex(palette.outline))
-                            .put("fontScale",getResources().getConfiguration().fontScale);
-                    evaluateJavascript("renderClassroom(JSON.parse("+JSONObject.quote(document)+"),"+theme+")",null);
+                            .put("fontScale",getResources().getConfiguration().fontScale)
+                            .put("viewportHeight",getResources().getDisplayMetrics().heightPixels/getResources().getDisplayMetrics().density);
+                    String report="e=>{const at=String(e?.stack||'').match(/reader\\.js:[0-9]+(?::[0-9]+)?/);ChronaSize.failure(String(e?.name||'Error'),at?at[0]:'render-entry');}";
+                    evaluateJavascript("(()=>{try{Promise.resolve(renderClassroom(JSON.parse("+JSONObject.quote(document)+"),"+theme+")).catch("+report+");}catch(e){("+report+")(e);}})()",null);
+                    removeCallbacks(readinessProbe);postDelayed(readinessProbe,10000);
                 }catch(JSONException ignored){}
             }
         });
@@ -114,5 +129,5 @@ final class ClassroomMarkdownView extends WebView {
     private static String hex(int color){return String.format(Locale.ROOT,"#%06x",color&0xffffff);}
     private static WebResourceResponse blocked(){return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));}
     void onReady(Runnable action){readyAction=action;if(ready&&action!=null)action.run();}
-    void dispose(){disposed=true;readyAction=null;stopLoading();removeJavascriptInterface("ChronaSize");destroy();}
+    void dispose(){disposed=true;readyAction=null;removeCallbacks(readinessProbe);stopLoading();removeJavascriptInterface("ChronaSize");destroy();}
 }

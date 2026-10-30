@@ -85,7 +85,7 @@ final class EnhancedDocumentChecks {
         await(()->{try{document=(ClassroomMarkdownView)field(screen,"documentView");return document!=null&&"true".equals(js("window.classroomReady===true"));}catch(Exception e){return false;}});
         SystemClock.sleep(650);JSONObject closed=state();
         check(closed.getBoolean("details")&&!closed.getBoolean("open"),"corrected transcript initially collapsed");
-        check(closed.getInt("errors")==0&&closed.getInt("math")>=2,"formulas inside collapsed content are rendered without errors");
+        check(closed.getInt("errors")==0&&closed.getInt("math")==0,"closed corrected transcript defers formula layout without blocking notes");
         check(closed.getBoolean("paragraphs")&&closed.getBoolean("codeLiteral"),"paragraph recovery preserves escaped code literals");
         double disclosure=Double.parseDouble(js("document.querySelector('summary').getBoundingClientRect().height"));
         double minimum=Double.parseDouble(js("parseFloat(getComputedStyle(document.querySelector('summary')).minHeight)"));
@@ -93,7 +93,7 @@ final class EnhancedDocumentChecks {
         evidence.put(new JSONObject().put("phase","disclosure-hit-area").put("cssHeight",disclosure).put("cssMinimum",minimum).put("physicalPixels",Math.round(disclosure*density)).put("requiredPhysicalPixels",Math.round(48*density)));
         check(minimum>=48&&Math.round(disclosure*density)>=Math.round(48*density),"disclosure has the shared minimum 48dp touch area in physical layout pixels");
         int before=document.getHeight();capture("collapsed");tapSummary();
-        await(()->{try{return state().getBoolean("open")&&document.getHeight()>before+200;}catch(Exception e){return false;}});
+        await(()->{try{return state().getBoolean("open")&&state().getInt("math")>=2&&document.getHeight()>before+200;}catch(Exception e){return false;}});
         JSONObject opened=state();check(opened.getInt("errors")==0,"expanded transcript keeps valid formula rendering");
         check(opened.getDouble("overflow")<=2,"ordinary portrait or landscape content stays within its viewport");
         capture("expanded");int expanded=document.getHeight();
@@ -118,7 +118,7 @@ final class EnhancedDocumentChecks {
     private void backgroundReady()throws Exception{
         JSONArray parts=new JSONArray();JSONObject original=summary.getJSONArray("parts").getJSONObject(0);
         for(int i=0;i<5;i++){JSONObject part=new JSONObject(original.toString());part.getJSONArray("notes").getJSONObject(0).put("text",original.getJSONArray("notes").getJSONObject(0).getString("text")+"\n\n代码与题干条件，逐项保留限制和步骤。\n\n".repeat(40));parts.put(part);}
-        summary.put("parts",parts).put("corrected_transcript",summary.getString("corrected_transcript").repeat(10));write("summary.json",summary);
+        summary.put("parts",parts).put("corrected_transcript",summary.getString("corrected_transcript").repeat(10)+"\n\n$x_i=i+1$ ".repeat(4631));write("summary.json",summary);
         screen=open(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).putExtra("hold_markdown_ready",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         await(()->{try{document=(ClassroomMarkdownView)field(screen,"documentView");return document!=null&&"\"function\"".equals(js("typeof window.chronaReleaseReady"));}catch(Exception e){return false;}});
         check(document.getVisibility()==View.INVISIBLE,"first long document stays hidden until local rendering is ready");
@@ -129,6 +129,8 @@ final class EnhancedDocumentChecks {
         await(()->{try{return "true".equals(js("window.classroomReady===true"))&&document.getVisibility()==View.VISIBLE&&document.getAlpha()==1f;}catch(Exception e){return false;}});
         check(document.getHeight()>1000,"background-ready long document receives its full native height after resume");
         check("true".equals(js("document.querySelectorAll('main>h2').length>=6&&!!document.querySelector('details')")),"all five note blocks and corrected disclosure are present");
+        check(state().getInt("math")==0,"long folded transcript does not eagerly typeset hidden formulas");
+        check("4651".equals(js("document.querySelectorAll('details [data-formula]').length")),"4651 hidden formulas preserve complete source without delaying the first document");
         capture("background-resumed");
         evidence.put(new JSONObject().put("phase","background-ready").put("visibility",document.getVisibility()).put("height",document.getHeight()).put("alpha",document.getAlpha()).put("js",state()));
     }

@@ -56,8 +56,10 @@
     }
   }
   function resize(){if(window.ChronaSize)window.ChronaSize.height(Math.ceil(document.querySelector('main').getBoundingClientRect().height));}
+  const yieldToReader=()=>new Promise(resolve=>setTimeout(resolve,0));
   new ResizeObserver(resize).observe(document.querySelector('main'));
   window.renderClassroom=async(data,theme={})=>{
+    window.classroomRenderStage='markdown';
     const turn=++generation;formulas=[];allowed=new Set(data.images);
     for(const key of ['text','muted','link','line'])if(theme[key])document.documentElement.style.setProperty('--'+key,theme[key]);
     document.documentElement.style.fontSize=(16*(theme.fontScale||1))+'px';
@@ -81,13 +83,35 @@
       const activate=event=>{if(event.target.closest('a'))return;location.href='action/task/'+el.dataset.task;};
       el.addEventListener('click',activate);el.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate(event);}});
     });
+    window.classroomRenderStage='math-startup';
     await MathJax.startup.promise;
-    for(const element of main.querySelectorAll('[data-formula]')){
-      if(turn!==generation)return;
-      const formula=formulas[Number(element.dataset.formula)];
-      try{const metrics=MathJax.getMetricsFor(element,formula.block);const output=await MathJax.tex2svgPromise(formula.tex,metrics);if(turn!==generation)return;sizeMath(output,element,formula.block);element.replaceChildren(output);}
-      catch(error){element.classList.add('formula-error');element.textContent=(formula.block?'$$':'$')+formula.tex+(formula.block?'$$':'$');}
-    }
-    window.classroomReady=true;resize();window.ChronaSize?.ready();
+    window.classroomRenderStage='formulas';
+    const entries=[...main.querySelectorAll('[data-formula]')];
+    const renderMath=async elements=>{
+      let count=0;
+      for(const element of elements){
+        if(turn!==generation)return;
+        if(element.dataset.typeset)continue;
+        element.dataset.typeset='pending';
+        const formula=formulas[Number(element.dataset.formula)];
+        try{const metrics=MathJax.getMetricsFor(element,formula.block);const output=await MathJax.tex2svgPromise(formula.tex,metrics);if(turn!==generation)return;sizeMath(output,element,formula.block);element.replaceChildren(output);}
+        catch(error){element.classList.add('formula-error');element.textContent=(formula.block?'$$':'$')+formula.tex+(formula.block?'$$':'$');}
+        element.dataset.typeset='done';
+        if(++count%16===0){resize();await yieldToReader();}
+      }
+      resize();
+    };
+    // A closed disclosure must not delay the document. Keep one MathJax queue
+    // so opening it while the notes finish never typesets the same node twice.
+    const notes=entries.filter(element=>!element.closest('details'));
+    const firstScreen=notes.filter(element=>element.getBoundingClientRect().top<(theme.viewportHeight||window.screen.height));
+    await renderMath(firstScreen);
+    if(turn!==generation)return;
+    window.classroomRenderStage='ready';window.classroomReady=true;resize();window.ChronaSize?.ready();
+    let queue=renderMath(notes);
+    main.querySelectorAll('details').forEach(details=>details.addEventListener('toggle',()=>{
+      if(details.open)queue=queue.then(()=>renderMath([...details.querySelectorAll('[data-formula]')]));
+    }));
+    await queue;
   };
 })();
