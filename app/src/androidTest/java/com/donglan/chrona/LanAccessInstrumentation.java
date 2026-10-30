@@ -117,25 +117,42 @@ public final class LanAccessInstrumentation extends Instrumentation {
             return;
         }
         Bundle result = new Bundle();
-        try { check(); result.putString("stream", "LAN integration: PASS (real Android SQLite and HTTP)\n"); finish(-1, result); }
+        try { check(); result.putString("stream", "web_calendar".equals(arguments.getString("check"))
+                ? "LAN calendar integration: PASS (real Android SQLite/HTTP, five views, native PNG parity, cache cleanup, no external data)\n"
+                : "LAN integration: PASS (real Android SQLite and HTTP)\n"); finish(-1, result); }
         catch (Throwable error) { result.putString("stream", "LAN integration: FAIL " + error.getClass().getSimpleName() + ": " + error.getMessage()+"\n");
-            if("web_core".equals(arguments.getString("check")))result.putString("error",android.util.Log.getStackTraceString(error));finish(0, result); }
+            if(java.util.List.of("web_core","web_calendar").contains(arguments.getString("check","")))result.putString("error",android.util.Log.getStackTraceString(error));finish(0, result); }
     }
     private String cookie, csrf, lastSetCookie;
     private int port;
     private boolean providerCompletion;
     private void check() throws Exception {
         Context target = getTargetContext();
-        if ("linked_calendar".equals(arguments.getString("check"))) FixtureIsolation.require(target);
+        boolean calendarCheck="web_calendar".equals(arguments.getString("check"));
+        if ("linked_calendar".equals(arguments.getString("check")) || calendarCheck) FixtureIsolation.require(target);
         File directory = new File(target.getCacheDir(), "lan-integration-" + UUID.randomUUID());
         if (!directory.mkdirs()) throw new IOException("Cannot create isolated test directory");
+        java.util.Set<String> preferenceNames=java.util.Collections.synchronizedSet(new java.util.HashSet<>());
         Context isolated = new ContextWrapper(target) {
             @Override public Context getApplicationContext() { return this; }
             @Override public File getFilesDir() { return directory; }
+            @Override public File getCacheDir() { return calendarCheck?directory:super.getCacheDir(); }
+            @Override public int checkSelfPermission(String permission) {
+                if(calendarCheck&&(android.Manifest.permission.READ_CALENDAR.equals(permission)
+                        ||android.Manifest.permission.WRITE_CALENDAR.equals(permission)))
+                    return android.content.pm.PackageManager.PERMISSION_DENIED;
+                return super.checkSelfPermission(permission);
+            }
+            @Override public int checkPermission(String permission,int pid,int uid) {
+                if(calendarCheck&&(android.Manifest.permission.READ_CALENDAR.equals(permission)
+                        ||android.Manifest.permission.WRITE_CALENDAR.equals(permission)))
+                    return android.content.pm.PackageManager.PERMISSION_DENIED;
+                return super.checkPermission(permission,pid,uid);
+            }
             @Override public File getDatabasePath(String name) { return new File(directory,name); }
             @Override public SQLiteDatabase openOrCreateDatabase(String name,int mode,SQLiteDatabase.CursorFactory factory) { return SQLiteDatabase.openOrCreateDatabase(getDatabasePath(name),factory); }
             @Override public SQLiteDatabase openOrCreateDatabase(String name,int mode,SQLiteDatabase.CursorFactory factory,DatabaseErrorHandler handler) { return SQLiteDatabase.openOrCreateDatabase(getDatabasePath(name).getAbsolutePath(),factory,handler); }
-            @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode) { return super.getSharedPreferences("lan-test-"+directory.getName()+"-"+name,mode); }
+            @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode) { String key="lan-test-"+directory.getName()+"-"+name;preferenceNames.add(key);return super.getSharedPreferences(key,mode); }
         };
         try(ServerSocket reserve = new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"))) { port=reserve.getLocalPort(); }
         java.util.concurrent.atomic.AtomicInteger approvalChanges = new java.util.concurrent.atomic.AtomicInteger();
@@ -148,6 +165,13 @@ public final class LanAccessInstrumentation extends Instrumentation {
             expect(request("POST","/api/pair",new JSONObject().put("code",server.security.pairing()),"http://evil.invalid"),403);
             expect(request("POST","/api/pair",new JSONObject().put("code",server.security.pairing()),origin()),200);
             Reply session=request("GET","/api/session",null,null);expect(session,200);csrf=session.body.getString("csrf");
+            if(calendarCheck){
+                checkWebCalendar(isolated);
+                expect(request("POST","/api/logout",new JSONObject(),origin()),200);
+                expect(request("GET","/api/agenda?from=2026-10-26&until=2026-11-02&view=week",null,null),401);
+                expect(request("GET","/api/agenda/week-image?from=2026-10-26",null,null),401);
+                return;
+            }
             Reply created=request("POST","/api/task/create",new JSONObject().put("text","LAN test original").put("process",false),origin());expect(created,200);long id=created.body.getLong("id");
             try(TaskStore store=new TaskStore(isolated)){require(store.getTask(id).rawText.equals("LAN test original"),"HTTP must persist into TaskStore");}
             Reply detail=request("GET","/api/task?id="+id,null,null);long revision=detail.body.getLong("revision");
@@ -239,7 +263,7 @@ public final class LanAccessInstrumentation extends Instrumentation {
             if ("linked_calendar".equals(arguments.getString("check"))) checkLinkedCalendar(isolated);
             expect(request("POST","/api/logout",new JSONObject(),origin()),200);expect(request("GET","/api/inbox",null,null),401);
             server.closeAccess();require(!server.security.authenticated(cookie),"closing revokes connections");
-        } finally { server.closeAccess(); delete(directory); }
+        } finally { server.closeAccess(); delete(directory);if(calendarCheck)for(String name:preferenceNames){target.getSharedPreferences(name,Context.MODE_PRIVATE).edit().clear().commit();target.deleteSharedPreferences(name);} }
     }
     private void checkApprovalProtocol(LanWebServer server,java.util.concurrent.atomic.AtomicInteger changes) throws Exception {
         expect(request("POST","/api/approval/request",new JSONObject(),null),403);
@@ -483,7 +507,86 @@ public final class LanAccessInstrumentation extends Instrumentation {
         expect(request("POST","/api/agenda/acknowledge",ack,origin()),409);
     }
     private String origin(){return "http://127.0.0.1:"+port;}
+    private void checkWebCalendar(Context context)throws Exception{
+        var monday=java.time.LocalDate.of(2026,10,26);var zone=java.time.ZoneId.systemDefault();
+        long morning=monday.atTime(8,0).atZone(zone).toInstant().toEpochMilli(),task;
+        HomeTimelinePreferences.setIncludesSystemCalendar(context,true);
+        CalendarSourcePreferences.setIncludesSystem(context,false);
+        long initialRevision;
+        try(TaskStore store=new TaskStore(context)){
+            task=store.insertTask("calendar isolated fixture",null,"web-calendar-check",morning);
+            store.updateStatus(task,com.donglan.chrona.data.TaskRecord.READY,null);
+            store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,task,"Calendar alpha",morning,morning+3600000,zone.getId(),"North 111","detail",null,false));
+            store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,task,"Calendar beta",morning+1800000,morning+5400000,zone.getId(),"South 222","detail",null,false));
+            long midnight=monday.atStartOfDay(zone).toInstant().toEpochMilli();
+            store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,task,"Calendar cross",midnight-1800000,midnight+1800000,zone.getId(),"","",null,false));
+            store.appendCandidate(new com.donglan.chrona.data.EventCandidate(0,task,"Calendar all-day",com.donglan.chrona.calendar.AllDayDates.utcStart(monday.toString()),com.donglan.chrona.calendar.AllDayDates.utcExclusiveEnd(monday.plusDays(1).toString()),zone.getId(),"","",null,false,null,"event",true));
+            initialRevision=store.dataRevision();
+        }
+        String week="/api/agenda?from=2026-10-26&until=2026-11-02&view=week";
+        JSONObject data=request("GET",week,null,null).body;
+        require(data.getJSONArray("items").length()==4,"real store calendar occurrences");
+        var timeline=data.getJSONObject("timeline");var days=timeline.getJSONArray("days");
+        require(days.length()==7&&!timeline.getBoolean("compressMorning"),"cross-midnight disables quiet compression");
+        var first=days.getJSONObject(0);require(first.getJSONArray("blocks").length()==3,"real clipped timed blocks");
+        boolean twoLanes=false,crossClipped=false;
+        for(int n=0;n<first.getJSONArray("blocks").length();n++){
+            var block=first.getJSONArray("blocks").getJSONObject(n);
+            twoLanes|=block.getInt("lanes")==2;
+            crossClipped|=block.getDouble("startMinute")==0&&block.getDouble("endMinute")==30;
+        }
+        require(twoLanes&&crossClipped,"native overlap lanes and midnight clipping through HTTP");
+        require(first.getJSONArray("allDay").length()==1&&days.getJSONObject(1).getJSONArray("allDay").length()==1
+                &&days.getJSONObject(2).getJSONArray("allDay").length()==0,"all-day exclusive end through HTTP");
+        JSONObject filtered=request("GET",week+"&search=nOrTh",null,null).body;
+        require(filtered.getJSONArray("items").length()==1&&filtered.getJSONObject("timeline").getBoolean("compressMorning"),"same native search controls items and quiet band");
+        for(String view:java.util.List.of("year","month","agenda")){
+            Reply result=request("GET","/api/agenda?from=2026-01-01&until=2027-01-01&view="+view,null,null);expect(result,200);
+            require(result.body.getJSONArray("items").length()==4&&!result.body.has("timeline"),view+" uses same real occurrences");
+        }
+        Reply day=request("GET","/api/agenda?from=2026-10-26&until=2026-10-27&view=day",null,null);expect(day,200);
+        require(day.body.getJSONObject("timeline").getJSONArray("days").length()==1,"day timeline");
+        expect(request("GET","/api/agenda?from=2026-10-26&until=2026-10-28&view=week",null,null),400);
+        expect(request("GET","/api/agenda?from=2026-10-26&until=2026-11-02&view=invalid",null,null),400);
+        expect(request("POST","/api/preferences",new JSONObject().put("scope","calendar").put("systemCalendarIncluded",true),origin()),403);
+        require(!CalendarSourcePreferences.includesSystem(context),"denied permission does not persist calendar switch");
+        expect(request("POST","/api/preferences",new JSONObject().put("scope","calendar").put("systemCalendarIncluded",false),origin()),200);
+        require(HomeTimelinePreferences.includesSystemCalendar(context),"calendar scope does not alter home source preference");
+        String export="/api/agenda/week-image?from=2026-10-26&index=false";
+        String saved=cookie;cookie=null;expect(request("GET",export,null,null),401);cookie=saved;
+        RawReply png=requestRaw("GET",export,null,null,20*1024*1024);
+        require(png.status==200&&png.type.startsWith("image/png")&&png.disposition.contains("Chrona-week-2026-10-26.png"),"authenticated binary MIME and filename");
+        var bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;
+        android.graphics.BitmapFactory.decodeByteArray(png.bytes,0,png.bytes.length,bounds);
+        require(bounds.outWidth==WeekAgendaImage.WIDTH&&bounds.outHeight>0,"valid full-width native PNG stream");
+        long until=System.currentTimeMillis()+3000;
+        while(exportFiles(context).length>0&&System.currentTimeMillis()<until)Thread.sleep(25);
+        require(exportFiles(context).length==0,"HTTP completion cleans temporary export");
+        var snapshot=AgendaRepository.load(context,monday.atStartOfDay(zone).toInstant().toEpochMilli(),monday.plusDays(7).atStartOfDay(zone).toInstant().toEpochMilli(),false,zone,new android.os.CancellationSignal());
+        File direct=WeekAgendaImage.write(context.getCacheDir(),monday,zone,snapshot.entries,UiStyle.colors(context),"",false,false);
+        try{require(java.util.Arrays.equals(png.bytes,java.nio.file.Files.readAllBytes(direct.toPath())),"web export byte-for-byte equals direct native export");}finally{require(direct.delete(),"direct native test export removed");}
+        RawReply indexed=requestRaw("GET","/api/agenda/week-image?from=2026-10-26&index=true",null,null,20*1024*1024);
+        var indexedBounds=new android.graphics.BitmapFactory.Options();indexedBounds.inJustDecodeBounds=true;
+        android.graphics.BitmapFactory.decodeByteArray(indexed.bytes,0,indexed.bytes.length,indexedBounds);
+        require(indexed.status==200&&indexedBounds.outWidth==bounds.outWidth&&indexedBounds.outHeight>bounds.outHeight,"optional schedule index is present");
+        RawReply searched=requestRaw("GET",export+"&search=nOrTh",null,null,20*1024*1024);
+        File filteredDirect=WeekAgendaImage.write(context.getCacheDir(),monday,zone,LanCalendarData.matching(snapshot.entries,"nOrTh"),UiStyle.colors(context),"nOrTh",false,false);
+        try{require(searched.status==200&&java.util.Arrays.equals(searched.bytes,java.nio.file.Files.readAllBytes(filteredDirect.toPath())),"search applies to native PNG content, not just the caption");}finally{require(filteredDirect.delete(),"filtered test export removed");}
+        expect(request("GET","/api/agenda/week-image?from=2026-10-27",null,null),400);
+        expect(request("GET","/api/agenda/week-image?from=2026-10-26&index=invalid",null,null),400);
+        CalendarSourcePreferences.setIncludesSystem(context,true);
+        require(request("GET",week,null,null).body.getBoolean("systemUnavailable"),"unreadable source is explicit");
+        expect(request("GET",export,null,null),409);
+        CalendarSourcePreferences.setIncludesSystem(context,false);
+        require(exportFiles(context).length==0,"failed export creates no temporary PNG");
+        try(TaskStore store=new TaskStore(context)){require(store.getCandidates(task).size()==4&&store.dataRevision()==initialRevision,"read/export never alter schedule rows or revision");}
+    }
+    private static File[] exportFiles(Context context){File[] files=context.getCacheDir().listFiles((dir,name)->name.startsWith("week-export-")&&name.endsWith(".png"));return files==null?new File[0]:files;}
     private Reply request(String method,String path,JSONObject body,String origin)throws Exception{
+        RawReply response=requestRaw(method,path,body,origin,1024*1024);
+        return new Reply(response.status,new JSONObject(new String(response.bytes,StandardCharsets.UTF_8)));
+    }
+    private RawReply requestRaw(String method,String path,JSONObject body,String origin,int maximum)throws Exception{
         lastSetCookie=null;
         // Raw loopback sockets avoid changing the release APK's outbound cleartext policy.
         try(Socket socket=new Socket()){
@@ -495,18 +598,21 @@ public final class LanAccessInstrumentation extends Instrumentation {
             if(origin!=null)headers.append("Origin: ").append(origin).append("\r\n");
             if(body!=null)headers.append("Content-Type: application/json\r\nContent-Length: ").append(bytes.length).append("\r\n");
             headers.append("\r\n");OutputStream output=socket.getOutputStream();output.write(headers.toString().getBytes(StandardCharsets.US_ASCII));output.write(bytes);output.flush();
-            BufferedInputStream input=new BufferedInputStream(socket.getInputStream());int status=Integer.parseInt(line(input).split(" ")[1]);int length=-1;String header;
+            BufferedInputStream input=new BufferedInputStream(socket.getInputStream());int status=Integer.parseInt(line(input).split(" ")[1]);int length=-1;String header,type="",disposition="";
             while(!(header=line(input)).isEmpty()){
                 if(header.toLowerCase(java.util.Locale.ROOT).startsWith("content-length:"))length=Integer.parseInt(header.substring(15).trim());
+                if(header.toLowerCase(java.util.Locale.ROOT).startsWith("content-type:"))type=header.substring(13).trim();
+                if(header.toLowerCase(java.util.Locale.ROOT).startsWith("content-disposition:"))disposition=header.substring(20).trim();
                 if(header.toLowerCase(java.util.Locale.ROOT).startsWith("set-cookie:")){lastSetCookie=header;cookie=header.substring(11).trim().split(";",2)[0];}
             }
-            if(length<0||length>1024*1024)throw new IOException("Invalid test response length");
+            if(length<0||length>maximum)throw new IOException("Invalid test response length");
             byte[] response=new byte[length];int offset=0;while(offset<length){int count=input.read(response,offset,length-offset);if(count<0)throw new IOException("Truncated response");offset+=count;}
-            return new Reply(status,new JSONObject(new String(response,StandardCharsets.UTF_8)));
+            return new RawReply(status,response,type,disposition);
         }
     }
     private static String line(InputStream input)throws IOException{ByteArrayOutputStream value=new ByteArrayOutputStream();int next;while((next=input.read())!=-1&&next!='\n'){if(next!='\r')value.write(next);if(value.size()>8192)throw new IOException("Header too long");}if(next==-1)throw new EOFException();return value.toString("US-ASCII");}
     private static final class Reply{final int status;final JSONObject body;Reply(int status,JSONObject body){this.status=status;this.body=body;}}
+    private static final class RawReply{final int status;final byte[] bytes;final String type,disposition;RawReply(int status,byte[] bytes,String type,String disposition){this.status=status;this.bytes=bytes;this.type=type;this.disposition=disposition;}}
     private static void expect(Reply reply,int code){require(reply.status==code,"expected HTTP "+code+" got "+reply.status);}
     private static void require(boolean result,String label){if(!result)throw new AssertionError(label);}
     private static void delete(File file){if(file.isDirectory()){File[] children=file.listFiles();if(children!=null)for(File child:children)delete(child);}if(!file.delete())file.deleteOnExit();}

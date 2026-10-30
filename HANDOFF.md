@@ -12,11 +12,12 @@
 - build/lan-web-functional/build.txt：release及lintRelease通过，2m10s；calendar-code.txt：生产Java投影／分列40项、日期／坐标／接线102项通过；Node语法通过。
 - daily-workspace.txt：生产资源在原Edge的三大主页面功能回归通过，覆盖鼠标／键盘／触摸导航、搜索／筛选、跨页选择、详情返回、草稿、旧请求隔离、作业定位／刷新及考试只读。请求证据另存build/lan-daily-workspace/functional-evidence.json。
 - calendar-final.txt：五视图、手机时区、原重复实例进入详情、返回草稿与横向阅读位置、缩放焦点、来源权限拒绝及独立开关、快速切月的迟到请求隔离、导出503恢复通过。两项失败复现见calendar-regression-before.txt／calendar-zoom-before.txt，修复后已通过。
+- build/lan-calendar-android/result-index-filter.txt：原AVD隔离validation包中真实SQLite／HTTP／PNG集成通过，退出码-1；五视图、边界／分列／搜索、来源权限与作用域、导出PNG／索引／筛选及原生逐字节一致、临时文件清理、数据库revision不变均已验证。remaining-export-files.txt与remaining-fixtures.txt为空。不改生产代码或候选，不截图；共享AVD已释放，保持原实例可复用。
 
 ## 验收边界与唯一下一步
 
-本轮是真实Edge＋模拟手机API的功能验证，没有截图、视觉几何验收或UI审查；用户明确自行验收视觉，不重用0.15.77截图来证明新候选。没有调用AI、修改真实日程、访问凭据或触控手机。
+浏览器功能是真实Edge＋模拟手机API；后端集成是真实Android＋隔离数据库，证据不互相替代。没有截图、视觉几何验收或UI审查；用户明确自行验收视觉，不重用0.15.77截图来证明新候选。没有调用AI、修改真实日程、访问凭据或触控手机。
 
-ADB设备清单为空，未安装0.15.79；手机最后有效安装证据仍为0.15.78／240。下一步是设备重新在线后协调单一手机所有者，正常流式覆盖这个固定候选，核对版本与真实LAN资源；若系统拒绝立即停止，不自动重试或代确认。真实Android新日历接口／导出仍需补验，浏览器模拟检查不冒充它。未重新配对，也不以新手机数据重跑测试。
+ADB仅有共享模拟器，没有在线真机，未安装0.15.79到手机；手机最后有效安装证据仍为0.15.78／240。唯一下一步是手机重新在线后协调单一所有者，正常流式覆盖固定候选，核对版本与真实LAN资源；若系统拒绝立即停止，不自动重试或代确认。后端新接口／导出已补验，手机浏览器实际网络与升级仍待完成。未重新配对，也不以新手机数据重跑测试。
 
 常规源码提交推送，不创建小版本Release。项目产物均在本项目build；用户AGENTS.md、角色toml、.backups/、.local-backups/、tools/Clean-Project.ps1不提交、不清理。历史交付与安装证据见docs/validation-history.md。

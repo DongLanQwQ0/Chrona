@@ -154,6 +154,15 @@ node checks/lan_daily_workspace_check.cjs
 ```
 
 检查成功必须返回 `LAN integration: PASS (real Android SQLite and HTTP)`。无在线设备时只确认该检查包编译通过，不能声称运行成功。仍须在手机/电脑真实局域网验证设置视觉、权限拒绝、前台通知、切后台/锁屏、网络变化、关闭撤销、日历权限/写入、附件读取、真实 WebDAV 多机同步、覆盖安装和提醒送达。
+
+五视图与周图片使用专用隔离检查：先确认共享`Chrona_Classroom_36`空闲，通过`--init-script checks/lan-core-validation.init.gradle`构建`:app:assembleDebug :app:assembleDebugAndroidTest`，核对包名为`com.donglan.chrona.followup.validation.v33`及其`.test`，仅向该模拟器流式安装。运行：
+
+```powershell
+& "$env:ANDROID_HOME\platform-tools\adb.exe" -s emulator-5580 shell am instrument -r -w -e check web_calendar com.donglan.chrona.followup.validation.v33.test/com.donglan.chrona.LanAccessInstrumentation
+```
+
+该项只接受隔离包和原AVD，不使用真实账号或系统日历数据。真实SQLite／HTTP验证五视图、跨日与全天边界、冲突分列、搜索、来源开关隔离及权限拒绝；二进制响应验证PNG尺寸、索引和筛选，并与同一素材的原生直接导出逐字节比较，不截图或作视觉验收。导出完成和拒绝后无临时PNG；最后删除本次数据库、偏好和缓存，记录行数及revision不变。成功必须同时返回`LAN calendar integration: PASS`与`INSTRUMENTATION_CODE: -1`，不能仅凭ADB命令退出码判断。
+
 ## 公共控件与普通详情
 
 页面、弹窗与备注输入框隐藏原生滚动条，仍可用滚轮、触摸或键盘滚动。状态筛选和类型选择统一主题下拉，方向键移动、Enter／Space确认、Escape关闭，支持外点关闭及连续打开／关闭。菜单行使用一层公共表面、相邻细分隔、主题色与尾部勾选，不叠加独立卡片。
