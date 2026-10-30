@@ -41,13 +41,13 @@ final class EnhancedDocumentChecks {
 
     private EnhancedDocumentChecks(ClassroomMonitorInstrumentation test,Bundle args){
         this.test=test;this.args=args;app=test.getTargetContext();account=new ZjuSettingsStore(app).account();
-        String suffix="failure-recovery".equals(args.getString("case"))?"-failure-recovery":"";
+        String suffix=switch(args.getString("case","")){case "failure-recovery"->"-failure-recovery";case "background-ready"->"-background-ready";default->"";};
         output=new File(app.getExternalFilesDir(null),"enhanced-document-"+args.getString("orientation","portrait")+"-"+args.getString("theme","light")+suffix);output.mkdirs();
     }
     static int run(ClassroomMonitorInstrumentation test,Bundle args)throws Exception{
         if(!test.getTargetContext().getPackageName().equals("com.donglan.chrona.monitor.validation")||!android.os.Build.HARDWARE.contains("ranchu"))throw new SecurityException("Owned emulator fixture required");
         EnhancedDocumentChecks c=new EnhancedDocumentChecks(test,args);
-        try{c.seed();if("failure-recovery".equals(args.getString("case")))c.openRecovery();else{c.reader();c.exports();}c.failureReopen();return c.checks;}
+        try{c.seed();if("background-ready".equals(args.getString("case"))){c.backgroundReady();return c.checks;}if("failure-recovery".equals(args.getString("case")))c.openRecovery();else{c.reader();c.exports();}c.failureReopen();return c.checks;}
         catch(Throwable failure){c.capture("failure");throw failure;}
         finally{
             ClassroomStore.write(new File(c.output,"report.json"),new JSONObject().put("checks",c.checks).put("evidence",c.evidence).put("synthetic",true).put("paid_calls",0));
@@ -114,6 +114,23 @@ final class EnhancedDocumentChecks {
         check("true".equals(js("![...document.querySelectorAll('main>h2')].some(n=>n.textContent==='重点概览')&&!document.querySelector('main').innerText.includes('等待图片分析')")),"corrected-only draft has no empty overview or invented image phase");
         evidence.put(new JSONObject().put("phase","native-layout").put("screenWidth",screen.getResources().getDisplayMetrics().widthPixels).put("screenHeight",screen.getResources().getDisplayMetrics().heightPixels).put("collapsedHeight",before).put("expandedHeight",expanded).put("closed",closed).put("opened",opened));
         write("summary.json",summary);
+    }
+    private void backgroundReady()throws Exception{
+        JSONArray parts=new JSONArray();JSONObject original=summary.getJSONArray("parts").getJSONObject(0);
+        for(int i=0;i<5;i++){JSONObject part=new JSONObject(original.toString());part.getJSONArray("notes").getJSONObject(0).put("text",original.getJSONArray("notes").getJSONObject(0).getString("text")+"\n\n代码与题干条件，逐项保留限制和步骤。\n\n".repeat(40));parts.put(part);}
+        summary.put("parts",parts).put("corrected_transcript",summary.getString("corrected_transcript").repeat(10));write("summary.json",summary);
+        screen=open(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).putExtra("hold_markdown_ready",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        await(()->{try{document=(ClassroomMarkdownView)field(screen,"documentView");return document!=null&&"\"function\"".equals(js("typeof window.chronaReleaseReady"));}catch(Exception e){return false;}});
+        check(document.getVisibility()==View.INVISIBLE,"first long document stays hidden until local rendering is ready");
+        anchor=open(new Intent(app,SettingsHubActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        check(test.lastResumed==anchor&&anchor!=screen,"another actual Activity covers the reader");
+        js("window.chronaReleaseReady()");SystemClock.sleep(1000);test.runOnMainSync(anchor::finish);anchor=null;
+        await(()->screen.hasWindowFocus());
+        await(()->{try{return "true".equals(js("window.classroomReady===true"))&&document.getVisibility()==View.VISIBLE&&document.getAlpha()==1f;}catch(Exception e){return false;}});
+        check(document.getHeight()>1000,"background-ready long document receives its full native height after resume");
+        check("true".equals(js("document.querySelectorAll('main>h2').length>=6&&!!document.querySelector('details')")),"all five note blocks and corrected disclosure are present");
+        capture("background-resumed");
+        evidence.put(new JSONObject().put("phase","background-ready").put("visibility",document.getVisibility()).put("height",document.getHeight()).put("alpha",document.getAlpha()).put("js",state()));
     }
     private JSONObject state()throws Exception{
         String value=js("JSON.stringify({details:!!document.querySelector('details'),open:!!document.querySelector('details')?.open,math:document.querySelector('details')?.querySelectorAll('mjx-container').length||0,errors:document.querySelectorAll('.formula-error').length,paragraphs:[...document.querySelectorAll('details p')].some(p=>p.textContent==='普通第一段')&&[...document.querySelectorAll('details p')].some(p=>p.textContent==='普通第二段'),codeLiteral:document.querySelector('details code')?.textContent.includes('\\\\n \\\\n'),overflow:document.documentElement.scrollWidth-innerWidth,height:document.querySelector('main').getBoundingClientRect().height})");
