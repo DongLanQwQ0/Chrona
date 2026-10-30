@@ -8,6 +8,7 @@
 - 更正失败且尚无第一份笔记时，入口改为「继续整理」。真实Activity定向恢复8项通过，`native-recovery-accepted.txt`与`enhanced-document-portrait-light-failure-recovery/`；两次重进状态高度与可见高度均51px。主代理与ui_review均亲看failure-before-summary.jpg并增量签收。
 - 上述为平台原生合成证据，paid_calls=0，不证明真实模型质量或缓存usage。真实C程序设计基础的2/5检查点和两次HTTP502边界沿用0.15.68记录；没有再次付费原样重试。手机部署及最终构建状态以当前HANDOFF为准。
 - 最终正常生产debug／AndroidTest编译／release／lintRelease通过`release-231-final-build.txt`。固定`build/candidates/0.15.69/Chrona-0.15.69.apk`3274905字节，231／0.15.69、非debug，签名验证并与230一致，见同目录`candidate-231-{package,signature}.txt`及JSON。GlobalSend确认让出USB后双方均仅发现模拟器，手机未连接，未安装231；不将AVD结果写为真机升级成功。不发Release。
+- 用户随后重新接入USB。与GlobalSend串行协调释放后，12:39正常覆盖安装成功；手机读回231／0.15.69，首次安装仍2026-09-26 18:54:37。安装前无课堂或LAN服务；证据`phone-231-{install,package,install-services}.txt`。后续页面检查遇到系统图片拖放，返回触控未导航，随后只读焦点转入相册，停止触控并协调，未强停其它应用。压缩JPEG／XML留在`build/phone-enhanced-229/phone-231-{home,dashboard}.*`，不作失败恢复入口通过证据；没有重发收费AI。手机入口复验仍有缺口，不影响已确认的签名覆盖与版本读回。
 
 ## 0.15.68 — 真实USB设置验收与失败原因保留 — 2026-10-30
 
