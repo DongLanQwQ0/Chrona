@@ -1,28 +1,24 @@
-# 当前交付：0.15.76处理记录已更新，待真实审计读回与LAN恢复
+# 当前交付：0.15.76已更新，处理记录真机复核与LAN恢复完成
 
-## 已交付及有效证据
+## 当前结果
 
-- 用户已批准课堂详情原操作行的只读「处理记录」。源码实现投影与原生页，右上导出／监视／删除次序、原总结及重生成语义不变；新页沿用SettingsPageLayout与公共首次入场，整页滚动。
-- 仅当前启用账号可查看同一课堂已保存的阶段、请求状态／起止、输入／输出／总Token、服务缓存读取Token、上下文附图数量、图片请求区间与依据。未知用量显示未提供，明确0保留；选中／已分析分开，新run不混旧summary。原始messages／response／图片二进制／远端地址／凭据不显示或导出，不调用学校／AI，不写run。
-- 详情处理时禁用入口，读者在ClassroomStore.LOCK内确认无ACTIVE写入所有者；忙时提示稍后刷新。账号停用／切换关闭；刷新和重建只读原文件。
-- 原AVD正常竖浅／横深各22项通过，含真实从详情触摸进入、入场、纵向滚动标题离屏、刷新／重建、原文件字节不变、busy与账号关闭及13项投影边界。横屏视口956px／屏1080px，上滑495px标题离屏。`build/enhanced-document/native-audit-238-{final-portrait,landscape}.txt`及`audit-238-evidence/`。没有极端DPI或分辨率调整。
-- 原独立ui_review发现running历史记录误标实时请求的P2，改为「未记录结果」；4项定向通过、原状态不改。`native-audit-238-unfinished.txt`及`audit-238-evidence/unfinished.jpg`。复审已签收受检UI／只读交互，不包含真实provider用量。
-- 最终release／lintRelease与隔离debug／AndroidTest构建通过。固定`build/candidates/0.15.76/Chrona-0.15.76.apk`3283725字节，238／0.15.76、非debug、原签名；证据`audit-238-final-build.txt`、`candidate-238-{package,signature}.txt`。
+- 用户批准的课堂只读「处理记录」已实现并推送，入口与原总结／重生成同行，右上导出／监视／删除次序保持。新页沿用公共二级布局、首次入场和整页滚动。
+- 只显示本节保存的逐轮阶段／请求状态／起止、输入／输出／总Token、服务缓存读取Token、上下文附图数量，以及选中／已分析数量、各段图片判断与请求区间依据。缺值显示未提供，明确0保留，新run不混旧summary；不显示或导出原消息、响应正文、图片二进制、远端地址或凭据，不调用学校／AI，不写run。
+- 处理时禁用入口，读取在ClassroomStore.LOCK内排除ACTIVE写入所有者；忙时提示稍后刷新。账号停用／切换关闭，刷新与重建保持只读。历史running显示「未记录结果」，不冒充实时网络活动。
+- 固定`build/candidates/0.15.76/Chrona-0.15.76.apk`3283725字节，238／0.15.76、非debug、原签名。最终19:12:07正常覆盖，首次安装仍2026-09-26 18:54:37；原V2527A／序列10AG5S1SR4005X7，端口10.195.59.196:39137。源码功能提交9fe5a65，后续仅文档收尾，不发小版本Release。
 
-## 手机状态与唯一下一步
+## 决定验收的证据
 
-用户端口`10.195.59.196:39137`，原V2527A／序列`10AG5S1SR4005X7`。第一次安装被明确拒绝，已停止；用户允许重新发起后19:09正常覆盖，最终状态修正版19:12:07覆盖成功，首次安装仍9/26。拒绝、许可后的安装及最终包分别记录在`phone-238-{install,retry-install,final-install,final-package}.txt`，没有绕过拒绝或新AI调用。
+- 正常release／lintRelease及隔离debug／AndroidTest编译通过：`build/enhanced-document/audit-238-final-build.txt`、`audit-238-unfinished-build.txt`；固定包／签名与覆盖证据`candidate-238-{package,signature}.txt`、`phone-238-final-{install,package}.txt`。
+- 原AVD正常竖浅／横深各22项，真实从详情触摸进入、入场、上滑标题离屏、刷新／recreate、run原字节不变、busy与账号关闭，含13项投影／隐私／缺值边界。原ui_review发现历史running误标P2，修正后仅补4项及实际JPEG，已复审关闭；`native-audit-238-{final-portrait,landscape,unfinished}.txt`及`audit-238-evidence/`。未调DPI或分辨率。
+- 用户给连续两分钟窗口后，正常UI打开真实C程序设计基础2026-09-23 14:15第7–8节（course87476／lesson1972361）并滚动读取：选中／已分析各40；第8轮输入762337、输出2752、缓存读取759808、总765089；第9轮缓存读取749952。第4轮失败及第5–7轮缺缓存字段仍显示未提供。
+- 真实数值来自原生页白名单TextView，`phone-238-audit-values.json`；没有读生产私有文件。压缩JPEG`build/phone-enhanced-229/phone-238-audit.jpg`因通用助手把六位数当配对信息遮蔽，Token行由单独数值记录补证，不能据灰条推断缺字段。ui_review已亲看真机呈现与数值并增量签收；不将样本推广为全课命中率或语义准确性。
+- 真实C课此前增强AI已完成，原文稿／总结／图片／消息历史与检查点保留；本轮没有AI调用或重生成，全局增强沿用原false。237已验证的长课堂正文、实际附图和共用大图行为未改，原341／292／538项管线／前缀证据继续适用。
 
-真实目标：C程序设计基础2026-09-23 14:15第7–8节（course87476／lesson1972361），此前增强AI已完成，文稿5/5、笔记／核图已完成。237已在真机复核正文、实际引用图及共用全屏查看；本轮不重生成、不修改历史或已保存输出，全局增强偏好沿用原false。
+## 运行状态与交接
 
-238只导航至历史，随后C课控件被外部浮层覆盖，输入守卫拒绝点击；尝试选择同一已观察控件的未遮挡区域之前，焦点已切到QQ，进程20070仍活着，已停止触控，没有当作崩溃。已询问用户能否连续空出两分钟，当前待答。唯一下一步：收到窗口后，从正常UI打开C课「处理记录」，读回真实Token／缓存字段与图片依据，再恢复安装前的LAN开关。不要重新生成或调用AI。
+LAN已通过正常页面恢复至`http://10.195.59.196:8765`，`phone-238-lan-http.txt`确认200，`phone-238-lan-restored.jpg`显示开启、居中地址与设备列表。浏览器依正常流程重新授权，不代确认、不重发链接。手机窗口已明确归还GlobalSend，Chrona不再触控／安装。本批无待执行的代码或手机检查。
 
-LAN原开启地址`http://10.195.59.196:8765`；首次拒绝后HTTP仍200，最终覆盖会停止服务，尚未能从正常页面恢复。恢复后需正常浏览器重新授权，不代确认，不重复设备发送。读取审计时可保存页面白名单数值；通用截图助手会遮蔽六位数字，不能将遮蔽后的XML当作Token缺失。只看压缩JPEG，不读取／上传PNG原图。
+GlobalSend的新文件夹单卡片等需求由原聊天所有者继续；用户关于“建议图片拖到发送区已修复”的消息明确仅归GlobalSend，Chrona不重测或认领该项目。Windows远程打开浏览器沿用用户已确认成功；真实iPad实收留用户后续验证，不猜目标、不重复发送。
 
-## 协作及边界
-
-GlobalSend原所有者已完成1.0.57/code68及2591字节合成图片实收，并明确释放手机；用户最新明确“建议图片拖入发送区已修复”仅归GlobalSend，Chrona不重测、不认领其它项目。对方正做新的文件夹单卡片等独立需求，已通知本轮只读窗口需求与QQ前台冲突，暂不并行输入／安装；本地开发可继续。Chrona完成恢复后明确归还手机。
-
-不发小版本Release。既有341／292／538项管线与前缀证据、动态设备清单等未受本轮影响，不重复跑。历史证据入口`docs/validation-history.md`。原始课堂审计仍只在本机，新页不扩展ZIP／图片Provider／同步的权限。
-
-项目衍生产物留本项目build；手机测试文件仅app-owned或专属/data/local/tmp/chrona-validation并finally清理，不写公共根目录。用户AGENTS.md、角色toml、.backups/、.local-backups/和tools/Clean-Project.ps1不提交、不清理。
+所有项目产物留本项目build；手机XML仅专属/data/local/tmp/chrona-validation并finally清理，截图stdout转换压缩JPEG后查看，不读PNG原图、不写手机公共根目录测试文件。用户AGENTS.md、角色toml、.backups/、.local-backups/、tools/Clean-Project.ps1不提交、不清理。完整历史证据见docs/validation-history.md。

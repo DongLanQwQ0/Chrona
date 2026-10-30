@@ -7,6 +7,8 @@
 - 原ui_review独立审核发现P2：持久化running被误显示为实时「请求中」。改为历史语义「未记录结果」，不改原状态；仅补无ACTIVE、无finished及UI／原字节4项，`native-audit-238-unfinished.txt`和`audit-238-evidence/unfinished.jpg`。复审关闭P2，受检UI／只读交互通过；不把合成数据当作真实provider命中证据。
 - 正常生产release／lintRelease与隔离debug／AndroidTest编译通过`audit-238-final-build.txt`、`audit-238-unfinished-build.txt`。最终固定`build/candidates/0.15.76/Chrona-0.15.76.apk`3283725字节，238／0.15.76、非debug、原签名，签名／包信息见`candidate-238-{signature,package}.txt`。
 - 首次覆盖被手机明确拒绝，已停止并询问用户，未绕过；用户允许后19:09覆盖成功，19:12:07补入最终状态修正版，首次安装仍2026-09-26 18:54:37。`phone-238-{install,retry-install,final-install,final-package}.txt`区分拒绝与最终结果。未调用AI。核对时仅导航至历史，C课控件被浮层覆盖后守卫拒绝触控；随后焦点切到QQ、进程20070仍活着，停止操作并请求用户空出两分钟。最终真实C课审计尚未读回，升级前开启的LAN还需从正常页面恢复；当前依赖见HANDOFF。
+- 用户随后明确暂停手机操作，完成真实C课9/23处理记录只读核对与实际滚动：选中／已分析图片各40；第8轮输入762337、输出2752、缓存读取759808、总765089，第9轮缓存读取749952；第4轮失败及第5–7轮缺缓存字段仍显示未提供。`phone-238-audit-values.json`只保存当前原生页面白名单文本，没有读生产私有文件、重生成或调用AI。通用截图助手遮蔽六位数，因此`build/phone-enhanced-229/phone-238-audit.jpg`中的Token灰条由该数值记录补证，不当作服务缺字段。
+- 已从正常设置恢复LAN，`phone-238-lan-restored.jpg`及`phone-238-lan-http.txt`确认开启与HTTP200；未代替用户配对或重新发送设备链接。ui_review亲看本轮真机JPEG与白名单数值后增量签收。窗口结束已明确归还手机给GlobalSend，不再触控／安装；课程语义质量与全课缓存命中率没有据此扩大结论。
 
 ## 0.15.75 — 长课堂首屏、按需公式与真机附图 — 2026-10-30
 
