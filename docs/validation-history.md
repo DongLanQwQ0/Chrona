@@ -9,8 +9,9 @@
 - 新包重进设置确认增强仍false；恢复用户原开启的LAN服务，实际地址http://10.195.59.196:8765。真实`/`、`/icons.js`、`/brand.svg`、`/app.js`均200，SVG MIME正确，`phone-235-lan-resources.json`。正常关联仍显示DongLan/Windows，不重发链接、不代替用户批准网页配对。配对信息、密码遮蔽后的JPEG/XML在`build/phone-enhanced-229/phone-235-*`，只生成/查看压缩JPEG，不写手机公共目录测试文件。
 - 主代理与原只读ui_review亲看235真机增强关闭、LAN及AI运行3张JPEG，增量实际呈现签收；无生产UI改动，233的动态清单14×2、行可达2×2、原协议32项仍适用。不据此扩展为运行中AI质量或真实iPad收件通过。
 - 按已授权原检查点启动一次剩余AI整理，原模型、服务与最多40张许可不变：全局增强false时真实直接进入核图计划0/5，未重做已完成的文稿5/5；ClassroomWorkService2043实际运行。随后仅仅读取该应用2043通知，核图计划已到1/5，越过原首块缺字段失败点，证据`phone-235-ai-{confirm,running,running-services,notification-1}.txt`。后续最终笔记、实际图片及真实usage尚待结果，不循环重试。
-- 后续仅读取本应用2043，依次确认核图计划2/5、分段完成笔记0/5、3/5、4/5，证据`phone-235-ai-notification-{2..5}.txt`；之后`phone-235-ai-terminal-services.txt`确认ClassroomWorkService结束，2043已撤销。自然回到该课时只读结果页：显示“重新生成”、无失败状态，`phone-235-ai-result.{txt,jpg,xml}`。刚进入时该帧未见正文，不能充作最终正文、实际图片或缓存usage通过；随后用户切出应用，守卫拒绝再截图，未抢前台或重做生成。
+- 后续仅读取本应用2043，依次确认核图计划2/5、分段完成笔记0/5、3/5、4/5，证据`phone-235-ai-notification-{2..5}.txt`；之后`phone-235-ai-terminal-services.txt`确认ClassroomWorkService结束，2043已撤销。自然回到该课时只读结果页：显示“重新生成”、无失败状态，`phone-235-ai-result.{txt,jpg,xml}`。刚进入时该帧未见正文，不能充作最终正文、实际图片或缓存usage通过；随后前台离开应用，守卫拒绝再截图，未抢前台或重做生成。
 - 对这个空白帧新增隔离原生后台/长文排查，不改生产渲染：普通竖屏、nativeScreen=true，真实其它Activity覆盖期间释放本地公式ready，返回后长文可见，visibility0/alpha1、高23160px、5个笔记块及更正文稿、20处公式无错、溢出0，6项通过。`native-background-ready.txt`和`background-ready-portrait-light/{report.json,background-resumed.jpg}`。仅操作共享AVD自己的合成课堂，paid_calls=0，清理自有数据并结束；不将此结果扩展为真机具体课堂已正常渲染，也不据单帧空白臆造生产修复。
+- 用户另给38975端口后正常连接原设备，明确协调单一控制者。导航中前台离开到桌面，本应用事件是userLeaving/pauseBackTasks而非当前进程崩溃；随后实际看到顶部悬浮通知遮住切换栏，不能仅以mCurrentFocus属于本应用判断点击与截图安全。清理确切两张自有newlease JPEG，不保留通知内容或将它们充作页面证据。当前手机再次offline；对端转达用户主动断开，停止连接尝试，实际正文/图片/usage仍未补验。
 
 ## 0.15.71 — GlobalSend设备列表动态更新 — 2026-10-30
 
