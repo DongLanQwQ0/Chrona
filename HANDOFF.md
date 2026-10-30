@@ -2,6 +2,8 @@
 
 ## 候选与范围
 
+本次新增约束已写入`docs/project-requirements.md`：手机主目录及公共目录禁写测试文件，必要临时项用专属目录并finally清理。已清理两条确切自有层级XML；公共目录只见正常用户导出，未删除。真实失败入口复验已完成。
+
 源码与USB手机均为 **0.15.69 / 231**。本批修复更正文稿折叠热区与焦点、草稿空概览／空安排、错误的图片阶段文案，以及更正失败但尚无笔记时的「继续整理」入口。单节／批量共享导出逻辑。默认关闭的增强整理及原消息历史仅追加、真实检查点合同不变。详见`docs/features/zju/classroom-summary.md`。
 
 ## 有效证据
@@ -19,7 +21,7 @@
 
 ## 当前依赖与唯一下一步
 
-2026-10-30用户再次要求「继续usb」，USB上线；GlobalSend线程`01a16e6f-f1c5-7081-adc4-1792a0a5d7db`确认释放后，12:39正常覆盖231成功。安装前无课堂或LAN服务，未打断实时字幕。证据`build/enhanced-document/phone-231-{install,package,install-services}.txt`。打开采集页后截图显示系统图片拖放仍在进行，返回触控没有产生导航；后续只读焦点已转相册，因此立即停止触控并协调，未继续误点或强停其它应用。`build/phone-enhanced-229/phone-231-{home,dashboard}.{xml,jpg}`仅证明当时页面与拖放，不作失败入口复验成功的证据。231真实失败入口检查仍待独占手机窗口，既有原生合成证据有效。下一步在服务恢复或有新依据且用户授权后续跑原课堂，不自动产生AI用量。不发Release，公共latest仍v0.15.61。
+2026-10-30已与GlobalSend线程`01a16e6f-f1c5-7081-adc4-1792a0a5d7db`协调，12:39正常覆盖231成功，安装前无课堂或LAN服务。初验遇拖放／聊天切前台已停止触控；无关聊天误采文件已清理。用户明确暂停手机操作后，从正常首页进入历史／未总结，真实9/23课堂两次重进均显示启用的「继续整理」，提示及操作完整可见。未点击续跑、不调用AI，恢复原总结时间筛选并返回首页后已释放USB。证据`build/phone-enhanced-229/phone-231-real-failure{,-reopen}.{xml,jpg}`，主代理与同一ui_review亲看签收；旧229执行记录当时没有具体detail，仍是通用失败提示，不声称恢复了旧HTTP原因。下一步在服务恢复或有新依据且用户授权后续跑原课堂。不发Release，公共latest仍v0.15.61。
 
 Chrona→真实Windows的GlobalSend联动另需用户首次显式「关联GlobalSend」及在线目标，不代用户授权。原Binder／Android接收证据保留，ABI唯一出处为对端`docs/INTEGRATION_ABI_V1.md`。
 
