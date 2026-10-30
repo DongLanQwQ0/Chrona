@@ -23,7 +23,7 @@
 
 2026-10-30已与GlobalSend线程`01a16e6f-f1c5-7081-adc4-1792a0a5d7db`协调，12:39正常覆盖231成功，安装前无课堂或LAN服务。初验遇拖放／聊天切前台已停止触控；无关聊天误采文件已清理。用户明确暂停手机操作后，从正常首页进入历史／未总结，真实9/23课堂两次重进均显示启用的「继续整理」，提示及操作完整可见。未点击续跑、不调用AI，恢复原总结时间筛选并返回首页后已释放USB。证据`build/phone-enhanced-229/phone-231-real-failure{,-reopen}.{xml,jpg}`，主代理与同一ui_review亲看签收；旧229执行记录当时没有具体detail，仍是通用失败提示，不声称恢复了旧HTTP原因。下一步在服务恢复或有新依据且用户授权后续跑原课堂。不发Release，公共latest仍v0.15.61。
 
-Chrona→真实Windows的GlobalSend联动另需用户首次显式「关联GlobalSend」及在线目标，不代用户授权。原Binder／Android接收证据保留，ABI唯一出处为对端`docs/INTEGRATION_ABI_V1.md`。
+Chrona→真实Windows的GlobalSend联动已由用户实测验收：2026-10-30用户明确确认「可以正常工作，可以直接唤起远程浏览器」。本轮手机连接Wi-Fi后，真实设置页显示当前访问地址及DongLan／Windows，现安装身份已有关联，无需重做批准；脱敏证据`build/phone-enhanced-229/phone-231-lan-started.{xml,jpg}`。不重复发送测试链接，不代点网页授权；保留当前用户正在使用的LAN会话。已通知GlobalSend所有者关闭该验收依赖并释放USB。此项不再阻塞交付，ABI唯一出处仍为对端`docs/INTEGRATION_ABI_V1.md`。
 
 ## 操作约束
 

@@ -2,6 +2,8 @@
 
 ## 0.15.69 — 增强文稿原生阅读、导出与失败恢复 — 2026-10-30
 
+- **GlobalSend真实联动用户验收**：用户明确允许打开关联页并亲自确认；初次开启LAN时手机无Wi-Fi，服务如实拒绝。用户连接Wi-Fi后，手机正常开启LAN，fresh本机桥显示DongLan／Windows，当前安装身份已有有效关联，无需重复批准。脱敏JPEG／XML为`build/phone-enhanced-229/phone-231-lan-started.*`，配对码与二维码已遮蔽，不保存原始截图。随后用户直接确认「这一项经过检验可以正常工作，可以直接唤起远程浏览器」，按用户真实操作验收关闭远程浏览器唤起缺口；不冒充主代理亲见Windows界面，也不据此断言网页会话已配对。停止重复发送、保留用户当前LAN访问，并通知对端所有者消费结论。没有更改ABI、组、凭据或Windows客户端。
+
 - 串行复用既有Chrona_Classroom_36，隔离monitor.validation应用，仅创建并清理自有合成课堂，不访问学校或AI。保持设备原分辨率／DPI／字体；nativeScreen=true实测竖1080×2376、横2376×1080。原生Activity和真实WebView覆盖竖浅／横暗各27项，折叠、实际触摸展开、公式、代码、滚动文末及再收起；两次重进失败原因均完整可见。回执`build/enhanced-document/native-{light,dark}-accepted.txt`。命令尾部400/1为未使用的旧夹具参数，非实际显示配置；实际尺寸见各报告。
 - 发现折叠热区不足48dp、草稿空概览及错误图片阶段文案；在现有阅读器内修复，未另建样式。CSS约47.998783px为WebView取整，物理热区123px与48dp换算123px相符。最终压缩JPEG及报告冻结于`build/enhanced-document/review-231/{portrait-light-accepted,landscape-dark-accepted}/`；持续复用只读ui_review亲看并签收。早期冷启动ANR、夹具缺少images字段、CSS浮点比较和窗口过渡未结束的失败保留在原日志，不充作通过证据。
 - 实际单节／批量ZIP均含课堂总结.md、sources.md、更正文稿.md和引用图，四项内容逐一相同；原字幕与更正文稿区分，段落／代码转义保护且空章节不导出，证据`accepted-evidence.json`及两档实际ZIP。Host批量导出51项、失败恢复9项、历史标签5项定向通过，`batch-export-check.txt`；未重跑不受影响的整套管线。
