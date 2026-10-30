@@ -37,12 +37,18 @@ public final class GlobalSendInstrumentation extends Instrumentation {
     private void protocol(Context app)throws Exception{
         Messenger server=new Messenger(new Handler(Looper.getMainLooper(),packet->{try{JSONObject request=new JSONObject(packet.getData().getString("request"));requests.add(request);String method=request.getString("method");JSONObject value;
             if(method.equals("hello")){JSONArray caps=new JSONArray().put("list_devices");if(!replyMode.equals("link_only"))caps.put("send_open_url");if(replyMode.startsWith("link")||replyMode.equals("open_failure"))caps.put("send_link");value=new JSONObject().put("protocolVersion",1).put("associationState",replyMode.equals("denied")?"required":"authorized").put("connected",true).put("capabilities",caps);}
-            else if(method.equals("list_devices")){JSONArray list=new JSONArray().put(device("owned-receiver",replyMode.equals("changed")?"验收电脑（名称更新）":"验收电脑"));if(replyMode.equals("expanded"))list.put(device("second","另一台设备"));if(replyMode.startsWith("link")||replyMode.equals("legacy_links")||replyMode.equals("open_failure"))list.put(device("owned-ipad","验收 iPad").put("platform","ios").put("capabilities",new JSONObject().put("openUrlIntentV1",false).put("sendLinkV1",true)));value=new JSONObject().put("devices",list);}
+            else if(method.equals("list_devices")){if(replyMode.equals("link_list_error")){respondError(packet,"not_connected");return true;}if(replyMode.equals("link_list_timeout"))return true;JSONArray list=new JSONArray().put(device("owned-receiver",replyMode.equals("changed")||replyMode.equals("link_changed")?"验收电脑（名称更新）":"验收电脑"));if(replyMode.equals("expanded")||replyMode.equals("link_expanded"))list.put(device("second","另一台设备"));if(replyMode.startsWith("link")||replyMode.equals("legacy_links")||replyMode.equals("open_failure"))list.put(device("owned-ipad","验收 iPad").put("platform","ios").put("online",!replyMode.equals("link_offline")).put("sendable",!replyMode.equals("link_offline")).put("capabilities",new JSONObject().put("openUrlIntentV1",false).put("sendLinkV1",!replyMode.equals("link_unsupported"))));value=new JSONObject().put("devices",list);}
             else if(method.equals("send_link")||method.equals("status")&&request.optString("deliveryMode").equals("link")){if(method.equals("send_link")){operation=request.getString("requestId");if(replyMode.equals("link_timeout")){delayedSend=Message.obtain(packet);return true;}}value=new JSONObject().put("requestId",operation).put("deliveryMode","link").put("state",replyMode.equals("link_queued")?"queued":replyMode.equals("link_failed")?"failed":"sent");if(replyMode.equals("link_failed"))value.put("error",new JSONObject().put("code","target_unavailable"));}
             else if(method.equals("send_open_url")&&replyMode.equals("open_failure")){respondError(packet,"unsupported_target");return true;}
             else{if(method.equals("send_open_url")){operation=request.getString("requestId");if(replyMode.equals("timeout")){delayedSend=Message.obtain(packet);return true;}}else{if(!request.getString("requestId").equals(operation))throw new AssertionError("Status changed operation ID");if(replyMode.equals("hold_status")){delayedStatus=Message.obtain(packet);return true;}}value=new JSONObject().put("requestId",operation).put("state",method.equals("status")?"launch_accepted":"queued");}
             JSONObject response=new JSONObject().put("v",1).put("requestId",request.getString("requestId")).put("ok",true).put("result",value);Message reply=Message.obtain(null,1);reply.arg1=packet.arg1;Bundle data=new Bundle();data.putString("response",response.toString());reply.setData(data);packet.replyTo.send(reply);
         }catch(Exception failure){throw new AssertionError(failure);}return true;}));
+        if(args.getString("case","").equals("dynamic")){dynamicDevices(app,server);return;}
+        if(args.getString("case","").equals("dynamic-visual")){
+            replyMode="link_sent";attach(app,server,null);runOnMainSync(()->{replyMode="link_expanded";link.foreground(true);});await(()->items().containsKey("second"));
+            TextView added=items().get("second");waitForIdleSync();runOnMainSync(()->added.requestRectangleOnScreen(new Rect(0,0,added.getWidth(),added.getHeight()),true));waitForIdleSync();capture("dynamic-joined-visible");Rect bounds=new Rect();runOnMainSync(()->added.getGlobalVisibleRect(bounds));check(added.getHeight()>0&&bounds.height()==added.getHeight(),"newly joined device is completely reachable by normal page scrolling");
+            runOnMainSync(()->replyMode="link_offline");await(()->items().size()==2&&!items().get("owned-ipad").isEnabled());TextView offline=items().get("owned-ipad");waitForIdleSync();runOnMainSync(()->offline.requestRectangleOnScreen(new Rect(0,0,offline.getWidth(),offline.getHeight()),true));waitForIdleSync();capture("dynamic-offline-visible");runOnMainSync(()->offline.getGlobalVisibleRect(bounds));check(offline.getHeight()>0&&bounds.height()==offline.getHeight(),"updated offline device and status remain completely reachable");return;
+        }
         if(args.getString("case","").equals("link-failed")){
             replyMode="link_failed";attach(app,server,null);runOnMainSync(()->link.send(ipad()));await(()->link.operationState.equals("failed"));View status=(View)field(screen,"sendStatus");waitForIdleSync();SystemClock.sleep(400);runOnMainSync(()->status.requestRectangleOnScreen(new Rect(0,0,status.getWidth(),status.getHeight()),true));waitForIdleSync();capture("link-failed-visible");Rect bounds=new Rect();runOnMainSync(()->status.getGlobalVisibleRect(bounds));check(status.getHeight()>0&&bounds.height()==status.getHeight(),"link failure status is entirely visible after normal page scrolling");return;
         }
@@ -94,6 +100,36 @@ public final class GlobalSendInstrumentation extends Instrumentation {
     }
     private GlobalSendLink.Device ipad(){return link.devices.stream().filter(d->d.id().equals("owned-ipad")).findFirst().orElseThrow();}
     private long count(String method){return requests.stream().filter(r->r.optString("method").equals(method)).count();}
+    private void dynamicDevices(Context app,Messenger server)throws Exception{
+        replyMode="link_sent";attach(app,server,null);TextView row=items().get("owned-receiver"),pad=items().get("owned-ipad");
+        runOnMainSync(()->{row.setFocusableInTouchMode(true);row.requestFocus();link.foreground(true);});await(()->!link.loading);long hellos=count("hello");
+        runOnMainSync(()->replyMode="link_expanded");await(()->items().containsKey("second"));
+        check(items().get("owned-receiver")==row&&row.hasFocus(),"foreground polling inserts a new device without reload or loss of focused row");
+        runOnMainSync(()->row.requestRectangleOnScreen(new Rect(0,0,row.getWidth(),row.getHeight()),true));waitForIdleSync();capture("dynamic-joined");
+        ScrollView viewport=null;for(ViewParent parent=row.getParent();parent!=null;parent=parent.getParent())if(parent instanceof ScrollView scroll){viewport=scroll;break;}
+        if(viewport==null)throw new AssertionError("Missing page viewport");ScrollView scroll=viewport;int offset=scroll.getScrollY();
+        runOnMainSync(()->replyMode="link_changed");await(()->row.getText().toString().contains("名称更新")&&items().size()==2);
+        check(items().get("owned-receiver")==row&&row.hasFocus()&&scroll.getScrollY()==offset,"automatic rename/removal preserves node, focus and reading offset");capture("dynamic-renamed");
+        runOnMainSync(()->replyMode="link_offline");await(()->!pad.isEnabled()&&pad.getText().toString().contains("离线"));
+        check(items().get("owned-ipad")==pad,"online/sendable changes update the existing device row");capture("dynamic-offline");
+        runOnMainSync(()->replyMode="link_unsupported");await(()->!ipad().linkSupported()&&pad.getText().toString().contains("不支持接收网页"));
+        check(!pad.isEnabled(),"automatic capability revocation disables link delivery without inventing support");
+        check(count("hello")==hellos&&count("send_open_url")==0&&count("send_link")==0,"periodic refresh only lists devices, never reauthorizes or sends");
+        runOnMainSync(()->{link.message="目标设备无法打开浏览器";link.operationId="preserved-operation";link.operationState="failed";link.operationTarget="验收电脑";replyMode="link_list_error";});await(()->link.deviceMessage.equals("请先连接 GlobalSend"));
+        check(link.message.equals("目标设备无法打开浏览器")&&link.operationId.equals("preserved-operation")&&link.operationState.equals("failed"),"metadata failure cannot erase the send error or operation identity");
+        runOnMainSync(()->replyMode="link_list_timeout");await(()->link.loading);long lists=count("list_devices");SystemClock.sleep(5500);
+        check(link.loading&&count("list_devices")==lists,"slow metadata response never starts an overlapping list request");
+        await(()->link.deviceMessage.equals("GlobalSend 响应超时"));check(link.message.equals("目标设备无法打开浏览器"),"metadata timeout preserves the send error too");
+        runOnMainSync(()->replyMode="link_sent");await(()->link.deviceMessage.isEmpty()&&!link.loading&&pad.isEnabled());
+        check(link.message.equals("目标设备无法打开浏览器")&&link.operationId.equals("preserved-operation"),"metadata recovers automatically without clearing the failed operation");
+        runOnMainSync(()->link.foreground(false));lists=count("list_devices");SystemClock.sleep(5500);check(count("list_devices")==lists,"background pauses device polling");
+        long resume=SystemClock.uptimeMillis();runOnMainSync(()->{replyMode="link_expanded";link.foreground(true);link.foreground(true);});await(()->items().containsKey("second"));
+        check(SystemClock.uptimeMillis()-resume<3000&&count("list_devices")==lists+1,"resume refreshes immediately and repeated lifecycle entry does not duplicate the request");
+        runOnMainSync(()->{link.operationId="expired-poll-budget";link.operationState="timeout_unknown";link.deliveryMode="link";link.statusPollUntil=System.currentTimeMillis()-1;});long statuses=count("status"),listsBeforeBudget=count("list_devices");await(()->count("list_devices")>listsBeforeBudget&&!link.loading);
+        check(count("status")==statuses&&link.operationId.equals("expired-poll-budget"),"metadata updates do not extend or restart the operation-status polling budget");
+        runOnMainSync(()->link.activate(""));lists=count("list_devices");SystemClock.sleep(5500);check(count("list_devices")==lists&&!link.loading&&!link.connecting,"closing LAN cancels the metadata loop");
+        replyMode="link_sent";attach(app,server,null);runOnMainSync(()->link.foreground(true));await(()->!link.loading);runOnMainSync(()->link.close());lists=count("list_devices");SystemClock.sleep(5500);check(count("list_devices")==lists,"destroying the retained bridge cancels the metadata loop");
+    }
     private void linkProtocol(Context app,Messenger server)throws Exception{
         replyMode="link_sent";attach(app,server,null);
         TextView pad=items().get("owned-ipad");check(pad.isEnabled()&&pad.getText().toString().contains("发送链接")&&!ipad().supported(),"iPad without browser-opening capability remains enabled for explicit link delivery");
@@ -132,7 +168,7 @@ public final class GlobalSendInstrumentation extends Instrumentation {
     private void respond(Message request,String state)throws Exception{String id=new JSONObject(request.getData().getString("request")).getString("requestId");Message reply=Message.obtain(null,1);reply.arg1=request.arg1;Bundle data=new Bundle();data.putString("response",new JSONObject().put("v",1).put("requestId",id).put("ok",true).put("result",new JSONObject().put("requestId",id).put("state",state)).toString());reply.setData(data);request.replyTo.send(reply);}
     private void real(Context app)throws Exception{
         runOnMainSync(()->LanAccessService.start(screen));await(LanAccessService::running);
-        await(()->{GlobalSendLink actual=(GlobalSendLink)field(screen,"globalSend");return !actual.connecting&&!actual.loading&&(actual.association!=null||actual.authorized||!actual.message.isEmpty());});
+        await(()->{GlobalSendLink actual=(GlobalSendLink)field(screen,"globalSend");return !actual.connecting&&!actual.loading&&(actual.association!=null||actual.authorized||!actual.message.isEmpty()||!actual.deviceMessage.isEmpty());});
         check(GlobalSendLink.installed(app),"actual GlobalSend package visible through exact queries");capture("real-initial");
         GlobalSendLink actual=(GlobalSendLink)field(screen,"globalSend");
         if(actual.association!=null){

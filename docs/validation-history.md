@@ -1,5 +1,14 @@
 # 验证记录
 
+## 0.15.71 — GlobalSend设备列表动态更新 — 2026-10-30
+
+- 复用现有Messenger ABI：前台立即/每5秒刷新设备清单，后台、LAN关闭与销毁撤销定时器；上一请求未结束不并发。独立清单错误不清发送错误或原操作ID，清单刷新也不重启已结束的状态查询预算。设备行继续按稳定ID复用，增删沿用原UiMotion，没有新增样式或系统权限。
+- 共享Chrona_Classroom_36隔离原生应用正常竖浅/横暗各14项通过：自动新增/删除/改名、离线与能力撤销、焦点和滚动保持、错误/8秒超时恢复、后台停止/恢复立即刷新、重复生命周期不重叠、查询预算及关闭/销毁。证据`build/global-send-link/dynamic-final-{portrait-light,landscape-dark}.txt`，每档15次本地假RPC，无真实发送。先前13项试跑后发现自动清单不应再次发起操作状态查询，修复并新增第14项后重验两档，旧试跑不代表最终候选。
+- 新设备及离线行完全可滚达的补充原生检查各2项通过，`dynamic-visual-{portrait-light,landscape-dark}.txt`；同名目录的`dynamic-{joined,offline}-visible.jpg`为压缩、遮蔽配对信息的实际画面。原open/link合同回归32项通过`regression-233.txt`（42次本地假RPC），覆盖原ID、迟到回执、能力、授权、普通链接终态及不自动降级。不调分辨率/DPI/字体，不调用学校或AI。
+- 主代理与持续复用的只读ui_review亲看竖浅/横暗5张JPEG；独立复审核对源码、14×2、可达性2×2及回归32项后签收233本轮受检范围，无新增明确缺陷。汇总`build/global-send-link/accepted-233.json`。此结论不扩大为实际iPad收件验收。
+- 正常生产debug/AndroidTest编译/release/lintRelease通过`production-233-build.txt`。固定包`build/candidates/0.15.71/Chrona-0.15.71.apk`3276329字节，233/0.15.71、非debug、原签名，见`candidate-233-{package,signature}.txt`及JSON。后续仅追加隔离测试case，不影响生产源码或此包。
+- 手机USB当前离线，未安装233；手机上次确认版本232。实际iPad收件由用户后续验证，未猜目标、没有重复发送Windows。真实C课AI剩余整理的具体错误与临时增强开关恢复仍依赖手机，不自动重发付费请求。GlobalSend原所有者已交付并推送，其HEAD为`34e7ca8`，工作区干净；Chrona未改对端代码。
+
 ## 0.15.70 — iPad普通链接与缺字段修复 — 2026-10-30
 
 - GlobalSend所有者已确认并实现ABI v1可选send_link/sendLinkV1及status.deliveryMode=link。Chrona优先原send_open_url；普通链接不发expiresInMs，sent/failed终态停止查询，queued/未知只查询，用户显式重试保留原ID、模式、目标和URL。打开失败不自动降级。隔离包在共享AVD真实Messenger及真触摸下正常竖浅／横暗各32项通过，`build/global-send-link/native-{portrait-light,landscape-dark}-final.txt`与对应JPEG目录。首两轮因AVD原AndroidWifi没有连接而未开启LAN，实际连接后重测通过；没有改产品网络准入规则或克隆AVD。

@@ -122,7 +122,7 @@ public final class LanSettingsActivity extends Activity {
     private void renderDevices(){
         if(isDestroyed())return;
         refreshDevices.setEnabled(!globalSend.connecting&&!globalSend.loading);
-        String message=globalSend.message;
+        String message=globalSend.message.isEmpty()?globalSend.deviceMessage:globalSend.message;
         deviceStatus.setText(message);deviceStatus.setVisibility(message.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
         associate.setVisibility(globalSend.association!=null?android.view.View.VISIBLE:android.view.View.GONE);
         String result=globalSend.operationText();sendStatus.setText(result);sendStatus.setVisibility(result.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
@@ -151,7 +151,7 @@ public final class LanSettingsActivity extends Activity {
     private void setDeviceEnabled(android.view.View view,GlobalSendLink.Device device){view.setEnabled(globalSend.canSend(device));view.setAlpha(view.isEnabled()?1f:.5f);}
     private void associateGlobalSend(){
         android.app.PendingIntent approval=globalSend.association;if(approval==null)return;
-        globalSend.association=null;globalSend.message="等待 GlobalSend 授权";renderDevices();
+        globalSend.association=null;globalSend.deviceMessage="等待 GlobalSend 授权";renderDevices();
         android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic();
         if(Build.VERSION.SDK_INT>=36)options.setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE);
         else if(Build.VERSION.SDK_INT>=34)options.setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
@@ -165,7 +165,7 @@ public final class LanSettingsActivity extends Activity {
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("局域网访问地址",url));
         Feedback.show(this,"已复制");
     }
-    @Override protected void onResume() { super.onResume(); globalSend.foreground(true);handler.post(poll);if(!globalSend.url.isEmpty())globalSend.refresh(); }
+    @Override protected void onResume() { super.onResume(); globalSend.foreground(true);handler.post(poll); }
     @Override protected void onPause() { handler.removeCallbacks(poll);globalSend.foreground(false);super.onPause(); }
     @Override protected void onSaveInstanceState(Bundle out){globalSend.save(out);super.onSaveInstanceState(out);}
     @Override public Object onRetainNonConfigurationInstance(){return globalSend;}
