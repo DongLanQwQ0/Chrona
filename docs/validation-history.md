@@ -1,5 +1,14 @@
 # 验证记录
 
+## 0.15.77 — 局域网页公共圆角、图标与间距 — 2026-10-30
+
+- 按用户四张截图阅读README、完整UI规范／交互基线及局域网功能文档。修正后置10px筛选圆角覆盖、12px操作胶囊与inline SVG基线偏移：Dock／筛选底板28px与6px内距、圆端高光，操作组48px单元、24px圆角／图标及16px短分隔；仅末端内容沿原生可见面积中心移动2px。移动端不再另改点击单元和图标内距。搜索与计数／筛选摘要保留一份8px间隔，短横屏移除无Dock的空工具行，并明确分页在结果之后。
+- 生产资源＋原Edge／持久profile完整浏览器检查通过：`build/lan-daily-workspace/check-output.txt`及`evidence.json`，包含桌面1280×900、常规414×896／896×414、深浅主题、三页导航、搜索／筛选、跨页批量、输入／草稿恢复、官方考试只读及减少动画。没有调DPI或极端低分辨率。
+- 真实触摸检查发现长按后延迟click再次反选，已局部消费该click，不用0ms清除抑制；下一次pointer／键盘操作保持正常。仅针对最终横屏排布与交互补跑现有`--controls-only`入口，`control-check-output.txt`／`control-evidence.json`通过：长按选一次→下一次反选→再选，实际首尾高光1.5倍／底板1.1倍、拖出／取消、操作组整体1.10倍与图标中心、分页顺序。最终横屏日程首条y268、收件y194，整页滚动工具可退出；截图`controls-896-{home,schedule,inbox}.jpg`与`controls-dock-{first,last}-{held,outside}.jpg`。原专门ui_review独立亲看正常／峰值JPEG并复审最终横屏，通过本轮范围；首端高光极端越界仍沿用既有允许边界。
+- release／lintRelease通过`release-build.txt`；最终仅补资产打包`final-assets-build.txt`，固定`build/candidates/0.15.77/Chrona-0.15.77.apk`3283969字节，239／0.15.77、非debug、原签名。ZIP内四项网页资源与最终已审核源码直接逐字节一致；`candidate-assets.txt`、`candidate-{package,signature}.txt`保留证据，不使用无必要的文件hash。
+- USB原手机10AG5S1SR4005X7正常流式覆盖成功，22:38:05更新，首次安装仍2026-09-26；没有在公共目录放安装暂存或测试文件。通过正常设置确认LAN仍开启，5项真实HTTP资源均200且内容等于最终源码，`phone-install.txt`、`phone-package.txt`与`phone-assets.json`。原生设置JPEG在`build/phone-enhanced-229/phone-239-lan-before.jpg`，配对凭据遮蔽；不重新配对、不代授权、不调用AI或修改日程。浏览器业务使用模拟手机API，真实手机本轮仅验证安装、运行与静态资源，不扩称新的SQLite／日历集成验收。
+- 源码常规推送，不创建小版本Release；完成后已向GlobalSend归还手机。
+
 ## 0.15.76 — 课堂只读处理记录 — 2026-10-30
 
 - 用户明确批准详情现有操作行增加「处理记录」，与总结／重生成同行，右上原导出／监视／删除保持。新非导出Activity沿用公共二级页、入场、安全区和整页滚动；没有额外固定工具。只投影已保存阶段、请求状态／时间、实际Token与缓存字段、上下文附图数量、选中／已分析数量和各段图片依据，不展示或导出原消息、响应正文、图片二进制、远端地址或凭据。缺值显示未提供，实际0保留；新run不混旧摘要，读取与刷新不调用AI、不写run。存储锁内排除ACTIVE所有者，停用／换账号关闭。
