@@ -23,4 +23,6 @@ GlobalSend原所有者已先完成1.0.57/code68及真实系统图片拖入待发
 
 真实服务usage／缓存命中未读回：原始审计保存在本机run.json，现无已批准的外部只读入口，不绕过私有缓存权限，也不声称实际缓存节省。后续如继续该项，走应用正常审计／导出能力；无需重新生成已完成课堂。
 
+本轮继续只读核对了生产入口：日程解析有配对后的`/api/parse-audit`；课堂`ClassroomConversation`已逐轮保存usage与response，但`DebugActivity`仅debug可达，普通课堂ZIP／图片Provider均明确排除生成检查点，不能用它们读取run.json。已向用户询问是否在课堂详情现有操作行新增只读「处理记录」入口（阶段、用量、图片依据，不导出原消息）；答复前不自造读取后门或新页面。当前唯一下一步为采纳该范围决定；GlobalSend仍独占手机进行自己的合成传输检查，Chrona不触控。
+
 项目衍生产物留本项目build；GitHub CLI使用F盘公共安装。用户的AGENTS.md、角色toml、.backups/、.local-backups/、tools/Clean-Project.ps1不提交、不清理。
