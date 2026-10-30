@@ -1,5 +1,14 @@
 # 验证记录
 
+## 0.15.70 — iPad普通链接与缺字段修复 — 2026-10-30
+
+- GlobalSend所有者已确认并实现ABI v1可选send_link/sendLinkV1及status.deliveryMode=link。Chrona优先原send_open_url；普通链接不发expiresInMs，sent/failed终态停止查询，queued/未知只查询，用户显式重试保留原ID、模式、目标和URL。打开失败不自动降级。隔离包在共享AVD真实Messenger及真触摸下正常竖浅／横暗各32项通过，`build/global-send-link/native-{portrait-light,landscape-dark}-final.txt`与对应JPEG目录。首两轮因AVD原AndroidWifi没有连接而未开启LAN，实际连接后重测通过；没有改产品网络准入规则或克隆AVD。
+- 主代理与同一只读ui_review亲看两档六张JPEG。横暗失败态第一张未滚到文字，补定向真实滚动及完整可见高度1项，`native-link-failed-visible.txt`和`landscape-dark-final/link-failed-visible.jpg`，增量复审通过；不把早期failure.jpg当成签收。二维码／配对码在截图中遮蔽，测试文件只在隔离应用目录及本项目build内。
+- 真实AI获用户再次授权后由2/5继续，完整更正文稿5/5保存，随后首段笔记缺image_requests停止。发现结构缺字段此前被当作语义错误跳过有限修复；现必需字段及容器类型错误走一次格式修复，空依据、无效来源／图片与权限矛盾仍手动。修复预算按已发repair阶段识别，先前语义失败不耗格式预算；网络中断的repair只在显式继续时复用原pending。手动／修复消息保留本块完整字段要求，不改原消息前缀。新增production回环`--case schema-repair`254项（含语义／手动预算）和默认管线291项通过，日志`build/enhanced-document/{schema-repair-check,summary-validator-232-check}.txt`。初次缺JSONException导入的编译失败已修，不作通过证据。
+- 正常生产debug／AndroidTest编译／release／lintRelease通过`build/global-send-link/production-232-build.txt`；固定`build/candidates/0.15.70/Chrona-0.15.70.apk`3275829字节，232／0.15.70、非debug、原签名，`candidate-232-{package,signature}.txt`及JSON。用户明确允许中断LAN后13:40:47正常覆盖，元数据读回232／0.15.70，首次安装仍9/26；证据`phone-232-{install,package}.txt`。首次立即导航因窗口未就绪被前台守卫拒绝，待真实Dashboard焦点后继续，没有盲点。
+- 用户允许232继续剩余AI；原gpt-6-luna／接口／40张授权不变，实际直接进入分段整理与核图计划0/5，没有重做5段文稿，2043前台服务证据`phone-232-ai-{confirm,running,running-services}.*`。随后离页核对LAN时服务不再运行，历史仍未完成；具体停止原因尚未读回，USB随后断开，未自动重发。此次增强开关临时开启，待可用设备上恢复原false。完整最终笔记／核图及真实usage不报通过。
+- fresh真实本机桥显示DongLan／Windows，未出现可明确识别的iPad卡，没有猜设备或重发Windows。现场图／脱敏XML在`build/phone-enhanced-229/phone-232-fresh-global-send.*`。GlobalSend手机1.0.55/66及Windows已由对端更新；对端本地中心合成iPad接收证据只支持其范围，不冒充真实iPad收到。用户新增列表动态更新要求，后续版本承接；同时明确两个项目无人值守、最终自行验证，实际iPad收件留用户验证，不阻塞代码交付。
+
 ## 0.15.69 — 增强文稿原生阅读、导出与失败恢复 — 2026-10-30
 
 - **GlobalSend真实联动用户验收**：用户明确允许打开关联页并亲自确认；初次开启LAN时手机无Wi-Fi，服务如实拒绝。用户连接Wi-Fi后，手机正常开启LAN，fresh本机桥显示DongLan／Windows，当前安装身份已有有效关联，无需重复批准。脱敏JPEG／XML为`build/phone-enhanced-229/phone-231-lan-started.*`，配对码与二维码已遮蔽，不保存原始截图。随后用户直接确认「这一项经过检验可以正常工作，可以直接唤起远程浏览器」，按用户真实操作验收关闭远程浏览器唤起缺口；不冒充主代理亲见Windows界面，也不据此断言网页会话已配对。停止重复发送、保留用户当前LAN访问，并通知对端所有者消费结论。没有更改ABI、组、凭据或Windows客户端。

@@ -30,12 +30,12 @@ public final class ClassroomEnhancedCheck {
     private static void reset(String value,boolean withImages){requests.clear();replies.clear();stages.clear();mode=value;images=withImages;lastStage="";failCall=-1;slowCall=-1;requestSeen=new CountDownLatch(1);}
     private static String prompt(JSONObject request)throws Exception{JSONArray messages=request.getJSONArray("messages");return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");}
     private static String stage(String prompt){
-        Matcher correction=Pattern.compile("更正文稿第 (\\d+)/").matcher(prompt);if(correction.find())return "correct-"+(Integer.parseInt(correction.group(1))-1);
-        Matcher draft=Pattern.compile("现在只整理第 (\\d+) 段").matcher(prompt);if(draft.find())return "draft-"+(Integer.parseInt(draft.group(1))-1);
-        Matcher fin=Pattern.compile("只核实并完善第 (\\d+) 段").matcher(prompt);if(fin.find())return "final-"+(Integer.parseInt(fin.group(1))-1);
         if(prompt.contains("唯一一次格式修复"))return lastStage+"-repair";
         if(prompt.contains("接续上一条"))return lastStage+"-continue";
         if(prompt.contains("用户授权继续当前板块"))return lastStage+"-user-retry";
+        Matcher correction=Pattern.compile("更正文稿第 (\\d+)/").matcher(prompt);if(correction.find())return "correct-"+(Integer.parseInt(correction.group(1))-1);
+        Matcher draft=Pattern.compile("现在只整理第 (\\d+) 段").matcher(prompt);if(draft.find())return "draft-"+(Integer.parseInt(draft.group(1))-1);
+        Matcher fin=Pattern.compile("只核实并完善第 (\\d+) 段").matcher(prompt);if(fin.find())return "final-"+(Integer.parseInt(fin.group(1))-1);
         return "legacy";
     }
     private static JSONObject part(int id,boolean draft,String prompt)throws Exception{
@@ -70,7 +70,11 @@ public final class ClassroomEnhancedCheck {
             }else if(mode.equals("bad-json")&&current.equals("draft-0"))output="{\"overview\":";
             else if(mode.equals("bad-repair")&&(current.equals("draft-0")||current.endsWith("repair")))output="{\"overview\":";
             else if(mode.equals("bad-manual")&&current.endsWith("user-retry"))output="{\"overview\":";
-            else output="  ```json\n"+part(id,current.startsWith("draft")||current.equals("legacy"),text).toString(2)+"\n```  ";
+            else {JSONObject value=part(id,current.startsWith("draft")||current.equals("legacy"),text);
+                if(current.equals("draft-0")&&mode.equals("missing-requests")||mode.equals("missing-always")&&current.startsWith("draft"))value.remove("image_requests");
+                if(current.equals("draft-0")&&mode.equals("missing-assessment"))value.remove("image_assessment");
+                if(current.equals("draft-0")&&mode.equals("request-type"))value.put("image_requests",new JSONObject());
+                output="  ```json\n"+value.toString(2)+"\n```  ";}
             JSONObject reply=new JSONObject().put("role","assistant").put("content",output).put("reasoning_content","合成推理\ncall="+call);
             replies.add(reply);
             JSONObject usage=new JSONObject().put("prompt_tokens",1000+call).put("completion_tokens",100)
@@ -261,6 +265,23 @@ public final class ClassroomEnhancedCheck {
         check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"draft-0-repair")==1,"manual attempts never repeat successful transcript or automatic repair");
         appendOnly(repaired);evidence("repair-validation-resume",repaired);
     }
+    private static void schemaRepair()throws Exception{
+        for(String defect:List.of("missing-requests","missing-assessment","request-type")){
+            reset(defect,false);File dir=materials("schema-"+defect,false);
+            check(generate(dir,true).getBoolean("complete"),"missing or mistyped image schema is repaired: "+defect);
+            check(stages.equals(List.of("correct-0","draft-0","draft-0-repair")),"one appended repair without transcript regeneration: "+defect);
+            check(prompt(requests.get(2)).contains("image_requests")&&prompt(requests.get(2)).contains("image_assessment"),"repair retains the full stage-specific schema: "+defect);appendOnly(dir);
+        }
+        reset("missing-always",false);File bounded=materials("schema-budget",false);rejects(()->generate(bounded,true),"persistently missing schema stops after the single repair");
+        check(requests.size()==3&&Collections.frequency(stages,"draft-0-repair")==1,"missing schema never creates an automatic repair loop");
+        reset("invalid-source",false);File manual=materials("schema-unused-budget",false);rejects(()->generate(manual,true),"semantic failure still requires manual authorization");
+        mode="bad-manual";check(generate(manual,true).getBoolean("complete"),"manual retry may use a format repair that was never spent");
+        check(stages.equals(List.of("correct-0","draft-0","draft-0-user-retry","draft-0-repair")),"manual repair uses the same block and one repair identity");appendOnly(manual);
+        reset("bad-json",false);File network=materials("schema-repair-network",false);failCall=3;rejects(()->generate(network,true),"network failure during repair stops without retry");
+        check(requests.size()==3,"no automatic transport retry");mode="normal";failCall=-1;
+        check(generate(network,true).getBoolean("complete"),"explicit resume continues the pending repair");
+        check(requests.get(2).toString().equals(requests.get(3).toString()),"pending repair retry preserves the entire previously sent request");appendOnly(network);
+    }
     private static void markdownFences()throws Exception{
         String literal="甲\\n \\n乙",paragraph="甲\n\n乙";
         String tilde="~~~java\n"+literal+"\n`inline` and ```backticks```\n~~~\n";
@@ -357,6 +378,11 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length==1)test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);
+        if(args.length>1&&args[1].equals("schema-repair")){
+            try{test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("existing semantic and manual budgets",ClassroomEnhancedCheck::validationResume);}
+            finally{server.stop(0);}System.out.println("ClassroomSchemaRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Schema repair checks failed");return;
+        }
         if(args.length>1&&args[1].equals("validation-resume")){
             try{test("semantic validation and repair manual continuation",ClassroomEnhancedCheck::validationResume);}
             finally{server.stop(0);}System.out.println("ClassroomEnhancedValidationResume: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced validation resume checks failed");return;

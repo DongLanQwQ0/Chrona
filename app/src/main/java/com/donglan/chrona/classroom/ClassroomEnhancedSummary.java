@@ -86,11 +86,11 @@ final class ClassroomEnhancedSummary {
     private JSONObject json(String stage,String prompt,List<byte[]> images,Validator validator)throws Exception{
         int attempt=state.optInt(stage+"_attempt");
         String raw=text(attempt==0?stage:stage+"-user-retry-"+attempt,attempt==0?prompt:
-                "用户授权继续当前板块。上一条回复未通过校验："+state.optString(stage+"_error")+"。只依据已有原始资料和实际已附图片修正此块JSON，来源和图片编号必须真实。"+ClassroomSummary.SCHEMA,attempt==0?images:Collections.emptyList());
+                "用户授权继续当前板块。上一条回复未通过校验："+state.optString(stage+"_error")+"。只依据已有原始资料和实际已附图片修正此块JSON，来源和图片编号必须真实。完整保留本块所需字段：\n"+prompt,attempt==0?images:Collections.emptyList());
         try{JSONObject result=ClassroomSummary.parseObject(raw);validator.check(result);return result;}
         catch(JSONException malformed){
-            if(attempt>0){invalid(stage,attempt,malformed);throw malformed;}
-            String repaired=text(stage+"-repair","上一条回复的JSON无法解析："+malformed.getMessage()+"。仅修复上一条回复的结构和转义，保留其事实、来源和图片编号，不新增内容，返回完整JSON对象。这是该块唯一一次格式修复。",Collections.emptyList());
+            if(attempt>0&&conversation.attempted(stage+"-repair")){invalid(stage,attempt,malformed);throw malformed;}
+            String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+malformed.getMessage()+"。仅修复上一条回复的结构、缺失字段和转义，保留其事实、来源和图片编号，不编造未见图片或新事实，返回完整JSON对象。这是该块唯一一次格式修复。\n本块要求："+prompt,Collections.emptyList());
             try{JSONObject result=ClassroomSummary.parseObject(repaired);validator.check(result);return result;}
             catch(Exception invalid){invalid(stage,attempt,invalid);throw invalid;}
         }

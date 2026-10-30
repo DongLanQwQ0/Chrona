@@ -13,7 +13,7 @@ from recurrence_dependencies import recurrence_java
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--case', choices=['edge-cases', 'validation-resume', 'markdown-fences', 'failure-detail'])
+parser.add_argument('--case', choices=['edge-cases', 'validation-resume', 'markdown-fences', 'failure-detail', 'schema-repair'])
 args = parser.parse_args()
 source = ast.parse((root / 'checks/classroom_summary_check.py').read_text(encoding='utf-8'))
 shared = {}

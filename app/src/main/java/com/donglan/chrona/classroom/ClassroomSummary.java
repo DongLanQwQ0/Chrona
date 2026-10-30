@@ -4,6 +4,7 @@ import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.ChatCompletionClient;
 import com.donglan.chrona.net.RequestControl;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
@@ -211,9 +212,10 @@ public final class ClassroomSummary {
         return result.put("ranges",ranges);
     }
     static void validateImageAssessment(JSONObject draft,JSONObject catalogue)throws Exception {
-        JSONObject assessment=draft.optJSONObject("image_assessment");
-        if(assessment==null||!(assessment.opt("reason") instanceof String reason)||reason.isBlank())throw new IOException("AI 缺少图片判断依据");
-        JSONArray windows=draft.optJSONArray("image_requests");if(windows==null)throw new IOException("AI 缺少图片请求清单");validateWindows(draft,windows);
+        JSONObject assessment=draft.getJSONObject("image_assessment");
+        if(!(assessment.get("reason") instanceof String reason))throw new JSONException("image_assessment.reason必须是字符串");
+        if(reason.isBlank())throw new IOException("AI 缺少图片判断依据");
+        JSONArray windows=draft.getJSONArray("image_requests");validateWindows(draft,windows);
         String decision=assessment.getString("decision");String required=catalogue.getInt("limit")==0?"disabled":catalogue.getInt("count")==0?"unavailable":null;
         if(required!=null){if(!required.equals(decision)||windows.length()>0)throw new IOException("AI 图片判断与可用权限不一致");return;}
         if("not_needed".equals(decision)&&windows.length()==0)return;
@@ -227,7 +229,7 @@ public final class ClassroomSummary {
                 .put("selection",!"request".equals(decision)?decision:selected==0?"no_matching_frame":"matched_requested_ranges");
     }
     private static void validateWindows(JSONObject draft,JSONArray windows) throws Exception {
-        if(draft.has("image_requests")&&windows==null)throw new IOException("AI 图片时间范围格式无效");
+        if(draft.has("image_requests")&&windows==null)throw new JSONException("image_requests必须是数组");
         if(windows==null)return;
         for(int i=0;i<windows.length();i++) {
             JSONObject window=windows.getJSONObject(i);Object start=window.get("start"),end=window.get("end");

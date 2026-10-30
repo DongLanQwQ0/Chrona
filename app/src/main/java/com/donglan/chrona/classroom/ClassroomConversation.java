@@ -18,6 +18,11 @@ final class ClassroomConversation {
         conversation=state.getJSONObject("conversation");
     }
     private static final class Incomplete extends IOException{final String output;Incomplete(String output){super("当前分段被截断，原始回复已保存");this.output=output;}}
+    boolean attempted(String stage)throws JSONException{
+        JSONArray turns=conversation.getJSONArray("turns");
+        for(int i=0;i<turns.length();i++)if(stage.equals(turns.getJSONObject(i).optString("stage")))return true;
+        return false;
+    }
     String text(String stage,String prompt,List<byte[]> images)throws Exception{
         StringBuilder combined=new StringBuilder();
         for(int attempt=0;attempt<3;attempt++)try{return combined.append(ask(attempt==0?stage:stage+"-continue-"+attempt,

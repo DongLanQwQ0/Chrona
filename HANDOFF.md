@@ -2,6 +2,8 @@
 
 ## 候选与范围
 
+新增交付：iPad普通链接投递。用户在GlobalSend明确授权双方协调；对端已确认ABI v1可选扩展send_link、sendLinkV1与status.deliveryMode=link。Chrona负责设备能力分流、原ID手动重试与状态恢复，GlobalSend负责本机桥及普通文本投递。已有Windows/Android自动打开不变，不因失败自动改投链接。sent仅表示中心接受普通链接。现有UI结构不变；复用同一只读ui_review验收。
+
 本次新增约束已写入`docs/project-requirements.md`：手机主目录及公共目录禁写测试文件，必要临时项用专属目录并finally清理。已清理两条确切自有层级XML；公共目录只见正常用户导出，未删除。真实失败入口复验已完成。
 
 源码与USB手机均为 **0.15.69 / 231**。本批修复更正文稿折叠热区与焦点、草稿空概览／空安排、错误的图片阶段文案，以及更正失败但尚无笔记时的「继续整理」入口。单节／批量共享导出逻辑。默认关闭的增强整理及原消息历史仅追加、真实检查点合同不变。详见`docs/features/zju/classroom-summary.md`。
@@ -17,7 +19,13 @@
 
 用户授权的 **C程序设计基础2026-09-23 14:15第7-8节，course87476／lesson1972361**：923条字幕、282→140截图，沿用原图片授权最多40。gpt-6-luna完成2/5更正文稿后HTTP502；用户再授权一次续跑，实际从2/5恢复，同阶段再次502。停止原样付费重试，原检查点保留。真实完整文稿／核图／最终笔记及缓存usage尚未验收，平台合成检查不替代这些结果。
 
-继续原轮次需服务恢复或新依据及用户再授权，保持增强开启、原模型／提示词／图片选项以复用历史。手机原增强关闭、主题跟随系统、旋转1／0此前已恢复。
+用户确认「服务已恢复，允许续跑」后，真实从2/5继续，越过旧502点并完成更正文稿5/5，ClassroomWorkService2043运行证据完整。进入首段笔记／核图计划后因AI缺少image_requests停止，未重复付费请求；原文稿和检查点保留，实际阅读页可见默认折叠「更正文稿」。证据`build/enhanced-document/phone-ai-{resumed-after-service-recovery,recovery-status-2,recovery-status-3,recovery-status-4}.txt`及`build/phone-enhanced-229/phone-ai-corrected-draft-settled.jpg`。没有形成最终笔记／真实核图结果，真实usage仍未取证。
+
+定位到结构缺字段被IOException当成语义错误，跳过有限格式修复。232源码已改为必需字段／类型JSON错误走唯一修复，事实／来源／权限错误仍手动授权；重试和修复重新附本块字段要求，原消息前缀不改。唯一修复预算按已持久化repair阶段识别，先前语义失败没有消耗预算，已有网络中断的repair可在显式授权后继续原请求。`checks/classroom_enhanced_check.py --case schema-repair` 254项通过（含既有语义／手动预算）；初次编译缺JSONException导入已补，失败日志不作通过证据。
+
+手机增强开关已保存恢复原false，重新打开AI设置读回false；主题跟随系统／旋转未改。长表单返回按钮滚出视口时未盲点，使用系统返回离开。GlobalSend已释放其25秒安装窗口，现手机GlobalSend为1.0.55/66，Windows也已更新；Chrona仍231。最后只读服务清单没有课堂或LAN服务，未擅自重启LAN或再次调用AI。232正式构建和安装尚未完成，不得拿隔离包覆盖手机。
+
+232普通链接分支现已在共享AVD真实Messenger＋触摸下正常竖浅／横暗各30项通过：原open、iPad能力分流、sent语义、原ID手动重试、重建查询及不自动降级。`build/global-send-link/native-{portrait-light,landscape-dark}-accepted.txt`及对应目录。后来对端确认link failed也是终态，源码及两项专项已添加，尚需补验。早期两次LAN启动失败因AVD AndroidWifi未连接；连接其原有开放虚拟网络后通过，无克隆／清空，现AndroidWifi已连接，原wifi开启状态不变。待完成专项、UI独立审核、正常生产包构建后再交付。
 
 ## 当前依赖与唯一下一步
 

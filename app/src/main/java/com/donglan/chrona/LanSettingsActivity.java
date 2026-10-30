@@ -141,14 +141,14 @@ public final class LanSettingsActivity extends Activity {
         for(String id:new java.util.ArrayList<>(deviceItems.keySet()))if(!ids.contains(id)){TextView row=deviceItems.remove(id);android.view.View line=deviceSeparators.remove(row);if(line!=null)deviceRows.removeView(line);deviceRows.removeView(row);deviceViews.remove(row);}
         if(!deviceItems.isEmpty()){TextView first=deviceItems.values().iterator().next();android.view.View line=deviceSeparators.remove(first);if(line!=null)deviceRows.removeView(line);}
         for(GlobalSendLink.Device device:values){
-            String platform=switch(device.platform()){case "windows"->"Windows";case "android"->"Android";default->device.platform();};String detail=platform+(device.online()?"":" · 离线")+(device.supported()?"":" · 不支持打开网页");String label=device.name()+"\n"+detail;
+            String platform=switch(device.platform()){case "windows"->"Windows";case "android"->"Android";case "ios"->"iOS";default->device.platform();};String detail=platform+(device.online()?"":" · 离线")+(device.supported()?"":device.linkSupported()?" · 发送链接":" · 不支持接收网页");String label=device.name()+"\n"+detail;
             TextView row=deviceItems.get(device.id());
             if(row==null){int before=deviceRows.getChildCount();row=UiDialogs.addMenuItem(deviceRows,label,false,()->globalSend.send(device));deviceItems.put(device.id(),row);if(deviceRows.getChildAt(before)!=row)deviceSeparators.put(row,deviceRows.getChildAt(before));}
             else if(!label.contentEquals(row.getText()))row.setText(label);
             row.setPadding(dp(16),row.getPaddingTop(),dp(16),row.getPaddingBottom());row.setOnClickListener(v->globalSend.send(device));deviceViews.put(row,device);setDeviceEnabled(row,device);
         }
     }
-    private void setDeviceEnabled(android.view.View view,GlobalSendLink.Device device){boolean sending=globalSend.inFlight()&&System.currentTimeMillis()<globalSend.operationExpires;view.setEnabled(globalSend.authorized&&!sending&&device.sendable()&&device.supported());view.setAlpha(view.isEnabled()?1f:.5f);}
+    private void setDeviceEnabled(android.view.View view,GlobalSendLink.Device device){view.setEnabled(globalSend.canSend(device));view.setAlpha(view.isEnabled()?1f:.5f);}
     private void associateGlobalSend(){
         android.app.PendingIntent approval=globalSend.association;if(approval==null)return;
         globalSend.association=null;globalSend.message="等待 GlobalSend 授权";renderDevices();
