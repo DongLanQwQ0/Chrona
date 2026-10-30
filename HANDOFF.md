@@ -1,28 +1,28 @@
-# 当前交付：0.15.75已更新，长课堂正文与引用图片已复核
+# 当前交付：0.15.76处理记录已更新，待真实审计读回与LAN恢复
 
-## 当前状态
+## 已交付及有效证据
 
-- 手机`10.195.59.196:39137`，V2527A／原序列`10AG5S1SR4005X7`。最终237／0.15.75于2026-10-30 17:19:01正常覆盖，首次安装仍2026-09-26 18:54:37；固定包`build/candidates/0.15.75/Chrona-0.15.75.apk`3277629字节、非debug、原签名。Release／lintRelease通过，不发小版本Release。
-- 真实C程序设计基础2026-09-23 14:15第7–8节（course87476／lesson1972361）AI已完成；本轮未调用AI、未重生成、未读生产私有缓存。原文稿、总结、40张图片许可、消息历史和检查点保留。全局增强偏好仍沿用此前保存的false。
-- 空白原因已查明：旧阅读器先串行排完全页4651个公式才显示；安全计数425→1638→3201→4651及最终visual ready证明持续运行，先前等待20秒并不足以区分长排版与永久失败。237首屏公式就绪即呈现，屏外笔记每16项让出事件循环，折叠文稿展开才排版；不改变字体、图片、导出和原入场参数。
-- 237真机已亲见正文、真实滚动、两张实际引用图，并点击进入共用全屏大图。`build/phone-enhanced-229/phone-237-{final-body,reading,picture,viewer}.jpg`均为先压缩JPEG，外部输入窗口区域已遮蔽。采集耗时含UI dump／截图，不宣称精确3秒。
-- 临时阶段计数文件仅在应用专属files/diagnostics写入，现已精确删除；临时文件写入和逐公式桥接代码已移除，最终包不再生成它。手机公共根目录没有测试写入。
+- 用户已批准课堂详情原操作行的只读「处理记录」。源码实现投影与原生页，右上导出／监视／删除次序、原总结及重生成语义不变；新页沿用SettingsPageLayout与公共首次入场，整页滚动。
+- 仅当前启用账号可查看同一课堂已保存的阶段、请求状态／起止、输入／输出／总Token、服务缓存读取Token、上下文附图数量、图片请求区间与依据。未知用量显示未提供，明确0保留；选中／已分析分开，新run不混旧summary。原始messages／response／图片二进制／远端地址／凭据不显示或导出，不调用学校／AI，不写run。
+- 详情处理时禁用入口，读者在ClassroomStore.LOCK内确认无ACTIVE写入所有者；忙时提示稍后刷新。账号停用／切换关闭；刷新和重建只读原文件。
+- 原AVD正常竖浅／横深各22项通过，含真实从详情触摸进入、入场、纵向滚动标题离屏、刷新／重建、原文件字节不变、busy与账号关闭及13项投影边界。横屏视口956px／屏1080px，上滑495px标题离屏。`build/enhanced-document/native-audit-238-{final-portrait,landscape}.txt`及`audit-238-evidence/`。没有极端DPI或分辨率调整。
+- 原独立ui_review发现running历史记录误标实时请求的P2，改为「未记录结果」；4项定向通过、原状态不改。`native-audit-238-unfinished.txt`及`audit-238-evidence/unfinished.jpg`。复审已签收受检UI／只读交互，不包含真实provider用量。
+- 最终release／lintRelease与隔离debug／AndroidTest构建通过。固定`build/candidates/0.15.76/Chrona-0.15.76.apk`3283725字节，238／0.15.76、非debug、原签名；证据`audit-238-final-build.txt`、`candidate-238-{package,signature}.txt`。
 
-## 验收证据
+## 手机状态与唯一下一步
 
-- `build/enhanced-document/reader-237-final-build.txt`：正常生产release及lintRelease通过；`candidate-237-{package,signature}.txt`、`phone-237-final-install.txt`及固定APK对应同一候选。
-- 同一原AVD正常横竖屏、未调DPI：原生阅读／折叠／公式／代码／滚动／单节与批量ZIP／失败恢复29项各通过；长文后台Activity覆盖与恢复、4651隐藏公式按需排版8项通过。`native-reader-237-{portrait,landscape,long-hidden}.txt`，实际JPEG及report在`reader-237-final-evidence/`。长文检查最初失败是测试把JS字符串的JSON引号当数字比较，改为数字返回后通过，未修改生产实现掩盖失败。
-- 原只读`/root/ui_review`亲看真机正文／图片／共用查看页及AVD长文／横屏证据，本轮受检阅读器范围通过，无新增明确缺陷；结论不扩大到模型内容质量或服务缓存usage。
-- 既有341项原模式恢复与schema检查、292项默认管线、538项同次请求前缀、GlobalSend清单动态更新14×2及协议32项不受本轮影响，继续复用；历史入口见`docs/validation-history.md`。
+用户端口`10.195.59.196:39137`，原V2527A／序列`10AG5S1SR4005X7`。第一次安装被明确拒绝，已停止；用户允许重新发起后19:09正常覆盖，最终状态修正版19:12:07覆盖成功，首次安装仍9/26。拒绝、许可后的安装及最终包分别记录在`phone-238-{install,retry-install,final-install,final-package}.txt`，没有绕过拒绝或新AI调用。
 
-## 设备归还与下一步
+真实目标：C程序设计基础2026-09-23 14:15第7–8节（course87476／lesson1972361），此前增强AI已完成，文稿5/5、笔记／核图已完成。237已在真机复核正文、实际引用图及共用全屏查看；本轮不重生成、不修改历史或已保存输出，全局增强偏好沿用原false。
 
-已恢复升级前开启的局域网访问`http://10.195.59.196:8765`；`/`、`/app.js`、`/icons.js`、`/brand.svg`均200且SVG MIME正确（`phone-237-lan-http.json`）。浏览器按正常流程重新授权，不代替用户确认，不重复发送链接。
+238只导航至历史，随后C课控件被外部浮层覆盖，输入守卫拒绝点击；尝试选择同一已观察控件的未遮挡区域之前，焦点已切到QQ，进程20070仍活着，已停止触控，没有当作崩溃。已询问用户能否连续空出两分钟，当前待答。唯一下一步：收到窗口后，从正常UI打开C课「处理记录」，读回真实Token／缓存字段与图片依据，再恢复安装前的LAN开关。不要重新生成或调用AI。
 
-GlobalSend原所有者已先完成1.0.57/code68及真实系统图片拖入待发区检查。Chrona本轮已明确归还手机，之后不触控／安装；对方可继续自己的定向实收等剩余测试，不改Chrona／网络／LAN。Windows远程浏览器联动沿用用户亲自确认成功，不重复发送；真实iPad实收仍由用户后续验证。
+LAN原开启地址`http://10.195.59.196:8765`；首次拒绝后HTTP仍200，最终覆盖会停止服务，尚未能从正常页面恢复。恢复后需正常浏览器重新授权，不代确认，不重复设备发送。读取审计时可保存页面白名单数值；通用截图助手会遮蔽六位数字，不能将遮蔽后的XML当作Token缺失。只看压缩JPEG，不读取／上传PNG原图。
 
-真实服务usage／缓存命中未读回：原始审计保存在本机run.json，现无已批准的外部只读入口，不绕过私有缓存权限，也不声称实际缓存节省。后续如继续该项，走应用正常审计／导出能力；无需重新生成已完成课堂。
+## 协作及边界
 
-本轮继续只读核对了生产入口：日程解析有配对后的`/api/parse-audit`；课堂`ClassroomConversation`已逐轮保存usage与response，但`DebugActivity`仅debug可达，普通课堂ZIP／图片Provider均明确排除生成检查点，不能用它们读取run.json。已向用户询问是否在课堂详情现有操作行新增只读「处理记录」入口（阶段、用量、图片依据，不导出原消息）；答复前不自造读取后门或新页面。当前唯一下一步为采纳该范围决定；GlobalSend仍独占手机进行自己的合成传输检查，Chrona不触控。
+GlobalSend原所有者已完成1.0.57/code68及2591字节合成图片实收，并明确释放手机；用户最新明确“建议图片拖入发送区已修复”仅归GlobalSend，Chrona不重测、不认领其它项目。对方正做新的文件夹单卡片等独立需求，已通知本轮只读窗口需求与QQ前台冲突，暂不并行输入／安装；本地开发可继续。Chrona完成恢复后明确归还手机。
 
-项目衍生产物留本项目build；GitHub CLI使用F盘公共安装。用户的AGENTS.md、角色toml、.backups/、.local-backups/、tools/Clean-Project.ps1不提交、不清理。
+不发小版本Release。既有341／292／538项管线与前缀证据、动态设备清单等未受本轮影响，不重复跑。历史证据入口`docs/validation-history.md`。原始课堂审计仍只在本机，新页不扩展ZIP／图片Provider／同步的权限。
+
+项目衍生产物留本项目build；手机测试文件仅app-owned或专属/data/local/tmp/chrona-validation并finally清理，不写公共根目录。用户AGENTS.md、角色toml、.backups/、.local-backups/和tools/Clean-Project.ps1不提交、不清理。

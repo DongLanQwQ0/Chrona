@@ -24,7 +24,7 @@ public final class ClassroomLessonActivity extends Activity {
     static final String EXTRA_ACCOUNT = "classroom_account";
     private static final int EXPORT=2041;
     private Session s; private LinearLayout root,content,notes; private TextView status,overview,completion;
-    private Button prepare,generate,cancel;private ImageButton export,delete;private int rendered,shownRevision=-1;private String detailKey="";
+    private Button prepare,generate,cancel,audit;private ImageButton export,delete;private int rendered,shownRevision=-1;private String detailKey="";
     private ProgressBar progressBar;
     private LinearLayout progressPanel;
     private TextView progressStage,progressCount,progressTime,progressDetail;
@@ -193,12 +193,13 @@ public final class ClassroomLessonActivity extends Activity {
         TextView courseTitle=new TextView(this);courseTitle.setText(s.selected.course);courseTitle.setTextSize(21);UiStyle.title(courseTitle);
         heading.addView(courseTitle,new LinearLayout.LayoutParams(0,-2,1));
         content.addView(heading);text(content,s.selected.date()+" "+clock(s.selected)+" · "+s.selected.title,14,false);
-        completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"总结",this::prepare);generate=action(actions,"生成总结",()->{if(s.retryRequired||s.summary!=null)confirmGeneration();else prepare();});content.addView(actions);
+        completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"总结",this::prepare);generate=action(actions,"生成总结",()->{if(s.retryRequired||s.summary!=null)confirmGeneration();else prepare();});audit=action(actions,"处理记录",()->ClassroomAuditActivity.open(this,s.account,s.selected));content.addView(actions);
         cancel=button(content,"停止",()->s.cancel(),false);
         overview=text(content,"",17,false);notes=new LinearLayout(this);notes.setOrientation(LinearLayout.VERTICAL);content.addView(notes);
     }
     private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary==null?(s.retryRequired?"继续整理":"生成总结"):s.summary.optBoolean("complete")?"重新生成":"继续整理");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
         prepare.setVisibility(s.prepared==null?View.VISIBLE:View.GONE);generate.setVisibility(s.prepared!=null?View.VISIBLE:View.GONE);
+        audit.setEnabled(s.localInitialized&&!s.busy&&!s.deleting);
         delete.setEnabled(!s.deleting&&s.localInitialized&&(s.summary!=null||s.materials!=null||s.busy));cancel.setVisibility(s.busy&&!s.deleting?View.VISIBLE:View.GONE);
         if(s.prepared!=null)completion.setText("字幕就绪 · "+s.prepared.optInt("segments")+" 条\n截图 "+s.prepared.optInt("raw")+" → "+s.prepared.optInt("candidates")+" 张");else completion.setText(s.selected.state(System.currentTimeMillis()));
         overview.setVisibility(View.GONE);

@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.76 — 课堂只读处理记录 — 2026-10-30
+
+- 用户明确批准详情现有操作行增加「处理记录」，与总结／重生成同行，右上原导出／监视／删除保持。新非导出Activity沿用公共二级页、入场、安全区和整页滚动；没有额外固定工具。只投影已保存阶段、请求状态／时间、实际Token与缓存字段、上下文附图数量、选中／已分析数量和各段图片依据，不展示或导出原消息、响应正文、图片二进制、远端地址或凭据。缺值显示未提供，实际0保留；新run不混旧摘要，读取与刷新不调用AI、不写run。存储锁内排除ACTIVE所有者，停用／换账号关闭。
+- 同一原AVD、正常横竖屏及深浅主题原生22项各通过；最终portrait报告`build/enhanced-document/native-audit-238-final-portrait.txt`、landscape报告`native-audit-238-landscape.txt`。覆盖真实从详情DOWN／UP进入、首次动效、上滑标题离屏、刷新、recreate、原run字节不变、busy读取保护及账号关闭；投影覆盖13项隐私／缺值／两种模式／图片计数等边界。JPEG／report在`audit-238-evidence/classroom-audit-{portrait-light,landscape-dark}/`；横屏正文视口956px／屏1080px，上滑495px后标题离屏，未调分辨率或DPI。
+- 原ui_review独立审核发现P2：持久化running被误显示为实时「请求中」。改为历史语义「未记录结果」，不改原状态；仅补无ACTIVE、无finished及UI／原字节4项，`native-audit-238-unfinished.txt`和`audit-238-evidence/unfinished.jpg`。复审关闭P2，受检UI／只读交互通过；不把合成数据当作真实provider命中证据。
+- 正常生产release／lintRelease与隔离debug／AndroidTest编译通过`audit-238-final-build.txt`、`audit-238-unfinished-build.txt`。最终固定`build/candidates/0.15.76/Chrona-0.15.76.apk`3283725字节，238／0.15.76、非debug、原签名，签名／包信息见`candidate-238-{signature,package}.txt`。
+- 首次覆盖被手机明确拒绝，已停止并询问用户，未绕过；用户允许后19:09覆盖成功，19:12:07补入最终状态修正版，首次安装仍2026-09-26 18:54:37。`phone-238-{install,retry-install,final-install,final-package}.txt`区分拒绝与最终结果。未调用AI。核对时仅导航至历史，C课控件被浮层覆盖后守卫拒绝触控；随后焦点切到QQ、进程20070仍活着，停止操作并请求用户空出两分钟。最终真实C课审计尚未读回，升级前开启的LAN还需从正常页面恢复；当前依赖见HANDOFF。
+
 ## 0.15.75 — 长课堂首屏、按需公式与真机附图 — 2026-10-30
 
 - 用户提供39137后，与GlobalSend串行使用同一原手机。真实C程序设计基础9/23已完成总结，等待20秒仍空白；236安全诊断证实HTML已生成、原生高度44559px，但全页4651公式尚在串行处理，425→1638→3201→4651后才visual ready。原因是全部隐藏文稿排版阻塞首次呈现，非AI未完成。`build/enhanced-document/phone-236-{phase,file-probe}.txt`及`build/phone-enhanced-229/phone-236-final-render.jpg`保留边界；系统日志输出关闭，临时安全计数仅写app-owned诊断文件，不读生产私有缓存或原始AI审计。
