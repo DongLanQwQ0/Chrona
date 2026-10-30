@@ -10,7 +10,6 @@ import android.widget.*;
 import com.donglan.chrona.classroom.*;
 import com.donglan.chrona.ai.*;
 import com.donglan.chrona.net.RequestControl;
-import com.donglan.chrona.net.NetworkFailure;
 import org.json.*;
 import java.io.*;
 import java.lang.ref.WeakReference;
@@ -69,7 +68,7 @@ public final class ClassroomLessonActivity extends Activity {
             publish();Runnable execute=()->worker.execute(()->{
             boolean success=false;File leased=null;
             try{if(!allowed())return;if(dir!=null){ClassroomStore.begin(dir);leased=dir;}control=new RequestControl(60*60*1000L);if(cancelRequested)control.cancel();control.check();work.run();success=true;}
-            catch(Exception e){message=cancelRequested||control!=null&&control.isCancelled()?"已停止，已完成内容已保存":NetworkFailure.hasDetails(e)?NetworkFailure.describe(e):(e.getMessage()==null?"操作失败，请重试":e.getMessage());}
+            catch(Exception e){message=ClassroomAutoSummary.failureDetail(e,cancelRequested||control!=null&&control.isCancelled());}
             finally{if(leased!=null)ClassroomStore.end(leased);if(client!=null){client.close();client=null;}if(control!=null){control.close();control=null;}if(exportInFlight){exportUri=null;exportInFlight=false;}boolean completed=success;main.post(()->{busy=false;succeeded=completed;
                 if(notices&&notifications!=null){if(allowed())notifications.finished(message,completed);else notifications.clear();}notifyWork=false;if(notices)ClassroomWorkService.finished(this);publish();if(this.completed!=null)this.completed.run();disposeIfDetached();});}
         });

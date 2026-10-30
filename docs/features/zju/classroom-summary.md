@@ -95,7 +95,7 @@ PPT读取官方page／per_page分页，完整检查总数和重复页；复用�
 
 `notes.images`与正文Markdown图片统一经`ClassroomDocument.imageName`解析，接受合法`images/image-编号.jpg`前缀并归一为实际文件名。已选图片的稀疏编号和正文附图位置保持不变，不按数组位置重编号；真正白名单外的文件仍拒绝并报告具体文件名。正文、大图与单节／批量ZIP使用同一引用清单，行内已有图片不重复追加，也不形成`images/images/`路径。
 
-第二轮请求前保存`final_prompt`及实际开始时间，收到原始响应后先保存`final_output`和结束时间，再做结构及图片引用校验。`final_validation`记录`running/succeeded/failed/cancelled`，失败区分`transport/validation`阶段并保留实际异常类型与原因。顶层final_output显示当前尝试，全部旧原始响应仍保留在追加式conversation审计中；失败草稿保留待续跑状态。重新打开同轮未完成总结时，原状态区恢复已保存的失败或取消原因；其它轮次或已有最终结果不显示旧错误。
+第二轮请求前保存`final_prompt`及实际开始时间，收到原始响应后先保存`final_output`和结束时间，再做结构及图片引用校验。`final_validation`记录`running/succeeded/failed/cancelled`，失败区分`transport/validation`阶段并保留实际异常类型与原因。顶层final_output显示当前尝试，全部旧原始响应仍保留在追加式conversation审计中；失败草稿保留待续跑状态。两种模式的execution.detail保存与当前页面相同的失败原因，重新进入不被通用授权提示覆盖；AI HTTP错误保留状态码与应用内恢复建议，不把服务响应原文、链接或凭据放入持久状态文案。明确停止优先于迟到网络错误；完成后不显示旧错误。
 
 字幕上传保留原文与来源编号，省去连续语句的重复时间字段；开头、明显间隔和每分钟保留时间锚，供模型定位图片范围。本地来源始终保留完整起止时间。
 

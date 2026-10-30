@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.68 — 真实USB设置验收与失败原因保留 — 2026-10-30
+
+- 用户接入USB，GlobalSend所有者确认让出手机。V2527A从228正常覆盖固定229包，版本读回0.15.67；安装前无拾时运行服务。普通竖浅／横浅／竖暗／横暗实际检查新增开关、成本提示、保存操作及退出确认：取消留草稿、旋转保留、放弃重进关闭、保存重进开启、无新修改返回不提示。14项证据`build/phone-enhanced-229/settings-result.json`；ui_review亲看6张压缩JPEG独立通过受检范围。未改变分辨率、DPI或字体，不用模拟器替代手机。
+- 用户明确允许最近一节完整素材未总结课堂的真实AI用量，选C程序设计基础2026-09-23 14:15第7-8节（课程87476／课堂1972361），923条字幕、282→140截图；确认框原图片授权勾选，沿用最多40张。gpt-6-luna实际完成前两块更正文稿后返回HTTP502。用户另行授权一次续跑，实际从2/5开始、未重做前两块，随后同阶段再次502，停止原样重试。未重做已完成课堂，未把上游失败解释为后台被杀。证据`enhanced-real-start`、`enhanced-progress-2`、`enhanced-checkpoint-resumed`、`enhanced-resume-progress-1`的JPEG／XML及`current-owned-notification.txt`；仅读取本应用通知，没有取得服务缓存usage。
+- 发现真实失败重新进入时execution.detail被通用授权提示覆盖。230共用failureDetail处理当前显示和持久化，HTTP只留状态码及应用自有AI建议，取消优先，不显示服务原文、URL或凭据。提取生产格式化／记录／恢复方法并复用真实ClassroomStore、NetworkFailure和RequestException，49项定向离线检查通过，`failure-detail-check.txt`；不重新运行无变化的整条收费流程。ui_review源码复审无新增明确缺陷，状态TextView自然换行且可滚动；230未来错误状态的实际重进尚未验证，不将229截图冒充230文案证据。
+- 完整更正文稿、分段核图、最终笔记及其折叠／公式／导出，被第三块两次502阻塞，未形成真实结果；实际缓存命中亦未验收。原检查点保留，服务恢复或取得新依据后再由用户授权继续；不自动重发。一次测试导航过退应用后改为每次先确认当前Chrona节点再触控，错误路线截图不作通过证据。
+- 最终230固定源码debug／AndroidTest编译／release／lintRelease通过`candidate-230-final-build.txt`。`build/candidates/0.15.68/Chrona-0.15.68.apk`3274865字节、230／0.15.68、非debug、签名验证通过且身份与229相同。用户在vivo确认后正常覆盖成功，手机元数据读回230／0.15.68，主进程14676，首页正常；原增强开关关闭经新包重新进入确认，跟随系统主题与旋转1／0恢复，无课堂运行服务，ADB已释放并通知GlobalSend。证据同目录`candidate-230-{package,signature}.txt`、`install-230.txt`、`phone-230-package.txt`、`phone-230-enhanced-off.{jpg,xml}`、`phone-230-final-home.{jpg,xml,txt}`及`final-*-rotation.txt`。不发Release／标签，public latest仍v0.15.61。
+
 ## 0.15.67 — 增强整理代码候选，待上机验收 — 2026-10-29
 
 - 新增默认关闭的增强整理，设置保存、退出保护、旋转草稿及配置备份接入同一偏好；单节、批量及监视总结在启动时快照。先完整更正文稿，再按原字幕来源分块整理／核图并本地组装；更正文稿共用阅读器和单节／批量导出入口。改卷／讲评提示保留题目条件、扣分点及细微线索的依据和不确定性。

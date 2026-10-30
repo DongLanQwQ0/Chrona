@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import com.donglan.chrona.ai.*;
 import com.donglan.chrona.classroom.*;
+import com.donglan.chrona.net.NetworkFailure;
 import java.io.File;
 import java.io.IOException;
 import org.json.JSONObject;
@@ -58,13 +59,26 @@ final class ClassroomAutoSummary {
         }catch(Exception failure){
             if(failure instanceof ChatCompletionClient.RequestException rejected&&job.imageLimit>0&&rejected.rejectsImage()&&ai!=null)
                 new AiSettingsStore(job.app).markImageUnsupported(ai);
-            try{execution(job,job.cancelRequested?"interrupted":"failed","总结未完成，请手动授权继续");}
+            boolean stopped=job.cancelRequested||job.control!=null&&job.control.isCancelled();
+            try{execution(job,stopped?"interrupted":"failed",failureDetail(failure,stopped));}
             catch(Exception recording){failure.addSuppressed(recording);}
             throw failure;
         }finally{
             job.ignoredSummaryUpdated=-1;
             if(job.summary==null&&previous!=null){job.summary=previous;job.revision++;}
         }
+    }
+    static String failureDetail(Exception failure,boolean stopped){
+        if(stopped)return "已停止，已完成内容已保存";
+        if(failure instanceof ChatCompletionClient.RequestException rejected){
+            int code=rejected.statusCode;
+            String action=code==401||code==403?"请检查 AI 服务密钥与模型权限":code==407?"代理要求身份认证，请检查代理配置":
+                    code==429?"服务限流，请稍后手动继续":code>=500?"AI 服务暂不可用，请稍后手动继续":"请检查 AI 服务、模型及请求配置";
+            return "AI 请求失败（HTTP "+code+"）· "+action;
+        }
+        if(NetworkFailure.hasDetails(failure))return NetworkFailure.describe(failure);
+        String detail=failure.getMessage();
+        return detail==null||detail.isBlank()?"总结未完成，请手动授权继续":detail;
     }
     private static void execution(ClassroomLessonActivity.Session job,String state,String detail)throws Exception {
         File file=new File(job.dir,"run.json");JSONObject run=ClassroomStore.read(file);if(run==null)run=new JSONObject();

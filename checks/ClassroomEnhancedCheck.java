@@ -313,8 +313,45 @@ public final class ClassroomEnhancedCheck {
         for(String[] item:cases){String actual=ClassroomDocument.normalizeMarkdown(item[1]);check(actual.equals(item[2]),item[0]);evidence.put(new JSONObject().put("case",item[0]).put("input",item[1]).put("expected",item[2]).put("actual",actual).put("passed",actual.equals(item[2])));}
         ClassroomStore.write(new File(root,"markdown-fences.json"),new JSONObject().put("cases",evidence).put("assertions",cases.length).put("failures",failures));
     }
+    private static void failureDetails()throws Exception{
+        Class<?> auto=Class.forName("com.donglan.chrona.ClassroomAutoSummary"),activity=Class.forName("com.donglan.chrona.ClassroomLessonActivity"),session=Class.forName("com.donglan.chrona.ClassroomLessonActivity$Session");
+        var detail=auto.getDeclaredMethod("failureDetail",Exception.class,boolean.class);detail.setAccessible(true);
+        var record=auto.getDeclaredMethod("execution",session,String.class,String.class);record.setAccessible(true);
+        var restore=activity.getDeclaredMethod("restoredFailure",JSONObject.class,JSONObject.class);restore.setAccessible(true);
+        var rejected=com.donglan.chrona.ai.ChatCompletionClient.RequestException.class.getDeclaredConstructor(int.class,String.class);rejected.setAccessible(true);
+        File directory=new File(root,"failure-detail");directory.mkdirs();Object job=session.getConstructor(File.class).newInstance(directory);
+        for(int code:new int[]{400,401,403,407,429,502,503}){
+            Exception failure=rejected.newInstance(code,"synthetic-secret https://untrusted.invalid/private?token=synthetic-secret");
+            String safe=(String)detail.invoke(null,failure,false);
+            check(safe.contains("HTTP "+code),"HTTP status remains actionable: "+code);
+            String action=code==401||code==403?"AI 服务密钥":code==407?"代理":code==429?"限流":code>=500?"手动继续":"模型及请求配置";
+            check(safe.contains(action)&&!safe.contains("课程权限"),"recovery advice belongs to AI service rather than school access: "+code);
+            check(!safe.contains("synthetic-secret")&&!safe.contains("untrusted.invalid"),"server text and URL never enter durable detail: "+code);
+            ClassroomStore.write(new File(directory,"run.json"),new JSONObject().put("run","original-run").put("conversation",new JSONObject().put("marker","untouched")));
+            record.invoke(null,job,"failed",safe);JSONObject saved=ClassroomStore.read(new File(directory,"run.json"));
+            check(saved.getJSONObject("execution").getString("detail").equals(safe)&&saved.getJSONObject("execution").getInt("imageLimit")==40,"exact safe error persisted with existing image permission: "+code);
+            check(saved.getString("run").equals("original-run")&&saved.getJSONObject("conversation").getString("marker").equals("untouched"),"failure metadata preserves existing conversation: "+code);
+            check(safe.equals(restore.invoke(null,null,saved)),"reopened page restores actual HTTP cause: "+code);
+        }
+        String invalid="图片引用不存在：image-999.jpg";
+        check(invalid.equals(detail.invoke(null,new IOException(invalid),false)),"reference validation keeps concrete cause");
+        check(((String)detail.invoke(null,new IOException(),false)).contains("手动授权"),"missing message remains recoverable");
+        check(((String)detail.invoke(null,new IOException(" "),false)).contains("手动授权"),"blank message remains recoverable");
+        String stopped=(String)detail.invoke(null,rejected.newInstance(502,"synthetic-secret"),true);
+        check(stopped.equals("已停止，已完成内容已保存"),"explicit cancellation takes precedence over late HTTP error");
+        record.invoke(null,job,"interrupted",stopped);
+        check(stopped.equals(restore.invoke(null,null,ClassroomStore.read(new File(directory,"run.json")))),"cancelled checkpoint restores stop state");
+        String network=com.donglan.chrona.net.NetworkFailure.describe(com.donglan.chrona.net.NetworkFailure.http("素材下载","media.example.edu",503));
+        check(network.equals(detail.invoke(null,com.donglan.chrona.net.NetworkFailure.http("素材下载","media.example.edu",503),false)),"existing safe network context remains intact");
+        record.invoke(null,job,"complete","");
+        check("".equals(restore.invoke(null,null,ClassroomStore.read(new File(directory,"run.json")))),"completion never shows stale failed detail");
+    }
     public static void main(String[] args)throws Exception{
         root=new File(args[0]);root.mkdirs();
+        if(args.length==1||args[1].equals("failure-detail")){
+            test("durable safe failure detail and page restore",ClassroomEnhancedCheck::failureDetails);
+            if(args.length>1){System.out.println("ClassroomFailureDetail: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Failure detail checks failed");return;}
+        }
         if(args.length>1&&args[1].equals("markdown-fences")){
             test("Markdown fences preserve code and TeX escapes",ClassroomEnhancedCheck::markdownFences);
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
