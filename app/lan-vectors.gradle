@@ -5,7 +5,7 @@ def generateLanVectors = tasks.register('generateLanVectors') {
         'arrow-left':'ic_arrow_left', 'refresh-cw':'ic_refresh', settings:'ic_settings', check:'ic_check',
         clock:'ic_todo_clock', 'list-checks':'ic_homework', filter:'ic_filter_alt', circle:'ic_circle',
         'clock-alert':'ic_todo_alert', 'file-text':'ic_notes', search:'ic_search', 'log-out':'ic_log_out',
-        'sun-moon':'ic_sun_moon', 'grid-2x2':'ic_grid']
+        'sun-moon':'ic_sun_moon', 'grid-2x2':'ic_grid', download:'ic_week_export']
     def sources = icons.collectEntries { name, resource -> [(name):file("src/main/res/drawable/${resource}.xml")] }
     def brand = rootProject.file('docs/assets/chrona-icon.svg')
     inputs.files(sources.values()); inputs.file(brand); inputs.file(file('lan-vectors.gradle'))

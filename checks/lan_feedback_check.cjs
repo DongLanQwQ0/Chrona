@@ -12,7 +12,7 @@ const source=http.createServer((req,res)=>{
  if(url.pathname.startsWith('/api/candidate/')){requests++;release=(success=false)=>json(success?200:503,success?{ok:true}:{error:'模拟手机暂时不可用，请重试'});req.resume();return;}
  if(url.pathname==='/api/session')return json(200,{csrf:'test',zone:'Asia/Shanghai',palette:{background:'#f4f6f8',primary:'#486a85'},calendarAllowed:true});
  if(url.pathname==='/api/home')return json(200,{revision:1,items:[],calendar:[],date:'2026-10-05',review:0,failed:0});
- const file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[url.pathname];
+ const file={'/':'index.html','/app.js':'app.js','/calendar.js':'calendar.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[url.pathname];
  if(!file){res.writeHead(404);return res.end();}
  res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(path.join(root,file)));
 });

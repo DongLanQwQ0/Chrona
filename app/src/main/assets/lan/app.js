@@ -5,7 +5,7 @@ let scannedPairing=takePairingFragment();
 const $=selector=>document.querySelector(selector);
 function node(tag,cls,text){const element=document.createElement(tag);if(cls)element.className=cls;if(text!==undefined)element.textContent=text;return element;}
 function icon(name){const element=node('span','ui-icon');element.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]||ICONS['file-text']}</svg>`;return element;}
-function icons(){enhanceSelects();document.querySelectorAll('[data-icon]').forEach(element=>element.replaceChildren(icon(element.dataset.icon)));}
+function icons(){enhanceSelects();document.querySelectorAll('[data-icon]').forEach(element=>element.replaceChildren(icon(element.dataset.icon)));layoutSelectionBars();}
 let openSelect=null,closingSelect=null,selectId=0;
 function closeSelect(restore=false,immediate=false){const opened=openSelect||(immediate?closingSelect:null);if(!opened)return;openSelect=null;closingSelect=opened;opened.menu.inert=true;opened.trigger.setAttribute('aria-expanded','false');if(restore&&opened.trigger.isConnected)opened.trigger.focus({preventScroll:true});const animation=immediate?null:motion(opened.menu,[{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(-4px)'}],120);const remove=()=>{if(openSelect===opened)return;if(opened.menu.matches(':popover-open'))opened.menu.hidePopover();opened.menu.remove();if(closingSelect===opened)closingSelect=null;};if(animation)animation.finished.then(remove,()=>{});else{activeMotion.get(opened.menu)?.cancel();remove();}}
 function enhanceSelects(){
@@ -152,8 +152,11 @@ function fmt(value,allDay=false,full=false,zone){if(value===null||value===undefi
 function statusLabel(status){return {queued:'排队中',processing:'正在处理',needs_review:'待确认',ready:'已就绪',failed:'处理失败'}[status]||status;}
 let scheduleTab=0,publication=0,todoScope=0,inboxCategory='',rangeFrom='',rangeUntil='',selectedRows=new Set(),selectionMode=false,homeworkLocate=null;
 let rangePreset=0,listSource=0,inboxOldest=false;
+let calendarView='month',calendarDate='',calendarSearch='',calendarZoom=1,calendarExportBusy=false;
+const calendarViews=[['year','年'],['month','月'],['week','周'],['day','日'],['agenda','日程']];
+const calendarPositions=new Map();
 const scheduleOrders=new Map();
-const selectionObservers=new Set();
+const selectionObservers=new Map();
 const routeState=new Map();
 function listState(){return {page,search,filter,scheduleTab,publication,todoScope,inboxCategory,rangeFrom,rangeUntil,rangePreset,listSource,selected:[...selectedRows],selectionMode,scroll:scrollY};}
 function restoreList(value={}){page=value.page??0;search=value.search??'';filter=value.filter??'';scheduleTab=value.scheduleTab??0;publication=value.publication??0;todoScope=value.todoScope??0;inboxCategory=value.inboxCategory??'';rangeFrom=value.rangeFrom??'';rangeUntil=value.rangeUntil??'';rangePreset=value.rangePreset??0;listSource=value.listSource??0;selectedRows=new Set(value.selected||[]);selectionMode=!!value.selectionMode;}
@@ -198,13 +201,13 @@ function phoneDayStart(date){
  calendarDayBounds.set(key,high);return high;
 }
 // AgendaRepository already projects all-day entries onto phone-zone day boundaries.
-function agendaDayEntries(items,date){const start=phoneDayStart(date),end=phoneDayStart(addCivilDays(date,1));return items.filter(item=>item.start<end&&Math.max(item.end??item.start,item.start+1)>start);}
+function agendaDayEntries(items,date){const start=phoneDayStart(date),end=phoneDayStart(addCivilDays(date,1));return items.filter(item=>item.start<end&&item.finish>start);}
 const pageOrder=['home','schedule','inbox'];
 let mainSection='home';
 const dockHighlight=node('span','dock-highlight');dockHighlight.hidden=true;dockHighlight.setAttribute('aria-hidden','true');$('.bottom nav').prepend(dockHighlight);
 const dockNav=$('.bottom nav'),dockState={p:0,v:0,target:0,w:0,wv:0,wt:0,s:1,sv:0,st:1,bar:1,bv:0,bt:1,stretch:1,xv:0};
 let dockFrame=0,dockTime=0,dockTouch=null,dockSuppressClick=false,dockCoasting=false;
-const dockCoastDamping=7.5,dockOutwardWidth=.75,dockPressTime=1.5;
+const dockCoastDamping=7.5,dockOutwardWidth=.75,dockPressTime=1.5,dockInnerInset=6;
 let dockCoastTarget=null;
 function dockLanding(position=dockState.p){const buttons=dockButtons();return buttons.reduce((best,button)=>Math.abs(position-(button.offsetLeft+button.offsetWidth/2))<best.distance?{button,distance:Math.abs(position-(button.offsetLeft+button.offsetWidth/2))}:best,{button:null,distance:Infinity}).button;}
 function coastDockStep(state,first,last,dt){const edge=Math.max(first,Math.min(last,state.p)),overflow=state.p-edge;if(overflow){state.v+=(-180*overflow-18*state.v)*dt;state.p+=state.v*dt;}else{const decay=Math.exp(-dockCoastDamping*dt);state.p+=state.v*(1-decay)/dockCoastDamping;state.v*=decay;}}
@@ -214,7 +217,7 @@ function commitDockCoast(){dockCoasting=false;targetDock(dockCoastTarget);}
 function dockButtons(){return [...dockNav.querySelectorAll('[data-page]')];}
 function dockNearest(clientX){return dockButtons().reduce((best,button)=>{const rect=button.getBoundingClientRect();return Math.abs(clientX-(rect.left+rect.right)/2)<best.distance?{button,distance:Math.abs(clientX-(rect.left+rect.right)/2)}:best;},{button:null,distance:Infinity}).button;}
 function softDockUpper(value,limit,approach){if(approach<=0)return Math.min(value,limit);const start=limit-approach;return value<=start?value:start+approach*Math.tanh((value-start)/approach);}
-function drawDock(){const state=dockState,width=state.w*state.s*state.stretch,maximum=state.w*dockOutwardWidth;let left=softDockUpper(state.p-width/2,dockNav.offsetWidth-state.w/2,state.w/2),right=-softDockUpper(-state.p-width/2,-state.w/2,state.w/2);if(maximum>0){if(left<0)left=-maximum*Math.tanh(-left/maximum);if(right>dockNav.offsetWidth)right=dockNav.offsetWidth+maximum*Math.tanh((right-dockNav.offsetWidth)/maximum);}dockHighlight.style.width=(right-left)+'px';dockHighlight.style.transform=`translateX(${left}px) scaleY(${state.s})`;dockNav.style.transform=`scale(${state.bar})`;}
+function drawDock(){const state=dockState,width=state.w*state.s*state.stretch,maximum=state.w*dockOutwardWidth;let left=softDockUpper(state.p-width/2,dockNav.offsetWidth-state.w/2,state.w/2),right=-softDockUpper(-state.p-width/2,-state.w/2,state.w/2);if(maximum>0){if(left<0)left=-maximum*Math.tanh(-left/maximum);if(right>dockNav.offsetWidth)right=dockNav.offsetWidth+maximum*Math.tanh((right-dockNav.offsetWidth)/maximum);}const height=Math.max(0,dockNav.clientHeight-dockInnerInset*2)*state.s;dockHighlight.style.width=(right-left)+'px';dockHighlight.style.height=height+'px';dockHighlight.style.top=(dockNav.clientHeight-height)/2+'px';dockHighlight.style.transform=`translateX(${left}px)`;dockNav.style.transform=`scale(${state.bar})`;}
 function snapDock(){const state=dockState;state.p=state.target;state.w=state.wt;state.s=state.st;state.bar=state.bt;state.stretch=1;state.v=state.wv=state.sv=state.bv=state.xv=0;drawDock();}
 function advanceDock(now){dockFrame=0;const state=dockState;if(reducedMotion.matches){if(dockCoasting)commitDockCoast();snapDock();return;}const elapsed=Math.min(.064,Math.max(0,(now-dockTime)/1000)),steps=Math.max(1,Math.ceil(elapsed*120)),dt=elapsed/steps;dockTime=now;
  const buttons=dockButtons(),first=buttons[0].offsetLeft+buttons[0].offsetWidth/2,last=buttons.at(-1).offsetLeft+buttons.at(-1).offsetWidth/2;
@@ -236,7 +239,7 @@ function dockPointerVelocity(samples){const recent=samples.filter(sample=>sample
 function recordDockPointer(touch,event){const samples=event.getCoalescedEvents?.()||[];for(const sample of samples.length?samples:[event])touch.samples.push({x:sample.clientX,time:sample.timeStamp});touch.samples=touch.samples.filter(sample=>sample.time>=event.timeStamp-150);}
 new ResizeObserver(()=>{if(dockTouch)dockTouch.cancelled=true;updateDock();}).observe(dockNav);
 // Detail controls stay above the real Dock, including enlarged browser text.
-function updateDockClearance(){const bottom=$('.bottom');document.documentElement.style.setProperty('--dock-clearance',(bottom.offsetHeight+(parseFloat(getComputedStyle(bottom).bottom)||0)+20)+'px');}
+function updateDockClearance(){const bottom=$('.bottom');document.documentElement.style.setProperty('--dock-clearance',(bottom.offsetHeight+(parseFloat(getComputedStyle(bottom).bottom)||0)+20)+'px');if(route==='home'){const button=$('#capture'),bounds=bottom.getBoundingClientRect();button.style.left=(bounds.right-button.offsetWidth)+'px';button.style.top=(bounds.top+(bounds.height-button.offsetHeight)/2)+'px';}}
 new ResizeObserver(updateDockClearance).observe($('.bottom'));
 window.addEventListener('resize',updateDockClearance);
 dockNav.addEventListener('pointerdown',event=>{if(event.button!==0)return;if(dockTouch){dockTouch.cancelled=true;dockCoasting=false;pressDock(false);return;}dockCoasting=false;dockTouch={id:event.pointerId,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false,samples:[]};recordDockPointer(dockTouch,event);dockNav.setPointerCapture(event.pointerId);pressDock(true);});
@@ -267,11 +270,13 @@ reducedMotion.addEventListener('change',()=>{if(!reducedMotion.matches)return;cl
 async function navigate(next,updateHash=true,initialState=null){
  if(inlineEditor?.form.isConnected&&!await leaveInlineEditor()){history.replaceState(null,'','#'+route);return;}
  rememberDetailScroll();
+ rememberCalendarScroll();
  const [path,query]=next.split('?');
  if(path==='schedule'&&query){const params=new URLSearchParams(query);initialState=history.state?.schedule??{filter:params.get('category')||'',scheduleTab:Number(params.get('tab')||0),todoScope:Number(params.get('todo')||0)};next=path;}
- if(!['home','schedule','inbox'].includes(next)&&!next.startsWith('task/'))next='home';
+ if(path==='calendar'){const params=new URLSearchParams(query||'');if(calendarViews.some(([key])=>key===params.get('view')))calendarView=params.get('view');if(validCalendarDate(params.get('date')))calendarDate=params.get('date');next=path;}
+ if(!['home','schedule','inbox','calendar'].includes(next)&&!next.startsWith('task/'))next='home';
  const previous=route,changed=previous!==next;
- const nextSection=pageOrder.includes(next)?next:mainSection,sectionChanged=nextSection!==mainSection;
+ const nextSection=next==='calendar'?'schedule':pageOrder.includes(next)?next:mainSection,sectionChanged=nextSection!==mainSection;
  if(sectionChanged){selectedRows.clear();selectionMode=false;for(const saved of routeState.values()){saved.selected=[];saved.selectionMode=false;}mainSection=nextSection;}
  if(changed){routeState.delete(previous);routeState.set(previous,listState());while(routeState.size>10)routeState.delete(routeState.keys().next().value);}
  route=next;restoreList(initialState??(changed?routeState.get(next):listState()));if(sectionChanged){selectedRows.clear();selectionMode=false;}currentTask=null;homeworkLocate=initialState?.locate??null;
@@ -279,7 +284,7 @@ async function navigate(next,updateHash=true,initialState=null){
  const destination=next==='schedule'&&initialState?`schedule?${new URLSearchParams({category:filter,tab:scheduleTab,todo:todoScope})}`:next;
  if(updateHash&&location.hash!==`#${destination}`)history.pushState(next==='schedule'?{schedule:listState()}:null,'',`#${destination}`);
  document.querySelectorAll('[data-page]').forEach(button=>{const selected=button.dataset.page===mainSection;button.classList.toggle('active',selected);if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
- updateCapture();updateDock();const direction=next.startsWith('task/')?1:previous.startsWith('task/')?-1:Math.sign(pageOrder.indexOf(next)-pageOrder.indexOf(previous));
+ updateCapture();updateDock();const direction=next.startsWith('task/')?1:previous.startsWith('task/')?-1:next==='calendar'?1:previous==='calendar'?-1:Math.sign(pageOrder.indexOf(next)-pageOrder.indexOf(previous));
  await render(changed?{direction,detail:next.startsWith('task/')}:false);
  if(changed)window.scrollTo(0,routeState.get(next)?.scroll??0);
 }
@@ -288,9 +293,10 @@ async function render(animate=false){if(inlineEditor?.form.isConnected)return;co
  if(route.startsWith('task/'))content=await taskPage(Number(route.split('/')[1].split('?')[0]),ticket);
  else if(route==='home')content=await homePage(ticket);
  else if(route==='inbox'||route==='schedule')content=await listPage(ticket);
+ else if(route==='calendar')content=await calendarPage(ticket);
  else{route='home';content=await homePage(ticket);}
  if(ticket===sequence){
-  const switching=animate?.local&&animate.direction&&host.querySelector('.result-list');
+  const switching=animate?.local&&animate.direction&&host.querySelector('.result-list,.calendar-body');
   if(switching){const exit=motion(switching,[{opacity:1,transform:'translateX(0)'},{opacity:0,transform:`translateX(${-Math.sign(animate.direction)*12}px)`}],120);if(exit)await exit.finished.catch(()=>{});if(ticket!==sequence)return;}
   const active=document.activeElement,label=host.contains(active)?active.getAttribute('aria-label'):null,selection=label&&'selectionStart' in active?[active.selectionStart,active.selectionEnd]:null,scrollY=window.scrollY;
   clearReveals();
@@ -300,18 +306,19 @@ async function render(animate=false){if(inlineEditor?.form.isConnected)return;co
   const reused=new Set();
   if(local)for(const element of incoming.querySelectorAll('[data-preserve]')){const old=host.querySelector(`[data-preserve="${element.dataset.preserve}"]`);if(old&&old.dataset.state===element.dataset.state)element.replaceWith(old);}
   if(local)for(const element of incoming.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(old&&!reused.has(old.element)&&!element.matches('.selectable-result')&&!element.querySelector('input')&&old.element.isEqualNode(element)){element.replaceWith(old.element);reused.add(old.element);}}
-  $('#workspace').classList.toggle('task-mode',route.startsWith('task/'));host.classList.toggle('list-mode',route==='schedule'||route==='inbox');
-  host.replaceChildren(incoming);icons();for(const observer of selectionObservers)if(!observer.host?.isConnected){observer.disconnect();selectionObservers.delete(observer);}if(route==='schedule'&&homeworkLocate)locateHomework(homeworkLocate,ticket);
+  rememberCalendarScroll();
+  $('#workspace').classList.toggle('task-mode',route.startsWith('task/'));host.classList.toggle('list-mode',route==='schedule'||route==='inbox');host.classList.toggle('calendar-mode',route==='calendar');
+  host.replaceChildren(incoming);icons();if(route==='calendar'){syncCalendarTools();restoreCalendarScroll();}if(route==='schedule'&&homeworkLocate)locateHomework(homeworkLocate,ticket);
   if(route==='schedule')history.replaceState({schedule:listState()},'',`#schedule?${new URLSearchParams({category:filter,tab:scheduleTab,todo:todoScope})}`);
   if(local){window.scrollTo(0,scrollY);for(const element of host.querySelectorAll('[data-key]')){const old=previous.get(element.dataset.key);if(!old)continue;const rect=element.getBoundingClientRect(),x=old.rect.x-rect.x,y=old.rect.y-rect.y;if(Math.abs(x)+Math.abs(y)>1)motion(element,[{transform:`translate(${x}px,${y}px)`},{transform:'translate(0,0)'}],280);}}
   if(label&&local){const replacement=[...host.querySelectorAll('[aria-label]')].find(element=>element.getAttribute('aria-hidden')!=='true'&&element.getAttribute('aria-label')===label);replacement?.focus({preventScroll:true});if(selection&&replacement?.setSelectionRange)replacement.setSelectionRange(...selection);}
   if(animate&&!animate.local){motion(host,[{opacity:.55,transform:`translateX(${(animate.direction||1)*(animate.detail?20:12)}px)`},{opacity:1,transform:'translateX(0)'}],240);observeCards(host);}
-  else if(switching){const list=host.querySelector('.result-list');if(list)motion(list,[{opacity:0,transform:`translateX(${Math.sign(animate.direction)*12}px)`},{opacity:1,transform:'translateX(0)'}],180);}
+  else if(switching){const list=host.querySelector('.result-list,.calendar-body');if(list)motion(list,[{opacity:0,transform:`translateX(${Math.sign(animate.direction)*12}px)`},{opacity:1,transform:'translateX(0)'}],180);}
  }}
 function iconAction(name,label,work,pressed){const button=action('',work,'icon-button');button.append(icon(name));button.setAttribute('aria-label',label);button.title=label;if(pressed!==undefined)button.setAttribute('aria-pressed',String(pressed));return button;}
 function actionGroup(buttons){const group=node('div','header-action-group');group.append(...buttons);return group;}
 function preserve(element,key,state){element.dataset.preserve=key;element.dataset.state=JSON.stringify(state);return element;}
-function updateCapture(){const shown=route==='home',button=$('#capture');button.inert=!shown;button.setAttribute('aria-hidden',String(!shown));$('.bottom').classList.toggle('without-capture',!shown);}
+function updateCapture(){const shown=route==='home',button=$('#capture');button.inert=!shown;button.setAttribute('aria-hidden',String(!shown));button.classList.toggle('is-hidden',!shown);$('.bottom').classList.toggle('without-capture',!shown);if(shown)requestAnimationFrame(updateDockClearance);}
 async function refreshHomework(){
  if(!session.homeworkRefreshAvailable){toast(session.homeworkStatus||'请先在手机启用折姜星辰并登录');return;}
  if(session.homeworkRefreshing)return;
@@ -379,11 +386,21 @@ function choicePanel(label,choices,value,change){
 }
 function selectionBar(label,choices,value,change){
  const host=node('div','selection-host'),bar=node('div','selection-bar');bar.setAttribute('role','group');bar.setAttribute('aria-label',label);
- const highlight=node('span','selection-highlight');bar.append(highlight);let active;
- for(const [key,text]of choices){const button=action(text,()=>{active=button;bar.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));position();change(key);});button.setAttribute('aria-pressed',String(String(key)===String(value)));if(String(key)===String(value))active=button;bar.append(button);}
- const compact=action('',()=>choicePanel(label,choices,value,change),'selection-current');compact.append(node('span','',choices.find(([key])=>String(key)===String(value))?.[1]||''),icon('chevron-right'));compact.setAttribute('aria-label',label);compact.hidden=true;
- const position=()=>{if(active){highlight.style.width=active.offsetWidth+'px';highlight.style.transform=`translateX(${active.offsetLeft}px)`;}const buttons=[...bar.querySelectorAll('button')],required=buttons.reduce((sum,button)=>{const style=getComputedStyle(button),canvas=selectionBar.canvas||(selectionBar.canvas=document.createElement('canvas')),context=canvas.getContext('2d');context.font=style.font;return sum+context.measureText(button.textContent).width+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight);},10);const small=required>host.clientWidth;bar.classList.toggle('selection-measure',small);compact.hidden=!small;};
- host.append(bar,compact);requestAnimationFrame(()=>{if(!bar.isConnected)return;position();const observer=new ResizeObserver(position);observer.host=host;selectionObservers.add(observer);observer.observe(host);});return host;
+ const highlight=node('span','selection-highlight');bar.append(highlight);
+ for(const [key,text]of choices){const button=action(text,()=>{bar.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));positionSelectionBar(host);return change(key);});button.dataset.choice=String(key);button.setAttribute('aria-pressed',String(String(key)===String(value)));bar.append(button);}
+ const compact=action('',()=>choicePanel(label,choices,bar.querySelector('[aria-pressed="true"]')?.dataset.choice??value,change),'selection-current');compact.append(node('span','',choices.find(([key])=>String(key)===String(value))?.[1]||''),icon('chevron-right'));compact.setAttribute('aria-label',label);compact.hidden=true;
+ host.append(bar,compact);return host;
+}
+function positionSelectionBar(host){
+ const bar=host.querySelector('.selection-bar'),compact=host.querySelector('.selection-current');if(!bar||!host.isConnected)return;
+ const buttons=[...bar.querySelectorAll('button')],required=buttons.reduce((sum,button)=>{const style=getComputedStyle(button),canvas=selectionBar.canvas||(selectionBar.canvas=document.createElement('canvas')),context=canvas.getContext('2d');context.font=style.font;return sum+context.measureText(button.textContent).width+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight);},14),small=required>host.clientWidth;
+ bar.classList.toggle('selection-measure',small);compact.hidden=!small;
+ const active=bar.querySelector('[aria-pressed="true"]'),highlight=bar.querySelector('.selection-highlight');
+ if(active){compact.firstElementChild.textContent=active.textContent;highlight.style.width=active.offsetWidth+'px';highlight.style.transform=`translateX(${active.offsetLeft}px)`;}
+}
+function layoutSelectionBars(){
+ for(const [host,observer]of selectionObservers)if(!host.isConnected){observer.disconnect();selectionObservers.delete(host);}
+ for(const host of document.querySelectorAll('.selection-host')){if(!selectionObservers.has(host)){const observer=new ResizeObserver(()=>positionSelectionBar(host));selectionObservers.set(host,observer);observer.observe(host);}positionSelectionBar(host);}
 }
 
 function monthAfter(date,amount=1){const d=new Date(date.slice(0,8)+'01T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+amount);return d.toISOString().slice(0,10);}
@@ -423,7 +440,7 @@ async function listPage(ticket){
  update();if(!data.items.length)empty(list,inbox?'没有符合条件的收件':filter==='exam'&&!data.examsLoaded?'尚未获取考试安排，请在手机中刷新':'没有符合条件的日程');
  const order=action(data.oldestFirst?'最早优先':'最近优先',()=>{if(inbox)inboxOldest=!data.oldestFirst;else scheduleOrders.set(scheduleTab,!data.oldestFirst);return refreshList();});
  const refresh=iconAction('refresh-cw','刷新作业',refreshHomework);refresh.dataset.homeworkRefresh='';refresh.disabled=!!session.homeworkRefreshing;refresh.classList.toggle('refreshing',!!session.homeworkRefreshing);
- const result=[heading(inbox?'收件箱':'日程','',[order,...(!inbox&&filter==='homework'?[refresh]:[])]),searchForm(inbox)];
+ const result=[heading(inbox?'收件箱':'日程','',[order,...(!inbox?[actionGroup([iconAction('calendar-days','查看日历',()=>navigate('calendar'))])]:[]),...(!inbox&&filter==='homework'?[refresh]:[])]),searchForm(inbox)];
  if(!inbox)result.push(preserve(selectionBar('日程范围',[[0,'待处理'],[1,'待安排'],[2,'历史'],[3,'全部']],scheduleTab,value=>{scheduleTab=Number(value);refreshList();}),'schedule-tabs',scheduleTab));
  const tags=[inbox?categories[inboxCategory]:scheduleCategories[filter],!inbox&&listSource?'系统日程':'',!inbox&&['','待确认','已写入','未写入'][publication],!inbox&&['','今日截止','已逾期','未完成'][todoScope],!inbox&&(rangeFrom||data.from)&&`${rangeFrom||data.from} — ${addCivilDays(rangeUntil||data.until,-1)}`].filter(Boolean);
  if(tags.length)result.push(node('p','filter-summary',tags.join(' · ')));result.push(toolbar,list,pagination(data));return result;
@@ -549,7 +566,7 @@ async function taskPage(id,ticket){
  if(saved.detailOpen??params.has('candidate_id'))workspace.classList.add('show-detail');
  workspace.append(master,reader);
  requestAnimationFrame(()=>{if(!workspace.isConnected||ticket!==sequence)return;sync();const selected=rows.get(active?.id);if(selected){list.scrollTop=saved.listScroll||0;const top=selected.offsetTop-list.offsetTop;if(top<list.scrollTop||top+selected.offsetHeight>list.scrollTop+list.clientHeight)list.scrollTop=top-(list.clientHeight-selected.offsetHeight)/2;}});
- const back=action('',()=>{const previous=[...routeState.keys()].reverse().find(key=>['home','inbox','schedule'].includes(key));return navigate(previous||'inbox');},'icon-button');back.append(icon('arrow-left'));back.setAttribute('aria-label','返回列表');
+ const back=action('',()=>{const previous=[...routeState.keys()].reverse().find(key=>['home','inbox','schedule','calendar'].includes(key));return navigate(previous||'inbox');},'icon-button');back.append(icon('arrow-left'));back.setAttribute('aria-label','返回列表');
  return[heading('记录详情',task.source+' · '+fmt(task.created,false,true),[back]),workspace];
 }
 function editRaw(task){showDialog('修改原文',(body,owner)=>{const form=node('form'),input=field(form,'原文',task.text,'textarea','text');input.required=true;input.maxLength=100000;const actions=node('div','actions'),submit=node('button','primary','保存');submit.type='submit';actions.append(submit);form.append(actions);form.addEventListener('submit',event=>{event.preventDefault();guard(async()=>{submit.disabled=true;try{await api('/api/task/edit',{id:String(task.id),revision,text:input.value});closeDialog(false,owner);await render();}finally{submit.disabled=false;}});});dialogEditor={form,dirty:()=>input.value!==task.text,working:()=>submit.disabled};body.append(form);});}
@@ -664,7 +681,7 @@ async function refreshSession(manual=false){
  const ticket=sequence,latest=await api('/api/session');if(!session||ticket!==sequence)return;
  const changed=latest.revision!==session.revision||latest.acknowledgementRevision!==session.acknowledgementRevision,finished=homeworkRefreshPending&&!latest.homeworkRefreshing;session=latest;csrf=latest.csrf;applyPalette(latest.palette);updateHomeworkRefresh();
  if(finished){homeworkRefreshPending=false;toast(latest.homeworkStatus||'作业刷新已结束');}
- if(manual||finished||changed||pageOrder.includes(route)||currentTask&&['queued','processing'].includes(currentTask.task.status))await render();
+ if(manual||finished||changed||pageOrder.includes(route)||route==='calendar'||currentTask&&['queued','processing'].includes(currentTask.task.status))await render();
 }
 let pagePointerCount=0;
 document.addEventListener('pointerdown',()=>pagePointerCount++,true);

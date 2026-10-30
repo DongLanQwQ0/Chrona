@@ -6,7 +6,7 @@ const common={category:'event',zone:'Asia/Shanghai',allDay:false,location:'北�
 const proposal={state:'pending',original,original_date:'2026-10-30',targetTaskId:2,targetCandidateId:2};
 let source={...common,id:1,taskId:1,title:'无协内训 · 机械设计与3D打印',start:original,end:original+5400000,occurrenceUpdate:{...proposal}},series={...common,id:2,taskId:2,title:'无协每周内训',start:original,end:original+3600000,location:'北四-212',calendarLinked:true,needsConfirmation:false,recurrence:{frequency:'weekly',interval:1,weekdays:[5],until:null,count:null},repeatLabel:'每周五'};
 const server=http.createServer(async(req,res)=>{try{
- const url=new URL(req.url,'http://localhost'),file={'/':'index.html','/app.js':'app.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[url.pathname];res.setHeader('Cache-Control','no-store');
+ const url=new URL(req.url,'http://localhost'),file={'/':'index.html','/app.js':'app.js','/calendar.js':'calendar.js','/icons.js':'icons.js','/brand.svg':'brand.svg','/style.css':'style.css'}[url.pathname];res.setHeader('Cache-Control','no-store');
  if(file){res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(path.join(assets,file)));return;}
  let raw='';for await(const chunk of req)raw+=chunk;const body=raw?JSON.parse(raw):null;requests.push({path:url.pathname,body});let data;
  if(url.pathname==='/api/session')data={csrf:'fixture',zone:'Asia/Shanghai',calendarAllowed:true,palette:{background:'#f4f6f8',surface:'#fff',text:'#202c36',muted:'#70808e',primary:'#008582',outline:'#d7e0e7'}};

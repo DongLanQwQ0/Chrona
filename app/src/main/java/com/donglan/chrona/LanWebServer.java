@@ -58,7 +58,7 @@ final class LanWebServer extends NanoHTTPD {
         if (fetchSite != null && !(fetchSite.equals("same-origin") || fetchSite.equals("none"))) return json(Response.Status.FORBIDDEN, "来源无效");
         String path = request.getUri(); Method method = request.getMethod();
         if (method != Method.GET && method != Method.POST) return json(Response.Status.METHOD_NOT_ALLOWED, "请求方法无效");
-        if (method == Method.GET && (path.equals("/") || path.equals("/app.js") || path.equals("/icons.js") || path.equals("/brand.svg") || path.equals("/style.css"))) {
+        if (method == Method.GET && (path.equals("/") || path.equals("/app.js") || path.equals("/calendar.js") || path.equals("/icons.js") || path.equals("/brand.svg") || path.equals("/style.css"))) {
             String name = path.equals("/") ? "index.html" : path.substring(1);
             return newChunkedResponse(Response.Status.OK, path.endsWith(".js") ? "text/javascript; charset=utf-8" : path.endsWith(".css") ? "text/css; charset=utf-8" : path.endsWith(".svg") ? "image/svg+xml" : "text/html; charset=utf-8", context.getAssets().open("lan/" + name));
         }
@@ -97,6 +97,7 @@ final class LanWebServer extends NanoHTTPD {
         }
         if (!security.authenticated(headers.get("cookie"))) return json(Response.Status.UNAUTHORIZED, "请在手机开启局域网访问并配对");
         if (method == Method.POST && !security.write(origin, headers.get("x-chrona-csrf"))) return json(Response.Status.FORBIDDEN, "连接验证失败，请重新配对");
+        if (method == Method.GET && path.equals("/api/agenda/week-image")) return weekImage(request);
         if (method == Method.GET && path.equals("/api/sync"))
             return data(LanSyncApi.read(context, integer(request.getParms().get("page"), 0, 0, 100000)));
         if (method == Method.POST && path.equals("/api/sync/preferences"))
@@ -128,7 +129,8 @@ final class LanWebServer extends NanoHTTPD {
             return data(new JSONObject().put("csrf", security.csrf()).put("zone", ZoneId.systemDefault().getId())
                     .put("palette", new JSONObject().put("background", hex(colors.background)).put("text", hex(colors.text)).put("muted", hex(colors.muted)).put("primary", hex(colors.primary)).put("surface", hex(colors.surface)).put("outline", hex(colors.outline)))
                     .put("calendarAllowed", new CalendarStore(context).hasWritePermission()).put("calendarReadable",new CalendarStore(context).hasReadPermission())
-                    .put("systemCalendarIncluded",HomeTimelinePreferences.includesSystemCalendar(context)).put("syncStatus", new WebDavSettingsStore(context).status())
+                    .put("systemCalendarIncluded",HomeTimelinePreferences.includesSystemCalendar(context))
+                    .put("calendarSystemIncluded",CalendarSourcePreferences.includesSystem(context)).put("syncStatus", new WebDavSettingsStore(context).status())
                     .put("homeworkRefreshAvailable",homeworkAvailable).put("homeworkRefreshing",ZjuSync.homeworkRefreshing())
                     .put("homeworkStatus",homeworkAvailable?new ZjuSettingsStore(context).status():"请先在手机启用并配置作业同步")
                     .put("acknowledgementRevision",AgendaReminderPreferences.prefs(context).getLong("acknowledgement_revision",0L)));
@@ -260,7 +262,11 @@ final class LanWebServer extends NanoHTTPD {
             if(method==Method.POST&&path.equals("/api/preferences")){
                 JSONObject body=body(request,256);boolean included=bool(body,"systemCalendarIncluded");
                 if(included&&!new CalendarStore(context).hasReadPermission())return json(Response.Status.FORBIDDEN,"系统日历读取权限需在手机授予");
-                HomeTimelinePreferences.setIncludesSystemCalendar(context,included);return data(new JSONObject().put("ok",true).put("systemCalendarIncluded",included));
+                String scope=body.has("scope")?string(body,"scope",16,true):"home";
+                if(scope.equals("calendar"))CalendarSourcePreferences.setIncludesSystem(context,included);
+                else if(scope.equals("home"))HomeTimelinePreferences.setIncludesSystemCalendar(context,included);
+                else throw new IllegalArgumentException();
+                return data(new JSONObject().put("ok",true).put("systemCalendarIncluded",included));
             }
             if (path.startsWith("/api/attachment/")) return method == Method.GET ? attachment(request) : json(Response.Status.METHOD_NOT_ALLOWED,"请求方法无效");
             if (path.equals("/api/ics") && method != Method.GET) return json(Response.Status.METHOD_NOT_ALLOWED,"请求方法无效");
@@ -282,6 +288,36 @@ final class LanWebServer extends NanoHTTPD {
                 return data(result.put("revision", store.dataRevision()));
             }
         }
+    }
+    private Response weekImage(IHTTPSession request) throws Exception {
+        String date=request.getParms().get("from");if(date==null)throw new IllegalArgumentException();
+        LocalDate from=LocalDate.parse(date);
+        if(from.getDayOfWeek()!=DayOfWeek.MONDAY)throw new IllegalArgumentException();
+        String search=request.getParms().getOrDefault("search","");
+        String index=request.getParms().getOrDefault("index","true");
+        if(search.length()>256||!Set.of("true","false").contains(index))throw new IllegalArgumentException();
+        ZoneId zone=ZoneId.systemDefault();boolean system=CalendarSourcePreferences.includesSystem(context);
+        AgendaRepository.Snapshot snapshot;
+        synchronized(AndroidSync.LOCK){
+            if(closed)return json(Response.Status.SERVICE_UNAVAILABLE,"局域网访问已关闭");
+            snapshot=AgendaRepository.load(context,from.atStartOfDay(zone).toInstant().toEpochMilli(),
+                    from.plusDays(7).atStartOfDay(zone).toInstant().toEpochMilli(),system,zone,new android.os.CancellationSignal());
+        }
+        if(snapshot.truncated||snapshot.systemUnavailable)
+            return json(Response.Status.CONFLICT,"日程尚未完整读取，请缩小范围或重试后导出");
+        File image;
+        try{image=WeekAgendaImage.write(context.getCacheDir(),from,zone,LanCalendarData.matching(snapshot.entries,search),
+                UiStyle.colors(context),search,system,Boolean.parseBoolean(index));}
+        catch(OutOfMemoryError error){return json(Response.Status.INTERNAL_ERROR,"图片过大，请用搜索缩小日程范围后导出");}
+        try{
+            if(closed){image.delete();return json(Response.Status.SERVICE_UNAVAILABLE,"局域网访问已关闭");}
+            InputStream stream=new FilterInputStream(new FileInputStream(image)){
+                @Override public void close()throws IOException{try{super.close();}finally{image.delete();}}
+            };
+            Response response=newFixedLengthResponse(Response.Status.OK,"image/png",stream,image.length());
+            response.addHeader("Content-Disposition","attachment; filename=\"Chrona-week-"+from+".png\"");
+            return response;
+        }catch(Exception error){image.delete();throw error;}
     }
     private Response read(IHTTPSession request, TaskStore store) throws Exception {
         String path = request.getUri(); JSONObject result = new JSONObject().put("revision", store.dataRevision());
@@ -397,13 +433,10 @@ final class LanWebServer extends NanoHTTPD {
             LocalDate from=LocalDate.parse(request.getParms().get("from")),until=LocalDate.parse(request.getParms().get("until"));
             if(!until.isAfter(from)||java.time.temporal.ChronoUnit.DAYS.between(from,until)>366)throw new IllegalArgumentException();
             AgendaRepository.Snapshot snapshot=AgendaRepository.load(context,from.atStartOfDay(zone).toInstant().toEpochMilli(),
-                    until.atStartOfDay(zone).toInstant().toEpochMilli(),HomeTimelinePreferences.includesSystemCalendar(context),zone,new android.os.CancellationSignal());
-            JSONArray entries=new JSONArray();
-            for(AgendaEntry item:snapshot.entries)entries.put(new JSONObject().put("id",item.id).put("taskId",item.taskId)
-                    .put("title",item.title).put("start",item.start).put("end",item.end).put("allDay",item.allDay)
-                    .put("location",item.location).put("description",item.description).put("source",item.source)
-                    .put("category",item.category).put("system",item.system).put("occurrenceAt",item.occurrenceAtMillis==null?JSONObject.NULL:item.occurrenceAtMillis).put("due",item.dueAtMillis==null?JSONObject.NULL:item.dueAtMillis));
-            return data(result.put("items",entries).put("truncated",snapshot.truncated).put("systemUnavailable",snapshot.systemUnavailable));
+                    until.atStartOfDay(zone).toInstant().toEpochMilli(),CalendarSourcePreferences.includesSystem(context),zone,new android.os.CancellationSignal());
+            JSONObject calendar=LanCalendarData.project(snapshot.entries,from,until,zone,request.getParms().getOrDefault("view","agenda"),
+                    request.getParms().getOrDefault("search",""),snapshot.truncated,snapshot.systemUnavailable);
+            return data(calendar.put("revision",store.dataRevision()));
         }
         if (path.equals("/api/home")) {
             HomeData home=new HomeData(context,store);ZoneId zone=home.zone;LocalDate date=home.today;

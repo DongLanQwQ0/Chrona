@@ -25,7 +25,8 @@ assert(source.includes('!reused.has(old.element)'),'one old node cannot be consu
 assert(source.includes('if(ticket!==sequence)return [];'),'stale async results rejected');count++;
 assert(source.includes('selected:[...selectedRows],selectionMode'),'history carries selected identities');count++;
 assert(source.includes('selectedRows.clear();selectionMode=false;for(const saved of routeState.values())'),'section switch invalidates selection');count++;
-for(const removed of ['async function calendarPage(', 'async function timetablePage(', 'function settingsPage(', 'async function sourcesDialog(', 'async function syncDialog(', 'async function detectMerges(']){assert(!source.includes(removed),removed+' removed');count++;}
+for(const removed of ['async function timetablePage(', 'function settingsPage(', 'async function sourcesDialog(', 'async function syncDialog(', 'async function detectMerges(']){assert(!source.includes(removed),removed+' removed');count++;}
+assert(source.includes("else if(route==='calendar')content=await calendarPage(ticket)"),'calendar is a nested schedule destination');count++;
 console.log('PASS '+count+' daily-list production date/state checks; rendering is checks/lan_daily_workspace_check.cjs');
 '''
 subprocess.run(['node', '-e', script], cwd=root, check=True)
