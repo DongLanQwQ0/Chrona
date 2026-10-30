@@ -1,21 +1,22 @@
-# 当前交付：0.15.78已更新手机，视觉由用户验收
+# 当前交付：0.15.79网页功能修复候选，待真机更新
 
-## 本轮已实现
+## 本轮结果
 
-- 网页筛选高光在挂载、复用、尺寸变化后按当前选中节点重新定位；Dock高光沿用原运动参数，改为真实宽高／顶部位置放大，保持圆端，不再scaleY拉伸。
-- 「＋」移出导航宿主独立固定，导航伸缩不再挤压按钮；原位渐隐、缩小与模糊退出，隐藏即停止交互。
-- 日程页右上日历图标进入年／月／周／日／日程五视图。日期条选择／前后／滑动、今天、搜索、年进入月、月选日明细、周／日全天及定时区、原生冲突分列／凌晨空段压缩／缩放、原详情与重复实例、周PNG导出均已接线。数据与分列直接调用手机仓库和CalendarTimelineLayout，导出复用WeekAgendaImage；来源开关与手机日历共用且不改首页开关，不调用AI。
+- 保留0.15.78的五视图日历、高光和独立新增按钮，不重新设计样式。修复日历搜索草稿在详情返回后被清空；查询与草稿独立，仅显式提交改变结果。
+- 修复周日历缩放把固定40px时间栏一起缩放计算而导致的焦点漂移，保持日期列及分钟焦点；不改样式和运动参数。
+- 继续使用首页、日程、收件箱三个主导航，日历是日程子页；不扩展课堂等高级网页管理。
 
-## 代码与构建证据
+## 固定候选与有效证据
 
-- build/lan-calendar-code/final-checks.txt：40项Java真实投影／分列、102项纯JS日期／坐标／活节点高光／接线通过。dates.txt为21项既有日期规则。Node语法、release及lintRelease通过final-build.txt。
-- 固定build/candidates/0.15.78/Chrona-0.15.78.apk，3294581字节，240／0.15.78、非debug、原签名。candidate.json记录六项资产与源码直接逐字节一致；candidate-package.txt／signature.txt提供元信息。最后仅补入日历子页面方向及导出按钮初始隐藏态，资产打包见final-assets-build.txt。
-- 首次安装被明确拒绝后已停止；用户允许重试后，经已连接无线ADB核对原手机10AG5S1SR4005X7并正常覆盖成功。最终23:37:24更新，原首次安装仍9月26日；phone-retry-install.txt／phone-final-install.txt／phone-package.txt。
+- build/candidates/0.15.79/Chrona-0.15.79.apk：0.15.79／241、3294641字节、非debug、原签名。build/lan-web-functional/candidate.json记录六项打包资产与源码直接逐字节一致；package.txt／signature.txt保留检查。
+- build/lan-web-functional/build.txt：release及lintRelease通过，2m10s；calendar-code.txt：生产Java投影／分列40项、日期／坐标／接线102项通过；Node语法通过。
+- daily-workspace.txt：生产资源在原Edge的三大主页面功能回归通过，覆盖鼠标／键盘／触摸导航、搜索／筛选、跨页选择、详情返回、草稿、旧请求隔离、作业定位／刷新及考试只读。请求证据另存build/lan-daily-workspace/functional-evidence.json。
+- calendar-final.txt：五视图、手机时区、原重复实例进入详情、返回草稿与横向阅读位置、缩放焦点、来源权限拒绝及独立开关、快速切月的迟到请求隔离、导出503恢复通过。两项失败复现见calendar-regression-before.txt／calendar-zoom-before.txt，修复后已通过。
 
 ## 验收边界与唯一下一步
 
-用户明确自行做视觉验收。本轮没有运行浏览器、截图、触控页面或委派UI审查；不宣称动画、像素与真实浏览器五视图已验收，也不挪用0.15.77截图。可选旧浏览器用例已迁移资源与新日历接口，但未运行。
+本轮是真实Edge＋模拟手机API的功能验证，没有截图、视觉几何验收或UI审查；用户明确自行验收视觉，不重用0.15.77截图来证明新候选。没有调用AI、修改真实日程、访问凭据或触控手机。
 
-更新后原LAN地址暂不可达（phone-static-assets.json记录URLError）。唯一下一步：用户在手机重新开启局域网访问，浏览器刷新并按正常流程授权，然后检查两处高光、独立「＋」退出与五种日历视图。没有代配对或自动继续视觉检查。手机已归还GlobalSend，源码常规提交推送，不创建小版本Release。
+ADB设备清单为空，未安装0.15.79；手机最后有效安装证据仍为0.15.78／240。下一步是设备重新在线后协调单一手机所有者，正常流式覆盖这个固定候选，核对版本与真实LAN资源；若系统拒绝立即停止，不自动重试或代确认。真实Android新日历接口／导出仍需补验，浏览器模拟检查不冒充它。未重新配对，也不以新手机数据重跑测试。
 
-全部产物在本项目build；安装流式传输，无手机公共目录暂存。用户AGENTS.md、角色toml、.backups/、.local-backups/、tools/Clean-Project.ps1不提交、不清理。历史证据见docs/validation-history.md。
+常规源码提交推送，不创建小版本Release。项目产物均在本项目build；用户AGENTS.md、角色toml、.backups/、.local-backups/、tools/Clean-Project.ps1不提交、不清理。历史交付与安装证据见docs/validation-history.md。

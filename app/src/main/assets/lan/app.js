@@ -152,7 +152,7 @@ function fmt(value,allDay=false,full=false,zone){if(value===null||value===undefi
 function statusLabel(status){return {queued:'排队中',processing:'正在处理',needs_review:'待确认',ready:'已就绪',failed:'处理失败'}[status]||status;}
 let scheduleTab=0,publication=0,todoScope=0,inboxCategory='',rangeFrom='',rangeUntil='',selectedRows=new Set(),selectionMode=false,homeworkLocate=null;
 let rangePreset=0,listSource=0,inboxOldest=false;
-let calendarView='month',calendarDate='',calendarSearch='',calendarZoom=1,calendarExportBusy=false;
+let calendarView='month',calendarDate='',calendarSearch='',calendarSearchDraft='',calendarZoom=1,calendarExportBusy=false;
 const calendarViews=[['year','年'],['month','月'],['week','周'],['day','日'],['agenda','日程']];
 const calendarPositions=new Map();
 const scheduleOrders=new Map();

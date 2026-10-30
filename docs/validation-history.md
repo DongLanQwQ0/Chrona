@@ -1,5 +1,12 @@
 # 验证记录
 
+## 0.15.79 — 网页功能续查与日历阅读状态 — 2026-10-31
+
+- 按用户「视觉由我检查」的边界，使用原Edge／同一持久profile运行功能用例，不截图、不作像素验收、不调整DPI或分辨率。`build/lan-web-functional/daily-workspace.txt`通过首页／日程／收件箱的真实鼠标、键盘、触摸操作：导航、筛选、分页与跨页选择、详情返回、草稿、异步旧结果隔离、作业定位／刷新、考试只读和批量排除；完整请求证据另存`build/lan-daily-workspace/functional-evidence.json`，未覆盖原视觉记录。
+- 首次实跑五视图基础用例通过；补查复现两处缺陷：未提交日历搜索在详情返回后变空（`calendar-regression-before.txt`），周缩放错误地连同固定40px时间栏计算横向位置，日期列焦点由0.365079偏至0.377113（`calendar-zoom-before.txt`）。分别将查询／输入草稿分开保存、按时间栏之后的可缩放轨道计算焦点；不更改已确认样式或动效参数。
+- 最终`checks/lan_calendar_navigation_check.cjs`通过，见`build/lan-web-functional/calendar-final.txt`：年366天／月42格／周跨日／日／日程、浏览器与手机不同时区、重复实例原身份进入既有详情、返回草稿、横向阅读位置、横纵缩放焦点、来源拒绝不误启用、与首页开关独立、迟到旧月份不覆盖新月份、导出503解除忙态并提示原错误、非周隐藏导出。它使用生产资源与模拟API，不替代真实Android HTTP／SQLite／日历权限或PNG内容验收。
+- Node语法、40项生产Java投影／分列与102项日期／坐标／控件接线检查通过`calendar-code.txt`。release／lintRelease通过`build.txt`（2m10s）；固定`build/candidates/0.15.79/Chrona-0.15.79.apk`3294641字节、241／0.15.79、非debug、原签名，六项打包网页资产与最终源码直接逐字节一致，见`candidate.json`／`package.txt`／`signature.txt`。本轮ADB设备清单为空，未控制手机或尝试安装；手机仍为先前0.15.78，真实Android新接口／导出待补验。不创建小版本Release。
+
 ## 0.15.78 — 网页高光、独立新增按钮与日历五视图 — 2026-10-30
 
 - 用户指出筛选文字已选中但无填充高光、按压高光圆端被纵向拉伸，以及选择栏扩宽会挤压「＋」。筛选改为挂载／复用／尺寸变化时从当前`aria-pressed`节点定位，不保留旧按钮闭包；Dock沿用原弹簧及峰值，只改真实高度／顶部位置而不scaleY。新增按钮移出导航宿主独立固定，退出不收缩自身布局宽度，保留原渐隐／缩小／模糊，导航单独扩宽。
