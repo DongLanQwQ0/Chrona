@@ -189,10 +189,12 @@ public final class ClassroomEnhancedCheck {
         reset("normal",false);File dir=materials("default",true);JSONObject result;
         try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,p->{},"保留题干条件及步骤分");}
         check(requests.size()==1&&stages.get(0).equals("legacy")&&!result.has("corrected_transcript"),"seven-argument default remains one whole-lesson draft stage");
+        draftExample(prompt(requests.get(0)));
         reset("normal",false);check(generate(materials("explicit-false",true),false).getBoolean("complete")&&requests.size()==1,"explicit false preserves default stage count");
         reset("normal",true);File illustrated=materials("default-images",true);
         try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(illustrated,LESSON,AI,2,c,p->{},"保留题干条件及步骤分");}
         check(result.getBoolean("complete")&&requests.size()==2&&!result.has("corrected_transcript"),"seven-argument illustrated default keeps original two stages over whole lesson");
+        draftExample(prompt(requests.get(0)));
         appendOnly(illustrated);evidence("default-images",illustrated);
     }
     private static void jsonEnvelope()throws Exception{
@@ -265,11 +267,36 @@ public final class ClassroomEnhancedCheck {
         check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"draft-0-repair")==1,"manual attempts never repeat successful transcript or automatic repair");
         appendOnly(repaired);evidence("repair-validation-resume",repaired);
     }
+    private static JSONObject draftExample(String prompt)throws Exception{
+        String start="完整对象：\n";int from=prompt.indexOf(start),to=prompt.indexOf("\n字段规则：",from);
+        check(from>=0&&to>from,"draft prompt contains one complete JSON example");
+        JSONObject example=new JSONObject(prompt.substring(from+start.length(),to));
+        check(example.keySet().equals(Set.of("overview","notes","assignments","image_assessment","image_requests")),"the JSON example contains all five mandatory top-level fields");
+        return example;
+    }
     private static void schemaRepair()throws Exception{
+        var modeMethod=Class.forName("com.donglan.chrona.ClassroomAutoSummary").getDeclaredMethod("enhancedMode",JSONObject.class,boolean.class);modeMethod.setAccessible(true);
+        for(boolean preferred:new boolean[]{false,true}){
+            check((boolean)modeMethod.invoke(null,null,preferred)==preferred,"new classroom uses current mode preference");
+            check((boolean)modeMethod.invoke(null,new JSONObject().put("conversation",new JSONObject()).put("final",new JSONObject()),preferred)==preferred,"completed classroom regeneration uses current mode preference");
+        }
+        for(boolean original:new boolean[]{false,true}){
+            reset("invalid-source",false);File dir=materials("mode-resume-"+original,false);rejects(()->generate(dir,original),"mode-resume fixture stops on semantic validation");JSONObject run=state(dir);String id=run.getString("run"),before=run.toString();
+            boolean retained=(boolean)modeMethod.invoke(null,run,!original);
+            check(retained==original&&run.toString().equals(before),"changed global default retains unfinished pipeline without editing checkpoint");mode="normal";
+            JSONObject result=generate(dir,retained);check(result.getBoolean("complete")&&result.getString("run").equals(id),"resume retains original run identity after global mode changes");appendOnly(dir);
+        }
+        for(int limit:new int[]{0,40})for(int count:new int[]{0,3}){
+            JSONObject example=draftExample(ClassroomSummary.draftSchema(new JSONObject().put("count",count),limit));
+            String expected=limit==0?"disabled":count==0?"unavailable":"request";
+            check(example.getJSONObject("image_assessment").getString("decision").equals(expected),"example follows actual image permission and availability");
+            check((example.getJSONArray("image_requests").length()>0)==expected.equals("request"),"disabled/unavailable example explicitly retains an empty request array");
+        }
         for(String defect:List.of("missing-requests","missing-assessment","request-type")){
             reset(defect,false);File dir=materials("schema-"+defect,false);
             check(generate(dir,true).getBoolean("complete"),"missing or mistyped image schema is repaired: "+defect);
             check(stages.equals(List.of("correct-0","draft-0","draft-0-repair")),"one appended repair without transcript regeneration: "+defect);
+            draftExample(prompt(requests.get(1)));draftExample(prompt(requests.get(2)));
             check(prompt(requests.get(2)).contains("image_requests")&&prompt(requests.get(2)).contains("image_assessment"),"repair retains the full stage-specific schema: "+defect);appendOnly(dir);
         }
         reset("missing-always",false);File bounded=materials("schema-budget",false);rejects(()->generate(bounded,true),"persistently missing schema stops after the single repair");
@@ -281,6 +308,7 @@ public final class ClassroomEnhancedCheck {
         check(requests.size()==3,"no automatic transport retry");mode="normal";failCall=-1;
         check(generate(network,true).getBoolean("complete"),"explicit resume continues the pending repair");
         check(requests.get(2).toString().equals(requests.get(3).toString()),"pending repair retry preserves the entire previously sent request");appendOnly(network);
+        defaultFlow();
     }
     private static void markdownFences()throws Exception{
         String literal="甲\\n \\n乙",paragraph="甲\n\n乙";

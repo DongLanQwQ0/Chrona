@@ -201,7 +201,10 @@ public final class ClassroomSummaryCheck {
         check(calls==3,"retry calls only failed second round");
         JSONArray firstMessages=requests.get(0).getJSONArray("messages");String firstPrompt=firstMessages.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
         check(firstMessages.getJSONObject(1).getJSONArray("content").length()==1,"first round sends no image bytes");
-        check(firstPrompt.contains("应主动请求相关时间范围")&&firstPrompt.contains("必须返回 image_assessment")&&!firstPrompt.contains("仅在确有需要时请求"),"first prompt requires explicit visual-gap review instead of optional image requests");
+        check(firstPrompt.contains("应主动核图")&&firstPrompt.contains("五个顶层字段")&&!firstPrompt.contains("仅在确有需要时请求"),"first prompt requires explicit visual-gap review instead of optional image requests");
+        String shapeMarker="完整对象：\n";int shapeStart=firstPrompt.indexOf(shapeMarker),shapeEnd=firstPrompt.indexOf("\n字段规则：",shapeStart);
+        JSONObject draftShape=new JSONObject(firstPrompt.substring(shapeStart+shapeMarker.length(),shapeEnd));
+        check(draftShape.keySet().equals(java.util.Set.of("overview","notes","assignments","image_assessment","image_requests")),"first-round complete JSON example includes the mandatory visual decision and requests");
         JSONObject imageAudit=result.getJSONObject("image_audit");
         check(imageAudit.getJSONObject("assessment").getString("decision").equals("request")&&!imageAudit.getJSONObject("assessment").getString("reason").isBlank(),"summary preserves the model's reason for requesting images");
         check(imageAudit.getInt("selected_count")==3&&imageAudit.getInt("analysed_count")==3&&checkpoint.getJSONObject("image_audit").getInt("analysed_count")==0,"audit distinguishes planned selection from actually analysed frames across failure");

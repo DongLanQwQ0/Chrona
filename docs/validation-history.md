@@ -1,5 +1,15 @@
 # 验证记录
 
+## 0.15.73 — 真机恢复、完整图片规划schema与原模式续跑 — 2026-10-30
+
+- 用户提供10.195.59.196:38711，正常ADB连接后核对原V2527A序列身份。与GlobalSend明确单一手机控制者后，从正常页面读取原C程序设计基础2026-09-23第7–8节：实际错误`No value for image_requests`，923条字幕、282→140截图及未完成入口保留；`build/global-send-link/phone-233-real-failure.txt`及同名压缩JPEG/XML。不把它描述为后台被杀或擅自断言已用几次修复。
+- 将增强整理通过正常设置保存恢复false，并重进确认；233于14:36:59正常覆盖。核对提示词发现完整JSON示例漏列两个必需图片字段，改为默认、增强及手动/修复共用五字段完整示例；未授权/无图时示例显式保留空请求数组。234正常覆盖后再次确认原设置。初次默认检查仅原字符串断言失败，改为解析真实请求中的完整示例并保留主动核图条件后，默认管线292项（同次AI请求538项）通过`default-schema-234-final-check.txt`。
+- 原全局模式改变会让未完成课堂换管线，补充共享总结入口的检查点模式选择：已有未完成conversation按实际blocks结构保持原模式，新任务及完成后重生成继续用当前偏好。真实生产helper与两向模式变更后的实际HTTP生成、原run身份、逐消息原样前缀、完整示例、有限修复及默认路径共341项通过`schema-resume-235-check.txt`。既有模型/图片预算改变产生独立任务规则未改，不修改已发送消息，也不扩大自动修复次数。
+- 最终生产debug/AndroidTest编译/release/lintRelease通过`production-235-build.txt`。固定`build/candidates/0.15.73/Chrona-0.15.73.apk`3276349字节，235/0.15.73、非debug、原签名；`candidate-235-{package,signature}.txt`及JSON。手机14:52:25正常覆盖并读回235，首次安装仍2026-09-26 18:54:37；安装前无课堂任务，证据`phone-235-{pre-install-services,install,package}.txt`。
+- 新包重进设置确认增强仍false；恢复用户原开启的LAN服务，实际地址http://10.195.59.196:8765。真实`/`、`/icons.js`、`/brand.svg`、`/app.js`均200，SVG MIME正确，`phone-235-lan-resources.json`。正常关联仍显示DongLan/Windows，不重发链接、不代替用户批准网页配对。配对信息、密码遮蔽后的JPEG/XML在`build/phone-enhanced-229/phone-235-*`，只生成/查看压缩JPEG，不写手机公共目录测试文件。
+- 主代理与原只读ui_review亲看235真机增强关闭、LAN及AI运行3张JPEG，增量实际呈现签收；无生产UI改动，233的动态清单14×2、行可达2×2、原协议32项仍适用。不据此扩展为运行中AI质量或真实iPad收件通过。
+- 按已授权原检查点启动一次剩余AI整理，原模型、服务与最多40张许可不变：全局增强false时真实直接进入核图计划0/5，未重做已完成的文稿5/5；ClassroomWorkService2043实际运行。随后仅仅读取该应用2043通知，核图计划已到1/5，越过原首块缺字段失败点，证据`phone-235-ai-{confirm,running,running-services,notification-1}.txt`。后续最终笔记、实际图片及真实usage尚待结果，不循环重试。
+
 ## 0.15.71 — GlobalSend设备列表动态更新 — 2026-10-30
 
 - 复用现有Messenger ABI：前台立即/每5秒刷新设备清单，后台、LAN关闭与销毁撤销定时器；上一请求未结束不并发。独立清单错误不清发送错误或原操作ID，清单刷新也不重启已结束的状态查询预算。设备行继续按稳定ID复用，增删沿用原UiMotion，没有新增样式或系统权限。

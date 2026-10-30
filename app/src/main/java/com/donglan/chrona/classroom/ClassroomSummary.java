@@ -87,9 +87,19 @@ public final class ClassroomSummary {
     public static String systemPrompt(String classroomPrompt) {
         return SYSTEM+(classroomPrompt.isBlank()?"":"\n以下是用户在课堂总结设置中保存的自定义要求，其语言、详略、重点与组织要求优先于默认偏好。它只用于课堂总结，不用于日程解析。仍须保留当前阶段指定格式、有效来源引用、图片预算和资料安全边界。\n用户自定义要求：\n"+classroomPrompt);
     }
-    static final String SCHEMA="返回 {\"overview\":\"全课重点\",\"notes\":[{\"title\":\"主题\",\"text\":\"详细笔记\",\"sources\":[0],\"images\":[]}],"
-            +"\"assignments\":[{\"text\":\"老师明确提出的作业或考试安排，保留原日期措辞\",\"sources\":[0]}]}。"
-            +"每条笔记和安排必须附真实字幕 id；没有安排返回空数组。notes.images仅填写本次images清单中实际file的原值；Markdown配图使用images/加同一个file。";
+    private static final String SUMMARY_FIELDS="\"overview\":\"全课重点\",\"notes\":[{\"title\":\"主题\",\"text\":\"详细笔记\",\"sources\":[0],\"images\":[]}],"
+            +"\"assignments\":[{\"text\":\"老师明确提出的作业或考试安排，保留原日期措辞\",\"sources\":[0]}]";
+    private static final String SOURCE_REQUIREMENTS="每条笔记和安排必须附真实字幕 id；没有安排返回空数组。notes.images仅填写本次images清单中实际file的原值；Markdown配图使用images/加同一个file。";
+    static final String SCHEMA="返回 {"+SUMMARY_FIELDS+"}。"+SOURCE_REQUIREMENTS;
+    static String draftSchema(JSONObject catalogue,int limit)throws Exception{
+        String decision=limit==0?"disabled":catalogue.getInt("count")==0?"unavailable":"request";
+        String requests=decision.equals("request")?"[{\"start\":0,\"end\":60,\"reason\":\"该时间范围需要核对的视觉内容\"}]":"[]";
+        return "只返回一个JSON对象，五个顶层字段overview、notes、assignments、image_assessment、image_requests全部必填，图片判断和请求必须在同一个顶层对象中。完整对象：\n{"
+                +SUMMARY_FIELDS+",\"image_assessment\":{\"decision\":\""+decision+"\",\"reason\":\"具体判断依据\"},"
+                +"\"image_requests\":"+requests+"}\n字段规则："
+                +"示例中的来源编号、时间范围及decision须按实际资料填写；无图片请求时image_requests仍必须为[]，不得省略、填null或嵌套到notes。"
+                +SOURCE_REQUIREMENTS+imageInstructions(catalogue,limit);
+    }
     public static JSONObject generate(File dir,ClassroomLesson lesson,AiSettings ai,int imageLimit,RequestControl control,ClassroomImages.Progress progress,String classroomPrompt) throws Exception {
         return generate(dir,lesson,ai,imageLimit,control,progress,classroomPrompt,false);
     }
@@ -115,18 +125,13 @@ public final class ClassroomSummary {
                     full.getJSONArray("segments").length()+" 条字幕 · 等待 AI 返回"));
             String prompt="课程："+lesson.course+"。课堂："+lesson.title+"。以下为全课字幕。"
                     +"字幕在开头、间隔至少15秒或距上个时间锚至少60秒时附start秒数，其余按顺序连续阅读；id始终对应原字幕来源。图片请求范围按这些时间锚定位。"
-                    +"长时间跨度的单句字幕可能是对齐异常，不据此推断期间内容。当前未附图片，笔记 images 必须为空。"+SCHEMA
-                    +"先判断视觉信息缺口：板书推导、图表、结构示意、课件例题、字幕不清的公式或‘看这里/如图’等依赖画面的讲解，应主动请求相关时间范围；不要仅因能概括字幕就跳过必要图片，也不要为配图凑数量。"
-                    +"必须返回 image_assessment:{\"decision\":\"request|not_needed|disabled|unavailable\",\"reason\":\"一句具体依据\"} 和 image_requests:[{\"start\":0,\"end\":60,\"reason\":\"该区间需核对的视觉信息\"}]。"
-                    +"start/end是课堂开始后的秒数，按现有字幕时间锚请求少量相关区间，不逐句重复时间戳；截图清单ranges每项为[首张秒数,末张秒数,张数]，只概括分布，不是图片内容。"
-                    +(imageLimit==0?"本次未授权图片上传，decision必须为disabled、请求为空。":catalogue.getInt("count")==0?"本次没有可用截图，decision必须为unavailable、请求为空。":
-                        "本次允许图片分析，decision为request时请求不可为空且每项写明依据；确实仅凭字幕已足够时才用not_needed并说明理由、请求为空。全课最多 "+imageLimit+" 张，只补充一轮图片；图片内容收到后再核实，不能预先编造。")
+                    +"长时间跨度的单句字幕可能是对齐异常，不据此推断期间内容。当前未附图片，笔记 images 必须为空。本模式只补充一轮图片，收到图片后再核实。"+draftSchema(catalogue,imageLimit)
                     +"资料：\n"+uploadChunk(full);
             state.put("first_system",system).put("first_prompt",prompt).put("image_catalogue",catalogue);
             ClassroomStore.write(new File(dir,"run.json"),state);
             int attempt=state.optInt("first_attempt");
             String output=conversation.text(attempt==0?"first":"first-retry-"+attempt,attempt==0?prompt:
-                    "用户已授权继续。上一条总结校验失败："+state.optString("first_error")+"。基于原有消息修正本阶段JSON，不能编造来源或图片。"+SCHEMA+imageInstructions(catalogue,imageLimit),Collections.emptyList());
+                    "用户已授权继续。上一条总结校验失败："+state.optString("first_error")+"。基于原有消息修正本阶段JSON，不能编造来源或图片。"+draftSchema(catalogue,imageLimit),Collections.emptyList());
             state.put("first_output",output);ClassroomStore.write(new File(dir,"run.json"),state);
             JSONObject draft;
             try{draft=parseObject(output);validate(draft,full);validateImageAssessment(draft,catalogue);}
@@ -193,8 +198,8 @@ public final class ClassroomSummary {
     }
     /** Compact availability, never a per-frame timestamp inventory or a claim about image content. */
     static String imageInstructions(JSONObject catalogue,int limit)throws Exception{
-        return "判断当前板块的视觉信息缺口：板书、图表、题目条件、公式或‘看这里’应主动核图，不能因为能概括字幕就忽略。"
-                +"返回image_assessment:{\"decision\":\"request|not_needed|disabled|unavailable\",\"reason\":\"具体依据\"}及image_requests:[{\"start\":0,\"end\":60,\"reason\":\"需要核对什么\"}]。时间为课堂开始后的秒数；目录ranges是[首张秒,末张秒,张数]，最多40段，不代表图片内容。未附图时images必须为空。"
+        return "判断当前板块的视觉信息缺口：板书推导、图表、结构示意、课件例题、题目条件、字幕不清的公式或‘看这里/如图’等依赖画面的讲解应主动核图，不能因为能概括字幕就忽略，也不要为配图凑数量。"
+                +"image_assessment.decision从request、not_needed、disabled、unavailable中选择一个，reason写具体依据；每个image_requests区间写明需要核对什么。时间为课堂开始后的秒数，按已有字幕时间锚选择少量相关区间，不逐句重复时间戳；目录ranges是[首张秒,末张秒,张数]，最多40段，不代表图片内容。未附图时images必须为空。"
                 +(limit==0?"本次未授权上传图片，decision=disabled且请求为空。":catalogue.getInt("count")==0?"没有可用图片，decision=unavailable且请求为空。":"全课最多"+limit+"张；确无视觉缺口才not_needed并给具体理由。request必须有非空范围和依据，不能编造未见图片。");
     }
     public static JSONObject imageCatalogue(JSONArray candidates,int limit)throws Exception {

@@ -26,6 +26,10 @@ final class ClassroomAutoSummary {
     static boolean needsAuthorization(JSONObject summary,JSONObject run){
         return (summary==null||!summary.optBoolean("complete"))&&(summary!=null||run!=null);
     }
+    /** An unfinished conversation owns its pipeline; changing the default applies to future runs. */
+    static boolean enhancedMode(JSONObject run,boolean preferred){
+        return run!=null&&run.has("conversation")&&!run.has("final")?run.has("blocks"):preferred;
+    }
     /** Called only by an explicit download/summary action; never by page loading or polling. */
     static void downloadAndSummarize(ClassroomLessonActivity.Session job)throws Exception {
         if(job.enhancedClassroom==null)job.enhancedClassroom=SchedulePreferences.load(job.app).enhancedClassroom;
@@ -51,6 +55,7 @@ final class ClassroomAutoSummary {
             if(job.imageLimit>0&&new AiSettingsStore(job.app).isImageUnsupported(ai))throw new IOException("当前 AI 服务不支持图片，请手动选择文字模式继续");
             job.control.check();if(!job.allowed())throw new IOException("学校账号已停用或更换");
             JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));
+            job.enhancedClassroom=enhancedMode(prior,Boolean.TRUE.equals(job.enhancedClassroom));
             if(prior==null||!ClassroomSummary.configKey(ai,job.imageLimit,prompt,job.enhancedClassroom).equals(prior.optString("config"))||prior.has("final")){
                 job.ignoredSummaryUpdated=previous==null?-1:previous.optLong("updated");job.summary=null;job.revision++;job.publish();
             }

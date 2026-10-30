@@ -50,6 +50,7 @@ ui = root / 'app/src/main/java/com/donglan/chrona'
 wrappers = {
     'ClassroomAutoSummary.java': 'import com.donglan.chrona.ai.ChatCompletionClient; import com.donglan.chrona.net.NetworkFailure; import com.donglan.chrona.classroom.ClassroomStore; import org.json.JSONObject; import java.io.File; public class ClassroomAutoSummary {'
         + method(ui / 'ClassroomAutoSummary.java', 'static String failureDetail(')
+        + method(ui / 'ClassroomAutoSummary.java', 'static boolean enhancedMode(')
         + method(ui / 'ClassroomAutoSummary.java', 'private static void execution(') + '}',
     'ClassroomLessonActivity.java': 'import org.json.JSONObject; import java.io.File; public class ClassroomLessonActivity { public static class Session { public File dir; public int imageLimit=40; public Session(File file){dir=file;} }'
         + method(ui / 'ClassroomLessonActivity.java', 'static String restoredFailure(') + '}',
@@ -60,6 +61,7 @@ for name, body in wrappers.items():
     paths.append(path)
 assert 'message=ClassroomAutoSummary.failureDetail(' in (ui / 'ClassroomLessonActivity.java').read_text(encoding='utf-8')
 assert 'execution(job,stopped?"interrupted":"failed",failureDetail(failure,stopped))' in (ui / 'ClassroomAutoSummary.java').read_text(encoding='utf-8')
+assert 'job.enhancedClassroom=enhancedMode(prior,Boolean.TRUE.equals(job.enhancedClassroom))' in (ui / 'ClassroomAutoSummary.java').read_text(encoding='utf-8')
 jar = root / 'build/ai-checks/json.jar'
 if not jar.is_file():
     raise RuntimeError('Existing JSON jar required; nothing will be downloaded')

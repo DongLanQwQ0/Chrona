@@ -37,7 +37,7 @@ final class ClassroomEnhancedSummary {
         for(int i=drafts.length();i<blocks.length();i++){
             status("AI 分段整理与核图计划",i,blocks.length());
             String prompt="更正文稿已全部完成。现在只整理第 "+(i+1)+" 段，对应来源id："+ids(blocks.getJSONArray(i))+"。"
-                    +"利用已有全部上下文，不重复前段笔记。"+ClassroomSummary.SCHEMA+ClassroomSummary.imageInstructions(catalogue,imageLimit)
+                    +"利用已有全部上下文，不重复前段笔记。"+ClassroomSummary.draftSchema(catalogue,imageLimit)
                     +"\n全课PPT可用目录（只表示时间分布，不是图片内容）："+catalogue;
             drafts.put(json("draft-"+i,prompt,Collections.emptyList(),value->{ClassroomSummary.validate(value,full);ClassroomSummary.validateImageAssessment(value,catalogue);}));save();
         }
