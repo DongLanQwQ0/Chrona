@@ -33,8 +33,8 @@ public final class ClassroomExport {
         if(materials==null)throw new IOException("字幕缓存不存在，无法导出来源");
         JSONArray segments=materials.getJSONArray("segments");ClassroomLesson lesson=ClassroomLesson.fromJson(summary.getJSONObject("lesson"));
         Set<String> images=ClassroomDocument.referencedImages(summary);StringBuilder md=new StringBuilder("# ").append(escape(lesson.course)).append("\n\n").append(escape(lesson.title)).append("\n\n");
-        if(!summary.optBoolean("complete"))md.append("**字幕草稿 · 图片分析尚未完成**\n\n");
-        md.append("## 重点概览\n\n").append(ClassroomDocument.exportMarkdown(summary.optString("overview"))).append("\n\n");
+        if(!summary.optBoolean("complete"))md.append("**未完成**\n\n");
+        if(!summary.optString("overview").isBlank())md.append("## 重点概览\n\n").append(ClassroomDocument.exportMarkdown(summary.getString("overview"))).append("\n\n");
         JSONArray parts=summary.getJSONArray("parts");
         for(int p=0;p<parts.length();p++) {
             JSONObject part=parts.getJSONObject(p);
@@ -47,9 +47,9 @@ public final class ClassroomExport {
                 for(int n=0;n<pics.length();n++){String file=safeImage(pics.getString(n));if(!inline.contains(file))md.append("![课堂截图](images/").append(file).append(")\n\n");}
             }
         }
-        md.append("## 课堂安排\n\n");
+        boolean assignments=false;
         for(int p=0;p<parts.length();p++){JSONArray tasks=parts.getJSONObject(p).getJSONArray("assignments");
-            for(int i=0;i<tasks.length();i++){JSONObject task=tasks.getJSONObject(i);md.append(ClassroomDocument.exportMarkdown(task.getString("text"))).append("\n\n");refs(md,task.getJSONArray("sources"),segments);}}
+            for(int i=0;i<tasks.length();i++){if(!assignments){md.append("## 课堂安排\n\n");assignments=true;}JSONObject task=tasks.getJSONObject(i);md.append(ClassroomDocument.exportMarkdown(task.getString("text"))).append("\n\n");refs(md,task.getJSONArray("sources"),segments);}}
         JSONArray selected=summary.getJSONArray("images");
         md.append("原始截图 ").append(summary.getInt("raw_images")).append(" 张；去重候选 ").append(summary.getInt("candidate_images"))
                 .append(" 张；分析 ").append(selected.length()).append(" 张。\n");

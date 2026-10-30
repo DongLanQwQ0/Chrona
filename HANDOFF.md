@@ -1,32 +1,30 @@
-# 当前交付：课堂增强整理真机验收与失败反馈修复
+# 当前交付：增强整理阅读与恢复修复，准备更新0.15.69
 
-## 范围与已实现
+## 候选与范围
 
-**0.15.68 / 230**：保留229增强整理，另修复真实失败重新进入时原因丢失。默认关闭的「增强整理」先完整更正文稿，再分块笔记／视觉缺口判断、按原权限核图及本地组装。单节、批量、监视沿用相同入口；开关纳入保存、退出保护、旋转草稿和备份。更正文稿可在原阅读器折叠查看并随原ZIP导出。
+源码 **0.15.69 / 231**；手机上次确认 **0.15.68 / 230**。本批修复更正文稿折叠热区与焦点、草稿空概览／空安排、错误的图片阶段文案，以及更正失败但尚无笔记时的「继续整理」入口。单节／批量共享导出逻辑。默认关闭的增强整理及原消息历史仅追加、真实检查点合同不变。详见`docs/features/zju/classroom-summary.md`。
 
-两种模式均冻结选项，保留已发送system、user、assistant及图片原位置，后续仅追加，不重构资料包、不摘要或裁剪历史。每次实际响应、usage、阶段及错误保存在run.json；未返回usage不声称缓存命中。增强模式每块一次格式修复，来源／图片校验失败需手动授权后追加校正；未知网络结果不自动重发。新增分段与检查点，强化改卷线索，公共段落修复保护公式及代码。业务合同见`docs/features/zju/classroom-summary.md`。
+## 有效证据
 
-## 当前证据
+- 231隔离原生应用在既有共享AVD按正常竖浅／横暗各27项通过，实际WebView触摸展开／收起、公式和代码、文末、ZIP及两次失败重进；最后入口标签定向8项通过。主代理与持续复用只读ui_review亲看压缩JPEG并签收。无学校／AI调用，未改分辨率、DPI或字体。
+- 单节／批量ZIP四个条目逐项内容相同。证据`build/enhanced-document/`内`native-{light,dark}-accepted.txt`、`native-recovery-accepted.txt`、`accepted-evidence.json`、`review-231/`最终两档及`enhanced-document-portrait-light-failure-recovery/`。早期夹具／窗口过渡失败保留，不作通过证据；详见`docs/validation-history.md`。
+- 原增强管线277／75／116／28项、默认图片39项、队列15项、偏好35项、230失败格式化49项与手机设置14项证据继续适用，未重跑无变化路径。
+- 最终231正常生产debug／AndroidTest编译／release／lintRelease通过，日志`build/enhanced-document/release-231-final-build.txt`。固定包`build/candidates/0.15.69/Chrona-0.15.69.apk`3274905字节，231／0.15.69、非debug，签名验证且与230一致；元数据与签名见`candidate-231-{package,signature}.txt`及`candidate-231.json`。尚未安装手机。
 
-- 离线回环初组277项，超长字幕／复用历史图片75项，非法引用／手动续跑116项，Markdown围栏／公式28项分别通过；原请求与合成响应在`build/classroom-enhanced-check/fixtures/`。默认CI已包含这些分组。
-- 默认管线受影响图片／续跑39项、批量队列15项、偏好／备份含35项及reader.js语法检查通过；早期失败及修复范围见`docs/validation-history.md`，没有伪报整轮通过。
-- 持续复用的只读ui_review审查源码；两项围栏保护P2已闭合；另亲看229真机普通竖横／深浅6张JPEG通过设置范围。14项真机证据`build/phone-enhanced-229/settings-result.json`。230失败格式化、落盘及恢复49项定向检查通过，复审无明确新增缺陷；设置与阅读器未变，既有设置证据继续有效。230未来失败重进文案未在真实新失败中复验。
-- 固定229源码的debug／AndroidTest编译、release与lintRelease通过，见`build/classroom-enhanced/candidate-229-build.txt`。安装包`build/candidates/0.15.67/Chrona-0.15.67.apk`为3274457字节，229／0.15.67、签名验证通过且与228一致；元数据及签名证据在同目录前缀`candidate-229-`。所有衍生输出留在项目内。
-- 固定230包`build/candidates/0.15.68/Chrona-0.15.68.apk`为3274865字节，签名与229一致、非debug。debug／AndroidTest编译／release／lintRelease通过`build/phone-enhanced-229/candidate-230-final-build.txt`；49项失败原因检查在同目录`failure-detail-check.txt`。USB正常覆盖成功，元数据读回230／0.15.68，主进程14676，首页可用；签名、包及安装证据均在同目录。
+## 真实AI结果与缺口
 
-## 用户决定与唯一下一步
+用户授权的 **C程序设计基础2026-09-23 14:15第7-8节，course87476／lesson1972361**：923条字幕、282→140截图，沿用原图片授权最多40。gpt-6-luna完成2/5更正文稿后HTTP502；用户再授权一次续跑，实际从2/5恢复，同阶段再次502。停止原样付费重试，原检查点保留。真实完整文稿／核图／最终笔记及缓存usage尚未验收，平台合成检查不替代这些结果。
 
-此前按要求只完成代码。2026-10-30用户接入USB，GlobalSend确认让出手机。229设置检查后，230同一管线v11的失败反馈修复也已正常覆盖V2527A。vivo外部来源确认由用户完成，未绕过或重复发起安装。不发Release，公共latest仍v0.15.61。不读密钥或绕过私有缓存边界取证。
+继续原轮次需服务恢复或新依据及用户再授权，保持增强开启、原模型／提示词／图片选项以复用历史。手机原增强关闭、主题跟随系统、旋转1／0此前已恢复。
 
-设置实际检查通过取消留草稿、旋转保留、放弃不保存、保存重进开启、无新修改返回不提示。原跟随系统主题及旋转1／0已恢复；增强开关原关闭，测试后保存关闭并在230重进读回确认。一次导航过退应用已用当前Chrona节点校验触控修正，错误路线不作为证据，不再盲点坐标。
+## 当前依赖与唯一下一步
 
-用户允许最近一节已有完整素材未总结课堂的正常AI用量：**C程序设计基础，2026-09-23 14:15，第7-8节，course87476／lesson1972361**，923条字幕、282→140截图；原图片授权已勾选，沿用最多40。gpt-6-luna完成2/5更正文稿后HTTP502；用户另行授权一次续跑，真实从2/5恢复但同阶段再次502。已停止原样重试；不是后台被杀，初始运行时2043前台服务正常。原检查点保留，未重做已完成课堂。
+2026-10-30已与GlobalSend线程`01a16e6f-f1c5-7081-adc4-1792a0a5d7db`协调。对端确认USB可让出，但最近双方ADB清单仅有`emulator-5554`，实体手机未连接。AVD验收结束并通知释放，未关闭／重置。231最终构建与签名已确认，下一步USB出现后先重新核对设备归属，再正常覆盖并读回版本，不重做收费请求。不发Release，公共latest仍v0.15.61。
 
-本批已交付安装并通知GlobalSend释放手机／ADB。服务恢复或获得改变失败路径的新依据后，由用户再授权继续原课堂；继续该增强轮次前恢复增强开关开启、原模型／提示词及40张权限，保持管线v11以复用原消息。完整更正文稿、核图、最终笔记与折叠／公式／导出尚未形成真实结果；真实缓存usage未取证，均不报通过。
+Chrona→真实Windows的GlobalSend联动另需用户首次显式「关联GlobalSend」及在线目标，不代用户授权。原Binder／Android接收证据保留，ABI唯一出处为对端`docs/INTEGRATION_ABI_V1.md`。
 
-## 独立依赖与边界
+## 操作约束
 
-- 上一批网页SVG／跟随手机及浏览器独立主题已在228真机资源加载验证，证据`build/lan-theme/`和验证记录；无需重复修订成熟布局。
-- GlobalSend对端为「设计跨设备传输与同步系统」`01a16e6f-f1c5-7081-adc4-1792a0a5d7db`，用户已授权协调。ADB／共享AVD已让出。完整手机→真实Windows联动仍需用户首次显式关联及在线目标，原Binder／Android接收证据保留；不代用户授权，不改对端组、凭据或软件。ABI唯一出处为对端`docs/INTEGRATION_ABI_V1.md`。
-- FastCtx未提供时使用pwsh7；AVD仅复用`F:/Android/Avd/Chrona_Classroom_36`，不克隆、清空或重置。视觉图片先压缩JPEG，不读PNG原图，不调极端分辨率／DPI。GitHub CLI只用`F:/Programs/GitHubCLI/bin/gh.exe`，保留原鉴权。
-- 用户的`AGENTS.md`、角色toml、`.backups/`、`.local-backups/`及`tools/Clean-Project.ps1`不提交、不清理。
+FastCtx未提供时使用pwsh7；产物只放本项目build。AVD仅复用`F:/Android/Avd/Chrona_Classroom_36`，先协调，不克隆／清空／重置。视觉先压缩JPEG，不读PNG原图，不调极端显示配置。不读凭据／生产私有缓存，不绕过安装拒绝。GitHub CLI只用`F:/Programs/GitHubCLI/bin/gh.exe`。
+
+用户的`AGENTS.md`、角色toml、`.backups/`、`.local-backups/`及`tools/Clean-Project.ps1`不提交、不清理。

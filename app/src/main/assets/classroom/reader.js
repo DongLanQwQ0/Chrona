@@ -62,8 +62,8 @@
     for(const key of ['text','muted','link','line'])if(theme[key])document.documentElement.style.setProperty('--'+key,theme[key]);
     document.documentElement.style.fontSize=(16*(theme.fontScale||1))+'px';
     const summary=data.summary;
-    let html=summary.complete?'':'<p class="draft">字幕草稿 · 等待图片分析</p>';
-    html+='<h2>重点概览</h2>'+md.render(summary.overview||'');
+    let html=summary.complete?'':'<p class="draft">未完成</p>';
+    if(String(summary.overview||'').trim())html+='<h2>重点概览</h2>'+md.render(summary.overview);
     let taskIndex=0;
     for(const part of summary.parts||[]){
       for(const note of part.notes||[]){

@@ -1,5 +1,14 @@
 # 验证记录
 
+## 0.15.69 — 增强文稿原生阅读、导出与失败恢复 — 2026-10-30
+
+- 串行复用既有Chrona_Classroom_36，隔离monitor.validation应用，仅创建并清理自有合成课堂，不访问学校或AI。保持设备原分辨率／DPI／字体；nativeScreen=true实测竖1080×2376、横2376×1080。原生Activity和真实WebView覆盖竖浅／横暗各27项，折叠、实际触摸展开、公式、代码、滚动文末及再收起；两次重进失败原因均完整可见。回执`build/enhanced-document/native-{light,dark}-accepted.txt`。命令尾部400/1为未使用的旧夹具参数，非实际显示配置；实际尺寸见各报告。
+- 发现折叠热区不足48dp、草稿空概览及错误图片阶段文案；在现有阅读器内修复，未另建样式。CSS约47.998783px为WebView取整，物理热区123px与48dp换算123px相符。最终压缩JPEG及报告冻结于`build/enhanced-document/review-231/{portrait-light-accepted,landscape-dark-accepted}/`；持续复用只读ui_review亲看并签收。早期冷启动ANR、夹具缺少images字段、CSS浮点比较和窗口过渡未结束的失败保留在原日志，不充作通过证据。
+- 实际单节／批量ZIP均含课堂总结.md、sources.md、更正文稿.md和引用图，四项内容逐一相同；原字幕与更正文稿区分，段落／代码转义保护且空章节不导出，证据`accepted-evidence.json`及两档实际ZIP。Host批量导出51项、失败恢复9项、历史标签5项定向通过，`batch-export-check.txt`；未重跑不受影响的整套管线。
+- 更正失败且尚无第一份笔记时，入口改为「继续整理」。真实Activity定向恢复8项通过，`native-recovery-accepted.txt`与`enhanced-document-portrait-light-failure-recovery/`；两次重进状态高度与可见高度均51px。主代理与ui_review均亲看failure-before-summary.jpg并增量签收。
+- 上述为平台原生合成证据，paid_calls=0，不证明真实模型质量或缓存usage。真实C程序设计基础的2/5检查点和两次HTTP502边界沿用0.15.68记录；没有再次付费原样重试。手机部署及最终构建状态以当前HANDOFF为准。
+- 最终正常生产debug／AndroidTest编译／release／lintRelease通过`release-231-final-build.txt`。固定`build/candidates/0.15.69/Chrona-0.15.69.apk`3274905字节，231／0.15.69、非debug，签名验证并与230一致，见同目录`candidate-231-{package,signature}.txt`及JSON。GlobalSend确认让出USB后双方均仅发现模拟器，手机未连接，未安装231；不将AVD结果写为真机升级成功。不发Release。
+
 ## 0.15.68 — 真实USB设置验收与失败原因保留 — 2026-10-30
 
 - 用户接入USB，GlobalSend所有者确认让出手机。V2527A从228正常覆盖固定229包，版本读回0.15.67；安装前无拾时运行服务。普通竖浅／横浅／竖暗／横暗实际检查新增开关、成本提示、保存操作及退出确认：取消留草稿、旋转保留、放弃重进关闭、保存重进开启、无新修改返回不提示。14项证据`build/phone-enhanced-229/settings-result.json`；ui_review亲看6张压缩JPEG独立通过受检范围。未改变分辨率、DPI或字体，不用模拟器替代手机。

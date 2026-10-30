@@ -197,7 +197,7 @@ public final class ClassroomLessonActivity extends Activity {
         cancel=button(content,"停止",()->s.cancel(),false);
         overview=text(content,"",17,false);notes=new LinearLayout(this);notes.setOrientation(LinearLayout.VERTICAL);content.addView(notes);
     }
-    private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary==null?"生成总结":s.summary.optBoolean("complete")?"重新生成":"继续整理");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
+    private void updateDetail(){prepare.setEnabled(!s.busy&&s.selected.selectable(System.currentTimeMillis()));generate.setEnabled(!s.busy&&s.prepared!=null);generate.setText(s.summary==null?(s.retryRequired?"继续整理":"生成总结"):s.summary.optBoolean("complete")?"重新生成":"继续整理");export.setEnabled(!s.busy&&s.summary!=null);cancel.setVisibility(s.busy?View.VISIBLE:View.GONE);
         prepare.setVisibility(s.prepared==null?View.VISIBLE:View.GONE);generate.setVisibility(s.prepared!=null?View.VISIBLE:View.GONE);
         delete.setEnabled(!s.deleting&&s.localInitialized&&(s.summary!=null||s.materials!=null||s.busy));cancel.setVisibility(s.busy&&!s.deleting?View.VISIBLE:View.GONE);
         if(s.prepared!=null)completion.setText("字幕就绪 · "+s.prepared.optInt("segments")+" 条\n截图 "+s.prepared.optInt("raw")+" → "+s.prepared.optInt("candidates")+" 张");else completion.setText(s.selected.state(System.currentTimeMillis()));
