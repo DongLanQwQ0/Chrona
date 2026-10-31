@@ -91,6 +91,7 @@ public class View {
  public float scaleX=1,scaleY=1;public void setScaleX(float value){scaleX=value;}public void setScaleY(float value){scaleY=value;}public float getScaleX(){return scaleX;}public float getScaleY(){return scaleY;}
  public float alpha=1;public float getAlpha(){return alpha;}public void setAlpha(float value){alpha=value;}
  public ViewPropertyAnimator animate(){return new ViewPropertyAnimator(this);}
+
  public static class ViewPropertyAnimator {
   final View view; ViewPropertyAnimator(View view){this.view=view;}
   public ViewPropertyAnimator scaleX(float v){view.scaleX=v;return this;}

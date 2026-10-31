@@ -510,6 +510,7 @@ final class DockNavigationLayout extends FrameLayout {
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
             if (left < 0) left = -DockSpring.outwardExtension(-left, maximum);
             if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
+
             int baseWidth = Math.max(1, cell.getWidth()), baseHeight = Math.max(1, cell.getHeight());
             android.view.ViewGroup.LayoutParams layout = highlightView.getLayoutParams();
             if (layout.width != baseWidth || layout.height != baseHeight)
