@@ -310,7 +310,7 @@ public class DockNavigationCheck extends Context {
   touch(3,250,30);View.advance(1000);
   DockSpring physics=new DockSpring();physics.target=2;float maxLag=0,maxPosition=0;
   for(int i=0;i<240;i++){physics.step(1f/120);maxLag=Math.max(maxLag,physics.position-physics.tailPosition);maxPosition=Math.max(maxPosition,physics.position);}
-  require(maxLag>.1f,"Leading end moves before trailing end, creating directional stretch");require(maxPosition<=2.002f,"Click converges without oscillating across its target");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.tailPosition-2)<.002f,"Both ends settle rather than leaving a long ribbon");
+  require(maxLag>.1f,"Leading end moves before trailing end, creating directional stretch");require(maxPosition<=2.06f,"Click settles with at most a 3 percent overshoot");require(Math.abs(physics.position-2)<.002f&&Math.abs(physics.tailPosition-2)<.002f,"Both ends settle rather than leaving a long ribbon");
   DockSpring fast=new DockSpring();fast.press(true);for(int i=0;i<12;i++)fast.step(1f/120);
   DockSpring tap=new DockSpring();tap.press(true);tap.step(.008f);tap.releaseWithPulse();float peak=1;
   for(int i=0;i<180;i++){tap.step(1f/120);peak=Math.max(peak,tap.scale);}
@@ -319,7 +319,7 @@ public class DockNavigationCheck extends Context {
   require(fast.scale>1.4f&&fast.scale<1.53f&&fast.bar>1.08f,"Reference press visibly swells within about 100ms without excessive overshoot");for(int i=0;i<24;i++)fast.step(1f/120);
   require(fast.scale>1.49f&&fast.bar>1.09f,"Held press settles at full size");fast.press(false);float releasedScale=fast.scale;for(int i=0;i<8;i++)fast.step(1f/120);
   require(fast.scale>1.1f&&fast.scale<releasedScale,"Release contracts through intermediate frames");for(int i=0;i<180;i++)fast.step(1f/120);
-  require(fast.scale<1.002f&&fast.bar<1.001f,"Slower release ultimately returns to rest");center();require((GradientDrawable.lastColors[0]>>>24)==0x5E&&(GradientDrawable.lastColors[1]>>>24)==0x46,"Native highlight is a glass gradient, average 32 percent alpha");
+  require(fast.scale<1.002f&&fast.bar<1.001f,"Slower release ultimately returns to rest");center();require((GradientDrawable.lastColors[0]>>>24)==0x2E&&(GradientDrawable.lastColors[1]>>>24)==0x5E&&(GradientDrawable.lastColors[2]>>>24)==0x46,"Native highlight is sheen + glass gradient");
   DockSpring pressTiming=new DockSpring(),releaseTiming=new DockSpring();pressTiming.press(true);releaseTiming.scale=1.5f;releaseTiming.bar=1.1f;releaseTiming.press(false);
   for(int i=0;i<300;i++){pressTiming.step(.001f);releaseTiming.step(.0015f);}
   require(Math.abs((pressTiming.scale-1f)-(1.5f-releaseTiming.scale))<.005f,
@@ -358,7 +358,7 @@ public class DockNavigationCheck extends Context {
    for(int i=0;i<10;i++)distant.step(1f/120f);
    distant.press(false);distant.releaseWithPulse();float peakPosition=distant.position;
    for(int i=0;i<240;i++){distant.step(1f/120f);peakPosition=Math.max(peakPosition,distant.position);}
-   require(peakPosition<=distance+.002f,"Distant tap must not oscillate past its target: pace="+pace+" distance="+distance+" peak="+peakPosition);
+   require(peakPosition<=distance*1.03f,"Distant tap overshoots by no more than 3 percent: pace="+pace+" distance="+distance+" peak="+peakPosition);
   }
   for(float speed:new float[]{-100f,25f,100f}){
    DockSpring uncapped=new DockSpring();uncapped.coast(speed,2f);

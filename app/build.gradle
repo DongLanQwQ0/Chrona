@@ -56,6 +56,13 @@ android {
             buildConfigField 'long', 'CAPSULE_DESKTOP_MILLIS', '5000L'
             matchingFallbacks = ['release']
         }
+        // Side-by-side preview of experimental UI: separate package, separate data, same key.
+        preview {
+            initWith release
+            applicationIdSuffix '.preview'
+            versionNameSuffix '-preview'
+            matchingFallbacks = ['release']
+        }
     }
 
     compileOptions {

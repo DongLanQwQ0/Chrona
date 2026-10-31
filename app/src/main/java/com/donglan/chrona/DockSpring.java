@@ -14,7 +14,15 @@ final class DockSpring {
     // Rendering stretches between them, rather than multiplying two uniform scale factors.
     float tailPosition, tailVelocity;
     float lean, leanVelocity, leanTarget, crossLean, crossLeanVelocity, crossLeanTarget;
-    static final float COAST_DAMPING = 7.5f;
+    /**
+     * Release/rebound follows the system spring model: a response time and a damping ratio.
+     * 0.38s with 0.86 damping lands just past the target and settles, instead of the previous
+     * critically damped approach that stopped dead on arrival.
+     */
+    private static final float SETTLE_RESPONSE = .38f;
+    private static final float SETTLE_DAMPING_RATIO = .93f;
+    private static final float SETTLE_OMEGA = (float) (2 * Math.PI / SETTLE_RESPONSE);
+    static final float COAST_DAMPING = 5.5f;
     private static final float EDGE_APPROACH_SLOTS = .6f;
     private static final float EDGE_APPROACH_DAMPING = 18f;
     private static final float CLICK_FREQUENCY = (float)Math.sqrt(180f);
@@ -94,7 +102,7 @@ final class DockSpring {
                     velocity *= decay;
                 }
             } else {
-                advancePosition(moveDt, CLICK_FREQUENCY);
+                advanceSpring(moveDt, SETTLE_OMEGA, SETTLE_DAMPING_RATIO);
             }
             float tailOffset = tailPosition - position;
             float tailSpeed = approachingVelocity(tailOffset, tailVelocity, TAIL_FREQUENCY);
@@ -132,6 +140,22 @@ final class DockSpring {
         // Reduce approaching velocity, never jump position or erase the trailing shape.
         return offset * speed <= 0f
                 ? Math.copySign(Math.min(Math.abs(speed), frequency * Math.abs(offset)), speed) : speed;
+    }
+
+    /** Underdamped spring step: analytic solution keeps retargeting stable frame to frame. */
+    private void advanceSpring(float seconds, float omega, float dampingRatio) {
+        if (dampingRatio >= .999f) { advancePosition(seconds, omega); return; }
+        float offset = position - target;
+        float damping = dampingRatio * omega;
+        float damped = omega * (float) Math.sqrt(1f - dampingRatio * dampingRatio);
+        float decay = (float) Math.exp(-damping * seconds);
+        float cosine = (float) Math.cos(damped * seconds);
+        float sine = (float) Math.sin(damped * seconds);
+        float next= target + decay * (offset * cosine + ((velocity + damping * offset) / damped) * sine);
+        float nextVelocity = decay * (velocity * cosine
+                - ((damping * velocity + omega * omega * offset) / damped) * sine);
+        position = next;
+        velocity = nextVelocity;
     }
 
     private void advancePosition(float seconds, float frequency) {
