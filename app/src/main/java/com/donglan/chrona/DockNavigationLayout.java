@@ -28,6 +28,8 @@ final class DockNavigationLayout extends FrameLayout {
     private final Runnable finished;
     private final DockSpring spring = new DockSpring();
     private static final int HIGHLIGHT_ALPHA = 82;
+    /** Glass gradient: brighter at the top edge, settling into the plate colour at the bottom. */
+    private static final int GLASS_TOP_ALPHA = 94, GLASS_BOTTOM_ALPHA = 70;
     private static final int MIN_LABEL_TEXT_SP = 8;
     private static final float MOTION_PLATE_SCALE = 1.12f;
     private static final float PLATE_LEAN_DP = 6f, CROSS_LEAN_DP = 4f;
@@ -81,10 +83,12 @@ final class DockNavigationLayout extends FrameLayout {
         UiSurfaces.minimumAcrylicMix(this, 54);
         float density = getResources().getDisplayMetrics().density;
         highlight.setCornerRadius(UiStyle.RADIUS_DOCK * density);
-        highlight.setColor((UiStyle.colors(context).primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
-        // A glass lens reads by its edge, not by its fill: one physical pixel of light along the
-        // rim keeps the plate legible over both the wallpaper and a bright card.
-        highlight.setStroke(Math.max(1, Math.round(density)), 0x66FFFFFF);
+        int tint = UiStyle.colors(context).primary & 0x00FFFFFF;
+        // A glass lens is not a flat block of colour: light gathers at the top edge and the fill
+        // deepens towards the bottom, while the rim stays a shade brighter than the plate.
+        highlight.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
+        highlight.setColors(new int[]{(tint | (GLASS_TOP_ALPHA << 24)), (tint | (GLASS_BOTTOM_ALPHA << 24))});
+        highlight.setStroke(Math.max(1, Math.round(density)), 0x59FFFFFF);
     }
     void setOrientation(int value) { orientation = value; items.setOrientation(value); }
     void setHighlightMovementSpeed(float speed) { spring.movementSpeed = speed; }

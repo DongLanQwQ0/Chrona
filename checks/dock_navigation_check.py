@@ -24,8 +24,9 @@ public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){
     "android/graphics/Paint.java": "package android.graphics;public class Paint {public float measureText(String text){return text.length()*14f;}}",
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
 public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight,lastLeft,lastRight;public static int lastColor; int l,r,t,b;
-public static float[] radii;public void setCornerRadius(float x){}public void setCornerRadii(float[] x){radii=x.clone();} public void setColor(int c){lastColor=c;}
-public void setStroke(int width,int color){}
+public static float[] radii;public static int[] lastColors={0,0};public void setCornerRadius(float x){}public void setCornerRadii(float[] x){radii=x.clone();} public void setColor(int c){lastColor=c;}
+public void setStroke(int width,int color){}public void setColors(int[] c){lastColors=c.clone();}public void setOrientation(Object o){}
+public static final class Orientation { public static final Orientation TOP_BOTTOM=new Orientation(); }
 public void setBounds(int l,int t,int r,int b){this.l=l;this.r=r;this.t=t;this.b=b;}
 public void draw(android.graphics.Canvas c){lastCenter=(l+r)/2f;lastWidth=r-l;lastHeight=b-t;lastLeft=l;lastRight=r;} }""",
     "android/os/SystemClock.java": "package android.os; public class SystemClock { public static long uptimeMillis(){return android.view.View.now;} }",
@@ -318,7 +319,7 @@ public class DockNavigationCheck extends Context {
   require(fast.scale>1.4f&&fast.scale<1.53f&&fast.bar>1.08f,"Reference press visibly swells within about 100ms without excessive overshoot");for(int i=0;i<24;i++)fast.step(1f/120);
   require(fast.scale>1.49f&&fast.bar>1.09f,"Held press settles at full size");fast.press(false);float releasedScale=fast.scale;for(int i=0;i<8;i++)fast.step(1f/120);
   require(fast.scale>1.1f&&fast.scale<releasedScale,"Release contracts through intermediate frames");for(int i=0;i<180;i++)fast.step(1f/120);
-  require(fast.scale<1.002f&&fast.bar<1.001f,"Slower release ultimately returns to rest");center();require((GradientDrawable.lastColor>>>24)==0x52,"Native highlight has 32 percent alpha for background blending");
+  require(fast.scale<1.002f&&fast.bar<1.001f,"Slower release ultimately returns to rest");center();require((GradientDrawable.lastColors[0]>>>24)==0x5E&&(GradientDrawable.lastColors[1]>>>24)==0x46,"Native highlight is a glass gradient, average 32 percent alpha");
   DockSpring pressTiming=new DockSpring(),releaseTiming=new DockSpring();pressTiming.press(true);releaseTiming.scale=1.5f;releaseTiming.bar=1.1f;releaseTiming.press(false);
   for(int i=0;i<300;i++){pressTiming.step(.001f);releaseTiming.step(.0015f);}
   require(Math.abs((pressTiming.scale-1f)-(1.5f-releaseTiming.scale))<.005f,
