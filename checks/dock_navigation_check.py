@@ -25,6 +25,7 @@ public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
 public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight,lastLeft,lastRight;public static int lastColor; int l,r,t,b;
 public static float[] radii;public void setCornerRadius(float x){}public void setCornerRadii(float[] x){radii=x.clone();} public void setColor(int c){lastColor=c;}
+public void setStroke(int width,int color){}
 public void setBounds(int l,int t,int r,int b){this.l=l;this.r=r;this.t=t;this.b=b;}
 public void draw(android.graphics.Canvas c){lastCenter=(l+r)/2f;lastWidth=r-l;lastHeight=b-t;lastLeft=l;lastRight=r;} }""",
     "android/os/SystemClock.java": "package android.os; public class SystemClock { public static long uptimeMillis(){return android.view.View.now;} }",

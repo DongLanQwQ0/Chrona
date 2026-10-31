@@ -79,8 +79,12 @@ final class DockNavigationLayout extends FrameLayout {
         addView(items, new FrameLayout.LayoutParams(-1, -1));
         UiStyle.dockGlass(this);
         UiSurfaces.minimumAcrylicMix(this, 54);
-        highlight.setCornerRadius(UiStyle.RADIUS_DOCK * getResources().getDisplayMetrics().density);
+        float density = getResources().getDisplayMetrics().density;
+        highlight.setCornerRadius(UiStyle.RADIUS_DOCK * density);
         highlight.setColor((UiStyle.colors(context).primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
+        // A glass lens reads by its edge, not by its fill: one physical pixel of light along the
+        // rim keeps the plate legible over both the wallpaper and a bright card.
+        highlight.setStroke(Math.max(1, Math.round(density)), 0x66FFFFFF);
     }
     void setOrientation(int value) { orientation = value; items.setOrientation(value); }
     void setHighlightMovementSpeed(float speed) { spring.movementSpeed = speed; }
