@@ -100,6 +100,7 @@ final class DashboardDockChrome {
     }
 
     private void apply(float fraction, float dockFraction) {
+        float previousHome = homeFraction, previousDock = dockHomeFraction;
         homeFraction = Math.max(0f, Math.min(1f, fraction));
         dockHomeFraction = Math.max(0f, Math.min(1f, dockFraction));
         float presence = homeFraction * homeFraction * (3f - 2f * homeFraction) * (1f - minimize);
@@ -119,7 +120,9 @@ final class DashboardDockChrome {
                 : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         captureHost.invalidate();
         captureButton.invalidate();
-        layoutMobile();
+        // Only the page-switch progress changes the dock's width; a collapse frame must not
+        // trigger a measure/layout pass from inside the render step.
+        if (homeFraction != previousHome || dockHomeFraction != previousDock) layoutMobile();
     }
 
     /** Remeasure only the dock; never stretch its labels or relayout the page behind it. */

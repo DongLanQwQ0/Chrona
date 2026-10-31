@@ -16,7 +16,7 @@ final class DockSpring {
     float lean, leanVelocity, leanTarget, crossLean, crossLeanVelocity, crossLeanTarget;
     /**
      * Release/rebound follows the system spring model: a response time and a damping ratio.
-     * 0.38s with 0.86 damping lands just past the target and settles, instead of the previous
+     * 0.38s with 0.93 damping lands just past the target and settles, instead of the previous
      * critically damped approach that stopped dead on arrival.
      */
     private static final float SETTLE_RESPONSE = .38f;
@@ -25,7 +25,6 @@ final class DockSpring {
     static final float COAST_DAMPING = 5.5f;
     private static final float EDGE_APPROACH_SLOTS = .6f;
     private static final float EDGE_APPROACH_DAMPING = 18f;
-    private static final float CLICK_FREQUENCY = (float)Math.sqrt(180f);
     private static final float FOLLOW_FREQUENCY = (float)Math.sqrt(3600f);
     private static final float TAIL_FREQUENCY = (float)Math.sqrt(300f);
     // Time-compress the previous rebound by 1.5, preserving its damping ratio.
