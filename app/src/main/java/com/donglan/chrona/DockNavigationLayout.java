@@ -60,7 +60,6 @@ final class DockNavigationLayout extends FrameLayout {
     /** The capture action outside the dock rides the same collapse so the bar never splits. */
     private java.util.function.DoubleConsumer minimizeListener;
     private final java.util.WeakHashMap<View, String> dockItemLabels = new java.util.WeakHashMap<>();
-    static boolean minimizeEnabled = true;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private boolean fullWidthMotion;
     private final Runnable finishTouch = this::finishTouch;
@@ -400,7 +399,7 @@ final class DockNavigationLayout extends FrameLayout {
     void setMinimizeListener(java.util.function.DoubleConsumer listener) { minimizeListener = listener; }
 
     void setMinimized(boolean value) {
-        if (!minimizeEnabled || vertical()) return;
+        if (vertical()) return;
         float target = value ? 1f : 0f;
         if (Math.abs(minimizeFraction - target) < .001f && minimizeAnimator == null) return;
         if (minimizeAnimator != null) { minimizeAnimator.cancel(); minimizeAnimator = null; }
