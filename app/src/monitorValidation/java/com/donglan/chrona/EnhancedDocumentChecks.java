@@ -167,7 +167,7 @@ final class EnhancedDocumentChecks {
         ClassroomExport.write(dir,new JSONObject(summary.toString()).put("complete",false).put("overview","").put("parts",new JSONArray()).put("images",new JSONArray()),draft);
         Map<String,String> provisional=entries(draft.toByteArray());
         check(provisional.containsKey("更正文稿.md")&&provisional.get("课堂总结.md").contains("**未完成**")&&!provisional.get("课堂总结.md").contains("## 重点概览")&&!provisional.get("课堂总结.md").contains("## 课堂安排"),"corrected-only draft export has an accurate state and no empty sections");
-        ByteArrayOutputStream batch=new ByteArrayOutputStream();ClassroomExport.BatchResult result=ClassroomExport.writeBatch(List.of(new ClassroomExport.LessonFiles(lesson,dir)),batch,p->{},l->{if(l!=lesson)throw new AssertionError("Unexpected fixture identity");},file->"jpg");
+        ByteArrayOutputStream batch=new ByteArrayOutputStream();ClassroomExport.BatchResult result=ClassroomExport.writeBatch(List.of(new ClassroomExport.LessonFiles(lesson,dir)),ClassroomExport.Layout.FLAT,batch,p->{},l->{if(l!=lesson)throw new AssertionError("Unexpected fixture identity");},file->"jpg");
         Map<String,String> many=entries(batch.toByteArray());check(result.success==1&&result.failures.isEmpty(),"batch uses shared complete export writer");
         String prefix=many.keySet().stream().filter(n->n.endsWith("/更正文稿.md")).findFirst().orElseThrow();prefix=prefix.substring(0,prefix.lastIndexOf('/')+1);
         check(one.get("更正文稿.md").equals(many.get(prefix+"更正文稿.md"))&&one.get("课堂总结.md").equals(many.get(prefix+"课堂总结.md")),"single and batch corrected transcript and note contents agree");

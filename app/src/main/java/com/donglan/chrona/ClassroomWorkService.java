@@ -66,7 +66,7 @@ public final class ClassroomWorkService extends Service {
         }
     }
 
-    /** A sequential batch keeps one foreground owner alive between its lesson Sessions. */
+    /** A bounded batch keeps one foreground owner alive until all its lesson Sessions finish. */
     static void holdBatch(Object owner,android.content.Context app,Runnable ready,Runnable lost){
         if(batches.containsKey(owner))throw new IllegalStateException("批量任务已在运行");
         batches.put(owner,new BatchHold(ready,lost));pendingStarts++;

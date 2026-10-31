@@ -140,12 +140,13 @@ sources += [ROOT / 'app/src/main/java/com/donglan/chrona' / name for name in (
     'HomeTimelineEntry.java', 'calendar/AllDayDates.java', 'calendar/CalendarOccurrence.java')]
 sources += [shared / name for name in ('TaskCodec.java','MergeLedger.java','SyncState.java','SyncExchange.java','WebDavClient.java')]
 sources += [ROOT / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java']
+sources += [ROOT / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomMarkdownImages.java']
 sources += [ROOT / 'checks/CandidateMergeCheck.java',ROOT / 'checks/TwoScheduleTypesCheck.java',ROOT / 'checks/SyncExchangeCheck.java',ROOT / 'checks/SnapshotBackupCheck.java',ROOT / 'checks/ReviewStatusCheck.java',ROOT / 'checks/ParseAuditStoreCheck.java']
 cache = Path(os.environ.get('GRADLE_USER_HOME','F:/Android/GradleCache')) / 'caches/modules-2/files-2.1'
 jars = [ROOT / 'build/ai-checks/json.jar']
 for group,module in [('net.sf.biweekly','biweekly'),('com.github.mangstadt','vinnie'),
                      ('com.squareup.okhttp3','okhttp'),('com.squareup.okio','okio-jvm'),
-                     ('org.jetbrains.kotlin','kotlin-stdlib')]:
+                     ('org.jetbrains.kotlin','kotlin-stdlib'),('org.commonmark','commonmark')]:
     jars += sorted(path for path in (cache / group / module).glob('*/*/*.jar')
                    if not path.name.endswith(('-sources.jar', '-javadoc.jar')))[-1:]
 classpath = os.pathsep.join(map(str,jars))

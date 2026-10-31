@@ -1,12 +1,17 @@
 package com.donglan.chrona;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 
@@ -28,6 +33,12 @@ public final class SettingsActivity extends Activity {
     private EditText customPrompt;
     private EditText classroomPrompt;
     private Switch enhancedClassroom;
+    private int classroomConcurrency;
+    private TextView classroomConcurrencyChoice;
+    private int classroomNoteStrength;
+    private TextView classroomNoteStrengthLabel;
+    private SeekBar classroomNoteStrengthSlider;
+    private ImageButton classroomNoteStrengthInfo;
     private int workStartMinutes;
     private int workEndMinutes;
     private TextView workStart;
@@ -125,6 +136,43 @@ public final class SettingsActivity extends Activity {
         classroomPrompt.setGravity(Gravity.TOP | Gravity.START);
         classroomPrompt.setText(state == null ? preferences.classroomPrompt
                 : state.getString("classroomPrompt", preferences.classroomPrompt));
+        classroomNoteStrength = state == null ? preferences.classroomNoteStrength
+                : state.getInt("classroomNoteStrength", preferences.classroomNoteStrength);
+        classroomNoteStrengthLabel = new TextView(this);
+        UiStyle.muted(classroomNoteStrengthLabel);
+        classroomNoteStrengthLabel.setTextSize(16);
+        UiStyle.addSpaced(form, classroomNoteStrengthLabel, 8, 0);
+        LinearLayout noteStrengthRow = new LinearLayout(this);
+        noteStrengthRow.setOrientation(LinearLayout.HORIZONTAL);
+        noteStrengthRow.setGravity(Gravity.CENTER_VERTICAL);
+        noteStrengthRow.setClipChildren(false);
+        noteStrengthRow.setClipToPadding(false);
+        classroomNoteStrengthSlider = new SeekBar(this);
+        classroomNoteStrengthSlider.setContentDescription("笔记整理强度");
+        classroomNoteStrengthSlider.setMin(1);
+        classroomNoteStrengthSlider.setMax(3);
+        classroomNoteStrengthSlider.setProgress(classroomNoteStrength);
+        int sliderColor = UiStyle.colors(this).primary;
+        classroomNoteStrengthSlider.setThumbTintList(ColorStateList.valueOf(sliderColor));
+        classroomNoteStrengthSlider.setProgressTintList(ColorStateList.valueOf(sliderColor));
+        classroomNoteStrengthSlider.setProgressBackgroundTintList(ColorStateList.valueOf(
+                Color.argb(72, Color.red(sliderColor), Color.green(sliderColor), Color.blue(sliderColor))));
+        noteStrengthRow.addView(classroomNoteStrengthSlider, new LinearLayout.LayoutParams(0, dp(48), 1));
+        classroomNoteStrengthInfo = UiStyle.navigationIcon(this, R.drawable.ic_info, "笔记整理强度介绍",
+                () -> startActivity(new Intent(this, ClassroomNoteStrengthActivity.class)));
+        LinearLayout.LayoutParams infoParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        infoParams.leftMargin = dp(8);
+        noteStrengthRow.addView(classroomNoteStrengthInfo, infoParams);
+        UiStyle.addSpaced(form, noteStrengthRow, 0, 4);
+        refreshClassroomNoteStrength();
+        classroomNoteStrengthSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                classroomNoteStrength = progress;
+                refreshClassroomNoteStrength();
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
         enhancedClassroom = new Switch(this);
         enhancedClassroom.setText("增强整理");
         enhancedClassroom.setTextSize(16);
@@ -139,6 +187,17 @@ public final class SettingsActivity extends Activity {
         enhancedNote.setTextSize(13);
         UiStyle.muted(enhancedNote);
         UiStyle.addSpaced(form, enhancedNote, 0, 4);
+        classroomConcurrency = state == null ? preferences.classroomConcurrency
+                : state.getInt("classroomConcurrency", preferences.classroomConcurrency);
+        classroomConcurrencyChoice = new TextView(this);
+        UiStyle.fieldTrigger(classroomConcurrencyChoice, true);
+        refreshClassroomConcurrency();
+        UiStyle.addSpaced(form, classroomConcurrencyChoice, 8, 4);
+        classroomConcurrencyChoice.setOnClickListener(view -> UiDialogs.choiceDialog(this, "课堂总结并发数",
+                new String[]{"1", "2", "3"}, classroomConcurrency - 1, position -> {
+                    classroomConcurrency = position + 1;
+                    refreshClassroomConcurrency();
+                }));
         Button save = new Button(this);
         save.setText("保存设置");
         save.setOnClickListener(view -> save());
@@ -230,7 +289,8 @@ public final class SettingsActivity extends Activity {
         return new String[]{baseUrl.getText().toString(), model.getText().toString(),
                 apiKey.getText().toString(), reasoningEffort, Integer.toString(workStartMinutes),
                 Integer.toString(workEndMinutes), customPrompt.getText().toString(),
-                classroomPrompt.getText().toString(), Boolean.toString(enhancedClassroom.isChecked())};
+                classroomPrompt.getText().toString(), Boolean.toString(enhancedClassroom.isChecked()),
+                Integer.toString(classroomConcurrency), Integer.toString(classroomNoteStrength)};
     }
 
     private void restoreForm(String[] values) {
@@ -244,6 +304,11 @@ public final class SettingsActivity extends Activity {
         customPrompt.setText(values[6]);
         classroomPrompt.setText(values[7]);
         enhancedClassroom.setChecked(Boolean.parseBoolean(values[8]));
+        classroomConcurrency = Integer.parseInt(values[9]);
+        classroomNoteStrength = Integer.parseInt(values[10]);
+        classroomNoteStrengthSlider.setProgress(classroomNoteStrength);
+        refreshClassroomNoteStrength();
+        refreshClassroomConcurrency();
         refreshWorkTime();
     }
 
@@ -295,7 +360,7 @@ public final class SettingsActivity extends Activity {
         try {
             SchedulePreferences preferences = new SchedulePreferences(workStartMinutes, workEndMinutes,
                     customPrompt.getText().toString(), classroomPrompt.getText().toString(),
-                    enhancedClassroom.isChecked());
+                    enhancedClassroom.isChecked(), classroomConcurrency, classroomNoteStrength);
             AiSettingsStore store = new AiSettingsStore(this);
             String key = apiKey.getText().toString().trim();
             if (key.isEmpty()) {
@@ -325,6 +390,17 @@ public final class SettingsActivity extends Activity {
                 + (workEndMinutes < workStartMinutes ? " · 次日" : ""));
     }
 
+    private void refreshClassroomConcurrency() {
+        classroomConcurrencyChoice.setText("课堂总结并发数  " + classroomConcurrency);
+    }
+
+    private void refreshClassroomNoteStrength() {
+        classroomNoteStrengthLabel.setText("笔记整理强度 · " + classroomNoteStrength + "档");
+        if (android.os.Build.VERSION.SDK_INT >= 30)
+            classroomNoteStrengthSlider.setStateDescription(classroomNoteStrength + "档");
+        else classroomNoteStrengthSlider.setContentDescription("笔记整理强度 · " + classroomNoteStrength + "档");
+    }
+
     @Override
     protected void onSaveInstanceState(Bundle state) {
         state.putStringArray("savedForm", savedForm);
@@ -334,6 +410,8 @@ public final class SettingsActivity extends Activity {
         state.putString("customPrompt", customPrompt.getText().toString());
         state.putString("classroomPrompt", classroomPrompt.getText().toString());
         state.putBoolean("enhancedClassroom", enhancedClassroom.isChecked());
+        state.putInt("classroomConcurrency", classroomConcurrency);
+        state.putInt("classroomNoteStrength", classroomNoteStrength);
         super.onSaveInstanceState(state);
     }
 

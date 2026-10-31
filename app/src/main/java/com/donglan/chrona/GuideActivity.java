@@ -178,10 +178,9 @@ public final class GuideActivity extends Activity {
                     Feedback.show(this, "示例已复制，可在记录页粘贴");
                 }
             });
-            // A single quiet action inside the sample, not a full-width bar: it keeps the card's
-            // own inset and leaves the same gap above and below.
+            // The preceding text already provides 12dp; the final action must keep its own bottom inset.
             LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(-2, -2);
-            copyParams.topMargin = dp(12);
+            copyParams.bottomMargin = dp(12);
             sample.addView(copy, copyParams);
             UiStyle.addSpaced(content, sample, 8, 12);
         }

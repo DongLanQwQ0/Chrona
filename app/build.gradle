@@ -6,6 +6,7 @@ dependencies {
     implementation('com.google.zxing:core:3.5.3')
     implementation('org.nanohttpd:nanohttpd:2.3.1')
     implementation('com.squareup.okhttp3:okhttp:4.12.0')
+    implementation('org.commonmark:commonmark:0.31.0')
     // iCalendar parsing and recurrence expansion; only the text reader is used.
     implementation('net.sf.biweekly:biweekly:0.6.8') {
         exclude group: 'com.fasterxml.jackson.core'
@@ -28,8 +29,8 @@ android {
         applicationId 'com.donglan.chrona'
         minSdk 26
         targetSdk 36
-        versionCode 243
-        versionName '0.15.81'
+        versionCode 244
+        versionName '0.15.82'
         testInstrumentationRunner 'com.donglan.chrona.LanAccessInstrumentation'
         buildConfigField 'long', 'CAPSULE_DESKTOP_MILLIS', '30000L'
     }

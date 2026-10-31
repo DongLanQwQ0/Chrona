@@ -61,6 +61,8 @@ public final class ClassroomSummaryCheck {
             else if(mode.equals("downgrade")&&body.has("stream_options")){status=400;type="application/json";payload="{\"error\":{\"message\":\"unsupported parameter stream_options\"}}";}
             else {
                 JSONObject generated=chunk==null?new JSONObject().put("overview","合并重点"):part(chunk);
+                if(second&&chunk!=null){JSONArray reviews=new JSONArray();JSONArray files=chunk.getJSONArray("images");
+                    for(int i=0;i<files.length();i++)reviews.put(new JSONObject().put("file",files.getJSONObject(i).getString("file")).put("status","usable").put("confidence","high").put("visible","合成测试图中的黑白线条").put("reason","合成图支持本条笔记"));generated.put("image_reviews",reviews);}
                 if(chunk!=null&&!second){
                     JSONObject catalogue=chunk.optJSONObject("image_catalogue");String decision=catalogue==null||catalogue.optInt("limit")==0?"disabled":catalogue.optInt("count")==0?"unavailable":mode.equals("no-request")?"not_needed":"request";
                     generated.put("image_assessment",new JSONObject().put("decision",decision).put("reason",decision.equals("request")?"字幕中矩阵推导依赖板书，需核对符号":"本次材料与上传策略足以确定是否需要图片"));
@@ -177,7 +179,7 @@ public final class ClassroomSummaryCheck {
     }
     private static File materialDir(String name)throws Exception {
         File dir=new File(root,name);dir.mkdirs();JSONArray segments=new JSONArray(),candidates=new JSONArray();
-        for(int i=0;i<3;i++){segments.put(segment(i*100,"字幕 "+i+"甲".repeat(5000)));Files.write(new File(dir,"raw-"+i+".img").toPath(),image(i*60));candidates.put(new JSONObject().put("raw","raw-"+i+".img").put("second",i*100).put("index",i));}
+        for(int i=0;i<3;i++){segments.put(segment(i*100,"字幕 "+i+"甲".repeat(5000)));BufferedImage board=new BufferedImage(96,96,BufferedImage.TYPE_INT_RGB);for(int y=0;y<96;y++)for(int x=0;x<96;x++)board.setRGB(x,y,(x%12<2||y%12<2)?0x101010:0xeeeeee);ImageIO.write(board,"png",new File(dir,"raw-"+i+".img"));candidates.put(new JSONObject().put("raw","raw-"+i+".img").put("second",i*100).put("index",i));}
         ClassroomStore.write(new File(dir,"materials.json"),new JSONObject().put("segments",segments).put("raw_images",3));ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject().put("images",candidates));return dir;
     }
     private static Map<String,byte[]> unzip(byte[] value)throws Exception {
@@ -279,7 +281,7 @@ public final class ClassroomSummaryCheck {
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
         check(state.getJSONObject("final_validation").getString("status").equals("succeeded")&&!state.getString("final_output").contains("image-999.jpg"),"successful continuation replaces stale failed-final evidence with current response");
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
-        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n11\nfalse\n保留英文术语"),"shared configuration key explicitly upgrades pipeline version");
+        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n11\nfalse\n保留英文术语\nfigure_policy=1"),"shared configuration key records pipeline and visual policy version");
     }
     private static void prefixedFinal()throws Exception {
         reset();mode="prefixed-final";File dir=materialDir("prefixed-final-"+System.nanoTime());JSONObject result;
@@ -476,12 +478,49 @@ public final class ClassroomSummaryCheck {
         check(foreign.isDirectory()&&sibling.isDirectory()&&cache.catalog().size()==1,"other account, other lesson and school catalogue retained");
         rejects(()->cache.summaryImage(LESSON,"image-1.jpg"),"deleted published reference is immediately unavailable");
     }
+    private static void noteStrength()throws Exception {
+        check(ClassroomNoteStrength.DEFAULT==3,"new tasks default to strength three");
+        check(ClassroomNoteStrength.instructions(1).isEmpty(),"level one leaves the established system prompt unchanged");
+        check(ClassroomSummary.configKey(AI,3,"",false,1).equals(ClassroomSummary.configKey(AI,3,"",false)),"level one preserves legacy pending config identity");
+        Set<String> keys=new HashSet<>();
+        for(int level=1;level<=3;level++){
+            keys.add(ClassroomSummary.configKey(AI,0,"自定义末尾",false,level));
+            String system=ClassroomSummary.systemPrompt("自定义末尾",level);
+            check(system.endsWith("自定义末尾"),"custom style remains last and authoritative at level "+level);
+            check(system.contains("扣分点")&&system.contains("不确定性"),"grading and uncertainty guard retained at level "+level);
+            reset();File dir=materialDir("strength-"+level+"-"+System.nanoTime());JSONObject result;
+            try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"自定义末尾",false,level);}
+            JSONObject run=ClassroomStore.read(new File(dir,"run.json"));
+            check(result.getInt("note_strength")==level&&run.getInt("note_strength")==level,"style recorded in checkpoint and published result "+level);
+            check(requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content").equals(system),"real loopback request uses selected system prompt "+level);
+        }
+        check(keys.size()==3,"each strength has a distinct new-run identity");
+        check(ClassroomSummary.systemPrompt("",3).contains("保持整理深度，压紧表达")&&ClassroomSummary.systemPrompt("",3).contains("更正文稿仍逐条保留内容"),"concise handout never compresses correction transcript");
+        rejects(()->ClassroomNoteStrength.validate(0),"invalid low strength rejected");rejects(()->ClassroomNoteStrength.validate(4),"invalid high strength rejected");
+        for(int original:new int[]{1,3}){
+            reset();failCall=2;File dir=materialDir("strength-resume-"+original+"-"+System.nanoTime());
+            try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"",false,original),"synthetic image-stage failure saved checkpoint");}
+            JSONObject pending=ClassroomStore.read(new File(dir,"run.json"));String id=pending.getString("run");
+            if(original==1){pending.remove("note_strength");ClassroomStore.write(new File(dir,"run.json"),pending);}
+            JSONArray prefix=new JSONArray(pending.getJSONObject("conversation").getJSONArray("messages").toString());
+            failCall=-1;JSONObject result;
+            try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"",false,original==1?3:1);}
+            check(result.getString("run").equals(id)&&result.getInt("note_strength")==original,"continuation keeps original strength, including legacy history "+original);
+            JSONArray resumed=requests.get(requests.size()-1).getJSONArray("messages");
+            for(int n=0;n<prefix.length();n++)check(resumed.getJSONObject(n).toString().equals(prefix.getJSONObject(n).toString()),"sent message remains exact through strength change "+original+":"+n);
+            check(calls==3,"continuation does not repeat first extraction or paid image stage");
+            try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"",false,2);}
+            check(!result.getString("run").equals(id)&&result.getInt("note_strength")==2,"completed classroom regeneration adopts new strength");
+        }
+    }
     public static void main(String[] args)throws Exception {
         root=new File(args[0]);root.mkdirs();
         if(args.length>1&&"local-lifecycle".equals(args[1])){test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);System.out.println("LocalLessonLifecycle: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Local lifecycle check failed");return;}
         HttpServer server=server();try {
+            if(args.length>1&&"note-strength".equals(args[1])){test("strength selection and immutable continuation",ClassroomSummaryCheck::noteStrength);System.out.println("NoteStrength: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Note strength check failed");return;}
             if(args.length>1&&"image-references".equals(args[1])){test("image reference validation",ClassroomSummaryCheck::validation);test("final validation evidence and continuation",ClassroomSummaryCheck::capAndFinalValidation);test("prefixed final and export",ClassroomSummaryCheck::prefixedFinal);test("final transport and cancellation audit",ClassroomSummaryCheck::finalTransportAudit);System.out.println("ImageReferences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Image reference check failed");return;}
             test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);
+            test("strength selection and immutable continuation",ClassroomSummaryCheck::noteStrength);
             test("direct and monitored download parity",ClassroomSummaryCheck::completeDownloadParity);
             test("downloaded classroom history",ClassroomSummaryCheck::downloadedHistory);
             test("subtitle compression",ClassroomSummaryCheck::subtitleCompression);

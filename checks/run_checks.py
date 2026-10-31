@@ -24,6 +24,7 @@ GROUPS = {
         "ui_library_check.py",
         "classroom_header_check.py",
         "classroom_batch_work_check.py",
+        "classroom_summary_slots_check.py",
         "classroom_foreground_notification_check.py",
         "dashboard_pagination_check.py",
         "date_interval_bar_motion_check.py",

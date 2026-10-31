@@ -4,7 +4,7 @@
   const md=window.markdownit({html:false,linkify:false,breaks:false});
   const esc=md.utils.escapeHtml;
   const safeImage=path => /^(?:images\/)?image-\d+\.jpg$/.test(path);
-  let allowed=new Set(), formulas=[], generation=0;
+  let allowed=new Set(), formulas=[], generation=0, noteImages=null;
   // Source IDs belong to structured audit metadata, not the reading copy.
   // Inline parsing leaves fenced/inline code and math tokens untouched.
   md.inline.ruler.before('link','source_id',(state)=>{
@@ -43,6 +43,7 @@
   };
   md.renderer.rules.image=(tokens,index)=>{
     const t=tokens[index],src=t.attrGet('src')||'',name=src.replace(/^images\//,'');
+    if(safeImage(src)&&allowed.has(name))noteImages?.add(name);
     return safeImage(src)&&allowed.has(name)?`<a href="action/image/${name}" aria-label="放大课堂截图"><img src="images/${name}" alt="${esc(t.content||'课堂截图')}"></a>`:esc(t.content||'图片引用无效');
   };
   md.renderer.rules.table_open=()=>'<div class="table-scroll"><table>';
@@ -78,9 +79,10 @@
     let taskIndex=0;
     for(const part of summary.parts||[]){
       for(const note of part.notes||[]){
+        const inline=new Set();noteImages=inline;
         html+='<h2>'+md.renderInline(note.title||'',{hideSourceIds:true})+'</h2>'+reading(note.text);
-        const inline=new Set([...String(note.text).matchAll(/!\[[^\]\r\n]*\]\((?:images\/)?(image-\d+\.jpg)\)/g)].map(m=>m[1]));
         for(const image of note.images||[]){const name=String(image).replace(/^images\//,'');if(!inline.has(name))html+=md.render(`![课堂截图](images/${name})`);}
+        noteImages=null;
       }
       for(const task of part.assignments||[]){
         html+=`<h2>课堂安排</h2><div class="assignment" role="link" tabindex="0" data-task="${taskIndex++}" aria-label="提取课堂安排为日程">${reading(task.text)}</div>`;

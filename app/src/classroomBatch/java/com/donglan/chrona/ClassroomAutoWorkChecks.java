@@ -26,6 +26,7 @@ final class ClassroomAutoWorkChecks {
     private final List<Integer> limits=Collections.synchronizedList(new ArrayList<>());
     private final JSONArray report=new JSONArray();private int checks;private ClassroomBatchWork batch;
     private volatile boolean fail=true;private volatile String held="";private volatile CountDownLatch entered,release;
+    private final Set<String> heldTogether=ConcurrentHashMap.newKeySet();
     private volatile String phase="setup";private volatile long heartbeat;private volatile boolean observing=true;
     private ClassroomAutoWorkChecks(Instrumentation t,Bundle a){test=t;args=a;app=t.getTargetContext();}
     static String run(Instrumentation test,Bundle args)throws Exception{return new ClassroomAutoWorkChecks(test,args).run();}
@@ -37,27 +38,30 @@ final class ClassroomAutoWorkChecks {
         Handler main=new Handler(Looper.getMainLooper());Runnable pulse=new Runnable(){public void run(){heartbeat=SystemClock.uptimeMillis();if(observing)main.postDelayed(this,250);}};main.post(pulse);
         Thread watchdog=new Thread(()->{while(observing){SystemClock.sleep(500);if(heartbeat>0&&SystemClock.uptimeMillis()-heartbeat>2500){try{JSONObject state=new JSONObject().put("phase",phase).put("main",Arrays.toString(Looper.getMainLooper().getThread().getStackTrace()));java.nio.file.Files.write(new File(output(),"main-stall.json").toPath(),state.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));}catch(Exception ignored){}}}},"AutoSummaryFixtureWatchdog");watchdog.setDaemon(true);watchdog.start();
         Map<String,?> before=new HashMap<>(school.prefs.getAll());SharedPreferences monitor=app.getSharedPreferences("chrona_classroom_monitor",0);String monitorBefore=monitor.getString(ACCOUNT,null);
+        SharedPreferences schedule=app.getSharedPreferences("chrona_schedule_preferences",0);Map<String,?> scheduleBefore=new HashMap<>(schedule.getAll());
         ClassroomAutoSummary.Generator generator=ClassroomAutoSummary.generator;ClassroomAutoSummary.Settings settings=ClassroomAutoSummary.settings;java.util.function.BooleanSupplier foreground=ClassroomAutoSummary.foreground;
         ProxySelector proxy=ProxySelector.getDefault();ClassroomStore store=new ClassroomStore(app,ACCOUNT);List<ClassroomLesson> catalog=store.catalog();
         try{
             school.save("auto-summary-fixture","synthetic-no-network");school.prefs.edit().putString("account",ACCOUNT).putBoolean("enabled",true).putBoolean("homework",false).putBoolean("timetable",false).commit();
             if(Build.VERSION.SDK_INT>=33)test.getUiAutomation().grantRuntimePermission(app.getPackageName(),android.Manifest.permission.POST_NOTIFICATIONS);
             monitor.edit().remove(ACCOUNT).commit();new ClassroomMonitorStore(app,ACCOUNT).summaryImages(false);
+            var configured=com.donglan.chrona.ai.SchedulePreferences.load(app);
+            new com.donglan.chrona.ai.SchedulePreferences(configured.workStartMinutes,configured.workEndMinutes,configured.customPrompt,configured.classroomPrompt,configured.enhancedClassroom,3).save(app);
             ProxySelector.setDefault(new ProxySelector(){public List<Proxy> select(URI uri){routes.incrementAndGet();throw new SecurityException("Fixture has no network route");}public void connectFailed(URI u,SocketAddress a,IOException e){}});
             ClassroomAutoSummary.settings=c->new AiSettings("https://fixture.invalid","auto-work-fixture","synthetic-unused");
             ClassroomAutoSummary.generator=(job,ai,prompt)->{
                 if(job.summaryAuthorized)authorizationConsumed=false;
                 calls.incrementAndGet();limits.add(job.imageLimit);
-                if(job.selected.id.equals(held)){entered.countDown();while(!release.await(30,TimeUnit.MILLISECONDS))job.control.check();job.control.check();}
+                if(job.selected.id.equals(held)||heldTogether.contains(job.selected.id)){entered.countDown();while(!release.await(30,TimeUnit.MILLISECONDS))job.control.check();job.control.check();}
                 if(fail&&job.selected.id.equals(lessons.get(1).id))throw new IOException("Synthetic generation failure");
                 JSONObject summary=new JSONObject().put("lesson",job.selected.json()).put("complete",true).put("updated",System.currentTimeMillis()).put("parts",new JSONArray());
                 ClassroomStore.write(new File(job.dir,"summary.json"),summary);return summary;
             };
             String id=Long.toUnsignedString(System.nanoTime());long now=System.currentTimeMillis();
-            String[] names={"自动总结甲","自动总结失败","自动总结乙","已有完整总结","图片快照甲","图片快照乙","取消总结","未开始总结","历史未总结","单节自动总结","缺失素材重试","未下载课堂"};
+            String[] names={"自动总结甲","自动总结失败","自动总结乙","已有完整总结","图片快照甲","图片快照乙","取消总结甲","取消总结乙","历史未总结","单节自动总结","缺失素材重试","未下载课堂","取消总结丙","未开始总结"};
             for(int i=0;i<names.length;i++){
                 ClassroomLesson lesson=new ClassroomLesson("777164",id+i,names[i],"第 "+(i+1)+" 讲","隔离验收教室","6",now-(i+1)*3600000L);lessons.add(lesson);
-                if(i<10)materials(store.localLesson(lesson),lesson);
+                if(i<10||i>=12)materials(store.localLesson(lesson),lesson);
             }
             ClassroomStore.write(new File(store.localLesson(lessons.get(3)),"summary.json"),summary(lessons.get(3),true));
             ClassroomStore.write(new File(store.localLesson(lessons.get(10)),"run.json"),new JSONObject().put("execution",new JSONObject().put("state","failed").put("imageLimit",0).put("detail","Synthetic prior failure")));
@@ -80,9 +84,11 @@ final class ClassroomAutoWorkChecks {
             check(app.getSystemService(ActivityManager.class).getRunningServices(100).stream().anyMatch(s->s.service.getClassName().equals(ClassroomWorkService.class.getName())&&s.foreground),"summary phase remains under the actual Android foreground service");
             monitoring.summaryImages(false);release.countDown();settled();
             check(limits.get(limits.size()-1)==40&&limits.get(limits.size()-2)==40,"whole batch preserves the original 40-image permission snapshot");
-            held=lessons.get(6).id;entered=new CountDownLatch(1);release=new CountDownLatch(1);start(List.of(lessons.get(6),lessons.get(7)),Set.of());check(entered.await(10,TimeUnit.SECONDS),"cancelled batch reached actual summary phase");
+            held="";heldTogether.addAll(List.of(lessons.get(6).id,lessons.get(7).id,lessons.get(12).id));entered=new CountDownLatch(3);release=new CountDownLatch(1);
+            start(List.of(lessons.get(6),lessons.get(7),lessons.get(12),lessons.get(13)),Set.of());
+            check(entered.await(10,TimeUnit.SECONDS),"three batch lessons simultaneously enter the real process-wide summary gate");
             int atCancel=calls.get();test.runOnMainSync(()->batch.cancel("Fixture cancellation"));settled();release.countDown();
-            check(batch.cancelledCount==2&&calls.get()==atCancel,"stop cancels the running summary and does not start the next lesson");held="";
+            check(batch.cancelledCount==4&&calls.get()==atCancel,"stop cancels all three running summaries and never starts the queued lesson");heldTogether.clear();
             phase="ui";ui(store);
             check(authorizationConsumed,"per-lesson retry authorization is consumed before any generator call");
             check(routes.get()==0,"all native paths used existing preparation cache and fake generator; zero school or AI network requests");
@@ -99,7 +105,7 @@ final class ClassroomAutoWorkChecks {
             ClassroomAutoSummary.generator=generator;ClassroomAutoSummary.settings=settings;ClassroomAutoSummary.foreground=foreground;ProxySelector.setDefault(proxy);
             store.catalog(catalog);NotificationManager notices=app.getSystemService(NotificationManager.class);
             for(ClassroomLesson lesson:lessons){File dir=store.localLesson(lesson);if(new File(dir,"materials.json").isFile()||new File(dir,"candidates.json").isFile()||new File(dir,"summary.json").isFile())store.deleteLesson(lesson,()->{});else{new File(dir,"run.json").delete();dir.delete();}notices.cancel("classroom:"+ACCOUNT+":"+lesson.courseId+":"+lesson.id,0);}
-            if(monitorBefore==null)monitor.edit().remove(ACCOUNT).commit();else monitor.edit().putString(ACCOUNT,monitorBefore).commit();restore(school.prefs,before);
+            if(monitorBefore==null)monitor.edit().remove(ACCOUNT).commit();else monitor.edit().putString(ACCOUNT,monitorBefore).commit();restore(school.prefs,before);restore(schedule,scheduleBefore);
             java.nio.file.Files.write(new File(output(),"report.json").toPath(),report.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
     }

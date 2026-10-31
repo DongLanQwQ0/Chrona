@@ -32,6 +32,7 @@ for name, content in shared['fixtures'].items():
     paths.append(path)
 paths += [root / 'app/src/main/java/com/donglan/chrona' / name for name in shared['relative']]
 paths += [root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java',
+          root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomMarkdownImages.java',
           root / 'app/src/main/java/com/donglan/chrona/net/NetworkFailure.java',
           root / 'checks/ClassroomEnhancedCheck.java']
 # Extract only the independent production error/restore methods; no Android UI or account writes.

@@ -61,6 +61,7 @@ public final class ClassroomEnhancedCheck {
         if(mode.equals("empty-tail")&&id==1)value.put("overview","").put("notes",new JSONArray());
         if(draft)value.put("image_assessment",new JSONObject().put("decision",images?"request":"disabled").put("reason","合成板书需核对题目条件"))
                 .put("image_requests",images?new JSONArray().put(new JSONObject().put("start",mode.equals("reuse-images")?0:id*100).put("end",mode.equals("reuse-images")?120:id*100+20).put("reason","核对题干数字与步骤分")):new JSONArray());
+        if(!draft){JSONArray reviews=new JSONArray();Set<String> reviewed=new LinkedHashSet<>();for(int i=0;i<pictures.length();i++)if(reviewed.add(pictures.getString(i)))reviews.put(new JSONObject().put("file",pictures.getString(i)).put("status","usable").put("confidence","high").put("visible","合成图的黑白网格").put("reason","合成画面用于对应题目"));value.put("image_reviews",reviews);}
         return value;
     }
     private static HttpServer server()throws Exception{
@@ -98,7 +99,7 @@ public final class ClassroomEnhancedCheck {
             }else if(mode.equals("bad-json")&&current.equals("draft-0"))output="{\"overview\":";
             else if(mode.equals("bad-repair")&&(current.equals("draft-0")||current.endsWith("repair")))output="{\"overview\":";
             else if(mode.equals("bad-manual")&&current.endsWith("user-retry"))output="{\"overview\":";
-            else {JSONObject value=part(id,current.startsWith("draft")||current.equals("legacy"),text);
+            else {JSONObject value=part(id,current.startsWith("draft")||current.equals("legacy")&&!text.contains("本次images清单：\n")&&!text.contains("上一条最终总结"),text);
                 if(current.equals("draft-0")&&mode.equals("missing-requests")||mode.equals("missing-always")&&current.startsWith("draft"))value.remove("image_requests");
                 if(current.equals("draft-0")&&mode.equals("missing-assessment"))value.remove("image_assessment");
                 if(current.equals("draft-0")&&mode.equals("request-type"))value.put("image_requests",new JSONObject());
@@ -131,6 +132,7 @@ public final class ClassroomEnhancedCheck {
         for(int i=0;i<(longText?2:1);i++){
             segments.put(new JSONObject().put("start",i*100).put("end",i*100+20).put("text","题干 5 kg，步骤分 2 分。"+(longText?"甲".repeat(3500):"完整短字幕")));
             BufferedImage pic=new BufferedImage(48,48,BufferedImage.TYPE_INT_RGB);var g=pic.createGraphics();g.setColor(new java.awt.Color(i*60+30,i*60+30,i*60+30));g.fillRect(0,0,48,48);g.dispose();
+            for(int y=0;y<48;y++)for(int x=0;x<48;x++)pic.setRGB(x,y,(x%6<1||y%6<1)?0x101010:0xeeeeee);
             File raw=new File(dir,"raw-"+i+".img");ImageIO.write(pic,"png",raw);
             candidates.put(new JSONObject().put("raw",raw.getName()).put("index",i).put("second",i*100));
         }
@@ -535,6 +537,26 @@ public final class ClassroomEnhancedCheck {
         record.invoke(null,job,"complete","");
         check("".equals(restore.invoke(null,null,ClassroomStore.read(new File(directory,"run.json")))),"completion never shows stale failed detail");
     }
+    private static void noteStrength()throws Exception{
+        JSONArray original=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(new JSONObject().put("title","同一主题"))));
+        for(String image:List.of("image-48.jpg","image-999.jpg")){
+            JSONObject badPlan=new JSONObject().put("overview","![概览复活](images/"+image+")")
+                    .put("sections",new JSONArray().put(new JSONObject().put("title","主题").put("refs",new JSONArray().put("0:0"))));
+            rejects(()->ClassroomEnhancedSummary.validatePlan(badPlan,original),"editor overview cannot reintroduce rejected or unuploaded image");
+        }
+        reset("normal",false);File dir=materials("strength-three",false);JSONObject result;
+        try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,p->{},"保留题干条件及步骤分",true,3);}
+        check(result.getInt("note_strength")==3&&state(dir).getInt("note_strength")==3,"enhanced result and checkpoint retain selected strength");
+        check(requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content").contains("保持整理深度，压紧表达"),"enhanced requests use concise handout system");
+        String plan="",edit="";for(int i=0;i<stages.size();i++){
+            if(stages.get(i).equals("edit-plan"))plan=prompt(requests.get(i));
+            if(stages.get(i).equals("edit-note-0"))edit=prompt(requests.get(i));
+        }
+        check(plan.contains("按知识依赖重排为精简讲义"),"handout plan allows stronger organization instead of lecture-order lock");
+        check(edit.contains("保留自学需要的过程")&&edit.contains("不堆砌标题或小结"),"final editorial stage stays concise and self-study usable");
+        check(prompt(requests.get(0)).contains("不总结或删减内容"),"style never shortens correction stage");
+        appendOnly(dir);evidence("note-strength-three",dir);
+    }
     public static void main(String[] args)throws Exception{
         root=new File(args[0]);root.mkdirs();
         if(args.length==1||args[1].equals("failure-detail")){
@@ -546,7 +568,7 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
-        if(args.length==1){test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
+        if(args.length==1){test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
         if(args.length>1&&args[1].equals("schema-repair")){
             try{test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("existing semantic and manual budgets",ClassroomEnhancedCheck::validationResume);}
             finally{server.stop(0);}System.out.println("ClassroomSchemaRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Schema repair checks failed");return;

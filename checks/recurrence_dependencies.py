@@ -10,7 +10,8 @@ def recurrence_classpath():
     cache = Path(os.environ.get('GRADLE_USER_HOME', 'F:/Android/GradleCache')) / 'caches/modules-2/files-2.1'
     jars = [ROOT / 'build/ai-checks/json.jar']
     for module, version in [('net.sf.biweekly/biweekly', '0.6.8'),
-                            ('com.github.mangstadt/vinnie', '2.0.2')]:
+                            ('com.github.mangstadt/vinnie', '2.0.2'),
+                            ('org.commonmark/commonmark', '0.31.0')]:
         found = [p for p in (cache / module / version).glob('*/*.jar')
                  if not p.name.endswith(('-sources.jar', '-javadoc.jar'))]
         if len(found) != 1:

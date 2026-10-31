@@ -6,8 +6,10 @@ import subprocess
 from recurrence_dependencies import recurrence_java
 
 root = Path(__file__).resolve().parents[1]
-out = root / 'build/classroom-batch-export-check'
+out = root / 'build/classroom-export-layout/checks'
 out.mkdir(parents=True, exist_ok=True)
+temporary = out / 'tmp'
+temporary.mkdir(exist_ok=True)
 stubs = {
     'android/content/Context.java': '''package android.content; public class Context {
 private final java.io.File root;public Context(java.io.File root){this.root=root;}public java.io.File getNoBackupFilesDir(){return root;}}''',
@@ -29,6 +31,7 @@ for name, content in stubs.items():
 src = root / 'app/src/main/java/com/donglan/chrona/classroom'
 sources += [src / name for name in ['ClassroomStore.java', 'ClassroomExport.java', 'ClassroomLesson.java', 'ClassroomProgress.java']]
 sources += [root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java', root / 'checks/ClassroomBatchExportCheck.java']
+sources.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomMarkdownImages.java')
 activity = (root / 'app/src/main/java/com/donglan/chrona/ClassroomLessonActivity.java').read_text(encoding='utf-8')
 start = activity.index('    static String restoredFailure(')
 end = activity.index('{', start) + 1
@@ -81,7 +84,7 @@ def tool(name):
     return str(home) if home.is_file() else shutil.which(name)
 classes = out / 'classes'
 classes.mkdir(exist_ok=True)
-subprocess.run(recurrence_java([tool('javac'), '--release', '17', '-encoding', 'UTF-8', '-cp', str(jar), '-d', str(classes), *map(str, sources)]), check=True)
-subprocess.run(recurrence_java([tool('java'), '-Djava.awt.headless=true', '-cp', str(classes) + os.pathsep + str(jar), 'com.donglan.chrona.classroom.ClassroomBatchExportCheck', str(out / 'fixtures')]), check=True)
-subprocess.run(recurrence_java([tool('java'), '-cp', str(classes) + os.pathsep + str(jar), 'com.donglan.chrona.ClassroomFailureRestoreCheck']), check=True)
-subprocess.run(recurrence_java([tool('java'), '-cp', str(classes) + os.pathsep + str(jar), 'com.donglan.chrona.ClassroomHistoryCourseCheck']), check=True)
+subprocess.run(recurrence_java([tool('javac'), '-J-Djava.io.tmpdir=' + str(temporary), '--release', '17', '-encoding', 'UTF-8', '-cp', str(jar), '-d', str(classes), *map(str, sources)]), check=True)
+subprocess.run(recurrence_java([tool('java'), '-Djava.io.tmpdir=' + str(temporary), '-Djava.awt.headless=true', '-cp', str(classes) + os.pathsep + str(jar), 'com.donglan.chrona.classroom.ClassroomBatchExportCheck', str(out / 'fixtures')]), check=True)
+subprocess.run(recurrence_java([tool('java'), '-Djava.io.tmpdir=' + str(temporary), '-cp', str(classes) + os.pathsep + str(jar), 'com.donglan.chrona.ClassroomFailureRestoreCheck']), check=True)
+subprocess.run(recurrence_java([tool('java'), '-Djava.io.tmpdir=' + str(temporary), '-cp', str(classes) + os.pathsep + str(jar), 'com.donglan.chrona.ClassroomHistoryCourseCheck']), check=True)

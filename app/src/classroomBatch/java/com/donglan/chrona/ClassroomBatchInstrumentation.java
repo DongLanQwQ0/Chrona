@@ -34,6 +34,7 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         Context app=getTargetContext();if(!"com.donglan.chrona.batch.validation".equals(app.getPackageName())||!"ranchu".equals(Build.HARDWARE))throw new SecurityException("Synthetic batch package on shared official emulator required");
         ZjuSettingsStore settings=new ZjuSettingsStore(app);if(settings.configured()&&!settings.account().equals("00000000-0000-0000-0000-000000000036"))throw new SecurityException("Fixture refuses another account");
         WebDavSettingsStore sync=new WebDavSettingsStore(app);if(sync.configured()||sync.automatic())throw new SecurityException("Fixture refuses external sync");
+        if("figure_policy".equals(args.getString("mode"))){report.putString("figure_policy_report",ClassroomFigureDeviceChecks.run(app));finish(-1,report);return;}
         if("auto_summary".equals(args.getString("mode"))){ThemeStore.setMode(app,args.getString("theme","light"));report.putString("auto_summary_report",ClassroomAutoWorkChecks.run(this,args));finish(-1,report);return;}
         if("dashboard_batch".equals(args.getString("mode"))){ThemeStore.setMode(app,args.getString("theme","light"));report.putString("dashboard_batch_report",dashboardBatch(app));finish(-1,report);return;}
         settings.prefs.edit().putString("account","00000000-0000-0000-0000-000000000036").putString("credentials","synthetic-not-a-login").putBoolean("enabled",true).commit();
@@ -42,6 +43,7 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         if("selection_navigation".equals(args.getString("mode"))){report.putString("selection_navigation_report",selectionNavigation(app,store));finish(-1,report);return;}
         if("classroom_work".equals(args.getString("mode"))){report.putString("classroom_work_report",ClassroomWorkDeviceCheck.run(this));finish(-1,report);return;}
         if("classroom_notifications".equals(args.getString("mode"))){if(Build.VERSION.SDK_INT>=33)getUiAutomation().grantRuntimePermission(app.getPackageName(),android.Manifest.permission.POST_NOTIFICATIONS);report.putString("classroom_notifications_report",ClassroomNotificationDeviceCheck.run(this));finish(-1,report);return;}
+        if("export_layout".equals(args.getString("mode"))){report.putString("export_layout_report",exportLayout(app,store));finish(-1,report);return;}
         List<ClassroomLesson> catalog=new ArrayList<>();long now=System.currentTimeMillis();
         for(int i=0;i<54;i++){ClassroomLesson lesson=new ClassroomLesson("701",Integer.toString(71000+i),"批量课程甲","第 "+(i+1)+" 讲","教室A","6",now-(i+1)*3600000L);catalog.add(lesson);fixture(store.localLesson(lesson),lesson,i<2,i==1);}
         ClassroomLesson offline=new ClassroomLesson("702","72000","批量课程甲","离线共享课堂","","6",now-3600000L);
@@ -68,7 +70,7 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         if("true".equals(args.getString("manual_export"))){manualSeed=true;report.putString("manual_export_seed",new JSONObject().put("seedOnly",true).put("savedPickerVerified",false).put("selectedCourseId","702").put("selectedLessonId","72000").put("readyFor","Real system document picker and automatic share, owned by main agent").toString());finish(-1,report);return;}
         // The real shared writer receives the exact frozen selection and preserves sparse image 17.
         List<ClassroomLesson> selected=(List<ClassroomLesson>)invoke(page(),"selectionSnapshot");File archive=new File(app.getExternalFilesDir(null),"batch-native.zip");
-        try(OutputStream output=new FileOutputStream(archive)){ClassroomExport.BatchResult result=ClassroomExport.writeBatch(List.of(new ClassroomExport.LessonFiles(selected.get(0),store.lesson(selected.get(0)))),output,p->{},l->{},file->"jpg");require(result.success==1&&result.failures.isEmpty(),"native sparse prefixed summary exports");}
+        try(OutputStream output=new FileOutputStream(archive)){ClassroomExport.BatchResult result=ClassroomExport.writeBatch(List.of(new ClassroomExport.LessonFiles(selected.get(0),store.lesson(selected.get(0)))),ClassroomExport.Layout.FLAT,output,p->{},l->{},file->"jpg");require(result.success==1&&result.failures.isEmpty(),"native sparse prefixed summary exports");}
         // Active local work must be skipped without stopping it or marking the monitor deleted.
         ClassroomStore.begin(shared);try{tapDelete();await(()->!((String)field(session(),"operationMessage")).startsWith("正在"),"active delete result");require(new File(shared,"summary.json").isFile()&&ClassroomStore.active(shared),"active shared history is preserved");}finally{ClassroomStore.end(shared);}
         tapDelete();await(()->!shared.exists()&&!busy(),"inactive selected local copies delete");require(new ClassroomMonitorStore(app,settings.account()).read().getJSONObject("summaries").getJSONObject("702/72000").optString("state").equals("deleted"),"delete records terminal monitor state");
@@ -77,6 +79,70 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
     }catch(Throwable failure){try{capture("failure-"+args.getString("mode","classroom"));}catch(Exception captureFailure){failure.addSuppressed(captureFailure);}report.putString("error",android.util.Log.getStackTraceString(failure));finish(0,report);}finally{
         if(!manualSeed){if(lastResumed!=null)runOnMainSync(()->lastResumed.finish());if(!"dashboard_batch".equals(args.getString("mode")))new ZjuSettingsStore(getTargetContext()).prefs.edit().putBoolean("enabled",false).commit();}
     }}
+    private String exportLayout(Context app,ClassroomStore store)throws Exception {
+        List<ClassroomLesson> previous=store.catalog(),lessons=new ArrayList<>();String identity=Long.toUnsignedString(System.nanoTime());
+        long at=java.time.LocalDate.of(2026,9,23).atTime(14,15).atZone(ClassroomLesson.ZONE).toInstant().toEpochMilli();
+        for(int i=0;i<2;i++){ClassroomLesson lesson=new ClassroomLesson("777181",identity+i,"导出验证课程","2026-09-23第7-8节","教室A","6",at);lessons.add(lesson);fixture(store.localLesson(lesson),lesson,true,false);}
+        store.catalog(lessons);java.net.ProxySelector proxy=java.net.ProxySelector.getDefault();java.util.concurrent.atomic.AtomicInteger network=new java.util.concurrent.atomic.AtomicInteger();
+        java.net.ProxySelector.setDefault(new java.net.ProxySelector(){public List<java.net.Proxy> select(java.net.URI uri){network.incrementAndGet();throw new SecurityException("Export UI fixture forbids network");}public void connectFailed(java.net.URI uri,java.net.SocketAddress at,IOException error){}});
+        try{
+            long end=ClassroomExportTiming.endsAt(app,new ZjuSettingsStore(app).account(),lessons.get(0));
+            long expected=java.time.LocalDate.of(2026,9,23).atTime(15,50).atZone(ClassroomLesson.ZONE).toInstant().toEpochMilli();
+            require(end==expected,"historical period seven-eight resolves timetable period eight end");
+            List<ClassroomExport.LessonFiles> files=new ArrayList<>();for(ClassroomLesson lesson:lessons)files.add(new ClassroomExport.LessonFiles(lesson,store.lesson(lesson),end));
+            for(ClassroomExport.Layout layout:ClassroomExport.Layout.values()){
+                File archive=new File(evidenceDirectory(),"native-timestamps-"+layout+".zip");
+                try(OutputStream output=new FileOutputStream(archive)){ClassroomExport.BatchResult result=ClassroomExport.writeBatch(files,layout,output,p->{},l->{},f->"jpg");require(result.success==2,"native archive uses both classroom folders");}
+                verifyArchiveTimes(archive,end);
+            }
+            File single=new File(evidenceDirectory(),"native-timestamps-single.zip");
+            try(OutputStream output=new FileOutputStream(single)){ClassroomExport.write(store.lesson(lessons.get(0)),ClassroomStore.read(new File(store.lesson(lessons.get(0)),"summary.json")),output,p->{},end);}
+            verifyArchiveTimes(single,end);
+            Activity owner=startActivitySync(new Intent(app,ClassroomSummaryActivity.class).putExtra("classroom_mode",3).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            await(()->lastResumed==owner&&page() instanceof ClassroomSummaryPage&&!busy(),"history ready for export choices");
+            tap((View)field(page(),"historyCourse"));tapText("导出验证课程");await(()->"777181".equals(field(session(),"historyCourse")),"only owned fixtures selected");
+            enterSelectionByLongPress();tap((View)field(page(),"selectAll"));require(((Set<?>)field(session(),"selected")).size()==2,"two lessons selected");
+            openExportChoice();capture("export-layout-choices");sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);waitForIdleSync();
+            require(((List<?>)field(session(),"pendingExport")).isEmpty()&&field(session(),"exportUri")==null&&!(boolean)field(session(),"localWork"),"cancel choice starts no export or save picker");
+            for(String label:new String[]{"层级","平铺"}){
+                openExportChoice();tapText(label);
+                await(()->{var root=getUiAutomation().getRootInActiveWindow();return root!=null&&root.getPackageName()!=null&&root.getPackageName().toString().contains("documentsui");},"real system save picker for "+label);
+                require(((List<?>)field(session(),"pendingExport")).size()==2&&field(session(),"exportLayout")==("层级".equals(label)?ClassroomExport.Layout.BY_COURSE:ClassroomExport.Layout.FLAT),"save picker receives frozen layout "+label);
+                Bundle saved=new Bundle();runOnMainSync(()->{try{Method save=ClassroomSummaryPage.class.getDeclaredMethod("onSaveInstanceState",Bundle.class);save.setAccessible(true);save.invoke(page(),saved);}catch(Exception e){throw new IllegalStateException(e);}});
+                require(saved.getStringArrayList("batch_export_lessons").size()==2&&saved.getBoolean("batch_export_by_course")=="层级".equals(label),"production saved state retains pending layout "+label);
+                sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);await(()->page() instanceof ClassroomSummaryPage&&((List<?>)field(session(),"pendingExport")).isEmpty(),"cancel save picker clears pending export");
+                require(!(boolean)field(session(),"localWork")&&((Set<?>)field(session(),"selected")).size()==2,"cancel save retains selection without writing");
+                Activity previousActivity=lastResumed;Object retained=session();runOnMainSync(previousActivity::recreate);await(()->lastResumed!=previousActivity&&page() instanceof ClassroomSummaryPage,"recreate after cancelled picker");
+                require(session()==retained&&field(session(),"exportLayout")==("层级".equals(label)?ClassroomExport.Layout.BY_COURSE:ClassroomExport.Layout.FLAT),"recreate retains chosen layout "+label);
+            }
+            startActivitySync(new Intent(app,GuideActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            int expectedOrientation="landscape".equals(args.getString("orientation"))?Configuration.ORIENTATION_LANDSCAPE:Configuration.ORIENTATION_PORTRAIT;
+            await(()->lastResumed instanceof GuideActivity&&lastResumed.hasWindowFocus()&&lastResumed.getResources().getConfiguration().orientation==expectedOrientation,"guide orientation and focus ready");Activity guide=lastResumed;
+            runOnMainSync(()->{try{Method render=GuideActivity.class.getDeclaredMethod("renderStep",int.class);render.setAccessible(true);render.invoke(guide,2);}catch(Exception e){throw new IllegalStateException(e);}});waitForIdleSync();
+            View copy=findText(guide.getWindow().getDecorView(),"复制示例");require(copy!=null,"guide sample action visible");
+            await(()->copy.isAttachedToWindow()&&copy.isLaidOut()&&copy.getHeight()>0&&!copy.isLayoutRequested()&&((View)copy.getParent()).getHeight()>0&&!((View)copy.getParent()).isLayoutRequested(),"guide sample actual layout ready");
+            runOnMainSync(()->copy.requestRectangleOnScreen(new Rect(0,0,copy.getWidth(),copy.getHeight()),true));waitForIdleSync();
+            LinearLayout card=(LinearLayout)copy.getParent();float density=copy.getResources().getDisplayMetrics().density;
+            require(card.getHeight()-copy.getBottom()>=Math.round(12*density),"guide button keeps twelve dp below its measured bottom");
+            require(((LinearLayout.LayoutParams)copy.getLayoutParams()).topMargin==0,"guide does not double preceding text margin");capture("guide-sample-inset");
+            writeEvidence("export-layout-result",new JSONObject().put("assertions",assertions).put("networkCalls",network.get()).put("guideBottomInsetDp",(card.getHeight()-copy.getBottom())/density).put("native",true));
+            require(network.get()==0,"export choices and guide do not access school or AI");
+            return new JSONObject().put("assertions",assertions).put("native",true).put("theme",args.getString("theme","light")).toString();
+        }finally{
+            java.net.ProxySelector.setDefault(proxy);if(lastResumed!=null)runOnMainSync(()->lastResumed.finish());
+            for(ClassroomLesson lesson:lessons)store.deleteLesson(lesson,()->{});store.catalog(previous);
+        }
+    }
+    private void verifyArchiveTimes(File archive,long end)throws Exception{
+        try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(archive)){
+            var entries=zip.entries();int count=0;while(entries.hasMoreElements()){
+                var entry=entries.nextElement();count++;
+                require(entry.getCreationTime()!=null&&entry.getCreationTime().toMillis()==end,"native central directory creation time: "+entry.getName());
+                require(entry.getLastModifiedTime()!=null&&entry.getLastModifiedTime().toMillis()==end,"native central directory modification time: "+entry.getName());
+            }require(count>0,"native archive contains real classroom files");
+        }
+    }
+    private void openExportChoice(){View action=(View)field(page(),"batchExport");if(action.isShown())tap(action);else{tap((View)field(page(),"batchMenu"));tapText("导出 ZIP");}}
     private String selectionNavigation(Context app,ClassroomStore store)throws Exception {
         if(Build.VERSION.SDK_INT>=33)getUiAutomation().grantRuntimePermission(app.getPackageName(),android.Manifest.permission.POST_NOTIFICATIONS);
         List<ClassroomLesson> previous=store.catalog(),catalog=new ArrayList<>();
@@ -345,7 +411,8 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         if(view instanceof ViewGroup group){List<Integer> children=new ArrayList<>();for(int i=0;i<group.getChildCount();i++)children.add(i);children.sort((a,b)->{int z=Float.compare(group.getChildAt(b).getZ(),group.getChildAt(a).getZ());return z==0?Integer.compare(b,a):z;});for(int index:children){View hit=touchableAt(group.getChildAt(index),x,y);if(hit!=null)return hit;}}
         return view.isClickable()||view.isLongClickable()||view instanceof DockNavigationLayout||view instanceof ScrollView||view instanceof TextView text&&text.isTextSelectable()?view:null;
     }
-    private void writeEvidence(String name,JSONObject data)throws Exception {File target=new File(getTargetContext().getExternalFilesDir(null),"batch-"+name+"-"+args.getString("theme","light")+"-font"+args.getString("font","1")+".json");try(OutputStream out=new FileOutputStream(target)){out.write(data.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));}}
+    private File evidenceDirectory(){File dir=getTargetContext().getExternalFilesDir(null);if("export_layout".equals(args.getString("mode")))dir=new File(dir,"classroom-export-layout");dir.mkdirs();return dir;}
+    private void writeEvidence(String name,JSONObject data)throws Exception {File target=new File(evidenceDirectory(),"batch-"+name+"-"+args.getString("theme","light")+"-font"+args.getString("font","1")+".json");try(OutputStream out=new FileOutputStream(target)){out.write(data.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));}}
     private void touch(float x,float y,long duration){long down=SystemClock.uptimeMillis();MotionEvent press=MotionEvent.obtain(down,down,0,x,y,0);sendPointerSync(press);press.recycle();SystemClock.sleep(duration);MotionEvent up=MotionEvent.obtain(down,SystemClock.uptimeMillis(),1,x,y,0);sendPointerSync(up);up.recycle();waitForIdleSync();SystemClock.sleep(250);}
     private void tapText(String text){tapText(text,null);}
     private void tapText(String text,String captureBefore){
@@ -360,5 +427,5 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
             }return false;
         },"dialog option "+text);
     }
-    private void capture(String name)throws Exception {waitForIdleSync();SystemClock.sleep(350);Bitmap image=getUiAutomation().takeScreenshot();if(image==null)throw new AssertionError("No native render");float scale=Math.min(1f,1200f/Math.max(image.getWidth(),image.getHeight()));Bitmap small=Bitmap.createScaledBitmap(image,Math.round(image.getWidth()*scale),Math.round(image.getHeight()*scale),true);File target=new File(getTargetContext().getExternalFilesDir(null),"batch-"+name+"-"+args.getString("theme","light")+"-font"+args.getString("font","1")+".jpg");try(OutputStream out=new FileOutputStream(target)){small.compress(Bitmap.CompressFormat.JPEG,75,out);}if(small!=image)small.recycle();image.recycle();}
+    private void capture(String name)throws Exception {waitForIdleSync();SystemClock.sleep(350);Bitmap image=getUiAutomation().takeScreenshot();if(image==null)throw new AssertionError("No native render");float scale=Math.min(1f,1200f/Math.max(image.getWidth(),image.getHeight()));Bitmap small=Bitmap.createScaledBitmap(image,Math.round(image.getWidth()*scale),Math.round(image.getHeight()*scale),true);File target=new File(evidenceDirectory(),"batch-"+name+"-"+args.getString("theme","light")+"-font"+args.getString("font","1")+".jpg");try(OutputStream out=new FileOutputStream(target)){small.compress(Bitmap.CompressFormat.JPEG,75,out);}if(small!=image)small.recycle();image.recycle();}
 }

@@ -69,9 +69,9 @@ public final class ClassroomSummary {
     private static JSONObject finishPreparation(File dir,ClassroomLesson lesson,JSONObject materials,JSONObject candidates,
             ClassroomClient client,RequestControl control,ClassroomImages.Progress progress)throws Exception {
         progress.update(ClassroomProgress.waiting("字幕已就绪",materials.getJSONArray("segments").length()+" 条字幕 · "+materials.getInt("raw_images")+" 张原始截图"));
-        if(candidates==null){
+        if(candidates==null||candidates.optInt("visual_version")!=ClassroomFigureReview.VERSION){
             candidates=new JSONObject().put("images",ClassroomImages.prepare(dir,materials,client,control,progress))
-                    .put("lesson",lesson.json()).put("updated",System.currentTimeMillis());
+                    .put("lesson",lesson.json()).put("updated",System.currentTimeMillis()).put("visual_version",ClassroomFigureReview.VERSION);
             ClassroomStore.write(new File(dir,"candidates.json"),candidates);
         }
         if(materials.optBoolean("monitoring")){materials.put("monitoring",false);ClassroomStore.write(new File(dir,"materials.json"),materials);}
@@ -82,10 +82,24 @@ public final class ClassroomSummary {
         return configKey(ai,imageLimit,classroomPrompt,false);
     }
     public static String configKey(AiSettings ai,int imageLimit,String classroomPrompt,boolean enhanced) {
-        return ai.baseUrl+"\n"+ai.model+"\n"+ai.reasoningEffort+"\n"+imageLimit+"\n"+PIPELINE_VERSION+"\n"+enhanced+"\n"+classroomPrompt;
+        return configKey(ai,imageLimit,classroomPrompt,enhanced,1);
+    }
+    public static String configKey(AiSettings ai,int imageLimit,String classroomPrompt,boolean enhanced,int strength) {
+        return configKey(ai,imageLimit,classroomPrompt,enhanced,strength,ClassroomFigureReview.VERSION);
+    }
+    public static String configKey(AiSettings ai,int imageLimit,String classroomPrompt,boolean enhanced,int strength,int figurePolicy) {
+        ClassroomNoteStrength.validate(strength);
+        return ai.baseUrl+"\n"+ai.model+"\n"+ai.reasoningEffort+"\n"+imageLimit+"\n"+PIPELINE_VERSION+"\n"+enhanced+"\n"+classroomPrompt
+                +(strength==1?"":"\nnote_strength="+strength)+(figurePolicy==0?"":"\nfigure_policy="+figurePolicy);
     }
     public static String systemPrompt(String classroomPrompt) {
-        return SYSTEM+(classroomPrompt.isBlank()?"":"\n以下是用户在课堂总结设置中保存的自定义要求，其语言、详略、重点与组织要求优先于默认偏好。它只用于课堂总结，不用于日程解析。仍须保留当前阶段指定格式、有效来源引用、图片预算和资料安全边界。\n用户自定义要求：\n"+classroomPrompt);
+        return systemPrompt(classroomPrompt,1);
+    }
+    public static String systemPrompt(String classroomPrompt,int strength) {
+        return systemPrompt(classroomPrompt,strength,ClassroomFigureReview.VERSION);
+    }
+    private static String systemPrompt(String classroomPrompt,int strength,int figurePolicy) {
+        return SYSTEM+ClassroomNoteStrength.instructions(strength)+ClassroomFigureReview.instructions(figurePolicy)+(classroomPrompt.isBlank()?"":"\n以下是用户在课堂总结设置中保存的自定义要求，其语言、详略、重点与组织要求优先于默认偏好。它只用于课堂总结，不用于日程解析。仍须保留当前阶段指定格式、有效来源引用、图片预算和资料安全边界。\n用户自定义要求：\n"+classroomPrompt);
     }
     private static String summaryFields(boolean evidence){return "\"overview\":\"全课重点\",\"notes\":[{\"title\":\"主题\",\"text\":\"详细笔记\",\"sources\":[0],\"images\":[]}],"
             +"\"assignments\":[{\"text\":\"老师明确提出的作业或考试安排，保留原日期措辞\",\"sources\":[0]"+(evidence?",\"evidence\":\"对应明确要求的最短连续原话，逐字取自原始字幕\"":"")+"}]";}
@@ -113,19 +127,31 @@ public final class ClassroomSummary {
         return generate(dir,lesson,ai,imageLimit,control,progress,classroomPrompt,false);
     }
     public static JSONObject generate(File dir,ClassroomLesson lesson,AiSettings ai,int imageLimit,RequestControl control,ClassroomImages.Progress progress,String classroomPrompt,boolean enhanced) throws Exception {
+        return generate(dir,lesson,ai,imageLimit,control,progress,classroomPrompt,enhanced,1);
+    }
+    public static JSONObject generate(File dir,ClassroomLesson lesson,AiSettings ai,int imageLimit,RequestControl control,ClassroomImages.Progress progress,String classroomPrompt,boolean enhanced,int preferredStrength) throws Exception {
+        ClassroomNoteStrength.validate(preferredStrength);
         if(imageLimit<0||imageLimit>MAX_IMAGES)throw new IOException("图片上限应为 0 至 "+MAX_IMAGES);
         JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));
         JSONObject candidates=ClassroomStore.read(new File(dir,"candidates.json"));
         if(materials==null||candidates==null)throw new IOException("请先获取课堂素材");
         if(materials.optBoolean("monitoring"))throw new IOException("课堂素材尚未完成，请先获取完整素材");
+        JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
+        int strength=ClassroomNoteStrength.frozen(state,preferredStrength);
+        int figurePolicy=ClassroomFigureReview.policy(state);
+        String config=configKey(ai,imageLimit,classroomPrompt,enhanced,strength,figurePolicy);
+        String system=systemPrompt(classroomPrompt,strength,figurePolicy);
+        if(state==null||!config.equals(state.optString("config"))||state.has("final")){
+            figurePolicy=ClassroomFigureReview.VERSION;
+            config=configKey(ai,imageLimit,classroomPrompt,enhanced,strength,figurePolicy);
+            system=systemPrompt(classroomPrompt,strength,figurePolicy);
+            state=new JSONObject().put("config",config).put("run",java.util.UUID.randomUUID().toString());
+        }
+        state.put("note_strength",strength).put("figure_policy",figurePolicy);
+        if(figurePolicy>0&&!state.has("selected")&&imageLimit>0)ClassroomFigureReview.prepareQuality(dir,candidates,materials,control,progress);
         JSONObject catalogue=imageCatalogue(candidates.getJSONArray("images"),imageLimit);
         JSONObject full=lessonInput(materials.getJSONArray("segments"),new JSONArray()).put("image_catalogue",catalogue);
         if(full.getJSONArray("segments").length()==0)throw new IOException("课堂字幕为空");
-        String config=configKey(ai,imageLimit,classroomPrompt,enhanced);
-        String system=systemPrompt(classroomPrompt);
-        JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
-        if(state==null||!config.equals(state.optString("config"))||state.has("final"))state=new JSONObject().put("config",config)
-                .put("run",java.util.UUID.randomUUID().toString());
         ChatCompletionClient client=new ChatCompletionClient(ai,control);
         ClassroomConversation conversation=new ClassroomConversation(dir,state,client,system);
         if(enhanced)return new ClassroomEnhancedSummary(dir,lesson,state,materials,candidates,full,conversation,control,progress).generate(imageLimit);
@@ -153,12 +179,13 @@ public final class ClassroomSummary {
             JSONArray selected=new JSONArray();
             for(int i=0;i<chosen.length();i++) {
                 JSONObject image=chosen.getJSONObject(i);
-                selected.put(new JSONObject().put("file","image-"+image.getInt("index")+".jpg").put("second",image.getDouble("second")).put("raw",image.getString("raw")));
+                JSONObject row=new JSONObject().put("file","image-"+image.getInt("index")+".jpg").put("second",image.getDouble("second")).put("raw",image.getString("raw"));
+                if(image.optJSONObject("quality")!=null)row.put("quality",image.getJSONObject("quality"));selected.put(row);
             }
             state.put("selected",selected).put("image_audit",imageAudit(catalogue,state.getJSONObject("draft"),selected.length()));ClassroomStore.write(new File(dir,"run.json"),state);
         }
         JSONArray selected=state.getJSONArray("selected"),inventory=new JSONArray();
-        for(int i=0;i<selected.length();i++)inventory.put(new JSONObject().put("file",selected.getJSONObject(i).getString("file")).put("second",selected.getJSONObject(i).getDouble("second")));
+        for(int i=0;i<selected.length();i++)inventory.put(ClassroomFigureReview.inventory(selected.getJSONObject(i)));
         if(!state.has("final")) {
             JSONObject draft=state.getJSONObject("draft");
             ClassroomStore.write(new File(dir,"summary.json"),assemble(lesson,materials,candidates,state,draft,new JSONArray(),false));
@@ -175,7 +202,7 @@ public final class ClassroomSummary {
                 JSONArray allowedFiles=new JSONArray();for(int i=0;i<inventory.length();i++)allowedFiles.put(inventory.getJSONObject(i).getString("file"));
                 String prompt="沿用以上第一轮完整输入、原始输出及本次附图，修订并输出最终全课总结。历史消息不得重写。"
                         +"图片按 images 数组顺序附在请求中，第1张对应images[0].file，以此类推。file是原始稳定编号，可能不连续，绝不是本次附图的顺序号；不能自行重编号，也不能用字幕id或秒数拼文件名。"
-                        +"可引用的文件仅限本次images清单中的file原值，不能引用第一轮希望查看但本次没有附上的图片。本次可引用的file白名单："+allowedFiles+"。只引用真正支持笔记的实际附图。保留全部有效字幕来源，纠正初稿中的错误，不再请求图片。"+SCHEMA+"本次images清单：\n"+inventory;
+                        +"可引用的文件仅限本次images清单中的file原值，不能引用第一轮希望查看但本次没有附上的图片。本次可引用的file白名单："+allowedFiles+"。只引用真正支持笔记的实际附图。保留全部有效字幕来源，纠正初稿中的错误，不再请求图片。"+SCHEMA+ClassroomFigureReview.schema(figurePolicy)+"本次images清单：\n"+inventory;
                 control.check();progress.update(new ClassroomProgress("AI 结合图片完成总结",1,2,selected.length()+" 张图片 · 等待 AI 返回"));
                 state.put("final_prompt",prompt).put("final_started_at",System.currentTimeMillis());
                 state.remove("final_output");state.remove("final_finished_at");
@@ -184,9 +211,10 @@ public final class ClassroomSummary {
                 try {
                     int attempt=state.optInt("final_attempt");
                     String output=conversation.text(attempt==0?"final":"final-retry-"+attempt,attempt==0?prompt:
-                            "用户已授权继续。上一条最终总结未通过校验："+state.optString("final_error")+"。仅依据前面原始字幕和实际附图修正最终JSON，不重新编号或编造图片。"+SCHEMA,attempt==0?bytes:Collections.emptyList());
+                            "用户已授权继续。上一条最终总结未通过校验："+state.optString("final_error")+"。仅依据前面原始字幕和实际附图修正最终JSON，不重新编号或编造图片。"+SCHEMA+ClassroomFigureReview.schema(figurePolicy),attempt==0?bytes:Collections.emptyList());
                     state.put("final_output",output).put("final_finished_at",System.currentTimeMillis());ClassroomStore.write(new File(dir,"run.json"),state);
-                    try{result=parseObject(output);validate(result,lessonInput(materials.getJSONArray("segments"),inventory));}
+                    try{result=parseObject(output);validate(result,lessonInput(materials.getJSONArray("segments"),inventory));
+                        if(figurePolicy>0)ClassroomFigureReview.merge(state,ClassroomFigureReview.apply(result,inventory,inventory));}
                     catch(Exception invalid){state.put("final_attempt",attempt+1).put("final_error",invalid.getMessage());throw invalid;}
                     state.put("final_validation",new JSONObject().put("status","succeeded"));
                 } catch(Exception invalid) {
@@ -198,6 +226,7 @@ public final class ClassroomSummary {
                 state.put("final",result);
             }
             state.getJSONObject("image_audit").put("analysed_count",inventory.length());
+            if(state.has("figure_reviews"))state.getJSONObject("image_audit").put("figures",state.getJSONArray("figure_reviews"));
             ClassroomStore.write(new File(dir,"run.json"),state);
         }
         JSONObject result=assemble(lesson,materials,candidates,state,state.getJSONObject("final"),inventory,true);
@@ -284,6 +313,7 @@ public final class ClassroomSummary {
     }
     private static JSONObject assemble(ClassroomLesson lesson,JSONObject materials,JSONObject candidates,JSONObject state,JSONObject part,JSONArray analysed,boolean complete) throws Exception {
         return new JSONObject().put("lesson",lesson.json()).put("updated",System.currentTimeMillis()).put("complete",complete)
+                .put("note_strength",state.optInt("note_strength",1))
                 .put("overview",part.getString("overview")).put("parts",new JSONArray().put(part)).put("total_parts",1).put("images",analysed)
                 .put("run",state.getString("run")).put("planned_images",state.getJSONArray("selected").length())
                 .put("raw_images",materials.getInt("raw_images")).put("candidate_images",candidates.getJSONArray("images").length())

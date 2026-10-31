@@ -3,6 +3,8 @@ import ast
 import os
 from pathlib import Path
 import subprocess
+from recurrence_dependencies import recurrence_classpath
+import sys
 
 root = Path(__file__).resolve().parents[1]
 out = root / 'build/classroom-images-check'
@@ -25,11 +27,13 @@ for name, body in fixtures.items():
     path.write_text(body, encoding='utf-8')
     sources.append(path)
 src = root / 'app/src/main/java/com/donglan/chrona'
-sources += [src / name for name in ['classroom/ClassroomImages.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomTranscript.java', 'classroom/ClassroomProgress.java', 'classroom/ClassroomStore.java', 'classroom/ClassroomLesson.java', 'net/RequestControl.java']]
+sources += [src / name for name in ['classroom/ClassroomImages.java', 'classroom/ClassroomImageQuality.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomTranscript.java', 'classroom/ClassroomProgress.java', 'classroom/ClassroomStore.java', 'classroom/ClassroomLesson.java', 'net/RequestControl.java']]
 sources.append(root / 'checks/ClassroomImagesCheck.java')
 sources.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java')
+sources.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomMarkdownImages.java')
 sources.append(src / 'net/NetworkFailure.java')
 jar = root / 'build/ai-checks/json.jar'
+classpath = recurrence_classpath()
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
-subprocess.run([str(java / 'javac.exe'), f'-J-Djava.io.tmpdir={temporary}', '--release', '17', '-encoding', 'UTF-8', '-cp', str(jar), '-d', str(out), *map(str, sources)], check=True)
-subprocess.run([str(java / 'java.exe'), f'-Djava.io.tmpdir={temporary}', '-Djava.awt.headless=true', '-cp', str(out) + os.pathsep + str(jar), 'ClassroomImagesCheck'], check=True)
+subprocess.run([str(java / 'javac.exe'), f'-J-Djava.io.tmpdir={temporary}', '--release', '17', '-encoding', 'UTF-8', '-cp', classpath, '-d', str(out), *map(str, sources)], check=True)
+subprocess.run([str(java / 'java.exe'), f'-Djava.io.tmpdir={temporary}', '-Djava.awt.headless=true', '-cp', str(out) + os.pathsep + classpath, 'ClassroomImagesCheck', str(root / 'build/classroom-image-dedup'), *sys.argv[1:]], check=True)

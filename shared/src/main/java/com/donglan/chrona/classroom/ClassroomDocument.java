@@ -7,12 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /** One reference contract for reading, export, retention and portable documents. */
 public final class ClassroomDocument {
-    private static final Pattern IMAGE = Pattern.compile("!\\[[^\\]\\r\\n]*\\]\\(([^)\\r\\n]*)\\)");
     private ClassroomDocument() { }
 
     /** Recover double-escaped paragraph breaks, never unescape TeX commands or code literals. */
@@ -52,20 +49,10 @@ public final class ClassroomDocument {
         return path;
     }
     public static Set<String> inlineImages(String markdown) throws IOException {
-        Set<String> result = new LinkedHashSet<>();
-        Matcher matches = IMAGE.matcher(markdown);
-        while (matches.find()) result.add(imageName(matches.group(1).trim()));
-        return result;
+        return ClassroomMarkdownImages.inlineImages(markdown);
     }
     public static String exportMarkdown(String markdown) throws IOException {
-        markdown=normalizeMarkdown(markdown);
-        Matcher matches=IMAGE.matcher(markdown);StringBuffer result=new StringBuffer();
-        while(matches.find()) {
-            String image=imageName(matches.group(1).trim());
-            String replacement=matches.group().substring(0,matches.group().indexOf("](")+2)+"images/"+image+")";
-            matches.appendReplacement(result,Matcher.quoteReplacement(replacement));
-        }
-        matches.appendTail(result);return result.toString();
+        return ClassroomMarkdownImages.rewrite(normalizeMarkdown(markdown),Set.of(),true);
     }
     public static Set<String> referencedImages(JSONObject summary) throws Exception {
         Set<String> result = new LinkedHashSet<>(inlineImages(summary.optString("overview")));

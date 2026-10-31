@@ -13,9 +13,10 @@ import org.json.JSONObject;
 /** Shared download-to-summary work and once-only monitored dispatch through the Session registry. */
 final class ClassroomAutoSummary {
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
+    private static final ClassroomSummarySlots SUMMARY_SLOTS=new ClassroomSummarySlots();
     interface Generator { JSONObject generate(ClassroomLessonActivity.Session job,AiSettings ai,String prompt)throws Exception; }
     interface Settings { AiSettings load(Context app)throws Exception; }
-    static Generator generator=(job,ai,prompt)->ClassroomSummary.generate(job.dir,job.selected,ai,job.imageLimit,job.control,job::checkpoint,prompt,Boolean.TRUE.equals(job.enhancedClassroom));
+    static Generator generator=(job,ai,prompt)->ClassroomSummary.generate(job.dir,job.selected,ai,job.imageLimit,job.control,job::checkpoint,prompt,Boolean.TRUE.equals(job.enhancedClassroom),job.noteStrength);
     static Settings settings=app->new AiSettingsStore(app).load();
     static java.util.function.BooleanSupplier foreground=ClassroomMonitorService::running;
     static boolean hasForegroundOwner(){return foreground.getAsBoolean();}
@@ -32,7 +33,9 @@ final class ClassroomAutoSummary {
     }
     /** Called only by an explicit download/summary action; never by page loading or polling. */
     static void downloadAndSummarize(ClassroomLessonActivity.Session job)throws Exception {
-        if(job.enhancedClassroom==null)job.enhancedClassroom=SchedulePreferences.load(job.app).enhancedClassroom;
+        SchedulePreferences preferences=SchedulePreferences.load(job.app);
+        if(job.enhancedClassroom==null)job.enhancedClassroom=preferences.enhancedClassroom;
+        if(job.noteStrength==null)job.noteStrength=preferences.classroomNoteStrength;
         JSONObject saved=ClassroomStore.read(new File(job.store().lesson(job.selected),"summary.json"));
         if(saved!=null&&saved.optBoolean("complete")){job.summary=saved;job.message="总结已完成";return;}
         job.summary=saved;
@@ -42,6 +45,7 @@ final class ClassroomAutoSummary {
     /** The same checkpoint, image permission and failure contract for single, batch and monitored work. */
     static void summarize(ClassroomLessonActivity.Session job,AiSettings selected,String prompt,boolean regenerate)throws Exception {
         if(job.enhancedClassroom==null)job.enhancedClassroom=SchedulePreferences.load(job.app).enhancedClassroom;
+        if(job.noteStrength==null)job.noteStrength=SchedulePreferences.load(job.app).classroomNoteStrength;
         JSONObject previous=job.summary;
         boolean authorized=job.summaryAuthorized;job.summaryAuthorized=false;
         if(!regenerate&&previous!=null&&previous.optBoolean("complete")){job.message="总结已完成";return;}
@@ -49,17 +53,24 @@ final class ClassroomAutoSummary {
             throw new IOException("本节总结尚未完成，请手动授权继续");
         AiSettings ai=selected;
         try {
-            execution(job,"running","");job.retryRequired=true;
+            execution(job,"queued","");job.retryRequired=true;
             if(ai==null)ai=settings.load(job.app);
             if(ai==null)throw new IOException("请先在 AI 设置中配置服务，素材已保留");
             if(job.imageLimit>0&&new AiSettingsStore(job.app).isImageUnsupported(ai))throw new IOException("当前 AI 服务不支持图片，请手动选择文字模式继续");
             job.control.check();if(!job.allowed())throw new IOException("学校账号已停用或更换");
             JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));
             job.enhancedClassroom=enhancedMode(prior,Boolean.TRUE.equals(job.enhancedClassroom));
-            if(prior==null||!ClassroomSummary.configKey(ai,job.imageLimit,prompt,job.enhancedClassroom).equals(prior.optString("config"))||prior.has("final")){
+            job.noteStrength=ClassroomNoteStrength.frozen(prior,job.noteStrength);
+            if(prior==null||!ClassroomSummary.configKey(ai,job.imageLimit,prompt,job.enhancedClassroom,job.noteStrength,ClassroomFigureReview.policy(prior)).equals(prior.optString("config"))||prior.has("final")){
                 job.ignoredSummaryUpdated=previous==null?-1:previous.optLong("updated");job.summary=null;job.revision++;job.publish();
             }
-            job.summary=generator.generate(job,ai,prompt);
+            try(ClassroomSummarySlots.Lease slot=SUMMARY_SLOTS.acquire(job.control,
+                    ()->SchedulePreferences.load(job.app).classroomConcurrency,
+                    ()->job.checkpoint(ClassroomProgress.waiting("等待总结名额","")))){
+                job.control.check();if(!job.allowed())throw new IOException("学校账号已停用或更换");
+                execution(job,"running","");
+                job.summary=generator.generate(job,ai,prompt);
+            }
             execution(job,"complete","");job.retryRequired=false;job.message="总结已完成";
         }catch(Exception failure){
             if(failure instanceof ChatCompletionClient.RequestException rejected&&job.imageLimit>0&&rejected.rejectsImage()&&ai!=null)

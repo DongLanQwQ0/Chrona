@@ -19,5 +19,19 @@ vm.runInNewContext(fs.readFileSync(path.join(assets,'reader.js'),'utf8'),context
   assert(html.includes('[id:99]'),'corrected transcript retains its original source IDs');
   assert.equal(JSON.stringify(summary),snapshot,'structured audit data and source arrays never mutate');
   assert(html.includes('data-task="0"')&&html.includes('aria-label="提取课堂安排为日程"'),'existing action semantics remain intact');
-  console.log('ClassroomReaderSources: 7 assertions passed (production parser/reader, DOM adapter; no visual acceptance)');
+  const cases=[
+    ['![caption](images/image-61.jpg)',1],
+    ['![caption][ref]\n\n[ref]: images/image-61.jpg',1],
+    ['`![literal](images/image-61.jpg)`',1],
+    ['```text\n![literal](images/image-61.jpg)\n```',1],
+    ['> ```text\n> ![literal](images/image-61.jpg)',1],
+    ['Paragraph\n    ![caption](images/image-61.jpg)',1]
+  ];
+  for(const [text,count] of cases){
+    const data={complete:true,overview:'',parts:[{notes:[{title:'Proof',text,images:['image-61.jpg','images/image-61.jpg']}],assignments:[]}]};
+    const before=JSON.stringify(data);await window.renderClassroom({summary:data,images:['image-61.jpg']});
+    assert.equal((main.innerHTML.match(/<img /g)||[]).length,count,'actual image tokens control fallback without duplicate or missing picture: '+text);
+    assert.equal(JSON.stringify(data),before,'reader never mutates saved source for fallback');
+  }
+  console.log('ClassroomReaderSources: 19 assertions passed (production parser/reader, DOM adapter; no visual acceptance)');
 })().catch(error=>{console.error(error);process.exitCode=1;});

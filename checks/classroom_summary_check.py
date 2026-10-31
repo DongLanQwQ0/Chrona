@@ -14,6 +14,7 @@ import subprocess
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--image-references-only', action='store_true')
+parser.add_argument('--note-strength-only', action='store_true')
 args = parser.parse_args()
 src = root / 'app/src/main/java/com/donglan/chrona'
 out = root / 'build/classroom-summary-check'
@@ -56,7 +57,7 @@ for name, content in fixtures.items():
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding='utf-8')
     paths.append(path)
-relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java',
+relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java', 'classroom/ClassroomNoteStrength.java', 'classroom/ClassroomImageQuality.java', 'classroom/ClassroomFigureReview.java',
             'classroom/ClassroomImages.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomConversation.java', 'classroom/ClassroomEnhancedSummary.java', 'classroom/ClassroomExport.java', 'classroom/ClassroomProgress.java',
             'ai/AiSettings.java', 'ai/ChatCompletionClient.java', 'ai/ParseResult.java', 'ai/SchedulePrompt.java',
             'ai/SemanticEventNormalizer.java', 'ai/TimeAssessment.java', 'ai/RequestOptions.java', 'ai/StreamChunkContent.java',
@@ -64,8 +65,9 @@ relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java',
             'data/CandidateRules.java', 'calendar/AllDayDates.java', 'net/RequestControl.java']
 paths += [src / name for name in relative]
 paths.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java')
+paths.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomMarkdownImages.java')
 paths.append(src / 'net/NetworkFailure.java')
-paths += [root / 'checks/ClassroomSummaryCheck.java', root / 'checks/AiRequestCheck.java', root / 'checks/TimeAssessmentCheck.java']
+paths += [root / 'checks/ClassroomSummaryCheck.java', root / 'checks/ClassroomFigureReviewCheck.java', root / 'checks/AiRequestCheck.java', root / 'checks/TimeAssessmentCheck.java']
 jar = root / 'build/ai-checks/json.jar'
 if not jar.is_file():
     raise RuntimeError('Existing build/ai-checks/json.jar is required; nothing will be downloaded')
@@ -86,8 +88,9 @@ classes.mkdir(exist_ok=True)
 subprocess.run(recurrence_java([executable('javac'), '--release', '17', '-encoding', 'UTF-8', '-cp', str(jar),
                 '-d', str(classes), *map(str, paths)]), check=True)
 classpath = str(classes) + os.pathsep + str(jar)
-if not args.image_references_only:
+subprocess.run(recurrence_java([executable('java'), '-cp', classpath, 'com.donglan.chrona.classroom.ClassroomFigureReviewCheck', '--cache', str(root / 'build/classroom-image-dedup/cache-rebuild-check')]), check=True)
+if not args.image_references_only and not args.note_strength_only:
     subprocess.run(recurrence_java([executable('java'), '-cp', classpath, 'com.donglan.chrona.ai.AiRequestCheck']), check=True)
 subprocess.run(recurrence_java([executable('java'), '-Djava.awt.headless=true', '-cp', classpath,
                 'com.donglan.chrona.classroom.ClassroomSummaryCheck', str(out / 'fixtures'),
-                *(['image-references'] if args.image_references_only else [])]), check=True)
+                *(['image-references'] if args.image_references_only else ['note-strength'] if args.note_strength_only else [])]), check=True)

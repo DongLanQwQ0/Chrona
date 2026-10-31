@@ -11,12 +11,16 @@ public final class SchedulePreferences {
     public static final int DEFAULT_WORK_START = 10 * 60;
     public static final int DEFAULT_WORK_END = 22 * 60;
     public static final int MAX_PROMPT_CHARS = 8000;
+    public static final int DEFAULT_CLASSROOM_CONCURRENCY = 3;
+    public static final int DEFAULT_CLASSROOM_NOTE_STRENGTH = 3;
     private static final String STORE = "chrona_schedule_preferences";
     public final int workStartMinutes;
     public final int workEndMinutes;
     public final String customPrompt;
     public final String classroomPrompt;
     public final boolean enhancedClassroom;
+    public final int classroomConcurrency;
+    public final int classroomNoteStrength;
 
     public SchedulePreferences(int start, int end, String prompt, String classroomPrompt) {
         this(start, end, prompt, classroomPrompt, false);
@@ -24,16 +28,33 @@ public final class SchedulePreferences {
 
     public SchedulePreferences(int start, int end, String prompt, String classroomPrompt,
             boolean enhancedClassroom) {
+        this(start, end, prompt, classroomPrompt, enhancedClassroom, DEFAULT_CLASSROOM_CONCURRENCY);
+    }
+
+    public SchedulePreferences(int start, int end, String prompt, String classroomPrompt,
+            boolean enhancedClassroom, int classroomConcurrency) {
+        this(start, end, prompt, classroomPrompt, enhancedClassroom, classroomConcurrency,
+                DEFAULT_CLASSROOM_NOTE_STRENGTH);
+    }
+
+    public SchedulePreferences(int start, int end, String prompt, String classroomPrompt,
+            boolean enhancedClassroom, int classroomConcurrency, int classroomNoteStrength) {
         if (start < 0 || start >= 1440 || end < 0 || end >= 1440 || start == end)
             throw new IllegalArgumentException("工作时间起止必须不同，且为有效钟点");
         if (prompt == null || prompt.length() > MAX_PROMPT_CHARS
                 || classroomPrompt == null || classroomPrompt.length() > MAX_PROMPT_CHARS)
             throw new IllegalArgumentException("自定义提示词最多 8000 字符");
+        if (classroomConcurrency < 1 || classroomConcurrency > 3)
+            throw new IllegalArgumentException("课堂总结并发数必须为 1、2 或 3");
+        if (classroomNoteStrength < 1 || classroomNoteStrength > 3)
+            throw new IllegalArgumentException("笔记整理强度必须为 1、2 或 3");
         workStartMinutes = start;
         workEndMinutes = end;
         customPrompt = prompt;
         this.classroomPrompt = classroomPrompt;
         this.enhancedClassroom = enhancedClassroom;
+        this.classroomConcurrency = classroomConcurrency;
+        this.classroomNoteStrength = classroomNoteStrength;
     }
 
     public static SchedulePreferences load(Context context) {
@@ -41,7 +62,9 @@ public final class SchedulePreferences {
         return new SchedulePreferences(Integer.parseInt(prefs.getString("workStartMinutes", Integer.toString(DEFAULT_WORK_START))),
                 Integer.parseInt(prefs.getString("workEndMinutes", Integer.toString(DEFAULT_WORK_END))),
                 prefs.getString("customPrompt", ""), prefs.getString("classroomPrompt", ""),
-                prefs.getBoolean("enhancedClassroom", false));
+                prefs.getBoolean("enhancedClassroom", false),
+                Integer.parseInt(prefs.getString("classroomConcurrency", Integer.toString(DEFAULT_CLASSROOM_CONCURRENCY))),
+                Integer.parseInt(prefs.getString("classroomNoteStrength", Integer.toString(DEFAULT_CLASSROOM_NOTE_STRENGTH))));
     }
 
     public void save(Context context) {
@@ -50,7 +73,9 @@ public final class SchedulePreferences {
                 .putString("workEndMinutes", Integer.toString(workEndMinutes))
                 .putString("customPrompt", customPrompt)
                 .putString("classroomPrompt", classroomPrompt)
-                .putBoolean("enhancedClassroom", enhancedClassroom).apply();
+                .putBoolean("enhancedClassroom", enhancedClassroom)
+                .putString("classroomConcurrency", Integer.toString(classroomConcurrency))
+                .putString("classroomNoteStrength", Integer.toString(classroomNoteStrength)).apply();
     }
 
     public String systemPrompt() {
@@ -60,7 +85,9 @@ public final class SchedulePreferences {
     public JSONObject toJson() throws JSONException {
         return new JSONObject().put("workStartMinutes", workStartMinutes)
                 .put("workEndMinutes", workEndMinutes).put("customPrompt", customPrompt)
-                .put("classroomPrompt", classroomPrompt).put("enhancedClassroom", enhancedClassroom);
+                .put("classroomPrompt", classroomPrompt).put("enhancedClassroom", enhancedClassroom)
+                .put("classroomConcurrency", classroomConcurrency)
+                .put("classroomNoteStrength", classroomNoteStrength);
     }
 
     public static SchedulePreferences fromJson(JSONObject value) throws JSONException {
@@ -69,6 +96,16 @@ public final class SchedulePreferences {
             throw new JSONException("日程解析偏好格式无效");
         if (value.has("enhancedClassroom") && !(value.opt("enhancedClassroom") instanceof Boolean))
             throw new JSONException("增强整理设置格式无效");
+        if (value.has("classroomConcurrency")) {
+            Object number = value.opt("classroomConcurrency");
+            if (!(number instanceof Number) || ((Number) number).doubleValue() != ((Number) number).intValue())
+                throw new JSONException("课堂总结并发数格式无效");
+        }
+        if (value.has("classroomNoteStrength")) {
+            Object number = value.opt("classroomNoteStrength");
+            if (!(number instanceof Number) || ((Number) number).doubleValue() != ((Number) number).intValue())
+                throw new JSONException("笔记整理强度格式无效");
+        }
         for (String key : new String[]{"workStartMinutes", "workEndMinutes"}) {
             Object number = value.opt(key);
             if (!(number instanceof Number) || ((Number) number).doubleValue() != ((Number) number).intValue())
@@ -77,7 +114,9 @@ public final class SchedulePreferences {
         try {
             return new SchedulePreferences(value.getInt("workStartMinutes"), value.getInt("workEndMinutes"),
                     value.getString("customPrompt"), value.getString("classroomPrompt"),
-                    value.optBoolean("enhancedClassroom", false));
+                    value.optBoolean("enhancedClassroom", false), value.has("classroomConcurrency")
+                            ? value.getInt("classroomConcurrency") : DEFAULT_CLASSROOM_CONCURRENCY,
+                    value.has("classroomNoteStrength") ? value.getInt("classroomNoteStrength") : DEFAULT_CLASSROOM_NOTE_STRENGTH);
         } catch (IllegalArgumentException exception) {
             throw new JSONException(exception.getMessage());
         }

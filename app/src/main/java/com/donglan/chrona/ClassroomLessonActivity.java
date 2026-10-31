@@ -51,7 +51,7 @@ public final class ClassroomLessonActivity extends Activity {
         Object batchOwner;
         boolean succeeded;
         boolean retryRequired;
-        boolean summaryAuthorized;Boolean enhancedClassroom;
+        boolean summaryAuthorized;Boolean enhancedClassroom;Integer noteStrength;
         Runnable completed;
         boolean updateQueued, detached;
         long startedAt;
@@ -248,7 +248,7 @@ public final class ClassroomLessonActivity extends Activity {
         panel.addView(UiDialogs.actionRow(this,dialog,"上传并生成",()->{dialog.dismiss();startGeneration(ai,upload.isChecked()?ClassroomSummary.MAX_IMAGES:0);}));
         UiDialogs.showFloatingDialog(dialog,panel);
     }
-    private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;SchedulePreferences preferences=SchedulePreferences.load(this);String prompt=preferences.classroomPrompt;job.enhancedClassroom=preferences.enhancedClassroom;job.imageLimit=limit;job.run("准备整理课堂",true,()->{if(!new File(job.dir,"candidates.json").isFile())job.prepareMaterials();ClassroomAutoSummary.summarize(job,ai,prompt,true);});}
+    private void startGeneration(AiSettings ai,int limit){ClassroomNotifications.requestPermission(this);Session job=s;SchedulePreferences preferences=SchedulePreferences.load(this);String prompt=preferences.classroomPrompt;job.enhancedClassroom=preferences.enhancedClassroom;job.noteStrength=preferences.classroomNoteStrength;job.imageLimit=limit;job.run("准备整理课堂",true,()->{if(!new File(job.dir,"candidates.json").isFile())job.prepareMaterials();ClassroomAutoSummary.summarize(job,ai,prompt,true);});}
     private void confirmDelete(){
         if(!gate())return;
         if(s.busy||ClassroomLiveTranscripts.active(s.account,s.selected)){Feedback.show(this,"本节课堂正在处理，请先停止后再删除");return;}
@@ -272,7 +272,7 @@ public final class ClassroomLessonActivity extends Activity {
                 else job.publish();job.disposeIfDetached();});
         });
     }
-    private void export(){s.pendingExport=s.selected;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,"课堂总结-"+s.selected.date()+".zip");try{startActivityForResult(intent,EXPORT);}catch(Exception e){Feedback.show(this,"无法打开文件保存器");}}
+    private void export(){s.pendingExport=s.selected;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,ClassroomExport.fileName(s.selected));try{startActivityForResult(intent,EXPORT);}catch(Exception e){Feedback.show(this,"无法打开文件保存器");}}
     @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_document_presentation",firstDocumentPresentation);super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("share_uri",s.shareUri.toString());}catch(Exception ignored){}}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=EXPORT||result!=RESULT_OK||data==null||data.getData()==null||!gate())return;s.exportUri=data.getData();
         boolean read=(data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION)!=0,write=(data.getFlags()&Intent.FLAG_GRANT_WRITE_URI_PERMISSION)!=0;
@@ -280,7 +280,7 @@ public final class ClassroomLessonActivity extends Activity {
             else if(write)getContentResolver().takePersistableUriPermission(s.exportUri,Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             else if(read)getContentResolver().takePersistableUriPermission(s.exportUri,Intent.FLAG_GRANT_READ_URI_PERMISSION);
         }catch(SecurityException ignored){}if(s.localInitialized&&!s.busy)writeExport();}
-    private void writeExport(){Session job=s;if(!job.localInitialized||job.busy||job.exportInFlight)return;Uri uri=job.exportUri;ClassroomLesson lesson=job.pendingExport;if(lesson==null){job.exportUri=null;return;}job.exportInFlight=true;job.run("生成导出文件",()->{try{File dir=job.store().lesson(lesson);JSONObject summary=ClassroomStore.read(new File(dir,"summary.json"));if(summary==null)throw new IOException("总结缓存不存在");try(OutputStream out=job.app.getContentResolver().openOutputStream(uri,"w")){if(out==null)throw new IOException("无法写入文件");ClassroomExport.write(dir,summary,out,job::checkpoint);}job.message="ZIP 已导出";job.pendingExport=null;job.shareUri=uri;}finally{job.exportUri=null;job.exportInFlight=false;}});}
+    private void writeExport(){Session job=s;if(!job.localInitialized||job.busy||job.exportInFlight)return;Uri uri=job.exportUri;ClassroomLesson lesson=job.pendingExport;if(lesson==null){job.exportUri=null;return;}job.exportInFlight=true;job.run("生成导出文件",()->{try{File dir=job.store().lesson(lesson);JSONObject summary=ClassroomStore.read(new File(dir,"summary.json"));if(summary==null)throw new IOException("总结缓存不存在");long endsAt=ClassroomExportTiming.endsAt(job.app,job.account,lesson);try(OutputStream out=job.app.getContentResolver().openOutputStream(uri,"w")){if(out==null)throw new IOException("无法写入文件");ClassroomExport.write(dir,summary,out,job::checkpoint,endsAt);}job.message="ZIP 已导出";job.pendingExport=null;job.shareUri=uri;}finally{job.exportUri=null;job.exportInFlight=false;}});}
     private TextView text(LinearLayout parent,String value,int size,boolean title){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextIsSelectable(true);if(title)UiStyle.title(v);else v.setTextColor(UiStyle.colors(this).text);UiStyle.addSpaced(parent,v,6,10);return v;}
     private Button button(LinearLayout parent,String title,Runnable work,boolean primary){Button b=new Button(this);b.setText(title);b.setAllCaps(false);UiStyle.button(b,primary);b.setOnClickListener(v->{if(gate())work.run();});UiStyle.addSpaced(parent,b,4,6);return b;}
     private Button action(LinearLayout row,String title,Runnable work){Button b=new Button(this);b.setText(title);b.setTextSize(14);UiStyle.button(b,false);b.setOnClickListener(v->{if(gate())work.run();});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.setMargins(dp(2),dp(4),dp(2),dp(6));row.addView(b,p);return b;}

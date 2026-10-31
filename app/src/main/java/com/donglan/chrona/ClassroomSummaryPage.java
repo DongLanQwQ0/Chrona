@@ -121,6 +121,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         boolean selecting,localWork;
         final LinkedHashSet<String> selected=new LinkedHashSet<>();
         final List<ClassroomLesson> pendingExport=new ArrayList<>();
+        ClassroomExport.Layout exportLayout=ClassroomExport.Layout.FLAT;
         Uri exportUri,shareUri;
         String operationMessage="";
         int historyOrder=1;
@@ -201,6 +202,7 @@ final class ClassroomSummaryPage extends SchedulePage {
                 s.historyCourse=state.getString("history_course","");s.selecting=state.getBoolean("selecting",false);
                 ArrayList<String> selected=state.getStringArrayList("selected");if(selected!=null)s.selected.addAll(selected);
                 ArrayList<String> exports=state.getStringArrayList("batch_export_lessons");if(exports!=null)for(String value:exports)try{s.pendingExport.add(ClassroomLesson.fromJson(new JSONObject(value)));}catch(Exception ignored){}
+                s.exportLayout=state.getBoolean("batch_export_by_course",false)?ClassroomExport.Layout.BY_COURSE:ClassroomExport.Layout.FLAT;
                 String uri=state.getString("batch_export_uri");if(uri!=null)s.exportUri=Uri.parse(uri);
                 String share=state.getString("batch_share_uri");if(share!=null)s.shareUri=Uri.parse(share);
                 s.week = LocalDate.parse(state.getString("week", s.week.toString()));
@@ -635,8 +637,15 @@ final class ClassroomSummaryPage extends SchedulePage {
         if(ClassroomWorkService.find(owner.account,lesson)!=null||ClassroomLiveTranscripts.active(owner.account,lesson))throw new IOException("本节课堂正在处理，已跳过");
     }
     private void exportSelected(){
-        if(!canStartBatch())return;List<ClassroomLesson> snapshot=selectionSnapshot();if(snapshot.isEmpty())return;s.pendingExport.clear();s.pendingExport.addAll(snapshot);
-        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,"课堂资料-"+LocalDate.now(ClassroomLesson.ZONE)+".zip");
+        if(!canStartBatch())return;Session owner=s;List<ClassroomLesson> snapshot=selectionSnapshot();if(snapshot.isEmpty())return;
+        if(snapshot.size()==1){chooseExport(owner,snapshot,ClassroomExport.Layout.FLAT);return;}
+        UiDialogs.choiceDialog(activity,"导出方式",new String[]{"平铺","层级"},owner.exportLayout==ClassroomExport.Layout.BY_COURSE?1:0,
+                index->chooseExport(owner,snapshot,index==1?ClassroomExport.Layout.BY_COURSE:ClassroomExport.Layout.FLAT));
+    }
+    private void chooseExport(Session owner,List<ClassroomLesson> snapshot,ClassroomExport.Layout layout){
+        if(s!=owner||!canStartBatch())return;owner.pendingExport.clear();owner.pendingExport.addAll(snapshot);owner.exportLayout=layout;
+        String name=snapshot.size()==1?ClassroomExport.fileName(snapshot.get(0)):"课堂资料-"+LocalDate.now(ClassroomLesson.ZONE)+".zip";
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,name);
         try{startActivityForResult(intent,BATCH_EXPORT);}catch(Exception failure){s.pendingExport.clear();Feedback.show(activity,"无法打开文件保存器");}
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
@@ -652,15 +661,15 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private void writeBatchExport(){
         if(s==null||!s.allowed()||s.localWork||s.exportUri==null)return;
-        Session owner=s;Uri uri=owner.exportUri;owner.exportUri=null;List<ClassroomLesson> snapshot=new ArrayList<>(owner.pendingExport);owner.pendingExport.clear();if(snapshot.isEmpty())return;
+        Session owner=s;Uri uri=owner.exportUri;owner.exportUri=null;List<ClassroomLesson> snapshot=new ArrayList<>(owner.pendingExport);ClassroomExport.Layout layout=owner.exportLayout;owner.pendingExport.clear();if(snapshot.isEmpty())return;
         owner.localWork=true;owner.operationMessage="正在导出 0/"+snapshot.size();updateBatchStatus();updateSelectionUi();
         owner.worker.execute(()->{
             try{
-                List<ClassroomExport.LessonFiles> files=new ArrayList<>();ClassroomStore store=owner.storeForBatch();for(ClassroomLesson lesson:snapshot)files.add(new ClassroomExport.LessonFiles(lesson,store.lesson(lesson)));
+                List<ClassroomExport.LessonFiles> files=new ArrayList<>();ClassroomStore store=owner.storeForBatch();for(ClassroomLesson lesson:snapshot)files.add(new ClassroomExport.LessonFiles(lesson,store.lesson(lesson),ClassroomExportTiming.endsAt(owner.app,owner.account,lesson)));
                 ClassroomExport.BatchResult result;
                 try(OutputStream output=owner.app.getContentResolver().openOutputStream(uri,"w")){
                     if(output==null)throw new IOException("无法写入文件");
-                    result=ClassroomExport.writeBatch(files,output,value->{owner.operationMessage="正在导出 · "+value.text();owner.publish();},lesson->checkBatchLesson(owner,lesson),file->{
+                    result=ClassroomExport.writeBatch(files,layout,output,value->{owner.operationMessage="正在导出 · "+value.text();owner.publish();},lesson->checkBatchLesson(owner,lesson),file->{
                         android.graphics.BitmapFactory.Options bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeFile(file.getPath(),bounds);
                         if(bounds.outWidth<=0||bounds.outHeight<=0||bounds.outMimeType==null||!bounds.outMimeType.startsWith("image/"))throw new IOException("课堂图片格式无效");
                         return android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(bounds.outMimeType);
@@ -774,6 +783,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         state.putString("query",s.query);state.putInt("history_order",s.historyOrder);state.putBoolean("history_ascending",s.historyAscending);
         state.putString("history_course",s.historyCourse);state.putBoolean("selecting",s.selecting);state.putStringArrayList("selected",new ArrayList<>(s.selected));
         ArrayList<String> exports=new ArrayList<>();for(ClassroomLesson lesson:s.pendingExport)try{exports.add(lesson.json().toString());}catch(Exception ignored){}state.putStringArrayList("batch_export_lessons",exports);
+        state.putBoolean("batch_export_by_course",s.exportLayout==ClassroomExport.Layout.BY_COURSE);
         if(s.exportUri!=null)state.putString("batch_export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("batch_share_uri",s.shareUri.toString());
     }
     private TextView label(String text, int sp) {
