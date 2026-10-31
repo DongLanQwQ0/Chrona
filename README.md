@@ -12,7 +12,7 @@
   <a href="https://github.com/DongLanQwQ0/Chrona/issues">反馈问题</a>
 </p>
 
-<p align="center">Android 8.0 及以上 · 电脑浏览器局域网访问 · 当前候选 0.15.81</p>
+<p align="center">Android 8.0 及以上 · 电脑浏览器局域网访问 · 当前版本 0.15.81</p>
 
 拾时是一款 Android 日程助手，帮你把通知、聊天和截图里的安排整理成日程，集中查看并按时提醒。
 
