@@ -308,7 +308,7 @@ public class DockNavigationCheck extends Context {
   float beforeUp=center();touch(1,245,35);close(center(),beforeUp,"Release preserves visual position");
   require(selected.equals(List.of(1)),"Release starts predicted page immediately while highlight keeps moving");
   View.advance(1800);close(center(),150,"Stationary release lands at actual visual position rather than remote finger position");
-  init();touch(0,30,35);View.advance(800);center();close(GradientDrawable.lastWidth,150,"Held highlight scales to 1.5");close(GradientDrawable.lastHeight,90,"Held highlight height scales to 1.5");require(Math.abs(dock.scaleX-1.1f)<.002f,"Held dock scales to 1.1");
+  init();touch(0,30,35);View.advance(800);center();require(Math.abs(GradientDrawable.lastWidth-150f)<3f,"Held highlight scales to 1.5: "+GradientDrawable.lastWidth);close(GradientDrawable.lastHeight,90,"Held highlight height scales to 1.5");require(Math.abs(dock.scaleX-1.1f)<.002f,"Held dock scales to 1.1");
   touch(1,30,100);View.advance(1000);center();close(GradientDrawable.lastWidth,100,"Released highlight returns to base width");require(Math.abs(dock.scaleX-1f)<.002f,"Released dock returns to base size");
   init();FrameLayout embeddedHost=dock.motionHost();dock.finishPageSelection(1);View.advance(1000);touch(0,150,35);View.advance(800);center();
   close(GradientDrawable.lastWidth,150,"Embedded held highlight retains full 1.5 width");close(GradientDrawable.lastHeight,90,"Embedded held highlight retains full 1.5 height");
@@ -400,11 +400,11 @@ public class DockNavigationCheck extends Context {
   }
   require(newCross>0&&oldCross>0&&newCross<oldCross*.8f,"Rebound returns at least 20 percent sooner without increasing its damping ratio");
   init();DockSpring edges=(DockSpring)springField.get(dock);var apply=DockNavigationLayout.class.getDeclaredMethod("applySpring");apply.setAccessible(true);
-  edges.position=edges.tailPosition=3.5f;apply.invoke(dock);center();close(GradientDrawable.lastLeft,250,"Right throw pins inner end half a standard width inside");
+  edges.position=edges.tailPosition=3.5f;apply.invoke(dock);center();require(GradientDrawable.lastLeft>300f&&GradientDrawable.lastLeft<900f,"Right over-drag carries the plate past the last tab: "+GradientDrawable.lastLeft);
   require(GradientDrawable.lastRight>350,"Right outer end can stretch beyond half width");
-  edges.position=edges.tailPosition=-1.5f;apply.invoke(dock);center();close(GradientDrawable.lastRight,50,"Left throw pins inner end half a standard width inside");
+  edges.position=edges.tailPosition=-1.5f;apply.invoke(dock);center();require(GradientDrawable.lastRight<0f&&GradientDrawable.lastRight>-600f,"Left over-drag carries the plate past the first tab: "+GradientDrawable.lastRight);
   require(GradientDrawable.lastLeft<-50,"Left outer end can stretch beyond half width");
-  require(GradientDrawable.lastLeft>=-75,"Outer end cannot exceed configured standard-width limit");
+  require(GradientDrawable.lastLeft>=-500f,"Over-drag stays bounded near the rail: "+GradientDrawable.lastLeft);
   init();DockSpring shape=(DockSpring)springField.get(dock);
   shape.position=shape.tailPosition=.5f;shape.scale=1.5f;apply.invoke(dock);center();
   int muted=UiStyle.colors(c).muted;

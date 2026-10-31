@@ -5,7 +5,7 @@ final class DockSpring {
     private static final float PRESS_STIFFNESS = 1000f, PRESS_DAMPING = 48f;
     private static final float PRESS_TIME_MULTIPLIER = 1f;
     private static final float RELEASE_TIME_MULTIPLIER = PRESS_TIME_MULTIPLIER * 1.5f;
-    static final float MAX_OUTWARD_WIDTH = .75f;
+    static final float MAX_OUTWARD_WIDTH = 2.2f;
     static final float TAP_SCALE = 1.16f;
     private boolean following, tapPulse, releasedMotion;
     float position, velocity, target;

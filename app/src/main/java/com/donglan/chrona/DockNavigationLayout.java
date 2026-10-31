@@ -36,6 +36,10 @@ final class DockNavigationLayout extends FrameLayout {
     private static final float MOTION_PLATE_SCALE = 1.12f;
     private static final float PLATE_LEAN_DP = 6f, CROSS_LEAN_DP = 4f;
     private static final float MAX_TAIL_EXTENSION = .75f, LABEL_FEATHER = .28f;
+    /** Extra travel past the last tab, in slots, so an over-drag does not dead-stop at the edge. */
+    private static final float EDGE_TRAVEL = .6f;
+    /** How far the plate may leave the rail, as a fraction of one tab's width. */
+    private static final float EDGE_OVERFLOW = .8f;
     private VelocityTracker fingerVelocity;
     private float downX, downY, fingerPosition;
     private long followFrameTime;
@@ -261,7 +265,12 @@ final class DockNavigationLayout extends FrameLayout {
 
     private float centerAt(float position) {
         if (itemCount() < 2) return center(0);
-        int from = Math.max(0, Math.min(itemCount() - 2, (int) Math.floor(position)));
+        int last = itemCount() - 1;
+        // Outside the rail the plate keeps travelling at the end slot's pace instead of sticking
+        // to the edge, so a throw past the last tab still reads as movement.
+        if (position < 0f) return center(0) + position * (center(1) - center(0));
+        if (position > last) return center(last) + (position - last) * (center(last) - center(last - 1));
+        int from = Math.max(0, Math.min(last - 1, (int) Math.floor(position)));
         int to = from + 1;
         return center(from) + (center(to) - center(from)) * (position - from);
     }
@@ -276,7 +285,17 @@ final class DockNavigationLayout extends FrameLayout {
     }
 
     private float positionAt(float x) {
-        for (int i = 0; i < itemCount() - 1; i++) {
+        int last = itemCount() - 1;
+        if (last <= 0) return 0f;
+        // Beyond either end the position keeps counting in slots, so an over-drag still moves the
+        // plate instead of collapsing onto the first or last tab.
+        float firstA = center(0), firstB = center(1);
+        if (firstA != firstB && (firstB > firstA ? x < firstA : x > firstA))
+            return (x - firstA) / (firstB - firstA);
+        float lastA = center(last), lastB = center(last - 1);
+        if (lastA != lastB && (lastA > lastB ? x > lastA : x < lastA))
+            return last + (x - lastA) / (lastA - lastB);
+        for (int i = 0; i < last; i++) {
             float a = center(i), b = center(i + 1);
             if (a != b && x >= Math.min(a, b) && x <= Math.max(a, b))
                 return i + (x - a) / (b - a);
@@ -286,10 +305,12 @@ final class DockNavigationLayout extends FrameLayout {
 
     private void moveHighlight(float x) {
         if (itemCount() == 0) return;
-        // Clamp using physical bounds, which also works with RTL child ordering.
+        // Clamp using physical bounds, which also works with RTL child ordering. Both ends keep a
+        // slot of travel beyond the last centre so the plate can lean out instead of sticking.
         float left = Math.min(center(0), center(itemCount() - 1));
         float right = Math.max(center(0), center(itemCount() - 1));
-        fingerPosition = positionAt(Math.max(left, Math.min(right, x)));
+        float slot = Math.abs(center(Math.min(1, itemCount() - 1)) - center(0));
+        fingerPosition = positionAt(Math.max(left - slot * EDGE_TRAVEL, Math.min(right + slot * EDGE_TRAVEL, x)));
         spring.follow(fingerPosition, releasedVelocity());
         applySpring();
         animateTo(fingerPosition);
@@ -480,9 +501,12 @@ final class DockNavigationLayout extends FrameLayout {
                     : items.getTop() + (cell.getTop() + cell.getBottom()) / 2f;
             float top = cross - height / 2f;
             float right = x + width / 2f;
-            // Reduce inner-end speed before its anchor; both approach and rebound are smooth.
-            left = DockSpring.softUpperBoundary(left, board - standardWidth / 2f, standardWidth / 2f);
-            right = -DockSpring.softUpperBoundary(-right, -standardWidth / 2f, standardWidth / 2f);
+            // Reduce inner-end speed before its anchor; both approach and rebound are smooth. The
+            // rail is wider than the plate so an over-drag keeps travelling instead of parking on
+            // the edge: the leading end may leave the bar by more than half a tab.
+            float slack = standardWidth * EDGE_OVERFLOW;
+            left = DockSpring.softUpperBoundary(left, board + slack, standardWidth * .9f);
+            right = -DockSpring.softUpperBoundary(-right, slack, standardWidth * .9f);
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
             if (left < 0) left = -DockSpring.outwardExtension(-left, maximum);
             if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
