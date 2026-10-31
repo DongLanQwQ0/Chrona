@@ -141,7 +141,7 @@ import java.util.*; public class ViewGroup extends View {
  @Override public boolean onTouchEvent(android.view.MotionEvent event){return true;}
  }""",
     "android/widget/TextView.java": """package android.widget; public class TextView extends android.view.View {
-public TextView(android.content.Context c){super(c);}private int color; public void setTextColor(int c){color=c;}public int getCurrentTextColor(){return color;}
+public TextView(android.content.Context c){super(c);}public String text="";public void setText(CharSequence v){text=v==null?"":v.toString();}public CharSequence getText(){return text;}private int color; public void setTextColor(int c){color=c;}public int getCurrentTextColor(){return color;}
 public float textSize=14;public boolean singleLine,fontPadding=true,horizontalScrolling;public int autoMin,autoMax,autoStep,autoUnit;
 public void setTextSize(float value){textSize=value;}public float getTextSize(){return textSize;}
 public android.graphics.Paint getPaint(){return new android.graphics.Paint();}

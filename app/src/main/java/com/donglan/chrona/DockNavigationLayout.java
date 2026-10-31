@@ -52,6 +52,8 @@ final class DockNavigationLayout extends FrameLayout {
     /** 0 keeps the full dock; 1 leaves only the active tab at the leading corner. */
     private float minimizeFraction;
     private ValueAnimator minimizeAnimator;
+    private boolean labelsHidden;
+    private final java.util.WeakHashMap<View, String> dockItemLabels = new java.util.WeakHashMap<>();
     static boolean minimizeEnabled = true;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private boolean fullWidthMotion;
@@ -351,6 +353,22 @@ final class DockNavigationLayout extends FrameLayout {
             View item = itemAt(i);
             float alpha = i == selectedIndex ? 1f : 1f - .9f * minimizeFraction;
             if (Math.abs(item.getAlpha() - alpha) > .01f) item.setAlpha(alpha);
+        }
+        // A collapsed tab bar keeps the glyph only: scaled-down labels are unreadable.
+        boolean hideLabels = minimizeFraction > .5f;
+        if (hideLabels != labelsHidden) {
+            labelsHidden = hideLabels;
+            for (int i = 0; i < itemCount(); i++) {
+                View item = itemAt(i);
+                if (!(item instanceof TextView label)) continue;
+                if (hideLabels) {
+                    dockItemLabels.put(item, String.valueOf(label.getText()));
+                    label.setText("");
+                } else {
+                    String saved = dockItemLabels.remove(item);
+                    if (saved != null) label.setText(saved);
+                }
+            }
         }
     }
 
