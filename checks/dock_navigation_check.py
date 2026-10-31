@@ -163,7 +163,7 @@ public void setCompoundDrawableTintList(android.content.res.ColorStateList c){} 
   public void addUpdateListener(AnimatorUpdateListener l){listener=l;} public Object getAnimatedValue(){if(integer)return Integer.valueOf((int)to);return Float.valueOf(to);}
   public void addListener(AnimatorListenerAdapter listener){end=listener;}
   public void start(){if(listener!=null)listener.onAnimationUpdate(this);if(end!=null)end.onAnimationEnd(this);} }""",
-    "com/donglan/chrona/UiMotion.java": """package com.donglan.chrona; public class UiMotion { public static final long PRESS=90L, RELEASE=160L; public static final Object SETTLE=new Object(); }""",
+    "com/donglan/chrona/UiMotion.java": """package com.donglan.chrona; public class UiMotion { public static final long PRESS=90L, RELEASE=160L, ENTER=240L, EXIT=180L; public static final Object SETTLE=new Object(); }""",
     "com/donglan/chrona/UiStyle.java": """package com.donglan.chrona; public class UiStyle {
 public static final int RADIUS_DOCK=28;
 public static void dockGlass(android.view.View view){}
@@ -515,6 +515,13 @@ public class DockNavigationCheck extends Context {
   init();android.animation.ValueAnimator.enabled=false;touch(0,225,35);touch(2,245,35);close(center(),245,"Disabled animations follow immediately");android.animation.ValueAnimator.enabled=true;
   init();touch(0,225,35);touch(2,245,35);View.advance(16);android.animation.ValueAnimator.enabled=false;
   View.advance(16);close(center(),245,"Disabling during follow settles on next frame");android.animation.ValueAnimator.enabled=true;
+  init();
+  dock.setMinimized(true);
+  require(dock.getScaleY()<.7f,"Minimized dock shrinks toward the active tab");
+  require(dock.itemAt(1).getAlpha()<.2f,"Inactive tab fades while minimized");
+  dock.setMinimized(false);
+  require(Math.abs(dock.getScaleY()-1f)<.02f,"Restored dock returns to full size");
+  require(dock.itemAt(1).getAlpha()>.95f,"Inactive tab returns with the dock");
   System.out.println("Dock navigation checks passed: "+checks+" (queue test double, not device runtime)");
  }
 }

@@ -49,6 +49,10 @@ final class DockNavigationLayout extends FrameLayout {
     private int coastDestination;
     private int selectedIndex, tapIndex;
     private int pressedItem = -1;
+    /** 0 keeps the full dock; 1 leaves only the active tab at the leading corner. */
+    private float minimizeFraction;
+    private ValueAnimator minimizeAnimator;
+    static boolean minimizeEnabled = true;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private boolean fullWidthMotion;
     private final Runnable finishTouch = this::finishTouch;
@@ -329,14 +333,46 @@ final class DockNavigationLayout extends FrameLayout {
         float along = fullWidthMotion ? 0f : spring.lean * dp(PLATE_LEAN_DP);
         float across = spring.crossLean * dp(CROSS_LEAN_DP);
         float x = vertical() ? across : along, y = vertical() ? along : across;
+        float minScale = 1f - .42f * minimizeFraction;
+        scaleX *= minScale;
+        x -= minimizeFraction * dp(30);
         boolean plateMoved = Math.abs(getScaleX() - scaleX) > .001f || Math.abs(getScaleY() - spring.bar) > .001f
                 || Math.abs(getTranslationX() - x) > .001f || Math.abs(getTranslationY() - y) > .001f;
-        setVisualPosition(spring.position); setScaleX(scaleX); setScaleY(spring.bar);
+        setVisualPosition(spring.position);
+        setPivotX(minimizeFraction > 0f ? 0f : getWidth() / 2f);
+        setPivotY(minimizeFraction > 0f ? getHeight() : getHeight() / 2f);
+        setScaleX(scaleX); setScaleY(spring.bar * minScale);
         setTranslationX(x); setTranslationY(y);
         // The acrylic must sample its new location instead of translating an old sample.
         // Highlight-only motion still leaves the plate's display list untouched.
         if (plateMoved) invalidate();
         updateHighlight();
+        for (int i = 0; i < itemCount(); i++) {
+            View item = itemAt(i);
+            float alpha = i == selectedIndex ? 1f : 1f - .9f * minimizeFraction;
+            if (Math.abs(item.getAlpha() - alpha) > .01f) item.setAlpha(alpha);
+        }
+    }
+
+    /** Collapses to the active tab while the content scrolls down, as a system tab bar does. */
+    void setMinimized(boolean value) {
+        if (!minimizeEnabled || vertical()) return;
+        float target = value ? 1f : 0f;
+        if (Math.abs(minimizeFraction - target) < .001f && minimizeAnimator == null) return;
+        if (minimizeAnimator != null) { minimizeAnimator.cancel(); minimizeAnimator = null; }
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            minimizeFraction = target;
+            applySpring();
+            return;
+        }
+        minimizeAnimator = ValueAnimator.ofFloat(minimizeFraction, target);
+        minimizeAnimator.setDuration(value ? UiMotion.EXIT : UiMotion.ENTER);
+        minimizeAnimator.setInterpolator(UiMotion.SETTLE);
+        minimizeAnimator.addUpdateListener(animation -> {
+            minimizeFraction = (float) animation.getAnimatedValue();
+            applySpring();
+        });
+        minimizeAnimator.start();
     }
 
     /**

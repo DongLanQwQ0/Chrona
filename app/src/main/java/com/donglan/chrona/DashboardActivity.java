@@ -1058,6 +1058,9 @@ public final class DashboardActivity extends Activity {
         scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
+        scroll.setOnScrollChangeListener((view, scrollX, scrollY, oldX, oldY) -> {
+            if (!wide && navigation != null) navigation.setMinimized(scrollY > dp(160));
+        });
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         int horizontal = 20;
