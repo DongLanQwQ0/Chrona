@@ -23,8 +23,8 @@ public class Resources { public android.util.DisplayMetrics getDisplayMetrics(){
     "android/graphics/Canvas.java": "package android.graphics; public class Canvas {}",
     "android/graphics/Paint.java": "package android.graphics;public class Paint {public float measureText(String text){return text.length()*14f;}}",
     "android/graphics/drawable/GradientDrawable.java": """package android.graphics.drawable;
-public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight,lastLeft,lastRight;public static int lastColor; int l,r,t,b;
-public static float[] radii;public static int[] lastColors={0,0};public void setCornerRadius(float x){}public void setCornerRadii(float[] x){radii=x.clone();} public void setColor(int c){lastColor=c;}
+public class GradientDrawable { public static float lastCenter,lastWidth,lastHeight,lastLeft,lastRight;public static int lastColor;public static int solidColorCalls=0; int l,r,t,b;
+public static float[] radii;public static int[] lastColors={0,0};public void setCornerRadius(float x){}public void setCornerRadii(float[] x){radii=x.clone();} public void setColor(int c){lastColor=c;solidColorCalls++;}
 public void setStroke(int width,int color){}public void setColors(int[] c){lastColors=c.clone();}public void setOrientation(Object o){}
 public static final class Orientation { public static final Orientation TOP_BOTTOM=new Orientation(); }
 public void setBounds(int l,int t,int r,int b){this.l=l;this.r=r;this.t=t;this.b=b;}
@@ -523,6 +523,7 @@ public class DockNavigationCheck extends Context {
   dock.setMinimized(false);
   require(Math.abs(dock.getScaleY()-1f)<.02f,"Restored dock returns to full size");
   require(dock.itemAt(1).getAlpha()>.95f,"Inactive tab returns with the dock");
+  require(GradientDrawable.solidColorCalls==0,"Flat colour must never replace the lens gradient (calls="+GradientDrawable.solidColorCalls+")");
   System.out.println("Dock navigation checks passed: "+checks+" (queue test double, not device runtime)");
  }
 }
