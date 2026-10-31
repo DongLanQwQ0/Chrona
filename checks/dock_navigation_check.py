@@ -89,6 +89,18 @@ public class View {
  public boolean removeCallbacks(Runnable action){return jobs.removeIf(j->j.owner==this&&j.action==action);}
  public void invalidate(){invalidations++;} public boolean performHapticFeedback(int x){return true;}
  public float scaleX=1,scaleY=1;public void setScaleX(float value){scaleX=value;}public void setScaleY(float value){scaleY=value;}public float getScaleX(){return scaleX;}public float getScaleY(){return scaleY;}
+ public float alpha=1;public float getAlpha(){return alpha;}public void setAlpha(float value){alpha=value;}
+ public ViewPropertyAnimator animate(){return new ViewPropertyAnimator(this);}
+ public static class ViewPropertyAnimator {
+  final View view; ViewPropertyAnimator(View view){this.view=view;}
+  public ViewPropertyAnimator scaleX(float v){view.scaleX=v;return this;}
+  public ViewPropertyAnimator scaleY(float v){view.scaleY=v;return this;}
+  public ViewPropertyAnimator translationY(float v){view.translationY=v;return this;}
+  public ViewPropertyAnimator alpha(float v){view.alpha=v;return this;}
+  public ViewPropertyAnimator setDuration(long d){return this;}
+  public ViewPropertyAnimator setInterpolator(Object i){return this;}
+  public void start(){} public void cancel(){}
+ }
  protected void onDetachedFromWindow(){jobs.removeIf(j->j.owner==this);pressed=false;}
  public void detach(){onDetachedFromWindow();parent=null;}
  protected void dispatchDraw(android.graphics.Canvas c){}
@@ -151,6 +163,7 @@ public void setCompoundDrawableTintList(android.content.res.ColorStateList c){} 
   public void addUpdateListener(AnimatorUpdateListener l){listener=l;} public Object getAnimatedValue(){if(integer)return Integer.valueOf((int)to);return Float.valueOf(to);}
   public void addListener(AnimatorListenerAdapter listener){end=listener;}
   public void start(){if(listener!=null)listener.onAnimationUpdate(this);if(end!=null)end.onAnimationEnd(this);} }""",
+    "com/donglan/chrona/UiMotion.java": """package com.donglan.chrona; public class UiMotion { public static final long PRESS=90L, RELEASE=160L; public static final Object SETTLE=new Object(); }""",
     "com/donglan/chrona/UiStyle.java": """package com.donglan.chrona; public class UiStyle {
 public static final int RADIUS_DOCK=28;
 public static void dockGlass(android.view.View view){}

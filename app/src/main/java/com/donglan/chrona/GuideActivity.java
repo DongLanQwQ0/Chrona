@@ -178,8 +178,12 @@ public final class GuideActivity extends Activity {
                     Feedback.show(this, "示例已复制，可在记录页粘贴");
                 }
             });
-            sample.addView(copy);
-            UiStyle.addSpaced(content, sample, 4, 12);
+            // A single quiet action inside the sample, not a full-width bar: it keeps the card's
+            // own inset and leaves the same gap above and below.
+            LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(-2, -2);
+            copyParams.topMargin = dp(12);
+            sample.addView(copy, copyParams);
+            UiStyle.addSpaced(content, sample, 8, 12);
         }
         if (step.target != null) {
             Button practice = new Button(this);
@@ -197,7 +201,7 @@ public final class GuideActivity extends Activity {
     private LinearLayout card() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(12), dp(16), 0);
+        card.setPadding(dp(16), dp(12), dp(16), dp(12));
         UiStyle.card(card);
         return card;
     }

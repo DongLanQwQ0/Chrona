@@ -30,6 +30,8 @@ final class DockNavigationLayout extends FrameLayout {
     private static final int HIGHLIGHT_ALPHA = 82;
     /** Glass gradient: brighter at the top edge, settling into the plate colour at the bottom. */
     private static final int GLASS_TOP_ALPHA = 94, GLASS_BOTTOM_ALPHA = 70;
+    /** The specular sheen that makes the top edge read as glass rather than paint. */
+    private static final int GLASS_SHEEN = 0x2EFFFFFF;
     private static final int MIN_LABEL_TEXT_SP = 8;
     private static final float MOTION_PLATE_SCALE = 1.12f;
     private static final float PLATE_LEAN_DP = 6f, CROSS_LEAN_DP = 4f;
@@ -46,6 +48,7 @@ final class DockNavigationLayout extends FrameLayout {
     private boolean coastSelection;
     private int coastDestination;
     private int selectedIndex, tapIndex;
+    private int pressedItem = -1;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private boolean fullWidthMotion;
     private final Runnable finishTouch = this::finishTouch;
@@ -87,7 +90,10 @@ final class DockNavigationLayout extends FrameLayout {
         // A glass lens is not a flat block of colour: light gathers at the top edge and the fill
         // deepens towards the bottom, while the rim stays a shade brighter than the plate.
         highlight.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
-        highlight.setColors(new int[]{(tint | (GLASS_TOP_ALPHA << 24)), (tint | (GLASS_BOTTOM_ALPHA << 24))});
+        // Three stops: a white sheen where light hits the top edge, the tinted body, then the
+        // deeper base. One drawable, so the plate stays a single sampled surface.
+        highlight.setColors(new int[]{GLASS_SHEEN, (tint | (GLASS_TOP_ALPHA << 24)),
+                (tint | (GLASS_BOTTOM_ALPHA << 24))});
         highlight.setStroke(Math.max(1, Math.round(density)), 0x59FFFFFF);
     }
     void setOrientation(int value) { orientation = value; items.setOrientation(value); }
@@ -332,6 +338,35 @@ final class DockNavigationLayout extends FrameLayout {
         if (plateMoved) invalidate();
         updateHighlight();
     }
+
+    /**
+     * The tab under the finger answers on its own: a small lift on top of the shared plate. It runs
+     * on the platform animator so the interpolation, duration and refresh-rate pacing are the
+     * shared ones, and reduced motion lands immediately.
+     */
+    private void setPressedItem(int index) {
+        if (index == pressedItem) return;
+        int previous = pressedItem;
+        pressedItem = index;
+        animateItemPress(previous, false);
+        animateItemPress(index, true);
+    }
+
+    private void animateItemPress(int index, boolean pressed) {
+        if (index < 0 || index >= itemCount()) return;
+        View cell = itemAt(index);
+        float scale = pressed ? 1.06f : 1f;
+        float lift = pressed ? -dp(1) : 0f;
+        cell.animate().cancel();
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            cell.setScaleX(scale); cell.setScaleY(scale); cell.setTranslationY(lift);
+            return;
+        }
+        cell.animate().scaleX(scale).scaleY(scale).translationY(lift)
+                .setDuration(pressed ? UiMotion.PRESS : UiMotion.RELEASE)
+                .setInterpolator(UiMotion.SETTLE)
+                .start();
+    }
     private void press(boolean pressed) { spring.press(pressed); animateTo(spring.target); }
 
     private void cancelFingerFollow() {
@@ -496,6 +531,7 @@ final class DockNavigationLayout extends FrameLayout {
             // Preview immediately, but keep navigation owned by the eventual click/drag.
             // Waiting for Android's long-press timeout makes a pressed pill feel detached.
             spring.follow(nearest(axis(downX, downY)), 0f);
+            setPressedItem(nearest(axis(downX, downY)));
             leanToward(event);
             press(true);
             getParent().requestDisallowInterceptTouchEvent(true);
@@ -520,6 +556,7 @@ final class DockNavigationLayout extends FrameLayout {
                 // Cross-axis movement within a button is still an ordinary Android tap.
             }
             if (dragging) moveHighlight(axis(event.getX(), event.getY()));
+            if (dragging) setPressedItem(Math.round(positionAt(axis(event.getX(), event.getY()))));
         }
         boolean owned = dragging || ignoreTouch;
         boolean handled = owned || super.dispatchTouchEvent(event);
@@ -532,6 +569,7 @@ final class DockNavigationLayout extends FrameLayout {
             tracking = false;
             dragging = false;
             ignoreTouch = false;
+            setPressedItem(-1);
             press(false);
             if (pulse && ValueAnimator.areAnimatorsEnabled()) {
                 spring.releaseWithPulse();
