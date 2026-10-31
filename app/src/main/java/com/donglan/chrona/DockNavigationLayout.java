@@ -40,6 +40,8 @@ final class DockNavigationLayout extends FrameLayout {
     private static final float EDGE_TRAVEL = .6f;
     /** How far the plate may leave the rail, as a fraction of one tab's width. */
     private static final float EDGE_OVERFLOW = .25f;
+    /** Static room the motion host keeps for the plate's reach, in tabs. */
+    private static final float MOTION_RESERVE_TABS = .25f;
     private VelocityTracker fingerVelocity;
     private float downX, downY, fingerPosition;
     private long followFrameTime;
@@ -144,7 +146,9 @@ final class DockNavigationLayout extends FrameLayout {
                     totalWeight += weight; widestWeight = Math.max(widestWeight, weight);
                 }
                 float widest = totalWeight > 0f ? widestWeight / totalWeight : 1f / Math.max(1, dock.itemCount());
-                float ratio = (plate - 1f) / 2f + DockSpring.MAX_OUTWARD_WIDTH * plate * widest;
+                // Reserve what the plate can actually reach now (a quarter tab past the rim),
+                // not the stretch cap: the old formula would eat most of a narrow sidebar.
+                float ratio = (plate - 1f) / 2f + MOTION_RESERVE_TABS * plate * widest;
                 int clearance = (int)Math.ceil(2f * getResources().getDisplayMetrics().density);
                 int edge = (int)Math.ceil(available * ratio / (1f + 2f * ratio)) + clearance + Math.round(dp(PLATE_LEAN_DP));
                 if (!reserveHorizontal) edge = 0;
