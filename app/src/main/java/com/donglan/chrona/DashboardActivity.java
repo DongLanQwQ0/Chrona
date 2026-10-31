@@ -3623,7 +3623,10 @@ public final class DashboardActivity extends Activity {
                 TextView item = (TextView) cell; boolean active = section == SECTION_ORDER[i];
                 int color = active ? UiStyle.colors(this).onPrimaryContainer : UiStyle.colors(this).muted;
                 item.setTextColor(color); item.setCompoundDrawableTintList(ColorStateList.valueOf(color));
-                item.setContentDescription(item.getText() + (active ? "，当前页面" : ""));
+                // A collapsed dock blanks the label; never let that turn the spoken name into "，当前页面".
+                CharSequence name = item.getText();
+                if (name != null && name.length() > 0)
+                    item.setContentDescription(name + (active ? "，当前页面" : ""));
             }
             if (navigationBadge != null) navigationBadge.setContentDescription("待处理 " + attentionCount() + " 项：待确认 " + pendingReview + "，失败 " + pendingFailed);
             if (navigation != null) navigation.setSelectedIndex(sectionPosition(section));
