@@ -359,7 +359,8 @@ final class DockNavigationLayout extends FrameLayout {
         float x = vertical() ? across : along, y = vertical() ? along : across;
         float minScale = 1f - .42f * minimizeFraction;
         scaleX *= minScale;
-        x -= minimizeFraction * dp(30);
+        // The pivot already keeps the leading edge in place; shifting would push it past the
+        // 20dp content axis once collapsed.
         boolean plateMoved = Math.abs(getScaleX() - scaleX) > .001f || Math.abs(getScaleY() - spring.bar) > .001f
                 || Math.abs(getTranslationX() - x) > .001f || Math.abs(getTranslationY() - y) > .001f;
         setVisualPosition(spring.position);
@@ -383,6 +384,8 @@ final class DockNavigationLayout extends FrameLayout {
             labelsHidden = hideLabels;
             for (int i = 0; i < itemCount(); i++) {
                 View item = itemAt(i);
+                if (item instanceof FrameLayout wrapper && wrapper.getChildCount() > 0)
+                    item = wrapper.getChildAt(0);
                 if (!(item instanceof TextView label)) continue;
                 if (hideLabels) {
                     dockItemLabels.put(item, String.valueOf(label.getText()));
@@ -414,6 +417,11 @@ final class DockNavigationLayout extends FrameLayout {
         minimizeAnimator.addUpdateListener(animation -> {
             minimizeFraction = (float) animation.getAnimatedValue();
             applySpring();
+        });
+        minimizeAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                minimizeAnimator = null;
+            }
         });
         minimizeAnimator.start();
     }
@@ -454,8 +462,9 @@ final class DockNavigationLayout extends FrameLayout {
     }
 
     private void updateLabels(float left, float right, float feather) {
+        // The lens colour is fixed at construction: setting it again would replace the glass
+        // gradient with a flat fill on the very first frame.
         UiStyle.Palette palette = UiStyle.colors(getContext());
-        highlight.setColor((palette.primary & 0x00FFFFFF) | (HIGHLIGHT_ALPHA << 24));
         for (int i = 0; i < itemCount(); i++) {
             View cell = itemAt(i);
             if (cell instanceof FrameLayout wrapper) cell = wrapper.getChildAt(0);

@@ -201,7 +201,8 @@ public final class GuideActivity extends Activity {
     private LinearLayout card() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(12), dp(16), dp(12));
+        // Text rows already carry a 12dp bottom margin; a card inset here would double it.
+        card.setPadding(dp(16), dp(12), dp(16), 0);
         UiStyle.card(card);
         return card;
     }

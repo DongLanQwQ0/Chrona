@@ -66,6 +66,8 @@ public final class DashboardActivity extends Activity {
     private static final int HOME_CALENDAR_PERMISSION_REQUEST = 13;
     private static final long SYSTEM_CALENDAR_REFRESH_MILLIS = 5000L;
     private static final int MOBILE_DOCK_HEIGHT_DP = 64;
+    /** Scrolling this far past the top collapses the dock to the active tab. */
+    private static final int MINIMIZE_AFTER_DP = 160;
     private static final int MOBILE_BOTTOM_AREA_HEIGHT_DP = 88;
     private static final int MOBILE_DOCK_PRESS_CLEARANCE_DP = 12;
     /** How far the page follows a drag towards a section that does not exist. */
@@ -340,7 +342,15 @@ public final class DashboardActivity extends Activity {
         }
     }
 
+    /** Every section body drives the same collapse; a switch drops back to the full dock. */
+    private void attachDockMinimize(ScrollView view) {
+        view.setOnScrollChangeListener((target, scrollX, scrollY, oldX, oldY) -> {
+            if (!wide && navigation != null) navigation.setMinimized(scrollY > dp(MINIMIZE_AFTER_DP));
+        });
+    }
+
     private void activateSectionPage(SectionPage page) {
+        if (navigation != null) navigation.setMinimized(false);
         if (results != null && results != page.results) {
             resultMotionGeneration++;
             UiMotion.resetList(results);
@@ -379,6 +389,7 @@ public final class DashboardActivity extends Activity {
         ScrollView targetScroll = new ScrollView(this);
         targetScroll.setFillViewport(true);
         targetScroll.setVerticalScrollBarEnabled(false);
+        attachDockMinimize(targetScroll);
         LinearLayout targetContent = new LinearLayout(this);
         targetContent.setOrientation(LinearLayout.VERTICAL);
         int horizontal = 20;
@@ -1058,9 +1069,7 @@ public final class DashboardActivity extends Activity {
         scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
-        scroll.setOnScrollChangeListener((view, scrollX, scrollY, oldX, oldY) -> {
-            if (!wide && navigation != null) navigation.setMinimized(scrollY > dp(160));
-        });
+        attachDockMinimize(scroll);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         int horizontal = 20;
