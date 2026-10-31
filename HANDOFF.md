@@ -1,30 +1,24 @@
-# 当前交付：全仓 UI 样式统一（core）+ 网页导航修复收尾（chrona-web）
+# 当前交付：0.15.80 已发布；下一阶段 iOS 风格 Dock 实验
 
-分支 `ui/global-style-refresh`，工作树同一份、未提交。本文件是唯一工作单，写入方 `core`。
+分支 `main` 已包含 0.15.80；实验在独立分支进行，`v0.15.80` 是回滚点。
 
-## 已构建并部署
+## 已发布
 
-- `build/ui-refresh/Chrona-ui-refresh-0.15.79+241.apk`：release，0.15.79 / 241，已覆盖安装到真机 V2527A。
-- 真机截图：`build/ui-refresh/{home-zh,schedule-headings,phone-inbox,detail-final,calendar-month2,calendar-week}.png`。
+- `v0.15.80`：https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.80 （latest）
+- 候选 `build/candidates/0.15.80/Chrona-0.15.80.apk`，3,299,025 字节，242／0.15.80，原签名，非 debuggable。
+- 真机已覆盖升级（firstInstallTime 未变），Release 资产回读校验一致。
+- 全量检查 120/121；失败项 `data_integrity_check` 为夹具问题。
 
-## 本轮修复：首页切换「系统日程」导致整页抽搐
+## 下一阶段：iOS 风格 Dock 实验（需要可回滚）
 
-- 根因：`DashboardActivity.applyCompletionRows()` 给 `TransitionManager` 挂了 `Fade OUT + ChangeBounds + Fade IN`，作用对象是整块 `content`。任何一次数据变化（系统日程开关、轮询）都会把整页（含标题行）淡出再淡入一次，读作「抽搐」。切换开关并不触发 `render()`，所以不是入场动画。
-- 修复：只保留 `ChangeBounds`。保留的卡片继续按位移连续变化，新增行直接出现，不再整页洗白。
-- 证据：开关确实触发了行刷新（`拾时` 来源 0→1、系统节点 1→2）；构建通过，`completion_card_motion_check`／`dashboard_switch_check`／`section_history_check`／`review_badge_check` 全过。
-- 现场阻塞：真机当前停在 `LanSettingsActivity` 的「浏览器授权」页（10.171.176.71 的 Edge 配对请求），需要用户决定，未代点；因此本次未做逐帧视觉复核。
-
-## 前序成果
-
-- UI：标题区 24sp／64dp／8dp；`cardInset` 16/12；记录间距 8dp；`emptyState`；类型筛选可见化；日标题 15/13sp；日历圆角 `RADIUS_CHIP`、标题行 48dp、内容轴统一；详情页动作连续过渡、紧凑动作、中文日期。
-- 检查：full 套件 120/121，仅 `data_integrity_check` 因临时库文件占用＋快照缺表失败（数据层夹具问题，未改）。
+- 用户要求：参照 Apple 的 Dock 重新做一版更灵动、贴合原样的交互；可不使用液态玻璃。
+- 回滚方式：实验在独立分支提交，不打 tag、不发布；回滚即回到 `v0.15.80`。保留两版候选 APK 供对比。
+- 约束：现有 `DockNavigationLayout`／`DockSpring` 参数被交互基线与多处检查锁定；实验必须放在独立类或用开关切换，不改动既有基线参数，避免污染发布线。
 
 ## 唯一下一步
 
-1. 用户处理浏览器授权后，复核首页开关的过渡手感（逐帧或主观）。
-2. `data_integrity_check` 快照夹具。
-3. 课表／课堂标题行收敛。
+确定实验落点（独立 Dock 实现 + 开关），先做出可对比的候选，再由用户决定是否替换。
 
 ## 边界
 
-未改版本号、未建 Release；真机仅安装与浏览，未代用户授权、未写入用户数据。
+未改版本号（实验分支），未发布实验版本；真机仅安装已验证的 0.15.80。

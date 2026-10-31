@@ -1,5 +1,15 @@
 # 验证记录
 
+## 0.15.80 — 全仓 UI 统一与发布 — 2026-10-31
+
+- 变更：三个主页面共用同一标题区与卡片节奏（标题 24sp、行高 64dp、顶部 8dp、胶囊 48dp、卡片内距 16/12、记录间距 8dp）；新增 `UiStyle.cardInset`／`emptyState`；详情页条件动作改 `HeaderActionGroup.setActionVisible` 连续过渡、「设置重复」收为紧凑动作、截止占位改自然语言；日历标题行 44→48dp、三处字面圆角改 `RADIUS_CHIP`、月／年／日程内容轴与周／日统一；日期与日标题本地化为中文；网页端底部导航与新增按钮错位、筛选高光跟手修复。
+- 修复两处真机缺陷：首页 `applyCompletionRows` 给整块内容挂 `Fade OUT/IN` 导致任何刷新整页闪烁，改为仅 `ChangeBounds`；首页「下一件事」「待办」成对重复，原因是 `DashboardCardReconciler` 的保留前缀写死 2（旧两行标题区），改由 `addHeader()` 记录 `headerChildCount`。
+- 检查：8 条长期红灯（`completion_card_motion`、`zju_ui_style`、`detail_editor`、`bulk_calendar_publish`、`home_filter_reference`、`calendar_visibility_toggle`、`week_calendar`、`schedule_refresh_frame`、`dashboard_switch`）通过更新断言与注入 `ScheduleListing` 读形状替身修复；`python checks/run_checks.py full` 为 **120/121**，唯一失败 `data_integrity_check.py` 为临时库文件被占用与快照缺表，未修改。
+- 构建：`:app:assembleDebug :app:assembleRelease :app:lintDebug :app:lintRelease --no-daemon` 通过（2m32s）。
+- 候选：`build/candidates/0.15.80/Chrona-0.15.80.apk`，3,299,025 字节，versionCode 242／0.15.80，`apkanalyzer manifest debuggable` 为 false，`apksigner` SHA-256 `3f64d76960de8f2ee9705c2abd44f0d321851fda7edf9c6bc85d02f75b876770`（与既有候选同证书），SHA-256 `8EECCA89B7D430471B1AA0C9F845FCE508C522DE8322C702C46672410679DD20`。
+- 发布：tag `v0.15.80`，Release 非 draft、已设为 latest；资产 `Chrona-0.15.80.apk` 上传完成并按 `/releases/latest` 回读下载，大小与 SHA-256 与本地候选一致。
+- 真机：V2527A 覆盖安装成功，`firstInstallTime` 仍为 2026-09-26，Dashboard 正常前台，无崩溃日志。未做逐帧视觉验收与长时间使用观察。
+
 ## 网页导航直接跟手与布局修复 — 未构建候选 — 2026-10-31
 
 - 用户两张参考PNG先在项目`build/lan-dock-repair/references/`压成JPEG再读取；没有新增浏览器截图，视觉由用户验收。原Edge生产资源复现：返回首页＋位置停在padding过渡的中间态，向左错37px、与导航重叠23px；上方筛选没有MOVE处理，仅CSS点击过渡。`before.txt`和`track-evidence.json`提供功能坐标。
