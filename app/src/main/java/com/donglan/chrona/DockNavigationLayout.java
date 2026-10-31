@@ -56,7 +56,7 @@ final class DockNavigationLayout extends FrameLayout {
     private int selectedIndex, tapIndex;
     private int pressedItem = -1;
     /** 0 keeps the full dock; 1 leaves only the active tab at the leading corner. */
-    private float minimizeFraction;
+    private float minimizeFraction, notifiedMinimize = -1f;
     private ValueAnimator minimizeAnimator;
     private boolean labelsHidden;
     /** The capture action outside the dock rides the same collapse so the bar never splits. */
@@ -365,8 +365,10 @@ final class DockNavigationLayout extends FrameLayout {
         scaleX *= minScale;
         // The pivot already keeps the leading edge in place; shifting would push it past the
         // 20dp content axis once collapsed.
-        boolean plateMoved = Math.abs(getScaleX() - scaleX) > .001f || Math.abs(getScaleY() - spring.bar) > .001f
-                || Math.abs(getTranslationX() - x) > .001f || Math.abs(getTranslationY() - y) > .001f;
+        // Only a move resamples the acrylic; scaling is a GPU transform, so it must not force a
+        // fresh backdrop sample on every collapse frame.
+        boolean plateMoved = Math.abs(getTranslationX() - x) > .001f
+                || Math.abs(getTranslationY() - y) > .001f;
         setVisualPosition(spring.position);
         setPivotX(minimizeFraction > 0f ? 0f : getWidth() / 2f);
         setPivotY(minimizeFraction > 0f ? getHeight() : getHeight() / 2f);
@@ -375,7 +377,10 @@ final class DockNavigationLayout extends FrameLayout {
         // The acrylic must sample its new location instead of translating an old sample.
         // Highlight-only motion still leaves the plate's display list untouched.
         if (plateMoved) invalidate();
-        if (minimizeListener != null) minimizeListener.accept(minimizeFraction);
+        if (minimizeListener != null && Math.abs(minimizeFraction - notifiedMinimize) > .0005f) {
+            notifiedMinimize = minimizeFraction;
+            minimizeListener.accept(minimizeFraction);
+        }
         updateHighlight();
         for (int i = 0; i < itemCount(); i++) {
             View item = itemAt(i);

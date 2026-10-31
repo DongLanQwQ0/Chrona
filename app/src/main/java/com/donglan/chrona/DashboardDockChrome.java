@@ -25,6 +25,9 @@ final class DashboardDockChrome {
     private float homeFraction, dockHomeFraction, dragDockFrom;
     /** 1 while the dock is collapsed by scrolling; the capture action leaves with it. */
     private float minimize;
+    /** Last values actually pushed to the view, so a repeated frame writes nothing. */
+    private float appliedPresence = -1f, appliedBlur = -1f;
+    private int appliedInteractive = -1, appliedVisibility = -1;
     private boolean home;
     private ValueAnimator animator;
 
@@ -104,22 +107,37 @@ final class DashboardDockChrome {
         homeFraction = Math.max(0f, Math.min(1f, fraction));
         dockHomeFraction = Math.max(0f, Math.min(1f, dockFraction));
         float presence = homeFraction * homeFraction * (3f - 2f * homeFraction) * (1f - minimize);
-        captureHost.setVisibility(homeFraction > 0f ? View.VISIBLE : View.INVISIBLE);
-        captureHost.setAlpha(presence);
-        // Scale a wrapper, leaving the button's own pressed-state animation intact.
-        float scale = HIDDEN_SCALE + (1f - HIDDEN_SCALE) * presence;
-        captureHost.setScaleX(scale); captureHost.setScaleY(scale);
+        int visibility = homeFraction > 0f ? View.VISIBLE : View.INVISIBLE;
+        if (visibility != appliedVisibility) {
+            captureHost.setVisibility(visibility);
+            appliedVisibility = visibility;
+        }
+        if (Math.abs(presence - appliedPresence) > .001f) {
+            appliedPresence = presence;
+            captureHost.setAlpha(presence);
+            // Scale a wrapper, leaving the button's own pressed-state animation intact.
+            float scale = HIDDEN_SCALE + (1f - HIDDEN_SCALE) * presence;
+            captureHost.setScaleX(scale); captureHost.setScaleY(scale);
+        }
         if (Build.VERSION.SDK_INT >= 31) {
-            float blur = dp(EXIT_BLUR_DP) * (1f - presence);
-            captureHost.setRenderEffect(homeFraction == 0f || blur < .01f ? null
-                    : RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL));
+            float blur = homeFraction <= 0f || presence >= .999f ? 0f
+                    : dp(EXIT_BLUR_DP) * (1f - presence);
+            // A fresh RenderEffect every frame forces a new render node; only touch it when the
+            // radius really moves.
+            if (Math.abs(blur - appliedBlur) > .5f) {
+                appliedBlur = blur;
+                captureHost.setRenderEffect(blur < .5f ? null
+                        : RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL));
+            }
         }
         boolean interactive = home && homeFraction == 1f && animator == null && minimize == 0f;
-        captureButton.setEnabled(interactive);
-        captureHost.setImportantForAccessibility(interactive ? View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
-                : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        captureHost.invalidate();
-        captureButton.invalidate();
+        int interactiveFlag = interactive ? 1 : 0;
+        if (interactiveFlag != appliedInteractive) {
+            appliedInteractive = interactiveFlag;
+            captureButton.setEnabled(interactive);
+            captureHost.setImportantForAccessibility(interactive ? View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                    : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
         // Only the page-switch progress changes the dock's width; a collapse frame must not
         // trigger a measure/layout pass from inside the render step.
         if (homeFraction != previousHome || dockHomeFraction != previousDock) layoutMobile();
