@@ -53,6 +53,8 @@ final class DockNavigationLayout extends FrameLayout {
     private float minimizeFraction;
     private ValueAnimator minimizeAnimator;
     private boolean labelsHidden;
+    /** The capture action outside the dock rides the same collapse so the bar never splits. */
+    private java.util.function.DoubleConsumer minimizeListener;
     private final java.util.WeakHashMap<View, String> dockItemLabels = new java.util.WeakHashMap<>();
     static boolean minimizeEnabled = true;
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
@@ -348,6 +350,7 @@ final class DockNavigationLayout extends FrameLayout {
         // The acrylic must sample its new location instead of translating an old sample.
         // Highlight-only motion still leaves the plate's display list untouched.
         if (plateMoved) invalidate();
+        if (minimizeListener != null) minimizeListener.accept(minimizeFraction);
         updateHighlight();
         for (int i = 0; i < itemCount(); i++) {
             View item = itemAt(i);
@@ -373,6 +376,8 @@ final class DockNavigationLayout extends FrameLayout {
     }
 
     /** Collapses to the active tab while the content scrolls down, as a system tab bar does. */
+    void setMinimizeListener(java.util.function.DoubleConsumer listener) { minimizeListener = listener; }
+
     void setMinimized(boolean value) {
         if (!minimizeEnabled || vertical()) return;
         float target = value ? 1f : 0f;

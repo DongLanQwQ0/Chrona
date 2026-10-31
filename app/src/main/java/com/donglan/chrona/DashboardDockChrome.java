@@ -23,6 +23,8 @@ final class DashboardDockChrome {
     private final View captureHost, captureButton;
     private final int dockHeight;
     private float homeFraction, dockHomeFraction, dragDockFrom;
+    /** 1 while the dock is collapsed by scrolling; the capture action leaves with it. */
+    private float minimize;
     private boolean home;
     private ValueAnimator animator;
 
@@ -85,6 +87,14 @@ final class DashboardDockChrome {
         motion.start();
     }
 
+    /** Collapses the capture action together with the dock; 0 keeps it fully present. */
+    void setMinimize(float value) {
+        float clamped = Math.max(0f, Math.min(1f, value));
+        if (Math.abs(clamped - minimize) < .001f) return;
+        minimize = clamped;
+        apply(homeFraction, dockHomeFraction);
+    }
+
     private void apply(float fraction) {
         apply(fraction, fraction);
     }
@@ -92,7 +102,7 @@ final class DashboardDockChrome {
     private void apply(float fraction, float dockFraction) {
         homeFraction = Math.max(0f, Math.min(1f, fraction));
         dockHomeFraction = Math.max(0f, Math.min(1f, dockFraction));
-        float presence = homeFraction * homeFraction * (3f - 2f * homeFraction);
+        float presence = homeFraction * homeFraction * (3f - 2f * homeFraction) * (1f - minimize);
         captureHost.setVisibility(homeFraction > 0f ? View.VISIBLE : View.INVISIBLE);
         captureHost.setAlpha(presence);
         // Scale a wrapper, leaving the button's own pressed-state animation intact.
@@ -103,7 +113,7 @@ final class DashboardDockChrome {
             captureHost.setRenderEffect(homeFraction == 0f || blur < .01f ? null
                     : RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL));
         }
-        boolean interactive = home && homeFraction == 1f && animator == null;
+        boolean interactive = home && homeFraction == 1f && animator == null && minimize == 0f;
         captureButton.setEnabled(interactive);
         captureHost.setImportantForAccessibility(interactive ? View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                 : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);

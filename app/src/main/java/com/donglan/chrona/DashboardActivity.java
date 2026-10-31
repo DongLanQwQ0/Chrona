@@ -1117,6 +1117,9 @@ public final class DashboardActivity extends Activity {
                     Gravity.BOTTOM | Gravity.END);
             recordParams.setMargins(0, 0, dp(14) - blurGutter, dp(14) - blurGutter);
             mobileBottomArea.addView(captureHost, recordParams);
+            if (navigation != null) navigation.setMinimizeListener(value -> {
+                if (dockChrome != null) dockChrome.setMinimize((float) value);
+            });
             dockChrome = new DashboardDockChrome(navigation, mobileBottomArea, captureHost, record,
                     MOBILE_DOCK_HEIGHT_DP, section == HOME);
         }
