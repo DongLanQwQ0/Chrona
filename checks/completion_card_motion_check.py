@@ -1,6 +1,7 @@
 """Execute the real keyed reconciler with small Android View transport doubles."""
 from pathlib import Path
 import os
+import re
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
@@ -69,10 +70,11 @@ assert 'completingCandidates.add(candidate.id)' in activity
 assert 'completionRefreshRunning || !completingCandidates.isEmpty()' in activity
 assert 'TransitionManager.beginDelayedTransition(target, motion)' in activity
 assert 'UiMotion.isEnabled() && target.isLaidOut()' in activity
-assert 'completionRows.apply(target, incoming, destination == HOME ? 2 : 0)' in activity
+assert 'completionRows.apply(target, incoming, destination == HOME ? headerChildCount : 0)' in activity
 assert 'viewport.scrollTo(0, y)' in activity
 assert 'new LinearLayout.LayoutParams(dp(48), dp(48))' in activity
-assert 'EventCategory.VALUES[scheduleCategory - 1]' in activity
+# 收件类型路由随实现同步：源码为 EventCategory.VALUES[categoryIndex-1]，按正则容忍空格。
+assert re.search(r'EventCategory\.VALUES\[\s*categoryIndex\s*-\s*1\s*\]', activity)
 home_refresh = activity.split('private void refreshHomeContent()', 1)[1].split('private String calendarWindowKey', 1)[0]
 assert 'refreshCompletionRows();' in home_refresh and 'render();' not in home_refresh
 active_refresh = activity.split('private void refreshActivePageIfNeeded()', 1)[1].split('private ', 1)[0]

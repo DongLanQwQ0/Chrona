@@ -5,6 +5,15 @@
   const esc=md.utils.escapeHtml;
   const safeImage=path => /^(?:images\/)?image-\d+\.jpg$/.test(path);
   let allowed=new Set(), formulas=[], generation=0;
+  // Source IDs belong to structured audit metadata, not the reading copy.
+  // Inline parsing leaves fenced/inline code and math tokens untouched.
+  md.inline.ruler.before('link','source_id',(state)=>{
+    if(!state.env?.hideSourceIds)return false;
+    const match=/^\[id:\s*\d+\](?:\s*[—–-]\s*\[id:\s*\d+\])?/.exec(state.src.slice(state.pos));
+    if(!match)return false;
+    state.pos+=match[0].length;return true;
+  });
+  const reading=text=>md.render(text||'',{hideSourceIds:true});
   md.inline.ruler.before('escape','math',(state,silent)=>{
     const start=state.pos;
     if(state.src[start]!=='$')return false;
@@ -65,16 +74,16 @@
     document.documentElement.style.fontSize=(16*(theme.fontScale||1))+'px';
     const summary=data.summary;
     let html=summary.complete?'':'<p class="draft">未完成</p>';
-    if(String(summary.overview||'').trim())html+='<h2>重点概览</h2>'+md.render(summary.overview);
+    if(String(summary.overview||'').trim())html+='<h2>重点概览</h2>'+reading(summary.overview);
     let taskIndex=0;
     for(const part of summary.parts||[]){
       for(const note of part.notes||[]){
-        html+='<h2>'+md.renderInline(note.title||'')+'</h2>'+md.render(note.text||'');
+        html+='<h2>'+md.renderInline(note.title||'',{hideSourceIds:true})+'</h2>'+reading(note.text);
         const inline=new Set([...String(note.text).matchAll(/!\[[^\]\r\n]*\]\((?:images\/)?(image-\d+\.jpg)\)/g)].map(m=>m[1]));
         for(const image of note.images||[]){const name=String(image).replace(/^images\//,'');if(!inline.has(name))html+=md.render(`![课堂截图](images/${name})`);}
       }
       for(const task of part.assignments||[]){
-        html+=`<h2>课堂安排</h2><div class="assignment" role="link" tabindex="0" data-task="${taskIndex++}" aria-label="提取课堂安排为日程">${md.render(task.text||'')}</div>`;
+        html+=`<h2>课堂安排</h2><div class="assignment" role="link" tabindex="0" data-task="${taskIndex++}" aria-label="提取课堂安排为日程">${reading(task.text)}</div>`;
       }
     }
     if(summary.corrected_transcript)html+='<details><summary>更正文稿</summary>'+md.render(summary.corrected_transcript)+'</details>';

@@ -53,8 +53,23 @@ public class TaskStore implements AutoCloseable {
 'com/donglan/chrona/ZjuSettingsStore.java': '''package com.donglan.chrona;final class ZjuSettingsStore {
  static boolean active=true;ZjuSettingsStore(Object context){}boolean enabled(){return active;}}
 ''',
+'com/donglan/chrona/ScheduleListing.java': '''package com.donglan.chrona;
+import java.util.*;
+import com.donglan.chrona.data.EventCandidate;
+final class ScheduleListing {
+ static final class Exam { String time="",room="",seat=""; }
+ static final class Row { EventCandidate candidate; Exam exam; }
+ static final class Page { List<Long> ids=new ArrayList<>();List<Row> rows=new ArrayList<>();int page,total;String warning="",account="",scope="";boolean examsLoaded; }
+ static Page load(android.content.Context context,com.donglan.chrona.data.TaskStore store,com.donglan.chrona.data.ScheduleQuery query,boolean oldestFirst,int requestedPage,long focusCandidate){
+  Page page=new Page();page.ids=new ArrayList<>(store.queryScheduleIds(query));
+  page.total=page.ids.size();page.page=requestedPage;return page;
+ }
+ static String scope(android.content.Context context){return "";}
+ static boolean schoolCurrent(android.content.Context context,String account){return false;}
+}''',
 'com/donglan/chrona/data/ScheduleFilterState.java': '''package com.donglan.chrona.data;public final class ScheduleFilterState {
- public static final int HOMEWORK_CATEGORY=3;}
+ public static final int HOMEWORK_CATEGORY=3;
+ public static String categoryValue(int index){return index==4?com.donglan.chrona.data.ScheduleQuery.CATEGORY_EXAM:index>0&&index<=EventCategory.VALUES.length?EventCategory.VALUES[index-1]:null;}}
 ''',
 'com/donglan/chrona/DashboardActivity.java': '''package com.donglan.chrona;
 import java.time.*;import java.util.*;import java.util.concurrent.*;import com.donglan.chrona.data.*;

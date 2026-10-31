@@ -21,7 +21,8 @@ class RippleDrawable extends Drawable {}
 class Canvas {}
 class CheckBox {Context context;boolean checked,attached=true,broadcasting;java.util.function.Consumer<Boolean> listener;Drawable foreground;int invalidations,changes,width=48,height=48;
  CheckBox(Context context){this.context=context;}Context getContext(){return context;}Resources getResources(){return new Resources();}
- int getWidth(){return width;}int getHeight(){return height;}void setButtonDrawable(Drawable drawable){}void setBackgroundColor(int color){}
+ int getWidth(){return width;}int getHeight(){return height;}int getPaddingLeft(){return 0;}int getPaddingRight(){return 0;}
+ int getPaddingTop(){return 0;}int getPaddingBottom(){return 0;}void setButtonDrawable(Drawable drawable){}void setBackgroundColor(int color){}
  void setForeground(Drawable drawable){foreground=drawable;}boolean isChecked(){return checked;}
  void setChecked(boolean value){if(value!=checked){checked=value;changes++;if(!broadcasting&&listener!=null){broadcasting=true;try{listener.accept(value);}finally{broadcasting=false;}}}}boolean isAttachedToWindow(){return attached;}
  void invalidate(){invalidations++;}protected void onDraw(Canvas canvas){}protected void onDetachedFromWindow(){attached=false;}}

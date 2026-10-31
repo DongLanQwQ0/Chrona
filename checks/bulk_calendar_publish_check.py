@@ -12,6 +12,7 @@ files = {
     'android/content/Context.java': 'package android.content; public class Context {}',
     'android/util/Log.java': 'package android.util; public class Log {public static void w(String a,String b,Throwable c){}}',
     'com/donglan/chrona/AndroidSync.java': 'package com.donglan.chrona; public class AndroidSync {public static final Object LOCK=new Object();}',
+    'com/donglan/chrona/OccurrenceUpdates.java': 'package com.donglan.chrona; public class OccurrenceUpdates { public static boolean held(com.donglan.chrona.data.TaskStore store,long id){return false;} }',
     'com/donglan/chrona/data/TaskRecord.java': 'package com.donglan.chrona.data; public class TaskRecord {public static final String READY="ready",NEEDS_REVIEW="review",FAILED="failed",QUEUED="queued",PROCESSING="processing";public final String status;public TaskRecord(String status){this.status=status;}}',
     'com/donglan/chrona/data/TaskStore.java': '''package com.donglan.chrona.data;
 import java.util.*;

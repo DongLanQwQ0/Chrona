@@ -1,5 +1,13 @@
 # 验证记录
 
+## 网页导航直接跟手与布局修复 — 未构建候选 — 2026-10-31
+
+- 用户两张参考PNG先在项目`build/lan-dock-repair/references/`压成JPEG再读取；没有新增浏览器截图，视觉由用户验收。原Edge生产资源复现：返回首页＋位置停在padding过渡的中间态，向左错37px、与导航重叠23px；上方筛选没有MOVE处理，仅CSS点击过渡。`before.txt`和`track-evidence.json`提供功能坐标。
+- 两类栏改用同一`createNavigationTrack`，持有位置直接使用当前指针与变换坐标，范围为首尾选项中心；松手使用原速度／惯性、取消不提交。导航外框改监听border-box；复测发现提升运动层级后透明padding拦截新增按钮（`track-hit-diagnosis.txt`），改为外框不接收命中、实际nav承接。
+- `track-final.txt`通过：1280×900、414×896、896×414正常窗口中两类栏的真实触摸反向MOVE、首尾clamp、touchCancel、多指、Enter／Space、控制器复用／移除／重挂及＋命中。返回首页间距14px；上方栏首次MOVE中心与指针相差约0.006px。CDP触摸消息等待事件完成后的呈现帧，不以未送到页面的旧事件误判；窗口失焦仅合成blur事件验证清理，不扩称真实系统焦点测试。
+- `daily-functional.txt`三大主页面功能回归通过；`calendar-code.txt`生产Java40项、纯JS84项通过，旧私有Dock检查已迁移公共实现。专门只读ui_review复审关闭新状态机与透明命中缺口，代码／交互坐标范围可签收；实际视觉及手感留给用户。
+- 外部Agent正在同一工作树建立全局样式协作与管道，当前分支已变为`ui/global-style-refresh`。本聊天已通过`docs/Communication/to-external-agent.md`及本地管道消息#2申明既有网页车道与style.css租约冲突，尚待对齐集成／版本／构建负责人。未构建、未安装本轮修复，不借其它Agent工作创建Release或提交其文件。
+
 ## 0.15.79 — 网页功能续查与日历阅读状态 — 2026-10-31
 
 - 按用户「视觉由我检查」的边界，使用原Edge／同一持久profile运行功能用例，不截图、不作像素验收、不调整DPI或分辨率。`build/lan-web-functional/daily-workspace.txt`通过首页／日程／收件箱的真实鼠标、键盘、触摸操作：导航、筛选、分页与跨页选择、详情返回、草稿、异步旧结果隔离、作业定位／刷新、考试只读和批量排除；完整请求证据另存`build/lan-daily-workspace/functional-evidence.json`，未覆盖原视觉记录。

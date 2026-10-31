@@ -24,6 +24,10 @@ import android.widget.TextView;
 public final class UiStyle {
     public static final int PAGE_TOP_DP = 8;
     public static final int HEADER_HEIGHT_DP = 64;
+    /** Content card inset and the gap between adjacent records, shared by every list page. */
+    public static final int CARD_INSET_H_DP = 16;
+    public static final int CARD_INSET_V_DP = 12;
+    public static final int RECORD_GAP_DP = 8;
 
     /** 48dp controls share a centerline 40dp below the system safe area's top. */
     public static LinearLayout headerRow(Activity activity) {
@@ -329,6 +333,53 @@ public final class UiStyle {
     public static void card(View view) {
         UiSurfaces.acrylicSurface(view, RADIUS_CARD);
         view.setElevation(dp(view, 2));
+    }
+
+    /**
+     * The shared empty state: a card that continues the list from the toolbar instead of centring
+     * in the viewport, with one icon, one line of copy and an optional recovery action.
+     */
+    public static LinearLayout emptyState(LinearLayout parent, int iconRes, String label,
+            String actionLabel, Runnable action) {
+        Palette colors = colors(parent.getContext());
+        LinearLayout box = new LinearLayout(parent.getContext());
+        box.setOrientation(LinearLayout.VERTICAL);
+        card(box);
+        cardInset(box);
+        ImageView glyph = new ImageView(parent.getContext());
+        glyph.setImageResource(iconRes);
+        glyph.setImageTintList(ColorStateList.valueOf(colors.muted));
+        box.addView(glyph, new LinearLayout.LayoutParams(dp(box, 24), dp(box, 24)));
+        TextView text = new TextView(parent.getContext());
+        text.setText(label);
+        text.setTextColor(colors.text);
+        text.setTextSize(16);
+        text.setLineSpacing(dp(text, 2), 1f);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-1, -2);
+        textParams.topMargin = dp(text, 10);
+        box.addView(text, textParams);
+        if (actionLabel != null && action != null) {
+            TextView trigger = new TextView(parent.getContext());
+            trigger.setText(actionLabel);
+            trigger.setTextColor(colors.primary);
+            trigger.setTextSize(13);
+            trigger.setTypeface(null, Typeface.BOLD);
+            trigger.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            trigger.setMinimumHeight(dp(trigger, 48));
+            pressable(trigger);
+            trigger.setOnClickListener(view -> action.run());
+            box.addView(trigger, new LinearLayout.LayoutParams(-1, -2));
+        }
+        addSpaced(parent, box, RECORD_GAP_DP / 2, RECORD_GAP_DP / 2);
+        return box;
+    }
+
+    /** The shared content-card inset: 16dp horizontal, 12dp vertical. */
+    public static void cardInset(View view) {
+        float density = view.getResources().getDisplayMetrics().density;
+        int horizontal = Math.round(CARD_INSET_H_DP * density);
+        int vertical = Math.round(CARD_INSET_V_DP * density);
+        view.setPadding(horizontal, vertical, horizontal, vertical);
     }
 
     /** Translucent surface over the softly colored backdrop; text stays opaque. */

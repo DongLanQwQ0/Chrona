@@ -21,6 +21,21 @@ methods = '\n'.join(method(x) for x in (
     'private void buildScheduleResultFrame(', 'private void renderScheduleResults(', 'private void updateResultsWithEntrance(', 'private String inboxCategory(',
     'private ScheduleQuery buildScheduleQuery(', 'private String completionFilterKey(', 'private void queueHomeworkFocus('
 ))
+# ScheduleListing composes school exams with local rows; the harness only needs its read shape.
+SCHEDULE_LISTING_STUB = r'''
+class ScheduleListing {
+ static final class Exam { String time="",room="",seat=""; }
+ static final class Row { EventCandidate candidate; Exam exam; Row(EventCandidate c,Exam e){candidate=c;exam=e;} }
+ static final class Page { List<Long> ids=new ArrayList<>();List<Row> rows=new ArrayList<>();int page,total;String warning="",account="",scope="";boolean examsLoaded; }
+ static Page load(Object context,Object store,ScheduleQuery query,boolean oldestFirst,int requestedPage,long focusCandidate){
+  Page page=new Page();
+  for(int i=0;i<DashboardSectionData.count;i++){page.ids.add((long)i);page.rows.add(new Row(new EventCandidate(),null));}
+  page.total=DashboardSectionData.count;page.page=requestedPage;return page;
+ }
+ static String scope(Object context){return "";}
+ static boolean schoolCurrent(Object context,String account){return false;}
+}
+'''
 java = r'''
 import java.util.*;
 import java.time.*;
@@ -32,35 +47,57 @@ class LinearLayout {
  void removeAllViews(){rows=headings=footer=0;removed=true;}
  void removeCallbacks(Runnable r){frames.removeIf(x->x==r);}
  void postOnAnimation(Runnable r){frames.add(r);}
+ void setTag(Object tag){}
+ void setOnClickListener(OnClick listener){}
  void frame(){Runnable r=frames.poll();if(r!=null)r.run();}
 }
 class ScrollView {int y; Queue<Runnable> posts=new ArrayDeque<>();int getScrollY(){return y;}void scrollTo(int x,int value){y=value;}void post(Runnable r){posts.add(r);}void drain(){while(!posts.isEmpty())posts.remove().run();}}
 class QueueExecutor {boolean worker;Queue<Runnable> tasks=new ArrayDeque<>();void execute(Runnable r){tasks.add(r);}void run(){worker=true;try{tasks.remove().run();}finally{worker=false;}}}
 class Handler {Queue<Runnable> tasks=new ArrayDeque<>();void post(Runnable r){tasks.add(r);}void postDelayed(Runnable r,long delay){post(r);}void removeCallbacks(Runnable r){tasks.removeIf(x->x==r);}void drain(){while(!tasks.isEmpty())tasks.remove().run();}}
-class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int PAGE_SIZE=50,TODO_ANY=0,TODO_TODAY_DUE=1,TODO_OVERDUE=2,TODO_OPEN=3;static String CATEGORY_HOMEWORK="homework";}
-class ZjuSettingsStore {ZjuSettingsStore(Object context){}boolean enabled(){return true;}}
+class ScheduleQuery {Object[] args;ScheduleQuery(Object...a){args=a;}static int PAGE_SIZE=50,TODO_ANY=0,TODO_TODAY_DUE=1,TODO_OVERDUE=2,TODO_OPEN=3;static String CATEGORY_HOMEWORK="homework";boolean officialExamOnly(){return false;}}
+class ZjuSettingsStore {ZjuSettingsStore(Object context){}boolean enabled(){return true;}boolean configured(){return true;}}
 class InboxQuery {InboxQuery(Object...a){}}
 class EventCategory {static String[] VALUES={"event"};}
+class ExternalCourseDetailActivity { }
 // All rows in this frame-budget fixture are explicitly timed events, not deadline-only tasks.
-class EventCandidate {Long anchor(){return startAtMillis;}Long effectiveDueAtMillis(){return dueAtMillis!=null?dueAtMillis:endAtMillis!=null?endAtMillis:startAtMillis;}boolean hasDefaultExecutionInterval(){return false;}Long executionStartAtMillis(){return startAtMillis;}boolean executionAllDay(){return allDay;}Long startAtMillis=1L,endAtMillis,dueAtMillis=2L; boolean allDay;}
+class EventCandidate {long id;Long overdueAtMillis(){return null;}Long anchor(){return startAtMillis;}Long effectiveDueAtMillis(){return dueAtMillis!=null?dueAtMillis:endAtMillis!=null?endAtMillis:startAtMillis;}boolean hasDefaultExecutionInterval(){return false;}Long executionStartAtMillis(){return startAtMillis;}boolean executionAllDay(){return allDay;}Long startAtMillis=1L,endAtMillis,dueAtMillis=2L; boolean allDay;}
 class TaskStore {List<Long> queryScheduleIds(ScheduleQuery q){throw new AssertionError("SQL on UI");}List<EventCandidate> querySchedulePage(ScheduleQuery q,boolean o,int p){throw new AssertionError("SQL on UI");}}
 class AllDayDates {static String displayStart(long t){return "2026-10-13";}static String localDate(long t,ZoneId z){return "2026-10-13";}}
 class HomeTimelinePreferences {static boolean includesSystemCalendar(Object c){return true;}}
 class UiMotion {static int settled,enters,exits;static Runnable replace;static void resetList(Object l){replace=null;}static void exitList(Object l,Runnable r){exits++;replace=r;}static void enterList(Object l){enters++;}static void settleScroll(ScrollView s,LinearLayout l){settled++;}}
 class Feedback {static int failures;static void show(Object c,String s){failures++;}}
+class R {static class drawable {static final int ic_schedule=1,ic_inbox_outline=2,ic_homework=3;}}
+class Button { }
+interface OnClick { void onClick(Object view); }
+class CompletionRows { void row(Object view,String key,Object state){} }
+class Intent { Intent(Object context,Object target){} Intent putExtra(String key,String value){return this;} Intent putExtra(String key,long value){return this;} }
+class ZjuExamsActivity { }
+class ZjuSettingsActivity { }
+class UiStyle {static void emptyState(LinearLayout parent,int icon,String label,String action,Runnable run){}
+ static void addSpaced(LinearLayout parent,Object view,int top,int bottom){}
+ static void pressable(Object view){}}
 class DashboardSectionData {
- List<Long> ids=new ArrayList<>();List<EventCandidate> candidates=new ArrayList<>();int page,review,failed;long revision=9;
+ List<Long> ids=new ArrayList<>();List<EventCandidate> candidates=new ArrayList<>();int page,review,failed;long revision=9;ScheduleListing.Page schedule;
  static int reads, count=55,nextReview=2,nextFailed=1;static boolean fail;static ScheduleQuery last;
  static DashboardSectionData load(DashboardRefreshCheck c,int destination,InboxQuery i,ScheduleQuery q,boolean o,int p,boolean system,long focusCandidate){
   if(!c.startupReader.worker)throw new AssertionError("read outside worker");reads++;last=q;
   if(fail)throw new RuntimeException("read failed");
   DashboardSectionData d=new DashboardSectionData();d.page=p;d.review=nextReview;d.failed=nextFailed;
+  d.schedule=ScheduleListing.load(c,null,q,o,p,focusCandidate);
   for(int n=0;n<count;n++){d.ids.add((long)n);d.candidates.add(new EventCandidate());}return d;
  }
 }
 public class DashboardRefreshCheck {
  static int checks,throwAt=-1;static void check(boolean v,String message){checks++;if(!v)throw new AssertionError(message);}
  static final int SCHEDULE=2,INBOX=1;
+ void message(LinearLayout parent,String text){ }
+ void showScheduleFilters(){ }
+ void startActivity(Intent intent){ }
+ final CompletionRows completionRows=new CompletionRows();
+ LinearLayout card(){return new LinearLayout();}
+ void addScheduleCardContent(LinearLayout card,EventCandidate item,Object event,boolean a,boolean b,Object c,ScheduleListing.Exam exam){}
+ Button scheduleAction(String label,Runnable run){return new Button();}
+ void scheduleDayHeading(Object date){}
  int section=SCHEDULE,scheduleResultGeneration,resultMotionGeneration,scheduleSource,scheduleTab,scheduleCategory,schedulePublication,schedulePage,statusIndex,categoryIndex,scheduleTodoScope;
  boolean scheduleResultLoading,scheduleOldestFirst,destroyed,finishing;int updates,pendingReview=-1,pendingFailed=-1,countUpdates;
  String scheduleQuery="original",inboxQuery="";
@@ -120,14 +157,14 @@ public class DashboardRefreshCheck {
   System.out.println("Schedule refresh passed: "+checks+" checks (production controller/renderer, worker and frame doubles)");
  }
 }
-'''.replace('__METHODS__', methods)
+'''.replace('__METHODS__', methods) + SCHEDULE_LISTING_STUB
 out = ROOT / 'build/schedule-refresh-check'
 out.mkdir(parents=True, exist_ok=True)
 file = out / 'DashboardRefreshCheck.java'
 file.write_text(java, encoding='utf-8')
 filter_state = out / 'com/donglan/chrona/data/ScheduleFilterState.java'
 filter_state.parent.mkdir(parents=True, exist_ok=True)
-filter_state.write_text('package com.donglan.chrona.data; public final class ScheduleFilterState { public static final int HOMEWORK_CATEGORY=3; }', encoding='utf-8')
+filter_state.write_text('package com.donglan.chrona.data; public final class ScheduleFilterState { public static final int HOMEWORK_CATEGORY=3; public static String categoryValue(int index){return "";} }', encoding='utf-8')
 bin_dir = Path(os.environ['JAVA_HOME']) / 'bin'
 subprocess.run([str(bin_dir / 'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), str(file), str(filter_state)], check=True)
 subprocess.run([str(bin_dir / 'java.exe'), '-cp', str(out), 'DashboardRefreshCheck'], check=True)

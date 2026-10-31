@@ -117,6 +117,7 @@ public class CarouselMotionCheck {
  static class UiStyle {
   static void addSpaced(LinearLayout p,View v,int top,int bottom){Params lp=new Params(-1,-2);lp.setMargins(0,p.context.dp(top),0,p.context.dp(bottom));p.addView(v,lp);}
   static void pressable(View v){v.held=HELD;}
+   static void cardInset(View v){}
  }
  TextView text(String label,int size,boolean bold){return new TextView(this,size);}
  LinearLayout card(){return new LinearLayout(this);}

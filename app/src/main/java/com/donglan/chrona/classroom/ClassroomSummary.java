@@ -89,8 +89,12 @@ public final class ClassroomSummary {
     }
     private static final String SUMMARY_FIELDS="\"overview\":\"全课重点\",\"notes\":[{\"title\":\"主题\",\"text\":\"详细笔记\",\"sources\":[0],\"images\":[]}],"
             +"\"assignments\":[{\"text\":\"老师明确提出的作业或考试安排，保留原日期措辞\",\"sources\":[0]}]";
-    private static final String SOURCE_REQUIREMENTS="每条笔记和安排必须附真实字幕 id；没有安排返回空数组。notes.images仅填写本次images清单中实际file的原值；Markdown配图使用images/加同一个file。";
+    private static final String SOURCE_REQUIREMENTS="每条笔记和安排必须在sources数组附真实字幕 id，正文和标题不写[id:编号]或来源编号范围。没有安排返回空数组。"
+            +"assignments仅限老师明确布置、要求学生执行的具体事项，不能把一般知识、解题注意事项、自拟复习建议或考试重点改写为待办。"
+            +"未出现的评分/改卷/考试类别不写‘未提及’或‘没有’；无教学或明确安排意义的课后闲聊、模糊词片段不收入笔记。"
+            +"notes.images仅填写本次images清单中实际file的原值；Markdown配图使用images/加同一个file。";
     static final String SCHEMA="返回 {"+SUMMARY_FIELDS+"}。"+SOURCE_REQUIREMENTS;
+    static final String TOPIC_SCHEMA="返回 {\"overview\":\"\",\"notes\":[{\"title\":\"主题\",\"text\":\"完整主题笔记\",\"sources\":[0],\"images\":[]}],\"assignments\":[]}。"+SOURCE_REQUIREMENTS;
     static String draftSchema(JSONObject catalogue,int limit)throws Exception{
         String decision=limit==0?"disabled":catalogue.getInt("count")==0?"unavailable":"request";
         String requests=decision.equals("request")?"[{\"start\":0,\"end\":60,\"reason\":\"该时间范围需要核对的视觉内容\"}]":"[]";
@@ -290,14 +294,19 @@ public final class ClassroomSummary {
         return new JSONObject().put("segments",texts).put("images",images);
     }
     public static void validate(JSONObject part,JSONObject chunk) throws Exception {
-        if(part.getString("overview").isBlank())throw new IOException("课堂概览为空");
+        validate(part,chunk,false);
+    }
+    /** Scoped extraction may legitimately contain only non-teaching chatter. */
+    static void validateBlock(JSONObject part,JSONObject chunk)throws Exception{validate(part,chunk,true);}
+    private static void validate(JSONObject part,JSONObject chunk,boolean allowEmpty) throws Exception {
+        if(part.getString("overview").isBlank()&&!allowEmpty)throw new IOException("课堂概览为空");
         Set<Integer> sources=new HashSet<>();JSONArray segments=chunk.getJSONArray("segments");
         for(int i=0;i<segments.length();i++)sources.add(segments.getJSONObject(i).getInt("id"));
         Set<String> allowedImages=new HashSet<>();JSONArray pics=chunk.getJSONArray("images");
         for(int i=0;i<pics.length();i++)allowedImages.add(pics.getJSONObject(i).getString("file"));
         JSONObject wrapped=new JSONObject().put("overview",part.getString("overview")).put("parts",new JSONArray().put(part));
         for(String image:ClassroomDocument.referencedImages(wrapped))if(!allowedImages.contains(image))throw new IOException("AI 引用了未分析的图片："+image);
-        JSONArray notes=part.getJSONArray("notes");if(notes.length()==0)throw new IOException("AI 未返回课堂笔记");
+        JSONArray notes=part.getJSONArray("notes");if(notes.length()==0&&!allowEmpty)throw new IOException("AI 未返回课堂笔记");
         for(int i=0;i<notes.length();i++){
             JSONObject note=notes.getJSONObject(i);if(note.getString("title").isBlank()||note.getString("text").isBlank())throw new IOException("课堂笔记不完整");
             validateSources(note.getJSONArray("sources"),sources);JSONArray images=note.getJSONArray("images");
@@ -305,6 +314,16 @@ public final class ClassroomSummary {
         }
         JSONArray assignments=part.getJSONArray("assignments");
         for(int i=0;i<assignments.length();i++){JSONObject task=assignments.getJSONObject(i);if(task.getString("text").isBlank())throw new IOException("课堂安排为空");validateSources(task.getJSONArray("sources"),sources);}
+    }
+    static void validateAssignmentEvidence(JSONObject part,JSONArray segments)throws Exception{
+        JSONArray tasks=part.getJSONArray("assignments");
+        for(int i=0;i<tasks.length();i++){
+            JSONObject task=tasks.getJSONObject(i);String quote=task.getString("evidence").replaceAll("\\s+","");
+            if(quote.isEmpty())throw new IOException("课堂安排缺少老师明确要求的原话依据");
+            Set<Integer> refs=new HashSet<>();JSONArray ids=task.getJSONArray("sources");for(int n=0;n<ids.length();n++)refs.add(ids.getInt(n));
+            StringBuilder raw=new StringBuilder();for(int n=0;n<segments.length();n++){JSONObject row=segments.getJSONObject(n);if(refs.contains(row.getInt("id")))raw.append(row.getString("text").replaceAll("\\s+",""));else raw.append('\0');}
+            if(raw.indexOf(quote)<0)throw new IOException("课堂安排的原话依据不在所引用的字幕中");
+        }
     }
     private static void validateSources(JSONArray refs,Set<Integer> allowed) throws Exception {
         if(refs.length()==0)throw new IOException("课堂笔记缺少来源");

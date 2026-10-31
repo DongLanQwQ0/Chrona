@@ -22,30 +22,24 @@ async function until(fn){for(let i=0;i<100;i++){if(await fn())return;await delay
   evidence.route=await page.evaluate(async()=>{await navigate('schedule');const host=document.querySelector('#content'),animation=activeMotion.get(host);const a=getComputedStyle(host).transform;await new Promise(r=>setTimeout(r,65));const b=getComputedStyle(host).transform;return{a,b,keyframes:animation.effect.getKeyframes()};});
   assert.notEqual(evidence.route.a,evidence.route.b,'route moves through actual intermediate frames');
   await page.screenshot({path:path.join(out,'schedule-enter-mobile.png')});await delay(260);
-  evidence.dock=await page.evaluate(async()=>{const highlight=document.querySelector('.dock-highlight');document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page==='inbox'));updateDock();await new Promise(r=>setTimeout(r,40));const before=getComputedStyle(highlight).transform,velocity=dockState.v;document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page==='schedule'));updateDock();return{before,after:getComputedStyle(highlight).transform,velocity,retargetVelocity:dockState.v};});
+  evidence.dock=await page.evaluate(async()=>{const highlight=document.querySelector('.dock-highlight');document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page==='inbox'));updateDock();await new Promise(r=>setTimeout(r,40));const before=getComputedStyle(highlight).transform,velocity=dockTrack.state.v;document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page==='schedule'));updateDock();return{before,after:getComputedStyle(highlight).transform,velocity,retargetVelocity:dockTrack.state.v};});
   assert.equal(evidence.dock.before,evidence.dock.after,'dock reverses from current presentation');
   assert.equal(evidence.dock.velocity,evidence.dock.retargetVelocity,'retarget preserves actual inertia');
-  assert.equal(await page.evaluate(()=>dockPointerVelocity([{x:0,time:0},{x:40,time:20},{x:80,time:40}])),2000,'release velocity uses physical pixels per second without attenuation');
-  assert.equal(await page.evaluate(()=>dockPointerVelocity([{x:80,time:0},{x:40,time:20},{x:0,time:40}])),-2000,'reverse physical velocity sign retained');
+  assert.equal(await page.evaluate(()=>navigationVelocity([{x:0,time:0},{x:40,time:20},{x:80,time:40}])),2000,'release velocity uses physical pixels per second without attenuation');
+  assert.equal(await page.evaluate(()=>navigationVelocity([{x:80,time:0},{x:40,time:20},{x:0,time:40}])),-2000,'reverse physical velocity sign retained');
   const points=await page.evaluate(()=>{const first=dockNav.querySelector('[data-page="home"]').getBoundingClientRect(),last=dockNav.querySelector('[data-page="inbox"]').getBoundingClientRect();return{x:(first.left+first.right)/2,y:(first.top+first.bottom)/2,end:(last.left+last.right)/2,outside:first.top-45};});
   await page.cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x:points.x,y:points.y,button:'left',buttons:1,clickCount:1});await delay(800);
-  evidence.dockPress=await page.evaluate(()=>({scale:dockState.s,bar:dockState.bar,bottom:dockHighlight.getBoundingClientRect().bottom,viewport:innerHeight}));assert(Math.abs(evidence.dockPress.scale-1.5)<.01&&Math.abs(evidence.dockPress.bar-1.1)<.01,'press reaches requested physical scales');
+  evidence.dockPress=await page.evaluate(()=>({scale:dockTrack.state.s,bar:dockTrack.state.bar,bottom:dockHighlight.getBoundingClientRect().bottom,viewport:innerHeight}));assert(Math.abs(evidence.dockPress.scale-1.5)<.01&&Math.abs(evidence.dockPress.bar-1.1)<.01,'press reaches requested physical scales');
   assert(evidence.dockPress.bottom<=evidence.dockPress.viewport+1,'expanded highlight stays above bottom viewport boundary');
   await page.screenshot({path:path.join(out,'dock-pressed-mobile.png')});
   await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:points.end,y:points.y,button:'left',buttons:1});await delay(50);
-  const stretched=await page.evaluate(()=>dockState.stretch);assert(stretched>1.01,'moving highlight width stretches');
+  const stretched=await page.evaluate(()=>dockTrack.state.stretch);assert(stretched>1.01,'moving highlight width stretches');
   await page.screenshot({path:path.join(out,'dock-moving-mobile.png')});
   await delay(600);await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:points.end,y:points.outside,button:'left',buttons:1});
   await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:points.end,y:points.outside,button:'left',buttons:0,clickCount:1});await until(()=>page.evaluate(()=>route==='inbox'));await delay(1000);
-  assert(await page.evaluate(()=>Math.abs(dockState.s-1)<.002&&Math.abs(dockState.bar-1)<.002),'outside release commits and springs sizes back');
-  async function coast(speed){const start=await page.evaluate(async speed=>{const buttons=dockButtons(),gap=buttons[1].offsetLeft-buttons[0].offsetLeft;dockState.p=buttons[1].offsetLeft+buttons[1].offsetWidth/2;const predicted=predictDockLanding(gap*speed).dataset.page;startDockCoast(gap*speed);await Promise.resolve();return{predicted,route,coasting:dockCoasting};},speed);assert(start.coasting&&start.route===start.predicted,'predicted page starts immediately before coast settles');await until(()=>page.evaluate(()=>!dockCoasting));await delay(400);assert.equal(await page.evaluate(()=>route),start.predicted,'coast completion preserves immediate predicted route');return page.evaluate(()=>route);}
-  assert.equal(await coast(4),'inbox','positive velocity selects damped forward landing');
-  assert.equal(await coast(-4),'home','same release position with reverse velocity selects backward landing');
-  evidence.edge=await page.evaluate(()=>{dockState.p=dockNav.offsetWidth+dockState.w;drawDock();const left=parseFloat(dockHighlight.style.transform.match(/translateX\(([-.\d]+)/)[1]),width=parseFloat(dockHighlight.style.width);const result={left,width,board:dockNav.offsetWidth,standard:dockState.w};updateDock();return result;});
-  assert(Math.abs(evidence.edge.left-(evidence.edge.board-evidence.edge.standard/2))<1,'inner edge smoothly approaches half-width anchor');
-  assert(await page.evaluate(()=>{const a=softDockUpper(230,250,50),b=softDockUpper(240,250,50),c=softDockUpper(250,250,50);return a<230&&a<b&&b<c&&c<250&&c-b<b-a;}),'inner end slows before the boundary with no abrupt clamp');
-  assert(evidence.edge.left+evidence.edge.width>evidence.edge.board+evidence.edge.standard/2,'outer edge may extend beyond half the standard width');
-  assert(evidence.edge.left+evidence.edge.width<=evidence.edge.board+evidence.edge.standard*.75+.1,'outer extension approaches bounded maximum');
+  assert(await page.evaluate(()=>Math.abs(dockTrack.state.s-1)<.002&&Math.abs(dockTrack.state.bar-1)<.002),'outside release commits and springs sizes back');
+  // Direct held position, bounds, reversal and real release are covered by lan_navigation_track_check.cjs.
+  assert(await page.evaluate(()=>navigationTracks.get(dockNav)===dockTrack),'bottom uses the shared pointer controller');
   await page.evaluate(()=>navigate('schedule'));await delay(500);
   const reveal=await page.evaluate(async()=>{window.revealTarget=document.querySelector('.reveal-pending');revealTarget.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,60));return{revealed:!revealTarget.classList.contains('reveal-pending'),opacity:getComputedStyle(revealTarget).opacity};});
   assert(reveal.revealed&&Number(reveal.opacity)<1,'scroll starts a visible reveal animation');await delay(320);

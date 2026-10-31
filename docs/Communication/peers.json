@@ -1,0 +1,17 @@
+[
+  {
+    "id": "core",
+    "role": "本机主代理",
+    "responsibility": "需求拆解、方案取舍、租约仲裁、集成构建、验收"
+  },
+  {
+    "id": "ext",
+    "role": "外部 Agent",
+    "responsibility": "按任务卡实现并交付证据"
+  },
+  {
+    "id": "user",
+    "role": "用户",
+    "responsibility": "决策与最终验收"
+  }
+]

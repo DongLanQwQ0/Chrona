@@ -29,7 +29,7 @@ assert '.load(settings.account())' in detail
 assert 'ZjuSync.WORKER' not in detail and '"course-detail-local-reader").start()' in detail
 assert 'if(!item.description.isBlank())detail(card,item.description);' in detail
 style = (src / 'UiDialogs.java').read_text(encoding='utf-8')
-assert 'static LinearLayout dialogPanel' in style and 'static void dialogBody' in style
+assert 'static LinearLayout dialogPanel' in style and 'static ScrollView dialogBody' in style
 assert 'MeasureSpec.AT_MOST' in style and 'scroll.setVerticalScrollBarEnabled(false)' in style
 assert (root / 'docs/ui-style-contract.md').is_file()
 assert 'ui-style-contract.md' in (root / 'docs/development.md').read_text(encoding='utf-8')

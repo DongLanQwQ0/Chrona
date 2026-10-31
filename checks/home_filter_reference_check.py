@@ -86,7 +86,7 @@ class ChatCompletionClient {
     static List<Long> anchors=new ArrayList<>();
     ChatCompletionClient(AiSettings settings,RequestControl control,String system,int workStart,int workEnd) { }
     ParseResult parseImages(long id,String raw,List<byte[]> images,String links,String files,long now,String zone,
-            BestEffortPreview preview,boolean stream) throws IOException {
+            BestEffortPreview preview,boolean stream,org.json.JSONArray recurringPlaceholders) throws IOException {
         anchors.add(now);
         if(anchors.size()<3) throw new IOException("temporary transport failure");
         return new ParseResult();
@@ -121,9 +121,18 @@ preferences.write_text('''package com.donglan.chrona.ai; public class SchedulePr
 sources = [root / "app/src/main/java/com/donglan/chrona" / relative for relative in (
     "data/TaskRecord.java", "data/ScheduleFilterState.java", "data/ScheduleFilterSummary.java",
     "data/ScheduleRangeStep.java", "data/ScheduleQuery.java", "data/EventCategory.java", "net/RequestControl.java",
-    "ai/SchedulePrompt.java", "ai/TimeAssessment.java")]
+    "ai/SchedulePrompt.java", "ai/TimeAssessment.java", "ai/SemanticEventNormalizer.java",
+    "data/EventTimeDefaults.java", "calendar/AllDayDates.java", "data/EventCandidate.java",
+    "data/RepeatRule.java", "data/RepeatOccurrences.java")]
+# OccurrenceUpdates pulls in the calendar provider and the task store; this harness only needs the
+# one placeholder read, so it stands in for the production class.
+occurrence = out / "com/donglan/chrona/OccurrenceUpdates.java"
+occurrence.parent.mkdir(parents=True, exist_ok=True)
+occurrence.write_text('package com.donglan.chrona; public class OccurrenceUpdates {'
+                      ' public static org.json.JSONArray context(Object context){return new org.json.JSONArray();} }',
+                      encoding="utf-8")
 subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-d", str(out),
-                *map(str, sources), str(check), str(preferences)]), check=True)
+                *map(str, sources), str(check), str(preferences), str(occurrence)]), check=True)
 subprocess.run(recurrence_java([str(java / "java.exe"), "-cp", str(out), "HomeFilterReferenceCheck"]), check=True)
 subprocess.run(recurrence_java([str(java / "javac.exe"), "--release", "17", "-encoding", "UTF-8", "-cp", str(out), "-d", str(out),
                 str(root / "app/src/main/java/com/donglan/chrona/CandidateFeedback.java"),

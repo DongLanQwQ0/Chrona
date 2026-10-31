@@ -42,7 +42,7 @@
 
 页面调用样式和组合组件，不自行创建另一份亚克力 Drawable、弹窗层级管理或快照切换。渲染状态由 `UiSurfaces` 管理；浮层登记窗口模糊根，渲染层无需依赖浮层生命周期实现。
 
-局域网页的公共选择栏与图标操作组位于`assets/lan/app.js`。`layoutSelectionBars/positionSelectionBar`在挂载及复用后从当前选中语义定位；`drawDock`使用实际宽高更新高光圆端，新增按钮在独立宿主外固定。`assets/lan/calendar.js`只负责日历五视图与日期操作的组合；读取和周导出分别复用`LanCalendarData`／`AgendaRepository`与`WeekAgendaImage`，不在网页重新推断时间或冲突分列。
+局域网页的公共选择栏与图标操作组位于`assets/lan/app.js`。`createNavigationTrack`统一底部导航和完整筛选／视图栏的指针跟随、边界、释放惯性与生命周期；`layoutSelectionBars/positionSelectionBar`在挂载及复用后同步当前选中语义，不接管持有位置。高光以真实宽高保持圆端，新增按钮独立固定并监听导航border-box，透明占位不拦截点击。`assets/lan/calendar.js`只负责日历五视图与日期操作的组合；读取和周导出分别复用`LanCalendarData`／`AgendaRepository`与`WeekAgendaImage`，不在网页重新推断时间或冲突分列。
 
 日程、收件箱和课堂批量模式直接调用`BatchSelectionUi.action/attach/visible/marker`。课堂的替换计数行使用独立全宽层，退出动画结束才恢复原计数；重复局部刷新不重启动画，反向从当前进度续接。计数行在进入前后保留同一高度；课堂在动作放不下时用同款「操作」按钮打开公共选择面板，保留字号和操作范围。公共实现不持有选择、账号、分页或下载任务。
 `CalendarVisibilityToggle` 只管理开关图标及连续颜色变化；按压通过 `UiStyle.pressable` 使用 `UiSurfaces` 的公共填充遮罩，随 `HeaderActionGroup` 胶囊边界裁切。调用方不叠加专用圆形涟漪或选中底色。

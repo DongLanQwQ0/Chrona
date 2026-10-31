@@ -59,7 +59,7 @@ assert 'refreshAcknowledgementActions(content)' in poll
 assert poll.index('refreshAcknowledgementActions(content)') < poll.index('!hasUnsavedEdits')
 ack_refresh = block(source, 'private void refreshAcknowledgementActions(')
 assert 'hasUnsavedEdits' not in ack_refresh and 'markCandidateDirty' not in ack_refresh
-save_click = source[source.index('publish[0] = button(card, "保存", () -> {'):]
+save_click = source[source.index('publish[0] = button(card, updatingOccurrence?"更新本次":"保存", () -> {'):]
 save_fields = save_click[save_click.index('ZoneId zone ='):save_click.index('if ((edited.calendarStart()')]
 day_start_method = block(source, 'private static Long parseDayStart(')
 day_end_method = block(source, 'private static Long parseDayEnd(')
@@ -114,6 +114,10 @@ public final class DetailEditorCheck {
     final EditText start, end;
     final AllDayToggle allDay;
     int dirty;
+    // Fields the extracted editor methods read; declared here as the harness owns the class body.
+    Long occurrenceOriginal;
+    Runnable refreshTimeHint = () -> { };
+    boolean updatingOccurrence;
     DetailEditorCheck(boolean task, boolean generated, boolean dateOnly, String from, String until) {
         candidate.task = task;
         autoEnd = new boolean[]{generated};

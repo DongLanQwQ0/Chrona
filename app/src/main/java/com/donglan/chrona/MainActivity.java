@@ -88,7 +88,6 @@ public final class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(UiStyle.PAGE_TOP_DP), dp(20), dp(12));
-        root.setFitsSystemWindows(true);
         UiStyle.page(this, root);
         root.setBackgroundColor(Color.TRANSPARENT);
         page.addView(root);
@@ -106,7 +105,7 @@ public final class MainActivity extends Activity {
         titleRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView title = new TextView(this);
         title.setText("记录一件事");
-        title.setTextSize(26);
+        title.setTextSize(24);
         UiStyle.title(title);
         titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         titleRow.addView(iconTool(R.drawable.ic_content_paste, "读取剪贴板文字",
@@ -123,7 +122,6 @@ public final class MainActivity extends Activity {
         input.setGravity(android.view.Gravity.TOP);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         UiStyle.input(input);
-        UiStyle.glass(input);
         UiStyle.addSpaced(root, input, 0, 12);
 
         pendingImagesContainer = new LinearLayout(this);
@@ -849,14 +847,14 @@ public final class MainActivity extends Activity {
         button.setImageTintList(android.content.res.ColorStateList.valueOf(
                 UiStyle.colors(this).primary));
         button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        button.setPadding(dp(11), dp(11), dp(11), dp(11));
+        button.setPadding(dp(12), dp(12), dp(12), dp(12));
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setContentDescription(description);
-        UiStyle.glass(button);
+        UiStyle.acrylicChoice(button, false, UiStyle.RADIUS_PILL, false);
         UiStyle.pressable(button);
         button.setOnClickListener(action);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(44), dp(44));
-        params.setMargins(dp(6), 0, 0, 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(48), dp(48));
+        params.setMargins(dp(8), 0, 0, 0);
         button.setLayoutParams(params);
         return button;
     }

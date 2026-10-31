@@ -213,6 +213,7 @@ public final class TaskDetailActivity extends Activity {
     private LinearLayout content;
     private LinearLayout shell;
     private ImageButton completionAction;
+    private HeaderActionGroup detailActions;
     private ScrollView page;
     private ScrollView previewScroll;
     private Button previewToggleButton;
@@ -851,22 +852,20 @@ public final class TaskDetailActivity extends Activity {
         TextView title = new TextView(this);
         title.setText(occurrenceOriginal==null?"任务详情":"本次日程");
         title.setTag("detail_item_title");
-        title.setTextSize(20);
+        title.setTextSize(24);
         UiStyle.title(title);
         title.setPadding(dp(8), 0, 0, 0);
         row.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
-        HeaderActionGroup headerActions = new HeaderActionGroup(this, 48);
+        detailActions = new HeaderActionGroup(this, 48);
+        HeaderActionGroup headerActions = detailActions;
         completionAction = UiStyle.navigationIcon(this, R.drawable.ic_check, "保存日程", () -> { });
-        completionAction.setVisibility(View.GONE);
         headerActions.addAction(completionAction, 48);
+        headerActions.setActionVisible(completionAction, false);
         ImageButton more = UiStyle.navigationIcon(this, R.drawable.ic_ellipsis_vertical,
                 "打开模型输出、解析用量、来源与任务操作", this::showHeaderMenu);
         more.setTag("detail_header_menu");
         headerActions.addAction(more, 48);
-        View actionDivider = headerActions.getChildAt(1);
-        actionDivider.setVisibility(View.GONE);
-        completionAction.setTag(actionDivider);
-        if(occurrenceOriginal!=null){more.setVisibility(View.GONE);completionAction.setTag(null);}
+        headerActions.setActionVisible(more, occurrenceOriginal == null);
         headerActions.finish();
         row.addView(headerActions, new LinearLayout.LayoutParams(-2, dp(48)));
         UiStyle.addSpaced(content, row, 0, 2);
@@ -916,9 +915,8 @@ public final class TaskDetailActivity extends Activity {
     private void setCompletionAction(Runnable action, EventCandidate candidate,
             List<EventCandidate> candidates) {
         if (completionAction == null) return;
-        completionAction.setVisibility(View.VISIBLE);
-        if (completionAction.getTag() instanceof View divider)
-            divider.setVisibility(View.VISIBLE);
+        if (detailActions != null) detailActions.setActionVisible(completionAction, true);
+        else completionAction.setVisibility(View.VISIBLE);
         completionAction.setEnabled(true);
         int remaining = (int)candidates.stream().filter(c -> !c.settled()).count();
         boolean updating=occurrenceOriginal!=null;
@@ -2411,7 +2409,9 @@ public final class TaskDetailActivity extends Activity {
                         .putExtra("task_id", candidate.taskId).putExtra("candidate_id", candidate.id));
             });
             repeat.setContentDescription("重复日程");
-            LinearLayout.LayoutParams repeatParams = new LinearLayout.LayoutParams(0, -2, 1f);
+            // A compact action beside the delete icon: the row keeps its natural width instead of
+            // stretching one button across the card.
+            LinearLayout.LayoutParams repeatParams = new LinearLayout.LayoutParams(-2, -2);
             repeatParams.setMarginEnd(dp(8));
             candidateActions.addView(repeat, repeatParams);
         }
@@ -2621,7 +2621,7 @@ public final class TaskDetailActivity extends Activity {
             syncingRange[0] = false;
         });
         LinearLayout dueRow = formRow(card, "截止", R.drawable.ic_schedule);
-        EditText due = inlineField(dueRow, "可选：yyyy-MM-dd HH:mm", format(candidate.dueAtMillis), 1f);
+        EditText due = inlineField(dueRow, "可选：还没定截止时间", format(candidate.dueAtMillis), 1f);
         dueRow.setVisibility(EventCategory.isTaskLike(EventCategory.VALUES[selectedCategory[0]]) ? View.VISIBLE : View.GONE);
         configureTimePicker(due, new AllDayToggle(this,dp(DETAIL_FIELD_ICON_SIZE_DP),UiStyle.colors(this).primary,UiStyle.colors(this).onPrimaryContainer), "截止时间", candidate.isHomework() && !managedHomework, null);
         if (!managedHomework) trackUnsavedChanges(due,candidate.id);

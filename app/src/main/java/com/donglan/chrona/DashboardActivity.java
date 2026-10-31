@@ -382,7 +382,7 @@ public final class DashboardActivity extends Activity {
         LinearLayout targetContent = new LinearLayout(this);
         targetContent.setOrientation(LinearLayout.VERTICAL);
         int horizontal = 20;
-        targetContent.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
+        targetContent.setPadding(dp(horizontal), dp(UiStyle.PAGE_TOP_DP), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
         FrameLayout targetHost = new FrameLayout(this);
         allowSectionDockOverflow(targetContent, targetHost);
@@ -1004,8 +1004,7 @@ public final class DashboardActivity extends Activity {
             String end = AllDayDates.displayEnd(event.endMillis);
             return (start.equals(end) ? start : start + " 至 " + end) + " · 全天";
         }
-        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                .format(new Date(event.startMillis));
+        return dateTime(event.startMillis);
     }
 
     private void openHomeEntry(HomeTimelineEntry entry) {
@@ -1062,7 +1061,7 @@ public final class DashboardActivity extends Activity {
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         int horizontal = 20;
-        content.setPadding(dp(horizontal), dp(wide ? 8 : 2), dp(horizontal),
+        content.setPadding(dp(horizontal), dp(UiStyle.PAGE_TOP_DP), dp(horizontal),
                 dp(wide ? 42 : MOBILE_BOTTOM_AREA_HEIGHT_DP + 24));
         // The cross-fade of a section switch drops a snapshot of the outgoing body next to it, so
         // the body needs a parent that accepts a second child; a ScrollView raises instead.
@@ -1188,20 +1187,20 @@ public final class DashboardActivity extends Activity {
         rememberRenderedPage();
     }
 
+    /** Leading children owned by the title row, so a reconcile never re-adds the first card. */
+    private int headerChildCount = 1;
+
     private void addHeader() {
-        String eyebrow = section == HOME
-                ? new SimpleDateFormat("M月d日 EEEE", Locale.CHINA).format(new Date())
-                : "拾时 · Chrona";
-        TextView brand = text(eyebrow, 13, true);
-        brand.setTextColor(UiStyle.colors(this).primary);
-        UiStyle.addSpaced(content, brand, 0, 4);
-        // The gear shares the title's row, so it centres on the title rather than on the two-line
-        // block above it, which used to leave it sitting visibly high.
+        // One title row per page: the date rides beside the home title instead of claiming a row
+        // above it, so the first content starts at the shared top offset and the icon centre lands
+        // on the 40dp baseline.
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(UiStyle.HEADER_HEIGHT_DP));
         TextView title = text(section == HOME ? "今天的安排"
-                : section == INBOX ? "收件箱" : "日程", section == HOME ? 25 : 28, true);
+                : section == INBOX ? "收件箱" : "日程", 24, true);
         title.setMaxLines(section == HOME ? 2 : 1);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         // Without this the large CJK glyphs ride above the centre line and no longer match the
         // search field, the order arrow and the gear they share the row with.
         title.setIncludeFontPadding(false);
@@ -1210,7 +1209,12 @@ public final class DashboardActivity extends Activity {
             FrameLayout titleSlot = new FrameLayout(this);
             titleSlot.addView(underlinedTitle(title, "今天的安排，点击查看课表", TimetableActivity.class),
                     new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_VERTICAL));
-            row.addView(titleSlot, new LinearLayout.LayoutParams(0, -2, 1));
+            row.addView(titleSlot, new LinearLayout.LayoutParams(-2, -2));
+            TextView date = text(new SimpleDateFormat("M月d日 EEEE", Locale.CHINA).format(new Date()), 13, false);
+            LinearLayout.LayoutParams dateParams = new LinearLayout.LayoutParams(-2, -2);
+            dateParams.leftMargin = dp(8);
+            row.addView(date, dateParams);
+            row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
         } else {
             // The search field sits between the page title and the trailing control, so filtering
             // never moves the settings entry and the keyword stays reachable while scrolling.
@@ -1219,14 +1223,15 @@ public final class DashboardActivity extends Activity {
                         new LinearLayout.LayoutParams(-2, -2));
             } else row.addView(underlinedTitle(title, "收件箱，点击打开日历", CalendarOverviewActivity.class),
                     new LinearLayout.LayoutParams(-2, -2));
-            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(48), 1);
             searchParams.setMargins(dp(8), 0, dp(8), 0);
             row.addView(buildSearchField(), searchParams);
         }
-        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(-2, dp(section == HOME ? 48 : 44));
+        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(-2, dp(48));
         if (section == HOME) settingsParams.leftMargin = dp(8);
         row.addView(buildHeaderControls(), settingsParams);
-        UiStyle.addSpaced(content, row, 0, section == HOME ? 10 : 12);
+        UiStyle.addSpaced(content, row, 0, 12);
+        headerChildCount = content.getChildCount();
     }
 
     /** Shared title entry: center the underline on the glyph ink, with equal side extension. */
@@ -1268,7 +1273,7 @@ public final class DashboardActivity extends Activity {
      * corner read as unrelated controls and cost width the search field needs.
      */
     private LinearLayout buildHeaderControls() {
-        HeaderActionGroup group = new HeaderActionGroup(this, section == HOME ? 48 : 44);
+        HeaderActionGroup group = new HeaderActionGroup(this, 48);
         orderToggle = null;
         if (section == HOME) {
             if (new ZjuSettingsStore(this).enabled()) {
@@ -1284,19 +1289,19 @@ public final class DashboardActivity extends Activity {
                     dot.setBounds(x - radius, y - radius, x + radius, y + radius);
                 });
                 homework.setContentDescription(unreadHomeworkId > 0 ? "最近作业，有新作业" : "最近作业");
-                group.addAction(homework, 44);
+                group.addAction(homework, 48);
             }
-            group.addAction(homeSystemCalendarToggle(), 44);
+            group.addAction(homeSystemCalendarToggle(), 48);
         } else {
             TextView order = text("", 15, true);
             order.setGravity(Gravity.CENTER);
-            order.setMinWidth(dp(40));
+            order.setMinWidth(dp(48));
             order.setPadding(dp(10), 0, dp(10), 0);
             order.setOnClickListener(view -> toggleOrder());
             UiStyle.pressable(order);
             orderToggle = order;
             refreshOrderToggle();
-            group.addAction(order, 40);
+            group.addAction(order, 48);
         }
         ImageButton settings = new ImageButton(this);
         settings.setImageResource(R.drawable.ic_settings);
@@ -1308,7 +1313,7 @@ public final class DashboardActivity extends Activity {
         settings.setOnClickListener(view ->
                 startActivity(new Intent(this, SettingsHubActivity.class)));
         UiStyle.pressable(settings);
-        group.addAction(settings, 44);
+        group.addAction(settings, 48);
         group.finish();
         return group;
     }
@@ -1478,7 +1483,7 @@ public final class DashboardActivity extends Activity {
         android.animation.ValueAnimator[] expansion = {null};
         LinearLayout summary = card();
         completionRows.branch(summary, "home-todos");
-        summary.setPadding(dp(14), dp(8), dp(14), dp(8));
+        UiStyle.cardInset(summary);
         summary.setClipChildren(false);
         summary.setClipToPadding(false);
         TextView title = text("待办 · " + todos.total, 16, true);
@@ -1685,7 +1690,7 @@ public final class DashboardActivity extends Activity {
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setGravity(Gravity.CENTER);
         cell.setPadding(dp(3), dp(7), dp(3), dp(7));
-        TextView number = text(Integer.toString(count), 21, true);
+        TextView number = text(Integer.toString(count), 17, true);
         number.setIncludeFontPadding(false);
         number.setTextColor(count > 0 ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
         cell.addView(number);
@@ -1880,7 +1885,7 @@ public final class DashboardActivity extends Activity {
                 LinearLayout item = card();
                 completionRows.row(item, "upcoming:" + completionKey(entry.candidate, entry.systemEvent),
                         completionState(entry.candidate, entry.systemEvent));
-                item.setPadding(dp(14), dp(12), dp(14), dp(12));
+                UiStyle.cardInset(item);
                 TextView title = text(entry.title(), 16, true);
                 title.setIncludeFontPadding(false);
                 title.setMinLines(2); title.setMaxLines(2);
@@ -1991,7 +1996,8 @@ public final class DashboardActivity extends Activity {
         category.setContentDescription("类型筛选：" + categoryOptions()[categoryIndex]);
         category.setImageTintList(ColorStateList.valueOf(categoryIndex == 0
                 ? UiStyle.colors(this).muted : UiStyle.colors(this).primary));
-        applyThemeControlSurface(category, categoryIndex > 0, UiStyle.RADIUS_PILL);
+        applyThemeControlSurface(category, categoryIndex > 0, UiStyle.RADIUS_CHIP);
+        UiStyle.pressable(category);
         categoryChip = category;
         category.setOnClickListener(view -> {
             String[] choices = categoryOptions();
@@ -2039,13 +2045,7 @@ public final class DashboardActivity extends Activity {
             if (!query.keyword.isEmpty()) {
                 empty(results, "没有匹配「" + inboxQuery.trim() + "」的收件。");
             } else {
-                LinearLayout emptyCard = card();
-                emptyCard.setGravity(Gravity.CENTER);
-                emptyCard.setMinimumHeight(dp(168));
-                TextView emptyCopy = text("这里空空\n终于没事了~", 17, false);
-                emptyCopy.setGravity(Gravity.CENTER);
-                emptyCard.addView(emptyCopy, new LinearLayout.LayoutParams(-1, -2));
-                UiStyle.addSpaced(results, emptyCard, 3, 8);
+                UiStyle.emptyState(results, R.drawable.ic_inbox_outline, "这里空空", "去记录", this::openCapture);
             }
         }
         for (int i = 0; i < visible.size(); i++)
@@ -2112,7 +2112,7 @@ public final class DashboardActivity extends Activity {
         heading.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = text("共 " + count + (section == SCHEDULE
                 ? scheduleCategory == com.donglan.chrona.data.ScheduleFilterState.HOMEWORK_CATEGORY ? " 条作业" : " 条日程"
-                : " 条收件"), 19, true);
+                : " 条收件"), 16, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -2205,7 +2205,9 @@ public final class DashboardActivity extends Activity {
         updateSelectionUi();
         if(!listing.warning.isEmpty())message(results,listing.warning);
         if (visible.isEmpty()) {
-            empty(results, query.officialExamOnly()&&!listing.examsLoaded?"尚未获取考试安排":"这里空空\n换个日期或筛选看看");
+            if (query.officialExamOnly() && !listing.examsLoaded)
+                    UiStyle.emptyState(results, R.drawable.ic_schedule, "尚未获取考试安排", "刷新", this::requestScheduleResults);
+                else UiStyle.emptyState(results, R.drawable.ic_schedule, "这里空空", "修改筛选", this::showScheduleFilters);
             if(query.officialExamOnly()){
                 ZjuSettingsStore settings=new ZjuSettingsStore(this);
                 boolean school=settings.enabled()&&settings.configured();
@@ -2441,7 +2443,8 @@ public final class DashboardActivity extends Activity {
             LocalDate day = LocalDate.parse(date);
             LocalDate today = LocalDate.now();
             label = (day.equals(today) || day.equals(today.plusDays(1))
-                    ? timelineDayTitle(day, today) + " · " : "") + date;
+                    ? timelineDayTitle(day, today) + " · " : "")
+                    + day.format(java.time.format.DateTimeFormatter.ofPattern("M月d日", Locale.CHINA));
         }
         TextView heading = text(label, 15, true);
         heading.setTextColor(UiStyle.colors(this).primary);
@@ -2503,38 +2506,9 @@ public final class DashboardActivity extends Activity {
     }
 
     private void pickScheduleDate(String title, LocalDate initial, java.util.function.Consumer<LocalDate> chosen) {
-        android.app.Dialog dialog = new android.app.Dialog(this);
-        dialog.setCanceledOnTouchOutside(true);
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(16), dp(16), dp(16), dp(16));
-        UiStyle.glass(panel);
-        TextView heading = text(title, 18, true);
-        heading.setGravity(Gravity.CENTER);
-        panel.addView(heading);
-        GlassDateTimePickerView picker = new GlassDateTimePickerView(this, initial.atStartOfDay());
-        TextView value = text(initial.toString(), 14, false);
-        value.setGravity(Gravity.CENTER);
-        picker.onChanged(() -> value.setText(picker.value().toLocalDate().toString()));
-        UiStyle.addSpaced(panel, value, 8, 4);
-        android.graphics.Rect visible = new android.graphics.Rect();
-        getWindow().getDecorView().getWindowVisibleDisplayFrame(visible);
-        int height = Math.max(dp(80), Math.min(dp(210), visible.height() - dp(180)));
-        panel.addView(picker, new LinearLayout.LayoutParams(-1, height));
-        LinearLayout actions = new LinearLayout(this);
-        Button cancel = scheduleAction("取消", dialog::dismiss);
-        Button select = scheduleAction("确定", () -> {
-            picker.finishSelection();
-            LocalDate date = picker.value().toLocalDate();
-            dialog.dismiss();
-            refresh.post(() -> chosen.accept(date));
-        });
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(44), 1));
-        LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, dp(44), 1);
-        right.setMargins(dp(6), 0, 0, 0);
-        actions.addView(select, right);
-        UiStyle.addSpaced(panel, actions, 8, 0);
-        UiDialogs.showFloatingDialog(dialog, panel);
+        // The shared date dialog owns the panel, the picker height and the action row, so this page
+        // keeps only the posted callback its schedule reload depends on.
+        UiDialogs.dateDialog(this, title, initial, date -> refresh.post(() -> chosen.accept(date)));
     }
 
     private void renderSystemSchedule(TaskStore store) {
@@ -2564,7 +2538,7 @@ public final class DashboardActivity extends Activity {
         schedulePage = Math.min(schedulePage, Math.max(0, (total - 1) / ScheduleQuery.PAGE_SIZE));
         addInboxResultsHeading(total);
         updateSelectionUi();
-        if (total == 0) empty(results, "这里空空\n换个日期或筛选看看");
+        if (total == 0) UiStyle.emptyState(results, R.drawable.ic_schedule, "这里空空", "修改筛选", this::showScheduleFilters);
         String day = "";
         for (int i = schedulePage * ScheduleQuery.PAGE_SIZE;
                 i < Math.min(total, (schedulePage + 1) * ScheduleQuery.PAGE_SIZE); i++) {
@@ -2577,7 +2551,7 @@ public final class DashboardActivity extends Activity {
                 addScheduleCardContent(item, null, event, true, false, null);
                 item.setOnClickListener(view -> openHomeEntry(new HomeTimelineEntry(event)));
                 UiStyle.pressable(item);
-                UiStyle.addSpaced(results, item, 4, 7);
+                UiStyle.addSpaced(results, item, 4, 4);
             });
         }
         enqueueScheduleResult(() -> {
@@ -2750,10 +2724,6 @@ public final class DashboardActivity extends Activity {
         updateCompactFilterSelection(filterChips, selected);
     }
 
-    private void candidateRow(EventCandidate item, int index) {
-        candidateRow(content, item, index);
-    }
-
     private void candidateRow(LinearLayout parent, EventCandidate item, int index) {
         LinearLayout card = card();
         card.setTag(Long.valueOf(item.id));
@@ -2779,7 +2749,7 @@ public final class DashboardActivity extends Activity {
             applyInboxRowSelection(item.id);
         } else card.setOnClickListener(view -> openCandidate(item));
         UiStyle.pressable(card);
-        UiStyle.addSpaced(parent, card, 4, 7);
+        UiStyle.addSpaced(parent, card, 4, 4);
     }
 
     /** Shared hierarchy for the timeline, upcoming strip and schedule results. */
@@ -2794,7 +2764,7 @@ public final class DashboardActivity extends Activity {
         String titleText = candidate == null ? systemEvent.title : candidate.title;
         String location = candidate == null ? systemEvent.location : candidate.location;
         String source = exam!=null?"折姜星辰 · 教务":candidate == null ? systemEvent.calendarName : "拾时";
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        UiStyle.cardInset(card);
         LinearLayout body = card;
         FrameLayout interval = null;
         if (home) {
@@ -2813,7 +2783,7 @@ public final class DashboardActivity extends Activity {
             };
             body = new LinearLayout(this);
             body.setOrientation(LinearLayout.VERTICAL);
-            body.setPadding(dp(48), dp(10), dp(14), dp(10));
+            body.setPadding(dp(48), dp(12), dp(16), dp(12));
             interval.addView(body, new FrameLayout.LayoutParams(-1, -2));
             card.addView(interval, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -2855,8 +2825,8 @@ public final class DashboardActivity extends Activity {
         }
         if (candidate != null && candidate.isTask() && candidate.executionStartAtMillis() != null
                 && candidate.effectiveDueAtMillis() != null) {
-            String deadline = (candidate.isHomework() ? "作业截止 · " : "截止 · ") + DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
-                    DateFormat.SHORT).format(new Date(candidate.effectiveDueAtMillis()));
+            String deadline = (candidate.isHomework() ? "作业截止 · " : "截止 · ")
+                    + dateTime(candidate.effectiveDueAtMillis());
             UiStyle.addSpaced(body, scheduleAttribute(candidate.isHomework() ? R.drawable.ic_homework : R.drawable.ic_schedule, deadline,
                     "截止时间", 14, 2, false), home ? 5 : 8, 0);
         }
@@ -3066,19 +3036,18 @@ public final class DashboardActivity extends Activity {
             inboxRows = oldRows;
             strips.clear(); strips.addAll(oldStrips);
         }
-        // Platform transitions retain actual Views and animate layout bounds; no page snapshot,
-        // full-page fade, network read, or forced scroll-to-top is involved.
+        // Only retained rows move: a container-wide fade made every card blink whenever a poll or
+        // the calendar toggle changed one row. Bounds animation keeps insertions and the resulting
+        // displacement continuous without washing out the page.
         if (UiMotion.isEnabled() && target.isLaidOut()) {
             android.transition.TransitionSet motion = new android.transition.TransitionSet();
             motion.setOrdering(android.transition.TransitionSet.ORDERING_TOGETHER);
-            motion.addTransition(new android.transition.Fade(android.transition.Fade.OUT));
             motion.addTransition(new android.transition.ChangeBounds());
-            motion.addTransition(new android.transition.Fade(android.transition.Fade.IN));
             motion.setDuration(UiMotion.ENTER);
             motion.setInterpolator(UiMotion.SETTLE);
             android.transition.TransitionManager.beginDelayedTransition(target, motion);
         }
-        completionRows.apply(target, incoming, destination == HOME ? 2 : 0);
+        completionRows.apply(target, incoming, destination == HOME ? headerChildCount : 0);
         if (destination == HOME) {
             strips.clear();
             collectHomeStrips(content);
@@ -3244,8 +3213,7 @@ public final class DashboardActivity extends Activity {
         // A waiting row counts up instead of showing when it arrived, so "解析中" has a sign of life.
         TextView meta = text(statusText(task.status) + " · " + (waiting
                 ? "已 " + elapsedText(System.currentTimeMillis() - task.createdAtMillis)
-                : DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                        .format(new Date(task.createdAtMillis))), 13, false);
+                : dateTime(task.createdAtMillis)), 13, false);
         if (waiting) {
             // A quiet pulse so "解析中" reads as alive rather than as a stuck row.
             UiMotion.pulse(meta);
@@ -3268,7 +3236,7 @@ public final class DashboardActivity extends Activity {
         }
         UiStyle.pressable(card);
         if (inboxRow) applyInboxRowSelection(task.id);
-        UiStyle.addSpaced(parent, card, 4, 7);
+        UiStyle.addSpaced(parent, card, 4, 4);
     }
 
     private void toggleInboxSelection(long taskId) {
@@ -3812,8 +3780,8 @@ public final class DashboardActivity extends Activity {
     private LinearLayout card() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(17), dp(16), dp(17), dp(16));
         UiStyle.card(card);
+        UiStyle.cardInset(card);
         return card;
     }
 
@@ -3944,17 +3912,20 @@ public final class DashboardActivity extends Activity {
         return value.length() > 92 ? value.substring(0, 92) + "…" : value;
     }
 
+    /** One date-time format for the whole page, independent of the device language. */
+    private static String dateTime(long millis) {
+        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.CHINA)
+                .format(new Date(millis));
+    }
+
     private String formatWhen(EventCandidate item) {
         if (item.hasDefaultExecutionInterval()) {
-            return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                    .format(new Date(item.executionStartAtMillis())) + " — "
-                    + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                    .format(new Date(item.executionEndAtMillis()));
+            return dateTime(item.executionStartAtMillis()) + " — "
+                    + dateTime(item.executionEndAtMillis());
         }
         if (item.isTask() && item.startAtMillis == null && item.effectiveDueAtMillis() != null) {
             return (item.isHomework() ? "作业截止 · " : "截止 · ")
-                    + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                            .format(new Date(item.effectiveDueAtMillis()));
+                    + dateTime(item.effectiveDueAtMillis());
         }
         if (item.allDay && !HomeTimelineEntry.deadlineOnly(item)) {
             String start = AllDayDates.displayStart(item.startAtMillis);
@@ -3963,9 +3934,7 @@ public final class DashboardActivity extends Activity {
                     : start + " 至 " + end + " · 全天";
         }
         if (item.anchor()==null) return "尚未安排时间";
-        Date date = new Date(item.anchor());
-        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM,
-                DateFormat.SHORT).format(date);
+        return dateTime(item.anchor());
     }
 
     private void timelineDay(String title, LocalDate date, List<HomeTimelineEntry> entries) {
@@ -4014,12 +3983,12 @@ public final class DashboardActivity extends Activity {
         marker.setBackground(markerShape);
         markerSlot.addView(marker, new FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER));
         heading.addView(markerSlot, new LinearLayout.LayoutParams(dp(48), dp(18)));
-        TextView label = text(title, 17, true);
+        TextView label = text(title, 15, true);
         label.setIncludeFontPadding(false);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
         labelParams.setMargins(0, 0, dp(8), 0);
         heading.addView(label, labelParams);
-        TextView dateLabel = text(date.getMonthValue() + "月" + date.getDayOfMonth() + "日", 15, false);
+        TextView dateLabel = text(date.getMonthValue() + "月" + date.getDayOfMonth() + "日", 13, false);
         dateLabel.setIncludeFontPadding(false);
         heading.addView(dateLabel);
         View divider = new View(this);
@@ -4048,23 +4017,6 @@ public final class DashboardActivity extends Activity {
         UiStyle.addSpaced(content, dayGroup, 0, 0);
     }
 
-    private void sectionHeading(String title, String action, int destination) {
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(48));
-        row.setPadding(dp(2), 0, dp(2), 0);
-        TextView heading = text(title, 17, true);
-        row.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView link = text(action + "  →", 13, true);
-        link.setTextColor(UiStyle.colors(this).primary);
-        link.setMinHeight(dp(44));
-        link.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(link);
-        row.setOnClickListener(view -> switchTo(destination));
-        UiStyle.pressable(row);
-        UiStyle.addSpaced(content, row, 17, 9);
-    }
-
     private TextView text(String content, int size, boolean bold) {
         TextView view = new TextView(this);
         view.setText(content);
@@ -4073,31 +4025,11 @@ public final class DashboardActivity extends Activity {
         return view;
     }
 
-    private Button button(String label, boolean primary, Runnable action) {
-        Button button = new Button(this);
-        button.setText(label);
-        UiStyle.button(button, primary);
-        button.setOnClickListener(view -> action.run());
-        return button;
-    }
-
-    private void sectionTitle(String title) {
-        sectionTitle(content, title);
-    }
-    private void sectionTitle(LinearLayout parent, String title) {
-        TextView label = text(title, 19, true);
-        UiStyle.addSpaced(parent, label, 16, 9);
-    }
     private void message(LinearLayout parent, String text) {
         UiStyle.addSpaced(parent, text(text, 14, false), 0, 0);
     }
-    private void empty(String text) {
-        empty(content, text);
-    }
     private void empty(LinearLayout parent, String text) {
-        LinearLayout box = card();
-        box.addView(text(text, 15, false));
-        UiStyle.addSpaced(parent, box, 3, 8);
+        UiStyle.emptyState(parent, R.drawable.ic_inbox_outline, text, null, null);
     }
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);

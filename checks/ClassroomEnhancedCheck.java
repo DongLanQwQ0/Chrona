@@ -33,6 +33,8 @@ public final class ClassroomEnhancedCheck {
         if(prompt.contains("唯一一次格式修复"))return lastStage+"-repair";
         if(prompt.contains("接续上一条"))return lastStage+"-continue";
         if(prompt.contains("用户授权继续当前板块"))return lastStage+"-user-retry";
+        if(prompt.contains("现在编排一篇与普通模式相同的全课笔记"))return "edit-plan";
+        Matcher editor=Pattern.compile("全课整稿主题 (\\d+)/").matcher(prompt);if(editor.find())return "edit-note-"+(Integer.parseInt(editor.group(1))-1);
         Matcher correction=Pattern.compile("更正文稿第 (\\d+)/").matcher(prompt);if(correction.find())return "correct-"+(Integer.parseInt(correction.group(1))-1);
         Matcher draft=Pattern.compile("现在只整理第 (\\d+) 段").matcher(prompt);if(draft.find())return "draft-"+(Integer.parseInt(draft.group(1))-1);
         Matcher fin=Pattern.compile("只核实并完善第 (\\d+) 段").matcher(prompt);if(fin.find())return "final-"+(Integer.parseInt(fin.group(1))-1);
@@ -49,6 +51,8 @@ public final class ClassroomEnhancedCheck {
                     .put("sources",new JSONArray().put(mode.equals("invalid-source")||(!draft&&mode.equals("invalid-final-source"))?999:id))
                     .put("images",mode.equals("invalid-image")||(!draft&&mode.equals("invalid-final-image"))?new JSONArray().put("image-999.jpg"):pictures)))
                 .put("assignments",new JSONArray());
+        if(mode.equals("cross-draft")&&draft&&id==0||mode.equals("cross-final")&&!draft&&id==0)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1));
+        if(mode.equals("empty-tail")&&id==1)value.put("overview","").put("notes",new JSONArray());
         if(draft)value.put("image_assessment",new JSONObject().put("decision",images?"request":"disabled").put("reason","合成板书需核对题目条件"))
                 .put("image_requests",images?new JSONArray().put(new JSONObject().put("start",mode.equals("reuse-images")?0:id*100).put("end",mode.equals("reuse-images")?120:id*100+20).put("reason","核对题干数字与步骤分")):new JSONArray());
         return value;
@@ -67,6 +71,22 @@ public final class ClassroomEnhancedCheck {
                 if(current.contains("continue"))output=" 后半；条件 5 kg，步骤分 2 分。";
                 else output="# 更正文稿\n["+id+"] 完整题干、改卷细节与 $\\nabla x$。";
                 if(mode.startsWith("length")&&current.equals("correct-0")){output="# 更正文稿\n[0] 前半";finish="length";}
+            }else if(current.startsWith("edit-plan")){
+                JSONArray index=new JSONArray(text.substring(text.indexOf("已完成笔记索引：\n")+"已完成笔记索引：\n".length())),sections=new JSONArray();
+                if(mode.equals("merge-topics")){
+                    JSONArray refs=new JSONArray();for(int n=0;n<index.length();n++)refs.put(index.getJSONObject(n).getString("ref"));
+                    sections.put(new JSONObject().put("title","统一主题").put("refs",refs));
+                }else for(int n=0;n<index.length();n++)sections.put(new JSONObject().put("title",index.getJSONObject(n).getString("title")).put("refs",new JSONArray().put(index.getJSONObject(n).getString("ref"))));
+                if(mode.equals("bad-plan")&&sections.length()>0)sections.put(sections.getJSONObject(0));
+                output=new JSONObject().put("overview","统一全课重点").put("sections",sections).toString();
+            }else if(current.startsWith("edit-note")){
+                JSONArray input=new JSONArray(text.substring(text.indexOf("本主题提取稿：\n")+"本主题提取稿：\n".length()));
+                JSONArray refs=new JSONArray(),pics=new JSONArray();Set<Integer> sourceSet=new LinkedHashSet<>();Set<String> imageSet=new LinkedHashSet<>();
+                for(int n=0;n<input.length();n++){JSONObject note=input.getJSONObject(n);JSONArray source=note.getJSONArray("sources"),pictures=note.getJSONArray("images");for(int k=0;k<source.length();k++)sourceSet.add(source.getInt(k));for(int k=0;k<pictures.length();k++)imageSet.add(pictures.getString(k));}
+                for(int source:sourceSet)refs.put(source);for(String image:imageSet)pics.put(image);
+                if(mode.equals("bad-editor-source"))refs=new JSONArray().put(999);
+                JSONObject note=new JSONObject(input.getJSONObject(0).toString()).put("sources",refs).put("images",pics);
+                output=new JSONObject().put("overview","").put("notes",new JSONArray().put(note)).put("assignments",new JSONArray()).toString();
             }else if(mode.equals("bad-json")&&current.equals("draft-0"))output="{\"overview\":";
             else if(mode.equals("bad-repair")&&(current.equals("draft-0")||current.endsWith("repair")))output="{\"overview\":";
             else if(mode.equals("bad-manual")&&current.endsWith("user-retry"))output="{\"overview\":";
@@ -132,8 +152,8 @@ public final class ClassroomEnhancedCheck {
     }
     private static void multiBlock()throws Exception{
         reset("normal",true);File dir=materials("multi",true);JSONObject result=generate(dir,true);evidence("multi",dir);appendOnly(dir);
-        check(stages.equals(List.of("correct-0","correct-1","draft-0","draft-1","final-0","final-1")),"all corrected Markdown precedes every draft and image stage");
-        check(result.getBoolean("complete")&&result.getInt("total_parts")==2&&result.getJSONArray("parts").length()==2,"more than 6000 subtitle characters produces two complete parts");
+        check(stages.equals(List.of("correct-0","correct-1","draft-0","draft-1","final-0","final-1","edit-plan","edit-note-0","edit-note-1")),"correction, scoped extraction and images precede the bounded editorial pass");
+        check(result.getBoolean("complete")&&result.getInt("source_blocks")==2&&result.getInt("total_parts")==1&&result.getJSONArray("parts").length()==1,"multiple internal blocks publish one ordinary document");
         check(result.getString("corrected_transcript").contains("[0]")&&result.getString("corrected_transcript").contains("[1]"),"all corrected transcript blocks published");
         for(int i=0;i<4;i++)check(requests.get(i).getJSONArray("messages").getJSONObject(requests.get(i).getJSONArray("messages").length()-1).getJSONArray("content").length()==1,"no image upload before drafts finish "+i);
         check(result.getJSONArray("images").length()==2&&state(dir).getJSONObject("image_audit").getInt("selected_count")==2,"image budget and analysed inventory");
@@ -145,12 +165,12 @@ public final class ClassroomEnhancedCheck {
         check(requests.size()==4,"network failure made exactly one attempt");JSONObject failed=state(dir);String run=failed.getString("run");
         check(failed.getJSONArray("corrected").length()==2&&failed.getJSONArray("drafts").length()==1,"successful stages checkpointed before failure");
         check(failed.getJSONObject("conversation").getString("pending").equals("draft-1"),"failed stage remains pending");
-        failCall=-1;JSONObject result=generate(dir,true);check(requests.size()==7&&result.getString("run").equals(run),"manual resume only retries failed draft then remaining image stages");
+        failCall=-1;JSONObject result=generate(dir,true);check(requests.size()==10&&result.getString("run").equals(run),"manual resume only retries failed draft then remaining image and editorial stages");
         appendOnly(dir);evidence("network-resume",dir);
     }
     private static void repair()throws Exception{
         reset("bad-json",false);File dir=materials("repair",false);check(generate(dir,true).getBoolean("complete"),"single local JSON repair completes");
-        check(stages.equals(List.of("correct-0","draft-0","draft-0-repair")),"one repair appends without recomputing transcript");appendOnly(dir);evidence("repair",dir);
+        check(stages.equals(List.of("correct-0","draft-0","draft-0-repair","edit-plan","edit-note-0")),"one repair appends without recomputing transcript");appendOnly(dir);evidence("repair",dir);
         reset("bad-repair",false);File bad=materials("repair-limit",false);rejects(()->generate(bad,true),"invalid single repair fails");
         check(requests.size()==3,"repair budget is one");mode="bad-manual";rejects(()->generate(bad,true),"manual retry may fail but does not loop on another automatic repair");check(requests.size()==4,"explicit manual continue appends exactly one new request after failed repair");evidence("repair-limit",bad);
     }
@@ -230,8 +250,53 @@ public final class ClassroomEnhancedCheck {
         check(first.getJSONObject(first.length()-1).getJSONArray("content").length()==3,"first final stage uploads both requested images");
         check(second.getJSONObject(second.length()-1).getJSONArray("content").length()==1,"later overlapping image request uploads no image again");
         check(result.getJSONArray("images").length()==2&&state(dir).getJSONArray("analysed").length()==2,"analysed inventory retains two unique images");
-        check(result.getJSONArray("parts").getJSONObject(1).getJSONArray("notes").getJSONObject(0).getJSONArray("images").getString(0).equals("image-0.jpg"),"later block may cite image actually supplied in earlier message");
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(1).getJSONArray("images").getString(0).equals("image-0.jpg"),"later topic may cite image actually supplied in earlier message");
         appendOnly(dir);evidence("reuse-images",dir);
+    }
+    private static void editorial()throws Exception{
+        for(String defect:List.of("cross-draft","cross-final")){
+            reset(defect,defect.equals("cross-final"));File dir=materials(defect,true);rejects(()->generate(dir,true),"another valid lesson source cannot leak into this block: "+defect);
+            check(!state(dir).has("editor_plan")&&!state(dir).has("final"),"cross-block semantic error never publishes or automatically retries");
+        }
+        reset("merge-topics",true);File merged=materials("merge-topics",true);JSONObject result=generate(merged,true);
+        JSONObject document=result.getJSONArray("parts").getJSONObject(0);JSONArray notes=document.getJSONArray("notes");
+        check(result.getJSONArray("parts").length()==1&&notes.length()==1,"same topic across extraction blocks is edited into one section");
+        check(result.getString("overview").equals("统一全课重点")&&!result.getString("overview").contains("合成概览"),"one unified overview replaces concatenated block recaps");
+        check(notes.getJSONObject(0).getJSONArray("sources").length()==2&&notes.getJSONObject(0).getJSONArray("images").length()==2,"merged topic keeps distinct source and image support");
+        check(state(merged).getJSONArray("parts").length()==2&&state(merged).getJSONArray("corrected").length()==2,"raw extraction and corrected transcript remain checkpointed separately");
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").length()!=state(merged).getJSONArray("parts").length(),"reading copy is not a blind concatenation of extraction blocks");
+        ClassroomDocument.validate(ClassroomDocument.portable(result,ClassroomStore.read(new File(merged,"materials.json"))));check(true,"edited single-document result keeps the existing portable/sync contract");
+        ByteArrayOutputStream archive=new ByteArrayOutputStream();ClassroomExport.write(merged,result,archive);String markdown="";
+        try(var zip=new java.util.zip.ZipInputStream(new ByteArrayInputStream(archive.toByteArray()),StandardCharsets.UTF_8)){java.util.zip.ZipEntry entry;while((entry=zip.getNextEntry())!=null)if(entry.getName().equals("课堂总结.md"))markdown=new String(zip.readAllBytes(),StandardCharsets.UTF_8);}
+        check(markdown.contains("统一全课重点")&&!markdown.contains("合成概览")&&markdown.indexOf("## 题目条件与评分线索")==markdown.lastIndexOf("## 题目条件与评分线索"),"ZIP exports the same unified document without extraction recaps or repeated section");
+        for(int n=0;n<requests.size();n++){
+            String text=prompt(requests.get(n));
+            if(stages.get(n).startsWith("draft-")){int id=stages.get(n).endsWith("0")?0:1;check(text.contains("["+id+"] 完整题干"),"draft appends the correct corrected slice rather than relying on recency");check(text.contains("本次允许的字幕来源id仅为：["+id+"]"),"ordinary subtitle boundary gives a disjoint extraction scope");}
+            if(stages.get(n).startsWith("final-"))check(text.contains("本次唯一要修订的初稿"),"image revision identifies the actual target draft");
+        }
+        appendOnly(merged);evidence("editorial-merge",merged);
+        reset("bad-plan",false);File invalid=materials("bad-plan",true);rejects(()->generate(invalid,true),"duplicate editorial reference rejected");
+        check(requests.size()==5&&!state(invalid).has("final"),"invalid plan stops without automatic semantic repair");
+        mode="normal";check(generate(invalid,true).getBoolean("complete"),"manual plan retry resumes the original extraction");
+        check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"draft-0")==1,"manual editor retry never regenerates paid extraction");appendOnly(invalid);
+        reset("bad-editor-source",false);File badSource=materials("bad-editor-source",false);rejects(()->generate(badSource,true),"edited prose cannot invent a source");
+        check(!state(badSource).has("final")&&state(badSource).getJSONArray("editor_notes").length()==0,"invalid edited topic never reaches completed reading copy");
+        reset("normal",true);File interrupted=materials("editor-interrupted",true);failCall=9;rejects(()->generate(interrupted,true),"second editorial section transport failure stops");
+        check(state(interrupted).getJSONArray("editor_notes").length()==1&&!state(interrupted).has("final"),"first edited topic is saved before interruption");
+        JSONObject partial=ClassroomStore.read(new File(interrupted,"summary.json"));check(partial.getJSONArray("parts").length()==1&&partial.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").length()==1,"partial reading copy shows only edited topics, never raw duplicated blocks");
+        failCall=-1;check(generate(interrupted,true).getBoolean("complete"),"editor continuation finishes at its saved checkpoint");
+        check(Collections.frequency(stages,"edit-note-0")==1&&Collections.frequency(stages,"edit-note-1")==2,"only interrupted topic request is retried unchanged");appendOnly(interrupted);evidence("editorial-resume",interrupted);
+        reset("empty-tail",false);result=generate(materials("empty-tail",true),true);
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").length()==1,"non-teaching tail needs no filler section");
+        JSONArray raw=new JSONArray().put(new JSONObject().put("id",7).put("text","请下周五之前提交实验报告。"));
+        JSONObject task=new JSONObject().put("text","提交实验报告").put("sources",new JSONArray().put(7)).put("evidence","请下周五之前提交实验报告。");
+        JSONObject tasks=new JSONObject().put("assignments",new JSONArray().put(task));ClassroomSummary.validateAssignmentEvidence(tasks,raw);check(true,"explicit assignment preserves verbatim source evidence");
+        task.put("evidence","建议复习所有知识");rejects(()->ClassroomSummary.validateAssignmentEvidence(tasks,raw),"invented study suggestion lacks raw evidence");
+        task.put("evidence","");rejects(()->ClassroomSummary.validateAssignmentEvidence(tasks,raw),"blank action evidence is rejected");
+        JSONArray discontinuous=new JSONArray().put(new JSONObject().put("id",0).put("text","请交")).put(new JSONObject().put("id",1).put("text","并非该事项")).put(new JSONObject().put("id",2).put("text","报告"));
+        task.put("sources",new JSONArray().put(0).put(2)).put("evidence","请交报告");rejects(()->ClassroomSummary.validateAssignmentEvidence(tasks,discontinuous),"evidence cannot stitch nonadjacent sources into a new instruction");
+        JSONArray parts=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(new JSONObject())));
+        rejects(()->ClassroomEnhancedSummary.validatePlan(new JSONObject().put("overview","").put("sections",new JSONArray()),parts),"plan cannot silently drop an extracted note");
     }
     private static void validationResume()throws Exception{
         reset("invalid-source",false);File draft=materials("draft-validation-resume",false);
@@ -240,7 +305,7 @@ public final class ClassroomEnhancedCheck {
         check(!state(draft).getString("draft-0_error").isBlank(),"draft semantic failure retains actual validation reason");
         mode="normal";JSONObject result=generate(draft,true);
         check(result.getBoolean("complete")&&result.getString("run").equals(run),"draft manual continue succeeds in same run");
-        check(stages.equals(List.of("correct-0","draft-0","draft-0-user-retry")),"draft continue appends only failed-stage correction request");
+        check(stages.equals(List.of("correct-0","draft-0","draft-0-user-retry","edit-plan","edit-note-0")),"draft continue appends only failed-stage correction then editorial requests");
         check(state(draft).getJSONObject("conversation").getJSONArray("turns").getJSONObject(2).getString("stage").equals("draft-0-user-retry-1"),"draft retry has separate persisted stage identity");
         appendOnly(draft);evidence("draft-validation-resume",draft);
 
@@ -250,7 +315,7 @@ public final class ClassroomEnhancedCheck {
         JSONArray imageRequest=requests.get(2).getJSONArray("messages");check(imageRequest.getJSONObject(imageRequest.length()-1).getJSONArray("content").length()==2,"first final request really supplies one image");
         mode="final-retry";result=generate(fin,true);JSONArray retried=requests.get(3).getJSONArray("messages");
         check(retried.getJSONObject(retried.length()-1).getJSONArray("content").length()==1,"manual final retry appends text without uploading image again");
-        check(stages.equals(List.of("correct-0","draft-0","final-0","final-0-user-retry")),"final retry does not recompute corrected transcript or draft");
+        check(stages.equals(List.of("correct-0","draft-0","final-0","final-0-user-retry","edit-plan","edit-note-0")),"final retry does not recompute corrected transcript or draft");
         check(result.getBoolean("complete")&&result.getString("run").equals(run)&&result.getJSONArray("images").length()==1,"valid final retry publishes original selected image in same run");
         check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getJSONArray("images").getString(0).equals("image-0.jpg"),"retry may cite image retained in original message");
         appendOnly(fin);evidence("final-validation-resume",fin);
@@ -262,7 +327,7 @@ public final class ClassroomEnhancedCheck {
         check(requests.size()==4&&state(repaired).getInt("draft-0_attempt")==2,"manual bad JSON uses exactly one request and increments retry generation");
         check(Collections.frequency(stages,"draft-0-repair")==1,"automatic repair budget remains one across manual attempts");
         mode="normal";result=generate(repaired,true);
-        check(requests.size()==5&&result.getBoolean("complete")&&result.getString("run").equals(run),"next explicit manual continue completes without revisiting failed raw output");
+        check(requests.size()==7&&result.getBoolean("complete")&&result.getString("run").equals(run),"next explicit manual continue completes without revisiting failed raw output");
         check(state(repaired).getJSONObject("conversation").getJSONArray("turns").getJSONObject(4).getString("stage").equals("draft-0-user-retry-2"),"second manual retry retains its own append-only stage identity");
         check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"draft-0-repair")==1,"manual attempts never repeat successful transcript or automatic repair");
         appendOnly(repaired);evidence("repair-validation-resume",repaired);
@@ -295,7 +360,7 @@ public final class ClassroomEnhancedCheck {
         for(String defect:List.of("missing-requests","missing-assessment","request-type")){
             reset(defect,false);File dir=materials("schema-"+defect,false);
             check(generate(dir,true).getBoolean("complete"),"missing or mistyped image schema is repaired: "+defect);
-            check(stages.equals(List.of("correct-0","draft-0","draft-0-repair")),"one appended repair without transcript regeneration: "+defect);
+            check(stages.equals(List.of("correct-0","draft-0","draft-0-repair","edit-plan","edit-note-0")),"one appended repair without transcript regeneration: "+defect);
             draftExample(prompt(requests.get(1)));draftExample(prompt(requests.get(2)));
             check(prompt(requests.get(2)).contains("image_requests")&&prompt(requests.get(2)).contains("image_assessment"),"repair retains the full stage-specific schema: "+defect);appendOnly(dir);
         }
@@ -303,7 +368,7 @@ public final class ClassroomEnhancedCheck {
         check(requests.size()==3&&Collections.frequency(stages,"draft-0-repair")==1,"missing schema never creates an automatic repair loop");
         reset("invalid-source",false);File manual=materials("schema-unused-budget",false);rejects(()->generate(manual,true),"semantic failure still requires manual authorization");
         mode="bad-manual";check(generate(manual,true).getBoolean("complete"),"manual retry may use a format repair that was never spent");
-        check(stages.equals(List.of("correct-0","draft-0","draft-0-user-retry","draft-0-repair")),"manual repair uses the same block and one repair identity");appendOnly(manual);
+        check(stages.equals(List.of("correct-0","draft-0","draft-0-user-retry","draft-0-repair","edit-plan","edit-note-0")),"manual repair uses the same block and one repair identity");appendOnly(manual);
         reset("bad-json",false);File network=materials("schema-repair-network",false);failCall=3;rejects(()->generate(network,true),"network failure during repair stops without retry");
         check(requests.size()==3,"no automatic transport retry");mode="normal";failCall=-1;
         check(generate(network,true).getBoolean("complete"),"explicit resume continues the pending repair");
@@ -419,7 +484,7 @@ public final class ClassroomEnhancedCheck {
             try{test("oversized single subtitle preserves text and identity",ClassroomEnhancedCheck::oversizedSubtitle);test("reuse earlier image without reupload",ClassroomEnhancedCheck::reuseImages);}
             finally{server.stop(0);}System.out.println("ClassroomEnhancedEdges: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced edge checks failed");return;
         }
-        try{test("multi-block immutable-prefix pipeline",ClassroomEnhancedCheck::multiBlock);test("network manual checkpoint resume",ClassroomEnhancedCheck::manualResume);test("one structural repair",ClassroomEnhancedCheck::repair);test("source and image whitelist",ClassroomEnhancedCheck::whitelist);test("length continuation and resume",ClassroomEnhancedCheck::lengthResume);test("cancel and resume",ClassroomEnhancedCheck::cancellation);test("default stage preservation",ClassroomEnhancedCheck::defaultFlow);test("raw JSON assistant envelope",ClassroomEnhancedCheck::jsonEnvelope);test("Markdown paragraph and TeX/code guards",ClassroomEnhancedCheck::markdown);test("oversized single subtitle preserves text and identity",ClassroomEnhancedCheck::oversizedSubtitle);test("reuse earlier image without reupload",ClassroomEnhancedCheck::reuseImages);test("semantic validation and repair manual continuation",ClassroomEnhancedCheck::validationResume);test("Markdown fences preserve code and TeX escapes",ClassroomEnhancedCheck::markdownFences);}
+        try{test("scoped extraction and single-document editorial checkpoints",ClassroomEnhancedCheck::editorial);test("multi-block immutable-prefix pipeline",ClassroomEnhancedCheck::multiBlock);test("network manual checkpoint resume",ClassroomEnhancedCheck::manualResume);test("one structural repair",ClassroomEnhancedCheck::repair);test("source and image whitelist",ClassroomEnhancedCheck::whitelist);test("length continuation and resume",ClassroomEnhancedCheck::lengthResume);test("cancel and resume",ClassroomEnhancedCheck::cancellation);test("default stage preservation",ClassroomEnhancedCheck::defaultFlow);test("raw JSON assistant envelope",ClassroomEnhancedCheck::jsonEnvelope);test("Markdown paragraph and TeX/code guards",ClassroomEnhancedCheck::markdown);test("oversized single subtitle preserves text and identity",ClassroomEnhancedCheck::oversizedSubtitle);test("reuse earlier image without reupload",ClassroomEnhancedCheck::reuseImages);test("semantic validation and repair manual continuation",ClassroomEnhancedCheck::validationResume);test("Markdown fences preserve code and TeX escapes",ClassroomEnhancedCheck::markdownFences);}
         finally{server.stop(0);}System.out.println("ClassroomEnhancedCheck: "+checks+" assertions, "+failures+" failures; usage is synthetic, not provider cache-hit evidence");
         if(failures>0)throw new AssertionError(failures+" enhanced pipeline failures");
     }

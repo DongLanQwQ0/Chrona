@@ -181,9 +181,9 @@ final class CalendarOverviewPage extends SchedulePage {
         root.setFitsSystemWindows(false); root.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout header = UiStyle.headerRow(activity);
         header.addView(UiStyle.navigationIcon(activity, R.drawable.ic_arrow_left, "返回", this::finish), size(48, 48));
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(44), 1);
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(48), 1);
         searchParams.setMargins(dp(8), 0, dp(8), 0); header.addView(searchField(), searchParams);
-        HeaderActionGroup controls = new HeaderActionGroup(activity, 44);
+        HeaderActionGroup controls = new HeaderActionGroup(activity, 48);
         sourceSwitch = new CalendarVisibilityToggle(this);
         sourceSwitch.setContentDescription("包含系统日程");
         sourceSwitch.setChecked(includeSystem);
@@ -198,31 +198,31 @@ final class CalendarOverviewPage extends SchedulePage {
             }
             includeSystem = enabled; CalendarSourcePreferences.setIncludesSystem(this, enabled); load();
         });
-        controls.addAction(sourceSwitch, 44);
+        controls.addAction(sourceSwitch, 48);
         View sourceDivider = new View(activity); sourceDivider.setBackgroundColor(UiStyle.colors(this).outline);
         controls.addView(sourceDivider, size(1, 16));
         weekExportSlot = row();
         weekExportButton = icon(R.drawable.ic_week_export, "导出周日程为图片", this::exportWeek);
         weekExportButton.setEnabled(!weekExport.busy);
         weekExportButton.setBackgroundColor(Color.TRANSPARENT);
-        weekExportSlot.addView(weekExportButton, size(44, 44));
+        weekExportSlot.addView(weekExportButton, size(48, 48));
         View divider = new View(activity); divider.setBackgroundColor(UiStyle.colors(this).outline);
         LinearLayout.LayoutParams dividerParams = size(1, 16);
         weekExportSlot.addView(divider, dividerParams);
         weekActionShown = mode == WEEK;
         weekExportSlot.setVisibility(weekActionShown ? View.VISIBLE : View.GONE);
-        controls.addView(weekExportSlot, size(weekActionShown ? 45 : 0, 44));
+        controls.addView(weekExportSlot, size(weekActionShown ? 49 : 0, 48));
         ImageButton create = icon(R.drawable.ic_add, "记录新日程", () -> startActivity(new Intent(this, MainActivity.class)));
-        create.setBackgroundColor(Color.TRANSPARENT); controls.addView(create, size(44, 44));
+        create.setBackgroundColor(Color.TRANSPARENT); controls.addView(create, size(48, 48));
         controls.finish();
-        header.addView(controls, new LinearLayout.LayoutParams(-2, dp(44)));
+        header.addView(controls, new LinearLayout.LayoutParams(-2, dp(48)));
         root.addView(header);
         LinearLayout calendarTools=column();calendarTools.setClipChildren(false);calendarTools.setClipToPadding(false);
         LinearLayout navigation = row();
         dateTitle = new DateIntervalBar(activity, this::pickDate, direction -> { shift(direction); return true; });
         navigation.addView(dateTitle, new LinearLayout.LayoutParams(0, -2, 1));
         TextView today = action("今天", () -> navigateDate(LocalDate.now()));
-        LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(-2, dp(44));todayParams.leftMargin=dp(8);
+        LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(-2, dp(48));todayParams.leftMargin=dp(8);
         navigation.addView(today, todayParams);
         tabs = new DockNavigationLayout(this, this::changeMode, () -> { });
         tabs.setPadding(dp(3), dp(3), dp(3), dp(3));
@@ -410,7 +410,7 @@ final class CalendarOverviewPage extends SchedulePage {
         if (!(cell instanceof FrameLayout frame)) return;
         boolean selected = day.equals(date), today = day.equals(LocalDate.now());
         ((TextView) frame.getChildAt(0)).setTextColor(selected || today ? UiStyle.colors(this).primary : UiStyle.colors(this).text);
-        calendarSurface(frame, selected, 15, selected || today); frame.setSelected(selected);
+        calendarSurface(frame, selected, UiStyle.RADIUS_CHIP, selected || today); frame.setSelected(selected);
         frame.setContentDescription(day + (today ? "，今天" : "") + (selected ? "，已选中" : "") + "，本月，" + dayCounts.on(day) + "项日程");
     }
     private void updateMonthDetails(List<AgendaEntry> entries) {
@@ -647,7 +647,7 @@ final class CalendarOverviewPage extends SchedulePage {
         if(weekExportSlot==null||show==weekActionShown)return;
         weekActionShown=show;
         if(weekActionMotion!=null){weekActionMotion.removeAllListeners();weekActionMotion.cancel();}
-        int from=weekExportSlot.getLayoutParams().width,to=show?dp(45):0;
+        int from=weekExportSlot.getLayoutParams().width,to=show?dp(49):0;
         weekExportSlot.setVisibility(View.VISIBLE);weekExportButton.setEnabled(show&&!weekExport.busy);
         weekActionMotion=android.animation.ValueAnimator.ofInt(from,to);
         weekActionMotion.setDuration(UiMotion.isEnabled()?UiMotion.ENTER:0);
@@ -655,7 +655,7 @@ final class CalendarOverviewPage extends SchedulePage {
         weekActionMotion.addUpdateListener(animation->{
             int width=(int)animation.getAnimatedValue();
             android.view.ViewGroup.LayoutParams p=weekExportSlot.getLayoutParams();p.width=width;weekExportSlot.setLayoutParams(p);
-            weekExportSlot.setAlpha(width/(float)dp(45));
+            weekExportSlot.setAlpha(width/(float)dp(49));
         });
         weekActionMotion.addListener(new android.animation.AnimatorListenerAdapter(){
             @Override public void onAnimationEnd(android.animation.Animator animation){
@@ -823,9 +823,15 @@ final class CalendarOverviewPage extends SchedulePage {
         if (mode == WEEK || mode == DAY) { timeline(entries); return; }
         ScrollView scroll = new ScrollView(activity); scroll.setVerticalScrollBarEnabled(false);
         verticalViewport = scroll; watchScroll(scroll);
+        // The page already owns a 20dp content gutter, so only the part of the press envelope that
+        // exceeds it belongs to the viewport. Week and day views compensate their grid the same way,
+        // which keeps the left content axis identical when the view changes.
         int edge = PressFeedback.edgeSpace(body.getWidth() > 0 ? body.getWidth()
                 : getResources().getDisplayMetrics().widthPixels);
-        LinearLayout content = column(); content.setPadding(edge, 0, edge, dp(24)); scroll.addView(content);
+        int overshoot = Math.max(0, edge - dp(20));
+        scroll.setClipToPadding(false);
+        scroll.setPadding(overshoot, 0, overshoot, dp(24));
+        LinearLayout content = column(); content.setPadding(0, 0, 0, 0); scroll.addView(content);
         if (snapshot.systemUnavailable) notice(content, "系统日程暂时无法读取");
         if (snapshot.truncated) notice(content, "日程数量较多，请缩小日期范围");
         if (mode == YEAR) {
@@ -891,7 +897,7 @@ final class CalendarOverviewPage extends SchedulePage {
                 FrameLayout.LayoutParams numberParams = new FrameLayout.LayoutParams(-1, -1);
                 numberParams.bottomMargin = markerHeight; cell.addView(number, numberParams);
                 if (!mini) {
-                    calendarSurface(cell, day.equals(date) && ownMonth, 15,
+                    calendarSurface(cell, day.equals(date) && ownMonth, UiStyle.RADIUS_CHIP,
                             ownMonth && (day.equals(date) || day.equals(LocalDate.now())));
                     cell.setAlpha(ownMonth ? 1f : .65f);
                 }
@@ -1027,7 +1033,7 @@ final class CalendarOverviewPage extends SchedulePage {
                 date = day; changeMode(DAY);
             });
             label.setTag("day:" + day);
-            if (day.equals(LocalDate.now())) calendarSurface(label, true, 16, true);
+            if (day.equals(LocalDate.now())) calendarSurface(label, true, UiStyle.RADIUS_CHIP, true);
             dates.addView(label, new LinearLayout.LayoutParams(geometry.dayWidth, dp(60)));
             geometryBindings.add(() -> { android.view.ViewGroup.LayoutParams p = label.getLayoutParams(); p.width = geometry.dayWidth; label.setLayoutParams(p); });
             if (days == 7) { label.setPadding(dp(2), 0, dp(2), 0); label.setTextSize(12); }
@@ -1238,15 +1244,18 @@ final class CalendarOverviewPage extends SchedulePage {
     }
     private ImageButton icon(int resource, String description, Runnable click) {
         ImageButton button = new ImageButton(activity); button.setImageResource(resource); button.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).primary));
-        button.setPadding(dp(11), dp(11), dp(11), dp(11)); button.setContentDescription(description);
-        calendarSurface(button, false, UiStyle.RADIUS_PILL, false); button.setOnClickListener(v -> click.run()); return button;
+        // Same icon contract as UiStyle.navigationIcon: 48dp cell, 24dp glyph, shared press feedback.
+        button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        button.setPadding(dp(12), dp(12), dp(12), dp(12)); button.setContentDescription(description);
+        calendarSurface(button, false, UiStyle.RADIUS_PILL, false); UiStyle.pressable(button);
+        button.setOnClickListener(v -> click.run()); return button;
     }
     private void calendarSurface(View view, boolean selected, int radius, boolean outline) {
         UiStyle.acrylicChoice(view, selected, radius, outline);
         UiSurfaces.minimumAcrylicMix(view, ThemeStore.dark(this) ? 70 : 80);
     }
     private void eventSurface(View view, AgendaEntry entry) {
-        calendarSurface(view, true, 8, true);
+        calendarSurface(view, true, UiStyle.RADIUS_CHIP, true);
         if (entry.system) UiSurfaces.acrylicSourceColor(view, entry.calendarColor);
     }
     private void notice(LinearLayout container, String message) { TextView label = text(message, 13, false); UiStyle.muted(label); UiStyle.addSpaced(container, label, 12, 12); }

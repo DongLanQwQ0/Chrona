@@ -26,7 +26,7 @@ home = (src / 'DashboardActivity.java').read_text(encoding='utf-8')
 toggle = home[home.index('private CheckBox homeSystemCalendarToggle()'):home.index('private void home(HomeData')]
 toggle_view = (src / 'CalendarVisibilityToggle.java').read_text(encoding='utf-8')
 assert 'new CalendarVisibilityToggle(this)' in toggle and 'extends CheckBox' in toggle_view
-assert '(getWidth() - size) / 2' in toggle_view and '(getHeight() - size) / 2' in toggle_view
+assert '(getWidth() - size + getPaddingLeft() - getPaddingRight()) / 2' in toggle_view and '(getHeight() - size) / 2' in toggle_view
 assert 'UiStyle.pressable(this)' in toggle_view and 'setForeground(' not in toggle_view
 assert 'drawCircle' not in toggle_view, 'State uses icon tint; press fill uses the shared capsule mask'
 assert 'tint.evaluate(checkedFraction, palette.muted, palette.primary)' in toggle_view
@@ -77,6 +77,7 @@ public static final int ACTION_DOWN=0,ACTION_UP=1,ACTION_MOVE=2,ACTION_CANCEL=3,
 public boolean multi;int action;float x,y;public MotionEvent(int a,float x,float y){action=a;this.x=x;this.y=y;}
 public static MotionEvent obtain(MotionEvent e){return new MotionEvent(e.action,e.x,e.y);}
 public int getActionMasked(){return action;}public float getX(){return x;}public float getY(){return y;}
+public void offsetLocation(float dx,float dy){x+=dx;y+=dy;}
 public void setAction(int a){action=a;}public void recycle(){} }''',
     'android/view/ViewConfiguration.java': '''package android.view;public class ViewConfiguration {
 public static ViewConfiguration get(android.content.Context c){return new ViewConfiguration();}
@@ -86,8 +87,13 @@ float x,y,vx,vy;boolean first=true;public static VelocityTracker obtain(){return
 public void addMovement(MotionEvent e){if(!first){vx=(e.getX()-x)*100;vy=(e.getY()-y)*100;}first=false;x=e.getX();y=e.getY();}
 public void computeCurrentVelocity(int units,int max){}public float getXVelocity(){return vx;}public float getYVelocity(){return vy;}public void recycle(){} }''',
     'android/widget/ScrollView.java': '''package android.widget; public class ScrollView {
-public static final int OVER_SCROLL_NEVER=2;public int overscroll;public void setOverScrollMode(int mode){overscroll=mode;}
-public int x,y,flingVelocity,stops;public void scrollBy(int x,int y){this.x+=x;this.y+=y;}
+public static final int OVER_SCROLL_NEVER=2;public static final int SCROLL_AXIS_VERTICAL=1;
+public void setNestedScrollingEnabled(boolean value){}public void stopNestedScroll(){}public boolean startNestedScroll(int axes){return false;}
+public boolean dispatchNestedPreScroll(int dx,int dy,int[] consumed,int[] offsetInWindow){return false;}
+public boolean dispatchNestedScroll(int dxConsumed,int dyConsumed,int dxUnconsumed,int dyUnconsumed,int[] offsetInWindow){return false;}
+public int overscroll;public void setOverScrollMode(int mode){overscroll=mode;}
+public int x,y,flingVelocity,stops;public int getScrollX(){return x;}public int getScrollY(){return y;}
+public void scrollTo(int x,int y){this.x=x;this.y=y;}public void scrollBy(int x,int y){this.x+=x;this.y+=y;}
 public void fling(int v){flingVelocity=v;}public boolean onTouchEvent(android.view.MotionEvent e){if(e.getActionMasked()==0){stops++;flingVelocity=0;}return true;}}''',
     'android/widget/HorizontalScrollView.java': '''package android.widget;public class HorizontalScrollView extends ScrollView {
 public int cancels,dispatches;public HorizontalScrollView(android.content.Context c){}

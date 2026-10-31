@@ -12,3 +12,7 @@ local.properties
 keystore.properties
 signing.properties
 __pycache__/
+docs/Communication/.pipe/
+docs/Communication/locks/
+docs/Communication/inbox/
+docs/Communication/outbox/

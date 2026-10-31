@@ -204,61 +204,100 @@ function phoneDayStart(date){
 function agendaDayEntries(items,date){const start=phoneDayStart(date),end=phoneDayStart(addCivilDays(date,1));return items.filter(item=>item.start<end&&item.finish>start);}
 const pageOrder=['home','schedule','inbox'];
 let mainSection='home';
-const dockHighlight=node('span','dock-highlight');dockHighlight.hidden=true;dockHighlight.setAttribute('aria-hidden','true');$('.bottom nav').prepend(dockHighlight);
-const dockNav=$('.bottom nav'),dockState={p:0,v:0,target:0,w:0,wv:0,wt:0,s:1,sv:0,st:1,bar:1,bv:0,bt:1,stretch:1,xv:0};
-let dockFrame=0,dockTime=0,dockTouch=null,dockSuppressClick=false,dockCoasting=false;
-const dockCoastDamping=7.5,dockOutwardWidth=.75,dockPressTime=1.5,dockInnerInset=6;
-let dockCoastTarget=null;
-function dockLanding(position=dockState.p){const buttons=dockButtons();return buttons.reduce((best,button)=>Math.abs(position-(button.offsetLeft+button.offsetWidth/2))<best.distance?{button,distance:Math.abs(position-(button.offsetLeft+button.offsetWidth/2))}:best,{button:null,distance:Infinity}).button;}
-function coastDockStep(state,first,last,dt){const edge=Math.max(first,Math.min(last,state.p)),overflow=state.p-edge;if(overflow){state.v+=(-180*overflow-18*state.v)*dt;state.p+=state.v*dt;}else{const decay=Math.exp(-dockCoastDamping*dt);state.p+=state.v*(1-decay)/dockCoastDamping;state.v*=decay;}}
-function predictDockLanding(speed){const buttons=dockButtons(),first=buttons[0].offsetLeft+buttons[0].offsetWidth/2,last=buttons.at(-1).offsetLeft+buttons.at(-1).offsetWidth/2,state={p:dockState.p,v:speed};for(let frame=0;frame<2400;frame++){coastDockStep(state,first,last,1/120);if(Math.abs(state.v)<8&&state.p>=first-2&&state.p<=last+2)break;}return dockLanding(state.p);}
-function startDockCoast(speed){dockCoastTarget=predictDockLanding(speed);dockState.v=speed;dockCoasting=true;if(dockCoastTarget)guard(()=>navigate(dockCoastTarget.dataset.page));if(reducedMotion.matches){commitDockCoast();snapDock();}else animateDock();}
-function commitDockCoast(){dockCoasting=false;targetDock(dockCoastTarget);}
-function dockButtons(){return [...dockNav.querySelectorAll('[data-page]')];}
-function dockNearest(clientX){return dockButtons().reduce((best,button)=>{const rect=button.getBoundingClientRect();return Math.abs(clientX-(rect.left+rect.right)/2)<best.distance?{button,distance:Math.abs(clientX-(rect.left+rect.right)/2)}:best;},{button:null,distance:Infinity}).button;}
-function softDockUpper(value,limit,approach){if(approach<=0)return Math.min(value,limit);const start=limit-approach;return value<=start?value:start+approach*Math.tanh((value-start)/approach);}
-function drawDock(){const state=dockState,width=state.w*state.s*state.stretch,maximum=state.w*dockOutwardWidth;let left=softDockUpper(state.p-width/2,dockNav.offsetWidth-state.w/2,state.w/2),right=-softDockUpper(-state.p-width/2,-state.w/2,state.w/2);if(maximum>0){if(left<0)left=-maximum*Math.tanh(-left/maximum);if(right>dockNav.offsetWidth)right=dockNav.offsetWidth+maximum*Math.tanh((right-dockNav.offsetWidth)/maximum);}const height=Math.max(0,dockNav.clientHeight-dockInnerInset*2)*state.s;dockHighlight.style.width=(right-left)+'px';dockHighlight.style.height=height+'px';dockHighlight.style.top=(dockNav.clientHeight-height)/2+'px';dockHighlight.style.transform=`translateX(${left}px)`;dockNav.style.transform=`scale(${state.bar})`;}
-function snapDock(){const state=dockState;state.p=state.target;state.w=state.wt;state.s=state.st;state.bar=state.bt;state.stretch=1;state.v=state.wv=state.sv=state.bv=state.xv=0;drawDock();}
-function advanceDock(now){dockFrame=0;const state=dockState;if(reducedMotion.matches){if(dockCoasting)commitDockCoast();snapDock();return;}const elapsed=Math.min(.064,Math.max(0,(now-dockTime)/1000)),steps=Math.max(1,Math.ceil(elapsed*120)),dt=elapsed/steps;dockTime=now;
- const buttons=dockButtons(),first=buttons[0].offsetLeft+buttons[0].offsetWidth/2,last=buttons.at(-1).offsetLeft+buttons.at(-1).offsetWidth/2;
- for(let i=0;i<steps;i++){if(dockCoasting)coastDockStep(state,first,last,dt);else{state.v+=(180*(state.target-state.p)-22*state.v)*dt;state.p+=state.v*dt;}state.wv+=(200*(state.wt-state.w)-22*state.wv)*dt;state.w+=state.wv*dt;
-  const pressTime=state.st>1?dockPressTime:1,stiffness=900/(pressTime*pressTime),damping=50/pressTime;
-  state.sv+=(stiffness*(state.st-state.s)-damping*state.sv)*dt;state.s+=state.sv*dt;const stretch=1+Math.min(.25,Math.abs(state.v)/Math.max(1,state.w)*.025);
-  state.xv+=(200*(stretch-state.stretch)-18*state.xv)*dt;state.stretch+=state.xv*dt;state.bv+=(stiffness*(state.bt-state.bar)-damping*state.bv)*dt;state.bar+=state.bv*dt;}
- if(dockCoasting&&Math.abs(state.v)<8&&state.p>=first-2&&state.p<=last+2)commitDockCoast();
- drawDock();const moving=dockCoasting||Math.abs(state.p-state.target)>.05||Math.abs(state.v)>.1||Math.abs(state.w-state.wt)>.05||Math.abs(state.wv)>.1||Math.abs(state.s-state.st)>.001||Math.abs(state.sv)>.01||Math.abs(state.bar-state.bt)>.001||Math.abs(state.bv)>.01||Math.abs(state.stretch-1)>.001||Math.abs(state.xv)>.01;
- if(moving)dockFrame=requestAnimationFrame(advanceDock);else snapDock();
-}
-function animateDock(){if(reducedMotion.matches){if(dockFrame)cancelAnimationFrame(dockFrame);dockFrame=0;snapDock();}else if(!dockFrame){dockTime=performance.now();dockFrame=requestAnimationFrame(advanceDock);}}
-function pressDock(pressed){dockState.st=pressed?1.5:1;dockState.bt=pressed?1.1:1;animateDock();}
-function targetDock(button){if(!button||dockCoasting)return;dockState.target=button.offsetLeft+button.offsetWidth/2;dockState.wt=button.offsetWidth;animateDock();}
-function updateDock(){const selected=dockNav.querySelector('button.active');if(!selected){dockHighlight.hidden=true;return;}const first=dockHighlight.hidden;dockHighlight.hidden=false;if(first){dockState.target=selected.offsetLeft+selected.offsetWidth/2;dockState.wt=selected.offsetWidth;snapDock();}else targetDock(selected);}
-function dockPointerVelocity(samples){const recent=samples.filter(sample=>sample.time>=samples.at(-1).time-100);if(recent.length<2)return 0;
+// Every complete web selection rail uses one pointer and motion implementation.
+const navigationTracks=new WeakMap();
+const navigationCoastDamping=7.5,navigationOutwardWidth=.75,navigationInnerInset=6;
+function navigationLocalX(bar,clientX){const bounds=bar.getBoundingClientRect();return (clientX-bounds.left)*bar.offsetWidth/Math.max(1,bounds.width)-bar.clientLeft;}
+function navigationVelocity(samples){const recent=samples.filter(sample=>sample.time>=samples.at(-1).time-100);if(recent.length<2)return 0;
  const meanTime=recent.reduce((sum,sample)=>sum+sample.time,0)/recent.length,meanX=recent.reduce((sum,sample)=>sum+sample.x,0)/recent.length;
- let numerator=0,denominator=0;for(const sample of recent){numerator+=(sample.time-meanTime)*(sample.x-meanX);denominator+=(sample.time-meanTime)**2;}return denominator>0?numerator/denominator*1000:0;}
-function recordDockPointer(touch,event){const samples=event.getCoalescedEvents?.()||[];for(const sample of samples.length?samples:[event])touch.samples.push({x:sample.clientX,time:sample.timeStamp});touch.samples=touch.samples.filter(sample=>sample.time>=event.timeStamp-150);}
-new ResizeObserver(()=>{if(dockTouch)dockTouch.cancelled=true;updateDock();}).observe(dockNav);
-// Detail controls stay above the real Dock, including enlarged browser text.
-function updateDockClearance(){const bottom=$('.bottom');document.documentElement.style.setProperty('--dock-clearance',(bottom.offsetHeight+(parseFloat(getComputedStyle(bottom).bottom)||0)+20)+'px');if(route==='home'){const button=$('#capture'),bounds=bottom.getBoundingClientRect();button.style.left=(bounds.right-button.offsetWidth)+'px';button.style.top=(bounds.top+(bounds.height-button.offsetHeight)/2)+'px';}}
-new ResizeObserver(updateDockClearance).observe($('.bottom'));
-window.addEventListener('resize',updateDockClearance);
-dockNav.addEventListener('pointerdown',event=>{if(event.button!==0)return;if(dockTouch){dockTouch.cancelled=true;dockCoasting=false;pressDock(false);return;}dockCoasting=false;dockTouch={id:event.pointerId,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false,samples:[]};recordDockPointer(dockTouch,event);dockNav.setPointerCapture(event.pointerId);pressDock(true);});
-dockNav.addEventListener('pointermove',event=>{const touch=dockTouch;if(!touch||touch.id!==event.pointerId||touch.cancelled)return;const dx=Math.abs(event.clientX-touch.x),dy=Math.abs(event.clientY-touch.y),rect=dockNav.getBoundingClientRect();
- recordDockPointer(touch,event);
- touch.left ||= event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom;if(!touch.dragging&&dx>8&&dx>dy*1.25)touch.dragging=true;
- if(touch.dragging){const buttons=dockButtons(),ratio=dockNav.offsetWidth/rect.width,x=(event.clientX-rect.left)*ratio;dockState.target=Math.max(buttons[0].offsetLeft+buttons[0].offsetWidth/2,Math.min(buttons.at(-1).offsetLeft+buttons.at(-1).offsetWidth/2,x));dockState.wt=dockNearest(event.clientX).offsetWidth;animateDock();}
-});
-function finishDockPointer(event,cancelled=false){const touch=dockTouch;if(!touch||touch.id!==event.pointerId)return;dockTouch=null;pressDock(false);const button=dockNearest(event.clientX),rect=dockNav.getBoundingClientRect(),inside=event.clientX>=rect.left&&event.clientX<=rect.right&&event.clientY>=rect.top&&event.clientY<=rect.bottom;
- recordDockPointer(touch,event);const releaseVelocity=dockPointerVelocity(touch.samples)*dockNav.offsetWidth/rect.width;
- dockSuppressClick=true;setTimeout(()=>{dockSuppressClick=false;},0);if(dockNav.hasPointerCapture(event.pointerId))dockNav.releasePointerCapture(event.pointerId);
- if(!cancelled&&!touch.cancelled&&button&&(touch.dragging||(!touch.left&&inside))){if(touch.dragging)startDockCoast(releaseVelocity);else guard(()=>navigate(button.dataset.page));}else {dockCoasting=false;updateDock();}
+ let numerator=0,denominator=0;for(const sample of recent){numerator+=(sample.time-meanTime)*(sample.x-meanX);denominator+=(sample.time-meanTime)**2;}return denominator>0?numerator/denominator*1000:0;
 }
-dockNav.addEventListener('pointerup',event=>finishDockPointer(event));dockNav.addEventListener('pointercancel',event=>finishDockPointer(event,true));
-dockNav.addEventListener('lostpointercapture',()=>{if(dockTouch){dockTouch=null;pressDock(false);updateDock();}});
-dockNav.addEventListener('click',event=>{if(dockSuppressClick&&event.detail!==0){event.preventDefault();event.stopImmediatePropagation();return;}dockCoasting=false;},true);
-window.addEventListener('pointerdown',event=>{if(dockTouch&&event.pointerId!==dockTouch.id){dockTouch.cancelled=true;pressDock(false);}},true);
-window.addEventListener('blur',()=>{dockTouch=null;dockCoasting=false;pressDock(false);updateDock();});
-reducedMotion.addEventListener('change',()=>{if(reducedMotion.matches){if(dockFrame)cancelAnimationFrame(dockFrame);dockFrame=0;if(dockCoasting)commitDockCoast();snapDock();}});
+function coastNavigationStep(state,first,last,dt){const edge=Math.max(first,Math.min(last,state.p)),overflow=state.p-edge;if(overflow){state.v+=(-180*overflow-18*state.v)*dt;state.p+=state.v*dt;}else{const decay=Math.exp(-navigationCoastDamping*dt);state.p+=state.v*(1-decay)/navigationCoastDamping;state.v*=decay;}}
+function createNavigationTrack(bar,selected,choose){
+ if(navigationTracks.has(bar))return navigationTracks.get(bar);
+ const highlight=bar.querySelector('.dock-highlight,.selection-highlight'),state={p:0,v:0,target:0,w:0,wv:0,wt:0,s:1,sv:0,st:1,bar:1,bv:0,bt:1,stretch:1,xv:0,coasting:false};
+ let initialized=false,frame=0,time=0,pointer=null,suppressClick=false,disposed=false;
+ bar.classList.add('navigation-track');highlight.setAttribute('aria-hidden','true');
+ const buttons=()=>[...bar.querySelectorAll(':scope > button')],center=button=>button.offsetLeft+button.offsetWidth/2;
+ const limits=()=>{const items=buttons();return[center(items[0]),center(items.at(-1))];};
+ const nearest=(x,eligible=false)=>buttons().filter(button=>!eligible||!button.disabled).reduce((best,button)=>Math.abs(x-center(button))<best.distance?{button,distance:Math.abs(x-center(button))}:best,{button:null,distance:Infinity}).button;
+ function samples(event){for(const point of event.getCoalescedEvents?.().length?event.getCoalescedEvents():[event])pointer.samples.push({x:point.clientX,time:point.timeStamp});pointer.samples=pointer.samples.filter(point=>point.time>=event.timeStamp-150);}
+ function follow(){if(!pointer||pointer.cancelled)return;const[first,last]=limits();state.p=state.target=Math.max(first,Math.min(last,navigationLocalX(bar,pointer.clientX)));state.v=0;const button=nearest(state.p);if(button)state.wt=button.offsetWidth;}
+ function paint(){
+  bar.style.transform=`scale(${state.bar})`;follow();
+  const width=state.w*state.s*state.stretch,maximum=state.w*navigationOutwardWidth;
+  let left=state.p-width/2,right=state.p+width/2;
+  if(maximum>0){if(left<0)left=-maximum*Math.tanh(-left/maximum);if(right>bar.clientWidth)right=bar.clientWidth+maximum*Math.tanh((right-bar.clientWidth)/maximum);}
+  const height=Math.max(0,bar.clientHeight-navigationInnerInset*2)*state.s;
+  highlight.style.width=(right-left)+'px';highlight.style.height=height+'px';highlight.style.top=(bar.clientHeight-height)/2+'px';highlight.style.transform=`translateX(${left}px)`;
+ }
+ function snap(){state.p=state.target;state.w=state.wt;state.s=state.st;state.bar=state.bt;state.stretch=1;state.v=state.wv=state.sv=state.bv=state.xv=0;paint();}
+ function sync(){
+  if(disposed||!bar.isConnected||!bar.offsetWidth||getComputedStyle(bar).visibility==='hidden')return;
+  const button=selected();if(!button){highlight.hidden=true;return;}highlight.hidden=false;
+  if(!pointer&&!state.coasting){state.target=center(button);state.wt=button.offsetWidth;}
+  if(!initialized){initialized=true;state.target=center(button);state.wt=button.offsetWidth;snap();}else animate();
+ }
+ function animate(){
+  if(disposed)return;bar.classList.add('navigation-raised');
+  if(reducedMotion.matches){state.coasting=false;if(!pointer){const button=selected();if(button){state.target=center(button);state.wt=button.offsetWidth;}}snap();if(!pointer)bar.classList.remove('navigation-raised');return;}
+  if(!frame){time=performance.now();frame=requestAnimationFrame(advance);}
+ }
+ function advance(now){
+  frame=0;if(disposed||!bar.isConnected){destroy();return;}
+  const elapsed=Math.min(.064,Math.max(0,(now-time)/1000)),steps=Math.max(1,Math.ceil(elapsed*120)),dt=elapsed/steps;time=now;
+  const[first,last]=limits(),held=pointer&&!pointer.cancelled;
+  for(let n=0;n<steps;n++){
+   if(!held){if(state.coasting)coastNavigationStep(state,first,last,dt);else{state.v+=(180*(state.target-state.p)-22*state.v)*dt;state.p+=state.v*dt;}}
+   state.wv+=(200*(state.wt-state.w)-22*state.wv)*dt;state.w+=state.wv*dt;
+   const response=state.st>state.s?1:1.5,stiffness=900/(response*response),damping=50/response;
+   state.sv+=(stiffness*(state.st-state.s)-damping*state.sv)*dt;state.s+=state.sv*dt;state.bv+=(stiffness*(state.bt-state.bar)-damping*state.bv)*dt;state.bar+=state.bv*dt;
+   const speed=held?(now-pointer.samples.at(-1).time<100?navigationVelocity(pointer.samples):0):state.v,stretch=1+Math.min(.25,Math.abs(speed)/Math.max(1,state.w)*.025);
+   state.xv+=(200*(stretch-state.stretch)-18*state.xv)*dt;state.stretch+=state.xv*dt;
+  }
+  if(state.coasting&&Math.abs(state.v)<8&&state.p>=first-2&&state.p<=last+2){state.coasting=false;const button=selected();if(button){state.target=center(button);state.wt=button.offsetWidth;}}
+  paint();
+  const moving=state.coasting||!held&&(Math.abs(state.p-state.target)>.05||Math.abs(state.v)>.1)||Math.abs(state.w-state.wt)>.05||Math.abs(state.wv)>.1||Math.abs(state.s-state.st)>.001||Math.abs(state.sv)>.01||Math.abs(state.bar-state.bt)>.001||Math.abs(state.bv)>.01||Math.abs(state.stretch-1)>.001||Math.abs(state.xv)>.01;
+  if(moving)frame=requestAnimationFrame(advance);else{snap();if(!pointer)bar.classList.remove('navigation-raised');}
+ }
+ function commit(button){if(button)guard(async()=>{try{await choose(button);}finally{sync();}});}
+ function down(event){
+  if(pointer){pointer.cancelled=true;state.st=state.bt=1;animate();return;}
+  if(event.button!==0||event.isPrimary===false||!event.target.closest('button')||event.target.closest('button').disabled)return;
+  suppressClick=false;state.coasting=false;pointer={id:event.pointerId,clientX:event.clientX,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false,samples:[]};
+  samples(event);bar.setPointerCapture(event.pointerId);state.st=1.5;state.bt=1.1;follow();paint();animate();
+ }
+ function move(event){
+  if(!pointer||pointer.id!==event.pointerId||pointer.cancelled)return;
+  pointer.clientX=event.clientX;samples(event);const bounds=bar.getBoundingClientRect(),dx=Math.abs(event.clientX-pointer.x),dy=Math.abs(event.clientY-pointer.y);
+  pointer.left ||= event.clientX<bounds.left||event.clientX>bounds.right||event.clientY<bounds.top||event.clientY>bounds.bottom;
+  if(dx>8&&dx>dy*1.25)pointer.dragging=true;
+  follow();paint();animate();
+ }
+ function finish(event,cancelled=false){
+  if(!pointer||pointer.id!==event.pointerId)return;samples(event);pointer.clientX=event.clientX;follow();const touch=pointer,bounds=bar.getBoundingClientRect(),speed=navigationVelocity(touch.samples)*bar.offsetWidth/Math.max(1,bounds.width);
+  const inside=event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom,button=nearest(navigationLocalX(bar,event.clientX),true);
+  pointer=null;suppressClick=true;state.st=state.bt=1;if(bar.hasPointerCapture(event.pointerId))bar.releasePointerCapture(event.pointerId);
+  if(!cancelled&&!touch.cancelled&&button&&(touch.dragging||!touch.left&&inside)){
+   if(touch.dragging&&!reducedMotion.matches){const[first,last]=limits(),prediction={p:state.p,v:speed};for(let n=0;n<2400;n++){coastNavigationStep(prediction,first,last,1/120);if(Math.abs(prediction.v)<8&&prediction.p>=first-2&&prediction.p<=last+2)break;}state.v=speed;state.coasting=true;commit(nearest(prediction.p,true));}
+   else{state.target=center(button);state.wt=button.offsetWidth;commit(button);}
+   animate();
+  }else{state.coasting=false;sync();}
+ }
+ function cancel(){if(pointer){pointer.cancelled=true;const id=pointer.id;pointer=null;suppressClick=true;if(bar.hasPointerCapture(id))bar.releasePointerCapture(id);}state.coasting=false;state.st=state.bt=1;sync();}
+ const up=event=>finish(event),abort=event=>finish(event,true),lost=()=>{if(pointer)cancel();},click=event=>{if(suppressClick&&event.detail!==0){event.preventDefault();event.stopImmediatePropagation();}},other=event=>{if(pointer&&event.pointerId!==pointer.id){pointer.cancelled=true;state.st=state.bt=1;animate();}},menu=event=>event.preventDefault(),reduced=()=>{if(frame)cancelAnimationFrame(frame);frame=0;state.coasting=false;sync();};
+ function destroy(){if(disposed)return;disposed=true;if(frame)cancelAnimationFrame(frame);bar.removeEventListener('pointerdown',down);bar.removeEventListener('pointermove',move);bar.removeEventListener('pointerup',up);bar.removeEventListener('pointercancel',abort);bar.removeEventListener('lostpointercapture',lost);bar.removeEventListener('click',click,true);bar.removeEventListener('contextmenu',menu);window.removeEventListener('pointerdown',other,true);window.removeEventListener('blur',cancel);reducedMotion.removeEventListener('change',reduced);navigationTracks.delete(bar);}
+ bar.addEventListener('pointerdown',down);bar.addEventListener('pointermove',move);bar.addEventListener('pointerup',up);bar.addEventListener('pointercancel',abort);bar.addEventListener('lostpointercapture',lost);bar.addEventListener('click',click,true);bar.addEventListener('contextmenu',menu);window.addEventListener('pointerdown',other,true);window.addEventListener('blur',cancel);reducedMotion.addEventListener('change',reduced);
+ const controller={state,sync,cancel,destroy};navigationTracks.set(bar,controller);return controller;
+}
+const dockHighlight=node('span','dock-highlight');dockHighlight.hidden=true;dockHighlight.setAttribute('aria-hidden','true');$('.bottom nav').prepend(dockHighlight);
+const dockNav=$('.bottom nav'),dockTrack=createNavigationTrack(dockNav,()=>dockNav.querySelector('button.active'),button=>navigate(button.dataset.page));
+function updateDock(){dockTrack.sync();}
+// Observe the changing outer box, not only its constant content width during slot animation.
+function updateDockClearance(){const bottom=$('.bottom');document.documentElement.style.setProperty('--dock-clearance',(bottom.offsetHeight+(parseFloat(getComputedStyle(bottom).bottom)||0)+20)+'px');if(route==='home'){const button=$('#capture'),bounds=bottom.getBoundingClientRect();button.style.left=(bounds.right-button.offsetWidth)+'px';button.style.top=(bounds.top+(bounds.height-button.offsetHeight)/2)+'px';}}
+new ResizeObserver(updateDock).observe(dockNav);
+new ResizeObserver(updateDockClearance).observe($('.bottom'),{box:'border-box'});
+window.addEventListener('resize',updateDockClearance);
 let revealObserver=null;
 function clearReveals(){revealObserver?.disconnect();revealObserver=null;document.querySelectorAll('.reveal-pending').forEach(element=>element.classList.remove('reveal-pending'));}
 function observeCards(host){
@@ -395,11 +434,13 @@ function positionSelectionBar(host){
  const bar=host.querySelector('.selection-bar'),compact=host.querySelector('.selection-current');if(!bar||!host.isConnected)return;
  const buttons=[...bar.querySelectorAll('button')],required=buttons.reduce((sum,button)=>{const style=getComputedStyle(button),canvas=selectionBar.canvas||(selectionBar.canvas=document.createElement('canvas')),context=canvas.getContext('2d');context.font=style.font;return sum+context.measureText(button.textContent).width+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight);},14),small=required>host.clientWidth;
  bar.classList.toggle('selection-measure',small);compact.hidden=!small;
- const active=bar.querySelector('[aria-pressed="true"]'),highlight=bar.querySelector('.selection-highlight');
- if(active){compact.firstElementChild.textContent=active.textContent;highlight.style.width=active.offsetWidth+'px';highlight.style.transform=`translateX(${active.offsetLeft}px)`;}
+ const active=bar.querySelector('[aria-pressed="true"]');
+ if(active)compact.firstElementChild.textContent=active.textContent;
+ if(small){navigationTracks.get(bar)?.cancel();return;}
+ createNavigationTrack(bar,()=>bar.querySelector('[aria-pressed="true"]'),button=>button.click()).sync();
 }
 function layoutSelectionBars(){
- for(const [host,observer]of selectionObservers)if(!host.isConnected){observer.disconnect();selectionObservers.delete(host);}
+ for(const [host,observer]of selectionObservers)if(!host.isConnected){observer.disconnect();navigationTracks.get(host.querySelector('.selection-bar'))?.destroy();selectionObservers.delete(host);}
  for(const host of document.querySelectorAll('.selection-host')){if(!selectionObservers.has(host)){const observer=new ResizeObserver(()=>positionSelectionBar(host));selectionObservers.set(host,observer);observer.observe(host);}positionSelectionBar(host);}
 }
 
