@@ -26,7 +26,7 @@ final class DockSpring {
     private static final float EDGE_APPROACH_SLOTS = .6f;
     private static final float EDGE_APPROACH_DAMPING = 18f;
     private static final float CLICK_FREQUENCY = (float)Math.sqrt(180f);
-    private static final float FOLLOW_FREQUENCY = (float)Math.sqrt(1800f);
+    private static final float FOLLOW_FREQUENCY = (float)Math.sqrt(3600f);
     private static final float TAIL_FREQUENCY = (float)Math.sqrt(300f);
     // Time-compress the previous rebound by 1.5, preserving its damping ratio.
     private static final float REBOUND_SPEED = 1.5f;

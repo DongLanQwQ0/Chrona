@@ -39,7 +39,7 @@ final class DockNavigationLayout extends FrameLayout {
     /** Extra travel past the last tab, in slots, so an over-drag does not dead-stop at the edge. */
     private static final float EDGE_TRAVEL = .6f;
     /** How far the plate may leave the rail, as a fraction of one tab's width. */
-    private static final float EDGE_OVERFLOW = .8f;
+    private static final float EDGE_OVERFLOW = .25f;
     private VelocityTracker fingerVelocity;
     private float downX, downY, fingerPosition;
     private long followFrameTime;
@@ -501,11 +501,11 @@ final class DockNavigationLayout extends FrameLayout {
             float top = cross - height / 2f;
             float right = x + width / 2f;
             // Reduce inner-end speed before its anchor; both approach and rebound are smooth. The
-            // rail is wider than the plate so an over-drag keeps travelling instead of parking on
-            // the edge: the leading end may leave the bar by more than half a tab.
+            // stop sits a quarter of a tab past the rim: further out than the original half-tab
+            // inset, but still a limit, so the plate never leaves the rail entirely.
             float slack = standardWidth * EDGE_OVERFLOW;
-            left = DockSpring.softUpperBoundary(left, board + slack, standardWidth * .9f);
-            right = -DockSpring.softUpperBoundary(-right, slack, standardWidth * .9f);
+            left = DockSpring.softUpperBoundary(left, board + slack, standardWidth * .6f);
+            right = -DockSpring.softUpperBoundary(-right, slack, standardWidth * .6f);
             float maximum = standardWidth * DockSpring.MAX_OUTWARD_WIDTH;
             if (left < 0) left = -DockSpring.outwardExtension(-left, maximum);
             if (right > board) right = board + DockSpring.outwardExtension(right - board, maximum);
