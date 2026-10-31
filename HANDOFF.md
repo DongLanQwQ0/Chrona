@@ -1,24 +1,23 @@
-# 当前交付：0.15.80 已发布；Dock 实验已上真机预览，待验收
+# 当前交付：0.15.81 / 243 已更新手机，课堂整稿验收完成
 
-## 已发布
+## 范围与所有者
 
-- `v0.15.80`：https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.80 （latest），资产 `Chrona-0.15.80.apk` 3,299,025 字节，242／0.15.80，原签名，非 debuggable。
-- 真机 V2527A 已覆盖升级；全量检查 120/121，唯一失败为 `data_integrity_check`（数据层夹具，与功能无关）。
+- 本聊天接续 core 的构建交付，负责课堂 AI 修复、集成候选、手机更新及结果收口；不再并行改 Dock。core 交付见 `docs/Communication/to-external-agent.md`，既有 Dock 决定见 `docs/liquid-glass-dock.md`。
+- 版本已按用户要求递增到 0.15.81 / 243，覆盖升级成功；尚未发布 Release。正式线上仍为 v0.15.80。
+- 当前 checkout 为 `experiment/glass-lens`，含 main 的 Dock 合并及独立预览标签。保护 AGENTS.md、备份目录、角色 toml 和用户清理脚本，不纳入提交或清理。
 
-## 实验分支 `experiment/glass-lens`
+## 课堂候选与有效证据
 
-11 个提交，参数与决策见 `docs/liquid-glass-dock.md` 与 `docs/ui-interaction-baseline.md`：
+- 9月23日 C 程序设计基础第7–8节：真实成品为1篇、7主题、2条不同安排；39张不同正文配图，40张实际分析图片。证据：`build/classroom-c-audit/real-final-report-deduplicated.json`、`real-final-summary-readable.md`。
+- 最后只新增一次安排分组请求，原25轮审计不变；已验证原消息前缀、冻结options、文稿、7主题及全局偏好原样不变。最后一轮服务返回input270436、cached269824，保留真实usage，不推算缓存命中率。
+- 2200项增强检查、quick8/8通过；debug/release构建与lint均通过，原签名及release非debuggable已核对。修复了原快照检查夹具漏建作业计划表及异常退出时工作线程未收尾的问题，未改生产数据库。
+- 0.15.81正式包已实际覆盖安装，拉回APK与候选逐字节相同，首次安装时间仍为原值。vivo同版本安装可能同时回报拒绝与成功，不应只据ADB退出码判断用户拒绝；正常版本升级成功。候选及过程证据位于 `build/classroom-c-audit/atomic-candidate/`。
 
-玻璃镜片（渐变＋顶部高光＋边缘亮线）、弹簧 response 0.38s／damping 0.93、按压局部响应（1.06 倍，平台动画器）、滚动最小化（图标式，「＋」同步淡出且不可点）、引导页卡片内距与复制示例按钮、横向越界放开（首尾外 0.6 格）。
+## 已交还设备
 
-- 回归：`full` 120/121，与发布线一致。
-- 真机预览已装：`com.donglan.chrona.preview`，0.15.80-preview，14:24:40。预览包数据独立且为空，滚动最小化需先记录几条内容。
-- 正式版未动：`com.donglan.chrona` 0.15.80／242。
+- 没有运行中的AI、安装或手机控制任务；临时验证包已卸载，本任务手机临时文件及空目录已清理。
+- 未改账号、全局AI偏好或手机安全设置；未导出旧总结备份。正式包不是preview，已有独立预览包不发布也不擅自删除。
 
 ## 唯一下一步
 
-等用户对预览的试用结论。满意则该分支并入 `main`，版本递增到 0.15.81，走 `docs/github-releases.md` 的发布流程（构建 debug＋release＋lint、核对签名与版本、打 tag、发布并校验 `/releases/latest`）。
-
-## 边界
-
-实验未合并、未改正式版本号；预览包只用于验收，不与正式版共享数据。安装时 vivo 会要求勾选风险确认再点继续安装。
+同步本轮源码；由用户自行检查0.15.81的视觉和日常体验。未创建正式标签或Release；正式分发仍按 `docs/github-releases.md` 收口。不补截图审核、极端DPI或重跑已有效的旧检查。

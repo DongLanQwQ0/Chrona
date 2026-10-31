@@ -40,6 +40,8 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     # Include the production managed-homework tables now covered by complete snapshots.
     audit = store.split('private static void addParseAudits(SQLiteDatabase db) {', 1)[1].split('public String beginParseRun', 1)[0]
     audit_sql = [''.join(literals(expression)) for expression in re.findall(r'db\.execSQL\((.*?)\);', audit, re.S)]
+    plans = store.split('private static void addHomeworkPlans(SQLiteDatabase db) {', 1)[1].split('\n    }', 1)[0]
+    plans_sql = [''.join(literals(expression)) for expression in re.findall(r'db\.execSQL\((.*?)\);', plans, re.S)]
     managed = store.split('public static void addZjuHomework(SQLiteDatabase db) {', 1)[1].split('public boolean ignoredZjuCandidate', 1)[0]
     managed_sql = []
     for expression in re.findall(r'db\.execSQL\(((?:"(?:\\.|[^"\\])*"|[^"])*?)\);', managed, re.S):
@@ -53,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
         db.executescript(schema)
         for statement in managed_sql:
             db.execute(statement)
-        for statement in audit_sql:
+        for statement in audit_sql + plans_sql:
             db.execute(statement)
         for table in tables[:4]:
             for operation in ("INSERT", "UPDATE", "DELETE"):
@@ -71,6 +73,7 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
     live.execute("INSERT INTO event_candidates(id,task_id,start_at_millis,end_at_millis,all_day,calendar_event_id) VALUES(1,1,10,20,0,42)")
     live.execute("INSERT INTO task_attachments VALUES(1,1)")
     live.execute("INSERT INTO task_files VALUES(1,1)")
+    live.execute("INSERT INTO zju_homework_plans VALUES(1,1,1,'queued','{}',NULL,NULL)")
     original_revision = live.execute("SELECT revision FROM data_revision").fetchone()[0]
     attach_sql = literals(snapshot.split("source.execSQL(", 1)[1])[0]
     live.execute(attach_sql, (str(snap_path),))
@@ -87,6 +90,7 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
         except Exception as error: failures.append(error)
     worker = threading.Thread(target=writer)
     worker.start()
+    opened.callback(worker.join, 4)
     assert writer_started.wait(1)
     for table in tables:
         column_names = ','.join('"' + row[1].replace('"', '""') + '"'
@@ -104,6 +108,7 @@ with tempfile.TemporaryDirectory(prefix="chrona-snapshot-check-", dir=root / "bu
         assert live.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 2
         assert snap.execute("PRAGMA foreign_key_check").fetchall() == []
         assert snap.execute("SELECT revision FROM data_revision").fetchone()[0] == original_revision
+        assert snap.execute("SELECT candidate_id,state FROM zju_homework_plans").fetchall() == [(1, 'queued')]
         assert snap.execute("SELECT seq FROM sqlite_sequence WHERE name='tasks'").fetchone()[0] == 99
         snap.execute("INSERT INTO tasks(status) VALUES('ready')")
         assert snap.execute("SELECT MAX(id) FROM tasks").fetchone()[0] == 100

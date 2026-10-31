@@ -40,8 +40,9 @@ final class ClassroomEnhancedSummary {
             String prompt="更正文稿已全部完成。现在只整理第 "+(i+1)+" 段。"+scope(block)
                     +"历史仅用于理解语境，不得把最后一段或其它段当作本段。只提取本段事实，不写全课总结；同一内容不跨段重述。"
                     +"本段没有教学内容或明确安排时，overview为空字符串，notes和assignments为空数组；不能用闲聊或‘未提及评分规则’填充。"
-                    +assignmentRules()+ClassroomSummary.draftSchema(catalogue,imageLimit)
+                    +assignmentRules()+ClassroomSummary.draftSchema(catalogue,imageLimit,true)
                     +"\n本次要提取的更正文稿（历史原消息保持不变，此处仅追加定位）：\n"+corrected.getString(i)
+                    +"\n安排原话核验用原始字幕（只作evidence逐字定位，列全引文覆盖的sources）：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
                     +"\n全课PPT可用目录（只表示时间分布，不是图片内容）："+catalogue;
             drafts.put(json("draft-"+i,prompt,Collections.emptyList(),value->{ClassroomSummary.validateBlock(value,blockInput(block,new JSONArray()));ClassroomSummary.validateAssignmentEvidence(value,block);ClassroomSummary.validateImageAssessment(value,catalogue);}));save();
         }
@@ -67,17 +68,19 @@ final class ClassroomEnhancedSummary {
             else{
                 JSONArray allowed=new JSONArray(analysed.toString());for(int n=0;n<inventory.length();n++)allowed.put(inventory.getJSONObject(n));
                 JSONArray block=blocks.getJSONArray(i);
-                String prompt="只核实并完善第 "+(i+1)+" 段笔记。"+scope(block)
+                String prompt="只核实并完善第 "+(i+1)+" 段笔记。当前主体来源id："+ids(block)+"。每条笔记至少引用一条本块来源；可补引同课已提供的真实前文作对照，不引用后续来源、不只重写其它块。课堂安排仅引用本块来源。"
                         +"保留题目和改卷线索、原话条件及不确定性。只修订下面指定初稿，不要依据最后一条历史回复另写一段，不重述其它段。"+assignmentRules()
                         +"本次图片依次对应以下file原值，编号可能不连续，禁止重新编号："+inventory
-                        +"。此前已提供的图片保持在原消息位置。仅可引用本次或此前实际提供的file，不得把请求过但未附的图片当作已看到。"+ClassroomSummary.SCHEMA
+                        +"。此前已提供的图片保持在原消息位置。仅可引用本次或此前实际提供的file，不得把请求过但未附的图片当作已看到。"+ClassroomSummary.BLOCK_SCHEMA
+                        +"\n安排原话核验用原始字幕：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
                         +"\n本次唯一要修订的初稿：\n"+drafts.getJSONObject(i);
-                value=json("final-"+i,prompt,bytes,result->{ClassroomSummary.validateBlock(result,blockInput(block,allowed));ClassroomSummary.validateAssignmentEvidence(result,block);});
+                value=json("final-"+i,prompt,bytes,result->validateRefinement(result,blockInput(full.getJSONArray("segments"),allowed),block));
                 for(int n=0;n<inventory.length();n++)analysed.put(inventory.getJSONObject(n));
             }
             parts.put(value);save();ClassroomStore.write(new File(dir,"summary.json"),assemble(parts,analysed,false));
         }
         edit(parts,analysed);
+        editAssignments(parts);
         JSONObject result=assemble(parts,analysed,true);state.put("final",result);save();ClassroomStore.write(new File(dir,"summary.json"),result);return result;
     }
     private static String scope(JSONArray block)throws Exception{
@@ -85,7 +88,23 @@ final class ClassroomEnhancedSummary {
     }
     private static String assignmentRules(){
         return "课堂安排必须是老师明确布置的具体任务，不能把知识点、一般编程建议、自拟复习事项转成安排。"
-                +"每项assignments除text、sources外还必须带evidence，逐字摘录sources所指原始字幕中表达该要求的连续原话；没有真实要求就返回[]。";
+                +"每项assignments除text、sources外还必须带evidence，逐字摘录原始字幕中表达该要求的最短连续原话，不用更正文稿的改写，不拼接非连续片段。"
+                +"sources须列全引文覆盖的每条来源，不可跳过中间字幕；只摘具体行动要求，不带入无关分数或背景段落。没有真实要求就返回[]。";
+    }
+    static void validateRefinement(JSONObject part,JSONObject lecture,JSONArray block)throws Exception{
+        ClassroomSummary.validateBlock(part,lecture);
+        Set<Integer> current=new HashSet<>();int first=Integer.MAX_VALUE;
+        for(int i=0;i<block.length();i++){int id=block.getJSONObject(i).getInt("id");current.add(id);first=Math.min(first,id);}
+        JSONArray notes=part.getJSONArray("notes");
+        for(int n=0;n<notes.length();n++){
+            JSONArray refs=notes.getJSONObject(n).getJSONArray("sources");boolean anchored=false;
+            for(int k=0;k<refs.length();k++){int id=refs.getInt(k);if(current.contains(id))anchored=true;else if(id>=first)throw new IOException("核图笔记引用了本块之后的字幕："+id);}
+            if(!anchored)throw new IOException("核图笔记缺少本块来源，不可只重写前一段");
+        }
+        JSONArray tasks=part.getJSONArray("assignments");for(int i=0;i<tasks.length();i++){
+            JSONArray refs=tasks.getJSONObject(i).getJSONArray("sources");for(int n=0;n<refs.length();n++)if(!current.contains(refs.getInt(n)))throw new IOException("课堂安排引用了本块之外的字幕："+refs.getInt(n));
+        }
+        ClassroomSummary.validateAssignmentEvidence(part,block);
     }
     /** Only references are planned globally; prose is edited one topic at a time. */
     private void edit(JSONArray parts,JSONArray analysed)throws Exception{
@@ -129,24 +148,57 @@ final class ClassroomEnhancedSummary {
         String overview=plan.getString("overview");Set<String> remaining=new HashSet<>();
         for(int p=0;p<parts.length();p++)for(int n=0;n<parts.getJSONObject(p).getJSONArray("notes").length();n++)remaining.add(p+":"+n);
         if(!remaining.isEmpty()&&overview.isBlank())throw new IOException("整稿缺少全课重点概览");
-        JSONArray sections=plan.getJSONArray("sections");
+        JSONArray sections=plan.getJSONArray("sections");Map<String,Integer> topicOwners=new HashMap<>();
         for(int i=0;i<sections.length();i++){
             JSONObject section=sections.getJSONObject(i);if(section.getString("title").isBlank())throw new IOException("整稿主题标题为空");
             JSONArray refs=section.getJSONArray("refs");if(refs.length()==0)throw new IOException("整稿主题缺少原笔记");
-            for(int n=0;n<refs.length();n++)if(!remaining.remove(refs.getString(n)))throw new IOException("整稿引用了重复或不存在的笔记："+refs.getString(n));
+            for(int n=0;n<refs.length();n++){
+                String ref=refs.getString(n);if(!remaining.remove(ref))throw new IOException("整稿引用了重复或不存在的笔记："+ref);
+                String topic=noteAt(parts,ref).getString("title").replaceAll("\\s+","");Integer owner=topicOwners.putIfAbsent(topic,i);
+                if(owner!=null&&owner!=i)throw new IOException("同名主题被拆成重复章节："+topic);
+            }
         }
         if(!remaining.isEmpty())throw new IOException("整稿遗漏了已提取笔记："+remaining);
     }
     private static JSONObject noteAt(JSONArray parts,String ref)throws Exception{String[] pair=ref.split(":");return parts.getJSONObject(Integer.parseInt(pair[0])).getJSONArray("notes").getJSONObject(Integer.parseInt(pair[1]));}
+    private void editAssignments(JSONArray parts)throws Exception{
+        if(state.has("editor_assignments"))return;
+        JSONObject original=new JSONObject();JSONArray index=new JSONArray();
+        for(int p=0;p<parts.length();p++){JSONArray rows=parts.getJSONObject(p).getJSONArray("assignments");for(int n=0;n<rows.length();n++){
+            String ref=p+":"+n;JSONObject row=rows.getJSONObject(n);original.put(ref,row);index.put(new JSONObject().put("ref",ref).put("assignment",row));
+        }}
+        JSONArray result;
+        if(index.length()<2){result=new JSONArray();if(index.length()==1)result.put(new JSONObject(index.getJSONObject(0).getJSONObject("assignment").toString()));}
+        else{
+            status("AI 合并课堂安排",0,1);
+            String prompt="合并全课课堂安排中的同义重复，只返回索引分组，不重写原文。返回JSON {\"groups\":[[\"0:0\",\"0:1\"],[\"0:2\"]]}。"
+                    +"每个真实ref恰好出现一次，不得遗漏、重复、编造或返回空组。仅在首项原文已完整涵盖组内其它项的同一行动、日期、条件及限制时合并，首项选最完整的原文；简短重述并入完整要求。"
+                    +"不同任务、有互补细节或相互矛盾的要求各自成组，保留讲授顺序。不新增行动或解释，不改写任何已发送历史。\n已核验的安排索引：\n"+index;
+            JSONObject grouping=json("edit-assignments",prompt,Collections.emptyList(),value->groupAssignments(value,original));
+            result=groupAssignments(grouping,original);
+        }
+        state.put("editor_assignments",result);save();
+    }
+    static JSONArray groupAssignments(JSONObject grouping,JSONObject original)throws Exception{
+        Set<String> remaining=new HashSet<>();Iterator<String> keys=original.keys();while(keys.hasNext())remaining.add(keys.next());
+        JSONArray result=new JSONArray(),groups=grouping.getJSONArray("groups");
+        for(int i=0;i<groups.length();i++){
+            JSONArray refs=groups.getJSONArray(i);if(refs.length()==0)throw new IOException("课堂安排分组为空");
+            JSONObject kept=null;Set<Integer> sources=new LinkedHashSet<>();
+            for(int n=0;n<refs.length();n++){
+                String ref=refs.getString(n);if(!remaining.remove(ref))throw new IOException("课堂安排引用了重复或不存在的索引："+ref);
+                JSONObject row=original.getJSONObject(ref);if(kept==null)kept=new JSONObject(row.toString());
+                JSONArray ids=row.getJSONArray("sources");for(int k=0;k<ids.length();k++)sources.add(ids.getInt(k));
+            }
+            JSONArray ids=new JSONArray();for(int id:sources)ids.put(id);kept.put("sources",ids);result.put(kept);
+        }
+        if(!remaining.isEmpty())throw new IOException("课堂安排分组遗漏了索引："+remaining);
+        return result;
+    }
     private JSONObject assemble(JSONArray parts,JSONArray analysed,boolean complete)throws Exception{
         JSONObject plan=state.optJSONObject("editor_plan");String overview=plan==null?"":plan.getString("overview");
-        JSONArray notes=state.optJSONArray("editor_notes"),tasks=new JSONArray();Map<String,JSONObject> distinct=new LinkedHashMap<>();
-        if(plan!=null)for(int i=0;i<parts.length();i++){JSONArray rows=parts.getJSONObject(i).getJSONArray("assignments");for(int n=0;n<rows.length();n++){
-            JSONObject row=rows.getJSONObject(n);String key=row.getString("text").trim();
-            if(!distinct.containsKey(key)){JSONObject copy=new JSONObject(row.toString());distinct.put(key,copy);tasks.put(copy);}
-            else{JSONArray merged=distinct.get(key).getJSONArray("sources"),refs=row.getJSONArray("sources");for(int k=0;k<refs.length();k++){boolean exists=false;for(int m=0;m<merged.length();m++)exists|=merged.getInt(m)==refs.getInt(k);if(!exists)merged.put(refs.getInt(k));}}
-        }}
-        JSONObject document=new JSONObject().put("overview",overview).put("notes",notes==null?new JSONArray():new JSONArray(notes.toString())).put("assignments",tasks);
+        JSONArray notes=state.optJSONArray("editor_notes"),tasks=state.optJSONArray("editor_assignments");
+        JSONObject document=new JSONObject().put("overview",overview).put("notes",notes==null?new JSONArray():new JSONArray(notes.toString())).put("assignments",tasks==null?new JSONArray():new JSONArray(tasks.toString()));
         JSONArray corrected=state.getJSONArray("corrected");StringBuilder transcript=new StringBuilder();
         for(int i=0;i<corrected.length();i++){if(i>0)transcript.append("\n\n");transcript.append(corrected.getString(i));}
         return new JSONObject().put("lesson",lesson.json()).put("run",state.getString("run")).put("updated",System.currentTimeMillis()).put("complete",complete)
@@ -159,11 +211,11 @@ final class ClassroomEnhancedSummary {
     private JSONObject json(String stage,String prompt,List<byte[]> images,Validator validator)throws Exception{
         int attempt=state.optInt(stage+"_attempt");
         String raw=text(attempt==0?stage:stage+"-user-retry-"+attempt,attempt==0?prompt:
-                "用户授权继续当前板块。上一条回复未通过校验："+state.optString(stage+"_error")+"。只依据已有原始资料和实际已附图片修正此块JSON，来源和图片编号必须真实。完整保留本块所需字段：\n"+prompt,attempt==0?images:Collections.emptyList());
+                "用户授权继续当前板块。上一条回复未通过校验，当前板块未提交结果已回滚："+state.optString(stage+"_error")+"。只依据已有原始资料和实际已附图片，从头完整生成此块JSON，不续写、不输出补丁或拼接上次片段，来源和图片编号必须真实。完整保留本块所需字段：\n"+prompt,attempt==0?images:Collections.emptyList());
         try{JSONObject result=ClassroomSummary.parseObject(raw);validator.check(result);return result;}
         catch(JSONException malformed){
             if(attempt>0&&conversation.attempted(stage+"-repair")){invalid(stage,attempt,malformed);throw malformed;}
-            String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+malformed.getMessage()+"。仅修复上一条回复的结构、缺失字段和转义，保留其事实、来源和图片编号，不编造未见图片或新事实，返回完整JSON对象。这是该块唯一一次格式修复。\n本块要求："+prompt,Collections.emptyList());
+            String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+malformed.getMessage()+"。本块结果尚未提交。保留可核实事实、来源和图片编号，重新返回完整JSON对象，不输出补丁或剩余片段，不编造未见图片或新事实。这是该块唯一一次格式修复。\n本块要求："+prompt,Collections.emptyList());
             try{JSONObject result=ClassroomSummary.parseObject(repaired);validator.check(result);return result;}
             catch(Exception invalid){invalid(stage,attempt,invalid);throw invalid;}
         }

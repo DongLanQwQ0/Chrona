@@ -87,19 +87,24 @@ public final class ClassroomSummary {
     public static String systemPrompt(String classroomPrompt) {
         return SYSTEM+(classroomPrompt.isBlank()?"":"\n以下是用户在课堂总结设置中保存的自定义要求，其语言、详略、重点与组织要求优先于默认偏好。它只用于课堂总结，不用于日程解析。仍须保留当前阶段指定格式、有效来源引用、图片预算和资料安全边界。\n用户自定义要求：\n"+classroomPrompt);
     }
-    private static final String SUMMARY_FIELDS="\"overview\":\"全课重点\",\"notes\":[{\"title\":\"主题\",\"text\":\"详细笔记\",\"sources\":[0],\"images\":[]}],"
-            +"\"assignments\":[{\"text\":\"老师明确提出的作业或考试安排，保留原日期措辞\",\"sources\":[0]}]";
+    private static String summaryFields(boolean evidence){return "\"overview\":\"全课重点\",\"notes\":[{\"title\":\"主题\",\"text\":\"详细笔记\",\"sources\":[0],\"images\":[]}],"
+            +"\"assignments\":[{\"text\":\"老师明确提出的作业或考试安排，保留原日期措辞\",\"sources\":[0]"+(evidence?",\"evidence\":\"对应明确要求的最短连续原话，逐字取自原始字幕\"":"")+"}]";}
+    private static final String SUMMARY_FIELDS=summaryFields(false);
     private static final String SOURCE_REQUIREMENTS="每条笔记和安排必须在sources数组附真实字幕 id，正文和标题不写[id:编号]或来源编号范围。没有安排返回空数组。"
             +"assignments仅限老师明确布置、要求学生执行的具体事项，不能把一般知识、解题注意事项、自拟复习建议或考试重点改写为待办。"
             +"未出现的评分/改卷/考试类别不写‘未提及’或‘没有’；无教学或明确安排意义的课后闲聊、模糊词片段不收入笔记。"
             +"notes.images仅填写本次images清单中实际file的原值；Markdown配图使用images/加同一个file。";
     static final String SCHEMA="返回 {"+SUMMARY_FIELDS+"}。"+SOURCE_REQUIREMENTS;
+    static final String BLOCK_SCHEMA="返回 {"+summaryFields(true)+"}。"+SOURCE_REQUIREMENTS;
     static final String TOPIC_SCHEMA="返回 {\"overview\":\"\",\"notes\":[{\"title\":\"主题\",\"text\":\"完整主题笔记\",\"sources\":[0],\"images\":[]}],\"assignments\":[]}。"+SOURCE_REQUIREMENTS;
     static String draftSchema(JSONObject catalogue,int limit)throws Exception{
+        return draftSchema(catalogue,limit,false);
+    }
+    static String draftSchema(JSONObject catalogue,int limit,boolean evidence)throws Exception{
         String decision=limit==0?"disabled":catalogue.getInt("count")==0?"unavailable":"request";
         String requests=decision.equals("request")?"[{\"start\":0,\"end\":60,\"reason\":\"该时间范围需要核对的视觉内容\"}]":"[]";
         return "只返回一个JSON对象，五个顶层字段overview、notes、assignments、image_assessment、image_requests全部必填，图片判断和请求必须在同一个顶层对象中。完整对象：\n{"
-                +SUMMARY_FIELDS+",\"image_assessment\":{\"decision\":\""+decision+"\",\"reason\":\"具体判断依据\"},"
+                +summaryFields(evidence)+",\"image_assessment\":{\"decision\":\""+decision+"\",\"reason\":\"具体判断依据\"},"
                 +"\"image_requests\":"+requests+"}\n字段规则："
                 +"示例中的来源编号、时间范围及decision须按实际资料填写；无图片请求时image_requests仍必须为[]，不得省略、填null或嵌套到notes。"
                 +SOURCE_REQUIREMENTS+imageInstructions(catalogue,limit);
@@ -322,7 +327,14 @@ public final class ClassroomSummary {
             if(quote.isEmpty())throw new IOException("课堂安排缺少老师明确要求的原话依据");
             Set<Integer> refs=new HashSet<>();JSONArray ids=task.getJSONArray("sources");for(int n=0;n<ids.length();n++)refs.add(ids.getInt(n));
             StringBuilder raw=new StringBuilder();for(int n=0;n<segments.length();n++){JSONObject row=segments.getJSONObject(n);if(refs.contains(row.getInt("id")))raw.append(row.getString("text").replaceAll("\\s+",""));else raw.append('\0');}
-            if(raw.indexOf(quote)<0)throw new IOException("课堂安排的原话依据不在所引用的字幕中");
+            if(raw.indexOf(quote)<0){
+                StringBuilder all=new StringBuilder();int[] starts=new int[segments.length()],ends=new int[segments.length()];
+                for(int n=0;n<segments.length();n++){starts[n]=all.length();all.append(segments.getJSONObject(n).getString("text").replaceAll("\\s+",""));ends[n]=all.length();}
+                int at=all.indexOf(quote);Set<Integer> missing=new java.util.LinkedHashSet<>();
+                if(at>=0)for(int n=0;n<segments.length();n++)if(ends[n]>at&&starts[n]<at+quote.length()&&!refs.contains(segments.getJSONObject(n).getInt("id")))missing.add(segments.getJSONObject(n).getInt("id"));
+                if(!missing.isEmpty())throw new IOException("课堂安排引文漏引字幕："+missing+"；须列全引文覆盖的来源，或只摘对应明确要求的最短原话");
+                throw new IOException("课堂安排的原话依据不在所引用的字幕中；请逐字取自本段原始字幕，不改写或拼接不连续片段");
+            }
         }
     }
     private static void validateSources(JSONArray refs,Set<Integer> allowed) throws Exception {

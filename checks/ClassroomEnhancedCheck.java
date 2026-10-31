@@ -22,6 +22,7 @@ public final class ClassroomEnhancedCheck {
     private static final List<String> stages=new ArrayList<>();
     private static File root;private static int checks,failures,failCall=-1,slowCall=-1;
     private static String mode="normal",lastStage="";private static boolean images;
+    private static HttpURLConnection lastConnection;
     private static CountDownLatch requestSeen=new CountDownLatch(1);
     interface Task{void run()throws Exception;}
     private static void check(boolean ok,String message){checks++;if(!ok){failures++;System.err.println("FAIL: "+message);}}
@@ -30,9 +31,10 @@ public final class ClassroomEnhancedCheck {
     private static void reset(String value,boolean withImages){requests.clear();replies.clear();stages.clear();mode=value;images=withImages;lastStage="";failCall=-1;slowCall=-1;requestSeen=new CountDownLatch(1);}
     private static String prompt(JSONObject request)throws Exception{JSONArray messages=request.getJSONArray("messages");return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");}
     private static String stage(String prompt){
+        Matcher restart=Pattern.compile("当前阶段：([^；]+)；重试序号：(\\d+)").matcher(prompt);if(restart.find())return restart.group(1)+"-restart-"+restart.group(2);
         if(prompt.contains("唯一一次格式修复"))return lastStage+"-repair";
-        if(prompt.contains("接续上一条"))return lastStage+"-continue";
         if(prompt.contains("用户授权继续当前板块"))return lastStage+"-user-retry";
+        if(prompt.contains("合并全课课堂安排中的同义重复"))return "edit-assignments";
         if(prompt.contains("现在编排一篇与普通模式相同的全课笔记"))return "edit-plan";
         Matcher editor=Pattern.compile("全课整稿主题 (\\d+)/").matcher(prompt);if(editor.find())return "edit-note-"+(Integer.parseInt(editor.group(1))-1);
         Matcher correction=Pattern.compile("更正文稿第 (\\d+)/").matcher(prompt);if(correction.find())return "correct-"+(Integer.parseInt(correction.group(1))-1);
@@ -51,7 +53,11 @@ public final class ClassroomEnhancedCheck {
                     .put("sources",new JSONArray().put(mode.equals("invalid-source")||(!draft&&mode.equals("invalid-final-source"))?999:id))
                     .put("images",mode.equals("invalid-image")||(!draft&&mode.equals("invalid-final-image"))?new JSONArray().put("image-999.jpg"):pictures)))
                 .put("assignments",new JSONArray());
+        if(mode.startsWith("task-")&&id==0)value.put("assignments",new JSONArray()
+                .put(new JSONObject().put("text","今天进入作业页面查看成绩。").put("sources",new JSONArray().put(0)).put("evidence","题干 5 kg"))
+                .put(new JSONObject().put("text","查看成绩。").put("sources",new JSONArray().put(0)).put("evidence","步骤分 2 分")));
         if(mode.equals("cross-draft")&&draft&&id==0||mode.equals("cross-final")&&!draft&&id==0)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1));
+        if(mode.equals("cross-context")&&!draft&&id==1)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1).put(0));
         if(mode.equals("empty-tail")&&id==1)value.put("overview","").put("notes",new JSONArray());
         if(draft)value.put("image_assessment",new JSONObject().put("decision",images?"request":"disabled").put("reason","合成板书需核对题目条件"))
                 .put("image_requests",images?new JSONArray().put(new JSONObject().put("start",mode.equals("reuse-images")?0:id*100).put("end",mode.equals("reuse-images")?120:id*100+20).put("reason","核对题干数字与步骤分")):new JSONArray());
@@ -68,9 +74,11 @@ public final class ClassroomEnhancedCheck {
             if(call==failCall){byte[] error="{\"error\":{\"message\":\"synthetic unavailable\"}}".getBytes(StandardCharsets.UTF_8);replies.add(null);exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(503,error.length);exchange.getResponseBody().write(error);return;}
             String output,finish="stop";int id=current.matches(".*-[01].*")?Integer.parseInt(current.replaceAll(".*?-(\\d+).*","$1")):0;
             if(current.startsWith("correct")){
-                if(current.contains("continue"))output=" 后半；条件 5 kg，步骤分 2 分。";
-                else output="# 更正文稿\n["+id+"] 完整题干、改卷细节与 $\\nabla x$。";
-                if(mode.startsWith("length")&&current.equals("correct-0")){output="# 更正文稿\n[0] 前半";finish="length";}
+                output="# 更正文稿\n["+id+"] 完整题干、改卷细节与 $\\nabla x$。";
+                if(mode.equals("length-resume")&&current.equals("correct-0")){output="# 更正文稿\n[0] 前半";finish="length";}
+            }else if(current.startsWith("edit-assignments")){
+                output=new JSONObject().put("groups",new JSONArray().put(new JSONArray().put("0:0").put(mode.equals("task-invalid")?"0:9":"0:1"))).toString();
+                if(mode.equals("task-length")){output="{\"groups\":[[\"0:0\"";finish="length";}
             }else if(current.startsWith("edit-plan")){
                 JSONArray index=new JSONArray(text.substring(text.indexOf("已完成笔记索引：\n")+"已完成笔记索引：\n".length())),sections=new JSONArray();
                 if(mode.equals("merge-topics")){
@@ -95,6 +103,8 @@ public final class ClassroomEnhancedCheck {
                 if(current.equals("draft-0")&&mode.equals("missing-assessment"))value.remove("image_assessment");
                 if(current.equals("draft-0")&&mode.equals("request-type"))value.put("image_requests",new JSONObject());
                 output="  ```json\n"+value.toString(2)+"\n```  ";}
+            if(mode.equals("length-editor")&&current.equals("edit-note-1")){output="{\"overview\":\"截断不得拼接\"";finish="length";}
+            if(mode.equals("length-final")&&current.equals("final-0")){output="{\"overview\":\"截断不得拼接\"";finish="length";}
             JSONObject reply=new JSONObject().put("role","assistant").put("content",output).put("reasoning_content","合成推理\ncall="+call);
             replies.add(reply);
             JSONObject usage=new JSONObject().put("prompt_tokens",1000+call).put("completion_tokens",100)
@@ -113,7 +123,7 @@ public final class ClassroomEnhancedCheck {
         server.start();
         URL.setURLStreamHandlerFactory(protocol->protocol.equals("https")?new URLStreamHandler(){protected URLConnection openConnection(URL url)throws IOException{
             if(!url.getHost().equals("api.openai.com"))throw new IOException("Non-loopback destination forbidden");
-            return new URL("http://127.0.0.1:"+server.getAddress().getPort()+url.getFile()).openConnection();
+            lastConnection=(HttpURLConnection)new URL("http://127.0.0.1:"+server.getAddress().getPort()+url.getFile()).openConnection();return lastConnection;
         }}:null);return server;
     }
     private static File materials(String name,boolean longText)throws Exception{
@@ -143,7 +153,7 @@ public final class ClassroomEnhancedCheck {
             check(after.length()>=before.length(),"history never shrinks "+n);
             for(int i=0;i<before.length();i++)check(before.getJSONObject(i).toString().equals(after.getJSONObject(i).toString()),"exact message prefix "+n+":"+i);
             if(replies.get(n-1)!=null){check(after.length()==before.length()+2,"one assistant and user appended "+n);check(after.getJSONObject(before.length()).similar(replies.get(n-1)),"raw assistant including reasoning preserved "+n);}
-            else check(after.toString().equals(before.toString()),"unknown network outcome manually retries unchanged pending request "+n);
+            else check(after.length()==before.length()+1&&prompt(requests.get(n)).contains("从头完整重新生成当前板块"),"failed attempt is retired; explicit restart appends without splicing unknown output "+n);
         }
         JSONObject conversation=state(dir).getJSONObject("conversation");JSONArray turns=conversation.getJSONArray("turns");
         check(turns.length()==requests.size(),"every sent attempt retained in turns");
@@ -160,11 +170,40 @@ public final class ClassroomEnhancedCheck {
         check(state(dir).getJSONArray("drafts").getJSONObject(0).has("image_assessment")&&state(dir).getJSONArray("drafts").getJSONObject(1).getJSONArray("image_requests").length()==1,"per-block image assessment and requests persisted");
         check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").contains("。\n\n下一段"),"parsed Markdown normalizes escaped paragraph breaks");
     }
+    private static void assignmentEditorial()throws Exception{
+        JSONObject original=new JSONObject().put("0:0",new JSONObject().put("text","今天查看成绩并核对单选题。").put("sources",new JSONArray().put(0)).put("evidence","原始依据甲"))
+                .put("1:0",new JSONObject().put("text","查看成绩。").put("sources",new JSONArray().put(1)).put("evidence","原始依据乙"));
+        String untouched=original.toString();JSONObject grouping=new JSONObject().put("groups",new JSONArray().put(new JSONArray().put("0:0").put("1:0")));
+        JSONArray grouped=ClassroomEnhancedSummary.groupAssignments(grouping,original);
+        check(grouped.length()==1&&grouped.getJSONObject(0).getString("text").equals(original.getJSONObject("0:0").getString("text")),"semantic grouping keeps the complete original task text without model rewriting");
+        check(grouped.getJSONObject(0).getJSONArray("sources").toString().equals("[0,1]")&&grouped.getJSONObject(0).getString("evidence").equals("原始依据甲"),"grouping unions real sources and retains the kept original evidence");
+        check(original.toString().equals(untouched),"grouping never mutates extracted tasks or evidence");
+        for(JSONArray groups:new JSONArray[]{new JSONArray(),new JSONArray().put(new JSONArray()),new JSONArray().put(new JSONArray().put("0:0").put("missing")),new JSONArray().put(new JSONArray().put("0:0").put("0:0").put("1:0"))})
+            rejects(()->ClassroomEnhancedSummary.groupAssignments(new JSONObject().put("groups",groups),original),"empty, missing, invented and duplicate task indices fail closed");
+        reset("task-normal",false);File dir=materials("task-editor",false);JSONObject result=generate(dir,true);
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("assignments").length()==1&&state(dir).has("editor_assignments"),"task grouping is checkpointed and only consolidated tasks reach the final document");
+        check(stages.get(stages.size()-1).equals("edit-assignments"),"task editorial follows completed note editorial");appendOnly(dir);
+        reset("task-length",false);File interrupted=materials("task-rollback",false);rejects(()->generate(interrupted,true),"interrupted task group rolls back without partial publication");
+        check(state(interrupted).getJSONArray("editor_notes").length()==1&&!state(interrupted).has("editor_assignments")&&!state(interrupted).has("final"),"task failure preserves successful notes without committing the partial grouping");
+        mode="task-normal";JSONObject resumed=generate(interrupted,true);
+        check(resumed.getBoolean("complete")&&Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"edit-note-0")==1&&stages.get(stages.size()-1).equals("edit-assignments-restart-1"),"only interrupted assignment grouping restarts, not transcript, images or notes");appendOnly(interrupted);
+        reset("task-invalid",false);File invalid=materials("task-invalid",false);rejects(()->generate(invalid,true),"invalid task reference is not auto repaired");
+        check(!state(invalid).has("editor_assignments")&&state(invalid).getInt("edit-assignments_attempt")==1,"invalid semantic grouping remains a manual retry checkpoint");
+        mode="task-normal";check(generate(invalid,true).getBoolean("complete"),"explicit retry appends a valid task grouping");appendOnly(invalid);
+    }
+    private static void classroomTimeout()throws Exception{
+        reset("normal",false);var client=new com.donglan.chrona.ai.ChatCompletionClient(AI);
+        JSONObject request=client.classroomOptions().put("messages",new JSONArray().put(new JSONObject().put("role","user").put("content",new JSONArray().put(new JSONObject().put("type","text").put("text","synthetic classroom timeout check")))));
+        client.completeConversation(request);check(lastConnection.getReadTimeout()==600_000,"classroom transport allows ten minutes of silent long-context processing");
+        check(lastConnection.getConnectTimeout()==30_000,"classroom connection timeout remains thirty seconds");
+        client.complete("s","p",List.of());check(lastConnection.getReadTimeout()==180_000,"ordinary completion retains its original three-minute contract");
+        try(RequestControl control=new RequestControl(2500)){new com.donglan.chrona.ai.ChatCompletionClient(AI,control).completeConversation(request);check(lastConnection.getReadTimeout()>0&&lastConnection.getReadTimeout()<=2500,"classroom allowance is still bounded by the caller deadline");}
+    }
     private static void manualResume()throws Exception{
         reset("normal",true);File dir=materials("network",true);failCall=4;rejects(()->generate(dir,true),"network failure propagated without automatic resubmit");
         check(requests.size()==4,"network failure made exactly one attempt");JSONObject failed=state(dir);String run=failed.getString("run");
         check(failed.getJSONArray("corrected").length()==2&&failed.getJSONArray("drafts").length()==1,"successful stages checkpointed before failure");
-        check(failed.getJSONObject("conversation").getString("pending").equals("draft-1"),"failed stage remains pending");
+        check(!failed.getJSONObject("conversation").has("pending")&&failed.getJSONObject("conversation").getJSONObject("restarts").getInt("draft-1")==1,"failed draft is rolled back, not left pending for a continuation");
         failCall=-1;JSONObject result=generate(dir,true);check(requests.size()==10&&result.getString("run").equals(run),"manual resume only retries failed draft then remaining image and editorial stages");
         appendOnly(dir);evidence("network-resume",dir);
     }
@@ -188,10 +227,30 @@ public final class ClassroomEnhancedCheck {
         }
     }
     private static void lengthResume()throws Exception{
-        reset("length-resume",false);File dir=materials("length",true);failCall=2;rejects(()->generate(dir,true),"length continuation transport failure stops");check(requests.size()==2,"no automatic retry after continuation failure");
-        String run=state(dir).getString("run");failCall=-1;JSONObject result=generate(dir,true);
-        check(result.getString("run").equals(run)&&result.getString("corrected_transcript").contains("前半 后半"),"manual resume joins original length output and remaining continuation");
-        check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"correct-0-continue")==2,"length reply not resent; failed continuation alone retried");appendOnly(dir);evidence("length-resume",dir);
+        reset("length-resume",false);File dir=materials("length",true);rejects(()->generate(dir,true),"truncated segment stops without continuation");check(requests.size()==1,"no automatic continuation or retry after truncated response");
+        JSONObject failed=state(dir);String run=failed.getString("run");
+        check(failed.getJSONArray("corrected").length()==0&&!new File(dir,"corrected.json").exists(),"partial correction is never committed");
+        check(failed.getJSONObject("conversation").getJSONArray("messages").getJSONObject(2).getString("content").contains("前半"),"raw partial reply remains in immutable audit history");
+        JSONObject result=generate(dir,true);
+        check(result.getString("run").equals(run)&&!result.getString("corrected_transcript").contains("前半")&&result.getString("corrected_transcript").contains("完整题干"),"manual retry replaces the failed unit with a complete response, never joins fragments");
+        check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"correct-0-restart-1")==1&&stages.stream().noneMatch(s->s.contains("continue")),"one complete restart, no continuation calls");appendOnly(dir);evidence("length-rollback",dir);
+        reset("normal",false);File crash=materials("process-interrupted",true);failCall=2;rejects(()->generate(crash,true),"synthetic request interruption after the first committed correction");
+        JSONObject crashState=state(crash),conversation=crashState.getJSONObject("conversation");
+        // Model an AtomicFile checkpoint persisted immediately before a process died in HTTP.
+        conversation.getJSONObject("restarts").remove("correct-1");conversation.put("pending","correct-1");ClassroomStore.write(new File(crash,"run.json"),crashState);
+        failCall=-1;JSONObject recovered=generate(crash,true);
+        check(recovered.getBoolean("complete")&&Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"correct-1-restart-1")==1,"persisted pending crash retires unknown attempt and regenerates only its unit");
+        check(prompt(requests.get(2)).contains("从头完整重新生成当前板块"),"process recovery appends a full restart instead of resending the pending request");appendOnly(crash);evidence("process-rollback",crash);
+        for(String modeName:List.of("length-final","length-editor")){
+            reset(modeName,true);File interrupted=materials(modeName,true);rejects(()->generate(interrupted,true),"truncated image/editor stage rolls back: "+modeName);
+            JSONObject checkpoint=state(interrupted);String before=checkpoint.getString("run");
+            if(modeName.equals("length-editor"))check(checkpoint.getJSONArray("editor_notes").length()==1,"completed edited topic survives later truncation");
+            else check(checkpoint.getJSONArray("parts").length()==0&&checkpoint.getJSONArray("analysed").length()==0,"truncated image response commits neither notes nor analysed images");
+            JSONObject finished=generate(interrupted,true);check(finished.getString("run").equals(before)&&!finished.toString().contains("截断不得拼接"),"complete retry never splices truncated image/editor content");
+            check(Collections.frequency(stages,"correct-0")==1&&stages.stream().noneMatch(s->s.contains("continue")),"successful correction is reused, unfinished unit alone regenerates");
+            if(modeName.equals("length-final")){JSONArray retried=requests.get(5).getJSONArray("messages");check(retried.getJSONObject(retried.length()-1).getJSONArray("content").length()==1,"image-stage full restart keeps original attached image in history without reupload");}
+            appendOnly(interrupted);evidence(modeName,interrupted);
+        }
     }
     private static void cancellation()throws Exception{
         reset("normal",false);File dir=materials("cancel",true);slowCall=2;
@@ -258,6 +317,13 @@ public final class ClassroomEnhancedCheck {
             reset(defect,defect.equals("cross-final"));File dir=materials(defect,true);rejects(()->generate(dir,true),"another valid lesson source cannot leak into this block: "+defect);
             check(!state(dir).has("editor_plan")&&!state(dir).has("final"),"cross-block semantic error never publishes or automatically retries");
         }
+        reset("cross-context",true);JSONObject contextual=generate(materials("cross-context",true),true);
+        check(contextual.getBoolean("complete")&&contextual.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(1).getJSONArray("sources").length()==2,"image refinement can retain a genuine earlier comparison while anchored in the current block");
+        JSONObject referenced=part(0,false,"");JSONArray block=new JSONArray().put(new JSONObject().put("id",1).put("text","当前块"));
+        JSONObject lecture=new JSONObject().put("segments",new JSONArray().put(new JSONObject().put("id",0)).put(new JSONObject().put("id",1)).put(new JSONObject().put("id",2))).put("images",new JSONArray());
+        rejects(()->ClassroomEnhancedSummary.validateRefinement(referenced,lecture,block),"previous-only refinement cannot masquerade as the current block");
+        referenced.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1).put(2));
+        rejects(()->ClassroomEnhancedSummary.validateRefinement(referenced,lecture,block),"current anchor does not authorize references to later blocks");
         reset("merge-topics",true);File merged=materials("merge-topics",true);JSONObject result=generate(merged,true);
         JSONObject document=result.getJSONArray("parts").getJSONObject(0);JSONArray notes=document.getJSONArray("notes");
         check(result.getJSONArray("parts").length()==1&&notes.length()==1,"same topic across extraction blocks is edited into one section");
@@ -285,7 +351,7 @@ public final class ClassroomEnhancedCheck {
         check(state(interrupted).getJSONArray("editor_notes").length()==1&&!state(interrupted).has("final"),"first edited topic is saved before interruption");
         JSONObject partial=ClassroomStore.read(new File(interrupted,"summary.json"));check(partial.getJSONArray("parts").length()==1&&partial.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").length()==1,"partial reading copy shows only edited topics, never raw duplicated blocks");
         failCall=-1;check(generate(interrupted,true).getBoolean("complete"),"editor continuation finishes at its saved checkpoint");
-        check(Collections.frequency(stages,"edit-note-0")==1&&Collections.frequency(stages,"edit-note-1")==2,"only interrupted topic request is retried unchanged");appendOnly(interrupted);evidence("editorial-resume",interrupted);
+        check(Collections.frequency(stages,"edit-note-0")==1&&Collections.frequency(stages,"edit-note-1")==1&&Collections.frequency(stages,"edit-note-1-restart-1")==1,"only interrupted topic restarts in full; completed topic stays committed");appendOnly(interrupted);evidence("editorial-resume",interrupted);
         reset("empty-tail",false);result=generate(materials("empty-tail",true),true);
         check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").length()==1,"non-teaching tail needs no filler section");
         JSONArray raw=new JSONArray().put(new JSONObject().put("id",7).put("text","请下周五之前提交实验报告。"));
@@ -295,8 +361,17 @@ public final class ClassroomEnhancedCheck {
         task.put("evidence","");rejects(()->ClassroomSummary.validateAssignmentEvidence(tasks,raw),"blank action evidence is rejected");
         JSONArray discontinuous=new JSONArray().put(new JSONObject().put("id",0).put("text","请交")).put(new JSONObject().put("id",1).put("text","并非该事项")).put(new JSONObject().put("id",2).put("text","报告"));
         task.put("sources",new JSONArray().put(0).put(2)).put("evidence","请交报告");rejects(()->ClassroomSummary.validateAssignmentEvidence(tasks,discontinuous),"evidence cannot stitch nonadjacent sources into a new instruction");
-        JSONArray parts=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(new JSONObject())));
+        JSONArray adjacent=new JSONArray().put(new JSONObject().put("id",24).put("text","之前作业3分。"))
+                .put(new JSONObject().put("id",25).put("text","新增47分。"))
+                .put(new JSONObject().put("id",26).put("text","确认单选是否正确。"));
+        task.put("sources",new JSONArray().put(24).put(26)).put("evidence","之前作业3分。新增47分。确认单选是否正确。");
+        try{ClassroomSummary.validateAssignmentEvidence(tasks,adjacent);check(false,"missing evidence source must fail");}catch(IOException missing){check(missing.getMessage().contains("[25]"),"diagnostic identifies the missing source rather than reporting a generic quote mismatch");}
+        task.put("sources",new JSONArray().put(24).put(25).put(26));ClassroomSummary.validateAssignmentEvidence(tasks,adjacent);check(true,"complete evidence citation succeeds without weakening provenance checks");
+        JSONArray parts=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(new JSONObject().put("title","同一主题"))));
         rejects(()->ClassroomEnhancedSummary.validatePlan(new JSONObject().put("overview","").put("sections",new JSONArray()),parts),"plan cannot silently drop an extracted note");
+        parts.put(new JSONObject().put("notes",new JSONArray().put(new JSONObject().put("title","同一主题"))));
+        JSONArray separate=new JSONArray().put(new JSONObject().put("title","第一节").put("refs",new JSONArray().put("0:0"))).put(new JSONObject().put("title","第二节").put("refs",new JSONArray().put("1:0")));
+        rejects(()->ClassroomEnhancedSummary.validatePlan(new JSONObject().put("overview","概览").put("sections",separate),parts),"identical topic headings across blocks must be grouped rather than repeated");
     }
     private static void validationResume()throws Exception{
         reset("invalid-source",false);File draft=materials("draft-validation-resume",false);
@@ -371,8 +446,8 @@ public final class ClassroomEnhancedCheck {
         check(stages.equals(List.of("correct-0","draft-0","draft-0-user-retry","draft-0-repair","edit-plan","edit-note-0")),"manual repair uses the same block and one repair identity");appendOnly(manual);
         reset("bad-json",false);File network=materials("schema-repair-network",false);failCall=3;rejects(()->generate(network,true),"network failure during repair stops without retry");
         check(requests.size()==3,"no automatic transport retry");mode="normal";failCall=-1;
-        check(generate(network,true).getBoolean("complete"),"explicit resume continues the pending repair");
-        check(requests.get(2).toString().equals(requests.get(3).toString()),"pending repair retry preserves the entire previously sent request");appendOnly(network);
+        check(generate(network,true).getBoolean("complete"),"explicit retry restarts the failed repair with a full response");
+        check(prompt(requests.get(3)).contains("从头完整重新生成当前板块")&&!requests.get(2).toString().equals(requests.get(3).toString()),"repair rollback appends a restart instruction without editing original messages");appendOnly(network);
         defaultFlow();
     }
     private static void markdownFences()throws Exception{
@@ -471,7 +546,7 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
-        if(args.length==1)test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);
+        if(args.length==1){test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
         if(args.length>1&&args[1].equals("schema-repair")){
             try{test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("existing semantic and manual budgets",ClassroomEnhancedCheck::validationResume);}
             finally{server.stop(0);}System.out.println("ClassroomSchemaRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Schema repair checks failed");return;

@@ -212,7 +212,9 @@ public final class ClassroomSummaryCheck {
         check(new JSONObject(firstPrompt.substring(firstPrompt.indexOf("资料：\n")+4)).getJSONArray("segments").length()==3,"first round includes entire long transcript without chunks");
         JSONArray secondMessages=requests.get(2).getJSONArray("messages");
         JSONObject context=new JSONObject().put("first_system",secondMessages.getJSONObject(0).getString("content"));
-        check(secondMessages.length()==4&&secondMessages.getJSONObject(1).toString().equals(firstMessages.getJSONObject(1).toString()),"second round preserves exact first message rather than repackaging");
+        check(secondMessages.length()==5&&secondMessages.getJSONObject(1).toString().equals(firstMessages.getJSONObject(1).toString()),"full restart appends after the failed image request without repackaging the first message");
+        for(int i=0;i<4;i++)check(secondMessages.getJSONObject(i).toString().equals(requests.get(1).getJSONArray("messages").getJSONObject(i).toString()),"image restart preserves exact already-sent history "+i);
+        check(secondMessages.getJSONObject(4).getJSONArray("content").length()==1&&secondMessages.getJSONObject(4).toString().contains("从头完整重新生成当前板块"),"restart adds only complete-generation instructions, not another image upload");
 
         check(context.getString("first_system").contains("保留英文术语"),"classroom custom prompt reaches both rounds");
         check(context.getString("first_system").contains("数学符号与记法偏好中国大陆教材的常用风格。"),"general Chinese mathematical notation style reaches both rounds");

@@ -28,6 +28,8 @@ public final class ChatCompletionClient {
     private static final int CONNECT_TIMEOUT_MILLIS = 30_000;
     /** Hidden reasoning can stay silent for minutes, with or without images or SSE. */
     private static final int RESPONSE_READ_TIMEOUT_MILLIS = 180_000;
+    /** Long classroom history plus selected slides can delay the first response beyond parsing. */
+    private static final int CLASSROOM_RESPONSE_READ_TIMEOUT_MILLIS = 10 * 60_000;
     private static final int MAX_RESPONSE_CHARS = 2_000_000;
 
     private final AiSettings settings;
@@ -65,6 +67,7 @@ public final class ChatCompletionClient {
     public static int readTimeoutMillis(boolean withImage) {
         return RESPONSE_READ_TIMEOUT_MILLIS;
     }
+    public static int classroomReadTimeoutMillis(){return CLASSROOM_RESPONSE_READ_TIMEOUT_MILLIS;}
 
     /** Parses one submitted input and returns all proposed entries plus reported token usage. */
     public ParseResult parse(long taskId, String rawText, byte[] imageJpeg, String linkText,
@@ -186,7 +189,7 @@ public final class ChatCompletionClient {
     public JSONObject completeConversation(JSONObject request) throws IOException {
         try {
             boolean images=request.getJSONArray("messages").toString().contains("\"image_url\"");
-            return new JSONObject(executeEnvelope(new JSONObject(request.toString()),images,null,false));
+            return new JSONObject(executeEnvelope(new JSONObject(request.toString()),images,null,false,classroomReadTimeoutMillis()));
         }catch(JSONException e){throw new ResponseException("无法读取课堂响应",e);}
     }
 
@@ -214,10 +217,13 @@ public final class ChatCompletionClient {
 
     private String executeEnvelope(JSONObject body, boolean hasImages, PreviewSink preview,
             boolean canDowngrade) throws IOException {
+        return executeEnvelope(body,hasImages,preview,canDowngrade,readTimeoutMillis(hasImages));
+    }
+    private String executeEnvelope(JSONObject body,boolean hasImages,PreviewSink preview,
+            boolean canDowngrade,int maximumReadMillis)throws IOException {
         boolean streaming = body.optBoolean("stream");
         RequestControl.check(control);
-        int readTimeout = control == null ? readTimeoutMillis(hasImages)
-                : control.timeoutMillis(readTimeoutMillis(hasImages));
+        int readTimeout = control == null ? maximumReadMillis : control.timeoutMillis(maximumReadMillis);
         HttpURLConnection connection = (HttpURLConnection) new URL(
                 settings.baseUrl + "/chat/completions").openConnection();
         try {
@@ -245,7 +251,7 @@ public final class ChatCompletionClient {
                 String detail = errorMessage(response);
                 if (canDowngrade && RequestOptions.downgrade(body, status, detail)) {
                     connection.disconnect();
-                    return executeEnvelope(body, hasImages, preview, false);
+                    return executeEnvelope(body, hasImages, preview, false,maximumReadMillis);
                 }
                 throw new RequestException(status, "AI request failed (HTTP " + status + "): " + detail);
             }

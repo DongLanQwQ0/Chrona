@@ -17,27 +17,42 @@ final class ClassroomConversation {
                 .put("turns",new JSONArray()).put("outputs",new JSONObject()));
         conversation=state.getJSONObject("conversation");
     }
-    private static final class Incomplete extends IOException{final String output;Incomplete(String output){super("当前分段被截断，原始回复已保存");this.output=output;}}
     boolean attempted(String stage)throws JSONException{
         JSONArray turns=conversation.getJSONArray("turns");
         for(int i=0;i<turns.length();i++)if(stage.equals(turns.getJSONObject(i).optString("stage")))return true;
         return false;
     }
     String text(String stage,String prompt,List<byte[]> images)throws Exception{
-        StringBuilder combined=new StringBuilder();
-        for(int attempt=0;attempt<3;attempt++)try{return combined.append(ask(attempt==0?stage:stage+"-continue-"+attempt,
-                attempt==0?prompt:"接续上一条被长度限制截断的回复，只输出剩余部分，不重写、概括或重复此前内容；保持当前Markdown或JSON格式直到完成。",attempt==0?images:Collections.emptyList())).toString();}
-        catch(Incomplete partial){combined.append(partial.output);}
-        throw new IOException("本段连续三次达到输出上限，完整上下文已保存，请手动继续或选择更大输出预算的模型");
+        JSONObject restarts=conversation.optJSONObject("restarts");
+        if(restarts==null){restarts=new JSONObject();conversation.put("restarts",restarts);}
+        int generation=restarts.optInt(stage);String attempt=generation==0?stage:stage+"-restart-"+generation;
+        String pending=conversation.optString("pending");
+        if(!pending.isEmpty()&&!pending.equals(attempt))throw new IOException("另一个板块尚未完成，请先处理原阶段");
+        if(!pending.isEmpty()){
+            // A pending request already present on entry survived an interrupted process.
+            // Explicit recovery retires it rather than resending or continuing unknown output.
+            generation++;restarts.put(stage,generation);conversation.remove("pending");save();
+            attempt=stage+"-restart-"+generation;
+        }
+        String request=generation==0?prompt:"上次当前板块未完整成功，已回滚该板块未提交的结果。历史中的失败回复仅供审计，不作为本次输出的前半段。"
+                +"现在从头完整重新生成当前板块，禁止续写或拼接此前片段。当前阶段："+stage+"；重试序号："+generation+"。\n本次完整要求：\n"+prompt;
+        try{return ask(attempt,request,generation==0?images:Collections.emptyList());}
+        catch(Exception failure){
+            // Retire only this uncommitted attempt. Sent messages and actual replies stay exact.
+            if(attempt.equals(conversation.optString("pending")))conversation.remove("pending");
+            restarts.put(stage,generation+1);save();throw failure;
+        }
+    }
+    private static String complete(String output,String finish)throws IOException{
+        if("length".equals(finish))throw new IOException("当前板块输出被截断，未提交内容已回滚；请从头重新生成本板块");
+        if("content_filter".equals(finish))throw new IOException("AI 服务未允许返回本板块内容，未提交内容已回滚");
+        if(output.isBlank())throw new IOException("AI 未返回课堂内容，未提交内容已回滚");
+        return output;
     }
     private String ask(String stage,String prompt,List<byte[]> images)throws Exception{
         JSONObject outputs=conversation.getJSONObject("outputs");
         if(outputs.has(stage)){
-            String finish=conversation.getJSONObject("finishes").optString(stage);
-            if("length".equals(finish))throw new Incomplete(outputs.getString(stage));
-            if("content_filter".equals(finish))throw new IOException("AI 服务未允许返回本段内容，原始响应已保留");
-            if(outputs.getString(stage).isBlank())throw new IOException("AI 未返回课堂内容，原始响应已保留");
-            return outputs.getString(stage);
+            return complete(outputs.getString(stage),conversation.getJSONObject("finishes").optString(stage));
         }
         JSONArray messages=conversation.getJSONArray("messages");
         if(!conversation.has("pending")){
@@ -64,10 +79,7 @@ final class ClassroomConversation {
             conversation.getJSONObject("finishes").put(stage,choice.optString("finish_reason"));
             outputs.put(stage,output);conversation.remove("pending");
             audit.put("finish_reason",choice.opt("finish_reason")).put("status","received");save();
-            if("length".equals(choice.optString("finish_reason")))throw new Incomplete(output);
-            if("content_filter".equals(choice.optString("finish_reason")))throw new IOException("AI 服务未允许返回本段内容，原始响应已保留");
-            if(output.isBlank())throw new IOException("AI 未返回课堂内容");
-            return output;
+            return complete(output,choice.optString("finish_reason"));
         }catch(Exception e){audit.put("status","failed").put("type",e.getClass().getSimpleName()).put("error",e.getMessage());throw e;}
         finally{audit.put("finished",System.currentTimeMillis());save();}
     }
