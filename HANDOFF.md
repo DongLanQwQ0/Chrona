@@ -40,6 +40,6 @@
 
 ## 源码及既有发布边界
 
-- 当前checkout为`experiment/glass-lens`。保护AGENTS.md、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1与外部写入的docs/Communication/messages/2026-10-31.jsonl，不纳入本批提交或清理。
-- 本批不动Dock；core交付见`docs/Communication/to-external-agent.md`。正式latest仍v0.15.81，不为补丁新增Release，下一次手机测试需实际验证0.15.82升级及失败记录。
+- 当前checkout为`experiment/glass-lens`，候选源码提交`6f074e5`已推送origin/main，安装包对应记录为`build/candidates/0.15.83/candidate.json`。保护AGENTS.md、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1与外部写入的docs/Communication/messages/2026-10-31.jsonl，不纳入本批提交或清理。
+- 本批不动Dock；core交付见`docs/Communication/to-external-agent.md`。正式latest仍v0.15.81，不为补丁新增Release，下一次手机测试需实际验证0.15.83升级及失败记录。
 - 历史真实C课整稿、v0.15.81升级与Release清理证据见`docs/validation-history.md`、`build/classroom-c-audit/`与`build/release-cleanup/20261031-v0.15.81/`，不重复进入当前工作单。
