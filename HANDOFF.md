@@ -6,7 +6,7 @@
 - 最新候选0.15.90/252：build/candidates/0.15.90/Chrona-0.15.90.apk，正式包名、原升级签名、非debuggable；最终release/lint通过，未更新真机，不发Release。
 - 三处滚动收起接线及唯一minimize状态已删除；公共弹簧、按压、惯性参数不变。竖浅187、横深189项真实触摸通过，build/dock-scroll/portrait/及landscape/的报告/JPEG保留原实例、三页>160dp/回顶/切页/系统返回/首尾拖出/＋打开返回证据。独立UI最终复审无未解决P1/P2及关键证据缺口；导航队列183、Chrome39通过。
 - 同批回归发现并修正：＋同状态settle旁路禁用使缓存失配；presence/blur epsilon漏写精确终态；横屏已pin的侧栏将shell提升后遮住未pin的＋，给wide captureHost沿用同一pin。原失败及精确状态在portrait-first、portrait-second、portrait-diagnostics、landscape-first；未按失败候选交付。
-- 唯一下一步：真机恢复后先确认无活动总结/用户编辑，正常覆盖90并核对版本，再取得数学全量只读快照。原USB未连接，旧10.197.184.141:38283拒绝；双方mDNS无真机，GlobalSend已明确交还且未安装97；用户无人值守，不反复请求连接或重复旧端口。
+- 唯一下一步：真机恢复后先确认无活动总结/用户编辑，正常覆盖90并核对版本，再取得数学全量只读快照。原USB未连接，旧10.197.184.141:38283拒绝；本次续接ADB仅模拟器、mDNS无真机，原10.197.184.141:8765的单次有界TCP检查也不可达，不能改走原LAN地址继续。GlobalSend已明确交还且未安装97；用户无人值守，不反复请求连接或重复旧端口。
 - 数学只读诊断未安装：仅mathAudit跳过目标Application初始化并等待确认、构造Store前要求已有缓存且无symlink/.bak/.new；合并manifest两个Provider初始化无副作用，独立审查关闭P2。按实际key输出unique/duplicates，run_matches_summary要求非空UUID相等，run元数据均单列。修正版辅助包/日志在build/math-completion-audit-20261101/Chrona-Math-Audit.apk及probe-build-final.txt；尚未取得真机快照。portable只证明结构/来源/图片白名单，decodeBounds只证明图片头，不冒充内容/图片语义质量。
 
 ## 本轮核查与纠正
