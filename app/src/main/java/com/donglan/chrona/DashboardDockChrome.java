@@ -23,8 +23,6 @@ final class DashboardDockChrome {
     private final View captureHost, captureButton;
     private final int dockHeight;
     private float homeFraction, dockHomeFraction, dragDockFrom;
-    /** 1 while the dock is collapsed by scrolling; the capture action leaves with it. */
-    private float minimize;
     /** Last values actually pushed to the view, so a repeated frame writes nothing. */
     private float appliedPresence = -1f, appliedBlur = -1f;
     private int appliedInteractive = -1, appliedVisibility = -1;
@@ -66,7 +64,6 @@ final class DashboardDockChrome {
     void animateHome(boolean value, long duration) {
         cancel(); home = value;
         float target = value ? 1f : 0f;
-        captureButton.setEnabled(false);
         if (!UiMotion.isEnabled() || duration <= 0 || Math.abs(homeFraction - target) < .001f) {
             apply(target); return;
         }
@@ -87,15 +84,10 @@ final class DashboardDockChrome {
                 animator = null; apply(target);
             }
         });
-        motion.start();
-    }
-
-    /** Collapses the capture action together with the dock; 0 keeps it fully present. */
-    void setMinimize(float value) {
-        float clamped = Math.max(0f, Math.min(1f, value));
-        if (Math.abs(clamped - minimize) < .001f) return;
-        minimize = clamped;
+        // Apply interaction state through the same cache as each frame. A no-op settle must
+        // not disable an already-visible action without updating its cached state.
         apply(homeFraction, dockHomeFraction);
+        motion.start();
     }
 
     private void apply(float fraction) {
@@ -106,13 +98,14 @@ final class DashboardDockChrome {
         float previousHome = homeFraction, previousDock = dockHomeFraction;
         homeFraction = Math.max(0f, Math.min(1f, fraction));
         dockHomeFraction = Math.max(0f, Math.min(1f, dockFraction));
-        float presence = homeFraction * homeFraction * (3f - 2f * homeFraction) * (1f - minimize);
+        float presence = homeFraction * homeFraction * (3f - 2f * homeFraction);
         int visibility = homeFraction > 0f ? View.VISIBLE : View.INVISIBLE;
         if (visibility != appliedVisibility) {
             captureHost.setVisibility(visibility);
             appliedVisibility = visibility;
         }
-        if (Math.abs(presence - appliedPresence) > .001f) {
+        if (Math.abs(presence - appliedPresence) > .001f
+                || ((presence == 0f || presence == 1f) && presence != appliedPresence)) {
             appliedPresence = presence;
             captureHost.setAlpha(presence);
             // Scale a wrapper, leaving the button's own pressed-state animation intact.
@@ -124,13 +117,13 @@ final class DashboardDockChrome {
                     : dp(EXIT_BLUR_DP) * (1f - presence);
             // A fresh RenderEffect every frame forces a new render node; only touch it when the
             // radius really moves.
-            if (Math.abs(blur - appliedBlur) > .5f) {
+            if (Math.abs(blur - appliedBlur) > .5f || (blur == 0f && appliedBlur != 0f)) {
                 appliedBlur = blur;
                 captureHost.setRenderEffect(blur < .5f ? null
                         : RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL));
             }
         }
-        boolean interactive = home && homeFraction == 1f && animator == null && minimize == 0f;
+        boolean interactive = home && homeFraction == 1f && animator == null;
         int interactiveFlag = interactive ? 1 : 0;
         if (interactiveFlag != appliedInteractive) {
             appliedInteractive = interactiveFlag;
@@ -138,8 +131,7 @@ final class DashboardDockChrome {
             captureHost.setImportantForAccessibility(interactive ? View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                     : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         }
-        // Only the page-switch progress changes the dock's width; a collapse frame must not
-        // trigger a measure/layout pass from inside the render step.
+        // Only page-switch progress changes the dock's width.
         if (homeFraction != previousHome || dockHomeFraction != previousDock) layoutMobile();
     }
 

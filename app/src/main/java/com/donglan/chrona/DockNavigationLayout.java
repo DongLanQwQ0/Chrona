@@ -55,13 +55,6 @@ final class DockNavigationLayout extends FrameLayout {
     private int coastDestination;
     private int selectedIndex, tapIndex;
     private int pressedItem = -1;
-    /** 0 keeps the full dock; 1 leaves only the active tab at the leading corner. */
-    private float minimizeFraction, notifiedMinimize = -1f;
-    private ValueAnimator minimizeAnimator;
-    private boolean labelsHidden;
-    /** The capture action outside the dock rides the same collapse so the bar never splits. */
-    private java.util.function.DoubleConsumer minimizeListener;
-    private final java.util.WeakHashMap<View, String> dockItemLabels = new java.util.WeakHashMap<>();
     private boolean tracking, dragging, ignoreTouch, tapLeftBounds;
     private boolean fullWidthMotion;
     private final Runnable finishTouch = this::finishTouch;
@@ -361,78 +354,17 @@ final class DockNavigationLayout extends FrameLayout {
         float along = fullWidthMotion ? 0f : spring.lean * dp(PLATE_LEAN_DP);
         float across = spring.crossLean * dp(CROSS_LEAN_DP);
         float x = vertical() ? across : along, y = vertical() ? along : across;
-        float minScale = 1f - .42f * minimizeFraction;
-        scaleX *= minScale;
-        // The pivot already keeps the leading edge in place; shifting would push it past the
-        // 20dp content axis once collapsed.
-        // Only a move resamples the acrylic; scaling is a GPU transform, so it must not force a
-        // fresh backdrop sample on every collapse frame.
         boolean plateMoved = Math.abs(getTranslationX() - x) > .001f
                 || Math.abs(getTranslationY() - y) > .001f;
         setVisualPosition(spring.position);
-        setPivotX(minimizeFraction > 0f ? 0f : getWidth() / 2f);
-        setPivotY(minimizeFraction > 0f ? getHeight() : getHeight() / 2f);
-        setScaleX(scaleX); setScaleY(spring.bar * minScale);
+        setPivotX(getWidth() / 2f);
+        setPivotY(getHeight() / 2f);
+        setScaleX(scaleX); setScaleY(spring.bar);
         setTranslationX(x); setTranslationY(y);
         // The acrylic must sample its new location instead of translating an old sample.
         // Highlight-only motion still leaves the plate's display list untouched.
         if (plateMoved) invalidate();
-        if (minimizeListener != null && Math.abs(minimizeFraction - notifiedMinimize) > .0005f) {
-            notifiedMinimize = minimizeFraction;
-            minimizeListener.accept(minimizeFraction);
-        }
         updateHighlight();
-        for (int i = 0; i < itemCount(); i++) {
-            View item = itemAt(i);
-            float alpha = i == selectedIndex ? 1f : 1f - .9f * minimizeFraction;
-            if (Math.abs(item.getAlpha() - alpha) > .01f) item.setAlpha(alpha);
-        }
-        // A collapsed tab bar keeps the glyph only: scaled-down labels are unreadable.
-        boolean hideLabels = minimizeFraction > .5f;
-        if (hideLabels != labelsHidden) {
-            labelsHidden = hideLabels;
-            for (int i = 0; i < itemCount(); i++) {
-                View item = itemAt(i);
-                if (item instanceof FrameLayout wrapper && wrapper.getChildCount() > 0)
-                    item = wrapper.getChildAt(0);
-                if (!(item instanceof TextView label)) continue;
-                if (hideLabels) {
-                    dockItemLabels.put(item, String.valueOf(label.getText()));
-                    label.setText("");
-                } else {
-                    String saved = dockItemLabels.remove(item);
-                    if (saved != null) label.setText(saved);
-                }
-            }
-        }
-    }
-
-    /** Collapses to the active tab while the content scrolls down, as a system tab bar does. */
-    void setMinimizeListener(java.util.function.DoubleConsumer listener) { minimizeListener = listener; }
-
-    void setMinimized(boolean value) {
-        if (vertical()) return;
-        float target = value ? 1f : 0f;
-        if (Math.abs(minimizeFraction - target) < .001f && minimizeAnimator == null) return;
-        if (minimizeAnimator != null) { minimizeAnimator.cancel(); minimizeAnimator = null; }
-        if (!ValueAnimator.areAnimatorsEnabled()) {
-            minimizeFraction = target;
-            applySpring();
-            return;
-        }
-        minimizeAnimator = ValueAnimator.ofFloat(minimizeFraction, target);
-        minimizeAnimator.setDuration(value ? UiMotion.EXIT : UiMotion.ENTER);
-        minimizeAnimator.setInterpolator(UiMotion.SETTLE);
-        minimizeAnimator.addUpdateListener(animation -> {
-            minimizeFraction = (float) animation.getAnimatedValue();
-            applySpring();
-        });
-        minimizeAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(android.animation.Animator animation) {
-                minimizeAnimator = null;
-            }
-        });
-        minimizeAnimator.start();
     }
 
     /**

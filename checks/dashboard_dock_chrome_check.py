@@ -71,7 +71,13 @@ public class DockChromeCheck {
   chrome.setHome(false);check(capture.visibility==View.INVISIBLE&&!button.enabled&&capture.access==View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS,"Other pages fully hide plus and its accessibility target");
   check(dock.getWidth()==233&&Math.abs(dock.left+dock.right-360)<=1,"Hidden plus centers a modestly wider Dock instead of filling all freed space");
   check(capture.effect==null,"Fully hidden action releases its blur effect");
-  chrome.setHome(true);chrome.beginDrag();chrome.drag(1f,false,.4f);near(chrome.fraction(),.6f,"Body swipe previews hide");chrome.drag(1f,false,.2f);near(chrome.fraction(),.8f,"Reversed swipe restores continuously");
+  chrome.setHome(true);chrome.animateHome(true,240);
+  check(button.enabled,"Already-home settle keeps the capture action enabled");
+  chrome.animateHome(false,240);ValueAnimator.last.step(1f);
+  chrome.animateHome(true,240);ValueAnimator.last.step(.9999f);ValueAnimator.last.step(1f);
+  check(capture.alpha==1f&&capture.sx==1f&&capture.sy==1f,"Endpoint bypasses frame epsilon and restores exact full presence");
+  check(capture.effect==null,"Endpoint clears even a sub-threshold residual blur");
+  chrome.beginDrag();chrome.drag(1f,false,.4f);near(chrome.fraction(),.6f,"Body swipe previews hide");chrome.drag(1f,false,.2f);near(chrome.fraction(),.8f,"Reversed swipe restores continuously");
   chrome.animateHome(true,180);ValueAnimator.last.step(1);check(button.enabled&&dock.right==256,"Cancelled swipe restores home state");
   chrome.setHome(false);host.layout(0,0,600,110);host.pl=12;host.pr=12;host.pb=20;chrome.layoutMobile();
   check(dock.left==74&&dock.right==526&&dock.bottom==82,"Resizing retains centered bounds with a capped width gain and correct insets");

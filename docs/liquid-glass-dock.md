@@ -1,4 +1,6 @@
-# 液态玻璃 Dock 参照说明（调研稿）
+# 液态玻璃 Dock 参照说明（历史调研）
+
+本页保留实验经过；滚动最小化已按2026-11-01用户决定删除，当前行为以[交互基线](ui-interaction-baseline.md#选择栏的完整操作过程)为准。下文的最小化方案及旧发布状态不再用于实现。
 
 来源：Apple Human Interface Guidelines *Tab bars*／*Materials*（Liquid Glass）、WWDC25 相关资料整理。本文件只记录“要模仿什么”，不含实现结论。
 

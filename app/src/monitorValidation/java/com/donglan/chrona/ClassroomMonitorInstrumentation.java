@@ -134,6 +134,9 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         if("dashboard_pagination".equals(args.getString("mode"))){
             report.putString("dashboard_pagination_report","PASS: "+DashboardPaginationChecks.run(this,args)+" native pagination checks");finish(-1,report);return;
         }
+        if("dashboard_dock".equals(args.getString("mode"))){
+            report.putString("dashboard_dock_report","PASS: "+DashboardDockChecks.run(this,args)+" native Dock checks; output="+args.getString("outputDir"));finish(-1,report);return;
+        }
         if("page_motion".equals(args.getString("mode"))){
             assertions+=PageMotionChecks.run(this,args);
             report.putString("monitor_report","PASS: "+assertions+" assertions; page_motion "+args.getString("orientation","portrait")+" "+args.getString("theme","light"));

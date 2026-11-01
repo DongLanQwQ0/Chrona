@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.90 — 删除主页Dock滚动缩小 — 2026-11-01
+
+- 删除Dashboard三页160dp滚动监听、Dock唯一minimize状态及标签清空、Chrome的滚动显隐因子；保留既有弹簧、高光、惯性、切页以及独立新增入口的切页退出参数。最新决定同步UI规范、交互基线和日程浏览文档，旧玻璃调研标记历史。
+- 同一Chrona_Classroom_36正常窗口，原生竖浅187、横深189项真实触摸通过。三页旧阈值411px以上滚动、回顶、切页返回均保留原Dock实例、完整文字、尺寸位置及scale=1；新增入口实际打开/返回、Back历史、首尾长按拖出与惯性、正文双向切页通过。独立＋仍仅首页可操作，切页中间帧禁用；未调整DPI或分辨率。
+- 首轮Back回首页暴露同状态animateHome旁路禁用导致缓存失配，最小队列也复现；改为通过唯一apply状态入口控制触摸。下一轮精确诊断区分出按钮已启用，但alpha永留0.99967074、blur留0.49976957：终态0/1及blur=0绕过中间帧epsilon，保留原时长和帧去重。横屏首次＋点击穿透到TaskDetail，原因是已pin侧栏提升shell而新增宿主未pin；宿主复用同一InteractionLayers.pin后实际点击通过。
+- 原失败保存在build/dock-scroll/portrait-first、portrait-second、portrait-diagnostics、landscape-first；只按对应证据修正，未放宽断言。有效JPEG及报告在portrait/、landscape/；Native夹具不触生产包，仅删除本次51条fixture并恢复偏好。导航队列183、Chrome39通过，队列证据不替代实际渲染。
+- 最终pin后release/lint通过；APK为0.15.90/252、正式包名、原升级签名、非debuggable。独立UI最终复审无未解决P1/P2或关键证据缺口。真机旧10.197.184.141:38283拒绝，ADB及mDNS无V2527A，尚未覆盖更新；未发Release。本轮6个AVD专用目录已转回项目并清理，保留其它fixture与validation应用。
+
 ## 0.15.89 — 更正文稿独立阅读页 — 2026-11-01
 
 - 根据最新决定撤去88的正文末尾展开区，在课程名称同行最右放置共用紧凑文字按钮。新ClassroomCorrectedActivity复用SettingsPageLayout和原Markdown/MathJax，原文、来源编号、公式、代码、图片/导出内容不改；只读已发布快照，新轮处理中仍能阅读，原existingSummary忙时检查不变。

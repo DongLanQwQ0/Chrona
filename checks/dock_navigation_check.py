@@ -517,12 +517,8 @@ public class DockNavigationCheck extends Context {
   init();touch(0,225,35);touch(2,245,35);View.advance(16);android.animation.ValueAnimator.enabled=false;
   View.advance(16);close(center(),245,"Disabling during follow settles on next frame");android.animation.ValueAnimator.enabled=true;
   init();
-  dock.setMinimized(true);
-  require(dock.getScaleY()<.7f,"Minimized dock shrinks toward the active tab");
-  require(dock.itemAt(1).getAlpha()<.2f,"Inactive tab fades while minimized");
-  dock.setMinimized(false);
-  require(Math.abs(dock.getScaleY()-1f)<.02f,"Restored dock returns to full size");
-  require(dock.itemAt(1).getAlpha()>.95f,"Inactive tab returns with the dock");
+  require(Math.abs(dock.getScaleY()-1f)<.02f,"Idle dock keeps its full size");
+  require(dock.itemAt(1).getAlpha()>.95f,"Inactive tab stays fully visible");
   require(GradientDrawable.solidColorCalls==0,"Flat colour must never replace the lens gradient (calls="+GradientDrawable.solidColorCalls+")");
   System.out.println("Dock navigation checks passed: "+checks+" (queue test double, not device runtime)");
  }
