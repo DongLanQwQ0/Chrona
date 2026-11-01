@@ -3,8 +3,10 @@
 ## 当前候选与唯一下一步
 
 - 正式包0.15.91/253已于2026-11-01 20:27:08覆盖V2527A，首次安装仍9月26日；原升级证书、非debuggable。APK：build/candidates/0.15.91/Chrona-0.15.91.apk。最终release/lint通过，不发小补丁Release，正式latest仍v0.15.81。
-- 已经原UI在历史按课程时间排序，长按最新10月29日微积分、仅选1/27，确认「重新总结1节课堂」，启动新run验证32768预算与新提示。不能点旧run「继续」冒充预算更新。先观察这节完整通过，再恢复其余20节；运行时不安装、重启或instrument目标应用。
-- 被动观察：build/classroom-failure-20261101/watch_work.py，当前session84619；candidate91-single-watch-next.jsonl保存通知。20:45已全部完成分段笔记，进入「AI全课主题编排」，越过原length失败点；尚未整篇发布。观察掉线不等于任务停止，不据此重启请求。
+- 已经原UI按课程时间排序、长按最新10月29日微积分、仅选1/27并确认重新总结，新run实测冻参max_tokens32768、更正复用3/3。3个draft及3个final全stop，20→40张实际附图，全课编排完成；前2/12主题整稿成功，edit-note-2于20:56:31 HTTP502（请求3959069字节、302秒）。新预算截断路径已越过，整课尚未完成，不启动其余20节。
+- 确认服务/通知退出后读取phone-candidate91.json。21:00经用户允许后沿2/12恢复，21:06:09同阶段再次HTTP502，队列已退出；不再原样重试，不启动其它20节。只读保存错误为「Upstream service temporarily unavailable」，无更细服务原因；不能断言具体网关配置、上下文上限或模型内部路由。
+- 同配置独立短健康请求仅204字节，无课堂数据，1次请求60,001毫秒SocketTimeoutException；未改设置。当前不足以归因于长输入，实际阻塞为AI接口未稳定响应。证据phone-candidate91-502.json、phone-candidate91-health.txt。唯一下一步：待接口恢复可响应后，先沿edit-note-2检查点完成本课，再继续其它20节；不改key/model或裁历史绕开。
+- Probe明确诊断模式构建/实测通过：默认mathAudit无网络，providerFailure只扩展保存502限长脱敏摘录；aiPing独立跳过Application初始化且等待确认，不意外恢复其它业务。诊断辅助包、手机本轮window.xml与空任务目录均已正常删除；没有活动AI队列。
 
 ## 全21节的交付条件
 
@@ -28,8 +30,8 @@
 
 ## 设备及文件边界
 
-- 真机10.197.184.141:39343；GlobalSend99已于20:36:54安装并明确交还，root持有手机。仅实际冲突时协调。AVD只Chrona_Classroom_36/emulator-5554，不克隆/重置/改DPI或分辨率。
-- /data/local/tmp/chrona/classroom-failure-20261101/window.xml本轮UI又已生成，交还前只删此文件与空任务目录。诊断辅助包未安装；91签名probe已构建，仅任务结束后可运行mathAudit，结束卸载。
+- 真机10.197.184.141:39343；GlobalSend100已于21:02:10安装并明确交还，本轮手机操作已结束。AVD只Chrona_Classroom_36/emulator-5554，不克隆/重置/改DPI或分辨率。
+- /data/local/tmp/chrona/classroom-failure-20261101/window.xml与空任务目录已删除，诊断辅助包已卸载。91签名probe只在任务结束后运行，未中断活动总结。
 - 旧/data/local/tmp/chrona/classroom-failure-20261031/清理曾被策略拒绝；隔离包external files/classroom-json-projection-20261101/report.json读取被run-as拒绝，均不绕过。
 - 电脑派生文件全部项目build内；图片先压缩JPEG。89/90本轮AVD产物已转回清理，保留既有fixture/用户资料。
 

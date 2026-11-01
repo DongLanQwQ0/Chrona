@@ -8,6 +8,8 @@
 - SSE的非null error帧此前在无choices时被忽略，现明确失败，仅保留白名单code/type；EOF附正文/思考字符计数，不泄漏服务正文。接受完整回复的原DONE/finish规则保持，不接纳部分JSON、不自动重试。四条历史EOF因缺终止证据，具体原因仍未知。
 - 离线检查通过：AiRequest586、日程转换418、时间审计43、自动应用17；JSON字段/恢复725、增强管线2830、修正复用25、实际图片引用/回滚39。模型输出均为loopback合成数据，不冒充供应商缓存命中或数学成品验收。独立只读复审已关闭预算P2，未发现其余必须修项。真实新预算单课与全21节仍待验证，不把四份旧格式complete计为本轮完成。
 - 最终release/lint通过，0.15.91/253于20:27:08实际覆盖安装，首次安装时间及原签名保持；APK在build/candidates/0.15.91/，未发Release。通过原历史长按选1/27并确认重新总结，新轮正在验证，不沿旧8192检查点点击继续。只读probe初次用了不存在的assembleClassroomProbe任务，未构建成功；改用既有checks/classroom-probe.init.gradle与assembleReleaseAndroidTest后通过，不把前次失败算作有效证据。
+- 实际91单课越过原截断路径：更正复用3/3，冻结max_tokens32768；3段draft、3段final及edit-plan均stop，实际历史图片20→40张，主题整稿前2/12完成。edit-note-2于20:56:31请求302秒后HTTP502，3959069字节，无usage/正文；不能把这次服务端失败算客户端截断或整篇成功。确认队列停止后只读probe取得phone-candidate91.json并卸载，21:00沿原检查点手动续跑，已完成阶段不重做。服务usage曾返回46715输出及后续239517输入，记录原值，不据此反推本地冻结预算或猜测内部模型路由。
+- 该检查点21:06:09再次HTTP502（edit-note-2-restart-1，3960105字节、315849毫秒）；保存的限长脱敏错误仅为Upstream service temporarily unavailable。同配置独立健康请求只发固定OK短文，204字节、1次、无课堂数据、设置不变，60001毫秒SocketTimeoutException；不能只归因于长输入。未继续原样重试/启动其它20节，当前21节仍未完成。默认mathAudit无网络；独立aiPing跳过Application初始化且等待，实际模式校验通过后才请求。phone-candidate91-502.json与phone-candidate91-health.txt保留证据，诊断辅助包及本轮手机window.xml/空目录已删除，无活动总结队列。
 
 ## 0.15.90 — 删除主页Dock滚动缩小 — 2026-11-01
 

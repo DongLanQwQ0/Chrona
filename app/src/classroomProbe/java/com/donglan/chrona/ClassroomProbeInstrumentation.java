@@ -45,7 +45,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     }
     @Override public void callApplicationOnCreate(android.app.Application app){
         try{
-            if(mathAudit)applicationInitializationSkipped=true;
+            if(mathAudit||aiPing)applicationInitializationSkipped=true;
             else super.callApplicationOnCreate(app);
         }finally{applicationReady.countDown();}
     }
@@ -60,7 +60,11 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 if(!current.enabled()||!current.configured())throw new IllegalStateException("School account unavailable");
                 result.putString("math_audit",mathHistory(current).toString());finish(-1,result);return;
             }
-            if(aiPing){result.putString("ai_health",aiHealth().toString());finish(-1,result);return;}
+            if(aiPing){
+                if(!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
+                    throw new IllegalStateException("Isolated AI health initialization unavailable");
+                result.putString("ai_health",aiHealth().toString());finish(-1,result);return;
+            }
             if(cleanup){result.putInt("removed_public_assets",cleanupPublicAssets());finish(-1,result);return;}
             if(parseAudit){result.putString("parse_audit",recentParseAudits().toString());finish(-1,result);return;}
             ZjuSettingsStore settings = new ZjuSettingsStore(getTargetContext());
@@ -268,7 +272,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         java.util.regex.Matcher http=java.util.regex.Pattern.compile("\\bHTTP\\s+(\\d{3})\\b").matcher(failure);
                         if(http.find()){
                             int status=Integer.parseInt(http.group(1));row.put("run_last_http",status);
-                            if(providerFailure&&status==403)row.put("provider_error_excerpt",providerExcerpt(failure,currentKey));
+                            if(providerFailure&&(status==403||status==502))row.put("provider_error_excerpt",providerExcerpt(failure,currentKey));
                         }
                         row.put("run_last_error_category",healthCategory(failure));
                     }
