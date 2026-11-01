@@ -33,6 +33,7 @@ public final class SettingsActivity extends Activity {
     private EditText customPrompt;
     private EditText classroomPrompt;
     private Switch enhancedClassroom;
+    private Switch classroomCellular;
     private int classroomConcurrency;
     private TextView classroomConcurrencyChoice;
     private int classroomNoteStrength;
@@ -198,6 +199,15 @@ public final class SettingsActivity extends Activity {
                     classroomConcurrency = position + 1;
                     refreshClassroomConcurrency();
                 }));
+        classroomCellular = new Switch(this);
+        classroomCellular.setText("AI总结使用移动数据");
+        classroomCellular.setTextSize(16);
+        classroomCellular.setChecked(state == null ? preferences.classroomCellular
+                : state.getBoolean("classroomCellular", preferences.classroomCellular));
+        classroomCellular.setSwitchPadding(dp(12));
+        UiStyle.toggle(classroomCellular);
+        classroomCellular.setMinHeight(dp(54));
+        UiStyle.addSpaced(form, classroomCellular, 8, 0);
         Button save = new Button(this);
         save.setText("保存设置");
         save.setOnClickListener(view -> save());
@@ -290,7 +300,8 @@ public final class SettingsActivity extends Activity {
                 apiKey.getText().toString(), reasoningEffort, Integer.toString(workStartMinutes),
                 Integer.toString(workEndMinutes), customPrompt.getText().toString(),
                 classroomPrompt.getText().toString(), Boolean.toString(enhancedClassroom.isChecked()),
-                Integer.toString(classroomConcurrency), Integer.toString(classroomNoteStrength)};
+                Integer.toString(classroomConcurrency), Integer.toString(classroomNoteStrength),
+                Boolean.toString(classroomCellular.isChecked())};
     }
 
     private void restoreForm(String[] values) {
@@ -306,6 +317,7 @@ public final class SettingsActivity extends Activity {
         enhancedClassroom.setChecked(Boolean.parseBoolean(values[8]));
         classroomConcurrency = Integer.parseInt(values[9]);
         classroomNoteStrength = Integer.parseInt(values[10]);
+        classroomCellular.setChecked(Boolean.parseBoolean(values[11]));
         classroomNoteStrengthSlider.setProgress(classroomNoteStrength);
         refreshClassroomNoteStrength();
         refreshClassroomConcurrency();
@@ -360,7 +372,8 @@ public final class SettingsActivity extends Activity {
         try {
             SchedulePreferences preferences = new SchedulePreferences(workStartMinutes, workEndMinutes,
                     customPrompt.getText().toString(), classroomPrompt.getText().toString(),
-                    enhancedClassroom.isChecked(), classroomConcurrency, classroomNoteStrength);
+                    enhancedClassroom.isChecked(), classroomConcurrency, classroomNoteStrength,
+                    classroomCellular.isChecked());
             AiSettingsStore store = new AiSettingsStore(this);
             String key = apiKey.getText().toString().trim();
             if (key.isEmpty()) {
@@ -410,6 +423,7 @@ public final class SettingsActivity extends Activity {
         state.putString("customPrompt", customPrompt.getText().toString());
         state.putString("classroomPrompt", classroomPrompt.getText().toString());
         state.putBoolean("enhancedClassroom", enhancedClassroom.isChecked());
+        state.putBoolean("classroomCellular", classroomCellular.isChecked());
         state.putInt("classroomConcurrency", classroomConcurrency);
         state.putInt("classroomNoteStrength", classroomNoteStrength);
         super.onSaveInstanceState(state);

@@ -213,6 +213,31 @@ public final class ClassroomEnhancedCheck {
         check(!state(invalid).has("editor_assignments")&&state(invalid).getInt("edit-assignments_attempt")==1,"invalid semantic grouping remains a manual retry checkpoint");
         mode="task-normal";check(generate(invalid,true).getBoolean("complete"),"explicit retry appends a valid task grouping");appendOnly(invalid);
     }
+    private static void routedPipeline()throws Exception{
+        java.util.concurrent.atomic.AtomicInteger opened=new java.util.concurrent.atomic.AtomicInteger(),released=new java.util.concurrent.atomic.AtomicInteger();
+        com.donglan.chrona.ai.ChatCompletionClient.ConnectionRoute route=(url,control)->{
+            RequestControl.check(control);opened.incrementAndGet();
+            return new com.donglan.chrona.ai.ChatCompletionClient.OpenedConnection((HttpURLConnection)url.openConnection(),released::incrementAndGet);
+        };
+        reset("normal",true);File dir=materials("routed-pipeline",true);JSONObject result;
+        try(RequestControl control=new RequestControl(20000)){
+            result=ClassroomSummary.generate(dir,LESSON,AI,2,control,p->{},"保留题干条件及步骤分",true,3,route);
+        }
+        check(result.getBoolean("complete")&&result.getJSONArray("parts").length()==1,"scoped connection route completes the same single-document pipeline");
+        check(opened.get()==requests.size()&&released.get()==opened.get(),"every successful pipeline HTTP exchange releases its own route lease");
+        appendOnly(dir);
+        reset("normal",false);File failed=materials("routed-recovery",false);failCall=2;opened.set(0);released.set(0);
+        try(RequestControl control=new RequestControl(20000)){
+            rejects(()->ClassroomSummary.generate(failed,LESSON,AI,0,control,p->{},"",true,3,route),"routed upstream failure remains a manual checkpoint");
+        }
+        check(opened.get()==2&&released.get()==2&&requests.size()==2,"routed HTTP error releases without fallback or automatic retry");
+        failCall=-1;
+        try(RequestControl control=new RequestControl(20000)){
+            result=ClassroomSummary.generate(failed,LESSON,AI,0,control,p->{},"",true,3,route);
+        }
+        check(result.getBoolean("complete")&&Collections.frequency(stages,"correct-0")==1,"routed explicit continuation reuses committed correction");
+        check(released.get()==opened.get()&&opened.get()==requests.size(),"continued pipeline releases all route leases");appendOnly(failed);
+    }
     private static void classroomTimeout()throws Exception{
         reset("normal",false);var client=new com.donglan.chrona.ai.ChatCompletionClient(AI);
         JSONObject request=client.classroomOptions().put("messages",new JSONArray().put(new JSONObject().put("role","user").put("content",new JSONArray().put(new JSONObject().put("type","text").put("text","synthetic classroom timeout check")))));
@@ -707,6 +732,7 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length==1)test("scoped routing retains the full pipeline and immutable checkpoints",ClassroomEnhancedCheck::routedPipeline);
         if(args.length>1&&args[1].equals("note-strength")){
             try{test("enhanced note strength and overview image guard",ClassroomEnhancedCheck::noteStrength);}
             finally{server.stop(0);}System.out.println("ClassroomEnhancedNoteStrength: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced note strength checks failed");return;

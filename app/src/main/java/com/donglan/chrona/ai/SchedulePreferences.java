@@ -13,6 +13,7 @@ public final class SchedulePreferences {
     public static final int MAX_PROMPT_CHARS = 8000;
     public static final int DEFAULT_CLASSROOM_CONCURRENCY = 3;
     public static final int DEFAULT_CLASSROOM_NOTE_STRENGTH = 3;
+    public static final boolean DEFAULT_CLASSROOM_CELLULAR = true;
     private static final String STORE = "chrona_schedule_preferences";
     public final int workStartMinutes;
     public final int workEndMinutes;
@@ -21,6 +22,7 @@ public final class SchedulePreferences {
     public final boolean enhancedClassroom;
     public final int classroomConcurrency;
     public final int classroomNoteStrength;
+    public final boolean classroomCellular;
 
     public SchedulePreferences(int start, int end, String prompt, String classroomPrompt) {
         this(start, end, prompt, classroomPrompt, false);
@@ -39,6 +41,13 @@ public final class SchedulePreferences {
 
     public SchedulePreferences(int start, int end, String prompt, String classroomPrompt,
             boolean enhancedClassroom, int classroomConcurrency, int classroomNoteStrength) {
+        this(start, end, prompt, classroomPrompt, enhancedClassroom, classroomConcurrency,
+                classroomNoteStrength, DEFAULT_CLASSROOM_CELLULAR);
+    }
+
+    public SchedulePreferences(int start, int end, String prompt, String classroomPrompt,
+            boolean enhancedClassroom, int classroomConcurrency, int classroomNoteStrength,
+            boolean classroomCellular) {
         if (start < 0 || start >= 1440 || end < 0 || end >= 1440 || start == end)
             throw new IllegalArgumentException("工作时间起止必须不同，且为有效钟点");
         if (prompt == null || prompt.length() > MAX_PROMPT_CHARS
@@ -55,6 +64,7 @@ public final class SchedulePreferences {
         this.enhancedClassroom = enhancedClassroom;
         this.classroomConcurrency = classroomConcurrency;
         this.classroomNoteStrength = classroomNoteStrength;
+        this.classroomCellular = classroomCellular;
     }
 
     public static SchedulePreferences load(Context context) {
@@ -64,7 +74,8 @@ public final class SchedulePreferences {
                 prefs.getString("customPrompt", ""), prefs.getString("classroomPrompt", ""),
                 prefs.getBoolean("enhancedClassroom", false),
                 Integer.parseInt(prefs.getString("classroomConcurrency", Integer.toString(DEFAULT_CLASSROOM_CONCURRENCY))),
-                Integer.parseInt(prefs.getString("classroomNoteStrength", Integer.toString(DEFAULT_CLASSROOM_NOTE_STRENGTH))));
+                Integer.parseInt(prefs.getString("classroomNoteStrength", Integer.toString(DEFAULT_CLASSROOM_NOTE_STRENGTH))),
+                prefs.getBoolean("classroomCellular", DEFAULT_CLASSROOM_CELLULAR));
     }
 
     public void save(Context context) {
@@ -75,7 +86,8 @@ public final class SchedulePreferences {
                 .putString("classroomPrompt", classroomPrompt)
                 .putBoolean("enhancedClassroom", enhancedClassroom)
                 .putString("classroomConcurrency", Integer.toString(classroomConcurrency))
-                .putString("classroomNoteStrength", Integer.toString(classroomNoteStrength)).apply();
+                .putString("classroomNoteStrength", Integer.toString(classroomNoteStrength))
+                .putBoolean("classroomCellular", classroomCellular).apply();
     }
 
     public String systemPrompt() {
@@ -87,7 +99,8 @@ public final class SchedulePreferences {
                 .put("workEndMinutes", workEndMinutes).put("customPrompt", customPrompt)
                 .put("classroomPrompt", classroomPrompt).put("enhancedClassroom", enhancedClassroom)
                 .put("classroomConcurrency", classroomConcurrency)
-                .put("classroomNoteStrength", classroomNoteStrength);
+                .put("classroomNoteStrength", classroomNoteStrength)
+                .put("classroomCellular", classroomCellular);
     }
 
     public static SchedulePreferences fromJson(JSONObject value) throws JSONException {
@@ -96,6 +109,8 @@ public final class SchedulePreferences {
             throw new JSONException("日程解析偏好格式无效");
         if (value.has("enhancedClassroom") && !(value.opt("enhancedClassroom") instanceof Boolean))
             throw new JSONException("增强整理设置格式无效");
+        if (value.has("classroomCellular") && !(value.opt("classroomCellular") instanceof Boolean))
+            throw new JSONException("AI总结移动数据设置格式无效");
         if (value.has("classroomConcurrency")) {
             Object number = value.opt("classroomConcurrency");
             if (!(number instanceof Number) || ((Number) number).doubleValue() != ((Number) number).intValue())
@@ -116,7 +131,8 @@ public final class SchedulePreferences {
                     value.getString("customPrompt"), value.getString("classroomPrompt"),
                     value.optBoolean("enhancedClassroom", false), value.has("classroomConcurrency")
                             ? value.getInt("classroomConcurrency") : DEFAULT_CLASSROOM_CONCURRENCY,
-                    value.has("classroomNoteStrength") ? value.getInt("classroomNoteStrength") : DEFAULT_CLASSROOM_NOTE_STRENGTH);
+                    value.has("classroomNoteStrength") ? value.getInt("classroomNoteStrength") : DEFAULT_CLASSROOM_NOTE_STRENGTH,
+                    value.optBoolean("classroomCellular", DEFAULT_CLASSROOM_CELLULAR));
         } catch (IllegalArgumentException exception) {
             throw new JSONException(exception.getMessage());
         }

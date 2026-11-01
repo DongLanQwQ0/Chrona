@@ -2,6 +2,7 @@ package com.donglan.chrona.classroom;
 
 import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.ChatCompletionClient;
+import com.donglan.chrona.ai.SchedulePrompt;
 import com.donglan.chrona.net.RequestControl;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -150,6 +151,9 @@ public final class ClassroomSummary {
         return generate(dir,lesson,ai,imageLimit,control,progress,classroomPrompt,enhanced,1);
     }
     public static JSONObject generate(File dir,ClassroomLesson lesson,AiSettings ai,int imageLimit,RequestControl control,ClassroomImages.Progress progress,String classroomPrompt,boolean enhanced,int preferredStrength) throws Exception {
+        return generate(dir,lesson,ai,imageLimit,control,progress,classroomPrompt,enhanced,preferredStrength,null);
+    }
+    public static JSONObject generate(File dir,ClassroomLesson lesson,AiSettings ai,int imageLimit,RequestControl control,ClassroomImages.Progress progress,String classroomPrompt,boolean enhanced,int preferredStrength,ChatCompletionClient.ConnectionRoute route) throws Exception {
         ClassroomNoteStrength.validate(preferredStrength);
         if(imageLimit<0||imageLimit>MAX_IMAGES)throw new IOException("图片上限应为 0 至 "+MAX_IMAGES);
         JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));
@@ -174,7 +178,7 @@ public final class ClassroomSummary {
         JSONObject catalogue=imageCatalogue(candidates.getJSONArray("images"),imageLimit);
         JSONObject full=lessonInput(materials.getJSONArray("segments"),new JSONArray()).put("image_catalogue",catalogue);
         if(full.getJSONArray("segments").length()==0)throw new IOException("课堂字幕为空");
-        ChatCompletionClient client=new ChatCompletionClient(ai,control);
+        ChatCompletionClient client=new ChatCompletionClient(ai,control,SchedulePrompt.SYSTEM,route);
         ClassroomConversation conversation=new ClassroomConversation(dir,state,client,system);
         if(enhanced)return new ClassroomEnhancedSummary(dir,lesson,state,materials,candidates,full,conversation,control,progress).generate(imageLimit);
         ClassroomJsonStage json=new ClassroomJsonStage(dir,state,conversation,control);

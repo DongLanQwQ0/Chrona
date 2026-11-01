@@ -37,6 +37,21 @@ public final class ChatCompletionClient {
     private final String scheduleSystem;
     private final int workStartMinutes;
     private final int workEndMinutes;
+    private final ConnectionRoute connectionRoute;
+
+    /** A route owns only this HTTP exchange, never the process or unrelated clients. */
+    public interface ConnectionRoute {
+        OpenedConnection open(URL url, RequestControl control) throws IOException;
+    }
+    public static final class OpenedConnection implements AutoCloseable {
+        public final HttpURLConnection connection;
+        private final Runnable release;
+        public OpenedConnection(HttpURLConnection connection, Runnable release) {
+            this.connection = connection;
+            this.release = release;
+        }
+        @Override public void close() { release.run(); }
+    }
 
     public ChatCompletionClient(AiSettings settings) {
         this(settings, null);
@@ -53,6 +68,17 @@ public final class ChatCompletionClient {
 
     public ChatCompletionClient(AiSettings settings, RequestControl control, String scheduleSystem,
             int workStartMinutes, int workEndMinutes) {
+        this(settings, control, scheduleSystem, workStartMinutes, workEndMinutes, null);
+    }
+
+    public ChatCompletionClient(AiSettings settings, RequestControl control, String scheduleSystem,
+            ConnectionRoute connectionRoute) {
+        this(settings, control, scheduleSystem, SemanticEventNormalizer.DEFAULT_WORK_START,
+                SemanticEventNormalizer.DEFAULT_WORK_END, connectionRoute);
+    }
+
+    public ChatCompletionClient(AiSettings settings, RequestControl control, String scheduleSystem,
+            int workStartMinutes, int workEndMinutes, ConnectionRoute connectionRoute) {
         if (settings == null) {
             throw new IllegalArgumentException("settings must not be null");
         }
@@ -61,6 +87,7 @@ public final class ChatCompletionClient {
         this.scheduleSystem = scheduleSystem;
         this.workStartMinutes = workStartMinutes;
         this.workEndMinutes = workEndMinutes;
+        this.connectionRoute = connectionRoute;
     }
 
     /** The read timeout this client applies; exposed so diagnostics can report the real value. */
@@ -223,11 +250,15 @@ public final class ChatCompletionClient {
             boolean canDowngrade,int maximumReadMillis)throws IOException {
         boolean streaming = body.optBoolean("stream");
         RequestControl.check(control);
-        int readTimeout = control == null ? maximumReadMillis : control.timeoutMillis(maximumReadMillis);
-        HttpURLConnection connection = (HttpURLConnection) new URL(
-                settings.baseUrl + "/chat/completions").openConnection();
+        URL endpoint = new URL(settings.baseUrl + "/chat/completions");
+        OpenedConnection opened = connectionRoute == null
+                ? new OpenedConnection((HttpURLConnection) endpoint.openConnection(), () -> { })
+                : connectionRoute.open(endpoint, control);
+        HttpURLConnection connection = opened.connection;
+        int readTimeout = maximumReadMillis;
         try {
             if (control != null) control.register(connection);
+            readTimeout = control == null ? maximumReadMillis : control.timeoutMillis(maximumReadMillis);
             connection.setRequestMethod("POST");
             connection.setConnectTimeout(control == null ? CONNECT_TIMEOUT_MILLIS
                     : control.timeoutMillis(CONNECT_TIMEOUT_MILLIS));
@@ -283,8 +314,10 @@ public final class ChatCompletionClient {
             RequestControl.check(control);
             throw exception;
         } finally {
-            if (control != null) control.unregister(connection);
-            connection.disconnect();
+            try {
+                if (control != null) control.unregister(connection);
+                connection.disconnect();
+            } finally { opened.close(); }
         }
     }
 

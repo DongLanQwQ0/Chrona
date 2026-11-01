@@ -23,8 +23,14 @@ public final class SchedulePreferencesCheck {
                 && new SchedulePreferences(600,1320,"", "",true).classroomNoteStrength == 3
                 && new SchedulePreferences(600,1320,"", "",true,1).classroomNoteStrength == 3,
                 "new and all original constructors default note strength to three");
+        check(defaults.classroomCellular
+                && new SchedulePreferences(600,1320,"", "").classroomCellular
+                && new SchedulePreferences(600,1320,"", "",true).classroomCellular
+                && new SchedulePreferences(600,1320,"", "",true,1).classroomCellular
+                && new SchedulePreferences(600,1320,"", "",true,1,2).classroomCellular,
+                "new installs and all existing constructors default classroom mobile data on");
         String custom = "优先安排上午\n保留引号：\"时间\"";
-        new SchedulePreferences(22 * 60, 6 * 60, custom, "按课堂知识点分层", true, 2, 2).save(source);
+        new SchedulePreferences(22 * 60, 6 * 60, custom, "按课堂知识点分层", true, 2, 2, false).save(source);
         SchedulePreferences saved = SchedulePreferences.load(source);
         check(saved.workStartMinutes == 1320 && saved.workEndMinutes == 360
                 && saved.customPrompt.equals(custom) && saved.enhancedClassroom,
@@ -35,6 +41,8 @@ public final class SchedulePreferencesCheck {
                 "concurrency persists and JSON roundtrips");
         check(saved.classroomNoteStrength == 2 && SchedulePreferences.fromJson(saved.toJson()).classroomNoteStrength == 2,
                 "note strength persists and JSON roundtrips");
+        check(!saved.classroomCellular && !SchedulePreferences.fromJson(saved.toJson()).classroomCellular,
+                "explicit disabled classroom mobile data persists and JSON roundtrips");
         String system = saved.systemPrompt();
         check(system.startsWith(SchedulePrompt.SYSTEM), "default schema and safety retained");
         check(system.contains(JSONObject.quote(custom)) && system.contains("优先于上文默认解析规则"),
@@ -46,6 +54,33 @@ public final class SchedulePreferencesCheck {
         check(!system.contains("按课堂知识点分层"), "classroom preferences never enter schedule prompt");
         String portable = ConfigBackup.export(source, false);
         ConfigBackup.apply(target, portable);
+        check(!SchedulePreferences.load(target).classroomCellular, "backup restores explicit disabled classroom mobile data");
+        JSONObject oldCellular = new JSONObject(portable);
+        oldCellular.getJSONObject("schedulePreferences").remove("classroomCellular");
+        ConfigBackup.apply(target, oldCellular.toString());
+        check(SchedulePreferences.load(target).classroomCellular, "old backup missing classroom mobile data defaults on");
+        check(SchedulePreferences.fromJson(oldCellular.getJSONObject("schedulePreferences")).classroomCellular,
+                "missing JSON classroom mobile data defaults on");
+        ConfigBackup.apply(target, portable);
+        for (Object invalid : new Object[]{"true", "false", 1, 0, 1.5, JSONObject.NULL, new JSONObject(), new org.json.JSONArray()}) {
+            JSONObject broken = new JSONObject(portable);
+            broken.getJSONObject("schedulePreferences").put("classroomCellular", invalid);
+            try { ConfigBackup.apply(target, broken.toString()); throw new AssertionError("invalid mobile data switch accepted"); }
+            catch (JSONException expected) { count++; }
+            check(!SchedulePreferences.load(target).classroomCellular,
+                    "invalid mobile data switch import preserves saved setting");
+        }
+        for (boolean cellular : new boolean[]{false, true}) {
+            new SchedulePreferences(600,1320,"","",false,2,2,cellular).save(source);
+            SchedulePreferences roundtrip = SchedulePreferences.load(source);
+            check(roundtrip.classroomCellular == cellular
+                    && SchedulePreferences.fromJson(roundtrip.toJson()).classroomCellular == cellular,
+                    "both mobile data states save and JSON roundtrip");
+            Context imported = new Context();
+            ConfigBackup.apply(imported, ConfigBackup.export(source, false));
+            check(SchedulePreferences.load(imported).classroomCellular == cellular,
+                    "both mobile data states backup roundtrip");
+        }
         check(SchedulePreferences.load(target).classroomNoteStrength == 2,"backup restores note strength");
         JSONObject oldStrength = new JSONObject(portable);
         oldStrength.getJSONObject("schedulePreferences").remove("classroomNoteStrength");
@@ -108,7 +143,8 @@ public final class SchedulePreferencesCheck {
         ConfigBackup.apply(target, without.toString());
         check(SchedulePreferences.load(target).customPrompt.equals(custom)
                 && SchedulePreferences.load(target).enhancedClassroom
-                && SchedulePreferences.load(target).classroomNoteStrength == 2,
+                && SchedulePreferences.load(target).classroomNoteStrength == 2
+                && !SchedulePreferences.load(target).classroomCellular,
                 "absent preference section preserves local settings");
         JSONObject legacy = new JSONObject(portable);
         legacy.getJSONObject("schedulePreferences").remove("enhancedClassroom");

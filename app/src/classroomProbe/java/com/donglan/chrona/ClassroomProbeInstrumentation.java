@@ -27,6 +27,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean audit;
     private boolean parseAudit;
     private boolean aiPing;
+    private boolean classroomRoute;
     private boolean mathAudit;
     private boolean providerFailure;
     private final java.util.concurrent.CountDownLatch applicationReady=new java.util.concurrent.CountDownLatch(1);
@@ -39,6 +40,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         audit = args != null && "true".equals(args.getString("audit"));
         parseAudit = args != null && "true".equals(args.getString("parseAudit"));
         aiPing = args != null && "true".equals(args.getString("aiPing"));
+        classroomRoute = args != null && "true".equals(args.getString("classroomRoute"));
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
         providerFailure = args != null && "true".equals(args.getString("providerFailure"));
         super.onCreate(args); start();
@@ -187,16 +189,25 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 }
                 boolean documentPresent=new java.io.File(directory,"summary.json").isFile();
                 row.put("published_summary",documentPresent);
-                JSONArray parts=summary.optJSONArray("parts"),headings=new JSONArray();int notes=0,affairs=0,actions=0;
+                JSONArray parts=summary.optJSONArray("parts"),headings=new JSONArray();int notes=0,affairs=0,actions=0,noteCharacters=0,affairsCharacters=0,duplicateNoteTexts=0;
+                java.util.Set<String> noteTexts=new java.util.HashSet<>();
                 if(parts!=null)for(int p=0;p<parts.length();p++){
                     JSONObject part=parts.getJSONObject(p);
                     for(String field:new String[]{"notes","affairs","assignments"}){
                         JSONArray entries=part.optJSONArray(field);if(entries==null)continue;
                         if(field.equals("notes"))notes+=entries.length();else if(field.equals("affairs"))affairs+=entries.length();else actions+=entries.length();
+                        if(!field.equals("assignments"))for(int n=0;n<entries.length();n++){
+                            String text=entries.getJSONObject(n).optString("text");
+                            if(field.equals("notes")){noteCharacters+=text.length();if(!noteTexts.add(text))duplicateNoteTexts++;}
+                            else affairsCharacters+=text.length();
+                        }
                         if(!field.equals("assignments"))for(int n=0;n<entries.length();n++)headings.put(new JSONObject().put("area",field).put("title",entries.getJSONObject(n).optString("title")));
                     }
                 }
                 row.put("notes",notes).put("affairs",affairs).put("assignments",actions).put("headings",headings);
+                row.put("document_parts",parts==null?0:parts.length()).put("note_characters",noteCharacters)
+                        .put("affairs_characters",affairsCharacters).put("duplicate_note_texts",duplicateNoteTexts)
+                        .put("overview_characters",summary.optString("overview").length());
                 JSONObject materials=com.donglan.chrona.classroom.ClassroomStore.read(new java.io.File(directory,"materials.json"));
                 if(materials==null)row.put("source_validation","materials_unavailable");
                 else if(!finished)row.put("source_validation","unfinished_document");
@@ -312,8 +323,19 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         JSONObject report=new JSONObject().put("calls",0).put("classroom_data_sent",false).put("settings_changed",false);
         com.donglan.chrona.ai.AiSettings settings=new com.donglan.chrona.ai.AiSettingsStore(getTargetContext()).load();
         if(settings==null)return report.put("state","not_configured");
+        android.net.ConnectivityManager connectivity=(android.net.ConnectivityManager)getTargetContext()
+                .getSystemService(android.content.Context.CONNECTIVITY_SERVICE);
+        android.net.Network bound=connectivity==null?null:connectivity.getBoundNetworkForProcess();
+        android.net.Network active=connectivity==null?null:connectivity.getActiveNetwork();
+        android.net.NetworkCapabilities caps=active==null?null:connectivity.getNetworkCapabilities(active);
+        report.put("classroom_route",classroomRoute)
+                .put("cellular_preference",com.donglan.chrona.ai.SchedulePreferences.load(getTargetContext()).classroomCellular)
+                .put("default_wifi",caps!=null&&caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI))
+                .put("app_vpn",caps!=null&&caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN));
         try(com.donglan.chrona.net.RequestControl control=new com.donglan.chrona.net.RequestControl(60000)){
-            com.donglan.chrona.ai.ChatCompletionClient client=new com.donglan.chrona.ai.ChatCompletionClient(settings,control);
+            com.donglan.chrona.ai.ChatCompletionClient client=classroomRoute
+                    ?new com.donglan.chrona.ai.ChatCompletionClient(settings,control,com.donglan.chrona.ai.SchedulePrompt.SYSTEM,new CellularClassroomRoute(getTargetContext()))
+                    :new com.donglan.chrona.ai.ChatCompletionClient(settings,control);
             JSONObject request=client.classroomOptions().put("messages",new JSONArray()
                     .put(new JSONObject().put("role","system").put("content","Reply briefly."))
                     .put(new JSONObject().put("role","user").put("content","Reply with OK only.")));
@@ -334,6 +356,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             }catch(java.io.IOException failed){report.put("state","io_error").put("error_type",failed.getClass().getSimpleName());}
             report.put("elapsed_ms",android.os.SystemClock.elapsedRealtime()-began);
         }
+        report.put("process_binding_unchanged",connectivity==null||java.util.Objects.equals(bound,connectivity.getBoundNetworkForProcess()));
         return report;
     }
     private static String healthCategory(String message){

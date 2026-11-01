@@ -63,15 +63,120 @@ public final class SettingsExitInstrumentation extends Instrumentation {
     @Override public void onStart() {
         Bundle report = new Bundle();
         try {
-            check();
-            report.putString("settings_exit_report", "PASS: " + assertions
-                    + " assertions; all 11 form fields, note strength native drag/info navigation/draft/save/discard, concurrency, enhanced classroom, reverted values, title/system back, cancel,"
+            boolean cellularOnly = Boolean.parseBoolean(arguments.getString("cellularOnly", "false"));
+            if (cellularOnly) checkCellularOnly(); else check();
+            report.putString("settings_exit_report", cellularOnly ? "PASS: " + assertions
+                    + " assertions; classroom mobile data native default/tap/cancel/discard/save both states, landscape window with retained draft/baseline, reachable switch/save and scrolling header; orientation restored"
+                    : "PASS: " + assertions
+                    + " assertions; all 12 form fields, classroom mobile data native toggle/default/draft/save/discard, note strength native drag/info navigation/draft/save/discard, concurrency, enhanced classroom, reverted values, title/system back, cancel,"
                     + " dialog back/outside, discard, validation failures, save, recreation, immediate image reset");
             finish(-1, report);
         } catch (Throwable error) {
             report.putString("error", android.util.Log.getStackTraceString(error));
             finish(0, report);
         }
+    }
+    private void checkCellularOnly() throws Exception {
+        FixtureIsolation.require(getTargetContext());
+        SharedPreferences ai = getTargetContext().getSharedPreferences("chrona_ai_settings", 0);
+        SharedPreferences schedule = getTargetContext().getSharedPreferences("chrona_schedule_preferences", 0);
+        SharedPreferences appearance = getTargetContext().getSharedPreferences("appearance", 0);
+        Map<String, ?> oldAi = ai.getAll(), oldSchedule = schedule.getAll(), oldAppearance = appearance.getAll();
+        int originalRequest = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        int originalOrientation = Configuration.ORIENTATION_UNDEFINED;
+        boolean restoreOrientation = false;
+        try {
+            appearance.edit().putString("mode", arguments.getString("mode", "light")).commit();
+            new AiSettingsStore(getTargetContext()).save("https://synthetic.invalid/v1", "synthetic-model",
+                    "chrona-settings-exit-synthetic", "auto");
+            new SchedulePreferences(600, 1320, "初始日程", "初始课堂").save(getTargetContext());
+            open();
+            originalRequest = current.getRequestedOrientation();
+            originalOrientation = current.getResources().getConfiguration().orientation;
+            Switch cellular = (Switch)field(current, "classroomCellular");
+            scrollTo(cellular); requireFullyVisible(cellular, "mobile data switch is fully scroll reachable");
+            require("AI总结使用移动数据".contentEquals(cellular.getText()) && cellular.isChecked(),
+                    "mobile data switch has exact label and defaults on");
+            capture("classroom-cellular-only-default");tapCenter(cellular);
+            require("false".equals(values()[11]) && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "real switch tap changes only draft");
+            titleBack();require(prompt(), "mobile data draft protects title exit");click("取消");
+            require(!current.isFinishing() && "false".equals(values()[11])
+                    && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "cancel retains mobile data draft without saving");
+            String[] draft = values();
+            restoreOrientation = true;
+            rotateSettings(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE);
+            require(java.util.Arrays.equals(draft, values())
+                    && "true".equals(((String[])field(current, "savedForm"))[11])
+                    && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "landscape settings retains mobile data draft and original baseline");
+            cellular = (Switch)field(current, "classroomCellular");scrollTo(cellular);
+            requireFullyVisible(cellular, "landscape mobile data switch is fully scroll reachable");
+            require(cellular.getHeight() >= Math.round(54 * current.getResources().getDisplayMetrics().density),
+                    "landscape switch retains 54dp touch height");
+            TextView title = findText(current.getWindow().getDecorView(), "AI 服务设置");
+            require(title != null && !title.getGlobalVisibleRect(new Rect()),
+                    "landscape scrolling moves settings title outside viewport");
+            capture("classroom-cellular-only-landscape");
+            TextView save = findText(current.getWindow().getDecorView(), "保存设置");
+            require(save != null, "save action exists in landscape");scrollTo(save);
+            requireFullyVisible(save, "landscape save action remains fully scroll reachable");
+            capture("classroom-cellular-only-landscape-save");
+            rotateSettings(originalRequest, originalOrientation);restoreOrientation = false;
+            require(java.util.Arrays.equals(draft, values()), "restoring orientation retains mobile data draft");
+            systemBack();require(prompt(), "mobile data draft protects system exit after rotation");click("放弃");
+            require(current.isFinishing() && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "discard after rotation leaves saved mobile data on");
+            open();cellular = (Switch)field(current, "classroomCellular");scrollTo(cellular);tapCenter(cellular);
+            save = findText(current.getWindow().getDecorView(), "保存设置");scrollTo(save);
+            requireFullyVisible(save, "save action is reachable for explicit disabled state");tapCenter(save);
+            require(current.isFinishing() && !SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "visible save button persists disabled mobile data");
+            open();cellular = (Switch)field(current, "classroomCellular");scrollTo(cellular);
+            require(!cellular.isChecked(), "reopened form shows saved mobile data off");tapCenter(cellular);
+            titleBack();require(prompt(), "enabling mobile data protects exit");click("保存");
+            require(current.isFinishing() && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "exit dialog save persists enabled mobile data");
+        } finally {
+            try {
+                if (current != null && !current.isDestroyed() && !current.isFinishing()) {
+                    if (restoreOrientation) rotateSettings(originalRequest, originalOrientation);
+                    runOnMainSync(() -> {
+                        try { method("restoreForm", String[].class).invoke(current, (Object)field(current, "savedForm")); }
+                        catch (Exception error) { throw new IllegalStateException(error); }
+                        current.finish();
+                    });
+                }
+            } finally { restore(ai, oldAi);restore(schedule, oldSchedule);restore(appearance, oldAppearance); }
+        }
+    }
+    private void rotateSettings(int request, int orientation) {
+        SettingsActivity previous = current;
+        boolean changesOrientation = previous.getResources().getConfiguration().orientation != orientation;
+        ActivityMonitor monitor = changesOrientation ? addMonitor(SettingsActivity.class.getName(), null, false) : null;
+        try {
+            runOnMainSync(() -> previous.setRequestedOrientation(request));
+            if (changesOrientation) {
+                Activity next = waitForMonitorWithTimeout(monitor, 10000);
+                require(next instanceof SettingsActivity && next != previous, "orientation change recreates settings Activity");
+                current = (SettingsActivity)next;
+            }
+        } finally { if (monitor != null) removeMonitor(monitor); }
+        long deadline = SystemClock.uptimeMillis() + 10000;
+        do {
+            waitForIdleSync();
+            if (current.getResources().getConfiguration().orientation == orientation && current.hasWindowFocus()) break;
+            SystemClock.sleep(100);
+        } while (SystemClock.uptimeMillis() < deadline);
+        require(current.getResources().getConfiguration().orientation == orientation && current.hasWindowFocus(),
+                "requested orientation is visible and settings owns window focus");
+        settle();
+    }
+    private void requireFullyVisible(View view, String label) {
+        Rect visible = new Rect();
+        require(view.getGlobalVisibleRect(visible) && visible.width() == view.getWidth()
+                && visible.height() == view.getHeight(), label);
     }
     private void check() throws Exception {
         FixtureIsolation.require(getTargetContext());
@@ -89,8 +194,19 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             open(); systemBack(); require(current.isFinishing(), "pristine system back exits");
             open();
             String[] original = values();
-            require(original.length == 11 && "false".equals(original[8]) && "3".equals(original[9]) && "3".equals(original[10]),
-                    "enhanced classroom, concurrency and note strength defaults participate in form baseline");
+            require(original.length == 12 && "false".equals(original[8]) && "3".equals(original[9])
+                    && "3".equals(original[10]) && "true".equals(original[11]),
+                    "enhanced classroom, concurrency, note strength and mobile data defaults participate in form baseline");
+            Switch cellular = (Switch)field(current,"classroomCellular");
+            scrollTo(cellular);
+            require("AI总结使用移动数据".contentEquals(cellular.getText()) && cellular.isChecked(),
+                    "native mobile data switch has exact label and defaults on");
+            require(cellular.getHeight() >= Math.round(54 * current.getResources().getDisplayMetrics().density),
+                    "mobile data switch retains 54dp touch height");
+            capture("classroom-cellular-field");tapCenter(cellular);
+            require("false".equals(values()[11]) && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "native mobile data switch tap updates draft without saving");
+            tapCenter(cellular);
             dragNoteStrength(2);
             SeekBar strengthSlider=(SeekBar)field(current,"classroomNoteStrengthSlider");
             int touchSize=Math.round(48*current.getResources().getDisplayMetrics().density);
@@ -128,7 +244,8 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             for (int i = 0; i < original.length; i++) {
                 final int index = i;
                 runOnMainSync(() -> edit(index, index == 4 ? "660" : index == 5 ? "1380"
-                        : index == 3 ? "high" : index == 8 ? "true" : index == 9 || index == 10 ? "2" : original[index] + " changed"));
+                        : index == 3 ? "high" : index == 8 ? "true" : index == 11 ? "false"
+                        : index == 9 || index == 10 ? "2" : original[index] + " changed"));
                 if (i % 2 == 0) titleBack(); else systemBack();
                 if (!prompt()) {
                     capture("failed-field-" + i);
@@ -149,11 +266,14 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                 if (i == 10) require("2".equals(values()[10])
                         && SchedulePreferences.load(getTargetContext()).classroomNoteStrength == 3,
                         "cancel retains unsaved strength draft");
+                if (i == 11) require("false".equals(values()[11])
+                        && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                        "cancel retains unsaved mobile data draft");
                 runOnMainSync(() -> edit(index, original[index]));
             }
             titleBack(); require(current.isFinishing(), "all values reverted exits without prompt");
 
-            open(); runOnMainSync(() -> { edit(6, "未保存日程"); edit(8, "true"); edit(9, "1"); edit(10, "1"); });
+            open(); runOnMainSync(() -> { edit(6, "未保存日程"); edit(8, "true"); edit(9, "1"); edit(10, "1"); edit(11, "false"); });
             titleBack(); capture("exit-dialog");
             systemBack(); require(!current.isFinishing() && !prompt(), "dialog back keeps editing");
             titleBack(); tap(4, getTargetContext().getResources().getDisplayMetrics().heightPixels * .8f);
@@ -161,6 +281,8 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             require(SchedulePreferences.load(getTargetContext()).customPrompt.equals("初始日程"), "cancel does not persist");
             require("true".equals(values()[8]) && !SchedulePreferences.load(getTargetContext()).enhancedClassroom,
                     "dialog back and outside dismissal retain unsaved enhanced classroom draft");
+            require("false".equals(values()[11]) && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "dialog back and outside dismissal retain unsaved mobile data draft");
             titleBack(); click("放弃"); require(current.isFinishing(), "discard exits");
             require(SchedulePreferences.load(getTargetContext()).customPrompt.equals("初始日程"), "discard leaves preferences");
             require(!SchedulePreferences.load(getTargetContext()).enhancedClassroom,
@@ -169,12 +291,14 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                     "discard leaves saved concurrency unchanged");
             require(SchedulePreferences.load(getTargetContext()).classroomNoteStrength == 3,
                     "discard leaves saved note strength unchanged");
+            require(SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "discard leaves saved mobile data enabled");
 
             open(); runOnMainSync(() -> {
                 edit(0, "https://new.synthetic.invalid/v1"); edit(1, "new-synthetic-model");
                 edit(2, "replacement-synthetic-key"); edit(3, "high"); edit(4, "660");
                 edit(5, "1380"); edit(6, "重建日程"); edit(7, "重建课堂");
-                edit(8, "true"); edit(9, "2"); edit(10, "2");
+                edit(8, "true"); edit(9, "2"); edit(10, "2"); edit(11, "false");
             });
             String[] draft = values();
             ActivityMonitor monitor = addMonitor(SettingsActivity.class.getName(), null, false);
@@ -186,9 +310,11 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             require("false".equals(((String[]) field(current, "savedForm"))[8])
                     && "3".equals(((String[]) field(current, "savedForm"))[9])
                     && "3".equals(((String[]) field(current, "savedForm"))[10])
+                    && "true".equals(((String[]) field(current, "savedForm"))[11])
                     && !SchedulePreferences.load(getTargetContext()).enhancedClassroom
                     && SchedulePreferences.load(getTargetContext()).classroomConcurrency == 3
-                    && SchedulePreferences.load(getTargetContext()).classroomNoteStrength == 3,
+                    && SchedulePreferences.load(getTargetContext()).classroomNoteStrength == 3
+                    && SchedulePreferences.load(getTargetContext()).classroomCellular,
                     "recreation retains original preference baseline without saving draft");
             titleBack(); require(prompt(), "original baseline survives recreation"); click("取消");
             runOnMainSync(() -> edit(9, "4")); titleBack(); click("保存");
@@ -200,6 +326,8 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             require(SchedulePreferences.load(getTargetContext()).workStartMinutes == 600, "invalid save leaves preferences");
             require(!SchedulePreferences.load(getTargetContext()).enhancedClassroom,
                     "invalid save does not persist enhanced classroom draft");
+            require(SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "invalid save does not persist mobile data draft");
             runOnMainSync(() -> { edit(5, "1380"); edit(0, "http://invalid.invalid"); });
             titleBack(); click("保存"); require(!current.isFinishing(), "invalid endpoint stays on page");
             require(new AiSettingsStore(getTargetContext()).load().model.equals("synthetic-model"), "invalid endpoint leaves connection");
@@ -211,16 +339,18 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             SchedulePreferences prefs = SchedulePreferences.load(getTargetContext());
             require(prefs.workStartMinutes == 660 && prefs.workEndMinutes == 1380
                     && prefs.customPrompt.equals("重建日程") && prefs.classroomPrompt.equals("重建课堂")
-                    && prefs.enhancedClassroom && prefs.classroomConcurrency == 2 && prefs.classroomNoteStrength == 2,
-                    "all preferences including enhanced classroom, concurrency and note strength saved");
+                    && prefs.enhancedClassroom && prefs.classroomConcurrency == 2 && prefs.classroomNoteStrength == 2
+                    && !prefs.classroomCellular,
+                    "all preferences including enhanced classroom, concurrency, note strength and mobile data saved");
             new AiSettingsStore(getTargetContext()).markImageUnsupported(saved);
             open();
             runOnMainSync(() -> ((View) field(current, "allowImages")).performClick());
             require(!new AiSettingsStore(getTargetContext()).isImageUnsupported(saved), "image reset remains immediate");
             titleBack(); require(current.isFinishing(), "immediate image reset not a dirty form");
             open();
-            require("true".equals(values()[8]) && "2".equals(values()[9]) && "2".equals(values()[10]),
-                    "reopened form reflects saved enhanced classroom, concurrency and note strength");
+            require("true".equals(values()[8]) && "2".equals(values()[9]) && "2".equals(values()[10])
+                    && "false".equals(values()[11]),
+                    "reopened form reflects saved enhanced classroom, concurrency, note strength and mobile data");
             runOnMainSync(() -> edit(8, "false"));
             titleBack(); require(prompt(), "disabling enhanced classroom protects exit");
             click("保存"); require(current.isFinishing(), "saving disabled enhanced classroom exits");
@@ -230,6 +360,10 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             titleBack();require(prompt(),"native strength change protects exit");
             click("保存");require(current.isFinishing() && SchedulePreferences.load(getTargetContext()).classroomNoteStrength == 1,
                     "explicit save persists native strength slider value");
+            open();cellular=(Switch)field(current,"classroomCellular");scrollTo(cellular);tapCenter(cellular);
+            titleBack();require(prompt(),"enabling mobile data protects exit");
+            click("保存");require(current.isFinishing() && SchedulePreferences.load(getTargetContext()).classroomCellular,
+                    "explicit save persists mobile data enabled");
         } finally {
             if (introductionActivity != null && !introductionActivity.isDestroyed()) runOnMainSync(introductionActivity::finish);
             if (current != null && !current.isDestroyed()) runOnMainSync(() -> {
@@ -363,9 +497,9 @@ public final class SettingsExitInstrumentation extends Instrumentation {
     private void edit(int index, String value) {
         try {
             String[] fields = {"baseUrl", "model", "apiKey", "reasoningEffort", "workStartMinutes",
-                    "workEndMinutes", "customPrompt", "classroomPrompt", "enhancedClassroom", "classroomConcurrency", "classroomNoteStrength"};
+                    "workEndMinutes", "customPrompt", "classroomPrompt", "enhancedClassroom", "classroomConcurrency", "classroomNoteStrength", "classroomCellular"};
             if (index == 3) method("setEffort", String.class).invoke(current, value);
-            else if (index == 8) ((Switch) field(current, fields[index])).setChecked(Boolean.parseBoolean(value));
+            else if (index == 8 || index == 11) ((Switch) field(current, fields[index])).setChecked(Boolean.parseBoolean(value));
             else if (index == 10) ((SeekBar) field(current, "classroomNoteStrengthSlider")).setProgress(Integer.parseInt(value));
             else if (index == 4 || index == 5 || index == 9) {
                 Field target = SettingsActivity.class.getDeclaredField(fields[index]); target.setAccessible(true);

@@ -16,7 +16,7 @@ final class ClassroomAutoSummary {
     private static final ClassroomSummarySlots SUMMARY_SLOTS=new ClassroomSummarySlots();
     interface Generator { JSONObject generate(ClassroomLessonActivity.Session job,AiSettings ai,String prompt)throws Exception; }
     interface Settings { AiSettings load(Context app)throws Exception; }
-    static Generator generator=(job,ai,prompt)->ClassroomSummary.generate(job.dir,job.selected,ai,job.imageLimit,job.control,job::checkpoint,prompt,Boolean.TRUE.equals(job.enhancedClassroom),job.noteStrength);
+    static Generator generator=(job,ai,prompt)->ClassroomSummary.generate(job.dir,job.selected,ai,job.imageLimit,job.control,job::checkpoint,prompt,Boolean.TRUE.equals(job.enhancedClassroom),job.noteStrength,new CellularClassroomRoute(job.app));
     static Settings settings=app->new AiSettingsStore(app).load();
     static java.util.function.BooleanSupplier foreground=ClassroomMonitorService::running;
     static boolean hasForegroundOwner(){return foreground.getAsBoolean();}

@@ -25,6 +25,7 @@ public final class AiRequestCheck {
         checkTimeContext();
         checkRecurringContext();
         checkMultiImageRequest();
+        checkConnectionLeases();
         checkLeaveFixtures();
         check(data.getInt("current_year") == 1970, "request sends explicit local default year");
         for (String rule : new String[]{"月日明确而未写年份", "消息上下文中的明确年份", "日期已过也不移到下一年",
@@ -507,6 +508,93 @@ public final class AiRequestCheck {
                     "HTTP 200 SSE error keeps safe provider classification");
         }
         check(requests.size() == before + 1, "HTTP 200 SSE provider error makes no downgrade or automatic retry");
+    }
+
+    /** Route injection exercises the real HTTP client, not a reimplementation of executeEnvelope. */
+    private static void checkConnectionLeases() throws Exception {
+        AiSettings settings = new AiSettings("https://offline.invalid/v1", "offline", "test-only");
+        JSONObject request = new JSONObject().put("model", "offline").put("stream", false)
+                .put("messages", new org.json.JSONArray().put(new JSONObject().put("role", "user").put("content", "exact frozen body")));
+        String frozen = request.toString();
+        for (String mode : new String[]{"success", "http", "write", "runtime", "malformed", "cancel", "register-cancel", "stream"}) {
+            try (com.donglan.chrona.net.RequestControl control = new com.donglan.chrona.net.RequestControl(5000)) {
+                int[] opened = {0}, released = {0}, disconnects = {0};
+                boolean[] held = {false}, streamClosed = {false};
+                java.io.ByteArrayOutputStream written = new java.io.ByteArrayOutputStream();
+                ChatCompletionClient.ConnectionRoute route = (url, suppliedControl) -> {
+                    check(suppliedControl == control && url.toString().equals("https://offline.invalid/v1/chat/completions"),
+                            "route receives unchanged endpoint and cancellation scope: " + mode);
+                    opened[0]++; held[0] = true;
+                    java.net.HttpURLConnection connection = new java.net.HttpURLConnection(url) {
+                        public void connect() { }
+                        public void disconnect() { disconnects[0]++; }
+                        public boolean usingProxy() { return false; }
+                        public java.io.OutputStream getOutputStream() throws java.io.IOException {
+                            check(held[0] && released[0] == 0, "lease spans request body: " + mode);
+                            check(getRequestMethod().equals("POST") && !getInstanceFollowRedirects(), "route preserves POST/redirect policy: " + mode);
+                            check(getConnectTimeout() > 0 && getReadTimeout() > 0 && getReadTimeout() <= 5000,
+                                    "route preserves shared request deadline: " + mode);
+                            if (mode.equals("write")) throw new java.io.IOException("write fixture");
+                            if (mode.equals("runtime")) throw new IllegalStateException("runtime fixture");
+                            return written;
+                        }
+                        public int getResponseCode() { check(held[0], "lease spans response status: " + mode); return mode.equals("http") ? 422 : 200; }
+                        public String getContentType() { return mode.equals("stream") ? "text/event-stream" : "application/json"; }
+                        private java.io.InputStream response() {
+                            check(held[0], "lease spans response acquisition: " + mode);
+                            if (mode.equals("cancel")) control.cancel();
+                            String value = mode.equals("http") ? "{\"error\":{\"message\":\"unsupported parameter reasoning_effort\"}}"
+                                    : mode.equals("malformed") ? "invalid json" : mode.equals("stream")
+                                    ? "data: {\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+                                    : "{\"choices\":[{\"message\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}";
+                            return new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8)) {
+                                public synchronized int read(byte[] b, int offset, int length) {
+                                    check(held[0] && released[0] == 0, "lease spans complete response read: " + mode);
+                                    return super.read(b, offset, length);
+                                }
+                                public void close() { check(held[0], "stream closes before lease release: " + mode); streamClosed[0] = true; }
+                            };
+                        }
+                        public java.io.InputStream getInputStream() { return response(); }
+                        public java.io.InputStream getErrorStream() { return response(); }
+                    };
+                    if (mode.equals("register-cancel")) control.cancel();
+                    return new ChatCompletionClient.OpenedConnection(connection, () -> {
+                        check(held[0] && disconnects[0] > 0, "disconnect precedes release: " + mode);
+                        held[0] = false; released[0]++;
+                    });
+                };
+                ChatCompletionClient client = new ChatCompletionClient(settings, control, SchedulePrompt.SYSTEM, route);
+                JSONObject input = new JSONObject(frozen).put("stream", mode.equals("stream"));
+                String expectedBody = input.toString();
+                try {
+                    JSONObject response = client.completeConversation(input);
+                    check(mode.equals("success") || mode.equals("stream"), "only successful fixture may return: " + mode);
+                    check(response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").equals("done"),
+                            "normal/stream result preserved: " + mode);
+                } catch (ChatCompletionClient.RequestException expected) {
+                    check(mode.equals("http") && expected.statusCode == 422, "HTTP error retained without downgrade");
+                } catch (java.io.InterruptedIOException expected) {
+                    check(mode.equals("cancel") || mode.equals("register-cancel"), "cancellation remains cancellation");
+                } catch (IllegalStateException expected) {
+                    check(mode.equals("runtime"), "runtime fixture surfaces");
+                } catch (java.io.IOException expected) {
+                    check(mode.equals("write") || mode.equals("malformed"), "write/parse failure surfaces: " + mode);
+                }
+                check(opened[0] == 1 && released[0] == 1 && !held[0], "success/error/cancel/exception release exactly once with no resend: " + mode);
+                if (!mode.equals("register-cancel") && !mode.equals("write") && !mode.equals("runtime")) {
+                    check(written.toString(StandardCharsets.UTF_8).equals(expectedBody) && input.toString().equals(expectedBody),
+                            "connection route preserves exact request body and frozen caller options: " + mode);
+                    check(streamClosed[0], "response/error stream closed: " + mode);
+                }
+            }
+        }
+        // The pre-existing constructor still uses URL.openConnection, already installed by the offline fixture.
+        ChatCompletionClient ordinary = new ChatCompletionClient(settings, null, SchedulePrompt.SYSTEM, 600, 1320);
+        check(ordinary != null && new ChatCompletionClient(settings, null, SchedulePrompt.SYSTEM, 600, 1320,
+                (url, control) -> { throw new AssertionError("unused route"); }) != null,
+                "legacy five-argument and explicit six-argument entry points remain usable");
+        check(request.toString().equals(frozen), "original classroom request remains unchanged");
     }
 
     private static String envelope(String content) throws Exception {
