@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.89 — 更正文稿独立阅读页 — 2026-11-01
+
+- 根据最新决定撤去88的正文末尾展开区，在课程名称同行最右放置共用紧凑文字按钮。新ClassroomCorrectedActivity复用SettingsPageLayout和原Markdown/MathJax，原文、来源编号、公式、代码、图片/导出内容不改；只读已发布快照，新轮处理中仍能阅读，原existingSummary忙时检查不变。
+- debug/androidTest、release+lintRelease通过；原签名APK在build/candidates/0.15.89/Chrona-0.15.89.apk，251/0.15.89。合成原生竖浅62、横深font1.3 62通过，覆盖真实标题按钮、新页单reader、完整正文、标题可滚离、真实旋转、原生返回父页；图片返回非零偏移1231→1231、1487→1487且实例不变。原单/批ZIP与失败恢复保留。
+- 长文font1.3 19项通过：4651公式在打开新页后才加载，首屏50个公式即可呈现，屏外继续处理，无公式错误/横向溢出。仅文稿checkpoint的稳定竖浅、横深及减少动画各15项通过，含两次实际硬件frame commit、完整返回箭头/公共表面/正文，以及真实停用fixture账号后关闭并dispose文稿、恢复原设置。
+- 首次内容入场、恢复不重播、系统减少动画与实际返回20项通过。首轮减少动画夹具只等documentReady而未等onPresented消费标记，随后旧夹具异步还原系统倍率又导致下一轮在scale0中误测正常动画；原失败motion-first/second均保留，仅修夹具等实际绘制与系统值恢复，不改生产。最终系统倍率为1，另在0下以双frame commit补拍稳定成品后恢复1。
+- 初次部分JPEG为空帧或未绘出返回图标，不计稳定视觉通过；独立补取的stable-portrait、stable-landscape、stable-reduced完整关闭缺口，未据空帧修改布局或时长。独立UI最终复审无未解决P1/P2及关键证据缺口。证据build/corrected-secondary-ui/；未运行真实AI或学校请求，不作为19节数学重总结已完成的证据。15:56:05正常覆盖升级V2527A，包管理器确认251/0.15.89并正常启动，不发Release。
+
 ## 0.15.87–0.15.88 — JSON新指令与更正文稿原生展开 — 2026-11-01
 
 - 87/249已正常覆盖升级，真实新轮首请求403；用户授权的一次237字节无课堂资料健康请求也在1036ms返回403，类别未明确。证据 `build/classroom-regeneration-validation/phone-ai-health.txt`。没有更换凭据或网络绕过，没有继续重复数学批队列；微积分16、线代3的19项最终重总结仍未验收。

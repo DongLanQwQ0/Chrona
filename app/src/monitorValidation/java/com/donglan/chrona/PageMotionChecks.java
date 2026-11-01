@@ -103,7 +103,7 @@ final class PageMotionChecks {
     private void classroomDocument()throws Exception{
         motionLesson=new com.donglan.chrona.classroom.ClassroomLesson("882777",Long.toUnsignedString(System.nanoTime()),"课堂入场验收","公式和正文","验收教室","6",System.currentTimeMillis()-600000);
         File dir=new com.donglan.chrona.classroom.ClassroomStore(app,"page-motion").localLesson(motionLesson);
-        com.donglan.chrona.classroom.ClassroomStore.write(new File(dir,"summary.json"),new JSONObject().put("lesson",motionLesson.json()).put("complete",true).put("overview","## 课堂动效验收\n\n真实本地正文就绪后显示，公式 $x^2+y^2=z^2$。\n\n".repeat(4)).put("parts",new JSONArray()).put("updated",System.currentTimeMillis()));
+        com.donglan.chrona.classroom.ClassroomStore.write(new File(dir,"summary.json"),new JSONObject().put("lesson",motionLesson.json()).put("complete",true).put("overview","## 课堂动效验收\n\n真实本地正文就绪后显示，公式 $x^2+y^2=z^2$。\n\n".repeat(4)).put("parts",new JSONArray()).put("corrected_transcript","## 更正后的授课内容\n\n[id:99] 原始文稿与公式 $x^2+y^2=z^2$。\n\n".repeat(40)).put("updated",System.currentTimeMillis()));
         open(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,motionLesson.json().toString()).putExtra("hold_markdown_ready",true));
         await(()->{currentScreen();Object view=get(screen,"documentView");return view!=null&&"true".equals(js((ClassroomMarkdownView)view,"Boolean(window.chronaReleaseReady&&document.querySelector('main').children.length)"));});
         ClassroomMarkdownView held=(ClassroomMarkdownView)get(screen,"documentView");SystemClock.sleep(700);
@@ -127,7 +127,44 @@ final class PageMotionChecks {
             check(reduced.getVisibility()==View.VISIBLE&&reduced.getAlpha()==1f&&reduced.getTranslationY()==0f,"reduced animation presents ready content at its final state");test.waitForIdleSync();SystemClock.sleep(150);capture("classroom-document-reduced-initial");
             report.put(new JSONObject().put("phase","reduced-native-ready").put("width",reduced.getWidth()).put("height",reduced.getHeight()).put("shown",reduced.isShown()).put("windowFocus",reduced.hasWindowFocus()).put("dom",js(reduced,"JSON.stringify({ready:window.classroomReady,text:document.querySelector('main').innerText.length,height:document.querySelector('main').getBoundingClientRect().height})")));
             SystemClock.sleep(500);capture("classroom-document-reduced");test.runOnMainSync(screen::finish);SystemClock.sleep(350);
-        }finally{test.getUiAutomation().executeShellCommand("settings put global animator_duration_scale "+(scale==null?"1":scale)).close();}
+        }finally{
+            float expected=scale==null?1f:Float.parseFloat(scale);
+            test.getUiAutomation().executeShellCommand("settings put global animator_duration_scale "+(scale==null?"1":scale)).close();
+            await(()->android.provider.Settings.Global.getFloat(app.getContentResolver(),"animator_duration_scale",Float.NaN)==expected&&UiMotion.isEnabled()==(expected!=0f));
+        }
+        correctedDocument();
+    }
+    private void correctedDocument()throws Exception{
+        String scale=android.provider.Settings.Global.getString(app.getContentResolver(),"animator_duration_scale");
+        try{
+            for(boolean reduced:new boolean[]{false,true}){
+                if(reduced){test.getUiAutomation().executeShellCommand("settings put global animator_duration_scale 0").close();await(()->!UiMotion.isEnabled());}
+                open(new Intent(app,ClassroomCorrectedActivity.class).putExtra(ClassroomLessonActivity.EXTRA_ACCOUNT,"page-motion")
+                        .putExtra(ClassroomLessonActivity.EXTRA_LESSON,motionLesson.json().toString()).putExtra("hold_markdown_ready",true));
+                await(()->get(screen,"document")!=null);ClassroomMarkdownView held=(ClassroomMarkdownView)get(screen,"document");
+                await(()->"true".equals(js(held,"Boolean(window.chronaReleaseReady&&document.querySelector('main').children.length)")));SystemClock.sleep(650);
+                check(!(Boolean)get(screen,"documentReady")&&held.getVisibility()==View.INVISIBLE,"corrected secondary page waits for its real local first screen "+reduced);capture("corrected-page-held-"+reduced);
+                js(held,"window.chronaReleaseReady()");
+                if(!reduced)await(()->(Boolean)get(screen,"documentReady")&&hasEntrance((View)get(screen,"document")));
+                else await(()->(Boolean)get(screen,"documentReady")&&!(Boolean)get(screen,"firstPresentation"));
+                check(!(Boolean)get(screen,"firstPresentation"),"corrected first-ready bridge consumes its initial presentation once "+reduced);capture("corrected-page-ready-"+reduced);
+                await(()->held.getAlpha()==1f&&held.getTranslationY()==0f&&held.getVisibility()==View.VISIBLE);
+                check("true".equals(js(held,"!document.querySelector('details,summary')&&document.querySelector('main').innerText.includes('[id:99]')")),"corrected page is the original standalone document without a system disclosure "+reduced);
+                if(!reduced){
+                    Activity previous=screen;test.runOnMainSync(previous::recreate);await(()->test.lastResumed instanceof ClassroomCorrectedActivity&&test.lastResumed!=previous);screen=test.lastResumed;
+                    await(()->get(screen,"document")!=null);ClassroomMarkdownView restored=(ClassroomMarkdownView)get(screen,"document");
+                    await(()->"true".equals(js(restored,"Boolean(window.chronaReleaseReady)")));
+                    check(!(Boolean)get(screen,"firstPresentation")&&restored.getVisibility()==View.INVISIBLE,"restored corrected page retains its consumed entrance while waiting for valid content");
+                    js(restored,"window.chronaReleaseReady()");await(()->(Boolean)get(screen,"documentReady"));SystemClock.sleep(300);
+                    check(!hasEntrance(restored)&&test.entranceFrames.getOrDefault(screen,0)==0,"restored corrected content does not replay its initial entrance");capture("corrected-page-restored");
+                }else check(held.getAlpha()==1f&&held.getTranslationY()==0f&&test.entranceFrames.getOrDefault(screen,0)==0,"reduced animation presents the separate corrected page directly at its ready final state");
+                Activity child=screen;tap("返回");await(()->test.lastResumed==anchor&&child.isFinishing());check(true,"actual corrected-page header back returns to the existing parent window "+reduced);screen=anchor;SystemClock.sleep(300);
+            }
+        }finally{
+            float expected=scale==null?1f:Float.parseFloat(scale);
+            test.getUiAutomation().executeShellCommand("settings put global animator_duration_scale "+(scale==null?"1":scale)).close();
+            await(()->android.provider.Settings.Global.getFloat(app.getContentResolver(),"animator_duration_scale",Float.NaN)==expected&&UiMotion.isEnabled()==(expected!=0f));
+        }
     }
     private String js(ClassroomMarkdownView document,String script)throws Exception{
         java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);String[] value={null};

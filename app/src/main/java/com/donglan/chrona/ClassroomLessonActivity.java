@@ -35,10 +35,7 @@ public final class ClassroomLessonActivity extends Activity {
     private String shownParts="";
     private ZjuSettingsStore settings;
     private ClassroomMarkdownView documentView;
-    private ClassroomMarkdownView correctionView;
     private Button correctionToggle;
-    private FrameLayout correctionHolder;
-    private boolean correctionExpanded,correctionReady;
     private final android.content.SharedPreferences.OnSharedPreferenceChangeListener preference=(p,k)->gate();
     static final class Session {
         final Context app;final String account;final ExecutorService worker=Executors.newSingleThreadExecutor();
@@ -86,7 +83,7 @@ public final class ClassroomLessonActivity extends Activity {
         void checkpoint(ClassroomProgress value){if(!allowed()){cancel();return;}progress=value;message=value.text();if(notifyWork&&notifications!=null)notifications.progress(value,false);try{if(dir!=null){JSONObject next=ClassroomStore.read(new File(dir,"summary.json"));if(next==null||next.optLong("updated")!=ignoredSummaryUpdated)summary=next;materials=ClassroomStore.read(new File(dir,"materials.json"));}}catch(Exception ignored){}publish();}
     }
     @Override protected void onCreate(Bundle state) {
-        ThemeStore.apply(this); super.onCreate(state); firstDocumentPresentation=state==null||state.getBoolean("first_document_presentation",false);correctionExpanded=state!=null&&state.getBoolean("correction_expanded");settings=new ZjuSettingsStore(this);
+        ThemeStore.apply(this); super.onCreate(state); firstDocumentPresentation=state==null||state.getBoolean("first_document_presentation",false);settings=new ZjuSettingsStore(this);
         String notificationAccount=getIntent().getStringExtra(EXTRA_ACCOUNT);
         if(notificationAccount!=null&&!notificationAccount.equals(settings.account())){ClassroomNotifications.clearInactive(this);finish();return;}
         Object retained=getLastNonConfigurationInstance();
@@ -135,7 +132,7 @@ public final class ClassroomLessonActivity extends Activity {
     @Override public Object onRetainNonConfigurationInstance(){if(s!=null&&s.owner.get()==this)s.owner.clear();return s;}
     @Override protected void onResume(){super.onResume();visible=true;if(s!=null){s.owner=new WeakReference<>(this);s.detached=false;}progressHandler.post(progressTick);if(settings!=null){settings.prefs.registerOnSharedPreferenceChangeListener(preference);if(gate())update();}}
     @Override protected void onPause(){visible=false;progressHandler.removeCallbacks(progressTick);super.onPause();if(settings!=null)settings.prefs.unregisterOnSharedPreferenceChangeListener(preference);}
-    @Override protected void onDestroy(){if(documentView!=null)documentView.dispose();if(correctionView!=null)correctionView.dispose();if(s!=null&&s.owner.get()==this){s.owner.clear();if(!isChangingConfigurations()){s.detached=true;s.disposeIfDetached();}}super.onDestroy();}
+    @Override protected void onDestroy(){if(documentView!=null)documentView.dispose();if(s!=null&&s.owner.get()==this){s.owner.clear();if(!isChangingConfigurations()){s.detached=true;s.disposeIfDetached();}}super.onDestroy();}
     private boolean gate(){if(s==null||s.allowed())return true;s.cancel();if(s.notifications!=null)s.notifications.clear();if(content!=null)content.removeAllViews();Feedback.show(this,"请启用折姜星辰并保存账号");finish();return false;}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==ClassroomNotifications.PERMISSION_REQUEST&&s!=null&&s.allowed()&&s.notifications!=null)s.notifications.repost();}
     private void loadLocal() {
@@ -193,9 +190,12 @@ public final class ClassroomLessonActivity extends Activity {
     private static String clock(ClassroomLesson l){return Instant.ofEpochMilli(l.startsAt).atZone(ClassroomLesson.ZONE).toLocalTime().toString();}
 
     private void showDetail(){content.removeAllViews();rendered=0;
-        LinearLayout heading=new LinearLayout(this);heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        LinearLayout heading=new LinearLayout(this);heading.setGravity(android.view.Gravity.CENTER_VERTICAL);heading.setClipChildren(false);heading.setClipToPadding(false);
         TextView courseTitle=new TextView(this);courseTitle.setText(s.selected.course);courseTitle.setTextSize(21);UiStyle.title(courseTitle);
         heading.addView(courseTitle,new LinearLayout.LayoutParams(0,-2,1));
+        correctionToggle=UiStyle.compactAction(this,"更正文稿",0,()->{if(gate())ClassroomCorrectedActivity.open(this,s.account,s.selected);});
+        correctionToggle.setContentDescription("查看更正文稿");correctionToggle.setVisibility(View.GONE);
+        LinearLayout.LayoutParams correctionParams=new LinearLayout.LayoutParams(-2,-2);correctionParams.leftMargin=dp(8);heading.addView(correctionToggle,correctionParams);
         content.addView(heading);text(content,s.selected.date()+" "+clock(s.selected)+" · "+s.selected.title,14,false);
         completion=text(content,"",15,false);LinearLayout actions=new LinearLayout(this);prepare=action(actions,"总结",this::prepare);generate=action(actions,"生成总结",()->{if(s.retryRequired||s.summary!=null)confirmGeneration();else prepare();});audit=action(actions,"处理记录",()->ClassroomAuditActivity.open(this,s.account,s.selected));affairs=action(actions,"课程事务",()->ClassroomAffairsActivity.open(this,s.account,s.selected.courseId));content.addView(actions);
         cancel=button(content,"停止",()->s.cancel(),false);
@@ -209,12 +209,11 @@ public final class ClassroomLessonActivity extends Activity {
         if(s.prepared!=null)completion.setText("字幕就绪 · "+s.prepared.optInt("segments")+" 条\n截图 "+s.prepared.optInt("raw")+" → "+s.prepared.optInt("candidates")+" 张");else completion.setText(s.selected.state(System.currentTimeMillis()));
         overview.setVisibility(View.GONE);
         JSONObject summary=s.summary;
+        correctionToggle.setVisibility(summary!=null&&!summary.optString("corrected_transcript").isBlank()?View.VISIBLE:View.GONE);
         String next=summary==null?"":summary.toString();
         if(next.equals(shownParts)&&shownRevision==s.revision)return;
         shownParts=next;shownRevision=s.revision;
         if(documentView!=null){notes.removeView(documentView);documentView.dispose();documentView=null;}
-        if(correctionView!=null){correctionView.dispose();correctionView=null;}
-        correctionToggle=null;correctionHolder=null;correctionReady=false;
         notes.removeAllViews();
         if(summary==null)return;
         try{
@@ -232,55 +231,7 @@ public final class ClassroomLessonActivity extends Activity {
                     firstDocumentPresentation=false;presented.setVisibility(View.VISIBLE);UiMotion.enterPage(presented);
                 }
             });
-            if(!summary.optString("corrected_transcript").isBlank())addCorrection(summary,actions);
-            else correctionExpanded=false;
         }catch(Exception error){text(notes,"课堂正文无法显示："+error.getMessage(),16,false);}
-    }
-    private void addCorrection(JSONObject summary,ClassroomMarkdownView.Actions actions){
-        correctionToggle=UiStyle.compactAction(this,"更正文稿",R.drawable.ic_expand_more,()->{
-            correctionExpanded=!correctionExpanded;presentCorrectionToggle();showCorrection(summary,actions,true);
-        });
-        correctionToggle.setAccessibilityDelegate(new View.AccessibilityDelegate(){
-            @Override public void onInitializeAccessibilityNodeInfo(View host,android.view.accessibility.AccessibilityNodeInfo info){
-                super.onInitializeAccessibilityNodeInfo(host,info);info.setCheckable(true);info.setChecked(correctionExpanded);
-            }
-        });
-        LinearLayout controls=new LinearLayout(this);controls.setClipChildren(false);controls.setClipToPadding(false);
-        controls.addView(correctionToggle,new LinearLayout.LayoutParams(-2,-2));
-        UiStyle.addSpaced(notes,controls,4,4);
-        correctionHolder=new FrameLayout(this);notes.addView(correctionHolder,new LinearLayout.LayoutParams(-1,-2));
-        UiMotion.section(correctionHolder,false,false);
-        presentCorrectionToggle();
-        if(correctionExpanded)showCorrection(summary,actions,false);
-    }
-    private void presentCorrectionToggle(){
-        UiStyle.compactActionPresentation(correctionToggle,"更正文稿",correctionExpanded?R.drawable.ic_expand_less:R.drawable.ic_expand_more);
-        correctionToggle.setContentDescription((correctionExpanded?"收起":"展开")+"更正文稿");
-        if(Build.VERSION.SDK_INT>=30)correctionToggle.setStateDescription(correctionExpanded?"已展开":"已收起");
-    }
-    private void showCorrection(JSONObject summary,ClassroomMarkdownView.Actions actions,boolean animate){
-        if(!correctionExpanded){UiMotion.section(correctionHolder,false,animate);return;}
-        if(correctionReady){UiMotion.section(correctionHolder,true,animate);return;}
-        // A one-pixel native viewport lets WebView finish its first real frame
-        // without reserving the full hidden transcript's height in the page.
-        UiMotion.section(correctionHolder,false,false);
-        correctionHolder.getLayoutParams().height=1;correctionHolder.setAlpha(0f);
-        correctionHolder.setVisibility(View.VISIBLE);correctionHolder.requestLayout();
-        if(correctionView!=null)return;
-        try{
-            correctionView=ClassroomMarkdownView.correctedTranscript(this,s.dir,summary,actions);
-            correctionHolder.addView(correctionView);
-            ClassroomMarkdownView presented=correctionView;
-            presented.onReady(()->{
-                if(correctionView!=presented||isFinishing()||isDestroyed())return;
-                correctionReady=true;
-                UiMotion.section(correctionHolder,correctionExpanded,animate);
-            });
-        }catch(Exception error){
-            if(correctionView!=null){correctionView.dispose();correctionView=null;}
-            correctionExpanded=false;UiMotion.section(correctionHolder,false,false);presentCorrectionToggle();
-            Feedback.show(this,"更正文稿无法显示");
-        }
     }
     private void extractAssignment(int index){
         if(!gate()||s.summary==null||index<0)return;
@@ -329,7 +280,7 @@ public final class ClassroomLessonActivity extends Activity {
         });
     }
     private void export(){s.pendingExport=s.selected;Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip").putExtra(Intent.EXTRA_TITLE,ClassroomExport.fileName(s.selected));try{startActivityForResult(intent,EXPORT);}catch(Exception e){Feedback.show(this,"无法打开文件保存器");}}
-    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_document_presentation",firstDocumentPresentation);state.putBoolean("correction_expanded",correctionExpanded);super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("share_uri",s.shareUri.toString());}catch(Exception ignored){}}
+    @Override protected void onSaveInstanceState(Bundle state){state.putBoolean("first_document_presentation",firstDocumentPresentation);super.onSaveInstanceState(state);try{if(s.pendingExport!=null)state.putString("export_lesson",s.pendingExport.json().toString());if(s.exportUri!=null)state.putString("export_uri",s.exportUri.toString());if(s.shareUri!=null)state.putString("share_uri",s.shareUri.toString());}catch(Exception ignored){}}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=EXPORT||result!=RESULT_OK||data==null||data.getData()==null||!gate())return;s.exportUri=data.getData();
         boolean read=(data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION)!=0,write=(data.getFlags()&Intent.FLAG_GRANT_WRITE_URI_PERMISSION)!=0;
         try{if(read&&write)getContentResolver().takePersistableUriPermission(s.exportUri,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);

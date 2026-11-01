@@ -35,9 +35,9 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         entryCreates.add(screen.getClass().getSimpleName()+": restored="+(state!=null));
         if(!"page_motion".equals(args.getString("mode"))&&!"page_motion_visibility".equals(args.getString("mode")))screen.setRequestedOrientation("landscape".equals(args.getString("orientation"))?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         super.callActivityOnCreate(screen,state);
-        if(screen instanceof ClassroomLessonActivity&&screen.getIntent().getBooleanExtra("hold_markdown_ready",false)){
+        if((screen instanceof ClassroomLessonActivity||screen instanceof ClassroomCorrectedActivity)&&screen.getIntent().getBooleanExtra("hold_markdown_ready",false)){
             try{
-                Field field=ClassroomLessonActivity.class.getDeclaredField("notes");field.setAccessible(true);
+                Field field=screen.getClass().getDeclaredField(screen instanceof ClassroomLessonActivity?"notes":"body");field.setAccessible(true);
                 ViewGroup notes=(ViewGroup)field.get(screen);
                 notes.setOnHierarchyChangeListener(new ViewGroup.OnHierarchyChangeListener(){
                     @Override public void onChildViewAdded(View parent,View child){if(child instanceof ClassroomMarkdownView document)holdMarkdown(document);}

@@ -37,6 +37,7 @@
         android:enableOnBackInvokedCallback="true">
         <activity android:name=".LanPairingActivity" android:exported="false" android:launchMode="singleTop" />
         <activity android:name=".ClassroomLessonActivity" android:exported="false" />
+        <activity android:name=".ClassroomCorrectedActivity" android:exported="false" />
         <activity android:name=".ClassroomTranscriptActivity" android:exported="false" />
         <service android:name=".ClassroomWorkService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".ClassroomMonitorService" android:exported="false" android:foregroundServiceType="dataSync" />

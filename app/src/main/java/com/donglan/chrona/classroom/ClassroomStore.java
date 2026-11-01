@@ -44,11 +44,18 @@ public final class ClassroomStore {
     }
     /** Existing summary only; read-only readers must not create a lesson directory. Call under LOCK. */
     public File existingSummary(ClassroomLesson lesson)throws IOException {
+        return summaryDirectory(lesson,true);
+    }
+    /** Read an atomic published snapshot even while a later generation is running. Call under LOCK. */
+    public File publishedSummary(ClassroomLesson lesson)throws IOException {
+        return summaryDirectory(lesson,false);
+    }
+    private File summaryDirectory(ClassroomLesson lesson,boolean requireIdle)throws IOException {
         if(!lesson.courseId.matches("[0-9]+")||!lesson.id.matches("[0-9]+"))throw new IOException("课堂编号无效");
         File local=new File(root,lesson.courseId+"-"+lesson.id),imported=new File(shared,local.getName());
         for(File dir:new File[]{local,imported}){
             if(Files.isSymbolicLink(dir.toPath())||!dir.getCanonicalFile().getParentFile().equals(dir.equals(local)?root.getCanonicalFile():shared.getCanonicalFile()))throw new IOException("课堂目录无效");
-            if(active(dir))throw new IOException("课堂正在处理，请稍后刷新");
+            if(requireIdle&&active(dir))throw new IOException("课堂正在处理，请稍后刷新");
         }
         return new File(local,"summary.json").isFile()?local:new File(imported,"summary.json").isFile()?imported:null;
     }
