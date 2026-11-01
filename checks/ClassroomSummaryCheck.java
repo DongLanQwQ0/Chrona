@@ -42,13 +42,17 @@ public final class ClassroomSummaryCheck {
         ByteArrayOutputStream out=new ByteArrayOutputStream();ImageIO.write(image,"png",out);return out.toByteArray();
     }
     private static void reset(){calls=0;failCall=-1;mode="normal";requests.clear();requestBytes.clear();chunkCalls.clear();}
+    private static String referencedPrompt(JSONArray history,String prompt)throws Exception {
+        var reference=java.util.regex.Pattern.compile("完整要求见历史第(\\d+)条消息").matcher(prompt);
+        return reference.find()?history.getJSONObject(Integer.parseInt(reference.group(1))-1).getJSONArray("content").getJSONObject(0).getString("text"):prompt;
+    }
     private static HttpServer server()throws Exception {
         HttpServer server=HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(),0),0);
         server.setExecutor(Executors.newCachedThreadPool(r->{Thread t=new Thread(r);t.setDaemon(true);return t;}));
         server.createContext("/",exchange->{try {
             byte[] wire=exchange.getRequestBody().readAllBytes();requestBytes.add(wire.length);
             JSONObject body=new JSONObject(new String(wire,StandardCharsets.UTF_8));
-            calls++;requests.add(body);JSONArray history=body.getJSONArray("messages");String prompt=history.getJSONObject(history.length()-1).getJSONArray("content").getJSONObject(0).getString("text");
+            calls++;requests.add(body);JSONArray history=body.getJSONArray("messages");String prompt=referencedPrompt(history,history.getJSONObject(history.length()-1).getJSONArray("content").getJSONObject(0).getString("text"));
             boolean second=prompt.contains("本次images清单：\n")||prompt.contains("上一条最终总结未通过校验");
             JSONObject chunk=null;
             if(second) {
@@ -402,6 +406,56 @@ public final class ClassroomSummaryCheck {
         check(!ClassroomJsonFailure.detail(new JSONException("RAW_PRIVATE_PAYLOAD")).contains("RAW_PRIVATE_PAYLOAD"),"direct JSONException never exposes response or conversion values");
         for(String error:List.of("AI 服务 HTTP 503，请手动继续","JSON 配置字段尚未保存","图片引用不存在：image-999.jpg"))check(error.equals(ClassroomJsonFailure.stored(error)),"normal actionable errors survive stored projection: "+error);
     }
+    private static final String SOURCE_SENTINEL="LARGE_SOURCE_SENTINEL_KEEP_EXACT";
+    private static File largeMaterial(String name)throws Exception {
+        File dir=materialDir(name+System.nanoTime());JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));
+        JSONObject first=materials.getJSONArray("segments").getJSONObject(0);first.put("text",SOURCE_SENTINEL+first.getString("text"));
+        ClassroomStore.write(new File(dir,"materials.json"),materials);return dir;
+    }
+    private static void shortHistory(File dir)throws Exception {
+        JSONObject history=run(dir).getJSONObject("conversation");JSONArray messages=history.getJSONArray("messages");
+        for(int n=0;n<requests.size();n++){
+            JSONArray sent=requests.get(n).getJSONArray("messages");String all=sent.toString();
+            check(all.split(java.util.regex.Pattern.quote(SOURCE_SENTINEL),-1).length-1==1,"large source appears only in its original user message for request "+n);
+            check(lastPrompt(n).contains("首、末非空白字符必须分别为{和}")&&lastPrompt(n).contains("换行用\\n编码"),"every new JSON user request carries the wire format contract "+n);
+            for(int i=0;i<sent.length();i++)check(sent.getJSONObject(i).toString().equals(messages.getJSONObject(i).toString()),"final state retains every sent message unchanged "+n+":"+i);
+        }
+        check(requests.get(0).getJSONArray("messages").getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text").startsWith("当前JSON阶段：first。"),"first physical JSON request exposes the exact stage anchor");
+    }
+    private static void shortJsonRequests()throws Exception {
+        reset();mode="json-first-malformed";File repaired=largeMaterial("short-repair");check(ordinary(repaired,0).getBoolean("complete"),"short repair reuses original full schema and source");shortHistory(repaired);
+        check(lastPrompt(1).contains("完整要求见历史第2条消息")&&!lastPrompt(1).contains("资料：\n"),"repair points to exact original user message rather than reposting source");
+        JSONObject state=run(repaired);String safe="";try{ClassroomSummary.parseObject(state.getJSONObject("conversation").getJSONObject("outputs").getString("first"));}catch(JSONException invalid){safe=ClassroomJsonFailure.detail(invalid);}
+        String oldPrompt="上一条回复的JSON结构或字段不完整："+safe+"。本阶段结果尚未提交。保留可核实事实、来源和图片编号，重新返回完整JSON对象，不输出补丁或剩余片段，不编造未见图片或新事实。这是该块唯一一次格式修复。\n本块要求："+state.getString("first_prompt");
+        int currentBytes=requestBytes.get(1);JSONObject repeated=new JSONObject(requests.get(1).toString());JSONArray repeatedMessages=repeated.getJSONArray("messages");repeatedMessages.getJSONObject(repeatedMessages.length()-1).getJSONArray("content").getJSONObject(0).put("text",oldPrompt);
+        mode="normal";new ChatCompletionClient(AI).completeConversation(repeated);int repeatedBytes=requestBytes.get(2);
+        check(currentBytes<repeatedBytes&&repeatedBytes-currentBytes>40_000,"actual loopback wire payload removes the duplicated large source, without assuming a service limit");
+        ClassroomStore.write(new File(root,"short-json-payloads.json"),new JSONObject().put("synthetic",true).put("short_repair_request_bytes",currentBytes).put("previous_repeated_prompt_request_bytes",repeatedBytes).put("saved_bytes",repeatedBytes-currentBytes));
+        System.out.println("JSON loopback payload: short="+currentBytes+" bytes; previous repeated="+repeatedBytes+" bytes; saved="+(repeatedBytes-currentBytes)+" bytes");
+        reset();mode="json-always";File manual=largeMaterial("short-manual");rejects(()->ordinary(manual,0),"single short repair may fail atomically");mode="json-manual-malformed";rejects(()->ordinary(manual,0),"manual bad JSON does not gain a second short repair");mode="normal";check(ordinary(manual,0).getBoolean("complete")&&calls==4,"manual continuation succeeds without repeating schema or source");shortHistory(manual);
+        check(lastPrompt(2).contains("完整要求见历史第2条消息")&&lastPrompt(3).contains("完整要求见历史第2条消息"),"all manual attempts reference the same original stage request");
+        for(boolean duringRepair:new boolean[]{false,true}){
+            reset();mode=duringRepair?"json-first-malformed":"normal";File network=largeMaterial("short-network");failCall=duringRepair?2:1;
+            rejects(()->ordinary(network,0),"interrupted request stops without automatic transport retry");int sent=calls;failCall=-1;mode="normal";
+            check(ordinary(network,0).getBoolean("complete")&&calls==sent+1,"network recovery appends one complete-generation request only");shortHistory(network);
+            check(!lastPrompt(sent).contains(SOURCE_SENTINEL)&&lastPrompt(sent).contains("完整要求见历史第2条消息"),"attempt-zero network recovery does not repeat the large prompt");
+        }
+        reset();mode="slow";File cancelled=largeMaterial("short-cancel");
+        try(RequestControl control=new RequestControl(20000)){Thread stop=new Thread(()->{try{Thread.sleep(150);control.cancel();}catch(InterruptedException e){Thread.currentThread().interrupt();}});stop.start();rejects(()->ClassroomSummary.generate(cancelled,LESSON,AI,0,control,p->{},""),"in-flight JSON cancellation remains available");stop.join();}
+        check(!run(cancelled).has("draft")&&!run(cancelled).has("final"),"cancellation never commits an unfinished block");Thread.sleep(550);mode="normal";check(ordinary(cancelled,0).getBoolean("complete"),"explicit continuation recovers the cancelled block");shortHistory(cancelled);
+        reset();mode="json-first-malformed";File legacy=largeMaterial("short-legacy");JSONObject oldState=new JSONObject().put("run","legacy-short-reference");
+        JSONObject material=ClassroomStore.read(new File(legacy,"materials.json"));JSONObject full=ClassroomSummary.lessonInput(material.getJSONArray("segments"),new JSONArray()).put("image_catalogue",ClassroomSummary.imageCatalogue(new JSONArray(),0));
+        String original="本阶段完整schema与原始资料；"+ClassroomSummary.draftSchema(full.getJSONObject("image_catalogue"),0)+"资料：\n"+ClassroomSummary.uploadChunk(full);
+        try(RequestControl control=new RequestControl(20000)){
+            ClassroomConversation conversation=new ClassroomConversation(legacy,oldState,new ChatCompletionClient(AI,control),"LEGACY_SYSTEM_KEEP_EXACT");conversation.text("first",original,List.of());mode="normal";
+            new ClassroomJsonStage(legacy,oldState,conversation,control).generate("first",original,List.of(),value->value.getJSONArray("notes"),"-retry-","用户授权继续：",null);
+        }
+        JSONArray oldMessages=oldState.getJSONObject("conversation").getJSONArray("messages");
+        check(oldMessages.getJSONObject(0).getString("content").equals("LEGACY_SYSTEM_KEEP_EXACT")&&oldMessages.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text").equals(original),"legacy system and unanchored original user are never rewritten");
+        check(lastPrompt(1).contains("当前尚未提交板块")&&lastPrompt(1).contains("上文最近一次包含完整schema与原始资料")&&!lastPrompt(1).contains("沿用该消息中的阶段锚点"),"unanchored old history is referenced without inventing an old stage label");
+        check(requests.get(1).toString().split(java.util.regex.Pattern.quote(SOURCE_SENTINEL),-1).length-1==1,"legacy repair preserves original source exactly once");
+        String system=ClassroomSummary.systemPrompt("");check(system.contains("JSON字符串内的段落换行用\\n编码")&&!system.contains("段落使用真正换行"),"new system prompt correctly distinguishes JSON wire encoding from rendered paragraphs");
+    }
     private static void jsonDiagnostics()throws Exception {
         for(String[] item:new String[][]{
             {"No value for image_requests","字段缺失：image_requests"},
@@ -655,7 +709,7 @@ public final class ClassroomSummaryCheck {
         root=new File(args[0]);root.mkdirs();
         if(args.length>1&&"local-lifecycle".equals(args[1])){test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);System.out.println("LocalLessonLifecycle: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Local lifecycle check failed");return;}
         HttpServer server=server();try {
-            if(args.length>1&&"json-repair".equals(args[1])){test("safe specific JSON diagnostics",ClassroomSummaryCheck::jsonDiagnostics);test("bounded complete JSON repair and safe errors",ClassroomSummaryCheck::jsonRepair);System.out.println("ClassroomJsonRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("JSON repair check failed");return;}
+            if(args.length>1&&"json-repair".equals(args[1])){test("short wire-safe JSON stage requests",ClassroomSummaryCheck::shortJsonRequests);test("safe specific JSON diagnostics",ClassroomSummaryCheck::jsonDiagnostics);test("bounded complete JSON repair and safe errors",ClassroomSummaryCheck::jsonRepair);System.out.println("ClassroomJsonRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("JSON repair check failed");return;}
             if(args.length>1&&"note-strength".equals(args[1])){test("strength selection and immutable continuation",ClassroomSummaryCheck::noteStrength);System.out.println("NoteStrength: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Note strength check failed");return;}
             if(args.length>1&&"image-references".equals(args[1])){test("image reference validation",ClassroomSummaryCheck::validation);test("final validation evidence and continuation",ClassroomSummaryCheck::capAndFinalValidation);test("prefixed final and export",ClassroomSummaryCheck::prefixedFinal);test("final transport and cancellation audit",ClassroomSummaryCheck::finalTransportAudit);System.out.println("ImageReferences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Image reference check failed");return;}
             test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);

@@ -16,9 +16,22 @@ vm.runInNewContext(fs.readFileSync(path.join(assets,'reader.js'),'utf8'),context
   assert(!html.includes('[id:7]'),'assignment uses the same reading rule');
   assert(html.includes('<code>[id:3]</code>')&&html.includes('puts(&quot;[id:4]&quot;)'),'inline and fenced source-code literals stay exact');
   assert(html.includes('[id:5]')&&html.includes('[id:6]'),'math and escaped literal identifiers remain intact');
-  assert(html.includes('[id:99]'),'corrected transcript retains its original source IDs');
+  assert(!html.includes('[id:99]')&&!html.includes('原文保留'),'main notes do not render the lazily opened corrected transcript');
+  assert(!/<(?:details|summary)(?:\s|>)/i.test(html),'main reader never inserts a system disclosure');
   assert.equal(JSON.stringify(summary),snapshot,'structured audit data and source arrays never mutate');
   assert(html.includes('data-task="0"')&&html.includes('aria-label="提取课堂安排为日程"'),'existing action semantics remain intact');
+  const transcript={transcript:summary.corrected_transcript+'\n\n`[id:3]`\n\n```c\nputs("[id:4]");\n```\n\n$[id:5]$\n\n\\[id:6] 原样示例\n\n![允许](images/image-61.jpg)\n\n![越界](images/image-62.jpg)',images:['image-61.jpg']};
+  const transcriptBefore=JSON.stringify(transcript);
+  await window.renderClassroom(transcript);
+  const transcriptHtml=main.innerHTML;
+  assert(transcriptHtml.includes('[id:99]')&&transcriptHtml.includes('原文保留'),'standalone transcript preserves raw source IDs without summary data');
+  assert(transcriptHtml.includes('<code>[id:3]</code>')&&transcriptHtml.includes('puts(&quot;[id:4]&quot;)'),'transcript inline and fenced code literals stay exact');
+  assert(transcriptHtml.includes('[id:5]')&&transcriptHtml.includes('[id:6]'),'transcript math and escaped identifiers remain intact');
+  assert(!/<(?:details|summary)(?:\s|>)/i.test(transcriptHtml)&&!transcriptHtml.includes('data-task='),'native disclosure transcript has neither system details nor extraction actions');
+  assert.equal((transcriptHtml.match(/<img /g)||[]).length,1,'standalone transcript uses the original image allowlist');
+  assert.equal(JSON.stringify(transcript),transcriptBefore,'transcript mode leaves exact input unchanged');
+  await window.renderClassroom({transcript:'',images:[]});
+  assert.equal(main.innerHTML,'','empty transcript selects its explicit mode without creating summary headings');
   const cases=[
     ['![caption](images/image-61.jpg)',1],
     ['![caption][ref]\n\n[ref]: images/image-61.jpg',1],
@@ -79,5 +92,5 @@ vm.runInNewContext(fs.readFileSync(path.join(assets,'reader.js'),'utf8'),context
   assert.equal(JSON.stringify(aggregate),aggregateBefore,'aggregate never mutates input');
   await window.renderClassroom({summary:grouped,images:['image-61.jpg']});
   assert(main.innerHTML.includes('src="images/image-61.jpg"')&&!main.innerHTML.includes('src="lessons/'),'ordinary rendering restores unscoped image paths after aggregation');
-  console.log('ClassroomReaderSources: 41 assertions passed (production parser/reader, DOM adapter; no visual acceptance)');
+  console.log('ClassroomReaderSources: 49 assertions passed (production parser/reader, DOM adapter; no visual acceptance)');
 })().catch(error=>{console.error(error);process.exitCode=1;});

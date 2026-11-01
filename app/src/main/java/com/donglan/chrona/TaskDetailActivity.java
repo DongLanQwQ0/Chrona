@@ -1578,9 +1578,9 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout addActions = new LinearLayout(this);
         addActions.setOrientation(LinearLayout.HORIZONTAL);
         addActions.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
-        Button addImage = compactActionButton("添加图片", R.drawable.ic_add_photo,
+        Button addImage = UiStyle.compactAction(this, "添加图片", R.drawable.ic_add_photo,
                 this::pickCaptureImages);
-        Button addFile = compactActionButton("添加文件", R.drawable.ic_attach_file,
+        Button addFile = UiStyle.compactAction(this, "添加文件", R.drawable.ic_attach_file,
                 this::pickCaptureFiles);
         addImage.setContentDescription("添加图片附件");
         addFile.setContentDescription("添加普通文件附件，仅文件信息");
@@ -1603,7 +1603,7 @@ public final class TaskDetailActivity extends Activity {
         hint.setText("解析文字与图片；普通文件仅文件信息");
         hint.setTextSize(13);
         UiStyle.muted(hint);
-        Button reparse = compactActionButton("重新解析", R.drawable.ic_refresh,
+        Button reparse = UiStyle.compactAction(this, "重新解析", R.drawable.ic_refresh,
                 this::confirmReparseCapture);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(0, -2, 1f);
         hintParams.setMargins(0, 0, dp(8), 0);
@@ -1612,35 +1612,6 @@ public final class TaskDetailActivity extends Activity {
         reparseCard.addView(reparseRow);
         UiStyle.addSpaced(attachment, reparseCard, 4, 0);
         UiStyle.addSpaced(content, attachment, 8, 8);
-    }
-
-    private Button compactActionButton(String text, int iconResource, Runnable action) {
-        Button button = new Button(this);
-        button.setOnClickListener(view -> action.run());
-        UiStyle.glass(button);
-        UiStyle.pressable(button);
-        button.setTextColor(UiStyle.colors(this).primary);
-        button.setTypeface(android.graphics.Typeface.create("sans-serif-medium",
-                android.graphics.Typeface.NORMAL));
-        button.setMinimumHeight(dp(48));
-        button.setMinHeight(dp(48));
-        setCompactActionPresentation(button, text, iconResource);
-        return button;
-    }
-
-    private void setCompactActionPresentation(Button button, String text, int iconResource) {
-        button.setText(text);
-        button.setTextSize(DETAIL_LABEL_TEXT_SP);
-        button.setGravity(android.view.Gravity.CENTER);
-        button.setPadding(dp(9), 0, dp(9), 0);
-        Drawable icon = iconResource == 0 ? null : getDrawable(iconResource);
-        if (icon != null) {
-            icon = icon.mutate();
-            icon.setTint(UiStyle.colors(this).primary);
-            icon.setBounds(0, 0, dp(DETAIL_FIELD_ICON_SIZE_DP), dp(DETAIL_FIELD_ICON_SIZE_DP));
-        }
-        button.setCompoundDrawablesRelative(icon, null, null, null);
-        button.setCompoundDrawablePadding(dp(6));
     }
 
     private void confirmReparseCapture() {
@@ -1826,9 +1797,9 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.addSpaced(card, metadata, 2, 2);
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        Button open = compactActionButton("↗ 打开", 0, () -> openOrdinaryFile(file));
-        Button save = compactActionButton("↓ 保存副本", 0, () -> exportFile(file));
-        Button remove = compactActionButton("× 移除", 0,
+        Button open = UiStyle.compactAction(this, "↗ 打开", 0, () -> openOrdinaryFile(file));
+        Button save = UiStyle.compactAction(this, "↓ 保存副本", 0, () -> exportFile(file));
+        Button remove = UiStyle.compactAction(this, "× 移除", 0,
                 () -> confirmRemoveOrdinaryFile(file));
         for (Button action : new Button[] {open, save, remove}) {
             action.setTextSize(12);
@@ -1965,14 +1936,14 @@ public final class TaskDetailActivity extends Activity {
         previewScroll.addView(previewText);
         card.addView(previewScroll, new LinearLayout.LayoutParams(-1, dp(156)));
         previewScroll.setVisibility(previewExpanded ? View.VISIBLE : View.GONE);
-        previewToggleButton = compactActionButton(
+        previewToggleButton = UiStyle.compactAction(this,
                 previewExpanded ? "收起预览" : "展开预览", R.drawable.ic_expand_more, () -> { });
         previewToggleButton.setOnClickListener(view -> {
             previewExpanded = !previewExpanded;
-            setCompactActionPresentation(previewToggleButton,
+            UiStyle.compactActionPresentation(previewToggleButton,
                     previewExpanded ? "收起预览" : "展开预览",
                     previewExpanded ? R.drawable.ic_expand_less : R.drawable.ic_expand_more);
-            animateSection(previewScroll, previewExpanded);
+            UiMotion.section(previewScroll, previewExpanded);
         });
         if (previewExpanded) previewScroll.setVisibility(View.VISIBLE);
         LinearLayout previewActions = new LinearLayout(this);
@@ -1989,106 +1960,6 @@ public final class TaskDetailActivity extends Activity {
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         UiStyle.card(card);
         return card;
-    }
-
-    private final java.util.Map<View, SectionMotion> sectionMotions = new java.util.HashMap<>();
-
-    private void animateSection(View view, boolean showing) {
-        SectionMotion motion = sectionMotions.get(view);
-        if (motion == null) {
-            motion = new SectionMotion(view);
-            sectionMotions.put(view, motion);
-            view.addOnAttachStateChangeListener(motion);
-        }
-        motion.moveTo(showing);
-    }
-
-    /** Own the height as well as opacity so reversing never snaps or runs an old completion. */
-    private final class SectionMotion implements View.OnAttachStateChangeListener {
-        final View view;
-        final int naturalHeight;
-        android.animation.ValueAnimator animator;
-        boolean showing;
-
-        SectionMotion(View view) {
-            this.view = view;
-            naturalHeight = view.getLayoutParams().height;
-        }
-
-        void cancel() {
-            if (animator == null) return;
-            android.animation.ValueAnimator previous = animator;
-            animator = null;
-            previous.removeAllUpdateListeners();
-            previous.removeAllListeners();
-            previous.cancel();
-        }
-
-        void finish() {
-            cancel();
-            view.getLayoutParams().height = naturalHeight;
-            view.setAlpha(1f);
-            view.setTranslationY(0f);
-            view.setVisibility(showing ? View.VISIBLE : View.GONE);
-            view.requestLayout();
-        }
-
-        int expandedHeight() {
-            if (naturalHeight >= 0) return naturalHeight;
-            ViewGroup parent = (ViewGroup) view.getParent();
-            if (parent == null) return view.getMeasuredHeight();
-            int width = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
-            if (view.getLayoutParams() instanceof ViewGroup.MarginLayoutParams margins)
-                width -= margins.leftMargin + margins.rightMargin;
-            view.measure(View.MeasureSpec.makeMeasureSpec(Math.max(0, width), View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-            return view.getMeasuredHeight();
-        }
-
-        void moveTo(boolean target) {
-            boolean reversing = animator != null;
-            int start = view.getVisibility() == View.GONE ? 0
-                    : reversing ? Math.max(0, view.getLayoutParams().height) : view.getHeight();
-            float alpha = view.getVisibility() == View.GONE ? 0f : view.getAlpha();
-            cancel();
-            showing = target;
-            int expanded = expandedHeight();
-            int end = showing ? expanded : 0;
-            if (!UiMotion.isEnabled() || !view.isAttachedToWindow() || start == end) {
-                finish();
-                return;
-            }
-            view.animate().cancel();
-            view.setTranslationY(0f);
-            view.setAlpha(alpha);
-            view.getLayoutParams().height = start;
-            view.setVisibility(View.VISIBLE);
-            view.requestLayout();
-            animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
-            animator.setDuration(Math.max(90L, Math.round((showing ? UiMotion.ENTER : UiMotion.EXIT)
-                    * Math.abs(end - start) / (float) Math.max(1, expanded))));
-            animator.setInterpolator(new DecelerateInterpolator(1.5f));
-            animator.addUpdateListener(animation -> {
-                if (!UiMotion.isEnabled()) { finish(); return; }
-                float fraction = (float) animation.getAnimatedValue();
-                view.getLayoutParams().height = Math.round(start + (end - start) * fraction);
-                view.setAlpha(alpha + ((showing ? 1f : 0f) - alpha) * fraction);
-                view.requestLayout();
-            });
-            animator.addListener(new android.animation.AnimatorListenerAdapter() {
-                @Override public void onAnimationEnd(android.animation.Animator animation) {
-                    if (animator == animation) finish();
-                }
-            });
-            animator.start();
-        }
-
-        @Override public void onViewAttachedToWindow(View view) { }
-        @Override public void onViewDetachedFromWindow(View view) {
-            finish();
-            view.removeOnAttachStateChangeListener(this);
-            sectionMotions.remove(view);
-        }
     }
 
     private void addLinkSection(TaskRecord task, List<String> links, LinearLayout destination) {
@@ -2324,7 +2195,7 @@ public final class TaskDetailActivity extends Activity {
         cardTitle.setTextSize(17);
         UiStyle.title(cardTitle);
         cardHeader.addView(cardTitle, new LinearLayout.LayoutParams(0, -2, 1f));
-        Button createCandidate = compactActionButton("新建", R.drawable.ic_add,
+        Button createCandidate = UiStyle.compactAction(this, "新建", R.drawable.ic_add,
                 this::addManualCandidate);
         createCandidate.setContentDescription("新建事项");
         if(occurrenceOriginal!=null)createCandidate.setVisibility(View.GONE);
@@ -2646,7 +2517,7 @@ public final class TaskDetailActivity extends Activity {
             if (managedHomework) showHomeworkNotes(currentDescription[0]);
             else showNoteEditorDialog(candidate, baseline, currentDescription, notePreview);
         };
-        Button editNote = compactActionButton("展开", R.drawable.ic_expand_more, openNotes);
+        Button editNote = UiStyle.compactAction(this, "展开", R.drawable.ic_expand_more, openNotes);
         editNote.setContentDescription(managedHomework ? "查看作业内容" : "展开并编辑备注");
         noteRow.addView(editNote, new LinearLayout.LayoutParams(-2, -2));
         notePreview.setOnClickListener(view -> openNotes.run());
@@ -2801,9 +2672,9 @@ public final class TaskDetailActivity extends Activity {
         if (candidate.isHomework() && new ZjuSettingsStore(this).enabled()) {
             HomeworkLinks destinations = new ZjuHomeworkStore(this).links(candidate);
             LinearLayout links = new LinearLayout(this);
-            Button mobile = compactActionButton("雪灾浙大M", R.drawable.ic_open_external,
+            Button mobile = UiStyle.compactAction(this, "雪灾浙大M", R.drawable.ic_open_external,
                     () -> openHomeworkSite(destinations.mobile));
-            Button desktop = compactActionButton("雪灾浙大", R.drawable.ic_open_external,
+            Button desktop = UiStyle.compactAction(this, "雪灾浙大", R.drawable.ic_open_external,
                     () -> openHomeworkSite(destinations.desktop));
             mobile.setEnabled(destinations.mobile != null);
             desktop.setEnabled(destinations.desktop != null);

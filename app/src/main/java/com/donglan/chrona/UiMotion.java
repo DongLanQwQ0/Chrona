@@ -31,10 +31,116 @@ public final class UiMotion {
             new WeakHashMap<>();
     private static final WeakHashMap<ScrollView, java.lang.ref.WeakReference<ScrollRevealObserver>>
             SCROLLS = new WeakHashMap<>();
+    private static final WeakHashMap<View, java.lang.ref.WeakReference<SectionMotion>> SECTION_MOTIONS =
+            new WeakHashMap<>();
 
     private UiMotion() { }
 
     public static boolean isEnabled() { return ValueAnimator.areAnimatorsEnabled(); }
+
+    public static void section(View view, boolean showing) {
+        section(view, showing, true);
+    }
+
+    /** Restore without animating, or continue the task-detail section's current height and opacity. */
+    public static void section(View view, boolean showing, boolean animate) {
+        java.lang.ref.WeakReference<SectionMotion> reference = SECTION_MOTIONS.get(view);
+        SectionMotion motion = reference == null ? null : reference.get();
+        if (motion == null) {
+            motion = new SectionMotion(view);
+            SECTION_MOTIONS.put(view, new java.lang.ref.WeakReference<>(motion));
+            view.addOnAttachStateChangeListener(motion);
+        }
+        motion.moveTo(showing, animate);
+    }
+
+    /** Own the height as well as opacity so reversing never snaps or runs an old completion. */
+    private static final class SectionMotion implements View.OnAttachStateChangeListener {
+        final View view;
+        final int naturalHeight;
+        ValueAnimator animator;
+        boolean showing;
+
+        SectionMotion(View view) {
+            this.view = view;
+            naturalHeight = view.getLayoutParams().height;
+        }
+
+        void cancel() {
+            if (animator == null) return;
+            ValueAnimator previous = animator;
+            animator = null;
+            previous.removeAllUpdateListeners();
+            previous.removeAllListeners();
+            previous.cancel();
+        }
+
+        void finish() {
+            cancel();
+            view.getLayoutParams().height = naturalHeight;
+            view.setAlpha(1f);
+            view.setTranslationY(0f);
+            view.setVisibility(showing ? View.VISIBLE : View.GONE);
+            view.requestLayout();
+        }
+
+        int expandedHeight() {
+            if (naturalHeight >= 0) return naturalHeight;
+            ViewGroup parent = (ViewGroup) view.getParent();
+            if (parent == null) return view.getMeasuredHeight();
+            int width = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
+            if (view.getLayoutParams() instanceof ViewGroup.MarginLayoutParams margins)
+                width -= margins.leftMargin + margins.rightMargin;
+            view.measure(View.MeasureSpec.makeMeasureSpec(Math.max(0, width), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            return view.getMeasuredHeight();
+        }
+
+        void moveTo(boolean target, boolean animate) {
+            boolean reversing = animator != null;
+            int start = view.getVisibility() == View.GONE ? 0
+                    : reversing ? Math.max(0, view.getLayoutParams().height) : view.getHeight();
+            float alpha = view.getVisibility() == View.GONE ? 0f : view.getAlpha();
+            cancel();
+            showing = target;
+            int expanded = expandedHeight();
+            int end = showing ? expanded : 0;
+            if (!animate || !isEnabled() || !view.isAttachedToWindow() || start == end) {
+                finish();
+                return;
+            }
+            view.animate().cancel();
+            view.setTranslationY(0f);
+            view.setAlpha(alpha);
+            view.getLayoutParams().height = start;
+            view.setVisibility(View.VISIBLE);
+            view.requestLayout();
+            animator = ValueAnimator.ofFloat(0f, 1f);
+            animator.setDuration(Math.max(90L, Math.round((showing ? ENTER : EXIT)
+                    * Math.abs(end - start) / (float) Math.max(1, expanded))));
+            animator.setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f));
+            animator.addUpdateListener(animation -> {
+                if (!isEnabled()) { finish(); return; }
+                float fraction = (float) animation.getAnimatedValue();
+                view.getLayoutParams().height = Math.round(start + (end - start) * fraction);
+                view.setAlpha(alpha + ((showing ? 1f : 0f) - alpha) * fraction);
+                view.requestLayout();
+            });
+            animator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    if (animator == animation) finish();
+                }
+            });
+            animator.start();
+        }
+
+        @Override public void onViewAttachedToWindow(View view) { }
+        @Override public void onViewDetachedFromWindow(View view) {
+            finish();
+            view.removeOnAttachStateChangeListener(this);
+            SECTION_MOTIONS.remove(view);
+        }
+    }
 
     /** Idempotent; observes without replacing a caller's scroll listener. */
     public static void observeScroll(ScrollView viewport, ViewGroup content) {

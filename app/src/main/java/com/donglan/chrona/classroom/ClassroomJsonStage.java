@@ -7,6 +7,7 @@ import java.util.*;
 
 /** One complete structural repair per stage, with explicit continuation after interruption. */
 final class ClassroomJsonStage {
+    private static final String WIRE="整条响应首、末非空白字符必须分别为{和}；禁止根字符串、根数组、前置说明、思考文字和代码围栏。Markdown仅置于字段值中。JSON字符串内换行用\\n编码，反斜杠按JSON转义；解析后显示正常段落，不要双重转义。";
     interface Validator { void check(JSONObject result)throws Exception; }
     private final File dir;
     private final JSONObject state;
@@ -21,8 +22,10 @@ final class ClassroomJsonStage {
         if(state.has(stage+"_error")){
             state.put(stage+"_error",ClassroomJsonFailure.stored(state.getString(stage+"_error")));save();
         }
-        String request=attempt==0?prompt:retryIntroduction+ClassroomJsonFailure.stored(state.optString(stage+"_error"))
-                +"。当前阶段未提交结果已回滚。只依据已有原始资料和实际已附图片，从头完整生成本阶段JSON，不续写、不输出补丁或拼接上次片段，不编造来源和图片。完整要求：\n"+prompt;
+        boolean sent=firstTurn(stage)!=null;
+        String request=attempt==0&&!sent?"当前JSON阶段："+stage+"。"+WIRE+"\n"+prompt:
+                (attempt>0?retryIntroduction+ClassroomJsonFailure.stored(state.optString(stage+"_error"))+"。":"恢复此前未完成的JSON阶段。")
+                +reference(stage)+"本阶段未提交回复已回滚；只依据其中的完整schema、原始资料和历史实际附图，从头完整生成本阶段JSON对象，不续写、不拼接、不编造来源或图片。"+WIRE;
         String raw=text(attempt==0?stage:stage+retrySuffix+attempt,request,attempt==0?images:Collections.emptyList(),outputKey);
         try {return validate(raw,validator);}
         catch(JSONException malformed) {
@@ -33,7 +36,7 @@ final class ClassroomJsonStage {
             }
             state.put(stage+"_repair_attempt",attempt);save();
             String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+ClassroomJsonFailure.detail(malformed)
-                    +"。本阶段结果尚未提交。保留可核实事实、来源和图片编号，重新返回完整JSON对象，不输出补丁或剩余片段，不编造未见图片或新事实。这是该块唯一一次格式修复。\n本块要求："+prompt,Collections.emptyList(),outputKey);
+                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或新事实。"+WIRE,Collections.emptyList(),outputKey);
             try {return validate(repaired,validator);}
             catch(JSONException|IOException invalid){invalid(stage,attempt,invalid);throw invalid;}
         }
@@ -41,6 +44,21 @@ final class ClassroomJsonStage {
     }
     private static JSONObject validate(String raw,Validator validator)throws Exception {
         JSONObject result=ClassroomSummary.parseObject(raw);validator.check(result);return result;
+    }
+    private String reference(String stage)throws JSONException {
+        JSONObject turn=firstTurn(stage);
+        if(turn!=null){int count=turn.getInt("message_count");
+            JSONObject original=state.getJSONObject("conversation").getJSONArray("messages").getJSONObject(count-1);
+            JSONArray content=original.getJSONArray("content");String anchor="当前JSON阶段："+stage+"。";
+            boolean anchored=false;for(int i=0;i<content.length();i++)anchored|=content.getJSONObject(i).optString("text").contains(anchor);
+            return "当前JSON阶段："+stage+"；完整要求见历史第"+count+"条消息（system为第1条），即本阶段最初的user请求。"
+                    +(anchored?"沿用该消息中的阶段锚点。":"这是当前尚未提交板块，沿用上文最近一次包含完整schema与原始资料的该板块user请求。");}
+        throw new JSONException("当前JSON阶段缺少原始请求记录");
+    }
+    private JSONObject firstTurn(String stage)throws JSONException {
+        JSONArray turns=state.getJSONObject("conversation").getJSONArray("turns");
+        for(int i=0;i<turns.length();i++){JSONObject turn=turns.getJSONObject(i);String name=turn.optString("stage");if(stage.equals(name)||name.startsWith(stage+"-restart-"))return turn;}
+        return null;
     }
     private String text(String stage,String prompt,List<byte[]> images,String outputKey)throws Exception {
         control.check();

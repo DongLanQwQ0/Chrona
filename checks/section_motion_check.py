@@ -4,10 +4,12 @@ import os
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT / 'app/src/main/java/com/donglan/chrona/TaskDetailActivity.java').read_text(encoding='utf-8')
-start = source.index('    private final java.util.Map<View, SectionMotion>')
-end = source.index('    private void addLinkSection', start)
-controller = source[start:end].replace('android.animation.', '')
+source = (ROOT / 'app/src/main/java/com/donglan/chrona/UiMotion.java').read_text(encoding='utf-8')
+registry_start = source.index('    private static final WeakHashMap<View, java.lang.ref.WeakReference<SectionMotion>>')
+registry_end = source.index(';', registry_start) + 1
+start = source.index('    public static void section(View view, boolean showing)')
+end = source.index('    /** Idempotent; observes', start)
+controller = (source[registry_start:registry_end] + '\n' + source[start:end]).replace('android.animation.', '').replace('android.view.animation.', '')
 harness = r'''
 import java.util.*;
 public class SectionMotionCheck {
@@ -20,6 +22,7 @@ public class SectionMotionCheck {
         static boolean enabled = true;
         static final long ENTER = 240, EXIT = 180;
         static boolean isEnabled() { return enabled; }
+        CONTROLLER
     }
     static class Animator { }
     static class AnimatorListenerAdapter { public void onAnimationEnd(Animator a) { } }
@@ -97,58 +100,61 @@ public class SectionMotionCheck {
         int getPaddingLeft() { return 10; }
         int getPaddingRight() { return 10; }
     }
-    CONTROLLER
     public static void main(String[] args) {
-        SectionMotionCheck owner = new SectionMotionCheck();
         View v = new View(156);
         v.parent = new ViewGroup();
         v.visibility = View.GONE;
-        owner.animateSection(v, true);
-        SectionMotion motion = owner.sectionMotions.get(v);
+        UiMotion.section(v, true);
+        UiMotion.SectionMotion motion = UiMotion.SECTION_MOTIONS.get(v).get();
         check(v.params.height == 0 && v.alpha == 0, "Expansion begins collapsed");
         ValueAnimator first = motion.animator;
         first.step(.4f);
         int currentHeight = v.params.height;
         float currentAlpha = v.alpha;
-        owner.animateSection(v, false);
+        UiMotion.section(v, false);
         check(first.canceled, "Old animator canceled");
         check(v.params.height == currentHeight && v.alpha == currentAlpha, "Reversal retains geometry and alpha");
         ValueAnimator second = motion.animator;
         second.step(.3f);
         currentHeight = v.params.height;
-        owner.animateSection(v, true);
+        UiMotion.section(v, true);
         check(v.params.height == currentHeight, "Second reversal retains current height");
         second.end();
         check(v.visibility == View.VISIBLE, "Canceled collapse cannot hide new expansion");
         motion.animator.step(1);
         check(v.params.height == 156 && v.alpha == 1 && motion.animator == null, "Expanded terminal state");
-        owner.animateSection(v, false);
+        UiMotion.section(v, false);
         motion.animator.step(.5f);
         UiMotion.enabled = false;
         motion.animator.step(.6f);
         check(v.visibility == View.GONE && v.params.height == 156 && v.alpha == 1, "Disabling midflight reaches requested state");
-        owner.animateSection(v, true);
+        UiMotion.section(v, true);
         check(v.visibility == View.VISIBLE && motion.animator == null, "Disabled expansion is immediate");
         UiMotion.enabled = true;
-        owner.animateSection(v, false);
+        UiMotion.section(v, false);
         v.detach();
         check(v.visibility == View.GONE && v.alpha == 1, "Detach settles collapse");
-        check(owner.sectionMotions.isEmpty() && v.attachments.isEmpty(), "Detach drops controller and listener");
+        check(UiMotion.SECTION_MOTIONS.isEmpty() && v.attachments.isEmpty(), "Detach drops controller and listener");
         View dynamic = new View(-2);
         dynamic.parent = new ViewGroup();
         dynamic.visibility = View.GONE;
         dynamic.desiredHeight = 200;
-        owner.animateSection(dynamic, true);
-        SectionMotion flexible = owner.sectionMotions.get(dynamic);
+        UiMotion.section(dynamic, true);
+        UiMotion.SectionMotion flexible = UiMotion.SECTION_MOTIONS.get(dynamic).get();
         flexible.animator.step(.5f);
         check(dynamic.params.height == 100, "Wrap content measures full natural size");
         dynamic.desiredHeight = 300;
-        owner.animateSection(dynamic, false);
-        owner.animateSection(dynamic, true);
+        UiMotion.section(dynamic, false);
+        UiMotion.section(dynamic, true);
         flexible.animator.step(.5f);
         check(dynamic.params.height == 200, "Reversal remeasures changed content");
         flexible.animator.step(1);
         check(dynamic.params.height == -2, "Finish restores wrap content constraint");
+        UiMotion.section(dynamic, false, false);
+        check(dynamic.visibility == View.GONE && dynamic.params.height == -2 && dynamic.alpha == 1 && flexible.animator == null, "Restored collapse is immediate with natural height and opacity");
+        UiMotion.section(dynamic, true, false);
+        check(dynamic.visibility == View.VISIBLE && dynamic.params.height == -2 && flexible.animator == null, "Initial expanded content is restored without animation");
+        check(UiMotion.SECTION_MOTIONS.get(dynamic).get() == flexible && dynamic.attachments.size() == 1, "Animated and restored calls share one controller owner");
         System.out.println("Section motion checks passed: " + checks + " (production controller with animator doubles)");
     }
 }

@@ -1,5 +1,14 @@
 # 验证记录
 
+## 0.15.87–0.15.88 — JSON新指令与更正文稿原生展开 — 2026-11-01
+
+- 87/249已正常覆盖升级，真实新轮首请求403；用户授权的一次237字节无课堂资料健康请求也在1036ms返回403，类别未明确。证据 `build/classroom-regeneration-validation/phone-ai-health.txt`。没有更换凭据或网络绕过，没有继续重复数学批队列；微积分16、线代3的19项最终重总结仍未验收。
+- 新JSON请求明确完整对象边界及转义；repair/manual/network恢复仅引用已发送原user中的完整schema与资料，不重复大段原prompt，不改历史前缀或冻结选项。普通292、增强JSON719与独立只读检查通过；实际loopback请求102988→54596字节，只说明本夹具冗余减少，不推测服务上限。Android真实JSON根类型／可选图片投影12项通过，原生stdout有效，外部report的run-as读取曾被拒绝，未绕过。
+- 88/250把TaskDetail既有紧凑图文按钮和section高度／透明度控制器提升至UiStyle/UiMotion，删除私有重复并迁移全部旧调用。课堂更正文稿删除默认HTML details，首次展开才创建同款本地阅读器；后续复用，旋转保留开合，导出和源文稿不变。公共UI职责1530、实际生产section控制器16、真实Markdown解析／reader49项通过。
+- 同一共享AVD原生竖浅／横深各41项通过，含真实按钮点按、快速开合、正文末尾／代码可达、真实旋转及单／批导出。font1.3长文18项通过，4651个公式默认不加载、首屏先就绪、屏外继续排版；减少动画真实点击关闭／再开及恢复原系统倍率通过。没有改密度、分辨率或新建AVD，没有真实AI调用。
+- 长文preDraw轨迹关闭末帧跳变疑点：就绪后childHeight稳定，holder从当前高度／透明度走向自然WRAP_CONTENT；未在恢复自然高度时更换终点。减少动画初次夹具在真实点击尚未确认送达时用固定200ms断言失败，保留first日志和JPEG；只补等native开合状态，再按同一终态契约复验通过，不改生产管线。
+- 实际压缩JPEG与报告在 `build/correction-disclosure-ui/`，独立UI最终审查无未解决P1/P2或关键证据缺口。debug/androidTest、release+lintRelease通过；APK `build/candidates/0.15.88/Chrona-0.15.88.apk`，com.donglan.chrona、原升级证书、250/0.15.88。15:19正常覆盖升级V2527A，dumpsys确认版本与更新时间并正常启动；不发补丁Release。本轮未在生产手机重跑数学总结。
+
 ## 0.15.84–0.15.86 — 数学课堂重整理与失败诊断 — 2026-11-01
 
 - 83、84、85均已正常覆盖升级真机；85/247在13:45经dumpsys确认，正式签名、非debuggable，debug/release及两种lint完整退出成功。未发补丁Release。86仅补Android根类型错误的只读投影，尚未安装；不能把诊断改进写成真实生成问题已经修好。

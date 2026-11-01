@@ -17,7 +17,7 @@ import java.util.Map;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Read existing cache and authenticated school endpoints. No data writes, fixtures or AI calls. */
+/** Read existing cache/endpoints. The explicit aiPing mode sends one small authorized AI request. */
 public final class ClassroomProbeInstrumentation extends Instrumentation {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private boolean network;
@@ -26,6 +26,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean cleanup;
     private boolean audit;
     private boolean parseAudit;
+    private boolean aiPing;
     @Override public void onCreate(Bundle args) {
         network = args != null && "true".equals(args.getString("network"));
         requestedDate = args == null ? null : args.getString("date");
@@ -33,12 +34,14 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         cleanup = args != null && "true".equals(args.getString("cleanup"));
         audit = args != null && "true".equals(args.getString("audit"));
         parseAudit = args != null && "true".equals(args.getString("parseAudit"));
+        aiPing = args != null && "true".equals(args.getString("aiPing"));
         super.onCreate(args); start();
     }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
             if (!getTargetContext().getPackageName().equals("com.donglan.chrona")) throw new IllegalStateException();
+            if(aiPing){result.putString("ai_health",aiHealth().toString());finish(-1,result);return;}
             if(cleanup){result.putInt("removed_public_assets",cleanupPublicAssets());finish(-1,result);return;}
             if(parseAudit){result.putString("parse_audit",recentParseAudits().toString());finish(-1,result);return;}
             ZjuSettingsStore settings = new ZjuSettingsStore(getTargetContext());
@@ -101,6 +104,47 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             // Never log exceptions from authentication/HTTP with URLs, account data or response bodies.
             result.putString("error_type", failure.getClass().getSimpleName()); finish(0, result);
         }
+    }
+    /** Credentials stay in the target app's normal Keystore path; only whitelisted metadata leaves. */
+    private JSONObject aiHealth()throws Exception{
+        JSONObject report=new JSONObject().put("calls",0).put("classroom_data_sent",false).put("settings_changed",false);
+        com.donglan.chrona.ai.AiSettings settings=new com.donglan.chrona.ai.AiSettingsStore(getTargetContext()).load();
+        if(settings==null)return report.put("state","not_configured");
+        try(com.donglan.chrona.net.RequestControl control=new com.donglan.chrona.net.RequestControl(60000)){
+            com.donglan.chrona.ai.ChatCompletionClient client=new com.donglan.chrona.ai.ChatCompletionClient(settings,control);
+            JSONObject request=client.classroomOptions().put("messages",new JSONArray()
+                    .put(new JSONObject().put("role","system").put("content","Reply briefly."))
+                    .put(new JSONObject().put("role","user").put("content","Reply with OK only.")));
+            report.put("request_bytes",request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length).put("calls",1);
+            long began=android.os.SystemClock.elapsedRealtime();
+            try{
+                JSONObject response=client.completeConversation(request);
+                JSONObject choice=response.getJSONArray("choices").getJSONObject(0);
+                Object content=choice.getJSONObject("message").opt("content");
+                report.put("state","response").put("has_text",content instanceof String&&!((String)content).isBlank());
+                String finish=choice.optString("finish_reason");
+                if(java.util.Set.of("stop","length","content_filter","tool_calls").contains(finish))report.put("finish_reason",finish);
+                JSONObject usage=response.optJSONObject("usage");
+                if(usage!=null)for(String field:new String[]{"prompt_tokens","completion_tokens","total_tokens"})
+                    if(usage.opt(field) instanceof Number value&&value.longValue()>=0)report.put(field,value.longValue());
+            }catch(com.donglan.chrona.ai.ChatCompletionClient.RequestException rejected){
+                report.put("state","http_error").put("http",rejected.statusCode).put("category",healthCategory(rejected.getMessage()));
+            }catch(java.io.IOException failed){report.put("state","io_error").put("error_type",failed.getClass().getSimpleName());}
+            report.put("elapsed_ms",android.os.SystemClock.elapsedRealtime()-began);
+        }
+        return report;
+    }
+    private static String healthCategory(String message){
+        String detail=message==null?"":message.toLowerCase(java.util.Locale.ROOT);
+        if(detail.contains("invalid_api_key")||detail.contains("invalid api key")||detail.contains("incorrect api key")||detail.contains("invalid token"))return "credential_rejected";
+        if(detail.contains("country")||detail.contains("region")||detail.contains("territory"))return "region_restriction";
+        if(detail.contains("context_length")||detail.contains("context length")||detail.contains("maximum context")||detail.contains("too many tokens"))return "context_limit";
+        if(detail.contains("payload too large")||detail.contains("request entity too large")||detail.contains("body size"))return "request_size_limit";
+        if(detail.contains("cloudflare")||detail.contains("firewall")||detail.contains("waf"))return "gateway_policy";
+        if(detail.contains("quota")||detail.contains("balance")||detail.contains("billing")||detail.contains("insufficient"))return "quota_or_billing";
+        if(detail.contains("no available channel")||detail.contains("no channel")||detail.contains("无可用渠道"))return "route_unavailable";
+        if(detail.contains("permission")||detail.contains("not permitted")||detail.contains("model access"))return "permission_rejected";
+        return "unclassified";
     }
     private JSONArray recentParseAudits()throws Exception {
         JSONArray result=new JSONArray();

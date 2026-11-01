@@ -31,16 +31,41 @@ final class ClassroomAuditChecks {
     private ClassroomLesson lesson;private String account;private final List<File> owned=new ArrayList<>();
     private ClassroomAuditChecks(ClassroomMonitorInstrumentation test,Bundle args){
         this.test=test;this.args=args;output=new File(test.getTargetContext().getExternalFilesDir(null),
+                "root-json".equals(args.getString("case"))?"classroom-json-projection-20261101":
                 "classroom-audit-"+args.getString("orientation","portrait")+"-"+args.getString("theme","light"));output.mkdirs();
     }
     static int run(ClassroomMonitorInstrumentation test,Bundle args)throws Exception{
         if(!test.getTargetContext().getPackageName().equals("com.donglan.chrona.monitor.validation")||!android.os.Build.HARDWARE.contains("ranchu"))throw new SecurityException("Owned emulator fixture required");
         ClassroomAuditChecks c=new ClassroomAuditChecks(test,args);
-        try{if("unfinished".equals(args.getString("case")))c.unfinished();else{c.projection();c.page();}return c.checks;}
+        try{if("root-json".equals(args.getString("case")))c.rootProjection();else if("unfinished".equals(args.getString("case")))c.unfinished();else{c.projection();c.page();}return c.checks;}
         catch(Throwable failure){c.capture("failure");throw failure;}
         finally{ClassroomStore.write(new File(c.output,"report.json"),new JSONObject().put("checks",c.checks).put("evidence",c.evidence).put("paid_calls",0));
             if(c.screen!=null)test.runOnMainSync(c.screen::finish);if(c.lessonScreen!=null)test.runOnMainSync(c.lessonScreen::finish);
             for(File file:c.owned)file.delete();if(c.dir!=null)c.dir.delete();}
+    }
+    private void rootProjection()throws Exception{
+        JSONObject run=new JSONObject().put("affairs_schema",1);
+        for(String raw:new String[]{"[\"PRIVATE-ARRAY\"]","\"PRIVATE-STRING\"","PRIVATE-PREFIX {\"overview\":\"PRIVATE-BODY\"}"}){
+            String diagnostic=ClassroomJsonFailure.responseDetail(raw,"draft-0",run);
+            check(diagnostic.contains("顶层必须是对象"),"Android root-value conversion has a specific object diagnosis");
+            check(!diagnostic.contains("PRIVATE-"),"root conversion never discloses the actual value");
+        }
+        JSONObject valid=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",new JSONArray())
+                .put("assignments",new JSONArray()).put("image_assessment",new JSONObject().put("decision","not_needed").put("reason","字幕足够"))
+                .put("image_requests",new JSONArray());
+        check(ClassroomJsonFailure.responseDetail("```json\n"+valid+"\n```","draft-0",run).isEmpty(),"existing complete fenced object still parses without a new fault");
+        JSONObject assignment=new JSONObject().put("text","PRIVATE-TASK").put("sources",new JSONArray().put(0)).put("evidence","PRIVATE-EVIDENCE");
+        valid.put("assignments",new JSONArray().put(assignment));
+        check(ClassroomJsonFailure.responseDetail(valid.toString(),"draft-0",run).isEmpty(),"absent optional assignment images stays legal");
+        assignment.put("images",JSONObject.NULL);
+        String fault=ClassroomJsonFailure.responseDetail(valid.toString(),"draft-0",run);
+        check(fault.contains("assignments[0].images")&&!fault.contains("PRIVATE-")&&!fault.contains("顶层"),"nested optional image null gets only its safe field path");
+        assignment.put("images",new JSONArray().put(new JSONObject().put("secret","PRIVATE-IMAGE")));
+        fault=ClassroomJsonFailure.responseDetail(valid.toString(),"draft-0",run);
+        check(fault.contains("assignments[0].images[0]")&&!fault.contains("PRIVATE-"),"nested image type diagnosis never leaks an object value");
+        String original=run.toString();ClassroomJsonFailure.responseDetail("[]","correct-0",run);
+        check(original.equals(run.toString()),"projection keeps the saved run untouched");
+        check(ClassroomJsonFailure.responseDetail("[]","correct-0",run).isEmpty(),"Markdown correction stage is never treated as JSON");
     }
     private JSONObject fixture()throws Exception{
         JSONArray messages=new JSONArray().put(new JSONObject().put("role","system").put("content","PRIVATE-SYSTEM"))

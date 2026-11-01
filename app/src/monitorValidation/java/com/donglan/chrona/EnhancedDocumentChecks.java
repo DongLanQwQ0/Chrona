@@ -12,6 +12,8 @@ import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewParent;
+import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import com.donglan.chrona.classroom.*;
 import org.json.*;
@@ -67,7 +69,7 @@ final class EnhancedDocumentChecks {
         write("candidates.json",new JSONObject().put("lesson",lesson.json()).put("images",new JSONArray().put(new JSONObject().put("index",0).put("second",12).put("raw","raw-0.img"))));
         Bitmap image=Bitmap.createBitmap(640,240,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(image);canvas.drawColor(Color.rgb(230,240,245));Paint p=new Paint(3);p.setColor(Color.rgb(15,70,110));p.setTextSize(40);canvas.drawText("PPT - x + y = z",40,125,p);
         File picture=new File(dir,"image-0.jpg");try(FileOutputStream out=new FileOutputStream(picture)){image.compress(Bitmap.CompressFormat.JPEG,90,out);}image.recycle();owned.add(picture);
-        String corrected="## 更正后的授课内容\n\n[0] 题目中的限制条件与步骤分必须保留。\n\n普通第一段\\n \\n普通第二段\n\n"
+        String corrected="## 更正后的授课内容\n\n[0] 题目中的限制条件与步骤分必须保留。[id:99] 原始来源编号。\n\n普通第一段\\n \\n普通第二段\n\n"
                 +"行内公式 $\\nabla f=(2x,2y)$。\n\n$$\\int_0^1 x^2\\,dx=\\frac{1}{3}$$\n\n"
                 +"```java\nString marker = \"\\n \\n\";\nString ticks = \"```\";\n```\n\n"
                 +"[1] 完整上下文仍按原始顺序保留。\n\n".repeat(20);
@@ -84,34 +86,45 @@ final class EnhancedDocumentChecks {
         screen=open(new Intent(app,ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         await(()->{try{document=(ClassroomMarkdownView)field(screen,"documentView");return document!=null&&"true".equals(js("window.classroomReady===true"));}catch(Exception e){return false;}});
         SystemClock.sleep(650);JSONObject closed=state();
-        check(closed.getBoolean("details")&&!closed.getBoolean("open"),"corrected transcript initially collapsed");
+        check(closed.getBoolean("nativeToggle")&&!closed.getBoolean("open")&&!closed.getBoolean("loaded"),"native corrected transcript initially collapsed and lazily uncreated");
         check(closed.getInt("errors")==0&&closed.getInt("math")==0,"closed corrected transcript defers formula layout without blocking notes");
-        check(closed.getBoolean("paragraphs")&&closed.getBoolean("codeLiteral"),"paragraph recovery preserves escaped code literals");
-        double disclosure=Double.parseDouble(js("document.querySelector('summary').getBoundingClientRect().height"));
-        double minimum=Double.parseDouble(js("parseFloat(getComputedStyle(document.querySelector('summary')).minHeight)"));
+        check(!closed.getBoolean("systemDisclosure")&&"true".equals(js("!document.querySelector('main').innerText.includes('普通第一段')&&!document.querySelector('[data-formula]')")),"main document contains neither system details nor corrected transcript HTML");
+        Button toggle=correctionToggle();double disclosure=toggle.getHeight(),minimum=toggle.getMinimumHeight();
         float density=app.getResources().getDisplayMetrics().density;
-        evidence.put(new JSONObject().put("phase","disclosure-hit-area").put("cssHeight",disclosure).put("cssMinimum",minimum).put("physicalPixels",Math.round(disclosure*density)).put("requiredPhysicalPixels",Math.round(48*density)));
-        check(minimum>=48&&Math.round(disclosure*density)>=Math.round(48*density),"disclosure has the shared minimum 48dp touch area in physical layout pixels");
-        int before=document.getHeight();capture("collapsed");tapSummary();
-        await(()->{try{return state().getBoolean("open")&&state().getInt("math")>=2&&document.getHeight()>before+200;}catch(Exception e){return false;}});
+        evidence.put(new JSONObject().put("phase","disclosure-hit-area").put("nativeHeight",disclosure).put("nativeMinimum",minimum).put("requiredPhysicalPixels",Math.round(48*density)));
+        check(minimum>=Math.round(48*density)&&disclosure>=Math.round(48*density),"native disclosure has the shared minimum 48dp touch area in physical layout pixels");
+        int before=sectionHeight(),mainBefore=document.getHeight();capture("collapsed");tapSummary();
+        await(()->{try{return state().getBoolean("open")&&state().getBoolean("ready")&&state().getInt("math")>=2&&sectionHeight()>before+200&&correctionHolder().getAlpha()==1f;}catch(Exception e){return false;}});
+        ClassroomMarkdownView firstCorrection=correction();
         JSONObject opened=state();check(opened.getInt("errors")==0,"expanded transcript keeps valid formula rendering");
+        check(opened.getBoolean("paragraphs")&&opened.getBoolean("codeLiteral"),"paragraph recovery preserves escaped code literals");
+        check(opened.getBoolean("rawIds"),"native corrected reader preserves raw source identifiers");
+        check(!opened.getBoolean("systemDisclosure")&&document.getHeight()==mainBefore,"opening native transcript never inserts system details or changes the main WebView height");
         check(opened.getDouble("overflow")<=2,"ordinary portrait or landscape content stays within its viewport");
-        capture("expanded");int expanded=document.getHeight();
+        capture("expanded");int expanded=sectionHeight();
         ScrollView scroll=scrollOwner();int prior=scroll.getScrollY();swipeUp();
         await(()->scroll.getScrollY()>prior);check(true,"real upward reading gesture scrolls the content and header");
-        position("details pre");capture("expanded-code");
-        check("true".equals(js("document.querySelector('details pre').textContent.includes('String ticks')")),"expanded code remains complete");
-        position("details > p:last-child");capture("expanded-end");
-        check("true".equals(js("document.querySelector('details').lastElementChild.textContent.includes('完整上下文仍按原始顺序保留')")),"complete corrected transcript ending is reachable");
-        tapSummary();await(()->{try{return !state().getBoolean("open")&&document.getHeight()<expanded-200;}catch(Exception e){return false;}});
-        check(document.getHeight()<=before+3,"collapse restores natural document height without a blank reserved region");capture("collapsed-again");
+        position(firstCorrection,"pre");capture("expanded-code");
+        check("true".equals(js(firstCorrection,"document.querySelector('pre').textContent.includes('String ticks')")),"expanded code remains complete");
+        position(firstCorrection,"main > p:last-child");capture("expanded-end");
+        check("true".equals(js(firstCorrection,"document.querySelector('main').lastElementChild.textContent.includes('完整上下文仍按原始顺序保留')")),"complete corrected transcript ending is reachable");
+        tapSummary();await(()->{try{return !state().getBoolean("open")&&sectionHeight()<expanded-200&&correctionHolder().getVisibility()==View.GONE;}catch(Exception e){return false;}});
+        check(sectionHeight()<=before+3&&correctionHolder().getVisibility()==View.GONE,"collapse restores natural document height without a blank reserved region");capture("collapsed-again");
+        float[] rapidPoint=position(correctionToggle());
+        for(int i=0;i<3;i++){tap(rapidPoint,20);evidence.put(new JSONObject().put("phase","rapid-toggle").put("step",i).put("height",correctionHolder().getHeight()).put("alpha",correctionHolder().getAlpha()));}
+        await(()->{try{return state().getBoolean("open")&&correctionHolder().getVisibility()==View.VISIBLE&&sectionHeight()>before+200&&correctionHolder().getAlpha()==1f;}catch(Exception e){return false;}});
+        check(correction()==firstCorrection&&correctionHolder().getChildCount()==1,"rapid open/close/reopen reuses one ready transcript view without duplicate children");
+        check(state().getInt("errors")==0&&!state().getBoolean("systemDisclosure"),"rapid reversal keeps the rendered formula document and native-only disclosure");capture("rapid-expanded");
+        rotationRecovery();
         JSONObject partial=new JSONObject(summary.toString()).put("complete",false).put("overview","").put("parts",new JSONArray());
         write("summary.json",partial);
         Object session=field(screen,"s");test.runOnMainSync(()->{try{set(session,"summary",partial);invoke(screen,"updateDetail");}catch(Exception e){throw new RuntimeException(e);}});
         await(()->{try{document=(ClassroomMarkdownView)field(screen,"documentView");return document!=null&&"true".equals(js("window.classroomReady===true"));}catch(Exception e){return false;}});
         SystemClock.sleep(400);capture("corrected-only-draft");
-        check("true".equals(js("!!document.querySelector('details')")),"corrected-only checkpoint is readable before note generation");
+        check(correctionToggle().getVisibility()==View.VISIBLE&&!state().getBoolean("open")&&!state().getBoolean("loaded"),"corrected-only checkpoint exposes the collapsed native disclosure before note generation");
         check("true".equals(js("![...document.querySelectorAll('main>h2')].some(n=>n.textContent==='重点概览')&&!document.querySelector('main').innerText.includes('等待图片分析')")),"corrected-only draft has no empty overview or invented image phase");
+        tapSummary();await(()->{try{return state().getBoolean("ready")&&state().getInt("math")>=2;}catch(Exception e){return false;}});
+        check(state().getBoolean("paragraphs")&&state().getBoolean("codeLiteral")&&state().getBoolean("rawIds")&&!state().getBoolean("systemDisclosure"),"corrected-only native expansion retains complete paragraphs, code and source IDs");capture("corrected-only-draft-expanded");
         evidence.put(new JSONObject().put("phase","native-layout").put("screenWidth",screen.getResources().getDisplayMetrics().widthPixels).put("screenHeight",screen.getResources().getDisplayMetrics().heightPixels).put("collapsedHeight",before).put("expandedHeight",expanded).put("closed",closed).put("opened",opened));
         write("summary.json",summary);
     }
@@ -128,28 +141,143 @@ final class EnhancedDocumentChecks {
         await(()->screen.hasWindowFocus());
         await(()->{try{return "true".equals(js("window.classroomReady===true"))&&document.getVisibility()==View.VISIBLE&&document.getAlpha()==1f;}catch(Exception e){return false;}});
         check(document.getHeight()>1000,"background-ready long document receives its full native height after resume");
-        check("true".equals(js("document.querySelectorAll('main>h2').length>=6&&!!document.querySelector('details')")),"all five note blocks and corrected disclosure are present");
+        check("true".equals(js("document.querySelectorAll('main>h2').length>=6"))&&correctionToggle().getVisibility()==View.VISIBLE,"all five note blocks and native corrected disclosure are present");
         check(state().getInt("math")==0,"long folded transcript does not eagerly typeset hidden formulas");
-        check("4651".equals(js("document.querySelectorAll('details [data-formula]').length")),"4651 hidden formulas preserve complete source without delaying the first document");
+        check(!state().getBoolean("loaded")&&!state().getBoolean("systemDisclosure")&&"true".equals(js("document.querySelectorAll('[data-formula]').length===0&&!document.querySelector('main').innerText.includes('普通第一段')")),"long corrected source stays outside the main document and uncreated until native expansion");
         capture("background-resumed");
         evidence.put(new JSONObject().put("phase","background-ready").put("visibility",document.getVisibility()).put("height",document.getHeight()).put("alpha",document.getAlpha()).put("js",state()));
+        float[] point=position(correctionToggle());
+        check(point[0]>=0&&point[1]>=0&&point[0]<screen.getResources().getDisplayMetrics().widthPixels&&point[1]<screen.getResources().getDisplayMetrics().heightPixels,"actual native transcript disclosure is reachable");
+        View decor=screen.getWindow().getDecorView();FrameLayout holder=correctionHolder();
+        class ExpansionFrames implements android.view.ViewTreeObserver.OnPreDrawListener {
+            final long started=SystemClock.uptimeMillis();
+            final JSONArray frames=new JSONArray();
+            final CountDownLatch completed=new CountDownLatch(1);
+            volatile long firstReady=-1,lastReady=-1;
+            volatile boolean endFrameSeen;
+            volatile String failure="";
+            @Override public boolean onPreDraw(){
+                if(completed.getCount()==0)return true;
+                try{
+                    long elapsed=SystemClock.uptimeMillis()-started;
+                    boolean ready=(Boolean)field(screen,"correctionReady"),expanded=(Boolean)field(screen,"correctionExpanded");
+                    View child=holder.getChildCount()==0?null:holder.getChildAt(0);
+                    int layoutHeight=holder.getLayoutParams().height;
+                    frames.put(new JSONObject().put("elapsedMs",elapsed).put("holderHeight",holder.getHeight()).put("layoutHeight",layoutHeight)
+                            .put("alpha",holder.getAlpha()).put("childHeight",child==null?0:child.getHeight()).put("ready",ready).put("expanded",expanded));
+                    if(ready){if(firstReady<0)firstReady=elapsed;lastReady=elapsed;}
+                    if(ready&&expanded&&layoutHeight==android.view.ViewGroup.LayoutParams.WRAP_CONTENT&&holder.getAlpha()==1f)endFrameSeen=true;
+                    if(firstReady>=0&&elapsed-firstReady>=400||elapsed>=8000)completed.countDown();
+                    // Request observation frames even after the section settles; this changes
+                    // no layout, timing, MathJax promise or production rendering callback.
+                    else decor.postInvalidateOnAnimation();
+                }catch(Exception error){failure=error.toString();completed.countDown();}
+                return true;
+            }
+        }
+        ExpansionFrames sampling=new ExpansionFrames();long tapStarted=-1;
+        test.runOnMainSync(()->{decor.getViewTreeObserver().addOnPreDrawListener(sampling);decor.postInvalidateOnAnimation();});
+        try{
+            tapStarted=SystemClock.uptimeMillis()-sampling.started;tap(point,200);
+            await(()->{try{return state().getBoolean("ready")&&correctionHolder().getHeight()>1;}catch(Exception e){return false;}});
+            JSONObject firstScreen=state();
+            check(firstScreen.getInt("formulas")==4651,"all 4651 deferred formulas preserve complete source in the dedicated corrected view");
+            check(firstScreen.getInt("math")>=2&&firstScreen.getInt("math")<4651,"corrected first screen is ready before the offscreen formula queue completes");
+            check(firstScreen.getInt("errors")==0&&firstScreen.getBoolean("paragraphs")&&firstScreen.getBoolean("codeLiteral")&&firstScreen.getBoolean("rawIds"),"long native transcript retains valid formulas, complete paragraphs, code and raw source IDs");
+            check(correction().getWidth()>0&&correctionHolder().getHeight()>1,"lazy transcript obtains real width and expands beyond its one-pixel initialization host");
+            capture("background-transcript-first-screen");evidence.put(new JSONObject().put("phase","transcript-first-screen-ready").put("js",firstScreen));
+            long remaining=Math.max(0,8000-(SystemClock.uptimeMillis()-sampling.started));sampling.completed.await(remaining,TimeUnit.MILLISECONDS);
+            check(sampling.failure.isEmpty()&&sampling.firstReady>=0&&sampling.lastReady-sampling.firstReady>=400&&sampling.endFrameSeen,"actual first expansion frames include the settled WRAP_CONTENT frame and at least 400ms after first ready");
+            capture("background-transcript-expanded-frames");
+        }finally{
+            test.runOnMainSync(()->{if(decor.getViewTreeObserver().isAlive())decor.getViewTreeObserver().removeOnPreDrawListener(sampling);});
+            evidence.put(new JSONObject().put("phase","transcript-first-expansion-frames").put("clock","uptime milliseconds since listener creation").put("tapStartedMs",tapStarted)
+                    .put("firstReadyMs",sampling.firstReady).put("lastReadyMs",sampling.lastReady).put("settledFrameSeen",sampling.endFrameSeen)
+                    .put("samplingError",sampling.failure).put("frames",sampling.frames));
+        }
+        String scale=android.provider.Settings.Global.getString(app.getContentResolver(),"animator_duration_scale");
+        try{
+            test.getUiAutomation().executeShellCommand("settings put global animator_duration_scale 0").close();await(()->!UiMotion.isEnabled());
+            ClassroomMarkdownView loaded=correction();
+            tapSummary();await(()->{try{return !(Boolean)field(screen,"correctionExpanded");}catch(Exception error){return false;}});
+            check(correctionHolder().getVisibility()==View.GONE&&correctionHolder().getAlpha()==1f,"system-disabled animation collapses native transcript directly without reserved height after the real click is delivered");
+            tapSummary();await(()->{try{return (Boolean)field(screen,"correctionExpanded");}catch(Exception error){return false;}});
+            check(correction()==loaded&&correctionHolder().getVisibility()==View.VISIBLE&&correctionHolder().getAlpha()==1f&&correctionHolder().getLayoutParams().height==-2,"system-disabled animation reopens the same transcript at its natural final height after the real click is delivered");
+            capture("background-transcript-reduced");
+        }finally{
+            test.getUiAutomation().executeShellCommand(scale==null?"settings delete global animator_duration_scale":"settings put global animator_duration_scale "+scale).close();
+            boolean enabled=scale==null||Float.parseFloat(scale)!=0;await(()->UiMotion.isEnabled()==enabled);
+        }
     }
     private JSONObject state()throws Exception{
-        String value=js("JSON.stringify({details:!!document.querySelector('details'),open:!!document.querySelector('details')?.open,math:document.querySelector('details')?.querySelectorAll('mjx-container').length||0,errors:document.querySelectorAll('.formula-error').length,paragraphs:[...document.querySelectorAll('details p')].some(p=>p.textContent==='普通第一段')&&[...document.querySelectorAll('details p')].some(p=>p.textContent==='普通第二段'),codeLiteral:document.querySelector('details code')?.textContent.includes('\\\\n \\\\n'),overflow:document.documentElement.scrollWidth-innerWidth,height:document.querySelector('main').getBoundingClientRect().height})");
-        return new JSONObject(new JSONArray("["+value+"]").getString(0));
+        JSONObject main=json(js("JSON.stringify({systemDisclosure:!!document.querySelector('details,summary'),errors:document.querySelectorAll('.formula-error').length,overflow:document.documentElement.scrollWidth-innerWidth})"));
+        ClassroomMarkdownView corrected=correction();
+        JSONObject value=corrected==null?new JSONObject().put("systemDisclosure",false).put("math",0).put("formulas",0).put("errors",0).put("paragraphs",false).put("codeLiteral",false).put("rawIds",false).put("overflow",0).put("height",0)
+                :json(js(corrected,"JSON.stringify({systemDisclosure:!!document.querySelector('details,summary'),math:document.querySelectorAll('mjx-container').length,formulas:document.querySelectorAll('[data-formula]').length,errors:document.querySelectorAll('.formula-error').length,paragraphs:[...document.querySelectorAll('p')].some(p=>p.textContent==='普通第一段')&&[...document.querySelectorAll('p')].some(p=>p.textContent==='普通第二段'),codeLiteral:!!document.querySelector('code')?.textContent.includes('\\\\n \\\\n'),rawIds:document.querySelector('main').innerText.includes('[id:99]'),overflow:document.documentElement.scrollWidth-innerWidth,height:document.querySelector('main').getBoundingClientRect().height})"));
+        return value.put("systemDisclosure",main.getBoolean("systemDisclosure")||value.getBoolean("systemDisclosure"))
+                .put("errors",main.getInt("errors")+value.getInt("errors"))
+                .put("overflow",Math.max(main.getDouble("overflow"),value.getDouble("overflow")))
+                .put("nativeToggle",correctionToggle()!=null&&correctionToggle().getVisibility()==View.VISIBLE)
+                .put("open",(Boolean)field(screen,"correctionExpanded")).put("ready",(Boolean)field(screen,"correctionReady")).put("loaded",corrected!=null);
+    }
+    private static JSONObject json(String value)throws Exception{return new JSONObject(new JSONArray("["+value+"]").getString(0));}
+    private ClassroomMarkdownView correction()throws Exception{return (ClassroomMarkdownView)field(screen,"correctionView");}
+    private FrameLayout correctionHolder()throws Exception{return (FrameLayout)field(screen,"correctionHolder");}
+    private Button correctionToggle()throws Exception{return (Button)field(screen,"correctionToggle");}
+    private int sectionHeight()throws Exception{return ((View)field(screen,"notes")).getHeight();}
+    private void rotationRecovery()throws Exception{
+        String initial=args.getString("orientation","portrait"),opposite="landscape".equals(initial)?"portrait":"landscape";
+        ClassroomMarkdownView prior=correction();Object session=field(screen,"s");
+        try{
+            rotateTo(opposite);
+            await(()->{try{return state().getBoolean("ready")&&state().getInt("math")>=2&&correctionHolder().getHeight()>200;}catch(Exception e){return false;}});
+            JSONObject restored=state();
+            check(restored.getBoolean("open")&&correction()!=prior&&field(screen,"s")==session,"actual orientation change restores expanded state with one fresh view and retained session");
+            check(restored.getBoolean("paragraphs")&&restored.getBoolean("codeLiteral")&&restored.getBoolean("rawIds")&&restored.getInt("errors")==0&&restored.getDouble("overflow")<=2&&!restored.getBoolean("systemDisclosure"),"rotated native transcript keeps full content, valid formulas and viewport bounds");capture("rotated-expanded");
+            tapSummary();await(()->{try{return !state().getBoolean("open")&&correctionHolder().getVisibility()==View.GONE;}catch(Exception e){return false;}});
+            rotateTo(initial);
+            check(!state().getBoolean("open")&&!state().getBoolean("loaded")&&correctionHolder().getVisibility()==View.GONE,"actual rotation back restores collapsed state without eagerly recreating the transcript");
+            check(!state().getBoolean("systemDisclosure"),"both actual rotated document instances remain free of system details");capture("rotated-back-collapsed");
+        }finally{
+            if(!initial.equals(args.getString("orientation"))){
+                args.putString("orientation",initial);
+                Activity current=test.lastResumed instanceof ClassroomLessonActivity?test.lastResumed:screen;
+                test.runOnMainSync(()->current.setRequestedOrientation("landscape".equals(initial)?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+                test.getUiAutomation().setRotation("landscape".equals(initial)?android.app.UiAutomation.ROTATION_FREEZE_90:android.app.UiAutomation.ROTATION_FREEZE_0);
+            }
+        }
+    }
+    private void rotateTo(String orientation)throws Exception{
+        Activity previous=screen;int expected="landscape".equals(orientation)?android.content.res.Configuration.ORIENTATION_LANDSCAPE:android.content.res.Configuration.ORIENTATION_PORTRAIT;
+        args.putString("orientation",orientation);
+        test.runOnMainSync(()->previous.setRequestedOrientation(expected==android.content.res.Configuration.ORIENTATION_LANDSCAPE?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+        test.getUiAutomation().setRotation(expected==android.content.res.Configuration.ORIENTATION_LANDSCAPE?android.app.UiAutomation.ROTATION_FREEZE_90:android.app.UiAutomation.ROTATION_FREEZE_0);
+        await(()->test.lastResumed instanceof ClassroomLessonActivity&&test.lastResumed!=previous&&test.lastResumed.getResources().getConfiguration().orientation==expected);
+        screen=test.lastResumed;
+        await(()->{try{document=(ClassroomMarkdownView)field(screen,"documentView");return document!=null&&"true".equals(js("window.classroomReady===true"));}catch(Exception e){return false;}});
+        evidence.put(new JSONObject().put("phase","real-rotation").put("orientation",orientation).put("configuration",screen.getResources().getConfiguration().orientation).put("newActivity",screen!=previous));
     }
     private void tapSummary()throws Exception{
-        float[] point=position("summary");float x=point[0],y=point[1];
-        check(x>=0&&y>=0&&x<app.getResources().getDisplayMetrics().widthPixels&&y<app.getResources().getDisplayMetrics().heightPixels,"actual transcript disclosure is reachable");
-        long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,x,y,0),up=MotionEvent.obtain(now,now+70,MotionEvent.ACTION_UP,x,y,0);
-        try{test.sendPointerSync(down);SystemClock.sleep(70);test.sendPointerSync(up);}finally{down.recycle();up.recycle();}SystemClock.sleep(200);
+        float[] point=position(correctionToggle());
+        check(point[0]>=0&&point[1]>=0&&point[0]<screen.getResources().getDisplayMetrics().widthPixels&&point[1]<screen.getResources().getDisplayMetrics().heightPixels,"actual native transcript disclosure is reachable");
+        tap(point,200);
     }
-    private ScrollView scrollOwner(){for(ViewParent parent=document.getParent();parent!=null;parent=parent.getParent())if(parent instanceof ScrollView value)return value;throw new AssertionError("Missing shared page scroll viewport");}
-    private float[] position(String selector)throws Exception{
-        JSONObject rect=new JSONObject(new JSONArray("["+js("JSON.stringify((()=>{let r=document.querySelector("+JSONObject.quote(selector)+").getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})())")+"]").getString(0));
-        ScrollView owner=scrollOwner();float density=app.getResources().getDisplayMetrics().density;
-        test.runOnMainSync(()->{int[] w=new int[2],s=new int[2];document.getLocationOnScreen(w);owner.getLocationOnScreen(s);owner.scrollTo(0,owner.getScrollY()+Math.round(w[1]+(float)rect.optDouble("y")*density-s[1]-80*density));});SystemClock.sleep(200);
-        int[] at=new int[2];test.runOnMainSync(()->document.getLocationOnScreen(at));float x=at[0]+(float)rect.getDouble("x")*density,y=at[1]+(float)rect.getDouble("y")*density;
+    private void tap(float[] point,int settleMillis){
+        long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,point[0],point[1],0),up=MotionEvent.obtain(now,now+35,MotionEvent.ACTION_UP,point[0],point[1],0);
+        try{test.sendPointerSync(down);SystemClock.sleep(35);test.sendPointerSync(up);}finally{down.recycle();up.recycle();}SystemClock.sleep(settleMillis);
+    }
+    private ScrollView scrollOwner(){return scrollOwner(document);}
+    private ScrollView scrollOwner(View child){for(ViewParent parent=child.getParent();parent!=null;parent=parent.getParent())if(parent instanceof ScrollView value)return value;throw new AssertionError("Missing shared page scroll viewport");}
+    private float[] position(View view){
+        ScrollView owner=scrollOwner(view);float density=view.getResources().getDisplayMetrics().density;
+        test.runOnMainSync(()->{int[] at=new int[2],s=new int[2];view.getLocationOnScreen(at);owner.getLocationOnScreen(s);owner.scrollTo(0,owner.getScrollY()+Math.round(at[1]+view.getHeight()/2f-s[1]-80*density));});SystemClock.sleep(200);
+        float[] point=new float[2];test.runOnMainSync(()->{android.graphics.Rect visible=new android.graphics.Rect();if(!view.getGlobalVisibleRect(visible))throw new AssertionError("Native disclosure is not visible");point[0]=visible.exactCenterX();point[1]=visible.exactCenterY();});return point;
+    }
+    private float[] position(ClassroomMarkdownView view,String selector)throws Exception{
+        JSONObject rect=json(js(view,"JSON.stringify((()=>{let r=document.querySelector("+JSONObject.quote(selector)+").getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})())"));
+        ScrollView owner=scrollOwner(view);float density=view.getResources().getDisplayMetrics().density;
+        test.runOnMainSync(()->{int[] w=new int[2],s=new int[2];view.getLocationOnScreen(w);owner.getLocationOnScreen(s);owner.scrollTo(0,owner.getScrollY()+Math.round(w[1]+(float)rect.optDouble("y")*density-s[1]-80*density));});SystemClock.sleep(200);
+        int[] at=new int[2];test.runOnMainSync(()->view.getLocationOnScreen(at));float x=at[0]+(float)rect.getDouble("x")*density,y=at[1]+(float)rect.getDouble("y")*density;
         return new float[]{x,y};
     }
     private void swipeUp(){
@@ -214,7 +342,8 @@ final class EnhancedDocumentChecks {
         try{return test.startActivitySync(intent);}finally{delivered.set(true);}
     }
     private static Map<String,String> entries(byte[] data)throws Exception{Map<String,String> result=new LinkedHashMap<>();try(ZipInputStream zip=new ZipInputStream(new ByteArrayInputStream(data),StandardCharsets.UTF_8)){java.util.zip.ZipEntry e;while((e=zip.getNextEntry())!=null)result.put(e.getName(),new String(zip.readAllBytes(),StandardCharsets.UTF_8));}return result;}
-    private String js(String script)throws Exception{CountDownLatch done=new CountDownLatch(1);String[] value={null};test.runOnMainSync(()->document.evaluateJavascript(script,r->{value[0]=r;done.countDown();}));if(!done.await(5,TimeUnit.SECONDS))throw new AssertionError("JavaScript callback timeout");return value[0];}
+    private String js(String script)throws Exception{return js(document,script);}
+    private String js(ClassroomMarkdownView view,String script)throws Exception{CountDownLatch done=new CountDownLatch(1);String[] value={null};test.runOnMainSync(()->view.evaluateJavascript(script,r->{value[0]=r;done.countDown();}));if(!done.await(5,TimeUnit.SECONDS))throw new AssertionError("JavaScript callback timeout");return value[0];}
     private void write(String name,JSONObject value)throws Exception{File file=new File(dir,name);ClassroomStore.write(file,value);if(!owned.contains(file))owned.add(file);}
     private void check(boolean ok,String description)throws Exception{checks++;evidence.put(new JSONObject().put("case",description).put("passed",ok));if(!ok)throw new AssertionError(description);}
     private void await(BooleanSupplier condition){long end=SystemClock.uptimeMillis()+18000;while(SystemClock.uptimeMillis()<end){if(condition.getAsBoolean())return;SystemClock.sleep(100);}throw new AssertionError("Timed out waiting for enhanced document state");}

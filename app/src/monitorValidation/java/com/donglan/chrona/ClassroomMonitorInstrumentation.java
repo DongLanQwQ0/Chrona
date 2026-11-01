@@ -104,6 +104,13 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         }return result;
     }
     @Override public void onStart(){
+        if("json_failure_projection".equals(args.getString("mode"))){
+            Bundle report=new Bundle();try{
+                args.putString("case","root-json");
+                report.putString("json_projection_report","PASS: "+ClassroomAuditChecks.run(this,args)+" Android JSON assertions");finish(-1,report);
+            }catch(Throwable failure){report.putString("failure",android.util.Log.getStackTraceString(failure));finish(0,report);}
+            return;
+        }
         // This case consumes an already prepared real split screen; do not rotate it,
         // clear fixture preferences, acquire permissions or close its existing task.
         if("page_motion_visibility".equals(args.getString("mode"))){

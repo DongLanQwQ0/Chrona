@@ -55,6 +55,8 @@
 
 ## 常用接入
 
+内容展开：`UiStyle.compactAction` 创建日程详情既有的紧凑图文按钮，`compactActionPresentation` 原位切换文字与图标；`UiMotion.section(view, showing)` 共用高度／透明度控制器，恢复状态用三参数 `animate=false`。业务页拥有开合状态与懒加载，公共层只拥有按钮呈现和可反向动效；不复制控制器或在 WebView 中另造展开入口。
+
 ### 选择值后更新业务状态
 
 ```java

@@ -38,19 +38,28 @@ final class ClassroomMarkdownView extends WebView {
     private boolean dragEligible;private float downX,downY;
     @android.annotation.SuppressLint({"SetJavaScriptEnabled","AddJavascriptInterface"})
     ClassroomMarkdownView(Activity activity,File directory,JSONObject summary,Actions actions) throws Exception {
-        this(activity,directory,summary,null,Map.of(),actions);
+        this(activity,directory,summary,null,Map.of(),false,actions);
     }
     ClassroomMarkdownView(Activity activity,JSONArray lessons,Map<String,File> directories,Actions actions)throws Exception {
-        this(activity,null,null,lessons,directories,actions);
+        this(activity,null,null,lessons,directories,false,actions);
+    }
+    static ClassroomMarkdownView correctedTranscript(Activity activity,File directory,JSONObject summary,Actions actions)throws Exception {
+        return new ClassroomMarkdownView(activity,directory,summary,null,Map.of(),true,actions);
     }
     @android.annotation.SuppressLint({"SetJavaScriptEnabled","AddJavascriptInterface"})
-    private ClassroomMarkdownView(Activity activity,File directory,JSONObject summary,JSONArray lessons,Map<String,File> directories,Actions actions)throws Exception {
+    private ClassroomMarkdownView(Activity activity,File directory,JSONObject summary,JSONArray lessons,Map<String,File> directories,boolean transcriptOnly,Actions actions)throws Exception {
         super(activity);this.activity=activity;this.directory=directory;this.actions=actions;
         lessonDirectories=Map.copyOf(directories);
         if(lessons==null){
             images=ClassroomDocument.referencedImages(summary);
             JSONArray names=new JSONArray();for(String name:images)names.put(name);
-            document=new JSONObject().put("summary",ClassroomDocument.normalized(summary)).put("images",names).toString();
+            JSONObject data=new JSONObject().put("images",names);
+            if(transcriptOnly)data.put("transcript",ClassroomDocument.normalizeMarkdown(summary.optString("corrected_transcript")));
+            else {
+                JSONObject notes=new JSONObject(summary.toString());notes.remove("corrected_transcript");
+                data.put("summary",ClassroomDocument.normalized(notes));
+            }
+            document=data.toString();
         }else{
             images=Set.of();JSONArray copy=new JSONArray();
             for(int i=0;i<lessons.length();i++){

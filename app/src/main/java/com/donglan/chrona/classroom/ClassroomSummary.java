@@ -44,7 +44,7 @@ public final class ClassroomSummary {
             +"正文使用 Markdown。数学公式使用 Obsidian 语法：行内 $...$，独立公式 $$...$$；支持 LaTeX 分式、矩阵、积分及 aligned。"
             +"数学符号与记法偏好中国大陆教材的常用风格。"
             +"图片在对应正文位置使用 ![简短说明](images/image-编号.jpg)，仅可引用本轮实际附图。不要 HTML、远程图片、双链或完整 TeX 文档。"
-            +"按当前阶段要求返回Markdown文稿或JSON对象；JSON不要包代码围栏，字符串中的LaTeX反斜杠必须正确转义，段落使用真正换行，避免双重转义。";}
+            +"按当前阶段要求返回Markdown文稿或JSON对象；JSON不要包代码围栏，JSON字符串内的段落换行用\\n编码，LaTeX反斜杠按JSON转义；解析后显示正常段落，不要双重转义。";}
     private ClassroomSummary() { }
     public static JSONObject prepare(File dir,ClassroomLesson lesson,ClassroomClient client,RequestControl control,ClassroomImages.Progress progress) throws Exception {
         JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));

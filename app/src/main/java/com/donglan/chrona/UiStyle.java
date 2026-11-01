@@ -288,6 +288,35 @@ public final class UiStyle {
         rememberChildSurface(view, 2, primary, RADIUS_FIELD, primary);
     }
 
+    /** The compact text-and-icon action used by task details and expandable content. */
+    public static Button compactAction(Activity activity, String text, int iconResource, Runnable action) {
+        Button button = new Button(activity);
+        button.setOnClickListener(view -> action.run());
+        glass(button);
+        pressable(button);
+        button.setTextColor(colors(activity).primary);
+        button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        button.setMinimumHeight(dp(button, 48));
+        button.setMinHeight(dp(button, 48));
+        compactActionPresentation(button, text, iconResource);
+        return button;
+    }
+
+    public static void compactActionPresentation(Button button, String text, int iconResource) {
+        button.setText(text);
+        button.setTextSize(13);
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(dp(button, 9), 0, dp(button, 9), 0);
+        Drawable icon = iconResource == 0 ? null : button.getContext().getDrawable(iconResource);
+        if (icon != null) {
+            icon = icon.mutate();
+            icon.setTint(colors(button.getContext()).primary);
+            icon.setBounds(0, 0, dp(button, 18), dp(button, 18));
+        }
+        button.setCompoundDrawablesRelative(icon, null, null, null);
+        button.setCompoundDrawablePadding(dp(button, 6));
+    }
+
     static void toggle(android.widget.CompoundButton view) {
         applyToggleColors(view);
         view.setMinHeight(dp(view, 48));

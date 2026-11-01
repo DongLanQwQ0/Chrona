@@ -82,7 +82,9 @@
       for(const image of note.images||[]){const name=String(image).replace(/^images\//,'');if(!inline.has(name))output+=md.render(`![课堂截图](images/${name})`);}
       noteImages=null;return output;
     };
-    if(Array.isArray(data.lessons)){
+    if(typeof data.transcript==='string'){
+      html=md.render(data.transcript);
+    }else if(Array.isArray(data.lessons)){
       for(const lesson of data.lessons){
         if(!/^\d+-\d+$/.test(lesson.key))continue;
         lessonKey=lesson.key;allowed=new Set(lesson.images||[]);
@@ -123,7 +125,6 @@
         }
       }
     }
-    if(summary.corrected_transcript)html+='<details><summary>更正文稿</summary>'+md.render(summary.corrected_transcript)+'</details>';
     }
     const main=document.querySelector('main');main.innerHTML=html;resize();
     main.querySelectorAll('.assignment').forEach(el=>{
@@ -148,17 +149,12 @@
       }
       resize();
     };
-    // A closed disclosure must not delay the document. Keep one MathJax queue
-    // so opening it while the notes finish never typesets the same node twice.
-    const notes=entries.filter(element=>!element.closest('details'));
-    const firstScreen=notes.filter(element=>element.getBoundingClientRect().top<(theme.viewportHeight||window.screen.height));
+    // The native disclosure lazily creates a renderer for the transcript.
+    // Both modes present their first screen before typesetting offscreen math.
+    const firstScreen=entries.filter(element=>element.getBoundingClientRect().top<(theme.viewportHeight||window.screen.height));
     await renderMath(firstScreen);
     if(turn!==generation)return;
     window.classroomRenderStage='ready';window.classroomReady=true;resize();window.ChronaSize?.ready();
-    let queue=renderMath(notes);
-    main.querySelectorAll('details').forEach(details=>details.addEventListener('toggle',()=>{
-      if(details.open)queue=queue.then(()=>renderMath([...details.querySelectorAll('[data-formula]')]));
-    }));
-    await queue;
+    await renderMath(entries);
   };
 })();

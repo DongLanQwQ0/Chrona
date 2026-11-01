@@ -31,6 +31,10 @@ public final class ClassroomEnhancedCheck {
     private static void rejects(Task task,String label)throws Exception{try{task.run();check(false,label);}catch(IOException|JSONException expected){check(true,label);}}
     private static void reset(String value,boolean withImages){requests.clear();replies.clear();stages.clear();requestBytes.clear();mode=value;images=withImages;lastStage="";failCall=-1;slowCall=-1;requestSeen=new CountDownLatch(1);}
     private static String prompt(JSONObject request)throws Exception{JSONArray messages=request.getJSONArray("messages");return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");}
+    private static String referencedPrompt(JSONObject request,String prompt)throws Exception {
+        Matcher reference=Pattern.compile("完整要求见历史第(\\d+)条消息").matcher(prompt);
+        return reference.find()?request.getJSONArray("messages").getJSONObject(Integer.parseInt(reference.group(1))-1).getJSONArray("content").getJSONObject(0).getString("text"):prompt;
+    }
     private static String stage(String prompt){
         Matcher restart=Pattern.compile("当前阶段：([^；]+)；重试序号：(\\d+)").matcher(prompt);if(restart.find())return restart.group(1)+"-restart-"+restart.group(2);
         if(prompt.contains("唯一一次格式修复"))return lastStage+"-repair";
@@ -78,7 +82,7 @@ public final class ClassroomEnhancedCheck {
         server.createContext("/",exchange->{try{
             byte[] wire=exchange.getRequestBody().readAllBytes();requestBytes.add(wire.length);
             JSONObject body=new JSONObject(new String(wire,StandardCharsets.UTF_8));
-            requests.add(body);String text=prompt(body),current=stage(text);stages.add(current);int call=requests.size();
+            requests.add(body);String physical=prompt(body),current=stage(physical),text=referencedPrompt(body,physical);stages.add(current);int call=requests.size();
             if(!current.contains("continue")&&!current.contains("repair")&&!current.contains("user-retry"))lastStage=current;
             if(call==slowCall){requestSeen.countDown();Thread.sleep(1200);}
             if(call==failCall){byte[] error="{\"error\":{\"message\":\"synthetic unavailable\"}}".getBytes(StandardCharsets.UTF_8);replies.add(null);exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(503,error.length);exchange.getResponseBody().write(error);return;}
@@ -456,8 +460,9 @@ public final class ClassroomEnhancedCheck {
             reset(defect,false);File dir=materials("schema-"+defect,false);
             check(generate(dir,true).getBoolean("complete"),"missing or mistyped image schema is repaired: "+defect);
             check(stages.equals(List.of("correct-0","draft-0","draft-0-repair","edit-plan","edit-note-0")),"one appended repair without transcript regeneration: "+defect);
-            draftExample(prompt(requests.get(1)));draftExample(prompt(requests.get(2)));
-            check(prompt(requests.get(2)).contains("image_requests")&&prompt(requests.get(2)).contains("image_assessment"),"repair retains the full stage-specific schema: "+defect);appendOnly(dir);
+            draftExample(prompt(requests.get(1)));draftExample(referencedPrompt(requests.get(2),prompt(requests.get(2))));
+            check(prompt(requests.get(2)).contains("完整schema")&&!prompt(requests.get(2)).contains("完整对象："),"repair points to the original full schema rather than copying it: "+defect);appendOnly(dir);
+            check(prompt(requests.get(1)).startsWith("当前JSON阶段：draft-0。")&&prompt(requests.get(2)).contains("完整要求见历史第4条消息")&&prompt(requests.get(2)).contains("沿用该消息中的阶段锚点"),"enhanced JSON repair references its visible original stage anchor: "+defect);
         }
         reset("missing-always",false);File bounded=materials("schema-budget",false);rejects(()->generate(bounded,true),"persistently missing schema stops after the single repair");
         check(requests.size()==3&&Collections.frequency(stages,"draft-0-repair")==1,"missing schema never creates an automatic repair loop");
