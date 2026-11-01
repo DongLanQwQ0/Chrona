@@ -27,6 +27,9 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean audit;
     private boolean parseAudit;
     private boolean aiPing;
+    private boolean mathAudit;
+    private final java.util.concurrent.CountDownLatch applicationReady=new java.util.concurrent.CountDownLatch(1);
+    private volatile boolean applicationInitializationSkipped;
     @Override public void onCreate(Bundle args) {
         network = args != null && "true".equals(args.getString("network"));
         requestedDate = args == null ? null : args.getString("date");
@@ -35,12 +38,26 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         audit = args != null && "true".equals(args.getString("audit"));
         parseAudit = args != null && "true".equals(args.getString("parseAudit"));
         aiPing = args != null && "true".equals(args.getString("aiPing"));
+        mathAudit = args != null && "true".equals(args.getString("mathAudit"));
         super.onCreate(args); start();
+    }
+    @Override public void callApplicationOnCreate(android.app.Application app){
+        try{
+            if(mathAudit)applicationInitializationSkipped=true;
+            else super.callApplicationOnCreate(app);
+        }finally{applicationReady.countDown();}
     }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
             if (!getTargetContext().getPackageName().equals("com.donglan.chrona")) throw new IllegalStateException();
+            if(mathAudit){
+                if(!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
+                    throw new IllegalStateException("Read-only application initialization unavailable");
+                ZjuSettingsStore current=new ZjuSettingsStore(getTargetContext());
+                if(!current.enabled()||!current.configured())throw new IllegalStateException("School account unavailable");
+                result.putString("math_audit",mathHistory(current).toString());finish(-1,result);return;
+            }
             if(aiPing){result.putString("ai_health",aiHealth().toString());finish(-1,result);return;}
             if(cleanup){result.putInt("removed_public_assets",cleanupPublicAssets());finish(-1,result);return;}
             if(parseAudit){result.putString("parse_audit",recentParseAudits().toString());finish(-1,result);return;}
@@ -103,6 +120,82 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         } catch (Throwable failure) {
             // Never log exceptions from authentication/HTTP with URLs, account data or response bodies.
             result.putString("error_type", failure.getClass().getSimpleName()); finish(0, result);
+        }
+    }
+    /** Final-document metadata only; no messages, raw replies, account identity or model options leave. */
+    private JSONObject mathHistory(ZjuSettingsStore settings)throws Exception{
+        // ClassroomStore's normal reader may recover AtomicFile backups. Refuse pending recovery
+        // and missing roots before entering it, rather than mutating the cache during an audit.
+        java.io.File root=new java.io.File(getTargetContext().getNoBackupFilesDir(),"classroom");
+        if(!settings.account().matches("[a-zA-Z0-9-]+")||!root.isDirectory()
+                ||!new java.io.File(root,settings.account()).isDirectory())throw new java.io.IOException("Existing classroom cache unavailable");
+        requireStableCache(root);
+        JSONObject report=new JSONObject().put("application_initialization_skipped",applicationInitializationSkipped)
+                .put("pending_atomic_recovery",false).put("explicit_network_requests",false);
+        JSONArray rows=new JSONArray();JSONObject courses=new JSONObject();int complete=0;
+        java.util.Set<String> unique=new java.util.HashSet<>();JSONArray duplicates=new JSONArray();
+        com.donglan.chrona.classroom.ClassroomStore store=new com.donglan.chrona.classroom.ClassroomStore(getTargetContext(),settings.account());
+        synchronized(com.donglan.chrona.classroom.ClassroomStore.LOCK){
+            List<JSONObject> history=store.history();report.put("history_total",history.size());
+            for(JSONObject summary:history){
+                JSONObject identity=summary.optJSONObject("lesson");if(identity==null)continue;
+                ClassroomLesson lesson=ClassroomLesson.fromJson(identity);
+                if(!(lesson.course.contains("微积分")||lesson.course.contains("线性代数")))continue;
+                String key=com.donglan.chrona.classroom.ClassroomDocument.key(identity);
+                if(!unique.add(key))duplicates.put(key);
+                courses.put(lesson.course,courses.optInt(lesson.course)+1);
+                boolean finished=summary.optBoolean("complete");if(finished)complete++;
+                JSONObject row=new JSONObject().put("key",key).put("course",lesson.course).put("date",lesson.date().toString())
+                        .put("starts_at",lesson.startsAt).put("title",lesson.title).put("complete",finished)
+                        .put("updated",summary.optLong("updated")).put("affairs_schema",summary.optInt("affairs_schema",0))
+                        .put("note_strength",summary.optInt("note_strength",1)).put("corrected_characters",summary.optString("corrected_transcript").length());
+                rows.put(row);if(!finished)continue;
+                java.io.File directory;
+                try{directory=store.existingSummary(lesson);}catch(java.io.IOException busy){row.put("detail_state","busy_or_unavailable");continue;}
+                if(directory==null){row.put("detail_state","unavailable");continue;}
+                JSONArray parts=summary.optJSONArray("parts"),headings=new JSONArray();int notes=0,affairs=0,actions=0;
+                if(parts!=null)for(int p=0;p<parts.length();p++){
+                    JSONObject part=parts.getJSONObject(p);
+                    for(String field:new String[]{"notes","affairs","assignments"}){
+                        JSONArray entries=part.optJSONArray(field);if(entries==null)continue;
+                        if(field.equals("notes"))notes+=entries.length();else if(field.equals("affairs"))affairs+=entries.length();else actions+=entries.length();
+                        if(!field.equals("assignments"))for(int n=0;n<entries.length();n++)headings.put(new JSONObject().put("area",field).put("title",entries.getJSONObject(n).optString("title")));
+                    }
+                }
+                row.put("notes",notes).put("affairs",affairs).put("assignments",actions).put("headings",headings);
+                JSONObject materials=com.donglan.chrona.classroom.ClassroomStore.read(new java.io.File(directory,"materials.json"));
+                if(materials==null)row.put("source_validation","materials_unavailable");
+                else try{com.donglan.chrona.classroom.ClassroomDocument.portable(summary,materials);row.put("source_validation","passed");}
+                    catch(Exception invalid){row.put("source_validation","failed").put("source_error_type",invalid.getClass().getSimpleName());}
+                try{
+                    java.util.Set<String> images=com.donglan.chrona.classroom.ClassroomDocument.referencedImages(summary);int valid=0;
+                    for(String name:images){java.io.File image=store.summaryImage(lesson,name);
+                        android.graphics.BitmapFactory.Options bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;
+                        android.graphics.BitmapFactory.decodeFile(image.getPath(),bounds);if(image.length()>0&&bounds.outWidth>0&&bounds.outHeight>0)valid++;}
+                    row.put("referenced_images",images.size()).put("readable_images",valid);
+                }catch(Exception invalid){row.put("image_validation","failed").put("image_error_type",invalid.getClass().getSimpleName());}
+                JSONObject run=com.donglan.chrona.classroom.ClassroomStore.read(new java.io.File(directory,"run.json"));
+                row.put("run_present",run!=null);
+                boolean matches=run!=null&&!summary.optString("run").isEmpty()&&summary.optString("run").equals(run.optString("run"));
+                row.put("run_matches_summary",matches);
+                if(run!=null){
+                    row.put("run_affairs_schema",run.optInt("affairs_schema",0)).put("run_note_strength",run.optInt("note_strength",1));
+                    JSONObject audit=com.donglan.chrona.classroom.ClassroomAudit.project(run,summary);
+                    row.put("run_turns",audit.getJSONArray("turns"));
+                    JSONObject execution=audit.optJSONObject("execution");
+                    if(execution!=null)row.put("run_execution_state",execution.optString("state"));
+                }
+            }
+        }
+        return report.put("courses",courses).put("math_rows",rows.length()).put("math_unique",unique.size())
+                .put("duplicate_keys",duplicates).put("complete_rows",complete).put("rows",rows);
+    }
+    private static void requireStableCache(java.io.File path)throws java.io.IOException{
+        if(java.nio.file.Files.isSymbolicLink(path.toPath()))throw new java.io.IOException("Symbolic cache path unavailable");
+        if(path.getName().endsWith(".bak")||path.getName().endsWith(".new"))throw new java.io.IOException("Pending atomic recovery");
+        if(path.isDirectory()){
+            java.io.File[] children=path.listFiles();if(children==null)throw new java.io.IOException("Unreadable cache directory");
+            for(java.io.File child:children)requireStableCache(child);
         }
     }
     /** Credentials stay in the target app's normal Keystore path; only whitelisted metadata leaves. */
