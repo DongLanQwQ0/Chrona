@@ -134,6 +134,7 @@
             android:grantUriPermissions="true" android:authorities="${applicationId}.images" />
         <activity android:name=".ReminderDiagnosticsActivity" android:exported="false" />
         <activity android:name=".ClassroomAuditActivity" android:exported="false" />
+        <activity android:name=".ClassroomAffairsActivity" android:exported="false" />
         <activity android:name=".BackupRestoreActivity" android:exported="false" />
         <activity
             android:name=".TaskDetailActivity"

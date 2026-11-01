@@ -52,13 +52,20 @@ public final class ClassroomEnhancedCheck {
                     .put("text","题干 5 kg；步骤分 2 分；待核对 $\\nabla x$。\\n \\n下一段")
                     .put("sources",new JSONArray().put(mode.equals("invalid-source")||(!draft&&mode.equals("invalid-final-source"))?999:id))
                     .put("images",mode.equals("invalid-image")||(!draft&&mode.equals("invalid-final-image"))?new JSONArray().put("image-999.jpg"):pictures)))
-                .put("assignments",new JSONArray());
+                .put("affairs",new JSONArray()).put("assignments",new JSONArray());
         if(mode.startsWith("task-")&&id==0)value.put("assignments",new JSONArray()
                 .put(new JSONObject().put("text","今天进入作业页面查看成绩。").put("sources",new JSONArray().put(0)).put("evidence","题干 5 kg"))
                 .put(new JSONObject().put("text","查看成绩。").put("sources",new JSONArray().put(0)).put("evidence","步骤分 2 分")));
         if(mode.equals("cross-draft")&&draft&&id==0||mode.equals("cross-final")&&!draft&&id==0)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1));
         if(mode.equals("cross-context")&&!draft&&id==1)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1).put(0));
         if(mode.equals("empty-tail")&&id==1)value.put("overview","").put("notes",new JSONArray());
+        if(mode.startsWith("affairs")){
+            JSONObject affair=new JSONObject(value.getJSONArray("notes").getJSONObject(0).toString()).put("title","考核与出勤 "+id).put("text","本章只考证明第一步；步骤分2分，符号错误扣1分，可能作为附加题，范围待核对。");
+            value.put("affairs",new JSONArray().put(affair));
+            if(!mode.equals("affairs-mixed"))value.put("overview","").put("notes",new JSONArray());
+            if(mode.equals("affairs-source"))affair.put("sources",new JSONArray().put(999));
+            if(mode.equals("affairs-image"))affair.put("images",new JSONArray().put("image-999.jpg"));
+        }
         if(draft)value.put("image_assessment",new JSONObject().put("decision",images?"request":"disabled").put("reason","合成板书需核对题目条件"))
                 .put("image_requests",images?new JSONArray().put(new JSONObject().put("start",mode.equals("reuse-images")?0:id*100).put("end",mode.equals("reuse-images")?120:id*100+20).put("reason","核对题干数字与步骤分")):new JSONArray());
         if(!draft){JSONArray reviews=new JSONArray();Set<String> reviewed=new LinkedHashSet<>();for(int i=0;i<pictures.length();i++)if(reviewed.add(pictures.getString(i)))reviews.put(new JSONObject().put("file",pictures.getString(i)).put("status","usable").put("confidence","high").put("visible","合成图的黑白网格").put("reason","合成画面用于对应题目"));value.put("image_reviews",reviews);}
@@ -84,10 +91,11 @@ public final class ClassroomEnhancedCheck {
                 JSONArray index=new JSONArray(text.substring(text.indexOf("已完成笔记索引：\n")+"已完成笔记索引：\n".length())),sections=new JSONArray();
                 if(mode.equals("merge-topics")){
                     JSONArray refs=new JSONArray();for(int n=0;n<index.length();n++)refs.put(index.getJSONObject(n).getString("ref"));
-                    sections.put(new JSONObject().put("title","统一主题").put("refs",refs));
-                }else for(int n=0;n<index.length();n++)sections.put(new JSONObject().put("title",index.getJSONObject(n).getString("title")).put("refs",new JSONArray().put(index.getJSONObject(n).getString("ref"))));
+                    JSONObject section=new JSONObject().put("title","统一主题").put("refs",refs);if(index.length()>0&&index.getJSONObject(0).has("collection"))section.put("collection",index.getJSONObject(0).getString("collection"));sections.put(section);
+                }else for(int n=0;n<index.length();n++){JSONObject section=new JSONObject().put("title",index.getJSONObject(n).getString("title")).put("refs",new JSONArray().put(index.getJSONObject(n).getString("ref")));if(index.getJSONObject(n).has("collection"))section.put("collection",index.getJSONObject(n).getString("collection"));sections.put(section);}
                 if(mode.equals("bad-plan")&&sections.length()>0)sections.put(sections.getJSONObject(0));
-                output=new JSONObject().put("overview","统一全课重点").put("sections",sections).toString();
+                boolean teaching=index.length()>0&&!index.getJSONObject(0).has("collection");for(int n=0;n<index.length();n++)teaching|="notes".equals(index.getJSONObject(n).optString("collection"));
+                output=new JSONObject().put("overview",teaching?"统一全课重点":"").put("sections",sections).toString();
             }else if(current.startsWith("edit-note")){
                 JSONArray input=new JSONArray(text.substring(text.indexOf("本主题提取稿：\n")+"本主题提取稿：\n".length()));
                 JSONArray refs=new JSONArray(),pics=new JSONArray();Set<Integer> sourceSet=new LinkedHashSet<>();Set<String> imageSet=new LinkedHashSet<>();
@@ -95,7 +103,8 @@ public final class ClassroomEnhancedCheck {
                 for(int source:sourceSet)refs.put(source);for(String image:imageSet)pics.put(image);
                 if(mode.equals("bad-editor-source"))refs=new JSONArray().put(999);
                 JSONObject note=new JSONObject(input.getJSONObject(0).toString()).put("sources",refs).put("images",pics);
-                output=new JSONObject().put("overview","").put("notes",new JSONArray().put(note)).put("assignments",new JSONArray()).toString();
+                boolean affairs=text.contains("affairs恰好一项");
+                output=new JSONObject().put("overview","").put("notes",affairs?new JSONArray():new JSONArray().put(note)).put("affairs",affairs?new JSONArray().put(note):new JSONArray()).put("assignments",new JSONArray()).toString();
             }else if(mode.equals("bad-json")&&current.equals("draft-0"))output="{\"overview\":";
             else if(mode.equals("bad-repair")&&(current.equals("draft-0")||current.endsWith("repair")))output="{\"overview\":";
             else if(mode.equals("bad-manual")&&current.endsWith("user-retry"))output="{\"overview\":";
@@ -103,6 +112,10 @@ public final class ClassroomEnhancedCheck {
                 if(current.equals("draft-0")&&mode.equals("missing-requests")||mode.equals("missing-always")&&current.startsWith("draft"))value.remove("image_requests");
                 if(current.equals("draft-0")&&mode.equals("missing-assessment"))value.remove("image_assessment");
                 if(current.equals("draft-0")&&mode.equals("request-type"))value.put("image_requests",new JSONObject());
+                if(current.equals("draft-0")&&mode.equals("affairs-missing"))value.remove("affairs");
+                if(current.equals("draft-0")&&mode.equals("affairs-type"))value.put("affairs",new JSONObject());
+                if(mode.equals("affairs-missing-always")&&current.startsWith("draft"))value.remove("affairs");
+                if(!body.getJSONArray("messages").getJSONObject(0).optString("content").contains("成品严格分离"))value.remove("affairs");
                 output="  ```json\n"+value.toString(2)+"\n```  ";}
             if(mode.equals("length-editor")&&current.equals("edit-note-1")){output="{\"overview\":\"截断不得拼接\"";finish="length";}
             if(mode.equals("length-final")&&current.equals("final-0")){output="{\"overview\":\"截断不得拼接\"";finish="length";}
@@ -370,10 +383,10 @@ public final class ClassroomEnhancedCheck {
         try{ClassroomSummary.validateAssignmentEvidence(tasks,adjacent);check(false,"missing evidence source must fail");}catch(IOException missing){check(missing.getMessage().contains("[25]"),"diagnostic identifies the missing source rather than reporting a generic quote mismatch");}
         task.put("sources",new JSONArray().put(24).put(25).put(26));ClassroomSummary.validateAssignmentEvidence(tasks,adjacent);check(true,"complete evidence citation succeeds without weakening provenance checks");
         JSONArray parts=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(new JSONObject().put("title","同一主题"))));
-        rejects(()->ClassroomEnhancedSummary.validatePlan(new JSONObject().put("overview","").put("sections",new JSONArray()),parts),"plan cannot silently drop an extracted note");
+        rejects(()->ClassroomEnhancedSummary.validatePlan(new JSONObject().put("overview","").put("sections",new JSONArray()),parts,0),"legacy plan cannot silently drop an extracted note");
         parts.put(new JSONObject().put("notes",new JSONArray().put(new JSONObject().put("title","同一主题"))));
         JSONArray separate=new JSONArray().put(new JSONObject().put("title","第一节").put("refs",new JSONArray().put("0:0"))).put(new JSONObject().put("title","第二节").put("refs",new JSONArray().put("1:0")));
-        rejects(()->ClassroomEnhancedSummary.validatePlan(new JSONObject().put("overview","概览").put("sections",separate),parts),"identical topic headings across blocks must be grouped rather than repeated");
+        rejects(()->ClassroomEnhancedSummary.validatePlan(new JSONObject().put("overview","概览").put("sections",separate),parts,0),"legacy identical topic headings across blocks must be grouped rather than repeated");
     }
     private static void validationResume()throws Exception{
         reset("invalid-source",false);File draft=materials("draft-validation-resume",false);
@@ -413,7 +426,7 @@ public final class ClassroomEnhancedCheck {
         String start="完整对象：\n";int from=prompt.indexOf(start),to=prompt.indexOf("\n字段规则：",from);
         check(from>=0&&to>from,"draft prompt contains one complete JSON example");
         JSONObject example=new JSONObject(prompt.substring(from+start.length(),to));
-        check(example.keySet().equals(Set.of("overview","notes","assignments","image_assessment","image_requests")),"the JSON example contains all five mandatory top-level fields");
+        check(example.keySet().equals(Set.of("overview","notes","affairs","assignments","image_assessment","image_requests")),"the JSON example contains all six mandatory top-level fields");
         return example;
     }
     private static void schemaRepair()throws Exception{
@@ -538,11 +551,13 @@ public final class ClassroomEnhancedCheck {
         check("".equals(restore.invoke(null,null,ClassroomStore.read(new File(directory,"run.json")))),"completion never shows stale failed detail");
     }
     private static void noteStrength()throws Exception{
-        JSONArray original=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(new JSONObject().put("title","同一主题"))));
+        JSONArray original=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(new JSONObject().put("title","同一主题"))).put("affairs",new JSONArray()));
+        JSONObject textPlan=new JSONObject().put("overview","纯文字知识概览").put("sections",new JSONArray().put(section("notes","0:notes:0")));
+        ClassroomEnhancedSummary.validatePlan(textPlan,original);check(true,"valid schema-one plan accepts a plain-text overview before image rejection checks");
         for(String image:List.of("image-48.jpg","image-999.jpg")){
-            JSONObject badPlan=new JSONObject().put("overview","![概览复活](images/"+image+")")
-                    .put("sections",new JSONArray().put(new JSONObject().put("title","主题").put("refs",new JSONArray().put("0:0"))));
-            rejects(()->ClassroomEnhancedSummary.validatePlan(badPlan,original),"editor overview cannot reintroduce rejected or unuploaded image");
+            JSONObject badPlan=new JSONObject(textPlan.toString()).put("overview","![概览复活](images/"+image+")");
+            try{ClassroomEnhancedSummary.validatePlan(badPlan,original);check(false,"editor overview cannot reintroduce rejected or unuploaded image");}
+            catch(IOException invalid){check(invalid.getMessage().equals("整稿概览只允许文字，配图须在主题笔记中核对"),"overview image is rejected by the image guard rather than an unrelated schema failure: "+image);}
         }
         reset("normal",false);File dir=materials("strength-three",false);JSONObject result;
         try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,p->{},"保留题干条件及步骤分",true,3);}
@@ -557,8 +572,98 @@ public final class ClassroomEnhancedCheck {
         check(prompt(requests.get(0)).contains("不总结或删减内容"),"style never shortens correction stage");
         appendOnly(dir);evidence("note-strength-three",dir);
     }
+    private static JSONObject content(String title,int source)throws Exception{return new JSONObject().put("title",title).put("text","保留条件与不确定性").put("sources",new JSONArray().put(source)).put("images",new JSONArray());}
+    private static JSONObject section(String collection,String...refs)throws Exception{return new JSONObject().put("title",collection).put("collection",collection).put("refs",new JSONArray(Arrays.asList(refs)));}
+    private static JSONObject legacyState(File dir,boolean enhanced)throws Exception{
+        JSONObject run=new JSONObject().put("run","legacy-"+System.nanoTime()).put("config",ClassroomSummary.configKey(AI,0,"保留题干条件及步骤分",enhanced,1,0,0));
+        try(RequestControl control=new RequestControl(20000)){
+            new ClassroomConversation(dir,run,new com.donglan.chrona.ai.ChatCompletionClient(AI,control),"legacy-system-prefix");
+        }
+        run.getJSONObject("conversation").getJSONArray("messages")
+                .put(new JSONObject().put("role","user").put("content",new JSONArray().put(new JSONObject().put("type","text").put("text","legacy-sent-source"))))
+                .put(new JSONObject().put("role","assistant").put("content","legacy-sent-reply").put("reasoning_content","opaque-legacy-reasoning"));
+        ClassroomStore.write(new File(dir,"run.json"),run);return run;
+    }
+    private static void legacyExtraAffairsValidation()throws Exception{
+        JSONObject input=new JSONObject().put("segments",new JSONArray().put(new JSONObject().put("id",0).put("text","本课字幕"))).put("images",new JSONArray().put(new JSONObject().put("file","image-3.jpg")));
+        JSONObject legacy=new JSONObject().put("overview","原有知识概览").put("notes",new JSONArray().put(content("原有笔记",0))).put("assignments",new JSONArray());
+        ClassroomSummary.validate(legacy,input,false,0);check(true,"schema zero still accepts its original response without affairs");
+        JSONObject extra=new JSONObject(legacy.toString()).put("affairs",new JSONArray().put(content("额外课程事务",0)));
+        ClassroomSummary.validate(extra,input,false,0);check(true,"schema zero accepts present affairs with valid support");
+        JSONObject invalidSource=new JSONObject(extra.toString());invalidSource.getJSONArray("affairs").getJSONObject(0).put("sources",new JSONArray().put(999));
+        try{ClassroomSummary.validate(invalidSource,input,false,0);check(false,"schema zero must reject extra affairs whose source is outside the lesson");}
+        catch(IOException invalid){check(invalid.getMessage().equals("AI 引用了课堂之外的字幕，请重试"),"present legacy affairs reaches the actual source guard");}
+        JSONObject invalidImage=new JSONObject(extra.toString());invalidImage.getJSONArray("affairs").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));rejects(()->ClassroomSummary.validate(invalidImage,input,false,0),"present legacy affairs uses image whitelist");
+        JSONObject invalidStructure=new JSONObject(extra.toString());invalidStructure.getJSONArray("affairs").getJSONObject(0).remove("sources");rejects(()->ClassroomSummary.validate(invalidStructure,input,false,0),"present legacy affairs requires complete source structure");
+        JSONObject invalidText=new JSONObject(extra.toString());invalidText.getJSONArray("affairs").getJSONObject(0).put("text","");rejects(()->ClassroomSummary.validate(invalidText,input,false,0),"present legacy affairs cannot contain empty prose");
+        JSONObject wrongType=new JSONObject(extra.toString()).put("affairs",new JSONObject());rejects(()->ClassroomSummary.validate(wrongType,input,false,0),"present legacy affairs must be an array");
+        JSONArray lecture=new JSONArray().put(new JSONObject().put("id",0).put("text","前文")).put(new JSONObject().put("id",1).put("text","当前块")).put(new JSONObject().put("id",2).put("text","后文"));
+        JSONObject refinement=new JSONObject(extra.toString());refinement.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1));
+        JSONObject wholeInput=new JSONObject(input.toString()).put("segments",lecture);JSONArray block=new JSONArray().put(lecture.getJSONObject(1));
+        rejects(()->ClassroomEnhancedSummary.validateRefinement(refinement,wholeInput,block,0),"present legacy affairs must anchor in the current refinement block");
+        refinement.getJSONArray("affairs").getJSONObject(0).put("sources",new JSONArray().put(1));ClassroomEnhancedSummary.validateRefinement(refinement,wholeInput,block,0);check(true,"valid extra affairs can anchor with the original legacy schema");
+        refinement.getJSONArray("affairs").getJSONObject(0).put("sources",new JSONArray().put(1).put(2));rejects(()->ClassroomEnhancedSummary.validateRefinement(refinement,wholeInput,block,0),"present legacy affairs cannot cite future blocks");
+    }
+    private static void courseAffairs()throws Exception{
+        check(ClassroomAffairsPolicy.frozen(null)==1,"new runs use affairs schema one");
+        check(ClassroomAffairsPolicy.frozen(new JSONObject().put("conversation",new JSONObject()))==0,"missing schema in an unfinished conversation remains legacy");
+        check(ClassroomAffairsPolicy.frozen(new JSONObject().put("conversation",new JSONObject()).put("final",new JSONObject()))==1,"completed legacy run regenerates with new contract");
+        check(ClassroomSummary.configKey(AI,0,"",true,1,0,0).endsWith("\n11\ntrue\n")&&!ClassroomSummary.configKey(AI,0,"",true,1,0,0).contains("affairs_schema"),"legacy config retains exact pipeline eleven key");
+        check(ClassroomSummary.configKey(AI,0,"",true,1,0).endsWith("affairs_schema=1"),"existing public config overload selects new schema");
+        JSONArray segments=new JSONArray().put(new JSONObject().put("id",0).put("text","原始事务")),pics=new JSONArray().put(new JSONObject().put("file","image-3.jpg"));
+        JSONObject input=new JSONObject().put("segments",segments).put("images",pics);
+        JSONObject only=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",new JSONArray().put(content("考试范围",0))).put("assignments",new JSONArray());
+        ClassroomSummary.validate(only,input);check(true,"affairs-only class needs no invented knowledge overview or note");
+        JSONObject missing=new JSONObject(only.toString());missing.remove("affairs");rejects(()->ClassroomSummary.validate(missing,input),"new schema requires affairs even when empty");
+        JSONObject bad=new JSONObject(only.toString());bad.getJSONArray("affairs").getJSONObject(0).put("sources",new JSONArray().put(99));rejects(()->ClassroomSummary.validate(bad,input),"affairs source validation is identical to notes");
+        JSONObject badArray=new JSONObject(only.toString());badArray.getJSONArray("affairs").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));rejects(()->ClassroomSummary.validate(badArray,input),"affairs array cannot reference an unseen picture");
+        JSONObject inline=new JSONObject(only.toString());inline.getJSONArray("affairs").getJSONObject(0).put("text","![考核细节](images/image-999.jpg)");rejects(()->ClassroomSummary.validate(inline,input),"affairs markdown cannot bypass image whitelist");
+        JSONObject image=new JSONObject(only.toString());image.getJSONArray("affairs").getJSONObject(0).put("text","![考核细节](images/image-3.jpg)").put("images",new JSONArray().put("image-3.jpg"));
+        ClassroomSummary.validate(image,input);check(ClassroomDocument.referencedImages(new JSONObject().put("parts",new JSONArray().put(image))).contains("image-3.jpg"),"affairs images enter shared portable inventory");
+        ClassroomFigureReview.filter(image,new JSONArray().put(new JSONObject().put("file","image-3.jpg").put("included",false)));check(image.getJSONArray("affairs").getJSONObject(0).getJSONArray("images").length()==0&&!image.toString().contains("![考核细节]"),"rejected affairs pictures are filtered in both forms");
+        JSONObject mixed=new JSONObject(only.toString()).put("overview","学习重点").put("notes",new JSONArray().put(content("考试范围",0)));JSONArray parts=new JSONArray().put(mixed);
+        JSONObject plan=new JSONObject().put("overview","学习重点").put("sections",new JSONArray().put(section("notes","0:notes:0")).put(section("affairs","0:affairs:0")));
+        ClassroomEnhancedSummary.validatePlan(plan,parts);check(true,"same named knowledge and affairs are separate complete categories");
+        JSONObject omitted=new JSONObject(plan.toString());omitted.getJSONArray("sections").remove(1);rejects(()->ClassroomEnhancedSummary.validatePlan(omitted,parts),"plan cannot omit affairs indexes");
+        JSONObject duplicate=new JSONObject(plan.toString());duplicate.getJSONArray("sections").getJSONObject(1).getJSONArray("refs").put("0:affairs:0");rejects(()->ClassroomEnhancedSummary.validatePlan(duplicate,parts),"plan cannot reuse an affairs index");
+        JSONObject crossed=new JSONObject(plan.toString());crossed.getJSONArray("sections").getJSONObject(1).put("collection","notes");rejects(()->ClassroomEnhancedSummary.validatePlan(crossed,parts),"plan cannot move affairs into teaching notes");
+        JSONObject legacyPart=new JSONObject(only.toString());legacyPart.remove("affairs");legacyPart.put("overview","旧重点").put("notes",new JSONArray().put(content("旧知识",0)));ClassroomSummary.validate(legacyPart,input,false,0);check(true,"explicit legacy remains valid without affairs");
+        for(boolean enhanced:new boolean[]{false,true}){
+            reset("affairs-only",true);File dir=materials("affairs-only-"+enhanced,false);JSONObject result=generate(dir,enhanced),document=result.getJSONArray("parts").getJSONObject(0);
+            check(result.getBoolean("complete")&&document.getJSONArray("notes").length()==0&&result.getString("overview").isEmpty()&&document.getJSONArray("affairs").length()==1,"ordinary/enhanced affairs-only output remains useful without knowledge shells: "+enhanced);
+            check(document.getJSONArray("affairs").getJSONObject(0).getString("text").contains("扣1分")&&document.getJSONArray("affairs").getJSONObject(0).getJSONArray("sources").length()==1&&document.getJSONArray("affairs").getJSONObject(0).getJSONArray("images").length()==1,"affairs preserve fine grading detail, uncertainty, sources and actual pictures: "+enhanced);
+            check(state(dir).getInt("affairs_schema")==1&&result.getInt("affairs_schema")==1&&!document.getJSONArray("affairs").getJSONObject(0).has("collection"),"schema is frozen and saved in summary while editor collection metadata does not escape: "+enhanced);appendOnly(dir);
+        }
+        reset("affairs-mixed",false);JSONObject result=generate(materials("affairs-mixed",true),true),doc=result.getJSONArray("parts").getJSONObject(0);
+        check(doc.getJSONArray("notes").length()==2&&doc.getJSONArray("affairs").length()==2,"mixed multi-block editor assembles each category separately");
+        String planPrompt=prompt(requests.get(stages.indexOf("edit-plan"))),exampleMarker="只输出紧凑JSON ";
+        JSONObject planExample=new JSONObject(planPrompt.substring(planPrompt.indexOf(exampleMarker)+exampleMarker.length(),planPrompt.indexOf("。collection")));
+        JSONObject exampleSection=planExample.getJSONArray("sections").getJSONObject(0);
+        check(exampleSection.getString("collection").equals("notes")&&exampleSection.getJSONArray("refs").getString(0).equals("0:notes:0"),"new editorial example uses a valid collection matching its reference");
+        check(!planPrompt.contains("notes|affairs")&&planPrompt.contains("collection只可为notes或affairs，且必须与每条ref的原集合一致"),"new editorial prompt gives separate allowed values rather than a pipe-delimited sample value");
+        for(boolean enhanced:new boolean[]{false,true})for(String defect:List.of("affairs-source","affairs-image")){
+            reset(defect,false);File dir=materials(defect+"-"+enhanced,false);rejects(()->generate(dir,enhanced),"invalid affairs support rolls back block: "+defect+enhanced);String run=state(dir).getString("run");
+            check((enhanced?state(dir).getJSONArray("drafts").length()==0:!state(dir).has("draft"))&&!state(dir).has("final")&&requests.size()==(enhanced?2:1),"affairs semantic failure never commits or auto-repairs: "+defect+enhanced);
+            mode="affairs-only";check(generate(dir,enhanced).getString("run").equals(run),"explicit resume keeps successful correction and original affairs contract: "+defect+enhanced);appendOnly(dir);
+        }
+        reset("affairs-missing",false);File repaired=materials("affairs-required-repair",false);check(generate(repaired,true).getBoolean("complete"),"missing affairs field receives the single structural repair");check(Collections.frequency(stages,"draft-0-repair")==1&&prompt(requests.get(2)).contains("affairs"),"structural repair carries complete new schema");appendOnly(repaired);
+        reset("affairs-type",false);File wrongType=materials("affairs-type-repair",false);check(generate(wrongType,true).getBoolean("complete")&&Collections.frequency(stages,"draft-0-repair")==1,"wrong affairs container receives the single structural repair");
+        reset("affairs-missing-always",false);File bounded=materials("affairs-repair-budget",false);rejects(()->generate(bounded,true),"persistently missing affairs stops after bounded repair");check(requests.size()==3&&state(bounded).getJSONArray("drafts").length()==0,"failed affairs repair leaves no committed extraction");
+        for(boolean enhanced:new boolean[]{false,true}){
+            reset("normal",false);File dir=materials("legacy-affairs-frozen-"+enhanced,false);JSONObject before=legacyState(dir,enhanced);JSONArray prefix=new JSONArray(before.getJSONObject("conversation").getJSONArray("messages").toString());String config=before.getString("config"),run=before.getString("run");
+            result=generate(dir,enhanced);check(result.getString("run").equals(run)&&state(dir).getString("config").equals(config)&&state(dir).getInt("affairs_schema")==0,"unfinished legacy run retains identity and original config: "+enhanced);
+            JSONArray sent=requests.get(0).getJSONArray("messages");for(int i=0;i<prefix.length();i++)check(sent.getJSONObject(i).toString().equals(prefix.getJSONObject(i).toString()),"legacy sent prefix and reasoning survive unchanged: "+enhanced+":"+i);
+            for(JSONObject request:requests){String p=prompt(request);check(!p.contains("affairs")&&!p.contains("collection"),"legacy subsequent prompts retain old schema: "+enhanced);}
+            JSONObject legacyDocument=result.getJSONArray("parts").getJSONObject(0);check(result.getInt("affairs_schema")==0&&!legacyDocument.has("affairs"),"legacy assembled result records version zero and retains its original part shape: "+enhanced);
+            reset("affairs-only",false);result=generate(dir,enhanced);check(!result.getString("run").equals(run)&&state(dir).getInt("affairs_schema")==1&&result.getJSONArray("parts").getJSONObject(0).has("affairs"),"completed legacy regeneration opts into current contract: "+enhanced);
+        }
+    }
     public static void main(String[] args)throws Exception{
         root=new File(args[0]);root.mkdirs();
+        if(args.length>1&&args[1].equals("legacy-extra-affairs")){
+            test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);
+            System.out.println("ClassroomLegacyExtraAffairs: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Legacy extra affairs checks failed");return;
+        }
         if(args.length==1||args[1].equals("failure-detail")){
             test("durable safe failure detail and page restore",ClassroomEnhancedCheck::failureDetails);
             if(args.length>1){System.out.println("ClassroomFailureDetail: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Failure detail checks failed");return;}
@@ -568,7 +673,15 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
-        if(args.length==1){test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
+        if(args.length>1&&args[1].equals("note-strength")){
+            try{test("enhanced note strength and overview image guard",ClassroomEnhancedCheck::noteStrength);}
+            finally{server.stop(0);}System.out.println("ClassroomEnhancedNoteStrength: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced note strength checks failed");return;
+        }
+        if(args.length>1&&args[1].equals("affairs")){
+            try{test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);}
+            finally{server.stop(0);}System.out.println("ClassroomAffairsCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Course affairs checks failed");return;
+        }
+        if(args.length==1){test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
         if(args.length>1&&args[1].equals("schema-repair")){
             try{test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("existing semantic and manual budgets",ClassroomEnhancedCheck::validationResume);}
             finally{server.stop(0);}System.out.println("ClassroomSchemaRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Schema repair checks failed");return;

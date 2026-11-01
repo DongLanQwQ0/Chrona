@@ -61,7 +61,7 @@ final class ClassroomAutoSummary {
             JSONObject prior=ClassroomStore.read(new File(job.dir,"run.json"));
             job.enhancedClassroom=enhancedMode(prior,Boolean.TRUE.equals(job.enhancedClassroom));
             job.noteStrength=ClassroomNoteStrength.frozen(prior,job.noteStrength);
-            if(prior==null||!ClassroomSummary.configKey(ai,job.imageLimit,prompt,job.enhancedClassroom,job.noteStrength,ClassroomFigureReview.policy(prior)).equals(prior.optString("config"))||prior.has("final")){
+            if(prior==null||!ClassroomSummary.configKey(ai,job.imageLimit,prompt,job.enhancedClassroom,job.noteStrength,ClassroomFigureReview.policy(prior),ClassroomAffairsPolicy.frozen(prior)).equals(prior.optString("config"))||prior.has("final")){
                 job.ignoredSummaryUpdated=previous==null?-1:previous.optLong("updated");job.summary=null;job.revision++;job.publish();
             }
             try(ClassroomSummarySlots.Lease slot=SUMMARY_SLOTS.acquire(job.control,

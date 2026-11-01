@@ -4,7 +4,7 @@
   const md=window.markdownit({html:false,linkify:false,breaks:false});
   const esc=md.utils.escapeHtml;
   const safeImage=path => /^(?:images\/)?image-\d+\.jpg$/.test(path);
-  let allowed=new Set(), formulas=[], generation=0, noteImages=null;
+  let allowed=new Set(), formulas=[], generation=0, noteImages=null,lessonKey=null;
   // Source IDs belong to structured audit metadata, not the reading copy.
   // Inline parsing leaves fenced/inline code and math tokens untouched.
   md.inline.ruler.before('link','source_id',(state)=>{
@@ -44,7 +44,8 @@
   md.renderer.rules.image=(tokens,index)=>{
     const t=tokens[index],src=t.attrGet('src')||'',name=src.replace(/^images\//,'');
     if(safeImage(src)&&allowed.has(name))noteImages?.add(name);
-    return safeImage(src)&&allowed.has(name)?`<a href="action/image/${name}" aria-label="放大课堂截图"><img src="images/${name}" alt="${esc(t.content||'课堂截图')}"></a>`:esc(t.content||'图片引用无效');
+    const imagePath=lessonKey?`lessons/${lessonKey}/images/${name}`:`images/${name}`,actionPath=lessonKey?`${lessonKey}/${name}`:name;
+    return safeImage(src)&&allowed.has(name)?`<a href="action/image/${actionPath}" aria-label="放大课堂截图"><img src="${imagePath}" alt="${esc(t.content||'课堂截图')}"></a>`:esc(t.content||'图片引用无效');
   };
   md.renderer.rules.table_open=()=>'<div class="table-scroll"><table>';
   md.renderer.rules.table_close=()=>'</table></div>';
@@ -70,25 +71,60 @@
   new ResizeObserver(resize).observe(document.querySelector('main'));
   window.renderClassroom=async(data,theme={})=>{
     window.classroomRenderStage='markdown';
-    const turn=++generation;formulas=[];allowed=new Set(data.images);
+    const turn=++generation;formulas=[];allowed=new Set(data.images||[]);lessonKey=null;
     for(const key of ['text','muted','link','line'])if(theme[key])document.documentElement.style.setProperty('--'+key,theme[key]);
     document.documentElement.style.fontSize=(16*(theme.fontScale||1))+'px';
+    let html='';
+    const hasContent=note=>String(note.text||'').trim()||(note.images||[]).length;
+    const renderNote=(note,heading)=>{
+      const inline=new Set();noteImages=inline;
+      let output='<'+heading+'>'+md.renderInline(note.title||'',{hideSourceIds:true})+'</'+heading+'>'+reading(note.text);
+      for(const image of note.images||[]){const name=String(image).replace(/^images\//,'');if(!inline.has(name))output+=md.render(`![课堂截图](images/${name})`);}
+      noteImages=null;return output;
+    };
+    if(Array.isArray(data.lessons)){
+      for(const lesson of data.lessons){
+        if(!/^\d+-\d+$/.test(lesson.key))continue;
+        lessonKey=lesson.key;allowed=new Set(lesson.images||[]);
+        const label=(lesson.label||'')+(lesson.summary?.complete===false?' · 未完成':'');
+        html+=`<h2><a href="action/lesson/${lessonKey}" aria-label="${esc('查看原课堂：'+label)}">${esc(label)}</a></h2>`;
+        for(const part of lesson.summary?.parts||[]){
+          for(const affair of part.affairs||[])if(hasContent(affair))html+=renderNote(affair,'h3');
+          for(const task of part.assignments||[])if(String(task.text||'').trim())html+=reading(task.text);
+        }
+      }
+      lessonKey=null;allowed=new Set();
+    }else{
     const summary=data.summary;
-    let html=summary.complete?'':'<p class="draft">未完成</p>';
+    html=summary.complete?'':'<p class="draft">未完成</p>';
     if(String(summary.overview||'').trim())html+='<h2>重点概览</h2>'+reading(summary.overview);
     let taskIndex=0;
-    for(const part of summary.parts||[]){
+    const parts=summary.parts||[],affairsSchema=summary.affairs_schema===1||parts.some(part=>Object.hasOwn(part,'affairs'));
+    let learning=false;
+    for(const part of parts){
       for(const note of part.notes||[]){
-        const inline=new Set();noteImages=inline;
-        html+='<h2>'+md.renderInline(note.title||'',{hideSourceIds:true})+'</h2>'+reading(note.text);
-        for(const image of note.images||[]){const name=String(image).replace(/^images\//,'');if(!inline.has(name))html+=md.render(`![课堂截图](images/${name})`);}
-        noteImages=null;
+        if(affairsSchema&&!hasContent(note))continue;
+        if(affairsSchema&&!learning){html+='<h2>学习笔记</h2>';learning=true;}
+        html+=renderNote(note,affairsSchema?'h3':'h2');
       }
+      if(affairsSchema)continue;
       for(const task of part.assignments||[]){
         html+=`<h2>课堂安排</h2><div class="assignment" role="link" tabindex="0" data-task="${taskIndex++}" aria-label="提取课堂安排为日程">${reading(task.text)}</div>`;
       }
     }
+    if(affairsSchema){
+      let affairs=false;
+      const heading=()=>{if(!affairs){html+='<h2>课程事务</h2>';affairs=true;}};
+      for(const part of parts){
+        for(const affair of part.affairs||[]){if(hasContent(affair)){heading();html+=renderNote(affair,'h3');}}
+        for(const task of part.assignments||[]){
+          const index=taskIndex++;if(!String(task.text||'').trim())continue;
+          heading();html+=`<div class="assignment" role="link" tabindex="0" data-task="${index}" aria-label="提取课堂安排为日程">${reading(task.text)}</div>`;
+        }
+      }
+    }
     if(summary.corrected_transcript)html+='<details><summary>更正文稿</summary>'+md.render(summary.corrected_transcript)+'</details>';
+    }
     const main=document.querySelector('main');main.innerHTML=html;resize();
     main.querySelectorAll('.assignment').forEach(el=>{
       const activate=event=>{if(event.target.closest('a'))return;location.href='action/task/'+el.dataset.task;};

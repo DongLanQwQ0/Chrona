@@ -39,6 +39,7 @@ public final class ClassroomBatchInstrumentation extends Instrumentation {
         if("dashboard_batch".equals(args.getString("mode"))){ThemeStore.setMode(app,args.getString("theme","light"));report.putString("dashboard_batch_report",dashboardBatch(app));finish(-1,report);return;}
         settings.prefs.edit().putString("account","00000000-0000-0000-0000-000000000036").putString("credentials","synthetic-not-a-login").putBoolean("enabled",true).commit();
         ThemeStore.setMode(app,args.getString("theme","light"));ClassroomStore store=new ClassroomStore(app,settings.account());
+        if("course_affairs".equals(args.getString("mode"))){report.putString("course_affairs_report",ClassroomAffairsDeviceChecks.run(this,args));finish(-1,report);return;}
         if("fixture_cleanup".equals(args.getString("mode"))){report.putString("fixture_cleanup_report",ClassroomWorkDeviceCheck.cleanupOwnedResults(this));cleanupSelectionResults(app,settings.account());finish(-1,report);return;}
         if("selection_navigation".equals(args.getString("mode"))){report.putString("selection_navigation_report",selectionNavigation(app,store));finish(-1,report);return;}
         if("classroom_work".equals(args.getString("mode"))){report.putString("classroom_work_report",ClassroomWorkDeviceCheck.run(this));finish(-1,report);return;}

@@ -18,7 +18,7 @@ public final class ZjuSettingsActivity extends Activity {
     private EditText user,password;
     private TextView status;
     private android.widget.ImageButton sync;
-    private Button save,logout,calendarPermission,classroom,exams;
+    private Button save,logout,calendarPermission,classroom,affairs,exams;
     private boolean binding,busy;
     @Override protected void onCreate(Bundle state){
         ThemeStore.apply(this);super.onCreate(state);settings=new ZjuSettingsStore(this);
@@ -51,6 +51,7 @@ public final class ZjuSettingsActivity extends Activity {
         button(root,"日程来源",()->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));
         button(root,"作业更新记录",()->startActivity(new Intent(this,ZjuHomeworkHistoryActivity.class)));
         classroom=button(root,"课堂总结",()->startActivity(new Intent(this,ClassroomSummaryActivity.class)));
+        affairs=button(root,"课程事务",()->ClassroomAffairsActivity.open(this,settings.account(),""));
         Button cleanup=button(root,"清理未引用的课堂图片",()->{});
         cleanup.setOnClickListener(v->{cleanup.setEnabled(false);ClassroomCleanupService.WORKER.execute(()->{
             String message;
@@ -114,6 +115,7 @@ public final class ZjuSettingsActivity extends Activity {
         sync.setEnabled(!busy&&settings.enabled()&&settings.configured());status.setText(settings.status());
         classroom.setVisibility(settings.enabled()?View.VISIBLE:View.GONE);
         classroom.setEnabled(!busy&&settings.enabled()&&settings.configured());
+        affairs.setVisibility(classroom.getVisibility());affairs.setEnabled(classroom.isEnabled());
         exams.setVisibility(settings.enabled()?View.VISIBLE:View.GONE);
         exams.setEnabled(!busy&&settings.enabled()&&settings.configured());
         ZjuSync.WORKER.execute(()->{

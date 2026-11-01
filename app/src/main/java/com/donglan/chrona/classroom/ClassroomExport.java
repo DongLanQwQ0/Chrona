@@ -61,20 +61,29 @@ public final class ClassroomExport {
         if(!summary.optBoolean("complete"))md.append("**未完成**\n\n");
         if(!summary.optString("overview").isBlank())md.append("## 重点概览\n\n").append(ClassroomDocument.exportMarkdown(summary.getString("overview"))).append("\n\n");
         JSONArray parts=summary.getJSONArray("parts");
+        boolean affairsSchema=summary.optInt("affairs_schema")==1;
+        for(int p=0;p<parts.length();p++)affairsSchema|=parts.getJSONObject(p).has("affairs");
+        boolean learning=false;
         for(int p=0;p<parts.length();p++) {
             JSONObject part=parts.getJSONObject(p);
             JSONArray notes=part.getJSONArray("notes");
             for(int i=0;i<notes.length();i++) {
-                JSONObject note=notes.getJSONObject(i);md.append("## ").append(ClassroomDocument.exportMarkdown(note.getString("title"))).append("\n\n").append(ClassroomDocument.exportMarkdown(note.getString("text"))).append("\n\n");
-                refs(md,note.getJSONArray("sources"),segments);
-                JSONArray pics=note.getJSONArray("images");
-                Set<String> inline=ClassroomDocument.inlineImages(note.getString("text"));
-                for(int n=0;n<pics.length();n++){String file=safeImage(pics.getString(n));if(!inline.contains(file))md.append("![课堂截图](images/").append(file).append(")\n\n");}
+                JSONObject note=notes.getJSONObject(i);
+                if(affairsSchema&&!hasContent(note))continue;
+                if(affairsSchema&&!learning){md.append("## 学习笔记\n\n");learning=true;}
+                note(md,note,segments,affairsSchema?"### ":"## ");
             }
         }
         boolean assignments=false;
-        for(int p=0;p<parts.length();p++){JSONArray tasks=parts.getJSONObject(p).getJSONArray("assignments");
-            for(int i=0;i<tasks.length();i++){if(!assignments){md.append("## 课堂安排\n\n");assignments=true;}JSONObject task=tasks.getJSONObject(i);md.append(ClassroomDocument.exportMarkdown(task.getString("text"))).append("\n\n");refs(md,task.getJSONArray("sources"),segments);}}
+        for(int p=0;p<parts.length();p++){
+            JSONObject part=parts.getJSONObject(p);
+            if(part.has("affairs")){JSONArray affairs=part.getJSONArray("affairs");
+                for(int i=0;i<affairs.length();i++){JSONObject affair=affairs.getJSONObject(i);if(!hasContent(affair))continue;
+                    if(!assignments){md.append("## 课程事务\n\n");assignments=true;}note(md,affair,segments,"### ");}}
+            JSONArray tasks=part.getJSONArray("assignments");
+            for(int i=0;i<tasks.length();i++){JSONObject task=tasks.getJSONObject(i);if(affairsSchema&&task.getString("text").isBlank())continue;
+                if(!assignments){md.append(affairsSchema?"## 课程事务\n\n":"## 课堂安排\n\n");assignments=true;}
+                md.append(ClassroomDocument.exportMarkdown(task.getString("text"))).append("\n\n");refs(md,task.getJSONArray("sources"),segments);}}
         JSONArray selected=summary.getJSONArray("images");
         md.append("原始截图 ").append(summary.getInt("raw_images")).append(" 张；去重候选 ").append(summary.getInt("candidate_images"))
                 .append(" 张；分析 ").append(selected.length()).append(" 张。\n");
@@ -90,6 +99,17 @@ public final class ClassroomExport {
             for(String image:images){progress.update(new ClassroomProgress("写入 ZIP",done,total,image));entry(zip,prefix+"images/"+image,ClassroomStore.bytes(new File(dir,image)),time);done++;}
             progress.update(new ClassroomProgress("ZIP 内容已写入",done,total,images.size()+" 张图片"));
         }
+    }
+    private static boolean hasContent(JSONObject note)throws Exception {
+        return !note.getString("text").isBlank()||note.getJSONArray("images").length()>0;
+    }
+    private static void note(StringBuilder md,JSONObject note,JSONArray segments,String heading)throws Exception {
+        String title=note.getString("title"),text=note.getString("text");
+        md.append(heading).append(ClassroomDocument.exportMarkdown(title)).append("\n\n").append(ClassroomDocument.exportMarkdown(text)).append("\n\n");
+        refs(md,note.getJSONArray("sources"),segments);
+        Set<String> inline=new LinkedHashSet<>(ClassroomDocument.inlineImages(title));inline.addAll(ClassroomDocument.inlineImages(text));
+        JSONArray pics=note.getJSONArray("images");
+        for(int n=0;n<pics.length();n++){String file=safeImage(pics.getString(n));if(inline.add(file))md.append("![课堂截图](images/").append(file).append(")\n\n");}
     }
     public static final class LessonFiles {
         public final ClassroomLesson lesson;public final File dir;

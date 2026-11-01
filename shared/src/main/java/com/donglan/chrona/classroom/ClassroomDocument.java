@@ -60,13 +60,14 @@ public final class ClassroomDocument {
         for (int p=0;p<parts.length();p++) {
             JSONObject part=parts.getJSONObject(p);
             result.addAll(inlineImages(part.optString("overview")));
-            for (String collection:new String[]{"notes","assignments"}) {
+            for (String collection:new String[]{"notes","affairs","assignments"}) {
+                if(collection.equals("affairs")&&!part.has(collection))continue;
                 JSONArray rows=part.getJSONArray(collection);
                 for(int i=0;i<rows.length();i++) {
                     JSONObject row=rows.getJSONObject(i);
                     result.addAll(inlineImages(row.optString("title")));
                     result.addAll(inlineImages(row.getString("text")));
-                    JSONArray images=row.optJSONArray("images");
+                    JSONArray images=row.has("images")?row.getJSONArray("images"):null;
                     if(images!=null)for(int n=0;n<images.length();n++)result.add(imageName(images.getString(n)));
                 }
             }
@@ -101,10 +102,13 @@ public final class ClassroomDocument {
             row.getString("text");
         }
         JSONArray parts=summary.getJSONArray("parts");
-        for(int p=0;p<parts.length();p++)for(String collection:new String[]{"notes","assignments"}){
-            JSONArray rows=parts.getJSONObject(p).getJSONArray(collection);
+        for(int p=0;p<parts.length();p++)for(String collection:new String[]{"notes","affairs","assignments"}){
+            JSONObject part=parts.getJSONObject(p);
+            if(collection.equals("affairs")&&!part.has(collection))continue;
+            JSONArray rows=part.getJSONArray(collection);
             for(int i=0;i<rows.length();i++){
                 JSONObject row=rows.getJSONObject(i);row.getString("text");JSONArray refs=row.getJSONArray("sources");
+                if(collection.equals("affairs")){row.getString("title");row.getJSONArray("images");}
                 for(int n=0;n<refs.length();n++)if(!(refs.get(n) instanceof Integer)||refs.getInt(n)<0||refs.getInt(n)>=segments.length())throw new IOException("字幕引用无效");
             }
         }

@@ -33,5 +33,51 @@ vm.runInNewContext(fs.readFileSync(path.join(assets,'reader.js'),'utf8'),context
     assert.equal((main.innerHTML.match(/<img /g)||[]).length,count,'actual image tokens control fallback without duplicate or missing picture: '+text);
     assert.equal(JSON.stringify(data),before,'reader never mutates saved source for fallback');
   }
-  console.log('ClassroomReaderSources: 19 assertions passed (production parser/reader, DOM adapter; no visual acceptance)');
+  const note=(title,text,images=[])=>({title,text,images,sources:[0]});
+  const grouped={complete:true,affairs_schema:1,overview:'统一概览',parts:[
+    {notes:[note('知识一','概念一')],affairs:[note('[id:0] 评分规则','[id:0] 平时分30%。\n\n![图][slide]\n\n[slide]: images/image-61.jpg',['image-61.jpg','images/image-61.jpg'])],assignments:[{text:'第一项行动'}]},
+    {notes:[note('知识二','概念二')],affairs:[note('考核范围','第三章不考。')],assignments:[{text:'第二项行动'}]}
+  ]};
+  const groupedBefore=JSON.stringify(grouped);
+  await window.renderClassroom({summary:grouped,images:['image-61.jpg']});
+  const groupedHtml=main.innerHTML;
+  assert(groupedHtml.indexOf('<h2>重点概览</h2>')<groupedHtml.indexOf('<h2>学习笔记</h2>')&&groupedHtml.indexOf('概念二')<groupedHtml.indexOf('<h2>课程事务</h2>'),'all knowledge precedes consolidated affairs');
+  assert.equal((groupedHtml.match(/<h2>课程事务<\/h2>/g)||[]).length,1,'one affairs heading');
+  assert(!groupedHtml.includes('课堂安排</h2>')&&/<h3>\s*评分规则<\/h3>/.test(groupedHtml),'new affairs keep existing subsection styles and hide source markers');
+  assert.deepEqual([...groupedHtml.matchAll(/data-task="(\d+)"/g)].map(m=>m[1]),['0','1'],'existing assignment indices remain across parts');
+  assert.equal((groupedHtml.match(/class="assignment"/g)||[]).length,2,'non-action affairs never become extraction links');
+  assert.equal((groupedHtml.match(/<img /g)||[]).length,1,'affairs use actual CommonMark token fallback dedupe');
+  assert.equal(JSON.stringify(grouped),groupedBefore,'grouped reader leaves source data unchanged');
+  const only=structuredClone(grouped);only.overview='';for(const part of only.parts)part.notes=[];
+  await window.renderClassroom({summary:only,images:['image-61.jpg']});
+  assert(!main.innerHTML.includes('学习笔记')&&!main.innerHTML.includes('重点概览')&&main.innerHTML.includes('课程事务'),'affairs-only content has no empty learning shells');
+  const noMarker=structuredClone(only);delete noMarker.affairs_schema;
+  await window.renderClassroom({summary:noMarker,images:['image-61.jpg']});
+  assert(main.innerHTML.includes('课程事务'),'explicit optional affairs field also selects grouped schema');
+  const skipped=structuredClone(only);skipped.parts[0].assignments.unshift({text:'  '});
+  await window.renderClassroom({summary:skipped,images:['image-61.jpg']});
+  assert.deepEqual([...main.innerHTML.matchAll(/data-task="(\d+)"/g)].map(m=>m[1]),['1','2'],'skipping blank content never shifts original extraction indices');
+  const empty={complete:true,affairs_schema:1,overview:'',parts:[{notes:[],affairs:[],assignments:[]}]};
+  await window.renderClassroom({summary:empty,images:[]});
+  assert.equal(main.innerHTML,'','empty grouped document has no headings');
+  const aggregate={lessons:[
+    {key:'41-51',label:'2026-09-01 · 第1节',summary:grouped,images:['image-61.jpg']},
+    {key:'41-52',label:'2026-09-02 · <第2节>',summary:{complete:false,parts:[{notes:[note('不可出现','知识隐藏')],affairs:[note('第二课规则','![同编号](image-61.jpg)\n\n![越界](image-62.jpg)\n\n![远程](https://example.com/image-61.jpg)',['image-61.jpg'])],assignments:[{text:'第三项行动'}]}]},images:['image-61.jpg']}
+  ]};
+  const aggregateBefore=JSON.stringify(aggregate);
+  await window.renderClassroom(aggregate);
+  const aggregated=main.innerHTML;
+  assert(aggregated.includes('href="action/lesson/41-51" aria-label="查看原课堂：2026-09-01 · 第1节"')&&aggregated.includes('2026-09-02 · &lt;第2节&gt;'),'each lesson has escaped original-lesson navigation');
+  assert(aggregated.includes('aria-label="查看原课堂：2026-09-02 · &lt;第2节&gt; · 未完成"')&&!aggregated.includes('aria-label="查看原课堂"'),'lesson source accessible names distinguish dates/periods and preserve escaped draft status');
+  assert(aggregated.includes('2026-09-02 · &lt;第2节&gt; · 未完成</a>')&&aggregated.includes('2026-09-01 · 第1节</a>')&&(aggregated.match(/ · 未完成<\/a>/g)||[]).length===1,'only draft lesson source labels carry unfinished status');
+  assert(!aggregated.includes('重点概览')&&!aggregated.includes('学习笔记')&&!aggregated.includes('课程事务')&&!aggregated.includes('不可出现')&&!aggregated.includes('统一概览'),'aggregate contains only original affairs and actions, no extra section labels');
+  assert(!aggregated.includes('data-task=')&&!aggregated.includes('class="assignment"'),'aggregate action text is read-only');
+  assert(aggregated.includes('src="lessons/41-51/images/image-61.jpg"')&&aggregated.includes('src="lessons/41-52/images/image-61.jpg"'),'same image names scoped per lesson');
+  assert(aggregated.includes('href="action/image/41-51/image-61.jpg"')&&aggregated.includes('href="action/image/41-52/image-61.jpg"'),'image actions preserve original lesson identity');
+  assert.equal((aggregated.match(/<img /g)||[]).length,2,'scoped CommonMark tokens dedupe and reject unallowed or remote images');
+  assert(aggregated.indexOf('第一项行动')<aggregated.indexOf('第二项行动')&&aggregated.indexOf('第二项行动')<aggregated.indexOf('第三项行动'),'aggregate preserves original action order without merging');
+  assert.equal(JSON.stringify(aggregate),aggregateBefore,'aggregate never mutates input');
+  await window.renderClassroom({summary:grouped,images:['image-61.jpg']});
+  assert(main.innerHTML.includes('src="images/image-61.jpg"')&&!main.innerHTML.includes('src="lessons/'),'ordinary rendering restores unscoped image paths after aggregation');
+  console.log('ClassroomReaderSources: 41 assertions passed (production parser/reader, DOM adapter; no visual acceptance)');
 })().catch(error=>{console.error(error);process.exitCode=1;});

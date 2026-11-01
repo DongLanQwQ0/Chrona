@@ -42,6 +42,16 @@ public final class ClassroomStore {
         if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("无法创建课堂缓存");
         return dir;
     }
+    /** Existing summary only; read-only readers must not create a lesson directory. Call under LOCK. */
+    public File existingSummary(ClassroomLesson lesson)throws IOException {
+        if(!lesson.courseId.matches("[0-9]+")||!lesson.id.matches("[0-9]+"))throw new IOException("课堂编号无效");
+        File local=new File(root,lesson.courseId+"-"+lesson.id),imported=new File(shared,local.getName());
+        for(File dir:new File[]{local,imported}){
+            if(Files.isSymbolicLink(dir.toPath())||!dir.getCanonicalFile().getParentFile().equals(dir.equals(local)?root.getCanonicalFile():shared.getCanonicalFile()))throw new IOException("课堂目录无效");
+            if(active(dir))throw new IOException("课堂正在处理，请稍后刷新");
+        }
+        return new File(local,"summary.json").isFile()?local:new File(imported,"summary.json").isFile()?imported:null;
+    }
     /** Resolve only an existing local raw image; never a portable/shared import or arbitrary path. */
     public File localImage(String courseId,String lessonId,String raw)throws IOException {
         if(!courseId.matches("[0-9]+")||!lessonId.matches("[0-9]+")||!raw.matches("raw-[0-9]+\\.img"))throw new IOException("课堂图片无效");

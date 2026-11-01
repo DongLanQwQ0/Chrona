@@ -12,10 +12,12 @@ final class ClassroomEnhancedSummary {
     private final File dir;private final JSONObject state,materials,candidates,full;
     private final ClassroomLesson lesson;private final ClassroomConversation conversation;
     private final RequestControl control;private final ClassroomImages.Progress progress;
+    private final int affairsSchema;
     ClassroomEnhancedSummary(File dir,ClassroomLesson lesson,JSONObject state,JSONObject materials,JSONObject candidates,
             JSONObject full,ClassroomConversation conversation,RequestControl control,ClassroomImages.Progress progress){
         this.dir=dir;this.lesson=lesson;this.state=state;this.materials=materials;this.candidates=candidates;
         this.full=full;this.conversation=conversation;this.control=control;this.progress=progress;
+        this.affairsSchema=state.optInt("affairs_schema",0);
     }
     JSONObject generate(int imageLimit)throws Exception{
         if(!state.has("blocks"))state.put("blocks",blocks(full.getJSONArray("segments")));
@@ -39,12 +41,12 @@ final class ClassroomEnhancedSummary {
             JSONArray block=blocks.getJSONArray(i);
             String prompt="更正文稿已全部完成。现在只整理第 "+(i+1)+" 段。"+scope(block)
                     +"历史仅用于理解语境，不得把最后一段或其它段当作本段。只提取本段事实，不写全课总结；同一内容不跨段重述。"
-                    +"本段没有教学内容或明确安排时，overview为空字符串，notes和assignments为空数组；不能用闲聊或‘未提及评分规则’填充。"
-                    +assignmentRules()+ClassroomSummary.draftSchema(catalogue,imageLimit,true)
+                    +(affairsSchema==0?"本段没有教学内容或明确安排时，overview为空字符串，notes和assignments为空数组；不能用闲聊或‘未提及评分规则’填充。":"本段无教学内容时overview为空且notes=[]；非行动事务进入affairs，具体行动只进入assignments，三者均无内容时返回空数组，不用闲聊填充。")
+                    +assignmentRules()+ClassroomSummary.draftSchema(catalogue,imageLimit,true,affairsSchema)
                     +"\n本次要提取的更正文稿（历史原消息保持不变，此处仅追加定位）：\n"+corrected.getString(i)
                     +"\n安排原话核验用原始字幕（只作evidence逐字定位，列全引文覆盖的sources）：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
                     +"\n全课PPT可用目录（只表示时间分布，不是图片内容）："+catalogue;
-            drafts.put(json("draft-"+i,prompt,Collections.emptyList(),value->{ClassroomSummary.validateBlock(value,blockInput(block,new JSONArray()));ClassroomSummary.validateAssignmentEvidence(value,block);ClassroomSummary.validateImageAssessment(value,catalogue);}));save();
+            drafts.put(json("draft-"+i,prompt,Collections.emptyList(),value->{ClassroomSummary.validateBlock(value,blockInput(block,new JSONArray()),affairsSchema);ClassroomSummary.validateAssignmentEvidence(value,block);ClassroomSummary.validateImageAssessment(value,catalogue);}));save();
         }
         if(!state.has("selected")){
             JSONArray requests=new JSONArray();for(int i=0;i<drafts.length();i++){JSONArray rows=drafts.getJSONObject(i).getJSONArray("image_requests");for(int n=0;n<rows.length();n++)requests.put(rows.getJSONObject(n));}
@@ -71,11 +73,11 @@ final class ClassroomEnhancedSummary {
                 String prompt="只核实并完善第 "+(i+1)+" 段笔记。当前主体来源id："+ids(block)+"。每条笔记至少引用一条本块来源；可补引同课已提供的真实前文作对照，不引用后续来源、不只重写其它块。课堂安排仅引用本块来源。"
                         +"保留题目和改卷线索、原话条件及不确定性。只修订下面指定初稿，不要依据最后一条历史回复另写一段，不重述其它段。"+assignmentRules()
                         +"本次图片依次对应以下file原值，编号可能不连续，禁止重新编号："+inventory
-                        +"。此前已提供的图片保持在原消息位置。仅可引用本次或此前实际提供的file，不得把请求过但未附的图片当作已看到。"+ClassroomSummary.BLOCK_SCHEMA+ClassroomFigureReview.schema(state.optInt("figure_policy"))
+                        +"。此前已提供的图片保持在原消息位置。仅可引用本次或此前实际提供的file，不得把请求过但未附的图片当作已看到。"+ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
                         +"\n安排原话核验用原始字幕：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
                         +"\n本次唯一要修订的初稿：\n"+drafts.getJSONObject(i);
                 value=json("final-"+i,prompt,bytes,result->{
-                    validateRefinement(result,blockInput(full.getJSONArray("segments"),allowed),block);
+                    validateRefinement(result,blockInput(full.getJSONArray("segments"),allowed),block,affairsSchema);
                     if(state.optInt("figure_policy")>0)ClassroomFigureReview.apply(result,allowed,inventory,state.optJSONArray("figure_reviews"));
                 });
                 if(value.has("image_reviews")){ClassroomFigureReview.merge(state,value.getJSONArray("image_reviews"));ClassroomFigureReview.filter(value,state.getJSONArray("figure_reviews"));}
@@ -96,14 +98,19 @@ final class ClassroomEnhancedSummary {
                 +"sources须列全引文覆盖的每条来源，不可跳过中间字幕；只摘具体行动要求，不带入无关分数或背景段落。没有真实要求就返回[]。";
     }
     static void validateRefinement(JSONObject part,JSONObject lecture,JSONArray block)throws Exception{
-        ClassroomSummary.validateBlock(part,lecture);
+        validateRefinement(part,lecture,block,ClassroomAffairsPolicy.VERSION);
+    }
+    static void validateRefinement(JSONObject part,JSONObject lecture,JSONArray block,int affairsSchema)throws Exception{
+        ClassroomSummary.validateBlock(part,lecture,affairsSchema);
         Set<Integer> current=new HashSet<>();int first=Integer.MAX_VALUE;
         for(int i=0;i<block.length();i++){int id=block.getJSONObject(i).getInt("id");current.add(id);first=Math.min(first,id);}
-        JSONArray notes=part.getJSONArray("notes");
-        for(int n=0;n<notes.length();n++){
-            JSONArray refs=notes.getJSONObject(n).getJSONArray("sources");boolean anchored=false;
-            for(int k=0;k<refs.length();k++){int id=refs.getInt(k);if(current.contains(id))anchored=true;else if(id>=first)throw new IOException("核图笔记引用了本块之后的字幕："+id);}
-            if(!anchored)throw new IOException("核图笔记缺少本块来源，不可只重写前一段");
+        for(String collection:collections(part.has("affairs")?ClassroomAffairsPolicy.VERSION:affairsSchema)){
+            JSONArray notes=part.getJSONArray(collection);
+            for(int n=0;n<notes.length();n++){
+                JSONArray refs=notes.getJSONObject(n).getJSONArray("sources");boolean anchored=false;
+                for(int k=0;k<refs.length();k++){int id=refs.getInt(k);if(current.contains(id))anchored=true;else if(id>=first)throw new IOException("核图笔记引用了本块之后的字幕："+id);}
+                if(!anchored)throw new IOException("核图笔记缺少本块来源，不可只重写前一段");
+            }
         }
         JSONArray tasks=part.getJSONArray("assignments");for(int i=0;i<tasks.length();i++){
             JSONArray refs=tasks.getJSONObject(i).getJSONArray("sources");for(int n=0;n<refs.length();n++)if(!current.contains(refs.getInt(n)))throw new IOException("课堂安排引用了本块之外的字幕："+refs.getInt(n));
@@ -115,23 +122,24 @@ final class ClassroomEnhancedSummary {
         if(!state.has("editor_plan")){
             status("AI 全课主题编排",0,1);
             JSONArray index=new JSONArray();
-            for(int p=0;p<parts.length();p++){JSONArray notes=parts.getJSONObject(p).getJSONArray("notes");for(int n=0;n<notes.length();n++){
-                JSONObject note=notes.getJSONObject(n);index.put(new JSONObject().put("ref",p+":"+n).put("title",note.getString("title")).put("sources",note.getJSONArray("sources")));
+            for(int p=0;p<parts.length();p++)for(String collection:collections(affairsSchema)){JSONArray notes=parts.getJSONObject(p).getJSONArray(collection);for(int n=0;n<notes.length();n++){
+                JSONObject note=notes.getJSONObject(n),row=new JSONObject().put("ref",reference(p,collection,n,affairsSchema)).put("title",note.getString("title")).put("sources",note.getJSONArray("sources"));
+                if(affairsSchema>0)row.put("collection",collection);index.put(row);
             }}
             String prompt="全部分段提取与核图已完成，现在编排一篇与普通模式相同的全课笔记，不向用户展示分段流水账。"
                     +(state.optInt("note_strength",1)==3
                             ?"同一知识点的重复提取必须放入同一主题，合并跨段续讲；以老师讲授方向为准，可按知识依赖重排为精简讲义，保留不同题目条件、代码、纠错和评分细节，不能按输入段号设章节。"
                             :"同一知识点的重复提取必须放入同一主题，合并跨段续讲，按课程讲授顺序组织；保留不同题目条件、代码、纠错和评分细节，不能按输入段号设章节。")
-                    +"只输出紧凑JSON {\"overview\":\"全课统一重点概览\",\"sections\":[{\"title\":\"主题\",\"refs\":[\"0:0\"]}]}。"
-                    +"overview用少量完整句说明全课核心，只用文字不附图，不逐段复述、不写第几段或未提及的类别。refs是下面真实索引，每条必须恰好使用一次，不得遗漏、重复或编造；本轮不生成笔记正文。没有教学笔记则sections=[]，overview为空。"
+                    +(affairsSchema==0?"只输出紧凑JSON {\"overview\":\"全课统一重点概览\",\"sections\":[{\"title\":\"主题\",\"refs\":[\"0:0\"]}]}。":"只输出紧凑JSON {\"overview\":\"知识重点概览\",\"sections\":[{\"title\":\"主题\",\"collection\":\"notes\",\"refs\":[\"0:notes:0\"]}]}。collection只可为notes或affairs，且必须与每条ref的原集合一致，禁止跨类别合并。")
+                    +(affairsSchema==0?"overview用少量完整句说明全课核心，只用文字不附图，不逐段复述、不写第几段或未提及的类别。refs是下面真实索引，每条必须恰好使用一次，不得遗漏、重复或编造；本轮不生成笔记正文。没有教学笔记则sections=[]，overview为空。":"overview仅概括知识，只用文字不附图；没有notes时overview为空，affairs仍须编排。每条notes及affairs索引必须恰好使用一次，不得遗漏、重复或编造；本轮不生成正文。相同主题只在同一类别内合并，保留完整考核依据、范围和不确定性。")
                     +"\n已完成笔记索引：\n"+index;
-            state.put("editor_plan",json("edit-plan",prompt,Collections.emptyList(),value->validatePlan(value,parts)));save();
+            state.put("editor_plan",json("edit-plan",prompt,Collections.emptyList(),value->validatePlan(value,parts,affairsSchema)));save();
         }
         JSONObject plan=state.getJSONObject("editor_plan");JSONArray sections=plan.getJSONArray("sections"),edited=state.optJSONArray("editor_notes");
         if(edited==null){edited=new JSONArray();state.put("editor_notes",edited);}
         for(int i=edited.length();i<sections.length();i++){
             status("AI 全课主题整稿",i,sections.length());
-            JSONObject section=sections.getJSONObject(i);JSONArray inputs=new JSONArray();Set<Integer> sources=new HashSet<>();
+            JSONObject section=sections.getJSONObject(i);String collection=affairsSchema==0?"notes":section.getString("collection");JSONArray inputs=new JSONArray();Set<Integer> sources=new HashSet<>();
             JSONArray refs=section.getJSONArray("refs");
             for(int n=0;n<refs.length();n++){JSONObject note=noteAt(parts,refs.getString(n));inputs.put(note);JSONArray ids=note.getJSONArray("sources");for(int k=0;k<ids.length();k++)sources.add(ids.getInt(k));}
             JSONArray segments=new JSONArray(),all=full.getJSONArray("segments");for(int n=0;n<all.length();n++)if(sources.contains(all.getJSONObject(n).getInt("id")))segments.put(all.getJSONObject(n));
@@ -143,35 +151,46 @@ final class ClassroomEnhancedSummary {
                             :"沿用普通单篇总结的详略，正文不扩写成教程，不超过本主题提取稿正文的合计长度；重复较多时应明显缩短。")
                     +scope(segments)+"sources汇集实际使用的来源；图片只能使用已实际分析且支持本主题的原file，历史图片不重新上传。"
                     +(state.optInt("figure_policy")>0?"图注仅描述实际可见内容，不能把字幕讲过的公式或证明当作图片已显示；已排除的低置信度、空白、仅标题或遮挡图片不得重新引用。保存的图像核对："+state.optJSONArray("figure_reviews"):"")
-                    +"只返回一个JSON，overview为空，notes恰好一项，assignments=[]。"+ClassroomSummary.TOPIC_SCHEMA
+                    +(affairsSchema==0?"只返回一个JSON，overview为空，notes恰好一项，assignments=[]。":"只返回一个JSON，overview为空，"+collection+"恰好一项，另一内容集合及assignments为空数组。保持本主题原类别，不把事务并入学习笔记。")+ClassroomSummary.topicSchema(affairsSchema,collection)
                     +"\n本主题提取稿：\n"+inputs;
             JSONObject value=json("edit-note-"+i,prompt,Collections.emptyList(),result->{
-                ClassroomSummary.validateBlock(result,blockInput(segments,analysed));
+                ClassroomSummary.validateBlock(result,blockInput(segments,analysed),affairsSchema);
                 if(state.optInt("figure_policy")>0)ClassroomFigureReview.filter(result,state.optJSONArray("figure_reviews"));
-                if(result.getJSONArray("notes").length()!=1||result.getJSONArray("assignments").length()!=0||!result.getString("overview").isBlank())throw new IOException("整稿主题必须仅返回一节笔记，不重复概览或安排");
+                if(result.getJSONArray(collection).length()!=1||affairsSchema>0&&result.getJSONArray(collection.equals("notes")?"affairs":"notes").length()!=0||result.getJSONArray("assignments").length()!=0||!result.getString("overview").isBlank())throw new IOException("整稿主题必须仅返回原类别的一节内容，不重复概览或安排");
             });
-            edited.put(value.getJSONArray("notes").getJSONObject(0));save();
+            JSONObject note=new JSONObject(value.getJSONArray(collection).getJSONObject(0).toString());if(affairsSchema>0)note.put("collection",collection);
+            edited.put(note);save();
             ClassroomStore.write(new File(dir,"summary.json"),assemble(parts,analysed,false));
         }
     }
     static void validatePlan(JSONObject plan,JSONArray parts)throws Exception{
+        validatePlan(plan,parts,ClassroomAffairsPolicy.VERSION);
+    }
+    static void validatePlan(JSONObject plan,JSONArray parts,int affairsSchema)throws Exception{
         String overview=plan.getString("overview");Set<String> remaining=new HashSet<>();
-        for(int p=0;p<parts.length();p++)for(int n=0;n<parts.getJSONObject(p).getJSONArray("notes").length();n++)remaining.add(p+":"+n);
-        if(!remaining.isEmpty()&&overview.isBlank())throw new IOException("整稿缺少全课重点概览");
+        boolean teaching=false;
+        for(int p=0;p<parts.length();p++)for(String collection:collections(affairsSchema))for(int n=0;n<parts.getJSONObject(p).getJSONArray(collection).length();n++){remaining.add(reference(p,collection,n,affairsSchema));teaching|=collection.equals("notes");}
+        if(teaching&&overview.isBlank())throw new IOException("整稿缺少全课重点概览");
+        if(affairsSchema>0&&!teaching&&!overview.isBlank())throw new IOException("无教学笔记时知识概览必须为空");
         if(!ClassroomDocument.inlineImages(overview).isEmpty())throw new IOException("整稿概览只允许文字，配图须在主题笔记中核对");
         JSONArray sections=plan.getJSONArray("sections");Map<String,Integer> topicOwners=new HashMap<>();
         for(int i=0;i<sections.length();i++){
             JSONObject section=sections.getJSONObject(i);if(section.getString("title").isBlank())throw new IOException("整稿主题标题为空");
+            String collection=affairsSchema==0?"notes":section.getString("collection");
+            if(!Arrays.asList(collections(affairsSchema)).contains(collection))throw new IOException("整稿主题类别无效："+collection);
             JSONArray refs=section.getJSONArray("refs");if(refs.length()==0)throw new IOException("整稿主题缺少原笔记");
             for(int n=0;n<refs.length();n++){
                 String ref=refs.getString(n);if(!remaining.remove(ref))throw new IOException("整稿引用了重复或不存在的笔记："+ref);
-                String topic=noteAt(parts,ref).getString("title").replaceAll("\\s+","");Integer owner=topicOwners.putIfAbsent(topic,i);
+                if(affairsSchema>0&&!ref.split(":")[1].equals(collection))throw new IOException("整稿主题混合了学习笔记与课程事务："+ref);
+                String topic=collection+":"+noteAt(parts,ref).getString("title").replaceAll("\\s+","");Integer owner=topicOwners.putIfAbsent(topic,i);
                 if(owner!=null&&owner!=i)throw new IOException("同名主题被拆成重复章节："+topic);
             }
         }
         if(!remaining.isEmpty())throw new IOException("整稿遗漏了已提取笔记："+remaining);
     }
-    private static JSONObject noteAt(JSONArray parts,String ref)throws Exception{String[] pair=ref.split(":");return parts.getJSONObject(Integer.parseInt(pair[0])).getJSONArray("notes").getJSONObject(Integer.parseInt(pair[1]));}
+    private static String[] collections(int affairsSchema){return affairsSchema==0?new String[]{"notes"}:new String[]{"notes","affairs"};}
+    private static String reference(int part,String collection,int index,int affairsSchema){return affairsSchema==0?part+":"+index:part+":"+collection+":"+index;}
+    private static JSONObject noteAt(JSONArray parts,String ref)throws Exception{String[] pair=ref.split(":");return parts.getJSONObject(Integer.parseInt(pair[0])).getJSONArray(pair.length==2?"notes":pair[1]).getJSONObject(Integer.parseInt(pair[pair.length-1]));}
     private void editAssignments(JSONArray parts)throws Exception{
         if(state.has("editor_assignments"))return;
         JSONObject original=new JSONObject();JSONArray index=new JSONArray();
@@ -209,15 +228,18 @@ final class ClassroomEnhancedSummary {
     private JSONObject assemble(JSONArray parts,JSONArray analysed,boolean complete)throws Exception{
         if(state.has("image_audit")&&state.has("figure_reviews"))state.getJSONObject("image_audit").put("figures",state.getJSONArray("figure_reviews"));
         JSONObject plan=state.optJSONObject("editor_plan");String overview=plan==null?"":plan.getString("overview");
-        JSONArray notes=state.optJSONArray("editor_notes"),tasks=state.optJSONArray("editor_assignments");
-        JSONObject document=new JSONObject().put("overview",overview).put("notes",notes==null?new JSONArray():new JSONArray(notes.toString())).put("assignments",tasks==null?new JSONArray():new JSONArray(tasks.toString()));
-        ClassroomSummary.validateBlock(document,blockInput(full.getJSONArray("segments"),analysed));
+        JSONArray edited=state.optJSONArray("editor_notes"),tasks=state.optJSONArray("editor_assignments");
+        JSONObject document=new JSONObject().put("overview",overview).put("notes",new JSONArray()).put("assignments",tasks==null?new JSONArray():new JSONArray(tasks.toString()));
+        if(affairsSchema>0)document.put("affairs",new JSONArray());
+        if(edited!=null)for(int i=0;i<edited.length();i++){JSONObject note=new JSONObject(edited.getJSONObject(i).toString());String collection=affairsSchema==0?"notes":note.getString("collection");note.remove("collection");document.getJSONArray(collection).put(note);}
+        ClassroomSummary.validateBlock(document,blockInput(full.getJSONArray("segments"),analysed),affairsSchema);
         if(state.optInt("figure_policy")>0)ClassroomFigureReview.filter(document,state.optJSONArray("figure_reviews"));
         overview=document.getString("overview");
         JSONArray corrected=state.getJSONArray("corrected");StringBuilder transcript=new StringBuilder();
         for(int i=0;i<corrected.length();i++){if(i>0)transcript.append("\n\n");transcript.append(corrected.getString(i));}
         return new JSONObject().put("lesson",lesson.json()).put("run",state.getString("run")).put("updated",System.currentTimeMillis()).put("complete",complete)
                 .put("note_strength",state.optInt("note_strength",1))
+                .put("affairs_schema",affairsSchema)
                 .put("overview",overview).put("parts",new JSONArray().put(document)).put("total_parts",1).put("source_blocks",state.getJSONArray("blocks").length())
                 .put("corrected_transcript",ClassroomDocument.normalizeMarkdown(transcript.toString())).put("images",new JSONArray(analysed.toString()))
                 .put("planned_images",state.has("selected")?state.getJSONArray("selected").length():0).put("raw_images",materials.getInt("raw_images"))

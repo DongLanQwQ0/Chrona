@@ -104,8 +104,8 @@ public final class ClassroomFigureReview {
         if(reviews==null)return;Set<String> rejected=new LinkedHashSet<>();
         for(int i=0;i<reviews.length();i++){JSONObject row=reviews.getJSONObject(i);if(!row.optBoolean("included"))rejected.add(row.getString("file"));}
         part.put("overview",without(part.optString("overview"),rejected));
-        for(String collection:new String[]{"notes","assignments"}){
-            JSONArray rows=part.getJSONArray(collection);
+        for(String collection:new String[]{"notes","affairs","assignments"}){
+            JSONArray rows=part.optJSONArray(collection);if(rows==null)continue;
             for(int i=0;i<rows.length();i++){
                 JSONObject row=rows.getJSONObject(i);for(String field:new String[]{"title","text"})if(row.has(field))row.put(field,without(row.getString(field),rejected));
                 JSONArray images=row.optJSONArray("images");if(images==null)continue;JSONArray kept=new JSONArray();

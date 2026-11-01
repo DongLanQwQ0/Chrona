@@ -33,7 +33,7 @@ public final class ClassroomSummaryCheck {
         int id=chunk.getJSONArray("segments").getJSONObject(0).getInt("id");
         JSONArray pics=new JSONArray();for(int i=0;i<chunk.getJSONArray("images").length();i++)pics.put(chunk.getJSONArray("images").getJSONObject(i).getString("file"));
         return new JSONObject().put("overview","本段重点 "+id).put("notes",new JSONArray().put(new JSONObject().put("title","主题 "+id).put("text","概念与推导").put("sources",new JSONArray().put(id)).put("images",pics)))
-                .put("assignments",new JSONArray().put(new JSONObject().put("text","下周交作业").put("sources",new JSONArray().put(id))));
+                .put("affairs",new JSONArray()).put("assignments",new JSONArray().put(new JSONObject().put("text","下周交作业").put("sources",new JSONArray().put(id))));
     }
     private static byte[] image(int gray)throws Exception {
         BufferedImage image=new BufferedImage(96,96,BufferedImage.TYPE_INT_RGB);int color=gray*0x010101;
@@ -203,10 +203,10 @@ public final class ClassroomSummaryCheck {
         check(calls==3,"retry calls only failed second round");
         JSONArray firstMessages=requests.get(0).getJSONArray("messages");String firstPrompt=firstMessages.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text");
         check(firstMessages.getJSONObject(1).getJSONArray("content").length()==1,"first round sends no image bytes");
-        check(firstPrompt.contains("应主动核图")&&firstPrompt.contains("五个顶层字段")&&!firstPrompt.contains("仅在确有需要时请求"),"first prompt requires explicit visual-gap review instead of optional image requests");
+        check(firstPrompt.contains("应主动核图")&&firstPrompt.contains("六个顶层字段")&&!firstPrompt.contains("仅在确有需要时请求"),"first prompt requires explicit visual-gap review instead of optional image requests");
         String shapeMarker="完整对象：\n";int shapeStart=firstPrompt.indexOf(shapeMarker),shapeEnd=firstPrompt.indexOf("\n字段规则：",shapeStart);
         JSONObject draftShape=new JSONObject(firstPrompt.substring(shapeStart+shapeMarker.length(),shapeEnd));
-        check(draftShape.keySet().equals(java.util.Set.of("overview","notes","assignments","image_assessment","image_requests")),"first-round complete JSON example includes the mandatory visual decision and requests");
+        check(draftShape.keySet().equals(java.util.Set.of("overview","notes","affairs","assignments","image_assessment","image_requests")),"first-round complete JSON example includes affairs and the mandatory visual decision and requests");
         JSONObject imageAudit=result.getJSONObject("image_audit");
         check(imageAudit.getJSONObject("assessment").getString("decision").equals("request")&&!imageAudit.getJSONObject("assessment").getString("reason").isBlank(),"summary preserves the model's reason for requesting images");
         check(imageAudit.getInt("selected_count")==3&&imageAudit.getInt("analysed_count")==3&&checkpoint.getJSONObject("image_audit").getInt("analysed_count")==0,"audit distinguishes planned selection from actually analysed frames across failure");
@@ -248,7 +248,7 @@ public final class ClassroomSummaryCheck {
         check(exportProgress.get(exportProgress.size()-1).completed==entries.size(),"export count equals actual ZIP entries");
         check(entries.size()==5,"ZIP contains Markdown, subtitle source, three local images");
         for(int i=0;i<3;i++){check(md.contains("images/image-"+i+".jpg")&&entries.containsKey("images/image-"+i+".jpg"),"offline image reference resolves "+i);check(transcript.contains("id=\"s"+i+"\""),"offline subtitle anchor resolves "+i);}
-        check(md.contains("## 课堂安排")&&md.contains("下周交作业"),"assignments exported as suggestions without calendar writes");
+        check(md.contains("## 课程事务")&&md.contains("下周交作业"),"new assignments export within course affairs without calendar writes");
         check(!md.contains(AI.apiKey)&&!checkpoint.toString().contains(AI.apiKey)&&!result.toString().contains(AI.apiKey),"credential absent from run/summary/export");
         rejects(()->ClassroomExport.safeImage("../secret"),"ZIP path traversal rejected");
         try(RequestControl c=new RequestControl(20000)){JSONObject changed=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"保留英文术语");check(!changed.getString("run").equals(result.getString("run")),"changed image budget creates distinct run identity");check(changed.getJSONArray("images").length()==0&&changed.getInt("planned_images")==0,"changed config cannot reuse old image inventory");}
@@ -281,7 +281,7 @@ public final class ClassroomSummaryCheck {
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
         check(state.getJSONObject("final_validation").getString("status").equals("succeeded")&&!state.getString("final_output").contains("image-999.jpg"),"successful continuation replaces stale failed-final evidence with current response");
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");
-        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n11\nfalse\n保留英文术语\nfigure_policy=1"),"shared configuration key records pipeline and visual policy version");
+        check(state.getString("config").equals(ClassroomSummary.configKey(AI,40,"保留英文术语"))&&state.getString("config").endsWith("\n11\nfalse\n保留英文术语\nfigure_policy=1\naffairs_schema=1"),"shared configuration key records unchanged pipeline and explicit affairs policy version");
     }
     private static void prefixedFinal()throws Exception {
         reset();mode="prefixed-final";File dir=materialDir("prefixed-final-"+System.nanoTime());JSONObject result;
