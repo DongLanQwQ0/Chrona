@@ -51,12 +51,13 @@
 
 - 上次手机10.195.179.127:42381已连通，正式版为0.15.81/243。正常Launcher进入拾时；内部Activity不允许外部直接启动，不改exported或权限。QQ通知与GlobalSend前台切换曾打断导航，最后进入课堂历史（31节）但尚未进入失败项；该次已按用户要求停止操作，未重跑AI。本次恢复及交接状态以上节为准。
 - 本次恢复使用10.197.184.141:40137，临时文件仅放手机`/data/local/tmp/chrona/classroom-failure-20261101/`和项目`build/classroom-failure-20261101/`。原有20261031目录另行保留其已记录的清理边界，不混入本次文件。
+- 当前端口为10.197.184.141:38283。本次phone window.xml/install.xml及20261101空目录已清理；下次helper在已确认Chrona前台后重建同一专用目录，不向外散写。原生可见性探针两个本次nonce目录和临时chrona-split.xml已清理，报告/JPEG留项目build；其它前置夹具及旧failure.jpg未删。
 - 本次手机目录`/data/local/tmp/chrona/classroom-failure-20261031/`，含history.xml、window.xml及dashboard.xml（后者可能未生成）。电脑`build/classroom-current-failure/`的history.xml、current.jpg含偶发非Chrona窗口，不进Git或交付；删除命令被工具策略拒绝，未绕过，留待用户允许的执行通路清理。其它本次XML也仅属本任务。
 - 共享模拟器emulator-5580复用Chrona_Classroom_36。所有原生夹具已结束，本批合成课堂与专用course-affairs目录已清理；已清理先前两个隔离包的classroom-export-layout及auto-summary/portrait-light中本批六个文件。后者原有10月28日failure.jpg保留，不删前置文件、其它应用数据或AVD。未终止模拟器。
 - 用户跨任务偏好已按直接要求写到全局记忆更新便笺：询问操控手机后长时间无回复可按不在场继续；本次明确停止优先，不能以该默认授权绕过暂停或系统权限拒绝。
 
 ## 源码及既有发布边界
 
-- 当前checkout为`experiment/glass-lens`，候选源码提交`6f074e5`已推送origin/main，安装包对应记录为`build/candidates/0.15.83/candidate.json`。保护AGENTS.md、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1与外部写入的docs/Communication/messages/2026-10-31.jsonl，不纳入本批提交或清理。
+- 当前checkout为`experiment/glass-lens`，本轮源码提交`8abbbcc`已推送origin/main，86产物对应记录为`build/candidates/0.15.86/candidate.json`，未发布/未安装86；手机为85。保护AGENTS.md、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1与外部写入的docs/Communication/messages/2026-10-31.jsonl，不纳入本批提交或清理。
 - 本批不动Dock；core交付见`docs/Communication/to-external-agent.md`。正式latest仍v0.15.81，不为补丁新增Release；0.15.83真机覆盖升级及滑块可见已验证，剩余为上述JSON修复和全量重总结。
 - 历史真实C课整稿、v0.15.81升级与Release清理证据见`docs/validation-history.md`、`build/classroom-c-audit/`与`build/release-cleanup/20261031-v0.15.81/`，不重复进入当前工作单。
