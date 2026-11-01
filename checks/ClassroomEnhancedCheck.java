@@ -20,6 +20,7 @@ public final class ClassroomEnhancedCheck {
     private static final AiSettings AI=new AiSettings("https://api.openai.com/v1","gpt-5.1","synthetic-only-key","high");
     private static final List<JSONObject> requests=new ArrayList<>(), replies=new ArrayList<>();
     private static final List<String> stages=new ArrayList<>();
+    private static final List<Integer> requestBytes=new ArrayList<>();
     private static File root;private static int checks,failures,failCall=-1,slowCall=-1;
     private static String mode="normal",lastStage="";private static boolean images;
     private static HttpURLConnection lastConnection;
@@ -28,7 +29,7 @@ public final class ClassroomEnhancedCheck {
     private static void check(boolean ok,String message){checks++;if(!ok){failures++;System.err.println("FAIL: "+message);}}
     private static void test(String label,Task task){try{task.run();System.out.println("DONE: "+label);}catch(Throwable error){failures++;System.err.println("ERROR: "+label);error.printStackTrace();}}
     private static void rejects(Task task,String label)throws Exception{try{task.run();check(false,label);}catch(IOException|JSONException expected){check(true,label);}}
-    private static void reset(String value,boolean withImages){requests.clear();replies.clear();stages.clear();mode=value;images=withImages;lastStage="";failCall=-1;slowCall=-1;requestSeen=new CountDownLatch(1);}
+    private static void reset(String value,boolean withImages){requests.clear();replies.clear();stages.clear();requestBytes.clear();mode=value;images=withImages;lastStage="";failCall=-1;slowCall=-1;requestSeen=new CountDownLatch(1);}
     private static String prompt(JSONObject request)throws Exception{JSONArray messages=request.getJSONArray("messages");return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");}
     private static String stage(String prompt){
         Matcher restart=Pattern.compile("当前阶段：([^；]+)；重试序号：(\\d+)").matcher(prompt);if(restart.find())return restart.group(1)+"-restart-"+restart.group(2);
@@ -75,7 +76,8 @@ public final class ClassroomEnhancedCheck {
         HttpServer server=HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(),0),0);
         server.setExecutor(Executors.newCachedThreadPool(r->{Thread t=new Thread(r);t.setDaemon(true);return t;}));
         server.createContext("/",exchange->{try{
-            JSONObject body=new JSONObject(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
+            byte[] wire=exchange.getRequestBody().readAllBytes();requestBytes.add(wire.length);
+            JSONObject body=new JSONObject(new String(wire,StandardCharsets.UTF_8));
             requests.add(body);String text=prompt(body),current=stage(text);stages.add(current);int call=requests.size();
             if(!current.contains("continue")&&!current.contains("repair")&&!current.contains("user-retry"))lastStage=current;
             if(call==slowCall){requestSeen.countDown();Thread.sleep(1200);}
@@ -106,7 +108,7 @@ public final class ClassroomEnhancedCheck {
                 boolean affairs=text.contains("affairs恰好一项");
                 output=new JSONObject().put("overview","").put("notes",affairs?new JSONArray():new JSONArray().put(note)).put("affairs",affairs?new JSONArray().put(note):new JSONArray()).put("assignments",new JSONArray()).toString();
             }else if(mode.equals("bad-json")&&current.equals("draft-0"))output="{\"overview\":";
-            else if(mode.equals("bad-repair")&&(current.equals("draft-0")||current.endsWith("repair")))output="{\"overview\":";
+            else if(mode.equals("bad-repair")&&(current.equals("draft-0")||current.endsWith("repair")))output="{\"overview\":\"RAW_PRIVATE_PAYLOAD\"";
             else if(mode.equals("bad-manual")&&current.endsWith("user-retry"))output="{\"overview\":";
             else {JSONObject value=part(id,current.startsWith("draft")||current.equals("legacy")&&!text.contains("本次images清单：\n")&&!text.contains("上一条最终总结"),text);
                 if(current.equals("draft-0")&&mode.equals("missing-requests")||mode.equals("missing-always")&&current.startsWith("draft"))value.remove("image_requests");
@@ -172,6 +174,7 @@ public final class ClassroomEnhancedCheck {
         }
         JSONObject conversation=state(dir).getJSONObject("conversation");JSONArray turns=conversation.getJSONArray("turns");
         check(turns.length()==requests.size(),"every sent attempt retained in turns");
+        for(int n=0;n<turns.length();n++)check(turns.getJSONObject(n).getInt("request_bytes")==requestBytes.get(n),"every turn audits exact UTF-8 request bytes including HTTP failure, repair and restart "+n);
         for(int n=0;n<turns.length();n++)if(replies.get(n)!=null){JSONObject usage=turns.getJSONObject(n).getJSONObject("usage");check(usage.getJSONObject("prompt_tokens_details").getInt("cached_tokens")==701+n&&usage.getInt("prompt_cache_hit_tokens")==601+n,"synthetic cache usage retained verbatim "+n);}
         check(!state(dir).toString().contains(AI.apiKey),"run excludes API credential");
     }
@@ -413,8 +416,10 @@ public final class ClassroomEnhancedCheck {
         reset("bad-repair",false);File repaired=materials("repair-validation-resume",false);
         rejects(()->generate(repaired,true),"initial malformed draft and its sole automatic repair both fail");run=state(repaired).getString("run");
         check(requests.size()==3&&state(repaired).getInt("draft-0_attempt")==1,"failed automatic repair leaves resumable manual generation");
+        check(!state(repaired).getString("draft-0_error").contains("RAW_PRIVATE_PAYLOAD")&&prompt(requests.get(2)).contains("JSON")&&!prompt(requests.get(2)).contains("RAW_PRIVATE_PAYLOAD"),"enhanced parser failure and repair prompt never project original response");
         mode="bad-manual";rejects(()->generate(repaired,true),"malformed manual retry stops without second automatic repair");
         check(requests.size()==4&&state(repaired).getInt("draft-0_attempt")==2,"manual bad JSON uses exactly one request and increments retry generation");
+        check(!prompt(requests.get(3)).contains("RAW_PRIVATE_PAYLOAD"),"enhanced manual continuation uses safe stage error");
         check(Collections.frequency(stages,"draft-0-repair")==1,"automatic repair budget remains one across manual attempts");
         mode="normal";result=generate(repaired,true);
         check(requests.size()==7&&result.getBoolean("complete")&&result.getString("run").equals(run),"next explicit manual continue completes without revisiting failed raw output");
@@ -462,7 +467,13 @@ public final class ClassroomEnhancedCheck {
         reset("bad-json",false);File network=materials("schema-repair-network",false);failCall=3;rejects(()->generate(network,true),"network failure during repair stops without retry");
         check(requests.size()==3,"no automatic transport retry");mode="normal";failCall=-1;
         check(generate(network,true).getBoolean("complete"),"explicit retry restarts the failed repair with a full response");
+        check(state(network).getJSONObject("conversation").getJSONArray("turns").getJSONObject(3).getString("stage").equals("draft-0-repair-restart-1"),"attempt-zero repair interruption resumes the same repair identity");
         check(prompt(requests.get(3)).contains("从头完整重新生成当前板块")&&!requests.get(2).toString().equals(requests.get(3).toString()),"repair rollback appends a restart instruction without editing original messages");appendOnly(network);
+        reset("invalid-source",false);File manualNetwork=materials("schema-manual-repair-network",false);rejects(()->generate(manualNetwork,true),"semantic failure preserves unused repair budget");
+        mode="bad-manual";failCall=4;rejects(()->generate(manualNetwork,true),"first repair may be interrupted after manual semantic retry");
+        check(state(manualNetwork).getInt("draft-0_attempt")==1&&state(manualNetwork).getInt("draft-0_repair_attempt")==1,"manual repair transport failure retains originating validation attempt");
+        mode="normal";failCall=-1;check(generate(manualNetwork,true).getBoolean("complete"),"same manual repair identity restarts after transport interruption");
+        check(state(manualNetwork).getJSONObject("conversation").getJSONArray("turns").getJSONObject(4).getString("stage").equals("draft-0-repair-restart-1"),"manual repair recovery does not create a second repair budget");appendOnly(manualNetwork);
         defaultFlow();
     }
     private static void markdownFences()throws Exception{
@@ -524,11 +535,11 @@ public final class ClassroomEnhancedCheck {
         var restore=activity.getDeclaredMethod("restoredFailure",JSONObject.class,JSONObject.class);restore.setAccessible(true);
         var rejected=com.donglan.chrona.ai.ChatCompletionClient.RequestException.class.getDeclaredConstructor(int.class,String.class);rejected.setAccessible(true);
         File directory=new File(root,"failure-detail");directory.mkdirs();Object job=session.getConstructor(File.class).newInstance(directory);
-        for(int code:new int[]{400,401,403,407,429,502,503}){
+        for(int code:new int[]{400,401,403,407,413,429,502,503}){
             Exception failure=rejected.newInstance(code,"synthetic-secret https://untrusted.invalid/private?token=synthetic-secret");
             String safe=(String)detail.invoke(null,failure,false);
             check(safe.contains("HTTP "+code),"HTTP status remains actionable: "+code);
-            String action=code==401||code==403?"AI 服务密钥":code==407?"代理":code==429?"限流":code>=500?"手动继续":"模型及请求配置";
+            String action=code==401||code==403?"AI 服务密钥":code==407?"代理":code==413?"请求体上限":code==429?"限流":code>=500?"手动继续":"模型及请求配置";
             check(safe.contains(action)&&!safe.contains("课程权限"),"recovery advice belongs to AI service rather than school access: "+code);
             check(!safe.contains("synthetic-secret")&&!safe.contains("untrusted.invalid"),"server text and URL never enter durable detail: "+code);
             ClassroomStore.write(new File(directory,"run.json"),new JSONObject().put("run","original-run").put("conversation",new JSONObject().put("marker","untouched")));
@@ -539,6 +550,17 @@ public final class ClassroomEnhancedCheck {
         }
         String invalid="图片引用不存在：image-999.jpg";
         check(invalid.equals(detail.invoke(null,new IOException(invalid),false)),"reference validation keeps concrete cause");
+        for(String json:List.of("{\"overview\":\"RAW_PRIVATE_PAYLOAD\"","{\"notes\":{\"RAW_PRIVATE_PAYLOAD\":1}}")){
+            try{JSONObject value=ClassroomSummary.parseObject(json);value.getJSONArray("notes");check(false,"real malformed/type JSON throws");}
+            catch(JSONException failure){String safe=(String)detail.invoke(null,failure,false);check(safe.contains("JSON")&&!safe.contains("RAW_PRIVATE_PAYLOAD"),"real parser exception is safely projected by auto-summary");}
+        }
+        for(String old:List.of("Unterminated object at character 9210 of {RAW_PRIVATE_PAYLOAD", "Value {RAW_PRIVATE_PAYLOAD} of type org.json.JSONObject cannot be converted to JSONArray")){
+            JSONObject stored=new JSONObject().put("run","same-run").put("execution",new JSONObject().put("state","failed").put("detail",old));
+            check(!((String)restore.invoke(null,null,stored)).contains("RAW_PRIVATE_PAYLOAD"),"old execution detail restores without original response");
+            stored.remove("execution");stored.put("final_validation",new JSONObject().put("status","failed").put("error",old));
+            check(!((String)restore.invoke(null,new JSONObject().put("run","same-run"),stored)).contains("RAW_PRIVATE_PAYLOAD"),"old final validation detail restores without original response");
+            check(stored.getJSONObject("final_validation").getString("error").equals(old),"display projection leaves original stored evidence unchanged");
+        }
         check(((String)detail.invoke(null,new IOException(),false)).contains("手动授权"),"missing message remains recoverable");
         check(((String)detail.invoke(null,new IOException(" "),false)).contains("手动授权"),"blank message remains recoverable");
         String stopped=(String)detail.invoke(null,rejected.newInstance(502,"synthetic-secret"),true);

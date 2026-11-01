@@ -33,7 +33,7 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     volatile Activity lastResumed;
     @Override public void callActivityOnCreate(Activity screen,Bundle state){
         entryCreates.add(screen.getClass().getSimpleName()+": restored="+(state!=null));
-        if(!"page_motion".equals(args.getString("mode")))screen.setRequestedOrientation("landscape".equals(args.getString("orientation"))?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        if(!"page_motion".equals(args.getString("mode"))&&!"page_motion_visibility".equals(args.getString("mode")))screen.setRequestedOrientation("landscape".equals(args.getString("orientation"))?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE:android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         super.callActivityOnCreate(screen,state);
         if(screen instanceof ClassroomLessonActivity&&screen.getIntent().getBooleanExtra("hold_markdown_ready",false)){
             try{
@@ -65,7 +65,18 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     @Override public void callActivityOnResume(Activity screen){
         super.callActivityOnResume(screen);lastResumed=screen;View decor=screen.getWindow().getDecorView();
         android.view.ViewTreeObserver.OnPreDrawListener observer=()->{entryFrameCounts.merge(screen.getClass().getSimpleName(),1,Integer::sum);if(entryFrame(decor)){enteredPages.add(screen.getClass().getSimpleName());entranceFrames.merge(screen,1,Integer::sum);}return true;};
-        decor.getViewTreeObserver().addOnPreDrawListener(observer);decor.postDelayed(()->{if(decor.getViewTreeObserver().isAlive())decor.getViewTreeObserver().removeOnPreDrawListener(observer);},3000);
+        decor.getViewTreeObserver().addOnPreDrawListener(observer);
+        if(screen instanceof ClassroomAuditActivity){
+            // Audit builds its complete local record asynchronously. Observe its real entrance,
+            // even when the first drawable content arrives after the usual resume-time window.
+            decor.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener(){
+                @Override public void onViewAttachedToWindow(View view){}
+                @Override public void onViewDetachedFromWindow(View view){
+                    if(view.getViewTreeObserver().isAlive())view.getViewTreeObserver().removeOnPreDrawListener(observer);
+                    view.removeOnAttachStateChangeListener(this);
+                }
+            });
+        }else decor.postDelayed(()->{if(decor.getViewTreeObserver().isAlive())decor.getViewTreeObserver().removeOnPreDrawListener(observer);},3000);
     }
     private static boolean entryFrame(View view){
         if(view instanceof ViewGroup&&view.getAlpha()>0&&view.getAlpha()<1&&view.getTranslationY()>0)return true;
@@ -75,7 +86,13 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     @Override public void onCreate(Bundle input){args=input==null?new Bundle():input;super.onCreate(input);start();}
     @Override public Activity newActivity(ClassLoader loader,String name,Intent intent)throws InstantiationException,IllegalAccessException,ClassNotFoundException {
         Activity result=super.newActivity(loader,name,intent);
-        if("true".equals(args.getString("nativeScreen")))return result;
+        if("true".equals(args.getString("nativeScreen"))){
+            if(args.containsKey("font")&&name.startsWith("com.donglan.chrona.")){
+                Configuration config=new Configuration();config.fontScale=Float.parseFloat(args.getString("font"));
+                result.applyOverrideConfiguration(config);
+            }
+            return result;
+        }
         if(name.startsWith("com.donglan.chrona.")){
             var metrics=getTargetContext().getResources().getDisplayMetrics();int width=Integer.parseInt(args.getString("widthDp","400"));
             Configuration config=new Configuration();config.densityDpi=Math.round(metrics.widthPixels*160f/width);config.screenWidthDp=width;config.smallestScreenWidthDp=width;
@@ -86,7 +103,16 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
             config.fontScale=Float.parseFloat(args.getString("font","1"));result.applyOverrideConfiguration(config);
         }return result;
     }
-    @Override public void onStart(){Bundle report=new Bundle();try{
+    @Override public void onStart(){
+        // This case consumes an already prepared real split screen; do not rotate it,
+        // clear fixture preferences, acquire permissions or close its existing task.
+        if("page_motion_visibility".equals(args.getString("mode"))){
+            Bundle report=new Bundle();try{
+                report.putString("visibility_report","PASS: "+PageMotionVisibilityChecks.run(this,args)+" native visibility assertions");finish(-1,report);
+            }catch(Throwable failure){report.putString("failure",android.util.Log.getStackTraceString(failure));finish(0,report);}
+            return;
+        }
+        Bundle report=new Bundle();try{
         app=getTargetContext();if(!app.getPackageName().equals("com.donglan.chrona.monitor.validation"))throw new SecurityException("Fixture package required");
         if(!android.os.Build.HARDWARE.contains("ranchu"))throw new SecurityException("Owned emulator required");
         getUiAutomation().setRotation("landscape".equals(args.getString("orientation"))?UiAutomation.ROTATION_FREEZE_90:UiAutomation.ROTATION_FREEZE_0);SystemClock.sleep(800);

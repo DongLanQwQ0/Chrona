@@ -21,17 +21,20 @@ final class ClassroomEnhancedSummary {
     }
     JSONObject generate(int imageLimit)throws Exception{
         if(!state.has("blocks"))state.put("blocks",blocks(full.getJSONArray("segments")));
-        JSONArray blocks=state.getJSONArray("blocks"),corrected=state.optJSONArray("corrected");
+        JSONArray blocks=state.getJSONArray("blocks");
+        ClassroomCorrectionCache.restore(dir,state,blocks);
+        JSONArray corrected=state.optJSONArray("corrected");
         if(corrected==null){corrected=new JSONArray();state.put("corrected",corrected);}
         for(int i=corrected.length();i<blocks.length();i++){
             status("AI 更正文稿",i,blocks.length());
-            String prompt=(i==0?"课程："+lesson.course+"；课堂："+lesson.title+"。全部任务沿用同一消息历史，只追加，不修改此前资料。":"")
+            String prompt=(i==0||state.has("correction_reused_from")?"课程："+lesson.course+"；课堂："+lesson.title+"。全部任务沿用同一消息历史，只追加，不修改此前资料。":"")
                     +"当前为更正文稿第 "+(i+1)+"/"+blocks.length()+" 段。输出本段完整更正文稿Markdown，不输出JSON、不总结或删减内容。"
                     +"结合前文纠正识别、断句、术语及公式，不确定处保留原文并标[待核对]。保留每条原始[id]、所有题目条件、改卷得失分细节及细微暗示；不要编造来源。"
                     +"只更正以下原始来源，不重写前面段落：\n"+ClassroomSummary.uploadChunk(blockInput(blocks.getJSONArray(i),new JSONArray()));
             String text=text("correct-"+i,prompt,Collections.emptyList());
             corrected.put(text);save();
-            ClassroomStore.write(new File(dir,"corrected.json"),new JSONObject().put("run",state.getString("run")).put("parts",new JSONArray(corrected.toString())).put("complete",corrected.length()==blocks.length()));
+            ClassroomStore.write(new File(dir,"corrected.json"),new JSONObject().put("run",state.getString("run")).put("parts",new JSONArray(corrected.toString()))
+                    .put("blocks",new JSONArray(blocks.toString())).put("complete",corrected.length()==blocks.length()));
         }
         if(!state.has("parts")){ClassroomStore.write(new File(dir,"summary.json"),assemble(new JSONArray(),new JSONArray(),false));status("更正文稿已保存",corrected.length(),blocks.length());}
         JSONArray drafts=state.optJSONArray("drafts");if(drafts==null){drafts=new JSONArray();state.put("drafts",drafts);}
@@ -39,7 +42,8 @@ final class ClassroomEnhancedSummary {
         for(int i=drafts.length();i<blocks.length();i++){
             status("AI 分段整理与核图计划",i,blocks.length());
             JSONArray block=blocks.getJSONArray(i);
-            String prompt="更正文稿已全部完成。现在只整理第 "+(i+1)+" 段。"+scope(block)
+            String prompt=(i==0&&state.has("correction_reused_from")?"课程："+lesson.course+"；课堂："+lesson.title+"。以下复用已完成的修正文稿，按本轮要求重新整理笔记。":"")
+                    +"更正文稿已全部完成。现在只整理第 "+(i+1)+" 段。"+scope(block)
                     +"历史仅用于理解语境，不得把最后一段或其它段当作本段。只提取本段事实，不写全课总结；同一内容不跨段重述。"
                     +(affairsSchema==0?"本段没有教学内容或明确安排时，overview为空字符串，notes和assignments为空数组；不能用闲聊或‘未提及评分规则’填充。":"本段无教学内容时overview为空且notes=[]；非行动事务进入affairs，具体行动只进入assignments，三者均无内容时返回空数组，不用闲聊填充。")
                     +assignmentRules()+ClassroomSummary.draftSchema(catalogue,imageLimit,true,affairsSchema)
@@ -245,21 +249,10 @@ final class ClassroomEnhancedSummary {
                 .put("planned_images",state.has("selected")?state.getJSONArray("selected").length():0).put("raw_images",materials.getInt("raw_images"))
                 .put("candidate_images",candidates.getJSONArray("images").length()).put("image_audit",state.optJSONObject("image_audit"));
     }
-    interface Validator{void check(JSONObject result)throws Exception;}
-    private JSONObject json(String stage,String prompt,List<byte[]> images,Validator validator)throws Exception{
-        int attempt=state.optInt(stage+"_attempt");
-        String raw=text(attempt==0?stage:stage+"-user-retry-"+attempt,attempt==0?prompt:
-                "用户授权继续当前板块。上一条回复未通过校验，当前板块未提交结果已回滚："+state.optString(stage+"_error")+"。只依据已有原始资料和实际已附图片，从头完整生成此块JSON，不续写、不输出补丁或拼接上次片段，来源和图片编号必须真实。完整保留本块所需字段：\n"+prompt,attempt==0?images:Collections.emptyList());
-        try{JSONObject result=ClassroomSummary.parseObject(raw);validator.check(result);return result;}
-        catch(JSONException malformed){
-            if(attempt>0&&conversation.attempted(stage+"-repair")){invalid(stage,attempt,malformed);throw malformed;}
-            String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+malformed.getMessage()+"。本块结果尚未提交。保留可核实事实、来源和图片编号，重新返回完整JSON对象，不输出补丁或剩余片段，不编造未见图片或新事实。这是该块唯一一次格式修复。\n本块要求："+prompt,Collections.emptyList());
-            try{JSONObject result=ClassroomSummary.parseObject(repaired);validator.check(result);return result;}
-            catch(Exception invalid){invalid(stage,attempt,invalid);throw invalid;}
-        }
-        catch(IOException invalid){invalid(stage,attempt,invalid);throw invalid;}
+    private JSONObject json(String stage,String prompt,List<byte[]> images,ClassroomJsonStage.Validator validator)throws Exception{
+        return new ClassroomJsonStage(dir,state,conversation,control).generate(stage,prompt,images,validator,
+                "-user-retry-","用户授权继续当前板块。上一条回复未通过校验：",null);
     }
-    private void invalid(String stage,int attempt,Exception error)throws Exception{state.put(stage+"_attempt",attempt+1).put(stage+"_error",error.getMessage());save();}
     private String text(String stage,String prompt,List<byte[]> images)throws Exception{control.check();return conversation.text(stage,prompt,images);}
     private void status(String stage,int done,int total)throws Exception{control.check();progress.update(new ClassroomProgress(stage,done,total,"已完成 "+done+" / "+total));}
     private void save()throws IOException{ClassroomStore.write(new File(dir,"run.json"),state);}

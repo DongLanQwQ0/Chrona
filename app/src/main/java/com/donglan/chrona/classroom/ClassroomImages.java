@@ -27,6 +27,16 @@ public final class ClassroomImages {
     private static final int MAX_LOCAL_CHANGE=18;
     public interface Progress { void update(ClassroomProgress progress); }
     private ClassroomImages() { }
+    /** A surviving candidate list alone does not prove that cleaned raw images still exist. */
+    public static boolean hasCompleteCache(File dir,JSONObject materials)throws Exception {
+        JSONArray source=materials.getJSONArray("images");
+        for(int i=0;i<source.length();i++){
+            int index=source.getJSONObject(i).optInt("cache_index",i);
+            File raw=new File(dir,"raw-"+index+".img");
+            if(index<0||!raw.isFile()||raw.length()==0)return false;
+        }
+        return true;
+    }
     /** A null downloader permits cache-only recomputation; missing/broken originals fail explicitly. */
     public static JSONArray prepare(File dir,JSONObject materials,ClassroomClient client,RequestControl control,Progress progress) throws Exception {
         JSONArray source=materials.getJSONArray("images");List<JSONObject> ordered=new ArrayList<>();

@@ -72,6 +72,11 @@ public final class ClassroomAuditActivity extends Activity {
     }
     private void render(JSONObject snapshot){
         text(body,lesson.course,18,true);text(body,lesson.date()+" "+Instant.ofEpochMilli(lesson.startsAt).atZone(ClassroomLesson.ZONE).format(DateTimeFormatter.ofPattern("HH:mm")),13,false);
+        JSONObject execution=snapshot.optJSONObject("execution");
+        if(execution!=null){
+            text(body,execution(execution.optString("state")),16,true);
+            text(body,execution.optString("diagnostic",execution.optString("detail")),15,false);
+        }
         JSONArray decisions=snapshot.optJSONArray("decisions"),turns=snapshot.optJSONArray("turns");
         if(decisions!=null&&decisions.length()>0){
             text(body,"图片判断",16,true);
@@ -93,7 +98,7 @@ public final class ClassroomAuditActivity extends Activity {
             text(card,time(turn,"started")+" — "+time(turn,"finished"),13,false);
             text(card,"输入 "+value(turn,"input")+" · 输出 "+value(turn,"output"),15,false);
             text(card,"缓存读取 "+value(turn,"cached")+" · 总量 "+value(turn,"total"),15,false);
-            text(card,"上下文图片 "+value(turn,"context_images"),13,false);
+            text(card,"上下文图片 "+value(turn,"context_images")+" · 结束 "+value(turn,"finish_reason")+requestSize(turn),13,false);
         }
     }
     private LinearLayout card(){LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);
@@ -102,11 +107,18 @@ public final class ClassroomAuditActivity extends Activity {
         TextView label=new TextView(this);label.setText(value);label.setTextSize(size);label.setTextIsSelectable(true);
         if(title)UiStyle.title(label);else label.setTextColor(UiStyle.colors(this).text);UiStyle.addSpaced(parent,label,0,4);}
     private static String value(JSONObject row,String key){return row.has(key)&&!row.isNull(key)?String.valueOf(row.opt(key)):"未提供";}
+    private static String requestSize(JSONObject row){
+        boolean measured=row.has("request_bytes")&&!row.isNull("request_bytes");
+        String key=measured?"request_bytes":"estimated_request_bytes";
+        if(!row.has(key)||row.isNull(key))return "";
+        return String.format(Locale.ROOT," · 请求%s %.2f MiB",measured?"":"约",row.optLong(key)/(1024d*1024d));
+    }
     private static String time(JSONObject row,String key){return row.has(key)&&!row.isNull(key)?Instant.ofEpochMilli(row.optLong(key)).atZone(ClassroomLesson.ZONE).format(DateTimeFormatter.ofPattern("MM-dd HH:mm:ss")):"未提供";}
     private static String range(JSONObject row){return seconds(row,"start")+"–"+seconds(row,"end");}
     private static String seconds(JSONObject row,String key){if(row.isNull(key))return "未提供";long seconds=(long)row.optDouble(key);return String.format(Locale.ROOT,"%02d:%02d:%02d",seconds/3600,seconds/60%60,seconds%60);}
     private static String decision(String value){return switch(value){case "request"->"请求图片";case "not_needed"->"无需图片";case "disabled"->"未授权图片";case "unavailable"->"没有可用截图";default->"判断未提供";};}
     private static String status(String value){return switch(value){case "running"->"未记录结果";case "received"->"已响应";case "failed"->"失败";default->"状态未提供";};}
+    private static String execution(String value){return switch(value){case "queued"->"上次处理未开始";case "running"->"上次处理未结束";case "complete"->"处理已完成";case "interrupted"->"处理已中断";case "failed"->"处理失败";default->"";};}
     private static String stage(String value){
         String label=value.startsWith("correct-")?"更正文稿":value.startsWith("draft-")||value.startsWith("first")?"笔记与图片规划":value.startsWith("final")?"核图与笔记":"处理";
         java.util.regex.Matcher block=java.util.regex.Pattern.compile("^(?:correct|draft|final)-(\\d+)(?:-|$)").matcher(value);

@@ -18,6 +18,9 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 /** Local synthetic records only. No school, AI, device pairing or public-directory writes. */
@@ -49,11 +52,16 @@ final class ClassroomAuditChecks {
         JSONArray turns=new JSONArray();for(int i=0;i<18;i++)turns.put(new JSONObject().put("stage",i==0?"correct-0":i==1?"draft-0-user-retry-1":"final-"+i)
                 .put("status",i==1?"failed":"received").put("started",System.currentTimeMillis()-18000+i*500)
                 .put("finished",System.currentTimeMillis()-17500+i*500).put("message_count",2).put("usage",i==1?JSONObject.NULL:new JSONObject(usage.toString()))
+                .put("finish_reason",i==0?"length":i==1?JSONObject.NULL:"stop")
+                .put("request_bytes",i==0?3*1024*1024:JSONObject.NULL)
                 .put("response",new JSONObject().put("secret","PRIVATE-RESPONSE")).put("error","PRIVATE-ERROR"));
         JSONObject draft=new JSONObject().put("image_assessment",new JSONObject().put("decision","request").put("reason","核对例题的图示、限制条件与评分细节。"))
                 .put("image_requests",new JSONArray().put(new JSONObject().put("start",12).put("end",40).put("reason","核对曲线旁的标签和限制条件。")));
-        return new JSONObject().put("run","synthetic-audit").put("config","PRIVATE-CONFIG").put("conversation",new JSONObject().put("messages",messages)
-                .put("options",new JSONObject().put("secret","PRIVATE-OPTIONS")).put("turns",turns))
+        return new JSONObject().put("run","synthetic-audit").put("config","PRIVATE-CONFIG")
+                .put("execution",new JSONObject().put("state","failed").put("detail","JSONException: Unterminated object at character 10 of {\"raw\":\"PRIVATE-OLD-RESPONSE\"}"))
+                .put("conversation",new JSONObject().put("messages",messages)
+                .put("options",new JSONObject().put("secret","PRIVATE-OPTIONS")).put("turns",turns)
+                .put("outputs",new JSONObject().put("final-17","{\"overview\":\"PRIVATE-FAILED-JSON\"")))
                 .put("drafts",new JSONArray().put(draft)).put("image_audit",new JSONObject().put("selected_count",1))
                 .put("analysed",new JSONArray().put(new JSONObject().put("file","image-4.jpg")));
     }
@@ -65,6 +73,8 @@ final class ClassroomAuditChecks {
         check(first.getLong("input")==1200&&first.getLong("output")==40&&first.getLong("cached")==900,"actual provider usage fields retained");
         check(failed.isNull("input")&&failed.isNull("cached"),"missing usage remains unknown rather than zero");
         check(first.getInt("context_images")==1,"request image count uses recorded message prefix without decoding image bytes");
+        check(first.getString("finish_reason").equals("length")&&failed.isNull("finish_reason"),"saved finish reason distinguishes truncation from missing provider metadata");
+        check(projection.getJSONObject("execution").getString("state").equals("failed"),"current processing failure remains distinct from a received transport response");
         check(projection.getInt("selected")==1&&projection.getInt("analysed")==1,"selected and analysed remain separate source counts");
         check(projection.getJSONArray("decisions").getJSONObject(0).getString("reason").contains("限制条件"),"enhanced per-block image basis retained");
         JSONObject source=run.getJSONObject("conversation").getJSONArray("turns").getJSONObject(0);
@@ -92,8 +102,14 @@ final class ClassroomAuditChecks {
         lessonScreen=open(new Intent(test.getTargetContext(),ClassroomLessonActivity.class).putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()));
         await(()->{View button=find(lessonScreen.getWindow().getDecorView(),"处理记录");return button!=null&&button.isEnabled();});
         tap(find(lessonScreen.getWindow().getDecorView(),"处理记录"));await(()->test.lastResumed instanceof ClassroomAuditActivity);screen=test.lastResumed;
-        await(()->text(screen.getWindow().getDecorView()).contains("缓存读取 900"));SystemClock.sleep(700);
+        ready("initial","18 · 核图与笔记 第 18 段 · 已响应");
         check(text(screen.getWindow().getDecorView()).contains("输入 未提供"),"native page distinguishes absent usage from actual cache counts");
+        check(text(screen.getWindow().getDecorView()).contains("处理失败")&&text(screen.getWindow().getDecorView()).contains("已响应"),"processing failure and transport response keep separate labels");
+        String diagnostic=ClassroomAudit.project(fixture(),null).getJSONObject("execution").getString("diagnostic");
+        check(text(screen.getWindow().getDecorView()).contains(diagnostic)&&!text(screen.getWindow().getDecorView()).contains(ClassroomJsonFailure.stored(fixture().getJSONObject("execution").getString("detail"))),
+                "specific safe JSON diagnosis replaces the generic failure at the existing reason position");
+        check(text(screen.getWindow().getDecorView()).contains("上下文图片 1 · 结束 length")&&text(screen.getWindow().getDecorView()).contains("结束 未提供"),"native finish reason row retains known and unknown metadata");
+        check(text(screen.getWindow().getDecorView()).contains("请求 3.00 MiB"),"actual request size uses the existing metadata row without a separate toolbar");
         check(!text(screen.getWindow().getDecorView()).contains("PRIVATE-"),"native page never renders original private payloads");
         check(test.enteredPages.contains("ClassroomAuditActivity"),"actual audit content uses shared entry animation");capture("initial");
         ScrollView scroll=(ScrollView)field(screen,"viewport");int before=scroll.getScrollY();swipe();await(()->scroll.getScrollY()>before);
@@ -101,15 +117,15 @@ final class ClassroomAuditChecks {
                 .put("scrollY",scroll.getScrollY()).put("screenHeight",screen.getResources().getDisplayMetrics().heightPixels));
         check(find(screen.getWindow().getDecorView(),"处理记录").getGlobalVisibleRect(new Rect())==false,"real upward reading scrolls the title out of the viewport");capture("reading");
         test.runOnMainSync(()->scroll.scrollTo(0,0));SystemClock.sleep(250);tap(find(screen.getWindow().getDecorView(),"刷新处理记录"));
-        await(()->((View)fieldUnchecked(screen,"refresh")).isEnabled());
+        ready("refreshed","18 · 核图与笔记 第 18 段 · 已响应");
         check(original.equals(checkpoint()),"entry and refresh preserve exact original checkpoint bytes");
         test.runOnMainSync(screen::recreate);await(()->test.lastResumed instanceof ClassroomAuditActivity&&test.lastResumed!=screen);screen=test.lastResumed;
-        await(()->text(screen.getWindow().getDecorView()).contains("缓存读取 900"));SystemClock.sleep(500);capture("restored");
+        ready("restored","18 · 核图与笔记 第 18 段 · 已响应");capture("restored");
         check(original.equals(checkpoint()),"configuration restoration stays read-only");
         ClassroomStore.begin(dir);try{tap(find(screen.getWindow().getDecorView(),"刷新处理记录"));await(()->text(screen.getWindow().getDecorView()).contains("课堂正在处理，请稍后刷新"));
             check(original.equals(checkpoint()),"busy lesson is not read or rewritten while a producer owns its files");}
         finally{ClassroomStore.end(dir);}
-        tap(find(screen.getWindow().getDecorView(),"刷新处理记录"));await(()->text(screen.getWindow().getDecorView()).contains("缓存读取 900"));
+        tap(find(screen.getWindow().getDecorView(),"刷新处理记录"));ready("after-busy","18 · 核图与笔记 第 18 段 · 已响应");
         test.runOnMainSync(()->new ZjuSettingsStore(test.getTargetContext()).options(false,false));await(()->screen.isFinishing());
         check(true,"disabling the account closes its audit page");
     }
@@ -117,11 +133,12 @@ final class ClassroomAuditChecks {
         account=new ZjuSettingsStore(test.getTargetContext()).account();lesson=new ClassroomLesson("993500",Long.toUnsignedString(System.nanoTime()),"中断请求审计验收","合成课堂","","",System.currentTimeMillis());
         dir=new ClassroomStore(test.getTargetContext(),account).localLesson(lesson);JSONObject run=fixture();
         JSONObject turn=run.getJSONObject("conversation").getJSONArray("turns").getJSONObject(0);turn.put("status","running").remove("finished");
+        run.getJSONObject("execution").put("state","running");turn.remove("finish_reason");
         run.getJSONObject("conversation").put("turns",new JSONArray().put(turn));write("run.json",run);String original=checkpoint();
         check(!ClassroomStore.active(dir),"unfinished saved request has no active processing owner");
         check(ClassroomAudit.project(run,null).getJSONArray("turns").getJSONObject(0).isNull("finished"),"absent completion time remains unknown in the projection");
         screen=open(new Intent(test.getTargetContext(),ClassroomAuditActivity.class).putExtra(ClassroomLessonActivity.EXTRA_ACCOUNT,account).putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()));
-        await(()->text(screen.getWindow().getDecorView()).contains("未记录结果"));SystemClock.sleep(600);capture("unfinished");
+        ready("unfinished","1 · 更正文稿 第 1 段 · 未记录结果");capture("unfinished");
         check(!text(screen.getWindow().getDecorView()).contains("请求中"),"interrupted historical request is not presented as live network activity");
         check(original.equals(checkpoint()),"unknown-result display preserves the original running checkpoint");
     }
@@ -131,13 +148,96 @@ final class ClassroomAuditChecks {
     private static View find(View view,String label){if(view instanceof TextView text&&label.contentEquals(text.getText())||label.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;
         if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++){View result=find(group.getChildAt(i),label);if(result!=null)return result;}return null;}
     private static String text(View view){StringBuilder result=new StringBuilder();if(view instanceof TextView t)result.append(t.getText()).append('\n');if(view instanceof ViewGroup group)for(int i=0;i<group.getChildCount();i++)result.append(text(group.getChildAt(i)));return result.toString();}
-    private void tap(View view){if(view==null)throw new AssertionError("missing observed control");int[] point=new int[2];test.runOnMainSync(()->view.getLocationOnScreen(point));long now=SystemClock.uptimeMillis();
+    private void tap(View view){if(view==null)throw new AssertionError("missing observed control");
+        await(()->view.isAttachedToWindow()&&view.isShown()&&view.hasWindowFocus()&&view.getWidth()>0&&view.getHeight()>0);
+        int[] point=new int[2];test.runOnMainSync(()->view.getLocationOnScreen(point));long now=SystemClock.uptimeMillis();
         float x=point[0]+view.getWidth()/2f,y=point[1]+view.getHeight()/2f;MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,x,y,0),up=MotionEvent.obtain(now,now+80,MotionEvent.ACTION_UP,x,y,0);
         try{test.sendPointerSync(down);SystemClock.sleep(80);test.sendPointerSync(up);}finally{down.recycle();up.recycle();}SystemClock.sleep(300);}
     private void swipe(){float width=test.getTargetContext().getResources().getDisplayMetrics().widthPixels,height=test.getTargetContext().getResources().getDisplayMetrics().heightPixels;long now=SystemClock.uptimeMillis();
         for(int i=0;i<=12;i++){MotionEvent event=MotionEvent.obtain(now,SystemClock.uptimeMillis(),i==0?MotionEvent.ACTION_DOWN:i==12?MotionEvent.ACTION_UP:MotionEvent.ACTION_MOVE,width*.65f,height*(.8f-.55f*i/12),0);try{test.sendPointerSync(event);}finally{event.recycle();}SystemClock.sleep(35);}}
     private void check(boolean value,String description)throws Exception{checks++;evidence.put(new JSONObject().put("case",description).put("passed",value));if(!value)throw new AssertionError(description);}
-    private void await(BooleanSupplier condition){long end=SystemClock.uptimeMillis()+15000;while(SystemClock.uptimeMillis()<end){if(condition.getAsBoolean())return;SystemClock.sleep(100);}throw new AssertionError("audit state timeout");}
+    private void await(BooleanSupplier condition){long end=SystemClock.uptimeMillis()+15000;while(SystemClock.uptimeMillis()<end){
+        // Read view state only between complete main-thread turns, never while render is
+        // still adding the later records to the hierarchy.
+        boolean[] ready={false};test.runOnMainSync(()->ready[0]=condition.getAsBoolean());if(ready[0])return;SystemClock.sleep(100);
+    }throw new AssertionError("audit state timeout");}
+    private void ready(String phase,String lastRecord)throws Exception{
+        long began=SystemClock.uptimeMillis(),until=began+15000;boolean recordedStart=false;
+        while(SystemClock.uptimeMillis()<until){
+            JSONObject[] state={null};test.runOnMainSync(()->{adoptAudit(phase);state[0]=readyState(lastRecord);});
+            if(!recordedStart){evidence.put(state[0].put("phase",phase+"-ready-start"));recordedStart=true;}
+            if(!state[0].optBoolean("ready")){SystemClock.sleep(100);continue;}
+            test.waitForIdleSync();Activity framed=screen;View decor=framed.getWindow().getDecorView();
+            CountDownLatch drawn=new CountDownLatch(2);AtomicInteger frames=new AtomicInteger();
+            android.view.ViewTreeObserver.OnDrawListener observer=()->{
+                int frame=frames.incrementAndGet();if(frame<=2)decor.post(drawn::countDown);
+                if(frame<2)decor.postInvalidateOnAnimation();
+            };
+            test.runOnMainSync(()->{decor.getViewTreeObserver().addOnDrawListener(observer);decor.invalidate();});
+            boolean completed;
+            try{completed=drawn.await(8,TimeUnit.SECONDS);}
+            finally{test.runOnMainSync(()->{if(decor.getViewTreeObserver().isAlive())decor.getViewTreeObserver().removeOnDrawListener(observer);});}
+            test.waitForIdleSync();test.runOnMainSync(()->{adoptAudit(phase);state[0]=readyState(lastRecord);});
+            if(screen!=framed){
+                evidence.put(state[0].put("phase",phase+"-recreated-during-frame").put("previousActivity",identity(framed)).put("drawFrames",frames.get()));
+                continue; // A real replacement invalidates only the old instance's frame barrier.
+            }
+            if(!completed||!state[0].optBoolean("ready")){
+                evidence.put(state[0].put("phase",phase+"-frame-timeout").put("drawFrames",frames.get()));
+                throw new AssertionError("audit actual frame not ready: "+phase+" "+state[0]);
+            }
+            evidence.put(state[0].put("phase",phase+"-actual-frame-ready").put("waitMillis",SystemClock.uptimeMillis()-began)
+                    .put("drawFrames",frames.get()).put("preDrawFrames",test.entryFrameCounts.getOrDefault("ClassroomAuditActivity",0))
+                    .put("entranceFrames",test.entranceFrames.getOrDefault(screen,0)));
+            return;
+        }
+        JSONObject[] state={null};test.runOnMainSync(()->{adoptAudit(phase);state[0]=readyState(lastRecord);});
+        evidence.put(state[0].put("phase",phase+"-ready-timeout").put("waitMillis",SystemClock.uptimeMillis()-began));
+        throw new AssertionError("audit state timeout: "+phase+" "+state[0]);
+    }
+    private void adoptAudit(String phase){
+        Activity current=test.lastResumed;
+        if(current==screen||!(current instanceof ClassroomAuditActivity)||current.isFinishing()||current.isDestroyed()||!current.hasWindowFocus())return;
+        if(!sameAudit(current))return;
+        try{evidence.put(new JSONObject().put("phase",phase+"-adopt-resumed-audit").put("previousActivity",identity(screen)).put("currentActivity",identity(current)));}
+        catch(JSONException failure){throw new AssertionError(failure);}
+        screen=current;
+    }
+    private boolean sameAudit(Activity value){
+        if(!(value instanceof ClassroomAuditActivity)||!account.equals(value.getIntent().getStringExtra(ClassroomLessonActivity.EXTRA_ACCOUNT)))return false;
+        try{ClassroomLesson selected=ClassroomLesson.fromJson(new JSONObject(value.getIntent().getStringExtra(ClassroomLessonActivity.EXTRA_LESSON)));
+            return lesson.courseId.equals(selected.courseId)&&lesson.id.equals(selected.id);
+        }catch(Exception invalid){return false;}
+    }
+    private JSONObject readyState(String lastRecord){
+        try{
+            boolean audit=screen instanceof ClassroomAuditActivity;View body=audit?(View)fieldUnchecked(screen,"body"):null;
+            View refresh=audit?(View)fieldUnchecked(screen,"refresh"):null,last=body==null?null:find(body,lastRecord);Rect bounds=new Rect();
+            boolean visible=body!=null&&body.getGlobalVisibleRect(bounds),first=audit&&Boolean.TRUE.equals(fieldUnchecked(screen,"firstPresentation"));
+            boolean attached=body!=null&&body.isAttachedToWindow(),laidOut=body!=null&&body.isLaidOut(),layoutPending=body!=null&&body.isLayoutRequested();
+            boolean alive=audit&&!screen.isFinishing()&&!screen.isDestroyed(),focused=audit&&screen.hasWindowFocus(),same=screen==test.lastResumed;
+            float font=audit?screen.getResources().getConfiguration().fontScale:0;
+            boolean fontMatches=!args.containsKey("font")||Math.abs(font-Float.parseFloat(args.getString("font")))<.001f;
+            boolean complete=refresh!=null&&refresh.isEnabled(),lastLaidOut=last!=null&&last.isLaidOut();
+            boolean ready=alive&&focused&&same&&sameAudit(screen)&&complete&&lastLaidOut&&attached&&laidOut&&!layoutPending
+                    &&body.getWidth()>0&&body.getHeight()>0&&body.getAlpha()==1f&&body.getTranslationY()==0f&&!first&&visible&&!bounds.isEmpty()&&fontMatches;
+            return new JSONObject().put("ready",ready).put("screen",identity(screen)).put("lastResumed",identity(test.lastResumed))
+                    .put("sameResumed",same).put("sameLessonAccount",audit&&sameAudit(screen)).put("alive",alive).put("windowFocus",focused)
+                    .put("lastResumedFocus",test.lastResumed!=null&&test.lastResumed.hasWindowFocus())
+                    .put("lastResumedDestroyed",test.lastResumed==null||test.lastResumed.isDestroyed())
+                    .put("lastResumedFinishing",test.lastResumed!=null&&test.lastResumed.isFinishing())
+                    .put("lastResumedSameLessonAccount",sameAudit(test.lastResumed))
+                    .put("destroyed",screen==null||screen.isDestroyed()).put("finishing",screen!=null&&screen.isFinishing())
+                    .put("attached",attached).put("laidOut",laidOut).put("layoutRequested",layoutPending).put("refreshEnabled",complete)
+                    .put("lastRecordFound",last!=null).put("lastRecordLaidOut",lastLaidOut).put("firstPresentation",first)
+                    .put("bodyChildren",body instanceof ViewGroup group?group.getChildCount():0).put("bodyWidth",body==null?0:body.getWidth())
+                    .put("bodyHeight",body==null?0:body.getHeight()).put("visibleHeight",visible?bounds.height():0)
+                    .put("alpha",body==null?JSONObject.NULL:body.getAlpha()).put("translationY",body==null?JSONObject.NULL:body.getTranslationY())
+                    .put("fontScale",font).put("fontMatches",fontMatches).put("densityDpi",audit?screen.getResources().getConfiguration().densityDpi:0)
+                    .put("screenWidthDp",audit?screen.getResources().getConfiguration().screenWidthDp:0);
+        }catch(JSONException failure){throw new AssertionError(failure);}
+    }
+    private static String identity(Activity value){return value==null?"none":value.getClass().getSimpleName()+"@"+Integer.toHexString(System.identityHashCode(value));}
     private void capture(String name)throws Exception{Bitmap raw=test.getUiAutomation().takeScreenshot();if(raw==null)return;float scale=Math.min(1,1400f/Math.max(raw.getWidth(),raw.getHeight()));Bitmap small=Bitmap.createScaledBitmap(raw,Math.round(raw.getWidth()*scale),Math.round(raw.getHeight()*scale),true);try(FileOutputStream out=new FileOutputStream(new File(output,name+".jpg"))){small.compress(Bitmap.CompressFormat.JPEG,73,out);}finally{if(small!=raw)small.recycle();raw.recycle();}}
     private static Object field(Object owner,String name)throws Exception{java.lang.reflect.Field field=owner.getClass().getDeclaredField(name);field.setAccessible(true);return field.get(owner);}
     private static Object fieldUnchecked(Object owner,String name){try{return field(owner,name);}catch(Exception e){throw new AssertionError(e);}}

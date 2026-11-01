@@ -178,6 +178,12 @@ public final class ClassroomStore {
                     if(raw||unused){long size=file.length();if(!file.delete())throw new IOException("部分课堂截图无法清理，请稍后重试");bytes+=size;removedRaw|=raw;}
                 }
                 if(removedRaw){
+                    // Preserve correction provenance before retiring its source checkpoint.
+                    JSONObject corrected=read(new File(dir,"corrected.json"));
+                    if(run!=null&&corrected!=null&&run.optJSONArray("blocks")!=null
+                            &&run.optString("run").equals(corrected.optString("run"))){
+                        corrected.put("blocks",run.getJSONArray("blocks"));write(new File(dir,"corrected.json"),corrected);
+                    }
                     // A fresh preparation rebuilds candidates from the retained source manifest.
                     // Completed run metadata is stale once its selected raw files are removed.
                     new AtomicFile(new File(dir,"candidates.json")).delete();
@@ -192,6 +198,16 @@ public final class ClassroomStore {
         if(!file.exists()&&!new File(file+".bak").exists())return null;
         try { return new JSONObject(new String(atomic.readFully(),StandardCharsets.UTF_8)); }
         catch(Exception e){throw new IOException("课堂缓存无法读取",e);}
+    }
+    /** Explicit regeneration opens a new conversation; preserve the old audit byte for byte. */
+    public static void beginSummaryRun(File dir)throws IOException {
+        File current=new File(dir,"run.json");AtomicFile atomic=new AtomicFile(current);
+        if(current.exists()||new File(current+".bak").exists()){
+            File records=new File(dir,"runs");
+            if(Files.isSymbolicLink(records.toPath())||!records.isDirectory()&&!records.mkdirs())throw new IOException("无法保存课堂处理记录");
+            writeBytes(new File(records,java.util.UUID.randomUUID()+".json"),atomic.readFully());
+        }
+        write(current,new JSONObject());
     }
     public static void write(File file,JSONObject value) throws IOException { writeBytes(file,value.toString().getBytes(StandardCharsets.UTF_8)); }
     public static void writeBytes(File file,byte[] bytes) throws IOException {

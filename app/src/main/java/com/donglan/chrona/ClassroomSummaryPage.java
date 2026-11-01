@@ -559,6 +559,7 @@ final class ClassroomSummaryPage extends SchedulePage {
         updateBackAction();
         if(s==null||selectionBar==null||resultsCount==null||s.mode!=1&&s.mode!=3)return;
         boolean selecting=s.selecting;resultsCount.setVisibility(selecting?View.GONE:View.VISIBLE);
+        batchDownload.setContentDescription(s.mode==3?"重新总结所选课堂":"下载并总结所选课堂");
         BatchSelectionUi.visible(selectionBar,selecting,resultsHeading);
         selectionCount.setText(s.selected.size()+"/"+matchingLessons.size());selectionCount.setContentDescription("已选 "+s.selected.size()+" 节，共 "+matchingLessons.size()+" 节");
         boolean all=!matchingLessons.isEmpty();for(ClassroomLesson lesson:matchingLessons)all&=s.selected.contains(ClassroomBatchWork.key(lesson));
@@ -604,6 +605,7 @@ final class ClassroomSummaryPage extends SchedulePage {
     }
     private void downloadSelected(){
         if(!canStartBatch())return;List<ClassroomLesson> snapshot=selectionSnapshot();if(snapshot.isEmpty())return;
+        boolean regenerate=s.mode==3;
         Session owner=s;owner.localWork=true;updateSelectionUi();
         owner.worker.execute(()->{
             LinkedHashSet<String> retry=new LinkedHashSet<>();String error="";
@@ -612,8 +614,9 @@ final class ClassroomSummaryPage extends SchedulePage {
             java.util.Set<String> retries=java.util.Set.copyOf(retry);String failure=error;
             owner.main.post(()->{owner.localWork=false;if(s!=owner||!owner.allowed()||isDestroyed())return;updateSelectionUi();
                 if(!failure.isEmpty()){Feedback.show(activity,failure);return;}
-                Runnable start=()->{if(s!=owner||!canStartBatch())return;try{ClassroomNotifications.requestPermission(activity);owner.operationMessage="";ClassroomBatchWork.start(getApplicationContext(),owner.account,snapshot,retries);clearSelection();updateBatchStatus();updateSelectionUi();scheduleRefresh();}catch(Exception unavailable){Feedback.show(activity,"无法启动课堂总结");}};
-                if(!retries.isEmpty())UiDialogs.confirmDialog(activity,"继续总结 "+retries.size()+" 节课堂","将使用当前 AI 服务继续未完成的总结。","总结",start);else start.run();
+                Runnable start=()->{if(s!=owner||!canStartBatch())return;try{ClassroomNotifications.requestPermission(activity);owner.operationMessage="";ClassroomBatchWork.start(getApplicationContext(),owner.account,snapshot,retries,regenerate);clearSelection();updateBatchStatus();updateSelectionUi();scheduleRefresh();}catch(Exception unavailable){Feedback.show(activity,"无法启动课堂总结");}};
+                if(regenerate)UiDialogs.confirmDialog(activity,"重新总结 "+snapshot.size()+" 节课堂","使用当前设置重新整理，复用修正字幕并补齐图片。","总结",start);
+                else if(!retries.isEmpty())UiDialogs.confirmDialog(activity,"继续总结 "+retries.size()+" 节课堂","将使用当前 AI 服务继续未完成的总结。","总结",start);else start.run();
             });
         });
     }

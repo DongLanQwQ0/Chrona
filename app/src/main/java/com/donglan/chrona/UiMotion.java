@@ -177,6 +177,7 @@ public final class UiMotion {
         finishSwap(view);
         if (!isEnabled() && onPresented == null) return;
         android.view.ViewTreeObserver.OnPreDrawListener[] firstFrame = new android.view.ViewTreeObserver.OnPreDrawListener[1];
+        android.view.ViewTreeObserver.OnWindowFocusChangeListener[] focus = new android.view.ViewTreeObserver.OnWindowFocusChangeListener[1];
         Runnable[] start = new Runnable[1];
         Runnable[] cancel = new Runnable[1];
         boolean[] pending = { true };
@@ -191,7 +192,10 @@ public final class UiMotion {
         cancel[0] = () -> {
             pending[0] = false;
             PENDING_ENTRANCES.remove(view);
-            if (view.getViewTreeObserver().isAlive()) view.getViewTreeObserver().removeOnPreDrawListener(firstFrame[0]);
+            if (view.getViewTreeObserver().isAlive()) {
+                view.getViewTreeObserver().removeOnPreDrawListener(firstFrame[0]);
+                view.getViewTreeObserver().removeOnWindowFocusChangeListener(focus[0]);
+            }
             view.removeCallbacks(start[0]);
             view.removeOnAttachStateChangeListener(cleanup);
         };
@@ -203,6 +207,10 @@ public final class UiMotion {
         }
         start[0] = () -> {
             if (!pending[0]) return;
+            if (!canPresent(view)) {
+                if (view.getViewTreeObserver().isAlive()) view.getViewTreeObserver().addOnPreDrawListener(firstFrame[0]);
+                return;
+            }
             cancel[0].run();
             if (!view.isAttachedToWindow()) {
                 finishSwap(view); view.removeOnAttachStateChangeListener(cleanup); return;
@@ -220,11 +228,30 @@ public final class UiMotion {
         // The entrance clock starts after layout has produced a drawable frame, not while a
         // cold activity or resized window is still being attached by WindowManager.
         firstFrame[0] = () -> {
+            if (!canPresent(view)) return true;
             view.getViewTreeObserver().removeOnPreDrawListener(firstFrame[0]);
             if (pending[0]) view.postOnAnimation(start[0]);
             return true;
         };
+        focus[0] = focused -> { if (focused && pending[0]) view.postInvalidateOnAnimation(); };
         view.getViewTreeObserver().addOnPreDrawListener(firstFrame[0]);
+        view.getViewTreeObserver().addOnWindowFocusChangeListener(focus[0]);
+    }
+
+    private static boolean canPresent(View view) {
+        return view.isAttachedToWindow() && view.isShown() && view.getWindowVisibility() == View.VISIBLE
+                && (view.hasWindowFocus() || visibleMultiWindow(view)) && view.getWidth() > 0 && view.getHeight() > 0;
+    }
+
+    private static boolean visibleMultiWindow(View view) {
+        android.content.Context context = view.getContext();
+        while (context instanceof android.content.ContextWrapper wrapper) {
+            if (context instanceof android.app.Activity activity) return activity.isInMultiWindowMode();
+            android.content.Context base = wrapper.getBaseContext();
+            if (base == context) break;
+            context = base;
+        }
+        return false;
     }
 
     /**

@@ -69,7 +69,7 @@ public final class ClassroomSummary {
     private static JSONObject finishPreparation(File dir,ClassroomLesson lesson,JSONObject materials,JSONObject candidates,
             ClassroomClient client,RequestControl control,ClassroomImages.Progress progress)throws Exception {
         progress.update(ClassroomProgress.waiting("字幕已就绪",materials.getJSONArray("segments").length()+" 条字幕 · "+materials.getInt("raw_images")+" 张原始截图"));
-        if(candidates==null||candidates.optInt("visual_version")!=ClassroomFigureReview.VERSION){
+        if(candidates==null||candidates.optInt("visual_version")!=ClassroomFigureReview.VERSION||!ClassroomImages.hasCompleteCache(dir,materials)){
             candidates=new JSONObject().put("images",ClassroomImages.prepare(dir,materials,client,control,progress))
                     .put("lesson",lesson.json()).put("updated",System.currentTimeMillis()).put("visual_version",ClassroomFigureReview.VERSION);
             ClassroomStore.write(new File(dir,"candidates.json"),candidates);
@@ -177,6 +177,7 @@ public final class ClassroomSummary {
         ChatCompletionClient client=new ChatCompletionClient(ai,control);
         ClassroomConversation conversation=new ClassroomConversation(dir,state,client,system);
         if(enhanced)return new ClassroomEnhancedSummary(dir,lesson,state,materials,candidates,full,conversation,control,progress).generate(imageLimit);
+        ClassroomJsonStage json=new ClassroomJsonStage(dir,state,conversation,control);
         if(!state.has("draft")) {
             control.check();progress.update(new ClassroomProgress("AI 整理全课字幕",0,imageLimit>0?2:1,
                     full.getJSONArray("segments").length()+" 条字幕 · 等待 AI 返回"));
@@ -186,14 +187,10 @@ public final class ClassroomSummary {
                     +"资料：\n"+uploadChunk(full);
             state.put("first_system",system).put("first_prompt",prompt).put("image_catalogue",catalogue);
             ClassroomStore.write(new File(dir,"run.json"),state);
-            int attempt=state.optInt("first_attempt");
-            String output=conversation.text(attempt==0?"first":"first-retry-"+attempt,attempt==0?prompt:
-                    "用户已授权继续。上一条总结校验失败："+state.optString("first_error")+"。基于原有消息修正本阶段JSON，不能编造来源或图片。"+draftSchema(catalogue,imageLimit,false,affairsSchema),Collections.emptyList());
-            state.put("first_output",output);ClassroomStore.write(new File(dir,"run.json"),state);
-            JSONObject draft;
-            try{draft=parseObject(output);validate(draft,full,false,affairsSchema);validateImageAssessment(draft,catalogue);}
-            catch(Exception invalid){state.put("first_attempt",attempt+1).put("first_error",invalid.getMessage());ClassroomStore.write(new File(dir,"run.json"),state);throw invalid;}
-            state.put("first_output",output).put("draft",draft);
+            final int draftAffairs=affairsSchema;
+            JSONObject draft=json.generate("first",prompt,Collections.emptyList(),value->{validate(value,full,false,draftAffairs);validateImageAssessment(value,catalogue);},
+                    "-retry-","用户已授权继续。上一条总结校验失败：","first_output");
+            state.put("draft",draft);
             ClassroomStore.write(new File(dir,"run.json"),state);
         }
         if(!state.has("selected")) {
@@ -231,18 +228,17 @@ public final class ClassroomSummary {
                 state.put("final_validation",new JSONObject().put("status","running"));ClassroomStore.write(new File(dir,"run.json"),state);
                 JSONObject result;
                 try {
-                    int attempt=state.optInt("final_attempt");
-                    String output=conversation.text(attempt==0?"final":"final-retry-"+attempt,attempt==0?prompt:
-                            "用户已授权继续。上一条最终总结未通过校验："+state.optString("final_error")+"。仅依据前面原始字幕和实际附图修正最终JSON，不重新编号或编造图片。"+schema(false,affairsSchema)+ClassroomFigureReview.schema(figurePolicy),attempt==0?bytes:Collections.emptyList());
-                    state.put("final_output",output).put("final_finished_at",System.currentTimeMillis());ClassroomStore.write(new File(dir,"run.json"),state);
-                    try{result=parseObject(output);validate(result,lessonInput(materials.getJSONArray("segments"),inventory),false,affairsSchema);
-                        if(figurePolicy>0)ClassroomFigureReview.merge(state,ClassroomFigureReview.apply(result,inventory,inventory));}
-                    catch(Exception invalid){state.put("final_attempt",attempt+1).put("final_error",invalid.getMessage());throw invalid;}
+                    final int finalAffairs=affairsSchema,finalFigures=figurePolicy;
+                    result=json.generate("final",prompt,bytes,value->{validate(value,lessonInput(materials.getJSONArray("segments"),inventory),false,finalAffairs);
+                        if(finalFigures>0)ClassroomFigureReview.apply(value,inventory,inventory);},
+                            "-retry-","用户已授权继续。上一条最终总结未通过校验：","final_output");
+                    if(figurePolicy>0)ClassroomFigureReview.merge(state,result.getJSONArray("image_reviews"));
+                    state.put("final_finished_at",System.currentTimeMillis());
                     state.put("final_validation",new JSONObject().put("status","succeeded"));
                 } catch(Exception invalid) {
                     state.put("final_finished_at",System.currentTimeMillis()).put("final_validation",new JSONObject()
                             .put("status",control.isCancelled()?"cancelled":"failed").put("stage",state.has("final_output")?"validation":"transport")
-                            .put("type",invalid.getClass().getSimpleName()).put("error",invalid.getMessage()));
+                            .put("type",invalid.getClass().getSimpleName()).put("error",ClassroomJsonFailure.detail(invalid)));
                     ClassroomStore.write(new File(dir,"run.json"),state);throw invalid;
                 }
                 state.put("final",result);
@@ -343,8 +339,7 @@ public final class ClassroomSummary {
                 .put("image_audit",new JSONObject(state.getJSONObject("image_audit").toString()).put("analysed_count",analysed.length()));
     }
     public static JSONObject parseObject(String value) throws Exception {
-        String text=value.trim();if(text.startsWith("```")){int start=text.indexOf('\n');int end=text.lastIndexOf("```");if(start>=0&&end>start)text=text.substring(start+1,end).trim();}
-        return ClassroomDocument.normalized(new JSONObject(text));
+        return ClassroomDocument.normalized(ClassroomJsonObject.parseObject(value));
     }
     public static JSONObject lessonInput(JSONArray segments,JSONArray images) throws Exception {
         JSONArray texts=new JSONArray();

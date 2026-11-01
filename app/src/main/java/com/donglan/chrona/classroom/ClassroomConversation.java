@@ -4,6 +4,7 @@ import com.donglan.chrona.ai.ChatCompletionClient;
 import org.json.*;
 import java.io.*;
 import java.util.*;
+import java.nio.charset.StandardCharsets;
 
 /** Persist before sending, append exact assistant replies, never rewrite a sent message or options. */
 final class ClassroomConversation {
@@ -66,6 +67,7 @@ final class ClassroomConversation {
         if(messages.toString().length()>32_000_000)throw new IOException("课堂上下文已达本地上限，完整历史已保留，未裁剪或重新发送");
         JSONObject request=new JSONObject(conversation.getJSONObject("options").toString()).put("messages",new JSONArray(messages.toString()));
         JSONObject audit=new JSONObject().put("stage",stage).put("message_count",messages.length()).put("started",System.currentTimeMillis())
+                .put("request_bytes",request.toString().getBytes(StandardCharsets.UTF_8).length)
                 .put("status","running");conversation.getJSONArray("turns").put(audit);save();
         try{
             JSONObject response=client.completeConversation(request);

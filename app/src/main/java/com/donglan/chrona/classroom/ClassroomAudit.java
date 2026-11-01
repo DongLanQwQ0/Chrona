@@ -3,22 +3,49 @@ package com.donglan.chrona.classroom;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Pattern;
 
 /** Read-only projection: messages, response bodies, image bytes and credentials never leave the checkpoint. */
 public final class ClassroomAudit {
+    private static final Pattern HTTP_PAYLOAD_TOO_LARGE=Pattern.compile("\\bHTTP\\s+413\\b");
     private ClassroomAudit() { }
 
     public static JSONObject project(JSONObject run,JSONObject summary)throws Exception {
         JSONObject result=new JSONObject();JSONArray turns=new JSONArray(),decisions=new JSONArray();
         result.put("turns",turns).put("decisions",decisions);
+        JSONObject execution=run==null?null:run.optJSONObject("execution");
+        String state=execution==null?"":known(execution.opt("state"),"queued","running","complete","interrupted","failed");
+        if(!state.isEmpty()){
+            JSONObject current=new JSONObject().put("state",state);
+            Object detail=execution.opt("detail");
+            if(("failed".equals(state)||"interrupted".equals(state))&&detail instanceof String text&&!text.isBlank())
+                current.put("detail",ClassroomJsonFailure.stored(text));
+            result.put("execution",current);
+        }
         JSONObject conversation=run==null?null:run.optJSONObject("conversation");
         if(conversation!=null){
             JSONArray source=conversation.optJSONArray("turns"),messages=conversation.optJSONArray("messages");
+            JSONObject last=source==null||source.length()==0?null:source.optJSONObject(source.length()-1);
+            JSONObject current=result.optJSONObject("execution");
+            boolean failed="failed".equals(state)||"interrupted".equals(state);
+            String detail=current==null?"":current.optString("detail");
+            if(failed&&last!=null&&"received".equals(last.opt("status"))&&ClassroomJsonFailure.isJsonFailure(detail)){
+                JSONObject outputs=conversation.optJSONObject("outputs");Object stage=last.opt("stage");
+                Object raw=outputs==null||!(stage instanceof String)?null:outputs.opt((String)stage);
+                if(raw instanceof String text){
+                    String diagnostic=ClassroomJsonFailure.responseDetail(text,(String)stage,run);
+                    if(!diagnostic.isBlank()&&!diagnostic.equals(detail))current.put("diagnostic",diagnostic);
+                }
+            }
+            boolean payloadFailure=failed&&HTTP_PAYLOAD_TOO_LARGE.matcher(detail).find();
             if(source!=null)for(int i=0;i<source.length();i++){
                 JSONObject turn=source.optJSONObject(i);if(turn==null)continue;
                 JSONObject usage=turn.optJSONObject("usage");
                 JSONObject row=new JSONObject().put("stage",turn.optString("stage"))
                         .put("status",turn.optString("status"))
+                        .put("finish_reason",finishReason(turn.opt("finish_reason")))
+                        .put("request_bytes",number(turn,"request_bytes"))
                         .put("started",number(turn,"started")).put("finished",number(turn,"finished"))
                         .put("input",number(usage,"prompt_tokens")).put("output",number(usage,"completion_tokens"))
                         .put("total",number(usage,"total_tokens"));
@@ -35,6 +62,8 @@ public final class ClassroomAudit {
                     }
                     row.put("context_images",images);
                 }
+                if(turn==last&&payloadFailure&&"failed".equals(turn.opt("status"))&&!turn.has("request_bytes"))
+                    row.put("estimated_request_bytes",requestBytes(conversation,messages,count));
                 turns.put(row);
             }
         }
@@ -58,6 +87,25 @@ public final class ClassroomAudit {
                         .put("image_requests",imageAudit.optJSONArray("requests")),0);
         }
         return result;
+    }
+    private static Object requestBytes(JSONObject conversation,JSONArray messages,Object count)throws Exception {
+        JSONObject options=conversation.optJSONObject("options");
+        if(options==null||messages==null||!(count instanceof Long n)||n<=0||n>messages.length())return JSONObject.NULL;
+        JSONArray prefix=new JSONArray();
+        for(int i=0;i<n;i++){
+            JSONObject message=messages.optJSONObject(i);if(message==null)return JSONObject.NULL;
+            prefix.put(message);
+        }
+        JSONObject request=new JSONObject(options.toString()).put("messages",prefix);
+        return (long)request.toString().getBytes(StandardCharsets.UTF_8).length;
+    }
+    private static Object finishReason(Object value){
+        String reason=known(value,"stop","length","content_filter","tool_calls","function_call");
+        return reason.isEmpty()?JSONObject.NULL:reason;
+    }
+    private static String known(Object value,String... allowed){
+        if(value instanceof String text)for(String candidate:allowed)if(candidate.equals(text))return text;
+        return "";
     }
     private static void decision(JSONArray rows,JSONObject draft,int block)throws Exception {
         JSONObject assessment=draft==null?null:draft.optJSONObject("image_assessment");if(assessment==null)return;

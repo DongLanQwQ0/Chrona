@@ -158,13 +158,13 @@ public final class ClassroomLessonActivity extends Activity {
     static String restoredFailure(JSONObject summary,JSONObject run){
         if(run==null)return "";
         JSONObject execution=run.optJSONObject("execution");
-        if(execution!=null&&!"complete".equals(execution.optString("state")))return execution.optString("detail").isBlank()?"上次总结未完成，请手动授权继续":execution.optString("detail");
+        if(execution!=null&&!"complete".equals(execution.optString("state")))return execution.optString("detail").isBlank()?"上次总结未完成，请手动授权继续":ClassroomJsonFailure.stored(execution.optString("detail"));
         if(run.has("final"))return "";
         JSONObject validation=run.optJSONObject("final_validation");if(validation==null)return "";
         String status=validation.optString("status");
         if(!status.equals("failed")&&!status.equals("cancelled"))return "";
         if(summary!=null&&!summary.optString("run").equals(run.optString("run")))return "";
-        return validation.optString("error");
+        return ClassroomJsonFailure.stored(validation.optString("error"));
     }
 
     private void update() {

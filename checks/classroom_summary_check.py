@@ -15,6 +15,7 @@ root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--image-references-only', action='store_true')
 parser.add_argument('--note-strength-only', action='store_true')
+parser.add_argument('--json-repair-only', action='store_true')
 args = parser.parse_args()
 src = root / 'app/src/main/java/com/donglan/chrona'
 out = root / 'build/classroom-summary-check'
@@ -58,7 +59,7 @@ for name, content in fixtures.items():
     path.write_text(content, encoding='utf-8')
     paths.append(path)
 relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java', 'classroom/ClassroomNoteStrength.java', 'classroom/ClassroomAffairsPolicy.java', 'classroom/ClassroomImageQuality.java', 'classroom/ClassroomFigureReview.java',
-            'classroom/ClassroomImages.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomConversation.java', 'classroom/ClassroomEnhancedSummary.java', 'classroom/ClassroomExport.java', 'classroom/ClassroomProgress.java',
+            'classroom/ClassroomImages.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomConversation.java', 'classroom/ClassroomJsonStage.java', 'classroom/ClassroomJsonFailure.java', 'classroom/ClassroomJsonObject.java', 'classroom/ClassroomCorrectionCache.java', 'classroom/ClassroomEnhancedSummary.java', 'classroom/ClassroomExport.java', 'classroom/ClassroomProgress.java',
             'ai/AiSettings.java', 'ai/ChatCompletionClient.java', 'ai/ParseResult.java', 'ai/SchedulePrompt.java',
             'ai/SemanticEventNormalizer.java', 'ai/TimeAssessment.java', 'ai/RequestOptions.java', 'ai/StreamChunkContent.java',
             'data/EventCandidate.java', 'data/EventCategory.java', 'data/EventTimeDefaults.java',
@@ -89,8 +90,8 @@ subprocess.run(recurrence_java([executable('javac'), '--release', '17', '-encodi
                 '-d', str(classes), *map(str, paths)]), check=True)
 classpath = str(classes) + os.pathsep + str(jar)
 subprocess.run(recurrence_java([executable('java'), '-cp', classpath, 'com.donglan.chrona.classroom.ClassroomFigureReviewCheck', '--cache', str(root / 'build/classroom-image-dedup/cache-rebuild-check')]), check=True)
-if not args.image_references_only and not args.note_strength_only:
+if not args.image_references_only and not args.note_strength_only and not args.json_repair_only:
     subprocess.run(recurrence_java([executable('java'), '-cp', classpath, 'com.donglan.chrona.ai.AiRequestCheck']), check=True)
 subprocess.run(recurrence_java([executable('java'), '-Djava.awt.headless=true', '-cp', classpath,
                 'com.donglan.chrona.classroom.ClassroomSummaryCheck', str(out / 'fixtures'),
-                *(['image-references'] if args.image_references_only else ['note-strength'] if args.note_strength_only else [])]), check=True)
+                *(['image-references'] if args.image_references_only else ['note-strength'] if args.note_strength_only else ['json-repair'] if args.json_repair_only else [])]), check=True)

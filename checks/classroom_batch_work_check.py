@@ -13,7 +13,7 @@ tmp.mkdir(exist_ok=True)
 tree = ast.parse((root / 'checks/classroom_work_service_check.py').read_text(encoding='utf-8'))
 stubs = ast.literal_eval(next(node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'stubs' for t in node.targets)))
 stubs.update({
-'com/donglan/chrona/ai/SchedulePreferences.java': '''package com.donglan.chrona.ai;public class SchedulePreferences {public boolean enhancedClassroom;public static int classroomConcurrency=3,classroomNoteStrength=3;public static SchedulePreferences load(android.content.Context c){return new SchedulePreferences();}}''',
+'com/donglan/chrona/ai/SchedulePreferences.java': '''package com.donglan.chrona.ai;public class SchedulePreferences {public boolean enhancedClassroom;public String classroomPrompt="saved-prompt";public static int classroomConcurrency=3,classroomNoteStrength=3;public static SchedulePreferences load(android.content.Context c){return new SchedulePreferences();}}''',
 'com/donglan/chrona/ClassroomNotifications.java': '''package com.donglan.chrona;class ClassroomNotifications {
 void repost(){ClassroomWorkService.updateProgress(this);}
 static android.app.Notification foreground(android.content.Context c,int count){return new android.app.Notification("initial:"+count);}
@@ -37,8 +37,8 @@ public java.io.File lesson(ClassroomLesson l)throws Exception{return localLesson
 public java.io.File localLesson(ClassroomLesson l)throws Exception{if(l.id.equals("bad-dir"))throw new java.io.IOException("bad directory");return new java.io.File("fixture-"+l.id);}
 public static org.json.JSONObject read(java.io.File f){return f.toString().contains("fixture-complete")?new org.json.JSONObject(){public boolean optBoolean(String key){return true;}}:null;}}''',
 'com/donglan/chrona/ClassroomAutoSummary.java': '''package com.donglan.chrona;class ClassroomAutoSummary {
-static int calls;static boolean hasForegroundOwner(){return true;}static int imageLimit(android.content.Context c,String a){return 0;}
-static void downloadAndSummarize(ClassroomLessonActivity.Session s)throws Exception{calls++;if(s.selected.id.equals("fail"))throw new java.io.IOException("素材失败");s.message="总结已完成";}}''',
+static int calls,regenerations;static String lastPrompt;static boolean hasForegroundOwner(){return true;}static int imageLimit(android.content.Context c,String a){return 0;}
+static void downloadAndSummarize(ClassroomLessonActivity.Session s,boolean regenerate,String prompt)throws Exception{calls++;if(regenerate)regenerations++;lastPrompt=prompt;if(s.selected.id.equals("fail"))throw new java.io.IOException("素材失败");s.message="总结已完成";}}''',
 'com/donglan/chrona/ClassroomLiveTranscripts.java': '''package com.donglan.chrona;class ClassroomLiveTranscripts {
 static final java.util.Set<String> active=new java.util.HashSet<>();static boolean active(String a,com.donglan.chrona.classroom.ClassroomLesson l){return active.contains(l.id);}}''',
 'com/donglan/chrona/ClassroomLessonActivity.java': '''package com.donglan.chrona;public class ClassroomLessonActivity {static class Session {

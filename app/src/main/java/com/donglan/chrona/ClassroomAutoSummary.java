@@ -33,14 +33,23 @@ final class ClassroomAutoSummary {
     }
     /** Called only by an explicit download/summary action; never by page loading or polling. */
     static void downloadAndSummarize(ClassroomLessonActivity.Session job)throws Exception {
+        downloadAndSummarize(job,false,SchedulePreferences.load(job.app).classroomPrompt);
+    }
+    /** Explicit history regeneration is a new run, not a retry of the old response schema. */
+    static void downloadAndSummarize(ClassroomLessonActivity.Session job,boolean regenerate,String prompt)throws Exception {
         SchedulePreferences preferences=SchedulePreferences.load(job.app);
         if(job.enhancedClassroom==null)job.enhancedClassroom=preferences.enhancedClassroom;
         if(job.noteStrength==null)job.noteStrength=preferences.classroomNoteStrength;
         JSONObject saved=ClassroomStore.read(new File(job.store().lesson(job.selected),"summary.json"));
-        if(saved!=null&&saved.optBoolean("complete")){job.summary=saved;job.message="总结已完成";return;}
+        if(!regenerate&&saved!=null&&saved.optBoolean("complete")){job.summary=saved;job.message="总结已完成";return;}
         job.summary=saved;
         job.prepareMaterials();
-        summarize(job,null,SchedulePreferences.load(job.app).classroomPrompt,false);
+        if(regenerate){
+            job.control.check();if(!job.allowed())throw new IOException("学校账号已停用或更换");
+            ClassroomCorrectionCache.capture(job.dir);
+            ClassroomStore.beginSummaryRun(job.dir);
+        }
+        summarize(job,null,prompt,regenerate);
     }
     /** The same checkpoint, image permission and failure contract for single, batch and monitored work. */
     static void summarize(ClassroomLessonActivity.Session job,AiSettings selected,String prompt,boolean regenerate)throws Exception {
@@ -89,11 +98,11 @@ final class ClassroomAutoSummary {
         if(failure instanceof ChatCompletionClient.RequestException rejected){
             int code=rejected.statusCode;
             String action=code==401||code==403?"请检查 AI 服务密钥与模型权限":code==407?"代理要求身份认证，请检查代理配置":
-                    code==429?"服务限流，请稍后手动继续":code>=500?"AI 服务暂不可用，请稍后手动继续":"请检查 AI 服务、模型及请求配置";
+                    code==413?"请求超过 AI 服务大小限制，请检查服务的请求体上限":code==429?"服务限流，请稍后手动继续":code>=500?"AI 服务暂不可用，请稍后手动继续":"请检查 AI 服务、模型及请求配置";
             return "AI 请求失败（HTTP "+code+"）· "+action;
         }
         if(NetworkFailure.hasDetails(failure))return NetworkFailure.describe(failure);
-        String detail=failure.getMessage();
+        String detail=ClassroomJsonFailure.detail(failure);
         return detail==null||detail.isBlank()?"总结未完成，请手动授权继续":detail;
     }
     private static void execution(ClassroomLessonActivity.Session job,String state,String detail)throws Exception {

@@ -19,6 +19,7 @@ public final class ClassroomSummaryCheck {
     private static int checks, failures, calls, failCall = -1;
     private static String mode = "normal";
     private static final List<JSONObject> requests = new ArrayList<>();
+    private static final List<Integer> requestBytes = new ArrayList<>();
     private static final Map<Integer,Integer> chunkCalls = new HashMap<>();
     private static final ClassroomLesson LESSON = new ClassroomLesson("1","2","测试课程","单课","教室","6",1);
     private static final AiSettings AI = new AiSettings("https://api.openai.com/v1","gpt-5.1","synthetic-test-key","high");
@@ -40,12 +41,13 @@ public final class ClassroomSummaryCheck {
         for(int x=0;x<96;x++)for(int y=0;y<96;y++)image.setRGB(x,y,color);
         ByteArrayOutputStream out=new ByteArrayOutputStream();ImageIO.write(image,"png",out);return out.toByteArray();
     }
-    private static void reset(){calls=0;failCall=-1;mode="normal";requests.clear();chunkCalls.clear();}
+    private static void reset(){calls=0;failCall=-1;mode="normal";requests.clear();requestBytes.clear();chunkCalls.clear();}
     private static HttpServer server()throws Exception {
         HttpServer server=HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(),0),0);
         server.setExecutor(Executors.newCachedThreadPool(r->{Thread t=new Thread(r);t.setDaemon(true);return t;}));
         server.createContext("/",exchange->{try {
-            JSONObject body=new JSONObject(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
+            byte[] wire=exchange.getRequestBody().readAllBytes();requestBytes.add(wire.length);
+            JSONObject body=new JSONObject(new String(wire,StandardCharsets.UTF_8));
             calls++;requests.add(body);JSONArray history=body.getJSONArray("messages");String prompt=history.getJSONObject(history.length()-1).getJSONArray("content").getJSONObject(0).getString("text");
             boolean second=prompt.contains("本次images清单：\n")||prompt.contains("上一条最终总结未通过校验");
             JSONObject chunk=null;
@@ -82,7 +84,13 @@ public final class ClassroomSummaryCheck {
                     for(int i=0;i<chunk.getJSONArray("images").length();i++)prefixed.put("images/"+chunk.getJSONArray("images").getJSONObject(i).getString("file"));
                     note.put("images",prefixed).put("text","保留公式 $x^2$。![已上传的图]("+prefixed.getString(0)+")");
                 }
+                boolean defect=mode.equals("json-always")||mode.equals("json-manual-malformed")
+                        ||mode.startsWith("json-first-")&&calls==1||mode.startsWith("json-final-")&&calls==2;
+                if(defect&&mode.endsWith("fields"))generated.remove(second?"notes":"image_requests");
+                if(defect&&mode.endsWith("container"))generated.put("notes",new JSONObject().put("private","RAW_PRIVATE_PAYLOAD"));
+                if(defect&&mode.endsWith("nested")){generated.getJSONObject("image_assessment").put("image_requests",generated.getJSONArray("image_requests"));generated.remove("image_requests");}
                 String result=chunk!=null&&!second?"```json\n"+generated.toString(2)+"\n```":generated.toString();
+                if(defect&&(mode.endsWith("malformed")||mode.equals("json-always")))result="{\"overview\":\"RAW_PRIVATE_PAYLOAD\"";
                 if(mode.equals("schedule"))result="{\"events\":[]}";
                 String finish=mode.equals("length")?"length":mode.equals("filter")?"content_filter":"stop";
                 JSONObject frame=new JSONObject().put("choices",new JSONArray().put(new JSONObject().put("delta",new JSONObject().put("reasoning_content","合成推理").put("content",result)).put("finish_reason",finish)));
@@ -333,10 +341,140 @@ public final class ClassroomSummaryCheck {
         for(String scenario:List.of("missing-assessment","missing-decision-reason","missing-request-reason","conflicting-decision","unauthorized-request")){
             reset();mode=scenario;File malformed=materialDir(scenario+System.nanoTime());
             try(RequestControl c=new RequestControl(20000)){rejects(()->ClassroomSummary.generate(malformed,LESSON,AI,scenario.equals("unauthorized-request")?0:40,c,s->{},""),"invalid image assessment rejected: "+scenario);}
-            JSONObject evidence=ClassroomStore.read(new File(malformed,"run.json"));check(calls==1&&!evidence.has("draft")&&evidence.has("first_output"),"invalid decision has raw audit evidence but no successful draft or image upload: "+scenario);
+            JSONObject evidence=ClassroomStore.read(new File(malformed,"run.json"));check(calls==(scenario.equals("missing-assessment")?2:1)&&!evidence.has("draft")&&evidence.has("first_output"),"structural invalidity gets one repair; semantic decisions stop without repair, preserving raw evidence: "+scenario);
         }
         reset();File noFrames=materialDir("unavailable"+System.nanoTime());ClassroomStore.write(new File(noFrames,"candidates.json"),new JSONObject().put("images",new JSONArray()));
         try(RequestControl c=new RequestControl(20000)){JSONObject summary=ClassroomSummary.generate(noFrames,LESSON,AI,40,c,s->{},"");check(calls==1&&summary.getJSONObject("image_audit").getString("selection").equals("unavailable"),"unavailable frames are audited without a second AI request");}
+    }
+    private static JSONObject ordinary(File dir,int images)throws Exception {
+        try(RequestControl control=new RequestControl(20000)){return ClassroomSummary.generate(dir,LESSON,AI,images,control,p->{},"");}
+    }
+    private static JSONObject run(File dir)throws Exception {return ClassroomStore.read(new File(dir,"run.json"));}
+    private static String lastPrompt(int request)throws Exception {
+        JSONArray messages=requests.get(request).getJSONArray("messages");
+        return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");
+    }
+    private static void jsonRepair()throws Exception {
+        for(String phase:List.of("first","final"))for(String defect:List.of("malformed","fields","container","nested")){
+            if(phase.equals("final")&&defect.equals("nested"))continue;
+            reset();mode="json-"+phase+"-"+defect;File dir=materialDir(mode+System.nanoTime());
+            check(ordinary(dir,phase.equals("final")?3:0).getBoolean("complete"),"complete structural regeneration: "+mode);
+            JSONObject state=run(dir);int repair=phase.equals("final")?2:1;
+            check(calls==repair+1&&state.getJSONObject("conversation").getJSONObject("outputs").has(phase+"-repair"),"exactly one appended format repair: "+mode);
+            check(state.getString(phase+"_output").equals(state.getJSONObject("conversation").getJSONObject("outputs").getString(phase+"-repair")),"latest output is the actual repair response: "+mode);
+            JSONArray turns=state.getJSONObject("conversation").getJSONArray("turns");for(int i=0;i<turns.length();i++)check(turns.getJSONObject(i).getInt("request_bytes")==requestBytes.get(i),"request_bytes is the actual UTF-8 wire length: "+mode+":"+i);
+            check(lastPrompt(repair).contains("完整JSON对象")&&!lastPrompt(repair).contains("RAW_PRIVATE_PAYLOAD"),"repair prompt contains only safe failure projection: "+mode);
+            JSONArray before=requests.get(repair-1).getJSONArray("messages"),after=requests.get(repair).getJSONArray("messages");
+            for(int i=0;i<before.length();i++)check(before.getJSONObject(i).toString().equals(after.getJSONObject(i).toString()),"repair preserves sent messages "+mode+":"+i);
+            check(after.getJSONObject(after.length()-1).getJSONArray("content").length()==1,"repair does not append images again: "+mode);
+        }
+        reset();mode="json-always";File exhausted=materialDir("json-exhausted"+System.nanoTime());
+        JSONObject previous=new JSONObject().put("complete",true).put("marker","prior-saved-summary");ClassroomStore.write(new File(exhausted,"summary.json"),previous);
+        rejects(()->ordinary(exhausted,0),"malformed original and repair stop atomically");
+        check(calls==2&&!run(exhausted).has("draft")&&!run(exhausted).has("final")&&ClassroomStore.read(new File(exhausted,"summary.json")).toString().equals(previous.toString()),"failed draft repair preserves prior published document");
+        String identity=run(exhausted).getString("run");
+        check(!run(exhausted).getString("first_error").contains("RAW_PRIVATE_PAYLOAD")&&run(exhausted).getString("first_output").contains("RAW_PRIVATE_PAYLOAD"),"safe failure is separate from exact raw output");
+        mode="json-manual-malformed";rejects(()->ordinary(exhausted,0),"manual invalid JSON cannot buy a second repair");
+        check(calls==3&&run(exhausted).getInt("first_attempt")==2,"repair budget remains exhausted across explicit retries");
+        check(!lastPrompt(2).contains("RAW_PRIVATE_PAYLOAD"),"manual retry does not echo parser payload");
+        JSONObject legacy=run(exhausted);legacy.put("first_error","Unterminated object at character 9210 of {RAW_PRIVATE_PAYLOAD");ClassroomStore.write(new File(exhausted,"run.json"),legacy);
+        mode="normal";check(ordinary(exhausted,0).getString("run").equals(identity)&&calls==4,"next explicit generation recovers same run without successful-stage repetition");
+        check(!run(exhausted).getString("first_error").contains("RAW_PRIVATE_PAYLOAD")&&!lastPrompt(3).contains("RAW_PRIVATE_PAYLOAD"),"legacy durable parser error is sanitized before manual continuation");
+        for(String phase:List.of("first","final")){
+            reset();mode="json-"+phase+"-malformed";File interrupted=materialDir("json-repair-network-"+phase+System.nanoTime());int repair=phase.equals("first")?2:3;failCall=repair;
+            rejects(()->ordinary(interrupted,phase.equals("first")?0:3),"transport interruption during sole repair stops: "+phase);
+            check(calls==repair&&run(interrupted).optInt(phase+"_attempt")==0,"repair transport failure does not consume validation attempt: "+phase);
+            mode="normal";failCall=-1;check(ordinary(interrupted,phase.equals("first")?0:3).getBoolean("complete"),"manual recovery restarts same repair identity: "+phase);
+            check(calls==repair+1&&lastPrompt(repair).contains("当前阶段："+phase+"-repair；重试序号：1")&&lastPrompt(repair).contains("从头完整重新生成"),"repair restarts with full response, no splicing: "+phase);
+            JSONArray messages=requests.get(repair).getJSONArray("messages");check(messages.getJSONObject(messages.length()-1).getJSONArray("content").length()==1,"repair transport recovery never reuploads images: "+phase);
+        }
+        reset();mode="json-final-malformed";File finalBad=materialDir("json-final-exhausted"+System.nanoTime());failCall=3;
+        rejects(()->ordinary(finalBad,3),"first final repair transport checkpoint created");
+        failCall=-1;mode="json-always";rejects(()->ordinary(finalBad,3),"restarted repair may itself be malformed");
+        JSONObject failure=run(finalBad);
+        check(!failure.has("final")&&failure.has("draft")&&!ClassroomStore.read(new File(finalBad,"summary.json")).getBoolean("complete"),"failed final repair preserves draft without publishing incomplete final");
+        check(!failure.getString("final_error").contains("RAW_PRIVATE_PAYLOAD")&&!failure.getJSONObject("final_validation").getString("error").contains("RAW_PRIVATE_PAYLOAD"),"final durable error projections exclude raw model content");
+        reset();mode="length";File length=materialDir("json-length"+System.nanoTime());rejects(()->ordinary(length,0),"finish reason length stops before JSON repair");
+        check(calls==1&&!run(length).getJSONObject("conversation").getJSONObject("outputs").has("first-repair"),"truncation never spends structural repair budget");
+        mode="normal";check(ordinary(length,0).getBoolean("complete")&&calls==2&&lastPrompt(1).contains("当前阶段：first；重试序号：1"),"length recovers by complete stage restart");
+        for(String raw:List.of("Unterminated object at character 9210 of {RAW_PRIVATE_PAYLOAD", "Value {RAW_PRIVATE_PAYLOAD} of type org.json.JSONObject cannot be converted to JSONArray", "JSONObject[\"notes\"] is not a JSONArray: RAW_PRIVATE_PAYLOAD"))
+            check(!ClassroomJsonFailure.stored(raw).contains("RAW_PRIVATE_PAYLOAD"),"legacy parser detail projects safely");
+        check(!ClassroomJsonFailure.detail(new JSONException("RAW_PRIVATE_PAYLOAD")).contains("RAW_PRIVATE_PAYLOAD"),"direct JSONException never exposes response or conversion values");
+        for(String error:List.of("AI 服务 HTTP 503，请手动继续","JSON 配置字段尚未保存","图片引用不存在：image-999.jpg"))check(error.equals(ClassroomJsonFailure.stored(error)),"normal actionable errors survive stored projection: "+error);
+    }
+    private static void jsonDiagnostics()throws Exception {
+        for(String[] item:new String[][]{
+            {"No value for image_requests","字段缺失：image_requests"},
+            {"JSONObject[\"notes\"] not found.","字段缺失：notes"},
+            {"JSONObject[\"notes\"] is not a JSONArray: RAW_PRIVATE_PAYLOAD","notes 应为数组"},
+            {"Value {RAW_PRIVATE_PAYLOAD} at notes of type org.json.JSONObject cannot be converted to JSONArray","notes 应为数组"},
+            {"Unterminated object at character 9210 of {RAW_PRIVATE_PAYLOAD","对象未闭合（字符 9210）"},
+            {"Unterminated array at character 71 of [RAW_PRIVATE_PAYLOAD","数组未闭合（字符 71）"},
+            {"Unterminated string at 8 [character 9 line 1] RAW_PRIVATE_PAYLOAD","字符串未闭合（字符 8）"},
+            {"Invalid escape sequence at character 19 of RAW_PRIVATE_PAYLOAD","字符串转义无效（字符 19）"},
+            {"Expected ':' after RAW_PRIVATE_PAYLOAD at character 3 of RAW_PRIVATE_PAYLOAD","缺少冒号分隔符（字符 3）"},
+            {"Expected a ',' or '}' at character 4 of RAW_PRIVATE_PAYLOAD","对象缺少逗号或右花括号（字符 4）"}}){
+            String safe=ClassroomJsonFailure.stored(item[0]);check(safe.contains(item[1])&&!safe.contains("RAW_PRIVATE_PAYLOAD"),"specific safe diagnostic: "+item[1]);
+            check(ClassroomJsonFailure.isJsonFailure(item[0])&&ClassroomJsonFailure.isJsonFailure(safe),"old and safe JSON errors are recognised");
+        }
+        for(String hostile:List.of("No value for RAW_PRIVATE_PAYLOAD","No value for RAW_PRIVATE_PAYLOAD with spaces {\"x\":1}","JSONObject[\"RAW_PRIVATE_PAYLOAD\"] not found.","Value x at RAW_PRIVATE_PAYLOAD of type JSONObject cannot be converted to JSONArray","JSONObject[\"notes\"] is not a RAW_PRIVATE_PAYLOAD"))
+            check(!ClassroomJsonFailure.stored(hostile).contains("RAW_PRIVATE_PAYLOAD"),"unknown field/type never becomes output");
+        for(String business:List.of("课堂缓存无法读取","JSON 配置尚未保存","AI 请求失败（HTTP 413）"))check(!ClassroomJsonFailure.isJsonFailure(business)&&ClassroomJsonFailure.stored(business).equals(business),"ordinary business failure is not classified as model JSON");
+        for(String[] root:new String[][]{{"org.json.JSONArray","数组"},{"java.lang.String","字符串"}}){
+            JSONException android=new JSONException("Value RAW_PRIVATE_PAYLOAD of type "+root[0]+" cannot be converted to JSONObject");
+            String parsed=ClassroomJsonFailure.parsedFailure(android);
+            check(parsed.equals("JSON 语法错误：顶层必须是对象（实际为"+root[1]+"）")&&!parsed.contains("RAW_PRIVATE_PAYLOAD"),"Android root conversion has fixed safe type in parser catch: "+root[0]);
+            check(!ClassroomJsonFailure.detail(android).contains("顶层"),"ordinary validator detail does not infer a root conversion");
+        }
+        for(String member:List.of("0","notes","RAW_PRIVATE_PAYLOAD")){
+            String safe=ClassroomJsonFailure.parsedFailure(new JSONException("Value RAW_PRIVATE_PAYLOAD at "+member+" of type java.lang.String cannot be converted to JSONObject"));
+            check(!safe.contains("顶层")&&!safe.contains("RAW_PRIVATE_PAYLOAD"),"member conversion is not misclassified as a root error: "+member);
+        }
+        check(!ClassroomJsonFailure.parsedFailure(new JSONException("Value RAW_PRIVATE_PAYLOAD of type private.Secret cannot be converted to JSONObject")).contains("private.Secret"),"unrecognised root type remains private");
+        for(String raw:List.of("[]","\"RAW_PRIVATE_PAYLOAD\"","RAW_PRIVATE_PAYLOAD\n{}")){
+            String safe=ClassroomJsonFailure.responseDetail(raw,"draft-0",new JSONObject());
+            check(safe.contains("顶层必须是对象")&&!safe.contains("RAW_PRIVATE_PAYLOAD"),"host non-object parser projection remains specific and private");
+        }
+        JSONObject state=new JSONObject().put("affairs_schema",1).put("figure_policy",1);String original=state.toString();
+        for(String stage:new String[]{"correct-0","correct-0-restart-1","","unknown-stage",null}){
+            check(ClassroomJsonFailure.responseDetail("# 更正文稿\n[0] 合法完整的 Markdown。",stage,state).isEmpty(),"non-JSON stage is excluded before parsing Markdown: "+stage);
+            check(ClassroomJsonFailure.responseDetail("{\"RAW_PRIVATE_PAYLOAD\":",stage,state).isEmpty(),"unknown or correction stage is not reclassified by its response syntax: "+stage);
+        }
+        for(String stage:List.of("first","first-repair","draft-0","final","final-retry-1","edit-plan","edit-assignments-repair","edit-note-0"))
+            check(!ClassroomJsonFailure.responseDetail("{\"RAW_PRIVATE_PAYLOAD\":",stage,state).isEmpty(),"known JSON stage still diagnoses malformed JSON: "+stage);
+        JSONObject good=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",new JSONArray()).put("assignments",new JSONArray())
+                .put("image_assessment",new JSONObject().put("decision","disabled").put("reason","RAW_PRIVATE_PAYLOAD")).put("image_requests",new JSONArray()).put("image_reviews",new JSONArray());
+        for(String stage:List.of("first","draft-0","draft-0-repair","final","final-repair","final-0","final-0-repair","edit-note-0"))
+            check(ClassroomJsonFailure.responseDetail(good.toString(),stage,state).isEmpty(),"structurally valid response receives no failure diagnosis: "+stage);
+        for(String field:List.of("notes","affairs","assignments","image_assessment","image_requests")){
+            JSONObject bad=new JSONObject(good.toString());bad.remove(field);
+            check(ClassroomJsonFailure.responseDetail(bad.toString(),"draft-0-repair",state).equals("JSON 字段缺失："+field),"stage required field identified: "+field);
+        }
+        JSONObject note=new JSONObject().put("title","RAW_PRIVATE_PAYLOAD").put("text","text").put("sources",new JSONArray().put(999)).put("images",new JSONArray().put("unseen.jpg"));
+        JSONObject nested=new JSONObject(good.toString()).put("notes",new JSONArray().put(note));
+        check(ClassroomJsonFailure.responseDetail(nested.toString(),"draft-0",state).isEmpty(),"read-only diagnosis does not infer invalid sources or unseen image semantics");
+        for(String field:List.of("title","text","sources","images")){JSONObject bad=new JSONObject(nested.toString());bad.getJSONArray("notes").getJSONObject(0).remove(field);
+            check(ClassroomJsonFailure.responseDetail(bad.toString(),"first",state).equals("JSON 字段缺失：notes[0]."+field),"nested known path identified: "+field);}
+        JSONObject task=new JSONObject().put("text","RAW_PRIVATE_PAYLOAD").put("sources",new JSONArray().put(0));JSONObject tasks=new JSONObject(good.toString()).put("assignments",new JSONArray().put(task));
+        check(ClassroomJsonFailure.responseDetail(tasks.toString(),"final-repair",state).isEmpty(),"ordinary final repair never gains enhanced evidence requirement");
+        for(Object badImages:new Object[]{JSONObject.NULL,new JSONObject().put("RAW_PRIVATE_PAYLOAD",true),"RAW_PRIVATE_PAYLOAD"}){
+            JSONObject bad=new JSONObject(tasks.toString());bad.getJSONArray("assignments").getJSONObject(0).put("images",badImages);
+            check(ClassroomJsonFailure.responseDetail(bad.toString(),"final",state).equals("JSON 字段类型错误：assignments[0].images 应为数组"),"optional assignment images has a safe exact container path");
+        }
+        for(Object badImage:new Object[]{new JSONObject().put("RAW_PRIVATE_PAYLOAD",true),17,JSONObject.NULL}){
+            JSONObject bad=new JSONObject(tasks.toString());bad.getJSONArray("assignments").getJSONObject(0).put("images",new JSONArray().put(badImage));
+            check(ClassroomJsonFailure.responseDetail(bad.toString(),"final",state).equals("JSON 字段类型错误：assignments[0].images[0] 应为字符串"),"optional assignment image element reports only known path and type");
+        }
+        JSONObject withImages=new JSONObject(tasks.toString());withImages.getJSONArray("assignments").getJSONObject(0).put("images",new JSONArray().put("image-123.jpg"));
+        check(ClassroomJsonFailure.responseDetail(withImages.toString(),"final",state).isEmpty(),"optional assignment image strings do not trigger semantic image validation");
+        check(ClassroomJsonFailure.responseDetail(tasks.toString(),"final-0-repair",state).equals("JSON 字段缺失：assignments[0].evidence"),"enhanced evidence requirement is stage-specific");
+        JSONObject legacy=new JSONObject().put("affairs_schema",0).put("figure_policy",0);JSONObject legacyValue=new JSONObject(good.toString());legacyValue.remove("affairs");legacyValue.remove("image_reviews");
+        check(ClassroomJsonFailure.responseDetail(legacyValue.toString(),"final",legacy).isEmpty(),"legacy final does not acquire new affairs or image reviews requirement");
+        check(ClassroomJsonFailure.responseDetail("{\"RAW_PRIVATE_PAYLOAD\":", "first",state).contains("JSON"),"shared parser diagnoses original malformed output without repair");
+        check(ClassroomJsonFailure.responseDetail("{}","edit-plan",state).equals("JSON 字段缺失：overview"),"editor plan has its own shape");
+        check(ClassroomJsonFailure.responseDetail("{\"groups\":[{}]}","edit-assignments",state).equals("JSON 字段类型错误：groups[0] 应为数组"),"assignment grouping shape is independent of note schema");
+        check(state.toString().equals(original),"read-only diagnostic leaves run unchanged");
+        check(ClassroomJsonObject.parseObject("```json\n{\"text\":\"甲\\\\n乙\"}\n```").getString("text").equals("甲\\n乙"),"shared syntax parser preserves escaped payload without normalization");
     }
     private static void retention()throws Exception {
         check(ClassroomDocument.exportMarkdown("![图](image-0.jpg) $x^2$").equals("![图](images/image-0.jpg) $x^2$"),"export canonicalizes bare image paths without changing math");
@@ -517,9 +655,12 @@ public final class ClassroomSummaryCheck {
         root=new File(args[0]);root.mkdirs();
         if(args.length>1&&"local-lifecycle".equals(args[1])){test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);System.out.println("LocalLessonLifecycle: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Local lifecycle check failed");return;}
         HttpServer server=server();try {
+            if(args.length>1&&"json-repair".equals(args[1])){test("safe specific JSON diagnostics",ClassroomSummaryCheck::jsonDiagnostics);test("bounded complete JSON repair and safe errors",ClassroomSummaryCheck::jsonRepair);System.out.println("ClassroomJsonRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("JSON repair check failed");return;}
             if(args.length>1&&"note-strength".equals(args[1])){test("strength selection and immutable continuation",ClassroomSummaryCheck::noteStrength);System.out.println("NoteStrength: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Note strength check failed");return;}
             if(args.length>1&&"image-references".equals(args[1])){test("image reference validation",ClassroomSummaryCheck::validation);test("final validation evidence and continuation",ClassroomSummaryCheck::capAndFinalValidation);test("prefixed final and export",ClassroomSummaryCheck::prefixedFinal);test("final transport and cancellation audit",ClassroomSummaryCheck::finalTransportAudit);System.out.println("ImageReferences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Image reference check failed");return;}
             test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);
+            test("safe specific JSON diagnostics",ClassroomSummaryCheck::jsonDiagnostics);
+            test("bounded complete JSON repair and safe errors",ClassroomSummaryCheck::jsonRepair);
             test("strength selection and immutable continuation",ClassroomSummaryCheck::noteStrength);
             test("direct and monitored download parity",ClassroomSummaryCheck::completeDownloadParity);
             test("downloaded classroom history",ClassroomSummaryCheck::downloadedHistory);

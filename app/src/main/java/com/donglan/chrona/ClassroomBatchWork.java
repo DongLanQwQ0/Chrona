@@ -13,16 +13,17 @@ final class ClassroomBatchWork {
     private static final LinkedHashMap<String,ClassroomBatchWork> latest=new LinkedHashMap<>();
     static String key(ClassroomLesson lesson){return lesson.courseId+"/"+lesson.id;}
     static ClassroomBatchWork find(String account){return latest.get(account);}
-    static ClassroomBatchWork start(Context app,String account,List<ClassroomLesson> selection,java.util.Set<String> authorizedRetries)throws Exception{
+    static ClassroomBatchWork start(Context app,String account,List<ClassroomLesson> selection,java.util.Set<String> authorizedRetries,boolean regenerate)throws Exception{
         ClassroomBatchWork previous=latest.get(account);
         if(previous!=null&&previous.running)return previous;
-        ClassroomBatchWork batch=new ClassroomBatchWork(app,account,selection,authorizedRetries);latest.put(account,batch);
+        ClassroomBatchWork batch=new ClassroomBatchWork(app,account,selection,authorizedRetries,regenerate);latest.put(account,batch);
         batch.preferences.registerOnSharedPreferenceChangeListener(batch.changes);
         ClassroomWorkService.holdBatch(batch,app,batch::next,()->batch.cancel("后台处理已停止"));
         return batch;
     }
     final Context app;final String account;final List<ClassroomLesson> lessons;
     final int imageLimit,concurrency,noteStrength;final boolean enhancedClassroom;
+    final boolean regenerate;final String prompt;
     final java.util.Set<String> authorizedRetries;
     final LinkedHashMap<String,String> failures=new LinkedHashMap<>();
     final android.content.SharedPreferences preferences;
@@ -30,12 +31,13 @@ final class ClassroomBatchWork {
     boolean running=true,cancelled;private boolean filling;int position,success,skipped,cancelledCount;
     final LinkedHashMap<String,ClassroomLessonActivity.Session> active=new LinkedHashMap<>();
     String stopReason="已取消";
-    private ClassroomBatchWork(Context app,String account,List<ClassroomLesson> selection,java.util.Set<String> authorizedRetries)throws Exception{
+    private ClassroomBatchWork(Context app,String account,List<ClassroomLesson> selection,java.util.Set<String> authorizedRetries,boolean regenerate)throws Exception{
         this.app=app;this.account=account;
         this.authorizedRetries=java.util.Set.copyOf(authorizedRetries);
         imageLimit=ClassroomAutoSummary.imageLimit(app,account);
         var settings=com.donglan.chrona.ai.SchedulePreferences.load(app);
         enhancedClassroom=settings.enhancedClassroom;concurrency=settings.classroomConcurrency;noteStrength=settings.classroomNoteStrength;
+        this.regenerate=regenerate;prompt=settings.classroomPrompt;
         LinkedHashMap<String,ClassroomLesson> unique=new LinkedHashMap<>();for(ClassroomLesson lesson:selection)unique.put(key(lesson),lesson);
         lessons=new ArrayList<>(unique.values());preferences=new ZjuSettingsStore(app).prefs;
         changes=(p,k)->{if(!allowed())cancel("学校账号已停用或更换");};
@@ -61,7 +63,7 @@ final class ClassroomBatchWork {
                 skipped++;failures.put(key(lesson),"本节课堂正在处理，已跳过");continue;
             }
             try{org.json.JSONObject saved=ClassroomStore.read(new File(new ClassroomStore(app,account).lesson(lesson),"summary.json"));
-                if(saved!=null&&saved.optBoolean("complete")){skipped++;failures.put(key(lesson),"已有完整总结，已跳过");continue;}
+                if(!regenerate&&saved!=null&&saved.optBoolean("complete")){skipped++;failures.put(key(lesson),"已有完整总结，已跳过");continue;}
             }catch(Exception failure){failures.put(key(lesson),failure.getMessage()==null?"无法读取课堂资料":failure.getMessage());continue;}
             ClassroomLessonActivity.Session job=new ClassroomLessonActivity.Session(app,account);
             job.selected=lesson;job.batchOwner=this;job.detached=true;
@@ -81,7 +83,7 @@ final class ClassroomBatchWork {
             catch(Exception failure){job.completed=null;failures.put(key(lesson),failure.getMessage()==null?"无法创建课堂缓存":failure.getMessage());job.disposeIfDetached();continue;}
             job.localInitialized=true;
             active.put(key(lesson),job);
-            job.run("批量总结课堂",true,()->ClassroomAutoSummary.downloadAndSummarize(job));
+            job.run(regenerate?"重新总结课堂":"批量总结课堂",true,()->ClassroomAutoSummary.downloadAndSummarize(job,regenerate,prompt));
         }}finally{filling=false;}
         if(active.isEmpty()&&position==lessons.size())finish();
     }
