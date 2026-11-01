@@ -6,7 +6,14 @@
 - 同一Chrona_Classroom_36正常窗口，原生竖浅187、横深189项真实触摸通过。三页旧阈值411px以上滚动、回顶、切页返回均保留原Dock实例、完整文字、尺寸位置及scale=1；新增入口实际打开/返回、Back历史、首尾长按拖出与惯性、正文双向切页通过。独立＋仍仅首页可操作，切页中间帧禁用；未调整DPI或分辨率。
 - 首轮Back回首页暴露同状态animateHome旁路禁用导致缓存失配，最小队列也复现；改为通过唯一apply状态入口控制触摸。下一轮精确诊断区分出按钮已启用，但alpha永留0.99967074、blur留0.49976957：终态0/1及blur=0绕过中间帧epsilon，保留原时长和帧去重。横屏首次＋点击穿透到TaskDetail，原因是已pin侧栏提升shell而新增宿主未pin；宿主复用同一InteractionLayers.pin后实际点击通过。
 - 原失败保存在build/dock-scroll/portrait-first、portrait-second、portrait-diagnostics、landscape-first；只按对应证据修正，未放宽断言。有效JPEG及报告在portrait/、landscape/；Native夹具不触生产包，仅删除本次51条fixture并恢复偏好。导航队列183、Chrome39通过，队列证据不替代实际渲染。
-- 最终pin后release/lint通过；APK为0.15.90/252、正式包名、原升级签名、非debuggable。独立UI最终复审无未解决P1/P2或关键证据缺口。真机旧10.197.184.141:38283拒绝，ADB及mDNS无V2527A，尚未覆盖更新；未发Release。本轮6个AVD专用目录已转回项目并清理，保留其它fixture与validation应用。
+- 最终pin后release/lint通过；APK为0.15.90/252、正式包名、原升级签名、非debuggable。独立UI最终复审无未解决P1/P2或关键证据缺口。真机恢复10.197.184.141:39343后于19:08:11正常覆盖升级，首次安装时间仍9月26日18:54:37，未发Release。本轮6个AVD专用目录已转回项目并清理，保留其它fixture与validation应用。
+
+### 数学全量与服务拒绝原因
+
+- 签名诊断辅助包只在mathAudit模式跳过目标Application初始化并等待确认；既有缓存无symlink/.bak/.new才读取，两个Provider初始化无副作用。正常安装/运行后卸载，无学校或AI请求，输出仅安全元数据。真实phone-report.json确认27条总历史中数学21唯一key（微积分18、线代3），无重复；4份完整成品均为旧affairs_schema=0/强度1，最新格式仍0/21，不能按旧complete状态计成功。
+- 原完整成品与当前run分别标识，run_matches_summary避免归错轮次。扩充未完成课堂及无summary的既存目录读取，后者保持生产路径/active校验、不开目录；未成品标unfinished_document，不误报格式失败。独立只读复审通过，probe-build-all-runs-final构建及真实phone-all-runs.json读取通过。
+- 仅手动续一次10月29日微积分第9节，19:12:48–19:12:49再次HTTP403；0张上下文图、约0.05MiB，无模型正文/Token；未启动整批。用户再次要求查明原因后，仅从已保存403读取限长脱敏摘录，实际返回GROUP_DISABLED／API Key所属分组已停用。此阻塞需服务方恢复分组或用户更换有效Key，未改密钥/模型/网络绕过，未发新AI探测请求。
+- providerFailure为显式诊断模式：应用既有Keystore内遮蔽当前密钥，再遮蔽Basic/Bearer、完整引用值、Cookie整行尾部、短token、URL/email及长标识，最后截至320字符。两轮独立审查修正短Basic和Cookie尾巴泄漏及321字符截断；原例加入内存selftest，真实provider_error_redaction_checked=true。证据build/math-completion-audit-20261101/phone-provider.json，辅助包和手机专用window.xml/空目录均已清理；不导出原始conversation或模型回复。
 
 ## 0.15.89 — 更正文稿独立阅读页 — 2026-11-01
 

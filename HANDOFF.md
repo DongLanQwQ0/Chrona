@@ -3,17 +3,16 @@
 ## 当前优先交付
 
 - 用户明确删除主页Dock随滚动缩小、靠边及仅保留图标的行为；首页、日程、收件箱的主导航滚动后保持完整尺寸、标签与位置。保留点击、长按、拖动高光、惯性、切页和独立「＋」的原切页动效，横屏侧栏几何不变。
-- 最新候选0.15.90/252：build/candidates/0.15.90/Chrona-0.15.90.apk，正式包名、原升级签名、非debuggable；最终release/lint通过，未更新真机，不发Release。
+- 0.15.90/252已于2026-11-01 19:08:11正常覆盖V2527A，首次安装时间仍2026-09-26 18:54:37。APK为build/candidates/0.15.90/Chrona-0.15.90.apk，正式包名、原升级签名、非debuggable；最终release/lint通过，不发Release。
 - 三处滚动收起接线及唯一minimize状态已删除；公共弹簧、按压、惯性参数不变。竖浅187、横深189项真实触摸通过，build/dock-scroll/portrait/及landscape/的报告/JPEG保留原实例、三页>160dp/回顶/切页/系统返回/首尾拖出/＋打开返回证据。独立UI最终复审无未解决P1/P2及关键证据缺口；导航队列183、Chrome39通过。
 - 同批回归发现并修正：＋同状态settle旁路禁用使缓存失配；presence/blur epsilon漏写精确终态；横屏已pin的侧栏将shell提升后遮住未pin的＋，给wide captureHost沿用同一pin。原失败及精确状态在portrait-first、portrait-second、portrait-diagnostics、landscape-first；未按失败候选交付。
-- 唯一下一步：真机恢复后先确认无活动总结/用户编辑，正常覆盖90并核对版本，再取得数学全量只读快照。原USB未连接，旧10.197.184.141:38283拒绝；本次续接ADB仅模拟器、mDNS无真机，原10.197.184.141:8765的单次有界TCP检查也不可达，不能改走原LAN地址继续。GlobalSend已明确交还且未安装97；用户无人值守，不反复请求连接或重复旧端口。
-- 数学只读诊断未安装：仅mathAudit跳过目标Application初始化并等待确认、构造Store前要求已有缓存且无symlink/.bak/.new；合并manifest两个Provider初始化无副作用，独立审查关闭P2。按实际key输出unique/duplicates，run_matches_summary要求非空UUID相等，run元数据均单列。修正版辅助包/日志在build/math-completion-audit-20261101/Chrona-Math-Audit.apk及probe-build-final.txt；尚未取得真机快照。portable只证明结构/来源/图片白名单，decodeBounds只证明图片头，不冒充内容/图片语义质量。
+- 真机10.197.184.141:39343；GlobalSend97已安装并明确交还。90已安装且已正常启动；数学快照确认21唯一课堂（微积分18、线代3，无重复key），4份完整成品全为旧affairs_schema=0/强度1，最新格式完成数为0。最新单课续跑仍403，现已定位GROUP_DISABLED／API Key所属分组已停用；唯一下一步由服务方恢复分组或用户提供有效Key后，root先续单课通过，再推进全21节，不再盲试批量。
+- 数学只读诊断已正常安装/运行后卸载，phone-report/phone-all-runs/phone-provider.json为实际证据。仅mathAudit跳过Application并确认、已有缓存无symlink/.bak/.new才读；两个Provider初始化无副作用。按key/非空run UUID分离成品与轮次，覆盖无summary的失败run；无原消息/模型回复/凭据输出。显式providerFailure仅返回已保存403的320字符脱敏摘录，独立复审及真实内存脱敏检查通过，无新网络调用。portable/图片头不冒充语义质量。
 
 ## 本轮核查与纠正
 
-- 最新真机只读历史筛选显示微积分18节，其中4条已完成（10月20日、10月8日、9月24日、9月22日）；原工作单16节微积分/19节数学只描述原已选批次，不是完整数学库存。按用户原要求“微积分和线性代数”全量核对，不把漏入旧批次的两条旧完整记录排除。线代3节仍待当前快照确认，预计总21节。
-- UI读记录时前台切到GlobalSend，已停止触控；GlobalSend96现已安装并明确交还。root准备复用既有签名诊断辅助程序增加mathAudit只读缓存投影：课程/课堂身份、格式版本/档位、完成状态、来源/图片校验及安全处理元数据，不输出消息历史/原始响应/凭据，不访问学校或AI，不写课堂数据。该程序测试后卸载；安装或权限拒绝不绕过。
-- Dock交付后取得当前完整数学快照，按实际课堂key去重核对四条完整记录的新契约，纠正目标/剩余数量；服务403未恢复前不重跑批队列。
+- 真机快照微积分18、线代3共21唯一key；四条完整记录（10月20日、10月8日、9月24日、9月22日）均旧格式。原19只描述已选批次，漏选的两条旧记录也须纳入全量更新，不缩小用户范围。
+- 四份旧成品结构/来源与引用图片头检查通过，但不是新格式或语义验收；其中两份已有较新失败run，不能把新run审计归到旧成品。完整快照已取得，不再把数量/重复目录列为未知。
 
 ## 已交付候选
 
@@ -35,13 +34,13 @@
 
 ## AI服务依赖
 
-- 已准备独立审查的只读快照探针；恢复连接后核对四条完整数学记录的新契约，并纠正全部与剩余数量。
-- 服务恢复前不重复批量调用：87真实单课首请求HTTP403、无正文；用户授权的一次237字节无课堂资料健康请求也在1036ms返回403（类别未明确）。证据build/classroom-regeneration-validation/phone-ai-health.txt，诊断辅助包com.donglan.chrona.classroom.probe已卸载。
+- GROUP_DISABLED是保存的真实服务回复，明确为Key所属分组停用，不是推测；账号/分组权限由服务方处理，不能用更换模型/网络绕过。用户已知晓具体原因，未再要求其自行猜测。
+- 19:12:48–19:12:49单课403已证实无图、0.05MiB、无正文/Token。此后只有已保存错误读取，原始历史/冻结配置保留，无新AI请求。证据resume-one-audit.json及phone-provider.json；只读诊断辅助包已卸载。
 - 恢复后先续单课，真实通过再扩至失败数学课堂。禁止改密钥/模型/身份/网络绕过；不能宣称数学总结完成或服务恢复。
 
 ## 设备与文件边界
 
-- GlobalSend97因同一真机离线未安装，已明确交还；只有实际冲突才协调，不常规跨聊天广播。所有设备操作归root。
+- GlobalSend97及拾时90均已安装，手机当前由root使用后留在拾时首页；只有实际冲突才协调，不常规跨聊天广播。
 - 仅复用Chrona_Classroom_36 / emulator-5554，不克隆/清数据/改DPI或分辨率/中止其它任务。电脑产物在项目build；图片先压缩JPEG。
 - 手机本次/data/local/tmp/chrona/classroom-failure-20261101/window.xml及空任务目录已清理。新包流式安装，无共享目录测试文件，不删用户收件或应用数据。
 - 旧/data/local/tmp/chrona/classroom-failure-20261031/曾清理被策略拒绝，不绕过。

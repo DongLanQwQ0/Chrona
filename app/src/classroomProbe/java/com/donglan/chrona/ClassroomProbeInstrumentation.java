@@ -28,6 +28,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean parseAudit;
     private boolean aiPing;
     private boolean mathAudit;
+    private boolean providerFailure;
     private final java.util.concurrent.CountDownLatch applicationReady=new java.util.concurrent.CountDownLatch(1);
     private volatile boolean applicationInitializationSkipped;
     @Override public void onCreate(Bundle args) {
@@ -39,6 +40,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         parseAudit = args != null && "true".equals(args.getString("parseAudit"));
         aiPing = args != null && "true".equals(args.getString("aiPing"));
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
+        providerFailure = args != null && "true".equals(args.getString("providerFailure"));
         super.onCreate(args); start();
     }
     @Override public void callApplicationOnCreate(android.app.Application app){
@@ -134,6 +136,22 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 .put("pending_atomic_recovery",false).put("explicit_network_requests",false);
         JSONArray rows=new JSONArray();JSONObject courses=new JSONObject();int complete=0;
         java.util.Set<String> unique=new java.util.HashSet<>();JSONArray duplicates=new JSONArray();
+        String currentKey=null;
+        if(providerFailure){
+            com.donglan.chrona.ai.AiSettings current=new com.donglan.chrona.ai.AiSettingsStore(getTargetContext()).load();
+            if(current==null)throw new IllegalStateException("AI configuration unavailable");
+            currentKey=current.apiKey;
+            // This fixed fixture contains no real credential and never leaves process memory.
+            String fixture="Bearer fixtureCredentialValue123 api_key=fixtureKeyValue123 sk-fixtureKey01234567890123456789 "+currentKey
+                    +"\nauthorization=\"Basic dXNlcjpwYXNz\"\nCookie: session=abc123; sid=def456\n"
+                    +"password=\"one two three\"\naccess_token='shortTokenValue'\nBasic c2VjcmV0";
+            String masked=providerExcerpt(fixture,currentKey);
+            if(masked.contains(currentKey)||masked.contains("fixtureCredentialValue123")||masked.contains("fixtureKeyValue123")
+                    ||masked.contains("dXNlcjpwYXNz")||masked.contains("abc123")||masked.contains("def456")
+                    ||masked.contains("one two three")||masked.contains("shortTokenValue")||masked.contains("c2VjcmV0")||masked.length()>320)
+                throw new IllegalStateException("Provider error redaction failed");
+            report.put("provider_error_redaction_checked",true);
+        }
         com.donglan.chrona.classroom.ClassroomStore store=new com.donglan.chrona.classroom.ClassroomStore(getTargetContext(),settings.account());
         synchronized(com.donglan.chrona.classroom.ClassroomStore.LOCK){
             List<JSONObject> history=store.history();report.put("history_total",history.size());
@@ -149,10 +167,22 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         .put("starts_at",lesson.startsAt).put("title",lesson.title).put("complete",finished)
                         .put("updated",summary.optLong("updated")).put("affairs_schema",summary.optInt("affairs_schema",0))
                         .put("note_strength",summary.optInt("note_strength",1)).put("corrected_characters",summary.optString("corrected_transcript").length());
-                rows.put(row);if(!finished)continue;
+                rows.put(row);
                 java.io.File directory;
                 try{directory=store.existingSummary(lesson);}catch(java.io.IOException busy){row.put("detail_state","busy_or_unavailable");continue;}
-                if(directory==null){row.put("detail_state","unavailable");continue;}
+                if(directory==null){
+                    // existingSummary has already validated numeric IDs, canonical parents and
+                    // active leases. A downloaded/failed first run may have no published summary.
+                    java.io.File local=new java.io.File(new java.io.File(root,settings.account()),key);
+                    java.io.File imported=new java.io.File(new java.io.File(root,"shared"),key);
+                    directory=new java.io.File(local,"run.json").isFile()?local:
+                            new java.io.File(imported,"run.json").isFile()?imported:
+                            local.isDirectory()?local:imported.isDirectory()?imported:null;
+                    if(directory==null){row.put("detail_state","unavailable");continue;}
+                    row.put("detail_state","unpublished");
+                }
+                boolean documentPresent=new java.io.File(directory,"summary.json").isFile();
+                row.put("published_summary",documentPresent);
                 JSONArray parts=summary.optJSONArray("parts"),headings=new JSONArray();int notes=0,affairs=0,actions=0;
                 if(parts!=null)for(int p=0;p<parts.length();p++){
                     JSONObject part=parts.getJSONObject(p);
@@ -165,9 +195,11 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 row.put("notes",notes).put("affairs",affairs).put("assignments",actions).put("headings",headings);
                 JSONObject materials=com.donglan.chrona.classroom.ClassroomStore.read(new java.io.File(directory,"materials.json"));
                 if(materials==null)row.put("source_validation","materials_unavailable");
+                else if(!finished)row.put("source_validation","unfinished_document");
                 else try{com.donglan.chrona.classroom.ClassroomDocument.portable(summary,materials);row.put("source_validation","passed");}
                     catch(Exception invalid){row.put("source_validation","failed").put("source_error_type",invalid.getClass().getSimpleName());}
-                try{
+                if(!documentPresent)row.put("image_validation","unpublished_document");
+                else try{
                     java.util.Set<String> images=com.donglan.chrona.classroom.ClassroomDocument.referencedImages(summary);int valid=0;
                     for(String name:images){java.io.File image=store.summaryImage(lesson,name);
                         android.graphics.BitmapFactory.Options bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;
@@ -184,11 +216,40 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     row.put("run_turns",audit.getJSONArray("turns"));
                     JSONObject execution=audit.optJSONObject("execution");
                     if(execution!=null)row.put("run_execution_state",execution.optString("state"));
+                    JSONObject conversation=run.optJSONObject("conversation");
+                    JSONArray turns=conversation==null?null:conversation.optJSONArray("turns");
+                    JSONObject last=turns==null||turns.length()==0?null:turns.optJSONObject(turns.length()-1);
+                    if(last!=null&&"failed".equals(last.optString("status"))){
+                        String failure=last.optString("error");
+                        java.util.regex.Matcher http=java.util.regex.Pattern.compile("\\bHTTP\\s+(\\d{3})\\b").matcher(failure);
+                        if(http.find()){
+                            int status=Integer.parseInt(http.group(1));row.put("run_last_http",status);
+                            if(providerFailure&&status==403)row.put("provider_error_excerpt",providerExcerpt(failure,currentKey));
+                        }
+                        row.put("run_last_error_category",healthCategory(failure));
+                    }
                 }
             }
         }
         return report.put("courses",courses).put("math_rows",rows.length()).put("math_unique",unique.size())
                 .put("duplicate_keys",duplicates).put("complete_rows",complete).put("rows",rows);
+    }
+    /** Explicit diagnostic mode only; conversation messages and model replies stay private. */
+    private static String providerExcerpt(String error,String key){
+        String value=error==null?"":error;
+        if(key!=null&&!key.isEmpty())value=value.replace(key,"[credential]");
+        value=value.replaceAll("(?is)<script\\b[^>]*>.*?</script>|<style\\b[^>]*>.*?</style>"," ")
+                .replaceAll("(?s)<[^>]*>"," ")
+                .replaceAll("(?i)\\b(?:Bearer|Basic)\\s+[^\\s,;<>]+","[authorization]")
+                .replaceAll("(?is)([\\\"']?(?:api[_-]?key|(?:proxy[_-]?)?authorization|(?:access[_-]?|refresh[_-]?)?token|secret|password|(?:set[_-]?)?cookie|session(?:[_-]?(?:id|token))?|sid)[\\\"']?\\s*[:=]\\s*)(?:\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*')","$1[credential]")
+                // Whole-line fallback deliberately over-redacts headers/cookies and their tail.
+                .replaceAll("(?im)([\\\"']?(?:api[_-]?key|(?:proxy[_-]?)?authorization|(?:access[_-]?|refresh[_-]?)?token|secret|password|(?:set[_-]?)?cookie|session(?:[_-]?(?:id|token))?|sid)[\\\"']?\\s*[:=]\\s*)[^\\r\\n]*","$1[credential]")
+                .replaceAll("\\bsk-[A-Za-z0-9_-]+","[credential]")
+                .replaceAll("https?://[^\\s<>]+","[url]")
+                .replaceAll("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}","[email]")
+                .replaceAll("[A-Za-z0-9_+/=-]{24,}","[identifier]")
+                .replaceAll("\\s+"," ").trim();
+        return value.length()<=320?value:value.substring(0,319)+"…";
     }
     private static void requireStableCache(java.io.File path)throws java.io.IOException{
         if(java.nio.file.Files.isSymbolicLink(path.toPath()))throw new java.io.IOException("Symbolic cache path unavailable");
@@ -229,6 +290,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     }
     private static String healthCategory(String message){
         String detail=message==null?"":message.toLowerCase(java.util.Locale.ROOT);
+        if(detail.contains("group_disabled"))return "service_group_disabled";
         if(detail.contains("invalid_api_key")||detail.contains("invalid api key")||detail.contains("incorrect api key")||detail.contains("invalid token"))return "credential_rejected";
         if(detail.contains("country")||detail.contains("region")||detail.contains("territory"))return "region_restriction";
         if(detail.contains("context_length")||detail.contains("context length")||detail.contains("maximum context")||detail.contains("too many tokens"))return "context_limit";
