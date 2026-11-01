@@ -212,13 +212,57 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 row.put("run_matches_summary",matches);
                 if(run!=null){
                     row.put("run_affairs_schema",run.optInt("affairs_schema",0)).put("run_note_strength",run.optInt("note_strength",1));
+                    row.put("correction_reused",!run.optString("correction_reused_from").isEmpty());
+                    JSONArray corrected=run.optJSONArray("corrected"),blocks=run.optJSONArray("blocks");
+                    row.put("correction_parts",corrected==null?0:corrected.length()).put("source_blocks",blocks==null?0:blocks.length());
                     JSONObject audit=com.donglan.chrona.classroom.ClassroomAudit.project(run,summary);
                     row.put("run_turns",audit.getJSONArray("turns"));
                     JSONObject execution=audit.optJSONObject("execution");
                     if(execution!=null)row.put("run_execution_state",execution.optString("state"));
                     JSONObject conversation=run.optJSONObject("conversation");
+                    JSONObject options=conversation==null?null:conversation.optJSONObject("options"),limits=new JSONObject();
+                    if(options!=null){
+                        Object requestedModel=options.opt("model");
+                        if(requestedModel instanceof String model&&model.matches("[A-Za-z0-9_./:-]{1,120}"))limits.put("model",model);
+                        for(String name:new String[]{"max_completion_tokens","max_tokens"}){
+                            Object value=options.opt(name);if(value instanceof Number n&&n.longValue()>=0)limits.put(name,n.longValue());
+                        }
+                        Object effort=options.opt("reasoning_effort");
+                        if(effort instanceof String text&&java.util.Set.of("none","low","medium","high","max").contains(text))limits.put("reasoning_effort",text);
+                    }
+                    row.put("frozen_output_options",limits);
+                    String[] config=run.optString("config").split("\n",5);
+                    if(config.length>=4)try{
+                        java.net.URI endpoint=new java.net.URI(config[0]);String host=endpoint.getHost();
+                        if(host!=null&&host.matches("[A-Za-z0-9.-]+"))row.put("run_endpoint_host",host);
+                        if(java.util.Set.of("auto","none","low","medium","high","max").contains(config[2]))row.put("run_configured_effort",config[2]);
+                        if(config[3].matches("[0-9]{1,3}"))row.put("run_image_limit",Integer.parseInt(config[3]));
+                    }catch(java.net.URISyntaxException invalid){row.put("run_endpoint_host","invalid");}
                     JSONArray turns=conversation==null?null:conversation.optJSONArray("turns");
                     JSONObject last=turns==null||turns.length()==0?null:turns.optJSONObject(turns.length()-1);
+                    if(last!=null){
+                        JSONObject usage=last.optJSONObject("usage"),details=usage==null?null:usage.optJSONObject("completion_tokens_details");
+                        Object reasoning=details==null?null:details.opt("reasoning_tokens");
+                        row.put("run_last_reasoning_tokens",reasoning instanceof Number n&&n.longValue()>=0?n.longValue():JSONObject.NULL);
+                        JSONObject response=last.optJSONObject("response");JSONArray choices=response==null?null:response.optJSONArray("choices");
+                        JSONObject choice=choices==null||choices.length()==0?null:choices.optJSONObject(0),message=choice==null?null:choice.optJSONObject("message");
+                        Object content=message==null?null:message.opt("content"),reasoningText=message==null?null:message.opt("reasoning_content");
+                        row.put("run_last_content_characters",content instanceof String text?text.length():JSONObject.NULL);
+                        row.put("run_last_reasoning_characters",reasoningText instanceof String text?text.length():JSONObject.NULL);
+                        if(content instanceof String text)try{
+                            JSONObject object=com.donglan.chrona.classroom.ClassroomSummary.parseObject(text),fields=new JSONObject();
+                            for(String name:new String[]{"overview","notes","affairs","assignments","image_assessment","image_requests","image_reviews","sections","groups"})fields.put(name,object.has(name));
+                            row.put("run_last_response_shape","object").put("run_last_response_fields",fields);
+                            Object requests=object.opt("image_requests");
+                            row.put("run_last_image_requests_shape",!object.has("image_requests")?"missing":requests==JSONObject.NULL?"null":requests instanceof JSONArray?"array":requests instanceof JSONObject?"object":requests instanceof String?"string":"other");
+                            if(requests instanceof JSONArray list)row.put("run_last_image_requests",list.length());
+                            JSONObject assessment=object.optJSONObject("image_assessment");
+                            if(assessment!=null){
+                                String decision=assessment.optString("decision");
+                                row.put("run_last_image_decision",java.util.Set.of("request","not_needed","disabled","unavailable").contains(decision)?decision:"unrecognized");
+                            }
+                        }catch(Exception invalid){row.put("run_last_response_shape","not_valid_object");}
+                    }
                     if(last!=null&&"failed".equals(last.optString("status"))){
                         String failure=last.optString("error");
                         java.util.regex.Matcher http=java.util.regex.Pattern.compile("\\bHTTP\\s+(\\d{3})\\b").matcher(failure);

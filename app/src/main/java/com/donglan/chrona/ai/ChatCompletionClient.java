@@ -179,7 +179,7 @@ public final class ChatCompletionClient {
     /** General completion uses the same cancellation, options and HTTP transport as capture parsing. */
     public JSONObject classroomOptions() throws IOException {
         try {
-            JSONObject body=new JSONObject().put("model",settings.model);RequestOptions.apply(body,settings);
+            JSONObject body=new JSONObject().put("model",settings.model);RequestOptions.applyClassroom(body,settings);
             body.remove("response_format");
             if(body.has("prompt_cache_key"))body.put("prompt_cache_key","chrona-classroom-v11");
             return body.put("stream",true).put("stream_options",new JSONObject().put("include_usage",true));
@@ -325,6 +325,12 @@ public final class ChatCompletionClient {
                     if ("[DONE]".equals(data)) { done = true; break; }
                     try {
                         JSONObject frame = new JSONObject(data);
+                        if (frame.has("error") && !frame.isNull("error")) {
+                            JSONObject error = frame.optJSONObject("error");
+                            throw new ResponseException("AI stream provider error (code="
+                                    + safeStreamErrorLabel(error, "code") + ", type="
+                                    + safeStreamErrorLabel(error, "type") + ")");
+                        }
                         JSONObject frameUsage = frame.optJSONObject("usage");
                         if (frameUsage != null) usage = frameUsage;
                         JSONArray choices = frame.optJSONArray("choices");
@@ -365,7 +371,8 @@ public final class ChatCompletionClient {
         // Some OpenAI-compatible servers close the stream without the [DONE] sentinel. A reported
         // finish reason still proves the answer is complete; a connection cut mid-answer does not.
         if (!done && finishReason == null)
-            throw new ResponseException("AI stream ended before completion");
+            throw new ResponseException("AI stream ended before completion (content_chars="
+                    + completion.length() + ", reasoning_chars=" + reasoning.length() + ")");
         if (completion.length() == 0) throw new ResponseException("AI stream returned no content");
         JSONObject envelope = new JSONObject();
         try {
@@ -379,6 +386,32 @@ public final class ChatCompletionClient {
             throw new IOException("Could not assemble AI response", exception);
         }
         return envelope.toString();
+    }
+
+    /** Provider text is untrusted: only fixed error categories may enter diagnostics. */
+    private static String safeStreamErrorLabel(JSONObject error, String key) {
+        if (error == null || error.isNull(key)) return "unknown";
+        Object value = error.opt(key);
+        if (!(value instanceof String)) return "unknown";
+        String label = ((String) value).toLowerCase(java.util.Locale.ROOT);
+        switch (label) {
+            case "context_length_exceeded":
+            case "max_tokens_exceeded":
+            case "rate_limit_exceeded":
+            case "insufficient_quota":
+            case "server_error":
+            case "api_error":
+            case "invalid_request_error":
+            case "content_filter":
+            case "model_not_found":
+            case "authentication_error":
+            case "permission_error":
+            case "overloaded_error":
+            case "group_disabled":
+                return label;
+            default:
+                return "unknown";
+        }
     }
 
     private static String reasoningFrom(JSONObject message) {

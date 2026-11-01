@@ -29,8 +29,8 @@ android {
         applicationId 'com.donglan.chrona'
         minSdk 26
         targetSdk 36
-        versionCode 252
-        versionName '0.15.90'
+        versionCode 253
+        versionName '0.15.91'
         testInstrumentationRunner 'com.donglan.chrona.LanAccessInstrumentation'
         buildConfigField 'long', 'CAPSULE_DESKTOP_MILLIS', '30000L'
     }

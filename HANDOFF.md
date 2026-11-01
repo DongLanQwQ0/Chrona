@@ -1,55 +1,39 @@
-# 当前交付：Dock滚动缩小已删除；待真机更新及数学全量核对
+# 当前交付：数学课堂失败修复与全21节重新总结
 
-## 当前优先交付
+## 当前候选与唯一下一步
 
-- 用户明确删除主页Dock随滚动缩小、靠边及仅保留图标的行为；首页、日程、收件箱的主导航滚动后保持完整尺寸、标签与位置。保留点击、长按、拖动高光、惯性、切页和独立「＋」的原切页动效，横屏侧栏几何不变。
-- 0.15.90/252已于2026-11-01 19:08:11正常覆盖V2527A，首次安装时间仍2026-09-26 18:54:37。APK为build/candidates/0.15.90/Chrona-0.15.90.apk，正式包名、原升级签名、非debuggable；最终release/lint通过，不发Release。
-- 三处滚动收起接线及唯一minimize状态已删除；公共弹簧、按压、惯性参数不变。竖浅187、横深189项真实触摸通过，build/dock-scroll/portrait/及landscape/的报告/JPEG保留原实例、三页>160dp/回顶/切页/系统返回/首尾拖出/＋打开返回证据。独立UI最终复审无未解决P1/P2及关键证据缺口；导航队列183、Chrome39通过。
-- 同批回归发现并修正：＋同状态settle旁路禁用使缓存失配；presence/blur epsilon漏写精确终态；横屏已pin的侧栏将shell提升后遮住未pin的＋，给wide captureHost沿用同一pin。原失败及精确状态在portrait-first、portrait-second、portrait-diagnostics、landscape-first；未按失败候选交付。
-- 真机10.197.184.141:39343；GlobalSend97已安装并明确交还。90已安装且已正常启动；数学快照确认21唯一课堂（微积分18、线代3，无重复key），4份完整成品全为旧affairs_schema=0/强度1，最新格式完成数为0。最新单课续跑仍403，现已定位GROUP_DISABLED／API Key所属分组已停用；唯一下一步由服务方恢复分组或用户提供有效Key后，root先续单课通过，再推进全21节，不再盲试批量。
-- 数学只读诊断已正常安装/运行后卸载，phone-report/phone-all-runs/phone-provider.json为实际证据。仅mathAudit跳过Application并确认、已有缓存无symlink/.bak/.new才读；两个Provider初始化无副作用。按key/非空run UUID分离成品与轮次，覆盖无summary的失败run；无原消息/模型回复/凭据输出。显式providerFailure仅返回已保存403的320字符脱敏摘录，独立复审及真实内存脱敏检查通过，无新网络调用。portable/图片头不冒充语义质量。
+- 正式包0.15.91/253已于2026-11-01 20:27:08覆盖V2527A，首次安装仍9月26日；原升级证书、非debuggable。APK：build/candidates/0.15.91/Chrona-0.15.91.apk。最终release/lint通过，不发小补丁Release，正式latest仍v0.15.81。
+- 已经原UI在历史按课程时间排序，长按最新10月29日微积分、仅选1/27，确认「重新总结1节课堂」，启动新run验证32768预算与新提示。不能点旧run「继续」冒充预算更新。先观察这节完整通过，再恢复其余20节；运行时不安装、重启或instrument目标应用。
+- 被动观察：build/classroom-failure-20261101/watch_work.py，当前session84619；candidate91-single-watch-next.jsonl保存通知。20:45已全部完成分段笔记，进入「AI全课主题编排」，越过原length失败点；尚未整篇发布。观察掉线不等于任务停止，不据此重启请求。
 
-## 本轮核查与纠正
+## 全21节的交付条件
 
-- 真机快照微积分18、线代3共21唯一key；四条完整记录（10月20日、10月8日、9月24日、9月22日）均旧格式。原19只描述已选批次，漏选的两条旧记录也须纳入全量更新，不缩小用户范围。
-- 四份旧成品结构/来源与引用图片头检查通过，但不是新格式或语义验收；其中两份已有较新失败run，不能把新run审计归到旧成品。完整快照已取得，不再把数量/重复目录列为未知。
+- 微积分18+线代3，21唯一lesson key；不能缩成原19节。最新affairs_schema=1、强度3，一篇精简完整的可自学笔记；事务集中、assignments只明确行动，不把内部段落拼成重复长文。
+- 原6000分块的id/text匹配复用已提交修正文稿，不改分块；缺图走原完整下载/校验/去重。已发messages/options只追加、不裁历史；失败片段回滚、不拼接。旧轮精确归档同课审计，不另导出旧成品副本。
+- 21节均须新格式成品、真实来源/图片有效，抽查正文精简、过程解释与考核线索。四份旧schema0/强度1的complete不计成功；当前最新成功仍0/21。
 
-## 已交付候选
+## 本轮失败与修复
 
-- 0.15.89/251 于2026-11-01 15:56:05正常覆盖安装V2527A（10.197.184.141:38283），包管理器确认版本/更新时间并已正常启动。APK：build/candidates/0.15.89/Chrona-0.15.89.apk，com.donglan.chrona、原升级证书、非debuggable。未发Release；正式latest仍v0.15.81。
-- 最新要求已取代88折叠方案：入口仅在课程名称标题行最右侧，纯文字公共紧凑按钮，无上下展开箭头；删除正文末尾入口及inline文稿/holder/开合状态。ClassroomCorrectedActivity复用SettingsPageLayout和同一Markdown/MathJax，首屏就绪入场、系统返回、整页滚动，旋转/图片返回保留偏移，新触摸优先。源文稿/公式/代码/来源编号/导出不改。
-- publishedSummary只读解析已发布快照，允许新轮处理中阅读已有文稿；existingSummary保留原忙时guard，路径/身份/账号检查不变。页面不调用AI、学校或改检查点；账号撤销实际关闭并dispose。
-- debug/androidTest、release+lintRelease通过。常规竖浅62、横深font1.3 62；长文font1.3 19；仅文稿checkpoint稳定竖浅/横深/减少动画各15；首次入场/恢复/系统返回/减少动画20通过。图片偏移1231→1231、1487→1487，同reader，真实旋转与返回parent不重建正文。
-- 固定候选独立UI最终复审无未解决P1/P2或关键证据缺口。证据build/corrected-secondary-ui/及docs/validation-history.md；稳定JPEG在stable-portrait/stable-landscape/stable-reduced，各经两次硬件frame commit，完整返回/正文/公式/代码可见。
-- 首批部分JPEG是空帧/缺箭头，未计通过；motion-first/second夹具失败原样保留。仅补等待实际onPresented消费，并修异步还原倍率后误快照0的问题；最终系统倍率1，生产动效未改，不重跑已有效矩阵。
+- 用户恢复服务后模型glm-5.3-flash、api-slb.jiji.cc；真实冻参max_tokens=8192，未向未知模型猜测发送low。10/29第9节复用3/3修正文稿、3段draft均stop；19图final-0 length，正文1080、reasoning18099字符、usage输出8192，结果未提交。不是旧403。
+- 其它20节准确排除六节C及单课，用户允许后正常停止：成功0/失败6/取消14。六失败：漏image_requests、图片判断/请求不一致、四次stream ended before completion。通知2043及ClassroomWorkService退出，未强杀/清理资料。证据phone-model-budget.json、stop-batch-confirm.json。
+- 91课堂新run预算32768，普通日程不变；官方GPT-4o/mini及日期快照保留原8192。沿原token字段、不猜GLM effort；旧run冻参不改。完整字段自检、目录有图与尚未附图明确区分；逐图证据精炼但不省应核图片。
+- SSE顶层error不再因无choices被忽略；仅白名单code/type，EOF附正文/思考长度。原DONE/finish规则保持，不接纳部分JSON、不自动重试。四次历史EOF原因仍未知。
+- 检查通过：AiRequest586、日程418/时间43/自动应用17；schema725、增强2830、修正复用25、图片引用39。合成/loopback不冒充真实成品。独立只读复审关闭GPT-4o预算P2，无其余必须修项。新预算实际整课仍待完成。
 
-## 全量数学总结仍未完成
+## 已验收内容不重做
 
-- 范围是用户要求的所有微积分与线性代数，原已选批次19不代表全部；按实际lesson key去重确认总量，不把备份目录重复行算成新课堂。最终须实际验证全部最新格式、有效来源与配图依据，旧complete状态不算本轮成功。
-- 一篇精简完整笔记，affairs集中事务，assignments只明确行动；分段仅内部处理。复用已提交且原id/text与分块匹配的修正文稿，缺图走原下载/校验/去重。旧run精确留同课审计，不另导出旧成品副本。
-- 原19项首次选择见build/classroom-failure-20261101/math-selection.json。17项重跑前6项5个JSON结构失败、1个HTTP413后有序停止：成功0/失败6/取消11；素材/文稿保留，无活动AI队列。详情stopped-results.json及验证记录。
-- 86实机：微积分10月29日第9节、线代10月27日第9节顶层字符串而非对象，finish_reason=stop；1–2节无图修复请求0.13MiB返回413。不归因于截断、图片或臆测服务阈值。
-- 87以后首次JSON指令明确对象/转义，repair/manual/network恢复只引用原user完整schema/资料、不重复大prompt。历史与冻结模型/缓存选项只追加，不重构；每阶段唯一结构修复、引用检查、取消与原子回滚不变。
-- 普通292、增强JSON719、独立只读检查；loopback实际请求102988→54596字节；Android真实JSON根类型/可选图片安全投影12项通过。不能代替真实模型格式与质量验收。
+- 90删除三页Dock滚动缩小、靠边、仅图标；保留弹簧/高光/惯性/切页/独立＋。竖浅187、横深189、导航183/Chrome39及独立UI复审通过，build/dock-scroll/。
+- 89更正文稿独立二级页：标题行最右入口、同Markdown/MathJax、整页滚动/返回/偏移恢复，source/公式/代码不改。原生/独立UI通过，build/corrected-secondary-ui/。本轮无UI改版，不重做视觉验收。
+- 历史验证在docs/validation-history.md；先前GROUP_DISABLED是真实旧拒绝，用户恢复后已有成功请求，不再作为当前阻塞。安全诊断证据build/math-completion-audit-20261101/，不输出原始会话/凭据。
 
-## AI服务依赖
+## 设备及文件边界
 
-- GROUP_DISABLED是保存的真实服务回复，明确为Key所属分组停用，不是推测；账号/分组权限由服务方处理，不能用更换模型/网络绕过。用户已知晓具体原因，未再要求其自行猜测。
-- 19:12:48–19:12:49单课403已证实无图、0.05MiB、无正文/Token。此后只有已保存错误读取，原始历史/冻结配置保留，无新AI请求。证据resume-one-audit.json及phone-provider.json；只读诊断辅助包已卸载。
-- 恢复后先续单课，真实通过再扩至失败数学课堂。禁止改密钥/模型/身份/网络绕过；不能宣称数学总结完成或服务恢复。
+- 真机10.197.184.141:39343；GlobalSend99已于20:36:54安装并明确交还，root持有手机。仅实际冲突时协调。AVD只Chrona_Classroom_36/emulator-5554，不克隆/重置/改DPI或分辨率。
+- /data/local/tmp/chrona/classroom-failure-20261101/window.xml本轮UI又已生成，交还前只删此文件与空任务目录。诊断辅助包未安装；91签名probe已构建，仅任务结束后可运行mathAudit，结束卸载。
+- 旧/data/local/tmp/chrona/classroom-failure-20261031/清理曾被策略拒绝；隔离包external files/classroom-json-projection-20261101/report.json读取被run-as拒绝，均不绕过。
+- 电脑派生文件全部项目build内；图片先压缩JPEG。89/90本轮AVD产物已转回清理，保留既有fixture/用户资料。
 
-## 设备与文件边界
-
-- GlobalSend97及拾时90均已安装，手机当前由root使用后留在拾时首页；只有实际冲突才协调，不常规跨聊天广播。
-- 仅复用Chrona_Classroom_36 / emulator-5554，不克隆/清数据/改DPI或分辨率/中止其它任务。电脑产物在项目build；图片先压缩JPEG。
-- 手机本次/data/local/tmp/chrona/classroom-failure-20261101/window.xml及空任务目录已清理。新包流式安装，无共享目录测试文件，不删用户收件或应用数据。
-- 旧/data/local/tmp/chrona/classroom-failure-20261031/曾清理被策略拒绝，不绕过。
-- 原生JSON报告仍在隔离包external files的classroom-json-projection-20261101/report.json，run-as读取被拒绝；待正常应用清理，不能换身份绕过。错误命名的读取拒绝输出已改read-denied.txt，不作有效JSON。
-- 新UI原生JPEG/ZIP/报告已完整转入build/corrected-secondary-ui，本轮生成文件按精确名单清理；三个新stable/background任务目录已删除。前置fixture及旧failure.jpg/旧corrected-only-draft-expanded.jpg保留。PageMotion新图/报告已转入项目并清理，系统scale=1。
-- 本轮6个AVD dock-scroll专用目录已转回项目并按精确名单清理，fixture任务已删除、偏好已恢复，原validation应用保留。实际记录见docs/validation-history.md。
-
-## 未授权的讨论项与他人改动
+## 其它边界
 
 - 监视自动总结全局/课程三态仍在讨论，拟置标题下信息行右侧、后续课程左侧，未确认布局，不擅自实施。
-- 本轮仅按用户新授权删除Dock滚动缩小，不改弹簧/高光几何或核心手感；core历史接口见docs/Communication/to-external-agent.md。
-- 保护AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml及tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1；不提交或清理这些他人改动。
+- core接口见docs/Communication/to-external-agent.md；保护AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1及tools/Seed-PreviewData.ps1，不提交或清理他人改动。

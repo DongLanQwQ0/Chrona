@@ -115,6 +115,7 @@ public final class AiRequestCheck {
         check(options("https://api.jiji.cc/v1", "gpt-6.1-sol", "medium").getString("reasoning_effort").equals("medium"), "documented Jiji model");
         check(!options("https://api.jiji.cc.attacker.example/v1", "gpt-6-luna", "medium").has("reasoning_effort"), "exact relay host only");
         check(!options("https://api.jiji.cc/v1", "gpt-6-luna-audio", "medium").has("reasoning_effort"), "specialized relay model conservative");
+        checkClassroomBudget();
         JSONObject requested = options("https://api.jiji.cc/v1", "gpt-6-luna", "medium");
         check(!RequestOptions.downgrade(requested, 400, "unsupported parameter reasoning_effort")
                 && requested.getString("reasoning_effort").equals("medium"), "never silently discard requested reasoning");
@@ -162,8 +163,104 @@ public final class AiRequestCheck {
                 .candidates.isEmpty(), "final frame without blank delimiter");
         try { ChatCompletionClient.parseResponse(1, "{\"choices\":[{\"finish_reason\":\"length\"}]}", 0, "UTC"); throw new AssertionError("truncation"); }
         catch (ChatCompletionClient.ResponseException expected) { }
+        checkStreamIntegrity();
         checkContentWrappers();
         System.out.println("AiRequestCheck passed: " + checks + " checks");
+    }
+
+    private static void checkClassroomBudget() throws Exception {
+        for (String[] profile : new String[][] {
+                {"https://api.openai.com/v1", "gpt-5.1", "none", "max_completion_tokens", "8192"},
+                {"https://api.jiji.cc/v1", "gpt-6-luna", "medium", "max_completion_tokens", "16384"},
+                {"https://api.deepseek.com", "deepseek-v4-pro", "high", "max_tokens", "32768"},
+                {"https://api-slb.jiji.cc/v1", "glm-5.3-flash", "low", "max_tokens", "8192"},
+                {"https://example.com/v1", "unrecognized-model", "high", "max_tokens", "8192"}
+        }) {
+            AiSettings settings = new AiSettings(profile[0], profile[1], "test-only", profile[2]);
+            JSONObject ordinary = options(profile[0], profile[1], profile[2]);
+            JSONObject classroom = new ChatCompletionClient(settings).classroomOptions();
+            check(ordinary.getInt(profile[3]) == Integer.parseInt(profile[4]),
+                    "ordinary scheduling budget stays unchanged: " + profile[1]);
+            check(classroom.getInt(profile[3]) == 32768 && classroom.getString("model").equals(profile[1])
+                    && classroom.getBoolean("stream"), "classroom increases only chosen token budget: " + profile[1]);
+            check(ordinary.optString("reasoning_effort").equals(classroom.optString("reasoning_effort"))
+                    && ordinary.has("thinking") == classroom.has("thinking"),
+                    "classroom preserves explicit reasoning capability: " + profile[1]);
+            check(!(classroom.has("max_tokens") && classroom.has("max_completion_tokens")),
+                    "classroom never guesses a second token field");
+        }
+        for (String model : new String[]{"gpt-4o", "gpt-4o-mini", "gpt-4o-2024-08-06", "gpt-4o-mini-2024-07-18"}) {
+            JSONObject classroom = new ChatCompletionClient(new AiSettings("https://api.openai.com/v1", model, "test-only", "low")).classroomOptions();
+            check(classroom.getInt("max_completion_tokens") == 8192 && !classroom.has("max_tokens"),
+                    "known smaller-ceiling official model preserves original budget: " + model);
+        }
+    }
+
+    private static void checkStreamIntegrity() throws Exception {
+        String content = streamFrame(new JSONObject().put("content", "{\"events\":[]}"), null);
+        String partial = streamFrame(new JSONObject().put("content", "{\"events\":"), null);
+        String reasoning = streamFrame(new JSONObject().put("reasoning_content", "private-reasoning"), null);
+        String stop = streamFrame(new JSONObject(), "stop");
+        String done = "data: [DONE]\n\n";
+        for (String fixture : new String[]{"", ": heartbeat\n\n", reasoning, partial, content}) {
+            String message = streamFailure(fixture, null).getMessage();
+            check(message.startsWith("AI stream ended before completion (content_chars=")
+                    && message.contains("reasoning_chars=") && !message.contains("private-reasoning"),
+                    "EOF without finish or DONE always fails with content-free counts");
+        }
+        StringBuilder preview = new StringBuilder();
+        streamFailure(partial, preview::append);
+        check(preview.toString().equals("{\"events\":"), "partial EOF may preview but never becomes success");
+        check(ChatCompletionClient.parseStream(1, bytes(content + stop), null, 0, "UTC").candidates.isEmpty(),
+                "finish reason without DONE remains accepted");
+        check(ChatCompletionClient.parseStream(1, bytes(content + done), null, 0, "UTC").candidates.isEmpty(),
+                "DONE without finish reason retains existing complete-content contract");
+        check(ChatCompletionClient.parseStream(1, bytes(content + "data: [DONE]"), null, 0, "UTC").candidates.isEmpty(),
+                "unterminated final DONE frame remains accepted");
+        check(streamFailure(partial + done, null).getMessage().startsWith("Invalid AI response JSON"),
+                "DONE never makes malformed partial JSON successful");
+        check(streamFailure(reasoning + done, null).getMessage().equals("AI stream returned no content"),
+                "reasoning and DONE alone never become an answer");
+        check(streamFailure(content + streamFrame(new JSONObject(), "length") + done, null)
+                .getMessage().contains("truncated"), "reported output truncation remains rejected");
+
+        JSONObject error = new JSONObject().put("code", "context_length_exceeded").put("type", "invalid_request_error")
+                .put("message", "private service body Bearer test-secret");
+        String errorFrame = "data: " + new JSONObject().put("error", error) + "\n\n";
+        for (String fixture : new String[]{errorFrame, reasoning + errorFrame, partial + errorFrame + done,
+                content + stop + errorFrame + done, errorFrame.trim(),
+                "event: error\n" + errorFrame}) {
+            String message = streamFailure(fixture, null).getMessage();
+            check(message.equals("AI stream provider error (code=context_length_exceeded, type=invalid_request_error)"),
+                    "error frame wins over EOF, partial output and prior finish without leaking its message");
+        }
+        for (Object unsafe : new Object[]{"Bearer test-secret", new JSONObject().put("code", "sk-test-secret")
+                .put("type", "private-body"), new JSONObject().put("code", 123).put("type", new JSONObject())}) {
+            check(streamFailure("data: " + new JSONObject().put("error", unsafe) + "\n\n", null).getMessage()
+                    .equals("AI stream provider error (code=unknown, type=unknown)"),
+                    "unrecognized error shapes and arbitrary identifiers stay out of diagnostics");
+        }
+        check(streamFailure("data: " + new JSONObject().put("error", new JSONObject().put("code", "GROUP_DISABLED"))
+                + "\n\n", null).getMessage().contains("code=group_disabled"), "known provider code is case-normalized");
+    }
+
+    private static String streamFrame(JSONObject delta, String finish) throws Exception {
+        return "data: " + new JSONObject().put("choices", new org.json.JSONArray().put(new JSONObject()
+                .put("delta", delta).put("finish_reason", finish == null ? JSONObject.NULL : finish))) + "\n\n";
+    }
+
+    private static ByteArrayInputStream bytes(String value) {
+        return new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static ChatCompletionClient.ResponseException streamFailure(String fixture,
+            ChatCompletionClient.PreviewSink preview) throws Exception {
+        try {
+            ChatCompletionClient.parseStream(1, bytes(fixture), preview, 0, "UTC");
+            throw new AssertionError("incomplete or error stream must not become success");
+        } catch (ChatCompletionClient.ResponseException expected) {
+            return expected;
+        }
     }
 
     private static void checkTimeContext() throws Exception {
@@ -357,7 +454,8 @@ public final class AiRequestCheck {
     /** Fake URL transport exercises production body assembly without any network or model request. */
     private static void checkMultiImageRequest() throws Exception {
         java.util.List<java.io.ByteArrayOutputStream> requests = new java.util.ArrayList<>();
-        byte[] response = envelope("{\"events\":[]}").getBytes(StandardCharsets.UTF_8);
+        byte[][] response = {envelope("{\"events\":[]}").getBytes(StandardCharsets.UTF_8)};
+        String[] contentType = {"application/json"};
         java.net.URL.setURLStreamHandlerFactory(protocol -> "https".equals(protocol) ? new java.net.URLStreamHandler() {
             @Override protected java.net.URLConnection openConnection(java.net.URL url) {
                 if (!"offline.invalid".equals(url.getHost())) throw new AssertionError("offline fixture cannot contact " + url);
@@ -369,8 +467,8 @@ public final class AiRequestCheck {
                     public boolean usingProxy() { return false; }
                     public java.io.OutputStream getOutputStream() { return body; }
                     public int getResponseCode() { return 200; }
-                    public java.io.InputStream getInputStream() { return new ByteArrayInputStream(response); }
-                    public String getContentType() { return "application/json"; }
+                    public java.io.InputStream getInputStream() { return new ByteArrayInputStream(response[0]); }
+                    public String getContentType() { return contentType[0]; }
                 };
             }
         } : null);
@@ -397,6 +495,18 @@ public final class AiRequestCheck {
         org.json.JSONArray legacyContent = legacy.getJSONArray("messages").getJSONObject(1).getJSONArray("content");
         check(legacyContent.length() == 3 && !new JSONObject(legacyContent.getJSONObject(0).getString("text")).has("recurring_placeholders"),
                 "previous production entry point retains images and does not invent context");
+        response[0] = ("data: {\"error\":{\"code\":\"context_length_exceeded\","
+                + "\"message\":\"private provider body\"}}\n\n").getBytes(StandardCharsets.UTF_8);
+        contentType[0] = "text/event-stream; charset=utf-8";
+        int before = requests.size();
+        try {
+            client.parseImages(10, "raw", images, "link", "file", 0, "Asia/Shanghai", null, true);
+            throw new AssertionError("HTTP 200 provider error frame must fail");
+        } catch (ChatCompletionClient.ResponseException expected) {
+            check(expected.getMessage().equals("AI stream provider error (code=context_length_exceeded, type=unknown)"),
+                    "HTTP 200 SSE error keeps safe provider classification");
+        }
+        check(requests.size() == before + 1, "HTTP 200 SSE provider error makes no downgrade or automatic retry");
     }
 
     private static String envelope(String content) throws Exception {

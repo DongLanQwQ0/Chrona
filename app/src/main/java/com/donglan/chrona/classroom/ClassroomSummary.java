@@ -140,7 +140,7 @@ public final class ClassroomSummary {
         return "只返回一个JSON对象，"+(affairsSchema==0?"五个顶层字段overview、notes、assignments、image_assessment、image_requests":"六个顶层字段overview、notes、affairs、assignments、image_assessment、image_requests")+"全部必填，图片判断和请求必须在同一个顶层对象中。完整对象：\n{"
                 +summaryFields(evidence,affairsSchema)+",\"image_assessment\":{\"decision\":\""+decision+"\",\"reason\":\"具体判断依据\"},"
                 +"\"image_requests\":"+requests+"}\n字段规则："
-                +"示例中的来源编号、时间范围及decision须按实际资料填写；无图片请求时image_requests仍必须为[]，不得省略、填null或嵌套到notes。"
+                +"示例中的来源编号、时间范围及decision须按实际资料填写；无图片请求时image_requests仍必须为[]，不得省略、填null或嵌套到notes。输出前核对全部顶层字段齐全，decision与image_requests一致；不能只返回image_assessment而漏掉image_requests。"
                 +SOURCE_REQUIREMENTS+ClassroomAffairsPolicy.instructions(affairsSchema)+imageInstructions(catalogue,limit);
     }
     public static JSONObject generate(File dir,ClassroomLesson lesson,AiSettings ai,int imageLimit,RequestControl control,ClassroomImages.Progress progress,String classroomPrompt) throws Exception {
@@ -256,7 +256,7 @@ public final class ClassroomSummary {
     static String imageInstructions(JSONObject catalogue,int limit)throws Exception{
         return "判断当前板块的视觉信息缺口：板书推导、图表、结构示意、课件例题、题目条件、字幕不清的公式或‘看这里/如图’等依赖画面的讲解应主动核图，不能因为能概括字幕就忽略，也不要为配图凑数量。"
                 +"image_assessment.decision从request、not_needed、disabled、unavailable中选择一个，reason写具体依据；每个image_requests区间写明需要核对什么。时间为课堂开始后的秒数，按已有字幕时间锚选择少量相关区间，不逐句重复时间戳；目录ranges是[首张秒,末张秒,张数]，最多40段，不代表图片内容。未附图时images必须为空。"
-                +(limit==0?"本次未授权上传图片，decision=disabled且请求为空。":catalogue.getInt("count")==0?"没有可用图片，decision=unavailable且请求为空。":"全课最多"+limit+"张；确无视觉缺口才not_needed并给具体理由。request必须有非空范围和依据，不能编造未见图片。");
+                +(limit==0?"本次未授权上传图片，decision=disabled且请求为空。":catalogue.getInt("count")==0?"目录count=0，没有可用图片，decision=unavailable且请求为空。":"目录已有"+catalogue.getInt("count")+"张可请求图片，已授权全课最多"+limit+"张。此阶段仅做请求计划，尚未附图不等于图片不可用；禁止disabled或unavailable。需要核图则request并填写非空范围和依据；确无视觉缺口才not_needed且请求=[]，写具体理由。不能编造未见图片。");
     }
     public static JSONObject imageCatalogue(JSONArray candidates,int limit)throws Exception {
         if(limit<0||limit>MAX_IMAGES)throw new IOException("图片上限应为 0 至 "+MAX_IMAGES);

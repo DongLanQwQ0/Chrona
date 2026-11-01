@@ -7,7 +7,18 @@ import java.util.Locale;
 
 /** Explicit provider capabilities; unknown services keep their chosen model and basic options. */
 public final class RequestOptions {
+    private static final int CLASSROOM_OUTPUT_TOKENS = 32768;
     private RequestOptions() { }
+    /** Classroom responses include visual review and, on some models, internal thinking. */
+    public static void applyClassroom(JSONObject body, AiSettings settings) throws JSONException {
+        apply(body, settings);
+        // These existing official profiles have a smaller output ceiling; preserve their
+        // original allowance rather than sending the larger classroom budget to them.
+        if ("api.openai.com".equalsIgnoreCase(URI.create(settings.baseUrl).getHost())
+                && settings.model.toLowerCase(Locale.ROOT).matches("gpt-4o(?:-mini)?(?:-\\d{4}-\\d{2}-\\d{2})?")) return;
+        String key = body.has("max_completion_tokens") ? "max_completion_tokens" : "max_tokens";
+        body.put(key, Math.max(body.getInt(key), CLASSROOM_OUTPUT_TOKENS));
+    }
     public static void apply(JSONObject body, AiSettings settings) throws JSONException {
         String host = URI.create(settings.baseUrl).getHost().toLowerCase(Locale.ROOT);
         String model = settings.model.toLowerCase(Locale.ROOT);

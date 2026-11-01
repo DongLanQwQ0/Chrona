@@ -451,10 +451,17 @@ public final class ClassroomEnhancedCheck {
             JSONObject result=generate(dir,retained);check(result.getBoolean("complete")&&result.getString("run").equals(id),"resume retains original run identity after global mode changes");appendOnly(dir);
         }
         for(int limit:new int[]{0,40})for(int count:new int[]{0,3}){
-            JSONObject example=draftExample(ClassroomSummary.draftSchema(new JSONObject().put("count",count),limit));
+            String prompt=ClassroomSummary.draftSchema(new JSONObject().put("count",count),limit);
+            JSONObject example=draftExample(prompt);
             String expected=limit==0?"disabled":count==0?"unavailable":"request";
             check(example.getJSONObject("image_assessment").getString("decision").equals(expected),"example follows actual image permission and availability");
             check((example.getJSONArray("image_requests").length()>0)==expected.equals("request"),"disabled/unavailable example explicitly retains an empty request array");
+            check(prompt.contains("输出前核对全部顶层字段齐全"),"model must preflight mandatory image fields rather than omit requests");
+            if(limit>0&&count>0){
+                check(prompt.contains("尚未附图不等于图片不可用")&&prompt.contains("禁止disabled或unavailable"),"available catalogue is distinct from first-stage upload absence");
+                JSONObject unavailable=new JSONObject(example.toString()).put("image_assessment",new JSONObject().put("decision","unavailable").put("reason","尚未附图" )).put("image_requests",new JSONArray());
+                rejects(()->ClassroomSummary.validateImageAssessment(unavailable,new JSONObject().put("count",count).put("limit",limit)),"available images cannot be silently treated as unavailable");
+            }
         }
         for(String defect:List.of("missing-requests","missing-assessment","request-type")){
             reset(defect,false);File dir=materials("schema-"+defect,false);

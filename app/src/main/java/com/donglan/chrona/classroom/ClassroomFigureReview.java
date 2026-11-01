@@ -31,6 +31,7 @@ public final class ClassroomFigureReview {
                 +"{\"file\":\"实际file\",\"status\":\"usable|blank|title_only|occluded|unreadable|irrelevant\","
                 +"\"confidence\":\"high|medium|low\",\"visible\":\"仅描述实际看见的文字、公式或图形，空白可为空\","
                 +"\"reason\":\"为何支持当前笔记或为何排除\"}。同一file只出现一次。"
+                +"visible只摘录与本段相关的实际可见要点，不逐字抄整页；reason用一句具体依据，不重复笔记或扩写推导，但不得省略任何应核图片。"
                 +"只有usable且置信度不低的图才可进入notes.images和Markdown；仍返回被排除图的依据。低信息图可以参与理解，不为保留配图而虚构可见内容。";
     }
     static void prepareQuality(File dir,JSONObject candidates,JSONObject materials,RequestControl control,ClassroomImages.Progress progress)throws Exception{
