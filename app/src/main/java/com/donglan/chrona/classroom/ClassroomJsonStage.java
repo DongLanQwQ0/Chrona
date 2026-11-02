@@ -25,7 +25,7 @@ final class ClassroomJsonStage {
         boolean sent=firstTurn(stage)!=null;
         String request=attempt==0&&!sent?"当前JSON阶段："+stage+"。"+WIRE+"\n"+prompt:
                 (attempt>0?retryIntroduction+ClassroomJsonFailure.stored(state.optString(stage+"_error"))+"。":"恢复此前未完成的JSON阶段。")
-                +reference(stage)+"本阶段未提交回复已回滚；只依据其中的完整schema、原始资料和历史实际附图，从头完整生成本阶段JSON对象，不续写、不拼接、不编造来源或图片。"+WIRE+imageBoundary(stage);
+                +reference(stage)+"本阶段未提交回复已回滚；只依据其中的完整schema、原始资料和历史实际附图，从头完整生成本阶段JSON对象，不续写、不拼接、不编造来源或图片。"+WIRE+stageBoundary(stage);
         String raw=text(attempt==0?stage:stage+retrySuffix+attempt,request,attempt==0?images:Collections.emptyList(),outputKey);
         try {return validate(raw,validator);}
         catch(JSONException malformed) {
@@ -36,7 +36,7 @@ final class ClassroomJsonStage {
             }
             state.put(stage+"_repair_attempt",attempt);save();
             String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+ClassroomJsonFailure.detail(malformed)
-                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或新事实。"+WIRE+imageBoundary(stage),Collections.emptyList(),outputKey);
+                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或新事实。"+WIRE+stageBoundary(stage),Collections.emptyList(),outputKey);
             try {return validate(repaired,validator);}
             catch(JSONException|IOException invalid){invalid(stage,attempt,invalid);throw invalid;}
         }
@@ -45,8 +45,13 @@ final class ClassroomJsonStage {
     private static JSONObject validate(String raw,Validator validator)throws Exception {
         JSONObject result=ClassroomSummary.parseObject(raw);validator.check(result);return result;
     }
-    private static String imageBoundary(String stage){
-        return stage.equals("first")||stage.startsWith("draft-")?ClassroomSummary.DRAFT_IMAGE_RULE:"";
+    private String stageBoundary(String stage)throws Exception{
+        if(stage.equals("first")||stage.startsWith("draft-"))return ClassroomSummary.DRAFT_IMAGE_RULE;
+        if(stage.matches("final-[0-9]+")&&state.has("blocks")){
+            int index=Integer.parseInt(stage.substring("final-".length()));
+            return ClassroomEnhancedSummary.refinementScope(state.getJSONArray("blocks").getJSONArray(index),state.optInt("affairs_schema",0));
+        }
+        return "";
     }
     private String reference(String stage)throws JSONException {
         JSONObject turn=firstTurn(stage);

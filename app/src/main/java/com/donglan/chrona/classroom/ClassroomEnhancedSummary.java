@@ -79,7 +79,7 @@ final class ClassroomEnhancedSummary {
                         +"本次图片依次对应以下file原值，编号可能不连续，禁止重新编号："+inventory
                         +"。此前已提供的图片保持在原消息位置。仅可引用本次或此前实际提供的file，不得把请求过但未附的图片当作已看到。"+ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
                         +"\n安排原话核验用原始字幕：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
-                        +"\n本次唯一要修订的初稿：\n"+drafts.getJSONObject(i);
+                        +"\n本次唯一要修订的初稿：\n"+drafts.getJSONObject(i)+"\n"+refinementScope(block,affairsSchema);
                 value=json("final-"+i,prompt,bytes,result->{
                     validateRefinement(result,blockInput(full.getJSONArray("segments"),allowed),block,affairsSchema);
                     if(state.optInt("figure_policy")>0)ClassroomFigureReview.apply(result,allowed,inventory,state.optJSONArray("figure_reviews"));
@@ -96,6 +96,11 @@ final class ClassroomEnhancedSummary {
     private static String scope(JSONArray block)throws Exception{
         return "本次允许的字幕来源id仅为："+ids(block)+"；sources不得引用这个集合之外的编号。";
     }
+    static String refinementScope(JSONArray block,int affairsSchema)throws Exception{
+        return "当前核图块的真实来源id："+ids(block)+"。"+(affairsSchema>0?"notes与affairs的每条":"notes的每条")
+                +"都必须讲述本块真实事实，sources至少含一条对应的本块id。前文只可在同条中作真实对照，不单独输出前文回顾或其它块条目；不得为了过关虚挂本块id。"
+                +"本块没有相应内容时返回空集合，不用历史内容或常识填充。assignments仍只引用本块并逐字核验原话。schema中的来源编号示例只表示结构，不是本块的实际来源。";
+    }
     private static String assignmentRules(){
         return "课堂安排必须是老师明确布置的具体任务，不能把知识点、一般编程建议、自拟复习事项转成安排。"
                 +"每项assignments除text、sources外还必须带evidence，逐字摘录原始字幕中表达该要求的最短连续原话，不用更正文稿的改写，不拼接非连续片段。"
@@ -111,13 +116,13 @@ final class ClassroomEnhancedSummary {
         for(String collection:collections(part.has("affairs")?ClassroomAffairsPolicy.VERSION:affairsSchema)){
             JSONArray notes=part.getJSONArray(collection);
             for(int n=0;n<notes.length();n++){
-                JSONArray refs=notes.getJSONObject(n).getJSONArray("sources");boolean anchored=false;
-                for(int k=0;k<refs.length();k++){int id=refs.getInt(k);if(current.contains(id))anchored=true;else if(id>=first)throw new IOException("核图笔记引用了本块之后的字幕："+id);}
-                if(!anchored)throw new IOException("核图笔记缺少本块来源，不可只重写前一段");
+                JSONArray refs=notes.getJSONObject(n).getJSONArray("sources"),safeRefs=new JSONArray();boolean anchored=false;
+                for(int k=0;k<refs.length();k++){int id=refs.getInt(k);safeRefs.put(id);if(current.contains(id))anchored=true;else if(id>=first)throw new IOException("核图来源错误："+collection+"["+n+"].sources引用了本块之后的字幕："+id);}
+                if(!anchored)throw new IOException("核图来源错误："+collection+"["+n+"].sources="+safeRefs+"；缺少本块真实来源，不可只重写前文");
             }
         }
         JSONArray tasks=part.getJSONArray("assignments");for(int i=0;i<tasks.length();i++){
-            JSONArray refs=tasks.getJSONObject(i).getJSONArray("sources");for(int n=0;n<refs.length();n++)if(!current.contains(refs.getInt(n)))throw new IOException("课堂安排引用了本块之外的字幕："+refs.getInt(n));
+            JSONArray refs=tasks.getJSONObject(i).getJSONArray("sources");for(int n=0;n<refs.length();n++)if(!current.contains(refs.getInt(n)))throw new IOException("核图来源错误：assignments["+i+"].sources引用了本块之外的字幕："+refs.getInt(n));
         }
         ClassroomSummary.validateAssignmentEvidence(part,block);
     }

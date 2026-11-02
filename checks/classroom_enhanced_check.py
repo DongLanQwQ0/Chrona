@@ -13,7 +13,8 @@ from recurrence_dependencies import recurrence_java
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--case', choices=['edge-cases', 'validation-resume', 'markdown-fences', 'failure-detail', 'schema-repair', 'affairs', 'note-strength', 'legacy-extra-affairs', 'responses'])
+parser.add_argument('--case', choices=['edge-cases', 'validation-resume', 'markdown-fences', 'failure-detail', 'schema-repair', 'affairs', 'note-strength', 'legacy-extra-affairs', 'responses', 'refinement-scope'])
+parser.add_argument('--output-dir', type=Path, help='Project-local output directory for classes and loopback evidence')
 args = parser.parse_args()
 source = ast.parse((root / 'checks/classroom_summary_check.py').read_text(encoding='utf-8'))
 shared = {}
@@ -22,7 +23,9 @@ for node in source.body:
         for target in node.targets:
             if isinstance(target, ast.Name) and target.id in ('fixtures', 'relative'):
                 shared[target.id] = ast.literal_eval(node.value)
-out = root / 'build/classroom-enhanced-check'
+out = args.output_dir.resolve() if args.output_dir else root / 'build/classroom-enhanced-check'
+if not out.is_relative_to(root / 'build'):
+    raise ValueError('Output directory must stay within the project build directory')
 out.mkdir(parents=True, exist_ok=True)
 paths = []
 for name, content in shared['fixtures'].items():

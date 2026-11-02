@@ -305,6 +305,15 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         if(content instanceof String text)try{
                             JSONObject object=com.donglan.chrona.classroom.ClassroomSummary.parseObject(text),fields=new JSONObject();
                             row.put("run_last_image_reference_shapes",imageReferenceShapes(object));
+                            row.put("run_last_source_shapes",sourceShapes(object));
+                            String stage=last.optString("stage");java.util.regex.Matcher finalBlock=java.util.regex.Pattern.compile("^final-([0-9]+)(?:-.*)?$").matcher(stage);
+                            if(finalBlock.matches()&&blocks!=null){
+                                int index=Integer.parseInt(finalBlock.group(1));JSONArray block=blocks.optJSONArray(index),ids=new JSONArray();
+                                if(block!=null){for(int n=0;n<block.length();n++)ids.put(block.getJSONObject(n).getInt("id"));row.put("run_last_block_sources",ids);}
+                                JSONArray drafts=run.optJSONArray("drafts");JSONObject draft=drafts==null?null:drafts.optJSONObject(index);
+                                if(draft!=null)row.put("run_last_draft_source_shapes",sourceShapes(draft));
+                                row.put("run_committed_refinements",run.optJSONArray("parts")==null?0:run.getJSONArray("parts").length());
+                            }
                             for(String name:new String[]{"overview","notes","affairs","assignments","image_assessment","image_requests","image_reviews","sections","groups"})fields.put(name,object.has(name));
                             row.put("run_last_response_shape","object").put("run_last_response_fields",fields);
                             Object requests=object.opt("image_requests");
@@ -331,6 +340,19 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         }
         return report.put("courses",courses).put("math_rows",rows.length()).put("math_unique",unique.size())
                 .put("duplicate_keys",duplicates).put("complete_rows",complete).put("rows",rows);
+    }
+    /** Numeric source identities only: no model prose, raw transcript or private conversation. */
+    private static JSONArray sourceShapes(JSONObject object)throws Exception{
+        JSONArray result=new JSONArray();
+        for(String collection:new String[]{"notes","affairs","assignments"}){
+            JSONArray entries=object.optJSONArray(collection);if(entries==null)continue;
+            for(int i=0;i<entries.length();i++){
+                JSONObject entry=entries.optJSONObject(i);JSONArray refs=entry==null?null:entry.optJSONArray("sources"),safe=new JSONArray();
+                if(refs!=null)for(int n=0;n<refs.length();n++){Object value=refs.opt(n);safe.put(value instanceof Number?value:JSONObject.NULL);}
+                result.put(new JSONObject().put("field",collection+"["+i+"].sources").put("sources",safe));
+            }
+        }
+        return result;
     }
     /** Explicit diagnostic mode only; conversation messages and model replies stay private. */
     private static JSONArray imageReferenceShapes(JSONObject object)throws Exception{
