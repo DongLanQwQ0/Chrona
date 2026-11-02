@@ -1,53 +1,33 @@
-# 当前交付：监视字幕恢复、PPT裁剪与此前未完成验收
+# 当前交付：课堂监视恢复与数学21节重整
 
-## 当前候选与唯一下一步
+## 当前候选和唯一下一步
 
-- 当前已更新95/257，14:35:09实机覆盖成功；PPT公共视口修复通过正常原生竖浅18/横深9项与独立UI复审，Glue活性39项通过。真实服务Responses已成功（248B、3161ms、21/77Token），贺信原条目11/2 23:59保存并重新打开读回。证据均在`build/monitor95/`，不发小补丁Release。
-- 新决定性实机证据：11/2线代1989268官方status1，监视误在14:10结束，而学校课表整块13:25–15:50。`ClassroomMonitorTiming.matchingEnd`只取精确开始对应的首节end，应复用课表连堂合并入口，root负责96修复与实机接收恢复；background_transcript_research只读查共用入口。先前probe日期String/LocalDate比较错误已修，`monitor_audit_current_valid.json`才是有效当日记录，旧“目录缺当天”推测撤回。
-- 数学新有效审计：21身份仍齐，当前4节最新格式已完整且来源/图片/单篇检查通过；3旧schema完整不计，余17继续。先完成正在上课的监视截止修复，再启动剩余数学，避免后续安装/探针中断AI队列。真实Responses兼容已通过；旧未完成历史仍按冻结Chat续跑，新轮才用Responses，不转写前缀。
+- 实机 `10.195.25.59:35621` 已于11/2 14:51:56覆盖为 **0.15.96/258**。候选 `build/candidates/0.15.96/Chrona-0.15.96.apk`；release/lint及实机后台增长已通过，不发小补丁Release。95源码已推送 `2aac4e9`；96本轮提交所属源码。
+- 唯一下一步：在原历史列表精确选中尚未达最新格式的17节数学，排除6节C及4节已验成品，启动原批量重新总结；复用已提交更正文稿、缺图走原下载，使用当前默认Responses的新轮。先确认选择17/27再启动，不能误重做4节有效成品。接着后台观察结果和当前线代直播，不能在AI运行时安装或运行会重启进程的探针。
+- 当前21身份无重复；4节最新schema1/强度3已完整且来源、单篇、图片检查通过，另3节完整仍旧schema0/强度1，不计本轮完成。完整审计 `build/monitor95/math_audit.json`，21清单沿用 `build/math-completion-audit-20261101/phone-before-batch92.json`。
 
-- 11/2用户恢复实机`10.195.25.59:35621`并要求继续全部未完成事项。实机仍为0.15.92/254；当前MonitorService前台2045及WakeLock存在，无ClassroomWorkService。先保留直播连接、核对后台字幕增长与课堂状态，再确定安全更新时机；不得直接安装/运行会重启应用的诊断程序打断直播。
-- 本轮新增：监视页PPT日期式切换栏的按压动画仍被滚动边界裁剪；后台字幕疑似进页才恢复。root负责公共布局复用、后台修复取舍、集成与实机验收；background_transcript_research已只读定位Glue心跳缺少超时、发送失败检测及初始化期限，另有服务退出后依赖前台恢复的路径，尚未据此宣称实机根因。UI修改交原ui_check独立复审。
-- GlobalSend实际资源冲突已协调：106已安装，该聊天完成短暂只读检查并交还手机，当前root独占本轮触控；未改网络。勿安装旧GlobalSend候选或无冲突发送协调消息。
-- 唯一下一步：先在不进入监视页、不重启应用的条件下保存现有服务状态，再正常进入核对本节字幕/结束时刻；完成95修复候选后安全更新，并继续真实Responses、原征文截止条目和数学21节结果核查。以下旧“实机不可达”记录为恢复前状态，已不构成当前阻塞。
+## 本轮已完成和决定性证据
 
-- 新交付：修复「11月3日前」误算到11月3日23:59。采用通用时间对象`date_exclusive`日期边界标记：原文日期保留不减一天，模型声明是否不含当日；本地对仅日期due/plan_until按日历减一天再补23:59，并留下原始字段、依据与实际调整。某日截止／含当日不减，某日具体几点前保留钟点。root负责方案、生产代码、文档与集成；测试执行owner只改测试。旧已保存日程不按备注批量猜测改写，实机可达后单独核对该条。
-- 日期边界代码及检查已完成：AI请求680、归一化87、排程459、时间审计99、自动应用17、学校作业SQLite51通过；release/lint通过，**0.15.94/256**及同版诊断包在`build/candidates/0.15.94/`，包含93协议功能，无UI变更。下一步是已授权实机恢复后先核对后台队列，安全更新94并检查／更正截图中的原条目；尚未自动改写已有日程，不发小补丁Release。
+- PPT切换栏改用公共 `SettingsPageLayout.motionViewport`，复用20dp页面gutter，过渡容器不裁剪；不改变圆角、图片比例、零内距或公共动效。正常原生竖浅reader18项、横深PPT9项通过，独立ui_check复审无未解决P1/P2及关键UI缺口。JPEG在 `build/monitor95/native-*`。96实机按住图 `build/monitor96/phone-pager-held.jpg` 已查看，整个圆端和上边完整。
+- Glue新增30秒初始化、30秒心跳和15秒确认期限，发送失败沿原5–60秒退避恢复；保存节流窗口内当前句并异步清理TLS。真实Android合成断流39项通过，不把它冒充现场根因复现。
+- **已查清现场提前停字幕原因**：11/2线代1989268仍官方status1，旧监视按raw首段14:10结束，学校Grid整堂13:25–15:50。96复用 `ZjuTimetableView.terms` 的连堂块，只取目标实际日期末段；保留精确起点、NFKC名称、冲突end返回0，按账号/revision缓存。监视和导出共用结果，不复制20分钟/教室/课间冲突规则。
+- 96定向Android结束边界58项与已有学校Grid合并检查通过；含跨周/教室/午休/冲突/一次课、首段已过但末段未到仍保留同一Socket，整堂结束保存后关闭。实机只读 `build/monitor96/phone-end96.json` 已读回本节 **15:50**。
+- 96仅从Dashboard启动服务、离开到桌面后才首次进入专用页，已由旧106恢复到115条字幕/126张PPT；14:55实际截图126条/128PPT。转去历史选择后监视卡片已180条/137PPT，同一服务实例87fc5c8持续存活（`background-service-before/first-read/later.txt`），不依赖专用页停留。当前上传图片开关经正常UI读回true，未改设置；探针旧optBoolean缺省误报false已修。
+- 当前AI服务真实Responses小请求已通过：248B、一次3161ms、21输入/77输出Token；蜂窝默认开、拾时自身VPN=false、默认Wi-Fi及进程绑定不变，无课堂资料。证据 `build/monitor95/response-health95.txt`。未更改模型、密钥或设置。
+- 原贺信“11月3日前”已在正常编辑器改为 **11月2日23:59**，保存后重新打开日期器读回一致，原文保留。未来解析通用 `date_exclusive` 已在94实现，95/96包含；不按备注批量改旧记录。
 
-- 历史受阻审计已完成，用户于11/2明确恢复目标active并新增日期边界修复，当前先完成这项独立代码工作。实机仍不可达，不重跑有效检查或原样重连；恢复后由root先读取实际课堂队列结果，确认无活动AI再更新最新候选，验证所选服务Responses并完成数学21节逐项验收。未缩小目标、未判定手机后台任务停止；按无人值守指令不询问ADB连接。
-- 恢复后的受阻审计重新计数：日期修复回合及其后两次目标继续回合均仅发现模拟器，mDNS无实机；已连续3回合，目标标记blocked。日期代码／候选和有效检查已完成，无其它可推进的独立代码工作；剩余更新、原条目修正、真实Responses及21节成品核对均依赖实机连接恢复。恢复条件是本机能通过已授权ADB访问实机，由root继续；不要以重复测试或改文档充当实质进展，也不将手机后台任务判为停止。
+## 数学21节的剩余工作
 
-- 用户新增：AI服务加入协议选择，**默认Responses**，可选Chat Completions；按原公共选择控件处理，不另拼样式。候选 **0.15.93/255** 已实现并构建：`build/candidates/0.15.93/Chrona-0.15.93.apk`，正式包名、原升级证书、release/lint通过。未发Release、尚未安装真机。
-- 正式UI、协议代码已冻结。默认／缺协议旧配置为Responses；设置纳入十三项草稿、保存／取消／放弃、旋转及保留密钥保存与备份。根负责协议／课堂接线和集成，原设置执行owner、测试执行owner已完成各自代码；ui_check独立复审已通过，无P1/P2及关键UI缺口。
-- **唯一下一步：真机重新可达后先查实际AI队列，再决定安全安装最新94及真实服务验证。** 审计投影104项通过，93源码已提交并推送`2d77151`；不能因观察进程退出而重启、取消或假定手机任务已停。当前供应商／GLM模型的Responses支持尚未实测。
-- 后续诊断包已针对协议修正：原aiPing直接把messages放到classroomOptions，会在新Responses设置下误拼两种协议字段；现明确按所选协议使用input/messages，并输出白名单protocol。只读数学投影也识别原生预算／思考用量。`Chrona-Classroom-Probe93.apk`已构建至同候选目录，未安装／调用；后续只能在93正式版且无活动AI时运行，不用原92辅助包冒充Responses健康验证。
+- 已验四节：`86985-1984869`（10/22）、`86985-1988487`（10/29上午）、`86985-1984868`（10/22）、`86985-1988486`（10/29下午）。均单篇、schema1、强度3、来源通过、精确重复正文0，引用图18/26/9/23全部可读，更正块已复用。
+- 其余17需完成；旧失败含HTTP502/413、服务SSEerror、当前块来源缺失、原话依据非精确子串、缺images。旧413估算仅261–273KB且0图，不能臆断图片太大；这些失败发生在旧网络/旧轮次，不放松来源或JSON完整性校验。
+- 历史批量重新总结按原行为创建独立新轮并精确归档旧run，只复用已提交且源块匹配的更正文稿，不拼接半稿、不另导出旧成品副本。既有未完成轮次若点“继续”，必须按原冻结Chat协议和历史只追加；新批次用当前Responses，不转换旧前缀。
+- 完成后再只读审计21身份、最新格式、完整成品、来源和图片，区分真实服务失败与客户端检查。活动AI期间不得安装或运行instrumentation探针；仅普通UI查看和只读服务/通知观察。
 
-## 协议验收与有效证据
+## 设备、工具和收尾
 
-- 请求原生映射input_text/input_image、max_output_tokens、reasoning.effort、text.format；store=false、truncation=disabled。Responses只接受completed及response.completed，failed／incomplete／EOF／单独DONE不提交。HTTP、取消及网络lease共用原实现，不跨协议回退或自动付费重试。
-- 课堂新轮冻结protocol及options，直接保存完整原生input和原output items（含加密reasoning），只在末尾追加。既有无protocol的轮次继续Chat，不转写旧前缀；重新整理的新轮才使用当前选择。原始响应和usage完整保留，显示使用字段映射，不伪造缓存。
-- 有效检查：协议152、增强3511（Responses专项505）、蜂窝64／HTTP676、普通课堂526、备份及偏好121。包含真实loopback多块／附图／整稿、HTTP与incomplete回滚、改设置后冻结续跑、旧Chat不变；这是本地合成证据，不冒充实际供应商能力。
-- 同一AVD正常屏幕竖浅190、竖深190通过；外部user_rotation未改变协议截图方向，明确不计横屏。protocolOnly实际Activity横屏29通过，含可达、真实选择／旋转草稿、标题滚出／保存再开。真实压缩JPEG在`build/protocol93/ui-light/`、`ui-landscape/`；独立UI已消费证据并通过。26张设备任务JPEG转回`device-exports/`后清理，原偏好及旋转设置恢复。未改DPI／分辨率、未新建AVD。
-
-## 数学全21节范围不变
-
-- 微积分18+线代3，共21唯一lesson key，清单`build/math-completion-audit-20261101/phone-before-batch92.json`。最新affairs_schema1、强度3、单篇精简完整可自学笔记；事务集中，来源及引用图有效。旧schema0／强度1成品不计本轮完成。
-- 复用原6000分块id/text匹配的已提交更正文稿；缺图走原完整下载／校验／去重。messages/options只追加，失败片段回滚，不拼接半稿。
-- 已实际成品验收首节 **86985-1988486，微积分10/29第9节**：8知识主题／4事务、单篇、精确重复主题正文0、23引用图全部可读、来源有效、更正3/3复用，真实阅读页可访问。证据`phone-completed91.json`。
-- 其余20节在92于11/1 23:34原历史多选启动，观察20/27、排除六节C与上述首节，进行中3；首次选择未排除齐时安全停止，小步反向补齐后才确认。证据`build/classroom-failure-20261101/batch92-*`。
-- **队列最终状态未知。** 最后有效观察11/2 00:17：2个新完成通知（10/29上午、10/22下午微积分）、7个失败通知、3节活动，之后ADB丢失；不能把通知或观察超时当成最终成品验收。watch session64341已exit0（观察时限结束，连接错误），不可再等待旧handle；恢复后读实际服务/批次结果，不重启整批。
-- 七失败：两次服务SSE非空error（10/27微积分／线代）、10/26线代本块来源缺失、10/19线代来源缺失、10/20及10/15上午微积分原话依据不匹配、10/15下午微积分缺images字段。检查点均保留，不放松来源／完整JSON验证；恢复实机后按实际保存的阶段决定逐项修复或续跑。
-
-## 手机、协调与边界
-
-- 真机最后版本 **0.15.92/254**，11/1 23:10:23正常覆盖，原签名及首次安装时间保持。移动数据默认开启的真实连接曾成功：204字节固定OK、1次4635ms、CELLULAR且拾时自身VPN=false，默认Wi-Fi及进程绑定不变、结束释放。学校下载／LAN／普通日程AI不变。证据`cellular-health92.txt`及CM快照，不保证服务端502消失。
-- 旧无线地址`10.196.131.180:36653`已从设备表消失；一次重连拒绝、mDNS无服务，仅剩共享AVD。不扫描旧地址、不反复重连、不改安全设置；按无人值守要求不为ADB断线找用户。没有当前可用的真机serial。
-- GlobalSend待交接候选已更新为**106**，不安装旧104/105。该owner再次申请交接时，只读核对仍仅模拟器、无实机serial；已明确答复root无活动实机操作，但后台队列失联后状态未知，当前无法完成无活动队列交接。尚未授予106手机操作权。恢复后先核对队列再明确交接；无真实资源冲突不跨聊天发消息，103旧授权不沿用。
-- 诊断辅助包均已卸载，本轮真机`/data/local/tmp/chrona/classroom-failure-20261101/window.xml`及空任务目录已删除。旧20261031任务目录清理／隔离包external report读取曾被策略拒绝，未绕过。派生输出仅项目build，图片先压缩JPEG。
-- AVD统一`F:\Android\Avd\Chrona_Classroom_36`，root本轮复用，未克隆／清空，不终止其它任务资源。公共工具与签名保持外部原位置。
-
-## 源码与后续
-
-- 92源码已提交并推送`fe6c5c1`／工作记录`ffb7e2e`，93为`2d77151`；仅提交所属代码／测试／功能文档／验证记录／HANDOFF，不发补丁Release。
-- 保护他人改动：AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1。
-- 历史91预算／SSE错误修复、89更正文稿二级页、90取消Dock滚动缩小均保留，证据见`docs/validation-history.md`，不重做无变化验收。监视全局／课程自动总结三态的布局仍在讨论，未确认，不擅自实施。外部core接口见docs/Communication/to-external-agent.md。
+- 当前root持有手机触控；GlobalSend106已安装，其15分钟检查已明确交还，不改其数据/网络，无冲突不跨聊天发消息。手机切至用户正在使用的应用时停触控，现有授权内无人回复可继续；实际权限拒绝不能绕过。
+- 课堂诊断probe已卸载。本轮手机XML仍可能在 `/data/local/tmp/chrona/monitor95/window.xml`，普通UI操作仍用此单一目录；交还前删除该文件及空目录。不得在内部存储根、Download/DCIM/Pictures散放测试文件。
+- 公共AVD统一 `F:\Android\Avd\Chrona_Classroom_36` / emulator-5554，串行复用，不克隆/清空/改DPI或分辨率。本轮源fixture早期默认Activity覆盖配置不计正常验收，已改用 `nativeScreen=true`；需要清理本轮写入的精确fixture截图，保留旧其它材料。
+- 所有电脑派生内容留项目build；图片先压缩JPEG再查看，禁止查看PNG原图。公共JDK `D:\Minecraft\java21`，ADB `F:\Android\Sdk\platform-tools\adb.exe`，gh `F:\Programs\GitHubCLI\bin\gh.exe`，保留现有鉴权，不输出token。
+- 保护其它owner改动：AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1。只提交本轮所属文件；授权 `git push origin HEAD:main`，不force。
+- 业务/动效规范已按当前功能更新，旧过程证据见 `docs/validation-history.md`。监视全局/课程自动总结三态的控件位置仍处于讨论，未以本次后台修复擅自改布局。外部core接口仍见docs/Communication/to-external-agent.md。

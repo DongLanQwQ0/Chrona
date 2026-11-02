@@ -239,7 +239,51 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
                 new ZjuSnapshot.Lesson("end/current",selected.course,"教室A","end",selected.startsAt,end),
                 new ZjuSnapshot.Lesson("end/future",future.course,"教室A","end",future.startsAt,future.startsAt+600_000)),List.of("end"));
     }
+    private void consecutiveEndTimetable(long end)throws Exception{
+        new ZjuTimetableStore(app).save(account,List.of(
+                new ZjuSnapshot.Lesson("end/current-first",selected.course,"教室A","end",selected.startsAt,selected.startsAt+240_000),
+                new ZjuSnapshot.Lesson("end/current-last",selected.course,"教室A","end",selected.startsAt+540_000,end),
+                new ZjuSnapshot.Lesson("end/future",future.course,"教室A","end",future.startsAt,future.startsAt+600_000)),List.of("end"));
+    }
+    private static ZjuSnapshot.Lesson endLesson(String key,String title,String room,java.time.LocalDate day,int from,int until){
+        return new ZjuSnapshot.Lesson(key,title,room,"end",day.atStartOfDay().plusMinutes(from).atZone(ClassroomLesson.ZONE).toInstant().toEpochMilli(),
+                day.atStartOfDay().plusMinutes(until).atZone(ClassroomLesson.ZONE).toInstant().toEpochMilli());
+    }
+    private void consecutiveEndChecks()throws Exception{
+        java.time.LocalDate day=java.time.LocalDate.of(2026,11,2);String title="线性代数（甲）";
+        ZjuSnapshot.Lesson first=endLesson("linear/first",title,"东2-203",day,13*60+25,14*60+10);
+        ZjuSnapshot.Lesson last=endLesson("linear/last",title,"东2-203",day,14*60+15,15*60+50);
+        ClassroomLesson linear=new ClassroomLesson("72","86",title,"对应课堂","东2-203","1",first.start);
+        check(ClassroomMonitorTiming.matchingEnd(linear,List.of(first,last))==last.end,"November 2 consecutive linear algebra ends at 15:50, not the first 14:10 segment");
+        List<ZjuSnapshot.Lesson> weeks=new ArrayList<>();
+        for(int week=0;week<3;week++){
+            String room=week==1?"东4-322":"东2-203";java.time.LocalDate date=day.plusWeeks(week);
+            weeks.add(endLesson("linear/"+week+"/first",title,room,date,13*60+25,14*60+10));
+            weeks.add(endLesson("linear/"+week+"/last",title,room,date,14*60+15,15*60+50));
+        }
+        for(int week=0;week<3;week++){
+            ZjuSnapshot.Lesson begin=weeks.get(week*2),finish=weeks.get(week*2+1);
+            ClassroomLesson occurrence=new ClassroomLesson("72",""+(86+week),title,"对应课堂",begin.location,"1",begin.start);
+            check(ClassroomMonitorTiming.matchingEnd(occurrence,weeks)==finish.end,"weekly course with per-week room changes uses only its actual date end "+week);
+        }
+        check(ClassroomMonitorTiming.matchingEnd(linear,List.of(first,endLesson("moving",title,"东4-322",day,14*60+15,15*60+50)))==first.end,"same-day room change does not extend a lecture");
+        ZjuSnapshot.Lesson morning=endLesson("morning",title,"东2-203",day,11*60,11*60+45);
+        ClassroomLesson beforeLunch=new ClassroomLesson("72","87",title,"上午课堂","东2-203","1",morning.start);
+        check(ClassroomMonitorTiming.matchingEnd(beforeLunch,List.of(morning,first,last))==morning.end,"lunch gap does not extend a lecture into the afternoon");
+        check(ClassroomMonitorTiming.matchingEnd(linear,List.of(first,last,endLesson("break-conflict","课间另一门课","东2-203",day,14*60+11,14*60+14)))==first.end,"a real course during the teaching break prevents extension");
+        List<ZjuSnapshot.Lesson> unequalWeeks=new ArrayList<>(weeks);unequalWeeks.remove(unequalWeeks.size()-1);
+        check(ClassroomMonitorTiming.matchingEnd(linear,unequalWeeks)==first.end,"different actual-week coverage is not merged");
+        check(ClassroomMonitorTiming.matchingEnd(linear,List.of(first,last,new ZjuSnapshot.Lesson("conflicting-first",title,first.location,"end",first.start,first.end+1)))==0,"conflicting raw first-segment ends remain ambiguous even with a consecutive block");
+        ZjuSnapshot.Lesson oneOff=new ZjuSnapshot.Lesson("one-off",title,"东2-203","单次校外实践",first.start,first.end);
+        check(ClassroomMonitorTiming.matchingEnd(linear,List.of(oneOff))==oneOff.end,"one-off course matches without a regular academic-term classification");
+        new ZjuTimetableStore(app).save(account,List.of(first,last),List.of("end"));
+        check(ClassroomMonitorTiming.endsAt(app,account,linear)==last.end,"cached timetable projection resolves the complete consecutive block");
+        check(ClassroomExportTiming.endsAt(app,account,linear)==last.end,"archive export shares the complete consecutive timetable end");
+        new ZjuTimetableStore(app).save(account,List.of(first),List.of("end"));
+        check(ClassroomMonitorTiming.endsAt(app,account,linear)==first.end,"timetable revision invalidates the cached consecutive projection");
+    }
     private void endChecks()throws Exception{
+        consecutiveEndChecks();
         starts=(System.currentTimeMillis()-600_000)/1000*1000;
         selected=new ClassroomLesson("10","20","示例课程 · 实时课堂","课堂一","教室A","2",starts);
         future=new ClassroomLesson("10","21",selected.course,"课堂二","教室A","2",starts+3_600_000);
@@ -269,8 +313,13 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
             long limit=SystemClock.elapsedRealtime()+5000;while((lastSocket==null||socketOpens==0)&&SystemClock.elapsedRealtime()<limit)SystemClock.sleep(20);
             check(socketOpens==1,"ongoing timetable lesson opens one real-controller fixture socket");
             idle(300);FakeSocket socket=lastSocket;socket.sender.shutdownNow();
+            consecutiveEndTimetable(end);runOnMainSync(owner[0]::refresh);
+            check(selected.startsAt+240_000<System.currentTimeMillis()&&end>System.currentTimeMillis(),"consecutive owner fixture has passed its first end while the full lecture remains ongoing");
+            check(ClassroomMonitorTiming.endsAt(app,account,selected)==end&&ClassroomExportTiming.endsAt(app,account,selected)==end,"owner and archive resolve the last segment across the five-minute teaching break");
+            check(!socket.closed&&socketOpens==1&&ClassroomLiveTranscripts.active(account,selected),"real Slot keeps its existing connection after the first segment ends");
             socket.listener.onMessage(socket,"cd1&m"+new JSONObject().put("sourcetext","下课前尚未定句的最后一句").put("end_time","0").put("text_begin_time",System.currentTimeMillis()).put("text_end_time",System.currentTimeMillis()));
-            endTimetable(System.currentTimeMillis()-1);runOnMainSync(owner[0]::refresh);
+            check(!socket.closed&&((JSONObject)field(socket.listener,"state")).getJSONObject("current").getString("text").equals("下课前尚未定句的最后一句"),"the ongoing second segment still accepts a real Slot caption");
+            consecutiveEndTimetable(System.currentTimeMillis()-1);runOnMainSync(owner[0]::refresh);
             check(socket.closed,"real timetable end immediately closes the classroom socket");
             check(ClassroomLiveTranscripts.read(dir).getJSONObject("current").getString("text").equals("下课前尚未定句的最后一句"),"natural end saves the latest uncommitted sentence");
             check("等待课程处理".equals(ClassroomStore.read(new File(dir,"live-status.json")).getString("state")),"natural end exposes waiting-for-processing state");

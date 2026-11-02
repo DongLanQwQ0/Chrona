@@ -414,7 +414,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 .put("catalog_checked",state.optLong("checked")).put("catalog_count",state.getJSONArray("catalog").length())
                 .put("done",state.getJSONArray("done")).put("message",state.optString("message"))
                 .put("automatic",new JSONArray(ClassroomMonitorStore.autoTasks(state)))
-                .put("summary_images",state.optBoolean("summaryImages"));
+                .put("summary_images",new ClassroomMonitorStore(getTargetContext(),settings.account()).summaryImages());
         com.donglan.chrona.ai.AiSettings ai=new com.donglan.chrona.ai.AiSettingsStore(getTargetContext()).load();
         report.put("ai_configured",ai!=null);if(ai!=null)report.put("model",ai.model);
         Map<String,ClassroomLesson> inspected=new LinkedHashMap<>();
