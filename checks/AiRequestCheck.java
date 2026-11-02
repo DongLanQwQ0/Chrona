@@ -21,7 +21,9 @@ public final class AiRequestCheck {
         check(prefix.contains(SchedulePrompt.TIME_RULES) && !prefix.contains("e.g. tomorrow at 10:00"),
                 "single colloquial policy; bare twelve-hour example cannot auto-publish");
         check(prefix.contains(SchedulePrompt.DECISION_RULES), "decision boundaries sent to model");
-        check(SchedulePrompt.VERSION.equals("schedule-v18"), "auditable occurrence-aware scheduling prompt revision");
+        check(SchedulePrompt.VERSION.equals("schedule-v19"), "auditable exclusive-date scheduling prompt revision");
+        for (String rule : new String[]{"date_exclusive", "模型不得先减日期", "11月2日23:59", "11月3日17点前"})
+            check(SchedulePrompt.DECISION_RULES.contains(rule), "exclusive-date prompt contract: " + rule);
         checkTimeContext();
         checkRecurringContext();
         checkMultiImageRequest();
@@ -436,7 +438,7 @@ public final class AiRequestCheck {
         check(doubtful.candidates.get(0).needsConfirmation && doubtful.candidates.get(0).uncertaintyLevel == 2,
                 "wrapper handling never overrides genuine uncertainty");
         event.put("uncertainty_level", 0).put("needs_confirmation", false)
-                .put("start", new JSONObject().put("date", "2026-01-02").put("time", "10:00"));
+                .put("start", new JSONObject().put("date", "2026-01-02").put("time", "10:00").put("date_exclusive", false));
         ParseResult past = ChatCompletionClient.parseResponse(1, envelope(new JSONObject()
                 .put("events", new org.json.JSONArray().put(event)).toString()), now, "Asia/Shanghai");
         check(past.candidates.get(0).startAtMillis == java.time.Instant.parse("2026-01-02T02:00:00Z").toEpochMilli()

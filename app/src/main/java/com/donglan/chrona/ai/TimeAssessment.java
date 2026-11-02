@@ -30,6 +30,12 @@ public final class TimeAssessment {
     static void validate(JSONArray events) throws JSONException {
         for (int i = 0; i < events.length(); i++) {
             JSONObject event = events.getJSONObject(i);
+            for (String field : new String[]{"start", "end", "due", "suggested_start", "plan_until"}) {
+                if (event.isNull(field)) continue;
+                JSONObject point = event.getJSONObject(field);
+                if (!validDateBoundary(point, field, true))
+                    throw new JSONException("Missing or invalid date boundary: " + field);
+            }
             JSONObject assessment = event.getJSONObject("time_assessment");
             if (assessment.length() != FIELDS.length) throw new JSONException("Invalid time assessment fields");
             for (String field : FIELDS) {
@@ -52,6 +58,16 @@ public final class TimeAssessment {
                     throw new JSONException("Rule-based time requires the applied preference");
             }
         }
+    }
+
+    /** New model output must declare the boundary; original direct callers default to inclusive. */
+    static boolean validDateBoundary(JSONObject point, String field, boolean required) {
+        if (!point.has("date_exclusive")) return !required;
+        Object flag = point.opt("date_exclusive");
+        if (!(flag instanceof Boolean)) return false;
+        return !Boolean.TRUE.equals(flag) || (field.equals("due") || field.equals("plan_until"))
+                && point.isNull("time") && point.isNull("offset_minutes")
+                && (!point.isNull("date") || !point.isNull("day_offset") || !point.isNull("weekday"));
     }
 
     static boolean uncertain(JSONObject event) {
@@ -92,7 +108,9 @@ public final class TimeAssessment {
             JSONArray adjustments = new JSONArray();
             JSONObject validation = SemanticEventNormalizer.sourceTimeValidation(event, reference, zone);
             if (dateOnlyDeadline(event) && candidate.dueAtMillis != null)
-                adjustments.put("日期截止按产品规则补为该日23:59，原始钟点未提供。");
+                adjustments.put(event.getJSONObject("due").optBoolean("date_exclusive", false)
+                        ? "原文日期之前不含当日，按前一日23:59确定截止；原始日期与边界保留。"
+                        : "日期截止按产品规则补为该日23:59，原始钟点未提供。");
             if (event.isNull("start") && candidate.startAtMillis != null) {
                 adjustments.put(preferenceSuggestion(event) && candidate.uncertaintyLevel == 0
                         ? "使用已保存偏好的确定执行建议。"
@@ -138,6 +156,9 @@ public final class TimeAssessment {
             JSONObject checked = validation.getJSONObject(field);
             if (checked.getBoolean("requires_review")) {
                 evidence = localEvidence("uncertain", "local_time_validation", checked.getJSONArray("notes").getString(0));
+            } else if (field.equals("due") && dateOnlyDeadline(event) && raw.optBoolean("date_exclusive", false)) {
+                evidence = localEvidence(source != null && "uncertain".equals(source.optString("certainty")) ? "uncertain" : "rule_based",
+                        "exclusive_date_deadline", "原文日期之前不含当日，按前一日23:59确定截止。");
             } else if (source != null && raw != null && (!raw.isNull("time") || !raw.isNull("offset_minutes") || item.allDay)) {
                 evidence = new JSONObject(source.toString());
             } else if (field.equals("due")) {

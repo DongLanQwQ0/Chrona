@@ -143,6 +143,7 @@ public final class ScheduleExecutionCheck {
         }
         wholePeriodSingles();
         spreadPlans();
+        exclusivePlanningBoundaries();
         System.out.println("ScheduleExecutionCheck: " + checks + " checks passed");
     }
 
@@ -291,6 +292,74 @@ public final class ScheduleExecutionCheck {
         }
     }
 
+    private static void exclusivePlanningBoundaries() throws Exception {
+        long deadline = at("2026-11-02T15:59:00Z");
+        JSONArray exclusive = steps("exclusive-project", 4, deadline);
+        JSONArray equivalent = steps("exclusive-project", 4, deadline);
+        for (int i = 0; i < exclusive.length(); i++) {
+            exclusive.getJSONObject(i).put("due", exclusiveDate("2026-11-03"))
+                    .put("plan_until", exclusiveDate("2026-11-03"));
+            equivalent.getJSONObject(i).put("due", time("2026-11-02", null))
+                    .put("plan_until", time("2026-11-02", null));
+        }
+        String original = exclusive.toString();
+        List<EventCandidate> plan = batch(exclusive, NOW, 600, 1320);
+        List<EventCandidate> reference = batch(equivalent, NOW, 600, 1320);
+        check(exclusive.toString().equals(original), "group planning preserves raw exclusive dates and markers");
+        long previous = NOW;
+        for (int i = 0; i < plan.size(); i++) {
+            EventCandidate item = plan.get(i), expected = reference.get(i);
+            check(item.dueAtMillis == deadline && item.startAtMillis >= previous && item.endAtMillis <= deadline,
+                    "exclusive due and plan_until bound the whole ordered execution interval");
+            check(item.startAtMillis.equals(expected.startAtMillis) && item.endAtMillis.equals(expected.endAtMillis),
+                    "exclusive group exactly matches its already-resolved inclusive boundary, with no second subtraction");
+            check(item.reminderAnchor().equals(item.dueAtMillis) && item.reminderMinutesBefore.equals(expected.reminderMinutesBefore),
+                    "group reminder uses the resolved deadline exactly once");
+            previous = item.endAtMillis;
+        }
+        for (JSONObject anchor : new JSONObject[]{
+                exclusiveDate("2026-11-03"),
+                new JSONObject().put("day_offset", 15).put("time", JSONObject.NULL).put("date_exclusive", true),
+                new JSONObject().put("weekday", 2).put("week_offset", 2).put("time", JSONObject.NULL).put("date_exclusive", true)
+        }) {
+            JSONArray preparation = steps("preparation", 3, deadline);
+            JSONArray matched = steps("preparation", 3, deadline);
+            for (int i = 0; i < preparation.length(); i++) {
+                preparation.getJSONObject(i).put("due", JSONObject.NULL).put("plan_until", new JSONObject(anchor.toString()));
+                matched.getJSONObject(i).put("due", JSONObject.NULL).put("plan_until", time("2026-11-02", null));
+            }
+            plan = batch(preparation, NOW, 600, 1320);
+            reference = batch(matched, NOW, 600, 1320);
+            for (int i = 0; i < plan.size(); i++) {
+                EventCandidate item = plan.get(i);
+                check(item.startAtMillis.equals(reference.get(i).startAtMillis)
+                        && item.endAtMillis.equals(reference.get(i).endAtMillis) && item.endAtMillis <= deadline,
+                        "date/relative/weekday exclusive plan boundary matches local previous-day scheduling: " + anchor);
+                check(item.dueAtMillis == null && item.reminderMinutesBefore == null,
+                        "exclusive preparation boundary does not fabricate a deadline or deadline reminder");
+            }
+        }
+        JSONArray boundaryOnly = steps("early-boundary", 3, at("2026-11-10T12:00:00Z"));
+        for (int i = 0; i < boundaryOnly.length(); i++)
+            boundaryOnly.getJSONObject(i).put("plan_until", exclusiveDate("2026-11-03"));
+        plan = batch(boundaryOnly, NOW, 600, 1320);
+        for (EventCandidate item : plan)
+            check(item.endAtMillis <= deadline && item.dueAtMillis == at("2026-11-10T12:00:00Z"),
+                    "earlier exclusive plan boundary limits execution without rewriting a later real due");
+        plan = batch(boundaryOnly, at("2026-11-02T16:00:00Z"), 600, 1320);
+        for (EventCandidate item : plan)
+            check(item.startAtMillis == null && item.endAtMillis == null && item.dueAtMillis == at("2026-11-10T12:00:00Z")
+                    && item.needsConfirmation, "expired exclusive preparation boundary cannot fall back into excluded day");
+        plan = batch(exclusive, at("2026-11-02T15:50:00Z"), 0, 1439);
+        for (EventCandidate item : plan)
+            check(item.startAtMillis == null && item.endAtMillis == null && item.dueAtMillis == deadline,
+                    "remaining minutes before exclusive deadline do not borrow the excluded date");
+    }
+
+    private static JSONObject exclusiveDate(String date) throws Exception {
+        return time(date, null).put("date_exclusive", true);
+    }
+
     private static JSONArray steps(String group,int count,long due)throws Exception {
         ZonedDateTime local=Instant.ofEpochMilli(due).atZone(ZoneId.of("Asia/Shanghai"));
         JSONArray result=new JSONArray();
@@ -325,7 +394,8 @@ public final class ScheduleExecutionCheck {
                 .put("reminder_minutes_before", JSONObject.NULL).put("reminder_specified", false).put("recurrence", JSONObject.NULL);
     }
     private static JSONObject time(String date, String clock) throws Exception {
-        return new JSONObject().put("date", date).put("time", clock);
+        return new JSONObject().put("date", date).put("time", clock == null ? JSONObject.NULL : clock)
+                .put("date_exclusive", false);
     }
     private static long at(String value) { return Instant.parse(value).toEpochMilli(); }
     private static void check(boolean condition, String label) {

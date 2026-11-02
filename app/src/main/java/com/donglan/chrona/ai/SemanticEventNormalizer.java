@@ -198,6 +198,11 @@ public final class SemanticEventNormalizer {
                     || (Boolean.TRUE.equals(confirmation) && modelLevel != EventCandidate.INFERRED);
         }
         if (TimeAssessment.uncertain(event)) context.uncertain = true;
+        for (String field : new String[]{"start", "end", "due", "suggested_start", "plan_until"}) {
+            JSONObject point = event.optJSONObject(field);
+            if (point != null && !TimeAssessment.validDateBoundary(point, field, false))
+                review(context, "日期边界标记不符合该字段的日期／钟点含义，需确认。");
+        }
         String category = text(event, "category", context);
         if (category == null || !category.equals(EventCategory.normalize(category))) context.uncertain = true;
         category = EventCategory.normalize(category);
@@ -444,6 +449,10 @@ public final class SemanticEventNormalizer {
         if (!(raw instanceof JSONObject)) { review(context, "时间字段不是时间对象。"); return result; }
         JSONObject value = (JSONObject) raw;
         try {
+            if (!TimeAssessment.validDateBoundary(value, key, false)) {
+                review(context, "日期边界标记不符合该字段的日期／钟点含义，转换未通过。"); return result;
+            }
+            boolean exclusiveDate = value.optBoolean("date_exclusive", false);
             String explicitDate = text(value, "date", context);
             String clock = text(value, "time", context);
             Long day = integer(value, "day_offset", context);
@@ -488,6 +497,8 @@ public final class SemanticEventNormalizer {
                     result.date = result.date.plusDays(1);
                 reviewDate(context, result, "模型只给钟点，程序补最近一次日期，需确认。");
             }
+            // Keep the source anchor intact in JSON; calendar arithmetic belongs to this converter.
+            if (exclusiveDate && result.date != null) result.date = result.date.minusDays(1);
             if (allDay) {
                 if (clock != null || minutes != null) review(context, "全天事项同时包含具体钟点或分钟偏移。");
                 return result;
@@ -505,7 +516,7 @@ public final class SemanticEventNormalizer {
             // Product convention: end-of-day stays on the stated day, including deadlines.
             LocalTime parsedClock = midnightEnd ? LocalTime.of(23, 59) : LocalTime.parse(clock);
             LocalDateTime local = result.date.atTime(parsedClock);
-            if (explicitDate == null && day == null && weekday != null && week == null
+            if (!exclusiveDate && explicitDate == null && day == null && weekday != null && week == null
                     && local.isBefore(context.anchor.toLocalDateTime())) {
                 result.date = result.date.plusWeeks(1);
                 local = result.date.atTime(parsedClock);

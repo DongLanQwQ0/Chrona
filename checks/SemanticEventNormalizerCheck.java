@@ -12,6 +12,7 @@ public final class SemanticEventNormalizerCheck {
     private static int checks;
 
     public static void main(String[] args) throws Exception {
+        exclusiveDateDeadlines();
         EventCandidate task = parse(base("task").put("start", time(null, "11:00", 1)));
         check(task.startAtMillis == at("2026-09-29T03:00:00Z"), "relative local date");
         check(task.endAtMillis==null, "task does not invent duration");
@@ -165,6 +166,84 @@ public final class SemanticEventNormalizerCheck {
                     && draft.needsConfirmation, "colloquial model choice retained: " + Arrays.toString(example));
         }
         System.out.println("SemanticEventNormalizerCheck passed: " + checks + " checks");
+    }
+
+    private static void exclusiveDateDeadlines() throws Exception {
+        for (String[] boundary : new String[][] {
+                {"2026-11-03", "2026-11-02T15:59:00Z"},
+                {"2026-11-01", "2026-10-31T15:59:00Z"},
+                {"2027-01-01", "2026-12-31T15:59:00Z"},
+                {"2028-03-01", "2028-02-29T15:59:00Z"},
+                {"2027-03-01", "2027-02-28T15:59:00Z"}
+        }) {
+            JSONObject source = base("task").put("due", exclusive(time(boundary[0], null, null)));
+            String original = source.toString();
+            EventCandidate item = parse(source);
+            check(item.dueAtMillis != null && item.dueAtMillis == at(boundary[1])
+                    && !item.needsConfirmation && item.uncertaintyLevel == 0,
+                    "exclusive date resolves once, with no added uncertainty: " + boundary[0]);
+            check(source.toString().equals(original), "exclusive normalization preserves raw date and marker");
+        }
+        check(parse(base("homework").put("due", exclusive(time(null, null, 1)))).dueAtMillis
+                == at("2026-09-28T15:59:00Z"), "relative day deadline excludes the anchored date");
+        check(parse(base("task").put("due", exclusive(time(null, null, null)
+                .put("weekday", 1).put("week_offset", 1)))).dueAtMillis
+                == at("2026-10-04T15:59:00Z"), "next-week weekday deadline excludes the selected Monday");
+        check(parse(base("task").put("due", exclusive(time(null, null, null).put("weekday", 2)))).dueAtMillis
+                == at("2026-09-28T15:59:00Z"), "bare weekday anchors before subtracting a calendar date");
+        check(parse(base("task").put("due", exclusive(time(null, null, null).put("weekday", 1)))).dueAtMillis
+                == at("2026-09-27T15:59:00Z"), "current weekday exclusive boundary does not silently advance a week");
+        EventCandidate dst = parse(base("task").put("time_zone_id", "America/New_York")
+                .put("due", exclusive(time("2026-11-02", null, null))));
+        check(dst.dueAtMillis == at("2026-11-02T04:59:00Z"),
+                "exclusive deadline subtracts a local calendar day across DST, not 24 hours");
+        check(parse(base("task").put("due", time("2026-11-03", null, null)
+                .put("date_exclusive", false))).dueAtMillis == at("2026-11-03T15:59:00Z"),
+                "inclusive stated-date deadline remains on the stated day");
+        JSONObject legacy = time("2026-11-03", null, null);
+        legacy.remove("date_exclusive");
+        check(parse(base("task").put("due", legacy)).dueAtMillis == at("2026-11-03T15:59:00Z"),
+                "direct normalizer missing-marker contract remains inclusive");
+        check(parse(base("task").put("due", time("2026-11-03", "18:00", null)
+                .put("date_exclusive", false))).dueAtMillis == at("2026-11-03T10:00:00Z"),
+                "clock-level before semantics keep the exact clock on the stated date");
+        for (JSONObject invalid : new JSONObject[] {
+                exclusive(time("2026-11-03", "18:00", null)),
+                exclusive(new JSONObject().put("offset_minutes", 60)),
+                exclusive(new JSONObject())
+        }) {
+            EventCandidate item = parse(base("task").put("due", invalid));
+            check(item.dueAtMillis == null && item.needsConfirmation && item.uncertaintyLevel == 2,
+                    "invalid exclusive due stays unresolved in direct normalizer: " + invalid);
+        }
+        for (String field : new String[]{"start", "end", "suggested_start"}) {
+            EventCandidate item = parse(base("task").put(field, exclusive(time("2026-11-03", null, null))));
+            check(item.startAtMillis == null && item.endAtMillis == null && item.needsConfirmation
+                    && item.uncertaintyLevel == 2, "exclusive marker forbidden for direct " + field);
+        }
+        EventCandidate allDay = parse(base("task").put("all_day", true)
+                .put("due", exclusive(time("2026-11-03", null, null))));
+        check(allDay.dueAtMillis == at("2026-11-02T15:59:00Z") && !allDay.allDay,
+                "all-day deadline-only task retains the previous local end of day");
+        allDay = parse(base("task").put("all_day", true)
+                .put("start", time("2026-11-01", null, null))
+                .put("end", time("2026-11-01", null, null))
+                .put("due", exclusive(time("2026-11-03", null, null))));
+        check(allDay.allDay && allDay.startAtMillis == at("2026-11-01T00:00:00Z")
+                && allDay.endAtMillis == at("2026-11-02T00:00:00Z")
+                && allDay.dueAtMillis == at("2026-11-02T15:59:00Z"),
+                "all-day execution encoding never subtracts a second day from due or execution dates");
+        EventCandidate reminder = parse(base("task").put("due", exclusive(time(null, null, 1))));
+        check(reminder.reminderMinutesBefore == 30 && reminder.reminderAnchor().equals(reminder.dueAtMillis),
+                "default reminder uses the adjusted same-day deadline and anchor");
+        reminder = parse(base("task").put("due", exclusive(time(null, null, 1)))
+                .put("reminder_specified", true).put("reminder_minutes_before", 15));
+        check(reminder.reminderMinutesBefore == 15 && reminder.reminderAnchor().equals(reminder.dueAtMillis),
+                "explicit reminder stays unchanged while its deadline anchor moves once");
+    }
+
+    private static JSONObject exclusive(JSONObject time) throws Exception {
+        return time.put("date_exclusive", true);
     }
 
     private static JSONObject base(String category) throws Exception {

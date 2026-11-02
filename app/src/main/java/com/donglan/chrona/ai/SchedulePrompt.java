@@ -8,12 +8,14 @@ import java.time.format.DateTimeFormatter;
 
 /** Stable instructions and an explicitly encoded, bounded data suffix. */
 public final class SchedulePrompt {
-    public static final String VERSION = "schedule-v18";
+    public static final String VERSION = "schedule-v19";
     public static final String DECISION_RULES = "判断边界（按以下规则直接落字段，不再比较）："
             + "先按事项固有语义选类别：会议、课堂、考试、作业讲评会、赴约用event；普通个人行动用task；课程布置的作业、习题、实验报告、课程项目用homework，课程名纳入简短标题。"
             + "‘提醒’是设置，不覆盖事项固有类别：‘在T提醒我做X/提醒我T做X’按X分类，start=T，due=null，未给结束则end=null，reminder_specified=true，reminder_minutes_before=0。"
             + "event只用start/end，due=null；task/homework可用start/end表达执行时段、独立用due表达截止；只有截止时start/end=null，不伪造执行。"
-            + "只有明确‘截止/截至/最晚/DDL/某日前提交/周五交作业’等交付期限才写due；安排做事的钟点写start，不当成截止。仅日期截止的due保留该日期、time=null、all_day=false，程序确定性补为当天23:59；不能把默认钟点冒充原文。"
+            + "只有明确‘截止/截至/最晚/DDL/某日前提交/周五交作业’等交付期限才写due；安排做事的钟点写start，不当成截止。仅日期截止保留原文日期、time=null、all_day=false，用date_exclusive区分是否包含当日，程序确定性换算；不能把默认钟点冒充原文。"
+            + "每个非null时间对象必须给布尔date_exclusive，通常false。‘11月3日前/11月3日之前’等只给日期的排他截止用due(date=原文11月3日,time=null,date_exclusive=true)，不含11月3日，由程序取11月2日23:59；模型不得先减日期，避免减两次。‘11月3日截止/截至11月3日/11月3日内/含11月3日’用false，补11月3日23:59。‘11月3日17点前’保留该日17:00并用false，不因有‘前’字减一天。"
+            + "date_exclusive=true仅允许在没有time和offset_minutes的due/plan_until中，支持原文绝对日期、相对日期和星期锚点；start/end/suggested_start及具体钟点一律false。日期／含当日边界明确本身无需存疑，执行建议仍按其依据处理。"
             + "待办有时间不因此变活动。明确‘提前N分钟提醒’用N，明确不提醒用null。报名截止与活动开始不同时拆为报名task和活动event，活动due始终null。"
             + "普通活动公告附带的请假方式、请假截止只保留在主日程description，不生成独立请假候选，也不作为主event.due；只有请假是通知唯一或核心安排时才提取请假事项。按整段通知的主次语义判断，不按标题关键词过滤。"
             + "例如‘28日14点学院例会，不能参加者27日18点前请假’只提取例会event，due=null，请假方式和期限放description；‘本通知仅办理请假，27日18点前提交申请’可提取请假task.due；‘28日14点请假制度宣讲会’仍提取活动，不因标题含请假而删除。"
@@ -69,7 +71,7 @@ public final class SchedulePrompt {
             + "‘下个月今天/一个月后’按日历月递增，目标月没有该日则取月末并标2；‘几天后’按本地日期，‘几小时后’按实际分钟。"
             + "明确时间段保留起止；‘今晚11点到凌晨1点’结束为次日01:00；无跨日线索而结束早于开始时标2，勿反复猜测。"
             + "‘2到3点/两三点’作时间范围时保留范围，作大约时间时取一个合理钟点并标2；显式时区优先，匹配循环占位且公告未明说时区时用占位time_zone_id，其他无时区事项用请求时区。"
-            + "明确交付期限‘截至/最晚/DDL/某日前提交/周五交作业’放task/homework.due；只有日期的截止保留time=null，由程序补当天23:59、all_day=false；明确日期与明确偏好可确定补全，不单因缺钟点标2；‘会议之前提醒’只设提醒，勿填event.due；明确全天事项用all_day；普通无时间待办保持时间null。"
+            + "明确交付期限‘截至/最晚/DDL/某日前提交/周五交作业’放task/homework.due；日期截止保留time=null、all_day=false，‘某日前/之前’声明date_exclusive=true且保留原日期，其他日期截止false；程序分别补前一日或当日23:59。明确日期与明确偏好可确定补全，不单因缺钟点标2；‘会议之前提醒’只设提醒，勿填event.due；明确全天事项用all_day；普通无时间待办保持时间null。"
             + "‘明天上午10点提醒我开会’的10点是事项时间；‘10点开会提前15分钟提醒’保留10点并设置15分钟提醒，勿减两次。"
             + "‘提前三天复习，当天考试’拆成独立任务/活动，锚定考试日期。"
             + "只有原文明确重复意图时填写recurrence，否则为null；event、task、homework均可重复，但必须有确定的首次start或due，不能创建无时间锚点的循环。"
@@ -96,7 +98,7 @@ public final class SchedulePrompt {
             + "对已给值的字段，无论确定或不确定均填写certainty、basis、rule、reason；不适用可null，程序补全的字段可说明规则。"
             + "certainty只用explicit（原文明确）、rule_based（上下文换算或明确偏好唯一确定）、uncertain（自由建议、缺失、冲突或多解）。"
             + "basis简要引用原文/上下文或准确摘录已保存偏好，不编造来源；rule在rule_based时必填实际规则或规则标识，否则可null；reason简短说明采用该时间或存疑的可核查原因。"
-            + "日期截止due的默认钟点规则为date_only_deadline；自定义偏好按其原句记录。明确时段、缺年补全也记录依据，不藏在description或只写‘确定/不确定’。"
+            + "日期截止due含当日时规则为date_only_deadline，不含当日时规则为exclusive_date_deadline；basis保留‘某日前/之前’原话，说明边界，不把原日期改成前一天再声明排他。自定义偏好按其原句记录。明确时段、缺年补全也记录依据，不藏在description或只写‘确定/不确定’。"
             + "方案边界与自由排程属于不同字段：截止明确可为explicit，执行建议仍可uncertain；任何字段uncertain都要求整体level2并待确认。确定的偏好补全不因它是自动填写而标2。"
             + "只输出短依据、规则和结论，不输出内部思考过程或逐步推理，不列备选方案比较。";
     public static final String SYSTEM = "Chrona schedule extraction " + VERSION + ". "
@@ -116,6 +118,7 @@ public final class SchedulePrompt {
             + "Use start/end for event duration and always event.due=null; optional start/end for task/homework execution and independently optional due for an explicit deadline. Deadline-only tasks/homework leave start/end null. Tasks/homework may have no times; do not invent a time or duration for an unscheduled item. Preserve explicit duration_minutes. "
             + "For each time use an explicit date if stated; otherwise encode day_offset relative to now_local, "
             + "offset_minutes relative to reference epoch, or weekday (Monday=1) and week_offset (this week=0). Use exactly one main anchor per time object: date, day_offset, weekday, or offset_minutes; set the other main anchors null. "
+            + "Every time object also requires boolean date_exclusive. Use true only for date-only due/plan_until before the stated date, keeping the original date anchor unchanged; the program subtracts one calendar day. Use false for inclusive deadlines, all execution times and explicitly stated clocks, including a clock followed by 'before'. "
             + "Vague times such as later, someday, soon or evening are allowed: choose the first reasonable concrete date/time "
             + "that comes to mind using now_local and context, without prolonged comparison. Mark any freely chosen date/clock "
             + "uncertainty_level=2 and needs_confirmation=true; briefly label the chosen time as a suggestion in description. "
@@ -140,6 +143,7 @@ public final class SchedulePrompt {
             for (String key : new String[]{"date", "time"}) tp.put(key, nullable("string"));
             for (String key : new String[]{"day_offset", "offset_minutes", "weekday", "week_offset"})
                 tp.put(key, nullable("integer"));
+            tp.put("date_exclusive", new JSONObject().put("type", "boolean"));
             time.put("properties", tp).put("required", tp.names());
             JSONObject ep = new JSONObject();
             ep.put("time_assessment", TimeAssessment.schema());

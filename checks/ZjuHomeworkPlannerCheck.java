@@ -33,7 +33,8 @@ public final class ZjuHomeworkPlannerCheck {
     static JSONObject time(long millis) {
         LocalDateTime local=Instant.ofEpochMilli(millis).atZone(ZoneId.of(ZONE)).toLocalDateTime();
         return new JSONObject().put("date",local.toLocalDate().toString()).put("time",local.toLocalTime().withSecond(0).withNano(0).toString())
-                .put("day_offset",JSONObject.NULL).put("weekday",JSONObject.NULL).put("week_offset",JSONObject.NULL).put("offset_minutes",JSONObject.NULL);
+                .put("day_offset",JSONObject.NULL).put("weekday",JSONObject.NULL).put("week_offset",JSONObject.NULL).put("offset_minutes",JSONObject.NULL)
+                .put("date_exclusive",false);
     }
     static ParseResult response(long task,long reference,String zone,boolean noWindow) throws Exception {
         long suggested=LocalDate.now().plusDays(1).atTime(12,0).atZone(ZoneId.of(zone)).toInstant().toEpochMilli();

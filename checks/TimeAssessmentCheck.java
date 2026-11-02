@@ -15,6 +15,11 @@ public final class TimeAssessmentCheck {
     }
     static JSONObject evidence(JSONObject event) throws Exception {
         JSONObject result = new JSONObject();
+        // Old synthetic responses adopt the current wire contract; malformed-marker tests mutate afterwards.
+        for (String field : new String[]{"start", "end", "due", "suggested_start", "plan_until"}) {
+            JSONObject value = event.optJSONObject(field);
+            if (value != null && !value.has("date_exclusive")) value.put("date_exclusive", false);
+        }
         for (String field : TimeAssessment.FIELDS) result.put(field, event.isNull(field) ? JSONObject.NULL
                 : reason("explicit", "合成原文中的明确" + field, null, "沿用合成原文"));
         event.put("time_assessment", result);
@@ -30,7 +35,8 @@ public final class TimeAssessmentCheck {
         return event;
     }
     static JSONObject time(String date, String clock) throws Exception {
-        return new JSONObject().put("date", date).put("time", clock == null ? JSONObject.NULL : clock);
+        return new JSONObject().put("date", date).put("time", clock == null ? JSONObject.NULL : clock)
+                .put("date_exclusive", false);
     }
     static ParseResult parse(JSONObject event, long now) throws Exception {
         String content = new JSONObject().put("events", new JSONArray().put(event)).toString();
@@ -43,6 +49,7 @@ public final class TimeAssessmentCheck {
         catch (ChatCompletionClient.ResponseException expected) { checks++; }
     }
     public static void main(String[] args) throws Exception {
+        exclusiveDateContract();
         JSONObject multiDay=evidence(base().put("category","event").put("execution_time_explicit",true)
                 .put("start",time("2026-11-21",null)).put("end",time("2026-11-22",null)));
         ParseResult range=parse(multiDay,NOW);EventCandidate rangeItem=range.candidates.get(0);
@@ -165,6 +172,91 @@ public final class TimeAssessmentCheck {
             check(SchedulePrompt.DECISION_RULES.contains(term), "planning obligation: " + term);
         System.out.println("Time assessment: " + checks + " checks passed; actual conversion and response validation, synthetic model outputs");
     }
+    private static void exclusiveDateContract() throws Exception {
+        JSONObject source = evidence(base().put("due", time("2026-11-03", null).put("date_exclusive", true)));
+        source.getJSONObject("time_assessment").put("due", reason("explicit", "11月3日前发送电子文档", null, "日期级排他截止"));
+        String raw = source.toString();
+        ParseResult parsed = parse(source, NOW);
+        EventCandidate item = parsed.candidates.get(0);
+        long deadline = at("2026-11-02T15:59:00Z");
+        check(item.dueAtMillis == deadline && item.startAtMillis != null && item.endAtMillis <= deadline,
+                "real response parser keeps execution before November 2 23:59 for November 3 before");
+        check(source.toString().equals(raw) && parse(source, NOW).candidates.get(0).dueAtMillis == deadline,
+                "reparsing original evidence neither mutates nor subtracts twice");
+        JSONObject entry = new JSONObject(parsed.timeAuditJson).getJSONArray("entries").getJSONObject(0);
+        JSONObject original = entry.getJSONObject("model").getJSONObject("due");
+        check(original.getString("date").equals("2026-11-03") && original.isNull("time")
+                && original.getBoolean("date_exclusive"), "audit preserves original date, missing clock and exclusive flag");
+        check(entry.getJSONObject("resolved").getLong("due") == deadline,
+                "audit normalized deadline matches actual candidate with one calendar-day adjustment");
+        JSONObject resolved = entry.getJSONObject("resolved_time_assessment").getJSONObject("due");
+        check(resolved.getString("rule").equals("exclusive_date_deadline")
+                && resolved.getString("certainty").equals("rule_based")
+                && !entry.getJSONObject("source_time_validation").getJSONObject("due").getBoolean("requires_review"),
+                "exclusive date is deterministic and independently audited despite uncertain execution");
+        check(entry.getJSONArray("adjustments").toString().contains("前一日"),
+                "audit explains exclusive date conversion rather than saying it retained the stated day");
+        check(item.reminderAnchor().equals(item.dueAtMillis) && item.reminderMinutesBefore == 360,
+                "automatic reminder anchors to resolved exclusive due");
+
+        JSONObject inclusive = evidence(base().put("due", time("2026-11-03", null)));
+        JSONObject inclusiveEntry = new JSONObject(parse(inclusive, NOW).timeAuditJson).getJSONArray("entries").getJSONObject(0);
+        check(inclusiveEntry.getJSONObject("resolved").getLong("due") == at("2026-11-03T15:59:00Z")
+                && inclusiveEntry.getJSONObject("resolved_time_assessment").getJSONObject("due").getString("rule").equals("date_only_deadline"),
+                "inclusive deadline retains its original date-only audit rule");
+        JSONObject precise = evidence(base().put("due", time("2026-11-03", "17:00")));
+        check(parse(precise, NOW).candidates.get(0).dueAtMillis == at("2026-11-03T09:00:00Z"),
+                "explicit November 3 17:00 before retains its clock without shifting the date");
+        for (JSONObject anchor : new JSONObject[]{
+                new JSONObject().put("day_offset", 11).put("time", JSONObject.NULL).put("date_exclusive", true),
+                new JSONObject().put("weekday", 2).put("week_offset", 1).put("time", JSONObject.NULL).put("date_exclusive", true)
+        }) {
+            long expected = anchor.has("day_offset") ? deadline : at("2026-10-26T15:59:00Z");
+            JSONObject event = evidence(base().put("due", anchor));
+            check(parse(event, NOW).candidates.get(0).dueAtMillis == expected,
+                    "wire exclusive relative/weekday anchor converts locally: " + anchor);
+        }
+        JSONObject fixed = evidence(base().put("due", time("2026-11-03", null).put("date_exclusive", true))
+                .put("start", time("2026-11-01", "09:00")).put("execution_time_explicit", true));
+        EventCandidate fixedItem = parse(fixed, NOW).candidates.get(0);
+        check(fixedItem.startAtMillis == at("2026-11-01T01:00:00Z") && fixedItem.dueAtMillis == deadline
+                && fixedItem.uncertaintyLevel == 0 && !fixedItem.needsConfirmation,
+                "clear exclusive deadline adds no uncertainty to explicit source execution");
+
+        JSONObject properties = SchedulePrompt.schema().getJSONObject("properties").getJSONObject("events")
+                .getJSONObject("items").getJSONObject("properties");
+        for (String field : new String[]{"start", "end", "due", "suggested_start", "plan_until"}) {
+            JSONObject timeSchema = properties.getJSONObject(field).getJSONArray("anyOf").getJSONObject(0);
+            check(timeSchema.getJSONArray("required").toList().contains("date_exclusive")
+                    && timeSchema.getJSONObject("properties").getJSONObject("date_exclusive").getString("type").equals("boolean"),
+                    "all time schemas require a nonnullable boolean marker: " + field);
+            for (Object marker : new Object[]{JSONObject.NULL, "true", "false", 1, 0}) {
+                JSONObject malformed = evidence(base().put(field, time("2026-11-03", null)));
+                if (field.equals("plan_until")) malformed.put("plan_group", "准备");
+                malformed.getJSONObject(field).put("date_exclusive", marker);
+                rejected(malformed, "nonboolean exclusive marker accepted: " + field + "/" + marker);
+            }
+            JSONObject missing = evidence(base().put(field, time("2026-11-03", null)));
+            if (field.equals("plan_until")) missing.put("plan_group", "准备");
+            missing.getJSONObject(field).remove("date_exclusive");
+            rejected(missing, "wire time object missing marker accepted: " + field);
+            if (!field.equals("due") && !field.equals("plan_until")) {
+                JSONObject invalid = evidence(base().put(field, time("2026-11-03", null).put("date_exclusive", true)));
+                rejected(invalid, "exclusive execution date accepted: " + field);
+            } else {
+                for (JSONObject invalidTime : new JSONObject[]{
+                        time("2026-11-03", "17:00").put("date_exclusive", true),
+                        new JSONObject().put("offset_minutes", 60).put("date_exclusive", true),
+                        new JSONObject().put("date_exclusive", true)
+                }) {
+                    JSONObject invalid = evidence(base().put(field, invalidTime));
+                    if (field.equals("plan_until")) invalid.put("plan_group", "准备");
+                    rejected(invalid, "invalid exclusive date semantics accepted: " + field + "/" + invalidTime);
+                }
+            }
+        }
+    }
+
     static long at(String value) { return Instant.parse(value).toEpochMilli(); }
     static void check(boolean value, String label) { checks++; if (!value) throw new AssertionError(label); }
 }
