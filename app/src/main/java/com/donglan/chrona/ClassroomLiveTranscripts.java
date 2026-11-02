@@ -3,6 +3,7 @@ package com.donglan.chrona;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import com.donglan.chrona.classroom.*;
 import okhttp3.*;
 import org.json.JSONArray;
@@ -16,6 +17,9 @@ final class ClassroomLiveTranscripts {
     private static final Set<String> ACTIVE=new HashSet<>();
     static boolean active(String account,ClassroomLesson lesson){synchronized(ClassroomStore.LOCK){return ACTIVE.contains(account+":"+ClassroomMonitorStore.key(lesson));}}
     private static final String WAITING="等待课程处理";
+    private static final long HANDSHAKE_TIMEOUT_MILLIS=30_000;
+    private static final long HEARTBEAT_INTERVAL_MILLIS=30_000;
+    private static final long HEARTBEAT_TIMEOUT_MILLIS=15_000;
     // TLS pool eviction may write close_notify. Service destruction must never perform it on main.
     private static final java.util.concurrent.ExecutorService cleanup=Executors.newSingleThreadExecutor();
     private static void release(ClassroomClient client){if(client!=null)cleanup.execute(client::close);}
@@ -73,7 +77,27 @@ final class ClassroomLiveTranscripts {
         volatile ClassroomClient client;volatile WebSocket socket;
         File dir;JSONObject state;long savedAt;
         volatile long verifiedAt;volatile boolean checking;
-        private final Runnable heartbeat=new Runnable(){public void run(){synchronized(Slot.this){if(!stopped&&failedAt==0&&socket!=null){socket.send("pi");main.postDelayed(this,30_000);}}}};
+        long openedAt,pingAt;boolean initialized;
+        private final Runnable heartbeat=this::checkLiveness;
+        private synchronized void checkLiveness(){
+            if(stopped||failedAt>0||socket==null)return;
+            long now=SystemClock.elapsedRealtime();
+            main.removeCallbacks(heartbeat);
+            if(!initialized){
+                long remaining=HANDSHAKE_TIMEOUT_MILLIS-(now-openedAt);
+                if(remaining<=0){fail();return;}
+                main.postDelayed(heartbeat,remaining);return;
+            }
+            if(pingAt>0){
+                long remaining=HEARTBEAT_TIMEOUT_MILLIS-(now-pingAt);
+                if(remaining<=0){fail();return;}
+                main.postDelayed(heartbeat,remaining);return;
+            }
+            // Set before send: a synchronous peer can already acknowledge the heartbeat.
+            pingAt=now;
+            if(!socket.send("pi")){fail();return;}
+            main.postDelayed(heartbeat,pingAt==0?HEARTBEAT_INTERVAL_MILLIS:HEARTBEAT_TIMEOUT_MILLIS);
+        }
         Slot(String account,ClassroomLesson lesson)throws Exception{this.account=account;this.lesson=lesson;
             synchronized(ClassroomStore.LOCK){if(!ClassroomMonitorStore.matches(new ClassroomMonitorStore(app,account).read(),lesson))throw new java.io.IOException("课堂监视已结束");ACTIVE.add(account+":"+ClassroomMonitorStore.key(lesson));}}
         void connect(){
@@ -82,12 +106,13 @@ final class ClassroomLiveTranscripts {
                     dir=new ClassroomStore(app,account).localLesson(lesson);state=read(dir);status("连接中");}
                 if(complete(account,lesson)){close(WAITING);return;}
                 String[] pair=new ZjuSettingsStore(app).credentials();ClassroomClient owner;try{owner=ClassroomMonitor.clients.apply(pair[0],pair[1]);}finally{Arrays.fill(pair,"");}
-                synchronized(this){if(stopped){release(owner);return;}client=owner;}
+                synchronized(this){if(stopped){release(owner);return;}client=owner;openedAt=SystemClock.elapsedRealtime();}
                 WebSocket connected=owner.liveTranscript(lesson,this);
                 synchronized(this){
                     if(stopped||failedAt>0){if(connected!=null)connected.cancel();release(owner);return;}
                     socket=connected;verifiedAt=System.currentTimeMillis();
                     if(connected==null){failedAt=System.currentTimeMillis();status("等待实时字幕");client=null;release(owner);}
+                    else{main.removeCallbacks(heartbeat);main.postDelayed(heartbeat,initialized?HEARTBEAT_INTERVAL_MILLIS:HANDSHAKE_TIMEOUT_MILLIS);}
                 }
             }catch(Exception failure){fail();}
         }
@@ -101,16 +126,18 @@ final class ClassroomLiveTranscripts {
             if(stopped||failedAt>0){ws.cancel();return;}
             try{if(complete(account,lesson)){close(WAITING);ws.cancel();return;}}
             catch(Exception failure){ws.cancel();fail();return;}
-            socket=ws;ws.send("in{\"version\":\"1.9.1\"}");
+            socket=ws;openedAt=SystemClock.elapsedRealtime();
+            main.removeCallbacks(heartbeat);main.postDelayed(heartbeat,HANDSHAKE_TIMEOUT_MILLIS);
+            if(!ws.send("in{\"version\":\"1.9.1\"}"))fail();
         }
         @Override public synchronized void onMessage(WebSocket ws,String frame){
             if(failedAt>0)return;
             if(stopped||!ClassroomMonitor.allowed(app,account)){close();return;}
             try {
                 if(complete(account,lesson)){close(WAITING);return;}
-                if(frame.startsWith("pi")){ws.send("po");status("实时连接");return;}
-                if(frame.startsWith("po")){status("实时连接");return;}
-                if(frame.startsWith("in")){failures=0;status("实时连接");main.removeCallbacks(heartbeat);main.postDelayed(heartbeat,30_000);return;}
+                if(frame.startsWith("pi")){if(!ws.send("po")){fail();return;}if(initialized)status("实时连接");return;}
+                if(frame.startsWith("po")){if(initialized){pingAt=0;status("实时连接");main.removeCallbacks(heartbeat);main.postDelayed(heartbeat,HEARTBEAT_INTERVAL_MILLIS);}return;}
+                if(frame.startsWith("in")){initialized=true;pingAt=0;failures=0;status("实时连接");main.removeCallbacks(heartbeat);main.postDelayed(heartbeat,HEARTBEAT_INTERVAL_MILLIS);return;}
                 JSONObject payload=ClassroomTranscript.payload(frame);if(payload==null)return;
                 synchronized(this){
                     int previousCount=state.getJSONArray("segments").length();
@@ -129,7 +156,9 @@ final class ClassroomLiveTranscripts {
         }
         private synchronized void fail(){
             if(stopped||failedAt>0)return;failedAt=System.currentTimeMillis();retryDelay=Math.min(60_000,5_000L<<Math.min(failures++,4));main.removeCallbacks(heartbeat);status("连接中断，正在重连");
-            ClassroomClient current=client;if(current!=null)current.close();client=null;socket=null;
+            saveCurrent();
+            WebSocket old=socket;ClassroomClient current=client;client=null;socket=null;
+            if(old!=null)old.cancel();release(current);
             // A live connection recovers independently of the slower PPT polling cadence.
             main.postDelayed(()->{if(!closed)refresh();},retryDelay);
         }
@@ -138,9 +167,12 @@ final class ClassroomLiveTranscripts {
         synchronized void close(){close("连接已暂停");}
         synchronized void close(String finalState){
             if(stopped)return;stopped=true;main.removeCallbacks(heartbeat);
-            try{if(state!=null&&dir!=null)ClassroomStore.write(new File(dir,"live-current.json"),new JSONObject().put("base_count",state.getJSONArray("segments").length()).put("current",state.opt("current")));}catch(Exception ignored){}
+            saveCurrent();
             WebSocket ws=socket;if(ws!=null)ws.close(1000,"monitor stopped");ClassroomClient current=client;client=null;socket=null;release(current);status(finalState);
             synchronized(ClassroomStore.LOCK){ACTIVE.remove(account+":"+ClassroomMonitorStore.key(lesson));}
+        }
+        private void saveCurrent(){
+            try{if(state!=null&&dir!=null)ClassroomStore.write(new File(dir,"live-current.json"),new JSONObject().put("base_count",state.getJSONArray("segments").length()).put("current",state.opt("current")));}catch(Exception ignored){}
         }
     }
 }

@@ -4,6 +4,7 @@ import android.app.Instrumentation;
 import android.os.Bundle;
 import com.donglan.chrona.classroom.ClassroomClient;
 import com.donglan.chrona.classroom.ClassroomLesson;
+import com.donglan.chrona.classroom.ClassroomStore;
 import com.donglan.chrona.zju.ZjuClient;
 import com.donglan.chrona.zju.ZjuSnapshot;
 import java.time.Instant;
@@ -29,6 +30,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean aiPing;
     private boolean classroomRoute;
     private boolean mathAudit;
+    private boolean monitorAudit;
     private boolean providerFailure;
     private final java.util.concurrent.CountDownLatch applicationReady=new java.util.concurrent.CountDownLatch(1);
     private volatile boolean applicationInitializationSkipped;
@@ -42,12 +44,13 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         aiPing = args != null && "true".equals(args.getString("aiPing"));
         classroomRoute = args != null && "true".equals(args.getString("classroomRoute"));
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
+        monitorAudit = args != null && "true".equals(args.getString("monitorAudit"));
         providerFailure = args != null && "true".equals(args.getString("providerFailure"));
         super.onCreate(args); start();
     }
     @Override public void callApplicationOnCreate(android.app.Application app){
         try{
-            if(mathAudit||aiPing)applicationInitializationSkipped=true;
+            if(mathAudit||monitorAudit||aiPing)applicationInitializationSkipped=true;
             else super.callApplicationOnCreate(app);
         }finally{applicationReady.countDown();}
     }
@@ -55,12 +58,14 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         Bundle result = new Bundle();
         try {
             if (!getTargetContext().getPackageName().equals("com.donglan.chrona")) throw new IllegalStateException();
-            if(mathAudit){
+            if(mathAudit||monitorAudit){
                 if(!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
                     throw new IllegalStateException("Read-only application initialization unavailable");
                 ZjuSettingsStore current=new ZjuSettingsStore(getTargetContext());
                 if(!current.enabled()||!current.configured())throw new IllegalStateException("School account unavailable");
-                result.putString("math_audit",mathHistory(current).toString());finish(-1,result);return;
+                if(mathAudit)result.putString("math_audit",mathHistory(current).toString());
+                if(monitorAudit)result.putString("monitor_audit",auditMonitor(current).toString());
+                finish(-1,result);return;
             }
             if(aiPing){
                 if(!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
@@ -406,17 +411,27 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private JSONObject auditMonitor(ZjuSettingsStore settings)throws Exception {
         JSONObject state=new ClassroomMonitorStore(getTargetContext(),settings.account()).read(),report=new JSONObject();JSONArray rows=new JSONArray();
         JSONArray rules=state.getJSONArray("rules");report.put("now",System.currentTimeMillis()).put("rules",rules.length())
+                .put("catalog_checked",state.optLong("checked")).put("catalog_count",state.getJSONArray("catalog").length())
                 .put("done",state.getJSONArray("done")).put("message",state.optString("message"))
                 .put("automatic",new JSONArray(ClassroomMonitorStore.autoTasks(state)))
                 .put("summary_images",state.optBoolean("summaryImages"));
         com.donglan.chrona.ai.AiSettings ai=new com.donglan.chrona.ai.AiSettingsStore(getTargetContext()).load();
         report.put("ai_configured",ai!=null);if(ai!=null)report.put("model",ai.model);
-        for(int i=0;i<rules.length();i++){ClassroomLesson selected=ClassroomLesson.fromJson(rules.getJSONObject(i).getJSONObject("lesson"));
+        Map<String,ClassroomLesson> inspected=new LinkedHashMap<>();
+        for(int i=0;i<rules.length();i++){ClassroomLesson selected=ClassroomLesson.fromJson(rules.getJSONObject(i).getJSONObject("lesson"));inspected.put(ClassroomMonitorStore.key(selected),selected);}
+        String day=requestedDate==null?LocalDate.now(ZONE).toString():requestedDate;
+        for(ClassroomLesson selected:new ClassroomStore(getTargetContext(),settings.account()).catalog())if(day.equals(selected.date().toString()))inspected.put(ClassroomMonitorStore.key(selected),selected);
+        JSONArray monitoredCatalog=state.getJSONArray("catalog");
+        for(int i=0;i<monitoredCatalog.length();i++){ClassroomLesson selected=ClassroomLesson.fromJson(monitoredCatalog.getJSONObject(i));if(day.equals(selected.date().toString()))inspected.put(ClassroomMonitorStore.key(selected),selected);}
+        for(ClassroomLesson selected:inspected.values()){
             java.io.File dir=new com.donglan.chrona.classroom.ClassroomStore(getTargetContext(),settings.account()).localLesson(selected);
-            JSONObject row=new JSONObject().put("course",selected.course).put("id",selected.id).put("status",selected.status).put("starts",selected.startsAt).put("repeat",rules.getJSONObject(i).getBoolean("repeat"));
+            JSONObject rule=ClassroomMonitorStore.ruleFor(state,selected);
+            JSONObject row=new JSONObject().put("course",selected.course).put("course_id",selected.courseId).put("id",selected.id).put("status",selected.status).put("starts",selected.startsAt)
+                    .put("timetable_end",ClassroomMonitorTiming.endsAt(getTargetContext(),settings.account(),selected)).put("registered",rule!=null)
+                    .put("repeat",rule!=null&&rule.getBoolean("repeat"));
             for(String file:new String[]{"live-status.json","monitor-stage.json","live-transcript.json","live-current.json","monitor-materials.json","monitor-candidates.json","materials.json","candidates.json","summary.json","run.json"}){
                 java.io.File path=new java.io.File(dir,file);JSONObject saved=com.donglan.chrona.classroom.ClassroomStore.read(path);JSONObject detail=new JSONObject().put("exists",path.isFile()).put("mtime",path.lastModified());
-                if(saved!=null){if(saved.has("state"))detail.put("state",saved.optString("state"));if(saved.has("status"))detail.put("status",saved.optString("status"));for(String list:new String[]{"segments","images"})if(saved.optJSONArray(list)!=null)detail.put(list,saved.getJSONArray(list).length());if(saved.optJSONObject("current")!=null)detail.put("current_chars",saved.getJSONObject("current").optString("text").length());
+                if(saved!=null){if(saved.has("at"))detail.put("at",saved.optLong("at"));if(saved.has("state"))detail.put("state",saved.optString("state"));if(saved.has("status"))detail.put("status",saved.optString("status"));for(String list:new String[]{"segments","images"})if(saved.optJSONArray(list)!=null)detail.put(list,saved.getJSONArray(list).length());if(saved.optJSONObject("current")!=null)detail.put("current_chars",saved.getJSONObject("current").optString("text").length());
                     for(String flag:new String[]{"complete","monitoring","portable"})if(saved.has(flag))detail.put(flag,saved.optBoolean(flag));
                     if(saved.has("run"))detail.put("run",saved.optString("run"));
                     if(file.equals("run.json")){detail.put("has_draft",saved.has("draft")).put("has_final",saved.has("final")).put("selected",saved.optJSONArray("selected"));
@@ -426,7 +441,11 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 }row.put(file,detail);
             }
             if(network){String[] pair=settings.credentials();try(ClassroomClient catalog=new ClassroomClient(pair[0],pair[1]);ZjuClient transport=new ZjuClient(pair[0],pair[1])){Arrays.fill(pair,"");
-                for(ClassroomLesson fresh:catalog.courseLessons(selected))if(fresh.id.equals(selected.id)){row.put("fresh_status",fresh.status).put("fresh_starts",fresh.startsAt);break;}
+                JSONArray freshToday=new JSONArray();
+                for(ClassroomLesson fresh:catalog.courseLessons(selected)){
+                    if(fresh.id.equals(selected.id))row.put("fresh_status",fresh.status).put("fresh_starts",fresh.startsAt);
+                    if(day.equals(fresh.date().toString()))freshToday.put(new JSONObject().put("id",fresh.id).put("status",fresh.status).put("starts",fresh.startsAt));
+                }row.put("fresh_today",freshToday);
                 JSONObject info=transport.classroomJson("https://yjapi.cmc.zju.edu.cn/courseapi/v3/portal-home-setting/get-sub-info?course_id="+selected.courseId+"&sub_id="+selected.id);row.put("info_code",info.optInt("code"));JSONObject data=info.optJSONObject("data"),content=data==null?null:data.optJSONObject("content");if(data!=null)row.put("sub_status",data.opt("sub_status"));if(content!=null){String address=content.optString("trans_socket_url");row.put("live_address",!address.isEmpty());if(!address.isEmpty()&&"1".equals(row.optString("fresh_status"))&&selected.startsAt<=System.currentTimeMillis()&&(data==null||!data.has("sub_status")||"1".equals(data.optString("sub_status"))))row.put("socket_probe",socketProbe(transport,address));}
             }finally{Arrays.fill(pair,"");}}
             rows.put(row);

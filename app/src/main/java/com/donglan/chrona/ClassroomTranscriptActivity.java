@@ -67,7 +67,10 @@ public final class ClassroomTranscriptActivity extends Activity {
         FrameLayout body=new FrameLayout(this);body.setClipChildren(false);body.setClipToPadding(false);
         FrameLayout readingArea=body;
         if(sideNavigation){LinearLayout columns=new LinearLayout(this);columns.setClipChildren(false);columns.setClipToPadding(false);readingArea=new FrameLayout(this);columns.addView(dockHost,new LinearLayout.LayoutParams(dp(getResources().getConfiguration().screenWidthDp>=SettingsPageLayout.NAVIGATION_RAIL_MIN_WIDTH_DP?120:96),-1));columns.addView(readingArea,new LinearLayout.LayoutParams(0,-1,1));body.addView(columns,new FrameLayout.LayoutParams(-1,-1));}
-        FrameLayout transitionHost=new FrameLayout(this);readingBody=new FrameLayout(this);transitionHost.addView(readingBody,new FrameLayout.LayoutParams(-1,-1));readingArea.addView(transitionHost,new FrameLayout.LayoutParams(-1,-1));
+        readingArea.setClipChildren(false);readingArea.setClipToPadding(false);
+        FrameLayout transitionHost=new FrameLayout(this);transitionHost.setClipChildren(false);transitionHost.setClipToPadding(false);
+        readingBody=new FrameLayout(this);readingBody.setClipChildren(false);readingBody.setClipToPadding(false);
+        transitionHost.addView(readingBody,new FrameLayout.LayoutParams(-1,-1));readingArea.addView(transitionHost,new FrameLayout.LayoutParams(-1,-1));
         scroll=new ScrollView(this){@Override public void computeScroll(){scrollingMotion=true;try{super.computeScroll();}finally{scrollingMotion=false;}}
             @Override public boolean dispatchTouchEvent(MotionEvent event){
             int action=event.getActionMasked();if(action==MotionEvent.ACTION_DOWN){touching=true;pendingLatest=false;pendingRestore=getScrollY();updateFollow();}
@@ -79,7 +82,11 @@ public final class ClassroomTranscriptActivity extends Activity {
         scroll.setFocusableInTouchMode(true);scroll.setDescendantFocusability(ViewGroup.FOCUS_BEFORE_DESCENDANTS);scroll.requestFocus();
         rows=new LinearLayout(this);rows.setOrientation(LinearLayout.VERTICAL);scroll.addView(rows);
         readingBody.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
-        slidesScroll=new ScrollView(this);slidesScroll.setVerticalScrollBarEnabled(false);slides=new LinearLayout(this);slides.setOrientation(LinearLayout.VERTICAL);slidesScroll.addView(slides);readingBody.addView(slidesScroll,new FrameLayout.LayoutParams(-1,-1));
+        slides=new LinearLayout(this);slides.setOrientation(LinearLayout.VERTICAL);
+        slidesScroll=SettingsPageLayout.motionViewport(this,slides);
+        // Reuse the page's existing gutter for the pager's full press envelope.
+        FrameLayout.LayoutParams slidesParams=new FrameLayout.LayoutParams(-1,-1);slidesParams.leftMargin=slidesParams.rightMargin=-dp(20);
+        readingBody.addView(slidesScroll,slidesParams);
         if(!sideNavigation)body.addView(dockHost,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));InteractionLayers.pin(dockHost);
         dockHost.addOnLayoutChangeListener((view,l,t,r,b,oldL,oldT,oldR,oldB)->{
             int clearance=sideNavigation?0:view.getHeight();

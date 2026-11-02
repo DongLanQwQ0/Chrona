@@ -23,6 +23,8 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
     private Activity activity;private int assertions;private volatile int phase;private volatile int downloads;
     private long starts;private ClassroomLesson selected,future;private byte[] red,blue;
     private volatile boolean liveFixture;private volatile int socketOpens;private volatile FakeSocket lastSocket;
+    private volatile boolean socketInitReply=true,socketPongReply=true,socketCaptions=true;
+    private volatile String socketSendFailure="";
     private volatile List<ClassroomLesson> lookupCatalog;
     private volatile CountDownLatch materialGate;
     private volatile CountDownLatch materialEntered;
@@ -170,6 +172,9 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         new ClassroomStore(app,account).catalog(List.of(selected,future));
         String mode=args.getString("mode","polish");
         if("live".equals(mode))backgroundChecks();
+        else if("live_liveness".equals(mode))livenessChecks();
+        else if("reader_viewport".equals(mode))readerChecks();
+        else if("ppt_viewport".equals(mode))pptViewportChecks();
         else if("overdue".equals(mode))assertions+=TaskOverdueChecks.run(this,args);
         else if("image_drag".equals(mode))assertions+=ImageDragChecks.run(this,args);
         else if("enhanced_document".equals(mode))assertions+=EnhancedDocumentChecks.run(this,args);
@@ -307,14 +312,35 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         subtitles=subtitleRequests;slides=slideRequests;pass();
         check(ClassroomMonitorStore.autoTasks(store.read()).size()==1&&subtitleRequests==subtitles&&slideRequests==slides&&downloads==2,"later passes never re-enqueue or re-fetch the completed lecture");
     }
-    private void readerChecks()throws Exception{
+    private File seedReader()throws Exception{
         File dir=new ClassroomStore(app,account).localLesson(selected);new File(dir,"materials.json").delete();new File(dir,"monitor-materials.json").delete();
         ClassroomStore.writeBytes(new File(dir,"raw-0.img"),red);ClassroomStore.writeBytes(new File(dir,"raw-1.img"),blue);
         ClassroomStore.write(new File(dir,"monitor-candidates.json"),new JSONObject().put("updated",System.currentTimeMillis()).put("images",new JSONArray().put(new JSONObject().put("raw","raw-0.img").put("second",1)).put(new JSONObject().put("raw","raw-1.img").put("second",20))));
         JSONArray segments=new JSONArray();for(int i=0;i<80;i++)segments.put(new JSONObject().put("start",i).put("end",i+1).put("origin","live").put("text","第"+i+"句：这里记录课堂知识点，向上翻看时保持当前位置。"));
         ClassroomStore.write(new File(dir,"live-transcript.json"),new JSONObject().put("segments",segments));ClassroomStore.write(new File(dir,"live-status.json"),new JSONObject().put("state","实时连接").put("at",System.currentTimeMillis()));
+        return dir;
+    }
+    private void pptViewportChecks()throws Exception{
+        seedReader();
         activity=startActivitySync(new Intent(app,ClassroomTranscriptActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("account",account).putExtra("lesson",selected.json().toString()));
-        idle(900);ScrollView viewport=(ScrollView)field(activity,"scroll");LinearLayout body=(LinearLayout)field(activity,"rows");
+        idle(1000);if(lastResumed instanceof ClassroomTranscriptActivity)activity=lastResumed;
+        check(!activity.isDestroyed()&&activity.hasWindowFocus(),"PPT checks use the actual resumed Activity after orientation recreation");
+        tapText("PPT");idle(500);capture("monitor-ppt-before-hold");pagerEnvelopeChecks();
+        check(((ImageView)field(activity,"slideImage")).getDrawable()!=null,"PPT decodes the actual cached picture");
+        tap((View)field(activity,"nextSlide"));long deadline=SystemClock.elapsedRealtime()+2000;
+        while(((Integer)field(activity,"pictureIndex"))!=1&&SystemClock.elapsedRealtime()<deadline)idle(50);
+        check(((Integer)field(activity,"pictureIndex"))==1,"visible next arrow commits the neighboring picture");capture("monitor-ppt-next");
+        ScrollView viewport=(ScrollView)field(activity,"slidesScroll");android.graphics.Rect bounds=new android.graphics.Rect();runOnMainSync(()->viewport.getGlobalVisibleRect(bounds));int heightBefore=viewport.getHeight();
+        if(SettingsPageLayout.shortWindow(activity)){
+            swipe(bounds.exactCenterX(),bounds.bottom-20,bounds.top+20);idle(400);
+            check(viewport.getHeight()>heightBefore,"landscape vertical swipe returns toolbar height to actual picture viewport");capture("monitor-ppt-tools-scrolled");
+        }
+    }
+    private void readerChecks()throws Exception{
+        File dir=seedReader();JSONArray segments=ClassroomStore.read(new File(dir,"live-transcript.json")).getJSONArray("segments");
+        activity=startActivitySync(new Intent(app,ClassroomTranscriptActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("account",account).putExtra("lesson",selected.json().toString()));
+        idle(900);if(lastResumed instanceof ClassroomTranscriptActivity)activity=lastResumed;
+        ScrollView viewport=(ScrollView)field(activity,"scroll");LinearLayout body=(LinearLayout)field(activity,"rows");
         check(body.getChildCount()==80,"all saved captions are readable");check(viewport.getScrollY()>0,"reader initially follows latest");capture("reader-latest");
         int[] xy=new int[2];ScrollView initialViewport=viewport;runOnMainSync(()->initialViewport.getLocationOnScreen(xy));swipe(xy[0]+viewport.getWidth()/2f,xy[1]+viewport.getHeight()*.2f,xy[1]+viewport.getHeight()*.8f);idle(500);
         int before=viewport.getScrollY();View first=body.getChildAt(0);check(!(Boolean)field(activity,"follow"),"real upward history browsing suspends follow");
@@ -324,12 +350,36 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         check(!(Boolean)field(activity,"follow")&&Math.abs(viewport.getScrollY()-before)<=3,"history scroll restores after asynchronous text layout");capture("reader-restored-history");
         tap((View)field(activity,"latest"));idle(650);capture("reader-return-latest");check((Boolean)field(activity,"follow")&&viewport.getScrollY()>before,"back-to-latest resumes follow: follow="+field(activity,"follow")+" y="+viewport.getScrollY()+" old="+before+" visibility="+((View)field(activity,"latest")).getVisibility());
         tapText("PPT");idle(450);check(((Integer)field(activity,"mode"))==1&&((ImageView)field(activity,"slideImage")).getDrawable()!=null,"PPT tab shows a verified cached image without network download");capture("monitor-ppt");
+        pagerEnvelopeChecks();
         DockNavigationLayout sectionDock=(DockNavigationLayout)field(activity,"sections");holdOut(sectionDock.itemAt(1),"monitor-section-held");idle(300);check(field(activity,"sections")==sectionDock,"PPT section survives hold and drag-out");
-        tap((View)field(activity,"nextSlide"));idle(350);check(((Integer)field(activity,"pictureIndex"))==1,"PPT next button selects next cached frame");
+        tap((View)field(activity,"nextSlide"));long slideDeadline=SystemClock.elapsedRealtime()+2000;
+        while(((Integer)field(activity,"pictureIndex"))!=1&&SystemClock.elapsedRealtime()<slideDeadline)idle(50);
+        capture("monitor-ppt-after-arrow");check(((Integer)field(activity,"pictureIndex"))==1,"PPT next button selects next cached frame; index="+field(activity,"pictureIndex")+" mode="+field(activity,"mode"));
         ActivityMonitor pptRestore=addMonitor(ClassroomTranscriptActivity.class.getName(),null,false);runOnMainSync(activity::recreate);Activity restored=waitForMonitorWithTimeout(pptRestore,5000);removeMonitor(pptRestore);check(restored!=null,"PPT recreation returns a real Activity");activity=restored;idle(700);body=(LinearLayout)field(activity,"rows");check(((Integer)field(activity,"mode"))==1&&((Integer)field(activity,"pictureIndex"))==1,"PPT mode and selected frame survive recreation");capture("monitor-ppt-restored");
         tap((View)field(activity,"slideImage"));idle(350);capture("monitor-ppt-large");getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);idle(250);
         tapText("字幕");idle(250);check((Boolean)field(activity,"follow")&&body.getChildCount()==81,"subtitle state remains intact after viewing PPT");
         runOnMainSync(activity::finish);activity=null;
+    }
+    private void pagerEnvelopeChecks()throws Exception{
+        View pager=(View)field(activity,"slidesBar");ScrollView viewport=(ScrollView)field(activity,"slidesScroll");
+        android.graphics.Rect viewportBounds=new android.graphics.Rect();int[] xy=new int[2];
+        runOnMainSync(()->{viewport.getGlobalVisibleRect(viewportBounds);pager.getLocationOnScreen(xy);});
+        long down=SystemClock.uptimeMillis();float x=xy[0]+pager.getWidth()/2f,y=xy[1]+pager.getHeight()/2f;
+        pointer(down,down,MotionEvent.ACTION_DOWN,x,y);
+        try{
+            idle(300);
+            android.graphics.RectF envelope=new android.graphics.RectF(0,0,pager.getWidth(),pager.getHeight());
+            runOnMainSync(()->{android.graphics.Matrix matrix=new android.graphics.Matrix();pager.transformMatrixToGlobal(matrix);matrix.mapRect(envelope);});
+            check(pager.getScaleX()>1.02f,"pager keeps shared real pressed scale");
+            check(envelope.left>=viewportBounds.left&&envelope.right<=viewportBounds.right,"pager pressed sides fit actual scroll viewport: "+envelope+" within "+viewportBounds);
+            check(envelope.top>=viewportBounds.top,"pager pressed top fits actual scroll viewport");
+            capture("monitor-pager-held");
+        }finally{pointer(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_CANCEL,x,y);}
+        idle(350);
+        for(View parent=pager;(parent=parent.getParent() instanceof View?(View)parent.getParent():null)!=null&&parent!=viewport;)
+            if(parent instanceof ViewGroup group)check(!group.getClipChildren()&&!group.getClipToPadding(),"intermediate PPT parent preserves press envelope");
+        ImageView picture=(ImageView)field(activity,"slideImage");
+        check(picture.getPaddingLeft()==0&&picture.getPaddingTop()==0&&picture.getPaddingRight()==0&&picture.getPaddingBottom()==0,"PPT picture keeps zero content padding");
     }
     private void scopeChecks()throws Exception{
         ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);store.stopAll();
@@ -421,16 +471,104 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         store.stopAll();runOnMainSync(()->ClassroomMonitor.changed(app));idle(500);check(!running()&&lastSocket.closed,"stop releases foreground owner and continuous socket");liveFixture=false;
         Field closing=ClassroomLiveTranscripts.class.getDeclaredField("cleanup");closing.setAccessible(true);java.util.concurrent.ExecutorService closeWorker=(java.util.concurrent.ExecutorService)closing.get(null);check(closeWorker.submit(()->Looper.myLooper()!=Looper.getMainLooper()).get(5,TimeUnit.SECONDS),"service TLS cleanup queue drains outside the main thread");
     }
+    private void livenessChecks()throws Exception{
+        ClassroomMonitorStore store=new ClassroomMonitorStore(app,account);store.stopAll();phase=0;liveFixture=true;socketOpens=0;lastSocket=null;
+        socketInitReply=false;socketPongReply=true;socketCaptions=false;socketSendFailure="";
+        File dir=new ClassroomStore(app,account).localLesson(selected);
+        for(String name:List.of("monitor-stage.json","live-transcript.json","live-current.json","live-status.json"))new File(dir,name).delete();
+        store.add(selected,false);final ClassroomLiveTranscripts[] owner={null};
+        try{
+            check(livenessConstant("HANDSHAKE_TIMEOUT_MILLIS")==30000&&livenessConstant("HEARTBEAT_INTERVAL_MILLIS")==30000&&livenessConstant("HEARTBEAT_TIMEOUT_MILLIS")==15000,"live protocol retains 30s initialization/heartbeat cadence and 15s reply deadline");
+            runOnMainSync(()->owner[0]=new ClassroomLiveTranscripts(app));
+            FakeSocket initial=awaitSocket(1);
+            check(!(Boolean)field(initial.listener,"initialized"),"missing in reply leaves real Slot uninitialized");
+            check((Long)field(initial.listener,"openedAt")>0,"onOpen starts initialization deadline");
+            checkLiveness(initial,null,0);check(!initial.closed&&(Long)field(initial.listener,"failedAt")==0,"initialization remains connected before its deadline");
+            checkLiveness(initial,"openedAt",livenessConstant("HANDSHAKE_TIMEOUT_MILLIS"));
+            checkFailed(initial,"missing initialization reply times out and cancels socket");
+            socketInitReply=true;
+            FakeSocket healthy=reconnect(owner[0],initial,2);
+            check((Boolean)field(healthy.listener,"initialized"),"original retry path completes a fresh initialization");
+
+            // No caption traffic is needed for a healthy connection: only the real pi/po protocol.
+            for(int i=0;i<3;i++){
+                int pings=healthy.pings;checkLiveness(healthy,null,0);
+                check(healthy.pings==pings+1&&(Long)field(healthy.listener,"pingAt")==0,"healthy silent stream receives po and clears its pending ping");
+                runOnMainSync(owner[0]::refresh);
+            }
+            check(socketOpens==2&&!healthy.closed&&(Long)field(healthy.listener,"failedAt")==0,"normal heartbeat without subtitles never reconnects");
+            check(ClassroomTranscript.snapshot(ClassroomLiveTranscripts.read(dir)).length()==0,"healthy-silence case contains no hidden caption frames");
+
+            long begin=System.currentTimeMillis();
+            healthy.listener.onMessage(healthy,caption("超时前已定句",true,begin));
+            healthy.listener.onMessage(healthy,caption("超时前尚未定句",false,begin+1000));
+            healthy.pongReply=false;int pings=healthy.pings;checkLiveness(healthy,null,0);
+            check(healthy.pings==pings+1&&(Long)field(healthy.listener,"pingAt")>0,"lost po leaves a real outstanding heartbeat");
+            checkLiveness(healthy,null,0);check(!healthy.closed&&healthy.pings==pings+1,"pending heartbeat waits for reply deadline without duplicate pi");
+            try(ClassroomClient current=client()){check(current.liveNow(selected),"HTTP directory still qualifies the lesson as live during heartbeat loss");}
+            checkLiveness(healthy,"pingAt",livenessConstant("HEARTBEAT_TIMEOUT_MILLIS"));
+            checkFailed(healthy,"missing heartbeat reply times out despite live HTTP qualification");
+            JSONObject saved=ClassroomLiveTranscripts.read(dir);
+            check(saved.getJSONArray("segments").length()==1&&"超时前尚未定句".equals(saved.getJSONObject("current").getString("text")),"heartbeat failure preserves committed and latest uncommitted captions");
+            FakeSocket recovered=reconnect(owner[0],healthy,3);
+            check(ClassroomTranscript.snapshot(ClassroomLiveTranscripts.read(dir)).length()==2,"reconnected Slot restores both saved caption forms");
+            String stateBefore=((JSONObject)field(healthy.listener,"state")).toString();
+            String diskBefore=ClassroomLiveTranscripts.read(dir).toString();String statusBefore=ClassroomStore.read(new File(dir,"live-status.json")).toString();
+            healthy.listener.onOpen(healthy,response(healthy.request,"text/plain",new byte[0]));
+            healthy.listener.onMessage(healthy,"in{\"socketID\":\"late\"}");healthy.listener.onMessage(healthy,"po");healthy.listener.onMessage(healthy,"pi");
+            healthy.listener.onMessage(healthy,caption("失效连接的迟到字幕",true,begin+2000));
+            healthy.listener.onFailure(healthy,new IOException("late failure"),null);healthy.listener.onClosed(healthy,1000,"late close");
+            check(stateBefore.equals(((JSONObject)field(healthy.listener,"state")).toString())&&diskBefore.equals(ClassroomLiveTranscripts.read(dir).toString()),"failed old callbacks cannot append or alter recovered captions");
+            check(statusBefore.equals(ClassroomStore.read(new File(dir,"live-status.json")).toString())&&!recovered.closed,"old lifecycle and protocol callbacks cannot change current status or close replacement");
+
+            recovered.sendFailure="pi";checkLiveness(recovered,null,0);
+            checkFailed(recovered,"pi send false fails immediately");
+            FakeSocket pongFailure=reconnect(owner[0],recovered,4);pongFailure.sendFailure="po";
+            pongFailure.listener.onMessage(pongFailure,"pi");checkFailed(pongFailure,"po send false fails immediately");
+            socketSendFailure="in";
+            FakeSocket initFailure=reconnect(owner[0],pongFailure,5,false);checkFailed(initFailure,"in send false fails immediately");
+            socketSendFailure="";
+            FakeSocket finalSocket=reconnect(owner[0],initFailure,6);
+            check(!finalSocket.closed&&socketOpens==6,"all liveness failures recover through the existing reconnect owner");
+        }finally{
+            if(owner[0]!=null)runOnMainSync(owner[0]::close);
+            store.stopAll();liveFixture=false;socketInitReply=true;socketPongReply=true;socketCaptions=true;socketSendFailure="";
+        }
+        Field closing=ClassroomLiveTranscripts.class.getDeclaredField("cleanup");closing.setAccessible(true);
+        check(((ExecutorService)closing.get(null)).submit(()->Looper.myLooper()!=Looper.getMainLooper()).get(5,TimeUnit.SECONDS),"liveness failure TLS cleanup drains off main");
+    }
+    private static long livenessConstant(String name)throws Exception{Field value=ClassroomLiveTranscripts.class.getDeclaredField(name);value.setAccessible(true);return value.getLong(null);}
+    private static String caption(String text,boolean complete,long begin)throws JSONException{return "cd1&m"+new JSONObject().put("sourcetext",text).put("end_time",complete?"1":"0").put("text_begin_time",begin).put("text_end_time",begin+500);}
+    private FakeSocket awaitSocket(int count)throws Exception{
+        long limit=SystemClock.elapsedRealtime()+5000;
+        while(SystemClock.elapsedRealtime()<limit){FakeSocket socket=lastSocket;if(socketOpens==count&&socket!=null&&socket.opened)return socket;SystemClock.sleep(20);}
+        throw new AssertionError("Expected opened fixture socket "+count+", got "+socketOpens);
+    }
+    private void checkLiveness(FakeSocket socket,String ageField,long timeout)throws Exception{
+        runOnMainSync(()->{try{
+            if(ageField!=null)field(socket.listener,ageField,SystemClock.elapsedRealtime()-timeout-1);
+            java.lang.reflect.Method check=socket.listener.getClass().getDeclaredMethod("checkLiveness");check.setAccessible(true);check.invoke(socket.listener);
+        }catch(Exception failure){throw new RuntimeException(failure);}});
+    }
+    private void checkFailed(FakeSocket socket,String label)throws Exception{check(socket.closed&&(Long)field(socket.listener,"failedAt")>0&&field(socket.listener,"socket")==null,label);}
+    private FakeSocket reconnect(ClassroomLiveTranscripts owner,FakeSocket old,int count)throws Exception{return reconnect(owner,old,count,true);}
+    private FakeSocket reconnect(ClassroomLiveTranscripts owner,FakeSocket old,int count,boolean initialized)throws Exception{
+        long retry=(Long)field(old.listener,"retryDelay");check(retry>=5000&&retry<=60000,"failure retains bounded 5-60 second reconnect delay");
+        runOnMainSync(()->{try{field(old.listener,"failedAt",System.currentTimeMillis()-retry-1);owner.refresh();}catch(Exception failure){throw new RuntimeException(failure);}});
+        FakeSocket socket=awaitSocket(count);check(socket!=old,"retry replaces failed Slot socket");
+        check((Boolean)field(socket.listener,"initialized")==initialized,"replacement reflects its own initialization result");return socket;
+    }
     private boolean running(){for(ActivityManager.RunningServiceInfo service:app.getSystemService(ActivityManager.class).getRunningServices(100))if(service.service.getClassName().equals(ClassroomMonitorService.class.getName()))return service.foreground;return false;}
     private final class FakeSocket implements WebSocket {
-        final Request request;final WebSocketListener listener;final ScheduledExecutorService sender=Executors.newSingleThreadScheduledExecutor();volatile boolean closed;int frames;long begin;
-        FakeSocket(Request request,WebSocketListener listener){this.request=request;this.listener=listener;socketOpens++;sender.schedule(()->listener.onOpen(this,response(request,"text/plain",new byte[0])),50,TimeUnit.MILLISECONDS);}
+        final Request request;final WebSocketListener listener;final ScheduledExecutorService sender=Executors.newSingleThreadScheduledExecutor();volatile boolean closed,opened;
+        final boolean initReply=socketInitReply,captions=socketCaptions;volatile boolean pongReply=socketPongReply;volatile String sendFailure=socketSendFailure;int frames,pings;long begin;
+        FakeSocket(Request request,WebSocketListener listener){this.request=request;this.listener=listener;socketOpens++;sender.schedule(()->{listener.onOpen(this,response(request,"text/plain",new byte[0]));opened=true;},50,TimeUnit.MILLISECONDS);}
         public Request request(){return request;}public long queueSize(){return 0;}
-        public boolean send(String text){if(closed)return false;if(text.startsWith("in")){listener.onMessage(this,"in{\"socketID\":\"fixture\"}");sender.scheduleAtFixedRate(()->{if(closed)return;try{if(frames%4==0)begin=System.currentTimeMillis();JSONObject payload=new JSONObject().put("sourcetext","实时推送第"+frames/4+"句，版本"+frames%4).put("end_time",frames%4==3?"1":"0").put("text_begin_time",begin).put("text_end_time",System.currentTimeMillis());frames++;listener.onMessage(this,"cd1&m"+payload);}catch(Exception failure){throw new RuntimeException(failure);}},0,200,TimeUnit.MILLISECONDS);}else if(text.equals("pi"))listener.onMessage(this,"po");return true;}
+        public boolean send(String text){if(closed||!sendFailure.isEmpty()&&text.startsWith(sendFailure))return false;if(text.startsWith("in")){if(initReply)listener.onMessage(this,"in{\"socketID\":\"fixture\"}");if(initReply&&captions)sender.scheduleAtFixedRate(()->{if(closed)return;try{if(frames%4==0)begin=System.currentTimeMillis();JSONObject payload=new JSONObject().put("sourcetext","实时推送第"+frames/4+"句，版本"+frames%4).put("end_time",frames%4==3?"1":"0").put("text_begin_time",begin).put("text_end_time",System.currentTimeMillis());frames++;listener.onMessage(this,"cd1&m"+payload);}catch(Exception failure){throw new RuntimeException(failure);}},0,200,TimeUnit.MILLISECONDS);}else if(text.equals("pi")){pings++;if(pongReply)listener.onMessage(this,"po");}return true;}
         public boolean send(okio.ByteString bytes){return false;}public boolean close(int code,String reason){if(closed)return true;closed=true;sender.shutdownNow();listener.onClosed(this,code,reason);return true;}public void cancel(){close(1000,"cancel");}void abort(){if(closed)return;closed=true;sender.shutdownNow();listener.onFailure(this,new IOException("fixture interruption"),null);}
     }
     private void idle(long delay){waitForIdleSync();SystemClock.sleep(delay);waitForIdleSync();}
-    private void tap(View view){int[] xy=new int[2];runOnMainSync(()->view.getLocationOnScreen(xy));float x=xy[0]+view.getWidth()/2f,y=xy[1]+view.getHeight()/2f;long at=SystemClock.uptimeMillis();pointer(at,at,MotionEvent.ACTION_DOWN,x,y);pointer(at,at+80,MotionEvent.ACTION_UP,x,y);}
+    private void tap(View view){android.graphics.Rect visible=new android.graphics.Rect();runOnMainSync(()->view.getGlobalVisibleRect(visible));if(visible.isEmpty())throw new AssertionError("Tap target is outside the real visible viewport");long at=SystemClock.uptimeMillis();pointer(at,at,MotionEvent.ACTION_DOWN,visible.exactCenterX(),visible.exactCenterY());pointer(at,at+80,MotionEvent.ACTION_UP,visible.exactCenterX(),visible.exactCenterY());}
     private void swipe(float x,float from,float to){long at=SystemClock.uptimeMillis();pointer(at,at,MotionEvent.ACTION_DOWN,x,from);for(int i=1;i<=12;i++){SystemClock.sleep(18);pointer(at,SystemClock.uptimeMillis(),MotionEvent.ACTION_MOVE,x,from+(to-from)*i/12);}pointer(at,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,x,to);}
     private void pointer(long down,long at,int action,float x,float y){MotionEvent event=MotionEvent.obtain(down,at,action,x,y,0);event.setSource(InputDevice.SOURCE_TOUCHSCREEN);sendPointerSync(event);event.recycle();}
     private void capture(String name)throws Exception{Bitmap image=getUiAutomation().takeScreenshot();File dir=new File(app.getExternalFilesDir(null),"monitor-validation");dir.mkdirs();try(FileOutputStream out=new FileOutputStream(new File(dir,name+"-"+args.getString("theme","light")+"-"+args.getString("widthDp","400")+".png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();}
