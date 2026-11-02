@@ -2,6 +2,8 @@
 
 ## 当前候选与唯一下一步
 
+- **当前固定单课停在final-2，新的确切失败为服务过载。** 新密钥已通过实际请求：4/4草稿、前2块核图完成。第3块原回复新增`notes[2]`只引430–535，实际本块536–772，严格来源校验拒绝（不是最后块，也不是前三块已完成）；数字证据`build/editorial103/source-check/source-scope.json`。用户再明确允许继续后，仅续`final-2-user-retry-1`，服务返回SSE error `server_is_overloaded / Our servers are currently overloaded`，无正文／usage；原始事件已保存，未拼接失败输出，服务f5f0e25终止。observer65275已结束，`build/editorial103/provider-event/audit.json`为脱敏确证。诊断包已卸载且正常恢复主Activity，当前无课堂服务。下一步间隔后仅重试同块一次；同路径两次无新证据则停止原样重试，不批量21节、不放宽校验。正式包仍103/265；本轮AI失败都不能算笔记内容验收。
+
 - **当前103/265已安装，固定单课已真实后台续跑。** 用户确认新密钥更新后，完成103原生归档回归13项、正式release/lint及包名版本／v2签名校验，正常安装Success并读回265／103。普通UI仅继续86985-1988487（10/29 08:00第1–2节），图片40开启，ClassroomWorkService d670dba、通知2043已前台运行；观察exec55547及`build/editorial103/phone/`。沿102同一新轮仅重试draft-0，4/4更正文稿不重做。实际终态待核，不能把运行中当成鉴权／内容通过；服务活动时禁止安装或instrumentation。任务XML及空目录已清理。唯一下一步：观察同一任务终态，再用只读指定文稿投影审读全部实际正文和旧缺陷，不启动21节批量。
 
 - **102实际回归已发出一次，新提供商返回401，未出新正文。** 普通UI确认精确课堂86985-1988487（10/29 08:00第1–2节），新模型gpt-6-luna、host chickener.top，图片40开启；请求立即终止且无ClassroomWorkService。接下来只读脱敏错误，不换密钥／协议、不循环重试。GlobalSend实际同机安装冲突已协调，它的114安装完成且已归还前台。另确认手动`startGeneration→summarize`绕过批量`downloadAndSummarize→beginSummaryRun`，新轮替换时漏归档旧run；root将把必要归档补到共用入口并加针对性回归，先保护后续处理历史，不伪称本次旧run已由手动路径归档。

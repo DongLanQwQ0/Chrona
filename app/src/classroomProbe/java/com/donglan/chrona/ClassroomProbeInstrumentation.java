@@ -288,6 +288,20 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         row.put("run_last_reasoning_tokens",reasoning instanceof Number n&&n.longValue()>=0?n.longValue():JSONObject.NULL);
                         JSONObject response=last.optJSONObject("response");JSONArray choices=response==null?null:response.optJSONArray("choices");
                         if(response!=null){
+                            if(providerFailure&&"failed".equals(last.optString("status"))){
+                                JSONObject nativeFailure=response.optJSONObject("response"),event=response.optJSONObject("event");
+                                JSONObject error=nativeFailure==null?null:nativeFailure.optJSONObject("error");
+                                if(error==null&&event!=null)error=event.optJSONObject("error");
+                                if(error==null&&event!=null)error=event;
+                                if(error!=null){
+                                    JSONObject labels=new JSONObject();
+                                    for(String field:new String[]{"code","type","message"}){
+                                        Object value=error.opt(field);
+                                        if(value instanceof String||value instanceof Number)labels.put(field,value);
+                                    }
+                                    row.put("provider_event_excerpt",providerExcerpt(labels.toString(),currentKey));
+                                }
+                            }
                             row.put("run_last_stream_content_characters",response.opt("content_chars")==null?JSONObject.NULL:response.opt("content_chars"))
                                     .put("run_last_stream_reasoning_characters",response.opt("reasoning_chars")==null?JSONObject.NULL:response.opt("reasoning_chars"));
                             JSONObject nativeResponse=response.optJSONObject("response");JSONArray nativeOutput=nativeResponse==null?null:nativeResponse.optJSONArray("output");

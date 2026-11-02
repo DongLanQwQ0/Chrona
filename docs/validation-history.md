@@ -6,6 +6,7 @@
 - 原生隔离v33 fixture真实两次本机失败请求通过13项断言：旧run字节完全一致、只新增一个归档、失败重试身份保持、旧正文及documentView恢复、ignored状态清除。首次检查只等worker busy=false便立即验UI，撞上既有100ms发布回调；原失败日志保留，新检查等待原要求的可观察恢复状态后执行同一断言，未改产品来规避。证据`build/editorial103/checks/native-regenerate-fixed.log`及`native-regenerate-result.json`。仅复用共享AVD，保留既有synthetic目录并恢复、清本次cache，测试结束关闭本次空闲实例，未操作真机。
 - Release/lint通过，正式候选`build/candidates/0.15.103/Chrona-0.15.103.apk`包名com.donglan.chrona、265／0.15.103、v2签名通过；正常覆盖Success并读回265／103。隔离测试包单独输出，不把v33产物用于真机。
 - 102第一次真实单课请求使用新host和Responses/low，复用4/4更正稿，draft-0返回401。只读脱敏确认`Invalid token`，未换协议或自动循环请求；用户已明确更新密钥并允许继续，103将沿同一新轮追加重试。该错误和旧服务余额不足分别记录，均不能当作文稿内容验收。诊断包已卸载。
+- 用户更新密钥后实际完成4块草稿、2块核图；final-2新增独立前文notes[2]（430–535），当前块为536–772，来源校验拒绝，原草稿来源在当前块内。用户明确允许继续后仅重试该块，服务SSE error返回`server_is_overloaded`，未产生正文／usage，不是输出超限、401或JSON结构失败。完整失败事件仍在原轮审计，诊断只取code/type/message并脱敏限长，未导出消息或图片二进制；服务终止、探针卸载。证据`build/editorial103/source-check/`及`provider-event/`，最终笔记尚未完成。
 
 ## 0.15.102 — 笔记内容约束与单课回归 — 2026-11-02
 
