@@ -381,6 +381,9 @@ final class ClassroomDeviceCheck {
         ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject().put("images",new JSONArray()));
         ClassroomStore.write(new File(dir,"run.json"),new JSONObject().put("config",ClassroomSummary.configKey(ai,0,prompt))
                 .put("run",saved.getString("run")).put("selected",new JSONArray()).put("final",saved.getJSONArray("parts").getJSONObject(0)));
+        byte[] originalRun=java.nio.file.Files.readAllBytes(new File(dir,"run.json").toPath());
+        File records=new File(dir,"runs");File[] beforeRecords=records.listFiles(File::isFile);
+        int originalRecordCount=beforeRecords==null?0:beforeRecords.length;
         Activity activity=test.startActivitySync(new Intent(test.getTargetContext(),ClassroomLessonActivity.class)
                 .putExtra(ClassroomLessonActivity.EXTRA_LESSON,lesson.json().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         try {
@@ -393,7 +396,17 @@ final class ClassroomDeviceCheck {
                 JSONObject run=ClassroomStore.read(new File(dir,"run.json"));
                 require(!run.has("final")&&!run.getString("run").equals(saved.getString("run")),"completed checkpoint is replaced before a real loopback connection attempt");
                 require(attempt==0||interrupted.equals(run.getString("run")),"unfinished regeneration keeps its identity on retry");
+                File[] archived=records.listFiles(File::isFile);
+                require(archived!=null&&archived.length==originalRecordCount+1,"manual regeneration archives one old run and retry does not fork another");
+                boolean originalPreserved=false;
+                for(File record:archived)if(java.util.Arrays.equals(originalRun,java.nio.file.Files.readAllBytes(record.toPath())))originalPreserved=true;
+                require(originalPreserved,"manual regeneration preserves the retiring checkpoint byte for byte before execution status changes");
                 interrupted=run.getString("run");
+                // Session publishes UI recovery on a delayed main callback after busy becomes false.
+                // Wait for that observable recovery, not only the worker's terminal flag.
+                waitFor(test,()->{Object current=field(session(activity),"summary");
+                    return current instanceof JSONObject value&&value.toString().equals(saved.toString())&&field(activity,"documentView")!=null;
+                },"previous readable summary and document restored after failed regeneration");
                 require(((JSONObject)field(session(activity),"summary")).toString().equals(saved.toString())&&field(activity,"documentView")!=null,"first-round failure restores previous readable summary in the same Activity");
                 require((long)field(session(activity),"ignoredSummaryUpdated")==-1,"failed regeneration clears ignored-summary state");
             }

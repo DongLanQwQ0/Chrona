@@ -346,7 +346,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         java.util.regex.Matcher http=java.util.regex.Pattern.compile("\\bHTTP\\s+(\\d{3})\\b").matcher(failure);
                         if(http.find()){
                             int status=Integer.parseInt(http.group(1));row.put("run_last_http",status);
-                            if(providerFailure&&(status==403||status==502))row.put("provider_error_excerpt",providerExcerpt(failure,currentKey));
+                            if(providerFailure&&(status==401||status==403||status==502))row.put("provider_error_excerpt",providerExcerpt(failure,currentKey));
                         }
                         row.put("run_last_error_category",healthCategory(failure));
                     }

@@ -62,7 +62,7 @@ final class ClassroomAutoSummary {
             throw new IOException("本节总结尚未完成，请手动授权继续");
         AiSettings ai=selected;
         try {
-            execution(job,"queued","");job.retryRequired=true;
+            job.retryRequired=true;
             if(ai==null)ai=settings.load(job.app);
             if(ai==null)throw new IOException("请先在 AI 设置中配置服务，素材已保留");
             if(job.imageLimit>0&&new AiSettingsStore(job.app).isImageUnsupported(ai))throw new IOException("当前 AI 服务不支持图片，请手动选择文字模式继续");
@@ -71,8 +71,15 @@ final class ClassroomAutoSummary {
             job.enhancedClassroom=enhancedMode(prior,Boolean.TRUE.equals(job.enhancedClassroom));
             job.noteStrength=ClassroomNoteStrength.frozen(prior,job.noteStrength);
             if(prior==null||!ClassroomSummary.configKey(ai,job.imageLimit,prompt,job.enhancedClassroom,job.noteStrength,ClassroomFigureReview.policy(prior),ClassroomAffairsPolicy.frozen(prior)).equals(prior.optString("config"))||prior.has("final")){
+                // Manual regeneration and provider changes must preserve the same audit as batch.
+                // Archive before queued/running changes touch the retiring checkpoint.
+                if(prior!=null&&(prior.has("run")||prior.has("conversation"))){
+                    ClassroomCorrectionCache.capture(job.dir);
+                    ClassroomStore.beginSummaryRun(job.dir);
+                }
                 job.ignoredSummaryUpdated=previous==null?-1:previous.optLong("updated");job.summary=null;job.revision++;job.publish();
             }
+            execution(job,"queued","");
             try(ClassroomSummarySlots.Lease slot=SUMMARY_SLOTS.acquire(job.control,
                     ()->SchedulePreferences.load(job.app).classroomConcurrency,
                     ()->job.checkpoint(ClassroomProgress.waiting("等待总结名额","")))){
