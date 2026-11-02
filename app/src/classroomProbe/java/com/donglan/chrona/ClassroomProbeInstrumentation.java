@@ -197,9 +197,10 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 boolean documentPresent=new java.io.File(directory,"summary.json").isFile();
                 row.put("published_summary",documentPresent);
                 JSONArray parts=summary.optJSONArray("parts"),headings=new JSONArray();int notes=0,affairs=0,actions=0,noteCharacters=0,affairsCharacters=0,duplicateNoteTexts=0;
-                if(finished&&key.equals(reviewKey)){
-                    // Only the selected published notebook: never run history, raw replies or subtitles.
-                    JSONObject review=new JSONObject();
+                if(documentPresent&&key.equals(reviewKey)){
+                    // Only the selected published notebook, including an explicitly labelled draft.
+                    // Never return run history, raw model replies or subtitles.
+                    JSONObject review=new JSONObject().put("complete",finished);
                     if(parts!=null)review.put("parts",new JSONArray(parts.toString()));
                     else{
                         review.put("overview",summary.optString("overview"));
