@@ -96,7 +96,15 @@ final class ClassroomConversation {
             outputs.put(stage,output);conversation.remove("pending");
             audit.put("finish_reason",choice.opt("finish_reason")).put("status","received");save();
             return complete(output,choice.optString("finish_reason"));
-        }catch(Exception e){audit.put("status","failed").put("type",e.getClass().getSimpleName()).put("error",e.getMessage());throw e;}
+        }catch(Exception e){
+            if(e instanceof ChatCompletionClient.ResponseException failure&&failure.evidence!=null){
+                JSONObject evidence=failure.evidence;
+                audit.put("response",evidence).put("usage",evidence.optJSONObject("usage")==null?JSONObject.NULL:evidence.getJSONObject("usage"));
+                for(String key:new String[]{"finish_reason","terminal_type","content_chars","reasoning_chars"})
+                    if(evidence.has(key))audit.put(key,evidence.get(key));
+            }
+            audit.put("status","failed").put("type",e.getClass().getSimpleName()).put("error",e.getMessage());throw e;
+        }
         finally{audit.put("finished",System.currentTimeMillis());save();}
     }
     private void save()throws IOException{ClassroomStore.write(new File(dir,"run.json"),state);}

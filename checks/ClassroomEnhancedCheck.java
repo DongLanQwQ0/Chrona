@@ -132,20 +132,29 @@ public final class ClassroomEnhancedCheck {
                     .put("total_tokens",1100+call).put("prompt_tokens_details",new JSONObject().put("cached_tokens",700+call)).put("prompt_cache_hit_tokens",600+call);
             String payload,type;
             if(body.has("input")){
+                boolean failing=current.equals("draft-1")&&mode.startsWith("native-");
                 JSONObject nativeUsage=new JSONObject().put("input_tokens",1000+call).put("output_tokens",100).put("total_tokens",1100+call)
                         .put("input_tokens_details",new JSONObject().put("cached_tokens",700+call)).put("output_tokens_details",new JSONObject().put("reasoning_tokens",30));
                 JSONObject nativeResponse=new JSONObject().put("id","resp_loopback_"+call).put("object","response")
-                        .put("status",mode.equals("native-incomplete")&&current.equals("draft-1")?"incomplete":"completed")
+                        .put("status",failing&&(mode.equals("native-incomplete")||mode.equals("native-json-incomplete"))?"incomplete":failing&&(mode.equals("native-failed")||mode.equals("native-error"))?"failed":"completed")
                         .put("usage",nativeUsage).put("output",new JSONArray()
                                 .put(new JSONObject().put("type","reasoning").put("id","rs_"+call).put("encrypted_content","opaque-native-reasoning-"+call)
                                         .put("summary",new JSONArray().put(new JSONObject().put("type","summary_text").put("text","合成推理 call="+call))))
                                 .put(new JSONObject().put("id","msg_"+call).put("type","message").put("role","assistant").put("status","completed")
                                         .put("content",new JSONArray().put(new JSONObject().put("type","output_text").put("text",output)
                                                 .put("annotations",new JSONArray()).put("provider_extension",new JSONObject().put("opaque","unchanged"))))));
+                if(nativeResponse.getString("status").equals("incomplete"))nativeResponse.put("incomplete_details",new JSONObject().put("reason","max_output_tokens"));
+                if(nativeResponse.getString("status").equals("failed"))nativeResponse.put("error",new JSONObject().put("code","server_error").put("message","PRIVATE-provider-failure"));
                 replies.set(replies.size()-1,nativeResponse);
-                String terminal=nativeResponse.getString("status").equals("completed")?"response.completed":"response.incomplete";
-                payload="event: response.output_text.delta\ndata: "+new JSONObject().put("type","response.output_text.delta").put("output_index",1).put("content_index",0).put("delta",output)+"\n\n"
+                String terminal=nativeResponse.getString("status").equals("completed")?"response.completed":nativeResponse.getString("status").equals("failed")?"response.failed":"response.incomplete";
+                if(failing&&mode.equals("native-error"))terminal="error";
+                String delta=failing&&mode.equals("native-invalid-complete")?"contradictory streamed text":output;
+                String frames="event: response.output_text.delta\ndata: "+new JSONObject().put("type","response.output_text.delta").put("output_index",1).put("content_index",0).put("delta",delta)+"\n\n"
+                        +"event: response.reasoning_summary_text.delta\ndata: "+new JSONObject().put("type","response.reasoning_summary_text.delta").put("delta","合成推理 delta="+call)+"\n\n";
+                payload=frames
                         +"event: "+terminal+"\ndata: "+new JSONObject().put("type",terminal).put("response",nativeResponse)+"\n\n";type="text/event-stream";
+                if(failing&&mode.equals("native-eof"))payload=frames;
+                if(failing&&mode.equals("native-json-incomplete")){payload=nativeResponse.toString();type="application/json";}
             }else if(mode.equals("json-envelope")){
                 reply.put("provider_extension",new JSONObject().put("opaque","unchanged"));
                 payload=new JSONObject().put("choices",new JSONArray().put(new JSONObject().put("message",reply).put("finish_reason",finish))).put("usage",usage).toString();type="application/json";
@@ -258,6 +267,7 @@ public final class ClassroomEnhancedCheck {
             check(requests.size()==4&&before.getJSONArray("corrected").length()==2&&before.getJSONArray("drafts").length()==1&&!before.has("final"),"native failure only rolls back uncommitted block "+incomplete);
             JSONArray prefix=new JSONArray(requests.get(3).getJSONArray("input").toString());
             check(!before.getJSONObject("conversation").has("pending")&&before.getJSONObject("conversation").getJSONObject("restarts").getInt("draft-1")==1,"native failure records restart checkpoint "+incomplete);
+            if(incomplete)nativeFailedTurn(before,replies.get(3),"response.incomplete",true,"length");
             mode="normal";failCall=-1;
             // A user protocol change applies to new runs, never a partly completed frozen conversation.
             result=generateWithProtocol(failed,AiSettings.CHAT_COMPLETIONS);
@@ -267,6 +277,7 @@ public final class ClassroomEnhancedCheck {
             check(!resumed.toString().contains("opaque-native-reasoning-4"),"incomplete native output/encrypted items never enter resumed history "+incomplete);
             nativeAppendOnly(failed);evidence("native-resumed-"+incomplete,failed);
         }
+        nativeFailureRecovery();
         reset("normal",false);File legacy=materials("native-setting-legacy-chat",false);JSONObject legacyRun=legacyState(legacy,true);
         legacyRun.getJSONObject("conversation").remove("protocol");ClassroomStore.write(new File(legacy,"run.json"),legacyRun);
         JSONArray prefix=new JSONArray(legacyRun.getJSONObject("conversation").getJSONArray("messages").toString());
@@ -275,6 +286,48 @@ public final class ClassroomEnhancedCheck {
         for(String endpoint:endpoints)check(endpoint.equals("/v1/chat/completions"),"legacy missing protocol continues only Chat endpoint");
         JSONArray sent=requests.get(0).getJSONArray("messages");
         for(int i=0;i<prefix.length();i++)check(sent.getJSONObject(i).toString().equals(prefix.getJSONObject(i).toString()),"legacy sent Chat history is never converted "+i);
+    }
+    private static void nativeFailedTurn(JSONObject run,JSONObject raw,String terminal,boolean counters,String finish)throws Exception{
+        JSONObject conversation=run.getJSONObject("conversation"),turn=conversation.getJSONArray("turns").getJSONObject(3);
+        check(turn.getString("status").equals("failed"),"native exception remains failed, never received");
+        check(turn.getJSONObject("response").getJSONObject("response").toString().equals(raw.toString()),"failed run stores full original native output including encrypted reasoning");
+        JSONObject usage=turn.getJSONObject("usage");
+        check(usage.getInt("input_tokens")==1004&&usage.getInt("output_tokens")==100&&usage.getInt("prompt_tokens")==1004&&usage.getInt("completion_tokens")==100
+                &&usage.getInt("total_tokens")==1104&&usage.getJSONObject("prompt_tokens_details").getInt("cached_tokens")==704
+                &&usage.getJSONObject("output_tokens_details").getInt("reasoning_tokens")==30,"failed run projects actual usage beside unmodified native usage");
+        check(finish==null?turn.isNull("finish_reason"):finish.equals(turn.opt("finish_reason")),"failed turn retains truthful finish reason");
+        if(terminal!=null)check(terminal.equals(turn.opt("terminal_type")),"failed turn retains exact SSE terminal type");
+        if(counters)check(turn.getInt("content_chars")==(mode.equals("native-invalid-complete")?"contradictory streamed text".length():raw.getJSONArray("output").getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text").length())
+                &&turn.getInt("reasoning_chars")=="合成推理 delta=4".length(),"failed turn projects actual streamed body/reasoning character counts");
+        else check(!turn.has("content_chars")&&!turn.has("reasoning_chars"),"nonstream failure has no invented stream counters");
+        check(!conversation.getJSONObject("outputs").has("draft-1")
+                &&(conversation.optJSONObject("finishes")==null||!conversation.getJSONObject("finishes").has("draft-1")),"failed native output is excluded from reusable outputs/finishes");
+        check(!conversation.getJSONArray("messages").toString().contains("opaque-native-reasoning-4"),"failed encrypted reasoning never enters model history");
+    }
+    private static void nativeFailureRecovery()throws Exception{
+        for(String failure:List.of("native-failed","native-error","native-json-incomplete","native-eof","native-invalid-complete")){
+            reset(failure,false);File dir=materials(failure,true);
+            rejects(()->generateWithProtocol(dir,AiSettings.RESPONSES),"native failure rejects whole uncommitted block: "+failure);
+            JSONObject before=state(dir),conversation=before.getJSONObject("conversation");
+            String options=conversation.getJSONObject("options").toString(),prefix=conversation.getJSONArray("messages").toString();
+            String corrected=before.getJSONArray("corrected").toString(),drafts=before.getJSONArray("drafts").toString(),run=before.getString("run");
+            check(requests.size()==4&&before.getJSONArray("corrected").length()==2&&before.getJSONArray("drafts").length()==1&&!before.has("final"),"no automatic retry, repair or partial publication: "+failure);
+            check(!conversation.has("pending")&&conversation.getJSONObject("restarts").getInt("draft-1")==1,"failure checkpoint retires only current attempt: "+failure);
+            JSONObject failedTurn=conversation.getJSONArray("turns").getJSONObject(3);String failedSnapshot=failedTurn.toString();
+            if(!failure.equals("native-eof"))nativeFailedTurn(before,replies.get(3),failure.equals("native-json-incomplete")?null:failure.equals("native-error")?"error":failure.equals("native-invalid-complete")?"response.completed":"response.failed",!failure.equals("native-json-incomplete"),failure.equals("native-json-incomplete")?"length":failure.equals("native-invalid-complete")?"stop":null);
+            else check(failedTurn.getString("status").equals("failed")&&failedTurn.isNull("finish_reason")
+                    &&!conversation.getJSONObject("outputs").has("draft-1"),"EOF never receives fabricated completion metadata or output");
+            check(conversation.getJSONArray("messages").toString().equals(requests.get(3).getJSONArray("input").toString()),"failure stores no native output items in exact sent history: "+failure);
+            mode="normal";JSONObject result=generateWithProtocol(dir,AiSettings.RESPONSES),after=state(dir);
+            check(result.getBoolean("complete")&&result.getString("run").equals(run),"explicit continuation finishes same native run: "+failure);
+            check(after.getJSONObject("conversation").getJSONObject("options").toString().equals(options),"explicit recovery never raises output budget or changes frozen options: "+failure);
+            check(after.getJSONArray("corrected").toString().equals(corrected)&&after.getJSONArray("drafts").getJSONObject(0).toString().equals(new JSONArray(drafts).getJSONObject(0).toString()),"recovery retains all committed blocks: "+failure);
+            check(after.getJSONObject("conversation").getJSONArray("turns").getJSONObject(3).toString().equals(failedSnapshot),"recovery never rewrites failed evidence: "+failure);
+            JSONArray old=new JSONArray(prefix),resumed=requests.get(4).getJSONArray("input");
+            check(resumed.length()==old.length()+1&&prompt(requests.get(4)).contains("从头完整重新生成当前板块"),"recovery appends explicit restart only: "+failure);
+            for(int i=0;i<old.length();i++)check(old.getJSONObject(i).toString().equals(resumed.getJSONObject(i).toString()),"recovery retains exact failed-attempt history prefix "+failure+":"+i);
+            check(!resumed.toString().contains("opaque-native-reasoning-4"),"recovery never replays failed encrypted output: "+failure);
+        }
     }
     private static void assignmentEditorial()throws Exception{
         JSONObject original=new JSONObject().put("0:0",new JSONObject().put("text","今天查看成绩并核对单选题。").put("sources",new JSONArray().put(0)).put("evidence","原始依据甲"))

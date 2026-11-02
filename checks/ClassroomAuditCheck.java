@@ -57,7 +57,7 @@ public final class ClassroomAuditCheck {
         check(!ClassroomAudit.project(null,summary).has("execution"),"summary-only records never invent execution state");
         check(ClassroomAudit.project(null,summary).getJSONArray("decisions").length()==1,"summary-only existing image audit remains readable");
         check(ClassroomAudit.project(null,null).getJSONArray("turns").length()==0,"missing records stay empty");
-        diagnostics();requestSizes();responsesProjection();
+        diagnostics();requestSizes();responsesProjection();nativeFailureProjection();
         System.out.println("ClassroomAudit: "+checks+" checks passed; paid calls=0, checkpoint writes=0");
     }
     private static void diagnostics()throws Exception{
@@ -195,6 +195,90 @@ public final class ClassroomAuditCheck {
         projected=ClassroomAudit.project(run,null);
         check(projected.getString("protocol").equals("chat_completions")&&projected.getJSONArray("turns").getJSONObject(1).getLong("estimated_request_bytes")==chatBytes,
                 "missing legacy protocol keeps Chat estimate rather than inferring Responses from content parts");
+    }
+    private static void nativeFailureProjection()throws Exception{
+        JSONObject run=fixture(),conversation=run.getJSONObject("conversation").put("protocol","responses");
+        JSONObject options=conversation.getJSONObject("options").put("max_output_tokens",32768);
+        JSONObject usage=new JSONObject().put("input_tokens",101).put("output_tokens",17).put("total_tokens",118)
+                .put("input_tokens_details",new JSONObject().put("cached_tokens",64))
+                .put("output_tokens_details",new JSONObject().put("reasoning_tokens",11));
+        JSONObject nativeResponse=new JSONObject().put("id","PRIVATE-RESPONSE-ID").put("status","incomplete")
+                .put("usage",usage).put("incomplete_details",new JSONObject().put("reason","max_output_tokens").put("private","PRIVATE-DETAIL"))
+                .put("output",new JSONArray().put(new JSONObject().put("type","reasoning").put("encrypted_content","PRIVATE-ENCRYPTED"))
+                        .put(new JSONObject().put("type","message").put("content","PRIVATE-BODY")));
+        JSONObject evidence=new JSONObject().put("response",nativeResponse).put("usage",usage).put("finish_reason","length")
+                .put("terminal_type","response.incomplete").put("content_chars",0).put("reasoning_chars",37);
+        JSONObject turn=conversation.getJSONArray("turns").getJSONObject(0).put("status","failed").put("response",evidence)
+                .put("usage",usage).put("finish_reason","length").put("terminal_type","response.incomplete");
+        run.put("execution",new JSONObject().put("state","failed").put("detail","当前板块输出被截断，未提交内容已回滚"))
+                .put("max_output_tokens",999999);
+        JSONObject summary=new JSONObject().put("max_output_tokens",888888);String original=run.toString();
+        JSONObject projected=ClassroomAudit.project(run,summary),row=turn(projected);
+        check(row.getLong("input")==101&&row.getLong("output")==17&&row.getLong("total")==118&&row.getLong("cached")==64,"native-only failed usage projects real input/output/total/cache");
+        check(row.getString("finish_reason").equals("length")&&row.getString("native_status").equals("incomplete")
+                &&row.getString("incomplete_reason").equals("max_output_tokens"),"failed native output limit remains a length failure with its original incomplete reason");
+        check(row.getLong("reasoning_tokens")==11&&row.getLong("output_limit")==32768,"reasoning cost and frozen conversation output limit remain visible");
+        check(row.getString("terminal_type").equals("response.incomplete"),"actual SSE incomplete terminal is safely projected");
+        check(original.equals(run.toString()),"failure projection never changes raw evidence or frozen options");
+        check(!projected.toString().contains("PRIVATE-")&&!projected.toString().contains("encrypted_content")&&!projected.toString().contains("provider_extension"),"failure projection exposes no original output, encrypted reasoning, provider payload or private metadata");
+        nativeResponse.getJSONObject("incomplete_details").put("reason","content_filter");
+        check(turn(ClassroomAudit.project(run,null)).getString("incomplete_reason").equals("content_filter"),"known content filter reason is safe to project");
+        for(Object reason:new Object[]{"PRIVATE-UNKNOWN",JSONObject.NULL,7,new JSONObject().put("raw","PRIVATE-RAW")}){
+            nativeResponse.getJSONObject("incomplete_details").put("reason",reason);
+            check(turn(ClassroomAudit.project(run,null)).isNull("incomplete_reason"),"unknown malformed native reason remains null");
+        }
+        for(String status:new String[]{"completed","failed","incomplete"}){
+            nativeResponse.put("status",status);
+            check(turn(ClassroomAudit.project(run,null)).getString("native_status").equals(status),"known native status is preserved: "+status);
+        }
+        for(Object status:new Object[]{"PRIVATE-STATUS",JSONObject.NULL,7,new JSONObject().put("raw","PRIVATE-RAW")}){
+            nativeResponse.put("status",status);
+            check(turn(ClassroomAudit.project(run,null)).isNull("native_status"),"unknown native status never escapes whitelist");
+        }
+        nativeResponse.put("status","incomplete");
+        for(String terminal:new String[]{"response.completed","response.incomplete","response.failed","error"}){
+            turn.put("terminal_type",terminal);
+            check(turn(ClassroomAudit.project(run,null)).getString("terminal_type").equals(terminal),"known actual SSE terminal is retained: "+terminal);
+        }
+        for(Object terminal:new Object[]{"PRIVATE-TERMINAL",JSONObject.NULL,7,new JSONObject().put("raw","PRIVATE-RAW")}){
+            turn.put("terminal_type",terminal);
+            check(turn(ClassroomAudit.project(run,null)).isNull("terminal_type"),"unknown malformed terminal remains null");
+        }
+        usage.put("prompt_tokens",7).put("completion_tokens",8).put("prompt_tokens_details",new JSONObject().put("cached_tokens",9));
+        row=turn(ClassroomAudit.project(run,null));
+        check(row.getLong("input")==7&&row.getLong("output")==8&&row.getLong("cached")==9,"explicit common usage remains authoritative over native aliases");
+        usage.remove("prompt_tokens");usage.remove("completion_tokens");usage.remove("prompt_tokens_details");
+        for(String key:new String[]{"input_tokens","output_tokens","total_tokens"})usage.put(key,0);
+        usage.getJSONObject("input_tokens_details").put("cached_tokens",0);
+        usage.getJSONObject("output_tokens_details").put("reasoning_tokens",0);options.put("max_output_tokens",0);
+        row=turn(ClassroomAudit.project(run,null));
+        check(row.getLong("input")==0&&row.getLong("output")==0&&row.getLong("total")==0&&row.getLong("cached")==0
+                &&row.getLong("reasoning_tokens")==0&&row.getLong("output_limit")==0,"actual native zero values stay distinct from unknown");
+        for(Object invalid:new Object[]{JSONObject.NULL,"17",-1,1.5,true,new JSONObject().put("raw","PRIVATE-RAW")}){
+            usage.put("input_tokens",invalid).put("output_tokens",invalid).put("total_tokens",invalid);
+            usage.getJSONObject("input_tokens_details").put("cached_tokens",invalid);
+            usage.getJSONObject("output_tokens_details").put("reasoning_tokens",invalid);options.put("max_output_tokens",invalid);
+            row=turn(ClassroomAudit.project(run,null));
+            check(row.isNull("input")&&row.isNull("output")&&row.isNull("total")&&row.isNull("cached")
+                    &&row.isNull("reasoning_tokens")&&row.isNull("output_limit"),"invalid native counts and output limit remain unknown");
+        }
+        usage.remove("input_tokens");usage.remove("output_tokens");usage.remove("total_tokens");
+        usage.remove("input_tokens_details");usage.remove("output_tokens_details");options.remove("max_output_tokens");
+        row=turn(ClassroomAudit.project(run,summary));
+        check(row.isNull("input")&&row.isNull("output")&&row.isNull("total")&&row.isNull("cached")
+                &&row.isNull("reasoning_tokens")&&row.isNull("output_limit"),"missing usage and frozen limit never borrow mutable run or summary settings");
+        options.put("max_tokens",1024).put("max_completion_tokens",2048);
+        check(turn(ClassroomAudit.project(run,null)).getLong("output_limit")==2048,"legacy frozen completion budget precedes legacy max_tokens");
+        options.remove("max_completion_tokens");
+        check(turn(ClassroomAudit.project(run,null)).getLong("output_limit")==1024,"legacy frozen max_tokens remains readable without guessing current budget");
+        options.put("max_output_tokens",4096);
+        check(turn(ClassroomAudit.project(run,null)).getLong("output_limit")==4096,"frozen native budget precedes legacy aliases");
+        usage.put("completion_tokens_details",new JSONObject().put("reasoning_tokens",6));
+        check(turn(ClassroomAudit.project(run,null)).getLong("reasoning_tokens")==6,"Chat reasoning token details remain readable");
+        turn.remove("response");
+        row=turn(ClassroomAudit.project(run,null));
+        check(row.isNull("native_status")&&row.isNull("incomplete_reason"),"legacy or EOF turn has no fabricated native status or incomplete reason");
+        check(!ClassroomAudit.project(run,null).toString().contains("PRIVATE-"),"all malformed native metadata remains private");
     }
     private static JSONObject validReply()throws Exception{
         return new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",new JSONArray()).put("assignments",new JSONArray())

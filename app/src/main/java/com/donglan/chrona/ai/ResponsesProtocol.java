@@ -63,6 +63,9 @@ public final class ResponsesProtocol {
 
     /** Preserve the complete service response beside the common text/usage projection. */
     public static JSONObject normalize(JSONObject response) throws IOException {
+        JSONObject evidence;
+        try { evidence=failureEvidence(response); }
+        catch(JSONException invalid){throw new ResponseException("Invalid Responses JSON",invalid);}
         try {
             if (response.has("error") && !response.isNull("error")) throw failure(response.optJSONObject("error"));
             String status = response.optString("status");
@@ -103,20 +106,44 @@ public final class ResponsesProtocol {
             JSONObject envelope = new JSONObject().put("choices", new JSONArray().put(new JSONObject()
                     .put("finish_reason", "stop").put("message", message)))
                     .put("response", new JSONObject(response.toString()));
-            JSONObject usage = response.optJSONObject("usage");
-            if (usage != null) {
-                JSONObject mapped = new JSONObject(usage.toString());
-                if (usage.has("input_tokens")) mapped.put("prompt_tokens", usage.get("input_tokens"));
-                if (usage.has("output_tokens")) mapped.put("completion_tokens", usage.get("output_tokens"));
-                if (usage.has("input_tokens_details")) mapped.put("prompt_tokens_details", usage.get("input_tokens_details"));
-                envelope.put("usage", mapped);
-            }
+            JSONObject usage=evidence.optJSONObject("usage");
+            if(usage!=null)envelope.put("usage",usage);
             return envelope;
-        } catch (JSONException invalid) { throw new ResponseException("Invalid Responses JSON", invalid); }
+        } catch(ResponseException failure){throw new ResponseException(failure.getMessage(),failure,evidence);}
+        catch (JSONException invalid) { throw new ResponseException("Invalid Responses JSON", invalid,evidence); }
+    }
+
+    /** Failure responses remain auditable without becoming accepted assistant/history items. */
+    private static JSONObject failureEvidence(JSONObject response)throws JSONException{
+        JSONObject evidence=new JSONObject();
+        if(response==null)return evidence;
+        evidence.put("response",new JSONObject(response.toString()));
+        JSONObject usage=response.optJSONObject("usage");
+        if(usage!=null){
+            JSONObject mapped=new JSONObject(usage.toString());
+            if(usage.has("input_tokens"))mapped.put("prompt_tokens",usage.get("input_tokens"));
+            if(usage.has("output_tokens"))mapped.put("completion_tokens",usage.get("output_tokens"));
+            if(usage.has("input_tokens_details"))mapped.put("prompt_tokens_details",usage.get("input_tokens_details"));
+            evidence.put("usage",mapped);
+        }
+        JSONObject incomplete=response.optJSONObject("incomplete_details");
+        Object finish="completed".equals(response.optString("status"))?"stop":
+                "incomplete".equals(response.optString("status"))&&incomplete!=null&&"max_output_tokens".equals(incomplete.optString("reason"))?"length":JSONObject.NULL;
+        return evidence.put("finish_reason",finish);
+    }
+    private static ResponseException streamFailure(ResponseException failure,JSONObject terminal,JSONObject event,String type,int contentChars,int reasoningChars){
+        try{
+            JSONObject evidence=failure.evidence==null?failureEvidence(terminal):new JSONObject(failure.evidence.toString());
+            if(event!=null)evidence.put("event",new JSONObject(event.toString()));
+            if(type!=null)evidence.put("terminal_type",type);
+            evidence.put("content_chars",contentChars).put("reasoning_chars",reasoningChars);
+            return new ResponseException(failure.getMessage(),failure,evidence);
+        }catch(JSONException invalid){return new ResponseException("Invalid Responses failure evidence",invalid);}
     }
 
     public static String read(InputStream stream, ChatCompletionClient.PreviewSink preview, RequestControl control) throws IOException {
         StringBuilder data = new StringBuilder(), text = new StringBuilder(), reasoning = new StringBuilder();
+        JSONObject terminal=null,errorEvent=null;String terminalType=null;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while (true) {
@@ -134,10 +161,12 @@ public final class ResponsesProtocol {
                     String type = event.optString("type");
                     if ("error".equals(type) || "response.failed".equals(type)) {
                         JSONObject failed = event.optJSONObject("response");
+                        terminal=failed;terminalType=type;if(failed==null)errorEvent=event;
                         throw failure(failed == null ? event : failed.optJSONObject("error"));
                     }
                     if ("response.incomplete".equals(type) || "response.completed".equals(type)) {
                         JSONObject response = event.optJSONObject("response");
+                        terminal=response;terminalType=type;
                         if (response == null) throw new ResponseException("Responses完成事件缺少结果");
                         JSONObject envelope = normalize(response);
                         if (!"response.completed".equals(type)) throw new ResponseException("Responses未完整完成，当前板块未提交");
@@ -163,9 +192,10 @@ public final class ResponsesProtocol {
                     append(data, line.substring(5).trim());
                 }
             }
-        } catch (JSONException invalid) { throw new ResponseException("Invalid Responses stream content", invalid); }
-        throw new ResponseException("Responses stream ended before completion (content_chars=" + text.length()
-                + ", reasoning_chars=" + reasoning.length() + ")");
+        }catch(ResponseException failure){throw streamFailure(failure,terminal,errorEvent,terminalType,text.length(),reasoning.length());}
+        catch (JSONException invalid) { throw streamFailure(new ResponseException("Invalid Responses stream content", invalid),terminal,errorEvent,terminalType,text.length(),reasoning.length()); }
+        throw streamFailure(new ResponseException("Responses stream ended before completion (content_chars=" + text.length()
+                + ", reasoning_chars=" + reasoning.length() + ")"),terminal,errorEvent,terminalType,text.length(),reasoning.length());
     }
 
     private static void append(StringBuilder target, String value) throws ResponseException {

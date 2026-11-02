@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.97 — Responses失败终态与真实用量留证 — 2026-11-02
+
+- 96在原历史精确选17/27（排除6C及4份有效成品），确认“重新总结17节”后实际3并发启动。随后至少10/20、10/15下午返回原生incomplete/max_output_tokens；正式处理记录显示0.05MiB、上下文0图，但输入/输出/结束全未提供。两次相同路径后从正式批量操作正常停止，实际终态成功0、失败7、取消10，检查点保留；最新格式有效成品仍4/21，不把启动、结束通知或旧完整笔记当成新增成功。
+- 查明代码缺陷：Responses normalize在构造usage/envelope前抛异常，课堂catch只记异常字符串，已收到的失败response和用量没有存入turn。97用ResponseException.evidence传递完整原生结果、usage及实际SSE终态/正文与推理delta字符数，课堂原turn保存；仅长度原因映射length，EOF不伪造终态或用量。未完成输出不追加到原生输入、不提交片段、不自动重发或抬高冻结预算，既有前缀与options不改。
+- 审计仅投影白名单native_status/incomplete_reason/terminal_type、实际reasoning_tokens与冻结output_limit，支持原生usage及已有Chat计数，0与未提供分开；原生正文/加密reasoning留本机不进入只读投影。旧失败没有保存的usage不能恢复。代码课堂预算32768按原值映射，无降额证据；尚不能断言实际服务是否采用或思考是否耗尽，须新失败留证实测。
+- 受限测试执行owner完成：ResponsesProtocol249、ClassroomAudit145、原生增强定向650、完整ClassroomEnhanced3656均通过；覆盖native JSON/SSE incomplete/failed/error/非法完成/EOF留证，实际失败板块回滚、原始历史和冻结配置保留，显式恢复只追加重试要求，失败encrypted output不重放。既有断言保留，git diff --check通过。这些是离线及既有loopback证据，不冒充真实服务根因已修。
+- release/lint及专用probe构建通过，259/0.15.97候选在`build/candidates/0.15.97/`。实机随后离线，仅模拟器、mDNS无设备，未安装97、未再请求AI；正常手机仍96，直播最后同一MonitorService持续。下一步实机可达先核对11/2课后是否自动AI在跑，安全安装后只续一节以取得真实失败usage，再决定修复，不重新启动17整批碰运气。不发Release。
+
 ## 0.15.96 — 连堂监视不在首节提前结束 — 2026-11-02
 
 - 实机线代1989268仍status1、开始13:25，95及此前只匹配raw首段14:10；Grid同日期已合并至15:50。`ClassroomMonitorTiming`现在直接复用`ZjuTimetableView.terms`生成的连堂块，匹配精确开始和规范化课程名后仅在目标日期求末段epoch结束，保留原始end冲突返回0。按账号与课表revision缓存，监视和导出共用；不新增一套间歇、教室或周覆盖判断。

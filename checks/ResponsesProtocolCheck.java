@@ -12,7 +12,7 @@ import org.json.*;
 public final class ResponsesProtocolCheck {
     private static int checks;
     public static void main(String[] args) throws Exception {
-        mapping(); normalization(); streaming(); clientTransport();
+        mapping(); normalization(); streaming(); failureEvidence(); clientTransport();
         System.out.println("ResponsesProtocolCheck passed: " + checks + " checks (synthetic protocol fixtures)");
     }
     private static void mapping() throws Exception {
@@ -89,6 +89,61 @@ public final class ResponsesProtocolCheck {
         rejects(() -> ResponsesProtocol.normalize(refused), "completed refusal is never usable output");
     }
     private static String event(String type, JSONObject value) throws Exception { return "event: " + type + "\ndata: " + new JSONObject(value.toString()).put("type", type) + "\n\n"; }
+    private static ChatCompletionClient.ResponseException responseFailure(Throwing operation, String label) throws Exception {
+        try { operation.run(); } catch (ChatCompletionClient.ResponseException expected) { check(true, label); return expected; }
+        throw new AssertionError(label);
+    }
+    private static void retained(JSONObject raw, JSONObject evidence, String finish, String label) throws Exception {
+        check(evidence != null && evidence.getJSONObject("response").toString().equals(raw.toString()), label + " retains complete raw response including encrypted reasoning");
+        JSONObject usage=evidence.getJSONObject("usage"),nativeUsage=raw.getJSONObject("usage");
+        for(String key:List.of("input_tokens","output_tokens","total_tokens","input_tokens_details","output_tokens_details"))
+            check(usage.get(key).toString().equals(nativeUsage.get(key).toString()),label+" preserves native usage "+key);
+        check(usage.getInt("prompt_tokens")==101&&usage.getInt("completion_tokens")==17
+                &&usage.getJSONObject("prompt_tokens_details").getInt("cached_tokens")==64,label+" maps common usage even on failure");
+        check(finish==null?evidence.isNull("finish_reason"):finish.equals(evidence.opt("finish_reason")),label+" truthful finish reason");
+        check(!evidence.has("choices"),label+" never presents failure as usable completion");
+    }
+    private static void failureEvidence() throws Exception {
+        ChatCompletionClient.ResponseException legacy=new ChatCompletionClient.ResponseException("old constructor");
+        check(legacy.evidence==null,"original exception constructor remains usable without invented evidence");
+        IOException cause=new IOException("fixture");
+        check(new ChatCompletionClient.ResponseException("old cause",cause).getCause()==cause,"original cause constructor remains usable");
+        JSONObject supplied=new JSONObject().put("fixture",true);
+        check(new ChatCompletionClient.ResponseException("with evidence",cause,supplied).evidence.similar(supplied),"evidence exception constructor exposes metadata");
+        for(String status:List.of("incomplete","failed")){
+            JSONObject raw=response("PRIVATE-partial").put("status",status)
+                    .put("incomplete_details",new JSONObject().put("reason","max_output_tokens"))
+                    .put("error",new JSONObject().put("code","server_error").put("message","PRIVATE-provider-message"));
+            String snapshot=raw.toString(),finish=status.equals("incomplete")?"length":null;
+            JSONObject json=responseFailure(()->ResponsesProtocol.normalize(raw),"native JSON failure surfaces "+status).evidence;
+            retained(raw,json,finish,"native JSON "+status);
+            check(!json.has("content_chars")&&!json.has("reasoning_chars"),"JSON never invents delta counters "+status);
+            for(String type:status.equals("incomplete")?List.of("response.incomplete"):List.of("response.failed","error")){
+                String wire=event("response.output_text.delta",new JSONObject().put("delta","半😀"))
+                        +event("response.reasoning_summary_text.delta",new JSONObject().put("delta","思考"))
+                        +event("response.reasoning_text.delta",new JSONObject().put("delta","!"))
+                        +event(type,new JSONObject().put("response",raw).put("error",raw.getJSONObject("error")));
+                JSONObject streamed=responseFailure(()->ResponsesProtocol.read(bytes(wire),null,null),"SSE failure surfaces "+type).evidence;
+                retained(raw,streamed,finish,"SSE "+type);
+                check(streamed.getString("terminal_type").equals(type),"actual SSE terminal retained "+type);
+                check(streamed.getInt("content_chars")=="半😀".length()&&streamed.getInt("reasoning_chars")==3,"actual typed delta counts retained, never final output size "+type);
+            }
+            check(raw.toString().equals(snapshot),"failure extraction never mutates native JSON "+status);
+        }
+        JSONObject filtered=response("partial").put("status","incomplete").put("incomplete_details",new JSONObject().put("reason","content_filter"));
+        retained(filtered,responseFailure(()->ResponsesProtocol.normalize(filtered),"filtered native response rejected").evidence,null,"filtered native failure");
+        JSONObject contradictory=response("complete-looking");
+        JSONObject bad=responseFailure(()->ResponsesProtocol.read(bytes(event("response.failed",new JSONObject().put("response",contradictory))),null,null),"typed failure still rejects completed-looking body").evidence;
+        retained(contradictory,bad,"stop","contradictory terminal");
+        check(bad.getString("terminal_type").equals("response.failed"),"typed failure event cannot be relabelled as completed");
+        String partial=event("response.output_text.delta",new JSONObject().put("delta","{\"events\":[]}"));
+        JSONObject eof=responseFailure(()->ResponsesProtocol.read(bytes(partial),null,null),"EOF never commits valid-looking partial JSON").evidence;
+        check(eof==null||(!eof.has("response")&&eof.isNull("terminal_type")&&eof.isNull("finish_reason")),"unknown EOF never invents native terminal or finish");
+        JSONObject mismatch=response("different");
+        JSONObject invalid=responseFailure(()->ResponsesProtocol.read(bytes(partial+event("response.completed",new JSONObject().put("response",mismatch))),null,null),"contradictory complete event never commits").evidence;
+        retained(mismatch,invalid,"stop","invalid completed event");
+        check(invalid.getString("terminal_type").equals("response.completed")&&invalid.getInt("content_chars")=="{\"events\":[]}".length(),"invalid completion retains actual terminal and observed delta count");
+    }
     private static String completed(String text) throws Exception { return event("response.completed", new JSONObject().put("response", response(text))); }
     private static InputStream bytes(String value) { return new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8)); }
     private static void streaming() throws Exception {

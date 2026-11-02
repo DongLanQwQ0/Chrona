@@ -614,8 +614,13 @@ public final class ChatCompletionClient {
 
     /** A completed model response that cannot become safe candidates; never retry automatically. */
     public static final class ResponseException extends IOException {
-        public ResponseException(String message) { super(message); }
-        public ResponseException(String message, Throwable cause) { super(message, cause); }
+        /** Private request audit only; never include this evidence in an error message. */
+        public final JSONObject evidence;
+        public ResponseException(String message) { this(message,null,null); }
+        public ResponseException(String message, Throwable cause) { this(message,cause,null); }
+        public ResponseException(String message, Throwable cause, JSONObject evidence) {
+            super(message,cause);this.evidence=evidence;
+        }
     }
 
     /** A non-2xx Chat Completions response, with enough detail to classify the failure. */

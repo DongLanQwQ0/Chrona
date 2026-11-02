@@ -48,11 +48,24 @@ public final class ClassroomAudit {
                         .put("finish_reason",finishReason(turn.opt("finish_reason")))
                         .put("request_bytes",number(turn,"request_bytes"))
                         .put("started",number(turn,"started")).put("finished",number(turn,"finished"))
-                        .put("input",number(usage,"prompt_tokens")).put("output",number(usage,"completion_tokens"))
+                        .put("input",firstNumber(usage,"prompt_tokens","input_tokens")).put("output",firstNumber(usage,"completion_tokens","output_tokens"))
                         .put("total",number(usage,"total_tokens"));
                 Object cached=number(usage==null?null:usage.optJSONObject("prompt_tokens_details"),"cached_tokens");
+                if(cached==JSONObject.NULL)cached=number(usage==null?null:usage.optJSONObject("input_tokens_details"),"cached_tokens");
                 if(cached==JSONObject.NULL)cached=number(usage,"prompt_cache_hit_tokens");
                 row.put("cached",cached);
+                JSONObject response=turn.optJSONObject("response"),nativeResponse=response==null?null:response.optJSONObject("response");
+                String nativeStatus=known(nativeResponse==null?null:nativeResponse.opt("status"),"completed","incomplete","failed","cancelled","queued","in_progress");
+                JSONObject incomplete=nativeResponse==null?null:nativeResponse.optJSONObject("incomplete_details");
+                String incompleteReason=known(incomplete==null?null:incomplete.opt("reason"),"max_output_tokens","content_filter");
+                String terminal=known(turn.opt("terminal_type"),"response.completed","response.incomplete","response.failed","error");
+                Object reasoningTokens=number(usage==null?null:usage.optJSONObject("output_tokens_details"),"reasoning_tokens");
+                if(reasoningTokens==JSONObject.NULL)reasoningTokens=number(usage==null?null:usage.optJSONObject("completion_tokens_details"),"reasoning_tokens");
+                row.put("native_status",nativeStatus.isEmpty()?JSONObject.NULL:nativeStatus)
+                        .put("incomplete_reason",incompleteReason.isEmpty()?JSONObject.NULL:incompleteReason)
+                        .put("terminal_type",terminal.isEmpty()?JSONObject.NULL:terminal)
+                        .put("reasoning_tokens",reasoningTokens)
+                        .put("output_limit",firstNumber(conversation.optJSONObject("options"),"max_output_tokens","max_completion_tokens","max_tokens"));
                 Object count=number(turn,"message_count");
                 if(messages!=null&&count instanceof Long n&&n<=messages.length()){
                     int images=0;for(int m=0;m<n;m++){
@@ -103,6 +116,10 @@ public final class ClassroomAudit {
     private static Object finishReason(Object value){
         String reason=known(value,"stop","length","content_filter","tool_calls","function_call");
         return reason.isEmpty()?JSONObject.NULL:reason;
+    }
+    private static Object firstNumber(JSONObject source,String... keys){
+        for(String key:keys){Object value=number(source,key);if(value!=JSONObject.NULL)return value;}
+        return JSONObject.NULL;
     }
     private static String known(Object value,String... allowed){
         if(value instanceof String text)for(String candidate:allowed)if(candidate.equals(text))return text;
