@@ -823,13 +823,24 @@ public final class ClassroomEnhancedCheck {
         reset("normal",false);File dir=materials("strength-three",false);JSONObject result;
         try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,p->{},"保留题干条件及步骤分",true,3);}
         check(result.getInt("note_strength")==3&&state(dir).getInt("note_strength")==3,"enhanced result and checkpoint retain selected strength");
-        check(requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content").contains("保持整理深度，压紧表达"),"enhanced requests use concise handout system");
+        String system=requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
+        check(system.contains("保持整理深度，压紧表达"),"enhanced requests use concise handout system");
+        check(system.contains("自行复算数学与代码")&&system.contains("题设和结论是否一致"),"actual request asks for mathematical and logical self-checks");
+        check(system.contains("完整题干")&&system.contains("补齐必要推导")&&system.contains("不根据答案反造原题"),"actual request preserves questions while distinguishing valid derivation from invented facts");
+        check(system.contains("标题的确定性不得高于正文证据")&&system.contains("省去识别纠正"),"actual request keeps evidence strength and removes resolved transcription workflow");
+        check(system.contains("不再叠加课堂口述版")&&system.contains("同一道题将题干"),"handout combines each example and proof rather than repeating presentation layers");
+        check(system.contains("可选做法合为一项")&&system.contains("概览不混入考试"),"actions retain alternative paths and overview stays educational");
         String plan="",edit="";for(int i=0;i<stages.size();i++){
             if(stages.get(i).equals("edit-plan"))plan=prompt(requests.get(i));
             if(stages.get(i).equals("edit-note-0"))edit=prompt(requests.get(i));
         }
         check(plan.contains("按知识依赖重排为精简讲义"),"handout plan allows stronger organization instead of lecture-order lock");
+        check(plan.contains("完整的提取与核图正文")&&plan.contains("不能仅凭标题分组"),"plan groups the real content rather than matching titles alone");
+        check(plan.contains("不同题目条件、评分例外和相反结论不可误并"),"global grouping preserves distinct conditions and grading exceptions");
         check(edit.contains("保留自学需要的过程")&&edit.contains("不堆砌标题或小结"),"final editorial stage stays concise and self-study usable");
+        check(edit.contains("先核对本主题的题干、公式、定义域和证明")&&edit.contains("最终结果"),"topic output requests complete self-consistent working rather than calculation placeholders");
+        check(edit.contains("本主题只讲知识")&&edit.contains("不能再次抄入知识正文"),"knowledge topics keep grading and actions in their original separate collections");
+        check(edit.contains("关联用主题名称")&&edit.contains("重复事实只在所属主题完整讲一次"),"topic editing avoids stale relative references and cross-topic repetition");
         check(prompt(requests.get(0)).contains("不总结或删减内容"),"style never shortens correction stage");
         appendOnly(dir);evidence("note-strength-three",dir);
     }

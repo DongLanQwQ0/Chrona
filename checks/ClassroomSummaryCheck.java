@@ -726,6 +726,8 @@ public final class ClassroomSummaryCheck {
             String system=ClassroomSummary.systemPrompt("自定义末尾",level);
             check(system.endsWith("自定义末尾"),"custom style remains last and authoritative at level "+level);
             check(system.contains("扣分点")&&system.contains("不确定性"),"grading and uncertainty guard retained at level "+level);
+            check(system.contains("自行复算数学与代码")&&system.contains("不根据答案反造原题"),"all strengths check mathematics without reconstructing missing question facts "+level);
+            check(system.contains("标题的确定性不得高于正文证据")&&system.contains("可选做法合为一项"),"all strengths preserve evidence and whole conditional actions "+level);
             reset();File dir=materialDir("strength-"+level+"-"+System.nanoTime());JSONObject result;
             try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"自定义末尾",false,level);}
             JSONObject run=ClassroomStore.read(new File(dir,"run.json"));
