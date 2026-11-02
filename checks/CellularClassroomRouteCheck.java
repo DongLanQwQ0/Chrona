@@ -197,7 +197,7 @@ public final class CellularClassroomRouteCheck {
         JSONObject request = new JSONObject().put("model", "offline").put("stream", false)
                 .put("messages", new JSONArray().put(new JSONObject().put("role", "user").put("content", "original")));
         String frozen = request.toString();
-        ChatCompletionClient client = new ChatCompletionClient(new AiSettings("https://offline.invalid/v1", "offline", "test-only"),
+        ChatCompletionClient client = new ChatCompletionClient(new AiSettings("https://offline.invalid/v1", "offline", "test-only", "auto", AiSettings.CHAT_COMPLETIONS),
                 null, SchedulePrompt.SYSTEM, new CellularClassroomRoute(c));
         client.completeConversation(request);
         MemoryConnection value = connection.get();

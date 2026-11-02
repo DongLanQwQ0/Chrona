@@ -3,19 +3,27 @@ package com.donglan.chrona.ai;
 import java.net.URI;
 import java.net.URISyntaxException;
 
-/** Connection settings for a Chat Completions-compatible HTTPS service. */
+/** Connection settings for the explicitly selected HTTPS API protocol. */
 public final class AiSettings {
+    public static final String RESPONSES = "responses";
+    public static final String CHAT_COMPLETIONS = "chat_completions";
     public final String baseUrl;
     public final String model;
     public final String apiKey;
     public final String reasoningEffort;
+    public final String protocol;
 
     public AiSettings(String baseUrl, String model, String apiKey) {
         this(baseUrl, model, apiKey, "auto");
     }
 
     public AiSettings(String baseUrl, String model, String apiKey, String reasoningEffort) {
+        this(baseUrl, model, apiKey, reasoningEffort, RESPONSES);
+    }
+
+    public AiSettings(String baseUrl, String model, String apiKey, String reasoningEffort, String protocol) {
         validateReasoningEffort(reasoningEffort);
+        validateProtocol(protocol);
         if (baseUrl == null || model == null || model.trim().isEmpty()
                 || apiKey == null || apiKey.trim().isEmpty()
                 || apiKey.indexOf('\n') >= 0 || apiKey.indexOf('\r') >= 0) {
@@ -37,6 +45,12 @@ public final class AiSettings {
         this.model = model;
         this.apiKey = apiKey;
         this.reasoningEffort = reasoningEffort;
+        this.protocol = protocol;
+    }
+
+    public static void validateProtocol(String value) {
+        if (!RESPONSES.equals(value) && !CHAT_COMPLETIONS.equals(value))
+            throw new IllegalArgumentException("Invalid AI protocol");
     }
 
     public static void validateReasoningEffort(String value) {

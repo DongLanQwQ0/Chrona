@@ -19,7 +19,7 @@ import com.donglan.chrona.ai.AiSettings;
 import com.donglan.chrona.ai.AiSettingsStore;
 import com.donglan.chrona.ai.SchedulePreferences;
 
-/** User-supplied HTTPS Chat Completions endpoint and model. */
+/** User-supplied HTTPS AI endpoint, protocol and model. */
 public final class SettingsActivity extends Activity {
     private EditText baseUrl;
     private EditText model;
@@ -30,6 +30,10 @@ public final class SettingsActivity extends Activity {
     private static final String[] EFFORT_LABELS = {"自动", "关闭", "低", "中", "高", "最高"};
     private String reasoningEffort = "auto";
     private TextView effortChoice;
+    private static final String[] PROTOCOL_VALUES = {AiSettings.RESPONSES, AiSettings.CHAT_COMPLETIONS};
+    private static final String[] PROTOCOL_LABELS = {"Responses", "Chat Completions"};
+    private String protocol = AiSettings.RESPONSES;
+    private TextView protocolChoice;
     private EditText customPrompt;
     private EditText classroomPrompt;
     private Switch enhancedClassroom;
@@ -69,6 +73,16 @@ public final class SettingsActivity extends Activity {
         UiStyle.fieldTrigger(preset);
         UiStyle.addSpaced(form, preset, 5, 10);
         baseUrl = field(form, "API 基础地址（含 /v1）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        TextView protocolTitle = new TextView(this);
+        protocolTitle.setText("API 协议");
+        UiStyle.muted(protocolTitle);
+        UiStyle.addSpaced(form, protocolTitle, 8, 4);
+        protocolChoice = new TextView(this);
+        UiStyle.fieldTrigger(protocolChoice);
+        setProtocol(protocol);
+        UiStyle.addSpaced(form, protocolChoice, 4, 8);
+        protocolChoice.setOnClickListener(view -> UiDialogs.choiceDialog(this, "API 协议",
+                PROTOCOL_LABELS, protocolIndex(), position -> setProtocol(PROTOCOL_VALUES[position])));
         model = field(form, "模型名称", InputType.TYPE_CLASS_TEXT);
         TextView effortTitle = new TextView(this);
         effortTitle.setText("思考强度");
@@ -247,6 +261,7 @@ public final class SettingsActivity extends Activity {
                 baseUrl.setText(existing.baseUrl);
                 model.setText(existing.model);
                 setEffort(existing.reasoningEffort);
+                setProtocol(existing.protocol);
                 if ("https://api.deepseek.com".equals(existing.baseUrl)) {
                     if ("deepseek-flash".equals(existing.model)) selectedPreset[0] = 1;
                     else if ("deepseek-v4-pro".equals(existing.model)) selectedPreset[0] = 2;
@@ -263,6 +278,7 @@ public final class SettingsActivity extends Activity {
                     baseUrl.setText(pending.baseUrl);
                     model.setText(pending.model);
                     setEffort(pending.reasoningEffort);
+                    setProtocol(pending.protocol);
                 }
             } catch (Exception ignored) { }
         }
@@ -301,7 +317,7 @@ public final class SettingsActivity extends Activity {
                 Integer.toString(workEndMinutes), customPrompt.getText().toString(),
                 classroomPrompt.getText().toString(), Boolean.toString(enhancedClassroom.isChecked()),
                 Integer.toString(classroomConcurrency), Integer.toString(classroomNoteStrength),
-                Boolean.toString(classroomCellular.isChecked())};
+                Boolean.toString(classroomCellular.isChecked()), protocol};
     }
 
     private void restoreForm(String[] values) {
@@ -318,6 +334,7 @@ public final class SettingsActivity extends Activity {
         classroomConcurrency = Integer.parseInt(values[9]);
         classroomNoteStrength = Integer.parseInt(values[10]);
         classroomCellular.setChecked(Boolean.parseBoolean(values[11]));
+        setProtocol(values[12]);
         classroomNoteStrengthSlider.setProgress(classroomNoteStrength);
         refreshClassroomNoteStrength();
         refreshClassroomConcurrency();
@@ -381,7 +398,7 @@ public final class SettingsActivity extends Activity {
                 if (existing != null) key = existing.apiKey;
             }
             store.save(baseUrl.getText().toString().trim(), model.getText().toString().trim(), key,
-                    reasoningEffort);
+                    reasoningEffort, protocol);
             preferences.save(this);
             ConfigBackup.clearDraft(this);
             Feedback.show(this, "设置已保存");
@@ -395,6 +412,18 @@ public final class SettingsActivity extends Activity {
         for (int i = 0; i < EFFORT_VALUES.length; i++)
             if (EFFORT_VALUES[i].equals(reasoningEffort)) return i;
         return 0;
+    }
+
+    private int protocolIndex() {
+        for (int i = 0; i < PROTOCOL_VALUES.length; i++)
+            if (PROTOCOL_VALUES[i].equals(protocol)) return i;
+        return 0;
+    }
+
+    private void setProtocol(String value) {
+        AiSettings.validateProtocol(value);
+        protocol = value;
+        protocolChoice.setText(PROTOCOL_LABELS[protocolIndex()]);
     }
 
     private void refreshWorkTime() {

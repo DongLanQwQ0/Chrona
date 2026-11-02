@@ -25,6 +25,7 @@ public final class AiSettingsStore {
     private static final String BASE_URL = "base_url";
     private static final String MODEL = "model";
     private static final String REASONING_EFFORT = "reasoning_effort";
+    private static final String PROTOCOL = "protocol";
     private static final String ENCRYPTED_KEY = "encrypted_api_key";
     private static final String KEY_IV = "api_key_iv";
     private static final String IMAGE_REJECTED_FOR = "image_rejected_for";
@@ -44,7 +45,12 @@ public final class AiSettingsStore {
 
     public void save(String baseUrl, String model, String apiKey, String reasoningEffort)
             throws GeneralSecurityException {
-        AiSettings settings = new AiSettings(baseUrl, model, apiKey, reasoningEffort);
+        save(baseUrl, model, apiKey, reasoningEffort, AiSettings.RESPONSES);
+    }
+
+    public void save(String baseUrl, String model, String apiKey, String reasoningEffort, String protocol)
+            throws GeneralSecurityException {
+        AiSettings settings = new AiSettings(baseUrl, model, apiKey, reasoningEffort, protocol);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
         byte[] encrypted = cipher.doFinal(settings.apiKey.getBytes(StandardCharsets.UTF_8));
@@ -52,6 +58,7 @@ public final class AiSettingsStore {
                 .putString(BASE_URL, settings.baseUrl)
                 .putString(MODEL, settings.model)
                 .putString(REASONING_EFFORT, settings.reasoningEffort)
+                .putString(PROTOCOL, settings.protocol)
                 .putString(ENCRYPTED_KEY, Base64.encodeToString(encrypted, Base64.NO_WRAP))
                 .putString(KEY_IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
                 .commit();
@@ -80,7 +87,8 @@ public final class AiSettingsStore {
                     new GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)));
             byte[] plain = cipher.doFinal(Base64.decode(encrypted, Base64.NO_WRAP));
             return new AiSettings(baseUrl, model, new String(plain, StandardCharsets.UTF_8),
-                    preferences.getString(REASONING_EFFORT, "auto"));
+                    preferences.getString(REASONING_EFFORT, "auto"),
+                    preferences.getString(PROTOCOL, AiSettings.RESPONSES));
         } catch (IllegalArgumentException e) {
             throw new GeneralSecurityException("Invalid saved AI settings", e);
         }
@@ -93,8 +101,8 @@ public final class AiSettingsStore {
     }
 
     /**
-     * True when this exact endpoint and model rejected a request that carried an image, so the
-     * image entry stays disabled until the model changes or the user clears the flag.
+     * True when this exact endpoint, model and protocol rejected a request that carried an image,
+     * so the image entry stays disabled until that configuration changes or the user clears it.
      */
     public boolean isImageUnsupported(AiSettings settings) {
         return settings != null
@@ -109,7 +117,7 @@ public final class AiSettingsStore {
                 || "https://api.deepseek.com/v1".equalsIgnoreCase(settings.baseUrl);
     }
 
-    /** Remembers that this endpoint and model cannot take images. */
+    /** Remembers that this endpoint, model and protocol cannot take images. */
     public void markImageUnsupported(AiSettings settings) {
         if (settings == null) throw new IllegalArgumentException("settings are required");
         preferences.edit().putString(IMAGE_REJECTED_FOR, identity(settings)).apply();
@@ -122,7 +130,7 @@ public final class AiSettingsStore {
     }
 
     private static String identity(AiSettings settings) {
-        return settings.baseUrl + "\n" + settings.model;
+        return settings.baseUrl + "\n" + settings.model + "\n" + settings.protocol;
     }
 
     private static SecretKey getExistingKey() throws GeneralSecurityException {

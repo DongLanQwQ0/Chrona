@@ -60,7 +60,7 @@ for name, content in fixtures.items():
     paths.append(path)
 relative = ['classroom/ClassroomLesson.java', 'classroom/ClassroomStore.java', 'classroom/ClassroomNoteStrength.java', 'classroom/ClassroomAffairsPolicy.java', 'classroom/ClassroomImageQuality.java', 'classroom/ClassroomFigureReview.java',
             'classroom/ClassroomImages.java', 'classroom/ClassroomMaterialUpdates.java', 'classroom/ClassroomSummary.java', 'classroom/ClassroomConversation.java', 'classroom/ClassroomJsonStage.java', 'classroom/ClassroomJsonFailure.java', 'classroom/ClassroomJsonObject.java', 'classroom/ClassroomCorrectionCache.java', 'classroom/ClassroomEnhancedSummary.java', 'classroom/ClassroomExport.java', 'classroom/ClassroomProgress.java',
-            'ai/AiSettings.java', 'ai/ChatCompletionClient.java', 'ai/ParseResult.java', 'ai/SchedulePrompt.java',
+            'ai/AiSettings.java', 'ai/ChatCompletionClient.java', 'ai/ResponsesProtocol.java', 'ai/ParseResult.java', 'ai/SchedulePrompt.java',
             'ai/SemanticEventNormalizer.java', 'ai/TimeAssessment.java', 'ai/RequestOptions.java', 'ai/StreamChunkContent.java',
             'data/EventCandidate.java', 'data/EventCategory.java', 'data/EventTimeDefaults.java',
             'data/CandidateRules.java', 'calendar/AllDayDates.java', 'net/RequestControl.java']

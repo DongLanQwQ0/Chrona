@@ -1,38 +1,37 @@
-# 当前交付：数学课堂全21节重新总结
+# 当前交付：协议选择与数学全21节整理
 
 ## 当前候选与唯一下一步
 
-- 正式版 **0.15.92 / 254** 已于2026-11-01 23:10:23覆盖安装V2527A，首次安装时间与原签名保持。安装重试已成功，不再重复安装。APK：`build/candidates/0.15.92/Chrona-0.15.92.apk`；release/lint通过，不发补丁Release。
-- 「AI总结使用移动数据」默认开启，真实手机已验证AI交换申请CELLULAR并成功响应；拾时自身VPN=false、默认Wi-Fi仍在，进程绑定不变，结束释放网络请求。学校素材下载、LAN、普通日程AI与其它应用不变；无蜂窝明确失败，不回Wi-Fi、不自动付费重试。
-- 首节 **86985-1988486，微积分2026-10-29第9节** 已完成最新整理：affairs_schema=1、强度3、单篇，8知识主题/4事务、无精确重复主题正文、来源有效、23引用图均可读，修正3/3复用。真实阅读页可打开；元数据与可访问正文抽查不等于全21节质量已通过。
-- **当前最新完成1/21，剩余20节已于23:34启动。** 历史按课程时间排序、长按多选、全选27，最终准确排除六节C与已完成首节，观察20/27并确认“重新总结20节课堂”。原界面显示“总结0/20·进行中3”，选择已退出。首次较大滚动漏过两节边缘记录而安全停止，随后沿五条已验证选择、小步反向遍历补齐，未误启动其它课。
-- 唯一下一步：被动观察这20节真实结果，再逐节核对最新成品。观察脚本`build/classroom-failure-20261101/watch_work.py batch92-cellular-watch --seconds 14400`，当前exec session **64341**；日志`batch92-cellular-watch.jsonl`。23:34:23已观察active，通知列出10/29上午微积分、10/27线代与10/27上午微积分三节真实任务；初始无通知只是提升前状态。运行期间不安装诊断包、不覆盖更新、不修改历史/设置。
-- 23:35:24三节均进入原分段整理与核图计划：0/4、0/2、1/5，第三节已提交一个内部阶段；无新失败通知。整节仍未新增完成，不把分段进度计作成品。
+- 用户新增：AI服务加入协议选择，**默认Responses**，可选Chat Completions；按原公共选择控件处理，不另拼样式。候选 **0.15.93/255** 已实现并构建：`build/candidates/0.15.93/Chrona-0.15.93.apk`，正式包名、原升级证书、release/lint通过。未发Release、尚未安装真机。
+- 正式UI、协议代码已冻结。默认／缺协议旧配置为Responses；设置纳入十三项草稿、保存／取消／放弃、旋转及保留密钥保存与备份。根负责协议／课堂接线和集成，原设置执行owner、测试执行owner已完成各自代码；ui_check独立复审已通过，无P1/P2及关键UI缺口。
+- **唯一下一步：真机重新可达后先查实际AI队列，再决定安全安装93及真实服务验证。** 最后新增审计投影104项通过，93源码准备提交／推送；不能因观察进程退出而重启、取消或假定手机任务已停。当前供应商／GLM模型的Responses支持尚未实测。
 
-## 全量验收
+## 协议验收与有效证据
 
-- 微积分18+线代3，共21唯一lesson key，与`build/math-completion-audit-20261101/phone-before-batch92.json`清单一致。四份旧schema0/强度1成品不计本轮成功。
-- 复用原6000分块id/text匹配的已提交更正文稿，缺图走原下载/校验/去重；旧messages/options不改，只追加。失败片段回滚，不拼接半稿。
-- 每节最新affairs_schema=1、强度3、单篇精简完整可自学笔记；事务集中，assignments仅明确行动；来源与引用图有效。最终抽查正文、过程解释及考核线索。
-- 首节证据`phone-completed91.json`；实际完成通知见`build/classroom-failure-20261101/continue-idle-watch.jsonl`。网络健康证据`cellular-health92.txt`、`cellular-request-cm92.json`、`cellular-request-released92.json`均在math-completion-audit目录。
+- 请求原生映射input_text/input_image、max_output_tokens、reasoning.effort、text.format；store=false、truncation=disabled。Responses只接受completed及response.completed，failed／incomplete／EOF／单独DONE不提交。HTTP、取消及网络lease共用原实现，不跨协议回退或自动付费重试。
+- 课堂新轮冻结protocol及options，直接保存完整原生input和原output items（含加密reasoning），只在末尾追加。既有无protocol的轮次继续Chat，不转写旧前缀；重新整理的新轮才使用当前选择。原始响应和usage完整保留，显示使用字段映射，不伪造缓存。
+- 有效检查：协议152、增强3511（Responses专项505）、蜂窝64／HTTP676、普通课堂526、备份及偏好121。包含真实loopback多块／附图／整稿、HTTP与incomplete回滚、改设置后冻结续跑、旧Chat不变；这是本地合成证据，不冒充实际供应商能力。
+- 同一AVD正常屏幕竖浅190、竖深190通过；外部user_rotation未改变协议截图方向，明确不计横屏。protocolOnly实际Activity横屏29通过，含可达、真实选择／旋转草稿、标题滚出／保存再开。真实压缩JPEG在`build/protocol93/ui-light/`、`ui-landscape/`；独立UI已消费证据并通过。26张设备任务JPEG转回`device-exports/`后清理，原偏好及旋转设置恢复。未改DPI／分辨率、未新建AVD。
 
-## 本轮实现与有效检查
+## 数学全21节范围不变
 
-- root拥有蜂窝lease、公共HTTP按连接接线和课堂集成；设置与测试执行代理已交付。单节/批量/监视共用入口。每个新交换读取已保存开关，已有请求不因设置变化中断；网络取得响应取消、计入原期限，所有结束路径释放，DNS/代理/TLS与禁止重定向保持。用户确认拾时在VPN黑名单，不修改VPN。
-- 偏好121、实际路由64、HTTP676、增强管线3006项通过；原生设置竖浅160、横深定向30项通过，包含草稿/保存/丢弃/旋转。固定候选独立UI复审无未解决P1/P2或关键证据缺口。证据`build/cellular-ui92/`及本轮构建日志。
-- 共享AVD冷启动曾有Launcher/SystemUI ANR，早期原生测试未通过；观察实际系统ANR后正常关闭其失响应窗口，再完成有效检查。未重置AVD、改密度或放宽输入权限。早期失败保留，不冒充有效结果。
-- 真实固定OK短请求204字节，1次、4635ms、stop，未发送课堂资料。真实课堂20节正在运行，长请求稳定性尚待结果；蜂窝无法消除服务端502。
-- 历史91预算截断/SSE错误修复、89更正文稿二级页、90取消Dock滚动缩小均保留，历史证据见`docs/validation-history.md`，不重做无变化验收。
+- 微积分18+线代3，共21唯一lesson key，清单`build/math-completion-audit-20261101/phone-before-batch92.json`。最新affairs_schema1、强度3、单篇精简完整可自学笔记；事务集中，来源及引用图有效。旧schema0／强度1成品不计本轮完成。
+- 复用原6000分块id/text匹配的已提交更正文稿；缺图走原完整下载／校验／去重。messages/options只追加，失败片段回滚，不拼接半稿。
+- 已实际成品验收首节 **86985-1988486，微积分10/29第9节**：8知识主题／4事务、单篇、精确重复主题正文0、23引用图全部可读、来源有效、更正3/3复用，真实阅读页可访问。证据`phone-completed91.json`。
+- 其余20节在92于11/1 23:34原历史多选启动，观察20/27、排除六节C与上述首节，进行中3；首次选择未排除齐时安全停止，小步反向补齐后才确认。证据`build/classroom-failure-20261101/batch92-*`。
+- **队列最终状态未知。** 最后有效观察11/2 00:17：2个新完成通知（10/29上午、10/22下午微积分）、7个失败通知、3节活动，之后ADB丢失；不能把通知或观察超时当成最终成品验收。watch session64341已exit0（观察时限结束，连接错误），不可再等待旧handle；恢复后读实际服务/批次结果，不重启整批。
+- 七失败：两次服务SSE非空error（10/27微积分／线代）、10/26线代本块来源缺失、10/19线代来源缺失、10/20及10/15上午微积分原话依据不匹配、10/15下午微积分缺images字段。检查点均保留，不放松来源／完整JSON验证；恢复实机后按实际保存的阶段决定逐项修复或续跑。
 
-## 设备、所有权与清理
+## 手机、协调与边界
 
-- 手机`10.196.131.180:36653`。GlobalSend103于23:22明确交还，root当前拥有本轮操作；没有实际冲突不跨聊天发消息。已授权手机操作遇用户无回复可继续，真实授权拒绝或并发占用不绕过。
-- 诊断辅助包已卸载，无额外AI诊断任务。启动批次后已删除`/data/local/tmp/chrona/classroom-failure-20261101/window.xml`及空任务目录，保留用户数据；被动观察只在电脑保存元数据。
-- AVD统一Chrona_Classroom_36，root本轮使用，未克隆/清空/改DPI。13张任务JPEG已转回`build/cellular-ui92/device-exports/`并清理本轮AVD输出；不关掉其他任务资源。
-- 测试输出仅项目build；查看图片使用压缩JPEG。旧`/data/local/tmp/chrona/classroom-failure-20261031/`删除及隔离包external report读取曾被策略拒绝，未绕过。
+- 真机最后版本 **0.15.92/254**，11/1 23:10:23正常覆盖，原签名及首次安装时间保持。移动数据默认开启的真实连接曾成功：204字节固定OK、1次4635ms、CELLULAR且拾时自身VPN=false，默认Wi-Fi及进程绑定不变、结束释放。学校下载／LAN／普通日程AI不变。证据`cellular-health92.txt`及CM快照，不保证服务端502消失。
+- 旧无线地址`10.196.131.180:36653`已从设备表消失；一次重连拒绝、mDNS无服务，仅剩共享AVD。不扫描旧地址、不反复重连、不改安全设置；按无人值守要求不为ADB断线找用户。没有当前可用的真机serial。
+- GlobalSend待交接候选已由104替换为**105**，只安装105；此前Chrona仍有活动队列，已暂不交还，现实机离线的变化也已通知该owner。尚未授予105手机操作权。恢复后先核对队列再明确交接；无真实资源冲突不跨聊天发消息，103旧授权不沿用。
+- 诊断辅助包均已卸载，本轮真机`/data/local/tmp/chrona/classroom-failure-20261101/window.xml`及空任务目录已删除。旧20261031任务目录清理／隔离包external report读取曾被策略拒绝，未绕过。派生输出仅项目build，图片先压缩JPEG。
+- AVD统一`F:\Android\Avd\Chrona_Classroom_36`，root本轮复用，未克隆／清空，不终止其它任务资源。公共工具与签名保持外部原位置。
 
-## 源码与其它边界
+## 源码与后续
 
-- 92实现已提交`fe6c5c1`并推送origin/main；仅本轮代码/测试/功能文档/验证记录/HANDOFF，不发Release。
+- 92源码已提交并推送`fe6c5c1`／工作记录`ffb7e2e`；93仅提交所属代码／测试／功能文档／验证记录／HANDOFF，不发补丁Release。
 - 保护他人改动：AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1。
-- 监视自动总结全局/课程三态布局仍在讨论，未确认，不擅自实现；外部core接口见docs/Communication/to-external-agent.md。
+- 历史91预算／SSE错误修复、89更正文稿二级页、90取消Dock滚动缩小均保留，证据见`docs/validation-history.md`，不重做无变化验收。监视全局／课程自动总结三态的布局仍在讨论，未确认，不擅自实施。外部core接口见docs/Communication/to-external-agent.md。

@@ -99,7 +99,7 @@ for name, content in fixtures.items():
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding='utf-8')
     paths.append(p)
-relative = ['ai/AiSettings.java','ai/ChatCompletionClient.java','ai/ParseResult.java','ai/SchedulePrompt.java',
+relative = ['ai/AiSettings.java','ai/ChatCompletionClient.java','ai/ResponsesProtocol.java','ai/ParseResult.java','ai/SchedulePrompt.java',
             'ai/SemanticEventNormalizer.java','ai/TimeAssessment.java','ai/RequestOptions.java','ai/StreamChunkContent.java',
             'data/EventCandidate.java','data/EventCategory.java','data/EventTimeDefaults.java','data/CandidateRules.java',
             'calendar/AllDayDates.java','net/RequestControl.java','processing/BestEffortPreview.java','processing/AutoCalendarPublisher.java']

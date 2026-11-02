@@ -48,6 +48,7 @@ GROUPS = {
     "cached_dependencies": (
         "vivo_setup_helper_check.py",
         "cellular_classroom_route_check.py",
+        "responses_protocol_check.py",
         "classroom_summary_check.py", "classroom_enhanced_check.py", "classroom_client_check.py", "classroom_images_check.py", "classroom_work_service_check.py", "classroom_batch_export_check.py", "zju_timetable_view_check.py",
         "repeat_ai_check.py", "repeat_projection_check.py", "calendar_repeat_check.py",
         "config_backup_check.py", "backup_restore_check.py", "linked_calendar_events_check.py", "timetable_check.py", "academic_terms_check.py", "lan_qr_check.py", "candidate_merge_check.py", "lan_calendar_check.py",

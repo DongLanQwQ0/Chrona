@@ -1,5 +1,16 @@
 # AI 服务请求协议
 
+## 选择访问协议
+
+AI服务在基础地址后提供「API协议」，复用原公共选择面板，可选Responses与Chat Completions，默认Responses。缺少协议的旧配置及旧备份也以Responses作为新请求默认值；选择只修改草稿，保存后生效，纳入十三项退出保护、旋转恢复、保留密钥保存及配置备份。图片拒绝标记按地址、模型、协议分别记录。
+
+- Responses请求`/responses`：正文／图片为原生`input_text/input_image`，预算`max_output_tokens`、思考`reasoning.effort`、结构化输出`text.format`。不发送Chat专属字段；固定`store=false`、`truncation=disabled`，不托管或压缩历史。
+- Chat Completions请求`/chat/completions`，保留原`messages`、参数和SSE。服务不支持所选协议时明确失败，不自动换协议／模型或重新付费请求；下文的一次参数降级仅适用于普通Chat请求。
+- Responses只接受完整`completed`结果；流式必须收到`response.completed`，delta、`[DONE]`、EOF、failed或incomplete均不能提交。正文与可见推理按实际事件显示，完整原生响应保留。用量从`input_tokens/output_tokens/input_tokens_details.cached_tokens`映射到既有展示，原生usage也保留。
+- 课堂每轮冻结协议。续跑不随全局选择改变，无协议字段的既有轮次继续原Chat协议，不转换旧前缀。新Responses轮次逐项保存原生input与服务完整output（含加密reasoning项），下一轮只追加，不改写旧项、不用previous_response_id替代本地历史；重新整理的新轮采用新协议。
+
+实现依据：[Responses迁移](https://developers.openai.com/api/docs/guides/migrate-to-responses)、[typed流式事件](https://developers.openai.com/api/reference/resources/responses/streaming-events)。当前供应商／模型的支持情况需真实验证，协议名称不代表缓存命中。
+
 请求保留用户所选地址、模型和全部图片，使用版本化静态规则／schema 前缀及有界动态 JSON，语义时间在本地规范化。能力参数按已识别的服务和模型发送；格式、缓存或流选项被明确拒绝时，只允许使用原消息和时间参照降级一次。完整但非法或截断的响应抛出 `ResponseException`，不自动重新调用模型。缓存统计仅来自服务 usage。
 
 动态内容上限：原文 24000 字符，超出拒绝；抓取正文 4000、附件元信息 6000，截断带标记。上限针对数据字符串，JSON 转义与参照字段另有传输开销。
@@ -14,7 +25,7 @@
 
 AI 服务设置中的工作时间默认 10:00–22:00；开始晚于结束表示跨午夜，起止相同不可保存。日程解析和课堂总结各有独立的自定义提示词，每项最多 8000 字符，语义偏好优先于各自默认规则；JSON schema、输出格式、安全边界与自由建议时间的待确认要求保持有效。明确保存的时间偏好能唯一应用时，可按规则确定补全，并记录偏好依据。
 
-AI服务设置比较进入页的实际表单基线：地址、模型、密钥输入、思考强度、工作起止、两类提示词、增强整理、并发数、笔记整理强度和移动数据开关共十二项。标题返回与系统返回统一弹出「保存／取消／放弃」；改回原值直接退出。取消、弹窗返回或外部关闭保留草稿；放弃不写配置；保存沿用原校验，失败留页、成功退出。Activity重建保留全部草稿和原基线，不在离开前台时偷偷保存。图片输入重新允许仍是独立即时动作，不计作未保存表单修改。
+AI服务设置比较进入页的实际表单基线：地址、协议、模型、密钥输入、思考强度、工作起止、两类提示词、增强整理、并发数、笔记整理强度和移动数据开关共十三项。标题返回与系统返回统一弹出「保存／取消／放弃」；改回原值直接退出。取消、弹窗返回或外部关闭保留草稿；放弃不写配置；保存沿用原校验，失败留页、成功退出。Activity重建保留全部草稿和原基线，不在离开前台时偷偷保存。图片输入重新允许仍是独立即时动作，不计作未保存表单修改。
 
 `SchedulePreferences` 与地址、模型、密钥独立保存。`customPrompt` 仅进入日程请求，`classroomPrompt` 供课堂总结使用，两者互不混入。`ProcessingJobService` 在一轮请求开始时读取偏好，并让本轮重试使用同一份 system 内容。配置备份的 `schedulePreferences` 包含工作时间、两个完整自定义提示词、增强整理、并发数、笔记整理强度与`classroomCellular`；导入前验证类型、范围与长度，缺少该节时保留本机偏好。
 
@@ -57,4 +68,4 @@ DeepSeek 官方接口：auto/low → low，medium/high → high，max → max，
 - 已有 SSE/非流式通路读取服务实际返回的 `reasoning_content` 或 `reasoning` 文本；未返回时不伪造思考过程。启用推理与返回可见推理文本是两个独立结果。
 - 离线测试覆盖三个域名、六种选项、特殊模型与伪造子域不匹配、拒绝参数不静默降级。未读取用户密钥、未发起付费调用；服务端是否执行和是否返回思考文本仍需有效调用验证。
 
-依据：[Chat Completions](https://docs.jiji.cc/api/chat-completions)、[网络线路](https://docs.jiji.cc/environment/network)。服务推荐 GPT 推理模型采用 Responses，本轮保持 Chrona 现有 Chat Completions 协议，修复已证实的参数遗漏。
+依据：[Chat Completions](https://docs.jiji.cc/api/chat-completions)、[网络线路](https://docs.jiji.cc/environment/network)。以上为Chat参数；选择Responses时使用原生字段映射，不据协议名称推断服务支持所有模型或参数。

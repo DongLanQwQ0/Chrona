@@ -25,6 +25,7 @@ public final class ClassroomAudit {
         }
         JSONObject conversation=run==null?null:run.optJSONObject("conversation");
         if(conversation!=null){
+            result.put("protocol",conversation.optString("protocol","chat_completions"));
             JSONArray source=conversation.optJSONArray("turns"),messages=conversation.optJSONArray("messages");
             JSONObject last=source==null||source.length()==0?null:source.optJSONObject(source.length()-1);
             JSONObject current=result.optJSONObject("execution");
@@ -57,7 +58,7 @@ public final class ClassroomAudit {
                     int images=0;for(int m=0;m<n;m++){
                         JSONObject message=messages.optJSONObject(m);JSONArray content=message==null?null:message.optJSONArray("content");
                         if(content!=null)for(int p=0;p<content.length();p++){
-                            JSONObject part=content.optJSONObject(p);if(part!=null&&"image_url".equals(part.optString("type")))images++;
+                            JSONObject part=content.optJSONObject(p);if(part!=null&&("image_url".equals(part.optString("type"))||"input_image".equals(part.optString("type"))))images++;
                         }
                     }
                     row.put("context_images",images);
@@ -96,7 +97,7 @@ public final class ClassroomAudit {
             JSONObject message=messages.optJSONObject(i);if(message==null)return JSONObject.NULL;
             prefix.put(message);
         }
-        JSONObject request=new JSONObject(options.toString()).put("messages",prefix);
+        JSONObject request=new JSONObject(options.toString()).put("responses".equals(conversation.optString("protocol"))?"input":"messages",prefix);
         return (long)request.toString().getBytes(StandardCharsets.UTF_8).length;
     }
     private static Object finishReason(Object value){

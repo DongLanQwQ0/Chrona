@@ -81,7 +81,7 @@ paths += [src / relative for relative in (
     'CellularClassroomRoute.java', 'ai/SchedulePreferences.java', 'ai/AiSettings.java',
     'ai/ChatCompletionClient.java', 'ai/ParseResult.java', 'ai/SchedulePrompt.java',
     'ai/SemanticEventNormalizer.java', 'ai/TimeAssessment.java', 'ai/RequestOptions.java',
-    'ai/StreamChunkContent.java', 'data/EventTimeDefaults.java', 'data/CandidateRules.java',
+    'ai/StreamChunkContent.java', 'ai/ResponsesProtocol.java', 'data/EventTimeDefaults.java', 'data/CandidateRules.java',
     'calendar/AllDayDates.java', 'net/RequestControl.java', 'net/NetworkFailure.java')]
 paths += [root / 'checks' / name for name in (
     'CellularClassroomRouteCheck.java', 'AiRequestCheck.java', 'TimeAssessmentCheck.java')]

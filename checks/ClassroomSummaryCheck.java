@@ -22,7 +22,7 @@ public final class ClassroomSummaryCheck {
     private static final List<Integer> requestBytes = new ArrayList<>();
     private static final Map<Integer,Integer> chunkCalls = new HashMap<>();
     private static final ClassroomLesson LESSON = new ClassroomLesson("1","2","测试课程","单课","教室","6",1);
-    private static final AiSettings AI = new AiSettings("https://api.openai.com/v1","gpt-5.1","synthetic-test-key","high");
+    private static final AiSettings AI = new AiSettings("https://api.openai.com/v1","gpt-5.1","synthetic-test-key","high",AiSettings.CHAT_COMPLETIONS);
     private static File root;
     interface Task {void run() throws Exception;}
     private static void check(boolean value,String message) {checks++;if(!value){failures++;System.err.println("FAIL: "+message);}}

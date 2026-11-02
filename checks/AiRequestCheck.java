@@ -177,7 +177,7 @@ public final class AiRequestCheck {
                 {"https://api-slb.jiji.cc/v1", "glm-5.3-flash", "low", "max_tokens", "8192"},
                 {"https://example.com/v1", "unrecognized-model", "high", "max_tokens", "8192"}
         }) {
-            AiSettings settings = new AiSettings(profile[0], profile[1], "test-only", profile[2]);
+            AiSettings settings = new AiSettings(profile[0], profile[1], "test-only", profile[2], AiSettings.CHAT_COMPLETIONS);
             JSONObject ordinary = options(profile[0], profile[1], profile[2]);
             JSONObject classroom = new ChatCompletionClient(settings).classroomOptions();
             check(ordinary.getInt(profile[3]) == Integer.parseInt(profile[4]),
@@ -191,7 +191,7 @@ public final class AiRequestCheck {
                     "classroom never guesses a second token field");
         }
         for (String model : new String[]{"gpt-4o", "gpt-4o-mini", "gpt-4o-2024-08-06", "gpt-4o-mini-2024-07-18"}) {
-            JSONObject classroom = new ChatCompletionClient(new AiSettings("https://api.openai.com/v1", model, "test-only", "low")).classroomOptions();
+            JSONObject classroom = new ChatCompletionClient(new AiSettings("https://api.openai.com/v1", model, "test-only", "low", AiSettings.CHAT_COMPLETIONS)).classroomOptions();
             check(classroom.getInt("max_completion_tokens") == 8192 && !classroom.has("max_tokens"),
                     "known smaller-ceiling official model preserves original budget: " + model);
         }
@@ -474,7 +474,7 @@ public final class AiRequestCheck {
             }
         } : null);
         String stable = SchedulePrompt.configuredSystem("偏好", "10:00", "22:00");
-        ChatCompletionClient client = new ChatCompletionClient(new AiSettings("https://offline.invalid/v1", "offline", "test-only"), null, stable);
+        ChatCompletionClient client = new ChatCompletionClient(new AiSettings("https://offline.invalid/v1", "offline", "test-only", "auto", AiSettings.CHAT_COMPLETIONS), null, stable);
         org.json.JSONArray placeholders = new org.json.JSONArray().put(new JSONObject().put("series_id", "private-context-series"));
         java.util.List<byte[]> images = java.util.Arrays.asList(new byte[]{1, 2}, null, new byte[0], new byte[]{3});
         ParseResult result = client.parseImages(10, "raw", images, "link", "file", 0, "Asia/Shanghai", null, false, placeholders);
@@ -512,7 +512,7 @@ public final class AiRequestCheck {
 
     /** Route injection exercises the real HTTP client, not a reimplementation of executeEnvelope. */
     private static void checkConnectionLeases() throws Exception {
-        AiSettings settings = new AiSettings("https://offline.invalid/v1", "offline", "test-only");
+        AiSettings settings = new AiSettings("https://offline.invalid/v1", "offline", "test-only", "auto", AiSettings.CHAT_COMPLETIONS);
         JSONObject request = new JSONObject().put("model", "offline").put("stream", false)
                 .put("messages", new org.json.JSONArray().put(new JSONObject().put("role", "user").put("content", "exact frozen body")));
         String frozen = request.toString();
@@ -603,7 +603,7 @@ public final class AiRequestCheck {
     }
     private static JSONObject options(String endpoint, String model, String effort) throws Exception {
         JSONObject body = new JSONObject();
-        RequestOptions.apply(body, new AiSettings(endpoint, model, "test-only", effort));
+        RequestOptions.apply(body, new AiSettings(endpoint, model, "test-only", effort, AiSettings.CHAT_COMPLETIONS));
         return body;
     }
     private static void check(boolean result, String label) { checks++; if (!result) throw new AssertionError(label); }

@@ -64,16 +64,105 @@ public final class SettingsExitInstrumentation extends Instrumentation {
         Bundle report = new Bundle();
         try {
             boolean cellularOnly = Boolean.parseBoolean(arguments.getString("cellularOnly", "false"));
-            if (cellularOnly) checkCellularOnly(); else check();
-            report.putString("settings_exit_report", cellularOnly ? "PASS: " + assertions
+            boolean protocolOnly = Boolean.parseBoolean(arguments.getString("protocolOnly", "false"));
+            if (protocolOnly) checkProtocolOnly(); else if (cellularOnly) checkCellularOnly(); else check();
+            report.putString("settings_exit_report", protocolOnly ? "PASS: " + assertions
+                    + " assertions; native landscape protocol field/menu, real Chat Completions choice changes draft only, rotation retains draft/baseline, cancel protects exit, scrolling title/save reachability, save/reopen retains protocol and key; orientation and preferences restored"
+                    : cellularOnly ? "PASS: " + assertions
                     + " assertions; classroom mobile data native default/tap/cancel/discard/save both states, landscape window with retained draft/baseline, reachable switch/save and scrolling header; orientation restored"
                     : "PASS: " + assertions
-                    + " assertions; all 12 form fields, classroom mobile data native toggle/default/draft/save/discard, note strength native drag/info navigation/draft/save/discard, concurrency, enhanced classroom, reverted values, title/system back, cancel,"
+                    + " assertions; all 13 form fields, protocol default/native selection/key retention/image-rejection identity, classroom mobile data native toggle/default/draft/save/discard, note strength native drag/info navigation/draft/save/discard, concurrency, enhanced classroom, reverted values, title/system back, cancel,"
                     + " dialog back/outside, discard, validation failures, save, recreation, immediate image reset");
             finish(-1, report);
         } catch (Throwable error) {
             report.putString("error", android.util.Log.getStackTraceString(error));
             finish(0, report);
+        }
+    }
+    private void checkProtocolOnly() throws Exception {
+        FixtureIsolation.require(getTargetContext());
+        require(Boolean.parseBoolean(arguments.getString("nativeScreen", "false")),
+                "protocol-only validation requires the actual native screen configuration");
+        SharedPreferences ai = getTargetContext().getSharedPreferences("chrona_ai_settings", 0);
+        SharedPreferences schedule = getTargetContext().getSharedPreferences("chrona_schedule_preferences", 0);
+        SharedPreferences appearance = getTargetContext().getSharedPreferences("appearance", 0);
+        Map<String, ?> oldAi = ai.getAll(), oldSchedule = schedule.getAll(), oldAppearance = appearance.getAll();
+        int originalRequest = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        int originalOrientation = Configuration.ORIENTATION_UNDEFINED;
+        boolean restoreOrientation = false;
+        try {
+            appearance.edit().putString("mode", arguments.getString("mode", "dark")).commit();
+            new AiSettingsStore(getTargetContext()).save("https://synthetic.invalid/v1", "synthetic-model",
+                    "chrona-settings-exit-synthetic", "auto");
+            new SchedulePreferences(600, 1320, "初始日程", "初始课堂").save(getTargetContext());
+            open();
+            originalRequest = current.getRequestedOrientation();
+            originalOrientation = current.getResources().getConfiguration().orientation;
+            restoreOrientation = true;
+            rotateSettings(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE);
+            View decor = current.getWindow().getDecorView();
+            require(current.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE
+                    && decor.getWidth() > decor.getHeight(), "protocol evidence uses an actual visible landscape window");
+            TextView protocolChoice = (TextView)field(current, "protocolChoice");scrollTo(protocolChoice);
+            requireFullyVisible(protocolChoice, "landscape protocol choice is fully visible");
+            require("Responses".contentEquals(protocolChoice.getText()), "landscape protocol defaults Responses");
+            capture("ai-protocol-only-landscape-field");tapCenter(protocolChoice);
+            TextView chatOption = null, responseOption = null;
+            for (View window : android.view.inspector.WindowInspector.getGlobalWindowViews()) {
+                if (findText(window,"API 协议") == null) continue;
+                chatOption = findText(window,"Chat Completions");
+                responseOption = findText(window,"Responses");
+                if (chatOption != null && responseOption != null) break;
+            }
+            require(chatOption != null && responseOption != null, "landscape shared menu exposes both protocols");
+            requireFullyVisible(chatOption, "landscape Chat Completions option is fully visible");
+            requireFullyVisible(responseOption, "landscape Responses option is fully visible");
+            capture("ai-protocol-only-landscape-menu");click("Chat Completions");
+            require(AiSettings.CHAT_COMPLETIONS.equals(values()[12])
+                    && AiSettings.RESPONSES.equals(new AiSettingsStore(getTargetContext()).load().protocol),
+                    "real landscape protocol choice updates only draft");
+            String[] draft = values();
+            rotateSettings(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, Configuration.ORIENTATION_PORTRAIT);
+            require(java.util.Arrays.equals(draft, values())
+                    && AiSettings.RESPONSES.equals(((String[])field(current,"savedForm"))[12]),
+                    "portrait recreation retains protocol draft and original baseline");
+            rotateSettings(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE);
+            require(java.util.Arrays.equals(draft, values())
+                    && AiSettings.RESPONSES.equals(new AiSettingsStore(getTargetContext()).load().protocol),
+                    "returning to landscape retains draft without saving");
+            titleBack();require(prompt(), "rotated protocol draft protects exit");click("取消");
+            require(!current.isFinishing() && AiSettings.CHAT_COMPLETIONS.equals(values()[12]),
+                    "cancel retains rotated protocol draft");
+            TextView save = findText(current.getWindow().getDecorView(), "保存设置");
+            require(save != null, "landscape save action exists");scrollTo(save);
+            requireFullyVisible(save, "landscape save action is fully scroll reachable");
+            TextView title = findText(current.getWindow().getDecorView(), "AI 服务设置");
+            require(title != null && !title.getGlobalVisibleRect(new Rect()), "landscape title scrolls outside viewport");
+            tapCenter(save);
+            require(current.isFinishing() && AiSettings.CHAT_COMPLETIONS.equals(new AiSettingsStore(getTargetContext()).load().protocol),
+                    "landscape save commits selected protocol");
+            open();protocolChoice = (TextView)field(current, "protocolChoice");scrollTo(protocolChoice);
+            requireFullyVisible(protocolChoice, "reopened protocol choice is reachable");
+            AiSettings saved = new AiSettingsStore(getTargetContext()).load();
+            require("Chat Completions".contentEquals(protocolChoice.getText())
+                    && AiSettings.CHAT_COMPLETIONS.equals(values()[12])
+                    && saved.apiKey.equals("chrona-settings-exit-synthetic"),
+                    "reopened form retains saved protocol and existing key");
+        } finally {
+            try {
+                if (current != null && !current.isDestroyed() && !current.isFinishing()) {
+                    if (prompt()) systemBack();
+                    if (restoreOrientation) rotateSettings(originalRequest, originalOrientation);
+                    runOnMainSync(() -> {
+                        try { method("restoreForm", String[].class).invoke(current, (Object)field(current, "savedForm")); }
+                        catch (Exception error) { throw new IllegalStateException(error); }
+                        current.finish();
+                    });
+                }
+            } finally {
+                try { restore(ai, oldAi); }
+                finally { try { restore(schedule, oldSchedule); } finally { restore(appearance, oldAppearance); } }
+            }
         }
     }
     private void checkCellularOnly() throws Exception {
@@ -194,9 +283,20 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             open(); systemBack(); require(current.isFinishing(), "pristine system back exits");
             open();
             String[] original = values();
-            require(original.length == 12 && "false".equals(original[8]) && "3".equals(original[9])
-                    && "3".equals(original[10]) && "true".equals(original[11]),
-                    "enhanced classroom, concurrency, note strength and mobile data defaults participate in form baseline");
+            require(original.length == 13 && "false".equals(original[8]) && "3".equals(original[9])
+                    && "3".equals(original[10]) && "true".equals(original[11]) && AiSettings.RESPONSES.equals(original[12]),
+                    "enhanced classroom, concurrency, note strength, mobile data and Responses defaults participate in form baseline");
+            checkProtocolStore();
+            TextView protocolChoice = (TextView)field(current,"protocolChoice");
+            scrollTo(protocolChoice);requireFullyVisible(protocolChoice,"protocol choice is fully reachable");
+            require("Responses".contentEquals(protocolChoice.getText()),"protocol choice defaults to Responses");
+            capture("ai-protocol-field");tapCenter(protocolChoice);capture("ai-protocol-choices");click("Chat Completions");
+            require(AiSettings.CHAT_COMPLETIONS.equals(values()[12])
+                    && AiSettings.RESPONSES.equals(new AiSettingsStore(getTargetContext()).load().protocol),
+                    "native protocol choice updates draft without saving");
+            titleBack();require(prompt(),"protocol draft protects title exit");click("取消");
+            require(AiSettings.CHAT_COMPLETIONS.equals(values()[12]),"cancel retains native protocol draft");
+            runOnMainSync(() -> edit(12,AiSettings.RESPONSES));
             Switch cellular = (Switch)field(current,"classroomCellular");
             scrollTo(cellular);
             require("AI总结使用移动数据".contentEquals(cellular.getText()) && cellular.isChecked(),
@@ -245,6 +345,7 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                 final int index = i;
                 runOnMainSync(() -> edit(index, index == 4 ? "660" : index == 5 ? "1380"
                         : index == 3 ? "high" : index == 8 ? "true" : index == 11 ? "false"
+                        : index == 12 ? AiSettings.CHAT_COMPLETIONS
                         : index == 9 || index == 10 ? "2" : original[index] + " changed"));
                 if (i % 2 == 0) titleBack(); else systemBack();
                 if (!prompt()) {
@@ -269,11 +370,14 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                 if (i == 11) require("false".equals(values()[11])
                         && SchedulePreferences.load(getTargetContext()).classroomCellular,
                         "cancel retains unsaved mobile data draft");
+                if (i == 12) require(AiSettings.CHAT_COMPLETIONS.equals(values()[12])
+                        && AiSettings.RESPONSES.equals(new AiSettingsStore(getTargetContext()).load().protocol),
+                        "cancel retains unsaved protocol draft");
                 runOnMainSync(() -> edit(index, original[index]));
             }
             titleBack(); require(current.isFinishing(), "all values reverted exits without prompt");
 
-            open(); runOnMainSync(() -> { edit(6, "未保存日程"); edit(8, "true"); edit(9, "1"); edit(10, "1"); edit(11, "false"); });
+            open(); runOnMainSync(() -> { edit(6, "未保存日程"); edit(8, "true"); edit(9, "1"); edit(10, "1"); edit(11, "false"); edit(12,AiSettings.CHAT_COMPLETIONS); });
             titleBack(); capture("exit-dialog");
             systemBack(); require(!current.isFinishing() && !prompt(), "dialog back keeps editing");
             titleBack(); tap(4, getTargetContext().getResources().getDisplayMetrics().heightPixels * .8f);
@@ -283,6 +387,9 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                     "dialog back and outside dismissal retain unsaved enhanced classroom draft");
             require("false".equals(values()[11]) && SchedulePreferences.load(getTargetContext()).classroomCellular,
                     "dialog back and outside dismissal retain unsaved mobile data draft");
+            require(AiSettings.CHAT_COMPLETIONS.equals(values()[12])
+                    && AiSettings.RESPONSES.equals(new AiSettingsStore(getTargetContext()).load().protocol),
+                    "dialog back and outside dismissal retain protocol draft without saving");
             titleBack(); click("放弃"); require(current.isFinishing(), "discard exits");
             require(SchedulePreferences.load(getTargetContext()).customPrompt.equals("初始日程"), "discard leaves preferences");
             require(!SchedulePreferences.load(getTargetContext()).enhancedClassroom,
@@ -293,12 +400,15 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                     "discard leaves saved note strength unchanged");
             require(SchedulePreferences.load(getTargetContext()).classroomCellular,
                     "discard leaves saved mobile data enabled");
+            require(AiSettings.RESPONSES.equals(new AiSettingsStore(getTargetContext()).load().protocol),
+                    "discard preserves original protocol");
 
             open(); runOnMainSync(() -> {
                 edit(0, "https://new.synthetic.invalid/v1"); edit(1, "new-synthetic-model");
                 edit(2, "replacement-synthetic-key"); edit(3, "high"); edit(4, "660");
                 edit(5, "1380"); edit(6, "重建日程"); edit(7, "重建课堂");
                 edit(8, "true"); edit(9, "2"); edit(10, "2"); edit(11, "false");
+                edit(12,AiSettings.CHAT_COMPLETIONS);
             });
             String[] draft = values();
             ActivityMonitor monitor = addMonitor(SettingsActivity.class.getName(), null, false);
@@ -311,6 +421,8 @@ public final class SettingsExitInstrumentation extends Instrumentation {
                     && "3".equals(((String[]) field(current, "savedForm"))[9])
                     && "3".equals(((String[]) field(current, "savedForm"))[10])
                     && "true".equals(((String[]) field(current, "savedForm"))[11])
+                    && AiSettings.RESPONSES.equals(((String[])field(current,"savedForm"))[12])
+                    && AiSettings.RESPONSES.equals(new AiSettingsStore(getTargetContext()).load().protocol)
                     && !SchedulePreferences.load(getTargetContext()).enhancedClassroom
                     && SchedulePreferences.load(getTargetContext()).classroomConcurrency == 3
                     && SchedulePreferences.load(getTargetContext()).classroomNoteStrength == 3
@@ -326,6 +438,8 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             require(SchedulePreferences.load(getTargetContext()).workStartMinutes == 600, "invalid save leaves preferences");
             require(!SchedulePreferences.load(getTargetContext()).enhancedClassroom,
                     "invalid save does not persist enhanced classroom draft");
+            require(AiSettings.RESPONSES.equals(new AiSettingsStore(getTargetContext()).load().protocol),
+                    "invalid save does not persist protocol draft");
             require(SchedulePreferences.load(getTargetContext()).classroomCellular,
                     "invalid save does not persist mobile data draft");
             runOnMainSync(() -> { edit(5, "1380"); edit(0, "http://invalid.invalid"); });
@@ -335,7 +449,8 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             titleBack(); click("保存"); require(current.isFinishing() && !prompt(), "successful save exits without second prompt");
             AiSettings saved = new AiSettingsStore(getTargetContext()).load();
             require(saved.model.equals("new-synthetic-model") && saved.reasoningEffort.equals("high")
-                    && saved.apiKey.equals("replacement-synthetic-key"), "connection saved");
+                    && saved.apiKey.equals("replacement-synthetic-key") && AiSettings.CHAT_COMPLETIONS.equals(saved.protocol),
+                    "connection and selected Chat Completions protocol saved");
             SchedulePreferences prefs = SchedulePreferences.load(getTargetContext());
             require(prefs.workStartMinutes == 660 && prefs.workEndMinutes == 1380
                     && prefs.customPrompt.equals("重建日程") && prefs.classroomPrompt.equals("重建课堂")
@@ -349,8 +464,8 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             titleBack(); require(current.isFinishing(), "immediate image reset not a dirty form");
             open();
             require("true".equals(values()[8]) && "2".equals(values()[9]) && "2".equals(values()[10])
-                    && "false".equals(values()[11]),
-                    "reopened form reflects saved enhanced classroom, concurrency, note strength and mobile data");
+                    && "false".equals(values()[11]) && AiSettings.CHAT_COMPLETIONS.equals(values()[12]),
+                    "reopened form reflects saved enhanced classroom, concurrency, note strength, mobile data and protocol");
             runOnMainSync(() -> edit(8, "false"));
             titleBack(); require(prompt(), "disabling enhanced classroom protects exit");
             click("保存"); require(current.isFinishing(), "saving disabled enhanced classroom exits");
@@ -364,6 +479,12 @@ public final class SettingsExitInstrumentation extends Instrumentation {
             titleBack();require(prompt(),"enabling mobile data protects exit");
             click("保存");require(current.isFinishing() && SchedulePreferences.load(getTargetContext()).classroomCellular,
                     "explicit save persists mobile data enabled");
+            open();protocolChoice=(TextView)field(current,"protocolChoice");scrollTo(protocolChoice);tapCenter(protocolChoice);click("Responses");
+            titleBack();require(prompt(),"switching back to Responses protects exit");click("保存");
+            AiSettings restoredProtocol=new AiSettingsStore(getTargetContext()).load();
+            require(current.isFinishing() && AiSettings.RESPONSES.equals(restoredProtocol.protocol)
+                    && restoredProtocol.apiKey.equals("replacement-synthetic-key"),
+                    "protocol-only save with blank key retains existing secret");
         } finally {
             if (introductionActivity != null && !introductionActivity.isDestroyed()) runOnMainSync(introductionActivity::finish);
             if (current != null && !current.isDestroyed()) runOnMainSync(() -> {
@@ -377,6 +498,26 @@ public final class SettingsExitInstrumentation extends Instrumentation {
     private void open() {
         current = (SettingsActivity) startActivitySync(new Intent(getTargetContext(), SettingsActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); settle();
+    }
+    private void checkProtocolStore() throws Exception {
+        AiSettingsStore store = new AiSettingsStore(getTargetContext());
+        AiSettings response = store.load();
+        require(AiSettings.RESPONSES.equals(response.protocol),"original store save entry defaults Responses");
+        store.save(response.baseUrl,response.model,response.apiKey,response.reasoningEffort,AiSettings.CHAT_COMPLETIONS);
+        AiSettings chat = store.load();
+        require(AiSettings.CHAT_COMPLETIONS.equals(chat.protocol),"store persists explicit Chat Completions protocol");
+        store.markImageUnsupported(chat);
+        require(store.isImageUnsupported(chat) && !store.isImageUnsupported(response),
+                "learned image rejection is scoped to Chat Completions protocol");
+        store.markImageUnsupported(response);
+        require(store.isImageUnsupported(response) && !store.isImageUnsupported(chat),
+                "learned image rejection is scoped to Responses protocol");
+        store.clearImageSupport();
+        require(getTargetContext().getSharedPreferences("chrona_ai_settings",0).edit().remove("protocol").commit(),
+                "old configuration fixture removes protocol field");
+        AiSettings legacy = store.load();
+        require(AiSettings.RESPONSES.equals(legacy.protocol) && legacy.apiKey.equals(response.apiKey),
+                "old stored configuration missing protocol loads Responses with key preserved");
     }
     private void verifyIntroduction()throws Exception{
         for(int level=1;level<=3;level++){
@@ -497,8 +638,9 @@ public final class SettingsExitInstrumentation extends Instrumentation {
     private void edit(int index, String value) {
         try {
             String[] fields = {"baseUrl", "model", "apiKey", "reasoningEffort", "workStartMinutes",
-                    "workEndMinutes", "customPrompt", "classroomPrompt", "enhancedClassroom", "classroomConcurrency", "classroomNoteStrength", "classroomCellular"};
+                    "workEndMinutes", "customPrompt", "classroomPrompt", "enhancedClassroom", "classroomConcurrency", "classroomNoteStrength", "classroomCellular", "protocol"};
             if (index == 3) method("setEffort", String.class).invoke(current, value);
+            else if (index == 12) method("setProtocol", String.class).invoke(current, value);
             else if (index == 8 || index == 11) ((Switch) field(current, fields[index])).setChecked(Boolean.parseBoolean(value));
             else if (index == 10) ((SeekBar) field(current, "classroomNoteStrengthSlider")).setProgress(Integer.parseInt(value));
             else if (index == 4 || index == 5 || index == 9) {

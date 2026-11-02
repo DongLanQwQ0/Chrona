@@ -17,9 +17,9 @@ import java.util.regex.*;
 /** Production classes, synthetic material and model output, real loopback HTTP. */
 public final class ClassroomEnhancedCheck {
     private static final ClassroomLesson LESSON=new ClassroomLesson("1","2","合成课程","合成课堂","教室","6",1);
-    private static final AiSettings AI=new AiSettings("https://api.openai.com/v1","gpt-5.1","synthetic-only-key","high");
+    private static final AiSettings AI=new AiSettings("https://api.openai.com/v1","gpt-5.1","synthetic-only-key","high",AiSettings.CHAT_COMPLETIONS);
     private static final List<JSONObject> requests=new ArrayList<>(), replies=new ArrayList<>();
-    private static final List<String> stages=new ArrayList<>();
+    private static final List<String> stages=new ArrayList<>(),endpoints=new ArrayList<>();
     private static final List<Integer> requestBytes=new ArrayList<>();
     private static File root;private static int checks,failures,failCall=-1,slowCall=-1;
     private static String mode="normal",lastStage="";private static boolean images;
@@ -29,11 +29,12 @@ public final class ClassroomEnhancedCheck {
     private static void check(boolean ok,String message){checks++;if(!ok){failures++;System.err.println("FAIL: "+message);}}
     private static void test(String label,Task task){try{task.run();System.out.println("DONE: "+label);}catch(Throwable error){failures++;System.err.println("ERROR: "+label);error.printStackTrace();}}
     private static void rejects(Task task,String label)throws Exception{try{task.run();check(false,label);}catch(IOException|JSONException expected){check(true,label);}}
-    private static void reset(String value,boolean withImages){requests.clear();replies.clear();stages.clear();requestBytes.clear();mode=value;images=withImages;lastStage="";failCall=-1;slowCall=-1;requestSeen=new CountDownLatch(1);}
-    private static String prompt(JSONObject request)throws Exception{JSONArray messages=request.getJSONArray("messages");return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");}
+    private static void reset(String value,boolean withImages){requests.clear();replies.clear();stages.clear();endpoints.clear();requestBytes.clear();mode=value;images=withImages;lastStage="";failCall=-1;slowCall=-1;requestSeen=new CountDownLatch(1);}
+    private static JSONArray messages(JSONObject request)throws Exception{return request.getJSONArray(request.has("input")?"input":"messages");}
+    private static String prompt(JSONObject request)throws Exception{JSONArray messages=messages(request);return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");}
     private static String referencedPrompt(JSONObject request,String prompt)throws Exception {
         Matcher reference=Pattern.compile("完整要求见历史第(\\d+)条消息").matcher(prompt);
-        return reference.find()?request.getJSONArray("messages").getJSONObject(Integer.parseInt(reference.group(1))-1).getJSONArray("content").getJSONObject(0).getString("text"):prompt;
+        return reference.find()?messages(request).getJSONObject(Integer.parseInt(reference.group(1))-1).getJSONArray("content").getJSONObject(0).getString("text"):prompt;
     }
     private static String stage(String prompt){
         Matcher restart=Pattern.compile("当前阶段：([^；]+)；重试序号：(\\d+)").matcher(prompt);if(restart.find())return restart.group(1)+"-restart-"+restart.group(2);
@@ -82,7 +83,7 @@ public final class ClassroomEnhancedCheck {
         server.createContext("/",exchange->{try{
             byte[] wire=exchange.getRequestBody().readAllBytes();requestBytes.add(wire.length);
             JSONObject body=new JSONObject(new String(wire,StandardCharsets.UTF_8));
-            requests.add(body);String physical=prompt(body),current=stage(physical),text=referencedPrompt(body,physical);stages.add(current);int call=requests.size();
+            requests.add(body);endpoints.add(exchange.getRequestURI().getPath());String physical=prompt(body),current=stage(physical),text=referencedPrompt(body,physical);stages.add(current);int call=requests.size();
             if(!current.contains("continue")&&!current.contains("repair")&&!current.contains("user-retry"))lastStage=current;
             if(call==slowCall){requestSeen.countDown();Thread.sleep(1200);}
             if(call==failCall){byte[] error="{\"error\":{\"message\":\"synthetic unavailable\"}}".getBytes(StandardCharsets.UTF_8);replies.add(null);exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(503,error.length);exchange.getResponseBody().write(error);return;}
@@ -121,7 +122,7 @@ public final class ClassroomEnhancedCheck {
                 if(current.equals("draft-0")&&mode.equals("affairs-missing"))value.remove("affairs");
                 if(current.equals("draft-0")&&mode.equals("affairs-type"))value.put("affairs",new JSONObject());
                 if(mode.equals("affairs-missing-always")&&current.startsWith("draft"))value.remove("affairs");
-                if(!body.getJSONArray("messages").getJSONObject(0).optString("content").contains("成品严格分离"))value.remove("affairs");
+                if(!messages(body).getJSONObject(0).opt("content").toString().contains("成品严格分离"))value.remove("affairs");
                 output="  ```json\n"+value.toString(2)+"\n```  ";}
             if(mode.equals("length-editor")&&current.equals("edit-note-1")){output="{\"overview\":\"截断不得拼接\"";finish="length";}
             if(mode.equals("length-final")&&current.equals("final-0")){output="{\"overview\":\"截断不得拼接\"";finish="length";}
@@ -130,7 +131,22 @@ public final class ClassroomEnhancedCheck {
             JSONObject usage=new JSONObject().put("prompt_tokens",1000+call).put("completion_tokens",100)
                     .put("total_tokens",1100+call).put("prompt_tokens_details",new JSONObject().put("cached_tokens",700+call)).put("prompt_cache_hit_tokens",600+call);
             String payload,type;
-            if(mode.equals("json-envelope")){
+            if(body.has("input")){
+                JSONObject nativeUsage=new JSONObject().put("input_tokens",1000+call).put("output_tokens",100).put("total_tokens",1100+call)
+                        .put("input_tokens_details",new JSONObject().put("cached_tokens",700+call)).put("output_tokens_details",new JSONObject().put("reasoning_tokens",30));
+                JSONObject nativeResponse=new JSONObject().put("id","resp_loopback_"+call).put("object","response")
+                        .put("status",mode.equals("native-incomplete")&&current.equals("draft-1")?"incomplete":"completed")
+                        .put("usage",nativeUsage).put("output",new JSONArray()
+                                .put(new JSONObject().put("type","reasoning").put("id","rs_"+call).put("encrypted_content","opaque-native-reasoning-"+call)
+                                        .put("summary",new JSONArray().put(new JSONObject().put("type","summary_text").put("text","合成推理 call="+call))))
+                                .put(new JSONObject().put("id","msg_"+call).put("type","message").put("role","assistant").put("status","completed")
+                                        .put("content",new JSONArray().put(new JSONObject().put("type","output_text").put("text",output)
+                                                .put("annotations",new JSONArray()).put("provider_extension",new JSONObject().put("opaque","unchanged"))))));
+                replies.set(replies.size()-1,nativeResponse);
+                String terminal=nativeResponse.getString("status").equals("completed")?"response.completed":"response.incomplete";
+                payload="event: response.output_text.delta\ndata: "+new JSONObject().put("type","response.output_text.delta").put("output_index",1).put("content_index",0).put("delta",output)+"\n\n"
+                        +"event: "+terminal+"\ndata: "+new JSONObject().put("type",terminal).put("response",nativeResponse)+"\n\n";type="text/event-stream";
+            }else if(mode.equals("json-envelope")){
                 reply.put("provider_extension",new JSONObject().put("opaque","unchanged"));
                 payload=new JSONObject().put("choices",new JSONArray().put(new JSONObject().put("message",reply).put("finish_reason",finish))).put("usage",usage).toString();type="application/json";
             }else{
@@ -191,6 +207,74 @@ public final class ClassroomEnhancedCheck {
         check(result.getJSONArray("images").length()==2&&state(dir).getJSONObject("image_audit").getInt("selected_count")==2,"image budget and analysed inventory");
         check(state(dir).getJSONArray("drafts").getJSONObject(0).has("image_assessment")&&state(dir).getJSONArray("drafts").getJSONObject(1).getJSONArray("image_requests").length()==1,"per-block image assessment and requests persisted");
         check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").contains("。\n\n下一段"),"parsed Markdown normalizes escaped paragraph breaks");
+    }
+    private static JSONObject generateWithProtocol(File dir,String protocol)throws Exception{
+        AiSettings settings=new AiSettings(AI.baseUrl,AI.model,AI.apiKey,AI.reasoningEffort,protocol);
+        try(RequestControl control=new RequestControl(20000)){
+            return ClassroomSummary.generate(dir,LESSON,settings,images?2:0,control,p->{},"保留题干条件及步骤分",true);
+        }
+    }
+    private static void nativeAppendOnly(File dir)throws Exception{
+        JSONObject options=new JSONObject(requests.get(0).toString());options.remove("input");
+        for(int n=0;n<requests.size();n++){
+            JSONObject request=requests.get(n),currentOptions=new JSONObject(request.toString());currentOptions.remove("input");
+            check(endpoints.get(n).equals("/v1/responses")&&request.has("input")&&!request.has("messages"),"native frozen endpoint/body "+n);
+            check(currentOptions.similar(options),"native options never change "+n);
+            check(request.getInt("max_output_tokens")==32768&&!request.has("max_tokens")&&!request.has("max_completion_tokens")&&!request.has("stream_options"),"native output budget has no Chat fields "+n);
+            if(n==0)continue;
+            JSONArray before=requests.get(n-1).getJSONArray("input"),after=request.getJSONArray("input");
+            for(int i=0;i<before.length();i++)check(after.getJSONObject(i).toString().equals(before.getJSONObject(i).toString()),"exact native input prefix "+n+":"+i);
+            JSONObject prior=replies.get(n-1);
+            boolean success=prior!=null&&prior.optString("status").equals("completed");
+            JSONArray output=success?prior.getJSONArray("output"):new JSONArray();
+            check(after.length()==before.length()+output.length()+1,"append only service output items plus next user "+n);
+            for(int i=0;i<output.length();i++)check(after.getJSONObject(before.length()+i).toString().equals(output.getJSONObject(i).toString()),"native output item including encrypted reasoning unchanged "+n+":"+i);
+            if(!success)check(prompt(request).contains("从头完整重新生成当前板块"),"native failure restarts explicitly without failed partial output "+n);
+        }
+        JSONObject conversation=state(dir).getJSONObject("conversation");
+        check(conversation.getString("protocol").equals(AiSettings.RESPONSES),"conversation freezes explicit native protocol");
+        JSONArray turns=conversation.getJSONArray("turns");check(turns.length()==requests.size(),"all native attempts audited");
+        for(int n=0;n<turns.length();n++){
+            JSONObject turn=turns.getJSONObject(n);check(turn.getInt("request_bytes")==requestBytes.get(n),"exact native request bytes audited "+n);
+            if(replies.get(n)!=null&&replies.get(n).optString("status").equals("completed")){
+                check(turn.getJSONObject("response").getJSONObject("response").toString().equals(replies.get(n).toString()),"full native response preserved in audit "+n);
+                check(turn.getJSONObject("usage").getInt("prompt_tokens")==1001+n&&turn.getJSONObject("usage").getJSONObject("prompt_tokens_details").getInt("cached_tokens")==701+n,"native usage maps into classroom audit "+n);
+            }
+        }
+        check(!state(dir).toString().contains(AI.apiKey),"native run excludes credential");
+    }
+    private static void nativePipeline()throws Exception{
+        reset("normal",true);File dir=materials("native-multiblock",true);JSONObject result=generateWithProtocol(dir,AiSettings.RESPONSES);
+        check(result.getBoolean("complete")&&result.getJSONArray("parts").length()==1&&result.getInt("source_blocks")==2,"native enhanced multi-block pipeline produces one complete document");
+        check(stages.equals(List.of("correct-0","correct-1","draft-0","draft-1","final-0","final-1","edit-plan","edit-note-0","edit-note-1")),"native pipeline retains complete correction/extraction/image/editorial stages");
+        check(requests.stream().anyMatch(value->value.toString().contains("input_image")),"native pipeline actually attaches selected images as input_image");
+        check(requests.stream().noneMatch(value->value.toString().contains("\"type\":\"image_url\"")),"native pipeline never leaks Chat image parts");
+        nativeAppendOnly(dir);evidence("native-complete",dir);
+        for(boolean incomplete:new boolean[]{false,true}){
+            reset(incomplete?"native-incomplete":"normal",false);File failed=materials("native-resume-"+incomplete,true);
+            if(!incomplete)failCall=4;
+            rejects(()->generateWithProtocol(failed,AiSettings.RESPONSES),"native HTTP/incomplete response stops without automatic retry "+incomplete);
+            JSONObject before=state(failed);String run=before.getString("run");
+            check(requests.size()==4&&before.getJSONArray("corrected").length()==2&&before.getJSONArray("drafts").length()==1&&!before.has("final"),"native failure only rolls back uncommitted block "+incomplete);
+            JSONArray prefix=new JSONArray(requests.get(3).getJSONArray("input").toString());
+            check(!before.getJSONObject("conversation").has("pending")&&before.getJSONObject("conversation").getJSONObject("restarts").getInt("draft-1")==1,"native failure records restart checkpoint "+incomplete);
+            mode="normal";failCall=-1;
+            // A user protocol change applies to new runs, never a partly completed frozen conversation.
+            result=generateWithProtocol(failed,AiSettings.CHAT_COMPLETIONS);
+            check(result.getBoolean("complete")&&result.getString("run").equals(run)&&Collections.frequency(stages,"correct-0")==1,"native continuation retains run and committed correction after setting switches to Chat "+incomplete);
+            JSONArray resumed=requests.get(4).getJSONArray("input");
+            for(int i=0;i<prefix.length();i++)check(resumed.getJSONObject(i).toString().equals(prefix.getJSONObject(i).toString()),"native retry retains exact sent prefix "+incomplete+":"+i);
+            check(!resumed.toString().contains("opaque-native-reasoning-4"),"incomplete native output/encrypted items never enter resumed history "+incomplete);
+            nativeAppendOnly(failed);evidence("native-resumed-"+incomplete,failed);
+        }
+        reset("normal",false);File legacy=materials("native-setting-legacy-chat",false);JSONObject legacyRun=legacyState(legacy,true);
+        legacyRun.getJSONObject("conversation").remove("protocol");ClassroomStore.write(new File(legacy,"run.json"),legacyRun);
+        JSONArray prefix=new JSONArray(legacyRun.getJSONObject("conversation").getJSONArray("messages").toString());
+        result=generateWithProtocol(legacy,AiSettings.RESPONSES);
+        check(result.getBoolean("complete")&&result.getString("run").equals(legacyRun.getString("run")),"legacy no-protocol run remains usable under new default");
+        for(String endpoint:endpoints)check(endpoint.equals("/v1/chat/completions"),"legacy missing protocol continues only Chat endpoint");
+        JSONArray sent=requests.get(0).getJSONArray("messages");
+        for(int i=0;i<prefix.length();i++)check(sent.getJSONObject(i).toString().equals(prefix.getJSONObject(i).toString()),"legacy sent Chat history is never converted "+i);
     }
     private static void assignmentEditorial()throws Exception{
         JSONObject original=new JSONObject().put("0:0",new JSONObject().put("text","今天查看成绩并核对单选题。").put("sources",new JSONArray().put(0)).put("evidence","原始依据甲"))
@@ -732,6 +816,11 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length>1&&args[1].equals("responses")){
+            try{test("native Responses pipeline, immutable items and protocol-frozen recovery",ClassroomEnhancedCheck::nativePipeline);}
+            finally{server.stop(0);}System.out.println("ClassroomResponsesCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Native Responses pipeline checks failed");return;
+        }
+        if(args.length==1)test("native Responses pipeline, immutable items and protocol-frozen recovery",ClassroomEnhancedCheck::nativePipeline);
         if(args.length==1)test("scoped routing retains the full pipeline and immutable checkpoints",ClassroomEnhancedCheck::routedPipeline);
         if(args.length>1&&args[1].equals("note-strength")){
             try{test("enhanced note strength and overview image guard",ClassroomEnhancedCheck::noteStrength);}

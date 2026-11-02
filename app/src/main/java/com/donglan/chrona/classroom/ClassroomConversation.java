@@ -1,6 +1,7 @@
 package com.donglan.chrona.classroom;
 
 import com.donglan.chrona.ai.ChatCompletionClient;
+import com.donglan.chrona.ai.AiSettings;
 import org.json.*;
 import java.io.*;
 import java.util.*;
@@ -11,12 +12,17 @@ final class ClassroomConversation {
     private final File dir;
     private final JSONObject state,conversation;
     private final ChatCompletionClient client;
+    private final boolean responses;
     ClassroomConversation(File dir,JSONObject state,ChatCompletionClient client,String system)throws Exception{
         this.dir=dir;this.state=state;this.client=client;
         if(!state.has("conversation"))state.put("conversation",new JSONObject().put("options",client.classroomOptions())
+                .put("protocol",client.protocol())
                 .put("messages",new JSONArray().put(new JSONObject().put("role","system").put("content",system)))
                 .put("turns",new JSONArray()).put("outputs",new JSONObject()));
         conversation=state.getJSONObject("conversation");
+        // Saved pre-selection runs were sent with Chat Completions. Never translate their prefix.
+        String protocol=conversation.optString("protocol",AiSettings.CHAT_COMPLETIONS);
+        AiSettings.validateProtocol(protocol);responses=AiSettings.RESPONSES.equals(protocol);
     }
     boolean attempted(String stage)throws JSONException{
         JSONArray turns=conversation.getJSONArray("turns");
@@ -57,15 +63,18 @@ final class ClassroomConversation {
         }
         JSONArray messages=conversation.getJSONArray("messages");
         if(!conversation.has("pending")){
-            JSONArray content=new JSONArray().put(new JSONObject().put("type","text").put("text",prompt));
-            for(byte[] image:images)content.put(new JSONObject().put("type","image_url").put("image_url",new JSONObject()
-                    .put("url","data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(image))));
+            JSONArray content=new JSONArray().put(new JSONObject().put("type",responses?"input_text":"text").put("text",prompt));
+            for(byte[] image:images){
+                String url="data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(image);
+                content.put(responses?new JSONObject().put("type","input_image").put("image_url",url):
+                        new JSONObject().put("type","image_url").put("image_url",new JSONObject().put("url",url)));
+            }
             messages.put(new JSONObject().put("role","user").put("content",content));
             conversation.put("pending",stage);save();
         }else if(!stage.equals(conversation.getString("pending")))throw new IOException("上次请求结果未确认，请先继续原阶段");
         // A limit is an explicit stop, never a reason to compact or replace history.
         if(messages.toString().length()>32_000_000)throw new IOException("课堂上下文已达本地上限，完整历史已保留，未裁剪或重新发送");
-        JSONObject request=new JSONObject(conversation.getJSONObject("options").toString()).put("messages",new JSONArray(messages.toString()));
+        JSONObject request=new JSONObject(conversation.getJSONObject("options").toString()).put(responses?"input":"messages",new JSONArray(messages.toString()));
         JSONObject audit=new JSONObject().put("stage",stage).put("message_count",messages.length()).put("started",System.currentTimeMillis())
                 .put("request_bytes",request.toString().getBytes(StandardCharsets.UTF_8).length)
                 .put("status","running");conversation.getJSONArray("turns").put(audit);save();
@@ -73,9 +82,14 @@ final class ClassroomConversation {
             JSONObject response=client.completeConversation(request);
             audit.put("response",response).put("usage",response.optJSONObject("usage")==null?JSONObject.NULL:response.getJSONObject("usage"));
             JSONObject choice=response.getJSONArray("choices").getJSONObject(0),reply=choice.getJSONObject("message");
-            // Include service-returned reasoning fields exactly; do not synthesize or edit its content.
-            if(!reply.has("role"))reply.put("role","assistant");
-            messages.put(reply);
+            if(responses){
+                // Replay every complete native item, including encrypted reasoning, without rebuilding it.
+                JSONArray items=response.getJSONObject("response").getJSONArray("output");
+                for(int i=0;i<items.length();i++)messages.put(new JSONObject(items.getJSONObject(i).toString()));
+            }else{
+                if(!reply.has("role"))reply.put("role","assistant");
+                messages.put(reply);
+            }
             String output=reply.opt("content") instanceof String text?text:"";
             if(!conversation.has("finishes"))conversation.put("finishes",new JSONObject());
             conversation.getJSONObject("finishes").put(stage,choice.optString("finish_reason"));

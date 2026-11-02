@@ -35,7 +35,8 @@ public final class AiSettingsStore {
  private static final Map<Context,AiSettings> saved=new WeakHashMap<>(); private final Context context;
  public AiSettingsStore(Context context) { this.context=context; }
  public AiSettings load() { return saved.get(context); }
- public void save(String base,String model,String key,String effort) { saved.put(context,new AiSettings(base,model,key,effort)); }
+ public void save(String base,String model,String key,String effort) { save(base,model,key,effort,AiSettings.RESPONSES); }
+ public void save(String base,String model,String key,String effort,String protocol) { saved.put(context,new AiSettings(base,model,key,effort,protocol)); }
 }''',
 'com/donglan/chrona/ThemeStore.java': '''package com.donglan.chrona;
 import android.content.Context;
@@ -58,10 +59,12 @@ public final class ConfigBackupCheck {
  public static void main(String[] args) throws Exception {
   Context empty=new Context(), configured=new Context();
   AiSettingsStore saved=new AiSettingsStore(configured);
-  saved.save("https://original.test/v1","original-model","local-secret","high");
+  saved.save("https://original.test/v1","original-model","local-secret","high",AiSettings.CHAT_COMPLETIONS);
   String emptyExport=ConfigBackup.export(empty,false);
   ConfigBackup.apply(configured,emptyExport);
-  check(saved.load().baseUrl.equals("https://original.test/v1")&&saved.load().reasoningEffort.equals("high"),"empty export preserves connection");
+  check(saved.load().baseUrl.equals("https://original.test/v1")&&saved.load().reasoningEffort.equals("high")
+      &&saved.load().protocol.equals(AiSettings.CHAT_COMPLETIONS),"empty export preserves connection and explicit protocol");
+  check(new JSONObject(emptyExport).getJSONObject("ai").getString("protocol").equals(AiSettings.RESPONSES),"new configuration defaults Responses");
   check(ConfigBackup.describe(emptyExport).contains("保留本机解析服务设置"),"empty summary matches behavior");
   ConfigBackup.apply(empty,emptyExport);
   check(new AiSettingsStore(empty).load()==null&&ConfigBackup.pending(empty)==null,"empty export on unconfigured device");
@@ -70,8 +73,30 @@ public final class ConfigBackupCheck {
   root.put("ai",ai);
   ConfigBackup.apply(configured,root.toString());
   check(saved.load().model.equals("new-model")&&saved.load().apiKey.equals("local-secret"),"keyless configured import preserves key");
+  check(saved.load().protocol.equals(AiSettings.RESPONSES),"old backup missing protocol defaults Responses");
   ConfigBackup.apply(empty,root.toString());
-  check(ConfigBackup.pending(empty).model.equals("new-model")&&ConfigBackup.pending(empty).reasoningEffort.equals("low"),"new device pending fields");
+  check(ConfigBackup.pending(empty).model.equals("new-model")&&ConfigBackup.pending(empty).reasoningEffort.equals("low")
+      &&ConfigBackup.pending(empty).protocol.equals(AiSettings.RESPONSES),"new device pending fields default Responses");
+  for(String protocol:new String[]{AiSettings.RESPONSES,AiSettings.CHAT_COMPLETIONS}) {
+   ai.put("protocol",protocol);ConfigBackup.apply(configured,root.toString());ConfigBackup.apply(empty,root.toString());
+   check(saved.load().protocol.equals(protocol)&&saved.load().apiKey.equals("local-secret"),"both protocols import retaining key");
+   check(ConfigBackup.pending(empty).protocol.equals(protocol),"both protocols survive pending import");
+   check(new JSONObject(ConfigBackup.export(configured,false)).getJSONObject("ai").getString("protocol").equals(protocol),"saved protocol export roundtrip");
+   check(new JSONObject(ConfigBackup.export(empty,false)).getJSONObject("ai").getString("protocol").equals(protocol),"pending protocol export roundtrip");
+   Context keyed=new Context();ConfigBackup.apply(keyed,ConfigBackup.export(configured,true));
+   check(new AiSettingsStore(keyed).load().protocol.equals(protocol)
+       &&new AiSettingsStore(keyed).load().apiKey.equals("local-secret"),"both protocols keyed backup roundtrip");
+  }
+  for(Object invalid:new Object[]{"", "chat", "RESPONSES", " responses ", 1, true, JSONObject.NULL, new JSONObject(), new JSONArray()}) {
+   ai.put("protocol",invalid);
+   try { ConfigBackup.apply(configured,root.toString());throw new AssertionError("invalid protocol accepted"); }
+   catch(JSONException expected) { }
+   check(saved.load().protocol.equals(AiSettings.CHAT_COMPLETIONS)&&saved.load().apiKey.equals("local-secret"),"invalid protocol leaves configuration intact");
+   try { ConfigBackup.apply(empty,root.toString());throw new AssertionError("invalid pending protocol accepted"); }
+   catch(JSONException expected) { }
+   check(ConfigBackup.pending(empty).protocol.equals(AiSettings.CHAT_COMPLETIONS),"invalid protocol preserves pending configuration");
+  }
+  ai.put("protocol",AiSettings.CHAT_COMPLETIONS);
   ai.put("model","");
   try { ConfigBackup.inspect(root.toString());throw new AssertionError("half-empty accepted"); }
   catch(JSONException expected) { }
@@ -84,12 +109,16 @@ public final class ConfigBackupCheck {
   String portable=ConfigBackup.export(configured,false);
   check(!portable.contains("hidden:private")&&!portable.contains("new-secret"),"runtime and secrets excluded");
   ConfigBackup.apply(empty,portable);
+  check(new AiSettingsStore(empty).load()==null&&ConfigBackup.pending(empty).protocol.equals(AiSettings.CHAT_COMPLETIONS),"keyless portable protocol retained in pending import");
+  Context withKey=new Context();ConfigBackup.apply(withKey,ConfigBackup.export(configured,true));
+  check(new AiSettingsStore(withKey).load().protocol.equals(AiSettings.CHAT_COMPLETIONS)
+      &&new AiSettingsStore(withKey).load().apiKey.equals("new-secret"),"keyed backup restores protocol and credentials together");
   check(!empty.getSharedPreferences("agenda_reminder",0).getBoolean("atomic_seconds",true),"seconds restored");
   check(empty.getSharedPreferences("home_timeline",0).getBoolean("todos_expanded",false),"expansion restored");
   check(empty.getSharedPreferences("CalendarOverviewActivity",0).getBoolean("week_export_index",false),"export restored");
   JSONObject broken=new JSONObject(portable); broken.getJSONObject("features").getJSONObject("agenda_reminder").put("atomic_seconds","yes");
   try { ConfigBackup.apply(empty,broken.toString());throw new AssertionError("invalid switch accepted"); } catch(JSONException expected) { }
-  System.out.println("ConfigBackupCheck passed: empty AI export on both devices, truthful summary, retained/replaced key, keyless pending configuration and incomplete configuration rejection");
+  System.out.println("ConfigBackupCheck passed: both protocols keyed/keyless/pending roundtrips, missing protocol defaults Responses, strict protocol rejection without writes, empty AI export, retained/replaced key and incomplete configuration rejection");
  }
  static void check(boolean value,String label) { if(!value)throw new AssertionError(label); }
 }'''

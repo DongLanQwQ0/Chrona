@@ -10,6 +10,7 @@ public final class ClassroomAuditCheck {
     public static void main(String[] args)throws Exception {
         JSONObject run=fixture();String original=run.toString();
         JSONObject projection=ClassroomAudit.project(run,null),turn=turn(projection);
+        check(projection.getString("protocol").equals("chat_completions"),"missing frozen protocol keeps original Chat projection");
         check(original.equals(run.toString()),"projection leaves saved source unchanged");
         check(!projection.toString().contains("PRIVATE-"),"private messages, responses, options and turn errors stay local");
         check(turn.getLong("input")==0&&turn.getLong("output")==0&&turn.getLong("total")==0&&turn.getLong("cached")==0,
@@ -56,7 +57,7 @@ public final class ClassroomAuditCheck {
         check(!ClassroomAudit.project(null,summary).has("execution"),"summary-only records never invent execution state");
         check(ClassroomAudit.project(null,summary).getJSONArray("decisions").length()==1,"summary-only existing image audit remains readable");
         check(ClassroomAudit.project(null,null).getJSONArray("turns").length()==0,"missing records stay empty");
-        diagnostics();requestSizes();
+        diagnostics();requestSizes();responsesProjection();
         System.out.println("ClassroomAudit: "+checks+" checks passed; paid calls=0, checkpoint writes=0");
     }
     private static void diagnostics()throws Exception{
@@ -133,6 +134,67 @@ public final class ClassroomAuditCheck {
         messages.put(1,new JSONObject().put("role","assistant").put("content","PRIVATE-中文😀"));
         conversation.getJSONArray("turns").put(JSONObject.NULL);
         check(!ClassroomAudit.project(run,null).getJSONArray("turns").getJSONObject(1).has("estimated_request_bytes"),"a trailing invalid record never sends estimation back to an earlier turn");
+    }
+    private static void responsesProjection()throws Exception{
+        JSONObject run=fixture().put("protocol","chat_completions");
+        JSONObject conversation=run.getJSONObject("conversation").put("protocol","responses");
+        JSONObject options=new JSONObject().put("model","PRIVATE-MODEL").put("stream",true).put("max_output_tokens",32768)
+                .put("store",false).put("truncation","disabled")
+                .put("include",new JSONArray().put("reasoning.encrypted_content"));
+        JSONArray messages=new JSONArray()
+                .put(new JSONObject().put("role","user").put("content",new JSONArray()
+                        .put(new JSONObject().put("type","input_text").put("text","PRIVATE-中文😀"))
+                        .put(new JSONObject().put("type","input_image").put("image_url","data:image/jpeg;base64,PRIVATE-"+"A".repeat(65536)))))
+                .put(new JSONObject().put("type","reasoning").put("id","PRIVATE-REASONING-ID").put("encrypted_content","PRIVATE-ENCRYPTED")
+                        .put("summary",new JSONArray().put(new JSONObject().put("type","summary_text").put("text","PRIVATE-THOUGHT input_image"))))
+                .put(new JSONObject().put("type","message").put("role","assistant").put("content",new JSONArray()
+                        .put(new JSONObject().put("type","output_text").put("text","PRIVATE-OUTPUT input_image"))))
+                .put(new JSONObject().put("role","user").put("content",new JSONArray()
+                        .put(new JSONObject().put("type","input_image").put("image_url","PRIVATE-NATIVE-IMAGE"))
+                        .put(new JSONObject().put("type","image_url").put("image_url",new JSONObject().put("url","PRIVATE-CHAT-IMAGE")))))
+                .put(new JSONObject().put("role","user").put("content",new JSONArray()
+                        .put(new JSONObject().put("type","input_image").put("image_url","PRIVATE-LATER-NATIVE-IMAGE"))));
+        // Persisted Responses usage retains native fields beside its common counter projection.
+        JSONObject usage=new JSONObject().put("input_tokens",101).put("output_tokens",17).put("total_tokens",118)
+                .put("input_tokens_details",new JSONObject().put("cached_tokens",64))
+                .put("output_tokens_details",new JSONObject().put("reasoning_tokens",11))
+                .put("prompt_tokens",101).put("completion_tokens",17)
+                .put("prompt_tokens_details",new JSONObject().put("cached_tokens",64));
+        JSONObject first=new JSONObject().put("stage","native-first").put("status","received").put("message_count",1)
+                .put("request_bytes",123).put("usage",usage);
+        JSONObject last=new JSONObject().put("stage","native-failed").put("status","failed").put("message_count",4);
+        conversation.put("options",options).put("messages",messages).put("turns",new JSONArray().put(first).put(last));
+        run.put("execution",new JSONObject().put("state","failed").put("detail","AI 请求失败（HTTP 413）"));
+        JSONObject summary=new JSONObject().put("protocol","chat_completions");String original=run.toString();
+        JSONObject projected=ClassroomAudit.project(run,summary);JSONArray rows=projected.getJSONArray("turns");
+        check(projected.getString("protocol").equals("responses"),"projection takes frozen conversation protocol rather than run/current-summary fields");
+        JSONObject row=rows.getJSONObject(0);
+        check(row.getLong("input")==101&&row.getLong("output")==17&&row.getLong("total")==118&&row.getLong("cached")==64,
+                "saved native usage mapping projects input/output/total/cache counters");
+        check(row.getLong("request_bytes")==123&&!row.has("estimated_request_bytes"),"recorded native request bytes remain authoritative");
+        check(row.getLong("context_images")==1,"native first-turn image count is limited to its recorded input prefix");
+        check(rows.getJSONObject(1).getLong("context_images")==3,"native prefix counts input_image and image_url, excludes later images and reasoning/text mentions");
+        JSONArray prefix=new JSONArray();for(int i=0;i<4;i++)prefix.put(messages.getJSONObject(i));
+        String nativeBody=new JSONObject(options.toString()).put("input",prefix).toString();
+        long expected=nativeBody.getBytes(StandardCharsets.UTF_8).length;
+        long chatBytes=new JSONObject(options.toString()).put("messages",prefix).toString().getBytes(StandardCharsets.UTF_8).length;
+        check(expected!=chatBytes&&expected>nativeBody.length()&&rows.getJSONObject(1).getLong("estimated_request_bytes")==expected,
+                "native 413 estimate reconstructs exact UTF-8 input body, including encrypted items and image bytes, never Chat messages");
+        check(original.equals(run.toString()),"native projection never mutates frozen options, original output items or usage");
+        check(!projected.toString().contains("PRIVATE-")&&!projected.toString().contains("base64")&&!projected.toString().contains("encrypted_content"),
+                "native projection exposes no input, image bytes, encrypted reasoning or original outputs");
+        last.put("request_bytes",expected+10);
+        row=ClassroomAudit.project(run,null).getJSONArray("turns").getJSONObject(1);
+        check(row.getLong("request_bytes")==expected+10&&!row.has("estimated_request_bytes"),"native recorded request bytes suppress legacy estimation");
+        last.remove("request_bytes");
+        conversation.put("protocol","chat_completions");
+        projected=ClassroomAudit.project(run,null);
+        check(projected.getString("protocol").equals("chat_completions")&&projected.getJSONArray("turns").getJSONObject(1).getLong("estimated_request_bytes")==chatBytes,
+                "explicit frozen Chat retains its original messages-key estimate");
+        conversation.remove("protocol");
+        projected=ClassroomAudit.project(run,null);
+        check(projected.getString("protocol").equals("chat_completions")&&projected.getJSONArray("turns").getJSONObject(1).getLong("estimated_request_bytes")==chatBytes,
+                "missing legacy protocol keeps Chat estimate rather than inferring Responses from content parts");
     }
     private static JSONObject validReply()throws Exception{
         return new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",new JSONArray()).put("assignments",new JSONArray())

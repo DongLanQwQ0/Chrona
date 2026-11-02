@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class NetworkSafetyCheck {
     private static final String ANSWER = "{\"choices\":[{\"message\":{\"reasoning_content\":\"thought\",\"content\":\"{\\\"events\\\":[]}\"}}]}";
     private static final String SSE = "data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"events\\\":[]}\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
-    private static final AiSettings SETTINGS = new AiSettings("https://offline.test/v1", "test-model", "test-key");
+    private static final AiSettings SETTINGS = new AiSettings("https://offline.test/v1", "test-model", "test-key", "auto", AiSettings.CHAT_COMPLETIONS);
     private static final AtomicInteger posts = new AtomicInteger();
     private static volatile String mode = "success";
     private static volatile FakeConnection last;

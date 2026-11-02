@@ -197,7 +197,8 @@ public final class ChatCompletionClient {
                     .put("system", body.getJSONArray("messages").getJSONObject(0).getString("content"))
                     .put("input", new JSONObject(body.getJSONArray("messages").getJSONObject(1)
                             .getJSONArray("content").getJSONObject(0).getString("text")))
-                    .put("model", settings.model).put("reasoning_effort", settings.reasoningEffort));
+                    .put("model", settings.model).put("reasoning_effort", settings.reasoningEffort)
+                    .put("protocol", settings.protocol));
             return new ParseResult(parsed.candidates, parsed.promptTokens, parsed.completionTokens,
                     parsed.totalTokens, parsed.cachedTokens, audit.toString());
         } catch (JSONException invalidAudit) { throw new IOException("Could not retain parse time evidence", invalidAudit); }
@@ -209,14 +210,21 @@ public final class ChatCompletionClient {
             JSONObject body=new JSONObject().put("model",settings.model);RequestOptions.applyClassroom(body,settings);
             body.remove("response_format");
             if(body.has("prompt_cache_key"))body.put("prompt_cache_key","chrona-classroom-v11");
-            return body.put("stream",true).put("stream_options",new JSONObject().put("include_usage",true));
+            body.put("stream",true).put("stream_options",new JSONObject().put("include_usage",true));
+            if (AiSettings.RESPONSES.equals(settings.protocol)) {
+                body = ResponsesProtocol.request(body.put("messages", new JSONArray())); body.remove("input");
+            }
+            return body;
         }catch(JSONException e){throw new IOException("无法编码课堂请求",e);}
     }
+    public String protocol() { return settings.protocol; }
     /** The caller owns the frozen options and append-only messages. Never downgrade this request. */
     public JSONObject completeConversation(JSONObject request) throws IOException {
         try {
-            boolean images=request.getJSONArray("messages").toString().contains("\"image_url\"");
-            return new JSONObject(executeEnvelope(new JSONObject(request.toString()),images,null,false,classroomReadTimeoutMillis()));
+            boolean responses=request.has("input");
+            if (responses == request.has("messages")) throw new JSONException("Ambiguous frozen protocol");
+            boolean images=request.getJSONArray(responses ? "input" : "messages").toString().contains("\"image_url\"");
+            return new JSONObject(executeWire(new JSONObject(request.toString()),images,null,false,classroomReadTimeoutMillis(),responses));
         }catch(JSONException e){throw new ResponseException("无法读取课堂响应",e);}
     }
 
@@ -248,9 +256,16 @@ public final class ChatCompletionClient {
     }
     private String executeEnvelope(JSONObject body,boolean hasImages,PreviewSink preview,
             boolean canDowngrade,int maximumReadMillis)throws IOException {
+        boolean responses = AiSettings.RESPONSES.equals(settings.protocol);
+        try { return executeWire(responses ? ResponsesProtocol.request(body) : body,
+                hasImages,preview,canDowngrade,maximumReadMillis,responses); }
+        catch (JSONException invalid) { throw new IOException("无法编码所选AI协议请求", invalid); }
+    }
+    private String executeWire(JSONObject body,boolean hasImages,PreviewSink preview,
+            boolean canDowngrade,int maximumReadMillis,boolean responses)throws IOException {
         boolean streaming = body.optBoolean("stream");
         RequestControl.check(control);
-        URL endpoint = new URL(settings.baseUrl + "/chat/completions");
+        URL endpoint = new URL(settings.baseUrl + (responses ? "/responses" : "/chat/completions"));
         OpenedConnection opened = connectionRoute == null
                 ? new OpenedConnection((HttpURLConnection) endpoint.openConnection(), () -> { })
                 : connectionRoute.open(endpoint, control);
@@ -280,18 +295,22 @@ public final class ChatCompletionClient {
             if (status < 200 || status >= 300) {
                 String response = stream == null ? "" : readLimited(stream, control);
                 String detail = errorMessage(response);
-                if (canDowngrade && RequestOptions.downgrade(body, status, detail)) {
+                if (!responses && canDowngrade && RequestOptions.downgrade(body, status, detail)) {
                     connection.disconnect();
-                    return executeEnvelope(body, hasImages, preview, false,maximumReadMillis);
+                    return executeWire(body, hasImages, preview, false,maximumReadMillis,false);
                 }
                 throw new RequestException(status, "AI request failed (HTTP " + status + "): " + detail);
             }
             if (streaming && stream != null && connection.getContentType() != null
                     && connection.getContentType().toLowerCase(java.util.Locale.ROOT)
                     .contains("text/event-stream")) {
-                return streamEnvelope(stream, preview, control);
+                return responses ? ResponsesProtocol.read(stream,preview,control) : streamEnvelope(stream, preview, control);
             }
             String response = stream == null ? "" : readLimited(stream, control);
+            if (responses) {
+                try { response=ResponsesProtocol.normalize(new JSONObject(response)).toString(); }
+                catch (JSONException invalid) { throw new ResponseException("Invalid Responses JSON", invalid); }
+            }
             if (preview != null) {
                 try {
                     JSONObject message = new JSONObject(response).getJSONArray("choices")
@@ -422,7 +441,7 @@ public final class ChatCompletionClient {
     }
 
     /** Provider text is untrusted: only fixed error categories may enter diagnostics. */
-    private static String safeStreamErrorLabel(JSONObject error, String key) {
+    static String safeStreamErrorLabel(JSONObject error, String key) {
         if (error == null || error.isNull(key)) return "unknown";
         Object value = error.opt(key);
         if (!(value instanceof String)) return "unknown";
