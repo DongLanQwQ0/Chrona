@@ -272,6 +272,32 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         Object reasoning=details==null?null:details.opt("reasoning_tokens");
                         row.put("run_last_reasoning_tokens",reasoning instanceof Number n&&n.longValue()>=0?n.longValue():JSONObject.NULL);
                         JSONObject response=last.optJSONObject("response");JSONArray choices=response==null?null:response.optJSONArray("choices");
+                        if(response!=null){
+                            row.put("run_last_stream_content_characters",response.opt("content_chars")==null?JSONObject.NULL:response.opt("content_chars"))
+                                    .put("run_last_stream_reasoning_characters",response.opt("reasoning_chars")==null?JSONObject.NULL:response.opt("reasoning_chars"));
+                            JSONObject nativeResponse=response.optJSONObject("response");JSONArray nativeOutput=nativeResponse==null?null:nativeResponse.optJSONArray("output");
+                            JSONArray shapes=new JSONArray();StringBuilder nativeText=new StringBuilder();
+                            if(nativeOutput!=null)for(int n=0;n<nativeOutput.length();n++){
+                                JSONObject item=nativeOutput.optJSONObject(n);if(item==null)continue;
+                                String type=item.optString("type");JSONObject shape=new JSONObject().put("type",java.util.Set.of("message","reasoning","function_call").contains(type)?type:"other");
+                                shape.put("encrypted_characters",item.optString("encrypted_content").length());
+                                JSONArray content=item.optJSONArray("content");int textChars=0,thoughtChars=0;
+                                if(content!=null)for(int c=0;c<content.length();c++){
+                                    JSONObject part=content.optJSONObject(c);if(part==null)continue;
+                                    if("output_text".equals(part.optString("type"))){String text=part.optString("text");textChars+=text.length();nativeText.append(text);}
+                                }
+                                JSONArray thoughts=item.optJSONArray("summary");if(thoughts!=null)for(int t=0;t<thoughts.length();t++){
+                                    JSONObject part=thoughts.optJSONObject(t);if(part!=null)thoughtChars+=part.optString("text").length();
+                                }
+                                shapes.put(shape.put("text_characters",textChars).put("summary_characters",thoughtChars));
+                            }
+                            row.put("run_last_native_output",shapes);
+                            java.util.Map<String,Integer> lines=new java.util.HashMap<>();int nonblank=0,maxRepeated=0,repeatedCharacters=0;
+                            for(String line:nativeText.toString().split("\\R")){line=line.strip();if(line.length()<20)continue;nonblank++;
+                                int count=lines.merge(line,1,Integer::sum);maxRepeated=Math.max(maxRepeated,count);if(count>1)repeatedCharacters+=line.length();}
+                            row.put("run_last_native_text_characters",nativeText.length()).put("run_last_long_lines",nonblank)
+                                    .put("run_last_max_repeated_line",maxRepeated).put("run_last_repeated_line_characters",repeatedCharacters);
+                        }
                         JSONObject choice=choices==null||choices.length()==0?null:choices.optJSONObject(0),message=choice==null?null:choice.optJSONObject("message");
                         Object content=message==null?null:message.opt("content"),reasoningText=message==null?null:message.opt("reasoning_content");
                         row.put("run_last_content_characters",content instanceof String text?text.length():JSONObject.NULL);

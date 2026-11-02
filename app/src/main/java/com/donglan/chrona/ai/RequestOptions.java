@@ -29,6 +29,8 @@ public final class RequestOptions {
                 "(?:gpt-4o(?:-mini)?|gpt-4\\.1(?:-mini|-nano)?|gpt-5(?:\\.[124])?(?:-mini|-nano|-pro)?|o3(?:-mini)?|o4-mini)(?:-\\d{4}-\\d{2}-\\d{2})?");
         boolean jiji = host.equals("www.jiji.cc") || host.equals("api.jiji.cc") || host.equals("api-slb.jiji.cc");
         boolean jijiReasoning = jiji && model.matches("gpt-6(?:\\.1)?-(?:luna|sol|astra)");
+        boolean glmFlashReasoning = (jiji || host.equals("api.z.ai") || host.equals("open.bigmodel.cn"))
+                && model.matches("glm-5\\.3-flash(?:x(?:-legal)?)?");
         boolean reasoning = deep || jijiReasoning || (open && (model.startsWith("gpt-5") || model.startsWith("o3") || model.startsWith("o4")));
         String resolved = effort.equals("auto") ? "low" : effort;
         boolean supportsNone = jijiReasoning || open && model.matches("gpt-5\\.[124](?:-mini|-nano)?(?:-\\d{4}-\\d{2}-\\d{2})?");
@@ -42,6 +44,11 @@ public final class RequestOptions {
             body.put("thinking", new JSONObject().put("type", resolved.equals("none") ? "disabled" : "enabled"));
             if (!resolved.equals("none")) body.put("reasoning_effort",
                     resolved.equals("medium") ? "high" : resolved);
+        } else if (glmFlashReasoning) {
+            // GLM-5.3-Flash always thinks and defaults to max when effort is omitted.
+            // Honor the selected effort using its documented low/high/max vocabulary;
+            // none uses the lightest supported mode, medium the next supported depth.
+            body.put("reasoning_effort", resolved.equals("none") ? "low" : resolved.equals("medium") ? "high" : resolved);
         } else if (jijiReasoning) {
             // Jiji documents Chat Completions reasoning_effort; do not copy official-only
             // cache/schema options or assume the relay returns visible reasoning text.

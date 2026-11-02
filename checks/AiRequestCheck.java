@@ -118,6 +118,7 @@ public final class AiRequestCheck {
         check(options("https://api.jiji.cc/v1", "gpt-6.1-sol", "medium").getString("reasoning_effort").equals("medium"), "documented Jiji model");
         check(!options("https://api.jiji.cc.attacker.example/v1", "gpt-6-luna", "medium").has("reasoning_effort"), "exact relay host only");
         check(!options("https://api.jiji.cc/v1", "gpt-6-luna-audio", "medium").has("reasoning_effort"), "specialized relay model conservative");
+        checkGlmFlashEffort();
         checkClassroomBudget();
         JSONObject requested = options("https://api.jiji.cc/v1", "gpt-6-luna", "medium");
         check(!RequestOptions.downgrade(requested, 400, "unsupported parameter reasoning_effort")
@@ -169,6 +170,28 @@ public final class AiRequestCheck {
         checkStreamIntegrity();
         checkContentWrappers();
         System.out.println("AiRequestCheck passed: " + checks + " checks");
+    }
+
+    private static void checkGlmFlashEffort() throws Exception {
+        for (String host : new String[]{"www.jiji.cc", "api.jiji.cc", "api-slb.jiji.cc", "api.z.ai", "open.bigmodel.cn"}) {
+            for (String model : new String[]{"glm-5.3-flash", "glm-5.3-flashx", "glm-5.3-flashx-legal"}) {
+                for (String[] effort : new String[][]{{"auto", "low"}, {"none", "low"}, {"low", "low"},
+                        {"medium", "high"}, {"high", "high"}, {"max", "max"}}) {
+                    JSONObject body = options("https://" + host + "/v1", model, effort[0]);
+                    check(body.getString("reasoning_effort").equals(effort[1]), "GLM Flash effort: " + host + "/" + model + "/" + effort[0]);
+                    check(body.length() == 2 && body.getInt("max_tokens") == 8192,
+                            "GLM Flash keeps ordinary budget and adds only supported effort");
+                }
+            }
+        }
+        for (String host : new String[]{"example.com", "api.jiji.cc.attacker.example", "api.z.ai.attacker.example", "open.bigmodel.cn.attacker.example"}) {
+            JSONObject body = options("https://" + host + "/v1", "glm-5.3-flash", "low");
+            check(body.length() == 1 && body.getInt("max_tokens") == 8192, "GLM capability requires exact known host: " + host);
+        }
+        for (String model : new String[]{"glm-5.3", "glm-5.3-flash-legal", "glm-5.3-flash-audio", "glm-5.3-flashx-legal-extra", "glm-5.4-flash"}) {
+            JSONObject body = options("https://api-slb.jiji.cc/v1", model, "high");
+            check(body.length() == 1 && body.getInt("max_tokens") == 8192, "unknown GLM variant stays conservative: " + model);
+        }
     }
 
     private static void checkClassroomBudget() throws Exception {

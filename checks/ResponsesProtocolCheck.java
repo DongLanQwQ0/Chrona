@@ -56,6 +56,21 @@ public final class ResponsesProtocolCheck {
         check(options.getInt("max_output_tokens") == 32768 && !options.has("messages"), "new classroom options are native Responses");
         check(options.optJSONArray("include") != null && options.getJSONArray("include").toString().contains("reasoning.encrypted_content"), "stateless classroom requests retain encrypted reasoning items");
         noChat(options);
+        for (String[] effort : new String[][]{{"auto", "low"}, {"none", "low"}, {"low", "low"},
+                {"medium", "high"}, {"high", "high"}, {"max", "max"}}) {
+            AiSettings glm = new AiSettings("https://api-slb.jiji.cc/v1", "glm-5.3-flash", "test-only", effort[0], AiSettings.RESPONSES);
+            JSONObject canonical = new JSONObject().put("model", glm.model).put("messages", chat.getJSONArray("messages"));
+            RequestOptions.apply(canonical, glm);
+            JSONObject ordinary = ResponsesProtocol.request(canonical);
+            check(ordinary.getInt("max_output_tokens") == 8192
+                    && ordinary.getJSONObject("reasoning").getString("effort").equals(effort[1]),
+                    "GLM ordinary Responses preserves budget and selected effort: " + effort[0]);
+            JSONObject classroom = new ChatCompletionClient(glm).classroomOptions();
+            check(classroom.getString("model").equals(glm.model) && classroom.getInt("max_output_tokens") == 32768
+                    && classroom.getJSONObject("reasoning").getString("effort").equals(effort[1]),
+                    "GLM classroom Responses sends supported effort without raising budget: " + effort[0]);
+            noChat(ordinary); noChat(classroom);
+        }
     }
     private static JSONObject response(String content) throws Exception {
         return new JSONObject().put("id", "resp_fixture").put("object", "response").put("status", "completed")

@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.15.98 — GLM思考强度漏传修复 — 2026-11-02
+
+- USB恢复后正常安装97/259，仅续10/20微积分86985-1982954一节。真实Responses失败输出32768恰等冻结上限，input14780/total47548；状态incomplete/max_output_tokens，事件名称response.completed。客户端拒绝提交并回滚，未自动重发。服务未给reasoning_tokens，仍记未知。
+- 已保存native output只读统计：思考summary68076字符、正文6905字符；正文39条长行无重复。配置low却未在已知模型分支发送effort，GLM-5.3-Flash官方模型卡说明省略时默认max。修正该模型及已公布FlashX/Legal名称在官方与现用三个中转精确host的选项：auto/none→low，medium→high，low/high/max原值，Responses原生映射；课堂32768与普通8192不变，不猜未知端点能力。
+- 受限测试owner仅增加两份既有Java检查，AiRequest869、ResponsesProtocol345通过，包含既有冻结请求原样发送；release/lint通过。260/0.15.98已正常覆盖到USB实机并读回版本，未改UI。
+- 正常历史长按仅选10/20一节，确认“重新总结1节课堂”，新轮复用已提交更正字幕并补齐素材，不改旧冻结历史。实际批次0/1、进行中1及前台ClassroomWorkService fe698c已核对。真实整节结果尚待观察，不据离线通过认定问题已完全解决；其余16节暂未重启，原四节有效成品保留。
+- 证据`build/usb97/after-one.json`、`build/glm-effort98/checks.log`、`build/glm-effort98/build-release.txt`及同目录phone状态；诊断包已卸载，专用手机XML与空目录已清理。未发小补丁Release。
+
 ## 0.15.97 — Responses失败终态与真实用量留证 — 2026-11-02
 
 - 96在原历史精确选17/27（排除6C及4份有效成品），确认“重新总结17节”后实际3并发启动。随后至少10/20、10/15下午返回原生incomplete/max_output_tokens；正式处理记录显示0.05MiB、上下文0图，但输入/输出/结束全未提供。两次相同路径后从正式批量操作正常停止，实际终态成功0、失败7、取消10，检查点保留；最新格式有效成品仍4/21，不把启动、结束通知或旧完整笔记当成新增成功。

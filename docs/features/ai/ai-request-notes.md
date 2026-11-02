@@ -56,6 +56,8 @@ AI服务设置比较进入页的实际表单基线：地址、协议、模型、
 
 DeepSeek 官方接口：auto/low → low，medium/high → high，max → max，none 关闭思考。OpenAI 官方支持的文本模型使用严格 JSON Schema 与版本化 `prompt_cache_key`；auto → low，max → high，none 仅发送给已知支持的较新 GPT-5 家族，否则使用 low 及对应推理预算。
 
+GLM-5.3-Flash／FlashX／FlashX-Legal 在 `api.z.ai`、`open.bigmodel.cn` 和下述三个吉吉域名发送模型支持的 `reasoning_effort`：auto/none → low，medium → high，low/high/max 原样；Responses 映射为 `reasoning.effort`。模型无法关闭思考，不发送 `thinking.disabled`，也不将 max 降成 high。普通及课堂输出预算保持原值。依据[官方模型卡](https://huggingface.co/zai-org/GLM-5.3-Flash)与[官方模型说明](https://docs.z.ai/guides/vlm/glm-5.3-flash)：省略 effort 会采用 max，因此不能忽略已保存的 low。新参数仅用于新轮次；旧轮的冻结选项与已发送历史不变，需以「重新整理」建立新轮，复用已提交更正文稿。
+
 音频、实时、转写专用变体及未知端点仅使用保守 token 上限，保留模型与静态 schema 指令。格式、缓存和流选项只在明确兼容错误后移除一次；thinking／reasoning 参数被拒绝则显示错误，不静默丢弃用户设置。
 
 课堂新轮次输出预算提高至32768，沿用已识别的`max_completion_tokens`或`max_tokens`字段；已支持且上限较小的官方GPT-4o/mini保留原8192预算，不发送超限参数。不额外猜测未知模型的思考参数。核图与结构化笔记可能共用推理预算，不能普遍沿用短日程的8192上限。普通日程预算不变；已有课堂轮次的冻结选项原样保留，改变预算须重新整理并复用已提交的修正字幕，不改旧请求或拼接截断回复。服务不接受该预算时明确失败，不静默降级或自动重发。
