@@ -8,6 +8,7 @@
 - [Agent 交接](Communication/README.md)：与外部 Agent 的文件通信及共享文件协作边界。
 - [UI 设计规范](ui-style-contract.md)：任何 UI 操作前必读；全局视觉、布局、公共组件与验收约束。
 - [公共 UI 库](ui-library.md)：实现职责、组件选择、接入方式和无功能删减的整理门槛。
+- [界面组件名称](ui-component-names.md)：对照真实截图，找到统一中文称呼和代码入口。
 - [已确认交互基线](ui-interaction-baseline.md)：保留具体用户决定，不与通用设计原则混写。
 
 ## 按功能开发
