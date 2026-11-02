@@ -459,6 +459,7 @@ public final class ChatCompletionClient {
             case "authentication_error":
             case "permission_error":
             case "overloaded_error":
+            case "server_is_overloaded":
             case "group_disabled":
                 return label;
             default:

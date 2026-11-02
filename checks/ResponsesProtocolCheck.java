@@ -12,7 +12,7 @@ import org.json.*;
 public final class ResponsesProtocolCheck {
     private static int checks;
     public static void main(String[] args) throws Exception {
-        mapping(); normalization(); streaming(); failureEvidence(); clientTransport(); rejectedEffortTransport();
+        mapping(); normalization(); streaming(); failureEvidence(); nestedErrorEvent(); clientTransport(); rejectedEffortTransport();
         System.out.println("ResponsesProtocolCheck passed: " + checks + " checks (synthetic protocol fixtures)");
     }
     private static void mapping() throws Exception {
@@ -178,6 +178,31 @@ public final class ResponsesProtocolCheck {
         JSONObject invalid=responseFailure(()->ResponsesProtocol.read(bytes(partial+event("response.completed",new JSONObject().put("response",mismatch))),null,null),"contradictory complete event never commits").evidence;
         retained(mismatch,invalid,"stop","invalid completed event");
         check(invalid.getString("terminal_type").equals("response.completed")&&invalid.getInt("content_chars")=="{\"events\":[]}".length(),"invalid completion retains actual terminal and observed delta count");
+    }
+    private static void nestedErrorEvent() throws Exception {
+        JSONObject detail = new JSONObject().put("code", "server_is_overloaded")
+                .put("type", "overloaded_error").put("message", "PRIVATE-provider-message");
+        for (boolean nested : List.of(false, true)) {
+            JSONObject payload = nested ? new JSONObject().put("error", detail) : new JSONObject(detail.toString());
+            JSONObject original = new JSONObject(payload.toString()).put("type", "error");
+            ChatCompletionClient.ResponseException failure = responseFailure(
+                    () -> ResponsesProtocol.read(bytes(event("error", payload)), null, null),
+                    "standalone error remains terminal: nested=" + nested);
+            check(failure.getMessage().contains("code=server_is_overloaded"), "error code extracted: nested=" + nested);
+            check(failure.getMessage().contains("type=" + (nested ? "overloaded_error" : "unknown")),
+                    "actual error type extracted: nested=" + nested);
+            check(!failure.getMessage().contains("PRIVATE"), "provider message stays out of exception: nested=" + nested);
+            check(failure.evidence.getJSONObject("event").similar(original), "raw error event preserved: nested=" + nested);
+            check(!failure.evidence.has("response") && !failure.evidence.has("usage")
+                    && failure.evidence.getString("terminal_type").equals("error"),
+                    "error never manufactures response or usage: nested=" + nested);
+        }
+        JSONObject privateError = new JSONObject().put("error", new JSONObject()
+                .put("code", "PRIVATE-code").put("type", "PRIVATE-type").put("message", "PRIVATE-message"));
+        ChatCompletionClient.ResponseException hidden = responseFailure(
+                () -> ResponsesProtocol.read(bytes(event("error", privateError)), null, null), "private nested error rejected");
+        check(!hidden.getMessage().contains("PRIVATE") && hidden.getMessage().contains("code=unknown, type=unknown"),
+                "nested extraction preserves error-label allowlist");
     }
     private static String completed(String text) throws Exception { return event("response.completed", new JSONObject().put("response", response(text))); }
     private static InputStream bytes(String value) { return new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8)); }

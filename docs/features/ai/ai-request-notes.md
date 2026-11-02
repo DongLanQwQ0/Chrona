@@ -8,6 +8,7 @@ AI服务在基础地址后提供「API协议」，复用原公共选择面板，
 - Chat Completions请求`/chat/completions`，保留原`messages`、参数和SSE。服务不支持所选协议时明确失败，不自动换协议／模型或重新付费请求；下文的一次参数降级仅适用于普通Chat请求。
 - Responses只接受完整`completed`结果；流式必须收到`response.completed`，delta、`[DONE]`、EOF、failed或incomplete均不能提交。正文与可见推理按实际事件显示，完整原生响应保留。用量从`input_tokens/output_tokens/input_tokens_details.cached_tokens`映射到既有展示，原生usage也保留。
 - Responses失败终态也保留完整原生response、usage、实际SSE终态及已收到的正文／推理字符数，通过`ResponseException.evidence`进入本轮本地审计；不把这些失败output项追加成可重放历史或已提交板块。仅`incomplete/max_output_tokens`映射结束原因为length，其它未完成不猜原因；EOF不伪造终态或用量。审计仅投影真实Token、思考Token、冻结输出上限及白名单状态／原因，正文和加密reasoning仍仅本地保存。旧失败未保存的用量不能补算为0。达到上限不自动增额、重发或更改冻结参数，先据实际用量定位，再按明确授权重试当前板块。
+- SSE错误兼容事件顶层code/type和嵌套error对象；response.failed读取response.error。异常只显示已有安全标签白名单（含实际确认的server_is_overloaded），不透出原始message或任意服务字段；完整事件仍原位保存，失败不变成成功、不自动重发。
 - 课堂每轮冻结协议。续跑不随全局选择改变，无协议字段的既有轮次继续原Chat协议，不转换旧前缀。新Responses轮次逐项保存原生input与服务完整output（含加密reasoning项），下一轮只追加，不改写旧项、不用previous_response_id替代本地历史；重新整理的新轮采用新协议。
 
 实现依据：[Responses迁移](https://developers.openai.com/api/docs/guides/migrate-to-responses)、[typed流式事件](https://developers.openai.com/api/reference/resources/responses/streaming-events)。当前供应商／模型的支持情况需真实验证，协议名称不代表缓存命中。

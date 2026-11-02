@@ -162,7 +162,8 @@ public final class ResponsesProtocol {
                     if ("error".equals(type) || "response.failed".equals(type)) {
                         JSONObject failed = event.optJSONObject("response");
                         terminal=failed;terminalType=type;if(failed==null)errorEvent=event;
-                        throw failure(failed == null ? event : failed.optJSONObject("error"));
+                        JSONObject error = (failed == null ? event : failed).optJSONObject("error");
+                        throw failure(error == null && failed == null ? event : error);
                     }
                     if ("response.incomplete".equals(type) || "response.completed".equals(type)) {
                         JSONObject response = event.optJSONObject("response");

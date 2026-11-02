@@ -1,5 +1,12 @@
 # 验证记录
 
+## 0.15.104 — 原生SSE错误识别与单课续跑 — 2026-11-02
+
+- 两次真实失败只读确认均为SSE `server_is_overloaded`，没有正文或usage；最新证据`build/editorial103/retry3-event/audit.json`。原先unknown有两个原因：事件error对象嵌套且安全标签缺少该已确认code。修复仅提取真实对象并增加固定标签，不暴露原始message或任意字段，不改历史、冻结请求、失败提交边界或重试策略。
+- `ResponsesProtocolCheck` 719项通过，新增扁平／嵌套错误、原事件不变、真实终态、无虚构usage及未知标签隐私检查；原实现失败日志`build/editorial104/checks/before.txt`保留。专门check代理只读审阅无缺陷，复用有效检查而未重复运行。生产UI未变化。
+- Release/lint通过；候选`build/candidates/0.15.104/Chrona-0.15.104.apk`为com.donglan.chrona、266／0.15.104、v2签名；正常覆盖Success并实际读回。诊断包正常卸载，任务XML及空目录已清理。
+- 同配置、课堂蜂窝通路单次短健康请求stop成功：568输入、5输出、573总Token、8.4秒，没有发送课堂资料或改设置，进程网络绑定不变；证据`build/editorial104/health/result.txt`。此证据不证明长上下文可用。之后仅通过正常UI续10/29上午微积分同一失败块，复用4/4更正、4/4草稿及前2块核图；观察以真实服务终态为准，整篇内容尚未验收。
+
 ## 0.15.103 — 手动新轮归档与失败继续 — 2026-11-02
 
 - 修复单节手动重生成／服务配置变化开启新轮时绕过批量归档入口的问题：共用summarize在新轮判定内捕获更正稿并原字节归档旧run，之后才写queued/running。相同配置失败继续不另开轮，批量已清空状态不重复归档。不改消息、冻结选项或生成步骤。

@@ -3,10 +3,10 @@
 ## 当前候选与唯一下一步
 
 - **当前目标：单课笔记质量回归，随后逐节完成原数学21节。** 每次只生成一节，整篇完成后完整审读概览、学习笔记、事务、行动及必要来源／配图；按统一3档要求定位共同内容／流程缺口，修改通用规则，不塞本课题号、答案或单错误特判。新提示词用独立新轮、复用匹配更正稿、旧消息不改。单课通过后交用户确认，再换不同课堂逐节验证；此次不开批量／并发，原并发3设置能力保留。规范在`docs/features/zju/classroom-summary.md`。
-- **固定课堂：86985-1988487，微积分10月29日08:00第1–2节。** 正式包103/265已正常安装并读回；候选`build/candidates/0.15.103/Chrona-0.15.103.apk`，包名／v2签名与release/lint有效。当前服务chickener.top、gpt-6-luna、Responses/low、强度3、图片最多40张，使用用户保存配置，不擅自换密钥、模型或协议。原401经用户更新密钥后已通过真实请求，不再当作当前阻塞。
+- **固定课堂：86985-1988487，微积分10月29日08:00第1–2节。** 正式包104/266已正常安装并读回；候选`build/candidates/0.15.104/Chrona-0.15.104.apk`，包名／v2签名与release/lint有效。当前服务chickener.top、gpt-6-luna、Responses/low、强度3、图片最多40张，使用用户保存配置，不擅自换密钥、模型或协议。原401经用户更新密钥后已通过真实请求，不再当作当前阻塞。
 - **实际进度：更正4/4复用、草稿4/4、核图2/4已提交。** 第3块final-2初次新增独立前文`notes[2]`只引430–535，而真实块536–772，严格来源校验拒绝，原草稿来源正常；证据`build/editorial103/source-check/source-scope.json`。未生成整篇新笔记，不能进入成品审批。
-- **最新失败仍需只读确诊。** 首次显式续final-2返回SSE `server_is_overloaded`，已从原失败事件脱敏确认（`build/editorial103/provider-event/audit.json`）；间隔后retry3又结束，通知只有provider error unknown（`build/editorial103/retry3-result-notice.txt`），尚未读取该次事件，不能直接认定同因。旧服务余额错误与本次鉴权、来源和SSE失败分别记录。observer55547／65275／53651均已终止，最后一次b3a4e8d服务不存在；没有已知运行中课堂任务。
-- **唯一下一步：GlobalSend归还实机窗口后，读取retry3已保存的脱敏事件，按原因继续同一失败块。** GlobalSend聊天01a16e6f-f1c5-7081-adc4-1792a0a5d7db当前持有前台做约3分钟验证，root已请求其完成后归还约30秒只读诊断窗口；超时不转移所有权，不触控或安装打断。可用现成`build/editorial103/provider-event/Chrona-Provider-Probe103.apk`正常安装，`mathAudit=true, providerFailure=true`只取错误code/type/message并脱敏限长；先查无ClassroomWorkService／ClassroomMonitorService，读完卸载并正常启动主Activity。不要重复相同失败请求；同路径两次无新证据先定位或等真实服务恢复。
+- **最新两次失败已只读确认同因。** 两次final-2续跑均为SSE `server_is_overloaded`，最新证据`build/editorial103/retry3-event/audit.json`；原通知的unknown来自解析器没有读取error事件的嵌套error对象，不是服务缺少code。两次均无正文／usage，未提交失败板块；没有已知运行中课堂任务。旧401、来源语义失败和当前过载分别记录，不原样循环重试。
+- **唯一下一步：观察本次同一失败块续跑的真实终态。** 104已修嵌套error提取和确认过载标签，719项协议检查通过，独立check未发现缺陷；失败仍拒绝提交、原始事件保留、未知字段／message不泄露。蜂窝原通路一次短健康请求stop成功（568输入／5输出，8.4秒），只作为恢复线索；随后正常UI仅启动本课继续，现有ServiceRecord 4ea1d52与observer会话95822确认运行，证据`build/editorial104/launched-services.txt`、`observe/`。不因观察超时重启、不安装诊断打断；终态后只读成品／失败记录，完整成品再进入内容审核。探针已卸载、XML临时目录已清理。
 - **102内容约束已实现并技术验证。** 共用正确性、自学过程、事务唯一归属和增强语义分组／去重已加强，不添加AI阶段或改schema。独立check1124项0失败，日志`build/editorial102/checks/contract-checks.log`；合成检查仅证明约束确实发送、原冻结／来源／图片／repair合同不退化，不证明实际文稿质量。
 - **103修复手动新轮归档。** 共用summarize先捕获匹配更正稿、原字节归档旧run，再写新排队状态；失败同轮继续不重复归档。原生隔离v33检查13项0失败，字节一致／仅1份归档／重试身份／旧正文恢复均验证；首次测试撞100ms发布回调，保留失败日志，仅修正检查等待原恢复条件。证据`build/editorial103/checks/native-regenerate-fixed.log`及`native-regenerate-result.json`。旧synthetic状态已恢复、缓存清理、本次空闲AVD已关闭。102最初手动换服务存在漏归档缺口，不伪称那份旧run已被归档；103保护后续新轮。
 - **内容审查基线已交付且不等同达标。** 回归启动前原21节为4份最新3档完成、3份旧格式完成、14份未完成。完整审读当时4份最新成品及10/20草稿，发现数学、证明、定义域、重复／错分、缺必要演算和核图流水账；技术通过4份的内容验收均未通过。报告`docs/audits/classroom-notebook-content-review-20261102.md`，真实正文与状态`build/notebook-review101-20261102/`。当前其中10/29样例已进入新轮，不能继续把基线计数当实时完成数。
@@ -41,7 +41,7 @@
 ## 设备、文件与owner边界
 
 - 当前可用无线地址10.196.131.180:44423，USB身份10AG5S1SR4005X7；当前前台归属见上方唯一下一步。已有诊断包均已卸载，手机UI XML及`/data/local/tmp/chrona/monitor95/`已精确清理。安装前再次查实际服务，不能为审计／安装中断活动服务；拒绝安装不可绕过或自动反复尝试。
-- GlobalSend114已安装，当前正借用前台完成自身验证；无真实资源冲突不跨聊天例行发消息。用户正在使用手机切走时停止触控；已有授权下无人回复可继续，但真实权限拒绝/设备所有权冲突仍约束。
+- GlobalSend114已安装且已明确归还前台，合成测试清理完成；当前Chrona后台整理运行。无真实资源冲突不跨聊天例行发消息。用户正在使用手机切走时停止触控；已有授权下无人回复可继续，但真实权限拒绝/设备所有权冲突仍约束。
 - 共享AVD `F:\Android\Avd\Chrona_Classroom_36` 已正常emu kill，测试与截图已回收，独立任务目录monitor-policy100已清理；不新建/克隆/清空/改DPI分辨率。GlobalSend传达用户离开电源限制：2026-11-02 19:23–20:23禁止使用或启动Android虚拟机，root已停用。JPEG先压缩再查看，禁止直接看PNG原图；电脑所有衍生文件留项目build。
 - 子代理：协议实现、定位测试、无图边界测试、命名文档均完成交回；专门 `/root/ui_check` 可复用，不能再新建同名。实际工具无agent_type，不编造字段或模型角色声明。root负责集成/接受/手机更新和数学最终验收。
 - 公共工具：ADB `F:\Android\Sdk\platform-tools\adb.exe`，JDK `D:\Minecraft\java21`，gh `F:\Programs\GitHubCLI\bin\gh.exe`；保留登录，不取token。FastCtx未暴露时用pwsh7，错误立即中止。
