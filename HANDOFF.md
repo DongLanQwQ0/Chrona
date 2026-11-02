@@ -4,7 +4,8 @@
 
 - 用户新增：AI服务加入协议选择，**默认Responses**，可选Chat Completions；按原公共选择控件处理，不另拼样式。候选 **0.15.93/255** 已实现并构建：`build/candidates/0.15.93/Chrona-0.15.93.apk`，正式包名、原升级证书、release/lint通过。未发Release、尚未安装真机。
 - 正式UI、协议代码已冻结。默认／缺协议旧配置为Responses；设置纳入十三项草稿、保存／取消／放弃、旋转及保留密钥保存与备份。根负责协议／课堂接线和集成，原设置执行owner、测试执行owner已完成各自代码；ui_check独立复审已通过，无P1/P2及关键UI缺口。
-- **唯一下一步：真机重新可达后先查实际AI队列，再决定安全安装93及真实服务验证。** 最后新增审计投影104项通过，93源码准备提交／推送；不能因观察进程退出而重启、取消或假定手机任务已停。当前供应商／GLM模型的Responses支持尚未实测。
+- **唯一下一步：真机重新可达后先查实际AI队列，再决定安全安装93及真实服务验证。** 审计投影104项通过，93源码已提交并推送`2d77151`；不能因观察进程退出而重启、取消或假定手机任务已停。当前供应商／GLM模型的Responses支持尚未实测。
+- 后续诊断包已针对协议修正：原aiPing直接把messages放到classroomOptions，会在新Responses设置下误拼两种协议字段；现明确按所选协议使用input/messages，并输出白名单protocol。只读数学投影也识别原生预算／思考用量。`Chrona-Classroom-Probe93.apk`已构建至同候选目录，未安装／调用；后续只能在93正式版且无活动AI时运行，不用原92辅助包冒充Responses健康验证。
 
 ## 协议验收与有效证据
 
@@ -32,6 +33,6 @@
 
 ## 源码与后续
 
-- 92源码已提交并推送`fe6c5c1`／工作记录`ffb7e2e`；93仅提交所属代码／测试／功能文档／验证记录／HANDOFF，不发补丁Release。
+- 92源码已提交并推送`fe6c5c1`／工作记录`ffb7e2e`，93为`2d77151`；仅提交所属代码／测试／功能文档／验证记录／HANDOFF，不发补丁Release。
 - 保护他人改动：AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1。
 - 历史91预算／SSE错误修复、89更正文稿二级页、90取消Dock滚动缩小均保留，证据见`docs/validation-history.md`，不重做无变化验收。监视全局／课程自动总结三态的布局仍在讨论，未确认，不擅自实施。外部core接口见docs/Communication/to-external-agent.md。

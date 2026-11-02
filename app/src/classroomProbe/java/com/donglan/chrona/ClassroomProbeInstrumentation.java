@@ -235,14 +235,20 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     JSONObject execution=audit.optJSONObject("execution");
                     if(execution!=null)row.put("run_execution_state",execution.optString("state"));
                     JSONObject conversation=run.optJSONObject("conversation");
+                    if(conversation!=null){
+                        String protocol=conversation.optString("protocol",com.donglan.chrona.ai.AiSettings.CHAT_COMPLETIONS);
+                        if(java.util.Set.of(com.donglan.chrona.ai.AiSettings.RESPONSES,com.donglan.chrona.ai.AiSettings.CHAT_COMPLETIONS).contains(protocol))
+                            row.put("run_protocol",protocol);
+                    }
                     JSONObject options=conversation==null?null:conversation.optJSONObject("options"),limits=new JSONObject();
                     if(options!=null){
                         Object requestedModel=options.opt("model");
                         if(requestedModel instanceof String model&&model.matches("[A-Za-z0-9_./:-]{1,120}"))limits.put("model",model);
-                        for(String name:new String[]{"max_completion_tokens","max_tokens"}){
+                        for(String name:new String[]{"max_completion_tokens","max_tokens","max_output_tokens"}){
                             Object value=options.opt(name);if(value instanceof Number n&&n.longValue()>=0)limits.put(name,n.longValue());
                         }
                         Object effort=options.opt("reasoning_effort");
+                        if(effort==null&&options.optJSONObject("reasoning")!=null)effort=options.getJSONObject("reasoning").opt("effort");
                         if(effort instanceof String text&&java.util.Set.of("none","low","medium","high","max").contains(text))limits.put("reasoning_effort",text);
                     }
                     row.put("frozen_output_options",limits);
@@ -257,6 +263,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     JSONObject last=turns==null||turns.length()==0?null:turns.optJSONObject(turns.length()-1);
                     if(last!=null){
                         JSONObject usage=last.optJSONObject("usage"),details=usage==null?null:usage.optJSONObject("completion_tokens_details");
+                        if(details==null&&usage!=null)details=usage.optJSONObject("output_tokens_details");
                         Object reasoning=details==null?null:details.opt("reasoning_tokens");
                         row.put("run_last_reasoning_tokens",reasoning instanceof Number n&&n.longValue()>=0?n.longValue():JSONObject.NULL);
                         JSONObject response=last.optJSONObject("response");JSONArray choices=response==null?null:response.optJSONArray("choices");
@@ -336,10 +343,11 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             com.donglan.chrona.ai.ChatCompletionClient client=classroomRoute
                     ?new com.donglan.chrona.ai.ChatCompletionClient(settings,control,com.donglan.chrona.ai.SchedulePrompt.SYSTEM,new CellularClassroomRoute(getTargetContext()))
                     :new com.donglan.chrona.ai.ChatCompletionClient(settings,control);
-            JSONObject request=client.classroomOptions().put("messages",new JSONArray()
+            boolean responses=com.donglan.chrona.ai.AiSettings.RESPONSES.equals(settings.protocol);
+            JSONObject request=client.classroomOptions().put(responses?"input":"messages",new JSONArray()
                     .put(new JSONObject().put("role","system").put("content","Reply briefly."))
                     .put(new JSONObject().put("role","user").put("content","Reply with OK only.")));
-            report.put("request_bytes",request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length).put("calls",1);
+            report.put("protocol",settings.protocol).put("request_bytes",request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length).put("calls",1);
             long began=android.os.SystemClock.elapsedRealtime();
             try{
                 JSONObject response=client.completeConversation(request);
