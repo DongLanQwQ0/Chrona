@@ -1,8 +1,10 @@
-# 当前交付：99修复更新与数学21节重整
+# 当前交付：监视自动总结控制与数学21节重整
 
 ## 当前候选与唯一下一步
 
-- 当前源码候选 **0.15.99/261**，release/lint及只读probe已构建；最终增量构建再次确认源文稿边界与包一致（`build/release99/final-build.txt`）。候选目录 `build/candidates/0.15.99/`。USB **10AG5S1SR4005X7 / V2527A** 实际仍是98/260：99覆盖返回INSTALL_FAILED_ABORTED，已读回版本未升级，前台NotificationShade；不把错误归因用户点击。已停止重试并通过request_user_input_async询问是否重发。用户允许后仅重发一次正常安装，读回99，再仅续10/20微积分，确认无图草稿真实结果，然后完成其余16节。无课堂工作/监视服务，不以安装受阻取消数学范围。
+- **0.15.99/261已正常覆盖到USB 10AG5S1SR4005X7 / V2527A并读回版本。** 前次中止后，用户明确允许重发，本次返回Success；源码7ce9228已推送main，release/lint最终构建在`build/release99/final-build.txt`，候选目录`build/candidates/0.15.99/`。未发小补丁Release。
+- **0.15.100/262已实现并验证，待正常更新手机。** 全局自动总结与图片依赖、课程三态覆盖已落地；131项真实Android队列检查通过。最终原生UI普通竖19／横20／1.3深色19项通过，字段按压峰值完整、静态左右位置不变、关闭态已收敛、横屏正文566→925px；独立ui_check无P1/P2及关键缺口。最终release/lint通过，候选`build/candidates/0.15.100/Chrona-0.15.100.apk`，证据`build/monitor-policy100/screens-final/`及final测试日志。只正常源码推送，不为小补丁发Release。
+- **唯一下一步：等待实机交还后，正常安装100及只读诊断包，读取10/20微积分失败条目的实际审计。** 无线10.195.25.59:41657已连通，自有服务只读确认课堂工作／监视均停止，结果通知显示「核图笔记缺少本块来源，不可只重写前一段」（`build/image-ref99/wireless-reconnect/`）。5/5更正及全部草稿已成功复用／完成，不重复生成；核图部分未通过。未读实际条目前不盲重试、不开其余16节，不重做四节已验收成品。GlobalSend正用同机排查微信，已仅因真实安装窗口冲突请求交还约2分钟，待明确交还再安装／诊断，不触控微信。
 - 用户最新明确要求：新增命名文档不能取代其它工作，之前要求悉数完成；每次新需求先简要说明理解的范围、保留行为和预期结果再改。命名按 `docs/ui-component-names.md`，区分主导航栏、视图选择栏、状态筛选栏、操作组及定位强调。本地AGENTS已加这条，保留其余owner原有修改，不整文件提交。
 - **目标仍active、未完成。** 数学原21节仅4节最新成品验收；10/20试点目前未完成，不据UI、协议或格式测试通过宣称21节完成。禁止再次整批盲重启、拼接半稿、改写冻结历史或放宽来源/图片校验。
 
@@ -13,7 +15,7 @@
 - **通用思考配置已落地。** 任意host/model发送显式none/low/medium/high/max，不再由正向白名单丢弃，不静默改档；auto→low，仅原已识别普通OpenAI模型auto保留原省略合同。DeepSeek none用原生disabled。原预算/schema/cache、旧轮协议与options保留；混合拒绝涉及思考字段也不降级重发。AiRequest917、ResponsesProtocol705通过，真实本地HTTP覆盖拒绝不重试、协议不切换与冻结请求原样发送；产物 `build/protocol-effort99/`。
 - **无图草稿边界已修正，待真实续跑。** 98完整JSON的notes[0/3/5/6/7].text存在非规范JPEG Markdown链接（`build/image-ref99/before/audit.json`）。普通/增强草稿及显式恢复、唯一格式修复的新消息均明确未附实际图，images=[]，文本禁图片/占位链接，只经image_requests请求时间范围；不引入旧schema没有的字段，不更改旧消息。非法图片仍拒绝提交、不新增自动语义重试。最终定向普通51、增强含Responses330、JSON修复299、事务/legacy295通过，旧legacy !affairs/!collection断言保持；图片引用39既有证据复用。产物 `build/draft-images99/`。
 - **命名文档已交付并推送 c62d89b**：`docs/ui-component-names.md`，12项名称、2张压缩原生截图、3种高光区分，`docs/README.md`已索引。root看图且ui_check独立审查通过；截图只用于命名，不作为定位修复证据。
-- 99其它代码与验证记录尚未提交；当前HEAD为c62d89b（98源码7428a09已在main），正常授权 `git push origin HEAD:main`，不force、不为小修复创建Release。
+- 99生产/检查/验证记录已提交并推送7ce9228，命名文档为c62d89b。正常授权`git push origin HEAD:main`，不force，不为小修复创建Release。
 
 ## 数学21节：保留身份、字幕与审计
 
@@ -29,13 +31,13 @@
 
 - 96已实机验证PPT分页完整圆端及连堂字幕后台增长：线代13:25–15:50原被raw首段14:10提前结束，现复用ZjuTimetableView连堂块，监视与导出共用；同一服务在离开专用页后字幕继续增长。源bf920d3、证据 `build/monitor96/`。95心跳/握手恢复39项、96结束边界58项及正常原生PPT竖横视觉通过。
 - 日期专属截止通用date_exclusive已实现；原贺信“11月3日前”已正常编辑保存为11月2日23:59并重开读回。小Responses健康请求已通过，但不替代整节长流程验证。历史详见 `docs/validation-history.md`。
-- 监视全局自动总结/上传图片、课程覆盖三态的控件位置原处讨论，未借本次故障修复擅自拼布局；需求与后续授权需依原上下文核对，不默默取消。
+- **新增已授权交付：监视自动总结控制。** 全局「自动总结」默认开启以保持原行为；「上传图片」仅全局开启时可选，保留其既有授权值。单课「不自动／自动／跟随全局」默认跟随，放专用监视页「后续课程」旁，复用字段选择器，不新增卡片。只影响后续完整素材登记的任务；不取消连接、排队／运行任务，不改变手动和批量总结。关闭仍完整补齐素材并保存下载终态，防恢复重复入队。root负责实现／整合；独立UI审核后交付，真实AI试点继续后台运行不受安装或探针打断。
 
 ## 设备、文件与owner边界
 
-- USB当前无观察到的课堂工作/监视服务，最近只读探针已卸载；手机任务XML及 `/data/local/tmp/chrona/monitor95/` 已精确清理。99 probe只读检查也已卸载。下一次安装前必须重验，尤其晚间可能自动开始课堂监视。拒绝安装不可绕过或自动反复尝试。
+- USB断开但无线10.195.25.59:41657已恢复，本次只读确认无课堂工作／监视服务；99只读探针已卸载，手机UI XML及`/data/local/tmp/chrona/monitor95/`已在启动后台后精确清理。安装前再次查实际服务，不能为审计／安装中断活动服务；拒绝安装不可绕过或自动反复尝试。
 - GlobalSend111已安装且明确归还USB；无新真实冲突不跨聊天例行发消息。用户正在使用手机切走时停止触控；已有授权下无人回复可继续，但真实权限拒绝/设备所有权冲突仍约束。
-- 共享AVD `F:\Android\Avd\Chrona_Classroom_36` / emulator-5554 保持运行（PID4948/3736），当前已交还root；不新建/克隆/清空/改DPI分辨率。本轮测试cache精确清理、checkpoint为空、旋转free。JPEG先压缩再查看，禁止直接看PNG原图；电脑所有衍生文件留项目build。
+- 共享AVD `F:\Android\Avd\Chrona_Classroom_36` 已正常emu kill，测试与截图已回收，独立任务目录monitor-policy100已清理；不新建/克隆/清空/改DPI分辨率。GlobalSend传达用户离开电源限制：2026-11-02 19:23–20:23禁止使用或启动Android虚拟机，root已停用。JPEG先压缩再查看，禁止直接看PNG原图；电脑所有衍生文件留项目build。
 - 子代理：协议实现、定位测试、无图边界测试、命名文档均完成交回；专门 `/root/ui_check` 可复用，不能再新建同名。实际工具无agent_type，不编造字段或模型角色声明。root负责集成/接受/手机更新和数学最终验收。
 - 公共工具：ADB `F:\Android\Sdk\platform-tools\adb.exe`，JDK `D:\Minecraft\java21`，gh `F:\Programs\GitHubCLI\bin\gh.exe`；保留登录，不取token。FastCtx未暴露时用pwsh7，错误立即中止。
 - 保护他人既有改动：AGENTS.md（只额外加本轮沟通规则）、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1。只提交本轮owned路径，不整树add。外部core接口仍在docs/Communication/to-external-agent.md。

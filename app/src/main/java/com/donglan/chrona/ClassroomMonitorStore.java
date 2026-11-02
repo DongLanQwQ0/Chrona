@@ -13,6 +13,7 @@ import java.util.List;
 final class ClassroomMonitorStore {
     static final Object LOCK = new Object();
     static final long POLL_MILLIS = 30_000L, CATALOG_MILLIS = 5 * 60_000L;
+    static final int SUMMARY_FOLLOW_GLOBAL = -1, SUMMARY_OFF = 0, SUMMARY_ON = 1;
     private final SharedPreferences prefs;
     final String account;
     ClassroomMonitorStore(Context context, String account) {
@@ -113,9 +114,34 @@ final class ClassroomMonitorStore {
     }
     private static void enqueue(JSONObject state,ClassroomLesson lesson)throws Exception{
         JSONObject tasks=state.optJSONObject("summaries");if(tasks==null)tasks=new JSONObject();
-        if(!tasks.has(key(lesson)))tasks.put(key(lesson),new JSONObject().put("lesson",lesson.json()).put("state","queued")
-                .put("imageLimit",state.optBoolean("summaryImages")?com.donglan.chrona.classroom.ClassroomSummary.MAX_IMAGES:0).put("updated",System.currentTimeMillis()));
-        state.put("summaries",tasks).put("message",lesson.course+" · 素材已下载，等待自动总结");
+        if(tasks.has(key(lesson)))return;
+        boolean enabled=automaticSummary(state,lesson);
+        String text=lesson.course+(enabled?" · 素材已下载，等待自动总结":" · 素材已下载");
+        tasks.put(key(lesson),new JSONObject().put("lesson",lesson.json()).put("state",enabled?"queued":"skipped")
+                .put("automaticSummary",enabled).put("detail",text)
+                .put("imageLimit",enabled&&state.optBoolean("summaryImages")?com.donglan.chrona.classroom.ClassroomSummary.MAX_IMAGES:0).put("updated",System.currentTimeMillis()));
+        state.put("summaries",tasks).put("message",text);
+        if(!enabled){
+            JSONObject statuses=state.optJSONObject("statuses");if(statuses==null)statuses=new JSONObject();
+            statuses.put("lesson:"+key(lesson),text).put("course:"+lesson.courseId,text);state.put("statuses",statuses);
+            finishSingleRegistration(state,lesson);
+        }
+    }
+    boolean autoSummary()throws Exception{return read().optBoolean("autoSummary",true);}
+    void autoSummary(boolean enabled)throws Exception{synchronized(LOCK){JSONObject state=read();state.put("autoSummary",enabled);save(state);}}
+    static int summaryPolicy(JSONObject state,ClassroomLesson lesson){
+        JSONObject policies=state.optJSONObject("summaryPolicies");
+        return policies==null?SUMMARY_FOLLOW_GLOBAL:policies.optInt(lesson.courseId,SUMMARY_FOLLOW_GLOBAL);
+    }
+    int summaryPolicy(ClassroomLesson lesson)throws Exception{return summaryPolicy(read(),lesson);}
+    void summaryPolicy(ClassroomLesson lesson,int policy)throws Exception{
+        if(lesson.courseId.isEmpty()||policy<SUMMARY_FOLLOW_GLOBAL||policy>SUMMARY_ON)throw new IllegalArgumentException("无效的课程总结设置");
+        synchronized(LOCK){JSONObject state=read();JSONObject policies=state.optJSONObject("summaryPolicies");if(policies==null)policies=new JSONObject();
+            if(policy==SUMMARY_FOLLOW_GLOBAL)policies.remove(lesson.courseId);else policies.put(lesson.courseId,policy);
+            state.put("summaryPolicies",policies);save(state);}
+    }
+    static boolean automaticSummary(JSONObject state,ClassroomLesson lesson){
+        int policy=summaryPolicy(state,lesson);return policy==SUMMARY_FOLLOW_GLOBAL?state.optBoolean("autoSummary",true):policy==SUMMARY_ON;
     }
     boolean summaryImages()throws Exception{return read().optBoolean("summaryImages");}
     /** A local deletion is terminal for this lesson, not for its course's future rules. */
@@ -147,10 +173,13 @@ final class ClassroomMonitorStore {
             task.put("state",next).put("detail",text).put("updated",System.currentTimeMillis());
             JSONObject statuses=state.optJSONObject("statuses");if(statuses==null)statuses=new JSONObject();
             statuses.put("lesson:"+key(lesson),text).put("course:"+lesson.courseId,text);state.put("statuses",statuses).put("message",text);
-            if(!"queued".equals(next)&&!"running".equals(next)){JSONArray rules=state.getJSONArray("rules");
-                for(int i=rules.length()-1;i>=0;i--)if(!rules.getJSONObject(i).getBoolean("repeat")&&key(ClassroomLesson.fromJson(rules.getJSONObject(i).getJSONObject("lesson"))).equals(key(lesson)))rules.remove(i);}
+            if(!"queued".equals(next)&&!"running".equals(next))finishSingleRegistration(state,lesson);
             save(state);return true;
         }
+    }
+    private static void finishSingleRegistration(JSONObject state,ClassroomLesson lesson)throws Exception{
+        JSONArray rules=state.getJSONArray("rules");
+        for(int i=rules.length()-1;i>=0;i--)if(!rules.getJSONObject(i).getBoolean("repeat")&&key(ClassroomLesson.fromJson(rules.getJSONObject(i).getJSONObject("lesson"))).equals(key(lesson)))rules.remove(i);
     }
     static long next(JSONObject state,long now) throws Exception {
         boolean automatic=autoWork(state);

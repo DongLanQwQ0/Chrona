@@ -77,9 +77,12 @@ final class ClassroomMonitorUi {
         ClassroomMonitorStore store=new ClassroomMonitorStore(activity,account);
         android.app.Dialog dialog=new android.app.Dialog(activity);LinearLayout panel=UiDialogs.dialogPanel(activity,"监视运行设置");
         LinearLayout body=new LinearLayout(activity);body.setOrientation(LinearLayout.VERTICAL);
-        CheckBox images=new CheckBox(activity);images.setText("自动总结上传图片");images.setTextSize(15);images.setMinHeight(dp(activity,48));UiStyle.toggle(images);
-        try{images.setChecked(store.summaryImages());}catch(Exception failure){Feedback.show(activity,"无法读取监视运行设置");return;}
+        CheckBox automatic=new CheckBox(activity);automatic.setText("自动总结");automatic.setTextSize(15);automatic.setMinHeight(dp(activity,48));UiStyle.toggle(automatic);
+        CheckBox images=new CheckBox(activity);images.setText("上传图片");images.setTextSize(15);images.setMinHeight(dp(activity,48));UiStyle.toggle(images);
+        try{JSONObject state=store.read();automatic.setChecked(state.optBoolean("autoSummary",true));images.setChecked(state.optBoolean("summaryImages"));images.setEnabled(automatic.isChecked());}catch(Exception failure){Feedback.show(activity,"无法读取监视运行设置");return;}
+        automatic.setOnClickListener(view->{try{if(!ClassroomMonitor.allowed(activity,account))throw new IllegalStateException("学校账号已停用");store.autoSummary(automatic.isChecked());images.setEnabled(automatic.isChecked());}catch(Exception failure){automatic.setChecked(!automatic.isChecked());Feedback.show(activity,"无法保存监视运行设置");}});
         images.setOnClickListener(view->{try{if(!ClassroomMonitor.allowed(activity,account))throw new IllegalStateException("学校账号已停用");store.summaryImages(images.isChecked());}catch(Exception failure){images.setChecked(!images.isChecked());Feedback.show(activity,"无法保存监视运行设置");}});
+        UiStyle.addSpaced(body,automatic,0,0);
         UiStyle.addSpaced(body,images,0,8);
         List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
         android.app.AlarmManager alarms=activity.getSystemService(android.app.AlarmManager.class);

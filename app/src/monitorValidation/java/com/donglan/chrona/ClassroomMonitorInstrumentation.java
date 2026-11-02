@@ -182,6 +182,7 @@ public final class ClassroomMonitorInstrumentation extends Instrumentation {
         else if("end".equals(mode))endChecks();
         else if("pipeline".equals(mode))pipelineChecks();
         else if("auto".equals(mode))assertions+=ClassroomAutoSummaryChecks.run(this,args);
+        else if("summary_policy_ui".equals(mode)){seedReader();assertions+=MonitorSummaryPolicyUiChecks.run(this,args,account,selected);}
         else if("table".equals(mode))tableChecks();
         else if("workspace".equals(mode))workspaceChecks();
         else assertions+=ClassroomUiPolishChecks.run(this,args);

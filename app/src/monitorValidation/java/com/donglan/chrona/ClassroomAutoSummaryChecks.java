@@ -50,9 +50,11 @@ final class ClassroomAutoSummaryChecks {
                 JSONObject result=new JSONObject().put("lesson",job.selected.json()).put("complete",true).put("updated",System.currentTimeMillis());
                 ClassroomStore.write(new File(job.dir,"summary.json"),result);return result;
             };
+            checks.policyDefaults();
             checks.materialGate();checks.queueAndDedup();checks.savedAndMissing();checks.unknownAndScope();checks.accountCancellation();
             checks.legacyFinishedRecovery();
             checks.deletedLessonIsTerminal();
+            checks.policyIdentityAndScope();checks.policyMatrix();checks.policyMaterialAndRecovery();checks.policyRunningAndLegacySnapshots();
             checks.ownerLossBeforeDestroy(false);checks.ownerLossBeforeDestroy(true);
             return checks.assertions;
         }finally{
@@ -64,6 +66,8 @@ final class ClassroomAutoSummaryChecks {
         }
     }
     private ClassroomLesson lesson(){return new ClassroomLesson("991000",Long.toString(identityBase+(++sequence)),"自动总结验证"+sequence,"课堂","教室","6",System.currentTimeMillis()-600_000);}
+    private ClassroomLesson policyLesson(){ClassroomLesson lesson=lesson();return new ClassroomLesson("992"+lesson.id,lesson.id,"策略验证课程",lesson.title,lesson.room,lesson.status,lesson.startsAt);}
+    private ClassroomLesson nextLesson(ClassroomLesson lesson){ClassroomLesson next=lesson();return new ClassroomLesson(lesson.courseId,next.id,lesson.course,"后续课堂",lesson.room,"6",lesson.startsAt+3_600_000);}
     private void check(boolean condition,String label){assertions++;if(!condition)throw new AssertionError(label);}
     private String state(ClassroomLesson lesson)throws Exception{JSONObject task=ClassroomMonitorStore.auto(store.read(),lesson);return task==null?"":task.optString("state");}
     private void dispatch(){test.runOnMainSync(()->ClassroomAutoSummary.dispatch(app));}
@@ -101,10 +105,110 @@ final class ClassroomAutoSummaryChecks {
         store.stop(removed);
     }
     private void prepared(ClassroomLesson lesson)throws Exception{
+        materialFiles(lesson);
+        store.add(lesson,false);store.finished(lesson);
+    }
+    private void materialFiles(ClassroomLesson lesson)throws Exception{
         File dir=new ClassroomStore(app,account).localLesson(lesson);
         ClassroomStore.write(new File(dir,"materials.json"),new JSONObject().put("monitoring",false).put("raw_images",0).put("segments",new JSONArray().put(new JSONObject().put("start",0).put("end",1).put("text","完整字幕"))));
         ClassroomStore.write(new File(dir,"candidates.json"),new JSONObject().put("lesson",lesson.json()).put("images",new JSONArray()));
-        store.add(lesson,false);store.finished(lesson);
+    }
+    private void policyDefaults()throws Exception{
+        ClassroomLesson lesson=policyLesson();
+        check(!store.read().has("autoSummary")&&store.autoSummary(),"Missing automatic-summary preference preserves enabled default");
+        check(store.summaryPolicy(lesson)==ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL
+                &&ClassroomMonitorStore.automaticSummary(store.read(),lesson),"New course follows the enabled global default");
+        check(!store.summaryImages()&&ClassroomAutoSummary.imageLimit(app,account)==0,"Automatic default does not grant image uploads");
+    }
+    private void policyIdentityAndScope()throws Exception{
+        owner=false;ClassroomLesson first=policyLesson(),sibling=nextLesson(first),sameName=policyLesson();
+        store.add(first,true);store.catalog(java.util.List.of(first,sibling,sameName),System.currentTimeMillis());
+        String rules=store.read().getJSONArray("rules").toString(),catalog=store.read().getJSONArray("catalog").toString();
+        store.summaryPolicy(first,ClassroomMonitorStore.SUMMARY_OFF);store.autoSummary(false);store.summaryImages(true);
+        check(rules.equals(store.read().getJSONArray("rules").toString())&&catalog.equals(store.read().getJSONArray("catalog").toString()),"Saving preferences cannot replace registrations or their discovered lessons");
+        check(store.summaryPolicy(sibling)==ClassroomMonitorStore.SUMMARY_OFF&&!ClassroomMonitorStore.automaticSummary(store.read(),sibling),"Course override applies to another lesson with the same course ID");
+        check(first.course.equals(sameName.course)&&store.summaryPolicy(sameName)==ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL,"Identical course names with different IDs have independent overrides");
+        ClassroomMonitorStore reopened=new ClassroomMonitorStore(app,account);
+        check(!reopened.autoSummary()&&reopened.summaryPolicy(sibling)==ClassroomMonitorStore.SUMMARY_OFF&&reopened.summaryImages(),"Account preferences survive a new store instance");
+        ClassroomMonitorStore other=new ClassroomMonitorStore(app,"policy-other-"+identityBase);
+        check(other.autoSummary()&&!other.summaryImages()&&other.summaryPolicy(first)==ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL,"Another account never inherits this account's preferences");
+        other.autoSummary(false);other.summaryPolicy(first,ClassroomMonitorStore.SUMMARY_ON);
+        check(ClassroomMonitorStore.automaticSummary(other.read(),first)&&!ClassroomMonitorStore.automaticSummary(store.read(),first),"Same real course ID remains isolated across accounts");
+        check(store.summaryImages()&&ClassroomAutoSummary.imageLimit(app,account)==ClassroomSummary.MAX_IMAGES,"Global automatic-summary off retains image permission for explicit manual and batch requests");
+        store.summaryPolicy(first,ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL);
+        check(!store.read().getJSONObject("summaryPolicies").has(first.courseId)&&store.summaryPolicy(sibling)==ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL,"Following global removes the course override rather than storing a lesson override");
+        check(ClassroomMonitorStore.ruleFor(store.read(),sibling)!=null&&ClassroomMonitorStore.matches(store.read(),sibling),"Preference changes leave repeat monitoring active");
+        store.stop(first);store.autoSummary(true);store.summaryImages(false);
+    }
+    private void policyMatrix()throws Exception{
+        owner=false;int before=calls.get();java.util.List<ClassroomLesson> queued=new java.util.ArrayList<>(),skipped=new java.util.ArrayList<>();
+        store.summaryImages(true);
+        for(boolean global:new boolean[]{false,true})for(int policy:new int[]{ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL,ClassroomMonitorStore.SUMMARY_OFF,ClassroomMonitorStore.SUMMARY_ON}){
+            ClassroomLesson lesson=policyLesson();store.add(lesson,false);String rules=store.read().getJSONArray("rules").toString();
+            store.autoSummary(global);store.summaryPolicy(lesson,policy);
+            boolean enabled=policy==ClassroomMonitorStore.SUMMARY_ON||policy==ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL&&global;
+            String label="global="+global+", course="+policy;
+            check(rules.equals(store.read().getJSONArray("rules").toString())&&state(lesson).isEmpty(),"Registration does not snapshot automatic policy before material completion: "+label);
+            check(ClassroomMonitorStore.automaticSummary(store.read(),lesson)==enabled,"Resolve all global/course policy combinations: "+label);
+            materialFiles(lesson);store.finished(lesson);JSONObject task=ClassroomMonitorStore.auto(store.read(),lesson);
+            check((enabled?"queued":"skipped").equals(task.getString("state"))&&task.getBoolean("automaticSummary")==enabled,"Material commit persists the resolved automatic decision: "+label);
+            check(task.getInt("imageLimit")== (enabled?ClassroomSummary.MAX_IMAGES:0),"Skipped tasks never retain image upload authorization: "+label);
+            if(enabled)queued.add(lesson);else{
+                skipped.add(lesson);check(ClassroomMonitorStore.ruleFor(store.read(),lesson)==null&&!ClassroomMonitorStore.matches(store.read(),lesson),"Skipped single registration completes normally: "+label);
+            }
+        }
+        for(ClassroomLesson lesson:queued){
+            String snapshot=ClassroomMonitorStore.auto(store.read(),lesson).toString();store.autoSummary(false);store.summaryPolicy(lesson,ClassroomMonitorStore.SUMMARY_OFF);store.summaryImages(false);
+            check(snapshot.equals(ClassroomMonitorStore.auto(store.read(),lesson).toString()),"Later global/course/image choices do not rewrite a queued decision");
+        }
+        owner=true;dispatch();for(ClassroomLesson lesson:queued)waitFor(lesson,"complete");
+        check(calls.get()==before+queued.size()&&queued.size()==3,"Only the three enabled matrix cells dispatch their production Sessions");
+        for(ClassroomLesson lesson:skipped){store.autoSummary(true);store.summaryPolicy(lesson,ClassroomMonitorStore.SUMMARY_ON);store.add(lesson,false);store.finished(lesson);dispatch();
+            check("skipped".equals(state(lesson))&&!store.recoverFinished(lesson),"Enabling later cannot revive a skipped terminal outcome");store.stop(lesson);}
+        check(calls.get()==before+queued.size(),"Skipped terminal entries never bill after preference changes");store.autoSummary(true);store.summaryImages(false);
+    }
+    private void policyMaterialAndRecovery()throws Exception{
+        owner=false;int before=calls.get();ClassroomLesson lesson=policyLesson();store.add(lesson,false);store.catalog(java.util.List.of(lesson),System.currentTimeMillis());
+        ClassroomMonitor.clients=(user,password)->fake(lesson);phase=0;pass();
+        check(state(lesson).isEmpty(),"Live material has no automatic-policy snapshot");
+        store.autoSummary(false);store.summaryImages(true);phase=1;pass();File dir=new ClassroomStore(app,account).localLesson(lesson);
+        JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));
+        check(materials!=null&&!materials.optBoolean("monitoring")&&materials.getJSONArray("segments").length()>0&&new File(dir,"candidates.json").isFile(),"Automatic off still publishes formal complete transcript and image candidates through the real monitor pass");
+        check("skipped".equals(state(lesson))&&ClassroomMonitorStore.auto(store.read(),lesson).getInt("imageLimit")==0,"Policy is resolved at complete material publication, not at initial registration");
+        check(ClassroomMonitorStore.ruleFor(store.read(),lesson)==null&&ClassroomMonitorStore.pending(store.read()).isEmpty(),"Disabled summary still finishes single monitoring and download work");
+        AtomicInteger settingsReads=new AtomicInteger();ClassroomAutoSummary.Settings priorSettings=ClassroomAutoSummary.settings;
+        ClassroomAutoSummary.settings=context->{settingsReads.incrementAndGet();return ai;};
+        try{
+            owner=true;dispatch();check(calls.get()==before&&settingsReads.get()==0&&!new File(dir,"summary.json").exists(),"Skipped material does not load AI settings or dispatch a generator");
+            owner=false;ClassroomLesson recovered=policyLesson();materialFiles(recovered);legacyFinished(store,recovered);dispatch();
+            check("skipped".equals(state(recovered))&&ClassroomMonitorStore.auto(store.read(),recovered).getInt("imageLimit")==0,"Legacy finished material recovers using current disabled policy without billing");
+            String terminal=ClassroomMonitorStore.auto(store.read(),recovered).toString();store.autoSummary(true);store.summaryPolicy(recovered,ClassroomMonitorStore.SUMMARY_ON);
+            owner=true;dispatch();check(!store.recoverFinished(recovered)&&terminal.equals(ClassroomMonitorStore.auto(store.read(),recovered).toString())&&calls.get()==before&&settingsReads.get()==0,"Recovered skip remains terminal when preferences are enabled later");
+        }finally{ClassroomAutoSummary.settings=priorSettings;}
+        owner=false;store.autoSummary(false);ClassroomLesson repeat=policyLesson(),future=nextLesson(repeat);materialFiles(repeat);store.add(repeat,true);store.catalog(java.util.List.of(repeat,future),System.currentTimeMillis());store.finished(repeat);
+        check("skipped".equals(state(repeat))&&ClassroomMonitorStore.ruleFor(store.read(),future)!=null&&ClassroomMonitorStore.matches(store.read(),future),"Skipped current lesson retains repeat registration and its future lesson");
+        store.summaryPolicy(future,ClassroomMonitorStore.SUMMARY_ON);materialFiles(future);store.finished(future);
+        check("queued".equals(state(future))&&ClassroomMonitorStore.auto(store.read(),future).getInt("imageLimit")==ClassroomSummary.MAX_IMAGES,"Course-on overrides global-off for a future lesson with retained image permission");
+        owner=true;dispatch();waitFor(future,"complete");check(calls.get()==before+1,"Only the newly enabled future lesson dispatches once");store.stop(repeat);
+        owner=false;store.autoSummary(true);ClassroomLesson failed=policyLesson();prepared(failed);store.summaryState(failed,"queued","failed","controlled terminal failure");String terminal=ClassroomMonitorStore.auto(store.read(),failed).toString();
+        store.autoSummary(false);store.summaryPolicy(failed,ClassroomMonitorStore.SUMMARY_OFF);store.autoSummary(true);store.summaryPolicy(failed,ClassroomMonitorStore.SUMMARY_ON);store.add(failed,false);store.finished(failed);owner=true;dispatch();
+        check(!store.recoverFinished(failed)&&terminal.equals(ClassroomMonitorStore.auto(store.read(),failed).toString())&&calls.get()==before+1,"Policy toggles and re-registration cannot retry a failed terminal task");store.stop(failed);store.summaryImages(false);
+    }
+    private void policyRunningAndLegacySnapshots()throws Exception{
+        owner=false;store.autoSummary(true);store.summaryImages(true);ClassroomLesson running=policyLesson();prepared(running);
+        ClassroomAutoSummary.Generator prior=ClassroomAutoSummary.generator;CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);int before=calls.get();
+        ClassroomAutoSummary.generator=(job,ai,prompt)->{entered.countDown();while(!release.await(20,TimeUnit.MILLISECONDS))job.control.check();job.control.check();return prior.generate(job,ai,prompt);};
+        try{
+            owner=true;dispatch();check(entered.await(5,TimeUnit.SECONDS)&&"running".equals(state(running)),"Controlled generator enters the actual running Session");
+            String snapshot=ClassroomMonitorStore.auto(store.read(),running).toString();store.autoSummary(false);store.summaryPolicy(running,ClassroomMonitorStore.SUMMARY_OFF);store.summaryImages(false);dispatch();
+            check(snapshot.equals(ClassroomMonitorStore.auto(store.read(),running).toString()),"Changing all preferences neither cancels nor rewrites running work");
+            release.countDown();waitFor(running,"complete");check(calls.get()==before+1&&lastLimit==ClassroomSummary.MAX_IMAGES,"Running Session completes with its original image snapshot after preferences are disabled");
+        }finally{release.countDown();ClassroomAutoSummary.generator=prior;}
+        owner=false;store.autoSummary(true);ClassroomLesson legacy=policyLesson();prepared(legacy);
+        synchronized(ClassroomMonitorStore.LOCK){JSONObject state=store.read();ClassroomMonitorStore.auto(state,legacy).remove("automaticSummary");
+            if(!app.getSharedPreferences("chrona_classroom_monitor",0).edit().putString(account,state.toString()).commit())throw new IOException("Fixture legacy queue write failed");}
+        store.autoSummary(false);store.summaryPolicy(legacy,ClassroomMonitorStore.SUMMARY_OFF);owner=true;dispatch();waitFor(legacy,"complete");
+        check(calls.get()==before+2&&lastLimit==0,"Already queued legacy task without an automatic-summary flag still dispatches despite current disabled preferences");store.autoSummary(true);store.summaryImages(false);
     }
     private void queueAndDedup()throws Exception{
         owner=false;ClassroomLesson lesson=lesson();prepared(lesson);store.finished(lesson);
@@ -142,9 +246,18 @@ final class ClassroomAutoSummaryChecks {
         finally{school.prefs.edit().putString("account",account).commit();}
     }
     private void legacyFinished(ClassroomMonitorStore target,ClassroomLesson lesson)throws Exception{
-        target.add(lesson,false);target.finished(lesson);
-        synchronized(ClassroomMonitorStore.LOCK){JSONObject state=target.read();state.getJSONObject("summaries").remove(ClassroomMonitorStore.key(lesson));
-            if(!app.getSharedPreferences("chrona_classroom_monitor",0).edit().putString(target.account,state.toString()).commit())throw new IOException("Fixture legacy state write failed");}
+        // Old downloads kept the registration and done identity without an automatic task.
+        // Do not call today's finished(): a disabled policy correctly removes its single rule.
+        synchronized(ClassroomMonitorStore.LOCK){JSONObject state=target.read();String key=ClassroomMonitorStore.key(lesson);
+            JSONArray rules=state.getJSONArray("rules"),done=state.getJSONArray("done");
+            for(int i=rules.length()-1;i>=0;i--)if(key.equals(ClassroomMonitorStore.key(ClassroomLesson.fromJson(rules.getJSONObject(i).getJSONObject("lesson")))))rules.remove(i);
+            rules.put(new JSONObject().put("lesson",lesson.json()).put("repeat",false));
+            boolean downloaded=false;for(int i=0;i<done.length();i++)if(key.equals(done.getString(i)))downloaded=true;
+            if(!downloaded)done.put(key);
+            JSONObject tasks=state.optJSONObject("summaries");if(tasks!=null)tasks.remove(key);
+            if(!app.getSharedPreferences("chrona_classroom_monitor",0).edit().putString(target.account,state.toString()).commit())throw new IOException("Fixture legacy state write failed");
+            check(ClassroomMonitorStore.ruleFor(target.read(),lesson)!=null&&ClassroomMonitorStore.auto(target.read(),lesson)==null
+                    &&ClassroomMonitorStore.recoverableFinished(target.read()).stream().anyMatch(item->key.equals(ClassroomMonitorStore.key(item))),"Legacy fixture retains an active rule plus downloaded identity and no automatic task");}
     }
     private void legacyFinishedRecovery()throws Exception{
         owner=false;int before=calls.get();ClassroomLesson saved=lesson();prepared(saved);legacyFinished(store,saved);

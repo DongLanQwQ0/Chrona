@@ -16,7 +16,7 @@ import java.util.concurrent.Executors;
 public final class ClassroomTranscriptActivity extends Activity {
     private ClassroomLesson lesson;private String account;
     private LinearLayout rows;private ScrollView scroll;private ImageButton latest;private TextView status;private FrameLayout readingBody;
-    private CheckBox repeat;private ImageButton action;private boolean binding;private int mode;
+    private CheckBox repeat;private TextView summaryPolicy;private ImageButton action;private boolean binding;private int mode;
     private HeaderActionGroup headerActions;
     private ScrollView slidesScroll;private LinearLayout slides;private String pictureSignature="";
     private TextView slidesLabel;private DockNavigationLayout sections;
@@ -53,10 +53,17 @@ public final class ClassroomTranscriptActivity extends Activity {
         status=new TextView(this);status.setTextSize(12);status.setIncludeFontPadding(false);UiStyle.muted(status);status.setText("未开始监视");UiStyle.addSpaced(description,status,2,0);
         information.addView(description,new LinearLayout.LayoutParams(0,-2,1));
         repeat=new CheckBox(this);repeat.setText("后续课程");repeat.setContentDescription("监视后续课程");repeat.setTextSize(12);repeat.setMinHeight(dp(48));repeat.setIncludeFontPadding(false);UiStyle.toggle(repeat);
-        LinearLayout.LayoutParams scopeParams=new LinearLayout.LayoutParams(-2,-2);scopeParams.leftMargin=dp(8);information.addView(repeat,scopeParams);UiStyle.addSpaced(tools,information,0,4);
+        LinearLayout.LayoutParams scopeParams=new LinearLayout.LayoutParams(-2,-2);scopeParams.leftMargin=dp(8);information.addView(repeat,scopeParams);
+        summaryPolicy=new TextView(this);UiStyle.fieldTrigger(summaryPolicy,true);summaryPolicy.setOnClickListener(view->pickSummaryPolicy());
+        LinearLayout.LayoutParams policyParams=new LinearLayout.LayoutParams(-2,-2);policyParams.leftMargin=dp(8);information.addView(summaryPolicy,policyParams);
+        UiStyle.addSpaced(tools,information,4,4);
         refreshScope();if(state!=null&&!monitoring())repeat.setChecked(state.getBoolean("repeat",false));
         repeat.setOnCheckedChangeListener((button,checked)->{if(binding||!monitoring())return;try{ClassroomMonitor.start(this,lesson,checked);signature="";}catch(Exception failure){Feedback.show(this,"无法更改监视范围");refreshScope();}});
-        root.addView(SettingsPageLayout.toolsViewport(this,tools),new LinearLayout.LayoutParams(-1,-2));
+        ScrollView toolsViewport=SettingsPageLayout.toolsViewport(this,tools);
+        // The page gutter carries field presses; keep the tools' real viewport boundary.
+        toolsViewport.setPadding(dp(20),0,dp(20),0);toolsViewport.setClipToPadding(false);toolsViewport.setClipChildren(false);
+        LinearLayout.LayoutParams toolsParams=new LinearLayout.LayoutParams(-1,-2);toolsParams.leftMargin=toolsParams.rightMargin=-dp(20);
+        root.addView(toolsViewport,toolsParams);
         sideNavigation=SettingsPageLayout.shortWindow(this);
         sections=new DockNavigationLayout(this,this::setMode,()->{});sections.setPadding(dp(6),dp(6),dp(6),dp(6));
         if(sideNavigation)sections.setOrientation(LinearLayout.VERTICAL);
@@ -104,7 +111,23 @@ public final class ClassroomTranscriptActivity extends Activity {
         if(sections!=null)sections.finishPageSelection(mode);updateFollow();
     }
     private boolean monitoring(){try{return ClassroomMonitorStore.ruleFor(new ClassroomMonitorStore(this,account).read(),lesson)!=null;}catch(Exception ignored){return false;}}
-    private void refreshScope(){try{JSONObject rule=ClassroomMonitorStore.ruleFor(new ClassroomMonitorStore(this,account).read(),lesson);binding=true;if(rule!=null)repeat.setChecked(rule.getBoolean("repeat"));binding=false;boolean watching=rule!=null;action.setImageResource(watching?R.drawable.ic_circle_stop:R.drawable.ic_play);action.setContentDescription(watching?"停止监视":"开始监视");action.setTooltipText(watching?"停止监视":"开始监视");}catch(Exception ignored){binding=false;}}
+    private void refreshScope(){try{JSONObject state=new ClassroomMonitorStore(this,account).read(),rule=ClassroomMonitorStore.ruleFor(state,lesson);binding=true;if(rule!=null)repeat.setChecked(rule.getBoolean("repeat"));binding=false;boolean watching=rule!=null;action.setImageResource(watching?R.drawable.ic_circle_stop:R.drawable.ic_play);action.setContentDescription(watching?"停止监视":"开始监视");action.setTooltipText(watching?"停止监视":"开始监视");refreshSummaryPolicy(state);}catch(Exception ignored){binding=false;}}
+    private void refreshSummaryPolicy(JSONObject state){
+        int policy=ClassroomMonitorStore.summaryPolicy(state,lesson);
+        String label=policy==ClassroomMonitorStore.SUMMARY_OFF?"不自动":policy==ClassroomMonitorStore.SUMMARY_ON?"自动":"跟随全局";
+        if(!label.contentEquals(summaryPolicy.getText()))summaryPolicy.setText(label);
+        String description="自动总结，"+label+"，"+(ClassroomMonitorStore.automaticSummary(state,lesson)?"已开启":"已关闭");
+        if(!description.equals(summaryPolicy.getContentDescription()))summaryPolicy.setContentDescription(description);
+    }
+    private void pickSummaryPolicy(){
+        if(!ClassroomMonitor.allowed(this,account)){finish();return;}
+        try{ClassroomMonitorStore store=new ClassroomMonitorStore(this,account);int policy=store.summaryPolicy(lesson);
+            UiDialogs.choiceDialog(this,"自动总结",new String[]{"不自动","自动","跟随全局"},policy==ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL?2:policy,index->{
+                try{if(!ClassroomMonitor.allowed(this,account))throw new IllegalStateException("学校账号已停用");store.summaryPolicy(lesson,index==2?ClassroomMonitorStore.SUMMARY_FOLLOW_GLOBAL:index);refreshSummaryPolicy(store.read());}
+                catch(Exception failure){Feedback.show(this,"无法保存课程总结设置");}
+            });
+        }catch(Exception failure){Feedback.show(this,"无法读取课程总结设置");}
+    }
     private void toggleMonitoring(){
         if(!ClassroomMonitor.allowed(this,account)){finish();return;}
         try{if(monitoring()){new ClassroomMonitorStore(this,account).stop(lesson);ClassroomMonitor.changed(this);}else{ClassroomNotifications.requestPermission(this);ClassroomMonitor.start(this,lesson,repeat.isChecked());}refreshScope();signature="";read();}
@@ -120,7 +143,7 @@ public final class ClassroomTranscriptActivity extends Activity {
                 boolean watching=ClassroomMonitorUi.watching(getApplicationContext(),lesson);
                 JSONObject monitor=new ClassroomMonitorStore(getApplicationContext(),account).read();
                 String version=stamp.toString()+watching+":"+monitor.optJSONArray("rules")+":"+(lesson.startsAt<=System.currentTimeMillis());
-                if(version.equals(signature))return;
+                if(version.equals(signature)){main.post(()->{if(active&&generation==token&&ClassroomMonitor.allowed(this,account))refreshSummaryPolicy(monitor);});return;}
                 JSONObject complete=ClassroomStore.read(new File(saved,"materials.json"));JSONArray segments;
                 boolean finalTranscript=complete!=null&&!complete.optBoolean("monitoring")&&complete.optJSONArray("segments")!=null&&complete.getJSONArray("segments").length()>0;
                 if(finalTranscript)segments=complete.getJSONArray("segments");
