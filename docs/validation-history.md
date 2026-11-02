@@ -7,6 +7,8 @@
 - 真实JVM loopback定向1351项、追加恢复220项、旧格式额外事务10项、结构修复725项均通过；覆盖Chat／Responses第二核图独立前文事务拒绝、精确安全错误、合法本块＋前文对照、后文拒绝、仅补失败final、成功阶段与全部历史／冻结选项保持、不重复图，以及repair耗尽后手动坏JSON不额外修复。原请求／响应及日志`build/refinement-scope101/`，合成材料检查不替代真实模型。
 - Release／lint通过（`build/refinement-scope101/release-lint.txt`）；生产UI未改变，100最终UI证据仍适用。101尚未安装、试点未续跑，不将构建或定向通过算作21节重整完成。
 - GlobalSend交还实机后发起一次正常覆盖，系统返回INSTALL_FAILED_ABORTED；立即停止、不自动重发，读回仍100/262。没有启动后续探针或AI，已归还实机；待用户明确允许重发后再继续。候选263包名／版本及v2签名有效，源码dc2526f已推送，不据系统错误标签认定用户主动拒绝。
+- 用户明确同意重发后，101/263正常覆盖并读回版本。数字投影确认：最后块真实id896–972，原草稿两条notes；repair在中间新增独立`notes[1].sources=[887]`，其它条目仍本块，已提交核图4块。实际数值拓扑回归4项通过，同条本块916＋真实前文887仍合法；没有程序强补id或删除该条。证据`build/refinement-scope101/source-scope.json`、`directed-actual.txt`。
+- 只读诊断包已卸载。前台切微信后停止触控，用户再明确允许启动，正常UI继续本节→上传并生成，界面从核图4/5开始；ClassroomWorkService efe8fa6已后台运行，更正、草稿与前4核图未重做。观察`build/refinement-scope101/phone/`；服务活动时不安装或instrumentation。结果尚待本轮实际终态，不把新包安装或数值回归当成21节完成。
 
 ## 0.15.100 — 监视自动总结控制 — 2026-11-02
 

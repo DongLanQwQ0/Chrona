@@ -898,6 +898,20 @@ public final class ClassroomEnhancedCheck {
         refinementDiagnostic(()->ClassroomEnhancedSummary.validateRefinement(task,lecture,block),"核图来源错误：assignments[0].sources引用了本块之外的字幕：3","assignments cannot use previous blocks");
         task.put("assignments",new JSONArray());ClassroomEnhancedSummary.validateRefinement(task,lecture,block);check(true,"empty current-block output remains legal");
     }
+    private static void refinementActualSourceTopology()throws Exception{
+        JSONArray all=new JSONArray().put(new JSONObject().put("id",887).put("text","PRIVATE_EARLIER_SOURCE")),block=new JSONArray();
+        for(int id=896;id<=972;id++){JSONObject source=new JSONObject().put("id",id).put("text","PRIVATE_CURRENT_SOURCE_"+id);all.put(source);block.put(source);}
+        JSONObject lecture=new JSONObject().put("segments",all).put("images",new JSONArray());
+        JSONArray firstRefs=new JSONArray("[896,897,898,899,900,901,902,903,904,905,906,907,908,909,910,911,915]"),lastRefs=new JSONArray("[918,919,920,921,922,923,924,928,929,930,935,937,938,947,948]");
+        JSONObject middle=content("PRIVATE_INSERTED_EARLIER_NOTE_BODY",887);
+        JSONObject value=new JSONObject().put("overview","").put("notes",new JSONArray().put(content("PRIVATE_FIRST_CURRENT_NOTE_BODY",896).put("sources",firstRefs)).put(middle).put(content("PRIVATE_LAST_CURRENT_NOTE_BODY",918).put("sources",lastRefs))).put("affairs",new JSONArray()).put("assignments",new JSONArray());
+        check(block.length()==77&&block.getJSONObject(0).getInt("id")==896&&block.getJSONObject(76).getInt("id")==972,"actual numeric topology retains the complete current block 896..972");
+        String expected="核图来源错误：notes[1].sources=[887]；缺少本块真实来源，不可只重写前文";
+        refinementDiagnostic(()->ClassroomEnhancedSummary.validateRefinement(value,lecture,block),expected,"actual middle notes[1] is previous-only despite surrounding valid current notes");
+        JSONArray comparison=new JSONArray().put(916).put(887);middle.put("sources",comparison).put("text","PRIVATE_CURRENT_FACT_WITH_EARLIER_COMPARISON");
+        ClassroomEnhancedSummary.validateRefinement(value,lecture,block);check(true,"actual source ids allow a current fact with a real earlier comparison in the same note");
+        ClassroomStore.write(new File(root,"actual-source-topology.json"),new JSONObject().put("synthetic",true).put("basis","source-scope.json numeric topology").put("current_block_sources",sourceIds(block)).put("rejected_field","notes[1].sources").put("rejected_sources",new JSONArray().put(887)).put("expected_error",expected).put("surrounding_valid_sources",new JSONArray().put(firstRefs).put(lastRefs)).put("accepted_comparison_sources",comparison));
+    }
     private static void refinementScopePipeline()throws Exception{
         for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(boolean repair:new boolean[]{false,true}){
             reset(repair?"scope-repair-past":"scope-affairs-past",true);File dir=materials("scope-"+protocol+"-"+repair,true);
@@ -991,6 +1005,10 @@ public final class ClassroomEnhancedCheck {
     }
     public static void main(String[] args)throws Exception{
         root=new File(args[0]);root.mkdirs();
+        if(args.length>1&&args[1].equals("refinement-scope-actual")){
+            test("actual middle-note numeric source topology",ClassroomEnhancedCheck::refinementActualSourceTopology);
+            System.out.println("ClassroomRefinementScopeActual: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Actual refinement source topology checks failed");return;
+        }
         if(args.length>1&&args[1].equals("legacy-extra-affairs")){
             test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);
             System.out.println("ClassroomLegacyExtraAffairs: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Legacy extra affairs checks failed");return;
@@ -1005,7 +1023,7 @@ public final class ClassroomEnhancedCheck {
         }
         HttpServer server=server();
         if(args.length>1&&args[1].equals("refinement-scope")){
-            try{test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);}
+            try{test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("actual middle-note numeric source topology",ClassroomEnhancedCheck::refinementActualSourceTopology);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);}
             finally{server.stop(0);}System.out.println("ClassroomRefinementScope: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Refinement scope checks failed");return;
         }
         if(args.length>1&&args[1].equals("draft-images")){

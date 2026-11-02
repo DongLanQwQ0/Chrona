@@ -13,7 +13,7 @@ from recurrence_dependencies import recurrence_java
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--case', choices=['edge-cases', 'validation-resume', 'markdown-fences', 'failure-detail', 'schema-repair', 'affairs', 'note-strength', 'legacy-extra-affairs', 'responses', 'refinement-scope'])
+parser.add_argument('--case', choices=['edge-cases', 'validation-resume', 'markdown-fences', 'failure-detail', 'schema-repair', 'affairs', 'note-strength', 'legacy-extra-affairs', 'responses', 'refinement-scope', 'refinement-scope-actual'])
 parser.add_argument('--output-dir', type=Path, help='Project-local output directory for classes and loopback evidence')
 args = parser.parse_args()
 source = ast.parse((root / 'checks/classroom_summary_check.py').read_text(encoding='utf-8'))
