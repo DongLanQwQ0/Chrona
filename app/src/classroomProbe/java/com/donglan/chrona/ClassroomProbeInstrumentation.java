@@ -32,6 +32,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean mathAudit;
     private boolean monitorAudit;
     private boolean providerFailure;
+    private String reviewKey;
     private final java.util.concurrent.CountDownLatch applicationReady=new java.util.concurrent.CountDownLatch(1);
     private volatile boolean applicationInitializationSkipped;
     @Override public void onCreate(Bundle args) {
@@ -46,6 +47,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
         monitorAudit = args != null && "true".equals(args.getString("monitorAudit"));
         providerFailure = args != null && "true".equals(args.getString("providerFailure"));
+        reviewKey = args == null ? null : args.getString("reviewKey");
         super.onCreate(args); start();
     }
     @Override public void callApplicationOnCreate(android.app.Application app){
@@ -195,6 +197,18 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 boolean documentPresent=new java.io.File(directory,"summary.json").isFile();
                 row.put("published_summary",documentPresent);
                 JSONArray parts=summary.optJSONArray("parts"),headings=new JSONArray();int notes=0,affairs=0,actions=0,noteCharacters=0,affairsCharacters=0,duplicateNoteTexts=0;
+                if(finished&&key.equals(reviewKey)){
+                    // Only the selected published notebook: never run history, raw replies or subtitles.
+                    JSONObject review=new JSONObject();
+                    if(parts!=null)review.put("parts",new JSONArray(parts.toString()));
+                    else{
+                        review.put("overview",summary.optString("overview"));
+                        for(String collection:new String[]{"notes","affairs","assignments"}){
+                            JSONArray entries=summary.optJSONArray(collection);if(entries!=null)review.put(collection,new JSONArray(entries.toString()));
+                        }
+                    }
+                    row.put("notebook_review",review);
+                }
                 java.util.Set<String> noteTexts=new java.util.HashSet<>();
                 if(parts!=null)for(int p=0;p<parts.length();p++){
                     JSONObject part=parts.getJSONObject(p);
