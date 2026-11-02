@@ -82,6 +82,7 @@ public final class ClassroomSummaryCheck {
                 if(chunk!=null&&mode.equals("invalid-window"))generated.put("image_requests",new JSONArray().put(new JSONObject().put("start",20).put("end",10)));
                 if(chunk!=null&&mode.equals("invalid-source"))generated.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(999));
                 if(chunk!=null&&mode.equals("invalid-image"))generated.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));
+                if(chunk!=null&&!second&&mode.equals("invalid-draft-markdown"))generated.getJSONArray("notes").getJSONObject(0).put("text","![尚未看到的板书](lecture-slide-1.jpeg)");
                 if(second&&mode.equals("invalid-final"))generated.getJSONArray("notes").getJSONObject(0).put("images",new JSONArray().put("image-999.jpg"));
                 if(second&&mode.equals("prefixed-final")){
                     JSONObject note=generated.getJSONArray("notes").getJSONObject(0);JSONArray prefixed=new JSONArray();
@@ -358,6 +359,50 @@ public final class ClassroomSummaryCheck {
         JSONArray messages=requests.get(request).getJSONArray("messages");
         return messages.getJSONObject(messages.length()-1).getJSONArray("content").getJSONObject(0).getString("text");
     }
+    private static void draftImageBoundary(String prompt,String label){
+        for(String rule:List.of("只处理字幕与PPT时间目录","尚未提供任何实际图片","所有images数组必须为[]",
+                "所有文本字段均禁止插入Markdown图片、图片占位链接或自行命名文件","不得新增schema之外的字段",
+                "只通过image_requests的时间范围请求","收到实际附图后的核图阶段才能引用给定file"))
+            check(prompt.contains(rule),label+": "+rule);
+    }
+    private static void draftImageReferences()throws Exception {
+        reset();mode="invalid-draft-markdown";File dir=materialDir("draft-unseen-markdown-"+System.nanoTime());
+        JSONObject previous=new JSONObject().put("complete",true).put("marker","existing-published-document");
+        ClassroomStore.write(new File(dir,"summary.json"),previous);
+        rejects(()->ordinary(dir,3),"unseen noncanonical JPEG Markdown stops the ordinary draft");
+        JSONObject failed=run(dir),conversation=failed.getJSONObject("conversation");String identity=failed.getString("run");
+        check(calls==1&&!failed.has("draft")&&!failed.has("selected")&&!failed.has("final"),"semantic image failure gets no automatic repair or image upload and never commits a draft");
+        check(ClassroomStore.read(new File(dir,"summary.json")).toString().equals(previous.toString()),"semantic image failure preserves the published document");
+        check(failed.getString("first_output").contains("lecture-slide-1.jpeg")&&conversation.getJSONObject("outputs").getString("first").equals(failed.getString("first_output")),"exact failed image response remains available for audit");
+        check(failed.getInt("first_attempt")==1&&failed.getString("first_error").contains("图片引用"),"semantic image error is persisted for explicit continuation");
+        draftImageBoundary(lastPrompt(0),"ordinary initial draft boundary");
+        check(requests.get(0).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1,"ordinary draft has no actual attached images");
+        JSONArray prefix=new JSONArray(conversation.getJSONArray("messages").toString());String options=conversation.getJSONObject("options").toString();
+        mode="prefixed-final";JSONObject result=ordinary(dir,3);
+        check(result.getBoolean("complete")&&result.getString("run").equals(identity)&&calls==3,"explicit continuation submits one valid draft then one actual-image final in the same run");
+        draftImageBoundary(lastPrompt(1),"ordinary appended semantic recovery boundary");
+        JSONArray resumed=requests.get(1).getJSONArray("messages");
+        check(resumed.length()==prefix.length()+1,"explicit continuation appends exactly one recovery user message");
+        for(int i=0;i<prefix.length();i++)check(resumed.getJSONObject(i).toString().equals(prefix.getJSONObject(i).toString()),"ordinary original request and failed assistant stay exact "+i);
+        for(int n=0;n<requests.size();n++){JSONObject frozen=new JSONObject(requests.get(n).toString());frozen.remove("messages");check(frozen.toString().equals(options),"ordinary wire options remain exact "+n);}
+        check(run(dir).getJSONObject("conversation").getJSONObject("options").toString().equals(options),"ordinary durable frozen options remain exact");
+        check(!lastPrompt(2).contains(ClassroomSummary.DRAFT_IMAGE_RULE),"actual-image final does not inherit the draft-only ban");
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").contains("![已上传的图](images/image-"),"actual attached-image Markdown is still accepted after recovery");
+        ClassroomStore.write(new File(root,"ordinary-draft-image-recovery-http.json"),new JSONObject().put("synthetic",true).put("fixture",dir.getName()).put("requests",new JSONArray(requests)).put("failed_run",failed).put("final_run",run(dir)));
+
+        reset();mode="json-first-fields";File repair=materialDir("draft-image-format-repair-"+System.nanoTime());
+        check(ordinary(repair,3).getBoolean("complete")&&calls==3,"ordinary malformed draft gets exactly one structural repair before actual-image final");
+        draftImageBoundary(lastPrompt(1),"ordinary appended sole format repair boundary");
+        check(!lastPrompt(2).contains(ClassroomSummary.DRAFT_IMAGE_RULE),"ordinary final stays free of draft boundary after structural repair");
+
+        reset();failCall=1;File interrupted=materialDir("draft-image-transport-recovery-"+System.nanoTime());
+        rejects(()->ordinary(interrupted,0),"ordinary draft transport interruption stops without retry");
+        JSONArray sent=new JSONArray(run(interrupted).getJSONObject("conversation").getJSONArray("messages").toString());
+        failCall=-1;check(ordinary(interrupted,0).getBoolean("complete")&&calls==2,"explicit recovery restarts only the interrupted ordinary draft");
+        draftImageBoundary(lastPrompt(1),"ordinary appended interrupted-stage recovery boundary");
+        JSONArray restarted=requests.get(1).getJSONArray("messages");
+        for(int i=0;i<sent.length();i++)check(sent.getJSONObject(i).toString().equals(restarted.getJSONObject(i).toString()),"interrupted ordinary sent prefix stays exact "+i);
+    }
     private static void jsonRepair()throws Exception {
         for(String phase:List.of("first","final"))for(String defect:List.of("malformed","fields","container","nested")){
             if(phase.equals("final")&&defect.equals("nested"))continue;
@@ -368,6 +413,7 @@ public final class ClassroomSummaryCheck {
             check(state.getString(phase+"_output").equals(state.getJSONObject("conversation").getJSONObject("outputs").getString(phase+"-repair")),"latest output is the actual repair response: "+mode);
             JSONArray turns=state.getJSONObject("conversation").getJSONArray("turns");for(int i=0;i<turns.length();i++)check(turns.getJSONObject(i).getInt("request_bytes")==requestBytes.get(i),"request_bytes is the actual UTF-8 wire length: "+mode+":"+i);
             check(lastPrompt(repair).contains("完整JSON对象")&&!lastPrompt(repair).contains("RAW_PRIVATE_PAYLOAD"),"repair prompt contains only safe failure projection: "+mode);
+            check(lastPrompt(repair).contains(ClassroomSummary.DRAFT_IMAGE_RULE)==phase.equals("first"),"only draft structural repair adds the no-image boundary: "+mode);
             JSONArray before=requests.get(repair-1).getJSONArray("messages"),after=requests.get(repair).getJSONArray("messages");
             for(int i=0;i<before.length();i++)check(before.getJSONObject(i).toString().equals(after.getJSONObject(i).toString()),"repair preserves sent messages "+mode+":"+i);
             check(after.getJSONObject(after.length()-1).getJSONArray("content").length()==1,"repair does not append images again: "+mode);
@@ -709,11 +755,13 @@ public final class ClassroomSummaryCheck {
         root=new File(args[0]);root.mkdirs();
         if(args.length>1&&"local-lifecycle".equals(args[1])){test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);System.out.println("LocalLessonLifecycle: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Local lifecycle check failed");return;}
         HttpServer server=server();try {
+            if(args.length>1&&"draft-images".equals(args[1])){test("ordinary draft image boundary and append-only recovery",ClassroomSummaryCheck::draftImageReferences);System.out.println("ClassroomDraftImages: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Draft image checks failed");return;}
             if(args.length>1&&"json-repair".equals(args[1])){test("short wire-safe JSON stage requests",ClassroomSummaryCheck::shortJsonRequests);test("safe specific JSON diagnostics",ClassroomSummaryCheck::jsonDiagnostics);test("bounded complete JSON repair and safe errors",ClassroomSummaryCheck::jsonRepair);System.out.println("ClassroomJsonRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("JSON repair check failed");return;}
             if(args.length>1&&"note-strength".equals(args[1])){test("strength selection and immutable continuation",ClassroomSummaryCheck::noteStrength);System.out.println("NoteStrength: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Note strength check failed");return;}
             if(args.length>1&&"image-references".equals(args[1])){test("image reference validation",ClassroomSummaryCheck::validation);test("final validation evidence and continuation",ClassroomSummaryCheck::capAndFinalValidation);test("prefixed final and export",ClassroomSummaryCheck::prefixedFinal);test("final transport and cancellation audit",ClassroomSummaryCheck::finalTransportAudit);System.out.println("ImageReferences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Image reference check failed");return;}
             test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);
             test("safe specific JSON diagnostics",ClassroomSummaryCheck::jsonDiagnostics);
+            test("ordinary draft image boundary and append-only recovery",ClassroomSummaryCheck::draftImageReferences);
             test("bounded complete JSON repair and safe errors",ClassroomSummaryCheck::jsonRepair);
             test("strength selection and immutable continuation",ClassroomSummaryCheck::noteStrength);
             test("direct and monitored download parity",ClassroomSummaryCheck::completeDownloadParity);

@@ -584,10 +584,18 @@ public final class ChatCompletionClient {
         try {
             JSONObject error = new JSONObject(response).optJSONObject("error");
             if (error != null) {
-                String message = error.optString("message", "");
-                if (!message.isEmpty()) {
-                    return message;
+                String message = error.optString("message", "").replaceAll("\\s+", " ").trim();
+                String param = error.optString("param", "");
+                boolean thinkingParam = param.equals("reasoning_effort") || param.equals("reasoning")
+                        || param.equals("reasoning.effort") || param.equals("thinking") || param.equals("thinking.type");
+                if (!thinkingParam) {
+                    java.util.regex.Matcher named = Pattern.compile(
+                            "(?<![a-z0-9_])(?:reasoning_effort|reasoning\\.effort|thinking\\.type|thinking|reasoning)(?![a-z0-9_])",
+                            Pattern.CASE_INSENSITIVE).matcher(message);
+                    if (named.find()) { param = named.group().toLowerCase(java.util.Locale.ROOT); thinkingParam = true; }
                 }
+                return (message.isEmpty() ? "Rejected AI option" : message.substring(0, Math.min(message.length(), 500)))
+                        + (thinkingParam ? " (param=" + param + ")" : "");
             }
         } catch (JSONException ignored) {
             // Non-JSON HTTP errors are still reported with their status code.

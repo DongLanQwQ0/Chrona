@@ -133,6 +133,12 @@ public final class DashboardActivity extends Activity {
     private long unreadHomeworkId, pendingHomeworkFocus;
     private int homeworkFocusTop, homeworkFocusBottom;
     private String homeworkFocusFilter = "";
+    private View homeworkHighlightCard;
+    private GradientDrawable homeworkHighlight;
+    private android.animation.ValueAnimator homeworkHighlightFade;
+    private final View.OnLayoutChangeListener homeworkHighlightLayout = (view,l,t,r,b,ol,ot,or,ob) -> {
+        if (view == homeworkHighlightCard && homeworkHighlight != null) homeworkHighlight.setBounds(0, 0, r-l, b-t);
+    };
     private final Map<ImageButton, GradientDrawable> homeworkDots = new java.util.WeakHashMap<>();
     private final Runnable homeworkFocus = this::focusNewHomework;
     private static final int BULK_CALENDAR_PERMISSION_REQUEST = 14;
@@ -433,7 +439,7 @@ public final class DashboardActivity extends Activity {
         if (section == SCHEDULE && scheduleResultLoading) return;
         String version = dataSnapshot();
         if (dirtySections.contains(section) || !version.equals(sectionVersions.get(section))) {
-            if (section == HOME) {
+            if (section == HOME || section == SCHEDULE && scheduleSource == 0 && results != null) {
                 refreshCompletionRows();
                 return;
             }
@@ -850,6 +856,7 @@ public final class DashboardActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        clearHomeworkHighlight();
         if (dockChrome != null) dockChrome.cancel();
         cancelScheduleResults();
         refresh.removeCallbacksAndMessages(null);
@@ -1760,6 +1767,7 @@ public final class DashboardActivity extends Activity {
 
     private void openHomeHomework() {
         if (!new ZjuSettingsStore(this).enabled()) return;
+        clearHomeworkHighlight();
         pendingHomeworkFocus = unreadHomeworkId;
         homeworkFocusTop = homeworkFocusBottom = 0; homeworkFocusFilter = "";
         scheduleTab = 3; scheduleTodoScope = ScheduleQuery.TODO_OPEN;
@@ -1786,6 +1794,49 @@ public final class DashboardActivity extends Activity {
         if (pendingHomeworkFocus > 0) refresh.postDelayed(homeworkFocus, 16);
     }
 
+    /** Prepare the destination before its first visible frame, including the off-screen page. */
+    private void prepareHomeworkFocus(ScrollView viewport, LinearLayout list, Map<Long, InboxRow> rows) {
+        long candidate = pendingHomeworkFocus;
+        InboxRow row = rows.get(candidate);
+        if (candidate <= 0 || row == null) return;
+        View card = row.card;
+        String filter = completionFilterKey();
+        viewport.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            private void remove() {
+                if (viewport.getViewTreeObserver().isAlive()) viewport.getViewTreeObserver().removeOnPreDrawListener(this);
+            }
+            @Override public boolean onPreDraw() {
+                if (isDestroyed() || isFinishing() || pendingHomeworkFocus != candidate
+                        || !filter.equals(completionFilterKey()) || !card.isAttachedToWindow()) { remove(); return true; }
+                if (!card.isLaidOut() || viewport.getHeight() == 0 || list.isLayoutRequested()) { viewport.requestLayout(); return false; }
+                // A deliberate jump presents the target at its real layout position; a stale
+                // scroll-reveal translation must not move the emphasized card after centering.
+                UiMotion.settleScroll(viewport, list);
+                if (!centerHomeworkRow(viewport, list, card)) return false;
+                remove();
+                queueHomeworkFocus();
+                return true;
+            }
+        });
+    }
+
+    private boolean centerHomeworkRow(ScrollView viewport, LinearLayout list, View card) {
+        int[] point = new int[2], origin = new int[2];
+        card.getLocationOnScreen(point); viewport.getLocationOnScreen(origin);
+        int desired = viewport.getScrollY() + point[1] + card.getHeight() / 2 - origin[1] - viewport.getHeight() / 2;
+        View body = viewport.getChildAt(0);
+        int maximum = Math.max(0, body.getHeight() + viewport.getPaddingTop() + viewport.getPaddingBottom() - viewport.getHeight());
+        if (desired < 0 || desired > maximum) {
+            homeworkFocusTop += Math.max(0, -desired);
+            homeworkFocusBottom += Math.max(0, desired - maximum);
+            homeworkFocusFilter = completionFilterKey();
+            list.setPadding(0, homeworkFocusTop, 0, homeworkFocusBottom);
+            return false;
+        }
+        if (viewport.getScrollY() != desired) viewport.scrollTo(0, desired);
+        return !list.isLayoutRequested() && viewport.getScrollY() == desired;
+    }
+
     private void focusNewHomework() {
         if (isDestroyed() || isFinishing() || !foreground || !hasWindowFocus() || section != SCHEDULE || pendingHomeworkFocus <= 0) return;
         if (pageTransitionRunning || sectionLoadRunning || scheduleResultLoading) { queueHomeworkFocus(); return; }
@@ -1797,20 +1848,8 @@ public final class DashboardActivity extends Activity {
         }
         View card = row.card;
         if (!card.isLaidOut() || scroll.getHeight() <= 0 || card.isLayoutRequested()) { queueHomeworkFocus(); return; }
-        int[] point = new int[2], viewport = new int[2];
-        card.getLocationOnScreen(point); scroll.getLocationOnScreen(viewport);
-        int desired = scroll.getScrollY() + point[1] + card.getHeight() / 2 - viewport[1] - scroll.getHeight() / 2;
-        View body = scroll.getChildAt(0);
-        int maximum = Math.max(0, body.getHeight() + scroll.getPaddingTop() + scroll.getPaddingBottom() - scroll.getHeight());
-        // Only the explicit focus route adds the real scroll room needed to center edge rows.
-        if (desired < 0 || desired > maximum) {
-            homeworkFocusTop += Math.max(0, -desired);
-            homeworkFocusBottom += Math.max(0, desired - maximum);
-            homeworkFocusFilter = completionFilterKey();
-            results.setPadding(0, homeworkFocusTop, 0, homeworkFocusBottom);
-            queueHomeworkFocus(); return;
-        }
-        scroll.scrollTo(0, desired);
+        if (!centerHomeworkRow(scroll, results, card)) { queueHomeworkFocus(); return; }
+        if (card.getAlpha() < .999f || Math.abs(card.getTranslationY()) > .5f) { queueHomeworkFocus(); return; }
         long shown = pendingHomeworkFocus;
         card.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
             @Override public boolean onPreDraw() {
@@ -1831,30 +1870,49 @@ public final class DashboardActivity extends Activity {
         if (!card.getGlobalVisibleRect(visible)) return;
         int[] point = new int[2]; card.getLocationOnScreen(point);
         if (!visible.contains(point[0] + card.getWidth() / 2, point[1] + card.getHeight() / 2)) return;
+        int[] origin = new int[2]; scroll.getLocationOnScreen(origin);
+        if (Math.abs(point[1] + card.getHeight() / 2 - origin[1] - scroll.getHeight() / 2) > 1) { queueHomeworkFocus(); return; }
         pendingHomeworkFocus = 0;
+        clearHomeworkHighlight();
         GradientDrawable focus = new GradientDrawable();
         int primary = UiStyle.colors(this).primary;
         focus.setColor(Color.argb(36, Color.red(primary), Color.green(primary), Color.blue(primary)));
         focus.setStroke(dp(2), primary); focus.setCornerRadius(dp(Math.round(UiStyle.radius(this, UiStyle.RADIUS_CARD))));
-        android.graphics.drawable.Drawable previous = card.getForeground();
-        card.setForeground(focus);
+        focus.setBounds(0, 0, card.getWidth(), card.getHeight());
+        homeworkHighlightCard = card; homeworkHighlight = focus;
+        card.getOverlay().add(focus);
+        card.addOnLayoutChangeListener(homeworkHighlightLayout);
         if (android.os.Build.VERSION.SDK_INT >= 30) card.setStateDescription("新作业");
         if (UiMotion.isEnabled()) {
             android.animation.ValueAnimator fade = android.animation.ValueAnimator.ofInt(255, 0);
+            homeworkHighlightFade = fade;
             fade.setStartDelay(UiMotion.ENTER); fade.setDuration(HOMEWORK_FOCUS_DURATION);
             fade.addUpdateListener(animation -> focus.setAlpha((int) animation.getAnimatedValue()));
             fade.addListener(new android.animation.AnimatorListenerAdapter() {
                 @Override public void onAnimationEnd(android.animation.Animator animation) {
-                    if (card.getForeground() == focus) { card.setForeground(previous); if (android.os.Build.VERSION.SDK_INT >= 30) card.setStateDescription(null); }
+                    if (homeworkHighlight == focus) clearHomeworkHighlight();
                 }
             });
             fade.start();
-        } else card.postDelayed(() -> { if (card.getForeground() == focus) { card.setForeground(previous); if (android.os.Build.VERSION.SDK_INT >= 30) card.setStateDescription(null); } }, HOMEWORK_FOCUS_DURATION);
+        } else card.postDelayed(() -> { if (homeworkHighlight == focus) clearHomeworkHighlight(); }, HOMEWORK_FOCUS_DURATION);
         startupReader.execute(() -> {
             ZjuHomeworkStore store = new ZjuHomeworkStore(getApplicationContext());
             store.markSeen(shown); long next = store.newestUnread();
             refresh.post(() -> { if (!isDestroyed()) updateHomeworkAttention(next); });
         });
+    }
+
+    private void clearHomeworkHighlight() {
+        if (homeworkHighlightFade != null) {
+            android.animation.ValueAnimator previous = homeworkHighlightFade; homeworkHighlightFade = null;
+            previous.removeAllListeners(); previous.cancel();
+        }
+        if (homeworkHighlightCard != null) {
+            homeworkHighlightCard.removeOnLayoutChangeListener(homeworkHighlightLayout);
+            homeworkHighlightCard.getOverlay().remove(homeworkHighlight);
+            if (android.os.Build.VERSION.SDK_INT >= 30) homeworkHighlightCard.setStateDescription(null);
+        }
+        homeworkHighlightCard = null; homeworkHighlight = null;
     }
 
     private void showUpcomingCarousel(List<HomeTimelineEntry> upcoming) {
@@ -2246,7 +2304,7 @@ public final class DashboardActivity extends Activity {
                 }
             });
         }
-        enqueueScheduleResult(() -> { schedulePageControls(total); queueHomeworkFocus(); });
+        enqueueScheduleResult(() -> { schedulePageControls(total); prepareHomeworkFocus(scroll, results, inboxRows); queueHomeworkFocus(); });
     }
 
     private LocalDate[] scheduleWindow(boolean system) {

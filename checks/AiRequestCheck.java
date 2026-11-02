@@ -95,20 +95,21 @@ public final class AiRequestCheck {
         try { SchedulePrompt.data("x".repeat(24001), null, null, 0, "UTC"); throw new AssertionError("raw budget"); }
         catch (IllegalArgumentException expected) { }
         JSONObject deep = options("https://api.deepseek.com", "deepseek-flash", "medium");
-        check(deep.getInt("max_tokens") == 16384 && deep.getString("reasoning_effort").equals("high"), "DeepSeek effort mapping");
+        check(deep.getInt("max_tokens") == 16384 && deep.getString("reasoning_effort").equals("medium"), "DeepSeek explicit effort is unchanged");
         check(options("https://api.deepseek.com", "deepseek-v4-pro", "none").getJSONObject("thinking").getString("type").equals("disabled"), "DeepSeek off");
         JSONObject open = options("https://api.openai.com/v1", "gpt-5", "auto");
         check(open.has("max_completion_tokens") && open.getJSONObject("response_format").getString("type").equals("json_schema"), "OpenAI options");
-        check(!options("https://api.openai.com/v1", "gpt-4.1", "high").has("reasoning_effort"), "nonreasoning model");
+        check(options("https://api.openai.com/v1", "gpt-4.1", "high").getString("reasoning_effort").equals("high"), "explicit effort sent even to a nonreasoning model");
         check(!options("https://api.openai.com/v1", "gpt-4o-audio-preview", "high").has("response_format"), "specialized model conservative");
         check(options("https://api.openai.com/v1", "gpt-5.1", "none").getString("reasoning_effort").equals("none"), "supported thinking off");
-        check(options("https://api.openai.com/v1", "o3", "none").getInt("max_completion_tokens") == 16384, "non-disableable model keeps reasoning budget");
+        check(options("https://api.openai.com/v1", "o3", "none").getInt("max_completion_tokens") == 16384, "none preserves historical reasoning budget");
         JSONObject custom = options("https://example.com/v1", "gpt-5", "high");
-        check(custom.length() == 1 && custom.getInt("max_tokens") == 8192, "unknown endpoint conservative");
+        check(custom.length() == 2 && custom.getInt("max_tokens") == 8192
+                && custom.getString("reasoning_effort").equals("high"), "unknown endpoint preserves budget and explicit effort");
         for (String host : new String[]{"www.jiji.cc", "api.jiji.cc", "api-slb.jiji.cc"}) {
             for (String effort : new String[]{"auto", "none", "low", "medium", "high", "max"}) {
                 JSONObject relay = options("https://" + host + "/v1", "gpt-6-luna", effort);
-                String expected = effort.equals("auto") ? "low" : effort.equals("max") ? "high" : effort;
+                String expected = effort.equals("auto") ? "low" : effort;
                 check(relay.getString("reasoning_effort").equals(expected), "Jiji effort: " + host + "/" + effort);
                 int budget = effort.equals("none") ? 8192 : effort.equals("high") || effort.equals("max") ? 32768 : 16384;
                 check(relay.getInt("max_completion_tokens") == budget && !relay.has("max_tokens"), "Jiji reasoning budget");
@@ -116,18 +117,24 @@ public final class AiRequestCheck {
             }
         }
         check(options("https://api.jiji.cc/v1", "gpt-6.1-sol", "medium").getString("reasoning_effort").equals("medium"), "documented Jiji model");
-        check(!options("https://api.jiji.cc.attacker.example/v1", "gpt-6-luna", "medium").has("reasoning_effort"), "exact relay host only");
-        check(!options("https://api.jiji.cc/v1", "gpt-6-luna-audio", "medium").has("reasoning_effort"), "specialized relay model conservative");
+        check(options("https://api.jiji.cc.attacker.example/v1", "gpt-6-luna", "medium").getInt("max_tokens") == 8192, "exact relay host required only for provider budget");
+        check(options("https://api.jiji.cc/v1", "gpt-6-luna-audio", "medium").getInt("max_tokens") == 8192, "specialized relay model preserves conservative budget");
         checkGlmFlashEffort();
+        checkUniversalEffort();
         checkClassroomBudget();
         JSONObject requested = options("https://api.jiji.cc/v1", "gpt-6-luna", "medium");
         check(!RequestOptions.downgrade(requested, 400, "unsupported parameter reasoning_effort")
                 && requested.getString("reasoning_effort").equals("medium"), "never silently discard requested reasoning");
+        requested.put("response_format", new JSONObject().put("type", "json_object"));
+        String mixedSnapshot = requested.toString();
+        check(!RequestOptions.downgrade(requested, 400, "unsupported parameters reasoning_effort and response_format")
+                && requested.toString().equals(mixedSnapshot), "reasoning rejection cannot trigger another option removal and retry");
         JSONObject requestedDeep = options("https://api.deepseek.com", "deepseek-flash", "medium");
         check(!RequestOptions.downgrade(requestedDeep, 422, "unknown thinking parameter")
                 && requestedDeep.has("thinking"), "thinking rejection must surface");
         check(!RequestOptions.downgrade(open, 400, "invalid input") && open.has("response_format"), "unrelated error");
-        check(RequestOptions.downgrade(open, 422, "unsupported parameter response_format") && !open.has("response_format"), "named downgrade");
+        check(RequestOptions.downgrade(open, 422, "unsupported parameter response_format") && !open.has("response_format")
+                && open.getString("reasoning_effort").equals("low"), "named format downgrade preserves requested reasoning");
         JSONObject streamOptions = new JSONObject().put("stream", true).put("stream_options", new JSONObject().put("include_usage", true));
         check(RequestOptions.downgrade(streamOptions, 400, "unknown parameter stream_options")
                 && streamOptions.getBoolean("stream"), "usage option rejection preserves streaming");
@@ -175,23 +182,48 @@ public final class AiRequestCheck {
     private static void checkGlmFlashEffort() throws Exception {
         for (String host : new String[]{"www.jiji.cc", "api.jiji.cc", "api-slb.jiji.cc", "api.z.ai", "open.bigmodel.cn"}) {
             for (String model : new String[]{"glm-5.3-flash", "glm-5.3-flashx", "glm-5.3-flashx-legal"}) {
-                for (String[] effort : new String[][]{{"auto", "low"}, {"none", "low"}, {"low", "low"},
-                        {"medium", "high"}, {"high", "high"}, {"max", "max"}}) {
+                for (String[] effort : new String[][]{{"auto", "low"}, {"none", "none"}, {"low", "low"},
+                        {"medium", "medium"}, {"high", "high"}, {"max", "max"}}) {
                     JSONObject body = options("https://" + host + "/v1", model, effort[0]);
                     check(body.getString("reasoning_effort").equals(effort[1]), "GLM Flash effort: " + host + "/" + model + "/" + effort[0]);
                     check(body.length() == 2 && body.getInt("max_tokens") == 8192,
-                            "GLM Flash keeps ordinary budget and adds only supported effort");
+                            "GLM Flash keeps ordinary budget and selected effort");
                 }
             }
         }
         for (String host : new String[]{"example.com", "api.jiji.cc.attacker.example", "api.z.ai.attacker.example", "open.bigmodel.cn.attacker.example"}) {
             JSONObject body = options("https://" + host + "/v1", "glm-5.3-flash", "low");
-            check(body.length() == 1 && body.getInt("max_tokens") == 8192, "GLM capability requires exact known host: " + host);
+            check(body.length() == 2 && body.getInt("max_tokens") == 8192
+                    && body.getString("reasoning_effort").equals("low"), "GLM effort also sent to arbitrary host: " + host);
         }
         for (String model : new String[]{"glm-5.3", "glm-5.3-flash-legal", "glm-5.3-flash-audio", "glm-5.3-flashx-legal-extra", "glm-5.4-flash"}) {
             JSONObject body = options("https://api-slb.jiji.cc/v1", model, "high");
-            check(body.length() == 1 && body.getInt("max_tokens") == 8192, "unknown GLM variant stays conservative: " + model);
+            check(body.length() == 2 && body.getInt("max_tokens") == 8192
+                    && body.getString("reasoning_effort").equals("high"), "unknown GLM variant preserves budget and effort: " + model);
         }
+    }
+
+    private static void checkUniversalEffort() throws Exception {
+        for (String[] profile : new String[][] {
+                {"https://arbitrary.example/custom", "unlisted-model"},
+                {"https://api.openai.com/v1", "gpt-4o-audio-preview"},
+                {"https://api.openai.com/v1", "gpt-4o"},
+                {"https://api.openai.com/v1", "gpt-4.1"},
+                {"https://api.openai.com/v1", "o3"},
+                {"https://api.openai.com/v1", "gpt-5"},
+                {"https://api.deepseek.com", "deepseek-v4-pro"}}) {
+            for (String effort : new String[]{"auto", "none", "low", "medium", "high", "max"}) {
+                JSONObject body = options(profile[0], profile[1], effort);
+                boolean ordinaryAuto = effort.equals("auto") && (profile[1].equals("gpt-4o") || profile[1].equals("gpt-4.1"));
+                boolean deepOff = effort.equals("none") && profile[1].equals("deepseek-v4-pro");
+                if (ordinaryAuto || deepOff) check(!body.has("reasoning_effort"), "only ordinary auto or native disable omits Chat effort: " + profile[1]);
+                else check(body.getString("reasoning_effort").equals(effort.equals("auto") ? "low" : effort),
+                        "protocol effort independent of model capability: " + profile[1] + "/" + effort);
+                if (deepOff) check(body.getJSONObject("thinking").getString("type").equals("disabled"), "DeepSeek native off is semantic none");
+            }
+        }
+        for (String model : new String[]{"gpt-4o-mini", "gpt-4o-2024-08-06", "gpt-4.1-mini", "gpt-4.1-nano-2025-04-14"})
+            check(!options("https://api.openai.com/v1", model, "auto").has("reasoning_effort"), "identified ordinary OpenAI auto contract: " + model);
     }
 
     private static void checkClassroomBudget() throws Exception {

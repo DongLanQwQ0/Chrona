@@ -304,6 +304,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         row.put("run_last_reasoning_characters",reasoningText instanceof String text?text.length():JSONObject.NULL);
                         if(content instanceof String text)try{
                             JSONObject object=com.donglan.chrona.classroom.ClassroomSummary.parseObject(text),fields=new JSONObject();
+                            row.put("run_last_image_reference_shapes",imageReferenceShapes(object));
                             for(String name:new String[]{"overview","notes","affairs","assignments","image_assessment","image_requests","image_reviews","sections","groups"})fields.put(name,object.has(name));
                             row.put("run_last_response_shape","object").put("run_last_response_fields",fields);
                             Object requests=object.opt("image_requests");
@@ -332,6 +333,41 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 .put("duplicate_keys",duplicates).put("complete_rows",complete).put("rows",rows);
     }
     /** Explicit diagnostic mode only; conversation messages and model replies stay private. */
+    private static JSONArray imageReferenceShapes(JSONObject object)throws Exception{
+        JSONArray shapes=new JSONArray();
+        addMarkdownImageShapes(shapes,"overview",object.optString("overview"));
+        for(String collection:new String[]{"notes","affairs","assignments"}){
+            JSONArray entries=object.optJSONArray(collection);if(entries==null)continue;
+            for(int n=0;n<entries.length();n++){
+                JSONObject entry=entries.optJSONObject(n);if(entry==null)continue;
+                String path=collection+"["+n+"]";
+                for(String field:new String[]{"title","text"})addMarkdownImageShapes(shapes,path+"."+field,entry.optString(field));
+                JSONArray images=entry.optJSONArray("images");if(images!=null)for(int i=0;i<images.length();i++)
+                    shapes.put(new JSONObject().put("field",path+".images["+i+"]").put("kind",imagePathKind(images.opt(i))));
+            }
+        }
+        return shapes;
+    }
+    private static void addMarkdownImageShapes(JSONArray shapes,String field,String markdown){
+        org.commonmark.parser.Parser.builder().build().parse(markdown).accept(new org.commonmark.node.AbstractVisitor(){
+            @Override public void visit(org.commonmark.node.Image image){
+                try{shapes.put(new JSONObject().put("field",field).put("kind",imagePathKind(image.getDestination())));}
+                catch(org.json.JSONException invalid){throw new IllegalStateException(invalid);}
+            }
+        });
+    }
+    private static String imagePathKind(Object value){
+        if(value==null||value==JSONObject.NULL)return "null";
+        if(!(value instanceof String path))return value instanceof Number?"number":"other_type";
+        if(path.matches("(?:images/)?image-[0-9]+\\.jpg"))return "canonical_jpeg";
+        if(path.isBlank())return "empty_string";
+        if(path.equals("[]"))return "array_encoded_as_string";
+        if(path.matches("[0-9]+"))return "numeric_string";
+        if(path.contains("://")||path.startsWith("data:"))return "external_destination";
+        if(path.endsWith(".png"))return "png_filename";
+        if(path.endsWith(".jpg"))return "noncanonical_jpeg_name";
+        return "noncanonical_path";
+    }
     private static String providerExcerpt(String error,String key){
         String value=error==null?"":error;
         if(key!=null&&!key.isEmpty())value=value.replace(key,"[credential]");

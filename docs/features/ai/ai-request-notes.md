@@ -12,7 +12,7 @@ AI服务在基础地址后提供「API协议」，复用原公共选择面板，
 
 实现依据：[Responses迁移](https://developers.openai.com/api/docs/guides/migrate-to-responses)、[typed流式事件](https://developers.openai.com/api/reference/resources/responses/streaming-events)。当前供应商／模型的支持情况需真实验证，协议名称不代表缓存命中。
 
-请求保留用户所选地址、模型和全部图片，使用版本化静态规则／schema 前缀及有界动态 JSON，语义时间在本地规范化。能力参数按已识别的服务和模型发送；格式、缓存或流选项被明确拒绝时，只允许使用原消息和时间参照降级一次。完整但非法或截断的响应抛出 `ResponseException`，不自动重新调用模型。缓存统计仅来自服务 usage。
+请求保留用户所选地址、模型和全部图片，使用版本化静态规则／schema 前缀及有界动态 JSON，语义时间在本地规范化。思考强度按所选协议发送；模型识别只处理已确认的参数差异，不作为发送显式配置的白名单。格式、缓存或流选项被明确拒绝时，只允许使用原消息和时间参照降级一次；涉及思考参数的拒绝直接报错。完整但非法或截断的响应抛出 `ResponseException`，不自动重新调用模型。缓存统计仅来自服务 usage。
 
 动态内容上限：原文 24000 字符，超出拒绝；抓取正文 4000、附件元信息 6000，截断带标记。上限针对数据字符串，JSON 转义与参照字段另有传输开销。
 
@@ -52,23 +52,25 @@ AI服务设置比较进入页的实际表单基线：地址、协议、模型、
 
 相对词仍以输入创建时间解释，自动排期以响应完成时刻限制，避免队列等待后排进过去。工作时间按请求时区应用，即使原文截止使用其他时区。`checks/SchedulePreferencesCheck.java` 随 `python checks/config_backup_check.py` 检查两类提示词隔离、配置往返与校验；`checks/ScheduleExecutionCheck.java` 随 `python checks/ai_auto_publish_check.py` 检查排期、跨午夜、夏令时和响应解析。
 
-## 已识别服务的参数
+## 按协议发送思考配置
 
-DeepSeek 官方接口：auto/low → low，medium/high → high，max → max，none 关闭思考。OpenAI 官方支持的文本模型使用严格 JSON Schema 与版本化 `prompt_cache_key`；auto → low，max → high，none 仅发送给已知支持的较新 GPT-5 家族，否则使用 low 及对应推理预算。
+显式选择的 none／low／medium／high／max 对任意地址和模型均原样发送：Chat Completions 使用 `reasoning_effort`，Responses 使用 `reasoning.effort`。不将 none 换成 low、medium 换成 high 或 max 降成 high。auto 默认解析为 low；唯一保留的省略情形是 OpenAI 官方已识别的普通 GPT-4o／GPT-4.1 模型及现有 mini／nano／日期变体在 auto 下不发送思考参数。用户对这些模型显式选择强度仍会发送，不支持时由服务明确拒绝。
 
-GLM-5.3-Flash／FlashX／FlashX-Legal 在 `api.z.ai`、`open.bigmodel.cn` 和下述三个吉吉域名发送模型支持的 `reasoning_effort`：auto/none → low，medium → high，low/high/max 原样；Responses 映射为 `reasoning.effort`。模型无法关闭思考，不发送 `thinking.disabled`，也不将 max 降成 high。普通及课堂输出预算保持原值。依据[官方模型卡](https://huggingface.co/zai-org/GLM-5.3-Flash)与[官方模型说明](https://docs.z.ai/guides/vlm/glm-5.3-flash)：省略 effort 会采用 max，因此不能忽略已保存的 low。新参数仅用于新轮次；旧轮的冻结选项与已发送历史不变，需以「重新整理」建立新轮，复用已提交更正文稿。
+已识别的 DeepSeek 官方 `deepseek-flash`／`deepseek-v4-pro` 使用 `thinking.type=disabled` 表示 none，Responses 转换为 `reasoning.effort=none`；其余强度原样发送并保留启用思考选项。OpenAI 官方既有文本模型仍使用严格 JSON Schema 与版本化 `prompt_cache_key`；已确认的格式、缓存与输出预算规则保持不变。
 
-音频、实时、转写专用变体及未知端点仅使用保守 token 上限，保留模型与静态 schema 指令。格式、缓存和流选项只在明确兼容错误后移除一次；thinking／reasoning 参数被拒绝则显示错误，不静默丢弃用户设置。
+GLM-5.3-Flash／FlashX／FlashX-Legal 与其它模型遵循同一发送规则，不再依赖服务／模型白名单。已保存的 low 必须发送；选择 none 或 medium 时也不替换成别的档位。服务若不接受该值，显示错误。相关模型背景见[官方模型卡](https://huggingface.co/zai-org/GLM-5.3-Flash)与[官方模型说明](https://docs.z.ai/guides/vlm/glm-5.3-flash)。
 
-课堂新轮次输出预算提高至32768，沿用已识别的`max_completion_tokens`或`max_tokens`字段；已支持且上限较小的官方GPT-4o/mini保留原8192预算，不发送超限参数。不额外猜测未知模型的思考参数。核图与结构化笔记可能共用推理预算，不能普遍沿用短日程的8192上限。普通日程预算不变；已有课堂轮次的冻结选项原样保留，改变预算须重新整理并复用已提交的修正字幕，不改旧请求或拼接截断回复。服务不接受该预算时明确失败，不静默降级或自动重发。
+音频、实时、转写专用变体及未知端点保留原保守 token 上限、模型与静态 schema 指令，同时发送所选思考配置。thinking／reasoning 参数被拒绝时保留有界服务错误及可识别的参数名，不删除思考字段重试；同一错误还提及格式等参数时也不降级重发。不自动换协议或模型。
+
+课堂新轮次输出预算提高至32768，沿用已识别的`max_completion_tokens`或`max_tokens`字段；已支持且上限较小的官方GPT-4o/mini保留原8192预算，不发送超限参数。核图与结构化笔记可能共用推理预算，不能普遍沿用短日程的8192上限。普通日程预算不变；已有课堂轮次的冻结选项和已发送历史原样保留，新规则只用于新轮次。改变参数须「重新整理」并复用已提交的修正字幕，不改旧请求或拼接截断回复。服务不接受课堂预算时明确失败，不静默降级或自动重发。
 
 ## 吉吉 API 思考参数
 
-`www.jiji.cc`、`api.jiji.cc`、`api-slb.jiji.cc` 三个精确域名使用独立能力分支，适配 `gpt-6`、`gpt-6.1` 的 luna/sol/astra 模型名称（实际格式为 `gpt-6-luna`、`gpt-6.1-sol` 等）。原模型和地址保持不变；不复制官方端点专用的 schema/cache 参数，不对任意代理域名猜测能力。
+`www.jiji.cc`、`api.jiji.cc`、`api-slb.jiji.cc` 三个精确域名为 `gpt-6`、`gpt-6.1` 的 luna/sol/astra 模型名称（实际格式为 `gpt-6-luna`、`gpt-6.1-sol` 等）保留既有输出预算分支。原模型和地址保持不变；不复制官方端点专用的 schema/cache 参数。思考字段遵循上面的通用协议规则。
 
-- Chat Completions：`reasoning_effort` 传入 low/medium/high；界面 auto 映射 low，max 映射 high，none 原样发送。具体模型若不接受所选值，显示错误，不自动改成别的强度。
+- Chat Completions：`reasoning_effort` 原样传入 none/low/medium/high/max，auto 映射 low。具体模型若不接受所选值，显示错误，不自动改成别的强度。
 - 使用文档指定的 `max_completion_tokens`：none 为8192，low/medium为16384，high/max为32768，包含模型内部推理预算。
 - 已有 SSE/非流式通路读取服务实际返回的 `reasoning_content` 或 `reasoning` 文本；未返回时不伪造思考过程。启用推理与返回可见推理文本是两个独立结果。
-- 离线测试覆盖三个域名、六种选项、特殊模型与伪造子域不匹配、拒绝参数不静默降级。未读取用户密钥、未发起付费调用；服务端是否执行和是否返回思考文本仍需有效调用验证。
+- 离线测试覆盖三个域名、任意地址／未知模型、六种选项、原输出预算、原生字段转换及拒绝参数不降级重发。未读取用户密钥、未发起付费调用；服务端是否接受和执行所选档位、是否返回思考文本仍需有效调用验证。
 
 依据：[Chat Completions](https://docs.jiji.cc/api/chat-completions)、[网络线路](https://docs.jiji.cc/environment/network)。以上为Chat参数；选择Responses时使用原生字段映射，不据协议名称推断服务支持所有模型或参数。

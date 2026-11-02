@@ -5,7 +5,7 @@ import org.json.JSONException;
 import java.net.URI;
 import java.util.Locale;
 
-/** Explicit provider capabilities; unknown services keep their chosen model and basic options. */
+/** Protocol options plus confirmed provider-specific format and budget differences. */
 public final class RequestOptions {
     private static final int CLASSROOM_OUTPUT_TOKENS = 32768;
     private RequestOptions() { }
@@ -29,43 +29,35 @@ public final class RequestOptions {
                 "(?:gpt-4o(?:-mini)?|gpt-4\\.1(?:-mini|-nano)?|gpt-5(?:\\.[124])?(?:-mini|-nano|-pro)?|o3(?:-mini)?|o4-mini)(?:-\\d{4}-\\d{2}-\\d{2})?");
         boolean jiji = host.equals("www.jiji.cc") || host.equals("api.jiji.cc") || host.equals("api-slb.jiji.cc");
         boolean jijiReasoning = jiji && model.matches("gpt-6(?:\\.1)?-(?:luna|sol|astra)");
-        boolean glmFlashReasoning = (jiji || host.equals("api.z.ai") || host.equals("open.bigmodel.cn"))
-                && model.matches("glm-5\\.3-flash(?:x(?:-legal)?)?");
         boolean reasoning = deep || jijiReasoning || (open && (model.startsWith("gpt-5") || model.startsWith("o3") || model.startsWith("o4")));
         String resolved = effort.equals("auto") ? "low" : effort;
-        boolean supportsNone = jijiReasoning || open && model.matches("gpt-5\\.[124](?:-mini|-nano)?(?:-\\d{4}-\\d{2}-\\d{2})?");
-        // Older reasoning models cannot disable thinking; keep a reasoning-sized budget.
-        if (reasoning && !deep && resolved.equals("none") && !supportsNone) resolved = "low";
-        int budget = reasoning && !resolved.equals("none")
+        boolean noneHasReducedBudget = jijiReasoning || open && model.matches("gpt-5\\.[124](?:-mini|-nano)?(?:-\\d{4}-\\d{2}-\\d{2})?");
+        // Preserve the existing allowance independently from the requested effort.
+        boolean reasoningBudget = reasoning && (!resolved.equals("none") || !deep && !noneHasReducedBudget);
+        int budget = reasoningBudget
                 ? (resolved.equals("high") || resolved.equals("max") ? 32768 : 16384) : 8192;
         body.put(open || jijiReasoning ? "max_completion_tokens" : "max_tokens", budget);
         if (deep) {
             body.put("response_format", new JSONObject().put("type", "json_object"));
             body.put("thinking", new JSONObject().put("type", resolved.equals("none") ? "disabled" : "enabled"));
-            if (!resolved.equals("none")) body.put("reasoning_effort",
-                    resolved.equals("medium") ? "high" : resolved);
-        } else if (glmFlashReasoning) {
-            // GLM-5.3-Flash always thinks and defaults to max when effort is omitted.
-            // Honor the selected effort using its documented low/high/max vocabulary;
-            // none uses the lightest supported mode, medium the next supported depth.
-            body.put("reasoning_effort", resolved.equals("none") ? "low" : resolved.equals("medium") ? "high" : resolved);
-        } else if (jijiReasoning) {
-            // Jiji documents Chat Completions reasoning_effort; do not copy official-only
-            // cache/schema options or assume the relay returns visible reasoning text.
-            body.put("reasoning_effort", resolved.equals("max") ? "high" : resolved);
+            if (!resolved.equals("none")) body.put("reasoning_effort", resolved);
         } else if (open) {
             body.put("response_format", new JSONObject().put("type", "json_schema").put("json_schema",
                     new JSONObject().put("name", "chrona_schedule_v3").put("strict", true).put("schema", SchedulePrompt.schema())));
             body.put("prompt_cache_key", "chrona-" + SchedulePrompt.VERSION);
-            // Avoid sending 'none' to reasoning families that may not accept it.
-            if (reasoning) body.put("reasoning_effort", resolved.equals("max") ? "high" : resolved);
         }
+        // Explicit selections are protocol settings, not a positive model-capability list.
+        // Keep the established auto contract only for identified ordinary OpenAI models.
+        if (!deep && !(effort.equals("auto") && open && !reasoning))
+            body.put("reasoning_effort", resolved);
     }
 
     /** Remove only an explicitly named rejected option; at most one retry is made by the caller. */
     public static boolean downgrade(JSONObject body, int status, String detail) {
         if (status != 400 && status != 422) return false;
         String text = detail.toLowerCase(Locale.ROOT);
+        if (java.util.regex.Pattern.compile("(?<![a-z0-9_])(?:thinking|reasoning(?:_effort|\\.effort)?)(?![a-z0-9_])")
+                .matcher(text).find()) return false;
         if (!(text.contains("unsupported") || text.contains("not supported") || text.contains("does not support") || text.contains("unknown")
                 || text.contains("unrecognized") || text.contains("not allowed") || text.contains("invalid parameter"))) return false;
         boolean changed = false;

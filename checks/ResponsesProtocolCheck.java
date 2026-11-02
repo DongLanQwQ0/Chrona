@@ -12,7 +12,7 @@ import org.json.*;
 public final class ResponsesProtocolCheck {
     private static int checks;
     public static void main(String[] args) throws Exception {
-        mapping(); normalization(); streaming(); failureEvidence(); clientTransport();
+        mapping(); normalization(); streaming(); failureEvidence(); clientTransport(); rejectedEffortTransport();
         System.out.println("ResponsesProtocolCheck passed: " + checks + " checks (synthetic protocol fixtures)");
     }
     private static void mapping() throws Exception {
@@ -56,8 +56,8 @@ public final class ResponsesProtocolCheck {
         check(options.getInt("max_output_tokens") == 32768 && !options.has("messages"), "new classroom options are native Responses");
         check(options.optJSONArray("include") != null && options.getJSONArray("include").toString().contains("reasoning.encrypted_content"), "stateless classroom requests retain encrypted reasoning items");
         noChat(options);
-        for (String[] effort : new String[][]{{"auto", "low"}, {"none", "low"}, {"low", "low"},
-                {"medium", "high"}, {"high", "high"}, {"max", "max"}}) {
+        for (String[] effort : new String[][]{{"auto", "low"}, {"none", "none"}, {"low", "low"},
+                {"medium", "medium"}, {"high", "high"}, {"max", "max"}}) {
             AiSettings glm = new AiSettings("https://api-slb.jiji.cc/v1", "glm-5.3-flash", "test-only", effort[0], AiSettings.RESPONSES);
             JSONObject canonical = new JSONObject().put("model", glm.model).put("messages", chat.getJSONArray("messages"));
             RequestOptions.apply(canonical, glm);
@@ -68,8 +68,28 @@ public final class ResponsesProtocolCheck {
             JSONObject classroom = new ChatCompletionClient(glm).classroomOptions();
             check(classroom.getString("model").equals(glm.model) && classroom.getInt("max_output_tokens") == 32768
                     && classroom.getJSONObject("reasoning").getString("effort").equals(effort[1]),
-                    "GLM classroom Responses sends supported effort without raising budget: " + effort[0]);
+                    "GLM classroom Responses sends selected effort without raising budget: " + effort[0]);
             noChat(ordinary); noChat(classroom);
+        }
+        for (String[] profile : new String[][] {
+                {"https://arbitrary.example/custom", "unlisted-model"},
+                {"https://api.openai.com/v1", "gpt-4.1"},
+                {"https://api.openai.com/v1", "o3"},
+                {"https://api.openai.com/v1", "gpt-5"},
+                {"https://api.deepseek.com", "deepseek-flash"}}) {
+            for (String effort : List.of("auto", "none", "low", "medium", "high", "max")) {
+                AiSettings settings = new AiSettings(profile[0], profile[1], "test-only", effort, AiSettings.RESPONSES);
+                JSONObject canonical = new JSONObject().put("model", settings.model).put("messages", chat.getJSONArray("messages"));
+                RequestOptions.apply(canonical, settings);
+                String snapshot = canonical.toString();
+                JSONObject nativeBody = ResponsesProtocol.request(canonical);
+                if (effort.equals("auto") && profile[1].equals("gpt-4.1"))
+                    check(!nativeBody.has("reasoning"), "ordinary OpenAI auto remains omitted natively");
+                else check(nativeBody.getJSONObject("reasoning").getString("effort").equals(effort.equals("auto") ? "low" : effort),
+                        "arbitrary/native selected effort preserved: " + profile[1] + "/" + effort);
+                check(canonical.toString().equals(snapshot), "effort mapping does not mutate canonical request");
+                noChat(nativeBody);
+            }
         }
     }
     private static JSONObject response(String content) throws Exception {
@@ -261,6 +281,54 @@ public final class ResponsesProtocolCheck {
                 JSONObject sent = new JSONObject(body.toString(StandardCharsets.UTF_8));
                 if (frozen) check(body.toString(StandardCharsets.UTF_8).equals(snapshot) && request.toString().equals(snapshot), "frozen protocol request is sent unchanged " + mode);
                 else { noChat(sent); check(sent.has("input") && sent.has("max_output_tokens"), "ordinary default request uses native Responses " + mode); }
+            }
+        }
+    }
+    private static void rejectedEffortTransport() throws Exception {
+        for (String protocol : List.of(AiSettings.CHAT_COMPLETIONS, AiSettings.RESPONSES)) {
+            for (JSONObject error : List.of(
+                    new JSONObject().put("message", "unsupported reasoning_effort"),
+                    new JSONObject().put("message", "unsupported response_format").put("param", "reasoning_effort"),
+                    new JSONObject().put("message", "unsupported parameter").put("param", "reasoning.effort"),
+                    new JSONObject().put("message", "unsupported response_format " + "x".repeat(900) + " reasoning_effort"),
+                    new JSONObject().put("message", "x".repeat(900)).put("param", "thinking.type"),
+                    new JSONObject().put("param", "PRIVATE-unknown-param"),
+                    new JSONObject().put("message", "unsupported parameter").put("param", "PRIVATE-unknown-param"))) {
+                AtomicInteger opened = new AtomicInteger();
+                ByteArrayOutputStream wire = new ByteArrayOutputStream();
+                String[] endpoint = {""};
+                String errorWire = new JSONObject().put("error", error).toString();
+                ChatCompletionClient.ConnectionRoute route = (url, control) -> {
+                    opened.incrementAndGet(); endpoint[0] = url.getPath();
+                    return new ChatCompletionClient.OpenedConnection(new HttpURLConnection(url) {
+                        public void connect() { }
+                        public void disconnect() { }
+                        public boolean usingProxy() { return false; }
+                        public OutputStream getOutputStream() { return wire; }
+                        public int getResponseCode() { return 422; }
+                        public InputStream getErrorStream() { return bytes(errorWire); }
+                    }, () -> { });
+                };
+                ChatCompletionClient client = new ChatCompletionClient(new AiSettings(
+                        "https://offline.invalid/v1", "unlisted-model", "test-only", "max", protocol),
+                        null, SchedulePrompt.SYSTEM, route);
+                try {
+                    client.parse(1, "raw", null, null, 0, "UTC");
+                    throw new AssertionError("rejected effort must surface");
+                } catch (ChatCompletionClient.RequestException expected) {
+                    String message = expected.getMessage(), param = error.optString("param");
+                    check(expected.statusCode == 422 && message.contains("HTTP 422"), "HTTP failure remains explicit");
+                    check(message.length() < 600 && !message.contains("PRIVATE-unknown-param"), "bounded diagnostic excludes arbitrary param");
+                    if (!param.isEmpty() && !param.startsWith("PRIVATE"))
+                        check(message.contains("param=" + param), "known reasoning param retained even outside provider message");
+                }
+                check(opened.get() == 1, "effort rejection never retries or falls back: " + protocol);
+                check(endpoint[0].equals(AiSettings.RESPONSES.equals(protocol) ? "/v1/responses" : "/v1/chat/completions"),
+                        "rejection retains selected protocol");
+                JSONObject sent = new JSONObject(wire.toString(StandardCharsets.UTF_8));
+                check(sent.getString("model").equals("unlisted-model"), "rejected request retains selected model");
+                check((AiSettings.RESPONSES.equals(protocol) ? sent.getJSONObject("reasoning").getString("effort")
+                        : sent.getString("reasoning_effort")).equals("max"), "rejected request sent exact explicit effort");
             }
         }
     }

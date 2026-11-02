@@ -1,12 +1,21 @@
 # 验证记录
 
+## 0.15.99 — 新作业定位、协议思考配置与草稿无图边界 — 2026-11-02
+
+- 新作业原98逐帧复现：强调约399–434ms丢失，66条末页目标经历scroll5808→144→5808，行被清空重建且无高光；首次强调还含残留入场位移。99在目的页首个可见绘制前补足必要空间并定位，本地自然刷新复用既有行协调器；强调独立Overlay，保留原ENTER停留+2000ms渐隐，不被按压foreground替换。
+- 九组实际原生回归涵盖首条、单条、末页单条／多条、本地刷新、HOME/resume、普通横屏、深色及减少动画。正常强调2231–2242ms，首个目的内容及后续强调帧中心误差0，行实例1、无早缺失，渐隐后移除；减少动画真实系统比例0下保持2000ms、所有强调帧alpha255，2017ms清理，原比例1已恢复。横屏取消手势、返回和普通无红点入口保持。已查看压缩JPEG；独立ui_check复审无P1/P2或关键缺口。证据`build/homework-focus99/`，仅代表固定候选的原生UI范围。
+- 思考强度改为协议配置：任意地址／模型发送显式none/low/medium/high/max，不再白名单决定是否丢弃，亦不静默改为其它档。auto仍默认low；已确认普通OpenAI模型的auto保留原省略合同。DeepSeek none使用原生disabled；原预算、schema/cache及既有冻结历史不变。拒绝思考参数（含混合拒绝）不删除字段重发，HTTP诊断有界并保留白名单参数名。AiRequest917、ResponsesProtocol705通过，含真实本地HTTP拒绝、协议不切换和冻结请求原样发送；未据此声称所有远端模型支持全部档位。
+- 10/20微积分完整草稿的5处非法图片位于notes[0/3/5/6/7].text（非规范JPEG链接），并非超限或丢字段。草稿与显式恢复／格式修复消息明确当前无实际附图、images=[]、所有文本禁Markdown图片和占位链接，只可先请求时间段；保留严格校验与原消息。最终定向普通51、增强含Responses330、JSON修复299、事务/legacy295通过；旧schema禁止引入affairs/collection断言未放宽。图片引用39既有证据复用。真实单节及原21节剩余工作待安装后继续。
+- 命名截图文档`docs/ui-component-names.md`含12项名称、两张压缩原生截图及三种高光区分，索引已加，独立审核通过；源码文档提交c62d89b已推送。新增需求先说明理解的规则已补入本地AGENTS（保留他人既有未提交修改）。
+- 最终release/lint及专用probe构建通过，正式候选`build/candidates/0.15.99/Chrona-0.15.99.apk`。覆盖安装被系统中止（INSTALL_FAILED_ABORTED），实际读回仍98/260、前台通知栏；未绕过授权或自行重发，已询问重发。当前未把99算作实机已更新，真实课堂续跑及原21节验收继续保留。
+
 ## 0.15.98 — GLM思考强度漏传修复 — 2026-11-02
 
 - USB恢复后正常安装97/259，仅续10/20微积分86985-1982954一节。真实Responses失败输出32768恰等冻结上限，input14780/total47548；状态incomplete/max_output_tokens，事件名称response.completed。客户端拒绝提交并回滚，未自动重发。服务未给reasoning_tokens，仍记未知。
 - 已保存native output只读统计：思考summary68076字符、正文6905字符；正文39条长行无重复。配置low却未在已知模型分支发送effort，GLM-5.3-Flash官方模型卡说明省略时默认max。修正该模型及已公布FlashX/Legal名称在官方与现用三个中转精确host的选项：auto/none→low，medium→high，low/high/max原值，Responses原生映射；课堂32768与普通8192不变，不猜未知端点能力。
 - 受限测试owner仅增加两份既有Java检查，AiRequest869、ResponsesProtocol345通过，包含既有冻结请求原样发送；release/lint通过。260/0.15.98已正常覆盖到USB实机并读回版本，未改UI。
-- 正常历史长按仅选10/20一节，确认“重新总结1节课堂”，新轮复用已提交更正字幕并补齐素材，不改旧冻结历史。实际批次0/1、进行中1及前台ClassroomWorkService fe698c已核对。真实整节结果尚待观察，不据离线通过认定问题已完全解决；其余16节暂未重启，原四节有效成品保留。
-- 证据`build/usb97/after-one.json`、`build/glm-effort98/checks.log`、`build/glm-effort98/build-release.txt`及同目录phone状态；诊断包已卸载，专用手机XML与空目录已清理。未发小补丁Release。
+- 正常历史长按仅选10/20一节，确认重新总结；新轮复用5/5更正字幕，不改旧冻结历史。首段实际effort=low，59秒completed/stop，input14558/output7337/total21895，思考6278字符、正文7934字符。完整草稿被“图片引用必须使用 images/image-编号.jpg”校验拦截，未发布成品；其余16节暂未重启，原四节有效成品保留。思考漏传已获真实请求验证，整节仍有图片引用缺口。
+- 证据：97原生失败归档仍在应用runs；其本地快照被后续固定路径读取覆盖，已按实测工具stdout记录`build/usb97/failure97-projection.json`元数据投影。98实际数据`build/glm-effort98/phone/after-one.json`、检查`checks.log`与`build-release.txt`。诊断包已卸载，专用手机XML与空目录已清理。未发小补丁Release。
 
 ## 0.15.97 — Responses失败终态与真实用量留证 — 2026-11-02
 

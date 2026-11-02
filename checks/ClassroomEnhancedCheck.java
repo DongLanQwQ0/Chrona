@@ -64,6 +64,8 @@ public final class ClassroomEnhancedCheck {
                 .put(new JSONObject().put("text","查看成绩。").put("sources",new JSONArray().put(0)).put("evidence","步骤分 2 分")));
         if(mode.equals("cross-draft")&&draft&&id==0||mode.equals("cross-final")&&!draft&&id==0)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1));
         if(mode.equals("cross-context")&&!draft&&id==1)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1).put(0));
+        if(mode.equals("invalid-draft-markdown")&&draft)value.getJSONArray("notes").getJSONObject(0).put("text","![尚未看到的板书](lecture-slide-1.jpeg)");
+        if(mode.equals("valid-final-markdown")&&!draft&&pictures.length()>0)value.getJSONArray("notes").getJSONObject(0).put("text","实际核图后的板书 ![已上传的图](images/"+pictures.getString(0)+")");
         if(mode.equals("empty-tail")&&id==1)value.put("overview","").put("notes",new JSONArray());
         if(mode.startsWith("affairs")){
             JSONObject affair=new JSONObject(value.getJSONArray("notes").getJSONObject(0).toString()).put("title","考核与出勤 "+id).put("text","本章只考证明第一步；步骤分2分，符号错误扣1分，可能作为附加题，范围待核对。");
@@ -593,6 +595,64 @@ public final class ClassroomEnhancedCheck {
         check(Collections.frequency(stages,"correct-0")==1&&Collections.frequency(stages,"draft-0-repair")==1,"manual attempts never repeat successful transcript or automatic repair");
         appendOnly(repaired);evidence("repair-validation-resume",repaired);
     }
+    private static void draftImageBoundary(String prompt,String label){
+        for(String rule:List.of("只处理字幕与PPT时间目录","尚未提供任何实际图片","所有images数组必须为[]",
+                "所有文本字段均禁止插入Markdown图片、图片占位链接或自行命名文件","不得新增schema之外的字段",
+                "只通过image_requests的时间范围请求","收到实际附图后的核图阶段才能引用给定file"))
+            check(prompt.contains(rule),label+": "+rule);
+    }
+    private static void draftImageReferences()throws Exception{
+        reset("invalid-draft-markdown",true);File dir=materials("draft-unseen-markdown",false);
+        rejects(()->generate(dir,true),"unseen noncanonical JPEG Markdown stops the enhanced draft");
+        JSONObject failed=state(dir),conversation=failed.getJSONObject("conversation");String identity=failed.getString("run");
+        check(stages.equals(List.of("correct-0","draft-0"))&&failed.getJSONArray("drafts").length()==0&&!failed.has("selected")&&!failed.has("final"),"enhanced semantic image failure never retries or submits a draft");
+        check(!ClassroomStore.read(new File(dir,"summary.json")).getBoolean("complete"),"enhanced image failure cannot publish a complete document");
+        check(failed.getJSONArray("corrected").length()==1&&ClassroomStore.read(new File(dir,"corrected.json")).getBoolean("complete"),"completed correction remains reusable after draft image rejection");
+        String raw=conversation.getJSONObject("outputs").getString("draft-0");
+        check(raw.contains("lecture-slide-1.jpeg")&&raw.equals(replies.get(1).getString("content")),"enhanced exact invalid image output remains in audit only");
+        check(failed.getInt("draft-0_attempt")==1&&failed.getString("draft-0_error").contains("图片引用"),"enhanced semantic image error waits for explicit continuation");
+        draftImageBoundary(prompt(requests.get(1)),"enhanced initial draft boundary");
+        JSONArray sent=messages(requests.get(1));check(sent.getJSONObject(sent.length()-1).getJSONArray("content").length()==1,"enhanced draft attaches no images");
+        JSONArray prefix=new JSONArray(conversation.getJSONArray("messages").toString());String options=conversation.getJSONObject("options").toString();
+        mode="valid-final-markdown";JSONObject result=generate(dir,true);
+        check(result.getBoolean("complete")&&result.getString("run").equals(identity),"valid enhanced draft recovery completes in the same frozen run");
+        check(stages.equals(List.of("correct-0","draft-0","draft-0-user-retry","final-0","edit-plan","edit-note-0")),"explicit enhanced continuation never regenerates the completed correction or auto-repairs semantic images");
+        draftImageBoundary(prompt(requests.get(2)),"enhanced appended semantic recovery boundary");
+        JSONArray resumed=messages(requests.get(2));check(resumed.length()==prefix.length()+1,"enhanced continue appends exactly one user recovery message");
+        for(int i=0;i<prefix.length();i++)check(prefix.getJSONObject(i).toString().equals(resumed.getJSONObject(i).toString()),"enhanced original request and failed assistant stay exact "+i);
+        check(state(dir).getJSONObject("conversation").getJSONObject("options").toString().equals(options),"enhanced durable frozen options remain exact");
+        for(int i=3;i<requests.size();i++)check(!prompt(requests.get(i)).contains(ClassroomSummary.DRAFT_IMAGE_RULE),"enhanced actual-image final and editorial stages exclude draft-only ban "+i);
+        check(messages(requests.get(3)).getJSONObject(messages(requests.get(3)).length()-1).getJSONArray("content").length()==2,"enhanced final really attaches one selected image");
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").contains("![已上传的图](images/image-0.jpg)"),"enhanced final and editorial stages retain valid actual-image Markdown");
+        appendOnly(dir);evidence("enhanced-draft-image-recovery",dir);
+
+        reset("missing-requests",false);File repair=materials("draft-image-format-repair",false);
+        check(generate(repair,true).getBoolean("complete")&&stages.equals(List.of("correct-0","draft-0","draft-0-repair","edit-plan","edit-note-0")),"enhanced structural repair remains bounded to one appended message");
+        draftImageBoundary(prompt(requests.get(2)),"enhanced appended sole format repair boundary");
+        for(int i=3;i<requests.size();i++)check(!prompt(requests.get(i)).contains(ClassroomSummary.DRAFT_IMAGE_RULE),"enhanced editorial prompt stays free of draft boundary after repair "+i);
+        appendOnly(repair);
+
+        reset("normal",false);failCall=2;File interrupted=materials("draft-image-transport-recovery",false);
+        rejects(()->generate(interrupted,true),"enhanced draft transport interruption stops without retry");
+        check(requests.size()==2&&state(interrupted).getJSONArray("corrected").length()==1,"enhanced transport failure retains completed correction without another request");
+        failCall=-1;check(generate(interrupted,true).getBoolean("complete")&&stages.equals(List.of("correct-0","draft-0","draft-0-restart-1","edit-plan","edit-note-0")),"explicit enhanced transport recovery restarts only the draft stage");
+        draftImageBoundary(prompt(requests.get(2)),"enhanced appended interrupted-stage recovery boundary");
+        appendOnly(interrupted);
+
+        reset("invalid-draft-markdown",true);File nativeRun=materials("native-draft-image-recovery",false);
+        rejects(()->generateWithProtocol(nativeRun,AiSettings.RESPONSES),"native completed response with invalid draft Markdown stops before commit");
+        JSONObject nativeFailure=state(nativeRun);String nativeIdentity=nativeFailure.getString("run");
+        check(requests.size()==2&&nativeFailure.getJSONArray("drafts").length()==0&&replies.get(1).getString("status").equals("completed"),"native semantic image failure does not trigger a retry despite successful transport");
+        draftImageBoundary(prompt(requests.get(1)),"native initial draft boundary");
+        String nativeOptions=nativeFailure.getJSONObject("conversation").getJSONObject("options").toString();
+        mode="valid-final-markdown";result=generateWithProtocol(nativeRun,AiSettings.CHAT_COMPLETIONS);
+        check(result.getBoolean("complete")&&result.getString("run").equals(nativeIdentity),"native explicit continuation stays in the same run even when preferred protocol changes");
+        draftImageBoundary(prompt(requests.get(2)),"native appended semantic recovery boundary");
+        check(state(nativeRun).getJSONObject("conversation").getJSONObject("options").toString().equals(nativeOptions),"native semantic recovery preserves exact durable options");
+        for(int i=3;i<requests.size();i++)check(!prompt(requests.get(i)).contains(ClassroomSummary.DRAFT_IMAGE_RULE),"native actual-image final and editorial stages exclude draft-only ban "+i);
+        check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").contains("![已上传的图](images/image-0.jpg)"),"native recovery still accepts actual-image Markdown");
+        nativeAppendOnly(nativeRun);evidence("native-draft-image-recovery",nativeRun);
+    }
     private static JSONObject draftExample(String prompt)throws Exception{
         String start="完整对象：\n";int from=prompt.indexOf(start),to=prompt.indexOf("\n字段规则：",from);
         check(from>=0&&to>from,"draft prompt contains one complete JSON example");
@@ -869,11 +929,15 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length>1&&args[1].equals("draft-images")){
+            try{test("enhanced draft image boundary and append-only recovery",ClassroomEnhancedCheck::draftImageReferences);}
+            finally{server.stop(0);}System.out.println("ClassroomEnhancedDraftImages: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced draft image checks failed");return;
+        }
         if(args.length>1&&args[1].equals("responses")){
             try{test("native Responses pipeline, immutable items and protocol-frozen recovery",ClassroomEnhancedCheck::nativePipeline);}
             finally{server.stop(0);}System.out.println("ClassroomResponsesCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Native Responses pipeline checks failed");return;
         }
-        if(args.length==1)test("native Responses pipeline, immutable items and protocol-frozen recovery",ClassroomEnhancedCheck::nativePipeline);
+        if(args.length==1){test("enhanced draft image boundary and append-only recovery",ClassroomEnhancedCheck::draftImageReferences);test("native Responses pipeline, immutable items and protocol-frozen recovery",ClassroomEnhancedCheck::nativePipeline);}
         if(args.length==1)test("scoped routing retains the full pipeline and immutable checkpoints",ClassroomEnhancedCheck::routedPipeline);
         if(args.length>1&&args[1].equals("note-strength")){
             try{test("enhanced note strength and overview image guard",ClassroomEnhancedCheck::noteStrength);}

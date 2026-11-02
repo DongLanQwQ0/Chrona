@@ -70,7 +70,8 @@ final class HomeworkAttentionDeviceCheck {
             for (int i = 0; i < count; i++) items.add(item("work-" + i, "合成课程 · 新作业 " + i));
             var result = managed.apply(account, generation, items);
             require(result.newHomeworkIds.size() == count, "real transaction inserted every new identity");
-            long target = result.newHomeworkIds.get(count - 1);
+            int targetIndex = Integer.parseInt(args.getString("targetIndex", Integer.toString(count - 1)));
+            long target = result.newHomeworkIds.get(targetIndex);
             if ("notice_edges".equals(scope)) {
                 settings.prefs.edit().putBoolean("enabled", true).commit();
                 long first = result.newHomeworkIds.get(0), second = result.newHomeworkIds.get(1);
@@ -165,7 +166,8 @@ final class HomeworkAttentionDeviceCheck {
             } finally { android.database.sqlite.SQLiteDatabase.deleteDatabase(snapshot); }
             settings.prefs.edit().putBoolean("enabled", true).commit();
             int unseen = Math.min(count, Integer.parseInt(args.getString("unseen", "1")));
-            for (int i = 0; i < count - unseen; i++) managed.markSeen(result.newHomeworkIds.get(i));
+            for (int i = 0; i < count; i++) if ("focus_frames".equals(scope)
+                    ? i != targetIndex : i < count - unseen) managed.markSeen(result.newHomeworkIds.get(i));
             require(managed.newestUnread() == target, "only newest unseen work remains");
             managed.apply(account, generation, items);
             require(managed.newestUnread() == target, "duplicate fetch preserves unread instead of resetting it");
@@ -176,6 +178,7 @@ final class HomeworkAttentionDeviceCheck {
             SystemClock.sleep(250);
             View homeButton = opened[0].getWindow().getDecorView().findViewWithTag("home-homework");
             require(homeButton != null && homeButton.getContentDescription().toString().contains("新作业"), "red-dot action exposes accessible new-work state");
+            if ("focus_frames".equals(scope)) return focusFrames(test, context, opened[0], homeButton, target, targetIndex, args);
             capture(test, context, "homework-red-dot-" + args.getString("theme", "light"));
             if (Boolean.parseBoolean(args.getString("covered", "false"))) {
                 shell(test, "cmd statusbar expand-notifications");
@@ -204,13 +207,13 @@ final class HomeworkAttentionDeviceCheck {
             View card = (View)field(row, "card"); ScrollView viewport = (ScrollView)field(opened[0], "scroll");
             int[] a = new int[2], b = new int[2]; test.runOnMainSync(() -> { card.getLocationOnScreen(a); viewport.getLocationOnScreen(b); });
             require(Math.abs(a[1] + card.getHeight()/2 - b[1] - viewport.getHeight()/2) <= 3, "target row is centered in actual viewport");
-            require("新作业".contentEquals(card.getStateDescription()) && card.getForeground() != null, "centered row carries visible focus");
+            require("新作业".equals(card.getStateDescription()) && highlight(opened[0],card) != null, "centered row carries visible focus");
             capture(test, context, "homework-centered-" + args.getString("theme", "light"));
             if (Boolean.parseBoolean(args.getString("reduced", "false"))) {
-                android.graphics.drawable.Drawable emphasized = card.getForeground();
+                android.graphics.drawable.Drawable emphasized = highlight(opened[0],card);
                 SystemClock.sleep(2200);
                 test.runOnMainSync(() -> {});
-                require(card.getStateDescription() == null && card.getForeground() != emphasized,
+                require(card.getStateDescription() == null && highlight(opened[0],card) != emphasized,
                         "reduced-motion focus clears without leaving an overlay");
             }
             long remaining = unseen > 1 ? result.newHomeworkIds.get(count - 2) : 0;
@@ -234,6 +237,193 @@ final class HomeworkAttentionDeviceCheck {
             settings.prefs.edit().putBoolean("enabled", checkpoint.getBoolean("old_school", false)).commit();
             if (!retained) cleanup(context, checkpoint);
         }
+    }
+    /** Observe every actual draw, including transient list replacement and scroll restoration. */
+    private static String focusFrames(Instrumentation test, Context context, Activity activity, View button,
+                                      long target, int targetIndex, Bundle args) throws Exception {
+        String mode = args.getString("refresh", "none"), label = args.getString("label", "frames");
+        boolean reduced = Boolean.parseBoolean(args.getString("reduced","false"));
+        if (reduced) require(!UiMotion.isEnabled(), "real system reduced-motion branch is active");
+        File directory = new File(context.getCacheDir(), "homework-focus99");
+        require(directory.isDirectory() || directory.mkdirs(), "frame evidence directory exists");
+        File output = new File(directory, label + ".json");
+        org.json.JSONArray frames = new org.json.JSONArray();
+        long started = SystemClock.uptimeMillis();
+        long[] firstHighlight = {0}; boolean[] observing = {true}; Throwable[] observationError = {null};
+        boolean independentHighlight;
+        try { activity.getClass().getDeclaredField("homeworkHighlight"); independentHighlight = true; }
+        catch (NoSuchFieldException original98) { independentHighlight = false; }
+        final boolean overlayHighlight = independentHighlight;
+        View decor = activity.getWindow().getDecorView();
+        ViewTreeObserver.OnDrawListener observer = () -> {
+            if (!observing[0]) return;
+            try {
+                ScrollView scroll = (ScrollView)field(activity, "scroll");
+                Object row = ((Map<?, ?>)field(activity, "inboxRows")).get(target);
+                View card = row == null ? null : (View)field(row, "card");
+                View results = (View)field(activity,"results");
+                int[] xy = new int[2], vp = new int[2]; scroll.getLocationOnScreen(vp);
+                android.graphics.Rect visible = new android.graphics.Rect();
+                boolean shown = card != null && card.isAttachedToWindow() && card.getGlobalVisibleRect(visible);
+                if (card != null) card.getLocationOnScreen(xy);
+                android.graphics.drawable.Drawable emphasis = overlayHighlight
+                        ? field(activity,"homeworkHighlightCard") == card ? (android.graphics.drawable.Drawable)field(activity,"homeworkHighlight") : null
+                        : card == null ? null : card.getForeground();
+                boolean emphasized = card != null && "新作业".equals(card.getStateDescription()) && emphasis != null;
+                boolean destinationVisible = false;
+                if (Integer.valueOf(DashboardActivity.SCHEDULE).equals(field(activity,"section")))
+                    for (Object mapped : ((Map<?, ?>)field(activity,"inboxRows")).values()) {
+                        View candidate = (View)field(mapped,"card");
+                        if (candidate.isAttachedToWindow() && visibleAlpha(candidate) > .001f
+                                && candidate.getGlobalVisibleRect(new android.graphics.Rect())) { destinationVisible = true; break; }
+                    }
+                long now = SystemClock.uptimeMillis();
+                if (emphasized && firstHighlight[0] == 0) firstHighlight[0] = now;
+                frames.put(new JSONObject().put("ms", now-started).put("card", card == null ? 0 : System.identityHashCode(card))
+                        .put("attached", card != null && card.isAttachedToWindow()).put("visible", shown)
+                        .put("windowFocus", activity.hasWindowFocus()).put("scrollY", scroll.getScrollY())
+                        .put("centerY", card == null ? JSONObject.NULL : xy[1]+card.getHeight()/2f)
+                        .put("viewportCenterY", vp[1]+scroll.getHeight()/2f).put("height", card == null ? 0 : card.getHeight())
+                        .put("cardAlpha", card == null ? -1 : card.getAlpha()).put("cardTranslationY",card == null ? 0 : card.getTranslationY())
+                        .put("emphasized", emphasized).put("alpha", emphasized ? emphasis.getAlpha() : -1)
+                        .put("destinationContentVisible",destinationVisible).put("highlightPresent",emphasis != null)
+                        .put("highlightOwner",overlayHighlight && field(activity,"homeworkHighlightCard") != null ? System.identityHashCode(field(activity,"homeworkHighlightCard")) : 0)
+                        .put("foregroundType", card == null || card.getForeground() == null ? "" : card.getForeground().getClass().getSimpleName())
+                        .put("resultsAlpha", results == null ? -1 : results.getAlpha())
+                        .put("resultsTranslationY", results == null ? 0 : results.getTranslationY())
+                        .put("scrollAlpha", scroll.getAlpha()).put("scrollTranslationY",scroll.getTranslationY())
+                        .put("pending", field(activity,"pendingHomeworkFocus")).put("page", field(activity,"schedulePage"))
+                        .put("transition", field(activity,"pageTransitionRunning")).put("loading", field(activity,"scheduleResultLoading")));
+            } catch (Throwable failure) { observationError[0] = failure; }
+        };
+        Runnable pulse = new Runnable() { @Override public void run() { if (observing[0]) { decor.invalidate(); decor.postOnAnimation(this); } } };
+        test.runOnMainSync(() -> { decor.getViewTreeObserver().addOnDrawListener(observer); decor.postOnAnimation(pulse); });
+        boolean refreshed = false, capturedHighlight = false, capturedAfterRefresh = false;
+        try {
+            if (Boolean.parseBoolean(args.getString("cancelReturn","false"))) {
+                int[] point = new int[2]; test.runOnMainSync(() -> button.getLocationOnScreen(point));
+                long down = SystemClock.uptimeMillis();
+                for (int action : new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_CANCEL}) {
+                    MotionEvent event = MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,
+                            point[0]+button.getWidth()/2f,point[1]+button.getHeight()/2f,0);
+                    try { test.sendPointerSync(event); } finally { event.recycle(); }
+                }
+                test.runOnMainSync(() -> {});
+                require(Integer.valueOf(DashboardActivity.HOME).equals(field(activity,"section"))
+                        && ((Number)field(activity,"pendingHomeworkFocus")).longValue() == 0
+                        && new ZjuHomeworkStore(context).newestUnread() == target,
+                        "cancelled touch neither navigates nor consumes new homework");
+            }
+            tap(test, button);
+            long deadline = started+10000;
+            while (SystemClock.uptimeMillis() < deadline) {
+                test.runOnMainSync(() -> {});
+                if (observationError[0] != null) throw new AssertionError("draw observation failed", observationError[0]);
+                long first = firstHighlight[0], now = SystemClock.uptimeMillis();
+                if (Boolean.parseBoolean(args.getString("captures", "false")) && first > 0) {
+                    if (!capturedHighlight && now-first >= 80) { capturedHighlight = true; captureJpeg(test,directory,label+"-highlight"); }
+                    if (!capturedAfterRefresh && now-first >= 1000) { capturedAfterRefresh = true; captureJpeg(test,directory,label+"-after-refresh"); }
+                }
+                if (first > 0 && !refreshed && now-first >= 400) {
+                    refreshed = true;
+                    if ("local".equals(mode)) test.runOnMainSync(() -> invoke(activity, "refreshCompletionRows"));
+                    if ("resume".equals(mode)) {
+                        shell(test,"input keyevent KEYCODE_HOME");
+                        await(test, () -> !activity.hasWindowFocus(), "real home pauses focused activity");
+                        test.runOnMainSync(() -> context.startActivity(new Intent(context, DashboardActivity.class)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
+                        await(test, activity::hasWindowFocus, "same activity resumes from real home");
+                    }
+                }
+                if (first > 0 && now-first >= UiMotion.ENTER+2600) break;
+                SystemClock.sleep(8);
+            }
+        } finally {
+            test.runOnMainSync(() -> { observing[0] = false; decor.removeCallbacks(pulse);
+                if (decor.getViewTreeObserver().isAlive()) decor.getViewTreeObserver().removeOnDrawListener(observer); });
+        }
+        int highlighted = 0, offCenter = 0, gaps = 0, offCenterContent = 0, fadeFrames = 0, minAlpha = 255, maxAlpha = 0;
+        long first = -1, last = -1, firstContent = -1, firstClear = -1; Set<Integer> cards = new HashSet<>();
+        for (int i=0;i<frames.length();i++) {
+            JSONObject f = frames.getJSONObject(i);
+            if (f.getBoolean("destinationContentVisible")) {
+                if (firstContent < 0) firstContent = f.getLong("ms");
+                if (f.isNull("centerY") || Math.abs(f.getDouble("centerY")-f.getDouble("viewportCenterY")) > 3) offCenterContent++;
+            }
+            if (f.getBoolean("emphasized")) {
+                if (first < 0) first = f.getLong("ms"); last = f.getLong("ms"); highlighted++;
+                cards.add(f.getInt("card"));
+                minAlpha = Math.min(minAlpha,f.getInt("alpha")); maxAlpha = Math.max(maxAlpha,f.getInt("alpha"));
+                if (f.getInt("alpha") > 0 && f.getInt("alpha") < 250) fadeFrames++;
+                if (f.getBoolean("windowFocus") && Math.abs(f.getDouble("centerY")-f.getDouble("viewportCenterY")) > 3) offCenter++;
+            } else if (first >= 0) {
+                if (firstClear < 0) firstClear = f.getLong("ms");
+                if (f.getLong("ms")-first < (reduced ? 1968 : UiMotion.ENTER+1900) && f.getBoolean("windowFocus")) gaps++;
+            }
+        }
+        JSONObject report = new JSONObject().put("label",label).put("mode",mode).put("target",target).put("targetIndex",targetIndex)
+                .put("frames",frames).put("highlightedFrames",highlighted).put("highlightCardInstances",cards.size())
+                .put("firstHighlightMs",first).put("lastHighlightMs",last).put("highlightSpanMs",last-first)
+                .put("firstDestinationContentMs",firstContent).put("offCenterContentFrames",offCenterContent).put("fadeFrames",fadeFrames)
+                .put("reducedMotion",reduced).put("firstClearAfterMs",firstClear-first)
+                .put("minimumHighlightAlpha",minAlpha).put("maximumHighlightAlpha",maxAlpha)
+                .put("offCenterHighlightFrames",offCenter).put("earlyMissingHighlightFrames",gaps).put("evidence",output.getPath());
+        try (var out = new FileOutputStream(output)) { out.write(report.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8)); }
+        JSONObject summary = new JSONObject(report.toString()); summary.remove("frames");
+        Bundle progress = new Bundle(); progress.putString("stream", "focus_frames: "+summary+"\n");
+        // Keep the structured artifact even on assertion failure.
+        test.sendStatus(0, progress);
+        require(highlighted > 0, "target has an actual emphasized draw: " + output);
+        require(firstContent >= 0 && offCenterContent == 0, "first and later destination content draws are already positioned: " + offCenterContent + "; " + output);
+        require(offCenter == 0, "highlight must never draw at an intermediate scroll offset: " + offCenter + "; " + output);
+        require(gaps == 0 && last-first >= (reduced ? 1968 : UiMotion.ENTER+1900),
+                "highlight survives full ENTER hold and 2000ms fade without row-rebuild loss: span="+(last-first)+" gaps="+gaps+"; "+output);
+        JSONObject finalFrame = frames.getJSONObject(frames.length()-1);
+        require((reduced ? minAlpha == 255 && maxAlpha == 255 && firstClear-first >= 1968 && firstClear-first <= 2100 : fadeFrames > 0)
+                        && !finalFrame.getBoolean("emphasized") && (!overlayHighlight || !finalFrame.getBoolean("highlightPresent")),
+                "highlight visibly fades and clears its independent overlay: " + output);
+        if (Boolean.parseBoolean(args.getString("cancelReturn","false"))) {
+            shell(test,"input keyevent KEYCODE_BACK");
+            await(test,() -> Integer.valueOf(DashboardActivity.HOME).equals(field(activity,"section"))
+                    && !Boolean.TRUE.equals(field(activity,"pageTransitionRunning")),"actual back returns to home");
+            View ordinary = decor.findViewWithTag("home-homework");
+            require(ordinary != null && !ordinary.getContentDescription().toString().contains("新作业"),
+                    "return retains consumed red-dot state");
+            tap(test,ordinary);
+            await(test,() -> Integer.valueOf(DashboardActivity.SCHEDULE).equals(field(activity,"section"))
+                    && !Boolean.TRUE.equals(field(activity,"pageTransitionRunning"))
+                    && !Boolean.TRUE.equals(field(activity,"scheduleResultLoading")),"ordinary homework entry remains available");
+            require(((Number)field(activity,"pendingHomeworkFocus")).longValue() == 0
+                    && (!overlayHighlight || field(activity,"homeworkHighlight") == null),
+                    "ordinary entry does not replay consumed focus");
+            report.put("cancelTouchPreservedUnread",true).put("backReturnedHome",true).put("ordinaryEntryNoReplay",true);
+            try (var out = new FileOutputStream(output)) { out.write(report.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8)); }
+        }
+        report.remove("frames"); return report.put("assertions", assertions).toString();
+    }
+    private static float visibleAlpha(View view) {
+        float alpha = 1f;
+        for (View current=view; current!=null; current=current.getParent() instanceof View ? (View)current.getParent() : null)
+            alpha *= current.getVisibility() == View.VISIBLE ? current.getAlpha() : 0f;
+        return alpha;
+    }
+    private static android.graphics.drawable.Drawable highlight(Activity activity, View card) {
+        try { activity.getClass().getDeclaredField("homeworkHighlight"); }
+        catch (NoSuchFieldException original98) { return card.getForeground(); }
+        return field(activity,"homeworkHighlightCard") == card
+                ? (android.graphics.drawable.Drawable)field(activity,"homeworkHighlight") : null;
+    }
+    private static void captureJpeg(Instrumentation test, File directory, String name) throws Exception {
+        Bitmap image = test.getUiAutomation().takeScreenshot();
+        if (image == null) throw new AssertionError("No screenshot");
+        Bitmap preview = Bitmap.createScaledBitmap(image, Math.round(image.getWidth()*Math.min(1f,720f/image.getWidth())),
+                Math.round(image.getHeight()*Math.min(1f,720f/image.getWidth())), true);
+        try (var out = new FileOutputStream(new File(directory,name+".jpg"))) { preview.compress(Bitmap.CompressFormat.JPEG,78,out); }
+        finally { if (preview != image) preview.recycle(); image.recycle(); }
+    }
+    private static void invoke(Object target, String method) {
+        try { var call = target.getClass().getDeclaredMethod(method); call.setAccessible(true); call.invoke(target); }
+        catch (Exception failure) { throw new IllegalStateException(failure); }
     }
     private static void cleanup(Context context, android.content.SharedPreferences checkpoint) {
         long expiry = context.getSharedPreferences("homework_notice", 0).getLong("expiry", 0);
