@@ -99,6 +99,8 @@ final class ClassroomEnhancedSummary {
     static String refinementScope(JSONArray block,int affairsSchema)throws Exception{
         return "当前核图块的真实来源id："+ids(block)+"。"+(affairsSchema>0?"notes与affairs的每条":"notes的每条")
                 +"都必须讲述本块真实事实，sources至少含一条对应的本块id。前文只可在同条中作真实对照，不单独输出前文回顾或其它块条目；不得为了过关虚挂本块id。"
+                +"这是分块核图，不是全课整稿；跨块重排与合并留给后续整稿阶段。逐条检查事实归属：完全属于前文的条目从本次返回集合中移除，不改历史已提交条目，前文不会因本次不重写而丢失。"
+                +"同一例题或证明跨块时，本次只补本块新增步骤、条件或纠错，前文只作理解所需对照，不重新完整讲前一块；仍返回本阶段完整JSON对象，不返回局部补丁。"
                 +"本块没有相应内容时返回空集合，不用历史内容或常识填充。assignments仍只引用本块并逐字核验原话。schema中的来源编号示例只表示结构，不是本块的实际来源。";
     }
     private static String assignmentRules(){

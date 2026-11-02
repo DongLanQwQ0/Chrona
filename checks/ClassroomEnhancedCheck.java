@@ -880,7 +880,7 @@ public final class ClassroomEnhancedCheck {
         String boundary=ClassroomEnhancedSummary.refinementScope(block,schema);
         check(actual.endsWith(boundary),label+": complete current-block boundary is visible at the end of the new user message");
         check(boundary.contains("当前核图块的真实来源id："+sourceIds(block)),label+": source ids come from the actual block");
-        for(String rule:List.of("本块真实事实","sources至少含一条对应的本块id","前文只可在同条中作真实对照","不单独输出前文回顾","不得为了过关虚挂本块id","返回空集合","assignments仍只引用本块","来源编号示例只表示结构"))
+        for(String rule:List.of("本块真实事实","sources至少含一条对应的本块id","前文只可在同条中作真实对照","不单独输出前文回顾","不得为了过关虚挂本块id","返回空集合","assignments仍只引用本块","来源编号示例只表示结构","跨块重排与合并留给后续整稿阶段","完全属于前文的条目从本次返回集合中移除","不改历史已提交条目","本次只补本块新增步骤、条件或纠错","完整JSON对象，不返回局部补丁"))
             check(boundary.contains(rule),label+": "+rule);
         check((schema>0)==boundary.contains("affairs"),label+": affairs wording follows the frozen schema");
     }
