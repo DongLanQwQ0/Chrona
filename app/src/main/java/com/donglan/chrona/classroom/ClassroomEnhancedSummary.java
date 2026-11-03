@@ -176,12 +176,15 @@ final class ClassroomEnhancedSummary {
                 topics.put(new JSONObject().put("title",current.getString("title")).put("collection",affairsSchema==0?"notes":current.getString("collection")).put("inputs",topicInputs));
             }
             JSONArray segments=new JSONArray(),all=full.getJSONArray("segments");for(int n=0;n<all.length();n++)if(sources.contains(all.getJSONObject(n).getInt("id")))segments.put(all.getJSONObject(n));
+            boolean unifiedAffairs=sourceFirst&&collection.equals("affairs");
+            JSONArray proseInputs=unifiedAffairs?unifiedAffairsInput(inputs,all):inputs;
             String prompt="全课整稿主题 "+(i+1)+"/"+sections.length()+"："+section.getString("title")+"。"
-                    +(batch?"本次连续处理 "+count+" 个原计划主题，主题清单及各自提取稿见末尾。保留各主题的独立标题，不把所有主题揉成一个大段；仅同义主题可合并去重。":"把下面同主题提取稿合为一节完整笔记，")
+                    +(unifiedAffairs?"本次统一整理本组课程事务。原计划标题只用于定位，不是必须逐项生成的成品目录；按原话中的事实、适用对象与条件重新归类，同一事实只归入一处，不先写宽泛总节再按细目重写。":batch?"本次连续处理 "+count+" 个原计划主题，主题清单及各自提取稿见末尾。保留各主题的独立标题，不把所有主题揉成一个大段；仅同义主题可合并去重。":"把下面同主题提取稿合为一节完整笔记，")
                     +"消除重复叙述、重复截图和‘图片核对’流水账。保持普通模式的精炼组织，不因内部多轮而增加重复概览、分段编号、无关闲聊或未提及事项的说明。"
                     +(sourceFirst&&collection.equals("affairs")?"本组事务输入的text直接来自原始字幕及相邻语境，origin=original_subtitles；主题标题仅供定位，历史更正文稿与派生稿不作教师事实模板。根据这些原话及实际已提供的原图重新整理事务，不能沿用历史派生稿中的结论或其错误否定方向。原图明确展示的资源、题号等仍可记录，不能因字幕没有口述就忽略；也不能由图片中的解题内容推断口头考核承诺。把本组同一规则、对象及适用条件集中讲一次，范围不明只保留能确认的部分。":"")
                     +"保留每个有来源的独特事实、题目数字与条件、代码、纠错、明确不考/会考以及改卷给分细节；相同事实只写一次，不可为缩短而删除这些细节。不改变原话确定性。"
                     +"先核对本主题的题干、公式、定义域和证明是否自洽，再成稿；补齐已知条件可推出的关键步骤和最终结果，不能以‘化简即得’掩盖缺失计算。"
+                    +"严格与非严格不等式不可直接互换；若结论需要严格号，应说明等号何时成立或为何在当前条件下不能成立，不能从非严格估计直接跳到严格结论。"
                     +"区分求候选值与证明存在：可先在存在假设下求必要候选值，再独立证明存在性并核实定理前提；不能把候选值计算当成存在性证明。循环推理或未满足定理条件的尝试才归错误分析，不能以尚未成立的条件支撑正确解法。"
                     +"已核实的识别错误直接采用正确结果，不复述误识别词、核图过程或相互冲突的旧草稿。无关闲聊、轶事和无信息的尾段不保留。"
                     +(batch&&affairsSchema>0?"每个主题按实际内容独立归入notes知识或affairs课程事务，可纠正初稿分类；知识保留解法与例题，事务保留规则、条件与例外，禁止将事务混入知识。具体行动保持在assignments，不重复抄录。":affairsSchema>0&&collection.equals("notes")
@@ -196,11 +199,11 @@ final class ClassroomEnhancedSummary {
                     +(state.optInt("figure_policy")>0?"图注仅描述实际可见内容，不能把字幕讲过的公式或证明当作图片已显示；已排除的低置信度、空白、仅标题或遮挡图片不得重新引用。实际图像分析已在历史原消息中，最终图片准入表（included=false不得引用）："+figureAdmission(state.optJSONArray("figure_reviews")):"")
                     +(batch?"只返回一个JSON，overview为空，"+(affairsSchema==0?"notes":"notes与affairs合计")+"返回1至"+count+"项，覆盖本组全部主题；仅同义主题可合并，assignments必须=[]。"+ClassroomSummary.topicBatchSchema(affairsSchema)
                             :(affairsSchema==0?"只返回一个JSON，overview为空，notes恰好一项，assignments=[]。":"只返回一个JSON，overview为空，按实际内容放入notes或affairs，合计恰好一项；另一内容集合及assignments为空数组，不把事务并入学习笔记。")+ClassroomSummary.topicSchema(affairsSchema,collection))
-                    +(batch?"\n本组主题清单及提取稿：\n"+topics:"\n本主题提取稿：\n"+inputs)
+                    +(unifiedAffairs?"\n本主题提取稿：\n"+proseInputs:batch?"\n本组主题清单及提取稿：\n"+topics:"\n本主题提取稿：\n"+inputs)
                     +"\n本组引用图片的已有可见内容核对："+topicFigureEvidence(inputs,state.optJSONArray("figure_reviews"))
                     +"。准入只表示图片本身可用，不表示与任意段落匹配；逐项比较实际题干、公式及对象，不能将另一题的截图插入当前例题或按正文改写图注。无匹配图片时保留文字解法，不强行配图。"
                     +"\n对应原始字幕（用于核对教师事实、指令方向及与更正文稿的冲突，不仅用于安排引文定位）：\n"
-                    +ClassroomSummary.uploadChunk(blockInput(segments,new JSONArray()))
+                    +(unifiedAffairs?"原文已在上方唯一原始字幕集合中完整给出，不重复附录。":ClassroomSummary.uploadChunk(blockInput(segments,new JSONArray())).toString())
                     +"\n原字幕是教师事实依据，更正文稿与提取稿都是待核对的派生稿。出现冲突时回到原字幕及相邻语境，不因多份派生稿重复同一解释就认定为真。"
                     +"对未能确认的范围或术语，保留可靠事实并仅标明具体疑点；删除无依据的事实分支，不能用‘相关’或直接引号包装成确定结论。";
             JSONObject value=json("edit-note-"+i,prompt,Collections.emptyList(),result->{
@@ -241,9 +244,27 @@ final class ClassroomEnhancedSummary {
             for(int n=Math.max(0,i-1);n<=Math.min(all.length()-1,i+1);n++)positions.add(n);
         }
         JSONArray context=new JSONArray();for(int position:positions)context.put(all.getJSONObject(position));
-        JSONObject input=new JSONObject(note.toString());input.put("origin","original_subtitles")
+        Set<String> files=new LinkedHashSet<>();JSONArray originals=note.optJSONArray("images");
+        if(originals!=null)for(int i=0;i<originals.length();i++)files.add(ClassroomDocument.imageName(originals.getString(i)));
+        files.addAll(ClassroomDocument.inlineImages(note.optString("text")));files.addAll(ClassroomDocument.inlineImages(note.optString("title")));
+        JSONArray images=new JSONArray();for(String file:files)images.put(file);
+        JSONObject input=new JSONObject(note.toString());input.put("origin","original_subtitles").put("images",images)
                 .put("text",ClassroomSummary.uploadChunk(blockInput(context,new JSONArray())).toString());
         return input;
+    }
+    /** One chronological evidence stream, rather than overlapping copies under derived headings. */
+    static JSONArray unifiedAffairsInput(JSONArray inputs,JSONArray all)throws Exception{
+        Set<Integer> seen=new TreeSet<>();Set<String> files=new LinkedHashSet<>();
+        for(int i=0;i<inputs.length();i++){
+            JSONArray ids=inputs.getJSONObject(i).getJSONArray("sources");
+            for(int n=0;n<ids.length();n++)seen.add(ids.getInt(n));
+            JSONArray images=inputs.getJSONObject(i).optJSONArray("images");
+            if(images!=null)for(int n=0;n<images.length();n++)files.add(ClassroomDocument.imageName(images.getString(n)));
+        }
+        JSONArray ids=new JSONArray();for(int id:seen)ids.put(id);
+        JSONArray images=new JSONArray();for(String file:files)images.put(file);
+        JSONObject row=new JSONObject().put("title","课程事务原文").put("sources",ids).put("images",images).put("text","");
+        return new JSONArray().put(editorialInput(row,all,true));
     }
     static JSONArray figureAdmission(JSONArray reviews)throws Exception{
         JSONArray result=new JSONArray();if(reviews!=null)for(int i=0;i<reviews.length();i++){

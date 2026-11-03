@@ -1699,6 +1699,16 @@ public final class ClassroomEnhancedCheck {
         for(int n=0;n<3;n++)check(evidence.getJSONObject(n).getInt("id")==all.getJSONObject(n+1).getInt("id")&&evidence.getJSONObject(n).getString("text").equals(all.getJSONObject(n+1).getString("text")),"raw subtitle text and sparse IDs remain exact "+n);
         check(!supplied.getString("text").contains("PRIVATE_DERIVED_UNSUPPORTED_CLAIM")&&note.toString().equals(before)&&all.toString().equals(rawBefore),"projection removes unsupported derived prose only from new input, leaving saved material and history unchanged");
         check(ClassroomEnhancedSummary.editorialInput(note,all,false).toString().equals(before),"knowledge and legacy editorial inputs preserve their full existing body");
+        JSONArray union=ClassroomEnhancedSummary.unifiedAffairsInput(new JSONArray().put(note).put(new JSONObject(note.toString()).put("sources",new JSONArray().put(70))),all);
+        JSONArray unique=new JSONObject(union.getJSONObject(0).getString("text")).getJSONArray("segments");
+        check(union.length()==1&&unique.length()==4,"overlapping affair sources and neighbours form one chronological stream");
+        for(int i=0;i<unique.length();i++)check(unique.getJSONObject(i).getInt("id")==all.getJSONObject(i+1).getInt("id"),"union preserves exact sparse original identity "+i);
+        check(!union.toString().contains("PRIVATE_DERIVED_UNSUPPORTED_CLAIM")&&note.toString().equals(before)&&all.toString().equals(rawBefore),"unified evidence excludes derived prose and never mutates historical inputs");
+        JSONObject inline=new JSONObject(note.toString()).put("text","依据 ![板书](images/image-7.jpg)").put("images",new JSONArray().put("images/image-8.jpg").put("image-8.jpg"));
+        String inlineBefore=inline.toString();JSONObject projected=ClassroomEnhancedSummary.editorialInput(inline,all,true);
+        check(projected.getJSONArray("images").length()==2&&projected.getJSONArray("images").toString().contains("image-7.jpg"),"original inline-only reference survives raw-source projection and explicit alias duplicates collapse");
+        JSONArray imageUnion=ClassroomEnhancedSummary.unifiedAffairsInput(new JSONArray().put(projected).put(projected),all).getJSONObject(0).getJSONArray("images");
+        check(imageUnion.length()==2&&inline.toString().equals(inlineBefore),"union retains inline and explicit images once without rewriting original prose");
         JSONArray parts=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(content("abcdefghij",50))).put("affairs",new JSONArray().put(content("abcdefghij",50))));
         JSONArray sections=new JSONArray();for(int n=0;n<7;n++)sections.put(new JSONObject().put("title","主题"+n).put("collection",n<2?"notes":"affairs").put("refs",new JSONArray().put(n<2?"0:notes:0":"0:affairs:0")));
         int rawChars=ClassroomEnhancedSummary.editorialInput(parts.getJSONObject(0).getJSONArray("affairs").getJSONObject(0),all,true).getString("text").length();
