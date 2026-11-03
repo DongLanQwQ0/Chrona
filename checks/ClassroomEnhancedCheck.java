@@ -1072,6 +1072,7 @@ public final class ClassroomEnhancedCheck {
             for(int n=0;n<corrected.length();n++)check(corrected.getString(n).equals(coverageCorrected(n,headings)),"stored successful correction keeps CRLF, trailing spaces, Unicode and original wording unchanged "+n);
             for(int r=0;r<requests.size();r++){
                 String stage=stages.get(r),physical=prompt(requests.get(r)),logical=referencedPrompt(requests.get(r),physical);
+                if(!stage.startsWith("correct-"))check(physical.contains("结尾须闭合全部嵌套数组、对象及最外层对象"),"JSON generation carries general balanced-envelope guidance without local completion: "+stage);
                 if(stage.equals("edit-plan")){
                     String marker="已完成笔记索引：\n";JSONArray entries=new JSONArray(logical.substring(logical.indexOf(marker)+marker.length()));
                     for(int e=0;e<entries.length();e++){

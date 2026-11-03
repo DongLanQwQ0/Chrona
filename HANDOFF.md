@@ -7,7 +7,7 @@
 - 用户重新粘贴Go Key后，112的Responses单图及完整生成已成功，先前401已解除。saved配置deepseek-v4.1-flash／Responses／可选x-opencode-session；未读取或输出密钥。4段更正文稿复用，11次实际请求含1次JSON修复，生成6知识、6事务、0行动、18张引用图；流程成功但全文内容不批准。
 - 112成品仍有评分指令反转、存疑术语造加分条件、事务重复、行动漏项、标题层级及例题配图错位。问题原文、原字幕与预期详见docs/audits/classroom-notebook-regression-20261103.md；证据build/editorial117/export/、completed-audit.txt、image-review.jpg。
 - 当前候选113（275）：通用否定词作用对象／可靠事实规则；核图保留有原话支持行动；主题编排索引附完整正文；区分候选值与存在证明；内部标题降级；整稿仅追加本主题引用图片的已有visible，数组前缀引用规范化，不重传图片或增加AI阶段／硬校验。旧原话、回复和缓存前缀不改。
-- 113检查：build/editorial118/batches.txt 2140项、coverage.txt1351项、summary.txt594项0失败。独立check两项及prefix-only定向case已复核通过；build-final.log构建／lint通过，113已安装同一模拟器。正式同课新轮runner71081运行，日志build/editorial118/run.txt。唯一下一步：等待该真实终态后读取全文审核，不重启任务，不以测试代替内容批准。
+- 113检查：build/editorial118/batches.txt 2140项、coverage.txt1351项、summary.txt594项0失败。独立check两项及prefix-only定向case已复核通过；build-final.log构建／lint通过，113已安装同一模拟器。113同课runner71081已失败终态：draft-0成功，draft-1及一次repair缺一个对象闭合符；服务均completed/stop，未达输出上限，失败组未提交。证据audit.txt、shape-audit.txt。114只追加通用JSON完整闭合提示，coverage1389、resume220通过，build114.log构建／lint及独立复核通过，114已安装统一模拟器。configured续跑runner51386已启动，日志resume114.txt；唯一下一步等待终态，核对同轮恢复及完整成品，不重做第一组或4段更正文稿。
 
 ## 验收与原范围
 
@@ -26,7 +26,7 @@
 ## 运行与边界
 
 - 未收到新手机测试授权不占手机；模拟器串行复用、不新建／克隆／清空／改变显示参数。当前课堂runner76432已succeeded=true终态；安装前确认无活动AI。等待超时不当失败或重启依据。
-- 测试输出集中项目build/editorial117和editorial118；设备仅/data/local/tmp/chrona/editorial118或应用缓存。已清设备UI XML目录；正常审查导出暂存应用external cache/chrona-notebook-review108/review.zip，提取审核后删除本次ZIP与空目录。不得删真实素材／应用数据。
+- 测试输出集中项目build/editorial117和editorial118；设备仅/data/local/tmp/chrona/editorial118或应用缓存。已清设备UI XML目录；112审查导出ZIP已清理；113诊断又生成external cache/chrona-notebook-review108/review.zip，未拉取，收尾删除本次ZIP与空目录。不得删真实素材／应用数据。
 - 图片先压缩再查看，禁止直接查看PNG原图。112图审用已压缩image-review.jpg。
 - 代理：editorial_batch_check只读代码复审；pta_ui_check专门UI复审。实际工具无agent_type字段，不虚称角色／模型选择，不跨聊天例行通信。
 - ADB F:\Android\Sdk\platform-tools\adb.exe；JDK D:\Minecraft\java21；gh F:\Programs\GitHubCLI\bin\gh.exe。FastCtx未暴露时用pwsh7，保留账号、不输出token。

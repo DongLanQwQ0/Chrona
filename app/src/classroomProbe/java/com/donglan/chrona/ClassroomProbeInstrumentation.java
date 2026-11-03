@@ -429,6 +429,17 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         JSONObject choice=choices==null||choices.length()==0?null:choices.optJSONObject(0),message=choice==null?null:choice.optJSONObject("message");
                         Object content=message==null?null:message.opt("content"),reasoningText=message==null?null:message.opt("reasoning_content");
                         row.put("run_last_content_characters",content instanceof String text?text.length():JSONObject.NULL);
+                        if(key.equals(reviewKey)&&content instanceof String text){
+                            int objects=0,arrays=0;boolean quoted=false,escaped=false;
+                            for(int c=0;c<text.length();c++){
+                                char ch=text.charAt(c);
+                                if(quoted){if(escaped)escaped=false;else if(ch=='\\')escaped=true;else if(ch=='"')quoted=false;continue;}
+                                if(ch=='"')quoted=true;else if(ch=='{')objects++;else if(ch=='}')objects--;else if(ch=='[')arrays++;else if(ch==']')arrays--;
+                            }
+                            String trimmed=text.strip();
+                            row.put("run_last_syntax_shape",new JSONObject().put("open_objects",objects).put("open_arrays",arrays)
+                                    .put("unfinished_string",quoted).put("last_codepoint",trimmed.isEmpty()?-1:trimmed.codePointBefore(trimmed.length())));
+                        }
                         row.put("run_last_reasoning_characters",reasoningText instanceof String text?text.length():JSONObject.NULL);
                         if(content instanceof String text)try{
                             JSONObject object=com.donglan.chrona.classroom.ClassroomSummary.parseObject(text),fields=new JSONObject();

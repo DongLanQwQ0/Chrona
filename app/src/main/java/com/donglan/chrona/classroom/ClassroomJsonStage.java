@@ -7,7 +7,8 @@ import java.util.*;
 
 /** One complete structural repair per stage, with explicit continuation after interruption. */
 final class ClassroomJsonStage {
-    private static final String WIRE="整条响应首、末非空白字符必须分别为{和}；禁止根字符串、根数组、前置说明、思考文字和代码围栏。Markdown仅置于字段值中。JSON字符串内换行用\\n编码，反斜杠按JSON转义；解析后显示正常段落，不要双重转义。";
+    private static final String WIRE="整条响应首、末非空白字符必须分别为{和}；禁止根字符串、根数组、前置说明、思考文字和代码围栏。Markdown仅置于字段值中。JSON字符串内换行用\\n编码，反斜杠按JSON转义；解析后显示正常段落，不要双重转义。"
+            +"结尾须闭合全部嵌套数组、对象及最外层对象，末字符是}不代表整体已经闭合；输出前在本次生成内核对引号与括号配对，不输出检查报告。";
     interface Validator { void check(JSONObject result)throws Exception; }
     private final File dir;
     private final JSONObject state;
