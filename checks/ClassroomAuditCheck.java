@@ -57,8 +57,19 @@ public final class ClassroomAuditCheck {
         check(!ClassroomAudit.project(null,summary).has("execution"),"summary-only records never invent execution state");
         check(ClassroomAudit.project(null,summary).getJSONArray("decisions").length()==1,"summary-only existing image audit remains readable");
         check(ClassroomAudit.project(null,null).getJSONArray("turns").length()==0,"missing records stay empty");
-        diagnostics();requestSizes();responsesProjection();nativeFailureProjection();scopeWarnings();
+        diagnostics();requestSizes();responsesProjection();nativeFailureProjection();scopeWarnings();revalidations();
         System.out.println("ClassroomAudit: "+checks+" checks passed; paid calls=0, checkpoint writes=0");
+    }
+    private static void revalidations()throws Exception{
+        JSONObject run=fixture().put("edit-note-5_revalidated_from","edit-note-5")
+                .put("draft-0_revalidated_from","draft-0-repair-restart-1")
+                .put("PRIVATE-STAGE_revalidated_from","PRIVATE-OUTPUT")
+                .put("final-1_revalidated_from","final-1-PRIVATE-OUTPUT");
+        String before=run.toString();JSONArray rows=ClassroomAudit.project(run,null).getJSONArray("revalidations");
+        check(rows.length()==2,"only known local revalidation stage pointers are projected");
+        check(!rows.toString().contains("PRIVATE-"),"revalidation audit never exposes raw output or arbitrary checkpoint fields");
+        check(run.toString().equals(before),"revalidation audit does not rewrite conversation or checkpoint");
+        check(ClassroomAudit.project(null,null).getJSONArray("revalidations").length()==0,"missing checkpoint does not invent local recovery");
     }
     private static void scopeWarnings()throws Exception{
         JSONArray saved=new JSONArray()

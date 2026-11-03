@@ -13,7 +13,7 @@ from recurrence_dependencies import recurrence_java
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--case', choices=['edge-cases', 'validation-resume', 'markdown-fences', 'failure-detail', 'schema-repair', 'affairs', 'note-strength', 'legacy-extra-affairs', 'responses', 'refinement-scope', 'refinement-scope-actual'])
+parser.add_argument('--case', choices=['edge-cases', 'validation-resume', 'markdown-fences', 'failure-detail', 'schema-repair', 'affairs', 'note-strength', 'legacy-extra-affairs', 'responses', 'refinement-scope', 'refinement-scope-actual', 'editorial-batches', 'editorial-batch-schema', 'assignment-action-prompt', 'editorial-classification', 'received-revalidation'])
 parser.add_argument('--output-dir', type=Path, help='Project-local output directory for classes and loopback evidence')
 args = parser.parse_args()
 source = ast.parse((root / 'checks/classroom_summary_check.py').read_text(encoding='utf-8'))
@@ -81,8 +81,10 @@ def executable(name):
 
 classes = out / 'classes'
 classes.mkdir(exist_ok=True)
-subprocess.run(recurrence_java([executable('javac'), '--release', '17', '-encoding', 'UTF-8',
+temporary = out / 'tmp'
+temporary.mkdir(exist_ok=True)
+subprocess.run(recurrence_java([executable('javac'), '-J-Djava.io.tmpdir=' + str(temporary), '--release', '17', '-encoding', 'UTF-8',
                 '-cp', str(jar), '-d', str(classes), *map(str, paths)]), check=True)
-subprocess.run(recurrence_java([executable('java'), '-Djava.awt.headless=true', '-cp',
+subprocess.run(recurrence_java([executable('java'), '-Djava.io.tmpdir=' + str(temporary), '-Djava.awt.headless=true', '-cp',
                 str(classes) + os.pathsep + str(jar), 'com.donglan.chrona.classroom.ClassroomEnhancedCheck',
                 str(out / 'fixtures'), *([args.case] if args.case else [])]), check=True)

@@ -135,6 +135,12 @@ public final class ClassroomSummary {
         return "返回 {\"overview\":\"\",\"notes\":"+(collection.equals("notes")?"[{\"title\":\"主题\",\"text\":\"完整学习笔记\",\"sources\":[0],\"images\":[]}]":"[]")
                 +",\"affairs\":"+(collection.equals("affairs")?"[{\"title\":\"课程事务主题\",\"text\":\"完整课程事务\",\"sources\":[0],\"images\":[]}]":"[]")+",\"assignments\":[]}。"+SOURCE_REQUIREMENTS+ClassroomAffairsPolicy.instructions(affairsSchema);
     }
+    static String topicBatchSchema(int affairsSchema){
+        return "完整整稿对象：\n{\"overview\":\"\",\"notes\":[{\"title\":\"知识主题\",\"text\":\"完整学习笔记\",\"sources\":[0],\"images\":[]}]"
+                +(affairsSchema==0?"":",\"affairs\":[{\"title\":\"课程事务主题\",\"text\":\"完整课程事务\",\"sources\":[0],\"images\":[]}]")
+                +",\"assignments\":[]}\n按实际内容填写各集合，无内容返回[]；overview必须为空，assignments必须=[]。"
+                +SOURCE_REQUIREMENTS+ClassroomAffairsPolicy.instructions(affairsSchema);
+    }
     static String draftSchema(JSONObject catalogue,int limit)throws Exception{
         return draftSchema(catalogue,limit,false);
     }
@@ -177,7 +183,8 @@ public final class ClassroomSummary {
             affairsSchema=ClassroomAffairsPolicy.VERSION;
             config=configKey(ai,imageLimit,classroomPrompt,enhanced,strength,figurePolicy,affairsSchema);
             system=systemPrompt(classroomPrompt,strength,figurePolicy,affairsSchema);
-            state=new JSONObject().put("config",config).put("run",java.util.UUID.randomUUID().toString());
+            state=new JSONObject().put("config",config).put("run",java.util.UUID.randomUUID().toString())
+                    .put("editor_batch_size",enhanced?2:1);
         }
         state.put("note_strength",strength).put("figure_policy",figurePolicy).put("affairs_schema",affairsSchema);
         if(figurePolicy>0&&!state.has("selected")&&imageLimit>0)ClassroomFigureReview.prepareQuality(dir,candidates,materials,control,progress);

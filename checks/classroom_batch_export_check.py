@@ -29,7 +29,7 @@ for name, content in stubs.items():
     path.write_text(content, encoding='utf-8')
     sources.append(path)
 src = root / 'app/src/main/java/com/donglan/chrona/classroom'
-sources += [src / name for name in ['ClassroomStore.java', 'ClassroomExport.java', 'ClassroomLesson.java', 'ClassroomProgress.java']]
+sources += [src / name for name in ['ClassroomStore.java', 'ClassroomExport.java', 'ClassroomLesson.java', 'ClassroomProgress.java', 'ClassroomJsonFailure.java', 'ClassroomJsonObject.java']]
 sources += [root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomDocument.java', root / 'checks/ClassroomBatchExportCheck.java']
 sources.append(root / 'shared/src/main/java/com/donglan/chrona/classroom/ClassroomMarkdownImages.java')
 activity = (root / 'app/src/main/java/com/donglan/chrona/ClassroomLessonActivity.java').read_text(encoding='utf-8')
@@ -40,7 +40,7 @@ while depth:
     depth += (activity[end] == '{') - (activity[end] == '}')
     end += 1
 restore = out / 'ClassroomFailureRestoreCheck.java'
-restore.write_text('''package com.donglan.chrona;import org.json.*;
+restore.write_text('''package com.donglan.chrona;import org.json.*;import com.donglan.chrona.classroom.ClassroomJsonFailure;
 public class ClassroomFailureRestoreCheck {
 METHOD
 static void check(String actual,String expected){if(!actual.equals(expected))throw new AssertionError(actual+" != "+expected);}

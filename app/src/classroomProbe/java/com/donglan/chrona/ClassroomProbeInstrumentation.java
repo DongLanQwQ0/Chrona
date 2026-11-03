@@ -34,6 +34,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean providerFailure;
     private boolean timetableAudit;
     private String reviewKey;
+    private boolean reviewExport;
     private final java.util.concurrent.CountDownLatch applicationReady=new java.util.concurrent.CountDownLatch(1);
     private volatile boolean applicationInitializationSkipped;
     @Override public void onCreate(Bundle args) {
@@ -50,6 +51,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         providerFailure = args != null && "true".equals(args.getString("providerFailure"));
         timetableAudit = args != null && "true".equals(args.getString("timetableAudit"));
         reviewKey = args == null ? null : args.getString("reviewKey");
+        reviewExport = args != null && "true".equals(args.getString("reviewExport"));
         super.onCreate(args); start();
     }
     @Override public void callApplicationOnCreate(android.app.Application app){
@@ -63,8 +65,8 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         try {
             if (!getTargetContext().getPackageName().equals("com.donglan.chrona")) throw new IllegalStateException();
             if(timetableAudit){
-                if(!network||!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
-                    throw new IllegalStateException("Explicit isolated timetable read required");
+                if(!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
+                    throw new IllegalStateException("Isolated timetable read required");
                 result.putString("timetable_audit",timetableResponseAudit().toString());finish(-1,result);return;
             }
             if(mathAudit||monitorAudit){
@@ -152,6 +154,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         JSONObject calendar=com.donglan.chrona.zju.ZjuCalendarStore.load(getTargetContext()).json();
         for(ZjuSnapshot.Lesson row:new ZjuTimetableStore(getTargetContext()).load(settings.account()))
             if(row.title.contains("C程序设计"))cached.put(courseRow(row));
+        if(!network)return new JSONObject().put("explicit_network_requests",false).put("cache_written",false).put("calendar",calendar).put("cached",cached);
         String[] credentials=settings.credentials();
         try(ZjuClient client=new ZjuClient(credentials[0],credentials[1],com.donglan.chrona.zju.ZjuCalendarStore.load(getTargetContext()))){
             java.lang.reflect.Field field=ZjuClient.class.getDeclaredField("http");field.setAccessible(true);
@@ -261,6 +264,17 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                             JSONArray entries=summary.optJSONArray(collection);if(entries!=null)review.put(collection,new JSONArray(entries.toString()));
                         }
                     }
+                    if(reviewExport){
+                        java.io.File cache=getTargetContext().getExternalCacheDir();if(cache==null)throw new java.io.IOException("Review export cache unavailable");
+                        java.io.File output=new java.io.File(cache,"chrona-notebook-review108");
+                        if(!output.isDirectory()&&!output.mkdirs())throw new java.io.IOException("Review export directory unavailable");
+                        java.io.File zip=new java.io.File(output,"review.zip");
+                        try(java.io.FileOutputStream stream=new java.io.FileOutputStream(zip)){
+                            long end=com.donglan.chrona.classroom.ClassroomExport.periodEnd(ClassroomLesson.fromJson(summary.getJSONObject("lesson")),com.donglan.chrona.zju.ZjuCalendarStore.load(getTargetContext()).ends);
+                            com.donglan.chrona.classroom.ClassroomExport.write(directory,summary,stream,value->{},end);
+                        }
+                        review.put("export_cache",zip.getAbsolutePath());
+                    }
                     row.put("notebook_review",review);
                 }
                 java.util.Set<String> noteTexts=new java.util.HashSet<>();
@@ -304,9 +318,14 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     JSONArray corrected=run.optJSONArray("corrected"),blocks=run.optJSONArray("blocks");
                     row.put("correction_parts",corrected==null?0:corrected.length()).put("source_blocks",blocks==null?0:blocks.length());
                     JSONObject audit=com.donglan.chrona.classroom.ClassroomAudit.project(run,summary);
-                    row.put("run_turns",audit.getJSONArray("turns")).put("run_source_scope_warnings",audit.getJSONArray("source_scope_warnings"));
+                    row.put("run_turns",audit.getJSONArray("turns")).put("run_source_scope_warnings",audit.getJSONArray("source_scope_warnings"))
+                            .put("run_revalidations",audit.getJSONArray("revalidations"));
                     JSONObject phases=new JSONObject();for(String name:new String[]{"drafts","parts","editor_notes"})
                         phases.put(name,run.optJSONArray(name)==null?0:run.getJSONArray(name).length());
+                    JSONObject editorPlan=run.optJSONObject("editor_plan");JSONArray editorSections=editorPlan==null?null:editorPlan.optJSONArray("sections");
+                    phases.put("editor_planned_sections",editorSections==null?0:editorSections.length())
+                            .put("editor_section_done",run.optInt("editor_section_done",phases.optInt("editor_notes")))
+                            .put("editor_batch_size",run.optInt("editor_batch_size",1));
                     row.put("run_phase_counts",phases);
                     JSONObject execution=audit.optJSONObject("execution");
                     if(execution!=null)row.put("run_execution_state",execution.optString("state"));
@@ -550,7 +569,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     if(usage.opt(field) instanceof Number value&&value.longValue()>=0)report.put(field,value.longValue());
             }catch(com.donglan.chrona.ai.ChatCompletionClient.RequestException rejected){
                 report.put("state","http_error").put("http",rejected.statusCode).put("category",healthCategory(rejected.getMessage()));
-            }catch(java.io.IOException failed){report.put("state","io_error").put("error_type",failed.getClass().getSimpleName());}
+            }catch(java.io.IOException failed){report.put("state","io_error").put("error_type",failed.getClass().getSimpleName()).put("category",healthCategory(failed.getMessage()));}
             report.put("elapsed_ms",android.os.SystemClock.elapsedRealtime()-began);
         }
         report.put("process_binding_unchanged",connectivity==null||java.util.Objects.equals(bound,connectivity.getBoundNetworkForProcess()));
@@ -558,6 +577,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     }
     private static String healthCategory(String message){
         String detail=message==null?"":message.toLowerCase(java.util.Locale.ROOT);
+        if(detail.contains("server_is_overloaded")||detail.contains("server overloaded"))return "service_overloaded";
         if(detail.contains("group_disabled"))return "service_group_disabled";
         if(detail.contains("invalid_api_key")||detail.contains("invalid api key")||detail.contains("incorrect api key")||detail.contains("invalid token"))return "credential_rejected";
         if(detail.contains("country")||detail.contains("region")||detail.contains("territory"))return "region_restriction";

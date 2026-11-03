@@ -70,6 +70,7 @@ public final class ZjuCalendarCheck {
         require(ZjuCalendarConfig.haining().term("2026-2027","秋")==null,"haining never ordinary quarter");
         lessons=ZjuAcademicCalendar.expand("2026-2027","夏",new JSONArray().put(row(2,2)),new ArrayList<>());
         require(lessons.stream().noneMatch(x->date(x).isAfter(LocalDate.of(2027,6,14))),"summer stops before school exams");
+        explicitMakeupDates();
         require(ZjuCalendarConfig.ordinary().actualDate(LocalDate.of(2027,3,27))==null,"spring sports closed");
         require(ZjuCalendarConfig.ordinary().actualDate(LocalDate.of(2027,6,9))==null,"dragon boat holiday closed");
         ZjuCalendarConfig shortTerm=new ZjuCalendarConfig();shortTerm.campus="custom";
@@ -95,5 +96,45 @@ public final class ZjuCalendarCheck {
         catch (UnsupportedOperationException expected) { immutable = true; }
         require(immutable, "completed terms immutable");
         System.out.println("calendarChecks=" + checks + " passed");
+    }
+    private static JSONObject single(int week,int day,int period){
+        return row(day,2).put("kcb","CourseB<br>秋{第"+week+"-"+week+"周|2节/周}<br>TeacherB<br>RoomB")
+                .put("djj",period);
+    }
+    private static void explicitMakeupDates()throws Exception{
+        List<String> warnings=new ArrayList<>();
+        JSONArray rows=new JSONArray().put(single(4,6,7)).put(single(5,6,1));
+        List<ZjuSnapshot.Lesson> lessons=ZjuAcademicCalendar.expand("2026-2027","秋",rows,warnings);
+        require(lessons.size()==2&&warnings.isEmpty(),"explicit makeup slots are retained without warnings");
+        require(date(lessons.get(0)).equals(LocalDate.of(2026,10,10))&&Instant.ofEpochMilli(lessons.get(0).start).atZone(ZONE).toLocalTime().equals(LocalTime.of(14,15)),"single actual Saturday afternoon survives calendar displacement");
+        require(date(lessons.get(1)).equals(LocalDate.of(2026,10,17))&&Instant.ofEpochMilli(lessons.get(1).end).atZone(ZONE).toLocalTime().equals(LocalTime.of(9,35)),"single actual Saturday morning retains school period end");
+        require(lessons.stream().allMatch(x->x.location.equals("RoomB")&&x.notes.contains("TeacherB")),"actual makeup slots retain location and source notes");
+        require(lessons.stream().noneMatch(x->date(x).equals(LocalDate.of(2026,11,7))),"one-off school rows never expand into other Saturdays");
+        lessons=ZjuAcademicCalendar.expand("2026-2027","秋",new JSONArray().put(single(4,6,7).put("kcb","CourseB<br>秋{第4周|2节/周}<br>TeacherB<br>RoomB")),new ArrayList<>());
+        require(lessons.size()==1&&date(lessons.get(0)).equals(LocalDate.of(2026,10,10)),"single-week shorthand has the same actual-date contract");
+        lessons=ZjuAcademicCalendar.expand("2026-2027","秋",new JSONArray().put(row(6,2)),new ArrayList<>());
+        require(lessons.stream().noneMatch(x->date(x).equals(LocalDate.of(2026,10,10))||date(x).equals(LocalDate.of(2026,10,17))),"recurring Saturday slots still yield to the school makeup calendar");
+        lessons=ZjuAcademicCalendar.expand("2026-2027","秋",new JSONArray().put(single(4,3,7)),new ArrayList<>());
+        require(lessons.size()==1&&date(lessons.get(0)).equals(LocalDate.of(2026,10,10)),"single original teaching date is still moved to its actual date");
+        lessons=ZjuAcademicCalendar.expand("2026-2027","秋",new JSONArray().put(single(4,3,7)).put(single(4,6,7)),new ArrayList<>());
+        require(lessons.size()==1,"original and already-adjusted copies deduplicate at the same actual time");
+        lessons=ZjuAcademicCalendar.expand("2026-2027","秋",new JSONArray().put(single(2,6,1)),new ArrayList<>());
+        require(lessons.isEmpty(),"one-off rule does not bypass an ordinary closed holiday");
+        lessons=ZjuAcademicCalendar.expand("2026-2027","秋",new JSONArray().put(single(4,6,1).put("dsz",0)),new ArrayList<>());
+        require(lessons.isEmpty(),"one-off rule does not bypass incompatible week parity");
+        ZjuCalendarConfig custom=ZjuCalendarConfig.parse(ZjuCalendarConfig.ordinary().json().toString());
+        custom.makeup.put(LocalDate.of(2026,11,1),LocalDate.of(2026,10,30));custom.validate();
+        lessons=ZjuAcademicCalendar.expand(custom,"2026-2027","秋",new JSONArray().put(single(7,7,3)),new ArrayList<>());
+        require(lessons.size()==1&&date(lessons.get(0)).equals(LocalDate.of(2026,11,1)),"explicit actual date works for another weekday and user calendar mapping");
+        custom=ZjuCalendarConfig.parse(ZjuCalendarConfig.ordinary().json().toString());
+        custom.makeup.put(LocalDate.of(2026,11,14),LocalDate.of(2026,10,30));custom.validate();
+        lessons=ZjuAcademicCalendar.expand(custom,"2026-2027","秋",new JSONArray().put(single(7,5,1)),new ArrayList<>());
+        require(lessons.size()==1&&date(lessons.get(0)).equals(LocalDate.of(2026,11,14)),"original teaching slot can move beyond teaching cutoff");
+        lessons=ZjuAcademicCalendar.expand(custom,"2026-2027","秋",new JSONArray().put(single(9,6,1)),new ArrayList<>());
+        require(lessons.size()==1&&date(lessons.get(0)).equals(LocalDate.of(2026,11,14)),"explicit actual slot beyond cutoff matches the same valid term mapping");
+        lessons=ZjuAcademicCalendar.expand(custom,"2026-2027","秋",new JSONArray().put(single(9,5,1)),new ArrayList<>());
+        require(lessons.isEmpty(),"ordinary single slot beyond cutoff remains excluded");
+        lessons=ZjuAcademicCalendar.expand(custom,"2026-2027","秋",new JSONArray().put(single(17,1,1)),new ArrayList<>());
+        require(lessons.isEmpty(),"an actual date from another term mapping cannot bypass this term cutoff");
     }
 }

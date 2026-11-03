@@ -113,6 +113,15 @@ public final class ClassroomAudit {
             if(sources.length()>0)warnings.put(new JSONObject().put("stage",stage).put("field",field).put("sources",sources));
         }
         result.put("source_scope_warnings",warnings);
+        JSONArray revalidations=new JSONArray();
+        if(run!=null)for(java.util.Iterator<String> keys=run.keys();keys.hasNext();){
+            String key=keys.next();if(!key.endsWith("_revalidated_from"))continue;
+            String stage=key.substring(0,key.length()-"_revalidated_from".length()),from=run.optString(key);
+            if(!stage.matches("(?:first|final|draft-[0-9]+|final-[0-9]+|edit-plan|edit-note-[0-9]+|edit-assignments)"))continue;
+            if(!from.matches(java.util.regex.Pattern.quote(stage)+"(?:-(?:repair|retry|user-retry|restart)(?:-[0-9]+)?)*"))continue;
+            revalidations.put(new JSONObject().put("stage",stage).put("response_stage",from));
+        }
+        result.put("revalidations",revalidations);
         return result;
     }
     private static Object requestBytes(JSONObject conversation,JSONArray messages,Object count)throws Exception {

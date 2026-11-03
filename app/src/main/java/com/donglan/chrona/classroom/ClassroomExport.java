@@ -84,9 +84,6 @@ public final class ClassroomExport {
             for(int i=0;i<tasks.length();i++){JSONObject task=tasks.getJSONObject(i);if(affairsSchema&&task.getString("text").isBlank())continue;
                 if(!assignments){md.append(affairsSchema?"## 课程事务\n\n":"## 课堂安排\n\n");assignments=true;}
                 md.append(ClassroomDocument.exportMarkdown(task.getString("text"))).append("\n\n");refs(md,task.getJSONArray("sources"),segments);}}
-        JSONArray selected=summary.getJSONArray("images");
-        md.append("原始截图 ").append(summary.getInt("raw_images")).append(" 张；去重候选 ").append(summary.getInt("candidate_images"))
-                .append(" 张；分析 ").append(selected.length()).append(" 张。\n");
         String transcript=transcript(segments);
         for(String image:images)if(!new File(dir,image).isFile())throw new IOException("总结引用的图片缺失："+image);
         {

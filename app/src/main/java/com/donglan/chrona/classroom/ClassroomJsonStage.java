@@ -22,6 +22,10 @@ final class ClassroomJsonStage {
         if(state.has(stage+"_error")){
             state.put(stage+"_error",ClassroomJsonFailure.stored(state.getString(stage+"_error")));save();
         }
+        if(attempt>0){
+            JSONObject recovered=revalidateReceived(stage,validator);
+            if(recovered!=null)return recovered;
+        }
         boolean sent=firstTurn(stage)!=null;
         String request=attempt==0&&!sent?"当前JSON阶段："+stage+"。"+WIRE+"\n"+prompt:
                 (attempt>0?retryIntroduction+ClassroomJsonFailure.stored(state.optString(stage+"_error"))+"。":"恢复此前未完成的JSON阶段。")
@@ -44,6 +48,49 @@ final class ClassroomJsonStage {
     }
     private static JSONObject validate(String raw,Validator validator)throws Exception {
         JSONObject result=ClassroomSummary.parseObject(raw);validator.check(result);return result;
+    }
+    /** Re-check a whole completed reply after a local validation fix; never join failed fragments. */
+    private JSONObject revalidateReceived(String stage,Validator validator)throws Exception{
+        control.check();JSONObject history=state.getJSONObject("conversation"),outputs=history.getJSONObject("outputs");
+        if(!history.optString("pending").isEmpty())return null;
+        JSONArray turns=history.getJSONArray("turns");
+        for(int i=turns.length()-1;i>=0;i--){
+            JSONObject turn=turns.getJSONObject(i);String name=turn.optString("stage");
+            if(!(name.equals(stage)||name.startsWith(stage+"-")))continue;
+            if(!outputs.has(name)){
+                if(!emptyServiceFailure(turn))return null;
+                continue;
+            }
+            if(!"received".equals(turn.optString("status"))||!"stop".equals(turn.optString("finish_reason")))return null;
+            JSONObject result;
+            try{result=validate(outputs.getString(name),validator);}
+            catch(JSONException|IOException stillInvalid){return null;}
+            control.check();
+            state.put(stage+"_revalidated_from",name);state.remove(stage+"_error");save();return result;
+        }
+        return null;
+    }
+    private static boolean emptyServiceFailure(JSONObject turn){
+        Object finish=turn.opt("finish_reason");
+        if(!"failed".equals(turn.optString("status"))||turn.optLong("content_chars")>0||turn.optLong("reasoning_chars")>0
+                ||finish!=null&&finish!=JSONObject.NULL&&!"".equals(finish))return false;
+        JSONObject evidence=turn.optJSONObject("response");
+        if(evidence==null)return "RequestException".equals(turn.optString("type"));
+        if(evidence.optLong("content_chars")>0||evidence.optLong("reasoning_chars")>0)return false;
+        JSONObject nativeResponse=evidence.optJSONObject("response"),error;
+        if(nativeResponse!=null){
+            JSONArray output=nativeResponse.optJSONArray("output");
+            if(output!=null&&output.length()>0||"incomplete".equals(nativeResponse.optString("status"))
+                    ||!nativeResponse.isNull("incomplete_details"))return false;
+            error=nativeResponse.optJSONObject("error");
+        }else{
+            JSONObject event=evidence.optJSONObject("event");
+            if(!"error".equals(evidence.optString("terminal_type"))||event==null)return false;
+            error=event.optJSONObject("error");if(error==null)error=event;
+        }
+        if(error==null)return false;
+        String code=error.optString("code");
+        return code.equals("server_is_overloaded")||code.equals("server_error")||code.equals("rate_limit_exceeded");
     }
     private String stageBoundary(String stage)throws Exception{
         if(stage.equals("first")||stage.startsWith("draft-"))return ClassroomSummary.DRAFT_IMAGE_RULE;

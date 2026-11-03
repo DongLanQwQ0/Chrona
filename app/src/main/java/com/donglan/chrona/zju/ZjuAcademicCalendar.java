@@ -64,8 +64,13 @@ public final class ZjuAcademicCalendar {
             for (int w = from; w <= to; w++) {
                 if ((parity.equals("0") && w % 2 == 0) || (parity.equals("1") && w % 2 != 0)) continue;
                 LocalDate teachingDate = monday.plusWeeks(w - 1).plusDays(day - 1);
-                if (teachingDate.isAfter(term.teachingEnd)) continue;
-                LocalDate date = config.actualDate(teachingDate);
+                // A single-week school row can already name the actual makeup date.
+                // Only recurring slots on that weekday are displaced by the calendar.
+                LocalDate originalDate = config.makeup.get(teachingDate);
+                boolean explicitMakeup = from == to && originalDate != null
+                        && !originalDate.isBefore(term.start) && !originalDate.isAfter(term.teachingEnd);
+                if (teachingDate.isAfter(term.teachingEnd) && !explicitMakeup) continue;
+                LocalDate date = explicitMakeup ? teachingDate : config.actualDate(teachingDate);
                 if (date == null) continue;
                 long start = date.atTime(LocalTime.parse(config.starts.get(period - 1))).atZone(SCHOOL_ZONE).toInstant().toEpochMilli();
                 long end = date.atTime(LocalTime.parse(config.ends.get(period + count - 2))).atZone(SCHOOL_ZONE).toInstant().toEpochMilli();

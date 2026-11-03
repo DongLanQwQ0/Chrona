@@ -155,6 +155,7 @@ public final class ClassroomBatchExportCheck {
         require(markdown.contains("images/image-17.jpg")&&!markdown.contains("images/images/"),"prefixed sparse image normalizes once");
         require(markdown.indexOf("images/image-17.jpg")==markdown.lastIndexOf("images/image-17.jpg"),"inline image not duplicated by notes.images");
         require(markdown.contains("**未完成**")&&!markdown.contains("图片分析尚未完成"),"draft remains explicitly incomplete without inventing an image stage");
+        require(!markdown.contains("原始截图")&&!markdown.contains("去重候选"),"processing image counts stay in audit metadata rather than the study handout");
         require(Arrays.equals(original,entries.entrySet().stream().filter(e->e.getKey().endsWith("images/image-17.jpg")).findFirst().get().getValue()),"summary image original bytes");
         require(entries.entrySet().stream().filter(e->e.getKey().endsWith("sources.md")).allMatch(e->new String(e.getValue(),StandardCharsets.UTF_8).contains("00:00:03 — 00:00:08")),"same readable time-anchor transcript for every lesson");
         require(Arrays.equals(Files.readAllBytes(new File(raw,"raw-0.img").toPath()),entries.entrySet().stream().filter(e->e.getKey().endsWith("PPT/0001-raw-0.png")).findFirst().get().getValue()),"PPT PNG preserves actual format and bytes");
