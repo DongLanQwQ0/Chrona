@@ -39,7 +39,11 @@ public final class ClassroomModelTrialInstrumentation extends Instrumentation {
             job.noteStrength=prefs.classroomNoteStrength;job.imageLimit=40;job.summaryAuthorized=true;job.detached=true;
             job.completed=done::countDown;
             startActivitySync(new Intent(getTargetContext(),DashboardActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            runOnMainSync(()->job.run("单课模型回归",true,()->ClassroomAutoSummary.summarize(job,trial,prefs.classroomPrompt,true)));
+            boolean newRun="true".equals(arguments.getString("newRun"));
+            runOnMainSync(()->job.run("单课模型回归",true,()->{
+                if(newRun){ClassroomCorrectionCache.capture(job.dir);ClassroomStore.beginSummaryRun(job.dir);}
+                ClassroomAutoSummary.summarize(job,trial,prefs.classroomPrompt,true);
+            }));
             while(!done.await(30,TimeUnit.SECONDS)){
                 Bundle progress=new Bundle();progress.putString("trial_state","running");sendStatus(1,progress);
             }

@@ -119,6 +119,9 @@ public final class ClassroomEnhancedCheck {
             requests.add(body);endpoints.add(exchange.getRequestURI().getPath());String physical=prompt(body),current=stage(physical),text=referencedPrompt(body,physical);stages.add(current);int call=requests.size();
             if(!current.contains("continue")&&!current.contains("repair")&&!current.contains("user-retry"))lastStage=current;
             if(call==slowCall){requestSeen.countDown();Thread.sleep(1200);}
+            if(mode.equals("json-mode-rejected")&&(body.has("response_format")||body.optJSONObject("text")!=null&&body.getJSONObject("text").has("format"))){
+                byte[] error="{\"error\":{\"message\":\"JSON output mode unsupported\"}}".getBytes(StandardCharsets.UTF_8);replies.add(null);exchange.sendResponseHeaders(400,error.length);exchange.getResponseBody().write(error);return;
+            }
             if(call==failCall){byte[] error="{\"error\":{\"message\":\"synthetic unavailable\"}}".getBytes(StandardCharsets.UTF_8);replies.add(null);exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(503,error.length);exchange.getResponseBody().write(error);return;}
             if(mode.startsWith("revalidate-sse-")||mode.startsWith("revalidate-native-empty-")){
                 String payload;
@@ -272,10 +275,9 @@ public final class ClassroomEnhancedCheck {
         ClassroomStore.write(new File(root,name+"-http.json"),new JSONObject().put("synthetic",true).put("fixture",dir.getName()).put("stages",stages).put("requests",req).put("replies",rep));
     }
     private static void appendOnly(File dir)throws Exception{
-        JSONObject firstOptions=new JSONObject(requests.get(0).toString());firstOptions.remove("messages");
         for(int n=0;n<requests.size();n++){
             JSONObject options=new JSONObject(requests.get(n).toString());options.remove("messages");
-            check(options.similar(firstOptions),"frozen options for request "+n);
+            check(options.similar(stageOptions(dir,n)),"frozen base options plus only the declared stage format for request "+n);
             if(n==0)continue;
             JSONArray before=requests.get(n-1).getJSONArray("messages"),after=requests.get(n).getJSONArray("messages");
             check(after.length()>=before.length(),"history never shrinks "+n);
@@ -288,6 +290,15 @@ public final class ClassroomEnhancedCheck {
         for(int n=0;n<turns.length();n++)check(turns.getJSONObject(n).getInt("request_bytes")==requestBytes.get(n),"every turn audits exact UTF-8 request bytes including HTTP failure, repair and restart "+n);
         for(int n=0;n<turns.length();n++)if(replies.get(n)!=null){JSONObject usage=turns.getJSONObject(n).getJSONObject("usage");check(usage.getJSONObject("prompt_tokens_details").getInt("cached_tokens")==701+n&&usage.getInt("prompt_cache_hit_tokens")==601+n,"synthetic cache usage retained verbatim "+n);}
         check(!state(dir).toString().contains(AI.apiKey),"run excludes API credential");
+    }
+    private static JSONObject stageOptions(File dir,int index)throws Exception{
+        JSONObject run=state(dir),base=new JSONObject(run.getJSONObject("conversation").getJSONObject("options").toString());
+        if(run.optBoolean("native_json")&&!stages.get(index).startsWith("correct-")){
+            JSONObject format=new JSONObject().put("type","json_object");
+            if(base.has("max_output_tokens")){JSONObject text=base.optJSONObject("text");if(text==null){text=new JSONObject();base.put("text",text);}text.put("format",format);}
+            else base.put("response_format",format);
+        }
+        return base;
     }
     private static void multiBlock()throws Exception{
         reset("normal",true);File dir=materials("multi",true);JSONObject result=generate(dir,true);evidence("multi",dir);appendOnly(dir);
@@ -309,11 +320,10 @@ public final class ClassroomEnhancedCheck {
         }
     }
     private static void nativeAppendOnly(File dir)throws Exception{
-        JSONObject options=new JSONObject(requests.get(0).toString());options.remove("input");
         for(int n=0;n<requests.size();n++){
             JSONObject request=requests.get(n),currentOptions=new JSONObject(request.toString());currentOptions.remove("input");
             check(endpoints.get(n).equals("/v1/responses")&&request.has("input")&&!request.has("messages"),"native frozen endpoint/body "+n);
-            check(currentOptions.similar(options),"native options never change "+n);
+            check(currentOptions.similar(stageOptions(dir,n)),"native frozen base options plus only declared stage format "+n);
             check(request.getInt("max_output_tokens")==32768&&!request.has("max_tokens")&&!request.has("max_completion_tokens")&&!request.has("stream_options"),"native output budget has no Chat fields "+n);
             if(n==0)continue;
             JSONArray before=requests.get(n-1).getJSONArray("input"),after=request.getJSONArray("input");
@@ -1630,8 +1640,40 @@ public final class ClassroomEnhancedCheck {
             reset("affairs-only",false);result=generate(dir,enhanced);check(!result.getString("run").equals(run)&&state(dir).getInt("affairs_schema")==1&&result.getJSONArray("parts").getJSONObject(0).has("affairs"),"completed legacy regeneration opts into current contract: "+enhanced);
         }
     }
+    private static void nativeJsonModes()throws Exception{
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES)){
+            reset("normal",true);File dir=materials("json-modes-"+protocol,true);JSONObject result=generateWithProtocol(dir,protocol),run=state(dir);
+            check(result.getBoolean("complete")&&run.getBoolean("native_json"),"new run freezes native JSON mode: "+protocol);
+            JSONObject options=run.getJSONObject("conversation").getJSONObject("options");
+            check(!options.has("response_format")&&(!options.has("text")||!options.getJSONObject("text").has("format")),"frozen base options remain plain for correction: "+protocol);
+            JSONArray turns=run.getJSONObject("conversation").getJSONArray("turns");
+            for(int n=0;n<requests.size();n++){
+                boolean json=!stages.get(n).startsWith("correct-");JSONObject request=requests.get(n);
+                String format=protocol.equals(AiSettings.RESPONSES)?request.optJSONObject("text")==null?"":request.getJSONObject("text").getJSONObject("format").getString("type")
+                        :request.optJSONObject("response_format")==null?"":request.getJSONObject("response_format").getString("type");
+                check(format.equals(json?"json_object":""),"only JSON stages use protocol-native JSON mode: "+protocol+" "+stages.get(n));
+                check(turns.getJSONObject(n).getString("output_mode").equals(json?"json_object":"text"),"turn audits actual output mode: "+protocol+" "+stages.get(n));
+            }
+            if(protocol.equals(AiSettings.RESPONSES))nativeAppendOnly(dir);else appendOnly(dir);
+            reset("normal",true);File legacy=previousContentMaterials("json-mode-legacy-"+protocol,protocol);JSONObject frozen=state(legacy);String base=frozen.getJSONObject("conversation").getJSONObject("options").toString();
+            generateWithProtocol(legacy,protocol);
+            check(!state(legacy).optBoolean("native_json")&&state(legacy).getJSONObject("conversation").getJSONObject("options").toString().equals(base),"existing unfinished run keeps its prior format and base options: "+protocol);
+            for(JSONObject request:requests)check(!request.has("response_format")&&(!request.has("text")||!request.getJSONObject("text").has("format")),"legacy request never silently gains native JSON: "+protocol);
+            reset("json-mode-rejected",false);File rejected=materials("json-mode-rejected-"+protocol,false);
+            rejects(()->generateWithProtocol(rejected,protocol),"unsupported native JSON explicitly fails: "+protocol);
+            check(requests.size()==2&&state(rejected).getJSONArray("drafts").length()==0&&!state(rejected).has("final"),"no silent plain-text retry or invalid commit after format rejection: "+protocol);
+            reset("normal",false);File resume=materials("json-mode-resume-"+protocol,false);failCall=2;
+            rejects(()->generateWithProtocol(resume,protocol),"new JSON stage interruption keeps checkpoint: "+protocol);String identity=state(resume).getString("run");failCall=-1;
+            check(generateWithProtocol(resume,protocol).getBoolean("complete")&&state(resume).getString("run").equals(identity)&&Collections.frequency(stages,"correct-0")==1,"resume keeps native mode, same run and committed correction: "+protocol);
+            if(protocol.equals(AiSettings.RESPONSES))nativeAppendOnly(resume);else appendOnly(resume);
+        }
+    }
     public static void main(String[] args)throws Exception{
         root=new File(args[0]);root.mkdirs();
+        if(args.length>1&&args[1].equals("native-json")){
+            HttpServer server=server();try{test("stage-specific native JSON, legacy freeze, recovery and rejection",ClassroomEnhancedCheck::nativeJsonModes);}finally{server.stop(0);}
+            System.out.println("ClassroomNativeJson: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Native JSON mode checks failed");return;
+        }
         if(args.length>1&&args[1].equals("refinement-scope-actual")){
             test("actual middle-note numeric source topology",ClassroomEnhancedCheck::refinementActualSourceTopology);
             System.out.println("ClassroomRefinementScopeActual: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Actual refinement source topology checks failed");return;
@@ -1716,7 +1758,7 @@ public final class ClassroomEnhancedCheck {
             try{test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);}
             finally{server.stop(0);}System.out.println("ClassroomAffairsCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Course affairs checks failed");return;
         }
-        if(args.length==1){test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
+        if(args.length==1){test("stage-specific native JSON, legacy freeze, recovery and rejection",ClassroomEnhancedCheck::nativeJsonModes);test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
         if(args.length>1&&args[1].equals("schema-repair")){
             try{test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("existing semantic and manual budgets",ClassroomEnhancedCheck::validationResume);}
             finally{server.stop(0);}System.out.println("ClassroomSchemaRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Schema repair checks failed");return;

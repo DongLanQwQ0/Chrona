@@ -30,6 +30,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean aiPing;
     private boolean classroomRoute;
     private boolean healthImage;
+    private boolean healthJson;
     private int healthImageCount=1;
     private String healthModel;
     private boolean mathAudit;
@@ -50,6 +51,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         aiPing = args != null && "true".equals(args.getString("aiPing"));
         classroomRoute = args != null && "true".equals(args.getString("classroomRoute"));
         healthImage = args != null && "true".equals(args.getString("healthImage"));
+        healthJson = args != null && "true".equals(args.getString("healthJson"));
         if(args!=null&&args.containsKey("healthImageCount"))healthImageCount=Integer.parseInt(args.getString("healthImageCount"));
         healthModel = args == null ? null : args.getString("healthModel");
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
@@ -598,7 +600,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     ?new com.donglan.chrona.ai.ChatCompletionClient(settings,control,com.donglan.chrona.ai.SchedulePrompt.SYSTEM,new CellularClassroomRoute(getTargetContext()))
                     :new com.donglan.chrona.ai.ChatCompletionClient(settings,control);
             boolean responses=com.donglan.chrona.ai.AiSettings.RESPONSES.equals(settings.protocol);
-            Object userContent="Reply with OK only.";
+            Object userContent=healthJson?"Return a JSON object with one boolean field ok set to true.":"Reply with OK only.";
             if(healthImage){
                 if(healthImageCount<1||healthImageCount>40)throw new IllegalArgumentException("Health image count must be 1 to 40");
                 android.graphics.Bitmap sample=android.graphics.Bitmap.createBitmap(32,32,android.graphics.Bitmap.Config.ARGB_8888);
@@ -612,6 +614,11 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             JSONObject request=client.classroomOptions().put(responses?"input":"messages",new JSONArray()
                     .put(new JSONObject().put("role","system").put("content","Reply briefly."))
                     .put(new JSONObject().put("role","user").put("content",userContent)));
+            if(healthJson){
+                if(responses)request.put("text",new JSONObject().put("format",new JSONObject().put("type","json_object")));
+                else request.put("response_format",new JSONObject().put("type","json_object"));
+                report.put("json_mode_requested",true);
+            }
             report.put("synthetic_images",healthImage?healthImageCount:0);
             report.put("protocol",settings.protocol).put("request_bytes",request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length).put("calls",1);
             long began=android.os.SystemClock.elapsedRealtime();
@@ -620,6 +627,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 JSONObject choice=response.getJSONArray("choices").getJSONObject(0);
                 Object content=choice.getJSONObject("message").opt("content");
                 report.put("state","response").put("has_text",content instanceof String&&!((String)content).isBlank());
+                if(healthJson&&content instanceof String text)try{report.put("json_object_valid",new JSONObject(text).optBoolean("ok"));}catch(org.json.JSONException invalid){report.put("json_object_valid",false);}
                 String finish=choice.optString("finish_reason");
                 if(java.util.Set.of("stop","length","content_filter","tool_calls").contains(finish))report.put("finish_reason",finish);
                 JSONObject usage=response.optJSONObject("usage");

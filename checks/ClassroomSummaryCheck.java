@@ -384,7 +384,8 @@ public final class ClassroomSummaryCheck {
         JSONArray resumed=requests.get(1).getJSONArray("messages");
         check(resumed.length()==prefix.length()+1,"explicit continuation appends exactly one recovery user message");
         for(int i=0;i<prefix.length();i++)check(resumed.getJSONObject(i).toString().equals(prefix.getJSONObject(i).toString()),"ordinary original request and failed assistant stay exact "+i);
-        for(int n=0;n<requests.size();n++){JSONObject frozen=new JSONObject(requests.get(n).toString());frozen.remove("messages");check(frozen.toString().equals(options),"ordinary wire options remain exact "+n);}
+        JSONObject expectedOptions=new JSONObject(options).put("response_format",new JSONObject().put("type","json_object"));
+        for(int n=0;n<requests.size();n++){JSONObject frozen=new JSONObject(requests.get(n).toString());frozen.remove("messages");check(frozen.similar(expectedOptions),"ordinary wire retains exact frozen base plus declared native JSON format "+n);}
         check(run(dir).getJSONObject("conversation").getJSONObject("options").toString().equals(options),"ordinary durable frozen options remain exact");
         check(!lastPrompt(2).contains(ClassroomSummary.DRAFT_IMAGE_RULE),"actual-image final does not inherit the draft-only ban");
         check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").contains("![已上传的图](images/image-"),"actual attached-image Markdown is still accepted after recovery");

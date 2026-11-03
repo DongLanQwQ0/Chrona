@@ -2,6 +2,8 @@
 
 ## 选择访问协议
 
+课堂新轮按阶段选择输出格式：更正阶段普通文本，JSON阶段使用所选协议的原生`json_object`模式。基础请求选项和完整消息前缀不改，每次仅在请求副本中选择阶段格式并记录；旧未完成轮次保留原格式。服务不支持时明确报错，不按模型／域名猜测或静默切换。该模式只要求合法JSON，不增加内容级拒绝规则。
+
 AI服务在基础地址后提供「API协议」，复用原公共选择面板，可选Responses与Chat Completions，默认Responses。缺少协议的旧配置及旧备份也以Responses作为新请求默认值；选择只修改草稿，保存后生效，纳入十四项退出保护、旋转恢复、保留密钥保存及配置备份。图片拒绝标记按地址、模型、协议分别记录。
 
 - Responses请求`/responses`：正文／图片为原生`input_text/input_image`，预算`max_output_tokens`、思考`reasoning.effort`、结构化输出`text.format`。不发送Chat专属字段；固定`store=false`、`truncation=disabled`，不托管或压缩历史。

@@ -2,6 +2,9 @@
 
 ## 当前状态与唯一下一步
 
+- 用户已批准原生JSON模式。最小当前服务Responses请求已成功：364B、54输入＋20输出Token、1857ms，JSON对象合法，未改配置／发课堂数据。build/editorial119/json-mode-health.txt。
+- 当前115（277）实现：新run快照native_json=true；更正text、全部JSON阶段json入口。请求深拷贝冻结baseoptions后只选协议原生json_object格式，旧轮缺标记保持原请求格式，旧消息／原生output不改，无fallback／额外语义校验。Trial只有显式newRun=true才capture更正及正常归档旧run。native-json322、Responses509、resume220通过；summary594复验通过，build.log构建／lint及独立check通过。115已安装唯一AVD，configured+newRun=true正式同课新轮runner73329运行，日志build/editorial119/run.txt。唯一下一步：等待该真实终态，核对4段更正复用、实际缓存usage及完整成品，不因等待超时重启。
+
 - 用户要求修复可迁移，一次只总结一节，完整后按“问题原文—预期写法—通用修正”审核并修改，同课复验；用户批准前不换课、不批量。目标是3档精简完整、自学可用的讲义，最终不展示内部流水线。
 - 固定课堂：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。使用唯一Chrona_Classroom_36／emulator-5580，不占手机。
 - 用户重新粘贴Go Key后，112的Responses单图及完整生成已成功，先前401已解除。saved配置deepseek-v4.1-flash／Responses／可选x-opencode-session；未读取或输出密钥。4段更正文稿复用，11次实际请求含1次JSON修复，生成6知识、6事务、0行动、18张引用图；流程成功但全文内容不批准。

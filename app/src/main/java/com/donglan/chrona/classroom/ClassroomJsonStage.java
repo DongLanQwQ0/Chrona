@@ -154,7 +154,7 @@ final class ClassroomJsonStage {
     }
     private String text(String stage,String prompt,List<byte[]> images,String outputKey)throws Exception {
         control.check();
-        try {return conversation.text(stage,prompt,images);}
+        try {return conversation.json(stage,prompt,images);}
         finally {
             if(outputKey!=null){
                 JSONObject history=state.getJSONObject("conversation"),outputs=history.getJSONObject("outputs");
