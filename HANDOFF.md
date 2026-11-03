@@ -2,9 +2,9 @@
 
 ## 当前状态与唯一下一步
 
-- **当前：gpt-5.6-luna单课新轮运行中。** 用户明确授权尝试该模型；原提供商／Responses／low的一张合成小图请求18秒成功，570输入＋5输出=575Token，1406B，证据`build/editorial114/health/image.txt`。不保存默认模型；通过独立试验runner将内存AiSettings传入正式Session及AutoSummary，固定同课86985-1988487，旧run正常归档、复用匹配更正稿，40图及整理偏好保留。ServiceRecord624bf9f，am-instrument会话71161，日志`build/editorial114/trial-run.txt`；30秒status仅观察不终止任务。唯一下一步等待这个实际句柄终态，再卸载runner及读完整成品。活动中禁止另一instrumentation／安装，不能因观察超时重启。
+- **当前：gpt-5.6-luna试验已终态，2初稿成功、核图仍过载。** 用户授权新模型；原提供商／Responses／low单张32×32合成JPEG（1406B）18秒成功，570输入＋5输出Token。独立runner将内存AiSettings传入正式Session及AutoSummary，固定同课，旧run正常归档、更正4块复用、2初稿提交。final-0含27图／2606640B，6.3秒server_is_overloaded，无usage／正文，parts0。runner71161已返回succeeded=false及global_model_unchanged=true；默认模型未改。证据`build/editorial114/health/image.txt`、`trial-run.txt`、`after/audit.json`及正常导出。无活动AI，probe及导出专用ZIP清理。**唯一下一步：若继续排查，先用独立小请求区分图片数量／体积／长历史因素，不原样重复大核图请求。** 当前新轮已冻结gpt-5.6-luna；未来恢复须用同模型内存runner，不能普通UI误读默认旧模型而新开一轮。
 
-- 原提供商保留；用户最新允许改试`gpt-5.6-luna`，因此不再等待旧模型图片路径自行恢复。旧模型仍失败的历史证据保留，不混作新模型结果。
+- 原提供商保留；用户最新允许改试gpt-5.6-luna。单图成功不代表完整视觉核图成功，旧模型失败证据不混作新模型结果。
 - 目标重新激活后已连续三轮确认同一外部依赖未解除：首次复用原AVD（5580、109/271、原数据保留），1404B合成小图仍在2.9秒报service_overloaded；后两轮未收到恢复确认，无活动课堂服务，未重复付费测试。证据`build/editorial113/image-health.txt`；探针已卸载。当前标记受阻，需原提供商恢复图片通道后通知再继续。
 - 固定课堂：`86985-1988487`，微积分（甲）Ⅰ，2026-10-29 08:00，第1–2节。
 - 模拟器原111同轮：更正文稿4块复用，2组初稿已提交，核图0组；final-0及其恢复均在4–5秒返回server_is_overloaded，无正文／usage。没有活动课堂AI服务，observer51259已终态。
