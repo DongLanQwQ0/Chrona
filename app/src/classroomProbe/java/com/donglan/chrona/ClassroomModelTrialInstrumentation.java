@@ -18,7 +18,7 @@ public final class ClassroomModelTrialInstrumentation extends Instrumentation {
         Bundle result=new Bundle();
         try{
             if(!"com.donglan.chrona".equals(getTargetContext().getPackageName())||!"ranchu".equals(android.os.Build.HARDWARE))throw new SecurityException();
-            if(arguments==null||!"gpt-5.6-luna".equals(arguments.getString("model")))throw new IllegalArgumentException("Explicit approved trial model required");
+            if(arguments==null||!java.util.Set.of("gpt-5.6-luna","gpt-6-luna").contains(arguments.getString("model","")))throw new IllegalArgumentException("Explicit approved trial model required");
             ZjuSettingsStore school=new ZjuSettingsStore(getTargetContext());
             if(!school.enabled()||!school.configured())throw new IllegalStateException("School account unavailable");
             AiSettings original=new AiSettingsStore(getTargetContext()).load();

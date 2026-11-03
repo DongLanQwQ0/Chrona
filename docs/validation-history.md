@@ -1,5 +1,11 @@
 # 验证记录
 
+## 用户允许重试后要求失败即停 — 2026-11-03
+
+- 用户针对完整核图明确允许重复。gpt-5.6-luna同轮重试1仍在9秒server_is_overloaded，drafts2/parts0；间隔一分钟的重试2仍为相同服务过载，默认模型未改。证据`build/editorial114/retry1/audit.json`、`retry2/run.txt`和本课结束通知。第三次尚在60秒等待时用户要求停止5.6，已Ctrl-C本次脚本（exec26539 exit1），retry3/run.txt不存在且无课堂服务，未发第三次请求。
+- 用户改试6luna并要求“不行就先停下来”。gpt-6-luna一次合成小图19.3秒完整stop，570+5Token；随后仅一次完整同课试验，通过正式流程按模型变化新轮复用更正稿，最终succeeded=false、global_model_unchanged=true；结束通知明确server_is_overloaded。证据`build/editorial115/image.txt`、`trial-run.txt`、`finished-notice.txt`。
+- 确认ClassroomWorkService已消失，辅助包卸载；停止后无额外AI调用／重试。用户停止条件满足，目标暂停，资料／归档／检查点保留；不将小图成功称为完整核图成功。
+
 ## 用户指定gpt-5.6-luna试验 — 2026-11-03
 
 - 原提供商／Responses／low，仅健康请求内存替换model，1张32×32合成JPEG，1406B请求18秒完整stop，570输入＋5输出Token；默认配置与网络绑定未改，不发送课堂资料。`build/editorial114/health/image.txt`；小图请求成功不证明完整课堂视觉理解通过。

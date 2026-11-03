@@ -2,6 +2,12 @@
 
 ## 当前状态与唯一下一步
 
+- **已按用户条件停止。** 用户要求停5.6过载重试、改试6luna，“不行就先停下来”。gpt-6-luna小图成功，但完整单课试验最终succeeded=false；本课结束通知明确server_is_overloaded，默认模型未改。无活动ClassroomWorkService，辅助包已卸载，不再重试、检测或换模型。证据`build/editorial115/image.txt`、`trial-run.txt`、`finished-notice.txt`。**唯一下一步等用户明确恢复工作。** 既有素材、匹配更正稿及原run归档保留，不宣称笔记完成。
+
+- 最新停止条件：用户要求停5.6过载重试，改试6luna，不行就先停。5.6第三次重试在60秒等待期已取消（exec26539 exit1），retry3/run.txt不存在、无活动AI，未发起第三次请求。gpt-6-luna一次合成小图在19.3秒成功575Token，`build/editorial115/image.txt`。下一步仅一次6luna完整同课试验，模型变化新轮复用更正稿、不改默认模型；若该试验失败停止，不再自动恢复。
+
+- 最新授权：用户针对完整核图请求明确“允许重复”。按原gpt-5.6-luna同轮检查点重试一次失败final-0，原更正4块和2初稿保持，旧消息／冻结参数不变；不以默认旧模型重开。当前唯一下一步启动同模型内存runner并观察真实终态，不预先认定过载已恢复。
+
 - **当前：gpt-5.6-luna试验已终态，2初稿成功、核图仍过载。** 用户授权新模型；原提供商／Responses／low单张32×32合成JPEG（1406B）18秒成功，570输入＋5输出Token。独立runner将内存AiSettings传入正式Session及AutoSummary，固定同课，旧run正常归档、更正4块复用、2初稿提交。final-0含27图／2606640B，6.3秒server_is_overloaded，无usage／正文，parts0。runner71161已返回succeeded=false及global_model_unchanged=true；默认模型未改。证据`build/editorial114/health/image.txt`、`trial-run.txt`、`after/audit.json`及正常导出。无活动AI，probe及导出专用ZIP清理。**唯一下一步：若继续排查，先用独立小请求区分图片数量／体积／长历史因素，不原样重复大核图请求。** 当前新轮已冻结gpt-5.6-luna；未来恢复须用同模型内存runner，不能普通UI误读默认旧模型而新开一轮。
 
 - 原提供商保留；用户最新允许改试gpt-5.6-luna。单图成功不代表完整视觉核图成功，旧模型失败证据不混作新模型结果。
