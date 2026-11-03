@@ -1,5 +1,16 @@
 # 验证记录
 
+## 原话恢复诊断 — 2026-11-03
+
+- `ClassroomJsonStage`仅在增强draft-N／final-N的原重试／结构修复请求末尾追加动态对照：最近本阶段完整received/stop回复中未匹配的引文、字段及真实原字幕。错误引文标作废，要求保留ASR原字；旧历史、冻结options、validator、图片位置、回滚和请求预算均不改。无完整回复、截断、pending、缺原文及非引文错误不追加。
+- 实际双协议HTTP恢复838项、结构修复728项、来源恢复2543项0失败。独立check发现整稿阶段非法行动也可能触发，已限制stage；实际edit-note反例及draft/final补证188/0，复审P2闭环。日志`build/editorial112/checks/`。最终release/lint通过`build-final.log`，模拟器空闲时正常升级工作候选`candidate/Chrona-evidence-recovery.apk`（109/271），尚未凭此证明真实引文恢复成功。
+- 正常UI同课“继续整理”及40图确认启动原111同轮恢复，ServiceRecord3d4bc2d、observer21940，`build/editorial112/observe/`；原历史及更正缓存保留，未重开整课。真实终态与内容质量待审读。
+
+## 111第二次引文失败定位 — 2026-11-03
+
+- 同轮draft-0-user-retry-1完整stop，40263输入／4942输出／32896缓存；同一assignment0仍把原s217“可郑”写成“可证”，refs已缩为217；第二项s269可匹配。0草稿提交，未因部分输出或网络失败。证据`build/editorial111/continued/audit.json`及正常导出来源；读取后探针卸载、专用缓存清理。
+- 停止第三次原样重试。现有恢复仅通用失败原因，缺少错误引文与对应原字幕的即时对照。选定通用恢复提示修正，不改真实引用校验，不篡改旧AI输出，不新增调用阶段；实际修复及检查待完成。
+
 ## 111首组引文失败与同轮恢复 — 2026-11-03
 
 - observer40059确认原服务终态后读取：首组draft-0完整stop，33042输入／7269输出／32896缓存，10知识／4事务／2行动；仍为未提交0块，错误为原话依据不在所引字幕，不是网络或输出上限。正常导出保留更正文稿及来源，`build/editorial111/after/`。

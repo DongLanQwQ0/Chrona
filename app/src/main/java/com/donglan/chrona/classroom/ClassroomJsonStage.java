@@ -29,7 +29,7 @@ final class ClassroomJsonStage {
         boolean sent=firstTurn(stage)!=null;
         String request=attempt==0&&!sent?"当前JSON阶段："+stage+"。"+WIRE+"\n"+prompt:
                 (attempt>0?retryIntroduction+ClassroomJsonFailure.stored(state.optString(stage+"_error"))+"。":"恢复此前未完成的JSON阶段。")
-                +reference(stage)+"本阶段未提交回复已回滚；只依据其中的完整schema、原始资料和历史实际附图，从头完整生成本阶段JSON对象，不续写、不拼接、不编造来源或图片。"+WIRE+stageBoundary(stage);
+                +reference(stage)+"本阶段未提交回复已回滚；只依据其中的完整schema、原始资料和历史实际附图，从头完整生成本阶段JSON对象，不续写、不拼接、不编造来源或图片。"+WIRE+stageBoundary(stage)+assignmentEvidenceDiagnostic(stage);
         String raw=text(attempt==0?stage:stage+retrySuffix+attempt,request,attempt==0?images:Collections.emptyList(),outputKey);
         try {return validate(raw,validator);}
         catch(JSONException malformed) {
@@ -40,7 +40,7 @@ final class ClassroomJsonStage {
             }
             state.put(stage+"_repair_attempt",attempt);save();
             String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+ClassroomJsonFailure.detail(malformed)
-                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或课堂事实；学习笔记可按原要求使用标明的补充例题。"+WIRE+stageBoundary(stage),Collections.emptyList(),outputKey);
+                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或课堂事实；学习笔记可按原要求使用标明的补充例题。"+WIRE+stageBoundary(stage)+assignmentEvidenceDiagnostic(stage),Collections.emptyList(),outputKey);
             try {return validate(repaired,validator);}
             catch(JSONException|IOException invalid){invalid(stage,attempt,invalid);throw invalid;}
         }
@@ -100,6 +100,41 @@ final class ClassroomJsonStage {
             return ClassroomEnhancedSummary.refinementScope(groups.getJSONArray(index),state.optInt("affairs_schema",0));
         }
         return "";
+    }
+    private String assignmentEvidenceDiagnostic(String stage)throws Exception{
+        if(!stage.matches("(?:draft|final)-[0-9]+"))return "";
+        JSONArray blocks=state.optJSONArray("blocks");if(blocks==null)return "";
+        JSONObject history=state.getJSONObject("conversation"),outputs=history.getJSONObject("outputs"),reply=null;
+        if(!history.optString("pending").isEmpty())return "";
+        JSONArray turns=history.getJSONArray("turns");
+        for(int i=turns.length()-1;i>=0;i--){
+            JSONObject turn=turns.getJSONObject(i);String name=turn.optString("stage");
+            if(!(name.equals(stage)||name.startsWith(stage+"-")))continue;
+            if(!"received".equals(turn.optString("status"))||!"stop".equals(turn.optString("finish_reason"))||!outputs.has(name))return "";
+            try{reply=ClassroomSummary.parseObject(outputs.getString(name));}catch(JSONException malformed){return "";}
+            break;
+        }
+        if(reply==null)return "";JSONArray tasks=reply.optJSONArray("assignments");if(tasks==null)return "";
+        JSONArray originals=new JSONArray();Set<Integer> known=new HashSet<>();
+        for(int i=0;i<blocks.length();i++){
+            JSONArray block=blocks.getJSONArray(i);for(int n=0;n<block.length();n++){JSONObject row=block.getJSONObject(n);originals.put(row);known.add(row.getInt("id"));}
+        }
+        JSONArray diagnostics=new JSONArray();
+        for(int i=0;i<tasks.length();i++){
+            JSONObject task=tasks.optJSONObject(i);if(task==null||!(task.opt("evidence") instanceof String))continue;
+            JSONArray ids=task.optJSONArray("sources");if(ids==null||ids.length()==0)continue;Set<Integer> refs=new HashSet<>();boolean real=true;
+            for(int n=0;n<ids.length();n++){Object id=ids.get(n);if(!(id instanceof Integer)||!known.contains((Integer)id)){real=false;break;}refs.add((Integer)id);}
+            if(!real)continue;
+            try{ClassroomSummary.validateAssignmentEvidence(new JSONObject().put("assignments",new JSONArray().put(task)),originals);}
+            catch(IOException mismatch){
+                JSONArray source=new JSONArray();for(int n=0;n<originals.length();n++){JSONObject row=originals.getJSONObject(n);if(refs.contains(row.getInt("id")))source.put(new JSONObject().put("id",row.getInt("id")).put("text",row.getString("text")));}
+                diagnostics.put(new JSONObject().put("field","assignments["+i+"].evidence").put("discarded_quote",task.getString("evidence")).put("original_sources",source));
+            }
+        }
+        if(diagnostics.length()==0)return "";
+        return "\n本次安排原话诊断（错误引文已作废，仅供纠错，不能作为笔记内容）："+diagnostics
+                +"\n请从所指原始字幕逐字摘录表达真实要求的最短有效原话，并列全覆盖的sources；即使原始字幕含ASR错字，也不可在evidence中自动纠正。"
+                +"任务内容按原要求完整保留，从头重新生成本阶段完整JSON；不拼接失败正文或把作废引文当作有效依据。";
     }
     private String reference(String stage)throws JSONException {
         JSONObject turn=firstTurn(stage);

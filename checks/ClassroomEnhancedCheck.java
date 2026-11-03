@@ -136,7 +136,12 @@ public final class ClassroomEnhancedCheck {
                 replies.add(null);byte[] bytes=payload.getBytes(StandardCharsets.UTF_8);exchange.getResponseHeaders().set("Content-Type","text/event-stream");exchange.sendResponseHeaders(200,bytes.length);exchange.getResponseBody().write(bytes);return;
             }
             String output,finish="stop";int id=current.matches(".*-[0-9]+.*")?Integer.parseInt(current.replaceAll(".*?-(\\d+).*","$1")):0;
-            if(current.startsWith("correct")){
+            if(mode.startsWith("evidence-")){
+                String responseMode=(current.contains("repair")&&(mode.equals("evidence-repair")||mode.equals("evidence-malformed")))?"evidence-good":mode;
+                output=assignmentEvidenceValue(responseMode).toString();
+                if(mode.equals("evidence-malformed")&&!current.contains("repair"))output="{\"overview\":\"PRIVATE_PARTIAL_EVIDENCE_BODY\",\"assignments\":[";
+                if(mode.equals("evidence-length"))finish="length";
+            }else if(current.startsWith("correct")){
                 output="# 更正文稿\n["+id+"] 完整题干、改卷细节与 $\\nabla x$。";
                 if(mode.startsWith("coverage-"))output=coverageCorrected(id,mode.equals("coverage-headings"));
                 if(mode.equals("length-resume")&&current.equals("correct-0")){output="# 更正文稿\n[0] 前半";finish="length";}
@@ -195,11 +200,11 @@ public final class ClassroomEnhancedCheck {
                     .put("total_tokens",1100+call).put("prompt_tokens_details",new JSONObject().put("cached_tokens",700+call)).put("prompt_cache_hit_tokens",600+call);
             String payload,type;
             if(body.has("input")){
-                boolean failing=current.equals("draft-1")&&mode.startsWith("native-")||mode.equals("revalidate-partial")||mode.equals("revalidate-length")||mode.equals("revalidate-filter");
+                boolean failing=current.equals("draft-1")&&mode.startsWith("native-")||mode.equals("revalidate-partial")||mode.equals("revalidate-length")||mode.equals("revalidate-filter")||mode.equals("evidence-length");
                 JSONObject nativeUsage=new JSONObject().put("input_tokens",1000+call).put("output_tokens",100).put("total_tokens",1100+call)
                         .put("input_tokens_details",new JSONObject().put("cached_tokens",700+call)).put("output_tokens_details",new JSONObject().put("reasoning_tokens",30));
                 JSONObject nativeResponse=new JSONObject().put("id","resp_loopback_"+call).put("object","response")
-                        .put("status",failing&&(mode.equals("native-incomplete")||mode.equals("native-json-incomplete")||mode.equals("revalidate-length")||mode.equals("revalidate-filter"))?"incomplete":failing&&(mode.equals("native-failed")||mode.equals("native-error")||mode.equals("revalidate-partial"))?"failed":"completed")
+                        .put("status",failing&&(mode.equals("native-incomplete")||mode.equals("native-json-incomplete")||mode.equals("revalidate-length")||mode.equals("revalidate-filter")||mode.equals("evidence-length"))?"incomplete":failing&&(mode.equals("native-failed")||mode.equals("native-error")||mode.equals("revalidate-partial"))?"failed":"completed")
                         .put("usage",nativeUsage).put("output",new JSONArray()
                                 .put(new JSONObject().put("type","reasoning").put("id","rs_"+call).put("encrypted_content","opaque-native-reasoning-"+call)
                                         .put("summary",new JSONArray().put(new JSONObject().put("type","summary_text").put("text","合成推理 call="+call))))
@@ -1267,7 +1272,8 @@ public final class ClassroomEnhancedCheck {
     }
     private static void refinementBoundary(String actual,JSONArray block,int schema,String label)throws Exception{
         String boundary=ClassroomEnhancedSummary.refinementScope(block,schema);
-        check(actual.endsWith(boundary),label+": complete current-block boundary is visible at the end of the new user message");
+        int diagnostic=actual.indexOf("\n本次安排原话诊断（");String scoped=diagnostic<0?actual:actual.substring(0,diagnostic);
+        check(scoped.endsWith(boundary),label+": complete current-block boundary ends the recovery instructions before any specific evidence diagnostic");
         check(boundary.contains("当前核图块的主体来源id："+sourceIds(block)),label+": source ids come from the actual block");
         for(String rule:List.of("允许引用已提供的同课真实字幕","跨块引用只记审计提示，不影响本阶段提交","不得编造不存在的编号","跨块重复在后续整稿合并","安排原话按同课真实字幕核验","完整JSON对象","来源编号示例只表示结构"))
             check(boundary.contains(rule),label+": "+rule);
@@ -1367,6 +1373,83 @@ public final class ClassroomEnhancedCheck {
         check(Collections.frequency(stages,"final-1-repair")==1&&state(legacy).getInt("affairs_schema")==0,"legacy repair remains bounded and schema remains frozen");appendOnly(legacy);evidence("refinement-scope-legacy",legacy);
     }
     private static final String REVALIDATION_STAGE="edit-note-5";
+    private static final String ASR_QUOTE="请把这条可郑的结论整理成文。",WRONG_QUOTE="请把这条可证的结论整理成文。",EVIDENCE_MARKER="\n本次安排原话诊断（错误引文已作废，仅供纠错，不能作为笔记内容）：";
+    private static JSONArray evidenceOriginals()throws Exception{return new JSONArray().put(new JSONObject().put("id",217).put("text","请把这条可郑的结论")).put(new JSONObject().put("id",217).put("text","整理成文。")).put(new JSONObject().put("id",218).put("text","请继续核对记录。"));}
+    private static JSONObject assignmentEvidenceValue(String scenario)throws Exception{
+        boolean wrong=scenario.equals("evidence-bad")||scenario.equals("evidence-repair")||scenario.equals("evidence-length");
+        JSONObject result=new JSONObject().put("overview","完整新稿").put("notes",new JSONArray().put(content("完整新主题",scenario.equals("evidence-source")?999:217).put("text",wrong?"PRIVATE_FAILED_NOTE_BODY":"COMPLETE_SUCCESS_NOTE")))
+                .put("affairs",new JSONArray()).put("assignments",new JSONArray()
+                        .put(new JSONObject().put("text","PRIVATE_ACTION_TEXT_完整整理结论").put("sources",new JSONArray().put(scenario.equals("evidence-unknown")?999:217)).put("evidence",wrong?WRONG_QUOTE:ASR_QUOTE))
+                        .put(new JSONObject().put("text","核对记录").put("sources",new JSONArray().put(218)).put("evidence","请继续核对记录。")));
+        if(scenario.equals("evidence-repair"))result.remove("overview");
+        if(scenario.equals("evidence-editor-good"))result.put("overview","").put("assignments",new JSONArray());return result;
+    }
+    private static JSONObject evidenceGenerate(File dir,JSONObject run,String protocol,String stage)throws Exception{
+        AiSettings settings=new AiSettings(AI.baseUrl,AI.model,AI.apiKey,AI.reasoningEffort,protocol);JSONArray originals=evidenceOriginals();
+        JSONObject lecture=new JSONObject().put("segments",originals).put("images",new JSONArray().put(new JSONObject().put("file","image-0.jpg")));
+        try(RequestControl control=new RequestControl(20000)){
+            ClassroomConversation conversation=new ClassroomConversation(dir,run,new com.donglan.chrona.ai.ChatCompletionClient(settings,control),"frozen evidence synthetic system：成品严格分离");
+            boolean editorial=stage.startsWith("edit-note-");
+            String prompt=(editorial?"全课整稿主题 1/1：完整知识主题。":stage.startsWith("final")?"只核实并完善第 1 内容组笔记。":"现在只整理第 1 内容组。")+(editorial?ClassroomSummary.topicSchema(1,"notes"):ClassroomSummary.schema(true,1))+"原始字幕："+originals;
+            return new ClassroomJsonStage(dir,run,conversation,control).generate(stage,prompt,stage.startsWith("final")?Collections.singletonList(new byte[]{1,2,3}):Collections.emptyList(),value->{ClassroomSummary.validateBlock(value,lecture,1);if(editorial)ClassroomEnhancedSummary.topicCollection(value,1);else ClassroomSummary.validateAssignmentEvidence(value,originals);},"-user-retry-","用户授权继续当前板块。",null);
+        }
+    }
+    private static void assignmentEvidenceRecovery()throws Exception{
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(String scenario:List.of("draft","final","repair","malformed","source","unknown","length","no-blocks","no-output","pending","latest-non-evidence","latest-length")){
+            String initial=scenario.equals("repair")?"evidence-repair":scenario.equals("malformed")?"evidence-malformed":scenario.equals("source")?"evidence-source":scenario.equals("unknown")?"evidence-unknown":scenario.equals("length")?"evidence-length":"evidence-bad";
+            reset(initial,false);File dir=new File(root,"evidence-recovery-"+protocol+"-"+scenario+"-"+System.nanoTime());dir.mkdirs();JSONArray originals=evidenceOriginals();
+            JSONObject run=new JSONObject().put("run","evidence-synthetic").put("content_batch_size",2).put("affairs_schema",1)
+                    .put("blocks",new JSONArray().put(new JSONArray().put(originals.getJSONObject(0))).put(new JSONArray().put(originals.getJSONObject(1)).put(originals.getJSONObject(2))))
+                    .put("corrected",new JSONArray().put("DEPRECATED_DERIVED_请把这条可证的结论整理成文。"));
+            if(scenario.equals("no-blocks"))run.remove("blocks");String stage=scenario.equals("draft")?"draft-0":"final-0";JSONObject result;int recovery;
+            if(scenario.equals("repair")||scenario.equals("malformed")){
+                result=evidenceGenerate(dir,run,protocol,stage);recovery=1;
+                check(requests.size()==2&&stages.get(1).equals(stage+"-repair"),"structural recovery keeps exactly its original one-repair HTTP budget: "+scenario+" "+protocol);
+            }else{
+                rejects(()->evidenceGenerate(dir,run,protocol,stage),"bad or incomplete assignment response waits for explicit continuation: "+scenario);
+                check(requests.size()==1,"initial evidence failure never adds an automatic AI request");
+                String error=run.optString(stage+"_error");check(!error.contains(WRONG_QUOTE)&&!error.contains(ASR_QUOTE)&&!error.contains("PRIVATE_FAILED_NOTE_BODY")&&!error.contains("本次安排原话诊断"),"stored error contains no diagnostic, raw quotation or failed note body");
+                if(scenario.equals("no-output"))run.getJSONObject("conversation").getJSONObject("outputs").remove(stage);
+                if(scenario.equals("pending"))run.getJSONObject("conversation").put("pending",stage+"-user-retry-1");
+                if(scenario.startsWith("latest-")){
+                    mode=scenario.equals("latest-length")?"evidence-length":"evidence-source";rejects(()->evidenceGenerate(dir,run,protocol,stage),"newer failed attempt supersedes an older invalid quote");
+                }
+                JSONObject before=new JSONObject(run.getJSONObject("conversation").toString());recovery=requests.size();mode="evidence-good";
+                result=evidenceGenerate(dir,run,protocol,stage);
+                check(requests.size()==recovery+1,"explicit continuation makes exactly one request without a repair loop");revalidationHistory(before,run.getJSONObject("conversation"),true);
+            }
+            String physical=prompt(requests.get(recovery));boolean diagnostic=Set.of("draft","final","repair").contains(scenario);
+            check(physical.contains(EVIDENCE_MARKER)==diagnostic,"only the latest complete same-stage mismatched quote receives dynamic raw diagnostics: "+scenario+" "+protocol);
+            if(diagnostic){
+                int begin=physical.indexOf(EVIDENCE_MARKER)+EVIDENCE_MARKER.length();JSONArray rows=new JSONArray(physical.substring(begin,physical.indexOf("\n请从所指原始字幕",begin)));JSONObject row=rows.getJSONObject(0);
+                check(rows.length()==1&&row.keySet().equals(Set.of("field","discarded_quote","original_sources"))&&row.getString("field").equals("assignments[0].evidence")&&row.getString("discarded_quote").equals(WRONG_QUOTE),"diagnostic identifies only the mismatched assignment and labels its exact old quote as discarded");
+                check(row.getJSONArray("original_sources").toString().equals(new JSONArray().put(originals.getJSONObject(0)).put(originals.getJSONObject(1)).toString())&&row.getJSONArray("original_sources").getJSONObject(0).getString("text").contains("可郑"),"diagnostic uses ordered original block slices and the genuine ASR typo, never the corrected derivative or a valid other assignment");
+                check(physical.contains("逐字摘录表达真实要求的最短有效原话")&&physical.contains("即使原始字幕含ASR错字，也不可在evidence中自动纠正")&&physical.contains("任务内容按原要求完整保留，从头重新生成本阶段完整JSON"),"recovery preserves the real action and requests a complete fresh JSON with literal original evidence");
+                check(!physical.contains("PRIVATE_FAILED_NOTE_BODY")&&!physical.contains("PRIVATE_ACTION_TEXT_")&&!physical.contains("DEPRECATED_DERIVED_"),"diagnostic never copies failed notes, task paraphrases or derived transcript bodies into recovery instructions");
+            }else check(!physical.contains("PRIVATE_PARTIAL_EVIDENCE_BODY")&&!physical.contains("PRIVATE_FAILED_NOTE_BODY"),"unrelated or truncated failures never inject their response fragments into a new request");
+            check(result.getJSONArray("assignments").getJSONObject(0).getString("evidence").equals(ASR_QUOTE)&&result.getJSONArray("notes").getJSONObject(0).getString("text").equals("COMPLETE_SUCCESS_NOTE")&&!result.toString().contains("PRIVATE_FAILED_NOTE_BODY"),"successful fresh output uses the unchanged original quote without splicing a failed note");
+            check(messages(requests.get(recovery)).getJSONObject(messages(requests.get(recovery)).length()-1).getJSONArray("content").length()==1,"recovery sends text only and never uploads the original image a second time");
+            for(String key:run.keySet())if(key.endsWith("_error"))check(!run.getString(key).contains("本次安排原话诊断")&&!run.getString(key).contains("可郑"),"diagnostics remain confined to appended conversation user messages");
+            batchHistory(dir,protocol);evidence("assignment-evidence-"+scenario+"-"+protocol,dir);
+        }
+    }
+    private static void assignmentEvidenceStageScope()throws Exception{
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(String stage:List.of("draft-0","final-0","edit-note-0")){
+            reset("evidence-bad",false);File dir=new File(root,"evidence-stage-scope-"+protocol+"-"+stage+"-"+System.nanoTime());dir.mkdirs();JSONArray originals=evidenceOriginals();
+            JSONObject run=new JSONObject().put("run","evidence-stage-scope").put("content_batch_size",2).put("affairs_schema",1).put("blocks",new JSONArray().put(new JSONArray().put(originals.getJSONObject(0))).put(new JSONArray().put(originals.getJSONObject(1)).put(originals.getJSONObject(2))));
+            rejects(()->evidenceGenerate(dir,run,protocol,stage),"initial wrong quote or illegal editorial action requires explicit recovery: "+stage);
+            check(requests.size()==1&&stages.get(0).equals(stage),"stage-scope fixture sends the actual intended HTTP stage exactly once");
+            JSONObject before=new JSONObject(run.getJSONObject("conversation").toString());boolean editorial=stage.startsWith("edit-note-");
+            if(editorial)check(prompt(requests.get(0)).contains("\"assignments\":[]")&&run.getString(stage+"_error").contains("整稿主题须返回一节"),"editorial fixture explicitly requires empty actions and fails for returning an illegal action despite its mismatched quote");
+            mode=editorial?"evidence-editor-good":"evidence-good";JSONObject result=evidenceGenerate(dir,run,protocol,stage);String recovery=prompt(requests.get(1));
+            check(requests.size()==2&&stages.get(1).equals(stage+"-user-retry"),"stage-scoped diagnostic changes no retry budget or stage count");
+            check(recovery.contains(EVIDENCE_MARKER)==!editorial,"only draft/final evidence recovery receives quote diagnostics, never the empty-actions editorial stage: "+stage+" "+protocol);
+            if(editorial)check(result.getJSONArray("assignments").length()==0&&!recovery.contains("discarded_quote")&&!recovery.contains("任务内容按原要求完整保留")&&!recovery.contains(WRONG_QUOTE),"editorial recovery neither preserves an illegal task nor injects its failed quote");
+            else check(recovery.contains("可郑")&&recovery.contains(WRONG_QUOTE)&&result.getJSONArray("assignments").getJSONObject(0).getString("evidence").equals(ASR_QUOTE),"permitted content-stage recovery still sends original ASR wording and succeeds with literal evidence");
+            check(messages(requests.get(1)).getJSONObject(messages(requests.get(1)).length()-1).getJSONArray("content").length()==1,"stage-scope correction never retransmits an image");
+            revalidationHistory(before,run.getJSONObject("conversation"),true);batchHistory(dir,protocol);evidence("assignment-evidence-stage-scope-"+stage+"-"+protocol,dir);
+        }
+    }
     private static String revalidationPrompt()throws Exception{
         return "全课整稿主题 6/6：合成主题。只返回完整JSON。\n本主题提取稿：\n"+new JSONArray().put(content("原计划知识主题",0));
     }
@@ -1544,6 +1627,16 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length==1)test("evidence diagnostics exclude empty-actions editorial stages",ClassroomEnhancedCheck::assignmentEvidenceStageScope);
+        if(args.length>1&&args[1].equals("assignment-evidence-stage-scope")){
+            try{test("evidence diagnostics exclude empty-actions editorial stages",ClassroomEnhancedCheck::assignmentEvidenceStageScope);}
+            finally{server.stop(0);}System.out.println("ClassroomAssignmentEvidenceStageScope: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Assignment evidence stage-scope checks failed");return;
+        }
+        if(args.length==1)test("literal assignment-evidence diagnostics in bounded recovery requests",ClassroomEnhancedCheck::assignmentEvidenceRecovery);
+        if(args.length>1&&args[1].equals("assignment-evidence-recovery")){
+            try{test("literal assignment-evidence diagnostics in bounded recovery requests",ClassroomEnhancedCheck::assignmentEvidenceRecovery);}
+            finally{server.stop(0);}System.out.println("ClassroomAssignmentEvidenceRecovery: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Assignment evidence recovery checks failed");return;
+        }
         if(args.length==1)test("current-group full coverage and exact corrected-part boundaries",ClassroomEnhancedCheck::contentCoverage);
         if(args.length>1&&args[1].equals("content-coverage")){
             try{test("current-group full coverage and exact corrected-part boundaries",ClassroomEnhancedCheck::contentCoverage);}
