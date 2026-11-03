@@ -1,5 +1,10 @@
 # 验证记录
 
+## 112真实引文恢复与核图过载 — 2026-11-03
+
+- 原111同轮`draft-0-user-retry-2`完整stop并提交，随后`draft-1`完整stop，drafts=2。阶段清单显示夹逼求和、柯西定理及证明／几何、洛必达条件及证明等已在初稿恢复，尚不据标题或提交状态判最终内容通过。只读证据`build/editorial112/after/audit.json`、正常导出`after/export/`。
+- 首个`final-0`附图27张，约2.65MB，4秒返回Responses `server_is_overloaded`，无正文及usage；更正4块和2组初稿保留，未提交核图。读回后探针卸载、专用ZIP与空目录清理。正常UI同课继续、40图确认，仅恢复失败核图阶段，ServiceRecord4854904／observer51259，`vision-observe/`；未改模型、协议、密钥或历史。
+
 ## 原话恢复诊断 — 2026-11-03
 
 - `ClassroomJsonStage`仅在增强draft-N／final-N的原重试／结构修复请求末尾追加动态对照：最近本阶段完整received/stop回复中未匹配的引文、字段及真实原字幕。错误引文标作废，要求保留ASR原字；旧历史、冻结options、validator、图片位置、回滚和请求预算均不改。无完整回复、截断、pending、缺原文及非引文错误不追加。
