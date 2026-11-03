@@ -30,6 +30,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean aiPing;
     private boolean classroomRoute;
     private boolean healthImage;
+    private String healthModel;
     private boolean mathAudit;
     private boolean monitorAudit;
     private boolean providerFailure;
@@ -48,6 +49,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         aiPing = args != null && "true".equals(args.getString("aiPing"));
         classroomRoute = args != null && "true".equals(args.getString("classroomRoute"));
         healthImage = args != null && "true".equals(args.getString("healthImage"));
+        healthModel = args == null ? null : args.getString("healthModel");
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
         monitorAudit = args != null && "true".equals(args.getString("monitorAudit"));
         providerFailure = args != null && "true".equals(args.getString("providerFailure"));
@@ -566,6 +568,8 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         JSONObject report=new JSONObject().put("calls",0).put("classroom_data_sent",false).put("settings_changed",false);
         com.donglan.chrona.ai.AiSettings settings=new com.donglan.chrona.ai.AiSettingsStore(getTargetContext()).load();
         if(settings==null)return report.put("state","not_configured");
+        if(healthModel!=null)settings=new com.donglan.chrona.ai.AiSettings(settings.baseUrl,healthModel,settings.apiKey,settings.reasoningEffort,settings.protocol);
+        report.put("model",settings.model);
         android.net.ConnectivityManager connectivity=(android.net.ConnectivityManager)getTargetContext()
                 .getSystemService(android.content.Context.CONNECTIVITY_SERVICE);
         android.net.Network bound=connectivity==null?null:connectivity.getBoundNetworkForProcess();

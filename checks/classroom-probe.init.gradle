@@ -1,10 +1,11 @@
-// Read-only, focused probe; never include the general-purpose device fixtures.
+// Read-only by default; an explicit property selects the paid single-lesson model trial.
 allprojects {
     plugins.withId('com.android.application') {
         extensions.getByName('androidComponents').finalizeDsl { android ->
             android.testBuildType = 'release'
             android.defaultConfig.testApplicationId = 'com.donglan.chrona.classroom.probe'
-            android.defaultConfig.testInstrumentationRunner = 'com.donglan.chrona.ClassroomProbeInstrumentation'
+            android.defaultConfig.testInstrumentationRunner = project.findProperty('chronaModelTrial') == 'true'
+                    ? 'com.donglan.chrona.ClassroomModelTrialInstrumentation' : 'com.donglan.chrona.ClassroomProbeInstrumentation'
             android.sourceSets.androidTest.java.setSrcDirs([file('src/classroomProbe/java')])
             android.sourceSets.androidTest.manifest.srcFile file('src/classroomProbe/AndroidManifest.xml')
         }

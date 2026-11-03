@@ -1,5 +1,11 @@
 # 验证记录
 
+## 用户指定gpt-5.6-luna试验 — 2026-11-03
+
+- 原提供商／Responses／low，仅健康请求内存替换model，1张32×32合成JPEG，1406B请求18秒完整stop，570输入＋5输出Token；默认配置与网络绑定未改，不发送课堂资料。`build/editorial114/health/image.txt`；小图请求成功不证明完整课堂视觉理解通过。
+- 为不修改默认模型，独立test runner通过正式Session.run及AutoSummary.summarize传入所选内存AiSettings；固定当前课堂，使用原归档／更正复用，不改生产入口、旧消息及参数，不新增业务平台。编译通过`trial-runner-build.log`，独立只读审查未发现新增P1/P2；正常拒图能力缓存仍沿用正式失败处理，global_model_unchanged只证明默认模型未改。
+- 初次手写manifest额外runner未实际注册，已撤回，改init脚本显式-PchronaModelTrial=true选择runner；默认仍只读Probe。重建安装后pm list instrumentation确认真实条目才启动。Session624bf9f／exec71161，日志`trial-run.txt`；等待实际completed，30秒只报告运行中，不因观察超时finish。真实成品及内容验收待完成。
+
 ## 目标重新激活后的图片复查 — 2026-11-03
 
 - ADB初始无设备且无emulator/qemu进程，复用既有Chrona_Classroom_36启动5580，正常boot完成，包仍109/271；未新建、复制、清空或改变显示参数。启动日志`build/editorial113/emulator-out.log`／`emulator-error.log`。
