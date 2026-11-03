@@ -35,6 +35,10 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.Chrona.Starting"
         android:enableOnBackInvokedCallback="true">
+        <activity android:name=".SchoolSettingsActivity" android:exported="false" />
+        <activity android:name=".PtaSettingsActivity" android:exported="false" />
+        <activity android:name=".PtaLoginActivity" android:exported="false" />
+        <activity android:name=".PtaScopeActivity" android:exported="false" />
         <activity android:name=".LanPairingActivity" android:exported="false" android:launchMode="singleTop" />
         <activity android:name=".ClassroomLessonActivity" android:exported="false" />
         <activity android:name=".ClassroomCorrectedActivity" android:exported="false" />

@@ -2601,7 +2601,7 @@ public final class TaskDetailActivity extends Activity {
             due.setOnClickListener(null);
             due.setClickable(false);
             due.setFocusable(false);
-            due.setContentDescription("作业截止时间，由学在浙大同步：" + format(candidate.dueAtMillis));
+            due.setContentDescription("作业截止时间，由作业平台同步：" + format(candidate.dueAtMillis));
             categoryRow.removeAllViews();
             categoryRow.addView(fieldLabel("类型", R.drawable.ic_event),
                     new LinearLayout.LayoutParams(dp(DETAIL_FIELD_LABEL_WIDTH_DP), -2));
@@ -2669,10 +2669,11 @@ public final class TaskDetailActivity extends Activity {
             ViewGroup parent = (ViewGroup) publish[0].getParent();
             if (parent != null) parent.removeView(publish[0]);
         }
-        if (candidate.isHomework() && new ZjuSettingsStore(this).enabled()) {
+        if (candidate.isHomework() && ZjuHomeworkStore.sourceEnabled(this,candidate.taskId)) {
             HomeworkLinks destinations = new ZjuHomeworkStore(this).links(candidate);
             LinearLayout links = new LinearLayout(this);
-            Button mobile = UiStyle.compactAction(this, "雪灾浙大M", R.drawable.ic_open_external,
+            boolean pta=destinations.mobile!=null&&destinations.mobile.startsWith("https://pintia.cn/");
+            Button mobile = UiStyle.compactAction(this, pta?"PTA":"雪灾浙大M", R.drawable.ic_open_external,
                     () -> openHomeworkSite(destinations.mobile));
             Button desktop = UiStyle.compactAction(this, "雪灾浙大", R.drawable.ic_open_external,
                     () -> openHomeworkSite(destinations.desktop));
@@ -2683,7 +2684,7 @@ public final class TaskDetailActivity extends Activity {
             LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(48), 1f);
             left.setMarginEnd(dp(8));
             links.addView(mobile, left);
-            links.addView(desktop, new LinearLayout.LayoutParams(0, dp(48), 1f));
+            if(!pta)links.addView(desktop, new LinearLayout.LayoutParams(0, dp(48), 1f));
             UiStyle.addSpaced(card, links, 8, 0);
         }
         UiStyle.addSpaced(card, candidateActions, 8, 0);
@@ -2691,7 +2692,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private void openHomeworkSite(String url) {
-        if (url == null || !new ZjuSettingsStore(this).enabled()) {
+        if (url == null) {
             return;
         }
         try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }

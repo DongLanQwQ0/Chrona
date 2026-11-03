@@ -2,6 +2,11 @@ package com.donglan.chrona.data;
 
 /** An input saved before asynchronous processing begins. Times are Unix milliseconds. */
 public final class TaskRecord {
+    public static String sourceLabel(String source) {
+        if("zju-homework".equals(source))return "学在浙大";
+        if("pta-homework".equals(source))return "PTA";
+        return source==null?"":source;
+    }
     public static final String QUEUED = "queued";
     public static final String PROCESSING = "processing";
     public static final String NEEDS_REVIEW = "needs_review";

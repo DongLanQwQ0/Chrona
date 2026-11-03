@@ -30,6 +30,7 @@ public final class ScheduleQuery {
     private final boolean homeworkOnly;
     private final int tab, publication;
     private final String category, keyword;
+    private final int source;
     private final LocalDate from, until;
     private final long now;
     private final ZoneId zone;
@@ -44,6 +45,11 @@ public final class ScheduleQuery {
 
     public ScheduleQuery(int tab, String category, int publication, String keyword,
             LocalDate from, LocalDate until, long now, ZoneId zone, int todoScope) {
+        this(tab,category,publication,keyword,from,until,now,zone,todoScope,0);
+    }
+    public ScheduleQuery(int tab,String category,int publication,String keyword,
+            LocalDate from,LocalDate until,long now,ZoneId zone,int todoScope,int source) {
+        this.source=source;
         this.todoScope = todoScope;
         this.tab = tab; this.category = category; this.publication = publication;
         this.keyword = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
@@ -51,6 +57,7 @@ public final class ScheduleQuery {
         this.homeworkOnly = CATEGORY_HOMEWORK.equals(category);
         List<String> clauses = new ArrayList<>(), values = new ArrayList<>();
         clauses.add("is_record=0");
+        if(source==2||source==3){clauses.add("task_id IN (SELECT id FROM tasks WHERE source=?)");values.add(source==2?"zju-homework":"pta-homework");}
         String anchor = EXECUTION_START_SQL;
         String finish = "COALESCE(end_at_millis,due_at_millis,start_at_millis)";
         String dated = "((category IN ('task','homework') AND " + anchor + " IS NOT NULL) OR (category='event' AND start_at_millis IS NOT NULL AND end_at_millis IS NOT NULL))";
@@ -93,18 +100,22 @@ public final class ScheduleQuery {
         }
         String query = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
         if (!query.isEmpty()) {
-            String like = "%" + query.replace("\\", "\\\\").replace("%", "\\%")
+          for(String term:query.split("\\s+")){
+            String like = "%" + term.replace("\\", "\\\\").replace("%", "\\%")
                     .replace("_", "\\_") + "%";
             StringBuilder search = new StringBuilder("(LOWER(title) LIKE ? ESCAPE '\\'"
                     + " OR LOWER(COALESCE(location,'')) LIKE ? ESCAPE '\\'"
-                    + " OR LOWER(COALESCE(description,'')) LIKE ? ESCAPE '\\'");
-            values.add(like); values.add(like); values.add(like);
+                    + " OR LOWER(COALESCE(description,'')) LIKE ? ESCAPE '\\'"
+                    + " OR task_id IN (SELECT id FROM tasks WHERE LOWER(source) LIKE ? ESCAPE '\\'"
+                    + " OR (CASE source WHEN 'zju-homework' THEN '学在浙大' WHEN 'pta-homework' THEN 'pta' ELSE source END) LIKE ? ESCAPE '\\')");
+            values.add(like); values.add(like); values.add(like); values.add(like);values.add(like);
             for (int i = 0; i < EventCategory.VALUES.length; i++) {
-                if (EventCategory.LABELS[i].contains(query)) {
+                if (EventCategory.LABELS[i].contains(term)) {
                     search.append(" OR category=?"); values.add(EventCategory.VALUES[i]);
                 }
             }
             clauses.add(search.append(')').toString());
+          }
         }
         selection = clauses.isEmpty() ? "1=1" : String.join(" AND ", clauses);
         arguments = values.toArray(new String[0]);
@@ -122,7 +133,7 @@ public final class ScheduleQuery {
                 + ", " + EXECUTION_ALL_DAY_SQL + " DESC, " + EXECUTION_START_SQL + direction + ", id" + direction;
     }
 
-    public boolean includesOfficialExams(){return category==null||CATEGORY_EXAM.equals(category);}
+    public boolean includesOfficialExams(){return source<2&&(category==null||CATEGORY_EXAM.equals(category));}
     public boolean officialExamOnly(){return CATEGORY_EXAM.equals(category);}
     /** Same range/status semantics as ordinary timed events; no task or publication side effects. */
     public boolean matchesOfficialExam(EventCandidate exam,String searchable){
@@ -131,17 +142,21 @@ public final class ScheduleQuery {
         if(tab==1&&dated||tab==0&&(!dated||exam.endAtMillis<=now)||tab==2&&(!dated||exam.endAtMillis>now))return false;
         if(from!=null&&until!=null&&(!dated||exam.startAtMillis>=until.atStartOfDay(zone).toInstant().toEpochMilli()
                 ||exam.endAtMillis<=from.atStartOfDay(zone).toInstant().toEpochMilli()))return false;
-        return searchable.toLowerCase(Locale.ROOT).contains(keyword);
+        return matchesSearch(searchable+" 折姜星辰 教务");
     }
 
     /** Lists retain one selectable row per series; its occurrence opens the complete series history. */
     public EventCandidate seriesRow(EventCandidate series) {
+        return seriesRow(series,"");
+    }
+    public EventCandidate seriesRow(EventCandidate series,String sourceLabel) {
+        if(source>=2&&!sourceLabel.contains(source==2?"zju-homework":"pta-homework"))return null;
         if (tab == 1 || category != null && !category.equals(series.category)) return null;
         if (publication == 1 && !(series.needsConfirmation || !series.isTask() && series.calendarEventId == null)
                 || publication == 2 && series.calendarEventId == null || publication == 3 && series.calendarEventId != null) return null;
         String searchable = (series.title + " " + series.location + " " + series.description + " "
-                + EventCategory.label(series.category)).toLowerCase(Locale.ROOT);
-        if (!searchable.contains(keyword)) return null;
+                + EventCategory.label(series.category)+" "+sourceLabel).toLowerCase(Locale.ROOT);
+        if (!matchesSearch(searchable)) return null;
         ZoneId boundsZone = series.executionAllDay() ? ZoneOffset.UTC : zone;
         long current = series.executionAllDay() ? java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
                 .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli() : now;
@@ -197,6 +212,12 @@ public final class ScheduleQuery {
             return occurrence;
         }
         return null;
+    }
+
+    private boolean matchesSearch(String text){
+        String normalized=text.toLowerCase(Locale.ROOT);
+        for(String term:keyword.split("\\s+"))if(!normalized.contains(term))return false;
+        return true;
     }
 
     public java.util.Comparator<EventCandidate> comparator(boolean oldestFirst) {

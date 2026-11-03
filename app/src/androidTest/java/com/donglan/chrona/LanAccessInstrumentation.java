@@ -15,6 +15,7 @@ import java.util.UUID;
 /** Device-only integration check: real server + real Android SQLite, isolated from user data. */
 public final class LanAccessInstrumentation extends Instrumentation {
     private Bundle arguments;
+    volatile android.app.Activity ptaActivity;
     @Override public void onCreate(Bundle arguments) {
         this.arguments = arguments == null ? new Bundle() : new Bundle(arguments);
         super.onCreate(arguments); start();
@@ -29,6 +30,9 @@ public final class LanAccessInstrumentation extends Instrumentation {
     @Override public android.app.Activity newActivity(ClassLoader loader, String name, Intent intent)
             throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         android.app.Activity activity = super.newActivity(loader, name, intent);
+        if("pta_homework".equals(arguments.getString("check"))&&arguments.containsKey("font")){
+            var config=new android.content.res.Configuration();config.fontScale=Float.parseFloat(arguments.getString("font"));activity.applyOverrideConfiguration(config);
+        }
         if("responsive_workspace".equals(arguments.getString("check"))){
             var config=new android.content.res.Configuration();config.fontScale=Float.parseFloat(arguments.getString("font","1.0"));
             if(arguments.containsKey("windowWidthDp")){config.screenWidthDp=Integer.parseInt(arguments.getString("windowWidthDp"));config.screenHeightDp=Integer.parseInt(arguments.getString("windowHeightDp"));config.smallestScreenWidthDp=Math.min(config.screenWidthDp,config.screenHeightDp);}
@@ -54,9 +58,15 @@ public final class LanAccessInstrumentation extends Instrumentation {
             config.fontScale = font;
             activity.applyOverrideConfiguration(config);
         }
+        if("pta_homework".equals(arguments.getString("check")))ptaActivity=activity;
         return activity;
     }
     @Override public void onStart() {
+        if("pta_homework".equals(arguments.getString("check"))){
+            Bundle report=new Bundle();
+            try{report.putString("pta_report",PtaDeviceCheck.run(this,arguments));finish(-1,report);}
+            catch(Throwable error){report.putString("error_type",error.getClass().getSimpleName());for(var frame:error.getStackTrace())if(frame.getClassName().contains("Pta")){report.putString("error_location",frame.getClassName()+":"+frame.getLineNumber());break;}finish(0,report);}return;
+        }
         android.util.Log.i("ChronaDeviceCheck", "onStart phase=" + arguments.getString("phase"));
         if("responsive_workspace".equals(arguments.getString("check"))){
             Bundle report=new Bundle();try{report.putString("responsive_report",ResponsiveWorkspaceDeviceCheck.run(this,arguments));finish(-1,report);}
@@ -165,6 +175,19 @@ public final class LanAccessInstrumentation extends Instrumentation {
             expect(request("POST","/api/pair",new JSONObject().put("code",server.security.pairing()),"http://evil.invalid"),403);
             expect(request("POST","/api/pair",new JSONObject().put("code",server.security.pairing()),origin()),200);
             Reply session=request("GET","/api/session",null,null);expect(session,200);csrf=session.body.getString("csrf");
+            if("pta_http".equals(arguments.getString("check"))){
+                var homework=new ZjuHomeworkStore(isolated,2);homework.configure("pta:isolated-http",true);var binding=homework.state();
+                homework.apply(binding.account,binding.generation,java.util.List.of(new com.donglan.chrona.zju.ZjuSnapshot.Homework(
+                        "pta:123","","循环练习","测试题集","https://pintia.cn/problem-sets/123","",System.currentTimeMillis()+86400000L,null)));
+                Reply filtered=request("GET","/api/schedule?tab=3&source=3&search=PTA%20"+java.net.URLEncoder.encode("循环","UTF-8"),null,null);expect(filtered,200);
+                require(filtered.body.getInt("total")==1,"HTTP source plus title search");
+                require(filtered.body.getJSONArray("items").getJSONObject(0).getString("sourceLabel").equals("PTA"),"HTTP homework source label");
+                Reply inbox=request("GET","/api/inbox?search=PTA",null,null);expect(inbox,200);require(inbox.body.getInt("total")==1,"HTTP inbox source search");
+                Reply detail=request("GET","/api/task?id="+binding.captureId,null,null);expect(detail,200);
+                require(detail.body.getJSONObject("task").getString("source").equals("pta-homework"),"HTTP raw source contract retained");
+                require(detail.body.getJSONArray("candidates").getJSONObject(0).getString("mobileUrl").equals("https://pintia.cn/problem-sets/123"),"HTTP trusted PTA link");
+                return;
+            }
             if(calendarCheck){
                 checkWebCalendar(isolated);
                 expect(request("POST","/api/logout",new JSONObject(),origin()),200);

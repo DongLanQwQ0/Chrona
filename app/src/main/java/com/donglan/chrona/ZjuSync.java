@@ -14,11 +14,12 @@ import java.util.function.Consumer;
 /** One network owner; each source has its own cadence and applies only its own results. */
 final class ZjuSync {
     static final long HOMEWORK_INTERVAL = 5 * 60_000L, TIMETABLE_INTERVAL = 30 * 60_000L;
-    private static final int HOMEWORK = 1, TIMETABLE = 2, ALL = HOMEWORK | TIMETABLE;
+    private static final int HOMEWORK = 1, TIMETABLE = 2, PTA = 4, ALL = HOMEWORK | TIMETABLE | PTA;
     static final ExecutorService WORKER = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final List<Consumer<String>> listeners = new ArrayList<>(), queuedListeners = new ArrayList<>();
     private static volatile ZjuClient client;
+    private static volatile PtaClient ptaClient;
     private static volatile long epoch;
     private static long runningEpoch;
     private static int runningScopes, queuedScopes;
@@ -33,18 +34,24 @@ final class ZjuSync {
     };
 
     static boolean request(Context context, Consumer<String> callback) { return request(context, ALL, callback); }
-    static boolean requestHomework(Context context, Consumer<String> callback) { return request(context, HOMEWORK, callback); }
-    static synchronized boolean homeworkRefreshing() { return ((runningScopes | queuedScopes) & HOMEWORK) != 0; }
+    static boolean requestSchool(Context context,Consumer<String> callback){return request(context,HOMEWORK|TIMETABLE,callback);}
+    static boolean requestHomework(Context context, Consumer<String> callback) { return request(context, HOMEWORK | PTA, callback); }
+    static boolean requestPta(Context context, Consumer<String> callback) { return request(context, PTA, callback); }
+    static synchronized boolean homeworkRefreshing() { return ((runningScopes | queuedScopes) & (HOMEWORK | PTA)) != 0; }
+    static synchronized boolean ptaRefreshing() { return ((runningScopes | queuedScopes) & PTA) != 0; }
+    static boolean anyHomeworkEnabled(Context context){
+        ZjuSettingsStore school=new ZjuSettingsStore(context);
+        return school.enabled()&&school.configured()&&new ZjuHomeworkStore(context).state().enabled
+                ||new PtaSettingsStore(context).enabled()&&new ZjuHomeworkStore(context,2).state().enabled;
+    }
     static boolean requestDue(Context context, Consumer<String> callback) {
         return request(context, dueScopes(context, System.currentTimeMillis()), callback);
     }
     private static synchronized boolean request(Context context, int scopes, Consumer<String> callback) {
         Context app = context.getApplicationContext();
         ZjuSettingsStore settings = new ZjuSettingsStore(app);
-        if (!settings.enabled() || !settings.configured()) {
-            if (callback != null) deliver(List.of(callback), "请先打开折姜星辰并保存账号");
-            return false;
-        }
+        if (!settings.enabled() || !settings.configured()) scopes &= ~(HOMEWORK | TIMETABLE);
+        if (!new PtaSettingsStore(app).enabled()||!new ZjuHomeworkStore(app,2).state().enabled) scopes &= ~PTA;
         if (scopes == 0) { if (callback != null) deliver(List.of(callback), settings.status()); return false; }
         if (runningScopes != 0) {
             if (runningEpoch == epoch && (scopes & ~runningScopes) == 0) { if (callback != null) listeners.add(callback); }
@@ -55,14 +62,16 @@ final class ZjuSync {
         if (callback != null) listeners.add(callback);
         long token = epoch;
         runningEpoch = token;
-        WORKER.execute(() -> run(app, token, scopes));
+        int requested=scopes;
+        WORKER.execute(() -> run(app, token, requested));
         return true;
     }
 
     private static void run(Context context, long token, int scopes) {
         ZjuSettingsStore settings = new ZjuSettingsStore(context);
         ZjuHomeworkStore store = new ZjuHomeworkStore(context);
-        String account = settings.account(), result;
+        String account = settings.account(), result = "";
+        if ((scopes & (HOMEWORK | TIMETABLE)) != 0) {
         try {
             ZjuHomeworkStore.State before;
             synchronized (AndroidSync.LOCK) { checkCurrent(settings, account, token); before = store.state(); }
@@ -115,13 +124,50 @@ final class ZjuSync {
                 result = String.join("\n", results);
             }
         } catch (Exception failure) { result = message(failure); }
+        }
+        if((scopes&(HOMEWORK|TIMETABLE))!=0&&token==epoch&&account.equals(settings.account()))settings.status(result);
+        if ((scopes & PTA) != 0 && token == epoch) {
+            PtaSettingsStore pta = new PtaSettingsStore(context);
+            String ptaAccount = pta.account();
+            long revision=pta.prefs.getLong("options_revision",0);
+            ZjuHomeworkStore ptaStore = new ZjuHomeworkStore(context, 2);
+            try {
+                ZjuHomeworkStore.State before = ptaStore.state();
+                if (!pta.enabled() || !before.enabled) throw new java.io.IOException("PTA 同步未开启");
+                pta.prefs.edit().putLong("attempt",System.currentTimeMillis()).apply();
+                try(PtaClient active=new PtaClient(pta.session())) {
+                    ptaClient=active;
+                    var fetched=active.fetch(pta);
+                    synchronized(AndroidSync.LOCK) {
+                        if(token!=epoch||!pta.enabled()||!ptaAccount.equals(pta.account())||revision!=pta.prefs.getLong("options_revision",0))throw new java.io.IOException("PTA 设置已更改，本次同步已停止");
+                        org.json.JSONArray catalog=new org.json.JSONArray();java.util.List<com.donglan.chrona.zju.ZjuSnapshot.Homework> selected=new ArrayList<>();
+                        for(var item:fetched) {
+                            String id=item.key.substring(4);catalog.put(new org.json.JSONObject().put("id",id).put("title",item.title));
+                            if(!pta.excluded().contains(id))selected.add(item);
+                        }
+                        var applied=ptaStore.apply(ptaAccount,before.generation,selected);
+                        String state="PTA · 新增 "+applied.added+" · 更新 "+applied.updated;
+                        pta.prefs.edit().putString("catalog:"+ptaAccount,catalog.toString()).putBoolean("auth_expired",false)
+                                .putString("status",state).putLong("last_success",System.currentTimeMillis()).apply();
+                        if(!applied.newHomework.isEmpty())HomeworkNotice.show(context,applied.newHomework,applied.newHomeworkIds);
+                        result+=(result.isEmpty()?"":"\n")+state;
+                        AgendaWidgetProvider.requestRefresh(context);AgendaReminder.requestRefresh(context);
+                    }
+                }
+            }catch(Exception failure){
+                String state=failure instanceof PtaClient.AuthExpired?failure.getMessage():"PTA 同步未完成，请检查网络或重新登录";
+                if(token==epoch&&ptaAccount.equals(pta.account()))pta.prefs.edit().putString("status",state)
+                        .putBoolean("auth_expired",failure instanceof PtaClient.AuthExpired).apply();
+                result+=(result.isEmpty()?"":"\n")+state;
+            }finally{ptaClient=null;}
+        }
         // School results/notifications finish first; one optional AI item never holds AndroidSync.LOCK.
         if (token == epoch) {
             String planning = ZjuHomeworkPlanner.processOne(context);
             if (!planning.isEmpty()) result += "\n" + planning;
         }
         synchronized (ZjuSync.class) {
-            client = null; settings.status(result);
+            client = null;
             List<Consumer<String>> completed = new ArrayList<>(listeners); listeners.clear();
             runningScopes = 0;
             int next = queuedScopes; queuedScopes = 0;
@@ -148,8 +194,11 @@ final class ZjuSync {
         ZjuClient active;
         synchronized (AndroidSync.LOCK) { epoch++; active = client; }
         if (active != null) active.cancel();
+        PtaClient pta=ptaClient;if(pta!=null)pta.cancel();
         ZjuHomeworkPlanner.cancel();
     }
+    static void cancelSchool(){ZjuClient active=client;if(active!=null)active.cancel();ZjuHomeworkPlanner.cancel(1);}
+    static void cancelPta(){PtaClient active=ptaClient;if(active!=null)active.cancel();ZjuHomeworkPlanner.cancel(2);}
     private static String attemptKey(int source) { return source == HOMEWORK ? "homework_attempt" : "timetable_attempt"; }
     private static long remaining(ZjuSettingsStore settings, int source, long now) {
         long last = settings.prefs.getLong(attemptKey(source), 0);
@@ -158,19 +207,25 @@ final class ZjuSync {
     }
     private static int dueScopes(Context context, long now) {
         ZjuSettingsStore settings = new ZjuSettingsStore(context);
-        if (!settings.enabled() || !settings.configured()) return 0;
-        int scopes = 0;
+        int scopes = ptaDelay(context,now)==0?PTA:0;
+        if (!settings.enabled() || !settings.configured()) return scopes;
         if (new ZjuHomeworkStore(context).state().enabled && remaining(settings, HOMEWORK, now) == 0) scopes |= HOMEWORK;
         if (settings.timetable() && remaining(settings, TIMETABLE, now) == 0) scopes |= TIMETABLE;
         return scopes;
     }
     static long nextDelay(Context context, long now) {
         ZjuSettingsStore settings = new ZjuSettingsStore(context);
-        if (!settings.enabled() || !settings.configured()) return -1;
-        long delay = Long.MAX_VALUE;
-        if (new ZjuHomeworkStore(context).state().enabled) delay = remaining(settings, HOMEWORK, now);
-        if (settings.timetable()) delay = Math.min(delay, remaining(settings, TIMETABLE, now));
+        long pta=ptaDelay(context,now),delay=pta<0?Long.MAX_VALUE:pta;
+        if(settings.enabled()&&settings.configured()){
+            if (new ZjuHomeworkStore(context).state().enabled) delay = Math.min(delay,remaining(settings, HOMEWORK, now));
+            if (settings.timetable()) delay = Math.min(delay, remaining(settings, TIMETABLE, now));
+        }
         return delay == Long.MAX_VALUE ? -1 : delay;
+    }
+    private static long ptaDelay(Context context,long now){
+        PtaSettingsStore pta=new PtaSettingsStore(context);
+        if(!pta.enabled()||pta.prefs.getBoolean("auth_expired",false)||!new ZjuHomeworkStore(context,2).state().enabled)return -1;
+        long last=pta.prefs.getLong("attempt",0);return last<=0||last>now?0:Math.max(0,HOMEWORK_INTERVAL-(now-last));
     }
     static void foreground(Context context) {
         foregroundContext = context.getApplicationContext();

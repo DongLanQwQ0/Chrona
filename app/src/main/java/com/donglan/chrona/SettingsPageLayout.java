@@ -13,6 +13,38 @@ public final class SettingsPageLayout {
     static final int SHORT_WINDOW_HEIGHT_DP=480;
     static final int NAVIGATION_RAIL_MIN_WIDTH_DP=600;
     private SettingsPageLayout() { }
+    static LinearLayout group(Activity activity, LinearLayout root, String name) {
+        TextView heading = new TextView(activity); heading.setText(name); heading.setTextSize(12);heading.setIncludeFontPadding(false); UiStyle.muted(heading);
+        heading.setPadding(dp(activity,4),0,dp(activity,4),0); if(android.os.Build.VERSION.SDK_INT>=28)heading.setAccessibilityHeading(true);
+        UiStyle.addSpaced(root,heading,root.getChildCount()==1?0:16,7);
+        LinearLayout group = new LinearLayout(activity); group.setOrientation(LinearLayout.VERTICAL); UiStyle.glass(group);
+        root.addView(group,new LinearLayout.LayoutParams(-1,-2)); return group;
+    }
+    static void divider(Activity activity, LinearLayout group) {
+        if(group.getChildCount()==0)return;
+        android.view.View line=new android.view.View(activity);line.setBackgroundColor(UiStyle.colors(activity).outline);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(activity,1));p.setMargins(dp(activity,16),0,dp(activity,16),0);group.addView(line,p);
+    }
+    /** Existing settings-hub row, shared by source settings rather than re-created per page. */
+    static TextView row(Activity activity, LinearLayout group, String title, String value, Runnable action) {
+        divider(activity,group);
+        LinearLayout row=new LinearLayout(activity);row.setGravity(Gravity.CENTER_VERTICAL);row.setMinimumHeight(dp(activity,54));
+        row.setPadding(dp(activity,16),dp(activity,10),dp(activity,12),dp(activity,10));
+        TextView label=new TextView(activity);label.setText(title);label.setTextSize(16);label.setTextColor(UiStyle.colors(activity).text);label.setIncludeFontPadding(false);
+        row.addView(label,new LinearLayout.LayoutParams(0,-2,1));
+        TextView current=new TextView(activity);current.setText(value==null?"":value);current.setTextSize(13);current.setIncludeFontPadding(false);UiStyle.muted(current);
+        current.setGravity(Gravity.END);current.setPadding(dp(activity,8),0,dp(activity,8),0);current.setMaxWidth(dp(activity,110));
+        current.setVisibility(value==null?android.view.View.GONE:android.view.View.VISIBLE);row.addView(current,new LinearLayout.LayoutParams(-2,-2));
+        ImageView chevron=new ImageView(activity);chevron.setImageResource(R.drawable.ic_chevron_right_line);
+        chevron.setImageTintList(ColorStateList.valueOf(UiStyle.colors(activity).muted));chevron.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(chevron,new LinearLayout.LayoutParams(dp(activity,16),dp(activity,16)));row.setFocusable(true);
+        row.setOnClickListener(v->action.run());UiStyle.pressable(row);group.addView(row,new LinearLayout.LayoutParams(-1,-2));return current;
+    }
+    static Switch toggle(Activity activity,LinearLayout group,String title,boolean checked) {
+        divider(activity,group);Switch control=new Switch(activity);control.setText(title);control.setTextSize(16);control.setChecked(checked);
+        control.setPadding(dp(activity,16),dp(activity,3),dp(activity,16),dp(activity,3));control.setSwitchPadding(dp(activity,12));
+        control.setMinHeight(dp(activity,54));UiStyle.toggle(control);group.addView(control,new LinearLayout.LayoutParams(-1,-2));return control;
+    }
     static boolean shortWindow(android.content.Context context){return context.getResources().getConfiguration().screenHeightDp<=SHORT_WINDOW_HEIGHT_DP;}
     public static LinearLayout content(Activity activity) {
         return content(activity,new LinearLayout(activity));

@@ -165,6 +165,23 @@ public final class ZjuHomeworkPlannerCheck {
                     "v17 to v18 migration preserves existing candidate and historical parse audit");
             check(count(context,"1=1")==0,"v18 migration creates no retroactive scheduling queue");
         }
+        Context ptaContext=new Context(new File(args[0],"pta-planner-"+System.nanoTime()));
+        PtaSettingsStore ptaSettings=new PtaSettingsStore(ptaContext);
+        ptaSettings.prefs.edit().putString("session","test-only-not-a-credential").putString("account","pta:synthetic")
+                .putBoolean("enabled",true).putBoolean("auto_plan",false).apply();
+        var ptaStore=new ZjuHomeworkStore(ptaContext,2);ptaStore.configure("pta:synthetic",true);var ptaState=ptaStore.state();
+        ptaStore.apply(ptaState.account,ptaState.generation,List.of(work("pta-old",due,null)));
+        check(count(ptaContext,"1=1")==0,"PTA AI is independently opt-in");
+        ptaSettings.prefs.edit().putBoolean("auto_plan",true).apply();
+        var newPta=ptaStore.apply(ptaState.account,ptaState.generation,List.of(work("pta-new",due,null)));
+        long ptaId=newPta.newHomeworkIds.get(0);
+        check(process(ptaContext,null,false).contains("已自动排程")&&get(ptaContext,ptaId).startAtMillis!=null,
+                "PTA reuses actual scheduler and audit while school service disabled");
+        ptaStore.apply(ptaState.account,ptaState.generation,List.of(work("pta-cancel",due,null)));
+        ZjuHomeworkPlanner.cancelPending(ptaContext,1);
+        check(count(ptaContext,"state='queued'")==1,"school revocation cannot cancel PTA queue");
+        ptaSettings.prefs.edit().putBoolean("auto_plan",false).apply();ZjuHomeworkPlanner.cancelPending(ptaContext,2);
+        check(count(ptaContext,"state='queued'")==0,"PTA revocation cancels its own unstarted queue");
         System.out.println("PASS: "+checks+" real SQLite, fake-provider scheduling/race/audit/snapshot/window checks");
     }
 }

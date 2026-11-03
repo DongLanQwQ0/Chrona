@@ -33,35 +33,35 @@ public final class SettingsHubActivity extends Activity {
         page.addView(root);
         header(root);
 
-        LinearLayout display = group(root, "外观与显示");
+        LinearLayout display = SettingsPageLayout.group(this, root, "外观与显示");
         destination(display, "外观与配色", AppearanceActivity.class);
         timelineLimit(display);
 
-        LinearLayout scheduling = group(root, "日程处理");
+        LinearLayout scheduling = SettingsPageLayout.group(this, root, "日程处理");
         destination(scheduling, "AI 服务", SettingsActivity.class);
         destination(scheduling, "日程来源", ScheduleSourceSettingsActivity.class);
         destination(scheduling, "系统日程", SystemCalendarSettingsActivity.class);
         destination(scheduling, "折姜星辰", ZjuSettingsActivity.class);
 
-        LinearLayout widgets = group(root, "桌面小组件");
+        LinearLayout widgets = SettingsPageLayout.group(this, root, "桌面小组件");
         widgetPreview(widgets);
         widgetDanmaku(widgets);
         widgetSystemCalendar = calendarToggle(widgets, "包含系统其他日程",
                 WidgetPreferences.includesSystemCalendar(this), 702,
                 enabled -> WidgetPreferences.setIncludesSystemCalendar(this, enabled));
 
-        LinearLayout reminders = group(root, "通知");
+        LinearLayout reminders = SettingsPageLayout.group(this, root, "通知");
         destination(reminders, "通知与提醒", NotificationSettingsActivity.class);
 
-        LinearLayout services = group(root, "服务与数据");
+        LinearLayout services = SettingsPageLayout.group(this, root, "服务与数据");
         destination(services, "跨设备同步", SyncSettingsActivity.class);
         destination(services, "局域网访问", LanSettingsActivity.class);
         destination(services, "备份与恢复", BackupRestoreActivity.class);
 
-        LinearLayout help = group(root, "帮助与关于");
+        LinearLayout help = SettingsPageLayout.group(this, root, "帮助与关于");
         destination(help, "使用引导", GuideActivity.class);
         destination(help, "检查更新", UpdateActivity.class);
-        row(help, "关于拾时", appVersionName(), this::showAbout);
+        SettingsPageLayout.row(this, help, "关于拾时", appVersionName(), this::showAbout);
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0)
             destination(help, "诊断信息", DebugActivity.class);
 
@@ -82,61 +82,13 @@ public final class SettingsHubActivity extends Activity {
         SettingsPageLayout.header(this, root, "设置");
     }
 
-    private LinearLayout group(LinearLayout root, String name) {
-        TextView heading = text(name, 12);
-        UiStyle.muted(heading);
-        heading.setPadding(dp(4), 0, dp(4), 0);
-        if (Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true);
-        UiStyle.addSpaced(root, heading, root.getChildCount() == 1 ? 0 : 16, 7);
-        LinearLayout group = column();
-        UiStyle.glass(group);
-        root.addView(group, new LinearLayout.LayoutParams(-1, -2));
-        return group;
-    }
-
     private void destination(LinearLayout group, String title, Class<? extends Activity> target) {
-        row(group, title, null, () -> startActivity(new Intent(this, target)));
-    }
-
-    /** Full-row targets, wrapping labels, and values aligned before a trailing chevron. */
-    private TextView row(LinearLayout group, String title, String value, Runnable action) {
-        divider(group);
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(54));
-        row.setPadding(dp(16), dp(10), dp(12), dp(10));
-        row.addView(text(title, 16), new LinearLayout.LayoutParams(0, -2, 1));
-        TextView current = text(value == null ? "" : value, 13);
-        UiStyle.muted(current);
-        current.setGravity(Gravity.END);
-        current.setPadding(dp(8), 0, dp(8), 0);
-        current.setMaxWidth(dp(110));
-        current.setVisibility(value == null ? View.GONE : View.VISIBLE);
-        row.addView(current, new LinearLayout.LayoutParams(-2, -2));
-        ImageView chevron = new ImageView(this);
-        chevron.setImageResource(R.drawable.ic_chevron_right_line);
-        chevron.setImageTintList(ColorStateList.valueOf(UiStyle.colors(this).muted));
-        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        row.addView(chevron, new LinearLayout.LayoutParams(dp(16), dp(16)));
-        row.setFocusable(true);
-        row.setOnClickListener(view -> action.run());
-        UiStyle.pressable(row);
-        group.addView(row, new LinearLayout.LayoutParams(-1, -2));
-        return current;
-    }
-
-    private void divider(LinearLayout group) {
-        if (group.getChildCount() == 0) return;
-        View line = new View(this);
-        line.setBackgroundColor(UiStyle.colors(this).outline);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(1));
-        params.setMargins(dp(16), 0, dp(16), 0);
-        group.addView(line, params);
+        SettingsPageLayout.row(this, group, title, null, () -> startActivity(new Intent(this, target)));
     }
 
     private void timelineLimit(LinearLayout group) {
         TextView[] value = new TextView[1];
-        value[0] = row(group, "首页时间线数量", HomeTimelinePreferences.getItemLimit(this) + " 项", () -> {
+        value[0] = SettingsPageLayout.row(this, group, "首页时间线数量", HomeTimelinePreferences.getItemLimit(this) + " 项", () -> {
             String[] options = new String[10];
             for (int i = 0; i < options.length; i++) options[i] = (5 + i * 5) + " 项";
             int selected = (HomeTimelinePreferences.getItemLimit(this) - 5) / 5;
@@ -147,19 +99,9 @@ public final class SettingsHubActivity extends Activity {
         });
     }
     private Switch widgetSystemCalendar;
-    private Switch toggle(LinearLayout group, String title, boolean checked) {
-        divider(group);
-        Switch control = new Switch(this);
-        control.setText(title); control.setTextSize(16); control.setChecked(checked);
-        control.setPadding(dp(16), dp(3), dp(16), dp(3)); control.setSwitchPadding(dp(12));
-        control.setMinHeight(dp(54)); UiStyle.toggle(control);
-        group.addView(control, new LinearLayout.LayoutParams(-1, -2));
-        return control;
-    }
-
     private Switch calendarToggle(LinearLayout group, String title, boolean checked, int request,
             java.util.function.Consumer<Boolean> save) {
-        Switch control = toggle(group, title, checked);
+        Switch control = SettingsPageLayout.toggle(this, group, title, checked);
         control.setOnCheckedChangeListener((button, enabled) -> {
             if (enabled && !new com.donglan.chrona.calendar.CalendarStore(this).hasReadPermission()) {
                 control.setChecked(false);
@@ -182,7 +124,7 @@ public final class SettingsHubActivity extends Activity {
 
     private void widgetPreview(LinearLayout group) {
         TextView[] value = new TextView[1];
-        value[0] = row(group, "明日安排预览", previewTime(), () ->
+        value[0] = SettingsPageLayout.row(this, group, "明日安排预览", previewTime(), () ->
                 UiDialogs.timeDialog(this, "明日安排预览时间", WidgetPreferences.previewMinutes(this), selected -> {
                     WidgetPreferences.setPreviewMinutes(this, selected);
                     value[0].setText(previewTime());
@@ -195,7 +137,7 @@ public final class SettingsHubActivity extends Activity {
     }
 
     private void widgetDanmaku(LinearLayout group) {
-        divider(group);
+        SettingsPageLayout.divider(this, group);
         Switch enabled = new Switch(this);
         enabled.setText("鼓励弹幕");
         enabled.setTextSize(16);
@@ -221,7 +163,7 @@ public final class SettingsHubActivity extends Activity {
         UiStyle.muted(version);
         UiStyle.addSpaced(panel, version, 4, 16);
         LinearLayout links = column();
-        row(links, "GitHub 主页", null, () -> {
+        SettingsPageLayout.row(this, links, "GitHub 主页", null, () -> {
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW,
                         android.net.Uri.parse("https://github.com/DongLanQwQ0")));
@@ -229,7 +171,7 @@ public final class SettingsHubActivity extends Activity {
                 Feedback.show(this, "没有可用的浏览器");
             }
         });
-        TextView qq = row(links, "联系作者", "2590339284", this::copyQq);
+        TextView qq = SettingsPageLayout.row(this, links, "联系作者", "2590339284", this::copyQq);
         View qqRow = (View) qq.getParent();
         qqRow.setOnLongClickListener(view -> { copyQq(); return true; });
         qqRow.setContentDescription("作者 QQ 2590339284，点击或长按复制");

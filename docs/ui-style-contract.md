@@ -27,6 +27,7 @@
 | 职责 | 公共入口 |
 | --- | --- |
 | 二级设置结构、安全区与标题 | `SettingsPageLayout.content/header/show` |
+| 分组设置入口、当前值和开关行 | `SettingsPageLayout.group/row/toggle/divider`，沿用设置主页实现 |
 | 多视图内容页标题行 | `WorkspacePageHeader`，选择栏占标题槽位 |
 | 标题行相关操作 | `HeaderActionGroup`，共享胶囊、分隔与按压反馈 |
 | 配色、文字、卡片和表单 | `UiStyle.colors/title/muted/card/input/button/toggle` |

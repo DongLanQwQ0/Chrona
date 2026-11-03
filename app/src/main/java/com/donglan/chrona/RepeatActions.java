@@ -32,7 +32,7 @@ final class RepeatActions {
             JSONObject fields,JSONObject source)throws Exception{
         TaskRecord task=store.getTask(current.taskId);
         if(task==null||TaskRecord.PROCESSING.equals(task.status)||TaskRecord.QUEUED.equals(task.status))throw new IllegalStateException("请等待解析完成");
-        if(store.isManagedHomework(current.id,current.taskId))throw new IllegalArgumentException("同步作业由学在浙大管理");
+        if(store.isManagedHomework(current.id,current.taskId))throw new IllegalArgumentException("同步作业由作业平台管理");
         EventCandidate before=RepeatOccurrences.at(current,original),changed=RepeatOccurrences.edit(current,original,fields);
         JSONObject exceptions=RepeatOccurrences.exceptions(changed),entry=exceptions.getJSONObject(Long.toString(original));
         org.json.JSONArray history=entry.optJSONArray("history");if(history==null)history=new org.json.JSONArray();
@@ -57,7 +57,7 @@ final class RepeatActions {
                 TaskRecord task = store.getTask(taskId);
                 if (task == null || TaskRecord.PROCESSING.equals(task.status) || TaskRecord.QUEUED.equals(task.status))
                     throw new IllegalStateException("请等待解析完成");
-                if (store.isManagedHomework(id, taskId)) throw new IllegalArgumentException("同步作业由学在浙大管理");
+                if (store.isManagedHomework(id, taskId)) throw new IllegalArgumentException("同步作业由作业平台管理");
                 EventCandidate changed;
                 if ("rule".equals(action)) {
                     if (current.repeatRule != null) throw new IllegalArgumentException("已有重复系列请停止后新建，历史记录将保留");

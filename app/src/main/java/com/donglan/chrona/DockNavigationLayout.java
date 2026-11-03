@@ -122,8 +122,12 @@ final class DockNavigationLayout extends FrameLayout {
     }
     /** Fill the content width without altering the highlight's motion or overflow geometry. */
     FrameLayout fullWidthMotionHost() {
+        return fullWidthMotionHost(false);
+    }
+    /** Clipping forms reserve an envelope while retaining the full-width track's no-lean behavior. */
+    FrameLayout fullWidthMotionHost(boolean reserveEnvelope) {
         fullWidthMotion = true;
-        return motionHostLayout(true, false);
+        return motionHostLayout(!reserveEnvelope, reserveEnvelope);
     }
     private FrameLayout motionHostLayout(boolean overlapRows, boolean reserveHorizontal) {
         DockNavigationLayout dock = this;

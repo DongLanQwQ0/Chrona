@@ -22,15 +22,26 @@ import java.util.UUID;
 /** One authoritative device fetches homework; other devices receive ordinary task results. */
 public final class ZjuHomeworkStore {
     public static final String SOURCE = "zju-homework";
+    public static final String PTA_SOURCE = "pta-homework";
     private final Context context;
-    public ZjuHomeworkStore(Context context) { this.context = context.getApplicationContext(); }
+    private final int sourceId;
+    public ZjuHomeworkStore(Context context) { this(context, 1); }
+    ZjuHomeworkStore(Context context, int sourceId) {
+        if (sourceId != 1 && sourceId != 2) throw new IllegalArgumentException("未知作业来源");
+        this.context = context.getApplicationContext(); this.sourceId = sourceId;
+    }
 
     public static final class State {
         public final boolean enabled;
         public final String account;
         public final long generation, captureId;
+        public final int sourceId;
         State(boolean enabled, String account, long generation, long captureId) {
+            this(enabled,account,generation,captureId,1);
+        }
+        State(boolean enabled,String account,long generation,long captureId,int sourceId){
             this.enabled = enabled; this.account = account; this.generation = generation; this.captureId = captureId;
+            this.sourceId=sourceId;
         }
     }
     public static final class Result {
@@ -56,13 +67,26 @@ public final class ZjuHomeworkStore {
     }
 
     static State state(SQLiteDatabase db) {
-        try (Cursor cursor = db.rawQuery("SELECT enabled,account,generation,capture_id FROM managed_zju_state WHERE id=1", null)) {
+        return state(db, 1);
+    }
+    static State state(SQLiteDatabase db, int sourceId) {
+        try (Cursor cursor = db.rawQuery("SELECT enabled,account,generation,capture_id FROM managed_zju_state WHERE id=?", new String[]{Integer.toString(sourceId)})) {
             if (!cursor.moveToFirst()) throw new IllegalStateException("作业同步状态缺失");
-            return new State(cursor.getInt(0) != 0, cursor.getString(1), cursor.getLong(2), cursor.isNull(3) ? 0 : cursor.getLong(3));
+            return new State(cursor.getInt(0) != 0, cursor.getString(1), cursor.getLong(2), cursor.isNull(3) ? 0 : cursor.getLong(3),sourceId);
         }
     }
     public State state() {
-        try (TaskStore store = new TaskStore(context)) { return state(store.getReadableDatabase()); }
+        try (TaskStore store = new TaskStore(context)) { return state(store.getReadableDatabase(), sourceId); }
+    }
+
+    static State bindingForCapture(SQLiteDatabase db, long capture) {
+        try (Cursor row = db.rawQuery("SELECT id FROM managed_zju_state WHERE capture_id=?", new String[]{Long.toString(capture)})) {
+            return row.moveToFirst() ? state(db, row.getInt(0)) : new State(false, "", 0, 0);
+        }
+    }
+
+    static boolean sourceEnabled(Context context, long capture) {
+        try (TaskStore store = new TaskStore(context)) { return bindingForCapture(store.getReadableDatabase(), capture).enabled; }
     }
 
     /** Courses belonging to this exact active binding, including completed historical work. */
@@ -70,7 +94,7 @@ public final class ZjuHomeworkStore {
         Set<String> result = new HashSet<>();
         try (TaskStore store = new TaskStore(context)) {
             SQLiteDatabase db = store.getReadableDatabase();
-            State current = state(db);
+            State current = state(db, sourceId);
             if (!current.enabled || current.generation != generation || !Objects.equals(current.account, account)) return result;
             try (Cursor cursor = db.rawQuery("SELECT snapshot FROM zju_homework_map WHERE account=? AND capture_id=? AND ignored=0",
                     new String[]{account, Long.toString(current.captureId)})) {
@@ -93,7 +117,7 @@ public final class ZjuHomeworkStore {
             if (cursor.moveToFirst()) {
                 try {
                     JSONObject snapshot = new JSONObject(cursor.getString(0));
-                    return HomeworkLinks.fromUrl(snapshot.optString("url", ""), snapshot.optString("courseId", ""));
+                return HomeworkLinks.fromUrl(snapshot.optString("url", ""), snapshot.optString("courseId", ""));
                 } catch (org.json.JSONException invalid) { return HomeworkLinks.NONE; }
             }
         }
@@ -103,19 +127,19 @@ public final class ZjuHomeworkStore {
     /** Only an explicit settings action may create/rebind the managed capture. */
     public void configure(String account, boolean enabled) {
         account = account == null ? "" : account.trim();
-        if (enabled && account.isEmpty()) throw new IllegalArgumentException("请先登录浙大账号");
+        if (enabled && account.isEmpty()) throw new IllegalArgumentException(sourceId==2?"请先登录 PTA":"请先登录浙大账号");
         try (TaskStore store = new TaskStore(context)) {
             List<Long> alerts = new ArrayList<>(); boolean committed = false;
             SQLiteDatabase db = store.getWritableDatabase(); db.beginTransaction();
             try {
-                State previous = state(db);
+                State previous = state(db, sourceId);
                 for (EventCandidate item : store.getCandidates(previous.captureId)) if (item.calendarEventId != null) alerts.add(item.id);
                 long capture = 0;
                 try (Cursor cursor = db.rawQuery("SELECT z.capture_id FROM zju_homework_captures z JOIN tasks t ON t.id=z.capture_id WHERE z.account=? ORDER BY z.capture_id DESC LIMIT 1", new String[]{account})) {
                     if (cursor.moveToFirst()) capture = cursor.getLong(0);
                 }
                 if (enabled && capture == 0) {
-                    capture = store.insertTask("作业", null, SOURCE, System.currentTimeMillis());
+                    capture = store.insertTask(sourceId == 2 ? "PTA 作业" : "作业", null, sourceId == 2 ? PTA_SOURCE : SOURCE, System.currentTimeMillis());
                     store.updateStatus(capture, TaskRecord.READY, null);
                     store.stableTaskId(capture);
                     db.execSQL("INSERT INTO zju_homework_captures(capture_id,account) VALUES(?,?)", new Object[]{capture, account});
@@ -123,8 +147,8 @@ public final class ZjuHomeworkStore {
                     db.delete("zju_homework_map", "account=?", new String[]{account});
                 }
                 if (previous.enabled != enabled || !Objects.equals(previous.account, account) || previous.captureId != capture) {
-                    db.execSQL("UPDATE managed_zju_state SET enabled=?,account=?,generation=generation+1,capture_id=? WHERE id=1",
-                            new Object[]{enabled ? 1 : 0, account, capture == 0 ? null : capture});
+                    db.execSQL("UPDATE managed_zju_state SET enabled=?,account=?,generation=generation+1,capture_id=? WHERE id=?",
+                            new Object[]{enabled ? 1 : 0, account, capture == 0 ? null : capture, sourceId});
                 }
                 for (EventCandidate item : store.getCandidates(capture)) if (item.calendarEventId != null && !alerts.contains(item.id)) alerts.add(item.id);
                 db.setTransactionSuccessful(); committed = true;
@@ -138,7 +162,7 @@ public final class ZjuHomeworkStore {
             List<Long> alerts = new ArrayList<>(); boolean committed = false;
             SQLiteDatabase db = store.getWritableDatabase(); db.beginTransaction();
             try {
-                State current = state(db);
+                State current = state(db, sourceId);
                 if (!current.enabled || current.generation != generation || !Objects.equals(current.account, account)
                         || current.captureId == 0 || store.getTask(current.captureId) == null) return new Result(0, 0, 0, 0, 0, List.of(), List.of());
                 int added = 0, updated = 0, completed = 0, actionableAdded = 0, actionableUpdated = 0;
@@ -210,9 +234,8 @@ public final class ZjuHomeworkStore {
     }
 
     long newestUnread(TaskStore store) {
-        if (!new ZjuSettingsStore(context).enabled()) return 0;
         try (Cursor rows = store.getReadableDatabase().rawQuery("SELECT m.candidate_id FROM zju_homework_map m "
-                     + "JOIN managed_zju_state s ON s.id=1 AND s.enabled=1 AND s.account=m.account AND s.capture_id=m.capture_id "
+                     + "JOIN managed_zju_state s ON s.enabled=1 AND s.account=m.account AND s.capture_id=m.capture_id "
                      + "JOIN event_candidates c ON c.id=m.candidate_id WHERE m.unread=1 AND m.ignored=0 "
                      + "AND c.category='homework' AND c.completed_at_millis IS NULL ORDER BY m.candidate_id DESC LIMIT 1", null)) {
             return rows.moveToFirst() ? rows.getLong(0) : 0;
@@ -222,7 +245,7 @@ public final class ZjuHomeworkStore {
     void markSeen(long candidateId) {
         try (TaskStore store = new TaskStore(context)) {
             store.getWritableDatabase().execSQL("UPDATE zju_homework_map SET unread=0 WHERE candidate_id=? "
-                    + "AND capture_id=(SELECT capture_id FROM managed_zju_state WHERE id=1 AND enabled=1)", new Object[]{candidateId});
+                    + "AND capture_id IN (SELECT capture_id FROM managed_zju_state WHERE enabled=1)", new Object[]{candidateId});
         }
     }
 
@@ -252,7 +275,7 @@ public final class ZjuHomeworkStore {
         try (TaskStore store = new TaskStore(context)) {
             SQLiteDatabase db = store.getReadableDatabase();
             try (Cursor cursor = db.query("zju_homework_history", new String[]{"title", "change", "at_millis", "before_json", "after_json", "remote_updated_at", "id"},
-                    "account=? AND id<?", new String[]{state(db).account,Long.toString(beforeId)}, null, null, "id DESC", Integer.toString(Math.max(1, Math.min(1000, limit))))) {
+                    "account=? AND id<?", new String[]{state(db, sourceId).account,Long.toString(beforeId)}, null, null, "id DESC", Integer.toString(Math.max(1, Math.min(1000, limit))))) {
                 while (cursor.moveToNext()) result.add(new History(cursor));
             }
         }

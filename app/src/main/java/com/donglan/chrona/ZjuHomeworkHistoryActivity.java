@@ -62,7 +62,7 @@ public final class ZjuHomeworkHistoryActivity extends Activity {
         long cursor = beforeId;
         ZjuSync.WORKER.execute(() -> {
             List<ZjuHomeworkStore.History> rows;
-            try { rows = new ZjuHomeworkStore(this).history(PAGE_SIZE, cursor); }
+            try { rows = new ZjuHomeworkStore(this,getIntent().getIntExtra("source_id",1)).history(PAGE_SIZE, cursor); }
             catch (Exception error) {
                 runOnUiThread(() -> {
                     if (isDestroyed()||isFinishing()) return;

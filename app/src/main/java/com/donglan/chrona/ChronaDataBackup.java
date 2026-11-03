@@ -462,6 +462,9 @@ public final class ChronaDataBackup {
             ZjuSettingsStore school = new ZjuSettingsStore(context);
             school.options(false, school.prefs.getBoolean("timetable", false));
             new ZjuHomeworkStore(context).configure(school.account(), false);
+            PtaSettingsStore pta=new PtaSettingsStore(context);
+            pta.prefs.edit().putBoolean("enabled",false).apply();
+            new ZjuHomeworkStore(context,2).configure(pta.account(),false);
             AndroidSync.resetAfterRestore(context);
             return result + "\n自动同步已关闭。已有日程保留同步身份，与云端不同的版本可能待确认，请整理后再手动同步。";
             }

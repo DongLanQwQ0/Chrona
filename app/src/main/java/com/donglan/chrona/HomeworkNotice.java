@@ -97,9 +97,12 @@ public final class HomeworkNotice extends BroadcastReceiver {
             long expiry, boolean update, boolean waiting) {
         if (items.size() != ids.size()) throw new IllegalArgumentException("Homework identities do not match notice items");
         if (items.isEmpty()) return;
-        var binding = new ZjuHomeworkStore(context).state();
-        long capture = binding.captureId;
-        if (capture <= 0 || !binding.enabled) return;
+        long capture;
+        try(var store=new com.donglan.chrona.data.TaskStore(context)){
+            var candidates=store.getCandidatesByIds(List.of(ids.get(0)));
+            var binding=candidates.isEmpty()?new ZjuHomeworkStore(context).state():ZjuHomeworkStore.bindingForCapture(store.getReadableDatabase(),candidates.get(0).taskId);
+            capture=binding.captureId;if(capture<=0||!binding.enabled)return;
+        }
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
         manager.createNotificationChannel(new NotificationChannel(CHANNEL, "作业更新", NotificationManager.IMPORTANCE_DEFAULT));
@@ -186,8 +189,7 @@ public final class HomeworkNotice extends BroadcastReceiver {
         long expiry=prefs.getLong("expiry",0);
         if(expiry<=0)return;
         boolean waiting = awaitingScreen(context);
-        ZjuHomeworkStore.State state=new ZjuHomeworkStore(context).state();
-        if((!waiting && System.currentTimeMillis()>=expiry) || !state.enabled || state.captureId!=prefs.getLong("capture",0)) {
+        if(!waiting && System.currentTimeMillis()>=expiry) {
             dismiss(context,expiry);return;
         }
         try(com.donglan.chrona.data.TaskStore store=new com.donglan.chrona.data.TaskStore(context)) {
@@ -199,7 +201,8 @@ public final class HomeworkNotice extends BroadcastReceiver {
                 // ID zero is reserved for the explicit no-database-write phone preview.
                 if(id>0) {
                     var rows=store.getCandidatesByIds(List.of(id));
-                    if(rows.isEmpty() || rows.get(0).completed() || !rows.get(0).isHomework())continue;
+                    if(rows.isEmpty() || rows.get(0).completed() || !rows.get(0).isHomework()
+                            || !ZjuHomeworkStore.bindingForCapture(store.getReadableDatabase(),rows.get(0).taskId).enabled)continue;
                 }
                 ids.add(id);
                 remaining.add(savedItem(item));

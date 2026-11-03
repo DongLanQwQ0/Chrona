@@ -83,6 +83,40 @@ public final class ZjuHomeworkUpdateCheck {
         check(CalendarStore.rows.get(recovered).title.equals("Shared failed commit")&&row(context,did).calendarEventId==detachedAlerts
                 &&CalendarStore.rows.get(detachedAlerts)==original,"recovered school update preserves second owner");
     }
+    static void ptaSources(File root)throws Exception {
+        Context context=new Context(new File(root,"pta-sources-"+System.nanoTime()));
+        ZjuHomeworkStore school=new ZjuHomeworkStore(context),pta=new ZjuHomeworkStore(context,2);
+        school.configure("school-a",true);pta.configure("pta:account-a",true);
+        long schoolGeneration=school.state().generation, ptaGeneration=pta.state().generation;
+        var a=school.apply("school-a",schoolGeneration,List.of(homework("same","学校作业",DUE,false)));
+        var b=pta.apply("pta:account-a",ptaGeneration,List.of(homework("same","PTA 作业",DUE,null)));
+        check(a.added==1&&b.added==1,"each source owns independent capture and same remote key");
+        check(school.state().captureId!=pta.state().captureId,"independent source state");
+        check(pta.apply("pta:account-a",ptaGeneration,List.of(homework("same","PTA 作业",DUE,null))).added==0,"PTA refresh does not duplicate");
+        long id=b.newHomeworkIds.get(0);personal(context,id,DUE-7200000,0);
+        pta.apply("pta:account-a",ptaGeneration,List.of(homework("same","循环练习",DUE+3600000,null)));
+        check(row(context,id).startAtMillis==DUE-7200000&&row(context,id).dueAtMillis==DUE+3600000,"PTA update preserves personal execution");
+        pta.apply("pta:account-a",ptaGeneration,List.of());
+        check(row(context,id).title.equals("循环练习"),"future-only snapshot never removes expired homework");
+        try(TaskStore store=new TaskStore(context)){
+            var query=new com.donglan.chrona.data.ScheduleQuery(3,"homework",0,"PTA",null,null,System.currentTimeMillis(),java.time.ZoneId.systemDefault());
+            check(store.queryScheduleIds(query).equals(List.of(id)),"source name searchable in shared schedule query");
+            check(store.queryScheduleIds(new com.donglan.chrona.data.ScheduleQuery(3,"homework",0,"PTA 循环",null,null,System.currentTimeMillis(),java.time.ZoneId.systemDefault())).equals(List.of(id)),"source and content combined search");
+            check(store.queryScheduleIds(new com.donglan.chrona.data.ScheduleQuery(3,"homework",0,"",null,null,System.currentTimeMillis(),java.time.ZoneId.systemDefault(),0,3)).equals(List.of(id)),"PTA source filter isolates school work");
+            check(store.queryInboxIds(new com.donglan.chrona.data.InboxQuery(0,null,"pta"),true).equals(List.of(pta.state().captureId)),"source searchable in inbox");
+            store.getWritableDatabase().delete("event_candidates","id=?",new String[]{""+id});
+        }
+        check(pta.apply("pta:account-a",ptaGeneration,List.of(homework("same","PTA 作业",DUE,null))).added==0,"PTA ignored deletion never resurrects");
+        pta.configure("pta:account-a",false);
+        check(school.state().enabled&&school.state().generation==schoolGeneration,"PTA disable does not alter school binding");
+        check(pta.apply("pta:account-a",ptaGeneration,List.of(homework("new","stale",DUE,null))).added==0,"stale PTA generation rejected");
+        pta.configure("pta:account-b",true);
+        check(pta.apply("pta:account-a",ptaGeneration,List.of(homework("new","stale",DUE,null))).added==0,"PTA account switch rejects in-flight old snapshot");
+        long capture=pta.state().captureId;
+        try(TaskStore store=new TaskStore(context)){store.getWritableDatabase().delete("tasks","id=?",new String[]{""+capture});}
+        check(!pta.state().enabled&&school.state().enabled,"capture deletion disables only its own provider");
+    }
+
     public static void main(String[] args)throws Exception{
         File directory=new File(args[0],"homework-"+System.nanoTime());Context c=new Context(directory);
         ZjuHomeworkStore managed=new ZjuHomeworkStore(c);managed.configure("account",true);long generation=managed.state().generation;
@@ -202,6 +236,7 @@ public final class ZjuHomeworkUpdateCheck {
             check(rejected && row(c, bid) != null, "reparse cannot wipe a managed homework capture");
         }
         sharedOwners(new File(args[0]));
+        ptaSources(new File(args[0]));
         System.out.println("PASS: "+checks+" production homework upsert/actionable/calendar retry checks against real SQLite");
     }
 }

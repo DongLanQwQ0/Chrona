@@ -1,5 +1,15 @@
 # 验证记录
 
+## PTA 接入与校园设置 — 2026-11-03
+
+- 固定候选 `0.15.110 / 272`；统一AVD `Chrona_Classroom_36 / emulator-5580`，未修改显示参数。release覆盖安装成功，debug／AndroidTest／release构建和lint通过：`build/pta-research-20261103/final-build.log`。
+- 用户提供会话验证官方读取接口：新增1条，重复同步新增0／更新0；PTA搜索1、学校搜索33、身份唯一、学校状态保持。`live-import.txt`、`live-refresh.txt`。凭据只存Keystore加密配置，未输出、未加入导出；Android临时导入文件读取后即删。
+- 生产持久化82项、排程57项、调度29项通过；排程使用假AI，不产生费用。查询、来源组合、数据库升级／删除回滚及备份检查通过。`homework-tests.log`、`planner-tests.log`、`cadence-tests.log`、`inbox-tests.log`、`schedule-tests.log`、`schema-tests.log`。
+- 真实Android SQLite／HTTP检查通过：正常局域网配对、日程和收件箱来源组合搜索、原始source字段及PTA可信链接。`http-tests.txt`。替身检查与真实提供方证据分开。
+- UI交互通过：搜索和滚动旋转恢复、长课程名原行更新、键盘字段可达、主动登录反馈、合成目录恢复。`ui-interactions.txt`；普通竖横屏／深浅主题及大字体字段降级JPEG见 `ui/pta-ui/`。人工验证码流程未完整操作。
+- 筛选高光取证原先从Dock中央起滑并SHOW_ON_SCREEN，只最小露出目标而未滚到底，原图不作为包络通过依据；改侧沟槽真实上滑后，首尾峰值完整。甩动提交另发现来源切到系统日程新增日期范围栏144px；改为布局后恢复可见锚点，并以新触摸代次取消迟到恢复。实际偏移1263→1407px恰抵消增高，120ms与稳定态一致，完整高光未被截。`ui-motion-fling.txt`及最新JPEG有效；专用只读UI审查结论可交付，无剩余P1/P2和关键UI缺口。
+- 未调用课堂AI、未恢复已暂停的总结回归；实机未连接，手机安装不在本次通过范围。
+
 ## 用户允许重试后要求失败即停 — 2026-11-03
 
 - 用户针对完整核图明确允许重复。gpt-5.6-luna同轮重试1仍在9秒server_is_overloaded，drafts2/parts0；间隔一分钟的重试2仍为相同服务过载，默认模型未改。证据`build/editorial114/retry1/audit.json`、`retry2/run.txt`和本课结束通知。第三次尚在60秒等待时用户要求停止5.6，已Ctrl-C本次脚本（exec26539 exit1），retry3/run.txt不存在且无课堂服务，未发第三次请求。

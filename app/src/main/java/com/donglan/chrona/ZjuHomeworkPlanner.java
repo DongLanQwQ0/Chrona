@@ -25,6 +25,7 @@ import java.util.Objects;
 final class ZjuHomeworkPlanner {
     private static final long REQUEST_BUDGET = 240_000L;
     private static volatile RequestControl active;
+    private static volatile int activeSource;
     private static final String RULES = "\n学校作业排程专用约束：本次只安排所给的这一项原作业，events必须恰好一项，禁止拆分或新增事项。"
             + "保留官方标题、正文和独立截止，不改提醒、分类、来源或身份。category=homework，start/end=null，"
             + "execution_time_explicit=false，all_day=false，recurrence=null，plan_group/plan_until=null。"
@@ -44,11 +45,11 @@ final class ZjuHomeworkPlanner {
     /** Called only for a newly inserted item, in the same SQLite transaction as its source map. */
     static void enqueue(Context context, TaskStore store, ZjuHomeworkStore.State state,
             long candidateId, String stableId, String officialSnapshot) {
-        if (!new ZjuSettingsStore(context).homeworkAutoPlan()) return;
+        if (!allowed(context,state)) return;
         EventCandidate item = candidate(store, candidateId);
         if (!eligible(item, System.currentTimeMillis())) return;
         try {
-            JSONObject request = new JSONObject().put("source", "zju_homework_schedule")
+            JSONObject request = new JSONObject().put("source", state.sourceId==2?"pta_homework_schedule":"zju_homework_schedule").put("source_id",state.sourceId)
                     .put("candidateId", candidateId).put("candidateSyncId", stableId)
                     .put("account", state.account).put("generation", state.generation)
                     .put("official_snapshot", officialSnapshot).put("baseline", baseline(item));
@@ -60,12 +61,16 @@ final class ZjuHomeworkPlanner {
     }
 
     static void cancel() { RequestControl request = active; if (request != null) request.cancel(); }
+    static void cancel(int sourceId){if(activeSource==sourceId)cancel();}
 
     static void cancelPending(Context context) {
-        cancel();
+        cancelPending(context,1);
+    }
+    static void cancelPending(Context context,int sourceId) {
+        cancel(sourceId);
         try (TaskStore store = new TaskStore(context)) {
             ContentValues values = new ContentValues(); values.put("state", "cancelled"); values.put("error", "作业自动排程已关闭");
-            store.getWritableDatabase().update("zju_homework_plans", values, "state IN ('queued','running')", null);
+            store.getWritableDatabase().update("zju_homework_plans", values, "state IN ('queued','running') AND task_id IN (SELECT capture_id FROM zju_homework_captures WHERE account IN (SELECT account FROM managed_zju_state WHERE id=?))", new String[]{Integer.toString(sourceId)});
         }
     }
 
@@ -73,8 +78,7 @@ final class ZjuHomeworkPlanner {
 
     /** The sync owner serializes calls; a fake provider/settings can exercise races without AI traffic. */
     static synchronized String processOne(Context context, Provider provider, AiSettings testSettings) {
-        ZjuSettingsStore settings = new ZjuSettingsStore(context);
-        if (!settings.enabled() || !settings.configured() || !settings.homeworkAutoPlan()) return "";
+        if (!allowed(context,new ZjuHomeworkStore(context).state()) && !allowed(context,new ZjuHomeworkStore(context,2).state())) return "";
         String runId = null; long candidateId = 0;
         try {
             AiSettings ai = testSettings == null ? new AiSettingsStore(context).load() : testSettings;
@@ -84,19 +88,21 @@ final class ZjuHomeworkPlanner {
             String zone = ZoneId.systemDefault().getId();
             try (RequestControl control = new RequestControl(REQUEST_BUDGET)) {
                 synchronized (AndroidSync.LOCK) {
-                    if (!settings.enabled() || !settings.configured() || !settings.homeworkAutoPlan()) return "";
                     active = control;
                     try (TaskStore store = new TaskStore(context)) {
                         SQLiteDatabase db = store.getWritableDatabase(); db.beginTransaction();
                         try {
-                            ZjuHomeworkStore.State binding = ZjuHomeworkStore.state(db);
-                            // No live request exists here: an old running row has an unknown paid outcome.
-                            TaskStore.finishInterruptedParseRuns(db, binding.captureId, "InterruptedHomeworkSchedule");
+                            // Recover unknown paid outcomes even when no queued row remains.
+                            for(int sourceId:new int[]{1,2}){
+                                ZjuHomeworkStore.State binding=ZjuHomeworkStore.state(db,sourceId);
+                                if(binding.captureId>0)TaskStore.finishInterruptedParseRuns(db,binding.captureId,"InterruptedHomeworkSchedule");
+                            }
                             try (Cursor row = db.rawQuery("SELECT candidate_id,request_json FROM zju_homework_plans WHERE state='queued' ORDER BY created_at,candidate_id LIMIT 1", null)) {
                                 if (!row.moveToFirst()) { db.setTransactionSuccessful(); return ""; }
                                 candidateId = row.getLong(0); request = new JSONObject(row.getString(1));
                             }
                             original = candidate(store, candidateId);
+                            activeSource=request.optInt("source_id",1);
                             String rejected = rejection(context, store, original, request, reference);
                             if (rejected != null) {
                                 finishQueue(db, candidateId, "cancelled", null, rejected);
@@ -167,7 +173,7 @@ final class ZjuHomeworkPlanner {
                     return "新作业已自动排程";
                 }
                 return "作业自动排程未应用，保留原截止";
-            } finally { active = null; }
+            } finally { active = null;activeSource=0; }
         } catch (Exception failure) {
             if (runId != null) try (TaskStore store = new TaskStore(context)) {
                 store.failParseRun(runId, failure instanceof java.io.InterruptedIOException, failure.getMessage());
@@ -202,10 +208,8 @@ final class ZjuHomeworkPlanner {
 
     private static String rejection(Context context, TaskStore store, EventCandidate current, JSONObject request, long now)
             throws org.json.JSONException {
-        ZjuSettingsStore settings = new ZjuSettingsStore(context);
-        ZjuHomeworkStore.State state = ZjuHomeworkStore.state(store.getReadableDatabase());
-        if (!settings.enabled() || !settings.configured() || !settings.homeworkAutoPlan() || !state.enabled
-                || !Objects.equals(settings.account(), request.getString("account"))
+        ZjuHomeworkStore.State state = ZjuHomeworkStore.state(store.getReadableDatabase(),request.optInt("source_id",1));
+        if (!allowed(context,state) || !state.enabled
                 || !Objects.equals(state.account, request.getString("account")) || state.generation != request.getLong("generation")
                 || current == null || current.taskId != state.captureId) return "作业来源或账号已改变";
         if (!eligible(current, now) || !baseline(current).toString().equals(request.getJSONObject("baseline").toString())
@@ -215,6 +219,12 @@ final class ZjuHomeworkPlanner {
             if (!row.moveToFirst() || !row.getString(0).equals(request.getString("official_snapshot"))) return "官方作业已改变";
         }
         return null;
+    }
+
+    private static boolean allowed(Context context,ZjuHomeworkStore.State state){
+        if(!state.enabled)return false;
+        if(state.sourceId==2){PtaSettingsStore p=new PtaSettingsStore(context);return p.enabled()&&p.autoPlan()&&p.account().equals(state.account);}
+        ZjuSettingsStore s=new ZjuSettingsStore(context);return s.enabled()&&s.configured()&&s.homeworkAutoPlan()&&s.account().equals(state.account);
     }
 
     private static String input(EventCandidate item, String zone) throws org.json.JSONException {

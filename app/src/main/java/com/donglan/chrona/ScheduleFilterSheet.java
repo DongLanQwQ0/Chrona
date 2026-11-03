@@ -30,6 +30,7 @@ final class ScheduleFilterSheet {
     private final Consumer<ScheduleFilterState> apply;
     private final LinearLayout body;
     private int scrollY;
+    private long scrollRestoreGeneration;
     private DateIntervalBar interval;
     private ChoiceDock dates, category, todo, publication, source;
 
@@ -72,6 +73,10 @@ final class ScheduleFilterSheet {
                 ? activity.getResources().getDisplayMetrics().heightPixels : visible.height();
         int maxHeight = Math.max(0, visibleHeight - dp(180));
         ScrollView scroll = new ScrollView(activity) {
+            @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){
+                if(event.getActionMasked()==android.view.MotionEvent.ACTION_DOWN)scrollRestoreGeneration++;
+                return super.dispatchTouchEvent(event);
+            }
             @Override protected void onMeasure(int width, int height) {
                 int limit = View.MeasureSpec.getMode(height) == View.MeasureSpec.UNSPECIFIED
                         ? maxHeight : Math.min(maxHeight, View.MeasureSpec.getSize(height));
@@ -107,23 +112,39 @@ final class ScheduleFilterSheet {
     }
 
     private void render() {
+        ScrollView viewport=body.getParent() instanceof ScrollView value?value:null;
+        int previous=viewport==null?scrollY:viewport.getScrollY();
+        View visibleAnchor=null;
+        for(int i=0;i<body.getChildCount();i++){
+            View child=body.getChildAt(i);
+            if(child.getVisibility()!=View.GONE&&child.getBottom()>previous){visibleAnchor=child;break;}
+        }
+        View anchor=visibleAnchor;
+        int anchorTop=anchor==null?0:anchor.getTop();
+        long generation=++scrollRestoreGeneration;
         if (dates == null) buildChoices();
         int dateIndex = draft.range == ScheduleFilterState.DATE || draft.range == ScheduleFilterState.CUSTOM
                 ? 4 : draft.range;
         dates.sync(dateIndex, true);
         category.sync(draft.source == 1 ? EventCategory.indexOf(EventCategory.EVENT) + 1 : draft.category,
-                draft.source == 0);
-        todo.sync(draft.source == 1 ? ScheduleQuery.TODO_ANY : draft.todoScope, draft.source == 0);
+                draft.source != 1);
+        todo.sync(draft.source == 1 ? ScheduleQuery.TODO_ANY : draft.todoScope, draft.source != 1);
         int publicationIndex = draft.source == 1 ? 3
                 : draft.publication == 3 ? 1 : draft.publication == 1 ? 2 : draft.publication == 2 ? 3 : 0;
-        publication.sync(publicationIndex, draft.source == 0);
+        publication.sync(publicationIndex, draft.source != 1);
         source.sync(draft.source, true);
         LocalDate[] window = draft.window(LocalDate.now());
         interval.setVisibility(window[0] == null ? View.GONE : View.VISIBLE);
         if (window[0] != null) interval.setText(window[0] + " — " + window[1].minusDays(1));
-        if (body.getParent() instanceof ScrollView scroll) {
-            int previous = scrollY;
-            scroll.post(() -> scroll.scrollTo(0, previous));
+        if (viewport!=null) {
+            viewport.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener(){
+                public boolean onPreDraw(){
+                    viewport.getViewTreeObserver().removeOnPreDrawListener(this);
+                    if(generation==scrollRestoreGeneration)
+                        viewport.scrollTo(0,previous+(anchor==null?0:anchor.getTop()-anchorTop));
+                    return true;
+                }
+            });
         }
     }
 
@@ -165,7 +186,7 @@ final class ScheduleFilterSheet {
         });
         publication = new ChoiceDock("日历状态", R.drawable.ic_inbox_outline, publicationOptions(),
                 value -> draft.publication = new int[]{0, 3, 1, 2}[value]);
-        source = new ChoiceDock("来源", R.drawable.ic_filter_alt, new String[]{"拾时", "系统日程"}, value -> {
+        source = new ChoiceDock("来源", R.drawable.ic_filter_alt, new String[]{"全部", "系统日程", "学在浙大", "PTA"}, value -> {
             draft.source = value;
             if (value == 1) {
                 draft.category = draft.publication = 0;
@@ -179,6 +200,9 @@ final class ScheduleFilterSheet {
         final String name;
         final String[] choices;
         final java.util.function.IntConsumer changed;
+        final TextView compact;
+        final View motionHost;
+        float requiredWidth;
         int selected = -1;
 
         ChoiceDock(String name, int iconId, String[] choices, java.util.function.IntConsumer changed) {
@@ -203,6 +227,7 @@ final class ScheduleFilterSheet {
                 option.setMinHeight(dp(44));
                 option.setOnClickListener(view -> select(index));
                 float labelWidth = option.getPaint().measureText(choices[i]) + option.getPaddingLeft() + option.getPaddingRight() + dp(8);
+                requiredWidth+=labelWidth;
                 dock.addItem(option, new LinearLayout.LayoutParams(0, dp(44), labelWidth));
                 // Preserve the requested readable size and one-line labels; each cell's
                 // share includes its text and padding rather than enforcing equal widths.
@@ -210,7 +235,21 @@ final class ScheduleFilterSheet {
                 option.setSingleLine(true);
                 option.setHorizontallyScrolling(false);
             }
-            UiStyle.addSpaced(body, dock.fullWidthMotionHost(), 0, 6);
+            motionHost=dock.fullWidthMotionHost(true);
+            compact=new TextView(activity);UiStyle.fieldTrigger(compact,true);compact.setVisibility(View.GONE);
+            compact.setOnClickListener(v->UiDialogs.choiceDialog(activity,name,choices,Math.max(0,selected),this::select));
+            LinearLayout container=new LinearLayout(activity){
+                @Override protected void onMeasure(int widthSpec,int heightSpec){
+                    motionHost.measure(widthSpec,View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
+                    int available=View.MeasureSpec.getSize(widthSpec)-motionHost.getPaddingLeft()-motionHost.getPaddingRight();
+                    boolean narrow=available<requiredWidth+dp(16);
+                    compact.setVisibility(narrow?View.VISIBLE:View.GONE);motionHost.setVisibility(narrow?View.GONE:View.VISIBLE);
+                    super.onMeasure(widthSpec,heightSpec);
+                }
+            };container.setOrientation(LinearLayout.VERTICAL);
+            container.setClipChildren(false);container.setClipToPadding(false);
+            container.addView(motionHost,new LinearLayout.LayoutParams(-1,-2));container.addView(compact,new LinearLayout.LayoutParams(-1,-2));
+            UiStyle.addSpaced(body,container,0,6);
         }
 
         void select(int index) {
@@ -223,6 +262,8 @@ final class ScheduleFilterSheet {
             if (selected < 0) dock.setSelectedIndex(index);
             else dock.finishPageSelection(index);
             selected = index;
+            if(!choices[index].contentEquals(compact.getText()))compact.setText(choices[index]);
+            compact.setEnabled(enabled);compact.setContentDescription(name+"，"+choices[index]);
             dock.setEnabled(enabled);
             dock.setAlpha(enabled ? 1f : .45f);
             dock.setContentDescription(name + "选择栏，" + choices[index] + (enabled ? "" : "，当前来源不可修改"));

@@ -66,7 +66,7 @@ classes = root / 'app/build/intermediates/javac/debug/compileDebugJavaWithJavac/
 classpath = os.pathsep.join(map(str, (root / 'build/ai-checks/json.jar', classes)))
 java = Path(os.environ.get('JAVA_HOME', 'D:/Minecraft/java21')) / 'bin'
 names = ('data/TaskStore.java', 'data/TaskRecord.java', 'data/ScheduleQuery.java', 'zju/ZjuSnapshot.java',
-         'ZjuHomeworkStore.java', 'ZjuHomeworkPlanner.java', 'ZjuSettingsStore.java', 'HomeworkLinks.java', 'ai/AiSettings.java',
+         'ZjuHomeworkStore.java', 'ZjuHomeworkPlanner.java', 'ZjuSettingsStore.java', 'PtaSettingsStore.java', 'HomeworkLinks.java', 'ai/AiSettings.java',
          'ai/ParseResult.java', 'ai/SchedulePreferences.java', 'ai/SchedulePrompt.java', 'ai/TimeAssessment.java',
          'ai/ChatCompletionClient.java', 'ai/ResponsesProtocol.java', 'ai/SemanticEventNormalizer.java', 'ai/RequestOptions.java',
          'ai/StreamChunkContent.java', 'net/RequestControl.java')

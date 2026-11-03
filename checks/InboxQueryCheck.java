@@ -19,6 +19,8 @@ public final class InboxQueryCheck {
                 + String.join(",", args) + "\t" + encode(query.orderBy(oldest)));
     }
     public static void main(String[] args) {
+        check(new InboxQuery(0,null,"PTA 循环").matchesSearch(null,null,"循环练习",null,"pta-homework"),"Source participates in cross-field terms");
+        check(new InboxQuery(0,null,"学在浙大").matchesSearch(null,null,"作业",null,"zju-homework"),"Source display label searchable");
         check(new InboxQuery(0, null, " ÄBC ").matchesSearch("äBc", null), "Unicode case-insensitive search");
         check(new InboxQuery(0, null, "100%_\\").matchesSearch(null, "100%_\\ archive"), "Literal wildcard search/link body");
         check(!new InboxQuery(0, null, "100%_").matchesSearch("100hello", null), "Wildcards must not expand");

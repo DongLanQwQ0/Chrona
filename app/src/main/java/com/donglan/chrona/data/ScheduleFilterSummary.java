@@ -11,6 +11,8 @@ public final class ScheduleFilterSummary {
     public static String describe(ScheduleFilterState state, String query, LocalDate today) {
         List<String> parts = new ArrayList<>();
         if (state.source == 1) parts.add("系统日历");
+        if (state.source == 2) parts.add("学在浙大");
+        if (state.source == 3) parts.add("PTA");
         LocalDate[] window = state.window(today);
         if (window[0] != null) {
             LocalDate end = window[1].minusDays(1);

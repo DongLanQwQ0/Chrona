@@ -23,7 +23,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     public static final int WIDGET_ITEM_LIMIT = 200;
     private static final long ALL_DAY_DURATION_MILLIS = 86_400_000L;
     private static final String DATABASE_NAME = "chrona.db";
-    public static final int DATABASE_VERSION = 18;
+    public static final int DATABASE_VERSION = 19;
 
     private final Context context;
     private final LiveDatabaseAccess.Lease liveAccess;
@@ -314,11 +314,24 @@ public final class TaskStore extends SQLiteOpenHelper {
         if (oldVersion < 16) addParseAudits(db);
         if (oldVersion < 17) addOccurrenceUpdates(db);
         if (oldVersion < 18) addHomeworkPlans(db);
+        if (oldVersion < 19) addPtaBinding(db);
         DiagLog.add(context, "db upgrade done, rows=" + countIn(db, "tasks"));
     }
 
     public static void addHomeworkAttention(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE zju_homework_map ADD COLUMN unread INTEGER NOT NULL DEFAULT 0 CHECK(unread IN (0,1))");
+    }
+
+    private static void addPtaBinding(SQLiteDatabase db) {
+        db.execSQL("DROP TRIGGER zju_capture_deleted");
+        db.execSQL("CREATE TABLE managed_homework_binding(id INTEGER PRIMARY KEY CHECK(id IN (1,2)),enabled INTEGER NOT NULL DEFAULT 0,generation INTEGER NOT NULL DEFAULT 0,account TEXT NOT NULL DEFAULT '',capture_id INTEGER)");
+        db.execSQL("INSERT INTO managed_homework_binding SELECT * FROM managed_zju_state");
+        db.execSQL("DROP TABLE managed_zju_state");
+        db.execSQL("ALTER TABLE managed_homework_binding RENAME TO managed_zju_state");
+        db.execSQL("INSERT OR IGNORE INTO managed_zju_state(id) VALUES(2)");
+        captureDeletionTrigger(db);
+        for (String operation : new String[]{"INSERT", "UPDATE", "DELETE"})
+            db.execSQL("CREATE TRIGGER revision_managed_zju_state_" + operation + " AFTER " + operation + " ON managed_zju_state BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END");
     }
 
     private static void addHomeworkPlans(SQLiteDatabase db) {
@@ -562,22 +575,27 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     /** Managed-source metadata remains local; portable task results use normal sync identities. */
     public static void addZjuHomework(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE managed_zju_state(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,generation INTEGER NOT NULL DEFAULT 0,account TEXT NOT NULL DEFAULT '',capture_id INTEGER)");
+        db.execSQL("CREATE TABLE managed_zju_state(id INTEGER PRIMARY KEY CHECK(id IN (1,2)),enabled INTEGER NOT NULL DEFAULT 0,generation INTEGER NOT NULL DEFAULT 0,account TEXT NOT NULL DEFAULT '',capture_id INTEGER)");
         db.execSQL("INSERT INTO managed_zju_state(id) VALUES(1)");
+        db.execSQL("INSERT OR IGNORE INTO managed_zju_state(id) VALUES(2)");
         db.execSQL("CREATE TABLE zju_homework_captures(capture_id INTEGER PRIMARY KEY,account TEXT NOT NULL)");
         db.execSQL("CREATE TABLE zju_homework_map(account TEXT NOT NULL,remote_key TEXT NOT NULL,capture_id INTEGER NOT NULL,candidate_id INTEGER,sync_id TEXT,ignored INTEGER NOT NULL DEFAULT 0,snapshot TEXT NOT NULL,pending_calendar INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(account,remote_key))");
         db.execSQL("CREATE INDEX zju_homework_candidate ON zju_homework_map(candidate_id)");
         db.execSQL("CREATE TABLE zju_homework_history(id INTEGER PRIMARY KEY AUTOINCREMENT,account TEXT NOT NULL,title TEXT NOT NULL,change TEXT NOT NULL,at_millis INTEGER NOT NULL,before_json TEXT,after_json TEXT,remote_updated_at TEXT)");
         db.execSQL("CREATE TABLE zju_homework_deleted_tasks(sync_id TEXT PRIMARY KEY)");
         // Triggers cover UI deletion, sync tombstones and direct SQL equally.
-        db.execSQL("CREATE TRIGGER zju_capture_deleted BEFORE DELETE ON tasks BEGIN "
-                + "INSERT OR IGNORE INTO zju_homework_deleted_tasks SELECT sync_id FROM sync_task_map WHERE local_id=OLD.id AND EXISTS(SELECT 1 FROM zju_homework_captures WHERE capture_id=OLD.id); "
-                + "UPDATE managed_zju_state SET enabled=0,generation=generation+1,capture_id=NULL WHERE capture_id=OLD.id; END");
+        captureDeletionTrigger(db);
         db.execSQL("CREATE TRIGGER zju_candidate_deleted BEFORE DELETE ON event_candidates BEGIN "
                 + "UPDATE zju_homework_map SET ignored=1 WHERE candidate_id=OLD.id; END");
         for (String table : new String[]{"managed_zju_state", "zju_homework_map", "zju_homework_history", "zju_homework_captures", "zju_homework_deleted_tasks"})
             for (String operation : new String[]{"INSERT", "UPDATE", "DELETE"})
                 db.execSQL("CREATE TRIGGER revision_" + table + "_" + operation + " AFTER " + operation + " ON " + table + " BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END");
+    }
+
+    private static void captureDeletionTrigger(SQLiteDatabase db) {
+        db.execSQL("CREATE TRIGGER zju_capture_deleted BEFORE DELETE ON tasks BEGIN "
+                + "INSERT OR IGNORE INTO zju_homework_deleted_tasks SELECT sync_id FROM sync_task_map WHERE local_id=OLD.id AND EXISTS(SELECT 1 FROM zju_homework_captures WHERE capture_id=OLD.id); "
+                + "UPDATE managed_zju_state SET enabled=0,generation=generation+1,capture_id=NULL WHERE capture_id=OLD.id; END");
     }
 
     public boolean ignoredZjuCandidate(String stableId) {
@@ -750,7 +768,7 @@ public final class TaskStore extends SQLiteOpenHelper {
             while (cursor.moveToNext()) items.add(readCandidate(cursor));
         }
         for (EventCandidate series : repeatingCandidates()) {
-            EventCandidate row = query.seriesRow(series);
+            EventCandidate row = query.seriesRow(series,sourceSearchText(series.taskId));
             if (row != null) items.add(row);
         }
         items.sort(query.comparator(oldestFirst));
@@ -817,7 +835,7 @@ public final class TaskStore extends SQLiteOpenHelper {
         }
         ScheduleQuery repeatedOpen = new ScheduleQuery(3, null, 0, "", null, null, now, zone, ScheduleQuery.TODO_OPEN);
         for (EventCandidate series : repeatingCandidates()) {
-            EventCandidate row = repeatedOpen.seriesRow(series);
+            EventCandidate row = repeatedOpen.seriesRow(series,sourceSearchText(series.taskId));
             if (row == null) continue;
             total++;
             Long deadline = row.effectiveDueAtMillis();
@@ -840,7 +858,7 @@ public final class TaskStore extends SQLiteOpenHelper {
                 "repeat_rule IS NULL AND (" + query.selection + ")", query.arguments, null, null, "id ASC")) {
             while (cursor.moveToNext()) ids.add(cursor.getLong(0));
         }
-        for (EventCandidate series : repeatingCandidates()) if (query.seriesRow(series) != null) ids.add(series.id);
+        for (EventCandidate series : repeatingCandidates()) if (query.seriesRow(series,sourceSearchText(series.taskId)) != null) ids.add(series.id);
         return ids;
     }
 
@@ -849,6 +867,11 @@ public final class TaskStore extends SQLiteOpenHelper {
         int end = (int) Math.min(Integer.MAX_VALUE, offset + ScheduleQuery.PAGE_SIZE);
         List<EventCandidate> items = scheduleRows(query, oldestFirst, end);
         return offset >= items.size() ? new ArrayList<>() : new ArrayList<>(items.subList((int) offset, items.size()));
+    }
+
+    private String sourceSearchText(long taskId){
+        String source=scalar("SELECT source FROM tasks WHERE id=?",Long.toString(taskId));
+        return (source==null?"":source)+" "+TaskRecord.sourceLabel(source);
     }
 
     /** Explicit deep navigation uses the same projected order as the visible paginated list. */
@@ -1084,12 +1107,12 @@ public final class TaskStore extends SQLiteOpenHelper {
         String[] columns = query.keyword.isEmpty() ? new String[]{"id"}
                 : new String[]{"id", "raw_text", "link_text",
                     "(SELECT group_concat(title, char(10)) FROM event_candidates WHERE task_id=tasks.id)",
-                    "(SELECT group_concat(description, char(10)) FROM event_candidates WHERE task_id=tasks.id)"};
+                    "(SELECT group_concat(description, char(10)) FROM event_candidates WHERE task_id=tasks.id)","source"};
         try (Cursor cursor = getReadableDatabase().query("tasks", columns, query.selection,
                 query.arguments, null, null, query.orderBy(oldestFirst))) {
             while (cursor.moveToNext()) {
                 if (query.keyword.isEmpty() || query.matchesSearch(cursor.getString(1), cursor.getString(2),
-                        cursor.getString(3), cursor.getString(4)))
+                        cursor.getString(3), cursor.getString(4),cursor.getString(5)))
                     ids.add(cursor.getLong(0));
             }
         }
@@ -1597,7 +1620,7 @@ public final class TaskStore extends SQLiteOpenHelper {
     /** Updates a reviewed candidate without changing its calendar association. */
     public boolean updateCandidateDescription(long candidateId, long taskId, String description) {
         if (isManagedHomework(candidateId, taskId))
-            throw new IllegalArgumentException("作业内容由学在浙大同步，请到原平台修改");
+            throw new IllegalArgumentException("作业内容由作业平台同步，请到原平台修改");
         ContentValues values = new ContentValues();
         values.put("description", description);
         return getWritableDatabase().update("event_candidates", values, "id=? AND task_id=?",
@@ -1649,7 +1672,7 @@ public final class TaskStore extends SQLiteOpenHelper {
 
     public boolean setCandidateCompleted(long id, long taskId, boolean completed) {
         if (!completed && isSubmittedHomework(id, taskId))
-            throw new IllegalArgumentException("此作业已提交，提交状态由学在浙大管理");
+            throw new IllegalArgumentException("此作业已提交，提交状态由作业平台管理");
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
         try {
             ContentValues values=new ContentValues();
@@ -1681,9 +1704,9 @@ public final class TaskStore extends SQLiteOpenHelper {
                 || !java.util.Objects.equals(current.dueAtMillis, candidate.dueAtMillis)
                 || !java.util.Objects.equals(current.category, candidate.category)
                 || current.isRecord != candidate.isRecord)
-            throw new IllegalArgumentException("作业标题、内容、截止时间和类型由学在浙大管理");
+            throw new IllegalArgumentException("作业标题、内容、截止时间和类型由作业平台管理");
         if (current.completed() && !candidate.completed() && isSubmittedHomework(candidate.id, candidate.taskId))
-            throw new IllegalArgumentException("此作业已提交，提交状态由学在浙大管理");
+            throw new IllegalArgumentException("此作业已提交，提交状态由作业平台管理");
     }
 
     public boolean isManagedHomework(long id, long taskId) {

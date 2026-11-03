@@ -28,7 +28,7 @@ INSERT INTO tasks VALUES(10);
 INSERT INTO event_candidates VALUES(20,10,NULL,NULL,10000);
 INSERT INTO sync_task_map VALUES(10,'task_test');
 INSERT INTO zju_homework_captures VALUES(10,'account-a');
-UPDATE managed_zju_state SET enabled=1,account='account-a',generation=7,capture_id=10;
+UPDATE managed_zju_state SET enabled=1,account='account-a',generation=7,capture_id=10 WHERE id=1;
 INSERT INTO zju_homework_map(account,remote_key,capture_id,candidate_id,sync_id,ignored,snapshot) VALUES('account-a','opaque-key',10,20,'candidate_test',0,'{}');
 ''')
 due_source = (root / 'app/src/main/java/com/donglan/chrona/data/ScheduleQuery.java').read_text(encoding='utf-8')
@@ -52,15 +52,15 @@ assert db.execute('SELECT due_at_millis FROM event_candidates WHERE id=20').fetc
 db.commit()
 db.execute('BEGIN')
 db.execute('DELETE FROM tasks WHERE id=10')
-assert db.execute('SELECT enabled,generation,capture_id FROM managed_zju_state').fetchone() == (0, 8, None)
+assert db.execute('SELECT enabled,generation,capture_id FROM managed_zju_state WHERE id=1').fetchone() == (0, 8, None)
 assert db.execute('SELECT ignored FROM zju_homework_map').fetchone() == (1,)
 assert db.execute('SELECT sync_id FROM zju_homework_deleted_tasks').fetchone() == ('task_test',)
 db.rollback()
-assert db.execute('SELECT enabled,generation,capture_id FROM managed_zju_state').fetchone() == (1, 7, 10)
+assert db.execute('SELECT enabled,generation,capture_id FROM managed_zju_state WHERE id=1').fetchone() == (1, 7, 10)
 assert db.execute('SELECT ignored FROM zju_homework_map').fetchone() == (0,)
 db.execute('DELETE FROM event_candidates WHERE id=20')
 assert db.execute('SELECT ignored FROM zju_homework_map').fetchone() == (1,)
-assert db.execute('SELECT enabled,generation,capture_id FROM managed_zju_state').fetchone() == (1, 7, 10)
+assert db.execute('SELECT enabled,generation,capture_id FROM managed_zju_state WHERE id=1').fetchone() == (1, 7, 10)
 for table in ('managed_zju_state', 'zju_homework_captures', 'zju_homework_map', 'zju_homework_history', 'zju_homework_deleted_tasks'):
     assert f'"{table}"' in source.split('public void createSnapshot', 1)[1].split('@Override', 1)[0]
 sync = (root / 'app/src/main/java/com/donglan/chrona/AndroidSyncData.java').read_text(encoding='utf-8')

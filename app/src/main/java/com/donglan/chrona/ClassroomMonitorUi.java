@@ -88,6 +88,12 @@ final class ClassroomMonitorUi {
         android.app.AlarmManager alarms=activity.getSystemService(android.app.AlarmManager.class);
         if(android.os.Build.VERSION.SDK_INT>=31&&alarms!=null&&!alarms.canScheduleExactAlarms()){labels.add("允许准时启动");actions.add(()->activity.startActivity(new android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+activity.getPackageName()))));}
         labels.add("后台运行设置");actions.add(()->activity.startActivity(new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:"+activity.getPackageName()))));
+        labels.add("清理未引用的课堂图片");actions.add(()->ClassroomCleanupService.WORKER.execute(()->{
+            String message;
+            try{long bytes=com.donglan.chrona.classroom.ClassroomStore.cleanUnused(activity,true,System.currentTimeMillis());message="已清理 "+android.text.format.Formatter.formatFileSize(activity,bytes);}
+            catch(Exception failure){message="清理失败，请稍后重试";}
+            String result=message;activity.runOnUiThread(()->{if(!activity.isDestroyed())Feedback.show(activity,result);});
+        }));
         LinearLayout choices=new LinearLayout(activity);choices.setOrientation(LinearLayout.VERTICAL);
         for(int i=0;i<labels.size();i++){final int index=i;UiDialogs.addMenuItem(choices,labels.get(i),false,()->{dialog.dismiss();actions.get(index).run();});}
         body.addView(choices);UiDialogs.dialogBody(panel,body);UiDialogs.showFloatingDialog(dialog,panel);

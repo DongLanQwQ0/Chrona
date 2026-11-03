@@ -46,6 +46,7 @@ rows = [
 db.executemany(INSERT_SQL, rows)
 for column in ("is_record INTEGER NOT NULL DEFAULT 0","completed_at_millis INTEGER","due_at_millis INTEGER","needs_confirmation INTEGER DEFAULT 1"): db.execute("ALTER TABLE event_candidates ADD COLUMN "+column)
 db.execute('ALTER TABLE event_candidates ADD COLUMN task_id INTEGER DEFAULT 0')
+db.execute('CREATE TABLE tasks(id INTEGER PRIMARY KEY,status TEXT,source TEXT)')
 db.execute('CREATE TABLE managed_zju_state(capture_id INTEGER)')
 db.execute('INSERT INTO managed_zju_state VALUES(42)')
 
@@ -182,7 +183,7 @@ subprocess.run(recurrence_java([str(JAVA / 'javac.exe'), '--release', '17', '-en
                 '-d', str(generated.parent), str(generated)]), check=True)
 schema = subprocess.check_output(recurrence_java([str(JAVA / 'java.exe'), '-cp',
                                   str(generated.parent), 'SchemaExport']), text=True)
-db.execute('CREATE TABLE tasks(id INTEGER PRIMARY KEY,status TEXT)')
+
 db.execute('CREATE TABLE task_attachments(id INTEGER PRIMARY KEY)')
 db.execute('CREATE TABLE task_files(id INTEGER PRIMARY KEY)')
 before = ids('all')
@@ -201,6 +202,6 @@ db.rollback()
 assert revision(db) == 1 and db.execute('SELECT id FROM event_candidates WHERE id=2').fetchone()
 restored = sqlite3.connect(':memory:')
 db.backup(restored)
-restored.execute("INSERT INTO tasks VALUES(1,'needs_review')")
+restored.execute("INSERT INTO tasks(id,status) VALUES(1,'needs_review')")
 assert revision(restored) == 2, 'Backup copies must retain revision triggers'
 print('Schedule schema checks passed: old rows preserved, changes tracked, rollback and backup retained')

@@ -25,7 +25,7 @@ final class ZjuSettingsStore {
     boolean timetable(){return enabled() && prefs.getBoolean("timetable",false);}
     boolean homeworkAutoPlan(){return prefs.getBoolean("homework_auto_plan",false);}
     /** Revoke permission immediately; the sync worker may still be finishing an AI request. */
-    void revokeHomeworkAutoPlan(){prefs.edit().putBoolean("homework_auto_plan",false).apply();ZjuHomeworkPlanner.cancel();}
+    void revokeHomeworkAutoPlan(){prefs.edit().putBoolean("homework_auto_plan",false).apply();ZjuHomeworkPlanner.cancel(1);}
     void homeworkAutoPlan(boolean enabled){
         if(!enabled)revokeHomeworkAutoPlan();
         synchronized(AndroidSync.LOCK){

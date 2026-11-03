@@ -160,8 +160,8 @@ final class LanWebServer extends NanoHTTPD {
                     long id = positive(body.getString("candidateId"));
                     EventCandidate item = store.getCandidatesByIds(Collections.singleton(id)).stream().findFirst().orElseThrow(Conflict::new);
                     ZjuHomeworkStore homework = new ZjuHomeworkStore(context);
-                    ZjuHomeworkStore.State managed = homework.state();
-                    if (!new ZjuSettingsStore(context).enabled() || !managed.enabled || managed.captureId != item.taskId
+                    ZjuHomeworkStore.State managed = ZjuHomeworkStore.bindingForCapture(store.getReadableDatabase(),item.taskId);
+                    if (!managed.enabled || managed.captureId != item.taskId
                             || !EventCategory.HOMEWORK.equals(item.category) || item.completed()) throw new Conflict();
                     homework.markSeen(id);
                     return data(new JSONObject().put("ok",true).put("revision",store.dataRevision()));
@@ -367,7 +367,7 @@ final class LanWebServer extends NanoHTTPD {
                 JSONObject value = candidate(item).put("managed",store.isManagedHomework(item.id,item.taskId))
                         .put("submitted",store.isSubmittedHomework(item.id,item.taskId))
                         .put("mergedSources",CandidateMerges.sources(store,item.id));
-                if (item.isHomework() && new ZjuSettingsStore(context).enabled()) {
+                if (item.isHomework() && ZjuHomeworkStore.sourceEnabled(context,item.taskId)) {
                     HomeworkLinks links = new ZjuHomeworkStore(context).links(item);
                     value.put("mobileUrl",links.mobile == null ? JSONObject.NULL : links.mobile)
                             .put("desktopUrl",links.desktop == null ? JSONObject.NULL : links.desktop);
@@ -417,7 +417,7 @@ final class LanWebServer extends NanoHTTPD {
                 for(int i=page*ScheduleQuery.PAGE_SIZE;i<Math.min(visible.size(),(page+1)*ScheduleQuery.PAGE_SIZE);i++)items.put(externalCandidate(visible.get(i),zone));
                 return data(result.put("items",items).put("total",visible.size()).put("page",page).put("pageSize",ScheduleQuery.PAGE_SIZE).put("oldestFirst",oldestFirst).put("system",true).put("from",from.toString()).put("until",until.toString()));
             }
-            ScheduleQuery query=new ScheduleQuery(tab,category,publication,search,from,until,System.currentTimeMillis(),ZoneId.systemDefault(),todo);
+            ScheduleQuery query=new ScheduleQuery(tab,category,publication,search,from,until,System.currentTimeMillis(),ZoneId.systemDefault(),todo,integer(request.getParms().get("source"),0,0,3));
             boolean oldestFirst=request.getParms().containsKey("oldestFirst")?Boolean.parseBoolean(request.getParms().get("oldestFirst")):ScheduleOrderPreferences.oldestFirst(context,tab);
             long focus=request.getParms().containsKey("locate")?positive(request.getParms().get("locate")):0;
             ScheduleListing.Page listing=ScheduleListing.load(context,store,query,oldestFirst,page,focus);
@@ -597,7 +597,7 @@ final class LanWebServer extends NanoHTTPD {
             return json(Response.Status.NOT_FOUND,"附件已不存在");
         }
     }
-    private static JSONObject task(TaskRecord item)throws JSONException{return new JSONObject().put("id",item.id).put("text",item.rawText).put("linkText",item.linkText==null?"":item.linkText).put("status",item.status).put("error",item.errorMessage==null?"":item.errorMessage).put("created",item.createdAtMillis).put("source",item.source);}
+    private static JSONObject task(TaskRecord item)throws JSONException{return new JSONObject().put("id",item.id).put("text",item.rawText).put("linkText",item.linkText==null?"":item.linkText).put("status",item.status).put("error",item.errorMessage==null?"":item.errorMessage).put("created",item.createdAtMillis).put("source",item.source).put("sourceLabel",TaskRecord.sourceLabel(item.source));}
     private static JSONObject candidateBase(EventCandidate item)throws JSONException {
         return new JSONObject().put("id",item.id).put("taskId",item.taskId).put("title",item.title)
                 .put("start",item.startAtMillis==null?JSONObject.NULL:item.startAtMillis)
@@ -617,7 +617,7 @@ final class LanWebServer extends NanoHTTPD {
     }
     private boolean homeworkRefreshAvailable() {
         ZjuSettingsStore settings=new ZjuSettingsStore(context);
-        return settings.enabled()&&settings.configured()&&new ZjuHomeworkStore(context).state().enabled;
+        return ZjuSync.anyHomeworkEnabled(context);
     }
     private JSONObject externalCandidate(CalendarOccurrence item,ZoneId zone) throws JSONException {
         long start=item.displayStart(zone),end=item.displayEnd(zone);
@@ -641,7 +641,10 @@ final class LanWebServer extends NanoHTTPD {
         EventCandidate series=item;
         if(item.occurrenceAtMillis!=null)try(TaskStore store=new TaskStore(context)){List<EventCandidate> rows=store.getCandidatesByIds(Collections.singleton(item.id));if(!rows.isEmpty())series=rows.get(0);}
         JSONObject proposal;
+        String sourceLabel="";
         try(TaskStore store=new TaskStore(context)){
+            TaskRecord owner=store.getTask(item.taskId);
+            if(owner!=null&&item.isHomework()&&(ZjuHomeworkStore.SOURCE.equals(owner.source)||ZjuHomeworkStore.PTA_SOURCE.equals(owner.source)))sourceLabel=TaskRecord.sourceLabel(owner.source);
             proposal=store.occurrenceProposal(item.id);
             if(proposal!=null&&"applied".equals(proposal.optString("state")))try{
                 EventCandidate target=OccurrenceUpdates.series(store,proposal.getString("series_id"));
@@ -650,7 +653,7 @@ final class LanWebServer extends NanoHTTPD {
         }
         JSONArray history=null;
         if(item.occurrenceAtMillis!=null){JSONObject edit=RepeatOccurrences.exceptions(series).optJSONObject(Long.toString(item.occurrenceAtMillis));if(edit!=null)history=edit.optJSONArray("history");}
-        return candidateBase(item).put("occurrenceHistory",history==null?new JSONArray():history).put("occurrenceUpdate",proposal==null?JSONObject.NULL:proposal).put("recurrence",item.repeatRule==null?JSONObject.NULL:item.repeatRule.toJson()).put("repeatLabel",item.repeatRule==null?"":item.repeatRule.label())
+        return candidateBase(item).put("sourceLabel",sourceLabel).put("occurrenceHistory",history==null?new JSONArray():history).put("occurrenceUpdate",proposal==null?JSONObject.NULL:proposal).put("recurrence",item.repeatRule==null?JSONObject.NULL:item.repeatRule.toJson()).put("repeatLabel",item.repeatRule==null?"":item.repeatRule.label())
                 .put("repeatStoppedAt",item.repeatStoppedAtMillis==null?JSONObject.NULL:item.repeatStoppedAtMillis).put("occurrenceAt",item.occurrenceAtMillis==null?JSONObject.NULL:item.occurrenceAtMillis)
                 .put("baseline",CandidateEditBaseline.of(series)).put("canAcknowledge",!item.isRecord&&!item.isTask()&&until>System.currentTimeMillis())
                 .put("acknowledged",AgendaAcknowledgement.isAcknowledged(context,AgendaAcknowledgement.key(item)));

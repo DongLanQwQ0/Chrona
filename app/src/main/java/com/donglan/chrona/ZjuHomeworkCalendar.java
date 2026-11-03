@@ -19,12 +19,12 @@ public final class ZjuHomeworkCalendar {
                 SQLiteDatabase db = store.getWritableDatabase();
                 db.execSQL("UPDATE zju_homework_map SET pending_calendar=1 WHERE ignored=0 AND candidate_id IN ("
                         + "SELECT e.id FROM event_candidates e JOIN managed_zju_state s ON s.capture_id=e.task_id "
-                        + "WHERE s.id=1 AND s.enabled=1 AND s.account=zju_homework_map.account "
+                        + "WHERE s.enabled=1 AND s.account=zju_homework_map.account "
                         + "AND e.calendar_event_id IS NULL AND e.completed_at_millis IS NULL AND e.is_record=0 "
                         + "AND (e.start_at_millis IS NOT NULL OR e.due_at_millis IS NOT NULL))");
                 List<Long> ids = new ArrayList<>();
                 try (Cursor cursor = db.rawQuery("SELECT m.candidate_id FROM zju_homework_map m JOIN managed_zju_state s "
-                        + "ON s.id=1 AND s.enabled=1 AND s.account=m.account AND s.capture_id=m.capture_id "
+                        + "ON s.enabled=1 AND s.account=m.account AND s.capture_id=m.capture_id "
                         + "WHERE m.pending_calendar=1 AND m.ignored=0 AND m.candidate_id IS NOT NULL", null)) {
                     while (cursor.moveToNext()) ids.add(cursor.getLong(0));
                 }
@@ -107,7 +107,7 @@ public final class ZjuHomeworkCalendar {
     public static int pendingCount(Context context) {
         try (TaskStore store = new TaskStore(context);
              Cursor cursor = store.getReadableDatabase().rawQuery("SELECT COUNT(*) FROM zju_homework_map m JOIN managed_zju_state s "
-                     + "ON s.id=1 AND s.enabled=1 AND s.account=m.account AND s.capture_id=m.capture_id "
+                     + "ON s.enabled=1 AND s.account=m.account AND s.capture_id=m.capture_id "
                      + "WHERE m.pending_calendar=1 AND m.ignored=0", null)) {
             return cursor.moveToFirst() ? cursor.getInt(0) : 0;
         }

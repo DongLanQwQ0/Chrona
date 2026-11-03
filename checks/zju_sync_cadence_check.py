@@ -7,8 +7,8 @@ root = Path(__file__).resolve().parents[1]
 out = root / 'build/zju-sync-cadence-check'
 src = out / 'src'
 files = {
-'com/donglan/chrona/ZjuHomeworkPlanner.java': '''package com.donglan.chrona;class ZjuHomeworkPlanner {static String processOne(android.content.Context c){return "";}static void cancel(){}}''',
-'android/content/SharedPreferences.java': '''package android.content;public interface SharedPreferences {long getLong(String k,long d);Editor edit();interface Editor {Editor putLong(String k,long v);void apply();}}''',
+'com/donglan/chrona/ZjuHomeworkPlanner.java': '''package com.donglan.chrona;class ZjuHomeworkPlanner {static String processOne(android.content.Context c){return "";}static void cancel(){}static void cancel(int source){}}''',
+'android/content/SharedPreferences.java': '''package android.content;public interface SharedPreferences {long getLong(String k,long d);default boolean getBoolean(String k,boolean d){return d;}Editor edit();interface Editor {Editor putLong(String k,long v);default Editor putString(String k,String v){return this;}default Editor putBoolean(String k,boolean v){return this;}void apply();}}''',
 'android/content/Context.java': '''package android.content;public class Context {public Context getApplicationContext(){return this;}public <T>T getSystemService(Class<T> type){return type.cast(android.app.job.JobScheduler.INSTANCE);}}''',
 'android/content/ComponentName.java': '''package android.content;public class ComponentName {public ComponentName(Context c,Class<?> type){}}''',
 'android/os/Looper.java': '''package android.os;public class Looper {public static Looper getMainLooper(){return new Looper();}}''',
@@ -18,15 +18,21 @@ files = {
 'android/app/job/JobParameters.java': '''package android.app.job;public class JobParameters {}''',
 'android/app/job/JobService.java': '''package android.app.job;public class JobService extends android.content.Context {public boolean onStartJob(JobParameters p){return false;}public boolean onStopJob(JobParameters p){return false;}public void jobFinished(JobParameters p,boolean retry){}}''',
 'com/donglan/chrona/ZjuSettingsStore.java': '''package com.donglan.chrona;class ZjuSettingsStore {static boolean on=true,configured=true,table=true,credentialFailure;static String account="account",status="";static final Prefs PREFS=new Prefs();final Prefs prefs=PREFS;ZjuSettingsStore(android.content.Context c){}boolean enabled(){return on;}boolean configured(){return configured;}boolean timetable(){return on&&table;}String account(){return account;}String status(){return status;}void status(String s){status=s;}String[] credentials()throws java.io.IOException{if(credentialFailure)throw new java.io.IOException("credentials unavailable");return new String[]{"fixture","fixture"};}static class Prefs implements android.content.SharedPreferences,android.content.SharedPreferences.Editor {java.util.Map<String,Long> data=new java.util.concurrent.ConcurrentHashMap<>();public long getLong(String k,long d){return data.getOrDefault(k,d);}public Editor edit(){return this;}public Editor putLong(String k,long v){data.put(k,v);return this;}public void apply(){}}}''',
-'com/donglan/chrona/ZjuHomeworkStore.java': '''package com.donglan.chrona;class ZjuHomeworkStore {static boolean enabled=true;static int applies;static class State {boolean enabled=ZjuHomeworkStore.enabled;long generation=1;}ZjuHomeworkStore(android.content.Context c){}State state(){return new State();}java.util.Set<String> trackedCourses(String a,long g){return java.util.Set.of("tracked");}static class Result {int added=1,updated,completed;java.util.List<Object> newHomework=java.util.List.of(new Object());java.util.List<Long> newHomeworkIds=java.util.List.of(123L);}Result apply(String a,long g,java.util.List<Object> h){applies++;return new Result();}}''',
+'com/donglan/chrona/ZjuHomeworkStore.java': """package com.donglan.chrona;class ZjuHomeworkStore {
+static boolean enabled=true;static int applies;int source=1;static class State {boolean enabled;long generation=1;}
+ZjuHomeworkStore(android.content.Context c){}ZjuHomeworkStore(android.content.Context c,int source){this.source=source;}
+State state(){State s=new State();s.enabled=source==2?PtaSettingsStore.on:enabled;return s;}
+java.util.Set<String> trackedCourses(String a,long g){return java.util.Set.of("tracked");}
+static class Result {int added=1,updated,completed;java.util.List<com.donglan.chrona.zju.ZjuSnapshot.Homework> newHomework=java.util.List.of(new com.donglan.chrona.zju.ZjuSnapshot.Homework());java.util.List<Long> newHomeworkIds=java.util.List.of(123L);}
+Result apply(String a,long g,java.util.List<com.donglan.chrona.zju.ZjuSnapshot.Homework> h){applies++;return new Result();}}""",
 'com/donglan/chrona/ZjuTimetableStore.java': '''package com.donglan.chrona;class ZjuTimetableStore {static int saves;ZjuTimetableStore(android.content.Context c){}void save(String a,java.util.List<Object> l,java.util.List<String> t){saves++;}}''',
 'com/donglan/chrona/ZjuHomeworkCalendar.java': '''package com.donglan.chrona;class ZjuHomeworkCalendar {static int pendingCount(android.content.Context c){return 0;}}''',
 'com/donglan/chrona/AndroidSync.java': '''package com.donglan.chrona;class AndroidSync {static final Object LOCK=new Object();}''',
 'com/donglan/chrona/AgendaWidgetProvider.java': '''package com.donglan.chrona;class AgendaWidgetProvider {static void requestRefresh(android.content.Context c){}}''',
 'com/donglan/chrona/AgendaReminder.java': '''package com.donglan.chrona;class AgendaReminder {static void requestRefresh(android.content.Context c){}}''',
-'com/donglan/chrona/HomeworkNotice.java': '''package com.donglan.chrona;class HomeworkNotice {static int shows;static void show(android.content.Context c,java.util.List<Object> i,java.util.List<Long> ids){if(i.size()!=ids.size())throw new AssertionError("notice identities");shows++;}}''',
+'com/donglan/chrona/HomeworkNotice.java': '''package com.donglan.chrona;class HomeworkNotice {static int shows;static void show(android.content.Context c,java.util.List<?> i,java.util.List<Long> ids){if(i.size()!=ids.size())throw new AssertionError("notice identities");shows++;}}''',
 'com/donglan/chrona/zju/ZjuCalendarStore.java': '''package com.donglan.chrona.zju;public class ZjuCalendarStore {public static Object load(android.content.Context c){return new Object();}}''',
-'com/donglan/chrona/zju/ZjuSnapshot.java': '''package com.donglan.chrona.zju;public class ZjuSnapshot {public java.util.List<Object> homework=java.util.List.of(),lessons=java.util.List.of();public java.util.List<String> warnings=java.util.List.of(),completeTimetableTerms=java.util.List.of("term");}''',
+'com/donglan/chrona/zju/ZjuSnapshot.java': '''package com.donglan.chrona.zju;public class ZjuSnapshot {public static class Homework {public String key="pta:10",title="PTA test";}public java.util.List<Homework> homework=java.util.List.of();public java.util.List<Object> lessons=java.util.List.of();public java.util.List<String> warnings=java.util.List.of(),completeTimetableTerms=java.util.List.of("term");}''',
 'com/donglan/chrona/zju/ZjuClient.java': '''package com.donglan.chrona.zju;public class ZjuClient implements AutoCloseable {public static final java.util.List<Integer> calls=new java.util.concurrent.CopyOnWriteArrayList<>();public static boolean failHomework,failTimetable;public static volatile java.util.concurrent.CountDownLatch entered,release;volatile boolean cancelled;public ZjuClient(String u,String p,Object c){}public ZjuSnapshot fetch(boolean h,boolean t,java.util.Set<String> tracked)throws java.io.IOException{if(h==t)throw new AssertionError("sources must fetch independently");if(h&&!tracked.contains("tracked"))throw new AssertionError();calls.add(h?1:2);if(entered!=null){entered.countDown();try{if(!release.await(5,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("latch timeout");}catch(InterruptedException e){throw new java.io.IOException(e);}}if(cancelled)throw new java.io.IOException("cancelled");if(h?failHomework:failTimetable)throw new java.io.IOException("domain failed");return new ZjuSnapshot();}public void cancel(){cancelled=true;}public void close(){}}''',
 'com/donglan/chrona/ZjuSyncCadenceCheck.java': r'''package com.donglan.chrona;
 import android.content.Context;import android.os.Handler;import com.donglan.chrona.zju.ZjuClient;import java.util.*;import java.util.concurrent.*;
@@ -52,10 +58,32 @@ public class ZjuSyncCadenceCheck {
  int beforeWork=ZjuHomeworkStore.applies,beforeCourse=ZjuTimetableStore.saves;ZjuClient.calls.clear();List<String> manual=new ArrayList<>();due(120000,120000);check(ZjuSync.requestHomework(c,manual::add),"manual homework refresh bypasses cadence");idle();check(ZjuClient.calls.equals(List.of(1))&&ZjuHomeworkStore.applies==beforeWork+1&&ZjuTimetableStore.saves==beforeCourse&&manual.size()==1,"home refresh fetches only homework and returns callback");
  due(120000,120000);ZjuSync.foreground(c);check(Handler.delayed==1,"foreground continues checking while screen remains open");ZjuSync.background();check(Handler.delayed==0,"background removes foreground timer");
  check(new ZjuSyncJobService().onStopJob(new android.app.job.JobParameters()),"system interruption requests reschedule");
+ ZjuSettingsStore.on=false;ZjuSettingsStore.table=false;PtaSettingsStore.on=true;
+ PtaSettingsStore.PREFS.data.clear();int schoolCalls=com.donglan.chrona.zju.ZjuClient.calls.size();
+ check(ZjuSync.nextDelay(c,System.currentTimeMillis())==0,"PTA due with school disabled");
+ java.util.concurrent.CountDownLatch ptaDone=new java.util.concurrent.CountDownLatch(1);
+ ZjuSync.requestDue(c,value->ptaDone.countDown());
+ for(int i=0;i<100&&ptaDone.getCount()>0;i++){Thread.sleep(10);android.os.Handler.flush();}
+ check(ptaDone.getCount()==0&&PtaClient.calls==1,"PTA-only background request completes");
+ check(com.donglan.chrona.zju.ZjuClient.calls.size()==schoolCalls,"PTA does not fetch disabled school");
+ long ptaDelay=ZjuSync.nextDelay(c,System.currentTimeMillis());check(ptaDelay>290000&&ptaDelay<=300000,"PTA has independent five-minute clock");
+ PtaSettingsStore.PREFS.expired=true;check(ZjuSync.nextDelay(c,System.currentTimeMillis())==-1,"expired PTA pauses automatic requests");
+ PtaSettingsStore.on=false;
  System.out.println("PASS: "+checks+" production cadence/scope/queue/cancel/failure/lifecycle checks");
  }finally{ZjuSync.WORKER.shutdownNow();}}
 }'''
 }
+
+files['com/donglan/chrona/PtaSettingsStore.java'] = """package com.donglan.chrona;class PtaSettingsStore {
+static boolean on;static final Prefs PREFS=new Prefs();final Prefs prefs=PREFS;PtaSettingsStore(android.content.Context c){}
+boolean enabled(){return on;}String account(){return "pta";}String session(){return "synthetic";}java.util.Set<String> excluded(){return java.util.Set.of();}
+static class Prefs extends ZjuSettingsStore.Prefs {boolean expired;public boolean getBoolean(String k,boolean d){return k.equals("auth_expired")?expired:d;}public Editor putBoolean(String k,boolean value){if(k.equals("auth_expired"))expired=value;return this;}}
+}"""
+files['com/donglan/chrona/PtaClient.java'] = """package com.donglan.chrona;class PtaClient implements AutoCloseable {
+static int calls;PtaClient(String cookie){}java.util.List<com.donglan.chrona.zju.ZjuSnapshot.Homework> fetch(PtaSettingsStore settings){calls++;return java.util.List.of(new com.donglan.chrona.zju.ZjuSnapshot.Homework());}
+void cancel(){}public void close(){}static class AuthExpired extends java.io.IOException{}}
+"""
+
 for path, text in files.items():
     target = src / path
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -63,5 +91,5 @@ for path, text in files.items():
 production = root / 'app/src/main/java/com/donglan/chrona'
 java = Path(os.environ['JAVA_HOME']) / 'bin'
 sources = list(src.rglob('*.java')) + [production / 'ZjuSync.java', production / 'ZjuSyncJobService.java']
-subprocess.run([str(java/'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-d', str(out), *map(str,sources)], check=True)
-subprocess.run([str(java/'java.exe'), '-cp', str(out), 'com.donglan.chrona.ZjuSyncCadenceCheck'], check=True)
+subprocess.run([str(java/'javac.exe'), '--release', '17', '-encoding', 'UTF-8', '-cp', str(root/'build/ai-checks/json.jar'), '-d', str(out), *map(str,sources)], check=True)
+subprocess.run([str(java/'java.exe'), '-cp', str(out)+os.pathsep+str(root/'build/ai-checks/json.jar'), 'com.donglan.chrona.ZjuSyncCadenceCheck'], check=True)

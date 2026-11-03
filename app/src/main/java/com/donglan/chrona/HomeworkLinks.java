@@ -9,7 +9,7 @@ final class HomeworkLinks {
     static final HomeworkLinks NONE = new HomeworkLinks(null, null);
     final String mobile, desktop;
     private HomeworkLinks(String mobile, String desktop) { this.mobile=mobile; this.desktop=desktop; }
-    private static final Pattern URL = Pattern.compile("https://(?:courses|mcourses)\\.zju\\.edu\\.cn/[^\\s<>]+" );
+    private static final Pattern URL = Pattern.compile("https://(?:(?:courses|mcourses)\\.zju\\.edu\\.cn|pintia\\.cn)/[^\\s<>]+" );
     private static final Pattern DESKTOP_PATH = Pattern.compile("/course/([0-9]+)/learning-activity(?:/full-screen)?");
     private static final Pattern MOBILE_PATH = Pattern.compile("/course/([0-9]+)/homework/([0-9]+)");
     private static final Pattern ACTIVITY = Pattern.compile("(?:^|[?&])activityId=([0-9]+)(?:&|$)");
@@ -24,6 +24,8 @@ final class HomeworkLinks {
         final URI uri;
         try { uri=URI.create(url); } catch(IllegalArgumentException invalid){return NONE;}
         if(!"https".equals(uri.getScheme()) || uri.getUserInfo()!=null || uri.getPort()!=-1)return NONE;
+        if("pintia.cn".equals(uri.getHost())&&uri.getPath()!=null&&uri.getPath().matches("/problem-sets/[0-9]+")&&uri.getQuery()==null&&uri.getFragment()==null)
+            return new HomeworkLinks(url,url);
         String course=null,activity=null;
         Matcher path=DESKTOP_PATH.matcher(uri.getPath()==null?"":uri.getPath());
         if("courses.zju.edu.cn".equals(uri.getHost()) && path.matches()) {

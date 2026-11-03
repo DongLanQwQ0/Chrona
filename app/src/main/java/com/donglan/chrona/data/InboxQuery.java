@@ -42,10 +42,13 @@ public final class InboxQuery {
 
     public boolean matchesSearch(String rawText, String linkText,
             String candidateTitles, String candidateDescriptions) {
+        return matchesSearch(rawText,linkText,candidateTitles,candidateDescriptions,null);
+    }
+    public boolean matchesSearch(String rawText,String linkText,String candidateTitles,String candidateDescriptions,String source) {
         // Each literal term may occur in any field; every term must be present in this capture.
         if (terms.length == 0) return true;
         String[] fields = {normalized(rawText), normalized(linkText),
-                normalized(candidateTitles), normalized(candidateDescriptions)};
+                normalized(candidateTitles), normalized(candidateDescriptions),normalized(source),normalized(TaskRecord.sourceLabel(source))};
         for (String term : terms) {
             boolean found = false;
             for (String field : fields) if (field.contains(term)) { found = true; break; }

@@ -439,7 +439,7 @@ public final class DashboardActivity extends Activity {
         if (section == SCHEDULE && scheduleResultLoading) return;
         String version = dataSnapshot();
         if (dirtySections.contains(section) || !version.equals(sectionVersions.get(section))) {
-            if (section == HOME || section == SCHEDULE && scheduleSource == 0 && results != null) {
+            if (section == HOME || section == SCHEDULE && scheduleSource != 1 && results != null) {
                 refreshCompletionRows();
                 return;
             }
@@ -1727,7 +1727,7 @@ public final class DashboardActivity extends Activity {
     private void refreshHomeHomework() {
         if(homeworkRefreshRunning)return;
         ZjuSettingsStore settings=new ZjuSettingsStore(this);
-        if(!settings.enabled()||!settings.configured()||!new ZjuHomeworkStore(this).state().enabled) {
+        if(!ZjuSync.anyHomeworkEnabled(this)) {
             startActivity(new Intent(this,ZjuSettingsActivity.class));return;
         }
         homeworkRefreshRunning=true;
@@ -2322,7 +2322,7 @@ public final class DashboardActivity extends Activity {
         LocalDate[] window = scheduleWindow(false);
         return new ScheduleQuery(scheduleTab,
                 com.donglan.chrona.data.ScheduleFilterState.categoryValue(scheduleCategory),
-                schedulePublication, scheduleQuery, window[0], window[1], now, zone, scheduleTodoScope);
+                schedulePublication, scheduleQuery, window[0], window[1], now, zone, scheduleTodoScope,scheduleSource);
     }
 
     private void addScheduleFilterSummary() {
@@ -2823,6 +2823,9 @@ public final class DashboardActivity extends Activity {
         String titleText = candidate == null ? systemEvent.title : candidate.title;
         String location = candidate == null ? systemEvent.location : candidate.location;
         String source = exam!=null?"折姜星辰 · 教务":candidate == null ? systemEvent.calendarName : "拾时";
+        if(exam==null&&candidate!=null&&candidate.isHomework())try(TaskStore sourceStore=new TaskStore(this)){
+            TaskRecord owner=sourceStore.getTask(candidate.taskId);if(owner!=null&&(ZjuHomeworkStore.SOURCE.equals(owner.source)||ZjuHomeworkStore.PTA_SOURCE.equals(owner.source)))source=TaskRecord.sourceLabel(owner.source);
+        }
         UiStyle.cardInset(card);
         LinearLayout body = card;
         FrameLayout interval = null;
