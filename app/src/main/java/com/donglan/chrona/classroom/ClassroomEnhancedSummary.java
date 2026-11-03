@@ -9,7 +9,7 @@ import java.util.*;
 /** Bounded outputs over one growing, immutable-prefix conversation. Never compacts earlier inputs. */
 final class ClassroomEnhancedSummary {
     private static final int BLOCK_CHARS=6000;
-    private static final int EDITOR_BATCH_CHARS=12000;
+    private static final int LEGACY_EDITOR_BATCH_CHARS=12000;
     private final File dir;private final JSONObject state,materials,candidates,full;
     private final ClassroomLesson lesson;private final ClassroomConversation conversation;
     private final RequestControl control;private final ClassroomImages.Progress progress;
@@ -38,17 +38,20 @@ final class ClassroomEnhancedSummary {
                     .put("blocks",new JSONArray(blocks.toString())).put("complete",corrected.length()==blocks.length()));
         }
         if(!state.has("parts")){ClassroomStore.write(new File(dir,"summary.json"),assemble(new JSONArray(),new JSONArray(),false));status("更正文稿已保存",corrected.length(),blocks.length());}
+        int contentBatchSize=Math.max(1,state.optInt("content_batch_size",1));
+        JSONArray groups=contentGroups(blocks,contentBatchSize);
         JSONArray drafts=state.optJSONArray("drafts");if(drafts==null){drafts=new JSONArray();state.put("drafts",drafts);}
         JSONObject catalogue=full.getJSONObject("image_catalogue");
-        for(int i=drafts.length();i<blocks.length();i++){
-            status("AI 分段整理与核图计划",i,blocks.length());
-            JSONArray block=blocks.getJSONArray(i);
+        for(int i=drafts.length();i<groups.length();i++){
+            status("AI 分段整理与核图计划",i,groups.length());
+            JSONArray block=groups.getJSONArray(i);StringJoiner transcript=new StringJoiner("\n\n");
+            for(int n=i*contentBatchSize;n<Math.min(corrected.length(),(i+1)*contentBatchSize);n++)transcript.add(corrected.getString(n));
             String prompt=(i==0&&state.has("correction_reused_from")?"课程："+lesson.course+"；课堂："+lesson.title+"。以下复用已完成的修正文稿，按本轮要求重新整理笔记。":"")
-                    +"更正文稿已全部完成。现在只整理第 "+(i+1)+" 段。"
+                    +"更正文稿已全部完成。现在只整理第 "+(i+1)+(contentBatchSize==1?" 段。":" 内容组（原文第 "+(i*contentBatchSize+1)+" 至 "+Math.min(blocks.length(),(i+1)*contentBatchSize)+" 段）。")
                     +"以本段为整理主体，不写全课总结；同题跨段可以引用已提供的同课真实来源，避免重复讲解，后续统一整稿。"
                     +(affairsSchema==0?"本段没有教学内容或明确安排时，overview为空字符串，notes和assignments为空数组；不能用闲聊或‘未提及评分规则’填充。":"本段无教学内容时overview为空且notes=[]；非行动事务进入affairs，具体行动只进入assignments，三者均无内容时返回空数组，不用闲聊填充。")
                     +assignmentRules()+ClassroomSummary.draftSchema(catalogue,imageLimit,true,affairsSchema)
-                    +"\n本次要提取的更正文稿（历史原消息保持不变，此处仅追加定位）：\n"+corrected.getString(i)
+                    +"\n本次要提取的更正文稿（历史原消息保持不变，此处仅追加定位）：\n"+transcript
                     +"\n安排原话核验用原始字幕（只作evidence逐字定位，列全引文覆盖的sources）：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
                     +"\n全课PPT可用目录（只表示时间分布，不是图片内容）："+catalogue+"\n"+scope(block);
             JSONObject draft=json("draft-"+i,prompt,Collections.emptyList(),value->{ClassroomSummary.validateBlock(value,blockInput(full.getJSONArray("segments"),new JSONArray()),affairsSchema);ClassroomSummary.validateAssignmentEvidence(value,full.getJSONArray("segments"));ClassroomSummary.validateImageAssessment(value,catalogue);});
@@ -62,8 +65,8 @@ final class ClassroomEnhancedSummary {
         }
         JSONArray selected=state.getJSONArray("selected"),parts=state.optJSONArray("parts"),analysed=state.optJSONArray("analysed");
         if(parts==null){parts=new JSONArray();state.put("parts",parts);}if(analysed==null){analysed=new JSONArray();state.put("analysed",analysed);}
-        for(int i=parts.length();i<blocks.length();i++){
-            status("AI 分段完成笔记",i,blocks.length());
+        for(int i=parts.length();i<groups.length();i++){
+            status("AI 分段完成笔记",i,groups.length());
             JSONArray inventory=new JSONArray();List<byte[]> bytes=new ArrayList<>();
             for(int n=0;n<selected.length();n++){
                 JSONObject p=selected.getJSONObject(n);if(!requested(p,drafts.getJSONObject(i).getJSONArray("image_requests"))||contains(analysed,p.getString("file")))continue;
@@ -75,8 +78,8 @@ final class ClassroomEnhancedSummary {
             if(inventory.length()==0&&!reuse)value=drafts.getJSONObject(i);
             else{
                 JSONArray allowed=new JSONArray(analysed.toString());for(int n=0;n<inventory.length();n++)allowed.put(inventory.getJSONObject(n));
-                JSONArray block=blocks.getJSONArray(i);
-                String prompt="只核实并完善第 "+(i+1)+" 段笔记。当前主体来源id："+ids(block)+"。允许引用已提供的同课真实来源，不因分块边界删掉有用内容；跨段重复在后续全课整稿中合并。"
+                JSONArray block=groups.getJSONArray(i);
+                String prompt="只核实并完善第 "+(i+1)+(contentBatchSize==1?" 段笔记。":" 内容组笔记（原文第 "+(i*contentBatchSize+1)+" 至 "+Math.min(blocks.length(),(i+1)*contentBatchSize)+" 段）。")+"当前主体来源id："+ids(block)+"。允许引用已提供的同课真实来源，不因分块边界删掉有用内容；跨段重复在后续全课整稿中合并。"
                         +"保留题目和改卷线索、原话条件及不确定性。只修订下面指定初稿，不要依据最后一条历史回复另写一段，不重述其它段。"+assignmentRules()
                         +"本次图片依次对应以下file原值，编号可能不连续，禁止重新编号："+inventory
                         +"。此前已提供的图片保持在原消息位置。仅可引用本次或此前实际提供的file，不得把请求过但未附的图片当作已看到。"+ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
@@ -89,7 +92,7 @@ final class ClassroomEnhancedSummary {
                 if(value.has("image_reviews")){ClassroomFigureReview.merge(state,value.getJSONArray("image_reviews"));ClassroomFigureReview.filter(value,state.getJSONArray("figure_reviews"));}
                 for(int n=0;n<inventory.length();n++)analysed.put(inventory.getJSONObject(n));
             }
-            recordScopeWarnings("final-"+i,value,blocks.getJSONArray(i));parts.put(value);save();ClassroomStore.write(new File(dir,"summary.json"),assemble(parts,analysed,false));
+            recordScopeWarnings("final-"+i,value,groups.getJSONArray(i));parts.put(value);save();ClassroomStore.write(new File(dir,"summary.json"),assemble(parts,analysed,false));
         }
         edit(parts,analysed);
         editAssignments(parts);
@@ -151,7 +154,7 @@ final class ClassroomEnhancedSummary {
         if(edited==null){edited=new JSONArray();state.put("editor_notes",edited);}
         for(int i=state.optInt("editor_section_done",edited.length());i<sections.length();){
             status("AI 全课主题整稿",i,sections.length());
-            int end=editorBatchEnd(parts,sections,i,state.optInt("editor_batch_size",1)),count=end-i;
+            int end=editorBatchEnd(parts,sections,i,state.optInt("editor_batch_size",1),state.optInt("editor_batch_chars",LEGACY_EDITOR_BATCH_CHARS)),count=end-i;
             boolean batch=count>1;
             JSONObject section=sections.getJSONObject(i);String collection=affairsSchema==0?"notes":section.getString("collection");JSONArray inputs=new JSONArray(),topics=new JSONArray();Set<Integer> sources=new HashSet<>();
             for(int s=i;s<end;s++){
@@ -192,12 +195,12 @@ final class ClassroomEnhancedSummary {
             ClassroomStore.write(new File(dir,"summary.json"),assemble(parts,analysed,false));
         }
     }
-    static int editorBatchEnd(JSONArray parts,JSONArray sections,int start,int batchSize)throws Exception{
-        int end=start,chars=0,limit=Math.min(2,Math.max(1,batchSize));
+    static int editorBatchEnd(JSONArray parts,JSONArray sections,int start,int batchSize,int batchChars)throws Exception{
+        int end=start,limit=Math.max(1,batchSize);long chars=0;
         while(end<sections.length()&&end-start<limit){
-            int next=0;JSONArray refs=sections.getJSONObject(end).getJSONArray("refs");
+            long next=0;JSONArray refs=sections.getJSONObject(end).getJSONArray("refs");
             for(int n=0;n<refs.length();n++)next+=noteAt(parts,refs.getString(n)).getString("text").length();
-            if(end>start&&(long)chars+next>EDITOR_BATCH_CHARS)break;
+            if(end>start&&chars+next>batchChars)break;
             chars+=next;end++;
         }
         return end;
@@ -309,6 +312,17 @@ final class ClassroomEnhancedSummary {
     private void status(String stage,int done,int total)throws Exception{control.check();progress.update(new ClassroomProgress(stage,done,total,"已完成 "+done+" / "+total));}
     private void save()throws IOException{ClassroomStore.write(new File(dir,"run.json"),state);}
     private static JSONObject blockInput(JSONArray segments,JSONArray images)throws Exception{return new JSONObject().put("segments",segments).put("images",images);}
+    static JSONArray contentGroups(JSONArray blocks,int batchSize)throws Exception{
+        JSONArray result=new JSONArray();int size=Math.max(1,batchSize);
+        for(int start=0;start<blocks.length();start+=size){
+            JSONArray group=new JSONArray();
+            for(int i=start;i<Math.min(blocks.length(),start+size);i++){
+                JSONArray block=blocks.getJSONArray(i);for(int n=0;n<block.length();n++)group.put(block.getJSONObject(n));
+            }
+            result.put(group);
+        }
+        return result;
+    }
     static JSONArray blocks(JSONArray segments)throws Exception{
         JSONArray result=new JSONArray(),block=new JSONArray();int chars=0;
         for(int i=0;i<segments.length();i++){

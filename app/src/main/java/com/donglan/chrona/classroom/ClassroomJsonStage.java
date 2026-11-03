@@ -96,7 +96,8 @@ final class ClassroomJsonStage {
         if(stage.equals("first")||stage.startsWith("draft-"))return ClassroomSummary.DRAFT_IMAGE_RULE;
         if(stage.matches("final-[0-9]+")&&state.has("blocks")){
             int index=Integer.parseInt(stage.substring("final-".length()));
-            return ClassroomEnhancedSummary.refinementScope(state.getJSONArray("blocks").getJSONArray(index),state.optInt("affairs_schema",0));
+            JSONArray groups=ClassroomEnhancedSummary.contentGroups(state.getJSONArray("blocks"),state.optInt("content_batch_size",1));
+            return ClassroomEnhancedSummary.refinementScope(groups.getJSONArray(index),state.optInt("affairs_schema",0));
         }
         return "";
     }
