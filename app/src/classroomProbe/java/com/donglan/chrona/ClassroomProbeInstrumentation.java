@@ -346,7 +346,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                         row.put("run_content_inventory",inventory);
                     }
                     JSONObject execution=audit.optJSONObject("execution");
-                    if(execution!=null)row.put("run_execution_state",execution.optString("state"));
+                    if(execution!=null){row.put("run_execution_state",execution.optString("state"));if(key.equals(reviewKey)&&execution.has("detail"))row.put("run_execution_detail",execution.getString("detail"));}
                     JSONObject conversation=run.optJSONObject("conversation");
                     if(conversation!=null){
                         String protocol=conversation.optString("protocol",com.donglan.chrona.ai.AiSettings.CHAT_COMPLETIONS);
@@ -428,6 +428,14 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                             JSONObject object=com.donglan.chrona.classroom.ClassroomSummary.parseObject(text),fields=new JSONObject();
                             row.put("run_last_image_reference_shapes",imageReferenceShapes(object));
                             row.put("run_last_source_shapes",sourceShapes(object));
+                            if(key.equals(reviewKey)&&object.optJSONArray("assignments")!=null){
+                                JSONArray actionEvidence=new JSONArray(),items=object.getJSONArray("assignments");
+                                for(int a=0;a<items.length();a++){
+                                    JSONObject item=items.getJSONObject(a);
+                                    actionEvidence.put(pick(item,"text","evidence","sources"));
+                                }
+                                row.put("run_last_assignment_evidence",actionEvidence);
+                            }
                             String stage=last.optString("stage");java.util.regex.Matcher finalBlock=java.util.regex.Pattern.compile("^(?:final|draft)-([0-9]+)(?:-.*)?$").matcher(stage);
                             if(finalBlock.matches()&&blocks!=null){
                                 int index=Integer.parseInt(finalBlock.group(1));JSONArray block=blocks.optJSONArray(index),ids=new JSONArray();

@@ -2,6 +2,8 @@
 
 ## 当前候选与唯一下一步
 
+- **111第一次停在引文校验，已启动同轮明确续跑。** 首组完整stop，input33042/output7269、cached32896，10知识／4事务／2行动，但未提交（drafts0）：assignment0 evidence将原s217“可郑”改成“可证”，非网络／输出超限，第二行动原话可匹配。定向只读probe仅所选课堂投影text/evidence/sources，证据`build/editorial111/after/assignment-evidence.json`及failure-raw.txt，不导出完整模型历史。原修正文稿4块保留，不手工改AI输出或放行引文。正常UI打开准确课堂、继续整理、40图确认后同轮重试失败整组；ServiceRecord630a10c，observer12903，`build/editorial111/continue-observe/`。唯一下一步观察该句柄；活动中禁止instrumentation/安装，未完状态不当成覆盖已通过。诊断包、导出ZIP缓存和UI XML已清理。
+
 - **111覆盖修正规则已启动同课真实回归。** 明确原段边界与软标题清单、完整扫描、原字幕事实核对、行动时态与对象已实现；保留本班既有有效任务的提醒／补交，不一概排除过去布置。标题提醒忽略代码围栏并从前段恢复围栏状态，只输出当前组标题。实际双协议HTTP1321/0，独立check发现的规则范围／跨组围栏均闭环，release/lint通过。模拟器正常升级工作候选`build/editorial111/candidate/Chrona-coverage.apk`（109/271），同一课仅选1节确认重整；ServiceRecord7777a78，observer40059，`build/editorial111/observe/`。唯一下一步观察该句柄终态，导出后完整审读，不安装／instrumentation干扰活动任务。当前不宣称覆盖修好；UI XML已清理。
 
 - **当前修正：整组完整提取。** 更正原文存在而drafts已漏主题；将合组输入中每个原始段的起止边界明确标出，并按更正文稿已有Markdown标题生成覆盖提醒，要求扫描全部概念／证明／例题／事务／行动，不把开头摘要当整组。提醒不是成品目录或硬校验，不新增AI请求。保留原更正字符串及历史、2块合组、3主题整稿；实际再回归前先检查发送内容和旧合同。
