@@ -6,6 +6,7 @@
 - 可选请求头由服务配置提供，公共客户端不按域名／模型分支。协议检查752项覆盖不同协议、地址、模型、字段名及同轮／新轮标识；配置备份检查、偏好121项、课堂594项通过，独立代码审查通过。日志`build/editorial117/{responses-portable,config-portable,classroom-portable}.txt`。
 - 原生设置沿用公共输入控件，普通竖横屏、预设填入、旋转恢复、返回取消保留草稿及保存退出已实测；独立UI审查通过。压缩JPEG、树及`ui-checks.txt`保存在同目录，未查看PNG原图。
 - 实际Responses单图先因缺少会话头返回400，补头后返回401 `Upstream request failed: Invalid credential`；通用候选未重复同一失败请求。凭据未读取或输出，不据上游401认定本机密钥错误。服务恢复及完整单课内容回归仍未通过。
+- 最终通用候选使用已保存配置发一次纯文字对照：会话头已配置，283B、0图、839ms，同样401 `Upstream request failed: Invalid credential`；未发送课堂资料、未改配置。错误不限于图片通道；等待凭据／Go权限或客户端对照证据，不继续原样重试。`build/editorial117/portable-text-health.txt`；诊断包随后卸载。
 
 ## 用户恢复单课回归 — 2026-11-03
 
