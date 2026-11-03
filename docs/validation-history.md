@@ -1,5 +1,10 @@
 # 验证记录
 
+## 目标重新激活后的图片复查 — 2026-11-03
+
+- ADB初始无设备且无emulator/qemu进程，复用既有Chrona_Classroom_36启动5580，正常boot完成，包仍109/271；未新建、复制、清空或改变显示参数。启动日志`build/editorial113/emulator-out.log`／`emulator-error.log`。
+- 单次合成小图健康检查仍以原配置／Responses／课堂路由发送1404B请求，2.9秒ResponseException/service_overloaded，未提供usage；未发送课堂资料，配置与进程网络绑定未改，probe卸载。证据`build/editorial113/image-health.txt`。没有启动课堂续跑，待原服务图片通道恢复。
+
 ## 图片请求路径对照诊断 — 2026-11-03
 
 - 第二个final-0-restart-1在约5秒返回相同server_is_overloaded，无正文／usage，2初稿／0核图；停止原样重试。observer51259终态后只读审计`build/editorial112/vision-after/audit.json`，探针卸载。
