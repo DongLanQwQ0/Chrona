@@ -6,7 +6,7 @@
 - 已保存OpenCode Go deepseek-v4.1-flash／Responses／可选x-opencode-session；用户重新粘贴Key后401解除。密钥未读取／输出。用户已批准原生JSON模式：新轮更正文稿文本、JSON阶段json_object，旧轮格式及完整消息前缀不改。
 - 上轮115（277）已完整成功：4更正稿复用，11请求全部JSON模式、stop，无repair；第二轮49896输入／28288缓存，后续缓存也实际返回。全文9知识／4事务／2行动／23图已读，内容仍不批准：评分方向反转、存疑术语造事实、事务重复、图82/130错注及个别跳过计算。证据build/editorial119/export/、audit.txt、image-review-*.jpg；问题引文和预期见docs/audits/classroom-notebook-regression-20261103.md。
 - 当前116（278）：新增强轮快照affairs_source_first，事务输入直接给原字幕及邻句、派生标题仅定位，知识输入不变；事务同类按实际原文JSON文本预算集中，不跨知识边界，旧轮分批不改。普通和增强核图每张原JPEG前紧邻实际file文本，字节／顺序／缓存前缀不变，恢复不重传。无模型／课程分支，无新AI阶段或语义硬校验。
-- grounded275、事务301、普通课堂597、Responses509、恢复220通过。独立check发现预算失配并已闭环复核：实际原文长度而非短派生长度计量，超长单项独立，反例有效。build.log构建／lint及独立check通过，116已安装唯一AVD；configured+newRun=true同课新轮runner71347运行，日志build/editorial120/run.txt。唯一下一步等待真实终态，读取完整成品／缓存usage及逐图身份字节对照，不因观察超时重启，不批量。
+- grounded275、事务301、普通课堂597、Responses509、恢复220通过。独立check发现预算失配并已闭环复核：实际原文长度而非短派生长度计量，超长单项独立，反例有效。build.log构建／lint及独立check通过，116已安装唯一AVD；configured+newRun=true同课runner71347已失败终态：draft-0成功，draft-1 Connection reset（用量未知）；同时AVD出现Watchdog图形同步阻塞、package/activity服务短暂消失，现已自行恢复，无重启／清数据。不能据时间接近证明连接重置因果。已按同轮检查点启动runner41518续跑，日志resume.txt；仅重生成失败组，不重做draft-0或4段更正稿。唯一下一步等待该真实终态，读取完整成品／缓存usage和逐图身份字节对照，不批量。
 - 所有旧失败轮保留正常run归档；112曾完整但内容失败，113/114未闭合JSON提示修复失败，115原生JSON整轮通过。历史证据见验证记录，不把旧错误或等待条件当当前状态。
 ## 验收与原范围
 
