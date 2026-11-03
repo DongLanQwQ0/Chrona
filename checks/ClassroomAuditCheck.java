@@ -57,8 +57,23 @@ public final class ClassroomAuditCheck {
         check(!ClassroomAudit.project(null,summary).has("execution"),"summary-only records never invent execution state");
         check(ClassroomAudit.project(null,summary).getJSONArray("decisions").length()==1,"summary-only existing image audit remains readable");
         check(ClassroomAudit.project(null,null).getJSONArray("turns").length()==0,"missing records stay empty");
-        diagnostics();requestSizes();responsesProjection();nativeFailureProjection();
+        diagnostics();requestSizes();responsesProjection();nativeFailureProjection();scopeWarnings();
         System.out.println("ClassroomAudit: "+checks+" checks passed; paid calls=0, checkpoint writes=0");
+    }
+    private static void scopeWarnings()throws Exception{
+        JSONArray saved=new JSONArray()
+                .put(new JSONObject().put("stage","draft-0").put("field","assignments[1].sources").put("sources",new JSONArray().put(269)).put("raw","PRIVATE-OUTPUT"))
+                .put(new JSONObject().put("stage","edit-note-2").put("field","notes[0].sources").put("sources",new JSONArray().put(0).put(-1).put("PRIVATE-ID")))
+                .put(new JSONObject().put("stage","PRIVATE-STAGE").put("field","notes[0].sources").put("sources",new JSONArray().put(1)))
+                .put(new JSONObject().put("stage","final-1").put("field","PRIVATE-FIELD").put("sources",new JSONArray().put(1)));
+        JSONObject run=fixture().put("source_scope_warnings",saved),summary=new JSONObject().put("source_scope_warnings",saved);
+        String before=run.toString();JSONArray rows=ClassroomAudit.project(run,null).getJSONArray("source_scope_warnings");
+        check(rows.length()==2&&rows.getJSONObject(0).getJSONArray("sources").getInt(0)==269,"real cross-block source warning survives safe projection");
+        check(rows.getJSONObject(1).getJSONArray("sources").toString().equals("[0]"),"warnings expose only nonnegative numeric source ids");
+        check(!rows.toString().contains("PRIVATE-"),"warning projection never leaks body or arbitrary fields");
+        check(run.toString().equals(before),"warning projection preserves immutable checkpoint");
+        check(ClassroomAudit.project(null,summary).getJSONArray("source_scope_warnings").length()==2,"published summary retains source warnings without a run");
+        check(ClassroomAudit.project(fixture(),summary).getJSONArray("source_scope_warnings").length()==0,"new run never borrows previous summary warnings");
     }
     private static void diagnostics()throws Exception{
         JSONObject malformed=jsonRun("{\"overview\":\"PRIVATE-RAW https://private.invalid/?token=PRIVATE-TOKEN\"");

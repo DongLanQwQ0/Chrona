@@ -62,10 +62,12 @@ public final class ClassroomEnhancedCheck {
         if(mode.startsWith("task-")&&id==0)value.put("assignments",new JSONArray()
                 .put(new JSONObject().put("text","今天进入作业页面查看成绩。").put("sources",new JSONArray().put(0)).put("evidence","题干 5 kg"))
                 .put(new JSONObject().put("text","查看成绩。").put("sources",new JSONArray().put(0)).put("evidence","步骤分 2 分")));
+        if(mode.equals("editor-affairs-to-notes"))value.put("overview","").put("affairs",value.getJSONArray("notes")).put("notes",new JSONArray());
         if(mode.equals("cross-draft")&&draft&&id==0||mode.equals("cross-final")&&!draft&&id==0)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1));
         if(mode.equals("cross-context")&&!draft&&id==1)value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1).put(0));
         if(!draft&&id==1&&mode.startsWith("scope-")){
             if(mode.equals("scope-affairs-past")||mode.equals("scope-repair-past"))value.put("affairs",new JSONArray().put(content("PRIVATE_OLD_AFFAIR_BODY",0)));
+            if(mode.startsWith("scope-invalid"))value.put("assignments",new JSONArray().put(new JSONObject().put("text","老师要求提交额外考核作业").put("sources",new JSONArray().put(0)).put("evidence","PRIVATE_INVENTED_TEACHER_REQUIREMENT")));
             if(mode.equals("scope-legacy"))value.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(0)).put("text","PRIVATE_OLD_NOTE_BODY");
         }
         if(mode.equals("invalid-draft-markdown")&&draft)value.getJSONArray("notes").getJSONObject(0).put("text","![尚未看到的板书](lecture-slide-1.jpeg)");
@@ -115,11 +117,19 @@ public final class ClassroomEnhancedCheck {
                 for(int n=0;n<input.length();n++){JSONObject note=input.getJSONObject(n);JSONArray source=note.getJSONArray("sources"),pictures=note.getJSONArray("images");for(int k=0;k<source.length();k++)sourceSet.add(source.getInt(k));for(int k=0;k<pictures.length();k++)imageSet.add(pictures.getString(k));}
                 for(int source:sourceSet)refs.put(source);for(String image:imageSet)pics.put(image);
                 if(mode.equals("bad-editor-source"))refs=new JSONArray().put(999);
+                if(mode.equals("cross-editor"))refs=new JSONArray().put(1);
+                if(mode.equals("bad-editor-image"))pics=new JSONArray().put("image-999.jpg");
                 JSONObject note=new JSONObject(input.getJSONObject(0).toString()).put("sources",refs).put("images",pics);
-                boolean affairs=text.contains("affairs恰好一项");
-                output=new JSONObject().put("overview","").put("notes",affairs?new JSONArray():new JSONArray().put(note)).put("affairs",affairs?new JSONArray().put(note):new JSONArray()).put("assignments",new JSONArray()).toString();
+                boolean affairs=text.contains("affairs恰好一项")||text.contains("\"affairs\":[{\"title\":\"课程事务主题\"");
+                if(mode.equals("editor-notes-to-affairs"))affairs=true;
+                if(mode.equals("editor-affairs-to-notes"))affairs=false;
+                JSONObject edited=new JSONObject().put("overview",mode.equals("editor-redundant-overview")?"PRIVATE_REDUNDANT_TOPIC_OVERVIEW":"").put("notes",affairs?new JSONArray():new JSONArray().put(note)).put("affairs",affairs?new JSONArray().put(note):new JSONArray()).put("assignments",new JSONArray());
+                if(mode.equals("bad-editor-multiple"))edited.getJSONArray(affairs?"affairs":"notes").put(new JSONObject(note.toString()));
+                if(mode.equals("bad-editor-mixed"))edited.getJSONArray(affairs?"notes":"affairs").put(new JSONObject(note.toString()));
+                if(mode.equals("bad-editor-assignment"))edited.getJSONArray("assignments").put(new JSONObject().put("text","PRIVATE_EXTRA_ACTION").put("sources",refs).put("evidence","题干 5 kg"));
+                output=edited.toString();
             }else if(mode.equals("bad-json")&&current.equals("draft-0"))output="{\"overview\":";
-            else if((mode.equals("scope-repair-past")||mode.equals("scope-legacy"))&&current.equals("final-1"))output="{\"overview\":\"PRIVATE_MALFORMED_BODY\"";
+            else if((mode.equals("scope-repair-past")||mode.equals("scope-invalid-repair")||mode.equals("scope-legacy"))&&current.equals("final-1"))output="{\"overview\":\"PRIVATE_MALFORMED_BODY\"";
             else if(mode.equals("bad-repair")&&(current.equals("draft-0")||current.endsWith("repair")))output="{\"overview\":\"RAW_PRIVATE_PAYLOAD\"";
             else if(mode.equals("bad-manual")&&current.endsWith("user-retry"))output="{\"overview\":";
             else {JSONObject value=part(id,current.startsWith("draft")||current.equals("legacy")&&!text.contains("本次images清单：\n")&&!text.contains("上一条最终总结"),text);
@@ -504,17 +514,20 @@ public final class ClassroomEnhancedCheck {
         appendOnly(dir);evidence("reuse-images",dir);
     }
     private static void editorial()throws Exception{
-        for(String defect:List.of("cross-draft","cross-final")){
-            reset(defect,defect.equals("cross-final"));File dir=materials(defect,true);rejects(()->generate(dir,true),"another valid lesson source cannot leak into this block: "+defect);
-            check(!state(dir).has("editor_plan")&&!state(dir).has("final"),"cross-block semantic error never publishes or automatically retries");
+        for(String cross:List.of("cross-draft","cross-final","cross-editor")){
+            reset(cross,true);File dir=materials(cross,true);JSONObject accepted=generate(dir,true);
+            check(accepted.getBoolean("complete")&&requests.size()==9,"same-lesson source is accepted without an extra paid retry: "+cross);
+            String warningStage=cross.equals("cross-draft")?"draft-0":cross.equals("cross-final")?"final-0":"edit-note-0";
+            scopeWarning(dir,accepted,warningStage,"notes[0].sources",1);
+            appendOnly(dir);
         }
         reset("cross-context",true);JSONObject contextual=generate(materials("cross-context",true),true);
         check(contextual.getBoolean("complete")&&contextual.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(1).getJSONArray("sources").length()==2,"image refinement can retain a genuine earlier comparison while anchored in the current block");
         JSONObject referenced=part(0,false,"");JSONArray block=new JSONArray().put(new JSONObject().put("id",1).put("text","当前块"));
         JSONObject lecture=new JSONObject().put("segments",new JSONArray().put(new JSONObject().put("id",0)).put(new JSONObject().put("id",1)).put(new JSONObject().put("id",2))).put("images",new JSONArray());
-        rejects(()->ClassroomEnhancedSummary.validateRefinement(referenced,lecture,block),"previous-only refinement cannot masquerade as the current block");
+        ClassroomEnhancedSummary.validateRefinement(referenced,lecture,block);check(true,"previous-only same-lesson reference is valid");
         referenced.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1).put(2));
-        rejects(()->ClassroomEnhancedSummary.validateRefinement(referenced,lecture,block),"current anchor does not authorize references to later blocks");
+        ClassroomEnhancedSummary.validateRefinement(referenced,lecture,block);check(true,"already-provided later lesson source is valid");
         reset("merge-topics",true);File merged=materials("merge-topics",true);JSONObject result=generate(merged,true);
         JSONObject document=result.getJSONArray("parts").getJSONObject(0);JSONArray notes=document.getJSONArray("notes");
         check(result.getJSONArray("parts").length()==1&&notes.length()==1,"same topic across extraction blocks is edited into one section");
@@ -528,7 +541,7 @@ public final class ClassroomEnhancedCheck {
         check(markdown.contains("统一全课重点")&&!markdown.contains("合成概览")&&markdown.indexOf("## 题目条件与评分线索")==markdown.lastIndexOf("## 题目条件与评分线索"),"ZIP exports the same unified document without extraction recaps or repeated section");
         for(int n=0;n<requests.size();n++){
             String text=prompt(requests.get(n));
-            if(stages.get(n).startsWith("draft-")){int id=stages.get(n).endsWith("0")?0:1;check(text.contains("["+id+"] 完整题干"),"draft appends the correct corrected slice rather than relying on recency");check(text.contains("本次允许的字幕来源id仅为：["+id+"]"),"ordinary subtitle boundary gives a disjoint extraction scope");}
+            if(stages.get(n).startsWith("draft-")){int id=stages.get(n).endsWith("0")?0:1;check(text.contains("["+id+"] 完整题干"),"draft appends the correct corrected slice rather than relying on recency");check(text.contains("本段主体字幕来源id为：["+id+"]")&&text.contains("可引用已提供的同课真实来源"),"draft scope keeps a main subject without hard-rejecting cross-block references");}
             if(stages.get(n).startsWith("final-"))check(text.contains("本次唯一要修订的初稿"),"image revision identifies the actual target draft");
         }
         appendOnly(merged);evidence("editorial-merge",merged);
@@ -696,6 +709,7 @@ public final class ClassroomEnhancedCheck {
             check(stages.equals(List.of("correct-0","draft-0","draft-0-repair","edit-plan","edit-note-0")),"one appended repair without transcript regeneration: "+defect);
             draftExample(prompt(requests.get(1)));draftExample(referencedPrompt(requests.get(2),prompt(requests.get(2))));
             check(prompt(requests.get(2)).contains("完整schema")&&!prompt(requests.get(2)).contains("完整对象："),"repair points to the original full schema rather than copying it: "+defect);appendOnly(dir);
+            check(prompt(requests.get(2)).contains("不编造来源、未见图片或课堂事实")&&prompt(requests.get(2)).contains("学习笔记可按原要求使用标明的补充例题"),"actual repair preserves classroom evidence boundaries and labelled supplemental examples: "+defect);
             check(prompt(requests.get(1)).startsWith("当前JSON阶段：draft-0。")&&prompt(requests.get(2)).contains("完整要求见历史第4条消息")&&prompt(requests.get(2)).contains("沿用该消息中的阶段锚点"),"enhanced JSON repair references its visible original stage anchor: "+defect);
         }
         reset("missing-always",false);File bounded=materials("schema-budget",false);rejects(()->generate(bounded,true),"persistently missing schema stops after the single repair");
@@ -827,6 +841,7 @@ public final class ClassroomEnhancedCheck {
         check(system.contains("保持整理深度，压紧表达"),"enhanced requests use concise handout system");
         check(system.contains("自行复算数学与代码")&&system.contains("题设和结论是否一致"),"actual request asks for mathematical and logical self-checks");
         check(system.contains("完整题干")&&system.contains("补齐必要推导")&&system.contains("不根据答案反造原题"),"actual request preserves questions while distinguishing valid derivation from invented facts");
+        check(system.contains("同类型补充例题")&&system.contains("标题标为‘补充例题’")&&system.contains("不编造考核承诺"),"actual strength-three system allows labelled replacement examples without invented teacher commitments");
         check(system.contains("标题的确定性不得高于正文证据")&&system.contains("省去识别纠正"),"actual request keeps evidence strength and removes resolved transcription workflow");
         check(system.contains("不再叠加课堂口述版")&&system.contains("同一道题将题干"),"handout combines each example and proof rather than repeating presentation layers");
         check(system.contains("可选做法合为一项")&&system.contains("概览不混入考试"),"actions retain alternative paths and overview stays educational");
@@ -838,8 +853,9 @@ public final class ClassroomEnhancedCheck {
         check(plan.contains("完整的提取与核图正文")&&plan.contains("不能仅凭标题分组"),"plan groups the real content rather than matching titles alone");
         check(plan.contains("不同题目条件、评分例外和相反结论不可误并"),"global grouping preserves distinct conditions and grading exceptions");
         check(edit.contains("保留自学需要的过程")&&edit.contains("不堆砌标题或小结"),"final editorial stage stays concise and self-study usable");
+        check(edit.contains("原题无法确定时可换用同主线、同类型及相近难度的完整题目")&&edit.contains("标题标为‘补充例题’")&&edit.contains("不冒充老师原题或考核要求"),"actual final-topic request explicitly permits labelled complete replacement examples");
         check(edit.contains("先核对本主题的题干、公式、定义域和证明")&&edit.contains("最终结果"),"topic output requests complete self-consistent working rather than calculation placeholders");
-        check(edit.contains("本主题只讲知识")&&edit.contains("不能再次抄入知识正文"),"knowledge topics keep grading and actions in their original separate collections");
+        check(edit.contains("应纠正到affairs")&&edit.contains("具体行动保持在assignments，不重复抄录"),"knowledge topics correct misplaced affairs while keeping actions in their separate collection");
         check(edit.contains("关联用主题名称")&&edit.contains("重复事实只在所属主题完整讲一次"),"topic editing avoids stale relative references and cross-topic repetition");
         check(prompt(requests.get(0)).contains("不总结或删减内容"),"style never shortens correction stage");
         appendOnly(dir);evidence("note-strength-three",dir);
@@ -872,17 +888,17 @@ public final class ClassroomEnhancedCheck {
         JSONArray lecture=new JSONArray().put(new JSONObject().put("id",0).put("text","前文")).put(new JSONObject().put("id",1).put("text","当前块")).put(new JSONObject().put("id",2).put("text","后文"));
         JSONObject refinement=new JSONObject(extra.toString());refinement.getJSONArray("notes").getJSONObject(0).put("sources",new JSONArray().put(1));
         JSONObject wholeInput=new JSONObject(input.toString()).put("segments",lecture);JSONArray block=new JSONArray().put(lecture.getJSONObject(1));
-        rejects(()->ClassroomEnhancedSummary.validateRefinement(refinement,wholeInput,block,0),"present legacy affairs must anchor in the current refinement block");
+        ClassroomEnhancedSummary.validateRefinement(refinement,wholeInput,block,0);check(true,"present legacy affairs may reference a real earlier lesson source");
         refinement.getJSONArray("affairs").getJSONObject(0).put("sources",new JSONArray().put(1));ClassroomEnhancedSummary.validateRefinement(refinement,wholeInput,block,0);check(true,"valid extra affairs can anchor with the original legacy schema");
-        refinement.getJSONArray("affairs").getJSONObject(0).put("sources",new JSONArray().put(1).put(2));rejects(()->ClassroomEnhancedSummary.validateRefinement(refinement,wholeInput,block,0),"present legacy affairs cannot cite future blocks");
+        refinement.getJSONArray("affairs").getJSONObject(0).put("sources",new JSONArray().put(1).put(2));ClassroomEnhancedSummary.validateRefinement(refinement,wholeInput,block,0);check(true,"present legacy affairs may cite already-provided later lesson sources");
     }
     private static void refinementBoundary(String actual,JSONArray block,int schema,String label)throws Exception{
         String boundary=ClassroomEnhancedSummary.refinementScope(block,schema);
         check(actual.endsWith(boundary),label+": complete current-block boundary is visible at the end of the new user message");
-        check(boundary.contains("当前核图块的真实来源id："+sourceIds(block)),label+": source ids come from the actual block");
-        for(String rule:List.of("本块真实事实","sources至少含一条对应的本块id","前文只可在同条中作真实对照","不单独输出前文回顾","不得为了过关虚挂本块id","返回空集合","assignments仍只引用本块","来源编号示例只表示结构","跨块重排与合并留给后续整稿阶段","完全属于前文的条目从本次返回集合中移除","不改历史已提交条目","本次只补本块新增步骤、条件或纠错","完整JSON对象，不返回局部补丁"))
+        check(boundary.contains("当前核图块的主体来源id："+sourceIds(block)),label+": source ids come from the actual block");
+        for(String rule:List.of("允许引用已提供的同课真实字幕","跨块引用只记审计提示，不影响本阶段提交","不得编造不存在的编号","跨块重复在后续整稿合并","安排原话按同课真实字幕核验","完整JSON对象","来源编号示例只表示结构"))
             check(boundary.contains(rule),label+": "+rule);
-        check((schema>0)==boundary.contains("affairs"),label+": affairs wording follows the frozen schema");
+        check(!boundary.contains("sources至少含一条对应的本块id")&&!boundary.contains("assignments仍只引用本块"),label+": no hard per-block reference gate");
     }
     private static JSONArray sourceIds(JSONArray block)throws Exception{
         JSONArray ids=new JSONArray();for(int i=0;i<block.length();i++)ids.put(block.getJSONObject(i).getInt("id"));return ids;
@@ -899,14 +915,17 @@ public final class ClassroomEnhancedCheck {
         for(String collection:List.of("notes","affairs")){
             JSONObject value=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",new JSONArray()).put("assignments",new JSONArray());
             value.getJSONArray(collection).put(content("本块事实",7)).put(content("PRIVATE_OLD_BODY",3));
-            refinementDiagnostic(()->ClassroomEnhancedSummary.validateRefinement(value,lecture,block),"核图来源错误："+collection+"[1].sources=[3]；缺少本块真实来源，不可只重写前文",collection+" previous-only independent item");
+            ClassroomEnhancedSummary.validateRefinement(value,lecture,block);check(true,collection+": previous-only independent item is valid within the lesson");
             JSONObject note=value.getJSONArray(collection).getJSONObject(1);note.put("sources",new JSONArray().put(7).put(3)).put("text","本块事实与前文同条对照");
             ClassroomEnhancedSummary.validateRefinement(value,lecture,block);check(true,collection+": current source plus earlier comparison remains valid");
             note.put("sources",new JSONArray().put(9).put(12));
-            refinementDiagnostic(()->ClassroomEnhancedSummary.validateRefinement(value,lecture,block),"核图来源错误："+collection+"[1].sources引用了本块之后的字幕：12",collection+" future reference despite current anchor");
+            ClassroomEnhancedSummary.validateRefinement(value,lecture,block);check(true,collection+": already-provided later lesson source remains valid");
+            note.put("sources",new JSONArray().put(999));refinementDiagnostic(()->ClassroomEnhancedSummary.validateRefinement(value,lecture,block),"AI 引用了课堂之外的字幕，请重试",collection+": fabricated source id is still rejected");
+            note.put("sources",new JSONArray().put(3)).put("images",new JSONArray().put("image-999.jpg"));rejects(()->ClassroomEnhancedSummary.validateRefinement(value,lecture,block),collection+": unseen image remains rejected");
         }
         JSONObject task=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",new JSONArray()).put("assignments",new JSONArray().put(new JSONObject().put("text","PRIVATE_TASK_BODY").put("sources",new JSONArray().put(3)).put("evidence","来源 3")));
-        refinementDiagnostic(()->ClassroomEnhancedSummary.validateRefinement(task,lecture,block),"核图来源错误：assignments[0].sources引用了本块之外的字幕：3","assignments cannot use previous blocks");
+        ClassroomEnhancedSummary.validateRefinement(task,lecture,block);check(true,"assignment may quote a genuine source in another lesson block");
+        task.getJSONArray("assignments").getJSONObject(0).put("evidence","PRIVATE_INVENTED_TEACHER_REQUIREMENT");rejects(()->ClassroomEnhancedSummary.validateRefinement(task,lecture,block),"false teacher evidence remains rejected despite a valid source id");
         task.put("assignments",new JSONArray());ClassroomEnhancedSummary.validateRefinement(task,lecture,block);check(true,"empty current-block output remains legal");
     }
     private static void refinementActualSourceTopology()throws Exception{
@@ -917,20 +936,34 @@ public final class ClassroomEnhancedCheck {
         JSONObject middle=content("PRIVATE_INSERTED_EARLIER_NOTE_BODY",887);
         JSONObject value=new JSONObject().put("overview","").put("notes",new JSONArray().put(content("PRIVATE_FIRST_CURRENT_NOTE_BODY",896).put("sources",firstRefs)).put(middle).put(content("PRIVATE_LAST_CURRENT_NOTE_BODY",918).put("sources",lastRefs))).put("affairs",new JSONArray()).put("assignments",new JSONArray());
         check(block.length()==77&&block.getJSONObject(0).getInt("id")==896&&block.getJSONObject(76).getInt("id")==972,"actual numeric topology retains the complete current block 896..972");
-        String expected="核图来源错误：notes[1].sources=[887]；缺少本块真实来源，不可只重写前文";
-        refinementDiagnostic(()->ClassroomEnhancedSummary.validateRefinement(value,lecture,block),expected,"actual middle notes[1] is previous-only despite surrounding valid current notes");
+        ClassroomEnhancedSummary.validateRefinement(value,lecture,block);check(true,"actual middle notes[1] source 887 is accepted as a genuine earlier lesson source without a false current anchor");
         JSONArray comparison=new JSONArray().put(916).put(887);middle.put("sources",comparison).put("text","PRIVATE_CURRENT_FACT_WITH_EARLIER_COMPARISON");
         ClassroomEnhancedSummary.validateRefinement(value,lecture,block);check(true,"actual source ids allow a current fact with a real earlier comparison in the same note");
-        ClassroomStore.write(new File(root,"actual-source-topology.json"),new JSONObject().put("synthetic",true).put("basis","source-scope.json numeric topology").put("current_block_sources",sourceIds(block)).put("rejected_field","notes[1].sources").put("rejected_sources",new JSONArray().put(887)).put("expected_error",expected).put("surrounding_valid_sources",new JSONArray().put(firstRefs).put(lastRefs)).put("accepted_comparison_sources",comparison));
+        ClassroomStore.write(new File(root,"actual-source-topology.json"),new JSONObject().put("synthetic",true).put("basis","source-scope.json numeric topology").put("current_block_sources",sourceIds(block)).put("accepted_field","notes[1].sources").put("accepted_sources",new JSONArray().put(887)).put("surrounding_valid_sources",new JSONArray().put(firstRefs).put(lastRefs)).put("accepted_comparison_sources",comparison));
+    }
+    private static void scopeWarning(File dir,JSONObject result,String stage,String field,int source)throws Exception{
+        JSONArray warnings=state(dir).getJSONArray("source_scope_warnings");boolean found=false;
+        for(int i=0;i<warnings.length();i++){JSONObject warning=warnings.getJSONObject(i);check(warning.keySet().equals(Set.of("stage","field","sources")),"scope audit contains only stage, field and numeric source ids");for(int n=0;n<warning.getJSONArray("sources").length();n++)check(warning.getJSONArray("sources").get(n) instanceof Number,"scope audit never persists model prose as a source");if(warning.getString("stage").equals(stage)&&warning.getString("field").equals(field)&&warning.getJSONArray("sources").toString().equals("["+source+"]"))found=true;}
+        check(found,"soft warning identifies exact cross-block field: "+stage+" "+field);
+        check(result.getJSONArray("source_scope_warnings").toString().equals(warnings.toString()),"final summary retains soft warnings from the same candidate");
+        check(!warnings.toString().contains("PRIVATE_"),"scope audit excludes source and model bodies");
     }
     private static void refinementScopePipeline()throws Exception{
+        editorial();
         for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(boolean repair:new boolean[]{false,true}){
-            reset(repair?"scope-repair-past":"scope-affairs-past",true);File dir=materials("scope-"+protocol+"-"+repair,true);
-            rejects(()->generateWithProtocol(dir,protocol),"later-block previous-only affairs stops without semantic auto retry");
+            reset(repair?"scope-repair-past":"scope-affairs-past",true);File dir=materials("scope-accepted-"+protocol+"-"+repair,true);JSONObject result=generateWithProtocol(dir,protocol);
+            check(result.getBoolean("complete")&&requests.size()==(repair?11:10),"earlier-only affairs commit directly; only structural defects receive a paid repair: "+protocol+" "+repair);
+            scopeWarning(dir,result,"final-1","affairs[0].sources",0);
+            check(Collections.frequency(stages,"final-1")==1&&Collections.frequency(stages,"final-1-repair")== (repair?1:0)&&stages.stream().noneMatch(s->s.contains("user-retry")),"soft cross-block audit never starts a semantic retry");
+            if(protocol.equals(AiSettings.RESPONSES))nativeAppendOnly(dir);else appendOnly(dir);evidence("refinement-scope-accepted-"+protocol+"-"+repair,dir);
+        }
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(boolean repair:new boolean[]{false,true}){
+            reset(repair?"scope-invalid-repair":"scope-invalid-evidence",true);File dir=materials("scope-"+protocol+"-"+repair,true);
+            rejects(()->generateWithProtocol(dir,protocol),"fabricated teacher evidence stops without semantic auto retry");
             JSONObject before=state(dir);int sent=requests.size();String run=before.getString("run"),options=before.getJSONObject("conversation").getJSONObject("options").toString();
             check(sent==(repair?7:6)&&before.getInt("final-1_attempt")==1,"only initial final and optional single structural repair are sent");
             check(before.getJSONArray("corrected").length()==2&&before.getJSONArray("drafts").length()==2&&before.getJSONArray("parts").length()==1&&before.getJSONArray("analysed").length()==1&&!before.has("final"),"only failed second refinement is uncommitted");
-            String error=before.getString("final-1_error");check(error.contains("affairs[0].sources=[0]")&&!error.contains("PRIVATE_"),"persisted failure identifies exact affairs field without response prose");
+            String error=before.getString("final-1_error");check(error.contains("原话")&&!error.contains("PRIVATE_"),"persisted failure identifies the evidence guard without response prose");
             JSONArray block=before.getJSONArray("blocks").getJSONArray(1);
             refinementBoundary(prompt(requests.get(5)),block,1,"second initial refinement "+protocol);
             if(repair){refinementBoundary(prompt(requests.get(6)),block,1,"second refinement repair "+protocol);check(messages(requests.get(6)).getJSONObject(messages(requests.get(6)).length()-1).getJSONArray("content").length()==1,"repair sends text only, retaining original image position");}
@@ -953,12 +986,48 @@ public final class ClassroomEnhancedCheck {
         }
         reset("scope-legacy",true);File legacy=materials("scope-legacy",true);JSONObject seeded=legacyState(legacy,true);
         seeded.put("config",ClassroomSummary.configKey(AI,2,"保留题干条件及步骤分",true,1,0,0));ClassroomStore.write(new File(legacy,"run.json"),seeded);
-        rejects(()->generate(legacy,true),"legacy initial final and its single malformed repair stop on previous-only notes");
-        JSONObject before=state(legacy);check(requests.size()==7&&before.getInt("affairs_schema")==0&&before.getString("run").equals(seeded.getString("run")),"legacy keeps original run and schema through final repair");
+        JSONObject legacyResult=generate(legacy,true);
+        JSONObject before=state(legacy);check(requests.size()==10&&before.getInt("affairs_schema")==0&&before.getString("run").equals(seeded.getString("run"))&&before.getString("config").equals(seeded.getString("config"))&&before.getString("config").contains("\n11\n"),"legacy keeps original run, pipeline-eleven config and schema through final repair");
         JSONArray block=before.getJSONArray("blocks").getJSONArray(1);refinementBoundary(prompt(requests.get(5)),block,0,"legacy initial final");refinementBoundary(prompt(requests.get(6)),block,0,"legacy final repair");
-        mode="normal";check(generate(legacy,true).getBoolean("complete"),"legacy manual refinement continuation succeeds");refinementBoundary(prompt(requests.get(7)),block,0,"legacy manual final");
+        check(legacyResult.getBoolean("complete"),"legacy earlier-only refinement succeeds after its one structural repair");scopeWarning(legacy,legacyResult,"final-1","notes[0].sources",0);
         for(JSONObject request:requests)check(!prompt(request).contains("affairs"),"legacy initial, repair and subsequent prompts never introduce affairs");
         check(Collections.frequency(stages,"final-1-repair")==1&&state(legacy).getInt("affairs_schema")==0,"legacy repair remains bounded and schema remains frozen");appendOnly(legacy);evidence("refinement-scope-legacy",legacy);
+    }
+    private static JSONObject topicResult(int noteCount,int affairCount)throws Exception{
+        JSONArray notes=new JSONArray(),affairs=new JSONArray();for(int i=0;i<noteCount;i++)notes.put(content("知识 "+i,0));for(int i=0;i<affairCount;i++)affairs.put(content("事务 "+i,0));
+        return new JSONObject().put("overview","").put("notes",notes).put("affairs",affairs).put("assignments",new JSONArray());
+    }
+    private static void editorialClassificationContract()throws Exception{
+        for(String collection:List.of("notes","affairs"))for(String overview:List.of("","PRIVATE_REDUNDANT_TOPIC_OVERVIEW")){
+            JSONObject value=topicResult(collection.equals("notes")?1:0,collection.equals("affairs")?1:0).put("overview",overview);
+            check(ClassroomEnhancedSummary.topicCollection(value,1).equals(collection),"actual category is selected independently of the redundant topic overview: "+collection);
+        }
+        for(int[] counts:new int[][]{{0,0},{2,0},{0,2},{1,1}}){JSONObject value=topicResult(counts[0],counts[1]);rejects(()->ClassroomEnhancedSummary.topicCollection(value,1),"empty, multiple or mixed topic items cannot be silently dropped: "+Arrays.toString(counts));}
+        JSONObject withAction=topicResult(1,0);withAction.getJSONArray("assignments").put(new JSONObject().put("text","不能丢弃的行动"));rejects(()->ClassroomEnhancedSummary.topicCollection(withAction,1),"topic action cannot disappear during collection selection");
+        JSONObject legacy=topicResult(1,0);legacy.remove("affairs");check(ClassroomEnhancedSummary.topicCollection(legacy,0).equals("notes"),"legacy topic retains its original notes-only schema");
+        rejects(()->ClassroomEnhancedSummary.topicCollection(topicResult(0,1),0),"legacy topic cannot switch to affairs");
+    }
+    private static void editorialClassificationPipeline()throws Exception{
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(String fixture:List.of("editor-notes-to-affairs","editor-affairs-to-notes","editor-redundant-overview")){
+            reset(fixture,false);File dir=materials(fixture+"-"+protocol,false);JSONObject result=generateWithProtocol(dir,protocol),run=state(dir),document=result.getJSONArray("parts").getJSONObject(0);
+            String original=fixture.equals("editor-affairs-to-notes")?"affairs":"notes",actual=fixture.equals("editor-notes-to-affairs")?"affairs":"notes";
+            check(result.getBoolean("complete")&&stages.equals(List.of("correct-0","draft-0","edit-plan","edit-note-0")),"category correction and redundant overview finish without another paid request: "+fixture+" "+protocol);
+            check(run.getJSONObject("editor_plan").getJSONArray("sections").getJSONObject(0).getString("collection").equals(original)&&run.getJSONArray("editor_notes").getJSONObject(0).getString("collection").equals(actual),"editor checkpoint keeps the actual returned collection rather than the plan guess: "+fixture);
+            check(document.getJSONArray(actual).length()==1&&document.getJSONArray(actual.equals("notes")?"affairs":"notes").length()==0&&document.getJSONArray("assignments").length()==0,"assembled document routes exactly one topic to its corrected category: "+fixture);
+            check(document.getJSONArray(actual).getJSONObject(0).getString("text").equals(run.getJSONArray("drafts").getJSONObject(0).getJSONArray(original).getJSONObject(0).getString("text")),"classification correction preserves the full topic body: "+fixture);
+            String expectedOverview=document.getJSONArray("notes").length()==0?"":run.getJSONObject("editor_plan").getString("overview");
+            check(result.getString("overview").equals(expectedOverview)&&document.getString("overview").equals(expectedOverview)&&!document.toString().contains("PRIVATE_REDUNDANT_TOPIC_OVERVIEW"),"affairs-only output clears knowledge overview; remaining knowledge uses only the existing plan overview without inventing or duplicating one");
+            String sent=prompt(requests.get(3));check(sent.contains("按实际内容放入notes或affairs，合计恰好一项"),"actual editorial request permits correction to the real content category");
+            check(Collections.frequency(stages,"edit-note-0")==1&&stages.stream().noneMatch(s->s.contains("repair")||s.contains("retry")),"valid category correction never consumes a retry or repair");
+            if(protocol.equals(AiSettings.RESPONSES))nativeAppendOnly(dir);else appendOnly(dir);evidence(fixture+"-"+protocol,dir);
+        }
+        for(String defect:List.of("bad-editor-multiple","bad-editor-mixed","bad-editor-assignment","bad-editor-source","bad-editor-image")){
+            reset(defect,false);File dir=materials(defect,false);rejects(()->generate(dir,true),"editor still rejects an unsafe or lossy response: "+defect);JSONObject failed=state(dir);String run=failed.getString("run");
+            check(requests.size()==4&&!failed.has("final")&&failed.getJSONArray("editor_notes").length()==0&&failed.getInt("edit-note-0_attempt")==1,"invalid category/source/image response cannot commit, silently discard data or auto-retry: "+defect);
+            mode="normal";JSONObject result=generate(dir,true);check(result.getBoolean("complete")&&result.getString("run").equals(run)&&requests.size()==5&&stages.get(4).equals("edit-note-0-user-retry"),"explicit continuation retries only the rejected editorial topic: "+defect);
+            for(String completed:List.of("correct-0","draft-0","edit-plan"))check(Collections.frequency(stages,completed)==1,"manual editorial recovery preserves paid "+completed+": "+defect);
+            appendOnly(dir);evidence(defect,dir);
+        }
     }
     private static void courseAffairs()throws Exception{
         check(ClassroomAffairsPolicy.frozen(null)==1,"new runs use affairs schema one");
@@ -1033,6 +1102,10 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length>1&&args[1].equals("editorial-classification")){
+            try{test("editorial actual-category contract",ClassroomEnhancedCheck::editorialClassificationContract);test("editorial category correction, overview and safe recovery",ClassroomEnhancedCheck::editorialClassificationPipeline);}
+            finally{server.stop(0);}System.out.println("ClassroomEditorialClassification: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Editorial classification checks failed");return;
+        }
         if(args.length>1&&args[1].equals("refinement-scope")){
             try{test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("actual middle-note numeric source topology",ClassroomEnhancedCheck::refinementActualSourceTopology);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);}
             finally{server.stop(0);}System.out.println("ClassroomRefinementScope: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Refinement scope checks failed");return;
@@ -1045,7 +1118,7 @@ public final class ClassroomEnhancedCheck {
             try{test("native Responses pipeline, immutable items and protocol-frozen recovery",ClassroomEnhancedCheck::nativePipeline);}
             finally{server.stop(0);}System.out.println("ClassroomResponsesCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Native Responses pipeline checks failed");return;
         }
-        if(args.length==1){test("enhanced draft image boundary and append-only recovery",ClassroomEnhancedCheck::draftImageReferences);test("native Responses pipeline, immutable items and protocol-frozen recovery",ClassroomEnhancedCheck::nativePipeline);}
+        if(args.length==1){test("editorial actual-category contract",ClassroomEnhancedCheck::editorialClassificationContract);test("editorial category correction, overview and safe recovery",ClassroomEnhancedCheck::editorialClassificationPipeline);test("enhanced draft image boundary and append-only recovery",ClassroomEnhancedCheck::draftImageReferences);test("native Responses pipeline, immutable items and protocol-frozen recovery",ClassroomEnhancedCheck::nativePipeline);}
         if(args.length==1)test("scoped routing retains the full pipeline and immutable checkpoints",ClassroomEnhancedCheck::routedPipeline);
         if(args.length>1&&args[1].equals("note-strength")){
             try{test("enhanced note strength and overview image guard",ClassroomEnhancedCheck::noteStrength);}

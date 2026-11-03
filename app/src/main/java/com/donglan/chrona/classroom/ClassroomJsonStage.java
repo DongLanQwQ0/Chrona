@@ -36,7 +36,7 @@ final class ClassroomJsonStage {
             }
             state.put(stage+"_repair_attempt",attempt);save();
             String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+ClassroomJsonFailure.detail(malformed)
-                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或新事实。"+WIRE+stageBoundary(stage),Collections.emptyList(),outputKey);
+                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或课堂事实；学习笔记可按原要求使用标明的补充例题。"+WIRE+stageBoundary(stage),Collections.emptyList(),outputKey);
             try {return validate(repaired,validator);}
             catch(JSONException|IOException invalid){invalid(stage,attempt,invalid);throw invalid;}
         }

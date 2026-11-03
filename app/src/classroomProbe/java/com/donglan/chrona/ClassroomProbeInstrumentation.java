@@ -32,6 +32,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean mathAudit;
     private boolean monitorAudit;
     private boolean providerFailure;
+    private boolean timetableAudit;
     private String reviewKey;
     private final java.util.concurrent.CountDownLatch applicationReady=new java.util.concurrent.CountDownLatch(1);
     private volatile boolean applicationInitializationSkipped;
@@ -47,12 +48,13 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
         monitorAudit = args != null && "true".equals(args.getString("monitorAudit"));
         providerFailure = args != null && "true".equals(args.getString("providerFailure"));
+        timetableAudit = args != null && "true".equals(args.getString("timetableAudit"));
         reviewKey = args == null ? null : args.getString("reviewKey");
         super.onCreate(args); start();
     }
     @Override public void callApplicationOnCreate(android.app.Application app){
         try{
-            if(mathAudit||monitorAudit||aiPing)applicationInitializationSkipped=true;
+            if(mathAudit||monitorAudit||aiPing||timetableAudit)applicationInitializationSkipped=true;
             else super.callApplicationOnCreate(app);
         }finally{applicationReady.countDown();}
     }
@@ -60,6 +62,11 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         Bundle result = new Bundle();
         try {
             if (!getTargetContext().getPackageName().equals("com.donglan.chrona")) throw new IllegalStateException();
+            if(timetableAudit){
+                if(!network||!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
+                    throw new IllegalStateException("Explicit isolated timetable read required");
+                result.putString("timetable_audit",timetableResponseAudit().toString());finish(-1,result);return;
+            }
             if(mathAudit||monitorAudit){
                 if(!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
                     throw new IllegalStateException("Read-only application initialization unavailable");
@@ -136,6 +143,52 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             // Never log exceptions from authentication/HTTP with URLs, account data or response bodies.
             result.putString("error_type", failure.getClass().getSimpleName()); finish(0, result);
         }
+    }
+    /** Explicit school read, bounded C-course fields only; no cookie, credential or account export. */
+    private JSONObject timetableResponseAudit()throws Exception{
+        ZjuSettingsStore settings=new ZjuSettingsStore(getTargetContext());
+        if(!settings.enabled()||!settings.configured())throw new IllegalStateException("School account unavailable");
+        JSONArray responses=new JSONArray(),cached=new JSONArray(),expanded=new JSONArray();
+        JSONObject calendar=com.donglan.chrona.zju.ZjuCalendarStore.load(getTargetContext()).json();
+        for(ZjuSnapshot.Lesson row:new ZjuTimetableStore(getTargetContext()).load(settings.account()))
+            if(row.title.contains("C程序设计"))cached.put(courseRow(row));
+        String[] credentials=settings.credentials();
+        try(ZjuClient client=new ZjuClient(credentials[0],credentials[1],com.donglan.chrona.zju.ZjuCalendarStore.load(getTargetContext()))){
+            java.lang.reflect.Field field=ZjuClient.class.getDeclaredField("http");field.setAccessible(true);
+            okhttp3.OkHttpClient transport=(okhttp3.OkHttpClient)field.get(client);
+            field.set(client,transport.newBuilder().addInterceptor(chain->{
+                okhttp3.Response response=chain.proceed(chain.request());
+                if(chain.request().url().host().equals("zdbk.zju.edu.cn")&&chain.request().url().encodedPath().endsWith("/kbcx/xskbcx_cxXsKb.html")&&response.isSuccessful()){
+                    try{
+                        JSONObject data=new JSONObject(response.peekBody(2*1024*1024).string()),projection=new JSONObject();
+                        if(chain.request().body() instanceof okhttp3.FormBody form)for(int i=0;i<form.size();i++)
+                            if(form.name(i).equals("xnm")||form.name(i).equals("xqm"))projection.put(form.name(i),form.value(i));
+                        for(String key:new String[]{"kbList","sjkList","jxkList","xskList","ywkList","fKbList"}){
+                            JSONArray rows=data.optJSONArray(key),selected=new JSONArray();
+                            if(rows!=null)for(int i=0;i<rows.length();i++){
+                                JSONObject row=rows.optJSONObject(i);if(row==null||!(row.optString("kcb")+row.optString("kcmc")).contains("C程序设计"))continue;
+                                java.util.Set<String> names=new java.util.TreeSet<>();for(java.util.Iterator<String> it=row.keys();it.hasNext();)names.add(it.next());
+                                JSONObject safe=new JSONObject().put("field_names",new JSONArray(names));
+                                for(String name:new String[]{"kcb","kcmc","djj","skcd","xqj","dsz","zcd","qsrq","jzrq","skrq","jcs","cdmc"}){
+                                    Object value=row.opt(name);if(value instanceof Number||value instanceof String text&&text.length()<16000)safe.put(name,value);
+                                }
+                                selected.put(safe);
+                            }
+                            projection.put(key,new JSONObject().put("count",rows==null?0:rows.length()).put("selected",selected));
+                        }
+                        responses.put(projection);
+                    }catch(org.json.JSONException invalid){throw new java.io.IOException("Timetable diagnostic projection failed");}
+                }
+                return response;
+            }).build());
+            ZjuSnapshot snapshot=client.fetch(false,true,java.util.Collections.emptySet());
+            for(ZjuSnapshot.Lesson row:snapshot.lessons)if(row.title.contains("C程序设计"))expanded.put(courseRow(row));
+        }finally{Arrays.fill(credentials,"");}
+        return new JSONObject().put("explicit_network_requests",true).put("cache_written",false).put("calendar",calendar).put("cached",cached).put("responses",responses).put("expanded",expanded);
+    }
+    private static JSONObject courseRow(ZjuSnapshot.Lesson row)throws Exception{
+        return new JSONObject().put("title",row.title).put("start",Instant.ofEpochMilli(row.start).atZone(ZONE).toString())
+                .put("end",Instant.ofEpochMilli(row.end).atZone(ZONE).toString()).put("location",row.location).put("term",row.term);
     }
     /** Final-document metadata only; no messages, raw replies, account identity or model options leave. */
     private JSONObject mathHistory(ZjuSettingsStore settings)throws Exception{
@@ -251,7 +304,10 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     JSONArray corrected=run.optJSONArray("corrected"),blocks=run.optJSONArray("blocks");
                     row.put("correction_parts",corrected==null?0:corrected.length()).put("source_blocks",blocks==null?0:blocks.length());
                     JSONObject audit=com.donglan.chrona.classroom.ClassroomAudit.project(run,summary);
-                    row.put("run_turns",audit.getJSONArray("turns"));
+                    row.put("run_turns",audit.getJSONArray("turns")).put("run_source_scope_warnings",audit.getJSONArray("source_scope_warnings"));
+                    JSONObject phases=new JSONObject();for(String name:new String[]{"drafts","parts","editor_notes"})
+                        phases.put(name,run.optJSONArray(name)==null?0:run.getJSONArray(name).length());
+                    row.put("run_phase_counts",phases);
                     JSONObject execution=audit.optJSONObject("execution");
                     if(execution!=null)row.put("run_execution_state",execution.optString("state"));
                     JSONObject conversation=run.optJSONObject("conversation");
@@ -335,16 +391,31 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                             JSONObject object=com.donglan.chrona.classroom.ClassroomSummary.parseObject(text),fields=new JSONObject();
                             row.put("run_last_image_reference_shapes",imageReferenceShapes(object));
                             row.put("run_last_source_shapes",sourceShapes(object));
-                            String stage=last.optString("stage");java.util.regex.Matcher finalBlock=java.util.regex.Pattern.compile("^final-([0-9]+)(?:-.*)?$").matcher(stage);
+                            String stage=last.optString("stage");java.util.regex.Matcher finalBlock=java.util.regex.Pattern.compile("^(?:final|draft)-([0-9]+)(?:-.*)?$").matcher(stage);
                             if(finalBlock.matches()&&blocks!=null){
                                 int index=Integer.parseInt(finalBlock.group(1));JSONArray block=blocks.optJSONArray(index),ids=new JSONArray();
                                 if(block!=null){for(int n=0;n<block.length();n++)ids.put(block.getJSONObject(n).getInt("id"));row.put("run_last_block_sources",ids);}
+                                JSONArray correctedParts=run.optJSONArray("corrected");
+                                if(block!=null&&correctedParts!=null&&index<correctedParts.length()){
+                                    java.util.Set<Integer> allowed=new java.util.HashSet<>(),observed=new java.util.TreeSet<>();
+                                    for(int n=0;n<ids.length();n++)allowed.add(ids.getInt(n));
+                                    java.util.regex.Matcher markers=java.util.regex.Pattern.compile("(?i)\\[(?:id:)?\\s*([0-9]{1,9})\\s*\\]").matcher(correctedParts.getString(index));
+                                    while(markers.find())observed.add(Integer.parseInt(markers.group(1)));
+                                    JSONArray outside=new JSONArray();for(int id:observed)if(!allowed.contains(id))outside.put(id);
+                                    row.put("run_last_corrected_marker_ids",new JSONArray(observed)).put("run_last_corrected_marker_outside_block",outside);
+                                }
                                 JSONArray drafts=run.optJSONArray("drafts");JSONObject draft=drafts==null?null:drafts.optJSONObject(index);
                                 if(draft!=null)row.put("run_last_draft_source_shapes",sourceShapes(draft));
                                 row.put("run_committed_refinements",run.optJSONArray("parts")==null?0:run.getJSONArray("parts").length());
                             }
                             for(String name:new String[]{"overview","notes","affairs","assignments","image_assessment","image_requests","image_reviews","sections","groups"})fields.put(name,object.has(name));
                             row.put("run_last_response_shape","object").put("run_last_response_fields",fields);
+                            JSONObject counts=new JSONObject().put("overview_characters",object.optString("overview").length());
+                            for(String name:new String[]{"notes","affairs","assignments"})counts.put(name,object.optJSONArray(name)==null?-1:object.getJSONArray(name).length());
+                            row.put("run_last_collection_counts",counts);
+                            JSONObject plan=run.optJSONObject("editor_plan");JSONArray topics=plan==null?null:plan.optJSONArray("sections");
+                            JSONArray edited=run.optJSONArray("editor_notes");int nextTopic=edited==null?0:edited.length();
+                            if(topics!=null&&nextTopic<topics.length())row.put("run_next_topic_collection",topics.getJSONObject(nextTopic).optString("collection","notes"));
                             Object requests=object.opt("image_requests");
                             row.put("run_last_image_requests_shape",!object.has("image_requests")?"missing":requests==JSONObject.NULL?"null":requests instanceof JSONArray?"array":requests instanceof JSONObject?"object":requests instanceof String?"string":"other");
                             if(requests instanceof JSONArray list)row.put("run_last_image_requests",list.length());

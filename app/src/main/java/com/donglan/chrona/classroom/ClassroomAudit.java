@@ -100,6 +100,19 @@ public final class ClassroomAudit {
                 decision(decisions,new JSONObject().put("image_assessment",imageAudit.getJSONObject("assessment"))
                         .put("image_requests",imageAudit.optJSONArray("requests")),0);
         }
+        JSONObject warningSource=run==null?summary:run;
+        JSONArray warnings=new JSONArray(),saved=warningSource==null?null:warningSource.optJSONArray("source_scope_warnings");
+        if(saved!=null)for(int i=0;i<saved.length();i++){
+            JSONObject row=saved.optJSONObject(i);if(row==null)continue;
+            String stage=row.optString("stage"),field=row.optString("field");
+            if(!stage.matches("(?:draft|final|edit-note)-[0-9]+")||!field.matches("(?:notes|affairs|assignments)\\[[0-9]+\\]\\.sources"))continue;
+            JSONArray sources=new JSONArray(),ids=row.optJSONArray("sources");
+            if(ids!=null)for(int n=0;n<ids.length();n++){
+                Object value=number(new JSONObject().put("id",ids.opt(n)),"id");if(value!=JSONObject.NULL)sources.put(value);
+            }
+            if(sources.length()>0)warnings.put(new JSONObject().put("stage",stage).put("field",field).put("sources",sources));
+        }
+        result.put("source_scope_warnings",warnings);
         return result;
     }
     private static Object requestBytes(JSONObject conversation,JSONArray messages,Object count)throws Exception {

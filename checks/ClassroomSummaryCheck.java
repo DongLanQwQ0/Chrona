@@ -733,6 +733,9 @@ public final class ClassroomSummaryCheck {
             JSONObject run=ClassroomStore.read(new File(dir,"run.json"));
             check(result.getInt("note_strength")==level&&run.getInt("note_strength")==level,"style recorded in checkpoint and published result "+level);
             check(requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content").equals(system),"real loopback request uses selected system prompt "+level);
+            String actual=requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
+            check(actual.contains("标题标为‘补充例题’")&&actual.contains("不把补充题设当作老师原题"),"actual request permits clearly labelled complete replacement examples without invented original questions "+level);
+            if(level==3)check(actual.contains("同类型补充例题")&&actual.contains("不编造考核承诺"),"actual strength-three request preserves the teaching direction without fabricating assessment facts");
         }
         check(keys.size()==3,"each strength has a distinct new-run identity");
         check(ClassroomSummary.systemPrompt("",3).contains("保持整理深度，压紧表达")&&ClassroomSummary.systemPrompt("",3).contains("更正文稿仍逐条保留内容"),"concise handout never compresses correction transcript");
