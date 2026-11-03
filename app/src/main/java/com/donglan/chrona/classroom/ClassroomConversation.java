@@ -32,17 +32,20 @@ final class ClassroomConversation {
         return false;
     }
     String text(String stage,String prompt,List<byte[]> images)throws Exception{
-        return generate(stage,prompt,images,Collections.emptyList(),false);
+        return generate(stage,prompt,images,Collections.emptyList(),false,null);
     }
     String json(String stage,String prompt,List<byte[]> images)throws Exception{
         return json(stage,prompt,images,Collections.emptyList());
     }
     String json(String stage,String prompt,List<byte[]> images,List<String> imageNames)throws Exception{
+        return json(stage,prompt,images,imageNames,null);
+    }
+    String json(String stage,String prompt,List<byte[]> images,List<String> imageNames,JSONObject shape)throws Exception{
         if(!imageNames.isEmpty()&&imageNames.size()!=images.size())throw new IOException("图片标识与附件数量不一致");
         List<String> names=new ArrayList<>();for(String imageName:imageNames)names.add(ClassroomDocument.imageName(imageName));
-        return generate(stage,prompt,images,names,nativeJson);
+        return generate(stage,prompt,images,names,nativeJson,state.optBoolean("native_json_schema")?shape:null);
     }
-    private String generate(String stage,String prompt,List<byte[]> images,List<String> imageNames,boolean json)throws Exception{
+    private String generate(String stage,String prompt,List<byte[]> images,List<String> imageNames,boolean json,JSONObject shape)throws Exception{
         JSONObject restarts=conversation.optJSONObject("restarts");
         if(restarts==null){restarts=new JSONObject();conversation.put("restarts",restarts);}
         int generation=restarts.optInt(stage);String attempt=generation==0?stage:stage+"-restart-"+generation;
@@ -56,7 +59,7 @@ final class ClassroomConversation {
         }
         String request=generation==0?prompt:"上次当前板块未完整成功，已回滚该板块未提交的结果。历史中的失败回复仅供审计，不作为本次输出的前半段。"
                 +"现在从头完整重新生成当前板块，禁止续写或拼接此前片段。当前阶段："+stage+"；重试序号："+generation+"。\n本次完整要求：\n"+prompt;
-        try{return ask(attempt,request,generation==0?images:Collections.emptyList(),generation==0?imageNames:Collections.emptyList(),json);}
+        try{return ask(attempt,request,generation==0?images:Collections.emptyList(),generation==0?imageNames:Collections.emptyList(),json,shape);}
         catch(Exception failure){
             // Retire only this uncommitted attempt. Sent messages and actual replies stay exact.
             if(attempt.equals(conversation.optString("pending")))conversation.remove("pending");
@@ -69,7 +72,7 @@ final class ClassroomConversation {
         if(output.isBlank())throw new IOException("AI 未返回课堂内容，未提交内容已回滚");
         return output;
     }
-    private String ask(String stage,String prompt,List<byte[]> images,List<String> imageNames,boolean json)throws Exception{
+    private String ask(String stage,String prompt,List<byte[]> images,List<String> imageNames,boolean json,JSONObject shape)throws Exception{
         JSONObject outputs=conversation.getJSONObject("outputs");
         if(outputs.has(stage)){
             return complete(outputs.getString(stage),conversation.getJSONObject("finishes").optString(stage));
@@ -93,6 +96,8 @@ final class ClassroomConversation {
         JSONObject request=new JSONObject(conversation.getJSONObject("options").toString()).put(responses?"input":"messages",new JSONArray(messages.toString()));
         if(json){
             JSONObject format=new JSONObject().put("type","json_object");
+            if(shape!=null)format=responses?new JSONObject(shape.toString()).put("type","json_schema"):
+                    new JSONObject().put("type","json_schema").put("json_schema",new JSONObject(shape.toString()));
             if(responses){
                 JSONObject text=request.optJSONObject("text");
                 if(text==null){text=new JSONObject();request.put("text",text);}
@@ -100,7 +105,7 @@ final class ClassroomConversation {
             }else request.put("response_format",format);
         }
         JSONObject audit=new JSONObject().put("stage",stage).put("message_count",messages.length()).put("started",System.currentTimeMillis())
-                .put("output_mode",json?"json_object":"text")
+                .put("output_mode",json?(shape==null?"json_object":"json_schema"):"text")
                 .put("request_bytes",request.toString().getBytes(StandardCharsets.UTF_8).length)
                 .put("status","running");conversation.getJSONArray("turns").put(audit);save();
         try{

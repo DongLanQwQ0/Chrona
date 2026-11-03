@@ -298,7 +298,14 @@ public final class ClassroomEnhancedCheck {
         JSONObject run=state(dir),base=new JSONObject(run.getJSONObject("conversation").getJSONObject("options").toString());
         if(run.optBoolean("native_json")&&!stages.get(index).startsWith("correct-")){
             JSONObject format=new JSONObject().put("type","json_object");
-            if(base.has("max_output_tokens")){JSONObject text=base.optJSONObject("text");if(text==null){text=new JSONObject();base.put("text",text);}text.put("format",format);}
+            boolean responses=base.has("max_output_tokens");
+            if(run.optBoolean("native_json_schema")){
+                String sent=run.getJSONObject("conversation").getJSONArray("turns").getJSONObject(index).getString("stage"),best="";
+                JSONObject shapes=run.getJSONObject("response_shapes");for(String key:shapes.keySet())if((sent.equals(key)||sent.startsWith(key+"-"))&&key.length()>best.length())best=key;
+                JSONObject shape=new JSONObject(shapes.getJSONObject(best).toString());
+                format=responses?shape.put("type","json_schema"):new JSONObject().put("type","json_schema").put("json_schema",shape);
+            }
+            if(responses){JSONObject text=base.optJSONObject("text");if(text==null){text=new JSONObject();base.put("text",text);}text.put("format",format);}
             else base.put("response_format",format);
         }
         return base;
@@ -1643,6 +1650,47 @@ public final class ClassroomEnhancedCheck {
             reset("affairs-only",false);result=generate(dir,enhanced);check(!result.getString("run").equals(run)&&state(dir).getInt("affairs_schema")==1&&result.getJSONArray("parts").getJSONObject(0).has("affairs"),"completed legacy regeneration opts into current contract: "+enhanced);
         }
     }
+    private static void structuralOnly(JSONObject schema)throws Exception{
+        for(String key:schema.keySet())check(Set.of("type","properties","required","additionalProperties","items").contains(key),"stage schema contains structure only, no content/length/range constraint: "+key);
+        if(schema.getString("type").equals("object")){
+            JSONObject fields=schema.getJSONObject("properties");JSONArray required=schema.getJSONArray("required");Set<String> names=new HashSet<>();for(int n=0;n<required.length();n++)names.add(required.getString(n));
+            check(!schema.getBoolean("additionalProperties")&&names.equals(fields.keySet()),"object grammar declares each existing field exactly at its own level");
+            for(String key:fields.keySet())structuralOnly(fields.getJSONObject(key));
+        }else if(schema.getString("type").equals("array"))structuralOnly(schema.getJSONObject("items"));
+    }
+    private static void nativeSchemas()throws Exception{
+        for(int affairs:new int[]{0,1})for(int figures:new int[]{0,1})for(String stage:List.of("first","draft-0","final","final-0","edit-plan","edit-note-0","edit-assignments")){
+            JSONObject contract=ClassroomResponseShape.contract(stage,affairs,figures),schema=contract.getJSONObject("schema"),fields=schema.getJSONObject("properties");
+            check(contract.getBoolean("strict"),"wire grammar is explicitly strict: "+stage);structuralOnly(schema);
+            if(stage.equals("first")||stage.startsWith("draft-")){
+                check(fields.has("image_requests")&&!fields.getJSONObject("image_assessment").getJSONObject("properties").has("image_requests"),"requested image ranges are root siblings, never assessment members: "+stage);
+                check(fields.has("affairs")== (affairs>0),"draft grammar follows the frozen affairs schema");
+            }
+            if(stage.equals("final")||stage.startsWith("final-"))check(fields.has("image_reviews")== (figures>0),"final grammar follows frozen image-review policy");
+            if(fields.has("assignments"))check(fields.getJSONObject("assignments").getJSONObject("items").getJSONObject("properties").has("evidence")==stage.matches("(?:draft|final)-[0-9]+"),"only enhanced extraction/refinement request original action quotes");
+        }
+        check(ClassroomResponseShape.contract("draft-0",1,1).toString().equals(ClassroomResponseShape.contract("draft-19",1,1).toString()),"same-shape groups use identical schema names and content for cache reuse");
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES)){
+            reset("normal",false);File old=previousContentMaterials("legacy-json-object-"+protocol,protocol);JSONObject oldState=state(old);oldState.put("native_json",true);ClassroomStore.write(new File(old,"run.json"),oldState);
+            generateWithProtocol(old,protocol);
+            check(!state(old).optBoolean("native_json_schema")&&!state(old).has("response_shapes"),"old json_object run never silently acquires schema output: "+protocol);
+            for(int n=0;n<requests.size();n++)if(!stages.get(n).startsWith("correct-")){
+                JSONObject request=requests.get(n);String type=protocol.equals(AiSettings.RESPONSES)?request.getJSONObject("text").getJSONObject("format").getString("type"):request.getJSONObject("response_format").getString("type");
+                check(type.equals("json_object"),"old JSON stages retain exact json_object request mode: "+protocol);
+            }
+            reset("normal",false);File dir=materials("saved-schema-"+protocol,false);JSONObject state=new JSONObject().put("run","saved-schema-fixture").put("native_json",true).put("native_json_schema",true).put("affairs_schema",1).put("figure_policy",1);
+            JSONObject frozen=ClassroomResponseShape.contract("draft-0",1,1).put("name","saved_prior_shape");state.put("response_shapes",new JSONObject().put("draft-0",new JSONObject(frozen.toString())));
+            AiSettings service=new AiSettings(AI.baseUrl,AI.model,AI.apiKey,AI.reasoningEffort,protocol);JSONObject lecture=ClassroomSummary.lessonInput(ClassroomStore.read(new File(dir,"materials.json")).getJSONArray("segments"),new JSONArray());
+            try(RequestControl control=new RequestControl(20000)){
+                ClassroomConversation conversation=new ClassroomConversation(dir,state,new ChatCompletionClient(service,control),"SYNTHETIC"+ClassroomAffairsPolicy.instructions(1));ClassroomJsonStage json=new ClassroomJsonStage(dir,state,conversation,control);
+                failCall=1;rejects(()->json.generate("draft-0","现在只整理第 1 段。JSON affairs",List.of(),value->ClassroomSummary.validateBlock(value,lecture,1),"-retry-","用户授权继续：",null),"native schema request interruption retains its logical checkpoint: "+protocol);
+                failCall=-1;json.generate("draft-0","unused regenerated prompt",List.of(),value->ClassroomSummary.validateBlock(value,lecture,1),"-retry-","用户授权继续：",null);
+            }
+            check(requests.size()==2&&state.getJSONObject("response_shapes").getJSONObject("draft-0").toString().equals(frozen.toString()),"resume uses exact saved grammar, not a freshly rebuilt default: "+protocol);
+            for(JSONObject request:requests){JSONObject format=protocol.equals(AiSettings.RESPONSES)?new JSONObject(request.getJSONObject("text").getJSONObject("format").toString()):request.getJSONObject("response_format").getJSONObject("json_schema");if(protocol.equals(AiSettings.RESPONSES))format.remove("type");check(format.toString().equals(frozen.toString()),"each real HTTP attempt retains the exact saved schema: "+protocol);}
+            JSONArray before=messages(requests.get(0)),after=messages(requests.get(1));for(int n=0;n<before.length();n++)check(before.getJSONObject(n).toString().equals(after.getJSONObject(n).toString()),"schema recovery preserves every old message unchanged: "+protocol+" "+n);
+        }
+    }
     private static void groundedInputs()throws Exception{
         JSONArray all=new JSONArray();for(int n=0;n<5;n++)all.put(new JSONObject().put("id",10+n*20).put("start",n*10).put("end",n*10+5).put("text","原字幕 "+n+"：保留引号\"、换行\n与 ASR 原字。"));
         JSONObject note=content("PRIVATE_DERIVED_UNSUPPORTED_CLAIM",50).put("title","教师规则");String before=note.toString(),rawBefore=all.toString();
@@ -1700,8 +1748,8 @@ public final class ClassroomEnhancedCheck {
                 boolean json=!stages.get(n).startsWith("correct-");JSONObject request=requests.get(n);
                 String format=protocol.equals(AiSettings.RESPONSES)?request.optJSONObject("text")==null?"":request.getJSONObject("text").getJSONObject("format").getString("type")
                         :request.optJSONObject("response_format")==null?"":request.getJSONObject("response_format").getString("type");
-                check(format.equals(json?"json_object":""),"only JSON stages use protocol-native JSON mode: "+protocol+" "+stages.get(n));
-                check(turns.getJSONObject(n).getString("output_mode").equals(json?"json_object":"text"),"turn audits actual output mode: "+protocol+" "+stages.get(n));
+                check(format.equals(json?"json_schema":""),"only JSON stages use protocol-native structured mode: "+protocol+" "+stages.get(n));
+                check(turns.getJSONObject(n).getString("output_mode").equals(json?"json_schema":"text"),"turn audits actual output mode: "+protocol+" "+stages.get(n));
             }
             if(protocol.equals(AiSettings.RESPONSES))nativeAppendOnly(dir);else appendOnly(dir);
             reset("normal",true);File legacy=previousContentMaterials("json-mode-legacy-"+protocol,protocol);JSONObject frozen=state(legacy);String base=frozen.getJSONObject("conversation").getJSONObject("options").toString();
@@ -1719,6 +1767,10 @@ public final class ClassroomEnhancedCheck {
     }
     public static void main(String[] args)throws Exception{
         root=new File(args[0]);root.mkdirs();
+        if(args.length>1&&args[1].equals("native-schema")){
+            HttpServer server=server();try{test("typed stage grammar, root fields and immutable saved-schema recovery",ClassroomEnhancedCheck::nativeSchemas);}finally{server.stop(0);}
+            System.out.println("ClassroomNativeSchema: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Native schema checks failed");return;
+        }
         if(args.length>1&&args[1].equals("grounded-inputs")){
             HttpServer server=server();try{test("original teacher source and adjacent image identities",ClassroomEnhancedCheck::groundedInputs);}finally{server.stop(0);}
             System.out.println("ClassroomGroundedInputs: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Grounded input checks failed");return;
@@ -1811,7 +1863,7 @@ public final class ClassroomEnhancedCheck {
             try{test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);}
             finally{server.stop(0);}System.out.println("ClassroomAffairsCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Course affairs checks failed");return;
         }
-        if(args.length==1){test("original teacher source and adjacent image identities",ClassroomEnhancedCheck::groundedInputs);test("stage-specific native JSON, legacy freeze, recovery and rejection",ClassroomEnhancedCheck::nativeJsonModes);test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
+        if(args.length==1){test("typed stage grammar, root fields and immutable saved-schema recovery",ClassroomEnhancedCheck::nativeSchemas);test("original teacher source and adjacent image identities",ClassroomEnhancedCheck::groundedInputs);test("stage-specific native JSON, legacy freeze, recovery and rejection",ClassroomEnhancedCheck::nativeJsonModes);test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
         if(args.length>1&&args[1].equals("schema-repair")){
             try{test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("existing semantic and manual budgets",ClassroomEnhancedCheck::validationResume);}
             finally{server.stop(0);}System.out.println("ClassroomSchemaRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Schema repair checks failed");return;

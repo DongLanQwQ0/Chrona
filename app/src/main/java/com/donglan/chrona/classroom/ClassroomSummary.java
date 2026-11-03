@@ -185,6 +185,7 @@ public final class ClassroomSummary {
             system=systemPrompt(classroomPrompt,strength,figurePolicy,affairsSchema);
             state=new JSONObject().put("config",config).put("run",java.util.UUID.randomUUID().toString())
                     .put("native_json",true)
+                    .put("native_json_schema",true)
                     .put("affairs_source_first",enhanced&&affairsSchema>0)
                     .put("content_batch_size",enhanced?2:1).put("editor_batch_size",enhanced?3:1)
                     .put("editor_batch_chars",18000);

@@ -329,12 +329,13 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     JSONArray corrected=run.optJSONArray("corrected"),blocks=run.optJSONArray("blocks");
                     row.put("correction_parts",corrected==null?0:corrected.length()).put("source_blocks",blocks==null?0:blocks.length());
                     row.put("run_native_json",run.optBoolean("native_json"));
+                    row.put("run_native_json_schema",run.optBoolean("native_json_schema"));
                     row.put("run_affairs_source_first",run.optBoolean("affairs_source_first"));
                     JSONArray actualModes=new JSONArray();JSONObject savedConversation=run.optJSONObject("conversation");
                     JSONArray savedTurns=savedConversation==null?null:savedConversation.optJSONArray("turns");
                     if(savedTurns!=null)for(int t=0;t<savedTurns.length();t++){
                         JSONObject turn=savedTurns.getJSONObject(t);String mode=turn.optString("output_mode");
-                        actualModes.put(new JSONObject().put("mode",java.util.Set.of("text","json_object").contains(mode)?mode:"unknown"));
+                        actualModes.put(new JSONObject().put("mode",java.util.Set.of("text","json_object","json_schema").contains(mode)?mode:"unknown"));
                     }
                     row.put("run_output_modes",actualModes);
                     JSONObject audit=com.donglan.chrona.classroom.ClassroomAudit.project(run,summary);

@@ -2,8 +2,12 @@
 
 ## 当前状态与唯一下一步
 
+- PTA Cookie 文件已由用户移动至 `F:\Programs\Server\Cookies\PTACookies.txt`，已确认文件存在，仅查元数据未读内容。项目未硬编码旧电脑路径；后续确有导入需要时使用新源，不复制Cookie、不重复登录或打断课堂任务。
+
+- 117（279）已实现通用阶段JSON Schema，仅描述既有字段／类型／层级，无新增内容级限制。首次发送前保存阶段结构，恢复和repair复用；旧轮格式和历史不追改。native-schema1187、native-json322、普通597、Responses509、恢复220检查通过，release/lint构建及独立代码复审通过。117已安装唯一AVD；同课configured+newRun=true实测已启动，执行会话18921，输出build/editorial121/run.txt。唯一下一步等待该句柄终态，再读取实际审计和完整成品；不批量，不因观察超时重启。
+
 - 用户要求可迁移修复，一次只整理一节，按“问题原文—预期写法—通用修正”逐轮完整审核，用户批准前不换课、不批量。固定微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487；唯一AVD Chrona_Classroom_36／emulator-5580，不占手机。
-- 已保存OpenCode Go deepseek-v4.1-flash／Responses／可选x-opencode-session；用户重新粘贴Key后401解除。密钥未读取／输出。用户已批准原生JSON模式：新轮更正文稿文本、JSON阶段json_object，旧轮格式及完整消息前缀不改。
+- 已保存OpenCode Go deepseek-v4.1-flash／Responses／可选x-opencode-session；用户重新粘贴Key后401解除。密钥未读取／输出。用户已批准原生JSON模式：117新轮更正文稿文本、JSON阶段json_schema；旧json_object／文本轮格式及完整消息前缀不改。
 - 上轮115（277）已完整成功：4更正稿复用，11请求全部JSON模式、stop，无repair；第二轮49896输入／28288缓存，后续缓存也实际返回。全文9知识／4事务／2行动／23图已读，内容仍不批准：评分方向反转、存疑术语造事实、事务重复、图82/130错注及个别跳过计算。证据build/editorial119/export/、audit.txt、image-review-*.jpg；问题引文和预期见docs/audits/classroom-notebook-regression-20261103.md。
 - 当前116（278）：新增强轮快照affairs_source_first，事务输入直接给原字幕及邻句、派生标题仅定位，知识输入不变；事务同类按实际原文JSON文本预算集中，不跨知识边界，旧轮分批不改。普通和增强核图每张原JPEG前紧邻实际file文本，字节／顺序／缓存前缀不变，恢复不重传。无模型／课程分支，无新AI阶段或语义硬校验。
 - grounded275、事务301、普通课堂597、Responses509、恢复220通过。独立check发现预算失配并已闭环复核：实际原文长度而非短派生长度计量，超长单项独立，反例有效。build.log构建／lint及独立check通过，116已安装唯一AVD；configured+newRun=true同课runner71347已失败终态：draft-0成功，draft-1 Connection reset（用量未知）；同时AVD出现Watchdog图形同步阻塞、package/activity服务短暂消失，现已自行恢复，无重启／清数据。不能据时间接近证明连接重置因果。同轮runner41518已失败终态：draft-1-restart-1及repair都completed/stop但结构不完整；未重做draft-0/4更正稿，未提交失败块。nesting-audit.txt证明服务虽回显json_object，但image_requests被嵌进image_assessment，补外层括号后仍缺顶层必填字段，不能本地补写后接纳。已停止原样长请求。下一步改用各JSON阶段既有字段契约的原生JSON Schema结构输出（只约束结构、不加内容判错），旧轮冻结模式/历史不改；新轮复用4段更正稿。小请求接受schema/strict，已保存一次正确嵌套合成JSON；首次小请求布尔检查false且未留正文，不能宣称服务严格保证。证据build/editorial121/。先完成通用实现/检查/复审，再同课新轮，不批量。
@@ -24,7 +28,7 @@
 
 ## 运行与边界
 
-- 未收到新手机测试授权不占手机；模拟器串行复用、不新建／克隆／清空／改变显示参数。当前课堂runner76432已succeeded=true终态；安装前确认无活动AI。等待超时不当失败或重启依据。
+- 未收到新手机测试授权不占手机；模拟器串行复用、不新建／克隆／清空／改变显示参数。当前117课堂实测执行会话18921；安装或诊断前确认任务终态。等待超时不当失败或重启依据。
 - 测试输出集中项目build/editorial117和editorial118；设备仅/data/local/tmp/chrona/editorial118或应用缓存。已清设备UI XML目录；112审查导出ZIP已清理；113诊断生成的external cache/chrona-notebook-review108/review.zip及空目录已清理，诊断包已卸载。不得删真实素材／应用数据。
 - 图片先压缩再查看，禁止直接查看PNG原图。112图审用已压缩image-review.jpg。
 - 代理：editorial_batch_check只读代码复审；pta_ui_check专门UI复审。实际工具无agent_type字段，不虚称角色／模型选择，不跨聊天例行通信。

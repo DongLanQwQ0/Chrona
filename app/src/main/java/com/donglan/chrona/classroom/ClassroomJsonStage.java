@@ -23,6 +23,7 @@ final class ClassroomJsonStage {
     }
     JSONObject generate(String stage,String prompt,List<byte[]> images,List<String> imageNames,Validator validator,String retrySuffix,
             String retryIntroduction,String outputKey)throws Exception {
+        JSONObject shape=responseShape(stage);
         int attempt=state.optInt(stage+"_attempt");
         if(state.has(stage+"_error")){
             state.put(stage+"_error",ClassroomJsonFailure.stored(state.getString(stage+"_error")));save();
@@ -35,7 +36,7 @@ final class ClassroomJsonStage {
         String request=attempt==0&&!sent?"当前JSON阶段："+stage+"。"+WIRE+"\n"+prompt:
                 (attempt>0?retryIntroduction+ClassroomJsonFailure.stored(state.optString(stage+"_error"))+"。":"恢复此前未完成的JSON阶段。")
                 +reference(stage)+"本阶段未提交回复已回滚；只依据其中的完整schema、原始资料和历史实际附图，从头完整生成本阶段JSON对象，不续写、不拼接、不编造来源或图片。"+WIRE+stageBoundary(stage)+assignmentEvidenceDiagnostic(stage);
-        String raw=text(attempt==0?stage:stage+retrySuffix+attempt,request,attempt==0?images:Collections.emptyList(),attempt==0?imageNames:Collections.emptyList(),outputKey);
+        String raw=text(attempt==0?stage:stage+retrySuffix+attempt,request,attempt==0?images:Collections.emptyList(),attempt==0?imageNames:Collections.emptyList(),outputKey,shape);
         try {return validate(raw,validator);}
         catch(JSONException malformed) {
             // A transport-interrupted repair keeps its identity and attempt, and is restarted by
@@ -45,7 +46,7 @@ final class ClassroomJsonStage {
             }
             state.put(stage+"_repair_attempt",attempt);save();
             String repaired=text(stage+"-repair","上一条回复的JSON结构或字段不完整："+ClassroomJsonFailure.detail(malformed)
-                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或课堂事实；学习笔记可按原要求使用标明的补充例题。"+WIRE+stageBoundary(stage)+assignmentEvidenceDiagnostic(stage),Collections.emptyList(),outputKey);
+                    +"。这是该块唯一一次格式修复。"+reference(stage)+"本阶段未提交回复已回滚；按该原始请求中的完整schema、原始资料和历史实际附图，从头返回完整JSON对象，不输出补丁或剩余片段，不编造来源、未见图片或课堂事实；学习笔记可按原要求使用标明的补充例题。"+WIRE+stageBoundary(stage)+assignmentEvidenceDiagnostic(stage),Collections.emptyList(),Collections.emptyList(),outputKey,shape);
             try {return validate(repaired,validator);}
             catch(JSONException|IOException invalid){invalid(stage,attempt,invalid);throw invalid;}
         }
@@ -156,12 +157,18 @@ final class ClassroomJsonStage {
         for(int i=0;i<turns.length();i++){JSONObject turn=turns.getJSONObject(i);String name=turn.optString("stage");if(stage.equals(name)||name.startsWith(stage+"-restart-"))return turn;}
         return null;
     }
-    private String text(String stage,String prompt,List<byte[]> images,String outputKey)throws Exception {
-        return text(stage,prompt,images,Collections.emptyList(),outputKey);
+    private JSONObject responseShape(String stage)throws Exception{
+        if(!state.optBoolean("native_json_schema"))return null;
+        JSONObject shapes=state.optJSONObject("response_shapes");
+        if(shapes==null){shapes=new JSONObject();state.put("response_shapes",shapes);}
+        if(!shapes.has(stage)){
+            shapes.put(stage,ClassroomResponseShape.contract(stage,state.optInt("affairs_schema"),state.optInt("figure_policy")));save();
+        }
+        return new JSONObject(shapes.getJSONObject(stage).toString());
     }
-    private String text(String stage,String prompt,List<byte[]> images,List<String> imageNames,String outputKey)throws Exception {
+    private String text(String stage,String prompt,List<byte[]> images,List<String> imageNames,String outputKey,JSONObject shape)throws Exception {
         control.check();
-        try {return conversation.json(stage,prompt,images,imageNames);}
+        try {return conversation.json(stage,prompt,images,imageNames,shape);}
         finally {
             if(outputKey!=null){
                 JSONObject history=state.getJSONObject("conversation"),outputs=history.getJSONObject("outputs");

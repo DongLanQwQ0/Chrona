@@ -1,5 +1,11 @@
 # 验证记录
 
+## 117 阶段JSON Schema — 2026-11-03
+
+- 新轮各JSON阶段声明既有结构，保存完整逻辑阶段Schema后发送；更正仍文本，旧text／json_object轮不改。没有添加内容、来源范围、长度、枚举等新判错，也不在本地补写残缺回复。
+- `build/editorial121/native-schema.txt`1187项覆盖28种阶段／事务／核图组合、顶层image_requests与assessment分离、两协议封装、旧json_object保持、冻结Schema恢复及逐项原消息前缀不变。native-json322、普通课堂597、Responses509、恢复220项通过。
+- 独立check通过，release／lint／trial构建成功。服务小Schema仅证明接收参数并曾生成正确对象；正式课堂长请求、缓存及内容仍待新轮实测。117（279）候选证据`build/editorial121/`。
+
 ## 116 续跑后的结构问题定位 — 2026-11-03
 
 - 原AVD系统服务自行恢复后，同轮续跑draft-1-restart-1及唯一repair均completed／stop，但最终JSON仍不完整；真实输出12533／6625 Token，未达32768预算，失败块未提交。`build/editorial120/resume.txt`、resume-audit.txt。
