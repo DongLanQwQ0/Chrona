@@ -1243,3 +1243,9 @@
 
 - grounded283、affairs301、editorial-batches2140项通过。首次affairs检查发现统一输入漏携图片数组，已修为稳定去重合并原images并通过相同反例；原字幕内容/ID/顺序不变，图片核对仍使用原inputs。
 - 独立复审另发现inline-only图片会在原文投影前丢失，已合并原images及正文/标题引用后再投影，规范file别名并通过反例复审；不改原对象或图字节。release/lint/trial构建通过，118已安装AVD并启动同课新轮。117真实完整输出与内容失败证据见build/editorial121/；118的实际去重、指令方向和严格推导仍待同课新轮，不以合成检查判内容通过。
+
+## 119 整稿数量误拒绝 — 2026-11-04
+
+- 118第6次edit-note-0已completed/stop，返回3知识+2事务，却被“输入3主题→输出合计最多3”旧检查拒绝；无网络或截断故障。失败块未提交，原完整回复保留，4更正稿及前5阶段已完成。build/editorial122/audit.txt。
+- 119单次/合批统一取消输出条数上限，保留非空、来源、图片与行动分离；按实际返回集合提交，cursor仍按原输入end推进。旧notes合同额外事务完整并入原notes目的地。独立check指出旧集合丢失路径，已修并通过双协议实际反例复核。
+- classification561、batches2140、完整已收回复零请求重验及付费重试边界630项通过；release/lint/trial构建通过。119已安装唯一AVD，沿原轮检查点继续，未传newRun。实际是否零重付、后续内容仍待build/editorial123/run.txt终态审计。

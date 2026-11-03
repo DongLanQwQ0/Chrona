@@ -197,8 +197,8 @@ final class ClassroomEnhancedSummary {
                             :"沿用普通单篇总结的详略，正文不扩写成教程，不超过本主题提取稿正文的合计长度；重复较多时应明显缩短。")
                     +scope(segments)+"sources汇集实际使用的来源；图片只能使用已实际分析且支持本主题的原file，历史图片不重新上传。"
                     +(state.optInt("figure_policy")>0?"图注仅描述实际可见内容，不能把字幕讲过的公式或证明当作图片已显示；已排除的低置信度、空白、仅标题或遮挡图片不得重新引用。实际图像分析已在历史原消息中，最终图片准入表（included=false不得引用）："+figureAdmission(state.optJSONArray("figure_reviews")):"")
-                    +(batch?"只返回一个JSON，overview为空，"+(affairsSchema==0?"notes":"notes与affairs合计")+"返回1至"+count+"项，覆盖本组全部主题；仅同义主题可合并，assignments必须=[]。"+ClassroomSummary.topicBatchSchema(affairsSchema)
-                            :(affairsSchema==0?"只返回一个JSON，overview为空，notes恰好一项，assignments=[]。":"只返回一个JSON，overview为空，按实际内容放入notes或affairs，合计恰好一项；另一内容集合及assignments为空数组，不把事务并入学习笔记。")+ClassroomSummary.topicSchema(affairsSchema,collection))
+                    +"只返回一个JSON，overview为空，按实际内容放入"+(affairsSchema==0?"notes":"notes或affairs")
+                    +"，覆盖本组全部主题；可合并同义主题，也可将混合主题拆为知识和事务，不按输入条数限定输出条数。assignments必须=[]，不重复抄录具体行动。"+ClassroomSummary.topicBatchSchema(affairsSchema)
                     +(unifiedAffairs?"\n本主题提取稿：\n"+proseInputs:batch?"\n本组主题清单及提取稿：\n"+topics:"\n本主题提取稿：\n"+inputs)
                     +"\n本组引用图片的已有可见内容核对："+topicFigureEvidence(inputs,state.optJSONArray("figure_reviews"))
                     +"。准入只表示图片本身可用，不表示与任意段落匹配；逐项比较实际题干、公式及对象，不能将另一题的截图插入当前例题或按正文改写图注。无匹配图片时保留文字解法，不强行配图。"
@@ -209,10 +209,10 @@ final class ClassroomEnhancedSummary {
             JSONObject value=json("edit-note-"+i,prompt,Collections.emptyList(),result->{
                 ClassroomSummary.validateBlock(result,blockInput(full.getJSONArray("segments"),analysed),affairsSchema);
                 if(state.optInt("figure_policy")>0)ClassroomFigureReview.filter(result,state.optJSONArray("figure_reviews"));
-                if(batch)validateTopicBatch(result,affairsSchema,count);else topicCollection(result,affairsSchema);
+                validateEditorial(result,affairsSchema);
             });
             recordScopeWarnings("edit-note-"+i,value,segments);
-            for(String actualCollection:collections(affairsSchema)){
+            for(String actualCollection:value.has("affairs")?new String[]{"notes","affairs"}:new String[]{"notes"}){
                 JSONArray rows=value.getJSONArray(actualCollection);
                 for(int n=0;n<rows.length();n++){JSONObject note=new JSONObject(rows.getJSONObject(n).toString());if(affairsSchema>0)note.put("collection",actualCollection);edited.put(note);}
             }
@@ -288,14 +288,9 @@ final class ClassroomEnhancedSummary {
         }
         return result;
     }
-    static void validateTopicBatch(JSONObject value,int affairsSchema,int count)throws Exception{
-        int total=value.getJSONArray("notes").length()+(affairsSchema==0?0:value.getJSONArray("affairs").length());
-        if(total<1||total>count||value.getJSONArray("assignments").length()!=0)throw new IOException("整稿批次须返回1至"+count+"节知识或课程事务，具体安排保留在安排集合");
-    }
-    static String topicCollection(JSONObject value,int affairsSchema)throws Exception{
-        int notes=value.getJSONArray("notes").length(),affairs=affairsSchema==0?0:value.getJSONArray("affairs").length();
-        if(notes+affairs!=1||value.getJSONArray("assignments").length()!=0)throw new IOException("整稿主题须返回一节知识或课程事务，具体安排保留在安排集合");
-        return notes==1?"notes":"affairs";
+    static void validateEditorial(JSONObject value,int affairsSchema)throws Exception{
+        int total=value.getJSONArray("notes").length()+(value.has("affairs")?value.getJSONArray("affairs").length():0);
+        if(total<1||value.getJSONArray("assignments").length()!=0)throw new IOException("整稿须保留知识或课程事务，具体安排保留在安排集合");
     }
     static void validatePlan(JSONObject plan,JSONArray parts)throws Exception{
         validatePlan(plan,parts,ClassroomAffairsPolicy.VERSION);
