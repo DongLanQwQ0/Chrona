@@ -327,6 +327,24 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                             .put("editor_section_done",run.optInt("editor_section_done",phases.optInt("editor_notes")))
                             .put("editor_batch_size",run.optInt("editor_batch_size",1));
                     row.put("run_phase_counts",phases);
+                    if(key.equals(reviewKey)){
+                        JSONObject inventory=new JSONObject();
+                        for(String phase:new String[]{"drafts","parts"}){
+                            JSONArray entries=new JSONArray(),values=run.optJSONArray(phase);
+                            if(values!=null)for(int p=0;p<values.length();p++)for(String collection:new String[]{"notes","affairs","assignments"}){
+                                JSONArray items=values.getJSONObject(p).optJSONArray(collection);
+                                if(items!=null)for(int n=0;n<items.length();n++){
+                                    JSONObject item=items.getJSONObject(n);
+                                    entries.put(new JSONObject().put("group",p).put("collection",collection)
+                                            .put("title",item.optString("title")).put("characters",item.optString("text").length())
+                                            .put("sources",item.optJSONArray("sources")));
+                                }
+                            }
+                            inventory.put(phase,entries);
+                        }
+                        if(editorSections!=null)inventory.put("plan",editorSections);
+                        row.put("run_content_inventory",inventory);
+                    }
                     JSONObject execution=audit.optJSONObject("execution");
                     if(execution!=null)row.put("run_execution_state",execution.optString("state"));
                     JSONObject conversation=run.optJSONObject("conversation");
