@@ -24,6 +24,7 @@ public final class SettingsActivity extends Activity {
     private EditText baseUrl;
     private EditText model;
     private EditText apiKey;
+    private EditText sessionHeader;
     private TextView imageState;
     private Button allowImages;
     private static final String[] EFFORT_VALUES = {"auto", "none", "low", "medium", "high", "max"};
@@ -66,7 +67,11 @@ public final class SettingsActivity extends Activity {
         presetTitle.setTextSize(15);
         UiStyle.muted(presetTitle);
         form.addView(presetTitle);
-        String[] presets = {"自定义服务", "DeepSeek Flash", "DeepSeek Pro"};
+        String[] presets = {"自定义服务", "DeepSeek Flash", "DeepSeek Pro", "OpenCode Go · DeepSeek V4.1 Flash"};
+        String[][] connections={{"","",AiSettings.RESPONSES,""},
+                {"https://api.deepseek.com","deepseek-flash",AiSettings.RESPONSES,""},
+                {"https://api.deepseek.com","deepseek-v4-pro",AiSettings.RESPONSES,""},
+                {"https://opencode.ai/inference/go/openai/v1","deepseek-v4.1-flash",AiSettings.RESPONSES,"x-opencode-session"}};
         int[] selectedPreset = {0};
         TextView preset = new TextView(this);
         preset.setText(presets[0]);
@@ -84,6 +89,7 @@ public final class SettingsActivity extends Activity {
         protocolChoice.setOnClickListener(view -> UiDialogs.choiceDialog(this, "API 协议",
                 PROTOCOL_LABELS, protocolIndex(), position -> setProtocol(PROTOCOL_VALUES[position])));
         model = field(form, "模型名称", InputType.TYPE_CLASS_TEXT);
+        sessionHeader=field(form,"会话标识请求头（可选）",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         TextView effortTitle = new TextView(this);
         effortTitle.setText("思考强度");
         UiStyle.muted(effortTitle);
@@ -92,11 +98,6 @@ public final class SettingsActivity extends Activity {
         effortChoice.setText(EFFORT_LABELS[0]);
         UiStyle.fieldTrigger(effortChoice);
         UiStyle.addSpaced(form, effortChoice, 4, 8);
-        TextView effortNote = new TextView(this);
-        effortNote.setText("按模型能力映射；部分模型无法关闭思考，自定义接口可能忽略此选项。");
-        effortNote.setTextSize(12);
-        UiStyle.muted(effortNote);
-        UiStyle.addSpaced(form, effortNote, 0, 4);
         effortChoice.setOnClickListener(view -> UiDialogs.choiceDialog(this, "思考强度",
                 EFFORT_LABELS, effortIndex(), position -> setEffort(EFFORT_VALUES[position])));
         preset.setOnClickListener(view -> UiDialogs.choiceDialog(this, "常用模型预设",
@@ -104,8 +105,8 @@ public final class SettingsActivity extends Activity {
                 selectedPreset[0] = position;
                 preset.setText(presets[position]);
                 if (position == 0) return;
-                baseUrl.setText("https://api.deepseek.com");
-                model.setText(position == 1 ? "deepseek-flash" : "deepseek-v4-pro");
+                baseUrl.setText(connections[position][0]);model.setText(connections[position][1]);
+                setProtocol(connections[position][2]);sessionHeader.setText(connections[position][3]);
         }));
         apiKey = field(form, "API 密钥（留空表示不更改）", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         SchedulePreferences preferences = SchedulePreferences.load(this);
@@ -262,11 +263,11 @@ public final class SettingsActivity extends Activity {
                 model.setText(existing.model);
                 setEffort(existing.reasoningEffort);
                 setProtocol(existing.protocol);
-                if ("https://api.deepseek.com".equals(existing.baseUrl)) {
-                    if ("deepseek-flash".equals(existing.model)) selectedPreset[0] = 1;
-                    else if ("deepseek-v4-pro".equals(existing.model)) selectedPreset[0] = 2;
-                    preset.setText(presets[selectedPreset[0]]);
-                }
+                sessionHeader.setText(existing.sessionHeader);
+                for(int i=1;i<connections.length;i++)if(connections[i][0].equals(existing.baseUrl)
+                        &&connections[i][1].equals(existing.model)&&connections[i][2].equals(existing.protocol)
+                        &&connections[i][3].equalsIgnoreCase(existing.sessionHeader))selectedPreset[0]=i;
+                preset.setText(presets[selectedPreset[0]]);
             }
         } catch (Exception exception) {
             Feedback.showLong(this, "无法读取现有设置，请重新填写密钥");
@@ -279,12 +280,18 @@ public final class SettingsActivity extends Activity {
                     model.setText(pending.model);
                     setEffort(pending.reasoningEffort);
                     setProtocol(pending.protocol);
+                    sessionHeader.setText(pending.sessionHeader);
                 }
             } catch (Exception ignored) { }
         }
         savedForm = state == null ? formValues() : state.getStringArray("savedForm");
         if (savedForm == null) savedForm = formValues();
         if (state != null) restoreForm(state.getStringArray("settingsForm"));
+        selectedPreset[0]=0;
+        for(int i=1;i<connections.length;i++)if(connections[i][0].equals(baseUrl.getText().toString())
+                &&connections[i][1].equals(model.getText().toString())&&connections[i][2].equals(protocol)
+                &&connections[i][3].equalsIgnoreCase(sessionHeader.getText().toString()))selectedPreset[0]=i;
+        preset.setText(presets[selectedPreset[0]]);
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             settingsBack = this::requestExit;
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -317,7 +324,7 @@ public final class SettingsActivity extends Activity {
                 Integer.toString(workEndMinutes), customPrompt.getText().toString(),
                 classroomPrompt.getText().toString(), Boolean.toString(enhancedClassroom.isChecked()),
                 Integer.toString(classroomConcurrency), Integer.toString(classroomNoteStrength),
-                Boolean.toString(classroomCellular.isChecked()), protocol};
+                Boolean.toString(classroomCellular.isChecked()), protocol,sessionHeader.getText().toString()};
     }
 
     private void restoreForm(String[] values) {
@@ -335,6 +342,7 @@ public final class SettingsActivity extends Activity {
         classroomNoteStrength = Integer.parseInt(values[10]);
         classroomCellular.setChecked(Boolean.parseBoolean(values[11]));
         setProtocol(values[12]);
+        if(values.length>13)sessionHeader.setText(values[13]);
         classroomNoteStrengthSlider.setProgress(classroomNoteStrength);
         refreshClassroomNoteStrength();
         refreshClassroomConcurrency();
@@ -398,7 +406,7 @@ public final class SettingsActivity extends Activity {
                 if (existing != null) key = existing.apiKey;
             }
             store.save(baseUrl.getText().toString().trim(), model.getText().toString().trim(), key,
-                    reasoningEffort, protocol);
+                    reasoningEffort, protocol,sessionHeader.getText().toString());
             preferences.save(this);
             ConfigBackup.clearDraft(this);
             Feedback.show(this, "设置已保存");

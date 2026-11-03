@@ -570,8 +570,9 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         JSONObject report=new JSONObject().put("calls",0).put("classroom_data_sent",false).put("settings_changed",false);
         com.donglan.chrona.ai.AiSettings settings=new com.donglan.chrona.ai.AiSettingsStore(getTargetContext()).load();
         if(settings==null)return report.put("state","not_configured");
-        if(healthModel!=null)settings=new com.donglan.chrona.ai.AiSettings(settings.baseUrl,healthModel,settings.apiKey,settings.reasoningEffort,settings.protocol);
+        if(healthModel!=null)settings=new com.donglan.chrona.ai.AiSettings(settings.baseUrl,healthModel,settings.apiKey,settings.reasoningEffort,settings.protocol,settings.sessionHeader);
         report.put("model",settings.model);
+        report.put("session_header_configured",!settings.sessionHeader.isEmpty());
         android.net.ConnectivityManager connectivity=(android.net.ConnectivityManager)getTargetContext()
                 .getSystemService(android.content.Context.CONNECTIVITY_SERVICE);
         android.net.Network bound=connectivity==null?null:connectivity.getBoundNetworkForProcess();
@@ -615,6 +616,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     if(usage.opt(field) instanceof Number value&&value.longValue()>=0)report.put(field,value.longValue());
             }catch(com.donglan.chrona.ai.ChatCompletionClient.RequestException rejected){
                 report.put("state","http_error").put("http",rejected.statusCode).put("category",healthCategory(rejected.getMessage()));
+                report.put("detail",providerExcerpt(rejected.getMessage(),settings.apiKey));
             }catch(java.io.IOException failed){report.put("state","io_error").put("error_type",failed.getClass().getSimpleName()).put("category",healthCategory(failed.getMessage()));}
             report.put("elapsed_ms",android.os.SystemClock.elapsedRealtime()-began);
         }

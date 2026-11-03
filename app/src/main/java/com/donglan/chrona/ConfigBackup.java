@@ -27,7 +27,7 @@ public final class ConfigBackup {
         public final boolean hasAcrylic, acrylicEnabled;
         public final boolean hasGaussianBlur, gaussianBlur, hasCustomColor;
         public final boolean hasSurfaceMix, hasBlurStrength, hasCornerLevel;
-        public final String baseUrl, model, apiKey, mode, color, customColor, reasoningEffort, protocol;
+        public final String baseUrl, model, apiKey, mode, color, customColor, reasoningEffort, protocol,sessionHeader;
         public final int surfaceMix, blurStrength, cornerLevel;
 
         private Imported(JSONObject root) {
@@ -38,6 +38,7 @@ public final class ConfigBackup {
             model = hasAi ? ai.optString("model", "").trim() : "";
             reasoningEffort = hasAi ? ai.optString("reasoningEffort", "auto") : "auto";
             protocol = hasAi ? ai.optString("protocol", AiSettings.RESPONSES) : AiSettings.RESPONSES;
+            sessionHeader=hasAi?ai.optString("sessionHeader","").trim():"";
             apiKey = hasApiKey ? ai.optString("apiKey", "") : null;
             JSONObject appearance = root.optJSONObject("appearance");
             hasAppearance = appearance != null;
@@ -57,7 +58,7 @@ public final class ConfigBackup {
             cornerLevel = hasCornerLevel ? appearance.optInt("cornerLevel", 4) : 4;
         }
 
-        private Imported(String baseUrl, String model, String reasoningEffort, String protocol) {
+        private Imported(String baseUrl, String model, String reasoningEffort, String protocol,String sessionHeader) {
             hasAi = true;
             hasApiKey = false;
             hasAppearance = false;
@@ -74,6 +75,7 @@ public final class ConfigBackup {
             this.model = model;
             this.reasoningEffort = reasoningEffort;
             this.protocol = protocol;
+            this.sessionHeader=sessionHeader;
             apiKey = null;
             mode = null;
             color = null;
@@ -105,6 +107,7 @@ public final class ConfigBackup {
         ai.put("model", model == null ? "" : model.trim());
         ai.put("reasoningEffort", reasoningEffort);
         ai.put("protocol", protocol);
+        ai.put("sessionHeader",saved!=null?saved.sessionHeader:draft.getString("sessionHeader",""));
         String key = saved == null ? null : saved.apiKey;
         if (includeKey && key != null && !key.isEmpty()) ai.put("apiKey", key);
         root.put("ai", ai);
@@ -138,6 +141,7 @@ public final class ConfigBackup {
             text.append("· 协议 ").append(AiSettings.RESPONSES.equals(config.protocol)
                     ? "Responses" : "Chat Completions").append('\n');
             text.append("· 思考强度 ").append(config.reasoningEffort).append('\n');
+            if(!config.sessionHeader.isEmpty())text.append("· 会话请求头 ").append(config.sessionHeader).append('\n');
             text.append(config.hasApiKey ? "· 含 API 密钥，将覆盖本机密钥\n"
                     : "· 不含 API 密钥；本机已有密钥会保留，新设备需补填密钥\n");
         }
@@ -173,9 +177,9 @@ public final class ConfigBackup {
             if (imported.hasApiKey || existing != null) {
                 String key = imported.hasApiKey ? imported.apiKey : existing.apiKey;
                 AiSettings validated = new AiSettings(imported.baseUrl, imported.model, key,
-                        imported.reasoningEffort, imported.protocol);
+                        imported.reasoningEffort, imported.protocol,imported.sessionHeader);
                 store.save(validated.baseUrl, validated.model, validated.apiKey,
-                        validated.reasoningEffort, validated.protocol);
+                        validated.reasoningEffort, validated.protocol,validated.sessionHeader);
                 clearDraft(context);
             } else {
                 // A keyless file is still useful on a new device: keep its fields until the user
@@ -185,7 +189,7 @@ public final class ConfigBackup {
                         .putString("model", imported.model).apply();
                 context.getSharedPreferences(DRAFT, Context.MODE_PRIVATE).edit()
                         .putString("reasoningEffort", imported.reasoningEffort)
-                        .putString("protocol", imported.protocol).apply();
+                        .putString("protocol", imported.protocol).putString("sessionHeader",imported.sessionHeader).apply();
             }
         }
         if (imported.hasAppearance) {
@@ -210,7 +214,7 @@ public final class ConfigBackup {
         return baseUrl == null && model == null ? null
                 : new Imported(baseUrl == null ? "" : baseUrl, model == null ? "" : model,
                         preferences.getString("reasoningEffort", "auto"),
-                        preferences.getString("protocol", AiSettings.RESPONSES));
+                        preferences.getString("protocol", AiSettings.RESPONSES),preferences.getString("sessionHeader",""));
     }
 
     public static void clearDraft(Context context) {
@@ -244,11 +248,14 @@ public final class ConfigBackup {
             }
             if (ai.has("protocol") && !(ai.opt("protocol") instanceof String))
                 throw new JSONException("API 协议格式无效");
+            if(ai.has("sessionHeader")&&!(ai.opt("sessionHeader") instanceof String))throw new JSONException("会话请求头格式无效");
             try {
                 AiSettings.validateProtocol(ai.optString("protocol", AiSettings.RESPONSES));
             } catch (IllegalArgumentException exception) {
                 throw new JSONException("API 协议无效");
             }
+            try{AiSettings.validateSessionHeader(ai.optString("sessionHeader",""));}
+            catch(IllegalArgumentException exception){throw new JSONException("会话请求头无效");}
             String baseUrl = ai.optString("baseUrl", "").trim();
             String model = ai.optString("model", "").trim();
             String key = ai.optString("apiKey", "");

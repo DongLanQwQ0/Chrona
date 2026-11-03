@@ -12,7 +12,7 @@ import org.json.*;
 public final class ResponsesProtocolCheck {
     private static int checks;
     public static void main(String[] args) throws Exception {
-        mapping(); normalization(); streaming(); failureEvidence(); nestedErrorEvent(); clientTransport(); rejectedEffortTransport();
+        mapping(); normalization(); streaming(); failureEvidence(); nestedErrorEvent(); clientTransport(); rejectedEffortTransport(); providerSessions();
         System.out.println("ResponsesProtocolCheck passed: " + checks + " checks (synthetic protocol fixtures)");
     }
     private static void mapping() throws Exception {
@@ -355,6 +355,45 @@ public final class ResponsesProtocolCheck {
                 check((AiSettings.RESPONSES.equals(protocol) ? sent.getJSONObject("reasoning").getString("effort")
                         : sent.getString("reasoning_effort")).equals("max"), "rejected request sent exact explicit effort");
             }
+        }
+    }
+    private static void providerSessions()throws Exception{
+        for(String protocol:List.of(AiSettings.RESPONSES,AiSettings.CHAT_COMPLETIONS))for(String header:List.of("x-opencode-session","X-Workflow-Session")){
+            List<String> sessions=new ArrayList<>();List<String> sent=new ArrayList<>();
+            ChatCompletionClient.ConnectionRoute route=(url,control)->new ChatCompletionClient.OpenedConnection(new HttpURLConnection(url){
+                private final ByteArrayOutputStream body=new ByteArrayOutputStream();
+                public void connect(){}public void disconnect(){}public boolean usingProxy(){return false;}
+                public OutputStream getOutputStream(){return body;}
+                public int getResponseCode(){return 200;}
+                public String getContentType(){return "application/json";}
+                public InputStream getInputStream()throws IOException{
+                    sessions.add(getRequestProperty(header));sent.add(body.toString(StandardCharsets.UTF_8));
+                    try{return bytes(protocol.equals(AiSettings.RESPONSES)?response("done").toString():"{\"choices\":[{\"message\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}");}
+                    catch(Exception e){throw new IOException(e);}
+                }
+            },()->{});
+            AiSettings ai=new AiSettings(header.equals("x-opencode-session")?"https://opencode.ai/inference/go/openai/v1":"https://gateway.example/v2","arbitrary-model","fixture-key","low",protocol,header);
+            JSONObject request=new JSONObject().put("model",ai.model).put(protocol.equals(AiSettings.RESPONSES)?"input":"messages",new JSONArray().put(new JSONObject().put("role","user").put("content","unchanged")));
+            String original=request.toString();
+            ChatCompletionClient first=new ChatCompletionClient(ai,null,SchedulePrompt.SYSTEM,route,"ses_run_A");
+            first.completeConversation(request);first.completeConversation(request);
+            new ChatCompletionClient(ai,null,SchedulePrompt.SYSTEM,route,"ses_run_A").completeConversation(request);
+            new ChatCompletionClient(ai,null,SchedulePrompt.SYSTEM,route,"ses_run_B").completeConversation(request);
+            check(sessions.equals(List.of("ses_run_A","ses_run_A","ses_run_A","ses_run_B")),"routing identity persists across turns/recovery and separates runs "+protocol);
+            ChatCompletionClient independent=new ChatCompletionClient(ai,null,SchedulePrompt.SYSTEM,route);
+            independent.completeConversation(request);independent.completeConversation(request);
+            check(sessions.get(4).startsWith("ses_")&&sessions.get(4).equals(sessions.get(5)),"ordinary client session stable "+protocol);
+            new ChatCompletionClient(ai,null,SchedulePrompt.SYSTEM,route).completeConversation(request);
+            check(!sessions.get(4).equals(sessions.get(6)),"independent clients have distinct identity "+protocol);
+            AiSettings other=new AiSettings("https://opencode.ai.attacker.invalid/v1","model","fixture-key","low",protocol);
+            new ChatCompletionClient(other,null,SchedulePrompt.SYSTEM,route).completeConversation(request);
+            check(sessions.get(7)==null,"unconfigured requests do not gain provider headers "+protocol);
+            check(sent.stream().allMatch(original::equals)&&request.toString().equals(original),"routing header does not mutate frozen bodies/history "+protocol);
+        }
+        for(String header:List.of("Authorization","HOST","content-type","Cookie","Expect","TE","Trailer",
+                "Upgrade","Keep-Alive","Proxy-Connection","Content-Encoding","bad header","X-Session\r\nInjected")){
+            try{new AiSettings("https://gateway.example/v1","model","fixture","low",AiSettings.RESPONSES,header);throw new AssertionError("Invalid session header accepted");}
+            catch(IllegalArgumentException expected){check(true,"invalid or reserved header rejected");}
         }
     }
     private static void noChat(JSONObject body) {

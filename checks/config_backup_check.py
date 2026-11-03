@@ -36,7 +36,8 @@ public final class AiSettingsStore {
  public AiSettingsStore(Context context) { this.context=context; }
  public AiSettings load() { return saved.get(context); }
  public void save(String base,String model,String key,String effort) { save(base,model,key,effort,AiSettings.RESPONSES); }
- public void save(String base,String model,String key,String effort,String protocol) { saved.put(context,new AiSettings(base,model,key,effort,protocol)); }
+ public void save(String base,String model,String key,String effort,String protocol) { save(base,model,key,effort,protocol,""); }
+ public void save(String base,String model,String key,String effort,String protocol,String sessionHeader) { saved.put(context,new AiSettings(base,model,key,effort,protocol,sessionHeader)); }
 }''',
 'com/donglan/chrona/ThemeStore.java': '''package com.donglan.chrona;
 import android.content.Context;
@@ -97,6 +98,15 @@ public final class ConfigBackupCheck {
    check(ConfigBackup.pending(empty).protocol.equals(AiSettings.CHAT_COMPLETIONS),"invalid protocol preserves pending configuration");
   }
   ai.put("protocol",AiSettings.CHAT_COMPLETIONS);
+  ai.put("sessionHeader","X-Workflow-Session");ConfigBackup.apply(configured,root.toString());ConfigBackup.apply(empty,root.toString());
+  check(saved.load().sessionHeader.equals("X-Workflow-Session"),"session header saved without losing local key");
+  check(ConfigBackup.pending(empty).sessionHeader.equals("X-Workflow-Session"),"session header kept for keyless new-device import");
+  check(new JSONObject(ConfigBackup.export(configured,false)).getJSONObject("ai").getString("sessionHeader").equals("X-Workflow-Session"),"session header portable without key");
+  for(Object bad:new Object[]{"Authorization","Expect","Content-Encoding","Upgrade","bad header",12}){
+   JSONObject invalid=new JSONObject(root.toString());invalid.getJSONObject("ai").put("sessionHeader",bad);
+   try{ConfigBackup.apply(configured,invalid.toString());throw new AssertionError("invalid session header accepted");}catch(org.json.JSONException expected){}
+   check(saved.load().sessionHeader.equals("X-Workflow-Session"),"invalid import leaves connection untouched");
+  }
   ai.put("model","");
   try { ConfigBackup.inspect(root.toString());throw new AssertionError("half-empty accepted"); }
   catch(JSONException expected) { }

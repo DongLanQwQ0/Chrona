@@ -12,6 +12,7 @@ public final class AiSettings {
     public final String apiKey;
     public final String reasoningEffort;
     public final String protocol;
+    public final String sessionHeader;
 
     public AiSettings(String baseUrl, String model, String apiKey) {
         this(baseUrl, model, apiKey, "auto");
@@ -22,6 +23,10 @@ public final class AiSettings {
     }
 
     public AiSettings(String baseUrl, String model, String apiKey, String reasoningEffort, String protocol) {
+        this(baseUrl,model,apiKey,reasoningEffort,protocol,"");
+    }
+
+    public AiSettings(String baseUrl,String model,String apiKey,String reasoningEffort,String protocol,String sessionHeader){
         validateReasoningEffort(reasoningEffort);
         validateProtocol(protocol);
         if (baseUrl == null || model == null || model.trim().isEmpty()
@@ -46,6 +51,19 @@ public final class AiSettings {
         this.apiKey = apiKey;
         this.reasoningEffort = reasoningEffort;
         this.protocol = protocol;
+        this.sessionHeader=validateSessionHeader(sessionHeader);
+    }
+
+    public static String validateSessionHeader(String value){
+        String name=value==null?"":value.trim();
+        if(name.isEmpty())return "";
+        if(!name.matches("[-!#$%&'*+.^_`|~0-9A-Za-z]{1,128}")
+                ||java.util.Set.of("authorization","proxy-authorization","host","content-type","content-length",
+                    "transfer-encoding","content-encoding","connection","expect","te","trailer","upgrade",
+                    "keep-alive","proxy-connection","cookie","set-cookie","accept","accept-encoding","user-agent")
+                    .contains(name.toLowerCase(java.util.Locale.ROOT)))
+            throw new IllegalArgumentException("会话请求头名称无效，不能覆盖认证或HTTP传输字段");
+        return name;
     }
 
     public static void validateProtocol(String value) {

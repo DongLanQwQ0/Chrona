@@ -18,12 +18,13 @@ public final class ClassroomModelTrialInstrumentation extends Instrumentation {
         Bundle result=new Bundle();
         try{
             if(!"com.donglan.chrona".equals(getTargetContext().getPackageName())||!"ranchu".equals(android.os.Build.HARDWARE))throw new SecurityException();
-            if(arguments==null||!java.util.Set.of("gpt-5.6-luna","gpt-6-luna").contains(arguments.getString("model","")))throw new IllegalArgumentException("Explicit approved trial model required");
+            if(arguments==null||!java.util.Set.of("gpt-5.6-luna","gpt-6-luna","configured").contains(arguments.getString("model","")))throw new IllegalArgumentException("Explicit approved trial model or configured service required");
             ZjuSettingsStore school=new ZjuSettingsStore(getTargetContext());
             if(!school.enabled()||!school.configured())throw new IllegalStateException("School account unavailable");
             AiSettings original=new AiSettingsStore(getTargetContext()).load();
             if(original==null)throw new IllegalStateException("AI service unavailable");
-            AiSettings trial=new AiSettings(original.baseUrl,arguments.getString("model"),original.apiKey,original.reasoningEffort,original.protocol);
+            boolean configured="configured".equals(arguments.getString("model"));
+            AiSettings trial=configured?original:new AiSettings(original.baseUrl,arguments.getString("model"),original.apiKey,original.reasoningEffort,original.protocol,original.sessionHeader);
             ClassroomStore store=new ClassroomStore(getTargetContext(),school.account());
             ClassroomLesson identity=new ClassroomLesson("86985","1988487","","","","6",0);
             File dir=store.lesson(identity);
@@ -43,6 +44,7 @@ public final class ClassroomModelTrialInstrumentation extends Instrumentation {
                 Bundle progress=new Bundle();progress.putString("trial_state","running");sendStatus(1,progress);
             }
             result.putBoolean("succeeded",job.succeeded);result.putString("model",trial.model);
+            result.putBoolean("used_saved_configuration",configured);
             result.putBoolean("global_model_unchanged",original.model.equals(new AiSettingsStore(getTargetContext()).load().model));
             finish(job.succeeded?-1:0,result);
         }catch(Throwable failure){result.putString("error_type",failure.getClass().getSimpleName());finish(0,result);}

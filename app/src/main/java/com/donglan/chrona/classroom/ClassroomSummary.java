@@ -192,7 +192,7 @@ public final class ClassroomSummary {
         JSONObject catalogue=imageCatalogue(candidates.getJSONArray("images"),imageLimit);
         JSONObject full=lessonInput(materials.getJSONArray("segments"),new JSONArray()).put("image_catalogue",catalogue);
         if(full.getJSONArray("segments").length()==0)throw new IOException("课堂字幕为空");
-        ChatCompletionClient client=new ChatCompletionClient(ai,control,SchedulePrompt.SYSTEM,route);
+        ChatCompletionClient client=new ChatCompletionClient(ai,control,SchedulePrompt.SYSTEM,route,"ses_"+state.getString("run"));
         ClassroomConversation conversation=new ClassroomConversation(dir,state,client,system);
         if(enhanced)return new ClassroomEnhancedSummary(dir,lesson,state,materials,candidates,full,conversation,control,progress).generate(imageLimit);
         ClassroomJsonStage json=new ClassroomJsonStage(dir,state,conversation,control);

@@ -38,6 +38,7 @@ public final class ChatCompletionClient {
     private final int workStartMinutes;
     private final int workEndMinutes;
     private final ConnectionRoute connectionRoute;
+    private final String providerSessionId;
 
     /** A route owns only this HTTP exchange, never the process or unrelated clients. */
     public interface ConnectionRoute {
@@ -77,8 +78,20 @@ public final class ChatCompletionClient {
                 SemanticEventNormalizer.DEFAULT_WORK_END, connectionRoute);
     }
 
+    /** The saved classroom run supplies the same routing identity after process recovery. */
+    public ChatCompletionClient(AiSettings settings,RequestControl control,String scheduleSystem,
+            ConnectionRoute connectionRoute,String providerSessionId){
+        this(settings,control,scheduleSystem,SemanticEventNormalizer.DEFAULT_WORK_START,
+                SemanticEventNormalizer.DEFAULT_WORK_END,connectionRoute,providerSessionId);
+    }
+
     public ChatCompletionClient(AiSettings settings, RequestControl control, String scheduleSystem,
             int workStartMinutes, int workEndMinutes, ConnectionRoute connectionRoute) {
+        this(settings,control,scheduleSystem,workStartMinutes,workEndMinutes,connectionRoute,null);
+    }
+
+    private ChatCompletionClient(AiSettings settings,RequestControl control,String scheduleSystem,
+            int workStartMinutes,int workEndMinutes,ConnectionRoute connectionRoute,String providerSessionId){
         if (settings == null) {
             throw new IllegalArgumentException("settings must not be null");
         }
@@ -88,6 +101,8 @@ public final class ChatCompletionClient {
         this.workStartMinutes = workStartMinutes;
         this.workEndMinutes = workEndMinutes;
         this.connectionRoute = connectionRoute;
+        this.providerSessionId=providerSessionId==null?"ses_"+java.util.UUID.randomUUID():providerSessionId;
+        if(!this.providerSessionId.matches("[A-Za-z0-9_-]{1,128}"))throw new IllegalArgumentException("Invalid AI session identifier");
     }
 
     /** The read timeout this client applies; exposed so diagnostics can report the real value. */
@@ -281,6 +296,7 @@ public final class ChatCompletionClient {
             connection.setDoOutput(true);
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("Authorization", "Bearer " + settings.apiKey);
+            if(!settings.sessionHeader.isEmpty())connection.setRequestProperty(settings.sessionHeader,providerSessionId);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", !streaming
                     ? "application/json" : "text/event-stream, application/json");
