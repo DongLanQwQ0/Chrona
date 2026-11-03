@@ -2,16 +2,12 @@
 
 ## 当前状态与唯一下一步
 
-- 用户已批准原生JSON模式。最小当前服务Responses请求已成功：364B、54输入＋20输出Token、1857ms，JSON对象合法，未改配置／发课堂数据。build/editorial119/json-mode-health.txt。
-- 当前115（277）实现：新run快照native_json=true；更正text、全部JSON阶段json入口。请求深拷贝冻结baseoptions后只选协议原生json_object格式，旧轮缺标记保持原请求格式，旧消息／原生output不改，无fallback／额外语义校验。Trial只有显式newRun=true才capture更正及正常归档旧run。native-json322、Responses509、resume220通过；summary594复验通过，build.log构建／lint及独立check通过。115已安装唯一AVD，configured+newRun=true正式新轮runner73329已succeeded=true：4段更正复用，11请求全部JSON模式、stop，无repair；缓存实际返回（第二轮49896输入/28288缓存）。完整9知识/4事务/2行动/23图已核对，内容仍不批准：评分方向反转、术语造事实、事务重复、图82/130错注及个别省略计算。详见审查文档115节，export与压缩图在editorial119。唯一下一步：通用改为教师事务直接据原字幕成稿、派生稿只定位并集中去重；逐图紧邻发送实际file标识，减少长清单顺序映射错误。保持完整历史只追加，不新增语义硬校验；先实现、检查，再同课新轮复验，不批量。
-
-- 用户要求修复可迁移，一次只总结一节，完整后按“问题原文—预期写法—通用修正”审核并修改，同课复验；用户批准前不换课、不批量。目标是3档精简完整、自学可用的讲义，最终不展示内部流水线。
-- 固定课堂：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。使用唯一Chrona_Classroom_36／emulator-5580，不占手机。
-- 用户重新粘贴Go Key后，112的Responses单图及完整生成已成功，先前401已解除。saved配置deepseek-v4.1-flash／Responses／可选x-opencode-session；未读取或输出密钥。4段更正文稿复用，11次实际请求含1次JSON修复，生成6知识、6事务、0行动、18张引用图；流程成功但全文内容不批准。
-- 112成品仍有评分指令反转、存疑术语造加分条件、事务重复、行动漏项、标题层级及例题配图错位。问题原文、原字幕与预期详见docs/audits/classroom-notebook-regression-20261103.md；证据build/editorial117/export/、completed-audit.txt、image-review.jpg。
-- 当前候选113（275）：通用否定词作用对象／可靠事实规则；核图保留有原话支持行动；主题编排索引附完整正文；区分候选值与存在证明；内部标题降级；整稿仅追加本主题引用图片的已有visible，数组前缀引用规范化，不重传图片或增加AI阶段／硬校验。旧原话、回复和缓存前缀不改。
-- 113检查：build/editorial118/batches.txt 2140项、coverage.txt1351项、summary.txt594项0失败。独立check两项及prefix-only定向case已复核通过；build-final.log构建／lint通过，113已安装同一模拟器。113同课runner71081已失败终态：draft-0成功，draft-1及一次repair缺一个对象闭合符；服务均completed/stop，未达输出上限，失败组未提交。证据audit.txt、shape-audit.txt。114只追加通用JSON完整闭合提示，coverage1389、resume220通过，build114.log构建／lint及独立复核通过，114已安装统一模拟器。configured续跑runner51386已失败终态：draft-1-user-retry-1仍completed/stop但正文6053字符少一个对象闭合，3493输出Token；第一组和4段更正稿未重做。加强提示未解决，不继续同路径重试。已询问是否采用服务原生JSON模式，仅JSON阶段生效、更正文稿普通文本；新轮复用4段更正稿，旧轮冻结参数／消息不改。唯一下一步：取得用户决定；采用后先小请求验证服务真实支持，再实现通用阶段输出模式，不按域名／模型分支，不增加内容硬校验。
-
+- 用户要求可迁移修复，一次只整理一节，按“问题原文—预期写法—通用修正”逐轮完整审核，用户批准前不换课、不批量。固定微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487；唯一AVD Chrona_Classroom_36／emulator-5580，不占手机。
+- 已保存OpenCode Go deepseek-v4.1-flash／Responses／可选x-opencode-session；用户重新粘贴Key后401解除。密钥未读取／输出。用户已批准原生JSON模式：新轮更正文稿文本、JSON阶段json_object，旧轮格式及完整消息前缀不改。
+- 上轮115（277）已完整成功：4更正稿复用，11请求全部JSON模式、stop，无repair；第二轮49896输入／28288缓存，后续缓存也实际返回。全文9知识／4事务／2行动／23图已读，内容仍不批准：评分方向反转、存疑术语造事实、事务重复、图82/130错注及个别跳过计算。证据build/editorial119/export/、audit.txt、image-review-*.jpg；问题引文和预期见docs/audits/classroom-notebook-regression-20261103.md。
+- 当前116（278）：新增强轮快照affairs_source_first，事务输入直接给原字幕及邻句、派生标题仅定位，知识输入不变；事务同类按实际原文JSON文本预算集中，不跨知识边界，旧轮分批不改。普通和增强核图每张原JPEG前紧邻实际file文本，字节／顺序／缓存前缀不变，恢复不重传。无模型／课程分支，无新AI阶段或语义硬校验。
+- grounded275、事务301、普通课堂597、Responses509、恢复220通过。独立check发现预算失配并已闭环复核：实际原文长度而非短派生长度计量，超长单项独立，反例有效。build.log构建／lint及独立check通过，116已安装唯一AVD；configured+newRun=true同课新轮runner71347运行，日志build/editorial120/run.txt。唯一下一步等待真实终态，读取完整成品／缓存usage及逐图身份字节对照，不因观察超时重启，不批量。
+- 所有旧失败轮保留正常run归档；112曾完整但内容失败，113/114未闭合JSON提示修复失败，115原生JSON整轮通过。历史证据见验证记录，不把旧错误或等待条件当当前状态。
 ## 验收与原范围
 
 - 单篇知识主线完整，条件、必要推导、代表例题可直接自学；评分／考试及其他有用事务集中，真实指令和例外不反转，同义事实一次，具体行动保留。原题不明可使用标明的同类补充题，不冒充教师原题。图片必须实际可见、可用且匹配所在内容。

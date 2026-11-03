@@ -71,11 +71,12 @@ final class ClassroomEnhancedSummary {
         if(parts==null){parts=new JSONArray();state.put("parts",parts);}if(analysed==null){analysed=new JSONArray();state.put("analysed",analysed);}
         for(int i=parts.length();i<groups.length();i++){
             status("AI 分段完成笔记",i,groups.length());
-            JSONArray inventory=new JSONArray();List<byte[]> bytes=new ArrayList<>();
+            JSONArray inventory=new JSONArray();List<byte[]> bytes=new ArrayList<>();List<String> imageNames=new ArrayList<>();
             for(int n=0;n<selected.length();n++){
                 JSONObject p=selected.getJSONObject(n);if(!requested(p,drafts.getJSONObject(i).getJSONArray("image_requests"))||contains(analysed,p.getString("file")))continue;
                 File file=new File(dir,p.getString("file"));if(!file.exists())ClassroomStore.writeBytes(file,ClassroomImages.jpeg(new File(dir,p.getString("raw"))));
                 inventory.put(ClassroomFigureReview.inventory(p));bytes.add(ClassroomStore.bytes(file));
+                imageNames.add(p.getString("file"));
             }
             JSONObject value;
             boolean reuse=false;for(int n=0;n<analysed.length();n++)reuse|=requested(analysed.getJSONObject(n),drafts.getJSONObject(i).getJSONArray("image_requests"));
@@ -90,7 +91,7 @@ final class ClassroomEnhancedSummary {
                         +"。此前已提供的图片保持在原消息位置。仅可引用本次或此前实际提供的file，不得把请求过但未附的图片当作已看到。"+ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
                         +"\n安排原话核验用原始字幕：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
                         +"\n本次唯一要修订的初稿：\n"+drafts.getJSONObject(i)+"\n"+refinementScope(block,affairsSchema);
-                value=json("final-"+i,prompt,bytes,result->{
+                value=json("final-"+i,prompt,bytes,imageNames,result->{
                     validateRefinement(result,blockInput(full.getJSONArray("segments"),allowed),block,affairsSchema);
                     if(state.optInt("figure_policy")>0)ClassroomFigureReview.apply(result,allowed,inventory,state.optJSONArray("figure_reviews"));
                 });
@@ -161,18 +162,24 @@ final class ClassroomEnhancedSummary {
         if(edited==null){edited=new JSONArray();state.put("editor_notes",edited);}
         for(int i=state.optInt("editor_section_done",edited.length());i<sections.length();){
             status("AI 全课主题整稿",i,sections.length());
-            int end=editorBatchEnd(parts,sections,i,state.optInt("editor_batch_size",1),state.optInt("editor_batch_chars",LEGACY_EDITOR_BATCH_CHARS)),count=end-i;
+            boolean sourceFirst=state.optBoolean("affairs_source_first");
+            int end=editorBatchEnd(parts,sections,i,state.optInt("editor_batch_size",1),state.optInt("editor_batch_chars",LEGACY_EDITOR_BATCH_CHARS),sourceFirst,full.getJSONArray("segments")),count=end-i;
             boolean batch=count>1;
             JSONObject section=sections.getJSONObject(i);String collection=affairsSchema==0?"notes":section.getString("collection");JSONArray inputs=new JSONArray(),topics=new JSONArray();Set<Integer> sources=new HashSet<>();
             for(int s=i;s<end;s++){
                 JSONObject current=sections.getJSONObject(s);JSONArray topicInputs=new JSONArray(),refs=current.getJSONArray("refs");
-                for(int n=0;n<refs.length();n++){JSONObject note=noteAt(parts,refs.getString(n));inputs.put(note);topicInputs.put(note);JSONArray ids=note.getJSONArray("sources");for(int k=0;k<ids.length();k++)sources.add(ids.getInt(k));}
+                for(int n=0;n<refs.length();n++){
+                    JSONObject note=noteAt(parts,refs.getString(n));
+                    JSONObject supplied=editorialInput(note,full.getJSONArray("segments"),sourceFirst&&"affairs".equals(current.optString("collection")));
+                    inputs.put(supplied);topicInputs.put(supplied);JSONArray ids=note.getJSONArray("sources");for(int k=0;k<ids.length();k++)sources.add(ids.getInt(k));
+                }
                 topics.put(new JSONObject().put("title",current.getString("title")).put("collection",affairsSchema==0?"notes":current.getString("collection")).put("inputs",topicInputs));
             }
             JSONArray segments=new JSONArray(),all=full.getJSONArray("segments");for(int n=0;n<all.length();n++)if(sources.contains(all.getJSONObject(n).getInt("id")))segments.put(all.getJSONObject(n));
             String prompt="全课整稿主题 "+(i+1)+"/"+sections.length()+"："+section.getString("title")+"。"
                     +(batch?"本次连续处理 "+count+" 个原计划主题，主题清单及各自提取稿见末尾。保留各主题的独立标题，不把所有主题揉成一个大段；仅同义主题可合并去重。":"把下面同主题提取稿合为一节完整笔记，")
                     +"消除重复叙述、重复截图和‘图片核对’流水账。保持普通模式的精炼组织，不因内部多轮而增加重复概览、分段编号、无关闲聊或未提及事项的说明。"
+                    +(sourceFirst&&collection.equals("affairs")?"本组事务输入的text直接来自原始字幕及相邻语境，origin=original_subtitles；主题标题仅供定位，历史更正文稿与派生稿不作教师事实模板。根据这些原话及实际已提供的原图重新整理事务，不能沿用历史派生稿中的结论或其错误否定方向。原图明确展示的资源、题号等仍可记录，不能因字幕没有口述就忽略；也不能由图片中的解题内容推断口头考核承诺。把本组同一规则、对象及适用条件集中讲一次，范围不明只保留能确认的部分。":"")
                     +"保留每个有来源的独特事实、题目数字与条件、代码、纠错、明确不考/会考以及改卷给分细节；相同事实只写一次，不可为缩短而删除这些细节。不改变原话确定性。"
                     +"先核对本主题的题干、公式、定义域和证明是否自洽，再成稿；补齐已知条件可推出的关键步骤和最终结果，不能以‘化简即得’掩盖缺失计算。"
                     +"区分求候选值与证明存在：可先在存在假设下求必要候选值，再独立证明存在性并核实定理前提；不能把候选值计算当成存在性证明。循环推理或未满足定理条件的尝试才归错误分析，不能以尚未成立的条件支撑正确解法。"
@@ -211,14 +218,32 @@ final class ClassroomEnhancedSummary {
         }
     }
     static int editorBatchEnd(JSONArray parts,JSONArray sections,int start,int batchSize,int batchChars)throws Exception{
+        return editorBatchEnd(parts,sections,start,batchSize,batchChars,false,null);
+    }
+    static int editorBatchEnd(JSONArray parts,JSONArray sections,int start,int batchSize,int batchChars,boolean sourceFirst,JSONArray all)throws Exception{
         int end=start,limit=Math.max(1,batchSize);long chars=0;
+        String collection=sections.getJSONObject(start).optString("collection","notes");
+        if(sourceFirst&&collection.equals("affairs"))limit=Integer.MAX_VALUE;
         while(end<sections.length()&&end-start<limit){
+            if(sourceFirst&&!collection.equals(sections.getJSONObject(end).optString("collection","notes")))break;
             long next=0;JSONArray refs=sections.getJSONObject(end).getJSONArray("refs");
-            for(int n=0;n<refs.length();n++)next+=noteAt(parts,refs.getString(n)).getString("text").length();
+            for(int n=0;n<refs.length();n++)next+=editorialInput(noteAt(parts,refs.getString(n)),all,sourceFirst&&collection.equals("affairs")).getString("text").length();
             if(end>start&&chars+next>batchChars)break;
             chars+=next;end++;
         }
         return end;
+    }
+    static JSONObject editorialInput(JSONObject note,JSONArray all,boolean originalAffair)throws Exception{
+        if(!originalAffair)return new JSONObject(note.toString());
+        Set<Integer> cited=new HashSet<>();JSONArray ids=note.getJSONArray("sources");for(int i=0;i<ids.length();i++)cited.add(ids.getInt(i));
+        Set<Integer> positions=new TreeSet<>();
+        for(int i=0;i<all.length();i++)if(cited.contains(all.getJSONObject(i).getInt("id"))){
+            for(int n=Math.max(0,i-1);n<=Math.min(all.length()-1,i+1);n++)positions.add(n);
+        }
+        JSONArray context=new JSONArray();for(int position:positions)context.put(all.getJSONObject(position));
+        JSONObject input=new JSONObject(note.toString());input.put("origin","original_subtitles")
+                .put("text",ClassroomSummary.uploadChunk(blockInput(context,new JSONArray())).toString());
+        return input;
     }
     static JSONArray figureAdmission(JSONArray reviews)throws Exception{
         JSONArray result=new JSONArray();if(reviews!=null)for(int i=0;i<reviews.length();i++){
@@ -336,7 +361,10 @@ final class ClassroomEnhancedSummary {
                 .put("source_scope_warnings",state.optJSONArray("source_scope_warnings"));
     }
     private JSONObject json(String stage,String prompt,List<byte[]> images,ClassroomJsonStage.Validator validator)throws Exception{
-        return new ClassroomJsonStage(dir,state,conversation,control).generate(stage,prompt,images,validator,
+        return json(stage,prompt,images,Collections.emptyList(),validator);
+    }
+    private JSONObject json(String stage,String prompt,List<byte[]> images,List<String> imageNames,ClassroomJsonStage.Validator validator)throws Exception{
+        return new ClassroomJsonStage(dir,state,conversation,control).generate(stage,prompt,images,imageNames,validator,
                 "-user-retry-","用户授权继续当前板块。上一条回复未通过校验：",null);
     }
     private String text(String stage,String prompt,List<byte[]> images)throws Exception{control.check();return conversation.text(stage,prompt,images);}

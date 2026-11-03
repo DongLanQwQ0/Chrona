@@ -326,6 +326,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     JSONArray corrected=run.optJSONArray("corrected"),blocks=run.optJSONArray("blocks");
                     row.put("correction_parts",corrected==null?0:corrected.length()).put("source_blocks",blocks==null?0:blocks.length());
                     row.put("run_native_json",run.optBoolean("native_json"));
+                    row.put("run_affairs_source_first",run.optBoolean("affairs_source_first"));
                     JSONArray actualModes=new JSONArray();JSONObject savedConversation=run.optJSONObject("conversation");
                     JSONArray savedTurns=savedConversation==null?null:savedConversation.optJSONArray("turns");
                     if(savedTurns!=null)for(int t=0;t<savedTurns.length();t++){
@@ -365,6 +366,23 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     if(execution!=null){row.put("run_execution_state",execution.optString("state"));if(key.equals(reviewKey)&&execution.has("detail"))row.put("run_execution_detail",execution.getString("detail"));}
                     JSONObject conversation=run.optJSONObject("conversation");
                     if(conversation!=null){
+                        if(key.equals(reviewKey)){
+                            int imageCount=0,labelCount=0,mismatches=0;JSONArray sent=conversation.optJSONArray("messages");
+                            if(sent!=null)for(int m=0;m<sent.length();m++){
+                                JSONArray content=sent.getJSONObject(m).optJSONArray("content");if(content==null)continue;
+                                for(int c=0;c<content.length();c++){
+                                    JSONObject part=content.optJSONObject(c);if(part==null||!java.util.Set.of("input_image","image_url").contains(part.optString("type")))continue;
+                                    imageCount++;JSONObject preceding=c==0?null:content.optJSONObject(c-1);String label=preceding==null?"":preceding.optString("text");
+                                    java.util.regex.Matcher named=java.util.regex.Pattern.compile("^图片文件：(image-[0-9]+\\.jpg)；紧接的图片仅对应此file。$").matcher(label);
+                                    if(!named.matches())continue;labelCount++;
+                                    String url=part.opt("image_url") instanceof String text?text:part.getJSONObject("image_url").getString("url");
+                                    byte[] actual=java.util.Base64.getDecoder().decode(url.substring(url.indexOf(',')+1));
+                                    java.io.File image=new java.io.File(directory,named.group(1));
+                                    if(!image.isFile()||!java.util.Arrays.equals(actual,ClassroomStore.bytes(image)))mismatches++;
+                                }
+                            }
+                            row.put("run_attached_images",imageCount).put("run_labelled_images",labelCount).put("run_label_file_mismatches",mismatches);
+                        }
                         String protocol=conversation.optString("protocol",com.donglan.chrona.ai.AiSettings.CHAT_COMPLETIONS);
                         if(java.util.Set.of(com.donglan.chrona.ai.AiSettings.RESPONSES,com.donglan.chrona.ai.AiSettings.CHAT_COMPLETIONS).contains(protocol))
                             row.put("run_protocol",protocol);

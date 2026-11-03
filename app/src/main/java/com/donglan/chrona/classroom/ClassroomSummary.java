@@ -185,6 +185,7 @@ public final class ClassroomSummary {
             system=systemPrompt(classroomPrompt,strength,figurePolicy,affairsSchema);
             state=new JSONObject().put("config",config).put("run",java.util.UUID.randomUUID().toString())
                     .put("native_json",true)
+                    .put("affairs_source_first",enhanced&&affairsSchema>0)
                     .put("content_batch_size",enhanced?2:1).put("editor_batch_size",enhanced?3:1)
                     .put("editor_batch_chars",18000);
         }
@@ -230,12 +231,13 @@ public final class ClassroomSummary {
             progress.update(new ClassroomProgress("字幕笔记已保存",1,selected.length()>0?2:1,selected.length()+" 张待分析图片"));
             if(selected.length()==0)state.put("final",draft);
             else {
-                List<byte[]> bytes=new ArrayList<>();
+                List<byte[]> bytes=new ArrayList<>();List<String> imageNames=new ArrayList<>();
                 for(int i=0;i<selected.length();i++) {
                     control.check();JSONObject image=selected.getJSONObject(i);File target=new File(dir,image.getString("file"));
                     progress.update(new ClassroomProgress("准备请求的图片",i,selected.length(),"压缩第 "+(i+1)+" 张"));
                     if(!target.exists())ClassroomStore.writeBytes(target,ClassroomImages.jpeg(new File(dir,image.getString("raw"))));
                     bytes.add(ClassroomStore.bytes(target));
+                    imageNames.add(image.getString("file"));
                 }
                 JSONArray allowedFiles=new JSONArray();for(int i=0;i<inventory.length();i++)allowedFiles.put(inventory.getJSONObject(i).getString("file"));
                 String prompt="沿用以上第一轮完整输入、原始输出及本次附图，修订并输出最终全课总结。历史消息不得重写。"
@@ -248,7 +250,7 @@ public final class ClassroomSummary {
                 JSONObject result;
                 try {
                     final int finalAffairs=affairsSchema,finalFigures=figurePolicy;
-                    result=json.generate("final",prompt,bytes,value->{validate(value,lessonInput(materials.getJSONArray("segments"),inventory),false,finalAffairs);
+                    result=json.generate("final",prompt,bytes,imageNames,value->{validate(value,lessonInput(materials.getJSONArray("segments"),inventory),false,finalAffairs);
                         if(finalFigures>0)ClassroomFigureReview.apply(value,inventory,inventory);},
                             "-retry-","用户已授权继续。上一条最终总结未通过校验：","final_output");
                     if(figurePolicy>0)ClassroomFigureReview.merge(state,result.getJSONArray("image_reviews"));

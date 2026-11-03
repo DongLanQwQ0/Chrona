@@ -242,8 +242,11 @@ public final class ClassroomSummaryCheck {
         check(!ClassroomSummary.configKey(AI,20,"other").equals(ClassroomSummary.configKey(AI,20,"保留英文术语")),"custom prompt changes invalidate the previous run");
         check(secondMessages.getJSONObject(2).getString("content").equals(checkpoint.getString("first_output")),"second round contains exact raw first response");
         JSONArray secondContent=secondMessages.getJSONObject(3).getJSONArray("content");
-        check(secondContent.length()==4&&checkpoint.getJSONArray("selected").length()==3,"second round includes matching inventory and three actual images");
-        for(int i=0;i<3;i++)check(secondContent.getJSONObject(i+1).getJSONObject("image_url").getString("url").equals("data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(ClassroomStore.bytes(new File(dir,"image-"+i+".jpg")))),"second-round actual JPEG matches inventory "+i);
+        check(secondContent.length()==7&&checkpoint.getJSONArray("selected").length()==3,"second round includes matching inventory and three individually labelled actual images");
+        for(int i=0;i<3;i++){
+            check(secondContent.getJSONObject(i*2+1).getString("text").contains("图片文件：image-"+i+".jpg；"),"ordinary image label matches the immediately following attachment "+i);
+            check(secondContent.getJSONObject(i*2+2).getJSONObject("image_url").getString("url").equals("data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(ClassroomStore.bytes(new File(dir,"image-"+i+".jpg")))),"second-round actual JPEG matches inventory "+i);
+        }
         check(result.getString("run").equals(partial.getString("run")),"resumed run keeps identity for UI replacement");
         int before=calls;JSONObject regenerated;
         try(RequestControl c=new RequestControl(20000)){regenerated=ClassroomSummary.generate(dir,LESSON,AI,3,c,s->{},"保留英文术语");}
@@ -290,7 +293,7 @@ public final class ClassroomSummaryCheck {
         try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,40,c,s->{},"保留英文术语");}
         check(calls==3&&result.getJSONArray("images").length()==40,"final validation retry reuses first round and keeps forty-image cap");
         check(requests.get(0).getJSONArray("messages").getJSONObject(1).getJSONArray("content").length()==1
-                &&requests.get(2).getJSONArray("messages").getJSONObject(3).getJSONArray("content").length()==41&&requests.get(2).getJSONArray("messages").getJSONObject(5).getJSONArray("content").length()==1,"HTTP requests send zero then exactly forty images");
+                &&requests.get(2).getJSONArray("messages").getJSONObject(3).getJSONArray("content").length()==81&&requests.get(2).getJSONArray("messages").getJSONObject(5).getJSONArray("content").length()==1,"HTTP requests send zero then exactly forty labelled images, never reuploading on retry");
         JSONObject state=ClassroomStore.read(new File(dir,"run.json"));
         check(state.getJSONObject("final_validation").getString("status").equals("succeeded")&&!state.getString("final_output").contains("image-999.jpg"),"successful continuation replaces stale failed-final evidence with current response");
         check(state.getString("first_output").startsWith("```json\n")&&state.getString("first_output").contains("\n  "),"raw first output retains original fences and whitespace");

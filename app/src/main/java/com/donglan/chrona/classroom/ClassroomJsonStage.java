@@ -19,6 +19,10 @@ final class ClassroomJsonStage {
     }
     JSONObject generate(String stage,String prompt,List<byte[]> images,Validator validator,String retrySuffix,
             String retryIntroduction,String outputKey)throws Exception {
+        return generate(stage,prompt,images,Collections.emptyList(),validator,retrySuffix,retryIntroduction,outputKey);
+    }
+    JSONObject generate(String stage,String prompt,List<byte[]> images,List<String> imageNames,Validator validator,String retrySuffix,
+            String retryIntroduction,String outputKey)throws Exception {
         int attempt=state.optInt(stage+"_attempt");
         if(state.has(stage+"_error")){
             state.put(stage+"_error",ClassroomJsonFailure.stored(state.getString(stage+"_error")));save();
@@ -31,7 +35,7 @@ final class ClassroomJsonStage {
         String request=attempt==0&&!sent?"当前JSON阶段："+stage+"。"+WIRE+"\n"+prompt:
                 (attempt>0?retryIntroduction+ClassroomJsonFailure.stored(state.optString(stage+"_error"))+"。":"恢复此前未完成的JSON阶段。")
                 +reference(stage)+"本阶段未提交回复已回滚；只依据其中的完整schema、原始资料和历史实际附图，从头完整生成本阶段JSON对象，不续写、不拼接、不编造来源或图片。"+WIRE+stageBoundary(stage)+assignmentEvidenceDiagnostic(stage);
-        String raw=text(attempt==0?stage:stage+retrySuffix+attempt,request,attempt==0?images:Collections.emptyList(),outputKey);
+        String raw=text(attempt==0?stage:stage+retrySuffix+attempt,request,attempt==0?images:Collections.emptyList(),attempt==0?imageNames:Collections.emptyList(),outputKey);
         try {return validate(raw,validator);}
         catch(JSONException malformed) {
             // A transport-interrupted repair keeps its identity and attempt, and is restarted by
@@ -135,7 +139,7 @@ final class ClassroomJsonStage {
         if(diagnostics.length()==0)return "";
         return "\n本次安排原话诊断（错误引文已作废，仅供纠错，不能作为笔记内容）："+diagnostics
                 +"\n请从所指原始字幕逐字摘录表达真实要求的最短有效原话，并列全覆盖的sources；即使原始字幕含ASR错字，也不可在evidence中自动纠正。"
-                +"任务内容按原要求完整保留，从头重新生成本阶段完整JSON；不拼接失败正文或把作废引文当作有效依据。";
+                    +"任务内容按原要求完整保留，从头重新生成本阶段完整JSON；不拼接失败正文或把作废引文当作有效依据。";
     }
     private String reference(String stage)throws JSONException {
         JSONObject turn=firstTurn(stage);
@@ -153,8 +157,11 @@ final class ClassroomJsonStage {
         return null;
     }
     private String text(String stage,String prompt,List<byte[]> images,String outputKey)throws Exception {
+        return text(stage,prompt,images,Collections.emptyList(),outputKey);
+    }
+    private String text(String stage,String prompt,List<byte[]> images,List<String> imageNames,String outputKey)throws Exception {
         control.check();
-        try {return conversation.json(stage,prompt,images);}
+        try {return conversation.json(stage,prompt,images,imageNames);}
         finally {
             if(outputKey!=null){
                 JSONObject history=state.getJSONObject("conversation"),outputs=history.getJSONObject("outputs");

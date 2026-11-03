@@ -32,12 +32,17 @@ final class ClassroomConversation {
         return false;
     }
     String text(String stage,String prompt,List<byte[]> images)throws Exception{
-        return generate(stage,prompt,images,false);
+        return generate(stage,prompt,images,Collections.emptyList(),false);
     }
     String json(String stage,String prompt,List<byte[]> images)throws Exception{
-        return generate(stage,prompt,images,nativeJson);
+        return json(stage,prompt,images,Collections.emptyList());
     }
-    private String generate(String stage,String prompt,List<byte[]> images,boolean json)throws Exception{
+    String json(String stage,String prompt,List<byte[]> images,List<String> imageNames)throws Exception{
+        if(!imageNames.isEmpty()&&imageNames.size()!=images.size())throw new IOException("图片标识与附件数量不一致");
+        List<String> names=new ArrayList<>();for(String imageName:imageNames)names.add(ClassroomDocument.imageName(imageName));
+        return generate(stage,prompt,images,names,nativeJson);
+    }
+    private String generate(String stage,String prompt,List<byte[]> images,List<String> imageNames,boolean json)throws Exception{
         JSONObject restarts=conversation.optJSONObject("restarts");
         if(restarts==null){restarts=new JSONObject();conversation.put("restarts",restarts);}
         int generation=restarts.optInt(stage);String attempt=generation==0?stage:stage+"-restart-"+generation;
@@ -51,7 +56,7 @@ final class ClassroomConversation {
         }
         String request=generation==0?prompt:"上次当前板块未完整成功，已回滚该板块未提交的结果。历史中的失败回复仅供审计，不作为本次输出的前半段。"
                 +"现在从头完整重新生成当前板块，禁止续写或拼接此前片段。当前阶段："+stage+"；重试序号："+generation+"。\n本次完整要求：\n"+prompt;
-        try{return ask(attempt,request,generation==0?images:Collections.emptyList(),json);}
+        try{return ask(attempt,request,generation==0?images:Collections.emptyList(),generation==0?imageNames:Collections.emptyList(),json);}
         catch(Exception failure){
             // Retire only this uncommitted attempt. Sent messages and actual replies stay exact.
             if(attempt.equals(conversation.optString("pending")))conversation.remove("pending");
@@ -64,7 +69,7 @@ final class ClassroomConversation {
         if(output.isBlank())throw new IOException("AI 未返回课堂内容，未提交内容已回滚");
         return output;
     }
-    private String ask(String stage,String prompt,List<byte[]> images,boolean json)throws Exception{
+    private String ask(String stage,String prompt,List<byte[]> images,List<String> imageNames,boolean json)throws Exception{
         JSONObject outputs=conversation.getJSONObject("outputs");
         if(outputs.has(stage)){
             return complete(outputs.getString(stage),conversation.getJSONObject("finishes").optString(stage));
@@ -72,7 +77,10 @@ final class ClassroomConversation {
         JSONArray messages=conversation.getJSONArray("messages");
         if(!conversation.has("pending")){
             JSONArray content=new JSONArray().put(new JSONObject().put("type",responses?"input_text":"text").put("text",prompt));
-            for(byte[] image:images){
+            for(int i=0;i<images.size();i++){
+                byte[] image=images.get(i);
+                if(!imageNames.isEmpty())content.put(new JSONObject().put("type",responses?"input_text":"text")
+                        .put("text","图片文件："+imageNames.get(i)+"；紧接的图片仅对应此file。"));
                 String url="data:image/jpeg;base64,"+Base64.getEncoder().encodeToString(image);
                 content.put(responses?new JSONObject().put("type","input_image").put("image_url",url):
                         new JSONObject().put("type","image_url").put("image_url",new JSONObject().put("url",url)));

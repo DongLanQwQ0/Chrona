@@ -1,6 +1,7 @@
 package com.donglan.chrona.classroom;
 
 import com.donglan.chrona.ai.AiSettings;
+import com.donglan.chrona.ai.ChatCompletionClient;
 import com.donglan.chrona.net.RequestControl;
 import com.sun.net.httpserver.HttpServer;
 import org.json.*;
@@ -248,7 +249,9 @@ public final class ClassroomEnhancedCheck {
     private static File materials(String name,int blockCount,boolean longText)throws Exception{
         File dir=new File(root,name+"-"+System.nanoTime());dir.mkdirs();JSONArray segments=new JSONArray(),candidates=new JSONArray();
         for(int i=0;i<blockCount;i++){
-            segments.put(new JSONObject().put("start",i*100).put("end",i*100+20).put("text","题干 5 kg，步骤分 2 分。"+(longText?"甲".repeat(3500):"完整短字幕")));
+            segments.put(new JSONObject().put("start",i*100).put("end",i*100+20).put("text","题干 5 kg，步骤分 2 分。"
+                    +(mode.startsWith("affairs")?"本章只考证明第一步；步骤分2分，符号错误扣1分，可能作为附加题，范围待核对。":"")
+                    +(longText?"甲".repeat(3500):"完整短字幕")));
             BufferedImage pic=new BufferedImage(48,48,BufferedImage.TYPE_INT_RGB);var g=pic.createGraphics();g.setColor(new java.awt.Color(i*60+30,i*60+30,i*60+30));g.fillRect(0,0,48,48);g.dispose();
             for(int y=0;y<48;y++)for(int x=0;x<48;x++)pic.setRGB(x,y,(x%6<1||y%6<1)?0x101010:0xeeeeee);
             File raw=new File(dir,"raw-"+i+".img");ImageIO.write(pic,"png",raw);
@@ -585,7 +588,7 @@ public final class ClassroomEnhancedCheck {
     private static void reuseImages()throws Exception{
         reset("reuse-images",true);File dir=previousContentMaterials("reuse-images",AiSettings.CHAT_COMPLETIONS);JSONObject result=generate(dir,true);
         JSONArray first=requests.get(4).getJSONArray("messages"),second=requests.get(5).getJSONArray("messages");
-        check(first.getJSONObject(first.length()-1).getJSONArray("content").length()==3,"first final stage uploads both requested images");
+        check(first.getJSONObject(first.length()-1).getJSONArray("content").length()==5,"first final stage uploads both requested images with adjacent identities");
         check(second.getJSONObject(second.length()-1).getJSONArray("content").length()==1,"later overlapping image request uploads no image again");
         check(result.getJSONArray("images").length()==2&&state(dir).getJSONArray("analysed").length()==2,"analysed inventory retains two unique images");
         check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(1).getJSONArray("images").getString(0).equals("image-0.jpg"),"later topic may cite image actually supplied in earlier message");
@@ -670,7 +673,7 @@ public final class ClassroomEnhancedCheck {
         reset("invalid-final-image",true);File fin=materials("final-validation-resume",false);
         rejects(()->generate(fin,true),"invalid final image stops without automatic retry");run=state(fin).getString("run");
         check(requests.size()==3&&state(fin).getInt("final-0_attempt")==1,"final semantic failure advances only final retry generation");
-        JSONArray imageRequest=requests.get(2).getJSONArray("messages");check(imageRequest.getJSONObject(imageRequest.length()-1).getJSONArray("content").length()==2,"first final request really supplies one image");
+        JSONArray imageRequest=requests.get(2).getJSONArray("messages");check(imageRequest.getJSONObject(imageRequest.length()-1).getJSONArray("content").length()==3,"first final request really supplies one labelled image");
         mode="final-retry";result=generate(fin,true);JSONArray retried=requests.get(3).getJSONArray("messages");
         check(retried.getJSONObject(retried.length()-1).getJSONArray("content").length()==1,"manual final retry appends text without uploading image again");
         check(stages.equals(List.of("correct-0","draft-0","final-0","final-0-user-retry","edit-plan","edit-note-0")),"final retry does not recompute corrected transcript or draft");
@@ -719,7 +722,7 @@ public final class ClassroomEnhancedCheck {
         for(int i=0;i<prefix.length();i++)check(prefix.getJSONObject(i).toString().equals(resumed.getJSONObject(i).toString()),"enhanced original request and failed assistant stay exact "+i);
         check(state(dir).getJSONObject("conversation").getJSONObject("options").toString().equals(options),"enhanced durable frozen options remain exact");
         for(int i=3;i<requests.size();i++)check(!prompt(requests.get(i)).contains(ClassroomSummary.DRAFT_IMAGE_RULE),"enhanced actual-image final and editorial stages exclude draft-only ban "+i);
-        check(messages(requests.get(3)).getJSONObject(messages(requests.get(3)).length()-1).getJSONArray("content").length()==2,"enhanced final really attaches one selected image");
+        check(messages(requests.get(3)).getJSONObject(messages(requests.get(3)).length()-1).getJSONArray("content").length()==3,"enhanced final really attaches one individually labelled selected image");
         check(result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").contains("![已上传的图](images/image-0.jpg)"),"enhanced final and editorial stages retain valid actual-image Markdown");
         appendOnly(dir);evidence("enhanced-draft-image-recovery",dir);
 
@@ -1640,6 +1643,52 @@ public final class ClassroomEnhancedCheck {
             reset("affairs-only",false);result=generate(dir,enhanced);check(!result.getString("run").equals(run)&&state(dir).getInt("affairs_schema")==1&&result.getJSONArray("parts").getJSONObject(0).has("affairs"),"completed legacy regeneration opts into current contract: "+enhanced);
         }
     }
+    private static void groundedInputs()throws Exception{
+        JSONArray all=new JSONArray();for(int n=0;n<5;n++)all.put(new JSONObject().put("id",10+n*20).put("start",n*10).put("end",n*10+5).put("text","原字幕 "+n+"：保留引号\"、换行\n与 ASR 原字。"));
+        JSONObject note=content("PRIVATE_DERIVED_UNSUPPORTED_CLAIM",50).put("title","教师规则");String before=note.toString(),rawBefore=all.toString();
+        JSONObject supplied=ClassroomEnhancedSummary.editorialInput(note,all,true);JSONArray evidence=new JSONObject(supplied.getString("text")).getJSONArray("segments");
+        check(supplied.getString("origin").equals("original_subtitles")&&evidence.length()==3,"affair input uses original subtitle and immediate neighbours rather than derived prose");
+        for(int n=0;n<3;n++)check(evidence.getJSONObject(n).getInt("id")==all.getJSONObject(n+1).getInt("id")&&evidence.getJSONObject(n).getString("text").equals(all.getJSONObject(n+1).getString("text")),"raw subtitle text and sparse IDs remain exact "+n);
+        check(!supplied.getString("text").contains("PRIVATE_DERIVED_UNSUPPORTED_CLAIM")&&note.toString().equals(before)&&all.toString().equals(rawBefore),"projection removes unsupported derived prose only from new input, leaving saved material and history unchanged");
+        check(ClassroomEnhancedSummary.editorialInput(note,all,false).toString().equals(before),"knowledge and legacy editorial inputs preserve their full existing body");
+        JSONArray parts=new JSONArray().put(new JSONObject().put("notes",new JSONArray().put(content("abcdefghij",50))).put("affairs",new JSONArray().put(content("abcdefghij",50))));
+        JSONArray sections=new JSONArray();for(int n=0;n<7;n++)sections.put(new JSONObject().put("title","主题"+n).put("collection",n<2?"notes":"affairs").put("refs",new JSONArray().put(n<2?"0:notes:0":"0:affairs:0")));
+        int rawChars=ClassroomEnhancedSummary.editorialInput(parts.getJSONObject(0).getJSONArray("affairs").getJSONObject(0),all,true).getString("text").length();
+        check(ClassroomEnhancedSummary.editorBatchEnd(parts,sections,0,3,rawChars*5,true,all)==2,"new grouping keeps knowledge separate from raw-grounded affairs");
+        check(ClassroomEnhancedSummary.editorBatchEnd(parts,sections,2,3,rawChars*5,true,all)==7,"compatible affairs fit in one bounded batch rather than repeat across arbitrary three-topic boundaries");
+        check(ClassroomEnhancedSummary.editorBatchEnd(parts,sections,2,3,rawChars*2+1,true,all)==4,"whole-affair grouping budgets actual supplied raw text rather than short derived prose");
+        JSONArray longRaw=new JSONArray().put(new JSONObject().put("id",50).put("start",0).put("end",5).put("text","原".repeat(18000)));
+        check(ClassroomEnhancedSummary.editorBatchEnd(parts,sections,2,3,18000,true,longRaw)==3,"short derived affairs backed by oversized raw material stay standalone rather than silently over-batching");
+        check(ClassroomEnhancedSummary.editorBatchEnd(parts,sections,0,3,200)==3,"legacy grouping retains its exact existing contract");
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES)){
+            reset("affairs-only",false);File dir=materials("grounded-affairs-"+protocol,false);generateWithProtocol(dir,protocol);
+            String sent=prompt(requests.get(stages.indexOf("edit-note-0"))),marker="本主题提取稿：\n";int from=sent.indexOf(marker)+marker.length();JSONArray inputs=new JSONArray(sent.substring(from,sent.indexOf("\n本组引用图片",from)));
+            check(state(dir).getBoolean("affairs_source_first")&&inputs.getJSONObject(0).getString("origin").equals("original_subtitles"),"actual new-run editorial HTTP carries raw source projection: "+protocol);
+            JSONArray raw=new JSONObject(inputs.getJSONObject(0).getString("text")).getJSONArray("segments");
+            check(raw.getJSONObject(0).getString("text").equals(ClassroomStore.read(new File(dir,"materials.json")).getJSONArray("segments").getJSONObject(0).getString("text")),"actual teacher facts use original material rather than repeated model claims: "+protocol);
+            if(protocol.equals(AiSettings.RESPONSES))nativeAppendOnly(dir);else appendOnly(dir);
+            reset("normal",false);File labelled=materials("named-images-"+protocol,false);JSONObject state=new JSONObject().put("run","label-fixture").put("native_json",true);
+            AiSettings service=new AiSettings(AI.baseUrl,AI.model,AI.apiKey,AI.reasoningEffort,protocol);List<byte[]> bytes=new ArrayList<>();List<String> names=new ArrayList<>();
+            for(int n=0;n<40;n++){BufferedImage image=new BufferedImage(4,4,BufferedImage.TYPE_INT_RGB);image.setRGB(0,0,(n+1)*12345);ByteArrayOutputStream output=new ByteArrayOutputStream();ImageIO.write(image,"jpg",output);bytes.add(output.toByteArray());names.add((n==0?"images/":"")+"image-"+(n*3+7)+".jpg");}
+            try(RequestControl control=new RequestControl(20000)){
+                ClassroomConversation conversation=new ClassroomConversation(labelled,state,new ChatCompletionClient(service,control),"SYNTHETIC");String original=state.toString();
+                rejects(()->conversation.json("final-0","schema",bytes,List.of("image-7.jpg")),"mismatched new attachment labels fail before sending: "+protocol);
+                rejects(()->conversation.json("final-0","schema",List.of(bytes.get(0)),List.of("../secret.jpg")),"invalid new attachment label fails before sending: "+protocol);
+                check(requests.isEmpty()&&state.toString().equals(original),"invalid labels do not mutate durable history or call service: "+protocol);
+                conversation.json("final-0","synthetic final JSON",bytes,names);
+                JSONArray content=messages(requests.get(0)).getJSONObject(1).getJSONArray("content");check(content.length()==81,"forty images each have one adjacent identity text part: "+protocol);
+                for(int n=0;n<40;n++){
+                    JSONObject label=content.getJSONObject(n*2+1),image=content.getJSONObject(n*2+2);String file=ClassroomDocument.imageName(names.get(n));
+                    check(label.getString("type").equals(protocol.equals(AiSettings.RESPONSES)?"input_text":"text")&&label.getString("text").contains("图片文件："+file+"；"),"adjacent label preserves nonsequential stable file "+n+" "+protocol);
+                    String url=protocol.equals(AiSettings.RESPONSES)?image.getString("image_url"):image.getJSONObject("image_url").getString("url");
+                    check(Arrays.equals(Base64.getDecoder().decode(url.substring(url.indexOf(',')+1)),bytes.get(n)),"label is adjacent to exact corresponding JPEG bytes "+n+" "+protocol);
+                }
+                JSONArray prefix=new JSONArray(messages(requests.get(0)).toString());conversation.json("followup","Return the next synthetic JSON object without more images.",List.of());
+                JSONArray after=messages(requests.get(1));for(int n=0;n<prefix.length();n++)check(after.getJSONObject(n).toString().equals(prefix.getJSONObject(n).toString()),"labelled image prefix stays byte-for-byte unchanged in next turn "+n+" "+protocol);
+                check(after.getJSONObject(after.length()-1).getJSONArray("content").length()==1,"later stage never reuploads image labels or attachments: "+protocol);
+            }
+        }
+    }
     private static void nativeJsonModes()throws Exception{
         for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES)){
             reset("normal",true);File dir=materials("json-modes-"+protocol,true);JSONObject result=generateWithProtocol(dir,protocol),run=state(dir);
@@ -1670,6 +1719,10 @@ public final class ClassroomEnhancedCheck {
     }
     public static void main(String[] args)throws Exception{
         root=new File(args[0]);root.mkdirs();
+        if(args.length>1&&args[1].equals("grounded-inputs")){
+            HttpServer server=server();try{test("original teacher source and adjacent image identities",ClassroomEnhancedCheck::groundedInputs);}finally{server.stop(0);}
+            System.out.println("ClassroomGroundedInputs: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Grounded input checks failed");return;
+        }
         if(args.length>1&&args[1].equals("native-json")){
             HttpServer server=server();try{test("stage-specific native JSON, legacy freeze, recovery and rejection",ClassroomEnhancedCheck::nativeJsonModes);}finally{server.stop(0);}
             System.out.println("ClassroomNativeJson: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Native JSON mode checks failed");return;
@@ -1758,7 +1811,7 @@ public final class ClassroomEnhancedCheck {
             try{test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);}
             finally{server.stop(0);}System.out.println("ClassroomAffairsCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Course affairs checks failed");return;
         }
-        if(args.length==1){test("stage-specific native JSON, legacy freeze, recovery and rejection",ClassroomEnhancedCheck::nativeJsonModes);test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
+        if(args.length==1){test("original teacher source and adjacent image identities",ClassroomEnhancedCheck::groundedInputs);test("stage-specific native JSON, legacy freeze, recovery and rejection",ClassroomEnhancedCheck::nativeJsonModes);test("refinement scoped sources and safe indexed diagnostics",ClassroomEnhancedCheck::refinementScopeValidation);test("loopback append-only refinement retry, repair and frozen legacy",ClassroomEnhancedCheck::refinementScopePipeline);test("legacy response validates present out-of-contract affairs",ClassroomEnhancedCheck::legacyExtraAffairsValidation);test("course affairs schema, editorial coverage and frozen legacy",ClassroomEnhancedCheck::courseAffairs);test("enhanced note strength and immutable prefix",ClassroomEnhancedCheck::noteStrength);test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("classroom-specific timeout and shared deadline",ClassroomEnhancedCheck::classroomTimeout);test("atomic whole-lesson assignment deduplication",ClassroomEnhancedCheck::assignmentEditorial);}
         if(args.length>1&&args[1].equals("schema-repair")){
             try{test("required image schema bounded repair",ClassroomEnhancedCheck::schemaRepair);test("existing semantic and manual budgets",ClassroomEnhancedCheck::validationResume);}
             finally{server.stop(0);}System.out.println("ClassroomSchemaRepair: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Schema repair checks failed");return;
