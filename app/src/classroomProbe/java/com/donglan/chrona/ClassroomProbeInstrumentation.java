@@ -31,6 +31,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean classroomRoute;
     private boolean healthImage;
     private boolean healthJson;
+    private boolean healthSchema;
     private int healthImageCount=1;
     private String healthModel;
     private boolean mathAudit;
@@ -52,6 +53,8 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         classroomRoute = args != null && "true".equals(args.getString("classroomRoute"));
         healthImage = args != null && "true".equals(args.getString("healthImage"));
         healthJson = args != null && "true".equals(args.getString("healthJson"));
+        healthSchema = args != null && "true".equals(args.getString("healthSchema"));
+        healthJson|=healthSchema;
         if(args!=null&&args.containsKey("healthImageCount"))healthImageCount=Integer.parseInt(args.getString("healthImageCount"));
         healthModel = args == null ? null : args.getString("healthModel");
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
@@ -432,6 +435,9 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                             row.put("run_last_stream_content_characters",response.opt("content_chars")==null?JSONObject.NULL:response.opt("content_chars"))
                                     .put("run_last_stream_reasoning_characters",response.opt("reasoning_chars")==null?JSONObject.NULL:response.opt("reasoning_chars"));
                             JSONObject nativeResponse=response.optJSONObject("response");JSONArray nativeOutput=nativeResponse==null?null:nativeResponse.optJSONArray("output");
+                            JSONObject nativeTextConfig=nativeResponse==null?null:nativeResponse.optJSONObject("text"),nativeFormat=nativeTextConfig==null?null:nativeTextConfig.optJSONObject("format");
+                            String format=nativeFormat==null?"":nativeFormat.optString("type");
+                            row.put("run_last_native_format",java.util.Set.of("text","json_object","json_schema").contains(format)?format:"not_reported");
                             JSONArray shapes=new JSONArray();StringBuilder nativeText=new StringBuilder();
                             if(nativeOutput!=null)for(int n=0;n<nativeOutput.length();n++){
                                 JSONObject item=nativeOutput.optJSONObject(n);if(item==null)continue;
@@ -467,6 +473,15 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                             String trimmed=text.strip();
                             row.put("run_last_syntax_shape",new JSONObject().put("open_objects",objects).put("open_arrays",arrays)
                                     .put("unfinished_string",quoted).put("last_codepoint",trimmed.isEmpty()?-1:trimmed.codePointBefore(trimmed.length())));
+                            if(providerFailure&&objects==1&&arrays==0&&!quoted){
+                                try{
+                                    JSONObject hypothetical=new JSONObject(text+"}"),required=new JSONObject();
+                                    for(String field:new String[]{"overview","notes","affairs","assignments","image_assessment","image_requests"})required.put(field,hypothetical.has(field));
+                                    JSONObject assessment=hypothetical.optJSONObject("image_assessment");
+                                    row.put("run_last_outer_close_hypothesis",new JSONObject().put("parses",true).put("required_fields",required)
+                                            .put("image_requests_inside_assessment",assessment!=null&&assessment.has("image_requests")));
+                                }catch(org.json.JSONException stillInvalid){row.put("run_last_outer_close_hypothesis",new JSONObject().put("parses",false));}
+                            }
                         }
                         row.put("run_last_reasoning_characters",reasoningText instanceof String text?text.length():JSONObject.NULL);
                         if(content instanceof String text)try{
@@ -626,7 +641,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     ?new com.donglan.chrona.ai.ChatCompletionClient(settings,control,com.donglan.chrona.ai.SchedulePrompt.SYSTEM,new CellularClassroomRoute(getTargetContext()))
                     :new com.donglan.chrona.ai.ChatCompletionClient(settings,control);
             boolean responses=com.donglan.chrona.ai.AiSettings.RESPONSES.equals(settings.protocol);
-            Object userContent=healthJson?"Return a JSON object with one boolean field ok set to true.":"Reply with OK only.";
+            Object userContent=healthSchema?"Return a JSON object with ok=true and details.ready=true.":healthJson?"Return a JSON object with one boolean field ok set to true.":"Reply with OK only.";
             if(healthImage){
                 if(healthImageCount<1||healthImageCount>40)throw new IllegalArgumentException("Health image count must be 1 to 40");
                 android.graphics.Bitmap sample=android.graphics.Bitmap.createBitmap(32,32,android.graphics.Bitmap.Config.ARGB_8888);
@@ -641,8 +656,18 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     .put(new JSONObject().put("role","system").put("content","Reply briefly."))
                     .put(new JSONObject().put("role","user").put("content",userContent)));
             if(healthJson){
-                if(responses)request.put("text",new JSONObject().put("format",new JSONObject().put("type","json_object")));
-                else request.put("response_format",new JSONObject().put("type","json_object"));
+                JSONObject format=new JSONObject().put("type","json_object");
+                if(healthSchema){
+                    JSONObject detail=new JSONObject().put("type","object").put("properties",new JSONObject().put("ready",new JSONObject().put("type","boolean")))
+                            .put("required",new JSONArray().put("ready")).put("additionalProperties",false);
+                    JSONObject schema=new JSONObject().put("type","object").put("properties",new JSONObject().put("ok",new JSONObject().put("type","boolean")).put("details",detail))
+                            .put("required",new JSONArray().put("ok").put("details")).put("additionalProperties",false);
+                    JSONObject config=new JSONObject().put("name","chrona_health").put("strict",true).put("schema",schema);
+                    format=responses?config.put("type","json_schema"):new JSONObject().put("type","json_schema").put("json_schema",config);
+                    report.put("json_schema_requested",true);
+                }
+                if(responses)request.put("text",new JSONObject().put("format",format));
+                else request.put("response_format",format);
                 report.put("json_mode_requested",true);
             }
             report.put("synthetic_images",healthImage?healthImageCount:0);
@@ -654,6 +679,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 Object content=choice.getJSONObject("message").opt("content");
                 report.put("state","response").put("has_text",content instanceof String&&!((String)content).isBlank());
                 if(healthJson&&content instanceof String text)try{report.put("json_object_valid",new JSONObject(text).optBoolean("ok"));}catch(org.json.JSONException invalid){report.put("json_object_valid",false);}
+                if(healthSchema&&content instanceof String text)report.put("synthetic_reply",providerExcerpt(text,settings.apiKey));
                 String finish=choice.optString("finish_reason");
                 if(java.util.Set.of("stop","length","content_filter","tool_calls").contains(finish))report.put("finish_reason",finish);
                 JSONObject usage=response.optJSONObject("usage");

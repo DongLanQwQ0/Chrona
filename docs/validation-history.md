@@ -1,5 +1,11 @@
 # 验证记录
 
+## 116 续跑后的结构问题定位 — 2026-11-03
+
+- 原AVD系统服务自行恢复后，同轮续跑draft-1-restart-1及唯一repair均completed／stop，但最终JSON仍不完整；真实输出12533／6625 Token，未达32768预算，失败块未提交。`build/editorial120/resume.txt`、resume-audit.txt。
+- 请求／服务回显均为json_object。只读本地结构假设（不写成品、不改历史）显示：即使补一个闭合符，顶层仍缺image_requests，而该字段实际被放进image_assessment。说明不能把问题简化成缺结束括号或靠本地补写接纳。`nesting-audit.txt`。
+- 为选择替代机制，仅发送无课堂数据的嵌套JSON Schema小请求。首次响应未通过ok布尔检查且未保存具体正文，不能据此判断结构错误；第二次已保存合成回复为合法`{"ok":true,"details":{"ready":true}}`，服务接受json_schema／strict参数，未修改配置。`build/editorial121/schema-health.txt`、schema-reply.txt`。这不证明课堂长输出可靠，下一步需按既有各阶段字段契约提供结构Schema，不增加内容级校验；旧轮冻结格式仍须保留。
+
 ## 116 事务原文输入与逐图身份 — 2026-11-03
 
 - 针对115完整成品的事实反转、重复及图注错配，增强新轮增加事务原文输入快照：只改新追加的事务输入投影，原始材料、派生稿、旧消息和知识正文均不变；同类事务在实际投影文本预算内合批，旧轮分批不变。
