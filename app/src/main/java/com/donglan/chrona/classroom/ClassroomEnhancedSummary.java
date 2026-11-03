@@ -180,7 +180,11 @@ final class ClassroomEnhancedSummary {
                     +(state.optInt("figure_policy")>0?"图注仅描述实际可见内容，不能把字幕讲过的公式或证明当作图片已显示；已排除的低置信度、空白、仅标题或遮挡图片不得重新引用。实际图像分析已在历史原消息中，最终图片准入表（included=false不得引用）："+figureAdmission(state.optJSONArray("figure_reviews")):"")
                     +(batch?"只返回一个JSON，overview为空，"+(affairsSchema==0?"notes":"notes与affairs合计")+"返回1至"+count+"项，覆盖本组全部主题；仅同义主题可合并，assignments必须=[]。"+ClassroomSummary.topicBatchSchema(affairsSchema)
                             :(affairsSchema==0?"只返回一个JSON，overview为空，notes恰好一项，assignments=[]。":"只返回一个JSON，overview为空，按实际内容放入notes或affairs，合计恰好一项；另一内容集合及assignments为空数组，不把事务并入学习笔记。")+ClassroomSummary.topicSchema(affairsSchema,collection))
-                    +(batch?"\n本组主题清单及提取稿：\n"+topics:"\n本主题提取稿：\n"+inputs);
+                    +(batch?"\n本组主题清单及提取稿：\n"+topics:"\n本主题提取稿：\n"+inputs)
+                    +"\n对应原始字幕（用于核对教师事实、指令方向及与更正文稿的冲突，不仅用于安排引文定位）：\n"
+                    +ClassroomSummary.uploadChunk(blockInput(segments,new JSONArray()))
+                    +"\n原字幕是教师事实依据，更正文稿与提取稿都是待核对的派生稿。出现冲突时回到原字幕及相邻语境，不因多份派生稿重复同一解释就认定为真。"
+                    +"对未能确认的范围或术语，保留可靠事实并仅标明具体疑点；删除无依据的事实分支，不能用‘相关’或直接引号包装成确定结论。";
             JSONObject value=json("edit-note-"+i,prompt,Collections.emptyList(),result->{
                 ClassroomSummary.validateBlock(result,blockInput(full.getJSONArray("segments"),analysed),affairsSchema);
                 if(state.optInt("figure_policy")>0)ClassroomFigureReview.filter(result,state.optJSONArray("figure_reviews"));

@@ -93,6 +93,10 @@ public final class ClassroomEnhancedCheck {
                 .put("image_requests",images?new JSONArray().put(new JSONObject().put("start",mode.equals("reuse-images")?0:id*100).put("end",mode.equals("reuse-images")?120:id*100+20).put("reason","核对题干数字与步骤分")):new JSONArray());
         if(draft&&images&&groupedSources!=null)value.put("image_requests",new JSONArray().put(new JSONObject().put("start",groupedSources.getInt(0)*100).put("end",groupedSources.getInt(groupedSources.length()-1)*100+20).put("reason","核对本内容组每个原块的板书")));
         if(!draft){JSONArray reviews=new JSONArray();Set<String> reviewed=new LinkedHashSet<>();for(int i=0;i<pictures.length();i++)if(reviewed.add(pictures.getString(i)))reviews.put(new JSONObject().put("file",pictures.getString(i)).put("status","usable").put("confidence","high").put("visible","合成图的黑白网格").put("reason","合成画面用于对应题目"));value.put("image_reviews",reviews);}
+        if(mode.equals("fidelity-raw")){
+            JSONObject first=value.getJSONArray("notes").getJSONObject(0);first.put("text","PRIVATE_DERIVED_CLAIM_"+id+"_0");
+            for(int n=1;n<3;n++)value.getJSONArray("notes").put(new JSONObject(first.toString()).put("title","合成独立主题 "+id+"_"+n).put("text","PRIVATE_DERIVED_CLAIM_"+id+"_"+n));
+        }
         return value;
     }
     private static JSONObject editedNote(JSONArray input)throws Exception{
@@ -897,6 +901,7 @@ public final class ClassroomEnhancedCheck {
         try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,p->{},"保留题干条件及步骤分",true,3);}
         check(result.getInt("note_strength")==3&&state(dir).getInt("note_strength")==3,"enhanced result and checkpoint retain selected strength");
         String system=requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
+        fidelitySystemRules(system);
         check(system.contains("保持整理深度，压紧表达"),"enhanced requests use concise handout system");
         check(system.contains("自行复算数学与代码")&&system.contains("题设和结论是否一致"),"actual request asks for mathematical and logical self-checks");
         check(system.contains("完整题干")&&system.contains("补齐必要推导")&&system.contains("不根据答案反造原题"),"actual request preserves questions while distinguishing valid derivation from invented facts");
@@ -1042,6 +1047,56 @@ public final class ClassroomEnhancedCheck {
         String marker="完整整稿对象：\n";int start=text.lastIndexOf(marker)+marker.length();
         return new JSONObject(text.substring(start,text.indexOf("\n按实际内容填写各集合",start)));
     }
+    private static void fidelitySystemRules(String system){
+        for(String rule:List.of("数学解释须核对完整表达式及适用条件","不能从局部因子的性质推出整体性质","不能把某个例子的结论推广为一般规则","逐步核对等式与操作文字是否一致","关键计算不以未经解释的高阶等价或‘化简即得’代替","课堂具体证明转写不清，不等于数学结论不能成立","有可靠条件且可推出时给出简洁有效的推导","教师评分、考核和具体行动仍只按原始证据保留"))
+            check(system.contains(rule),"actual system prompt carries the generic mathematical-fidelity rule: "+rule);
+        check(!system.contains("PRIVATE_RAW_WORDS_")&&!system.contains("PRIVATE_DERIVED_CLAIM_"),"generic system rules do not embed fixture lecture text or an answer");
+    }
+    private static void editorialRawFidelity()throws Exception{
+        String marker="\n对应原始字幕（用于核对教师事实、指令方向及与更正文稿的冲突，不仅用于安排引文定位）：\n",endMarker="\n原字幕是教师事实依据";
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(String contract:List.of("new-three","old-two","old-single")){
+            reset("fidelity-raw",false);boolean fresh=contract.equals("new-three");
+            File dir=fresh?materials("fidelity-"+contract+"-"+protocol,4,true):previousContentMaterials("fidelity-"+contract+"-"+protocol,protocol);
+            JSONObject frozen=fresh?null:state(dir);
+            if(contract.equals("old-single")){frozen.remove("editor_batch_size");ClassroomStore.write(new File(dir,"run.json"),frozen);}
+            JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));JSONArray original=materials.getJSONArray("segments");
+            for(int i=0;i<original.length();i++)original.getJSONObject(i).put("text","PRIVATE_RAW_WORDS_"+i+" 教师原话，区分事实与指令。\n"+original.getJSONObject(i).getString("text"));
+            ClassroomStore.write(new File(dir,"materials.json"),materials);JSONObject result;
+            try(RequestControl control=new RequestControl(20000)){
+                AiSettings settings=new AiSettings(AI.baseUrl,AI.model,AI.apiKey,AI.reasoningEffort,protocol);
+                result=ClassroomSummary.generate(dir,LESSON,settings,0,control,p->{},"保留题干条件及步骤分",true,3);
+            }
+            JSONObject run=state(dir);JSONArray full=ClassroomSummary.lessonInput(original,new JSONArray()).getJSONArray("segments"),sections=run.getJSONObject("editor_plan").getJSONArray("sections");int batch=fresh?3:contract.equals("old-two")?2:1,editorRequests=0;
+            check(result.getBoolean("complete")&&run.getJSONArray("drafts").length()==2&&run.getJSONArray("parts").length()==2&&sections.length()==6,"raw grounding keeps the existing two content groups and six independent synthetic themes: "+contract+" "+protocol);
+            check(run.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0).getString("text").startsWith("PRIVATE_DERIVED_CLAIM_"),"fixture deliberately distinguishes extracted prose from raw teacher subtitles");
+            for(int r=0;r<requests.size();r++)if(stages.get(r).startsWith("edit-note-")){
+                editorRequests++;int start=Integer.parseInt(stages.get(r).substring("edit-note-".length()));Set<Integer> expectedIds=new LinkedHashSet<>();
+                for(int s=start;s<Math.min(sections.length(),start+batch);s++){
+                    JSONArray refs=sections.getJSONObject(s).getJSONArray("refs");for(int n=0;n<refs.length();n++){
+                        String[] ref=refs.getString(n).split(":");JSONObject note=run.getJSONArray("parts").getJSONObject(Integer.parseInt(ref[0])).getJSONArray(ref[1]).getJSONObject(Integer.parseInt(ref[2]));
+                        JSONArray sources=note.getJSONArray("sources");for(int i=0;i<sources.length();i++)expectedIds.add(sources.getInt(i));
+                    }
+                }
+                JSONArray selected=new JSONArray();for(int i=0;i<full.length();i++)if(expectedIds.contains(full.getJSONObject(i).getInt("id")))selected.put(full.getJSONObject(i));
+                JSONObject expected=ClassroomSummary.uploadChunk(new JSONObject().put("segments",selected).put("images",new JSONArray()));String physical=prompt(requests.get(r));int begin=physical.indexOf(marker);
+                check(begin>=0&&physical.indexOf(marker,begin+marker.length())<0,"each actual editorial request appends one explicit raw-subtitle block");
+                JSONObject raw=new JSONObject(physical.substring(begin+marker.length(),physical.indexOf(endMarker,begin)));
+                check(raw.similar(expected),"actual editorial raw rows exactly match the union of this batch's original refs, with no unrelated source rows: "+contract+" "+start);
+                check(raw.getJSONArray("segments").length()==expectedIds.size()&&raw.getJSONArray("images").length()==0&&!raw.toString().contains("PRIVATE_DERIVED_CLAIM_")&&!raw.toString().contains("完整题干、改卷细节"),"raw grounding contains original teacher text rather than either extracted or corrected prose");
+                for(int i=0;i<raw.getJSONArray("segments").length();i++){JSONObject row=raw.getJSONArray("segments").getJSONObject(i);check(row.getString("text").equals(original.getJSONObject(row.getInt("id")).getString("text")),"every appended raw subtitle retains its exact original wording "+row.getInt("id"));}
+                check(physical.contains("更正文稿与提取稿都是待核对的派生稿")&&physical.contains("不因多份派生稿重复同一解释就认定为真")&&physical.contains("删除无依据的事实分支"),"actual editor instructions ground conflicting derived claims in teacher evidence instead of repetitions");
+            }
+            check(editorRequests==6/batch&&requests.size()==(fresh?9:5+6/batch)&&stages.stream().allMatch(s->s.matches("(?:correct|draft|edit-note)-[0-9]+|edit-plan")),"raw grounding adds no AI stage or extra request and preserves the frozen editorial batch count: "+contract);
+            String system=messages(requests.get(0)).getJSONObject(0).getString("content");
+            if(fresh){fidelitySystemRules(system);check(run.getInt("content_batch_size")==2&&run.getInt("editor_batch_size")==3&&run.getInt("editor_batch_chars")==18000&&run.getInt("note_strength")==3,"new fidelity prompts retain the two-block, three-theme, 18000-UTF16 snapshots");}
+            else{
+                JSONObject history=run.getJSONObject("conversation"),prior=frozen.getJSONObject("conversation");
+                check(system.equals(prior.getJSONArray("messages").getJSONObject(0).getString("content"))&&history.getJSONObject("options").toString().equals(prior.getJSONObject("options").toString())&&run.getInt("note_strength")==1,"new preferred strength never rewrites an unfinished run's frozen system, style or options");
+                check(!run.has("content_batch_size")&&!run.has("editor_batch_chars")&&(contract.equals("old-single")?!run.has("editor_batch_size"):run.getInt("editor_batch_size")==2),"old absent content/char snapshots and singleton or two-topic batching remain unchanged");
+            }
+            batchHistory(dir,protocol);evidence("editorial-raw-fidelity-"+contract+"-"+protocol,dir);
+        }
+    }
     private static void editorialBatchSchema()throws Exception{
         for(int schema:new int[]{0,1}){
             JSONObject example=batchSchemaExample(ClassroomSummary.topicBatchSchema(schema));
@@ -1055,6 +1110,7 @@ public final class ClassroomEnhancedCheck {
             check(!sent.contains("image_assessment")&&!sent.contains("image_requests")&&!sent.contains("image_reviews")&&!sent.contains("\"evidence\""),"actual editorial prompt has no draft, image-review or nonempty-action example fields: "+protocol);
             evidence("editorial-batch-schema-"+protocol,dir);
         }
+        editorialRawFidelity();
     }
     private static void editorialBatches()throws Exception{
         rejects(()->ClassroomEnhancedSummary.validateTopicBatch(topicResult(0,0),1,2),"empty batch cannot silently skip all themes");
