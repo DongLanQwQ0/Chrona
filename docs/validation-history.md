@@ -6,6 +6,7 @@
 - 新run快照native_json；旧未完成轮次缺标记不改变格式。JSON阶段统一原生格式，更正仍文本，冻结基础选项及旧消息原样保留，单请求深拷贝只选择格式；实际output_mode写入turn。无静默回退、无新增校验或重试。
 - native-json322、Responses509、恢复220、普通课堂594项检查通过；独立check通过。两协议覆盖首次、恢复、repair、400不支持不回退、旧轮格式保持及完整消息前缀不变；不把合成usage当真实缓存证据。
 - release／lint／trial构建通过，115（277）覆盖安装统一AVD。已显式configured＋newRun启动固定微积分新轮，旧轮正常归档并复用匹配更正稿；`build/editorial119/run.txt`运行中。真实长请求、最终内容与缓存usage尚待验收。
+- 实际新轮已succeeded=true：4段更正复用，11请求全stop／completed且output_mode均json_object，没有repair。第二轮49896输入／28288缓存，后续各轮继续返回缓存用量。9知识、4事务、2行动、23图均已全文／压缩图核对；语法及执行通过，评分事实、事务去重及部分图注仍未过内容验收。原文、预期和下一步通用机制记录于单课审查文档。`build/editorial119/audit.txt`、export/、image-review-*.jpg。诊断包和本轮应用缓存导出ZIP已清理，原始课堂资料保留。
 
 ## 114 未闭合JSON的结构定位 — 2026-11-03
 
