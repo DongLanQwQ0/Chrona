@@ -85,6 +85,7 @@ final class ClassroomEnhancedSummary {
                 JSONArray block=groups.getJSONArray(i);
                 String prompt="只核实并完善第 "+(i+1)+(contentBatchSize==1?" 段笔记。":" 内容组笔记（原文第 "+(i*contentBatchSize+1)+" 至 "+Math.min(blocks.length(),(i+1)*contentBatchSize)+" 段）。")+"当前主体来源id："+ids(block)+"。允许引用已提供的同课真实来源，不因分块边界删掉有用内容；跨段重复在后续全课整稿中合并。"
                         +"保留题目和改卷线索、原话条件及不确定性。只修订下面指定初稿，不要依据最后一条历史回复另写一段，不重述其它段。"+assignmentRules()
+                        +"核图只补充或纠正证据，不把文字中的明确行动当作图片无关内容删去。逐项对照初稿assignments及原始字幕，仍有原话依据的行动完整保留；补全推导、整理成文等明确交给学生执行的任务，即使没有提交要求也属于行动。"
                         +"本次图片依次对应以下file原值，编号可能不连续，禁止重新编号："+inventory
                         +"。此前已提供的图片保持在原消息位置。仅可引用本次或此前实际提供的file，不得把请求过但未附的图片当作已看到。"+ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
                         +"\n安排原话核验用原始字幕：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
@@ -141,11 +142,12 @@ final class ClassroomEnhancedSummary {
             status("AI 全课主题编排",0,1);
             JSONArray index=new JSONArray();
             for(int p=0;p<parts.length();p++)for(String collection:collections(affairsSchema)){JSONArray notes=parts.getJSONObject(p).getJSONArray(collection);for(int n=0;n<notes.length();n++){
-                JSONObject note=notes.getJSONObject(n),row=new JSONObject().put("ref",reference(p,collection,n,affairsSchema)).put("title",note.getString("title")).put("sources",note.getJSONArray("sources"));
+                JSONObject note=notes.getJSONObject(n),row=new JSONObject().put("ref",reference(p,collection,n,affairsSchema)).put("title",note.getString("title")).put("text",note.getString("text")).put("sources",note.getJSONArray("sources"));
                 if(affairsSchema>0)row.put("collection",collection);index.put(row);
             }}
             String prompt="全部分段提取与核图已完成，现在编排一篇与普通模式相同的全课笔记，不向用户展示分段流水账。"
                     +"逐条对照历史中完整的提取与核图正文，索引只用于引用，不能仅凭标题分组。同一事实即使措辞和标题不同也应归入同一主题；不同题目条件、评分例外和相反结论不可误并。"
+                    +"下面索引同时给出各条正文；先比较正文中的规则、对象和条件，再确定主题。不同标题重复讲同一规则时，将其归入同一主题并保留互补细节，不分别编排后再重复生成。"
                     +(state.optInt("note_strength",1)==3
                             ?"同一知识点的重复提取必须放入同一主题，合并跨段续讲；以老师讲授方向为准，可按知识依赖重排为精简讲义，保留不同题目条件、代码、纠错和评分细节，不能按输入段号设章节。"
                             :"同一知识点的重复提取必须放入同一主题，合并跨段续讲，按课程讲授顺序组织；保留不同题目条件、代码、纠错和评分细节，不能按输入段号设章节。")
@@ -173,11 +175,13 @@ final class ClassroomEnhancedSummary {
                     +"消除重复叙述、重复截图和‘图片核对’流水账。保持普通模式的精炼组织，不因内部多轮而增加重复概览、分段编号、无关闲聊或未提及事项的说明。"
                     +"保留每个有来源的独特事实、题目数字与条件、代码、纠错、明确不考/会考以及改卷给分细节；相同事实只写一次，不可为缩短而删除这些细节。不改变原话确定性。"
                     +"先核对本主题的题干、公式、定义域和证明是否自洽，再成稿；补齐已知条件可推出的关键步骤和最终结果，不能以‘化简即得’掩盖缺失计算。"
+                    +"区分求候选值与证明存在：可先在存在假设下求必要候选值，再独立证明存在性并核实定理前提；不能把候选值计算当成存在性证明。循环推理或未满足定理条件的尝试才归错误分析，不能以尚未成立的条件支撑正确解法。"
                     +"已核实的识别错误直接采用正确结果，不复述误识别词、核图过程或相互冲突的旧草稿。无关闲聊、轶事和无信息的尾段不保留。"
                     +(batch&&affairsSchema>0?"每个主题按实际内容独立归入notes知识或affairs课程事务，可纠正初稿分类；知识保留解法与例题，事务保留规则、条件与例外，禁止将事务混入知识。具体行动保持在assignments，不重复抄录。":affairsSchema>0&&collection.equals("notes")
                             ?"本主题以知识、方法与例题为主；若提取稿实际只有评分或考试等事务，应纠正到affairs，不为维持初稿类别伪写知识。具体行动保持在assignments，不重复抄录。"
                             :affairsSchema>0?"本主题只保留有学生使用价值的课程事务，不重讲解法或题目答案；同一规则的分值、条件和例外合在一处，保留真实不确定性，不列无关的未提供字段清单。":"")
                     +"与历史中本轮已整稿主题比较，重复事实只在所属主题完整讲一次；关联用主题名称，不用‘上一节／下一节’等重排后易失效的指代，不承诺尚未发布的任务清单。"
+                    +"title由页面统一呈现，text不再重复该标题；正文内的小节使用更低层级的标题或简短加粗引导，避免同级标题堆叠造成拼装感。"
                     +(state.optInt("note_strength",1)==3
                             ?"按3档生成精简讲义，积极重组但压紧表达；保留自学需要的过程。原题无法确定时可换用同主线、同类型及相近难度的完整题目，标题标为‘补充例题’，给出必要推导和结论，不冒充老师原题或考核要求。删掉无关叙事与重复，不堆砌标题或小结，不扩写通用教材。"
                             :"沿用普通单篇总结的详略，正文不扩写成教程，不超过本主题提取稿正文的合计长度；重复较多时应明显缩短。")
@@ -186,6 +190,8 @@ final class ClassroomEnhancedSummary {
                     +(batch?"只返回一个JSON，overview为空，"+(affairsSchema==0?"notes":"notes与affairs合计")+"返回1至"+count+"项，覆盖本组全部主题；仅同义主题可合并，assignments必须=[]。"+ClassroomSummary.topicBatchSchema(affairsSchema)
                             :(affairsSchema==0?"只返回一个JSON，overview为空，notes恰好一项，assignments=[]。":"只返回一个JSON，overview为空，按实际内容放入notes或affairs，合计恰好一项；另一内容集合及assignments为空数组，不把事务并入学习笔记。")+ClassroomSummary.topicSchema(affairsSchema,collection))
                     +(batch?"\n本组主题清单及提取稿：\n"+topics:"\n本主题提取稿：\n"+inputs)
+                    +"\n本组引用图片的已有可见内容核对："+topicFigureEvidence(inputs,state.optJSONArray("figure_reviews"))
+                    +"。准入只表示图片本身可用，不表示与任意段落匹配；逐项比较实际题干、公式及对象，不能将另一题的截图插入当前例题或按正文改写图注。无匹配图片时保留文字解法，不强行配图。"
                     +"\n对应原始字幕（用于核对教师事实、指令方向及与更正文稿的冲突，不仅用于安排引文定位）：\n"
                     +ClassroomSummary.uploadChunk(blockInput(segments,new JSONArray()))
                     +"\n原字幕是教师事实依据，更正文稿与提取稿都是待核对的派生稿。出现冲突时回到原字幕及相邻语境，不因多份派生稿重复同一解释就认定为真。"
@@ -217,6 +223,22 @@ final class ClassroomEnhancedSummary {
     static JSONArray figureAdmission(JSONArray reviews)throws Exception{
         JSONArray result=new JSONArray();if(reviews!=null)for(int i=0;i<reviews.length();i++){
             JSONObject row=reviews.getJSONObject(i);result.put(new JSONObject().put("file",row.getString("file")).put("included",row.optBoolean("included")));
+        }
+        return result;
+    }
+    static JSONArray topicFigureEvidence(JSONArray inputs,JSONArray reviews)throws Exception{
+        Set<String> files=new HashSet<>();
+        for(int i=0;i<inputs.length();i++){
+            JSONObject note=inputs.getJSONObject(i);JSONArray images=note.optJSONArray("images");
+            if(images!=null)for(int n=0;n<images.length();n++)files.add(ClassroomDocument.imageName(images.getString(n)));
+            files.addAll(ClassroomDocument.inlineImages(note.optString("text")));
+            files.addAll(ClassroomDocument.inlineImages(note.optString("title")));
+        }
+        JSONArray result=new JSONArray();
+        if(reviews!=null)for(int i=0;i<reviews.length();i++){
+            JSONObject row=reviews.getJSONObject(i);
+            if(files.contains(row.getString("file")))result.put(new JSONObject().put("file",row.getString("file"))
+                    .put("included",row.optBoolean("included")).put("visible",row.optString("visible")));
         }
         return result;
     }

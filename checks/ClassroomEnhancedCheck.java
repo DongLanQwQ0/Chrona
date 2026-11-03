@@ -1072,6 +1072,16 @@ public final class ClassroomEnhancedCheck {
             for(int n=0;n<corrected.length();n++)check(corrected.getString(n).equals(coverageCorrected(n,headings)),"stored successful correction keeps CRLF, trailing spaces, Unicode and original wording unchanged "+n);
             for(int r=0;r<requests.size();r++){
                 String stage=stages.get(r),physical=prompt(requests.get(r)),logical=referencedPrompt(requests.get(r),physical);
+                if(stage.equals("edit-plan")){
+                    String marker="已完成笔记索引：\n";JSONArray entries=new JSONArray(logical.substring(logical.indexOf(marker)+marker.length()));
+                    for(int e=0;e<entries.length();e++){
+                        JSONObject entry=entries.getJSONObject(e);String[] ref=entry.getString("ref").split(":");
+                        JSONObject original=run.getJSONArray("parts").getJSONObject(Integer.parseInt(ref[0])).getJSONArray(ref.length==2?"notes":ref[1]).getJSONObject(Integer.parseInt(ref[ref.length-1]));
+                        check(entry.getString("text").equals(original.getString("text")),"editorial grouping receives complete body, not only an ambiguous title: "+protocol+" "+scenario);
+                    }
+                }
+                if(stage.startsWith("final-"))check(logical.contains("核图只补充或纠正证据")&&logical.contains("仍有原话依据的行动完整保留"),"visual refinement preserves text-supported tasks without adding validation or calls: "+protocol);
+                if(stage.startsWith("edit-note-"))check(logical.contains("不能把候选值计算当成存在性证明")&&logical.contains("正文内的小节使用更低层级"),"editorial request separates invalid reasoning and keeps nested hierarchy: "+protocol);
                 if(stage.startsWith("draft-")||stage.startsWith("final-")){
                     check(logical.contains("仅回顾已结束或仅属往届、其他班级且未要求本班当前执行的任务不提取")&&logical.contains("不能因出现‘布置作业’等词就创建本班当前行动"),"actual extraction/refinement request excludes finished or irrelevant other-class task stories: "+stage);
                     check(logical.contains("本班仍有效的既有任务，其截止提醒、补交或继续执行要求仍须保留，不要求重新布置才算行动"),"actual extraction/refinement request retains active existing tasks and deadline, makeup or continuation reminders: "+stage);
@@ -1229,9 +1239,20 @@ public final class ClassroomEnhancedCheck {
             figureRun.put("analysed",analysed).put("figure_reviews",reviews);JSONObject source=figureRun.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0);source.put("images",new JSONArray().put("image-0.jpg").put("image-1.jpg")).put("text","保留图片 ![准入](images/image-0.jpg) ![排除](images/image-1.jpg)");ClassroomStore.write(new File(figures,"run.json"),figureRun);
             result=generateWithProtocol(figures,protocol);String sent=prompt(requests.get(0));String marker="最终图片准入表（included=false不得引用）：";JSONArray admission=new JSONArray(sent.substring(sent.indexOf(marker)+marker.length(),sent.indexOf("只返回一个JSON",sent.indexOf(marker))));
             check(admission.length()==40&&admission.getJSONObject(1).getBoolean("included")==false&&admission.getJSONObject(0).length()==2,"editor receives file/included for all forty analysed figures");
-            check(!sent.contains("PRIVATE_LONG_VISIBLE_")&&!sent.contains("PRIVATE_LONG_REASON_")&&!sent.contains("\"visible\"")&&!sent.contains("\"reason\""),"editor never recopies long visible/reason review bodies");
+            String evidenceMarker="本组引用图片的已有可见内容核对：";int evidenceStart=sent.indexOf(evidenceMarker)+evidenceMarker.length();
+            JSONArray visualEvidence=new JSONArray(sent.substring(evidenceStart,sent.indexOf("。准入只表示",evidenceStart)));
+            check(visualEvidence.length()==2&&visualEvidence.getJSONObject(0).getString("file").equals("image-0.jpg")&&visualEvidence.getJSONObject(1).getString("file").equals("image-1.jpg"),"editor receives visible evidence only for referenced topic images, including rejected ones");
+            check(visualEvidence.getJSONObject(0).getString("visible").equals(reviews.getJSONObject(0).getString("visible"))&&!sent.contains("PRIVATE_LONG_REASON_")&&!sent.contains("\"reason\""),"topic visual evidence is copied verbatim without repeating other image reviews or reasons");
             JSONObject imageNote=result.getJSONArray("parts").getJSONObject(0).getJSONArray("notes").getJSONObject(0);check(imageNote.getJSONArray("images").length()==1&&imageNote.getJSONArray("images").getString(0).equals("image-0.jpg")&&!imageNote.getString("text").contains("image-1.jpg"),"local final filter cannot unlock a rejected image in array or Markdown");
             check(state(figures).getJSONArray("figure_reviews").toString().equals(reviews.toString()),"compact admission leaves full original review evidence intact");batchHistory(figures,protocol);evidence("editorial-compact-figures-"+protocol,figures);
+            String savedReviews=reviews.toString();
+            JSONArray imageInputs=new JSONArray().put(new JSONObject().put("images",new JSONArray().put("images/image-0.jpg")).put("text",""))
+                    .put(new JSONObject().put("text","![related](images/image-1.jpg)").put("images",new JSONArray()));
+            JSONArray selectedEvidence=ClassroomEnhancedSummary.topicFigureEvidence(imageInputs,reviews);
+            check(selectedEvidence.length()==2&&selectedEvidence.getJSONObject(0).getString("file").equals("image-0.jpg")&&selectedEvidence.getJSONObject(1).getString("file").equals("image-1.jpg"),"prefixed-array-only images normalize and deduplicate with plain and inline topic images");
+            imageInputs.getJSONObject(0).getJSONArray("images").put("image-0.jpg");
+            check(ClassroomEnhancedSummary.topicFigureEvidence(imageInputs,reviews).toString().equals(selectedEvidence.toString()),"adding a plain duplicate does not change prefix-only and inline selection");
+            check(reviews.toString().equals(savedReviews),"topic evidence selection leaves all original forty reviews unchanged");
             for(String defect:List.of("bad-editor-source","bad-editor-image","bad-editor-assignment")){
                 reset(defect,false);File invalid=editorialFixture(protocol,new int[]{20,30},true,true);rejects(()->generateWithProtocol(invalid,protocol),"batch retains all source, image and action guards: "+defect);
                 JSONObject checkpoint=state(invalid);check(requests.size()==1&&checkpoint.getJSONArray("editor_notes").length()==0&&!checkpoint.has("editor_section_done")&&!checkpoint.has("final"),"whole mixed batch remains uncommitted after any invalid member");

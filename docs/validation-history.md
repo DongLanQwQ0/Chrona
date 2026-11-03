@@ -1,5 +1,12 @@
 # 验证记录
 
+## 113 单课内容回归修正 — 2026-11-03
+
+- 112新Go Key的Responses单图成功，正式微积分同课终态succeeded=true，4段更正文稿复用。逐轮请求实际返回缓存用量，未改默认服务；完整正文、原字幕及18张引用图已读取对照。成品因评分方向、存疑术语、重复／行动漏项及题图错位不批准。问题引文、预期与通用修正见单课审查文档；证据`build/editorial117/`。
+- 113修正主题编排正文依据、教师事实保真、核图保留明确行动、标题层级与本组图片visible证据供给。协议、原消息、原图位置、原始reviews及生成阶段数不变，不增加语义硬拒绝。
+- `build/editorial118/batches.txt`2140、coverage.txt1351、summary.txt594项通过。独立check发现并闭合图片合法前缀引用遗漏及候选值提示过宽；prefix-only定向case可捕获原缺陷，另验证plain／inline去重与原reviews不变。
+- release／lint／trial构建通过，113（275）覆盖安装同一模拟器成功，未安装手机或发布Release。正式同课新轮已启动，`build/editorial118/run.txt`；完整内容验收待真实终态后继续，离线检查不能证明生成质量。
+
 ## 通用服务会话配置 — 2026-11-03
 
 - 候选0.15.112（274），release、lint及诊断包构建通过，覆盖安装既有emulator-5580成功；安装包`build/editorial117/Chrona-v0.15.112.apk`。未安装手机、未发布Release。

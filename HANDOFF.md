@@ -1,82 +1,33 @@
-# 当前交付：恢复单课总结内容回归
-
-- 用户要求修复具有可迁移性：撤出公共HTTP中的OpenCode域名分支，改为可选`sessionHeader`服务配置；公共客户端按配置发送run级稳定会话。AI设置复用原输入字段，OpenCode Go只是预设数据，旧配置默认空。配置保存、旋转／未保存保护、无密钥导入导出及模型试验复制都保留该字段，不增加语义硬校验。
-- 当前候选0.15.112（274）已构建并覆盖安装统一模拟器，未更新手机／发Release。通用实现已完成：协议检查752项、配置检查及偏好121项、课堂594项通过；独立代码与UI审查通过。证据在`build/editorial117/`。
-- 最近外部实测：补会话头后单图Responses不再报missing header，而返回HTTP401 `Upstream request failed: Invalid credential`。这是独立服务凭据／上游问题，不能据此宣称本机Key错误或改协议掩盖。尚未取得完整新服务笔记；唯一下一步是确认Go凭据／权限恢复，再以已保存配置做单图验证，成功后启动同课新轮、复用4段更正文稿。
-- 最终通用候选对照：已保存请求头为非空，Responses纯文字283B同样839ms返回上述401，无课堂资料／图片、无配置修改，证明错误不限于视觉通道。证据`build/editorial117/portable-text-health.txt`。已询问同一Go Key在官方客户端是否可用，不原样重试；诊断包已卸载。
-
-- 用户2026-11-03明确恢复回归。一次只总结一节：微积分（甲）Ⅰ，2026-10-29第1–2节，`86985-1988487`；只用已有`Chrona_Classroom_36 / emulator-5580`，不占手机、不批量启动21节。
-- 本轮实际续跑：gpt-6-luna／Responses／low／输出上限32768；更正4块复用，第二组纯文字成功，现2组提取／0核图。该请求输入57717、缓存57600、输出3504 Token。第一组及已发送历史保持，默认模型未改；final-0请求2668000B返回server_is_overloaded，无正文／usage，未提交图片核对。
-- 验收：3档单篇精简讲义，知识主线完整、条件／必要过程／代表例题可自学；教师评分、考核与任务细节集中且不反转语气；无重复和核图流水账，引用真实有效。原题不明允许标明的同类补充例题。成功后逐项列出问题原文、预期写法、通用修正，再修提示词并同课新轮；提交用户审批后再换课。
-- 已完成本轮对照：同模型／协议／课堂路由，1张32×32合成JPEG在57秒ResponseException、未得正文；27张同型合成图仅29978B仍在2.9秒service_overloaded。不是只在2.66MB大包出现错误，尚不能归咎于应用长度或图片总字节。未继续原样重试、未改提示词；辅助诊断结束后卸载。
-- 外部依赖：当前服务的图片请求恢复或用户选择另一项可用图片服务后，沿final-0继续；配置变化按正式新轮规则归档并复用匹配更正稿。不能关闭图片、裁剪历史、假称内容回归通过。证据`build/editorial116/{before,after,health-image-1,health-image-27}.txt`及trial-run.txt。最终成品仍须逐项对照原文／预期后交用户批准。
-- 用户切换为OpenCode Go的DeepSeek V4.1 Flash并已保存新Key。官方模型目录确认图片输入、100万上下文／384000输出；模型`deepseek-v4.1-flash`，基础地址`https://opencode.ai/inference/go/openai/v1`，实际已保存Responses，未读取／输出密钥。新服务使用独立新轮、复用更正4段，不把旧服务消息拼入新服务。元数据`build/editorial117/opencode-go-model.json`。
-- 用户已填Key并保存，要求仍默认Responses；实查当前保存协议就是Responses。Go的会话请求头通过可选服务字段配置，仅预设包含其字段名，公共HTTP无域名分支。课堂以保存run身份保持跨续跑一致，普通独立请求沿客户端独立生成；旧消息与冻结选项不改写，不静默换协议。实际服务401仍待解除，不能把离线检查当成单课回归通过。
-
-## 上轮已交付：网页选择栏高光与原生一致、筛选选择栏全宽
-
-- 用户反馈网页选择栏高光不同于Android；确认共用网页控制器仍有独立阻尼、整体速度拉伸、缺失独立尾部与跟踪高度。按Android公共物理参数／形状修正，同时保留网页立即跟手、取消不提交及减少动画。
-- 用户要求原生筛选来源选择栏填满一行；取消运动宿主对静止横向轨道的挤占，保留纵向包络。复用现有公共组件，不改原生弹簧。
-- 验收：网页主导航、状态／视图选择栏共用控制器，首尾按住、双向甩动、反向及取消／减少动画；原生轨道与内容边界对齐。固定候选后由本聊天UI审核代理只读复审。测试只用现有浏览器profile与单台AVD。
-- 候选 `0.15.111 (273)` 已完成并覆盖安装原AVD，release／lint通过。网页真实指针、键盘、取消／多指／减少动画通过；1230帧与9组惯性结束帧对照生产Java一致。原生底板全宽、首尾包络与透明画布点击边界通过。独立UI审核确认可交付，无P1/P2和关键缺口。
-- 用户要求的模拟器清理已完成：卸载12个旧Chrona验证包及本轮测试包，当前拾时和数据、其他项目应用保留。清单及本轮证据 `build/ui-parity-20261103/`，网页JPEG与交互证据 `build/lan-dock-repair/`。
-- 当前交付安装包 `build/ui-parity-20261103/Chrona-v0.15.111.apk`；源码提交推送后由用户自行查看。仅更新模拟器，实机未连接；不另发小版本Release、不恢复暂停的课堂AI。
-
-## 上轮已交付：PTA 作业接入、来源搜索与折姜星辰分组页面
-
-## 本轮范围、候选与唯一下一步
-
-- 用户已批准实施并要求无人值守完成。实现独立 PTA 登录／同步，来源搜索，紧凑分组入口和二级设置；复用现有通知、任务、日历、排程及公共 UI。先使用统一模拟器，不占用手机，不恢复暂停的课堂 AI 回归。
-- 固定上游候选：`Elyyyyyyyyxer/Elychron@fe1aff0fe22a4ccb523a1cf72a4745ad8a0d8229`；源码留在 `build/pta-research-20261103/elychron/`。结论与建议见 `docs/research/pta-homework-integration.md`。
-- 候选 `0.15.110 (272)` 已实现并构建，release覆盖安装统一模拟器。用户指定会话已验证：真实新增1条，重复刷新新增0／更新0；学校作业33条不变、状态独立。凭据加密私有保存，不输出、不导出。
-- 生产持久化82项、排程57项、调度29项与查询／数据库／真实 Android SQLite和HTTP检查通过；AI使用测试替身，未恢复暂停的课堂付费回归。普通竖横屏与深浅主题、旋转恢复、原位课程更新、登录反馈等交互通过。
-- 当前UI候选已获独立审查通过，无剩余P1/P2或关键UI缺口。新增日期栏144px由可见锚点同步抵消，甩动后位置稳定、首尾包络完整。证据 `build/pta-research-20261103/`。
-- 当前交付完成后由用户自行检查；安装包 `build/pta-research-20261103/Chrona-v0.15.110.apk`，不另发小版本Release。实机未连接，不能声称手机更新；官方人工验证码流程未完整操作。
-
----
-
-## 单课既有证据，随后原数学21节仍未完成
+# 当前交付：单课课堂总结内容回归
 
 ## 当前状态与唯一下一步
 
-- 上次按用户条件停止，**本轮已明确恢复**。gpt-6-luna小图成功，但完整单课最终succeeded=false、server_is_overloaded，默认模型未改。证据`build/editorial115/image.txt`、`trial-run.txt`、`finished-notice.txt`。既有素材、更正稿和run归档保留，尚无本轮批准成品。
+- 用户要求修复可迁移，一次只总结一节，完整后按“问题原文—预期写法—通用修正”审核并修改，同课复验；用户批准前不换课、不批量。目标是3档精简完整、自学可用的讲义，最终不展示内部流水线。
+- 固定课堂：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。使用唯一Chrona_Classroom_36／emulator-5580，不占手机。
+- 用户重新粘贴Go Key后，112的Responses单图及完整生成已成功，先前401已解除。saved配置deepseek-v4.1-flash／Responses／可选x-opencode-session；未读取或输出密钥。4段更正文稿复用，11次实际请求含1次JSON修复，生成6知识、6事务、0行动、18张引用图；流程成功但全文内容不批准。
+- 112成品仍有评分指令反转、存疑术语造加分条件、事务重复、行动漏项、标题层级及例题配图错位。问题原文、原字幕与预期详见docs/audits/classroom-notebook-regression-20261103.md；证据build/editorial117/export/、completed-audit.txt、image-review.jpg。
+- 当前候选113（275）：通用否定词作用对象／可靠事实规则；核图保留有原话支持行动；主题编排索引附完整正文；区分候选值与存在证明；内部标题降级；整稿仅追加本主题引用图片的已有visible，数组前缀引用规范化，不重传图片或增加AI阶段／硬校验。旧原话、回复和缓存前缀不改。
+- 113检查：build/editorial118/batches.txt 2140项、coverage.txt1351项、summary.txt594项0失败。独立check两项及prefix-only定向case已复核通过；build-final.log构建／lint通过，113已安装同一模拟器。正式同课新轮runner71081运行，日志build/editorial118/run.txt。唯一下一步：等待该真实终态后读取全文审核，不重启任务，不以测试代替内容批准。
 
-- 最新停止条件：用户要求停5.6过载重试，改试6luna，不行就先停。5.6第三次重试在60秒等待期已取消（exec26539 exit1），retry3/run.txt不存在、无活动AI，未发起第三次请求。gpt-6-luna一次合成小图在19.3秒成功575Token，`build/editorial115/image.txt`。下一步仅一次6luna完整同课试验，模型变化新轮复用更正稿、不改默认模型；若该试验失败停止，不再自动恢复。
+## 验收与原范围
 
-- 最新授权：用户针对完整核图请求明确“允许重复”。按原gpt-5.6-luna同轮检查点重试一次失败final-0，原更正4块和2初稿保持，旧消息／冻结参数不变；不以默认旧模型重开。当前唯一下一步启动同模型内存runner并观察真实终态，不预先认定过载已恢复。
+- 单篇知识主线完整，条件、必要推导、代表例题可直接自学；评分／考试及其他有用事务集中，真实指令和例外不反转，同义事实一次，具体行动保留。原题不明可使用标明的同类补充题，不冒充教师原题。图片必须实际可见、可用且匹配所在内容。
+- 每轮完整后审读概览、全部知识、事务、行动、原字幕及引用图；问题在聊天给出原文、预期、修正，规则应跨课程／模型迁移。无内容缺陷且用户批准后才能转原21节数学（18微积分＋3线代），不擅自加入11/2新课。原身份build/math-completion-audit-20261101/phone-before-batch92.json；旧完成数不代表当前内容合格。
+- 分段仅内部使用；已发送历史只能追加，失败未提交块完整回滚，不拼失败输出。已成功且源块匹配的更正字幕复用；配置改变及完整成品重生成使用新轮归档，不混服务历史，不另导旧成品副本。未知usage不记0；缓存命中仅据服务实际usage。
+- 原21节及手机端旧10/20试点仍未全部内容验收，不宣称完成。108/109/110旧成品不批准；历史详见上述审查和docs/validation-history.md。此前工作单可由Git a549653:HANDOFF.md检索，不把旧停止条件当当前指令。
 
-- **当前：gpt-5.6-luna试验已终态，2初稿成功、核图仍过载。** 用户授权新模型；原提供商／Responses／low单张32×32合成JPEG（1406B）18秒成功，570输入＋5输出Token。独立runner将内存AiSettings传入正式Session及AutoSummary，固定同课，旧run正常归档、更正4块复用、2初稿提交。final-0含27图／2606640B，6.3秒server_is_overloaded，无usage／正文，parts0。runner71161已返回succeeded=false及global_model_unchanged=true；默认模型未改。证据`build/editorial114/health/image.txt`、`trial-run.txt`、`after/audit.json`及正常导出。无活动AI，probe及导出专用ZIP清理。**唯一下一步：若继续排查，先用独立小请求区分图片数量／体积／长历史因素，不原样重复大核图请求。** 当前新轮已冻结gpt-5.6-luna；未来恢复须用同模型内存runner，不能普通UI误读默认旧模型而新开一轮。
+## 其他已决定／交付
 
-- 原提供商保留；用户最新允许改试gpt-5.6-luna。单图成功不代表完整视觉核图成功，旧模型失败证据不混作新模型结果。
-- 目标重新激活后已连续三轮确认同一外部依赖未解除：首次复用原AVD（5580、109/271、原数据保留），1404B合成小图仍在2.9秒报service_overloaded；后两轮未收到恢复确认，无活动课堂服务，未重复付费测试。证据`build/editorial113/image-health.txt`；探针已卸载。当前标记受阻，需原提供商恢复图片通道后通知再继续。
-- 固定课堂：`86985-1988487`，微积分（甲）Ⅰ，2026-10-29 08:00，第1–2节。
-- 模拟器原111同轮：更正文稿4块复用，2组初稿已提交，核图0组；final-0及其恢复均在4–5秒返回server_is_overloaded，无正文／usage。没有活动课堂AI服务，observer51259已终态。
-- 对照：同配置／协议／课堂路由，274B纯文成功（568+5Token，10.2秒）；1张32×32合成JPEG、1404B请求在2.6秒同样过载，无usage。支持当前图片路径失败，不推断提供商内部根因或永久不支持图片。
-- 证据：`build/editorial112/after/audit.json`、`vision-after/audit.json`、`health/text.txt`、`health/image.txt`。探针、专用导出ZIP及缓存空目录、UI XML已清理。
-- 不原样反复付费重试、不擅自换协议／密钥、不关图或裁历史；本次模型改变须新轮，不能把新模型塞进旧冻结请求。
+- 用户取消外部日历订阅，交由系统接管；未实施，不纳入待办。
+- 112通用服务会话配置已推送：公共HTTP按可选sessionHeader，不按域名或模型猜测；默认Responses、不静默切协议。保存／备份／旋转草稿／密钥保留已审查；协议752、偏好121及课堂594检查通过。UI独立审核通过。未安装手机或发Release。
+- 111网页选择栏物理对齐Android、原生来源选择栏全宽及AVD旧验证应用清理已验收；110 PTA同步、来源搜索及校园设置分组已验收。证据build/ui-parity-20261103/、build/lan-dock-repair/、build/pta-research-20261103/，不重新设计。
+- 99作业定位／通用思考、96连堂字幕与PPT分页、100监视自动总结、108实际补课保留原验收。C课10/10下午、10/17上午已恢复，未凭空写11/7，不改学校原始数据。
 
-## 当前候选与已有证据
+## 运行与边界
 
-- 模拟器安装工作候选：`build/editorial112/candidate/Chrona-evidence-recovery.apk`，仍109/271；最新源码已推送main，未发小版本Release。最终release/lint日志`build/editorial112/build-final.log`。
-- 减轮：原更正块仍6000 UTF16；新轮提取／核图每2块一组，整稿最多3主题／18000 UTF16。旧轮快照与成功内容保持。110曾15→8请求，但因漏内容未通过，不能以减轮代替内容验收。
-- 覆盖：逐段明确边界，原更正文本逐字保留；已有Markdown标题仅作软提醒，忽略跨段／跨组代码围栏，不强制成品目录。行动区分过去叙事与本班仍有效任务提醒。实际HTTP1321项及独立复审通过；派生稿互相重复不作独立证据。
-- 原话恢复：仅draft-N／final-N原重试／repair末尾追加错误引文与真实原字幕，保留ASR原字；不改validator、冻结历史或预算，不增加AI阶段。838／728／2543项及stage反例188项通过，独立复审通过；原111同轮两组初稿已真实提交，最终成稿待审。
-- 规范：`docs/features/zju/classroom-summary.md`。问题原文／预期／通用修正：`docs/audits/classroom-notebook-regression-20261103.md`。历史及证据：`docs/validation-history.md`；清理前交接全文可用Git读取`6b51ca6:HANDOFF.md`，过期句柄不再列为当前运行。
-
-## 必须完成的验收与原范围
-
-- 一次只整理一节，完整后审读概览、知识、事务、行动及来源／引用图。3档精简完整、可直接自学，保留必要条件、推导、例题和具体评分／考核细节；同义事实一次，非学习内容集中，不用删除问题对象冒充修复。全文通过后交用户确认，再换课验证，不先批量。
-- 原题不明可用标明的完整同类补充题；明确课堂题不统一标成补充题，不编造教师安排。同课跨块真实来源只记提示，不增加昂贵硬拒绝；不存在来源、未提供图片、虚假原话仍保留必要边界。
-- 108／109／110完整成品均未通过。110漏柯西定理、夹逼求和及多例题；111/112初稿标题已恢复主线，但完整正文、评分方向、考点／行动覆盖仍待验证。
-- 原21身份：`build/math-completion-audit-20261101/phone-before-batch92.json`（18微积分＋3线代），不擅自纳入11/2新线代或C课。原技术通过4节也未获内容豁免。基线审查：`docs/audits/classroom-notebook-content-review-20261102.md`、`build/notebook-review101-20261102/`；旧完成数不是实时统计。
-- 旧10/20试点86985-1982954及手机端任务终态仍须保留／核对，不与当前并行。旧17批次已停止（0成功、7失败、10取消）；本次单课，原3并发能力保留。旧服务错误不作当前失败原因。
-- 原始消息、Responses items／reasoning、冻结选项只能追加，不重写／摘要／裁剪。失败未提交块完整回滚；只复用成功且源块匹配的更正文稿。新轮归档旧run，不拼旧稿、不另导出旧成品副本；未知用量不记0。
-
-## 设备与边界
-
-- 普通回归只用已有Chrona_Classroom_36／emulator-5580，保留账号、素材、显示参数。手机仅留OEM专属验收，不长期占用。模拟器Windows触屏仍未修复／验证；用户已解决密钥粘贴，不等同触屏通过。
-- 安装／instrumentation会重启应用，先查真实服务，禁止中断活动AI；观察超时不等于终态。拒绝安装不绕过。测试文件集中项目build及设备专用目录，交还前清理本次文件；图片先压缩，禁止直接看PNG原图。
-- 已验收99作业定位／通用思考、96连堂字幕及PPT分页、100监视自动总结、108实际补课保留，不重开设计；证据在验证记录。C课10/10下午、10/17上午已恢复，未凭空写11/7，不修改学校数据。
-- 代理复用：editorial_batch_execute受限执行，editorial_batch_check只读代码审查，notebook108_content_check全文审查；主代理最终验收。实际工具无agent_type，不编造角色字段。
-- 工具：ADB `F:\Android\Sdk\platform-tools\adb.exe`，JDK `D:\Minecraft\java21`，gh `F:\Programs\GitHubCLI\bin\gh.exe`。FastCtx未暴露时用pwsh7；保留登录，不输出token。
-- 保护他人改动：AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1。只提交owned路径。无实际并行冲突不跨聊天例行发消息；core接口在`docs/Communication/to-external-agent.md`。
+- 未收到新手机测试授权不占手机；模拟器串行复用、不新建／克隆／清空／改变显示参数。当前课堂runner76432已succeeded=true终态；安装前确认无活动AI。等待超时不当失败或重启依据。
+- 测试输出集中项目build/editorial117和editorial118；设备仅/data/local/tmp/chrona/editorial118或应用缓存。已清设备UI XML目录；正常审查导出暂存应用external cache/chrona-notebook-review108/review.zip，提取审核后删除本次ZIP与空目录。不得删真实素材／应用数据。
+- 图片先压缩再查看，禁止直接查看PNG原图。112图审用已压缩image-review.jpg。
+- 代理：editorial_batch_check只读代码复审；pta_ui_check专门UI复审。实际工具无agent_type字段，不虚称角色／模型选择，不跨聊天例行通信。
+- ADB F:\Android\Sdk\platform-tools\adb.exe；JDK D:\Minecraft\java21；gh F:\Programs\GitHubCLI\bin\gh.exe。FastCtx未暴露时用pwsh7，保留账号、不输出token。
+- 保护其他改动：AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1。只提交本轮owned文件；不为小版本自动发Release。
