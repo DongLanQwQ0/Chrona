@@ -30,6 +30,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private boolean aiPing;
     private boolean classroomRoute;
     private boolean healthImage;
+    private int healthImageCount=1;
     private String healthModel;
     private boolean mathAudit;
     private boolean monitorAudit;
@@ -49,6 +50,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         aiPing = args != null && "true".equals(args.getString("aiPing"));
         classroomRoute = args != null && "true".equals(args.getString("classroomRoute"));
         healthImage = args != null && "true".equals(args.getString("healthImage"));
+        if(args!=null&&args.containsKey("healthImageCount"))healthImageCount=Integer.parseInt(args.getString("healthImageCount"));
         healthModel = args == null ? null : args.getString("healthModel");
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
         monitorAudit = args != null && "true".equals(args.getString("monitorAudit"));
@@ -586,17 +588,19 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             boolean responses=com.donglan.chrona.ai.AiSettings.RESPONSES.equals(settings.protocol);
             Object userContent="Reply with OK only.";
             if(healthImage){
+                if(healthImageCount<1||healthImageCount>40)throw new IllegalArgumentException("Health image count must be 1 to 40");
                 android.graphics.Bitmap sample=android.graphics.Bitmap.createBitmap(32,32,android.graphics.Bitmap.Config.ARGB_8888);
                 sample.eraseColor(android.graphics.Color.RED);java.io.ByteArrayOutputStream jpeg=new java.io.ByteArrayOutputStream();
                 sample.compress(android.graphics.Bitmap.CompressFormat.JPEG,80,jpeg);sample.recycle();
                 String url="data:image/jpeg;base64,"+java.util.Base64.getEncoder().encodeToString(jpeg.toByteArray());
-                userContent=new JSONArray().put(new JSONObject().put("type",responses?"input_text":"text").put("text","Reply with OK only."))
-                        .put(responses?new JSONObject().put("type","input_image").put("image_url",url):new JSONObject().put("type","image_url").put("image_url",new JSONObject().put("url",url)));
+                JSONArray content=new JSONArray().put(new JSONObject().put("type",responses?"input_text":"text").put("text","Reply with OK only."));
+                for(int i=0;i<healthImageCount;i++)content.put(responses?new JSONObject().put("type","input_image").put("image_url",url):new JSONObject().put("type","image_url").put("image_url",new JSONObject().put("url",url)));
+                userContent=content;
             }
             JSONObject request=client.classroomOptions().put(responses?"input":"messages",new JSONArray()
                     .put(new JSONObject().put("role","system").put("content","Reply briefly."))
                     .put(new JSONObject().put("role","user").put("content",userContent)));
-            report.put("synthetic_images",healthImage?1:0);
+            report.put("synthetic_images",healthImage?healthImageCount:0);
             report.put("protocol",settings.protocol).put("request_bytes",request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length).put("calls",1);
             long began=android.os.SystemClock.elapsedRealtime();
             try{
