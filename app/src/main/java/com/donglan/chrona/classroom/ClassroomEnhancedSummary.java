@@ -45,15 +45,19 @@ final class ClassroomEnhancedSummary {
         for(int i=drafts.length();i<groups.length();i++){
             status("AI 分段整理与核图计划",i,groups.length());
             JSONArray block=groups.getJSONArray(i);StringJoiner transcript=new StringJoiner("\n\n");
-            for(int n=i*contentBatchSize;n<Math.min(corrected.length(),(i+1)*contentBatchSize);n++)transcript.add(corrected.getString(n));
+            int first=i*contentBatchSize,last=Math.min(corrected.length(),(i+1)*contentBatchSize);
+            for(int n=first;n<last;n++)transcript.add("【原始段 "+(n+1)+" 开始】\n"+corrected.getString(n)+"\n【原始段 "+(n+1)+" 结束】");
             String prompt=(i==0&&state.has("correction_reused_from")?"课程："+lesson.course+"；课堂："+lesson.title+"。以下复用已完成的修正文稿，按本轮要求重新整理笔记。":"")
                     +"更正文稿已全部完成。现在只整理第 "+(i+1)+(contentBatchSize==1?" 段。":" 内容组（原文第 "+(i*contentBatchSize+1)+" 至 "+Math.min(blocks.length(),(i+1)*contentBatchSize)+" 段）。")
-                    +"以本段为整理主体，不写全课总结；同题跨段可以引用已提供的同课真实来源，避免重复讲解，后续统一整稿。"
+                    +"本请求须完整整理下列整组的全部原始段，从头至尾扫描，不仅摘要第一段或开头。逐项保留独特概念、定理及证明、例题及必要计算、考核评分线索和不同对象的明确行动；重复内容合并，不能以精简为由省去整项教学内容。"
+                    +"不写全课总结；同题跨组可以引用已提供的同课真实来源，保留跨组续讲，后续统一整稿。"
                     +(affairsSchema==0?"本段没有教学内容或明确安排时，overview为空字符串，notes和assignments为空数组；不能用闲聊或‘未提及评分规则’填充。":"本段无教学内容时overview为空且notes=[]；非行动事务进入affairs，具体行动只进入assignments，三者均无内容时返回空数组，不用闲聊填充。")
                     +assignmentRules()+ClassroomSummary.draftSchema(catalogue,imageLimit,true,affairsSchema)
                     +"\n本次要提取的更正文稿（历史原消息保持不变，此处仅追加定位）：\n"+transcript
-                    +"\n安排原话核验用原始字幕（只作evidence逐字定位，列全引文覆盖的sources）：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
-                    +"\n全课PPT可用目录（只表示时间分布，不是图片内容）："+catalogue+"\n"+scope(block);
+                    +"\n事实核对及安排原话定位用原始字幕（更正文稿与其冲突时核对原话；evidence逐字摘录并列全覆盖的sources）：\n"+ClassroomSummary.uploadChunk(blockInput(block,new JSONArray()))
+                    +"\n全课PPT可用目录（只表示时间分布，不是图片内容）："+catalogue+"\n"+scope(block)
+                    +"\n本组更正文稿已有标题，仅作覆盖提醒，不是成品目录："+coverageOutline(corrected,first,last)
+                    +"。输出前在本次处理内核对整组首尾及全部教学单元，不因某标题缺失而忽略无标题内容；标题可合并重排，但实质内容不能漏掉。不额外输出检查报告。";
             JSONObject draft=json("draft-"+i,prompt,Collections.emptyList(),value->{ClassroomSummary.validateBlock(value,blockInput(full.getJSONArray("segments"),new JSONArray()),affairsSchema);ClassroomSummary.validateAssignmentEvidence(value,full.getJSONArray("segments"));ClassroomSummary.validateImageAssessment(value,catalogue);});
             recordScopeWarnings("draft-"+i,draft,block);drafts.put(draft);save();
         }
@@ -109,7 +113,8 @@ final class ClassroomEnhancedSummary {
         return "课堂安排必须是老师明确布置的具体任务，不能把知识点、一般编程建议、自拟复习事项转成安排。"
                 +"每项assignments除text、sources外还必须带evidence，逐字摘录原始字幕中表达该要求的最短连续原话，不用更正文稿的改写，不拼接非连续片段。"
                 +"sources须列全引文覆盖的每条来源，不可跳过中间字幕；只摘具体行动要求，不带入无关分数或背景段落。没有真实要求就返回[]。"
-                +"明确行动须按动作及对象分别提取，不因措辞相同或相邻教学内容而合并不同对象，也不因未规定提交时间或方式而漏掉；只保留原文明确要求，不自行升级成提交作业。";
+                +"明确行动须按动作及对象分别提取，不因措辞相同或相邻教学内容而合并不同对象，也不因未规定提交时间或方式而漏掉；只保留原文明确要求，不自行升级成提交作业。"
+                +"先核对要求的时态、面向对象及上下文。仅回顾已结束或仅属往届、其他班级且未要求本班当前执行的任务不提取，不能因出现‘布置作业’等词就创建本班当前行动。本班仍有效的既有任务，其截止提醒、补交或继续执行要求仍须保留，不要求重新布置才算行动。";
     }
     static void validateRefinement(JSONObject part,JSONObject lecture,JSONArray block)throws Exception{
         validateRefinement(part,lecture,block,ClassroomAffairsPolicy.VERSION);
@@ -326,6 +331,22 @@ final class ClassroomEnhancedSummary {
             result.put(group);
         }
         return result;
+    }
+    static JSONArray coverageOutline(JSONArray corrected,int first,int last)throws Exception{
+        Set<String> titles=new LinkedHashSet<>();
+        char fence=0;int fenceLength=0;
+        for(int i=0;i<last;i++)for(String line:corrected.getString(i).split("\\R")){
+            String trimmed=line.strip();
+            char marker=trimmed.isEmpty()?0:trimmed.charAt(0);int count=0;
+            if(marker=='`'||marker=='~')while(count<trimmed.length()&&trimmed.charAt(count)==marker)count++;
+            if(count>=3){
+                if(fence==0){fence=marker;fenceLength=count;continue;}
+                if(marker==fence&&count>=fenceLength&&trimmed.substring(count).isBlank()){fence=0;continue;}
+            }
+            if(fence!=0)continue;
+            if(i>=first&&trimmed.matches("#{1,6}\\s+.+"))titles.add(trimmed.replaceFirst("^#{1,6}\\s+", ""));
+        }
+        return new JSONArray(titles);
     }
     static JSONArray blocks(JSONArray segments)throws Exception{
         JSONArray result=new JSONArray(),block=new JSONArray();int chars=0;

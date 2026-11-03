@@ -138,6 +138,7 @@ public final class ClassroomEnhancedCheck {
             String output,finish="stop";int id=current.matches(".*-[0-9]+.*")?Integer.parseInt(current.replaceAll(".*?-(\\d+).*","$1")):0;
             if(current.startsWith("correct")){
                 output="# 更正文稿\n["+id+"] 完整题干、改卷细节与 $\\nabla x$。";
+                if(mode.startsWith("coverage-"))output=coverageCorrected(id,mode.equals("coverage-headings"));
                 if(mode.equals("length-resume")&&current.equals("correct-0")){output="# 更正文稿\n[0] 前半";finish="length";}
             }else if(current.startsWith("edit-assignments")){
                 output=new JSONObject().put("groups",new JSONArray().put(new JSONArray().put("0:0").put(mode.equals("task-invalid")?"0:9":"0:1"))).toString();
@@ -980,9 +981,10 @@ public final class ClassroomEnhancedCheck {
             check(result.getBoolean("complete")&&result.getInt("source_blocks")==4&&result.getJSONArray("parts").length()==1&&result.getJSONArray("images").length()==4&&run.getJSONArray("analysed").length()==4,"grouped pipeline publishes one document and never misses a selected image");
             JSONArray groups=ClassroomEnhancedSummary.contentGroups(run.getJSONArray("blocks"),2),corrected=run.getJSONArray("corrected");
             for(int i=0;i<2;i++){
-                String prompt=prompt(requests.get(4+i)),marker="本次要提取的更正文稿（历史原消息保持不变，此处仅追加定位）：\n",raw="\n安排原话核验用原始字幕";
+                String prompt=prompt(requests.get(4+i)),marker="本次要提取的更正文稿（历史原消息保持不变，此处仅追加定位）：\n",raw="\n事实核对及安排原话定位用原始字幕";
                 String actual=prompt.substring(prompt.indexOf(marker)+marker.length(),prompt.indexOf(raw));
-                check(actual.equals(corrected.getString(i*2)+"\n\n"+corrected.getString(i*2+1)),"draft appends the two exact committed correction texts without rewriting or omission "+i);
+                StringJoiner bounded=new StringJoiner("\n\n");for(int n=i*2;n<i*2+2;n++)bounded.add("【原始段 "+(n+1)+" 开始】\n"+corrected.getString(n)+"\n【原始段 "+(n+1)+" 结束】");
+                check(actual.equals(bounded.toString()),"draft appends both committed correction texts unchanged inside explicit original-block boundaries "+i);
                 check(prompt.contains(ClassroomSummary.uploadChunk(new JSONObject().put("segments",groups.getJSONArray(i)).put("images",new JSONArray())).toString()),"raw evidence and scope cover every original row of content group "+i);
                 check(run.getJSONArray("drafts").getJSONObject(i).getJSONArray("notes").getJSONObject(0).getJSONArray("sources").toString().equals(new JSONArray().put(i*2).put(i*2+1).toString()),"actual extraction fixture references both original-block source ids "+i);
             }
@@ -1041,6 +1043,57 @@ public final class ClassroomEnhancedCheck {
             if(before!=null){check(run.getJSONArray("corrected").toString().equals(before.getJSONArray("corrected").toString())&&run.getJSONArray("drafts").toString().equals(before.getJSONArray("drafts").toString()),"boundary repair does not redo committed correction or extraction");for(int i=0;i<index;i++)check(run.getJSONArray("parts").getJSONObject(i).toString().equals(before.getJSONArray("parts").getJSONObject(i).toString()),"earlier successful image group remains exact");}
             if(legacy)check(!run.has("content_batch_size"),"legacy absent-field grouping stays untouched");
             batchHistory(dir,protocol);evidence("content-boundary-"+topology+"-"+(repair?"repair":"manual")+"-"+protocol,dir);
+        }
+    }
+    private static String coverageCorrected(int index,boolean headings){
+        if(!headings)return "无标题原段 "+index+"\r\n逐条教学内容😀  \r\n```python\n# CODE_ONLY_COMMENT_"+index+"\n```\n末尾原话 "+index+"\n";
+        return switch(index){
+            case 0->"# 组一首题\r\n  逐条原文😀  \r\n## 重复主题\r\n过程 A \r\n````python\n# CODE_BACKTICK_COMMENT\n```\n## CODE_SHORT_CLOSE\n~~~~\n# CODE_WRONG_TYPE\n````still-code\n# CODE_NONBLANK_CLOSE";
+            case 1->"## CODE_CROSS_PART\n````` \t\n## 重复主题\n内容 B\n### 组一末题\n原段尾部  \n~~~~~bash\n# CODE_CROSS_GROUP_OPEN";
+            case 2->"# CODE_FROM_PREVIOUS_GROUP\n~~~~~~ \t\n# 组二首题\n原文 C\n## 仅组二主题\n内容 D\n~~~~bash\n# CODE_TILDE_COMMENT\n````\n## CODE_WRONG_TYPE";
+            default->"### CODE_TILDE_CROSS_PART\n~~~\n# CODE_SHORT_CLOSE\n~~~~still-code\n# CODE_NONBLANK_CLOSE\n~~~~~ \t\n  ## 仅组二主题  \r\n内容 E\r\n###### 组二末题\r\n原尾😀";
+        };
+    }
+    private static void contentCoverage()throws Exception{
+        String transcriptMarker="本次要提取的更正文稿（历史原消息保持不变，此处仅追加定位）：\n",rawMarker="\n事实核对及安排原话定位用原始字幕（更正文稿与其冲突时核对原话；evidence逐字摘录并列全覆盖的sources）：\n",outlineMarker="本组更正文稿已有标题，仅作覆盖提醒，不是成品目录：";
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(String scenario:List.of("new-headings","new-plain","old-resume")){
+            boolean legacy=scenario.equals("old-resume"),headings=!scenario.equals("new-plain");reset(headings?"coverage-headings":"coverage-plain",true);
+            File dir=legacy?previousContentMaterials("coverage-"+scenario+"-"+protocol,protocol):materials("coverage-"+scenario+"-"+protocol,4,true);JSONObject frozen=legacy?state(dir):null,before=null,result;
+            if(legacy){
+                failCall=4;rejects(()->generateWithProtocol(dir,protocol),"old unfinished single-block extraction can stop after its first successful draft");before=state(dir);
+                check(before.getJSONArray("drafts").length()==1&&before.getJSONArray("corrected").length()==2,"old interrupted fixture has a real successful draft and committed correction prefix");failCall=-1;
+            }
+            result=legacy?generateWithProtocol(dir,protocol):generateContent(dir,protocol,new ArrayList<>());JSONObject run=state(dir);JSONArray corrected=run.getJSONArray("corrected");int size=legacy?1:2,draftRequests=0;
+            for(int n=0;n<corrected.length();n++)check(corrected.getString(n).equals(coverageCorrected(n,headings)),"stored successful correction keeps CRLF, trailing spaces, Unicode and original wording unchanged "+n);
+            for(int r=0;r<requests.size();r++){
+                String stage=stages.get(r),physical=prompt(requests.get(r)),logical=referencedPrompt(requests.get(r),physical);
+                if(stage.startsWith("draft-")||stage.startsWith("final-")){
+                    check(logical.contains("仅回顾已结束或仅属往届、其他班级且未要求本班当前执行的任务不提取")&&logical.contains("不能因出现‘布置作业’等词就创建本班当前行动"),"actual extraction/refinement request excludes finished or irrelevant other-class task stories: "+stage);
+                    check(logical.contains("本班仍有效的既有任务，其截止提醒、补交或继续执行要求仍须保留，不要求重新布置才算行动"),"actual extraction/refinement request retains active existing tasks and deadline, makeup or continuation reminders: "+stage);
+                }
+                if(!stage.startsWith("draft-"))continue;draftRequests++;int group=Integer.parseInt(stage.replaceFirst("draft-([0-9]+).*","$1")),first=group*size,last=Math.min(corrected.length(),first+size);
+                int begin=logical.indexOf(transcriptMarker)+transcriptMarker.length(),rawStart=logical.indexOf(rawMarker);String body=logical.substring(begin,rawStart);StringJoiner expected=new StringJoiner("\n\n");
+                for(int n=first;n<last;n++)expected.add("【原始段 "+(n+1)+" 开始】\n"+coverageCorrected(n,headings)+"\n【原始段 "+(n+1)+" 结束】");
+                check(body.equals(expected.toString()),"actual draft carries every current original part completely and verbatim within its explicit boundaries: "+scenario+" "+stage);
+                for(int n=0;n<corrected.length();n++)check(body.contains("【原始段 "+(n+1)+" 开始】")==(n>=first&&n<last),"draft boundaries include only the current group's original parts "+n);
+                int titleStart=logical.indexOf(outlineMarker)+outlineMarker.length();JSONArray outline=new JSONArray(logical.substring(titleStart,logical.indexOf("。输出前在本次处理内",titleStart)));
+                JSONArray expectedOutline=!headings?new JSONArray():legacy?(group==0?new JSONArray().put("组一首题").put("重复主题"):new JSONArray().put("重复主题").put("组一末题"))
+                        :group==0?new JSONArray().put("组一首题").put("重复主题").put("组一末题"):new JSONArray().put("组二首题").put("仅组二主题").put("组二末题");
+                check(outline.toString().equals(expectedOutline.toString()),"soft reminder keeps current-group headings in first-to-last order, deduplicates repeats and excludes fenced code comments: "+scenario+" "+stage);
+                if(!legacy)check(!outline.toString().contains("CODE_")&&body.contains("CODE_"),"actual heading reminder filters code inside backtick/tilde fences, including short or wrong-type/nonblank closes and cross-part state, without deleting code from the original transcript");
+                for(String rule:List.of("本请求须完整整理下列整组的全部原始段，从头至尾扫描，不仅摘要第一段或开头","逐项保留独特概念、定理及证明、例题及必要计算、考核评分线索和不同对象的明确行动","不能以精简为由省去整项教学内容","仅作覆盖提醒，不是成品目录","不因某标题缺失而忽略无标题内容","标题可合并重排，但实质内容不能漏掉","不额外输出检查报告"))check(logical.contains(rule),"actual draft retains soft all-unit coverage, including headingless content: "+rule);
+                JSONObject raw=new JSONObject(logical.substring(rawStart+rawMarker.length(),logical.indexOf("\n全课PPT可用目录",rawStart)));
+                JSONArray current=ClassroomEnhancedSummary.contentGroups(run.getJSONArray("blocks"),size).getJSONArray(group);JSONObject expectedRaw=ClassroomSummary.uploadChunk(new JSONObject().put("segments",current).put("images",new JSONArray()));
+                check(raw.similar(expectedRaw)&&logical.contains("更正文稿与其冲突时核对原话")&&!logical.contains("只作evidence逐字定位"),"raw subtitles are sent as independent teacher-fact and conflict evidence, not evidence-only placeholders");
+                check(logical.contains("evidence，逐字摘录原始字幕")&&logical.contains("不拼接非连续片段")&&logical.contains("sources须列全引文覆盖的每条来源"),"broader raw-fact use retains the original verbatim assignment evidence boundaries");
+            }
+            check(result.getBoolean("complete")&&requests.size()==(legacy?9:10)&&draftRequests==(legacy?3:2)&&run.getJSONArray("drafts").length()==2&&run.getJSONArray("parts").length()==2,"coverage is one existing draft per content group, with no extra schema stage or request: "+scenario);
+            check(run.getJSONArray("drafts").getJSONObject(0).keySet().equals(Set.of("overview","notes","affairs","assignments","image_assessment","image_requests")),"coverage reminders do not add wire fields or checks to the existing draft schema");
+            if(legacy){
+                check(!run.has("content_batch_size")&&!run.has("editor_batch_chars")&&run.getInt("editor_batch_size")==2&&run.getString("run").equals(before.getString("run")),"old unfinished run keeps single-block content units and frozen editorial batching");
+                check(run.getJSONArray("corrected").toString().equals(before.getJSONArray("corrected").toString())&&run.getJSONArray("drafts").getJSONObject(0).toString().equals(before.getJSONArray("drafts").getJSONObject(0).toString())&&run.getJSONObject("conversation").getJSONObject("options").toString().equals(frozen.getJSONObject("conversation").getJSONObject("options").toString()),"recovery never rewrites successful correction, first draft or original request options");
+            }else check(run.getInt("content_batch_size")==2&&run.getInt("editor_batch_size")==3&&run.getInt("editor_batch_chars")==18000,"new coverage prompts keep the agreed two-block/three-topic defaults");
+            batchHistory(dir,protocol);evidence("content-coverage-"+scenario+"-"+protocol,dir);
         }
     }
     private static JSONObject batchSchemaExample(String text)throws Exception{
@@ -1491,6 +1544,11 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length==1)test("current-group full coverage and exact corrected-part boundaries",ClassroomEnhancedCheck::contentCoverage);
+        if(args.length>1&&args[1].equals("content-coverage")){
+            try{test("current-group full coverage and exact corrected-part boundaries",ClassroomEnhancedCheck::contentCoverage);}
+            finally{server.stop(0);}System.out.println("ClassroomContentCoverage: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Content coverage checks failed");return;
+        }
         if(args.length==1)test("repair and manual retry append the actual grouped-final boundary",ClassroomEnhancedCheck::contentRetryBoundary);
         if(args.length>1&&args[1].equals("content-retry-boundary")){
             try{test("repair and manual retry append the actual grouped-final boundary",ClassroomEnhancedCheck::contentRetryBoundary);}
