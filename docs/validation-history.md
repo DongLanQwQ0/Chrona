@@ -1,5 +1,14 @@
 # 验证记录
 
+## 网页高光与原生全宽选择栏 — 2026-11-03
+
+- 候选 `0.15.111 (273)`。网页公共控制器不再使用独立的速度拉宽／阻尼；前沿立即响应，尾部、高度、覆盖文字色、缩放与松手物理按Android公共实现统一。首次独立复审发现固定8px/s／±2px惯性门槛，已改实际与预测共用0.08格/s／±0.02格判定。
+- `node checks/lan_navigation_physics_check.cjs`直接编译生产Java DockSpring并对照网页生产函数：48／100／300px格宽共1230帧、9组惯性结束帧及落点一致。`build/ui-parity-20261103/physics.txt`。不把物理替身当实际浏览器交互。
+- 真实Edge、生产网页资源及隔离接口：鼠标／触摸即时前沿、正反向、有限越界、取消、多指、失焦、键盘、减少动画和控件卸载检查通过。`build/lan-dock-repair/track-run.txt`、`track-evidence.json`；正反向JPEG在同目录。公共按钮几何及长按后点选检查 `controls-run.txt` 通过。
+- 键盘补验曾仅记录keydown／keyup而无click；CDP补齐真实Enter的回车text／unmodifiedText及nativeVirtualKeyCode后通过，未修改生产键盘行为。最终release／lint通过并覆盖原AVD，专门只读UI审核结论可交付，无剩余P1/P2或关键缺口。未声称实机更新。
+- 原生来源等筛选轨道与内容区同宽；透明窗口画布和扩展视口承载高光，首尾圆端及甩动完整。`build/ui-parity-20261103/pta-ui/`为原AVD实际压缩JPEG；`native-canvas.txt`证明内部不误关、外部可关闭。只复用单台AVD，无密度／分辨率修改。
+- 用户要求清理模拟器过时应用：核对六组旧Chrona隔离版本0.15.24／61／71／84／100／103无活动验证与服务后，卸载6应用＋6测试包及本轮用完测试包，共13包。当前Chrona账号和数据保留，其他项目应用未动；清单 `build/ui-parity-20261103/emulator-packages-{before,after}.txt`、`emulator-cleanup.txt`。
+
 ## PTA 接入与校园设置 — 2026-11-03
 
 - 固定候选 `0.15.110 / 272`；统一AVD `Chrona_Classroom_36 / emulator-5580`，未修改显示参数。release覆盖安装成功，debug／AndroidTest／release构建和lint通过：`build/pta-research-20261103/final-build.log`。

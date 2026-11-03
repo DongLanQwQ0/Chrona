@@ -206,32 +206,43 @@ const pageOrder=['home','schedule','inbox'];
 let mainSection='home';
 // Every complete web selection rail uses one pointer and motion implementation.
 const navigationTracks=new WeakMap();
-const navigationCoastDamping=7.5,navigationOutwardWidth=.75,navigationInnerInset=6;
+// Match DockSpring / DockNavigationLayout; holding still uses the web's immediate pointer response.
+const navigationCoastDamping=5.5,navigationOutwardWidth=2.2,navigationInnerInset=6;
 function navigationLocalX(bar,clientX){const bounds=bar.getBoundingClientRect();return (clientX-bounds.left)*bar.offsetWidth/Math.max(1,bounds.width)-bar.clientLeft;}
 function navigationVelocity(samples){const recent=samples.filter(sample=>sample.time>=samples.at(-1).time-100);if(recent.length<2)return 0;
  const meanTime=recent.reduce((sum,sample)=>sum+sample.time,0)/recent.length,meanX=recent.reduce((sum,sample)=>sum+sample.x,0)/recent.length;
  let numerator=0,denominator=0;for(const sample of recent){numerator+=(sample.time-meanTime)*(sample.x-meanX);denominator+=(sample.time-meanTime)**2;}return denominator>0?numerator/denominator*1000:0;
 }
-function coastNavigationStep(state,first,last,dt){const edge=Math.max(first,Math.min(last,state.p)),overflow=state.p-edge;if(overflow){state.v+=(-180*overflow-18*state.v)*dt;state.p+=state.v*dt;}else{const decay=Math.exp(-navigationCoastDamping*dt);state.p+=state.v*(1-decay)/navigationCoastDamping;state.v*=decay;}}
+function coastNavigationStep(state,first,last,dt,slot){const edge=Math.max(first,Math.min(last,state.p)),overflow=state.p-edge;if(overflow){state.v+=(-405*overflow-27*state.v)*dt;state.p+=state.v*dt;}else{const distance=state.v>0?last-state.p:state.p-first,approach=Math.max(0,1-distance/Math.max(.0001,slot*.6)),resistance=navigationCoastDamping+18*approach*approach,decay=Math.exp(-resistance*dt);state.p+=state.v*(1-decay)/resistance;state.v*=decay;}}
+function navigationCoastComplete(state,first,last,slot){return Math.abs(state.v)<slot*.08&&state.p>=first-slot*.02&&state.p<=last+slot*.02;}
+function settleNavigationStep(state,dt){const omega=2*Math.PI/.38,damping=.93*omega,frequency=omega*Math.sqrt(1-.93*.93),offset=state.p-state.target,decay=Math.exp(-damping*dt),cos=Math.cos(frequency*dt),sin=Math.sin(frequency*dt),speed=state.v;state.p=state.target+decay*(offset*cos+(speed+damping*offset)/frequency*sin);state.v=decay*(speed*cos-(damping*speed+omega*omega*offset)/frequency*sin);}
+function navigationSoftBoundary(value,limit,approach){const start=limit-approach;return value<=start?value:start+approach*Math.tanh((value-start)/approach);}
 function createNavigationTrack(bar,selected,choose){
  if(navigationTracks.has(bar))return navigationTracks.get(bar);
- const highlight=bar.querySelector('.dock-highlight,.selection-highlight'),state={p:0,v:0,target:0,w:0,wv:0,wt:0,s:1,sv:0,st:1,bar:1,bv:0,bt:1,stretch:1,xv:0,coasting:false};
+ const highlight=bar.querySelector('.dock-highlight,.selection-highlight'),state={p:0,v:0,target:0,w:0,wt:0,s:1,sv:0,st:1,bar:1,bv:0,bt:1,stretch:1,tail:0,tv:0,height:1,hv:0,tapPulse:false,coasting:false};
  let initialized=false,frame=0,time=0,pointer=null,suppressClick=false,disposed=false;
  bar.classList.add('navigation-track');highlight.setAttribute('aria-hidden','true');
  const buttons=()=>[...bar.querySelectorAll(':scope > button')],center=button=>button.offsetLeft+button.offsetWidth/2;
  const limits=()=>{const items=buttons();return[center(items[0]),center(items.at(-1))];};
+ const slotWidth=()=>{const items=buttons();return items.length>1?center(items[1])-center(items[0]):items[0].offsetWidth;};
+ function extent(x){const items=buttons();for(let i=1;i<items.length;i++)if(x<center(items[i])){const a=items[i-1],b=items[i],fraction=Math.max(0,(x-center(a))/(center(b)-center(a)));return a.offsetWidth+(b.offsetWidth-a.offsetWidth)*fraction;}return items.at(-1).offsetWidth;}
  const nearest=(x,eligible=false)=>buttons().filter(button=>!eligible||!button.disabled).reduce((best,button)=>Math.abs(x-center(button))<best.distance?{button,distance:Math.abs(x-center(button))}:best,{button:null,distance:Infinity}).button;
  function samples(event){for(const point of event.getCoalescedEvents?.().length?event.getCoalescedEvents():[event])pointer.samples.push({x:point.clientX,time:point.timeStamp});pointer.samples=pointer.samples.filter(point=>point.time>=event.timeStamp-150);}
- function follow(){if(!pointer||pointer.cancelled)return;const[first,last]=limits();state.p=state.target=Math.max(first,Math.min(last,navigationLocalX(bar,pointer.clientX)));state.v=0;const button=nearest(state.p);if(button)state.wt=button.offsetWidth;}
+ function follow(){if(!pointer||pointer.cancelled)return;const[first,last]=limits(),travel=slotWidth()*.6;state.p=state.target=Math.max(first-travel,Math.min(last+travel,navigationLocalX(bar,pointer.clientX)));state.v=0;state.w=state.wt=extent(state.p);}
  function paint(){
   bar.style.transform=`scale(${state.bar})`;follow();
-  const width=state.w*state.s*state.stretch,maximum=state.w*navigationOutwardWidth;
-  let left=state.p-width/2,right=state.p+width/2;
+  state.w=extent(state.p);const heldAmount=Math.max(0,Math.min(1,(state.s-1.16)/.34)),cap=state.w*(.12+(.75-.12)*heldAmount),lag=state.p-state.tail,stretch=cap*Math.tanh(lag/Math.max(1,cap)),width=state.w*state.s+Math.abs(stretch),maximum=state.w*navigationOutwardWidth;
+  state.stretch=width/Math.max(1,state.w*state.s);
+  let left=navigationSoftBoundary(state.p-stretch/2-width/2,bar.clientWidth+state.w*.25,state.w*.6),right=-navigationSoftBoundary(-(state.p-stretch/2+width/2),state.w*.25,state.w*.6);
   if(maximum>0){if(left<0)left=-maximum*Math.tanh(-left/maximum);if(right>bar.clientWidth)right=bar.clientWidth+maximum*Math.tanh((right-bar.clientWidth)/maximum);}
-  const height=Math.max(0,bar.clientHeight-navigationInnerInset*2)*state.s;
+  const height=Math.max(0,bar.clientHeight-navigationInnerInset*2)*state.s*state.height;
   highlight.style.width=(right-left)+'px';highlight.style.height=height+'px';highlight.style.top=(bar.clientHeight-height)/2+'px';highlight.style.transform=`translateX(${left}px)`;
+  for(const button of buttons()){
+   const distance=Math.min(center(button)-left,right-center(button)),coverage=Math.max(0,Math.min(1,.5+distance/Math.max(1,state.w*.56))),amount=coverage*coverage*(3-2*coverage);
+   button.style.color=`color-mix(in srgb,var(--primary) ${amount*100}%,var(--muted))`;
+  }
  }
- function snap(){state.p=state.target;state.w=state.wt;state.s=state.st;state.bar=state.bt;state.stretch=1;state.v=state.wv=state.sv=state.bv=state.xv=0;paint();}
+ function snap(){state.p=state.tail=state.target;state.w=state.wt;state.s=state.st;state.bar=state.bt;state.stretch=state.height=1;state.v=state.tv=state.sv=state.bv=state.hv=0;paint();}
  function sync(){
   if(disposed||!bar.isConnected||!bar.offsetWidth||getComputedStyle(bar).visibility==='hidden')return;
   const button=selected();if(!button){highlight.hidden=true;return;}highlight.hidden=false;
@@ -248,23 +259,25 @@ function createNavigationTrack(bar,selected,choose){
   const elapsed=Math.min(.064,Math.max(0,(now-time)/1000)),steps=Math.max(1,Math.ceil(elapsed*120)),dt=elapsed/steps;time=now;
   const[first,last]=limits(),held=pointer&&!pointer.cancelled;
   for(let n=0;n<steps;n++){
-   if(!held){if(state.coasting)coastNavigationStep(state,first,last,dt);else{state.v+=(180*(state.target-state.p)-22*state.v)*dt;state.p+=state.v*dt;}}
-   state.wv+=(200*(state.wt-state.w)-22*state.wv)*dt;state.w+=state.wv*dt;
-   const response=state.st>state.s?1:1.5,stiffness=900/(response*response),damping=50/response;
+   if(!held){if(state.coasting)coastNavigationStep(state,first,last,dt,slotWidth());else settleNavigationStep(state,dt);}
+   const frequency=Math.sqrt(300),offset=state.tail-state.p,speed=offset*state.tv<=0?Math.sign(state.tv)*Math.min(Math.abs(state.tv),frequency*Math.abs(offset)):state.tv,change=(speed+frequency*offset)*dt,decay=Math.exp(-frequency*dt);
+   state.tail=state.p+(offset+change)*decay;state.tv=(speed-frequency*change)*decay;
+   const response=state.st>1?1:1.5,stiffness=1000/(response*response),damping=48/response;
    state.sv+=(stiffness*(state.st-state.s)-damping*state.sv)*dt;state.s+=state.sv*dt;state.bv+=(stiffness*(state.bt-state.bar)-damping*state.bv)*dt;state.bar+=state.bv*dt;
-   const speed=held?(now-pointer.samples.at(-1).time<100?navigationVelocity(pointer.samples):0):state.v,stretch=1+Math.min(.25,Math.abs(speed)/Math.max(1,state.w)*.025);
-   state.xv+=(200*(stretch-state.stretch)-18*state.xv)*dt;state.stretch+=state.xv*dt;
+   const fingerSpeed=held&&now-pointer.samples.at(-1).time<100?navigationVelocity(pointer.samples):0,height=held&&Math.abs(fingerSpeed)/Math.max(1,slotWidth())>.15?.95:1;
+   state.hv+=(500*(height-state.height)-36*state.hv)*dt;state.height+=state.hv*dt;
+   if(state.tapPulse&&state.s>=1.155){state.tapPulse=false;state.st=1;}
   }
-  if(state.coasting&&Math.abs(state.v)<8&&state.p>=first-2&&state.p<=last+2){state.coasting=false;const button=selected();if(button){state.target=center(button);state.wt=button.offsetWidth;}}
+  if(state.coasting&&navigationCoastComplete(state,first,last,slotWidth())){state.coasting=false;const button=selected();if(button){state.target=center(button);state.wt=button.offsetWidth;}}
   paint();
-  const moving=state.coasting||!held&&(Math.abs(state.p-state.target)>.05||Math.abs(state.v)>.1)||Math.abs(state.w-state.wt)>.05||Math.abs(state.wv)>.1||Math.abs(state.s-state.st)>.001||Math.abs(state.sv)>.01||Math.abs(state.bar-state.bt)>.001||Math.abs(state.bv)>.01||Math.abs(state.stretch-1)>.001||Math.abs(state.xv)>.01;
+  const moving=state.coasting||!held&&(Math.abs(state.p-state.target)>.05||Math.abs(state.v)>.1)||Math.abs(state.tail-state.p)>.05||Math.abs(state.tv)>.1||Math.abs(state.s-state.st)>.001||Math.abs(state.sv)>.01||Math.abs(state.bar-state.bt)>.001||Math.abs(state.bv)>.01||Math.abs(state.height-1)>.001||Math.abs(state.hv)>.01;
   if(moving)frame=requestAnimationFrame(advance);else{snap();if(!pointer)bar.classList.remove('navigation-raised');}
  }
  function commit(button){if(button)guard(async()=>{try{await choose(button);}finally{sync();}});}
  function down(event){
   if(pointer){pointer.cancelled=true;state.st=state.bt=1;animate();return;}
   if(event.button!==0||event.isPrimary===false||!event.target.closest('button')||event.target.closest('button').disabled)return;
-  suppressClick=false;state.coasting=false;pointer={id:event.pointerId,clientX:event.clientX,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false,samples:[]};
+  suppressClick=false;state.coasting=state.tapPulse=false;pointer={id:event.pointerId,clientX:event.clientX,x:event.clientX,y:event.clientY,dragging:false,cancelled:false,left:false,samples:[]};
   samples(event);bar.setPointerCapture(event.pointerId);state.st=1.5;state.bt=1.1;follow();paint();animate();
  }
  function move(event){
@@ -279,8 +292,8 @@ function createNavigationTrack(bar,selected,choose){
   const inside=event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom,button=nearest(navigationLocalX(bar,event.clientX),true);
   pointer=null;suppressClick=true;state.st=state.bt=1;if(bar.hasPointerCapture(event.pointerId))bar.releasePointerCapture(event.pointerId);
   if(!cancelled&&!touch.cancelled&&button&&(touch.dragging||!touch.left&&inside)){
-   if(touch.dragging&&!reducedMotion.matches){const[first,last]=limits(),prediction={p:state.p,v:speed};for(let n=0;n<2400;n++){coastNavigationStep(prediction,first,last,1/120);if(Math.abs(prediction.v)<8&&prediction.p>=first-2&&prediction.p<=last+2)break;}state.v=speed;state.coasting=true;commit(nearest(prediction.p,true));}
-   else{state.target=center(button);state.wt=button.offsetWidth;commit(button);}
+   if(touch.dragging&&!reducedMotion.matches){const[first,last]=limits(),prediction={p:state.p,v:speed};for(let n=0;n<2400;n++){coastNavigationStep(prediction,first,last,1/120,slotWidth());if(navigationCoastComplete(prediction,first,last,slotWidth()))break;}state.v=speed;state.coasting=true;commit(nearest(prediction.p,true));}
+   else{state.tapPulse=!reducedMotion.matches&&state.s<1.16;state.st=state.tapPulse?1.16:1;state.target=center(button);state.wt=button.offsetWidth;commit(button);}
    animate();
   }else{state.coasting=false;sync();}
  }

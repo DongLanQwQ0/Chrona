@@ -124,10 +124,21 @@ final class DockNavigationLayout extends FrameLayout {
     FrameLayout fullWidthMotionHost() {
         return fullWidthMotionHost(false);
     }
-    /** Clipping forms reserve an envelope while retaining the full-width track's no-lean behavior. */
-    FrameLayout fullWidthMotionHost(boolean reserveEnvelope) {
+    /** Full-width forms keep the content axis and reserve only their cross-axis motion. */
+    FrameLayout fullWidthMotionHost(boolean reserveCrossAxis) {
         fullWidthMotion = true;
-        return motionHostLayout(!reserveEnvelope, reserveEnvelope);
+        return motionHostLayout(!reserveCrossAxis, false);
+    }
+    /** External canvas space for a full-width rail; never subtract it from the track. */
+    int horizontalMotionClearance(int trackWidth) {
+        float total=0f,widest=0f;
+        for(int i=0;i<itemCount();i++){
+            float weight=((LinearLayout.LayoutParams)itemAt(i).getLayoutParams()).weight;
+            total+=weight;widest=Math.max(widest,weight);
+        }
+        float fraction=total>0?widest/total:1f/Math.max(1,itemCount());
+        float ratio=(MOTION_PLATE_SCALE-1f)/2f+MOTION_RESERVE_TABS*MOTION_PLATE_SCALE*fraction;
+        return (int)Math.ceil(trackWidth*ratio+dp(2+PLATE_LEAN_DP));
     }
     private FrameLayout motionHostLayout(boolean overlapRows, boolean reserveHorizontal) {
         DockNavigationLayout dock = this;

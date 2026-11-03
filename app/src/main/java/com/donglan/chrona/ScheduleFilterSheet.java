@@ -108,7 +108,15 @@ final class ScheduleFilterSheet {
         saveParams.topMargin = dp(10);
         panel.addView(save, saveParams);
         render();
-        UiDialogs.showFloatingDialog(dialog, panel);
+        int screenWidth=activity.getResources().getDisplayMetrics().widthPixels;
+        int panelWidth=Math.min((int)(screenWidth*.90f),dp(460)),motionSpace=0;
+        for(ChoiceDock choice:new ChoiceDock[]{dates,category,todo,publication,source})
+            motionSpace=Math.max(motionSpace,choice.dock.horizontalMotionClearance(panelWidth-dp(32)));
+        motionSpace=Math.min(motionSpace,Math.max(0,(screenWidth-panelWidth)/2));
+        scroll.setPadding(dp(16)+motionSpace,0,dp(16)+motionSpace,0);
+        scrollParams.setMargins(-dp(16)-motionSpace,0,-dp(16)-motionSpace,0);
+        scroll.setLayoutParams(scrollParams);
+        UiDialogs.showFloatingDialog(dialog, panel,motionSpace);
     }
 
     private void render() {

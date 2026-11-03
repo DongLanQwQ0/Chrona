@@ -110,11 +110,26 @@ final class PtaDeviceCheck {
             try(var output=new java.io.FileOutputStream(new java.io.File(dir,name))){small.compress(android.graphics.Bitmap.CompressFormat.JPEG,78,output);}
             if(small!=bitmap)small.recycle();bitmap.recycle();
             if(heldAt>0)PtaUiInteractionCheck.touch(test,heldAt,android.os.SystemClock.uptimeMillis(),1,heldX,heldY);
+            boolean canvasChecked=false;
+            if("true".equals(args.getString("check_canvas"))){
+                Thread.sleep(500);
+                var heading=test.getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText("筛选日程");
+                var rect=new android.graphics.Rect();heading.get(0).getBoundsInScreen(rect);
+                long now=android.os.SystemClock.uptimeMillis();
+                PtaUiInteractionCheck.touch(test,now,now,0,rect.exactCenterX(),rect.exactCenterY());
+                PtaUiInteractionCheck.touch(test,now,now+50,1,rect.exactCenterX(),rect.exactCenterY());Thread.sleep(200);
+                if(test.getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText("筛选日程").isEmpty())throw new AssertionError("Inside panel dismissed");
+                float outside=rect.left-32*context.getResources().getDisplayMetrics().density;
+                now=android.os.SystemClock.uptimeMillis();PtaUiInteractionCheck.touch(test,now,now,0,outside,rect.exactCenterY());
+                PtaUiInteractionCheck.touch(test,now,now+50,1,outside,rect.exactCenterY());Thread.sleep(700);
+                if(!test.getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText("筛选日程").isEmpty())throw new AssertionError("Outside canvas did not dismiss");
+                canvasChecked=true;
+            }
             if(landscape)test.getUiAutomation().setRotation(android.app.UiAutomation.ROTATION_UNFREEZE);
             int[] settled=scrollMetrics(test);
             return new JSONObject().put("page",page).put("window_width",window.width()).put("window_height",window.height()).put("image",name)
                     .put("scroll_before",new JSONArray(scrollBefore)).put("scroll_120ms",scrollAfter==null?JSONObject.NULL:new JSONArray(scrollAfter))
-                    .put("scroll_settled",new JSONArray(settled)).toString();
+                    .put("scroll_settled",new JSONArray(settled)).put("canvas_checked",canvasChecked).toString();
             }finally{if(!theme.equals(oldMode)){test.runOnMainSync(()->ThemeStore.setMode(context,oldMode));context.getSharedPreferences("appearance",0).edit().putString("mode",oldMode).commit();}}
         }
         String schoolBefore=new ZjuSettingsStore(context).status();

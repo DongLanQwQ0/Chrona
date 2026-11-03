@@ -1,4 +1,4 @@
-/* Production controls in the existing Edge profile. Interaction/geometry only, no screenshots. */
+/* Production controls in the existing Edge profile; compressed JPEGs and real pointer input. */
 const assert=require('assert'),fs=require('fs'),path=require('path');
 const {createServer}=require('./lan_detail_navigation_check.cjs');
 const {chromium}=require('./lan_browser_cdp.cjs');
@@ -13,7 +13,7 @@ async function idle(page){await page.evaluate(async()=>{while(pending)await new 
  await page.evaluate(()=>navigate('schedule'));await idle(page);
  const track=await page.evaluate(()=>{const r=document.querySelector('.selection-bar').getBoundingClientRect();return{x:r.left+r.width*.18,to:r.left+r.width*.62,y:r.top+r.height/2};});
  await page.cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,x:track.x,y:track.y});await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',button:'left',buttons:1,x:track.to,y:track.y});
- evidence.selectionMove=await page.evaluate(()=>{const r=document.querySelector('.selection-highlight').getBoundingClientRect();return{center:r.left+r.width/2};});
+ evidence.selectionMove=await page.evaluate(()=>{const bar=document.querySelector('.selection-bar'),r=bar.getBoundingClientRect(),s=navigationTracks.get(bar).state;return{anchor:r.left+(s.p+bar.clientLeft)*r.width/bar.offsetWidth};});
  await page.cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,x:track.to,y:track.y});
  evidence.selectionPointer=track.to;
  await idle(page);
@@ -33,15 +33,19 @@ async function idle(page){await page.evaluate(async()=>{while(pending)await new 
     const position=await page.evaluate(({selector,fraction})=>{const bar=document.querySelector(selector),r=bar.getBoundingClientRect();return{x:r.left+r.width*fraction,y:r.top+r.height/2};},{selector,fraction});
     await touch('touchMove',position.x,position.y);
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-    const measured=await page.evaluate(selector=>{const bar=document.querySelector(selector),r=bar.querySelector('.dock-highlight,.selection-highlight').getBoundingClientRect();return{center:r.left+r.width/2,p:navigationTracks.get(bar).state.p,trace:pointerTrace.slice(-8)};},selector);
-    assert(Math.abs(measured.center-position.x)<=2,'real touch move frame follows without spring/CSS lag '+JSON.stringify({selector,size,position,measured}));
+    const measured=await page.evaluate(selector=>{const bar=document.querySelector(selector),r=bar.getBoundingClientRect(),s=navigationTracks.get(bar).state,scale=r.width/bar.offsetWidth;return{anchor:r.left+(s.p+bar.clientLeft)*scale,tail:s.tail,position:s.p,stretch:s.stretch,trace:pointerTrace.slice(-8)};},selector);
+    assert(Math.abs(measured.anchor-position.x)<=2,'native leading anchor follows immediately while its tail catches up '+JSON.stringify({selector,size,position,measured}));
+    if(size.width===1280&&(fraction===.65||fraction===.35)){
+     const shot=await page.cdp.send('Page.captureScreenshot',{format:'jpeg',quality:68,captureBeyondViewport:false});
+     fs.writeFileSync(path.join(out,`${selector==='.bottom nav'?'navigation':'selection'}-${fraction===.65?'forward':'reverse'}.jpg`),Buffer.from(shot.data,'base64'));
+    }
    }
    await touch('touchMove',0,points.y);
    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-   assert(await page.evaluate(selector=>{const bar=document.querySelector(selector),first=bar.querySelector('button');return Math.abs(navigationTracks.get(bar).state.p-(first.offsetLeft+first.offsetWidth/2))<.01;},selector),'held pointer is bounded to first option');
+   assert(await page.evaluate(selector=>{const bar=document.querySelector(selector),items=[...bar.querySelectorAll('button')],center=b=>b.offsetLeft+b.offsetWidth/2,limit=center(items[0])-(center(items[1])-center(items[0]))*.6;return Math.abs(navigationTracks.get(bar).state.p-Math.max(limit,navigationLocalX(bar,0)))<.01;},selector),'native first edge has bounded extra travel');
    await touch('touchMove',size.width-1,points.y);
    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-   assert(await page.evaluate(selector=>{const bar=document.querySelector(selector),last=[...bar.querySelectorAll('button')].at(-1);return Math.abs(navigationTracks.get(bar).state.p-(last.offsetLeft+last.offsetWidth/2))<.01;},selector),'held pointer is bounded to last option');
+   assert(await page.evaluate(selector=>{const bar=document.querySelector(selector),items=[...bar.querySelectorAll('button')],center=b=>b.offsetLeft+b.offsetWidth/2,limit=center(items.at(-1))+(center(items[1])-center(items[0]))*.6;return Math.abs(navigationTracks.get(bar).state.p-Math.min(limit,navigationLocalX(bar,innerWidth-1)))<.01;},selector),'native last edge has bounded extra travel');
    await touch('touchCancel');await idle(page);
    assert.deepEqual(await page.evaluate(()=>({route,tab:scheduleTab})),initial,'cancel does not navigate or select');
    assert(await page.evaluate(selector=>{const s=navigationTracks.get(document.querySelector(selector)).state;return Math.abs(s.s-1)<.01&&Math.abs(s.bar-1)<.01;},selector),'cancel restores resting sizes');
@@ -52,7 +56,7 @@ async function idle(page){await page.evaluate(async()=>{while(pending)await new 
  }
  await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>navigate('schedule'));await idle(page);
  const identity=await page.evaluate(async()=>{const bar=document.querySelector('.selection-bar'),track=navigationTracks.get(bar);await refreshSession();return bar===document.querySelector('.selection-bar')&&track===navigationTracks.get(bar);});assert(identity,'poll retains the same live pointer controller');
- await page.evaluate(()=>document.querySelector('.selection-bar button[data-choice="2"]').focus());await page.cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});await page.cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});await idle(page);assert.equal(await page.evaluate(()=>scheduleTab),2,'keyboard selection still works after pointer cancellation');
+ await page.evaluate(()=>{window.keyTrace=[];for(const type of ['keydown','keyup','click'])document.addEventListener(type,e=>keyTrace.push({type,choice:e.target.dataset.choice,detail:e.detail}),true);document.querySelector('.selection-bar button[data-choice="2"]').focus();});await page.cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,nativeVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});await page.cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});await idle(page);const keyboard=await page.evaluate(()=>({tab:scheduleTab,pending,focus:document.activeElement?.dataset.choice,hasFocus:document.hasFocus(),trace:keyTrace}));assert.equal(keyboard.tab,2,'keyboard selection still works after pointer cancellation '+JSON.stringify(keyboard));
  await page.evaluate(()=>document.querySelector('.selection-bar button[data-choice="1"]').focus());await page.cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:' ',code:'Space',windowsVirtualKeyCode:32});await page.cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32});await idle(page);assert.equal(await page.evaluate(()=>scheduleTab),1,'Space still selects after pointer cancellation');
  for(const selector of ['.bottom nav','.selection-bar']){
   const initial=await page.evaluate(()=>({route,tab:scheduleTab})),point=await page.evaluate(selector=>{const bar=document.querySelector(selector);bar.scrollIntoView({block:'center'});const r=bar.getBoundingClientRect();return{x:r.left+r.width*.3,y:r.top+r.height/2};},selector);
@@ -70,9 +74,13 @@ async function idle(page){await page.evaluate(async()=>{while(pending)await new 
  assert(await page.evaluate(async()=>{const bar=document.querySelector('.selection-bar'),track=navigationTracks.get(bar);await navigate('inbox');return !bar.isConnected&&!navigationTracks.has(bar)&&navigationTracks.get(document.querySelector('.selection-bar'))!==track;}),'detached track releases its registered controller');
  await page.evaluate(()=>navigate('schedule'));await idle(page);
  assert(await page.evaluate(()=>!!navigationTracks.get(document.querySelector('.selection-bar'))),'remounted selection has a live controller');
+ await page.cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+ await page.evaluate(()=>{const bar=document.querySelector('.selection-bar'),track=navigationTracks.get(bar);bar.querySelector('button[data-choice="2"]').click();track.sync();});await idle(page);
+ assert(await page.evaluate(()=>{const s=navigationTracks.get(document.querySelector('.selection-bar')).state;return !s.coasting&&Math.abs(s.p-s.target)<.01&&Math.abs(s.tail-s.p)<.01&&Math.abs(s.s-1)<.01;}),'reduced motion snaps without residual inertia/tail');
+ await page.cdp.send('Emulation.setEmulatedMedia',{features:[]});
  fs.writeFileSync(path.join(out,'track-evidence.json'),JSON.stringify(evidence,null,2));
  assert(evidence.returned.gap>=12,'independent plus overlaps navigation after returning home: '+JSON.stringify(evidence.returned));
- assert(Math.abs(evidence.selectionMove.center-track.to)<=2,'selection highlight does not follow pointer in the move frame: '+JSON.stringify(evidence.selectionMove));
- console.log('PASS shared navigation positioning and direct pointer tracking (no screenshots)');
+ assert(Math.abs(evidence.selectionMove.anchor-track.to)<=2,'selection leading anchor follows in the move frame: '+JSON.stringify(evidence.selectionMove));
+ console.log('PASS native motion, immediate leading tracking, bounded overflow, cancellation and reduced motion');
 }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}})().catch(error=>{console.error(error);process.exitCode=1;});
 async function geometry(page){return page.evaluate(()=>{const r=element=>{const b=element.getBoundingClientRect();return{x:b.left,y:b.top,right:b.right,bottom:b.bottom,width:b.width,height:b.height};},nav=r(document.querySelector('.bottom nav')),capture=r(document.querySelector('#capture')),bottom=r(document.querySelector('.bottom'));return{nav,capture,bottom,gap:capture.x-nav.right};});}

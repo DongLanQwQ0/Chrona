@@ -306,7 +306,30 @@ final class UiDialogs {
     }
 
     private static void showDialog(Dialog dialog, View content, int widthPx) {
-        dialog.setContentView(content);
+        showDialog(dialog,content,widthPx,0);
+    }
+
+    private static void showDialog(Dialog dialog, View content, int widthPx,int motionSpace) {
+        if(motionSpace>0){
+            android.widget.FrameLayout canvas=new android.widget.FrameLayout(content.getContext());
+            canvas.setClipChildren(false);canvas.setClipToPadding(false);
+            canvas.setPadding(motionSpace,0,motionSpace,0);
+            canvas.addView(content,new android.widget.FrameLayout.LayoutParams(widthPx,-2));
+            canvas.setOnTouchListener(new View.OnTouchListener(){
+                private boolean outsideDown;
+                public boolean onTouch(View view,android.view.MotionEvent event){
+                    boolean outside=event.getX()<content.getLeft()||event.getX()>content.getRight();
+                    if(event.getActionMasked()==android.view.MotionEvent.ACTION_DOWN){outsideDown=outside;return outside;}
+                    if(event.getActionMasked()==android.view.MotionEvent.ACTION_UP){
+                        boolean dismiss=outsideDown&&outside;outsideDown=false;
+                        if(dismiss)dialog.cancel();return dismiss;
+                    }
+                    if(event.getActionMasked()==android.view.MotionEvent.ACTION_CANCEL){outsideDown=false;return false;}
+                    return outsideDown;
+                }
+            });
+            dialog.setContentView(canvas);
+        }else dialog.setContentView(content);
         Window dialogWindow = dialog.getWindow();
         if (dialogWindow != null) {
             // Some callers create Dialog directly instead of using dialog(Activity). Clear the
@@ -332,7 +355,7 @@ final class UiDialogs {
         dialog.show();
         PressFeedback.install(content);
         Window window = dialog.getWindow();
-        if (window != null) window.setLayout(widthPx, -2);
+        if (window != null) window.setLayout(widthPx+2*motionSpace, -2);
         // The window owns both enter and exit, including outside-tap and system-back dismissals.
         // No delayed dismiss callback can outlive the Activity or block a confirmation action.
     }
@@ -340,6 +363,12 @@ final class UiDialogs {
     /** Applies the shared backdrop blur and page scale to a custom floating dialog. */
     static void showFloatingDialog(Dialog dialog, View content) {
         showDialog(dialog, content);
+    }
+
+    /** Transparent canvas outside the unchanged panel supports full-width control motion. */
+    static void showFloatingDialog(Dialog dialog,View content,int motionSpace){
+        int width=Math.min((int)(content.getResources().getDisplayMetrics().widthPixels*.90f),dp(content,460));
+        showDialog(dialog,content,width,motionSpace);
     }
 
     private static void applyDialogSurface(View content, Activity owner) {
