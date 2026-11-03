@@ -1,5 +1,11 @@
 # 验证记录
 
+## 图片请求路径对照诊断 — 2026-11-03
+
+- 第二个final-0-restart-1在约5秒返回相同server_is_overloaded，无正文／usage，2初稿／0核图；停止原样重试。observer51259终态后只读审计`build/editorial112/vision-after/audit.json`，探针卸载。
+- 通过原客户端、用户已保存模型／Responses／课堂网络路由做两个独立微型请求，不发送课堂资料、不改设置和网络绑定：纯文274B成功，568输入+5输出=573Token，10.2秒；1张32×32纯色合成JPEG，1404B，2.6秒ResponseException/service_overloaded，未返回usage。图片请求构造与正式ClassroomConversation的input_image/dataURL相同，图片只在内存，不落手机存储。证据`build/editorial112/health/text.txt`、`image.txt`，probe已卸载。
+- 对照支持“当前图片请求路径失败，不仅是该课长历史或大请求”的判断，不能推断提供商内部根因或永久不支持图片。已询问用户修复原服务后沿检查点继续，或换支持图片服务后复用更正文稿新轮；未擅自换模型／协议、裁历史或关图。完整内容回归未完成。
+
 ## 112真实引文恢复与核图过载 — 2026-11-03
 
 - 原111同轮`draft-0-user-retry-2`完整stop并提交，随后`draft-1`完整stop，drafts=2。阶段清单显示夹逼求和、柯西定理及证明／几何、洛必达条件及证明等已在初稿恢复，尚不据标题或提交状态判最终内容通过。只读证据`build/editorial112/after/audit.json`、正常导出`after/export/`。

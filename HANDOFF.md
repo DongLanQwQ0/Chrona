@@ -2,6 +2,8 @@
 
 ## 当前候选与唯一下一步
 
+- **当前外部依赖：提供商图片请求路径失败，等待服务选择／恢复。** observer51259已终态：final-0-restart-1同样5秒server_is_overloaded，parts0，两组初稿保留，已停原样重试。零课堂资料对照通过原AI客户端/已保存配置及课堂网络路由：274B纯文成功（568+5Token，10.2秒），1张32×32合成JPEG、1404B请求在2.6秒同样过载，无返回usage；不仅是长历史/大图片问题。未改模型／协议／密钥／历史／网络绑定，探针已卸载，无活动AI服务。证据`build/editorial112/vision-after/audit.json`、`health/text.txt`、`health/image.txt`。已问用户修复原服务后同轮继续或换支持图片服务后复用更正稿新轮；**唯一下一步取得外部服务恢复或用户选择后才继续，不把未知收费记0、不关图降级冒充完成。** 其余完整单课审批及原21节目标保留。
+
 - **112引文恢复已真实通过，2组初稿提交；核图遇服务过载后续跑中。** observer21940正常终态后只读确认draft-0-user-retry-2及draft-1完整stop，drafts2；初稿标题恢复夹逼求和、柯西定理／证明／几何、洛必达条件／证明等，尚非成品验收。首个final-0在4秒返回server_is_overloaded，无正文、无usage，非引文或输出超限；原两组不重做。证据`build/editorial112/after/audit.json`及导出，探针／专用ZIP已清理。正常UI同课继续及40图确认启动核图失败阶段，当前ServiceRecord4854904，observer51259，`build/editorial112/vision-observe/`。唯一下一步观察该句柄，终态后再读回；若同一路过载再失败，先停原样重试查服务，不偷偷更换模型／协议／裁历史。UI XML已清理。
 
 - **112恢复诊断已实装并同轮续跑。** 新诊断只作用draft-N/final-N，838／728／2543项及stage反例188项0失败，独立check范围P2闭环；release/lint通过。模拟器空闲正常升级`build/editorial112/candidate/Chrona-evidence-recovery.apk`（109/271），保留原111同轮和更正4块；正常UI准确打开同课并继续、40图确认。当前ServiceRecord3d4bc2d，observer21940，`build/editorial112/observe/`。唯一下一步等该真实服务终态，检查是否提交首组及新完整成品；不能在活动AI时安装/instrumentation，不再发送无变化提示的原样重试。UI XML已清理，尚不宣称真实恢复通过。
