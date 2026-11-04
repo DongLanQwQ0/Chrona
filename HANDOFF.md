@@ -4,7 +4,7 @@
 
 - PTA Cookie 文件已由用户移动至 `F:\Programs\Server\Cookies\PTACookies.txt`，已确认文件存在，仅查元数据未读内容。项目未硬编码旧电脑路径；后续确有导入需要时使用新源，不复制Cookie、不重复登录或打断课堂任务。
 
-- 118（280）实测会话15897已failed终态，网络/结构正常；edit-note-0完整返回3知识+2事务，却被批次合计最多3条的旧数量校验拒绝。6次均stop/completed，4更正稿复用。119（281）已取消整稿输出数量上限（保留来源/图/行动分离），classification561/batches2140/revalidation630及构建/独立复审通过；旧合同额外事务静默丢弃路径已修并复核。119已装AVD，原轮续跑会话71601，输出build/editorial123/run.txt，未传newRun。唯一下一步等待该句柄终态，核对实际本地重验及全文/图，不重做该已收付费块。118原文去重和评分方向效果尚未到事务整稿，不提前宣称解决。证据build/editorial122/audit.txt。
+- 119原轮续跑71601已succeeded=true；edit-note-0原完整回复本地重验，未新增该块付费请求，后续4请求正常。全文8知识/13事务/4行动/25图已审仍不批准：跨知识分类与事务整稿直接拼接重复、评分方向仍反、相反数/倒数矛盾、内外标题同级及个别教学机制缺完整计算。证据build/editorial123/export/、audit.txt、image-review-*.jpg。当前无活动AI，probe已卸载、审查ZIP已清。120（282）已实现新轮唯一全课事务整合发布点（追加edit-affairs，仅原文/图证据，editor_affairs替换而非拼接），知识追加公式/操作文字一致性、机制完整计算及内层加粗提示。unified-affairs1360、stage-scope188及独立复审通过；全量21829仅2处旧文案断言已定向修正；release/lint/trial构建通过。安装时AVD已退出且无模拟器进程，现仅重开原Chrona_Classroom_36，启动会话87991等待设备（未新建/清空），日志build/editorial124/emulator-*.log。唯一下一步AVD启动后安装120同课新轮，复用4更正稿，再审全文/图；不批量。
 
 - 用户要求可迁移修复，一次只整理一节，按“问题原文—预期写法—通用修正”逐轮完整审核，用户批准前不换课、不批量。固定微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487；唯一AVD Chrona_Classroom_36／emulator-5580，不占手机。
 - 已保存OpenCode Go deepseek-v4.1-flash／Responses／可选x-opencode-session；用户重新粘贴Key后401解除。密钥未读取／输出。用户已批准原生JSON模式：117新轮更正文稿文本、JSON阶段json_schema；旧json_object／文本轮格式及完整消息前缀不改。

@@ -9,7 +9,11 @@ final class ClassroomResponseShape {
     private ClassroomResponseShape() { }
     static JSONObject contract(String stage,int affairs,int figures)throws Exception{
         JSONObject properties;String name;
-        if(stage.equals("edit-plan")){
+        if(stage.equals("edit-affairs")){
+            JSONObject note=new JSONObject().put("title",type("string")).put("text",type("string"))
+                    .put("sources",array(type("integer"))).put("images",array(type("string")));
+            properties=new JSONObject().put("affairs",array(object(note)));name="affairs";
+        }else if(stage.equals("edit-plan")){
             JSONObject section=new JSONObject().put("title",type("string")).put("refs",array(type("string")));
             if(affairs>0)section.put("collection",type("string"));
             properties=new JSONObject().put("overview",type("string")).put("sections",array(object(section)));name="plan";

@@ -41,6 +41,7 @@ public final class ClassroomEnhancedCheck {
         Matcher restart=Pattern.compile("当前阶段：([^；]+)；重试序号：(\\d+)").matcher(prompt);if(restart.find())return restart.group(1)+"-restart-"+restart.group(2);
         if(prompt.contains("唯一一次格式修复"))return lastStage+"-repair";
         if(prompt.contains("用户授权继续当前板块"))return lastStage+"-user-retry";
+        if(prompt.contains("全课事务证据：\n"))return "edit-affairs";
         if(prompt.contains("合并全课课堂安排中的同义重复"))return "edit-assignments";
         if(prompt.contains("现在编排一篇与普通模式相同的全课笔记"))return "edit-plan";
         Matcher editor=Pattern.compile("全课整稿主题 (\\d+)/").matcher(prompt);if(editor.find())return "edit-note-"+(Integer.parseInt(editor.group(1))-1);
@@ -83,12 +84,13 @@ public final class ClassroomEnhancedCheck {
         if(mode.equals("invalid-draft-markdown")&&draft)value.getJSONArray("notes").getJSONObject(0).put("text","![尚未看到的板书](lecture-slide-1.jpeg)");
         if(mode.equals("valid-final-markdown")&&!draft&&pictures.length()>0)value.getJSONArray("notes").getJSONObject(0).put("text","实际核图后的板书 ![已上传的图](images/"+pictures.getString(0)+")");
         if(mode.equals("empty-tail")&&id==1)value.put("overview","").put("notes",new JSONArray());
-        if(mode.startsWith("affairs")){
+        if(mode.startsWith("affairs")||mode.startsWith("unified-")){
             JSONObject affair=new JSONObject(value.getJSONArray("notes").getJSONObject(0).toString()).put("title","考核与出勤 "+id).put("text","本章只考证明第一步；步骤分2分，符号错误扣1分，可能作为附加题，范围待核对。");
             value.put("affairs",new JSONArray().put(affair));
-            if(!mode.equals("affairs-mixed"))value.put("overview","").put("notes",new JSONArray());
+            if(!mode.equals("affairs-mixed")&&!mode.startsWith("unified-"))value.put("overview","").put("notes",new JSONArray());
             if(mode.equals("affairs-source"))affair.put("sources",new JSONArray().put(999));
             if(mode.equals("affairs-image"))affair.put("images",new JSONArray().put("image-999.jpg"));
+            if(mode.startsWith("unified-"))value.put("assignments",new JSONArray().put(new JSONObject().put("text","核对题干条件").put("sources",new JSONArray().put(id)).put("evidence","题干 5 kg")));
         }
         if(draft)value.put("image_assessment",new JSONObject().put("decision",images?"request":"disabled").put("reason","合成板书需核对题目条件"))
                 .put("image_requests",images?new JSONArray().put(new JSONObject().put("start",mode.equals("reuse-images")?0:id*100).put("end",mode.equals("reuse-images")?120:id*100+20).put("reason","核对题干数字与步骤分")):new JSONArray());
@@ -149,6 +151,13 @@ public final class ClassroomEnhancedCheck {
                 output="# 更正文稿\n["+id+"] 完整题干、改卷细节与 $\\nabla x$。";
                 if(mode.startsWith("coverage-"))output=coverageCorrected(id,mode.equals("coverage-headings"));
                 if(mode.equals("length-resume")&&current.equals("correct-0")){output="# 更正文稿\n[0] 前半";finish="length";}
+            }else if(current.startsWith("edit-affairs")){
+                JSONObject evidence=new JSONObject(text.substring(text.indexOf("全课事务证据：\n")+"全课事务证据：\n".length()));
+                JSONArray raw=evidence.getJSONObject("original_subtitles").getJSONArray("segments"),refs=new JSONArray(),pics=evidence.getJSONArray("images");StringBuilder prose=new StringBuilder();
+                for(int n=0;n<raw.length();n++){JSONObject row=raw.getJSONObject(n);refs.put(row.getInt("id"));if(n>0)prose.append('\n');prose.append(row.getString("text"));}
+                JSONArray affairs=new JSONArray();if(!mode.equals("unified-empty"))affairs.put(new JSONObject().put("title",evidence.getJSONArray("titles").getString(0)).put("text",prose.toString()).put("sources",mode.equals("unified-invalid-source")?new JSONArray().put(999):refs).put("images",mode.equals("unified-invalid-image")?new JSONArray().put("image-999.jpg"):pics));
+                if(mode.equals("unified-rejected-only"))affairs.getJSONObject(0).put("text","![待核图](images/image-0.jpg)").put("images",new JSONArray().put("image-0.jpg"));
+                output=new JSONObject().put("affairs",affairs).toString();
             }else if(current.startsWith("edit-assignments")){
                 output=new JSONObject().put("groups",new JSONArray().put(new JSONArray().put("0:0").put(mode.equals("task-invalid")?"0:9":"0:1"))).toString();
                 if(mode.equals("task-length")){output="{\"groups\":[[\"0:0\"";finish="length";}
@@ -176,6 +185,7 @@ public final class ClassroomEnhancedCheck {
                     if(mode.equals("bad-editor-mixed"))edited.getJSONArray(affairs?"notes":"affairs").put(new JSONObject(note.toString()));
                     if(mode.equals("bad-editor-assignment"))edited.getJSONArray("assignments").put(new JSONObject().put("text","PRIVATE_EXTRA_ACTION").put("sources",note.getJSONArray("sources")).put("evidence","题干 5 kg"));
                 }
+                if(mode.startsWith("unified-")&&edited.getJSONArray("notes").length()>0)edited.getJSONArray("affairs").put(new JSONObject(edited.getJSONArray("notes").getJSONObject(0).toString()).put("title","知识整稿纠正的同一事务").put("text","PRIVATE_DERIVED_DUPLICATE"));
                 output=edited.toString();
             }else if(mode.equals("bad-json")&&current.equals("draft-0"))output="{\"overview\":";
             else if(mode.startsWith("boundary-repair-")&&current.equals(mode.substring("boundary-repair-".length())))output="{\"overview\":\"PRIVATE_GROUP_BOUNDARY_MALFORMED\"";
@@ -250,7 +260,8 @@ public final class ClassroomEnhancedCheck {
         File dir=new File(root,name+"-"+System.nanoTime());dir.mkdirs();JSONArray segments=new JSONArray(),candidates=new JSONArray();
         for(int i=0;i<blockCount;i++){
             segments.put(new JSONObject().put("start",i*100).put("end",i*100+20).put("text","题干 5 kg，步骤分 2 分。"
-                    +(mode.startsWith("affairs")?"本章只考证明第一步；步骤分2分，符号错误扣1分，可能作为附加题，范围待核对。":"")
+                    +(mode.startsWith("affairs")||mode.startsWith("unified-")?"本章只考证明第一步；步骤分2分，符号错误扣1分，可能作为附加题，范围待核对。":"")
+                    +(mode.equals("plan-correct-duplicate")?"本题总分10分，两问各5分；第一问须证明；第二问须给出反例。":"")
                     +(longText?"甲".repeat(3500):"完整短字幕")));
             BufferedImage pic=new BufferedImage(48,48,BufferedImage.TYPE_INT_RGB);var g=pic.createGraphics();g.setColor(new java.awt.Color(i*60+30,i*60+30,i*60+30));g.fillRect(0,0,48,48);g.dispose();
             for(int y=0;y<48;y++)for(int x=0;x<48;x++)pic.setRGB(x,y,(x%6<1||y%6<1)?0x101010:0xeeeeee);
@@ -1220,7 +1231,7 @@ public final class ClassroomEnhancedCheck {
             for(JSONObject request:requests)check(prompt(request).contains("保留各主题的独立标题")&&prompt(request).contains("禁止将事务混入知识")&&prompt(request).contains("\"collection\":\"notes\"")&&prompt(request).contains("\"collection\":\"affairs\""),"actual batch prompt supplies both categories and independent titles");
             batchHistory(six,protocol);evidence("editorial-six-to-three-"+protocol,six);
             reset("plan-correct-duplicate",false);File corrected=materials("plan-correct-cross-category-"+protocol,false);result=generateWithProtocol(corrected,protocol);document=result.getJSONArray("parts").getJSONObject(0);after=state(corrected);
-            check(stages.equals(List.of("correct-0","draft-0","edit-plan","edit-note-0"))&&requests.size()==4,"cross-category duplicate planning succeeds directly without an extra AI stage: "+protocol);
+            check(stages.equals(List.of("correct-0","draft-0","edit-plan","edit-note-0","edit-affairs"))&&requests.size()==5,"cross-category duplicate planning is followed by one final affair integration: "+protocol);
             JSONObject mergedSection=after.getJSONObject("editor_plan").getJSONArray("sections").getJSONObject(0);
             check(after.getJSONObject("editor_plan").getJSONArray("sections").length()==1&&mergedSection.getString("collection").equals("affairs")&&mergedSection.getJSONArray("refs").toString().contains("0:notes:0")&&mergedSection.getJSONArray("refs").toString().contains("0:affairs:0"),"plan keeps true mixed original refs while grouping their same affair once");
             check(document.getJSONArray("notes").length()==0&&document.getJSONArray("affairs").length()==1&&document.getString("overview").isEmpty()&&document.getJSONArray("affairs").getJSONObject(0).getString("text").contains("第一问须证明")&&document.getJSONArray("affairs").getJSONObject(0).getString("text").contains("第二问须给出反例"),"corrected affair has one final section, no invented knowledge overview, and both unique facts");batchHistory(corrected,protocol);evidence("editorial-cross-category-plan-"+protocol,corrected);
@@ -1482,7 +1493,7 @@ public final class ClassroomEnhancedCheck {
             rejects(()->evidenceGenerate(dir,run,protocol,stage),"initial wrong quote or illegal editorial action requires explicit recovery: "+stage);
             check(requests.size()==1&&stages.get(0).equals(stage),"stage-scope fixture sends the actual intended HTTP stage exactly once");
             JSONObject before=new JSONObject(run.getJSONObject("conversation").toString());boolean editorial=stage.startsWith("edit-note-");
-            if(editorial)check(prompt(requests.get(0)).contains("\"assignments\":[]")&&run.getString(stage+"_error").contains("整稿主题须返回一节"),"editorial fixture explicitly requires empty actions and fails for returning an illegal action despite its mismatched quote");
+            if(editorial)check(prompt(requests.get(0)).contains("\"assignments\":[]")&&run.getString(stage+"_error").contains("具体安排保留在安排集合"),"editorial fixture explicitly requires empty actions and fails for returning an illegal action despite its mismatched quote");
             mode=editorial?"evidence-editor-good":"evidence-good";JSONObject result=evidenceGenerate(dir,run,protocol,stage);String recovery=prompt(requests.get(1));
             check(requests.size()==2&&stages.get(1).equals(stage+"-user-retry"),"stage-scoped diagnostic changes no retry budget or stage count");
             check(recovery.contains(EVIDENCE_MARKER)==!editorial,"only draft/final evidence recovery receives quote diagnostics, never the empty-actions editorial stage: "+stage+" "+protocol);
@@ -1576,10 +1587,11 @@ public final class ClassroomEnhancedCheck {
         for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES))for(String fixture:List.of("editor-notes-to-affairs","editor-affairs-to-notes","editor-redundant-overview")){
             reset(fixture,false);File dir=materials(fixture+"-"+protocol,false);JSONObject result=generateWithProtocol(dir,protocol),run=state(dir),document=result.getJSONArray("parts").getJSONObject(0);
             String original=fixture.equals("editor-affairs-to-notes")?"affairs":"notes",actual=fixture.equals("editor-notes-to-affairs")?"affairs":"notes";
-            check(result.getBoolean("complete")&&stages.equals(List.of("correct-0","draft-0","edit-plan","edit-note-0")),"category correction and redundant overview finish without another paid request: "+fixture+" "+protocol);
+            List<String> expectedStages=new ArrayList<>(List.of("correct-0","draft-0","edit-plan","edit-note-0"));if(!fixture.equals("editor-redundant-overview"))expectedStages.add("edit-affairs");
+            check(result.getBoolean("complete")&&stages.equals(expectedStages),"category correction gets one final affairs stage only when original or edited affairs exist: "+fixture+" "+protocol);
             check(run.getJSONObject("editor_plan").getJSONArray("sections").getJSONObject(0).getString("collection").equals(original)&&run.getJSONArray("editor_notes").getJSONObject(0).getString("collection").equals(actual),"editor checkpoint keeps the actual returned collection rather than the plan guess: "+fixture);
-            check(document.getJSONArray(actual).length()==1&&document.getJSONArray(actual.equals("notes")?"affairs":"notes").length()==0&&document.getJSONArray("assignments").length()==0,"assembled document routes exactly one topic to its corrected category: "+fixture);
-            check(original.equals("affairs")?document.getJSONArray(actual).getJSONObject(0).getString("origin").equals("original_subtitles"):document.getJSONArray(actual).getJSONObject(0).getString("text").equals(run.getJSONArray("drafts").getJSONObject(0).getJSONArray(original).getJSONObject(0).getString("text")),"classification correction preserves original evidence or full knowledge body: "+fixture);
+            check(document.getJSONArray(actual).length()==1&&document.getJSONArray(actual.equals("notes")?"affairs":"notes").length()==(original.equals("affairs")?1:0)&&document.getJSONArray("assignments").length()==0,"assembly preserves the corrected knowledge and replaces all candidate affairs with the final integration: "+fixture);
+            check(original.equals("affairs")?run.getJSONArray("editor_notes").getJSONObject(0).getString("origin").equals("original_subtitles"):run.getJSONArray("editor_notes").getJSONObject(0).getString("text").equals(run.getJSONArray("drafts").getJSONObject(0).getJSONArray(original).getJSONObject(0).getString("text")),"classification correction preserves original evidence or full knowledge body in its durable checkpoint: "+fixture);
             String expectedOverview=document.getJSONArray("notes").length()==0?"":run.getJSONObject("editor_plan").getString("overview");
             check(result.getString("overview").equals(expectedOverview)&&document.getString("overview").equals(expectedOverview)&&!document.toString().contains("PRIVATE_REDUNDANT_TOPIC_OVERVIEW"),"affairs-only output clears knowledge overview; remaining knowledge uses only the existing plan overview without inventing or duplicating one");
             String sent=prompt(requests.get(3));check(sent.contains("不按输入条数限定输出条数"),"actual editorial request permits correction to the real content category");
@@ -1588,7 +1600,7 @@ public final class ClassroomEnhancedCheck {
         }
         for(String accepted:List.of("bad-editor-multiple","bad-editor-mixed")){
             reset(accepted,false);File dir=materials("accepted-split-"+accepted,false);JSONObject result=generate(dir,true),document=result.getJSONArray("parts").getJSONObject(0);
-            check(result.getBoolean("complete")&&requests.size()==4&&document.getJSONArray("notes").length()+document.getJSONArray("affairs").length()==2,"complete split response retains every returned item without another request: "+accepted);
+            check(result.getBoolean("complete")&&requests.size()==(accepted.equals("bad-editor-mixed")?5:4)&&document.getJSONArray("notes").length()+document.getJSONArray("affairs").length()==2,"complete split response retains its knowledge and final affairs, adding integration only for mixed output: "+accepted);
             appendOnly(dir);
         }
         for(String defect:List.of("bad-editor-assignment","bad-editor-source","bad-editor-image")){
@@ -1671,8 +1683,42 @@ public final class ClassroomEnhancedCheck {
             for(String key:fields.keySet())structuralOnly(fields.getJSONObject(key));
         }else if(schema.getString("type").equals("array"))structuralOnly(schema.getJSONObject("items"));
     }
+    private static void unifiedAffairs()throws Exception{
+        JSONArray raw=new JSONArray();for(int n=0;n<5;n++)raw.put(new JSONObject().put("id",10+n*20).put("start",n*10).put("end",n*10+5).put("text","原始事务原话 "+n));
+        JSONObject first=content("候选事务",30).put("text","PRIVATE_DERIVED_UNSUPPORTED").put("images",new JSONArray().put("image-7.jpg"));
+        JSONArray parts=new JSONArray().put(new JSONObject().put("affairs",new JSONArray().put(first))),edited=new JSONArray().put(new JSONObject(first.toString()).put("collection","affairs").put("sources",new JSONArray().put(50)));
+        JSONArray reviews=new JSONArray().put(new JSONObject().put("file","image-7.jpg").put("included",true).put("visible","图中的明确原话"));String original=parts.toString()+edited+raw+reviews;
+        JSONObject projected=ClassroomEnhancedSummary.affairsEvidence(parts,edited,raw,reviews);JSONArray rows=projected.getJSONObject("original_subtitles").getJSONArray("segments");
+        check(projected.keySet().equals(Set.of("titles","original_subtitles","images","visible"))&&!projected.toString().contains("PRIVATE_DERIVED_UNSUPPORTED"),"whole-affair evidence contains title locators and original evidence only");
+        check(rows.length()==4,"overlapping original/editor affair references include immediate neighbours once");for(int n=0;n<rows.length();n++)check(rows.getJSONObject(n).getInt("id")==10+n*20,"whole-affair evidence retains chronological sparse source identity "+n);
+        check(projected.getJSONArray("images").toString().equals("[\"image-7.jpg\"]")&&projected.getJSONArray("visible").getJSONObject(0).getString("visible").equals("图中的明确原话"),"whole-affair evidence preserves actual image identity and visible evidence");
+        check(original.equals(parts.toString()+edited+raw+reviews),"whole-affair projection never mutates old inputs");
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES)){
+            reset("unified-duplicate",true);File dir=materials("whole-affairs-"+protocol,false);JSONObject result=generateWithProtocol(dir,protocol),run=state(dir),doc=result.getJSONArray("parts").getJSONObject(0);
+            check(run.getBoolean("unified_affairs")&&Collections.frequency(stages,"edit-affairs")==1&&stages.get(stages.size()-1).equals("edit-affairs"),"new run performs one final affair integration after topic editing: "+protocol);
+            JSONObject preservedNote=new JSONObject(run.getJSONArray("editor_notes").getJSONObject(0).toString());preservedNote.remove("collection");
+            check(doc.getJSONArray("notes").length()==1&&doc.getJSONArray("notes").getJSONObject(0).similar(preservedNote)&&doc.getJSONArray("assignments").length()==1&&doc.getJSONArray("assignments").similar(run.getJSONArray("editor_assignments"))&&doc.getJSONArray("affairs").length()==1&&run.getJSONArray("editor_notes").length()>doc.getJSONArray("affairs").length(),"knowledge-editor and original affair duplicates publish once while knowledge/actions stay exact: "+protocol);
+            JSONObject affair=doc.getJSONArray("affairs").getJSONObject(0);check(affair.keySet().equals(Set.of("title","text","sources","images"))&&affair.getJSONArray("sources").toString().equals("[0]")&&affair.getJSONArray("images").toString().equals("[\"image-0.jpg\"]")&&affair.getString("text").contains("符号错误扣1分")&&!affair.getString("text").contains("PRIVATE_DERIVED_DUPLICATE"),"integrated result retains teacher detail and original source/image references without derived repetitions");
+            int sent=requests.size();JSONObject history=new JSONObject(run.getJSONObject("conversation").toString());run.remove("final");ClassroomStore.write(new File(dir,"run.json"),run);JSONObject restored=generateWithProtocol(dir,protocol);
+            check(restored.getBoolean("complete")&&requests.size()==sent&&state(dir).getJSONObject("conversation").toString().equals(history.toString()),"completed affair checkpoint reassembles with zero extra requests or history changes: "+protocol);batchHistory(dir,protocol);evidence("unified-affairs-"+protocol,dir);
+            for(String defect:List.of("unified-invalid-source","unified-invalid-image","network")){
+                reset("unified-duplicate",true);File failed=materials("whole-affairs-fail-"+defect+"-"+protocol,false);mode=defect.equals("network")?"unified-duplicate":defect;if(defect.equals("network"))failCall=7;
+                rejects(()->generateWithProtocol(failed,protocol),"invalid/interrupted final affair response leaves resumable checkpoint: "+defect);JSONObject checkpoint=state(failed);int before=requests.size();
+                check(!checkpoint.has("editor_affairs")&&!checkpoint.has("final")&&checkpoint.getJSONArray("editor_notes").length()>0,"failed final integration never commits final affairs or final document: "+defect);
+                JSONObject partial=ClassroomStore.read(new File(failed,"summary.json"));check(!partial.optBoolean("complete"),"failed integration cannot publish a complete summary: "+defect);
+                String notes=checkpoint.getJSONArray("editor_notes").toString(),source=checkpoint.getJSONArray("parts").toString();mode="unified-duplicate";failCall=-1;JSONObject recovered=generateWithProtocol(failed,protocol);
+                check(recovered.getBoolean("complete")&&requests.size()==before+1&&stages.get(before).startsWith("edit-affairs")&&state(failed).getJSONArray("editor_notes").toString().equals(notes)&&state(failed).getJSONArray("parts").toString().equals(source),"resume pays only final affair stage and preserves completed upstream checkpoints: "+defect);batchHistory(failed,protocol);
+            }
+            reset("normal",false);File noAffairs=materials("whole-affairs-empty-"+protocol,false);generateWithProtocol(noAffairs,protocol);check(!stages.contains("edit-affairs"),"no original or editor affairs means no added request: "+protocol);
+            reset("unified-duplicate",true);File rejected=materials("whole-affairs-rejected-only-"+protocol,false);failCall=7;rejects(()->generateWithProtocol(rejected,protocol),"prepare interrupted final affair checkpoint with genuinely analysed images");JSONObject rejectedRun=state(rejected);JSONArray admission=rejectedRun.getJSONArray("figure_reviews");for(int n=0;n<admission.length();n++)admission.getJSONObject(n).put("included",false);ClassroomStore.write(new File(rejected,"run.json"),rejectedRun);
+            failCall=-1;mode="unified-rejected-only";int previous=requests.size();rejects(()->generateWithProtocol(rejected,protocol),"removing a rejected actual picture cannot commit an empty affair body");check(requests.size()==previous+1&&!state(rejected).has("editor_affairs")&&!state(rejected).has("final"),"post-filter validation leaves the whole affair stage uncommitted");mode="unified-duplicate";JSONObject repaired=generateWithProtocol(rejected,protocol);check(repaired.getBoolean("complete")&&requests.size()==previous+2&&stages.get(previous+1).startsWith("edit-affairs")&&repaired.getJSONArray("parts").getJSONObject(0).getJSONArray("affairs").getJSONObject(0).getJSONArray("images").length()==0,"explicit continuation retries only final affairs, retains raw prose and removes rejected images");batchHistory(rejected,protocol);
+            reset("normal",false);File legacy=editorialFixture(protocol,new int[]{20,30},true,false);generateWithProtocol(legacy,protocol);check(stages.equals(List.of("edit-note-0","edit-note-1"))&&!state(legacy).has("unified_affairs")&&!state(legacy).has("editor_affairs"),"absent old-run flag retains item-by-item historical editing without a new stage: "+protocol);batchHistory(legacy,protocol);
+            reset("unified-empty",false);File empty=materials("whole-affairs-empty-result-"+protocol,false);JSONObject emptyResult=generateWithProtocol(empty,protocol);check(emptyResult.getJSONArray("parts").getJSONObject(0).getJSONArray("affairs").length()==0&&state(empty).getJSONArray("editor_affairs").length()==0,"empty integrated affairs is a valid saved replacement: "+protocol);
+        }
+        JSONObject fields=ClassroomResponseShape.contract("edit-affairs",1,1).getJSONObject("schema").getJSONObject("properties");check(fields.keySet().equals(Set.of("affairs"))&&fields.getJSONObject("affairs").getJSONObject("items").getJSONObject("properties").keySet().equals(Set.of("title","text","sources","images")),"final affairs native grammar uses only the established affairs item fields");structuralOnly(ClassroomResponseShape.contract("edit-affairs",1,1).getJSONObject("schema"));
+    }
     private static void nativeSchemas()throws Exception{
-        for(int affairs:new int[]{0,1})for(int figures:new int[]{0,1})for(String stage:List.of("first","draft-0","final","final-0","edit-plan","edit-note-0","edit-assignments")){
+        for(int affairs:new int[]{0,1})for(int figures:new int[]{0,1})for(String stage:List.of("first","draft-0","final","final-0","edit-plan","edit-note-0","edit-assignments","edit-affairs")){
             JSONObject contract=ClassroomResponseShape.contract(stage,affairs,figures),schema=contract.getJSONObject("schema"),fields=schema.getJSONObject("properties");
             check(contract.getBoolean("strict"),"wire grammar is explicitly strict: "+stage);structuralOnly(schema);
             if(stage.equals("first")||stage.startsWith("draft-")){
@@ -1819,6 +1865,11 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length==1)test("whole-lesson final affairs and stage-only recovery",ClassroomEnhancedCheck::unifiedAffairs);
+        if(args.length>1&&args[1].equals("unified-affairs")){
+            try{test("whole-lesson final affairs and stage-only recovery",ClassroomEnhancedCheck::unifiedAffairs);}
+            finally{server.stop(0);}System.out.println("ClassroomUnifiedAffairs: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Unified affairs checks failed");return;
+        }
         if(args.length==1)test("evidence diagnostics exclude empty-actions editorial stages",ClassroomEnhancedCheck::assignmentEvidenceStageScope);
         if(args.length>1&&args[1].equals("assignment-evidence-stage-scope")){
             try{test("evidence diagnostics exclude empty-actions editorial stages",ClassroomEnhancedCheck::assignmentEvidenceStageScope);}

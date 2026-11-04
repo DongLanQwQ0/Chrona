@@ -102,6 +102,7 @@ final class ClassroomEnhancedSummary {
         }
         edit(parts,analysed);
         editAssignments(parts);
+        consolidateAffairs(parts,analysed);
         JSONObject result=assemble(parts,analysed,true);state.put("final",result);save();ClassroomStore.write(new File(dir,"summary.json"),result);return result;
     }
     private static String scope(JSONArray block)throws Exception{
@@ -185,13 +186,15 @@ final class ClassroomEnhancedSummary {
                     +"保留每个有来源的独特事实、题目数字与条件、代码、纠错、明确不考/会考以及改卷给分细节；相同事实只写一次，不可为缩短而删除这些细节。不改变原话确定性。"
                     +"先核对本主题的题干、公式、定义域和证明是否自洽，再成稿；补齐已知条件可推出的关键步骤和最终结果，不能以‘化简即得’掩盖缺失计算。"
                     +"严格与非严格不等式不可直接互换；若结论需要严格号，应说明等号何时成立或为何在当前条件下不能成立，不能从非严格估计直接跳到严格结论。"
+                    +"用实际公式核对操作文字；相反数与倒数、求导与取极限、除以整个式子与分子分母同除不能混写。若描述与公式矛盾，直接改正描述，不保留互相冲突的旧说法。"
+                    +"同一章节包含不同证明工具或转化机制时，各自保留一个可独立复算的代表过程；不能只列方法名称，却把完整计算都留给另一种机制。"
                     +"区分求候选值与证明存在：可先在存在假设下求必要候选值，再独立证明存在性并核实定理前提；不能把候选值计算当成存在性证明。循环推理或未满足定理条件的尝试才归错误分析，不能以尚未成立的条件支撑正确解法。"
                     +"已核实的识别错误直接采用正确结果，不复述误识别词、核图过程或相互冲突的旧草稿。无关闲聊、轶事和无信息的尾段不保留。"
                     +(batch&&affairsSchema>0?"每个主题按实际内容独立归入notes知识或affairs课程事务，可纠正初稿分类；知识保留解法与例题，事务保留规则、条件与例外，禁止将事务混入知识。具体行动保持在assignments，不重复抄录。":affairsSchema>0&&collection.equals("notes")
                             ?"本主题以知识、方法与例题为主；若提取稿实际只有评分或考试等事务，应纠正到affairs，不为维持初稿类别伪写知识。具体行动保持在assignments，不重复抄录。"
                             :affairsSchema>0?"本主题只保留有学生使用价值的课程事务，不重讲解法或题目答案；同一规则的分值、条件和例外合在一处，保留真实不确定性，不列无关的未提供字段清单。":"")
                     +"与历史中本轮已整稿主题比较，重复事实只在所属主题完整讲一次；关联用主题名称，不用‘上一节／下一节’等重排后易失效的指代，不承诺尚未发布的任务清单。"
-                    +"title由页面统一呈现，text不再重复该标题；正文内的小节使用更低层级的标题或简短加粗引导，避免同级标题堆叠造成拼装感。"
+                    +"title由页面统一呈现，text不再重复该标题；正文内的小节使用简短加粗引导，不再插入与外层主题同级的Markdown标题，避免标题堆叠造成拼装感。"
                     +(state.optInt("note_strength",1)==3
                             ?"按3档生成精简讲义，积极重组但压紧表达；保留自学需要的过程。原题无法确定时可换用同主线、同类型及相近难度的完整题目，标题标为‘补充例题’，给出必要推导和结论，不冒充老师原题或考核要求。删掉无关叙事与重复，不堆砌标题或小结，不扩写通用教材。"
                             :"沿用普通单篇总结的详略，正文不扩写成教程，不超过本主题提取稿正文的合计长度；重复较多时应明显缩短。")
@@ -265,6 +268,40 @@ final class ClassroomEnhancedSummary {
         JSONArray images=new JSONArray();for(String file:files)images.put(file);
         JSONObject row=new JSONObject().put("title","课程事务原文").put("sources",ids).put("images",images).put("text","");
         return new JSONArray().put(editorialInput(row,all,true));
+    }
+    /** All editorial branches feed one final affairs publication, never an appended second copy. */
+    private void consolidateAffairs(JSONArray parts,JSONArray analysed)throws Exception{
+        if(affairsSchema==0||!state.optBoolean("unified_affairs")||state.has("editor_affairs"))return;
+        JSONObject evidence=affairsEvidence(parts,state.optJSONArray("editor_notes"),full.getJSONArray("segments"),state.optJSONArray("figure_reviews"));
+        if(evidence.getJSONArray("titles").length()==0){state.put("editor_affairs",new JSONArray());save();return;}
+        status("AI 全课事务整合",0,1);
+        String prompt="现在只生成全课唯一的课程事务区，替换此前所有分段与整稿中的事务，不追加第二份。"
+                +"以下titles只是待核对的主题定位，不能作为事实或必须逐条重复的目录；事实仅依据original_subtitles及历史实际附图。"
+                +"按相同规则、适用对象和条件合并重复；互补分值、例外、范围和细微考核线索保留，一项事实只出现一次。不要把宽泛总节和其中各条分别再写一遍。"
+                +"教师要求与通常建议不同时保留教师方向。涉及允许、禁止、保留、划掉或给分的指令，先写决定动作方向的简短原话，再说明条件；逐句确认否定的作用对象，不采用派生稿中的改写作为证据。"
+                +"音近片段无法确认时只保留前后清楚语句支持的事实，不猜术语、不增加得分入口；不扩写批改轶事或空泛学习建议。"
+                +"学习解法不重讲，具体行动已在独立安排集合，不再重复。图片仅用已实际分析且支持该事务的file，不能由公式推断教师考核承诺。"
+                +"只输出JSON {\"affairs\":[{\"title\":\"事务主题\",\"text\":\"精简完整事务正文\",\"sources\":[0],\"images\":[]}]}。无可靠事务时affairs=[]。"
+                +"sources使用真实原id；原文只用于核对，不抄录无关口语。\n全课事务证据：\n"+evidence;
+        JSONObject value=json("edit-affairs",prompt,Collections.emptyList(),result->{
+            JSONObject wrapped=new JSONObject().put("overview","").put("notes",new JSONArray()).put("assignments",new JSONArray()).put("affairs",result.getJSONArray("affairs"));
+            ClassroomSummary.validateBlock(wrapped,blockInput(full.getJSONArray("segments"),analysed),affairsSchema);
+            if(state.optInt("figure_policy")>0)ClassroomFigureReview.filter(wrapped,state.optJSONArray("figure_reviews"));
+            ClassroomSummary.validateBlock(wrapped,blockInput(full.getJSONArray("segments"),analysed),affairsSchema);
+        });
+        state.put("editor_affairs",value.getJSONArray("affairs"));save();
+    }
+    static JSONObject affairsEvidence(JSONArray parts,JSONArray edited,JSONArray all,JSONArray reviews)throws Exception{
+        JSONArray inputs=new JSONArray(),titles=new JSONArray();Set<String> seen=new LinkedHashSet<>();
+        for(int i=0;i<parts.length();i++){
+            JSONArray rows=parts.getJSONObject(i).optJSONArray("affairs");
+            if(rows!=null)for(int n=0;n<rows.length();n++)inputs.put(editorialInput(rows.getJSONObject(n),all,true));
+        }
+        if(edited!=null)for(int i=0;i<edited.length();i++)if("affairs".equals(edited.getJSONObject(i).optString("collection")))inputs.put(editorialInput(edited.getJSONObject(i),all,true));
+        for(int i=0;i<inputs.length();i++)if(seen.add(inputs.getJSONObject(i).getString("title")))titles.put(inputs.getJSONObject(i).getString("title"));
+        JSONObject combined=unifiedAffairsInput(inputs,all).getJSONObject(0);
+        return new JSONObject().put("titles",titles).put("original_subtitles",new JSONObject(combined.getString("text")))
+                .put("images",combined.getJSONArray("images")).put("visible",topicFigureEvidence(new JSONArray().put(combined),reviews));
     }
     static JSONArray figureAdmission(JSONArray reviews)throws Exception{
         JSONArray result=new JSONArray();if(reviews!=null)for(int i=0;i<reviews.length();i++){
@@ -361,6 +398,7 @@ final class ClassroomEnhancedSummary {
         JSONObject document=new JSONObject().put("overview",overview).put("notes",new JSONArray()).put("assignments",tasks==null?new JSONArray():new JSONArray(tasks.toString()));
         if(affairsSchema>0)document.put("affairs",new JSONArray());
         if(edited!=null)for(int i=0;i<edited.length();i++){JSONObject note=new JSONObject(edited.getJSONObject(i).toString());String collection=affairsSchema==0?"notes":note.getString("collection");note.remove("collection");document.getJSONArray(collection).put(note);}
+        if(affairsSchema>0&&state.has("editor_affairs"))document.put("affairs",new JSONArray(state.getJSONArray("editor_affairs").toString()));
         if(document.getJSONArray("notes").length()==0)document.put("overview","");
         ClassroomSummary.validateBlock(document,blockInput(full.getJSONArray("segments"),analysed),affairsSchema);
         if(state.optInt("figure_policy")>0)ClassroomFigureReview.filter(document,state.optJSONArray("figure_reviews"));
