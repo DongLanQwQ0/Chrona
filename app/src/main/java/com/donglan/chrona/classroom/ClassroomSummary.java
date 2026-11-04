@@ -337,7 +337,42 @@ public final class ClassroomSummary {
         }
         matches.sort(Comparator.comparingDouble(image->image.optDouble("second")));
         JSONArray ordered=new JSONArray();for(JSONObject image:matches)ordered.put(image);
-        return ClassroomImages.select(ordered,limit);
+        JSONArray baseline=ClassroomImages.select(ordered,limit);
+        if(limit==0||windows==null)return baseline;
+        List<JSONObject> active=new ArrayList<>();
+        for(int w=0;w<windows.length();w++){
+            JSONObject window=windows.getJSONObject(w);
+            for(JSONObject image:matches)if(inWindow(image,window)){active.add(window);break;}
+        }
+        if(coversWindows(baseline,active))return baseline;
+        active.sort(Comparator.comparingDouble((JSONObject window)->window.optDouble("end")).thenComparingDouble(window->window.optDouble("start")));
+        List<JSONObject> anchors=new ArrayList<>();JSONObject last=null;
+        // Earliest ending interval + rightmost available point gives a minimum coverage set.
+        for(JSONObject window:active){
+            if(last!=null&&inWindow(last,window))continue;
+            JSONObject best=null;
+            for(JSONObject image:matches)if(inWindow(image,window)&&(best==null||image.getDouble("second")>best.getDouble("second")
+                    ||image.getDouble("second")==best.getDouble("second")&&ClassroomImages.informationScore(image)>=ClassroomImages.informationScore(best)))best=image;
+            anchors.add(best);last=best;
+        }
+        // An infeasible request budget keeps the established whole-timeline quality selection.
+        if(anchors.size()>limit)return baseline;
+        Set<Integer> reserved=new HashSet<>();for(JSONObject image:anchors)reserved.add(image.getInt("index"));
+        JSONArray remaining=new JSONArray();for(int i=0;i<baseline.length();i++)if(!reserved.contains(baseline.getJSONObject(i).getInt("index")))remaining.put(baseline.getJSONObject(i));
+        JSONArray extra=ClassroomImages.select(remaining,limit-anchors.size());
+        for(int i=0;i<extra.length();i++)anchors.add(extra.getJSONObject(i));
+        anchors.sort(Comparator.comparingDouble(image->image.optDouble("second")));
+        JSONArray result=new JSONArray();for(JSONObject image:anchors)result.put(image);return result;
+    }
+    private static boolean inWindow(JSONObject image,JSONObject window)throws Exception{
+        double second=image.getDouble("second");return second>=window.getDouble("start")&&second<=window.getDouble("end");
+    }
+    private static boolean coversWindows(JSONArray selected,List<JSONObject> windows)throws Exception{
+        for(JSONObject window:windows){boolean covered=false;
+            for(int i=0;i<selected.length();i++)if(inWindow(selected.getJSONObject(i),window)){covered=true;break;}
+            if(!covered)return false;
+        }
+        return true;
     }
     public static JSONObject uploadChunk(JSONObject chunk) throws Exception {
         JSONArray original=chunk.getJSONArray("segments"), compact=new JSONArray();

@@ -125,6 +125,132 @@ public final class ClassroomSummaryCheck {
         rejects(()->ClassroomSummary.selectRequested(candidates,new JSONArray().put(new JSONObject().put("start",-1).put("end",2)),20),"negative window rejected");
         rejects(()->ClassroomSummary.selectRequested(candidates,new JSONArray().put(new JSONObject().put("start","0").put("end",2)),20),"string window rejected");
     }
+    private static JSONObject windowFrame(int index,double second,double score)throws Exception {
+        return new JSONObject().put("index",index).put("second",second).put("quality",new JSONObject().put("score",score));
+    }
+    private static JSONObject imageWindow(double start,double end)throws Exception {
+        return new JSONObject().put("start",start).put("end",end).put("reason","synthetic coverage check");
+    }
+    private static boolean insideWindow(JSONObject image,JSONObject window)throws Exception {
+        double second=image.getDouble("second");return second>=window.getDouble("start")&&second<=window.getDouble("end");
+    }
+    private static boolean coveredBy(JSONArray images,JSONObject window)throws Exception {
+        for(int i=0;i<images.length();i++)if(insideWindow(images.getJSONObject(i),window))return true;
+        return false;
+    }
+    // Independent exhaustive subset oracle, not another implementation of the interval greedy algorithm.
+    private static int minimumWindowCover(JSONArray matches,JSONArray windows)throws Exception {
+        int minimum=matches.length()+1;
+        for(int mask=0;mask<(1<<matches.length());mask++){
+            int size=Integer.bitCount(mask);if(size>=minimum)continue;
+            boolean covers=true;
+            for(int w=0;w<windows.length();w++){
+                JSONObject window=windows.getJSONObject(w);if(!coveredBy(matches,window))continue;
+                boolean found=false;
+                for(int i=0;i<matches.length();i++)if((mask&(1<<i))!=0&&insideWindow(matches.getJSONObject(i),window)){found=true;break;}
+                if(!found){covers=false;break;}
+            }
+            if(covers)minimum=size;
+        }
+        return minimum;
+    }
+    private static boolean sameSelectedObjects(JSONArray first,JSONArray second)throws Exception {
+        if(first.length()!=second.length())return false;
+        for(int i=0;i<first.length();i++)if(first.getJSONObject(i)!=second.getJSONObject(i))return false;
+        return true;
+    }
+    private static JSONArray checkedWindowSelection(JSONArray candidates,JSONArray windows,int limit,String label)throws Exception {
+        String originalCandidates=candidates.toString(),originalWindows=windows==null?null:windows.toString();
+        List<JSONObject> ordered=new ArrayList<>();Set<Integer> ids=new HashSet<>();
+        for(int i=0;i<candidates.length();i++){
+            JSONObject candidate=candidates.getJSONObject(i);
+            if(windows!=null)for(int w=0;w<windows.length();w++)if(insideWindow(candidate,windows.getJSONObject(w))){
+                if(ids.add(candidate.getInt("index")))ordered.add(candidate);break;
+            }
+        }
+        ordered.sort(Comparator.comparingDouble(image->image.optDouble("second")));
+        JSONArray matches=new JSONArray();for(JSONObject image:ordered)matches.put(image);
+        JSONArray baseline=ClassroomImages.select(matches,limit);
+        JSONArray selected=ClassroomSummary.selectRequested(candidates,windows,limit);
+        check(candidates.toString().equals(originalCandidates)&&(windows==null||windows.toString().equals(originalWindows)),label+": all input values and ordering unchanged");
+        check(selected.length()==Math.min(limit,matches.length()),label+": fills available budget without extra images");
+        Set<Integer> selectedIds=new HashSet<>();double previous=-Double.MAX_VALUE;
+        for(int i=0;i<selected.length();i++){
+            JSONObject image=selected.getJSONObject(i);boolean original=false;
+            for(JSONObject candidate:ordered)if(candidate==image){original=true;break;}
+            check(original,label+": original candidate object and quality retained");
+            check(selectedIds.add(image.getInt("index")),label+": candidate index unique");
+            check(image.getDouble("second")>=previous,label+": chronological order");previous=image.getDouble("second");
+        }
+        boolean baselineCovers=true;
+        if(windows!=null)for(int w=0;w<windows.length();w++){
+            JSONObject window=windows.getJSONObject(w);
+            if(coveredBy(matches,window)&&!coveredBy(baseline,window))baselineCovers=false;
+        }
+        int minimum=matches.length()<=10&&windows!=null?minimumWindowCover(matches,windows):-1;
+        if(baselineCovers||minimum>limit)check(sameSelectedObjects(selected,baseline),label+": covered or infeasible baseline preserved exactly");
+        if(minimum>=0&&minimum<=limit&&windows!=null)for(int w=0;w<windows.length();w++){
+            JSONObject window=windows.getJSONObject(w);
+            check(!coveredBy(matches,window)||coveredBy(selected,window),label+": every feasible nonempty window covered");
+        }
+        return selected;
+    }
+    private static void windowCoverage()throws Exception {
+        JSONArray minimal=new JSONArray().put(windowFrame(10,0,.8)).put(windowFrame(20,1,.9)).put(windowFrame(30,100,.7));
+        JSONArray disjoint=new JSONArray().put(imageWindow(0,.5)).put(imageWindow(1,100));
+        JSONArray old=ClassroomImages.select(minimal,2);
+        check(!coveredBy(old,disjoint.getJSONObject(0)),"original minimal counterexample: time-quality baseline drops narrow window");
+        checkedWindowSelection(minimal,disjoint,2,"minimal disjoint repair");
+        checkedWindowSelection(minimal,new JSONArray().put(imageWindow(0,.5)).put(imageWindow(0,100)),2,"minimal nested repair");
+        JSONArray forty=new JSONArray().put(windowFrame(10,0,.8)).put(windowFrame(20,1,.9));
+        for(int i=0;i<39;i++)forty.put(windowFrame(100+i,80+i,.7));
+        JSONArray fortyWindows=new JSONArray().put(imageWindow(0,.5)).put(imageWindow(1,118));
+        check(!coveredBy(ClassroomImages.select(forty,40),fortyWindows.getJSONObject(0)),"original forty-budget counterexample drops narrow window");
+        JSONArray selected=checkedWindowSelection(forty,fortyWindows,40,"forty-budget repair");
+        check(coveredBy(selected,fortyWindows.getJSONObject(0))&&coveredBy(selected,fortyWindows.getJSONObject(1)),"forty-budget repair covers both windows");
+        JSONArray shared=new JSONArray();for(int i=0;i<5;i++)shared.put(imageWindow(i,10-i));
+        checkedWindowSelection(new JSONArray().put(windowFrame(0,0,.9)).put(windowFrame(1,5,.2)).put(windowFrame(2,10,.9)),shared,1,"more windows than slots share one anchor");
+        checkedWindowSelection(minimal,new JSONArray().put(imageWindow(200,300)),40,"empty window creates no candidate");
+        checkedWindowSelection(minimal,new JSONArray().put(imageWindow(0,.5)).put(imageWindow(1,1)).put(imageWindow(100,100)),2,"infeasible budget keeps baseline");
+        checkedWindowSelection(minimal,new JSONArray().put(imageWindow(0,100)),2,"already covered exact baseline");
+        checkedWindowSelection(minimal,disjoint,0,"zero budget");
+        checkedWindowSelection(minimal,disjoint,1,"one-slot infeasible budget");
+        checkedWindowSelection(minimal,null,40,"null requests");
+        checkedWindowSelection(minimal,new JSONArray(),40,"empty requests");
+        JSONArray duplicates=new JSONArray().put(minimal.getJSONObject(2)).put(minimal.getJSONObject(0)).put(windowFrame(10,0,1)).put(minimal.getJSONObject(1));
+        checkedWindowSelection(duplicates,new JSONArray().put(imageWindow(0,100)),40,"unsorted duplicate indices retain first object");
+        JSONArray ties=new JSONArray().put(windowFrame(0,0,.1)).put(windowFrame(1,1,.9)).put(windowFrame(2,1,.9)).put(windowFrame(3,2,.2)).put(windowFrame(4,100,.99));
+        JSONArray tieWindows=new JSONArray().put(imageWindow(0,1)).put(imageWindow(2,2)).put(imageWindow(0,100));
+        selected=checkedWindowSelection(ties,tieWindows,2,"same-second anchor quality and tie");
+        check(selected.getJSONObject(0)==ties.getJSONObject(2)&&selected.getJSONObject(1)==ties.getJSONObject(3),"rightmost anchor uses highest quality and later equal-score object");
+        ties.getJSONObject(1).getJSONObject("quality").put("score",1);
+        selected=checkedWindowSelection(ties,tieWindows,2,"same-second unequal quality");
+        check(selected.getJSONObject(0)==ties.getJSONObject(1),"same-second anchor favors quality over later object");
+        String unchanged=minimal.toString()+disjoint.toString();
+        rejects(()->ClassroomSummary.selectRequested(minimal,disjoint,-1),"negative image budget rejected");
+        rejects(()->ClassroomSummary.selectRequested(minimal,disjoint,41),"forty-one image budget rejected");
+        check(unchanged.equals(minimal.toString()+disjoint.toString()),"rejected budgets do not mutate inputs");
+        Random random=new Random(0x128C0FFEEFL);int feasible=0,infeasible=0;
+        for(int trial=0;trial<600;trial++){
+            JSONArray candidates=new JSONArray(),windows=new JSONArray();int count=1+random.nextInt(8);
+            List<JSONObject> frames=new ArrayList<>();
+            for(int i=0;i<count;i++){
+                JSONObject frame=windowFrame(i,random.nextInt(17)*.5,random.nextInt(5)*.25);
+                if(trial%3==0)frame.remove("quality");frames.add(frame);
+            }
+            Collections.shuffle(frames,random);for(JSONObject frame:frames)candidates.put(frame);
+            if(trial%4==0)candidates.put(frames.get(0));
+            for(int w=0;w<1+random.nextInt(7);w++){double start=random.nextInt(21)*.5,end=random.nextInt(21)*.5;windows.put(imageWindow(Math.min(start,end),Math.max(start,end)));}
+            for(int limit=0;limit<=Math.min(count,4);limit++){
+                JSONArray result=checkedWindowSelection(candidates,windows,limit,"seeded exhaustive trial "+trial+" limit "+limit);
+                boolean covered=true;
+                for(int w=0;w<windows.length();w++)if(coveredBy(candidates,windows.getJSONObject(w))&&!coveredBy(result,windows.getJSONObject(w)))covered=false;
+                if(covered)feasible++;else infeasible++;
+            }
+        }
+        check(feasible>0&&infeasible>0,"seeded subset enumeration exercises both feasible and infeasible budgets");
+        System.out.println("Window oracle: seed=0x128C0FFEEF, 600 candidate sets, feasible="+feasible+", infeasible="+infeasible);
+    }
     private static void subtitleCompression()throws Exception {
         JSONArray source=new JSONArray().put(segment(0,"第一句")).put(segment(3,"第二句"))
                 .put(segment(30,"间隔后的第三句"));
@@ -767,6 +893,7 @@ public final class ClassroomSummaryCheck {
     }
     public static void main(String[] args)throws Exception {
         root=new File(args[0]);root.mkdirs();
+        if(args.length>1&&"image-windows".equals(args[1])){test("requested image windows",ClassroomSummaryCheck::windowSelection);test("feasible image window coverage and baseline preservation",ClassroomSummaryCheck::windowCoverage);System.out.println("ClassroomImageWindows: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Image window checks failed");return;}
         if(args.length>1&&"local-lifecycle".equals(args[1])){test("published image and local deletion boundaries",ClassroomSummaryCheck::localLessonLifecycle);System.out.println("LocalLessonLifecycle: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Local lifecycle check failed");return;}
         HttpServer server=server();try {
             if(args.length>1&&"draft-images".equals(args[1])){test("ordinary draft image boundary and append-only recovery",ClassroomSummaryCheck::draftImageReferences);System.out.println("ClassroomDraftImages: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Draft image checks failed");return;}
@@ -785,7 +912,7 @@ public final class ClassroomSummaryCheck {
             test("HTTP forty-image cap and final validation retry",ClassroomSummaryCheck::capAndFinalValidation);
             test("prefixed final and export",ClassroomSummaryCheck::prefixedFinal);
             test("final transport and cancellation audit",ClassroomSummaryCheck::finalTransportAudit);
-            test("requested image windows",ClassroomSummaryCheck::windowSelection);test("reference validation",ClassroomSummaryCheck::validation);test("low-resolution dedup and budget",ClassroomSummaryCheck::images);test("transport options/cancel/deadline/SSE",ClassroomSummaryCheck::transport);test("checkpoint, retry and offline ZIP",ClassroomSummaryCheck::pipeline);test("text-only and invalid-response retry",ClassroomSummaryCheck::textOnlyAndInvalidRetry);test("anonymous account isolation",ClassroomSummaryCheck::isolation);
+            test("requested image windows",ClassroomSummaryCheck::windowSelection);test("feasible image window coverage and baseline preservation",ClassroomSummaryCheck::windowCoverage);test("reference validation",ClassroomSummaryCheck::validation);test("low-resolution dedup and budget",ClassroomSummaryCheck::images);test("transport options/cancel/deadline/SSE",ClassroomSummaryCheck::transport);test("checkpoint, retry and offline ZIP",ClassroomSummaryCheck::pipeline);test("text-only and invalid-response retry",ClassroomSummaryCheck::textOnlyAndInvalidRetry);test("anonymous account isolation",ClassroomSummaryCheck::isolation);
         }finally{server.stop(0);}System.out.println("ClassroomSummaryCheck: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError(failures+" classroom regression failures");
     }
 }

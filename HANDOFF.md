@@ -2,13 +2,13 @@
 
 ## 当前状态与唯一下一步
 
-- 当前候选123（285）已安装唯一AVD Chrona_Classroom_36／emulator-5580，同课configured+newRun=true会话70863正在运行，输出build/editorial127/run.txt。未传临时high，不改全局配置。122 runner23919已完整但内容未通过，证据保留。不占手机。前轮121 runner26670已成功终态但内容未批准；设备审查ZIP和空目录已清。
-- 固定课程：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。4/4更正稿复用，13请求全部stop/completed，含draft-1一次JSON repair。最终事务请求855条原字幕逐字一致、无派生标题，输入196792／实际缓存177792；40张附图标识与实际字节0失配。
-- 全文10知识／10事务／3行动／29图已读，四张压缩图集已检查。对数考点恢复、跨事务重复和图113错配消除，内容仍不批准：评分指令反转、同机制补题重复、缺题干生产说明、闲聊人数与其他教学班小测遗漏。0·∞已经由幂指例覆盖，不为机械验收另加重复题。
-- 真实成品和用量：build/editorial125/export/、audit.txt、image-review-1..4.jpg；逐项原句／预期／泛化方向见docs/audits/classroom-notebook-regression-20261103.md新增121节。独立内容check：regression125_content已完成，同样不批准；新增确认复核触发条件被改写、极限定义加分遗漏、错误示范操作桥梁省略。主代理已回原字幕复核并记录取舍，不把一般解题步骤要求自动新增为日程任务。
+- 当前安装候选123（285），唯一AVD Chrona_Classroom_36／emulator-5580，不占手机。新轮70863已失败终态：两段提取、两段核图完整，edit-plan返回completed但仅思考1735字符、正文0，output760/上限32768，非长度截断。未提交失败阶段。只读证据build/editorial127/audit.txt、run.txt；4/4更正稿复用、40附图标签0失配。沿原检查点configured续跑会话19926，输出resume.txt，无newRun或effort覆盖。
+- 固定课程：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。唯一下一步观察19926终态，再只读审核实际成品；同样空回复连续两次即停止原样重试，定位返回证据。不得覆盖安装正在运行的123。
+- 最近完整成品122尚未批准：9知识／7事务／3行动／22图已读，仍有合法约分被否定、生产说明、辛苦分释义与跨区重复。证据build/editorial126/export/、audit.txt、image-review-*.jpg；原句／预期／泛化方向见docs/audits/classroom-notebook-regression-20261103.md。123收拢重复政策并修正合法运算提示，尚无完整内容验收。
 - 模拟器保存服务为OpenCode Go／deepseek-v4.1-flash／Responses／low，可选x-opencode-session；密钥不读不输出。原模型、协议及全局设置未变。
 - 已非阻塞询问是否临时high同课对照，尚无答复，先不调用高思考。trial instrumentation已准备显式reasoningEffort参数，只构造本次AiSettings、不保存配置，并回报全局model/effort不变布尔；已构建未调用，辅助包build/editorial125/high-trial.apk。
-- high是可选对照，未答不调用，也不阻塞已授权回归。122已完成三条提示：原题确认后替代同机制补题、删除生产说明与事务触发方向；未改阶段/Schema/游标。危险的skip事务优化已撤回，双向分类739、复审及构建通过。122新轮23919已完整；low，11请求全stop，855原文一致、无titles，最后输入196880/缓存177920。全文9知识/7事务/3行动/22图已读：反向矛盾答案禁令和重复补题消除；仍有“不能约去b-a”错误、生产说明、辛苦分释义不准及知识/事务重复，不批准。已排除自定义覆盖：冻结与当前classroomPrompt长度均0。123已将整套政策仅留system一次，四类阶段Schema不重复；合法运算/失效前提提示，policy1002/全量24904/构建/复审通过。唯一下一步等待70863终态再审全文及图；同时可独立修正只读反例证实的请求窗口漏图，不能覆盖安装当前运行候选；不主动改low，以后high对照固定同候选。121历史和包保留，不在同一对照中混代码。
+- high可选未答，不调用、不阻塞正常回归；以后对照必须固定同候选。123政策仅system一次，四类Schema不重复，policy1002/全量24904/构建/独立复审通过。冻结与当前自定义提示长度均0，排除覆盖。危险skip事务优化已撤回，不能丢原事务中误分类的知识。
+- 124（286）独立图片窗口覆盖修复已构建未安装：已有基线覆盖则原样保留；预算足够时先最少区间锚点再补原质量采样，预算不可行保留原基线；40上限、来源编号、原图对象不变。实际122全部15窗已覆盖，不归因本课缺式。独立代码check通过，600组/2511预算穷举对照、专项23994/完整24566/Responses535/grounded317项0失败；build/editorial128/。测试diff保留原完整用例，仅新增覆盖检查。完成文档和源码提交，不安装到运行中的AVD。
 
 ## 验收与原范围
 
@@ -29,7 +29,7 @@
 
 ## 工作约束
 
-- 不自动发小版本Release；源码普通提交并push origin HEAD:main，不force。主APK build/editorial125/Chrona-v0.15.121.apk。未更新手机。
+- 不自动发小版本Release；源码普通提交并push origin HEAD:main，不force。安装包build/editorial127/Chrona-v0.15.123.apk；后续124包build/editorial128/Chrona-v0.15.124.apk。未更新手机。trial和只读probe分别保存，不拿被后续构建覆盖的默认AndroidTest包代替。
 - 复用单一AVD，串行使用，不新建/复制/清空/改显示参数。120安装前模拟器已退出且无进程，已正常重开原AVD，账号及数据保留。观察超时不当失败或重启依据。
 - 测试输出仅项目build/内；设备仅专用临时目录或应用缓存，不向共享存储根目录散放。图片先压缩再查看，禁止读取PNG原图。清理只删本次创建的确切路径。
 - ADB F:\Android\Sdk\platform-tools\adb.exe；JDK D:\Minecraft\java21；gh F:\Programs\GitHubCLI\bin\gh.exe，保留登录，不读token。FastCtx当前未暴露时用pwsh7。

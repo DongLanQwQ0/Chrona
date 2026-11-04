@@ -177,7 +177,7 @@ public final class ClassroomImages {
         }
         return selected;
     }
-    private static double informationScore(JSONObject candidate) {
+    static double informationScore(JSONObject candidate) {
         JSONObject quality=candidate.optJSONObject("quality");return quality==null?-1:quality.optDouble("score",0);
     }
     public static byte[] jpeg(File raw) throws IOException {

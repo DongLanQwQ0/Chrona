@@ -16,9 +16,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--image-references-only', action='store_true')
 parser.add_argument('--note-strength-only', action='store_true')
 parser.add_argument('--json-repair-only', action='store_true')
+parser.add_argument('--image-windows-only', action='store_true')
+parser.add_argument('--output-dir', type=Path)
 args = parser.parse_args()
 src = root / 'app/src/main/java/com/donglan/chrona'
-out = root / 'build/classroom-summary-check'
+out = args.output_dir.resolve() if args.output_dir else root / 'build/classroom-summary-check'
 out.mkdir(parents=True, exist_ok=True)
 fixtures = {
     'com/donglan/chrona/zju/ZjuClient.java': '''package com.donglan.chrona.zju;
@@ -89,9 +91,10 @@ classes.mkdir(exist_ok=True)
 subprocess.run(recurrence_java([executable('javac'), '--release', '17', '-encoding', 'UTF-8', '-cp', str(jar),
                 '-d', str(classes), *map(str, paths)]), check=True)
 classpath = str(classes) + os.pathsep + str(jar)
-subprocess.run(recurrence_java([executable('java'), '-cp', classpath, 'com.donglan.chrona.classroom.ClassroomFigureReviewCheck', '--cache', str(root / 'build/classroom-image-dedup/cache-rebuild-check')]), check=True)
-if not args.image_references_only and not args.note_strength_only and not args.json_repair_only:
+if not args.image_windows_only:
+    subprocess.run(recurrence_java([executable('java'), '-cp', classpath, 'com.donglan.chrona.classroom.ClassroomFigureReviewCheck', '--cache', str(root / 'build/classroom-image-dedup/cache-rebuild-check')]), check=True)
+if not args.image_references_only and not args.note_strength_only and not args.json_repair_only and not args.image_windows_only:
     subprocess.run(recurrence_java([executable('java'), '-cp', classpath, 'com.donglan.chrona.ai.AiRequestCheck']), check=True)
 subprocess.run(recurrence_java([executable('java'), '-Djava.awt.headless=true', '-cp', classpath,
                 'com.donglan.chrona.classroom.ClassroomSummaryCheck', str(out / 'fixtures'),
-                *(['image-references'] if args.image_references_only else ['note-strength'] if args.note_strength_only else ['json-repair'] if args.json_repair_only else [])]), check=True)
+                *(['image-windows'] if args.image_windows_only else ['image-references'] if args.image_references_only else ['note-strength'] if args.note_strength_only else ['json-repair'] if args.json_repair_only else [])]), check=True)

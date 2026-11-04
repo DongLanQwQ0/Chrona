@@ -1293,3 +1293,9 @@ high偏好未答，不调用高思考；可选对照不作为已授权回归的�
 - 123去schema、topicSchema、topicBatchSchema、draftSchema四处整套事务政策重复，完整政策仅system一次；阶段字段/来源/图片规则原样保留。NoteStrength补合法运算/失效前提区分，示例不再要求“详细”篇幅。旧history/options/schema不写。
 - policy-prefix1002、全量24904项0失败；独立check、release/lint/trial通过。build/editorial127/check-owner/和build.log。首次启动因安装了后生成的只读probe而非trial，明确注册错误、没有AI请求；已重建并单独存model-trial.apk，随后启动123同课newRun会话70863。不会把辅助包注册失败当服务故障。
 - 实际122全部15个图片请求窗口均有候选且均有选中图，不将当前缺式归因0图窗口。另只读生产反例证明合并全局采样可在足够预算下丢窄窗，见build/image-window-research/results.jsonl；独立缺陷待接续修正，不改正在运行的123候选。
+
+## 123空正文与124图片窗口覆盖修复 — 2026-11-04
+
+- 123会话70863失败在edit-plan：前两段提取/核图成功，四段更正文稿复用；服务response.completed/stop，实际output760/上限32768，仅思考1735字符、正文0。不是输出截断，不补造正文。40附图标签0失配，失败阶段未提交。沿原历史和检查点续跑19926，保存配置low/Responses不变，未新开轮。证据build/editorial127/audit.txt、run.txt、resume.txt；尚不能评价123最终内容。
+- 124只修selectRequested丢失请求窗口覆盖的缺陷：旧全局质量采样在两窗/两张预算及40张预算均有可执行反例，会挤掉有候选的窄窗。原选择已全覆盖时原样返回；否则按结束时间贪心选最右候选形成最少锚点，预算可行则用原质量采样补齐，预算不可行保留原基线。40上限、原编号/对象/质量信息不变，已冻结selected不追改，不新增AI请求。实际本课15窗已有覆盖，因此不宣称修复本课内容遗漏。
+- 独立只读代码审查通过；检查owner只新增测试及专项入口，无删除既有完整用例。600组小集合、2511个预算组合与独立穷举最优覆盖数对照；专用23994、完整ClassroomSummary24566、受影响Responses535/grounded317项均0失败。release/lint/probe构建成功，产物build/editorial128/Chrona-v0.15.124.apk。未安装124到正在续跑的AVD、未更新手机、未发布Release。
