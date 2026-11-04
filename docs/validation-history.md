@@ -1274,3 +1274,10 @@
 - runner26670 succeeded=true；4/4更正稿复用。13次实际请求均stop/completed，含draft-1一次结构repair；最终edit-affairs输入196792/缓存177792。全部855条原字幕在实际最后请求中逐字匹配，无titles；40附图标签对应0失配。build/editorial125/audit.txt。
 - 全文10知识/10事务/3行动/29引用图，已读完整正文和四张压缩图集。对数考核线索恢复、跨事务重复未再出现，图文基本对应；评分“不要把互相矛盾答案都留着”仍与原字幕方向冲突，其他教学班小测仍未收入。知识存在同机制额外补题重复、缺题干生产说明和少量无关叙事，内容仍不批准。不是原文漏传，不再以同样低思考原样盲重试。
 - 临时思考强度对照入口仅在trial instrumentation增加显式参数；不写全局设置，回报临时值与全局model/effort不变布尔。AndroidTest构建通过，尚未安装/调用该高思考试跑；用户偏好确认待答。不会把此当生产通用参数修改。
+
+## 122代码候选，未安装 — 2026-11-04
+
+- 只增加三条通用生成提示：确认原题后替代同构补题、删除内部生产说明、事务原状态/触发/变化/决定者。没有改阶段数量、Schema、游标、恢复或语义校验。
+- 尝试按plan.affairs跳过重复整稿的优化被独立check反例否定：原affairs/plan.affairs也可能实际含知识，原整稿允许纠正到notes，跳过会丢唯一教学成稿机会。已完整撤回新flag和skip代码，未安装或调用此方案，不以调用减少换内容丢失。
+- 测试owner恢复HEAD的完整121检查，Java检查文件diff为空；只复验双向editorial-classification739项0失败，原23902项证据继续适用未改机制。独立check确认撤回及三条提示无新关键缺陷；release/lint/trial构建通过。证据build/editorial126/check-owner/和build.log。
+- 122包build/editorial126/Chrona-v0.15.122.apk，仅代码/构建候选，未做真实成品验收、未安装AVD或手机、未发Release。AVD保留固定121，以免临时high对照混入代码变化。

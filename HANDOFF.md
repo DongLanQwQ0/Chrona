@@ -8,7 +8,7 @@
 - 真实成品和用量：build/editorial125/export/、audit.txt、image-review-1..4.jpg；逐项原句／预期／泛化方向见docs/audits/classroom-notebook-regression-20261103.md新增121节。独立内容check：regression125_content已完成，同样不批准；新增确认复核触发条件被改写、极限定义加分遗漏、错误示范操作桥梁省略。主代理已回原字幕复核并记录取舍，不把一般解题步骤要求自动新增为日程任务。
 - 模拟器保存服务为OpenCode Go／deepseek-v4.1-flash／Responses／low，可选x-opencode-session；密钥不读不输出。原模型、协议及全局设置未变。
 - 已非阻塞询问是否临时high同课对照，尚无答复，先不调用高思考。trial instrumentation已准备显式reasoningEffort参数，只构造本次AiSettings、不保存配置，并回报全局model/effort不变布尔；已构建未调用，辅助包build/editorial125/high-trial.apk。
-- 唯一下一步：独立内容审查已整合；用户确定临时思考强度后，用同一候选／课程新轮复用4更正稿对照，审读完整成品和实际usage。当前low在原文齐全下仍反向改写，不原样盲重试。
+- 下一步分两条但设备串行：当前121固定供临时high对照，用户偏好待答，不调用。代码122已完成三条提示：原题确认后替代同机制补题、删除生产说明与事务触发方向；未改阶段/Schema/游标。跳过plan.affairs优化被独立check证明会吞错分类知识，已完整撤回。双向分类739、独立复审及release/lint/trial通过；包build/editorial126/Chrona-v0.15.122.apk未安装/未实生成验收。AVD仍固定121，high偏好待答后再对照，避免混入代码变化。
 
 ## 验收与原范围
 
