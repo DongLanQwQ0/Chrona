@@ -7,7 +7,8 @@
 - 当前先加入低开销性能日志：前台主线程心跳延迟、主页刷新间隔／执行耗时、启动／恢复耗时；后台停留不计异常，不记录账号／正文，文件写入异步复用DiagLog。
 - 审计已实现：refresh_audit_check真实生产类桩21项通过，笔记强度84项／两阶段1548项通过；129 release/lint/trial构建通过，build/editorial132/build-verified.log。无新UI，未改既有界面。
 - 用户报告AVD退出，adb及进程确实消失；旧日志为保存default_boot后退出，无明确crash堆栈。只重开既有Chrona_Classroom_36／5580，boot_completed=1且128应用PID6090正常，未清userdata／改密度／重建AVD。日志build/editorial132/emulator-{stdout,stderr}.log。
-- 129（291）正式包与trial包已成功覆盖到原AVD，系统实读版本一致。单课low会话50284运行中，build/editorial132/run.txt；不重新启动、不替换正在运行的helper。唯一下一步：等该句柄终态，再只读审计／导出全文审查。偶发卡顿根因仍需异常日志复现，不以审计代码代替根因证明。
+- 129（291）已成功更新原AVD，单课low50284终态失败而非模拟器退出：4段更正复用，affairs-plan及一次修复成功，whole-note附40图后输出32768触顶，摘要推理45832字符／正文18531字符，未提交失败正文。build/editorial132/{run,complete-audit}.txt。只读helper已装，无活跃AI。
+- 已向用户说明130修正：图数上限不是配额，代表画面补真实缺口，同页渐进／相邻重复只取必要完整帧；知识自由组织主线和代表例题，不要求逐题复现。无新增阶段、硬语义校验或参数改写。专项1548/0与release/lint/trial通过，build/editorial133/{check,build}.log；130（292）两包成功安装原AVD并实读版本。同课low新轮54768正在运行，build/editorial133/run.txt，不能覆盖helper或重复启动。唯一下一步：等该句柄终态再只读审计／全文审查。偶发卡顿根因仍需异常日志复现。
 
 ## 当前候选与唯一下一步
 

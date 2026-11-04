@@ -1335,6 +1335,7 @@ high偏好未答，不调用高思考；可选对照不作为已授权回归的�
 - 第三档允许沿教师知识主线自主组织讲法、推导、可靠解法、必要细节与标明的同类型补题；不再只允许原题不明时替换。课程事务仍以原始证据判断；补题不冒充教师事实，所采用题设不偷换，同机制不重复展开。旧历史不改写，无额外AI阶段或语义门槛。note-strength84项及compact-affairs-first1548项通过。
 - release/lint/trial终版通过，build/editorial132/build-verified.log。初轮lint报旧批量删除块缩进，第二轮与固定终版均通过；不屏蔽检查、不修改该无关业务块。129（291）两包已安装原AVD，单课low回归50284已启动，成品内容仍待终态审查；未发布、未批量21节。
 - 用户报告模拟器退出：当时ADB／进程均消失，旧stdout末尾保存default_boot并退出，无明确crash堆栈。重新启动同一AVD后boot_completed=1，原128可启动且后续129升级成功；未清数据、未复制或重建AVD、未改显示配置。启动日志build/editorial132/emulator-{stdout,stderr}.log，不能据此断言退出根因。
+- 129真实low50284终态失败：4段更正复用，affairs-plan原请求及一次修复完成；whole-note附40图，native_status=incomplete/max_output_tokens，输出32768，推理摘要45832字符、正文18531字符。失败正文未提交，原导出128仍可供阅读。只读审计build/editorial132/complete-audit.txt；此次生成的未完成审查ZIP及空目录已清。130提示选最少代表图补真实缺口，不取满上限；知识保留主线与必要代表例题，不逐题复现，无新增阶段或参数回退。
 
 ## 125操作组分隔及日历遗留 — 2026-11-04
 
