@@ -349,6 +349,20 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                             .put("editor_batch_size",run.optInt("editor_batch_size",1));
                     row.put("run_phase_counts",phases);
                     if(key.equals(reviewKey)){
+                        if(providerFailure){
+                            JSONObject catalogue=ClassroomStore.read(new java.io.File(directory,"candidates.json"));
+                            JSONArray candidates=catalogue==null?null:catalogue.optJSONArray("images"),chosen=run.optJSONArray("selected"),drafts=run.optJSONArray("drafts"),coverage=new JSONArray();
+                            if(drafts!=null)for(int d=0;d<drafts.length();d++){
+                                JSONArray windows=drafts.getJSONObject(d).optJSONArray("image_requests");if(windows==null)continue;
+                                for(int w=0;w<windows.length();w++){
+                                    JSONObject window=windows.getJSONObject(w);double start=window.getDouble("start"),end=window.getDouble("end");int possible=0;JSONArray files=new JSONArray();
+                                    if(candidates!=null)for(int c=0;c<candidates.length();c++){double at=candidates.getJSONObject(c).getDouble("second");if(at>=start&&at<=end)possible++;}
+                                    if(chosen!=null)for(int c=0;c<chosen.length();c++){JSONObject image=chosen.getJSONObject(c);double at=image.getDouble("second");if(at>=start&&at<=end)files.put(image.getString("file"));}
+                                    coverage.put(new JSONObject().put("group",d).put("window",w).put("start",start).put("end",end).put("candidate_matches",possible).put("selected_matches",files.length()).put("selected_files",files));
+                                }
+                            }
+                            row.put("run_image_window_coverage",coverage);
+                        }
                         JSONObject inventory=new JSONObject();
                         for(String phase:new String[]{"drafts","parts"}){
                             JSONArray entries=new JSONArray(),values=run.optJSONArray(phase);
@@ -372,6 +386,16 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     if(conversation!=null){
                         if(key.equals(reviewKey)){
                             int imageCount=0,labelCount=0,mismatches=0;JSONArray sent=conversation.optJSONArray("messages");
+                            if(providerFailure&&sent!=null&&sent.length()>0){
+                                Object first=sent.getJSONObject(0).opt("content");String system="";
+                                if(first instanceof String text)system=text;
+                                else if(first instanceof JSONArray pieces)for(int c=0;c<pieces.length();c++)system+=pieces.getJSONObject(c).optString("text");
+                                String marker="\n用户自定义要求：\n";int at=system.lastIndexOf(marker);
+                                String custom=at<0?"":system.substring(at+marker.length());
+                                String current=com.donglan.chrona.ai.SchedulePreferences.load(getTargetContext()).classroomPrompt;
+                                row.put("run_custom_prompt_characters",custom.length()).put("current_custom_prompt_characters",current.length())
+                                        .put("run_custom_prompt_matches_current",custom.equals(current));
+                            }
                             if(sent!=null)for(int m=0;m<sent.length();m++){
                                 JSONArray content=sent.getJSONObject(m).optJSONArray("content");if(content==null)continue;
                                 for(int c=0;c<content.length();c++){

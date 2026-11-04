@@ -1285,3 +1285,11 @@
 ## 122按保存配置实测启动 — 2026-11-04
 
 high偏好未答，不调用高思考；可选对照不作为已授权回归的阻塞。安装122并configured+newRun启动，未传reasoningEffort，不改全局设置，实际配置与usage待终态审计。以后若进行high对照，同样固定122，避免代码混淆；121历史/包保留。会话23919，build/editorial126/run.txt。当前没有宣布内容通过或批量启动21节。
+
+## 122真实成品与123规则收拢 — 2026-11-04
+
+- 122 runner23919完整成功，保存配置low，model/effort全局不变，4更正稿复用。11请求全stop，无repair；最后输入196880/缓存177920，855原文逐字一致且无titles，40附图0标签失配。全文9知识/7事务/3行动/22图及三张压缩图集已读：矛盾答案反向禁令和重复补题消除，图文对应；仍有“不能约去b-a”错误、生产说明、辛苦分解释及跨知识/事务重复。未批准，未批量。build/editorial126/export/、audit.txt、image-review-*.jpg。
+- 只读元信息排除用户覆盖：冻结与当前自定义classroomPrompt长度均0，未输出其内容或凭据。prompt-audit.txt。
+- 123去schema、topicSchema、topicBatchSchema、draftSchema四处整套事务政策重复，完整政策仅system一次；阶段字段/来源/图片规则原样保留。NoteStrength补合法运算/失效前提区分，示例不再要求“详细”篇幅。旧history/options/schema不写。
+- policy-prefix1002、全量24904项0失败；独立check、release/lint/trial通过。build/editorial127/check-owner/和build.log。首次启动因安装了后生成的只读probe而非trial，明确注册错误、没有AI请求；已重建并单独存model-trial.apk，随后启动123同课newRun会话70863。不会把辅助包注册失败当服务故障。
+- 实际122全部15个图片请求窗口均有候选且均有选中图，不将当前缺式归因0图窗口。另只读生产反例证明合并全局采样可在足够预算下丢窄窗，见build/image-window-research/results.jsonl；独立缺陷待接续修正，不改正在运行的123候选。

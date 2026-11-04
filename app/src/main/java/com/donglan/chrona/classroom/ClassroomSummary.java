@@ -113,7 +113,7 @@ public final class ClassroomSummary {
     private static String systemPrompt(String classroomPrompt,int strength,int figurePolicy,int affairsSchema) {
         return systemBase(affairsSchema)+ClassroomNoteStrength.instructions(strength)+ClassroomFigureReview.instructions(figurePolicy)+ClassroomAffairsPolicy.instructions(affairsSchema)+(classroomPrompt.isBlank()?"":"\n以下是用户在课堂总结设置中保存的自定义要求，其语言、详略、重点与组织要求优先于默认偏好。它只用于课堂总结，不用于日程解析。仍须保留当前阶段指定格式、有效来源引用、图片预算和资料安全边界。\n用户自定义要求：\n"+classroomPrompt);
     }
-    private static String summaryFields(boolean evidence){return "\"overview\":\"全课重点\",\"notes\":[{\"title\":\"主题\",\"text\":\"详细笔记\",\"sources\":[0],\"images\":[]}],"
+    private static String summaryFields(boolean evidence){return "\"overview\":\"全课重点\",\"notes\":[{\"title\":\"主题\",\"text\":\"完整知识笔记\",\"sources\":[0],\"images\":[]}],"
             +"\"assignments\":[{\"text\":\"老师明确提出的作业或考试安排，保留原日期措辞\",\"sources\":[0]"+(evidence?",\"evidence\":\"对应明确要求的最短连续原话，逐字取自原始字幕\"":"")+"}]";}
     private static final String SUMMARY_FIELDS=summaryFields(false);
     static final String DRAFT_IMAGE_RULE="当前阶段只处理字幕与PPT时间目录，尚未提供任何实际图片。所有images数组必须为[]；所有文本字段均禁止插入Markdown图片、图片占位链接或自行命名文件，不得新增schema之外的字段。需要查看的视觉信息只通过image_requests的时间范围请求，收到实际附图后的核图阶段才能引用给定file。";
@@ -128,18 +128,18 @@ public final class ClassroomSummary {
         return summaryFields(evidence)+(affairsSchema==0?"":",\"affairs\":[{\"title\":\"课程事务主题\",\"text\":\"完整事务及原话条件和不确定性\",\"sources\":[0],\"images\":[]}]");
     }
     static String schema(boolean evidence,int affairsSchema){
-        return affairsSchema==0?(evidence?BLOCK_SCHEMA:SCHEMA):"返回 {"+summaryFields(evidence,affairsSchema)+"}。"+SOURCE_REQUIREMENTS+"affairs与notes的title、text、sources、images同样必填；无内容的集合返回[]。affairs.images也仅可使用实际file原值。"+ClassroomAffairsPolicy.instructions(affairsSchema);
+        return affairsSchema==0?(evidence?BLOCK_SCHEMA:SCHEMA):"返回 {"+summaryFields(evidence,affairsSchema)+"}。"+SOURCE_REQUIREMENTS+"affairs与notes的title、text、sources、images同样必填；无内容的集合返回[]。affairs.images也仅可使用实际file原值。";
     }
     static String topicSchema(int affairsSchema,String collection){
         if(affairsSchema==0)return TOPIC_SCHEMA;
         return "返回 {\"overview\":\"\",\"notes\":"+(collection.equals("notes")?"[{\"title\":\"主题\",\"text\":\"完整学习笔记\",\"sources\":[0],\"images\":[]}]":"[]")
-                +",\"affairs\":"+(collection.equals("affairs")?"[{\"title\":\"课程事务主题\",\"text\":\"完整课程事务\",\"sources\":[0],\"images\":[]}]":"[]")+",\"assignments\":[]}。"+SOURCE_REQUIREMENTS+ClassroomAffairsPolicy.instructions(affairsSchema);
+                +",\"affairs\":"+(collection.equals("affairs")?"[{\"title\":\"课程事务主题\",\"text\":\"完整课程事务\",\"sources\":[0],\"images\":[]}]":"[]")+",\"assignments\":[]}。"+SOURCE_REQUIREMENTS;
     }
     static String topicBatchSchema(int affairsSchema){
         return "完整整稿对象：\n{\"overview\":\"\",\"notes\":[{\"title\":\"知识主题\",\"text\":\"完整学习笔记\",\"sources\":[0],\"images\":[]}]"
                 +(affairsSchema==0?"":",\"affairs\":[{\"title\":\"课程事务主题\",\"text\":\"完整课程事务\",\"sources\":[0],\"images\":[]}]")
                 +",\"assignments\":[]}\n按实际内容填写各集合，无内容返回[]；overview必须为空，assignments必须=[]。"
-                +SOURCE_REQUIREMENTS+ClassroomAffairsPolicy.instructions(affairsSchema);
+                +SOURCE_REQUIREMENTS;
     }
     static String draftSchema(JSONObject catalogue,int limit)throws Exception{
         return draftSchema(catalogue,limit,false);
@@ -154,7 +154,7 @@ public final class ClassroomSummary {
                 +summaryFields(evidence,affairsSchema)+",\"image_assessment\":{\"decision\":\""+decision+"\",\"reason\":\"具体判断依据\"},"
                 +"\"image_requests\":"+requests+"}\n字段规则："
                 +"示例中的来源编号、时间范围及decision须按实际资料填写；无图片请求时image_requests仍必须为[]，不得省略、填null或嵌套到notes。输出前核对全部顶层字段齐全，decision与image_requests一致；不能只返回image_assessment而漏掉image_requests。"
-                +SOURCE_REQUIREMENTS+DRAFT_IMAGE_RULE+ClassroomAffairsPolicy.instructions(affairsSchema)+imageInstructions(catalogue,limit);
+                +SOURCE_REQUIREMENTS+DRAFT_IMAGE_RULE+imageInstructions(catalogue,limit);
     }
     public static JSONObject generate(File dir,ClassroomLesson lesson,AiSettings ai,int imageLimit,RequestControl control,ClassroomImages.Progress progress,String classroomPrompt) throws Exception {
         return generate(dir,lesson,ai,imageLimit,control,progress,classroomPrompt,false);

@@ -37,6 +37,14 @@ public final class ClassroomEnhancedCheck {
         Matcher reference=Pattern.compile("完整要求见历史第(\\d+)条消息").matcher(prompt);
         return reference.find()?messages(request).getJSONObject(Integer.parseInt(reference.group(1))-1).getJSONArray("content").getJSONObject(0).getString("text"):prompt;
     }
+    private static boolean affairsContract(JSONObject request,String currentPrompt)throws Exception{
+        JSONObject format=request.optJSONObject("response_format");if(format==null&&request.optJSONObject("text")!=null)format=request.getJSONObject("text").optJSONObject("format");
+        if(format!=null){JSONObject contract=format.optJSONObject("json_schema");if(contract==null)contract=format;JSONObject schema=contract.optJSONObject("schema");if(schema!=null)return schema.getJSONObject("properties").has("affairs");}
+        if(Pattern.compile("\"affairs\"\\s*:").matcher(currentPrompt).find())return true;
+        // Persisted synthetic fixtures can have short systems; use their declared contract,
+        // not the presence of the complete policy in every individual user message.
+        return messages(request).getJSONObject(0).opt("content").toString().contains("成品严格分离");
+    }
     private static String stage(String prompt){
         Matcher restart=Pattern.compile("当前阶段：([^；]+)；重试序号：(\\d+)").matcher(prompt);if(restart.find())return restart.group(1)+"-restart-"+restart.group(2);
         if(prompt.contains("唯一一次格式修复"))return lastStage+"-repair";
@@ -201,7 +209,7 @@ public final class ClassroomEnhancedCheck {
                 if(current.equals("draft-0")&&mode.equals("affairs-missing"))value.remove("affairs");
                 if(current.equals("draft-0")&&mode.equals("affairs-type"))value.put("affairs",new JSONObject());
                 if(mode.equals("affairs-missing-always")&&current.startsWith("draft"))value.remove("affairs");
-                if(!messages(body).getJSONObject(0).opt("content").toString().contains("成品严格分离"))value.remove("affairs");
+                if(!affairsContract(body,text))value.remove("affairs");
                 output="  ```json\n"+value.toString(2)+"\n```  ";}
             if(mode.equals("length-editor")&&current.equals("edit-note-0")){output="{\"overview\":\"截断不得拼接\"";finish="length";}
             if(mode.equals("length-final")&&current.equals("final-0")){output="{\"overview\":\"截断不得拼接\"";finish="length";}
@@ -1684,6 +1692,33 @@ public final class ClassroomEnhancedCheck {
             for(String key:fields.keySet())structuralOnly(fields.getJSONObject(key));
         }else if(schema.getString("type").equals("array"))structuralOnly(schema.getJSONObject("items"));
     }
+    private static int occurrences(String text,String fragment){int count=0,from=0;while((from=text.indexOf(fragment,from))>=0){count++;from+=fragment.length();}return count;}
+    private static void policyPrefix()throws Exception{
+        String policy=ClassroomAffairsPolicy.instructions(1);
+        check(!policy.isEmpty()&&ClassroomAffairsPolicy.instructions(0).isEmpty(),"affairs policy remains versioned and absent from legacy schema zero");
+        for(int strength:new int[]{1,2,3})check(occurrences(ClassroomSummary.systemPrompt("",strength),policy)==1,"factory system contains the full shared policy once at every unchanged strength: "+strength);
+        check(ClassroomNoteStrength.DEFAULT==3&&ClassroomNoteStrength.instructions(3).contains("分清合法运算和失效前提")&&ClassroomNoteStrength.instructions(3).contains("不为批评结论而否定合法的约分、变形或求导"),"current preferred strength retains self-study depth and distinguishes valid algebra from invalid premises");
+        for(String schema:List.of(ClassroomSummary.schema(false,1),ClassroomSummary.schema(true,1),ClassroomSummary.topicSchema(1,"notes"),ClassroomSummary.topicSchema(1,"affairs"),ClassroomSummary.topicBatchSchema(1),ClassroomSummary.draftSchema(new JSONObject().put("count",1),1,true,1))){
+            check(!schema.contains(policy),"stage format retains its local contract without repeating the full shared affairs policy");for(String field:List.of("overview","notes","affairs","assignments","sources","images"))check(schema.contains("\""+field+"\""),"stage examples retain existing field "+field);
+        }
+        check(ClassroomSummary.schema(true,1).contains("\"text\":\"完整知识笔记\"")&&!ClassroomSummary.schema(true,1).contains("详细笔记"),"knowledge example describes completeness without requesting extra verbosity");
+        for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES)){
+            for(String fixture:List.of("affairs-mixed","task-normal")){
+                reset(fixture,true);File dir=materials("policy-prefix-"+fixture+"-"+protocol,false);JSONObject result=generateWithProtocol(dir,protocol),run=state(dir),doc=result.getJSONArray("parts").getJSONObject(0);String expectedSystem=ClassroomSummary.systemPrompt("保留题干条件及步骤分",1);
+                check(result.getBoolean("complete")&&doc.getJSONArray("notes").length()==1&&doc.getJSONArray("affairs").length()==(fixture.equals("affairs-mixed")?1:0)&&doc.getJSONArray("assignments").length()==(fixture.equals("task-normal")?1:0),"real new-run factory retains separate learning, affairs and action results: "+fixture+" "+protocol);
+                for(int n=0;n<requests.size();n++){
+                    JSONArray sent=messages(requests.get(n));String system=sent.getJSONObject(0).getString("content");check(system.equals(expectedSystem)&&occurrences(system,policy)==1,"every actual request keeps the exact stable factory system with one policy copy: "+protocol+" "+stages.get(n));
+                    for(int m=1;m<sent.length();m++)if(sent.getJSONObject(m).optString("role").equals("user"))check(!sent.getJSONObject(m).getJSONArray("content").getJSONObject(0).getString("text").contains(policy),"stage/user history never repeats the complete policy: "+protocol+" "+stages.get(n));
+                    if(!stages.get(n).startsWith("correct-")){JSONObject shapes=run.getJSONObject("response_shapes");String logical=stages.get(n);JSONObject shape=shapes.getJSONObject(logical);Set<String> actual=shape.getJSONObject("schema").getJSONObject("properties").keySet();Set<String> expected=logical.equals("edit-plan")?Set.of("overview","sections"):logical.equals("edit-assignments")?Set.of("groups"):logical.equals("edit-affairs")?Set.of("affairs"):logical.startsWith("draft-")?Set.of("overview","notes","affairs","assignments","image_assessment","image_requests"):logical.startsWith("final-")?Set.of("overview","notes","affairs","assignments","image_reviews"):Set.of("overview","notes","affairs","assignments");check(actual.equals(expected),"native stage grammar retains every existing root field without policy duplication: "+logical);}
+                }
+                batchHistory(dir,protocol);evidence("policy-prefix-"+fixture+"-"+protocol,dir);
+            }
+            reset("affairs-mixed",false);File old=previousContentMaterials("policy-prefix-saved-"+protocol,protocol);JSONObject before=state(old);String savedSystem="旧已发送系统前缀\n"+policy+"\n旧冻结末尾";before.getJSONObject("conversation").getJSONArray("messages").getJSONObject(0).put("content",savedSystem);ClassroomStore.write(new File(old,"run.json"),before);String options=before.getJSONObject("conversation").getJSONObject("options").toString(),config=before.getString("config");JSONObject resumed=generateWithProtocol(old,protocol),after=state(old);
+            check(resumed.getBoolean("complete")&&resumed.getString("run").equals(before.getString("run"))&&after.getString("config").equals(config)&&after.getJSONObject("conversation").getJSONObject("options").toString().equals(options),"saved run identity, config and frozen options survive new policy placement: "+protocol);
+            for(JSONObject request:requests)check(messages(request).getJSONObject(0).getString("content").equals(savedSystem),"old already-sent system prefix is never replaced by today's factory: "+protocol);batchHistory(old,protocol);evidence("policy-prefix-saved-"+protocol,old);
+            reset("normal",false);File zero=previousContentMaterials("policy-prefix-legacy-zero-"+protocol,protocol);JSONObject zeroRun=state(zero);zeroRun.put("affairs_schema",0).put("config",ClassroomSummary.configKey(AI,0,"保留题干条件及步骤分",true,1,1,0));zeroRun.getJSONObject("conversation").getJSONArray("messages").getJSONObject(0).put("content","原有schema零系统，未包含新事务契约");ClassroomStore.write(new File(zero,"run.json"),zeroRun);JSONObject zeroResult=generateWithProtocol(zero,protocol);check(zeroResult.getInt("affairs_schema")==0&&!zeroResult.getJSONArray("parts").getJSONObject(0).has("affairs")&&!stages.contains("edit-affairs"),"legacy schema zero preserves its original fields and stage behavior: "+protocol);batchHistory(zero,protocol);
+        }
+    }
     private static void unifiedAffairs()throws Exception{
         JSONArray raw=new JSONArray();for(int n=0;n<5;n++)raw.put(new JSONObject().put("id",10+n*20).put("start",n*10).put("end",n*10+5).put("text","原始事务原话 "+n));
         JSONObject first=content("候选事务",30).put("text","PRIVATE_DERIVED_UNSUPPORTED").put("images",new JSONArray().put("image-7.jpg"));
@@ -1869,6 +1904,11 @@ public final class ClassroomEnhancedCheck {
             System.out.println("ClassroomEnhancedMarkdownFences: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Enhanced Markdown fences checks failed");return;
         }
         HttpServer server=server();
+        if(args.length==1)test("single stable shared policy and unchanged stage contracts",ClassroomEnhancedCheck::policyPrefix);
+        if(args.length>1&&args[1].equals("policy-prefix")){
+            try{test("single stable shared policy and unchanged stage contracts",ClassroomEnhancedCheck::policyPrefix);}
+            finally{server.stop(0);}System.out.println("ClassroomPolicyPrefix: "+checks+" assertions, "+failures+" failures");if(failures>0)throw new AssertionError("Policy prefix checks failed");return;
+        }
         if(args.length==1)test("whole-lesson final affairs and stage-only recovery",ClassroomEnhancedCheck::unifiedAffairs);
         if(args.length>1&&args[1].equals("unified-affairs")){
             try{test("whole-lesson final affairs and stage-only recovery",ClassroomEnhancedCheck::unifiedAffairs);}
