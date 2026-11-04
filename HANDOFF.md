@@ -2,12 +2,12 @@
 
 ## 当前状态与唯一下一步
 
-- 当前安装候选123（285），唯一AVD Chrona_Classroom_36／emulator-5580，不占手机。新轮70863已失败终态：两段提取、两段核图完整，edit-plan返回completed但仅思考1735字符、正文0，output760/上限32768，非长度截断。未提交失败阶段。只读证据build/editorial127/audit.txt、run.txt；4/4更正稿复用、40附图标签0失配。沿原检查点configured续跑会话19926，输出resume.txt，无newRun或effort覆盖。
-- 固定课程：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。唯一下一步观察19926终态，再只读审核实际成品；同样空回复连续两次即停止原样重试，定位返回证据。不得覆盖安装正在运行的123。
-- 最近完整成品122尚未批准：9知识／7事务／3行动／22图已读，仍有合法约分被否定、生产说明、辛苦分释义与跨区重复。证据build/editorial126/export/、audit.txt、image-review-*.jpg；原句／预期／泛化方向见docs/audits/classroom-notebook-regression-20261103.md。123收拢重复政策并修正合法运算提示，尚无完整内容验收。
+- 当前安装候选123（285），唯一AVD Chrona_Classroom_36／emulator-5580，不占手机。low新轮70863曾在edit-plan空正文失败，output760/上限32768，非截断；沿原检查点19926已完整成功。4/4更正稿复用、40附图标签0失配，855原字幕最终逐字一致，最后input204003/cache184960，含一次failed和一次restart。证据build/editorial127/complete-audit.txt、export/、两张压缩image-review已读，设备review.zip及空目录已清。
+- 固定课程：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。当前同候选high对照会话66850，build/editorial127/high/run.txt，configured+newRun=true+reasoningEffort=high，不保存全局。唯一下一步观察终态，审全文/全部图及与low逐项比较，再决定通用修正；不得覆盖安装正在运行的123。
+- 123 low全文9知识／10事务／2行动／18图已读，内容不批准：仍否定合法约分、反转保留答案指令、辛苦分触发条件改写、模糊词扩成具体加分条件、无用人数说明。原更正文稿确有反向指令，但最终事务已供全部原字幕，不能归咎漏传。image113可见2+2/3板书，与分步评分举例相关，不把它误报为无关图片。最近122证据保留build/editorial126/。
 - 模拟器保存服务为OpenCode Go／deepseek-v4.1-flash／Responses／low，可选x-opencode-session；密钥不读不输出。原模型、协议及全局设置未变。
-- 已非阻塞询问是否临时high同课对照，尚无答复，先不调用高思考。trial instrumentation已准备显式reasoningEffort参数，只构造本次AiSettings、不保存配置，并回报全局model/effort不变布尔；已构建未调用，辅助包build/editorial125/high-trial.apk。
-- high可选未答，不调用、不阻塞正常回归；以后对照必须固定同候选。123政策仅system一次，四类Schema不重复，policy1002/全量24904/构建/独立复审通过。冻结与当前自定义提示长度均0，排除覆盖。危险skip事务优化已撤回，不能丢原事务中误分类的知识。
+- 用户已批准临时high同课对照，已按上述66850启动。仅本次AiSettings、不保存全局配置；终态记录全局model/effort不变、实际effort、usage和内容差异。使用已保存匹配辅助包build/editorial127/model-trial.apk；不得先安装124再声称同候选对照。
+- 123政策仅system一次，四类Schema不重复，policy1002/全量24904/构建/独立复审通过。冻结与当前自定义提示长度均0，排除覆盖。危险skip事务优化已撤回，不能丢原事务中误分类的知识。
 - 124（286）独立图片窗口覆盖修复已构建未安装：已有基线覆盖则原样保留；预算足够时先最少区间锚点再补原质量采样，预算不可行保留原基线；40上限、来源编号、原图对象不变。实际122全部15窗已覆盖，不归因本课缺式。独立代码check通过，600组/2511预算穷举对照、专项23994/完整24566/Responses535/grounded317项0失败；build/editorial128/。测试diff保留原完整用例，仅新增覆盖检查。完成文档和源码提交，不安装到运行中的AVD。
 
 ## 验收与原范围
