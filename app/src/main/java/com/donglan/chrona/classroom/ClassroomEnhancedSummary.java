@@ -146,6 +146,13 @@ final class ClassroomEnhancedSummary {
                 ClassroomSummary.validateImageAssessment(value,catalogue);
                 if(countedImages){JSONArray requests=value.getJSONArray("image_requests");for(int i=0;i<requests.length();i++)ClassroomSummary.requestedCount(requests.getJSONObject(i));}
                 if(affairsFirst){
+                    // This stage receives no image bytes. Hydrate known empty metadata rather
+                    // than paying to regenerate correct teacher facts for an omitted empty list.
+                    JSONArray facts=value.getJSONArray("affairs");
+                    for(int i=0;i<facts.length();i++){
+                        JSONObject fact=facts.getJSONObject(i);
+                        if(!fact.has("images")||fact.isNull("images"))fact.put("images",new JSONArray());
+                    }
                     JSONObject publication=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",value.getJSONArray("affairs")).put("assignments",value.getJSONArray("assignments"));
                     ClassroomSummary.validateBlock(publication,blockInput(full.getJSONArray("segments"),new JSONArray()),affairsSchema);
                     ClassroomSummary.validateAssignmentEvidence(publication,full.getJSONArray("segments"));
@@ -246,6 +253,7 @@ final class ClassroomEnhancedSummary {
     }
     private static String assignmentRules(){
         return "课堂安排必须是老师明确布置的具体任务，不能把知识点、一般编程建议、自拟复习事项转成安排。"
+                +"安排只写需完成的行动、实际题名或编号及老师规定的执行条件、期限与方式；学习题干、公式和推导留在知识笔记，不在待办中另行改写一遍，不能因概括任务而增加、删减或猜测题设。"
                 +"每项assignments除text、sources外还必须带evidence，逐字摘录原始字幕中表达该要求的最短连续原话，不用更正文稿的改写，不拼接非连续片段。"
                 +"sources须列全引文覆盖的每条来源，不可跳过中间字幕；只摘具体行动要求，不带入无关分数或背景段落。没有真实要求就返回[]。"
                 +"明确行动须按动作及对象分别提取，不因措辞相同或相邻教学内容而合并不同对象，也不因未规定提交时间或方式而漏掉；只保留原文明确要求，不自行升级成提交作业。"

@@ -352,6 +352,34 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     if(providerFailure&&key.equals(reviewKey)&&run.optBoolean("editorial_source_first"))
                         row.put("run_editorial_input_audit",editorialInputAudit(run,materials));
                     JSONArray actualModes=new JSONArray();JSONObject savedConversation=run.optJSONObject("conversation");
+                    if(providerFailure&&key.equals(reviewKey)&&savedConversation!=null){
+                        JSONObject repair=new JSONObject();JSONArray reasons=new JSONArray(),messages=savedConversation.optJSONArray("messages");
+                        String prefix="上一条回复的JSON结构或字段不完整：",suffix="。这是该块唯一一次格式修复";
+                        if(messages!=null)for(int m=0;m<messages.length();m++){
+                            JSONObject message=messages.optJSONObject(m);if(message==null||!message.optString("role").equals("user"))continue;
+                            Object content=message.opt("content");JSONArray messageParts=content instanceof JSONArray?(JSONArray)content:new JSONArray().put(new JSONObject().put("text",content));
+                            for(int p=0;p<messageParts.length();p++){
+                                JSONObject part=messageParts.optJSONObject(p);String text=part==null?"":part.optString("text");int end=text.indexOf(suffix);
+                                if(text.startsWith(prefix)&&end>prefix.length()){
+                                    String detail=text.substring(prefix.length(),end);
+                                    reasons.put(detail.length()<160&&com.donglan.chrona.classroom.ClassroomJsonFailure.isJsonFailure(detail)?detail:"结构诊断已隐去");
+                                }
+                            }
+                        }
+                        repair.put("reasons",reasons);JSONObject outputs=savedConversation.optJSONObject("outputs");
+                        if(outputs!=null&&outputs.has("affairs-plan")){
+                            try{
+                                JSONObject first=com.donglan.chrona.classroom.ClassroomSummary.parseObject(outputs.getString("affairs-plan")),fields=new JSONObject();
+                                for(String field:new String[]{"affairs","assignments","image_requests","image_assessment"}){
+                                    Object value=first.opt(field);fields.put(field,value instanceof JSONArray?((JSONArray)value).length():value instanceof JSONObject?"object":value==null?"missing":"other");
+                                }
+                                JSONArray requests=first.optJSONArray("image_requests");int missing=0;
+                                if(requests!=null)for(int n=0;n<requests.length();n++)if(!requests.getJSONObject(n).has("count"))missing++;
+                                repair.put("first_fields",fields).put("first_missing_count",missing);
+                            }catch(Exception ignored){repair.put("first_parseable",false);}
+                        }
+                        row.put("run_repair_diagnostic",repair);
+                    }
                     JSONArray savedTurns=savedConversation==null?null:savedConversation.optJSONArray("turns");
                     if(savedTurns!=null)for(int t=0;t<savedTurns.length();t++){
                         JSONObject turn=savedTurns.getJSONObject(t);String mode=turn.optString("output_mode");

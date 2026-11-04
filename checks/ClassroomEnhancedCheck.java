@@ -258,6 +258,11 @@ public final class ClassroomEnhancedCheck {
                     }
                 }
             }
+            if(current.startsWith("affairs-plan")&&(mode.equals("affairs-first-missing-images")||mode.equals("affairs-first-null-images"))){
+                JSONObject value=ClassroomSummary.parseObject(output),fact=value.getJSONArray("affairs").getJSONObject(0);
+                if(mode.equals("affairs-first-missing-images"))fact.remove("images");else fact.put("images",JSONObject.NULL);
+                output=value.toString();
+            }
             JSONObject reply=new JSONObject().put("role","assistant").put("content",output).put("reasoning_content","合成推理\ncall="+call);
             replies.add(reply);
             JSONObject usage=new JSONObject().put("prompt_tokens",1000+call).put("completion_tokens",100)
@@ -1796,6 +1801,12 @@ public final class ClassroomEnhancedCheck {
         JSONObject schema=ClassroomResponseShape.contract("affairs-plan",1,1).getJSONObject("schema"),fields=schema.getJSONObject("properties");check(fields.keySet().equals(Set.of("image_assessment","image_requests","affairs","assignments"))&&!fields.has("notes")&&!fields.has("overview")&&fields.getJSONObject("assignments").getJSONObject("items").getJSONObject("properties").has("evidence"),"128 first-stage grammar has only image planning, original course affairs and literal-action evidence");structuralOnly(schema);
         for(String protocol:List.of(AiSettings.CHAT_COMPLETIONS,AiSettings.RESPONSES)){
             legacyCountedSnapshot(protocol);
+            for(String empty:List.of("affairs-first-missing-images","affairs-first-null-images")){
+                reset(empty,true);File emptyDir=compactMaterials(empty+"-"+protocol);
+                JSONObject emptyResult=affairsFirstGenerate(emptyDir,protocol),rawFact=syntheticReply(stages.indexOf("affairs-plan")).getJSONArray("affairs").getJSONObject(0),savedFact=state(emptyDir).getJSONObject("image_plan").getJSONArray("affairs").getJSONObject(0);
+                check(emptyResult.getBoolean("complete")&&stages.equals(List.of("correct-0","affairs-plan","whole-note")),"known-empty metadata does not regenerate a paid text-only plan: "+empty+" "+protocol);
+                check(savedFact.getJSONArray("images").length()==0&&rawFact.optJSONArray("images")==null&&savedFact.getString("text").equals(rawFact.getString("text"))&&savedFact.getJSONArray("sources").similar(rawFact.getJSONArray("sources")),"hydrate only the authoritative empty image list, retaining teacher facts, sources and the raw reply: "+empty+" "+protocol);
+            }
             reset("affairs-first-echo",true);File echoedDir=compactMaterials("echoed-affairs-"+protocol);
             JSONObject echoedResult=affairsFirstGenerate(echoedDir,protocol),echoedRun=state(echoedDir),echoedDoc=echoedResult.getJSONArray("parts").getJSONObject(0);
             for(String field:List.of("affairs","assignments"))check(echoedDoc.getJSONArray(field).similar(echoedRun.getJSONObject("image_plan").getJSONArray(field)),"an exact model echo does not duplicate or rewrite first-stage "+field+": "+protocol);
