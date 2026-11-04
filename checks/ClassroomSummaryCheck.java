@@ -744,6 +744,12 @@ public final class ClassroomSummaryCheck {
         check(ClassroomJsonFailure.responseDetail("{\"groups\":[{}]}","edit-assignments",state).equals("JSON 字段类型错误：groups[0] 应为数组"),"assignment grouping shape is independent of note schema");
         check(state.toString().equals(original),"read-only diagnostic leaves run unchanged");
         check(ClassroomJsonObject.parseObject("```json\n{\"text\":\"甲\\\\n乙\"}\n```").getString("text").equals("甲\\n乙"),"shared syntax parser preserves escaped payload without normalization");
+        String nativeMath="{\"overview\":\"\\(\\infty/\\infty\\)、\\(0\\cdotinfty\\)\"}";
+        check(ClassroomJsonObject.parseObject(nativeMath).getString("overview").equals("\\(\\infty/\\infty\\)、\\(0\\cdotinfty\\)"),"unknown JSON escapes retain TeX slashes rather than Android silently deleting them");
+        check(nativeMath.equals("{\"overview\":\"\\(\\infty/\\infty\\)、\\(0\\cdotinfty\\)\"}"),"syntax normalization never rewrites the original reply string");
+        JSONObject escapedPayload=new JSONObject().put("text","引号\"与\\frac{a}{b}、\\theta；换行\n制表\t回车\r退格\b分页\f；字面\\n与末尾\\");
+        check(ClassroomJsonObject.parseObject(escapedPayload.toString()).similar(escapedPayload),"all valid quote, slash, TeX and JSON control escapes keep their original values");
+        check(ClassroomJsonObject.parseObject("{\"text\":\"\\u4e2d\\/\\u6587\",\"nested\":{\"text\":\"\\q\"}}").getJSONObject("nested").getString("text").equals("\\q"),"literal unknown escapes are preserved inside nested strings without reshaping fields");
     }
     private static void retention()throws Exception {
         check(ClassroomDocument.exportMarkdown("![图](image-0.jpg) $x^2$").equals("![图](images/image-0.jpg) $x^2$"),"export canonicalizes bare image paths without changing math");

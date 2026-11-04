@@ -379,6 +379,14 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                             }catch(Exception ignored){repair.put("first_parseable",false);}
                         }
                         row.put("run_repair_diagnostic",repair);
+                        if(outputs!=null&&outputs.has("whole-note")){
+                            // Project only the requested note field, never conversation or settings.
+                            String rawNote=outputs.getString("whole-note");
+                            java.util.regex.Matcher overview=java.util.regex.Pattern.compile("\"overview\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"").matcher(rawNote);
+                            if(overview.find())row.put("whole_overview_native_literal",overview.group(1).substring(0,Math.min(2000,overview.group(1).length())));
+                            try{row.put("whole_overview_parsed",com.donglan.chrona.classroom.ClassroomSummary.parseObject(rawNote).optString("overview"));}
+                            catch(Exception ignored){row.put("whole_overview_parseable",false);}
+                        }
                     }
                     JSONArray savedTurns=savedConversation==null?null:savedConversation.optJSONArray("turns");
                     if(savedTurns!=null)for(int t=0;t<savedTurns.length();t++){
