@@ -8,7 +8,7 @@ import android.widget.TextView;
 
 /** Compact campus feature hub; source accounts and preferences have dedicated pages. */
 public final class ZjuSettingsActivity extends Activity {
-    private TextView account,school,pta;
+    private TextView account,school,pta,schoolStatus;
     @Override protected void onCreate(Bundle saved){
         ThemeStore.apply(this);super.onCreate(saved);
         LinearLayout root=SettingsPageLayout.content(this);
@@ -24,6 +24,7 @@ public final class ZjuSettingsActivity extends Activity {
         SettingsPageLayout.row(this,courses,"考试安排",null,()->startActivity(new Intent(this,ZjuExamsActivity.class)));
         SettingsPageLayout.row(this,courses,"课堂总结",null,()->startActivity(new Intent(this,ClassroomSummaryActivity.class)));
         SettingsPageLayout.row(this,courses,"课程事务",null,()->ClassroomAffairsActivity.open(this,new ZjuSettingsStore(this).account(),""));
+        schoolStatus=new TextView(this);schoolStatus.setTextSize(14);UiStyle.muted(schoolStatus);UiStyle.addSpaced(root,schoolStatus,8,0);
         SettingsPageLayout.show(this,root,saved==null);bind();
     }
     private void bind(){
@@ -31,6 +32,7 @@ public final class ZjuSettingsActivity extends Activity {
         account.setText(zju.configured()?zju.enabled()?"已开启":"已登录":"未登录");
         school.setText(zju.enabled()&&new ZjuHomeworkStore(this).state().enabled?"已开启":"未开启");
         pta.setText(pt.prefs.getBoolean("auth_expired",false)?"需登录":pt.enabled()&&new ZjuHomeworkStore(this,2).state().enabled?"已开启":pt.configured()?"未开启":"未登录");
+        String status=zju.enabled()?zju.status():"";schoolStatus.setText(status);schoolStatus.setVisibility(status.isBlank()?android.view.View.GONE:android.view.View.VISIBLE);
     }
     @Override protected void onResume(){super.onResume();if(account!=null)bind();}
 }

@@ -69,7 +69,7 @@ public final class ScheduleCompareActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         UiStyle.acrylicChoice(actions, false, UiStyle.RADIUS_PILL, false);
-        round(actions, UiStyle.RADIUS_PILL);
+        UiSurfaces.clipRounded(actions, UiStyle.RADIUS_PILL);
         ImageButton refresh = icon(R.drawable.ic_refresh, "刷新网页", () -> {
             if (web != null) web.reload();
         });
@@ -106,7 +106,7 @@ public final class ScheduleCompareActivity extends Activity {
             web = new WebView(this);
             configureWebView();
             FrameLayout website = new FrameLayout(this);
-            round(website, UiStyle.RADIUS_CARD);
+            UiSurfaces.clipRounded(website, UiStyle.RADIUS_CARD);
             website.addView(web, new FrameLayout.LayoutParams(-1, -1));
             LinearLayout.LayoutParams viewport = new LinearLayout.LayoutParams(-1, 0, 1);
             viewport.topMargin = dp(8);
@@ -138,16 +138,6 @@ public final class ScheduleCompareActivity extends Activity {
         UiStyle.pressable(button);
         button.setOnClickListener(view -> action.run());
         return button;
-    }
-
-    /** Clip the actual child rendering, including WebView's opaque page background. */
-    private void round(View view, int radius) {
-        view.setOutlineProvider(new android.view.ViewOutlineProvider() {
-            @Override public void getOutline(View target, android.graphics.Outline outline) {
-                outline.setRoundRect(0, 0, target.getWidth(), target.getHeight(), dp(UiStyle.radius(target.getContext(), radius)));
-            }
-        });
-        view.setClipToOutline(true);
     }
 
     private void configureWebView() {

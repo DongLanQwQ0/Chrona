@@ -11,6 +11,7 @@
 | 分组设置页的分组标题、当前值入口、分隔与开关 | `SettingsPageLayout.group/row/divider/toggle`；从原设置主页抽取，同类校园设置直接复用 |
 | 读取主题、圆角，设置文字／输入／按钮／卡片样式 | `UiStyle`；主题值来自 `ThemeStore` 与 `CornerScale`，外观滑块在原控件上更新 |
 | 采样与绘制亚克力、匹配涟漪遮罩、刷新移动中的表面 | `UiSurfaces`；负责矩阵、观察器、位图缓存与绘制状态，不负责页面导航或业务状态 |
+| 裁剪网页等不透明子内容的主题圆角 | `UiSurfaces.clipRounded`；宿主按当前圆角档位设置outline与实际子内容裁剪，同格与PTA登录共用 |
 | 选择、确认、文字编辑、日期／时间和自定义浮层 | `UiDialogs`；统一菜单、操作行、窗口开合、多层模糊与背景恢复 |
 | 内容呈现、列表切换、局部交叉淡化与取消恢复 | `UiMotion`；系统减少动画时落到正确终态，Activity 转场继续交给 Android |
 | 普通按压与组合操作反馈 | `PressFeedback`；Dock 继续独立管理按压、拖动与惯性 |

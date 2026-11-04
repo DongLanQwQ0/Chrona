@@ -25,6 +25,16 @@ final class UiSurfaces {
             new WeakHashMap<>();
     private UiSurfaces() { }
 
+    /** Clip opaque child content with the same theme geometry as its native container. */
+    static void clipRounded(View view,int radiusKind){
+        view.setOutlineProvider(new android.view.ViewOutlineProvider(){
+            @Override public void getOutline(View target,android.graphics.Outline outline){
+                outline.setRoundRect(0,0,target.getWidth(),target.getHeight(),dp(target,radius(target.getContext(),radiusKind)));
+            }
+        });
+        view.setClipToOutline(true);
+    }
+
     /** Window blur is already supplied for these roots; child surfaces must not sample twice. */
     static void setDialogBlurRoot(View root, boolean enabled) {
         synchronized (DIALOG_BLUR_ROOTS) {

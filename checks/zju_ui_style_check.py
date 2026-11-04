@@ -33,4 +33,26 @@ assert 'static LinearLayout dialogPanel' in style and 'static ScrollView dialogB
 assert 'MeasureSpec.AT_MOST' in style and 'scroll.setVerticalScrollBarEnabled(false)' in style
 assert (root / 'docs/ui-style-contract.md').is_file()
 assert 'ui-style-contract.md' in (root / 'docs/development.md').read_text(encoding='utf-8')
+school = (src / 'SchoolSettingsActivity.java').read_text(encoding='utf-8')
+hub = (src / 'ZjuSettingsActivity.java').read_text(encoding='utf-8')
+pta = (src / 'PtaSettingsActivity.java').read_text(encoding='utf-8')
+assert 'R.drawable.ic_refresh' not in school and 'R.drawable.ic_refresh' not in pta
+assert 'R.drawable.ic_refresh' in hub and 'ZjuSync.request(this,' in hub
+assert 'SettingsPageLayout.row(this,group,"账号与同步"' not in school
+assert 'SettingsPageLayout.row(this,identity,"账号与同步"' in hub
+assert 'params.setMargins(dp(16),dp(group.getChildCount()==0?12:4),dp(16),dp(8))' in school
+assert 'UiStyle.input(f)' in school and 'status=new TextView' not in school
+assert 'ZjuSync.requestSchool(this,' in school and 'Feedback.show(this,r)' in school
+task = (src / 'TaskDetailActivity.java').read_text(encoding='utf-8')
+assert 'new LinearLayout.LayoutParams(-2,dp(48));compact.setMarginEnd(dp(8))' in task
+assert 'candidateActions.addView(mobile,0,compact)' in task
+login = (src / 'PtaLoginActivity.java').read_text(encoding='utf-8')
+tongge = (src / 'ScheduleCompareActivity.java').read_text(encoding='utf-8')
+assert 'UiSurfaces.clipRounded(website,UiStyle.RADIUS_CARD)' in login
+assert 'UiSurfaces.clipRounded(website, UiStyle.RADIUS_CARD)' in tongge
+assert 'website.addView(web,new FrameLayout.LayoutParams(-1,-1))' in login
+assert 'root.addView(web,' not in login and 'private void round(' not in tongge
+surfaces = (src / 'UiSurfaces.java').read_text(encoding='utf-8')
+assert 'static void clipRounded(View view,int radiusKind)' in surfaces
+assert 'view.setClipToOutline(true)' in surfaces
 print('Native UI style contract: changed pages, theme dialogs, density spacing, overflow, feature gates passed; rendering not exercised')

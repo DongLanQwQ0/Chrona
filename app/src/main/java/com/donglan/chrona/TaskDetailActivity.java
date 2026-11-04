@@ -2675,17 +2675,17 @@ public final class TaskDetailActivity extends Activity {
             boolean pta=destinations.mobile!=null&&destinations.mobile.startsWith("https://pintia.cn/");
             Button mobile = UiStyle.compactAction(this, pta?"PTA":"雪灾浙大M", R.drawable.ic_open_external,
                     () -> openHomeworkSite(destinations.mobile));
-            Button desktop = UiStyle.compactAction(this, "雪灾浙大", R.drawable.ic_open_external,
-                    () -> openHomeworkSite(destinations.desktop));
             mobile.setEnabled(destinations.mobile != null);
-            desktop.setEnabled(destinations.desktop != null);
             if (destinations.mobile == null) mobile.setTooltipText("当前作业缺少平台链接");
-            if (destinations.desktop == null) desktop.setTooltipText("当前作业缺少平台链接");
-            LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(48), 1f);
-            left.setMarginEnd(dp(8));
-            links.addView(mobile, left);
-            if(!pta)links.addView(desktop, new LinearLayout.LayoutParams(0, dp(48), 1f));
-            UiStyle.addSpaced(card, links, 8, 0);
+            if(pta){
+                LinearLayout.LayoutParams compact=new LinearLayout.LayoutParams(-2,dp(48));compact.setMarginEnd(dp(8));
+                candidateActions.addView(mobile,0,compact);
+            }else{
+                Button desktop=UiStyle.compactAction(this,"雪灾浙大",R.drawable.ic_open_external,()->openHomeworkSite(destinations.desktop));
+                desktop.setEnabled(destinations.desktop!=null);if(destinations.desktop==null)desktop.setTooltipText("当前作业缺少平台链接");
+                LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,dp(48),1f);left.setMarginEnd(dp(8));
+                links.addView(mobile,left);links.addView(desktop,new LinearLayout.LayoutParams(0,dp(48),1f));UiStyle.addSpaced(card,links,8,0);
+            }
         }
         UiStyle.addSpaced(card, candidateActions, 8, 0);
         return publish[0];

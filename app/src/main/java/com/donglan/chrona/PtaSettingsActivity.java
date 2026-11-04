@@ -11,14 +11,12 @@ public final class PtaSettingsActivity extends Activity {
     private TextView account,status;
     private Switch enabled,plan;
     private boolean binding;
-    private ImageButton refresh;
     private final android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable poll=new Runnable(){public void run(){updateStatus();handler.postDelayed(this,1000);}};
     @Override protected void onCreate(Bundle saved){
         ThemeStore.apply(this);super.onCreate(saved);settings=new PtaSettingsStore(this);
         LinearLayout root=SettingsPageLayout.content(this);
-        refresh=UiStyle.navigationIcon(this,R.drawable.ic_refresh,"刷新 PTA 作业",this::sync);
-        SettingsPageLayout.header(this,root,"PTA 作业",refresh);
+        SettingsPageLayout.header(this,root,"PTA 作业");
         LinearLayout identity=SettingsPageLayout.group(this,root,"账号");
         account=SettingsPageLayout.row(this,identity,"PTA 账号","未登录",()->startActivity(new Intent(this,PtaLoginActivity.class)));
         SettingsPageLayout.row(this,identity,"退出登录",null,()->UiDialogs.confirmDialog(this,"退出 PTA？","保留已有作业，停止 PTA 同步。","退出",()->{
@@ -56,7 +54,6 @@ public final class PtaSettingsActivity extends Activity {
         if(status==null)return;
         boolean busy=ZjuSync.ptaRefreshing();String text=busy?"正在同步":settings.status();
         if(!text.contentEquals(status.getText()))status.setText(text);
-        refresh.setEnabled(!busy&&settings.enabled());refresh.setContentDescription(busy?"正在同步 PTA 作业":"刷新 PTA 作业");
     }
     @Override protected void onResume(){super.onResume();if(account!=null)bind();handler.post(poll);}
     @Override protected void onPause(){handler.removeCallbacks(poll);super.onPause();}

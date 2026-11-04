@@ -30,6 +30,10 @@ public final class LanAccessInstrumentation extends Instrumentation {
     @Override public android.app.Activity newActivity(ClassLoader loader, String name, Intent intent)
             throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         android.app.Activity activity = super.newActivity(loader, name, intent);
+        if("campus_settings".equals(arguments.getString("check"))&&arguments.containsKey("font")) {
+            FixtureIsolation.require(getTargetContext());
+            var config=new android.content.res.Configuration();config.fontScale=Float.parseFloat(arguments.getString("font"));activity.applyOverrideConfiguration(config);
+        }
         if("pta_homework".equals(arguments.getString("check"))&&arguments.containsKey("font")){
             var config=new android.content.res.Configuration();config.fontScale=Float.parseFloat(arguments.getString("font"));activity.applyOverrideConfiguration(config);
         }
@@ -62,6 +66,12 @@ public final class LanAccessInstrumentation extends Instrumentation {
         return activity;
     }
     @Override public void onStart() {
+        if ("campus_settings".equals(arguments.getString("check"))) {
+            Bundle report = new Bundle();
+            try { report.putString("campus_report", CampusSettingsDeviceCheck.run(this, arguments)); finish(-1, report); }
+            catch (Throwable error) { report.putString("error", android.util.Log.getStackTraceString(error)); finish(0, report); }
+            return;
+        }
         if ("header_actions".equals(arguments.getString("check"))) {
             Bundle report = new Bundle();
             try { report.putString("header_actions_report", HeaderActionGroupDeviceCheck.run(this, arguments)); finish(-1, report); }

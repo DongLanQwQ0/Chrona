@@ -189,6 +189,7 @@ public final class ClassroomSummary {
                     .put("affairs_source_first",enhanced&&affairsSchema>0)
                     .put("editorial_source_first",enhanced)
                     .put("compact_pipeline",enhanced&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
+                    .put("compact_affairs_first",enhanced&&affairsSchema>0&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
                     .put("unified_affairs",enhanced&&affairsSchema>0)
                     .put("content_batch_size",enhanced?2:1).put("editor_batch_size",enhanced?3:1)
                     .put("editor_batch_chars",18000);

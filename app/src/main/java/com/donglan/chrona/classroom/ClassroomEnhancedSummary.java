@@ -111,24 +111,38 @@ final class ClassroomEnhancedSummary {
     /** One evidence request and one complete publication; no intermediate notebook to rewrite. */
     private JSONObject compact(int imageLimit,JSONArray corrected)throws Exception{
         JSONObject catalogue=full.getJSONObject("image_catalogue");
+        boolean affairsFirst=state.optBoolean("compact_affairs_first");
         String originals=ClassroomSummary.uploadChunk(blockInput(full.getJSONArray("segments"),new JSONArray())).toString();
-        if(!state.has("image_plan")&&(imageLimit==0||catalogue.getInt("count")==0)){
+        if(!affairsFirst&&!state.has("image_plan")&&(imageLimit==0||catalogue.getInt("count")==0)){
             state.put("image_plan",new JSONObject().put("image_assessment",new JSONObject()
                     .put("decision",imageLimit==0?"disabled":"unavailable")
                     .put("reason",imageLimit==0?"用户未授权上传图片":"本课堂没有可用截图"))
                     .put("image_requests",new JSONArray())).put("image_plan_origin","local_availability");save();
         }
         if(!state.has("image_plan")){
-            status("AI 判断全课图片需求",0,1);
+            status(affairsFirst?"AI 整理课程事务与图片需求":"AI 判断全课图片需求",0,1);
             String decision=imageLimit==0?"disabled":catalogue.getInt("count")==0?"unavailable":"request";
-            String prompt="课程："+lesson.course+"；课堂："+lesson.title+"。更正文稿已完成。现在只判断图片需求，不生成初稿、主题编排或任何知识／事务正文。"
-                    +"已完成更正文稿在同一历史中；缓存复用文稿在下方按原顺序原字追加。结合全课原始字幕与PPT时间目录，指出公式、图形、题设或书面要求有哪些视觉信息缺口，再决定是否取图。"
-                    +"返回JSON {\"image_assessment\":{\"decision\":\""+decision+"\",\"reason\":\"具体依据\"},\"image_requests\":[]}。"
+            String prompt="课程："+lesson.course+"；课堂："+lesson.title+"。更正文稿已完成。"
+                    +(affairsFirst?"现在只依据下方全课原始字幕生成课程事务和明确任务，并判断图片需求。不生成知识初稿或主题编排，不采用派生更正文稿对教师指令的解释。"
+                    +"完整扫描全课，不按知识主题筛选事务。先引用决定方向的最短教师原话，再简述对象、条件与例外；相邻否定词只能作用于其实际动作，不能改成通常的答卷建议。所有清楚的具体分值和酌情给分、复核时待遇变化条件均保留，模糊术语不猜成新的得分入口。需要图才能确认的事实暂不猜测，只请求对应图片。"
+                    :"现在只判断图片需求，不生成初稿、主题编排或任何知识／事务正文。")
+                    +(affairsFirst?"本轮事务仅以下方原始字幕及完整相邻语境为事实依据，更正文稿留给知识整理阶段使用。":"已完成更正文稿在同一历史中；缓存复用文稿在下方按原顺序原字追加。")
+                    +"结合全课原始字幕与PPT时间目录，指出公式、图形、题设或书面要求有哪些视觉信息缺口，再决定是否取图。"
+                    +"返回JSON {\"image_assessment\":{\"decision\":\""+decision+"\",\"reason\":\"具体依据\"},\"image_requests\":[]"
+                    +(affairsFirst?",\"affairs\":[{\"title\":\"事务主题\",\"text\":\"精简完整事务，保留决定方向的短原话与条件\",\"sources\":[0],\"images\":[]}],\"assignments\":[{\"text\":\"具体任务\",\"sources\":[0],\"evidence\":\"原始字幕的最短连续逐字原话\"}]":"")+"}。"
+                    +(affairsFirst?"无可靠事务或任务时对应集合=[]。尚无实际附图，所有images=[]，正文不放图片。"+assignmentRules():"")
                     +"需要图时decision=request，每项image_requests为{\"start\":0,\"end\":60,\"reason\":\"视觉信息缺口\"}；无需图时not_needed且[]。禁止在关闭上传或无可用图片时请求。"
                     +ClassroomSummary.imageInstructions(catalogue,imageLimit)
-                    +"\n复用更正文稿：\n"+(state.has("correction_reused_from")?corrected.toString():"更正文稿已在本轮原始历史中，不重复附录。")
+                    +(affairsFirst?"":"\n复用更正文稿：\n"+(state.has("correction_reused_from")?corrected.toString():"更正文稿已在本轮原始历史中，不重复附录。"))
                     +"\n全课原始字幕：\n"+originals+"\nPPT时间目录："+catalogue;
-            JSONObject plan=json("image-plan",prompt,Collections.emptyList(),value->ClassroomSummary.validateImageAssessment(value,catalogue));
+            JSONObject plan=json(affairsFirst?"affairs-plan":"image-plan",prompt,Collections.emptyList(),value->{
+                ClassroomSummary.validateImageAssessment(value,catalogue);
+                if(affairsFirst){
+                    JSONObject publication=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",value.getJSONArray("affairs")).put("assignments",value.getJSONArray("assignments"));
+                    ClassroomSummary.validateBlock(publication,blockInput(full.getJSONArray("segments"),new JSONArray()),affairsSchema);
+                    ClassroomSummary.validateAssignmentEvidence(publication,full.getJSONArray("segments"));
+                }
+            });
             state.put("image_plan",plan).put("image_plan_origin","model");save();
         }
         if(!state.has("selected")){
@@ -152,18 +166,24 @@ final class ClassroomEnhancedSummary {
         if(!state.has("compact_note")){
             status("AI 生成全课笔记",0,1);
             String prompt="现在根据同一历史中的更正文稿、全课原始字幕及本次实际附图，一次生成最终完整笔记。没有独立提取稿、编排稿或后续整稿，不预留待后补的题干或计算。"
-                    +(state.has("correction_reused_from")&&!"model".equals(state.optString("image_plan_origin"))?"\n复用更正文稿（按原顺序原字追加）：\n"+corrected:"历史中的更正文稿保持原位，不重复附录。")
+                    +(affairsFirst?"课程事务和具体任务已经在affairs-plan完成，会在本地原字保留；本轮集中生成全课知识。affairs只补本次新图片明确支持、且此前没有的事务事实。assignments增补仍须有原始字幕可逐字摘录的真实行动原话，图片仅补清对象或条件，不能把纯图片文字伪引为字幕。两集合不重写、重复或总结已有事项，没有新增则各为[]。知识中不混入评分、考试范围或事务规则。":"")
+                    +(state.has("correction_reused_from")&&(affairsFirst||!"model".equals(state.optString("image_plan_origin")))?"\n复用更正文稿（按原顺序原字追加）：\n"+corrected:"历史中的更正文稿保持原位，不重复附录。")
                     +"知识只进入notes，课程事务只进入affairs，具体执行任务只进入assignments，各自独立、不混写、不跨区重复。概览只简述知识主线，不放图。"
                     +"按当前笔记整理强度组织；3档是精简完整讲义，按知识依赖积极重排，保留自学需要的条件、关键过程、解释和结论，不扩写教材或流水账。原题不明可用明确标注的同类型补充例题，同机制不并列重复原题和补题。"
                     +"数学先还原表达式与操作链，区分合法运算与真正失效的前提；不能为解释错误结论而否定合法约分、变形或求导。"
                     +"每次代入不等式或换元均对照定义逐项替换，保持分子、系数、幂次、符号与趋近方向一致，不能只因最后答案相同就省略或改变中间等式。"
-                    +"教师事务以原话为依据，集中保留考试、评分、范围、出勤和资源等有效信息。允许／禁止、保留／划掉、给分条件须核对动作、对象、触发行为和变化方向；不以常识覆盖原话，也不把派生文稿中反复出现的解释当作证据。"
-                    +"保留细微考核线索和不同适用对象，音近术语无法确认时保留可靠事实，不猜额外得分入口。删无关闲聊、生产说明、重复小结；一般答卷规范不额外变成待办。"
+                    +(affairsFirst?"不要重新扫描字幕生成另一份事务；已保存事务与行动原字保留，本轮只补此前没有的图中事务事实，任务仍遵守原始字幕引文契约。"
+                    :"教师事务以原话为依据，集中保留考试、评分、范围、出勤和资源等有效信息。允许／禁止、保留／划掉、给分条件须核对动作、对象、触发行为和变化方向；不以常识覆盖原话，也不把派生文稿中反复出现的解释当作证据。保留细微考核线索和不同适用对象，音近术语无法确认时保留可靠事实，不猜额外得分入口。")
+                    +"删无关闲聊、生产说明、重复小结；一般答卷规范不额外变成待办。"
                     +assignmentRules()+ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
                     +"\n本次图片按顺序绑定实际file（编号不连续，不重编号）："+inventory
                     +"。只可引用实际附图，图注描述实际可见内容；不把字幕里的证明当作图片已显示。空白、标题页、遮挡及低置信度图不放成品；不强行配图。"
                     +"\n全课原始字幕：\n"+originals;
             JSONObject value=json("whole-note",prompt,bytes,names,result->{
+                if(affairsFirst)for(String field:new String[]{"affairs","assignments"}){
+                    JSONArray combined=new JSONArray(state.getJSONObject("image_plan").getJSONArray(field).toString()),extra=result.getJSONArray(field);
+                    for(int i=0;i<extra.length();i++)combined.put(extra.getJSONObject(i));result.put(field,combined);
+                }
                 ClassroomSummary.validateBlock(result,blockInput(full.getJSONArray("segments"),inventory),affairsSchema);
                 ClassroomSummary.validateAssignmentEvidence(result,full.getJSONArray("segments"));
                 if(state.optInt("figure_policy")>0)ClassroomFigureReview.apply(result,inventory,inventory,state.optJSONArray("figure_reviews"));

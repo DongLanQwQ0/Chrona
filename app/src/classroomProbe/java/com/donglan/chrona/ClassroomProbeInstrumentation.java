@@ -333,6 +333,15 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     row.put("run_affairs_source_first",run.optBoolean("affairs_source_first"));
                     row.put("run_editorial_source_first",run.optBoolean("editorial_source_first"));
                     row.put("run_compact_pipeline",run.optBoolean("compact_pipeline"));
+                    row.put("run_compact_affairs_first",run.optBoolean("compact_affairs_first"));
+                    if(run.optBoolean("compact_affairs_first")&&run.has("image_plan")&&run.has("compact_note")){
+                        for(String field:new String[]{"affairs","assignments"}){
+                            JSONArray first=run.getJSONObject("image_plan").getJSONArray(field),published=run.getJSONObject("compact_note").getJSONArray(field);
+                            boolean preserved=published.length()>=first.length();
+                            for(int n=0;preserved&&n<first.length();n++)preserved=first.getJSONObject(n).toString().equals(published.getJSONObject(n).toString());
+                            row.put("run_first_"+field+"_count",first.length()).put("run_first_"+field+"_preserved",preserved);
+                        }
+                    }
                     row.put("run_image_plan_origin",run.optString("image_plan_origin"));
                     if(providerFailure&&key.equals(reviewKey)&&run.optBoolean("editorial_source_first"))
                         row.put("run_editorial_input_audit",editorialInputAudit(run,materials));

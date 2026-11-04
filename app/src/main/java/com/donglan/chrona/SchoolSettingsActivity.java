@@ -9,20 +9,16 @@ import android.widget.*;
 /** The school's account, homework and timetable settings, separated by responsibility. */
 public final class SchoolSettingsActivity extends Activity {
     private ZjuSettingsStore settings;
-    private TextView status;
     private EditText user,password;
     private boolean busy,binding;
-    private ImageButton refresh;
     private final java.util.List<android.view.View> controls=new java.util.ArrayList<>();
     private final java.util.Map<Switch,java.util.function.BooleanSupplier> toggles=new java.util.LinkedHashMap<>();
     static void open(Activity a,String page){a.startActivity(new Intent(a,SchoolSettingsActivity.class).putExtra("page",page));}
     @Override protected void onCreate(Bundle saved){
         ThemeStore.apply(this);super.onCreate(saved);settings=new ZjuSettingsStore(this);
         String page=getIntent().getStringExtra("page");LinearLayout root=SettingsPageLayout.content(this);
-        refresh=UiStyle.navigationIcon(this,R.drawable.ic_refresh,"立即同步",this::sync);
-        SettingsPageLayout.header(this,root,"homework".equals(page)?"学在浙大":"timetable".equals(page)?"课表与校历":"账号与同步",refresh);
+        SettingsPageLayout.header(this,root,"homework".equals(page)?"学在浙大":"timetable".equals(page)?"课表与校历":"账号与同步");
         if("homework".equals(page))homework(root);else if("timetable".equals(page))timetable(root);else account(root);
-        status=new TextView(this);status.setTextSize(14);UiStyle.muted(status);UiStyle.addSpaced(root,status,8,0);status.setText(settings.status());
         SettingsPageLayout.show(this,root,saved==null);
     }
     private void toggle(LinearLayout group,String label,java.util.function.BooleanSupplier value,java.util.function.Consumer<Boolean> action){
@@ -31,7 +27,7 @@ public final class SchoolSettingsActivity extends Activity {
     }
     private void account(LinearLayout root){
         LinearLayout group=SettingsPageLayout.group(this,root,"学校账号");
-        user=field(group,settings.configured()?"学号（留空保留）":"学号",false);
+        user=field(group,"学号",false);
         password=field(group,settings.configured()?"密码（留空保留）":"密码",true);
         SettingsPageLayout.row(this,group,"保存账号",null,()->{
             String name=user.getText().toString(),secret=password.getText().toString();
@@ -61,7 +57,6 @@ public final class SchoolSettingsActivity extends Activity {
             UiDialogs.confirmDialog(this,"自动安排新作业？","作业标题、内容和截止时间将发送至当前AI服务，执行时间直接应用，可随时修改。已有安排不变。","开启",()->change(()->settings.homeworkAutoPlan(true),null));
         });
         SettingsPageLayout.row(this,group,"作业更新记录",null,()->startActivity(new Intent(this,ZjuHomeworkHistoryActivity.class)));
-        SettingsPageLayout.row(this,group,"账号与同步",null,()->open(this,"account"));
         var calendar=new com.donglan.chrona.calendar.CalendarStore(this);
         if(!calendar.hasReadPermission()||!calendar.hasWritePermission())SettingsPageLayout.row(this,SettingsPageLayout.group(this,root,"日历"),"允许写入系统日历",null,
                 ()->requestPermissions(new String[]{android.Manifest.permission.READ_CALENDAR,android.Manifest.permission.WRITE_CALENDAR},73113));
@@ -73,17 +68,20 @@ public final class SchoolSettingsActivity extends Activity {
         },null));
         SettingsPageLayout.row(this,group,"校历",null,()->startActivity(new Intent(this,ZjuCalendarSettingsActivity.class)));
         SettingsPageLayout.row(this,group,"日程来源",null,()->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));
-        SettingsPageLayout.row(this,group,"账号与同步",null,()->open(this,"account"));
     }
     private EditText field(LinearLayout group,String hint,boolean secret){
         EditText f=new EditText(this);f.setHint(hint);f.setSingleLine();f.setInputType(InputType.TYPE_CLASS_TEXT|(secret?InputType.TYPE_TEXT_VARIATION_PASSWORD:InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD));
-        f.setSaveEnabled(false);f.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);UiStyle.input(f);UiStyle.addSpaced(group,f,4,6);controls.add(f);return f;
+        f.setSaveEnabled(false);f.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);UiStyle.input(f);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);
+        params.setMargins(dp(16),dp(group.getChildCount()==0?12:4),dp(16),dp(8));group.addView(f,params);
+        controls.add(f);return f;
     }
     private void bind(){binding=true;for(var e:toggles.entrySet()){
         e.getKey().setChecked(e.getValue().getAsBoolean());
         if("新作业自动排程".contentEquals(e.getKey().getText()))e.getKey().setEnabled(!busy&&settings.enabled()&&new ZjuHomeworkStore(this).state().enabled);
-    }refresh.setEnabled(!busy&&settings.enabled()&&settings.configured());binding=false;}
-    private void sync(){if(!settings.enabled()||!settings.configured()){bind();return;}refresh.setEnabled(false);status.setText("正在同步");ZjuSync.requestSchool(this,r->{if(!isDestroyed()){status.setText(settings.status());bind();}});}
+    }binding=false;}
+    private void sync(){if(!settings.enabled()||!settings.configured()){bind();return;}ZjuSync.requestSchool(this,r->{if(!isDestroyed()){bind();Feedback.show(this,r);}});}
+    private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private interface Work{void run()throws Exception;}
     private void change(Work work,Runnable done){
         if(busy)return;busy=true;for(var v:controls)v.setEnabled(false);ZjuSync.cancelSchool();

@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.webkit.*;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 
 /** Official interactive login; no JS bridge, credential logging or captcha automation. */
 public final class PtaLoginActivity extends Activity {
@@ -15,6 +16,7 @@ public final class PtaLoginActivity extends Activity {
     @Override protected void onCreate(Bundle saved){
         ThemeStore.apply(this);super.onCreate(saved);
         LinearLayout root=SettingsPageLayout.content(this);
+        root.setPadding(root.getPaddingLeft(),root.getPaddingTop(),root.getPaddingRight(),Math.round(8*getResources().getDisplayMetrics().density));
         SettingsPageLayout.header(this,root,"登录 PTA",UiStyle.navigationIcon(this,R.drawable.ic_check,"完成登录",()->verify(true)));
         web=new WebView(this);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(false);
@@ -23,7 +25,10 @@ public final class PtaLoginActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return !"https".equals(request.getUrl().getScheme());}
             @Override public void onPageFinished(WebView view,String url){verify();}
         });
-        root.addView(web,new LinearLayout.LayoutParams(-1,0,1));SettingsPageLayout.showFixed(this,root);
+        FrameLayout website=new FrameLayout(this);UiSurfaces.clipRounded(website,UiStyle.RADIUS_CARD);
+        website.addView(web,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout.LayoutParams viewport=new LinearLayout.LayoutParams(-1,0,1);viewport.topMargin=Math.round(8*getResources().getDisplayMetrics().density);
+        root.addView(website,viewport);SettingsPageLayout.showFixed(this,root);
         web.loadUrl("https://pintia.cn/auth/login");
     }
     private void verify(){
