@@ -140,23 +140,26 @@ final class ClassroomEnhancedSummary {
     }
     /** Keep the original plan stable; commit prose in bounded consecutive-topic batches. */
     private void edit(JSONArray parts,JSONArray analysed)throws Exception{
+        boolean originalEditorial=state.optBoolean("editorial_source_first");
         if(!state.has("editor_plan")){
             status("AI 全课主题编排",0,1);
             JSONArray index=new JSONArray();
             for(int p=0;p<parts.length();p++)for(String collection:collections(affairsSchema)){JSONArray notes=parts.getJSONObject(p).getJSONArray(collection);for(int n=0;n<notes.length();n++){
-                JSONObject note=notes.getJSONObject(n),row=new JSONObject().put("ref",reference(p,collection,n,affairsSchema)).put("title",note.getString("title")).put("text",note.getString("text")).put("sources",note.getJSONArray("sources"));
+                JSONObject note=notes.getJSONObject(n),row=originalEditorial?editorialReference(note):new JSONObject().put("title",note.getString("title")).put("text",note.getString("text")).put("sources",note.getJSONArray("sources"));
+                row.put("ref",reference(p,collection,n,affairsSchema));
                 if(affairsSchema>0)row.put("collection",collection);index.put(row);
             }}
             String prompt="全部分段提取与核图已完成，现在编排一篇与普通模式相同的全课笔记，不向用户展示分段流水账。"
-                    +"逐条对照历史中完整的提取与核图正文，索引只用于引用，不能仅凭标题分组。同一事实即使措辞和标题不同也应归入同一主题；不同题目条件、评分例外和相反结论不可误并。"
-                    +"下面索引同时给出各条正文；先比较正文中的规则、对象和条件，再确定主题。不同标题重复讲同一规则时，将其归入同一主题并保留互补细节，不分别编排后再重复生成。"
+                    +(originalEditorial?"索引以sources定位下方唯一原始字幕集合中的语境，origin=original_subtitles，images定位已提供的图片，不附历史派生稿正文。题名和原集合仅用于定位，不作为事实或分类结论；结合原话及历史中实际已提供的原图、核图证据，逐条判断主题。":"逐条对照历史中完整的提取与核图正文，索引只用于引用，不能仅凭标题分组。")
+                    +"同一事实即使措辞和标题不同也应归入同一主题；不同题目条件、评分例外和相反结论不可误并。先比较正文中的规则、对象和条件，再确定主题。不同标题重复讲同一规则时，将其归入同一主题并保留互补细节，不分别编排后再重复生成。"
                     +(state.optInt("note_strength",1)==3
                             ?"同一知识点的重复提取必须放入同一主题，合并跨段续讲；以老师讲授方向为准，可按知识依赖重排为精简讲义，保留不同题目条件、代码、纠错和评分细节，不能按输入段号设章节。"
                             :"同一知识点的重复提取必须放入同一主题，合并跨段续讲，按课程讲授顺序组织；保留不同题目条件、代码、纠错和评分细节，不能按输入段号设章节。")
                     +(affairsSchema==0?"只输出紧凑JSON {\"overview\":\"全课统一重点概览\",\"sections\":[{\"title\":\"主题\",\"refs\":[\"0:0\"]}]}。":"只输出紧凑JSON {\"overview\":\"知识重点概览\",\"sections\":[{\"title\":\"主题\",\"collection\":\"notes\",\"refs\":[\"0:notes:0\"]}]}。collection只可为notes或affairs，表示本主题按真实正文确定的最终类别，可纠正初稿分类；ref里的原集合只用于准确定位，不限制最终类别。")
                     +(affairsSchema==0?"overview用少量完整句说明全课核心，只用文字不附图，不逐段复述、不写第几段或未提及的类别。refs是下面真实索引，每条必须恰好使用一次，不得遗漏、重复或编造；本轮不生成笔记正文。没有教学笔记则sections=[]，overview为空。":"overview仅概括知识，只用文字不附图；没有知识时overview为空，课程事务仍须编排。每条notes及affairs索引必须恰好使用一次，不得遗漏、重复或编造；本轮不生成正文。相同事实即使分别来自初稿notes和affairs，也须合入同一正确类别的主题，保留独特事实、完整考核依据、范围和不确定性；不同知识与课程事务仍各自成节，不在同一节混写。")
                     +"概览只交代少量知识主线，不列整套题号、答案或逐项公式。编排须覆盖全课并统一后续指代，局部‘未提及’结论不能覆盖其它段已有信息。"
-                    +"\n已完成笔记索引：\n"+index;
+                    +"\n已完成笔记索引：\n"+index
+                    +(originalEditorial?"\n编排原始字幕集合：\n"+editorialContext(index,full.getJSONArray("segments")):"");
             state.put("editor_plan",json("edit-plan",prompt,Collections.emptyList(),value->validatePlan(value,parts,affairsSchema)));save();
         }
         JSONObject plan=state.getJSONObject("editor_plan");JSONArray sections=plan.getJSONArray("sections"),edited=state.optJSONArray("editor_notes");
@@ -164,25 +167,27 @@ final class ClassroomEnhancedSummary {
         for(int i=state.optInt("editor_section_done",edited.length());i<sections.length();){
             status("AI 全课主题整稿",i,sections.length());
             boolean sourceFirst=state.optBoolean("affairs_source_first");
-            int end=editorBatchEnd(parts,sections,i,state.optInt("editor_batch_size",1),state.optInt("editor_batch_chars",LEGACY_EDITOR_BATCH_CHARS),sourceFirst,full.getJSONArray("segments")),count=end-i;
+            int end=editorBatchEnd(parts,sections,i,state.optInt("editor_batch_size",1),state.optInt("editor_batch_chars",LEGACY_EDITOR_BATCH_CHARS),sourceFirst,full.getJSONArray("segments"),originalEditorial),count=end-i;
             boolean batch=count>1;
-            JSONObject section=sections.getJSONObject(i);String collection=affairsSchema==0?"notes":section.getString("collection");JSONArray inputs=new JSONArray(),topics=new JSONArray();Set<Integer> sources=new HashSet<>();
+            JSONObject section=sections.getJSONObject(i);String collection=affairsSchema==0?"notes":section.getString("collection");JSONArray inputs=new JSONArray(),topics=new JSONArray();Set<Integer> sources=new HashSet<>();long extractedCharacters=0;
             for(int s=i;s<end;s++){
                 JSONObject current=sections.getJSONObject(s);JSONArray topicInputs=new JSONArray(),refs=current.getJSONArray("refs");
                 for(int n=0;n<refs.length();n++){
                     JSONObject note=noteAt(parts,refs.getString(n));
-                    JSONObject supplied=editorialInput(note,full.getJSONArray("segments"),sourceFirst&&"affairs".equals(current.optString("collection")));
+                    extractedCharacters+=note.getString("text").length();
+                    JSONObject supplied=originalEditorial?editorialReference(note):editorialInput(note,full.getJSONArray("segments"),sourceFirst&&"affairs".equals(current.optString("collection")));
                     inputs.put(supplied);topicInputs.put(supplied);JSONArray ids=note.getJSONArray("sources");for(int k=0;k<ids.length();k++)sources.add(ids.getInt(k));
                 }
                 topics.put(new JSONObject().put("title",current.getString("title")).put("collection",affairsSchema==0?"notes":current.getString("collection")).put("inputs",topicInputs));
             }
             JSONArray segments=new JSONArray(),all=full.getJSONArray("segments");for(int n=0;n<all.length();n++)if(sources.contains(all.getJSONObject(n).getInt("id")))segments.put(all.getJSONObject(n));
             boolean unifiedAffairs=sourceFirst&&collection.equals("affairs");
-            JSONArray proseInputs=unifiedAffairs?unifiedAffairsInput(inputs,all):inputs;
+            JSONArray proseInputs=unifiedAffairs&&!originalEditorial?unifiedAffairsInput(inputs,all):inputs;
             String prompt="全课整稿主题 "+(i+1)+"/"+sections.length()+"："+section.getString("title")+"。"
                     +(unifiedAffairs?"本次统一整理本组课程事务。原计划标题只用于定位，不是必须逐项生成的成品目录；按原话中的事实、适用对象与条件重新归类，同一事实只归入一处，不先写宽泛总节再按细目重写。":batch?"本次连续处理 "+count+" 个原计划主题，主题清单及各自提取稿见末尾。保留各主题的独立标题，不把所有主题揉成一个大段；仅同义主题可合并去重。":"把下面同主题提取稿合为一节完整笔记，")
                     +"消除重复叙述、重复截图和‘图片核对’流水账。保持普通模式的精炼组织，不因内部多轮而增加重复概览、分段编号、无关闲聊或未提及事项的说明。"
-                    +(sourceFirst&&collection.equals("affairs")?"本组事务输入的text直接来自原始字幕及相邻语境，origin=original_subtitles；主题标题仅供定位，历史更正文稿与派生稿不作教师事实模板。根据这些原话及实际已提供的原图重新整理事务，不能沿用历史派生稿中的结论或其错误否定方向。原图明确展示的资源、题号等仍可记录，不能因字幕没有口述就忽略；也不能由图片中的解题内容推断口头考核承诺。把本组同一规则、对象及适用条件集中讲一次，范围不明只保留能确认的部分。":"")
+                    +(originalEditorial?"本组inputs仅定位sources与已提供图片，原话及邻文在下方唯一原始字幕集合中，不附待润色的旧笔记；题名不预设正确解释。根据原话、已提供原图及本组可见内容证据重新组织讲义，历史更正文稿和提取稿仅帮助定位，不能作独立事实依据。数学过程先还原实际表达式与操作链，再解释真正失效的前提；教师指令按原话的动作和作用对象确定方向，不能沿用多份派生稿共同重复的误读。原图独有的题设、推导与书面要求也应保留，不能因字幕未口述而省去。":"")
+                    +(sourceFirst&&collection.equals("affairs")&&!originalEditorial?"本组事务输入的text直接来自原始字幕及相邻语境，origin=original_subtitles；主题标题仅供定位，历史更正文稿与派生稿不作教师事实模板。根据这些原话及实际已提供的原图重新整理事务，不能沿用历史派生稿中的结论或其错误否定方向。原图明确展示的资源、题号等仍可记录，不能因字幕没有口述就忽略；也不能由图片中的解题内容推断口头考核承诺。把本组同一规则、对象及适用条件集中讲一次，范围不明只保留能确认的部分。":"")
                     +"保留每个有来源的独特事实、题目数字与条件、代码、纠错、明确不考/会考以及改卷给分细节；相同事实只写一次，不可为缩短而删除这些细节。不改变原话确定性。"
                     +"先核对本主题的题干、公式、定义域和证明是否自洽，再成稿；补齐已知条件可推出的关键步骤和最终结果，不能以‘化简即得’掩盖缺失计算。"
                     +"严格与非严格不等式不可直接互换；若结论需要严格号，应说明等号何时成立或为何在当前条件下不能成立，不能从非严格估计直接跳到严格结论。"
@@ -199,6 +204,7 @@ final class ClassroomEnhancedSummary {
                     +"title由页面统一呈现，text不再重复该标题；正文内的小节使用简短加粗引导，不再插入与外层主题同级的Markdown标题，避免标题堆叠造成拼装感。"
                     +(state.optInt("note_strength",1)==3
                             ?"按3档生成精简讲义，积极重组但压紧表达；保留自学需要的过程。原题无法确定时可换用同主线、同类型及相近难度的完整题目，标题标为‘补充例题’，给出必要推导和结论，不冒充老师原题或考核要求。删掉无关叙事与重复，不堆砌标题或小结，不扩写通用教材。"
+                            :originalEditorial?"沿用普通单篇总结的详略，正文不扩写成教程。本组原提取稿正文合计"+extractedCharacters+"个UTF16字符，仅用此数值控制成品长度，不超过该合计；重复较多时应明显缩短。"
                             :"沿用普通单篇总结的详略，正文不扩写成教程，不超过本主题提取稿正文的合计长度；重复较多时应明显缩短。")
                     +scope(segments)+"sources汇集实际使用的来源；图片只能使用已实际分析且支持本主题的原file，历史图片不重新上传。"
                     +(state.optInt("figure_policy")>0?"图注仅描述实际可见内容，不能把字幕讲过的公式或证明当作图片已显示；已排除的低置信度、空白、仅标题或遮挡图片不得重新引用。实际图像分析已在历史原消息中，最终图片准入表（included=false不得引用）："+figureAdmission(state.optJSONArray("figure_reviews")):"")
@@ -208,7 +214,7 @@ final class ClassroomEnhancedSummary {
                     +"\n本组引用图片的已有可见内容核对："+topicFigureEvidence(inputs,state.optJSONArray("figure_reviews"))
                     +"。准入只表示图片本身可用，不表示与任意段落匹配；逐项比较实际题干、公式及对象，不能将另一题的截图插入当前例题或按正文改写图注。无匹配图片时保留文字解法，不强行配图。"
                     +"\n对应原始字幕（用于核对教师事实、指令方向及与更正文稿的冲突，不仅用于安排引文定位）：\n"
-                    +(unifiedAffairs?"原文已在上方唯一原始字幕集合中完整给出，不重复附录。":ClassroomSummary.uploadChunk(blockInput(segments,new JSONArray())).toString())
+                    +(originalEditorial?editorialContext(inputs,all):unifiedAffairs?"本组原文及相邻语境已在上方原始字幕输入中给出，不重复附录。":ClassroomSummary.uploadChunk(blockInput(segments,new JSONArray())).toString())
                     +"\n原字幕是教师事实依据，更正文稿与提取稿都是待核对的派生稿。出现冲突时回到原字幕及相邻语境，不因多份派生稿重复同一解释就认定为真。"
                     +"对未能确认的范围或术语，保留可靠事实并仅标明具体疑点；删除无依据的事实分支，不能用‘相关’或直接引号包装成确定结论。";
             JSONObject value=json("edit-note-"+i,prompt,Collections.emptyList(),result->{
@@ -229,33 +235,47 @@ final class ClassroomEnhancedSummary {
         return editorBatchEnd(parts,sections,start,batchSize,batchChars,false,null);
     }
     static int editorBatchEnd(JSONArray parts,JSONArray sections,int start,int batchSize,int batchChars,boolean sourceFirst,JSONArray all)throws Exception{
-        int end=start,limit=Math.max(1,batchSize);long chars=0;
+        return editorBatchEnd(parts,sections,start,batchSize,batchChars,sourceFirst,all,false);
+    }
+    static int editorBatchEnd(JSONArray parts,JSONArray sections,int start,int batchSize,int batchChars,boolean sourceFirst,JSONArray all,boolean originalEditorial)throws Exception{
+        int end=start,limit=Math.max(1,batchSize);long chars=0;JSONArray evidence=new JSONArray();
         String collection=sections.getJSONObject(start).optString("collection","notes");
         if(sourceFirst&&collection.equals("affairs"))limit=Integer.MAX_VALUE;
         while(end<sections.length()&&end-start<limit){
             if(sourceFirst&&!collection.equals(sections.getJSONObject(end).optString("collection","notes")))break;
             long next=0;JSONArray refs=sections.getJSONObject(end).getJSONArray("refs");
-            for(int n=0;n<refs.length();n++)next+=editorialInput(noteAt(parts,refs.getString(n)),all,sourceFirst&&collection.equals("affairs")).getString("text").length();
-            if(end>start&&chars+next>batchChars)break;
-            chars+=next;end++;
+            for(int n=0;n<refs.length();n++){
+                JSONObject note=noteAt(parts,refs.getString(n));
+                if(originalEditorial)evidence.put(editorialReference(note));else next+=editorialInput(note,all,sourceFirst&&collection.equals("affairs")).getString("text").length();
+            }
+            long total=originalEditorial?editorialContext(evidence,all).length():chars+next;
+            if(end>start&&total>batchChars)break;
+            chars=total;end++;
         }
         return end;
     }
-    static JSONObject editorialInput(JSONObject note,JSONArray all,boolean originalAffair)throws Exception{
-        if(!originalAffair)return new JSONObject(note.toString());
+    static JSONObject editorialInput(JSONObject note,JSONArray all,boolean useOriginal)throws Exception{
+        if(!useOriginal)return new JSONObject(note.toString());
         Set<Integer> cited=new HashSet<>();JSONArray ids=note.getJSONArray("sources");for(int i=0;i<ids.length();i++)cited.add(ids.getInt(i));
         Set<Integer> positions=new TreeSet<>();
         for(int i=0;i<all.length();i++)if(cited.contains(all.getJSONObject(i).getInt("id"))){
             for(int n=Math.max(0,i-1);n<=Math.min(all.length()-1,i+1);n++)positions.add(n);
         }
         JSONArray context=new JSONArray();for(int position:positions)context.put(all.getJSONObject(position));
+        JSONObject reference=editorialReference(note),input=new JSONObject(note.toString());
+        return input.put("origin","original_subtitles").put("images",reference.getJSONArray("images"))
+                .put("text",ClassroomSummary.uploadChunk(blockInput(context,new JSONArray())).toString());
+    }
+    static JSONObject editorialReference(JSONObject note)throws Exception{
         Set<String> files=new LinkedHashSet<>();JSONArray originals=note.optJSONArray("images");
         if(originals!=null)for(int i=0;i<originals.length();i++)files.add(ClassroomDocument.imageName(originals.getString(i)));
         files.addAll(ClassroomDocument.inlineImages(note.optString("text")));files.addAll(ClassroomDocument.inlineImages(note.optString("title")));
         JSONArray images=new JSONArray();for(String file:files)images.put(file);
-        JSONObject input=new JSONObject(note.toString());input.put("origin","original_subtitles").put("images",images)
-                .put("text",ClassroomSummary.uploadChunk(blockInput(context,new JSONArray())).toString());
-        return input;
+        return new JSONObject().put("title",note.getString("title")).put("sources",new JSONArray(note.getJSONArray("sources").toString()))
+                .put("origin","original_subtitles").put("images",images);
+    }
+    static String editorialContext(JSONArray inputs,JSONArray all)throws Exception{
+        return unifiedAffairsInput(inputs,all).getJSONObject(0).getString("text");
     }
     /** One chronological evidence stream, rather than overlapping copies under derived headings. */
     static JSONArray unifiedAffairsInput(JSONArray inputs,JSONArray all)throws Exception{

@@ -331,6 +331,9 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     row.put("run_native_json",run.optBoolean("native_json"));
                     row.put("run_native_json_schema",run.optBoolean("native_json_schema"));
                     row.put("run_affairs_source_first",run.optBoolean("affairs_source_first"));
+                    row.put("run_editorial_source_first",run.optBoolean("editorial_source_first"));
+                    if(providerFailure&&key.equals(reviewKey)&&run.optBoolean("editorial_source_first"))
+                        row.put("run_editorial_input_audit",editorialInputAudit(run,materials));
                     JSONArray actualModes=new JSONArray();JSONObject savedConversation=run.optJSONObject("conversation");
                     JSONArray savedTurns=savedConversation==null?null:savedConversation.optJSONArray("turns");
                     if(savedTurns!=null)for(int t=0;t<savedTurns.length();t++){
@@ -590,6 +593,56 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 .put("duplicate_keys",duplicates).put("complete_rows",complete).put("rows",rows);
     }
     /** Numeric source identities only: no model prose, raw transcript or private conversation. */
+    /** Inspect sent editorial projections without exporting messages, subtitles or credentials. */
+    private static JSONArray editorialInputAudit(JSONObject run,JSONObject materials)throws org.json.JSONException{
+        JSONArray result=new JSONArray(),originals=materials==null?null:materials.optJSONArray("segments");
+        java.util.Map<Integer,String> originalText=new java.util.HashMap<>();
+        if(originals!=null)for(int i=0;i<originals.length();i++){
+            // materials keeps service rows without IDs; lessonInput assigns the array index.
+            JSONObject row=originals.getJSONObject(i);originalText.put(i,row.getString("text"));
+        }
+        JSONObject conversation=run.optJSONObject("conversation");
+        JSONArray turns=conversation==null?null:conversation.optJSONArray("turns"),messages=conversation==null?null:conversation.optJSONArray("messages");
+        if(turns==null||messages==null)return result;
+        for(int t=0;t<turns.length();t++){
+            JSONObject turn=turns.getJSONObject(t);String stage=turn.optString("stage");
+            if(!stage.equals("edit-plan")&&!stage.matches("edit-note-[0-9]+"))continue;
+            JSONObject audit=new JSONObject().put("stage",stage);result.put(audit);
+            try{
+                JSONObject message=messages.getJSONObject(turn.getInt("message_count")-1);Object body=message.get("content");String text="";
+                if(body instanceof String plain)text=plain;
+                else if(body instanceof JSONArray parts)for(int p=0;p<parts.length();p++)text+=parts.getJSONObject(p).optString("text");
+                String marker=null;
+                for(String candidate:new String[]{"\n已完成笔记索引：\n","\n本组主题清单及提取稿：\n","\n本主题提取稿：\n"})if(text.contains(candidate)){marker=candidate;break;}
+                if(marker==null){audit.put("parseable",false);continue;}
+                JSONArray supplied=(JSONArray)new org.json.JSONTokener(text.substring(text.indexOf(marker)+marker.length())).nextValue(),inputs=new JSONArray();
+                for(int i=0;i<supplied.length();i++){
+                    JSONObject row=supplied.getJSONObject(i);JSONArray nested=row.optJSONArray("inputs");
+                    if(nested==null)inputs.put(row);else for(int n=0;n<nested.length();n++)inputs.put(nested.getJSONObject(n));
+                }
+                int sourceInputs=0,segments=0;boolean exact=originals!=null,covered=true,unique=true;
+                String contextMarker=stage.equals("edit-plan")?"\n编排原始字幕集合：\n":"\n对应原始字幕（用于核对教师事实、指令方向及与更正文稿的冲突，不仅用于安排引文定位）：\n";
+                if(!text.contains(contextMarker)){audit.put("parseable",false);continue;}
+                JSONObject context=(JSONObject)new org.json.JSONTokener(text.substring(text.indexOf(contextMarker)+contextMarker.length())).nextValue();
+                JSONArray rows=context.getJSONArray("segments");java.util.Set<Integer> present=new java.util.HashSet<>();
+                for(int n=0;n<rows.length();n++){
+                    JSONObject row=rows.getJSONObject(n);segments++;unique&=present.add(row.getInt("id"));
+                    exact&=row.getString("text").equals(originalText.get(row.getInt("id")));
+                }
+                for(int i=0;i<inputs.length();i++){
+                    JSONObject input=inputs.getJSONObject(i);
+                    if(!"original_subtitles".equals(input.optString("origin"))){exact=false;continue;}
+                    sourceInputs++;JSONArray refs=input.getJSONArray("sources");
+                    for(int n=0;n<refs.length();n++)covered&=present.contains(refs.getInt(n));
+                }
+                audit.put("parseable",true).put("inputs",inputs.length()).put("original_inputs",sourceInputs)
+                        .put("subtitle_occurrences",segments).put("original_text_exact",exact)
+                        .put("source_ids_present",covered).put("unique_subtitles",unique);
+            }catch(org.json.JSONException|ClassCastException invalid){audit.put("parseable",false);}
+        }
+        return result;
+    }
+
     private static JSONArray sourceShapes(JSONObject object)throws Exception{
         JSONArray result=new JSONArray();
         for(String collection:new String[]{"notes","affairs","assignments"}){
