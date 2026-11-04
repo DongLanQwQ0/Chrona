@@ -112,6 +112,7 @@ final class ClassroomEnhancedSummary {
     private JSONObject compact(int imageLimit,JSONArray corrected)throws Exception{
         JSONObject catalogue=full.getJSONObject("image_catalogue");
         boolean affairsFirst=state.optBoolean("compact_affairs_first");
+        boolean countedImages=state.optBoolean("counted_image_requests");
         String originals=ClassroomSummary.uploadChunk(blockInput(full.getJSONArray("segments"),new JSONArray())).toString();
         if(!affairsFirst&&!state.has("image_plan")&&(imageLimit==0||catalogue.getInt("count")==0)){
             state.put("image_plan",new JSONObject().put("image_assessment",new JSONObject()
@@ -136,10 +137,14 @@ final class ClassroomEnhancedSummary {
                     +(affairsFirst?"无可靠事务或任务时对应集合=[]。尚无实际附图，所有images=[]，正文不放图片。"+assignmentRules():"")
                     +"需要图时decision=request，每项image_requests为{\"start\":0,\"end\":60,\"reason\":\"视觉信息缺口\"}；无需图时not_needed且[]。禁止在关闭上传或无可用图片时请求。"
                     +ClassroomSummary.imageInstructions(catalogue,imageLimit)
+                    +(countedImages?"每段image_requests还必须给count整数，明确请求该范围内几张代表图（1至40）。代码只取请求数量，不会自动填满授权；按实际视觉缺口估计必要张数，合并重复需求，总数不超过已授权上限。":"")
+                    +(affairsFirst?"先完成课程事务与当前行动，最后规划取图。下列索引只定位可能相关的原始段，不替代完整全课语境，也不能据索引缺失排除信息："+affairsScopeIndex(full.getJSONArray("segments"))
+                    +"。输出前在本轮中核对每项行动是否被全课后文撤回或澄清为历史对象；评分按‘具体场景、动作方向、全部明确数字、触发与例外’合成事项，不把例子中的优惠概括为通用加分规则。":"")
                     +(affairsFirst?"":"\n复用更正文稿：\n"+(state.has("correction_reused_from")?corrected.toString():"更正文稿已在本轮原始历史中，不重复附录。"))
                     +"\n全课原始字幕：\n"+originals+"\nPPT时间目录："+catalogue;
             JSONObject plan=json(affairsFirst?"affairs-plan":"image-plan",prompt,Collections.emptyList(),value->{
                 ClassroomSummary.validateImageAssessment(value,catalogue);
+                if(countedImages){JSONArray requests=value.getJSONArray("image_requests");for(int i=0;i<requests.length();i++)ClassroomSummary.requestedCount(requests.getJSONObject(i));}
                 if(affairsFirst){
                     JSONObject publication=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",value.getJSONArray("affairs")).put("assignments",value.getJSONArray("assignments"));
                     ClassroomSummary.validateBlock(publication,blockInput(full.getJSONArray("segments"),new JSONArray()),affairsSchema);
@@ -150,7 +155,8 @@ final class ClassroomEnhancedSummary {
         }
         if(!state.has("selected")){
             JSONObject plan=state.getJSONObject("image_plan");
-            JSONArray picked=ClassroomSummary.selectRequested(candidates.getJSONArray("images"),plan.getJSONArray("image_requests"),imageLimit),selected=new JSONArray();
+            JSONArray picked=countedImages?ClassroomSummary.selectCountedRequests(candidates.getJSONArray("images"),plan.getJSONArray("image_requests"),imageLimit)
+                    :ClassroomSummary.selectRequested(candidates.getJSONArray("images"),plan.getJSONArray("image_requests"),imageLimit),selected=new JSONArray();
             for(int i=0;i<picked.length();i++){
                 JSONObject p=picked.getJSONObject(i),row=new JSONObject().put("file","image-"+p.getInt("index")+".jpg").put("second",p.getDouble("second")).put("raw",p.getString("raw"));
                 if(p.optJSONObject("quality")!=null)row.put("quality",p.getJSONObject("quality"));selected.put(row);
@@ -200,6 +206,13 @@ final class ClassroomEnhancedSummary {
             state.getJSONObject("image_audit").put("analysed_count",inventory.length());save();
         }
         JSONObject result=assemble(new JSONArray(),inventory,true);state.put("final",result);save();ClassroomStore.write(new File(dir,"summary.json"),result);return result;
+    }
+    static JSONArray affairsScopeIndex(JSONArray segments)throws Exception{
+        java.util.regex.Pattern signals=java.util.regex.Pattern.compile("考|评分|给分|扣分|分值|作业|提交|截止|出勤|签到|请假|要求|规定|不准|不要|务必|往届|以前|过去|没让|补交|重做|通知|exam|grade|point|homework|assign|deadline|attendance|submit|must|should",java.util.regex.Pattern.CASE_INSENSITIVE);
+        Set<Integer> indices=new LinkedHashSet<>();
+        for(int i=0;i<segments.length();i++)if(signals.matcher(segments.getJSONObject(i).getString("text")).find())
+            for(int n=Math.max(0,i-1);n<=Math.min(segments.length()-1,i+1);n++)indices.add(n);
+        JSONArray result=new JSONArray();for(int index:indices)result.put(segments.getJSONObject(index).getInt("id"));return result;
     }
     private static String scope(JSONArray block)throws Exception{
         return "本段主体字幕来源id为："+ids(block)+"；可引用已提供的同课真实来源，编号不得凭空编造。";

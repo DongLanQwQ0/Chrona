@@ -115,6 +115,7 @@ public final class ClassroomSummaryCheck {
         return server;
     }
     private static void windowSelection()throws Exception {
+        countedWindowSelection();
         JSONArray candidates=new JSONArray();for(int i=39;i>=0;i--)candidates.put(new JSONObject().put("index",i).put("second",i));
         JSONArray windows=new JSONArray().put(new JSONObject().put("start",5).put("end",35)).put(new JSONObject().put("start",10).put("end",20));
         JSONArray chosen=ClassroomSummary.selectRequested(candidates,windows,20);Set<Integer> ids=new HashSet<>();
@@ -127,6 +128,30 @@ public final class ClassroomSummaryCheck {
     }
     private static JSONObject windowFrame(int index,double second,double score)throws Exception {
         return new JSONObject().put("index",index).put("second",second).put("quality",new JSONObject().put("score",score));
+    }
+    private static void countedWindowSelection()throws Exception {
+        JSONArray candidates=new JSONArray();for(int i=39;i>=0;i--)candidates.put(windowFrame(i,i,i/40.0));
+        JSONArray windows=new JSONArray().put(imageWindow(0,39).put("count",1));
+        String unchanged=candidates.toString()+windows;
+        JSONArray selected=ClassroomSummary.selectCountedRequests(candidates,windows,40);
+        check(selected.length()==1&&selected.getJSONObject(0).getInt("index")==39,"one requested representative prefers information score and never fills forty slots");
+        windows.put(imageWindow(0,39).put("count",1));
+        check(ClassroomSummary.selectCountedRequests(candidates,windows,40).length()==1,"overlapping requests share the same actual representative");
+        check(unchanged.equals(candidates.toString()+new JSONArray().put(windows.getJSONObject(0))),"counted selection does not mutate sources or requested fields");
+        windows=new JSONArray().put(imageWindow(0,10).put("count",1)).put(imageWindow(30,39).put("count",2));
+        selected=ClassroomSummary.selectCountedRequests(candidates,windows,40);
+        check(selected.length()==3,"separate requested counts determine upload quantity, not the cap");
+        selected=ClassroomSummary.selectCountedRequests(candidates,windows,2);
+        check(selected.length()==2&&selected.getJSONObject(0).getInt("index")<=10&&selected.getJSONObject(1).getInt("index")>=30,"over-budget requests retain feasible disjoint coverage within the global cap");
+        check(ClassroomSummary.selectCountedRequests(candidates,windows,0).length()==0,"disabled image authorization never uploads");
+        check(ClassroomSummary.selectCountedRequests(candidates,null,40).length()==0,"no requested ranges select none");
+        check(ClassroomSummary.selectCountedRequests(candidates,new JSONArray().put(imageWindow(99,100).put("count",2)),40).length()==0,"no matching frames do not trigger unrelated uploads");
+        JSONArray overlapFrames=new JSONArray().put(windowFrame(0,0,1)).put(windowFrame(1,5,0)).put(windowFrame(2,10,1));
+        JSONArray overlapWindows=new JSONArray().put(imageWindow(0,5).put("count",1)).put(imageWindow(5,10).put("count",1));
+        selected=ClassroomSummary.selectCountedRequests(overlapFrames,overlapWindows,1);
+        check(selected.length()==1&&selected.getJSONObject(0).getInt("index")==1,"over-budget representative selection retains an initially unchosen frame covering both overlapping windows");
+        for(Object bad:new Object[]{0,-1,41,1.5,"1"}){JSONObject invalid=imageWindow(0,39).put("count",bad);rejects(()->ClassroomSummary.selectCountedRequests(candidates,new JSONArray().put(invalid),40),"invalid wire image count rejected: "+bad);}
+        rejects(()->ClassroomSummary.selectCountedRequests(candidates,new JSONArray().put(imageWindow(0,39)),40),"counted contract requires explicit count rather than silently filling the cap");
     }
     private static JSONObject imageWindow(double start,double end)throws Exception {
         return new JSONObject().put("start",start).put("end",end).put("reason","synthetic coverage check");

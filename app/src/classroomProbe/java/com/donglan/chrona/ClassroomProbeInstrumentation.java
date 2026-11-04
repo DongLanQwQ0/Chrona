@@ -334,6 +334,12 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     row.put("run_editorial_source_first",run.optBoolean("editorial_source_first"));
                     row.put("run_compact_pipeline",run.optBoolean("compact_pipeline"));
                     row.put("run_compact_affairs_first",run.optBoolean("compact_affairs_first"));
+                    row.put("run_counted_image_requests",run.optBoolean("counted_image_requests"));
+                    if(run.optBoolean("counted_image_requests")&&run.has("image_plan")){
+                        JSONArray counts=new JSONArray(),requests=run.getJSONObject("image_plan").getJSONArray("image_requests");
+                        for(int n=0;n<requests.length();n++){JSONObject request=requests.getJSONObject(n);counts.put(new JSONObject().put("start",request.getDouble("start")).put("end",request.getDouble("end")).put("count",request.getInt("count")));}
+                        row.put("run_requested_image_counts",counts);
+                    }
                     if(run.optBoolean("compact_affairs_first")&&run.has("image_plan")&&run.has("compact_note")){
                         for(String field:new String[]{"affairs","assignments"}){
                             JSONArray first=run.getJSONObject("image_plan").getJSONArray(field),published=run.getJSONObject("compact_note").getJSONArray(field);

@@ -1,4 +1,12 @@
-# 当前交付：保持两次请求，分开整理课程事务与知识
+# 当前交付：课程事务完整与按需取图（131）
+
+## 131候选与唯一下一步
+
+- 130单课low54768已成功，两请求、4修正段复用；7知识／5事务／4行动，17引用图均可读。root读全文及5张压缩拼图，compact127_content_check独立全文核图：数学未见明确算式错误，但历史作业误列行动，评分场景／数字／条件与先证明要求仍漏，image27图注超出实际画面。build/editorial133/{run,complete-audit}.txt、export/、image-review-{1..5}.jpg。设备审查ZIP与空目录已清，当前无活跃AI，readonly helper保持。
+- 查明40图原因：旧selectRequested命中后主动填满预算。131新轮冻结counted_image_requests，首轮每范围count整数，按请求量取代表帧、重叠去重，超全局上限保留可行窗口覆盖；旧轮无该快照仍保持旧Schema、消息和选择契约，不追改已选图。
+- 事务只补来源ID导航（全课原文仍完整一份，不依索引筛内容），在同一轮优先完成事务与当前行动，核对后文对象澄清以及数字/场景/触发条件；无额外请求、无语义拒绝门槛。知识自主讲义方向保留，未对本课写任何题号/原话/答案特判。
+- 独立counted_request_check发现超预算时预选漏共享帧P2，已修为完整候选恢复覆盖并补0/5/10交点原反例；终版image-windows24009/0。compact-affairs-first1620/0含双协议旧快照无count字段的端到端失败／恢复和逐条历史、旧Schema、旧selected保持；全量29090/0覆盖其余未变管线。独立复审确认P2及旧专项缺口闭环，无新增明确缺陷。工具不支持agent_type/角色文件模型，不虚称已选。
+- 131 release/lint/trial已通过，build/editorial134/build.log，APK和model-trial.apk固定。两包已更新原AVD并实读0.15.131／293；单课low会话76695运行中，build/editorial134/run.txt，不能覆盖helper／重复启动。唯一下一步：等句柄终态，再只读计数审计／全文审查，不批量21节、不占手机。
 
 ## 新增交付：刷新／启动恢复卡顿审计
 

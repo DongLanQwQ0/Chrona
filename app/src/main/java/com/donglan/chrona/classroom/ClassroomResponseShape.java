@@ -8,6 +8,9 @@ import org.json.JSONObject;
 final class ClassroomResponseShape {
     private ClassroomResponseShape() { }
     static JSONObject contract(String stage,int affairs,int figures)throws Exception{
+        return contract(stage,affairs,figures,false);
+    }
+    static JSONObject contract(String stage,int affairs,int figures,boolean counted)throws Exception{
         JSONObject properties;String name;
         if(stage.equals("image-plan")||stage.equals("affairs-plan")){
             properties=new JSONObject().put("image_assessment",object(new JSONObject().put("decision",type("string")).put("reason",type("string"))))
@@ -16,6 +19,10 @@ final class ClassroomResponseShape {
                 JSONObject fields=summary(affairs,true);properties.put("affairs",fields.get("affairs")).put("assignments",fields.get("assignments"));
             }
             name=stage.equals("affairs-plan")?"affairs_plan":"image_plan";
+            if(counted){
+                JSONObject request=properties.getJSONObject("image_requests").getJSONObject("items").getJSONObject("properties");
+                request.put("count",type("integer"));properties.put("image_requests",array(object(request)));
+            }
         }else if(stage.equals("edit-affairs")){
             JSONObject note=new JSONObject().put("title",type("string")).put("text",type("string"))
                     .put("sources",array(type("integer"))).put("images",array(type("string")));

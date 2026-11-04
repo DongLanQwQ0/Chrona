@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Sequential, checkpointed single-lesson pipeline. Only explicitly selected images leave the device. */
@@ -190,6 +191,7 @@ public final class ClassroomSummary {
                     .put("editorial_source_first",enhanced)
                     .put("compact_pipeline",enhanced&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
                     .put("compact_affairs_first",enhanced&&affairsSchema>0&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
+                    .put("counted_image_requests",enhanced&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
                     .put("unified_affairs",enhanced&&affairsSchema>0)
                     .put("content_batch_size",enhanced?2:1).put("editor_batch_size",enhanced?3:1)
                     .put("editor_batch_chars",18000);
@@ -366,6 +368,30 @@ public final class ClassroomSummary {
         for(int i=0;i<extra.length();i++)anchors.add(extra.getJSONObject(i));
         anchors.sort(Comparator.comparingDouble(image->image.optDouble("second")));
         JSONArray result=new JSONArray();for(JSONObject image:anchors)result.put(image);return result;
+    }
+    /** Explicit per-range demand, without filling unused authorization. Existing saved plans stay unchanged. */
+    static JSONArray selectCountedRequests(JSONArray candidates,JSONArray windows,int limit)throws Exception{
+        if(limit<0||limit>MAX_IMAGES)throw new IOException("图片上限应为 0 至 "+MAX_IMAGES);
+        validateWindows(new JSONObject(),windows);
+        Map<Integer,JSONObject> chosen=new java.util.LinkedHashMap<>();
+        if(windows!=null)for(int w=0;w<windows.length();w++){
+            JSONObject window=windows.getJSONObject(w);int count=requestedCount(window);
+            List<JSONObject> matches=new ArrayList<>();
+            for(int i=0;i<candidates.length();i++){JSONObject image=candidates.getJSONObject(i);if(inWindow(image,window))matches.add(image);}
+            matches.sort(Comparator.comparingDouble(image->image.optDouble("second")));
+            JSONArray ordered=new JSONArray();for(JSONObject image:matches)ordered.put(image);
+            JSONArray selected=ClassroomImages.select(ordered,Math.min(count,limit));
+            for(int i=0;i<selected.length();i++){JSONObject image=selected.getJSONObject(i);chosen.putIfAbsent(image.getInt("index"),image);}
+        }
+        List<JSONObject> ordered=new ArrayList<>(chosen.values());ordered.sort(Comparator.comparingDouble(image->image.optDouble("second")));
+        JSONArray result=new JSONArray();for(JSONObject image:ordered)result.put(image);
+        return result.length()>limit?selectRequested(candidates,windows,limit):result;
+    }
+    static int requestedCount(JSONObject window)throws Exception{
+        Object raw=window.get("count");
+        if(!(raw instanceof Number n)||!Double.isFinite(n.doubleValue())||n.doubleValue()!=Math.rint(n.doubleValue())||n.doubleValue()<1||n.doubleValue()>MAX_IMAGES)
+            throw new IOException("图片请求count须为1至"+MAX_IMAGES+"的整数");
+        return ((Number)raw).intValue();
     }
     private static boolean inWindow(JSONObject image,JSONObject window)throws Exception{
         double second=image.getDouble("second");return second>=window.getDouble("start")&&second<=window.getDouble("end");

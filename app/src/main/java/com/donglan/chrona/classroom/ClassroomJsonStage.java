@@ -162,7 +162,7 @@ final class ClassroomJsonStage {
         JSONObject shapes=state.optJSONObject("response_shapes");
         if(shapes==null){shapes=new JSONObject();state.put("response_shapes",shapes);}
         if(!shapes.has(stage)){
-            shapes.put(stage,ClassroomResponseShape.contract(stage,state.optInt("affairs_schema"),state.optInt("figure_policy")));save();
+            shapes.put(stage,ClassroomResponseShape.contract(stage,state.optInt("affairs_schema"),state.optInt("figure_policy"),state.optBoolean("counted_image_requests")));save();
         }
         return new JSONObject(shapes.getJSONObject(stage).toString());
     }
