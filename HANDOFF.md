@@ -2,13 +2,13 @@
 
 ## 当前状态与唯一下一步
 
-- 当前候选121（283），源码已推送main，提交7c6a6c7；唯一AVD Chrona_Classroom_36／emulator-5580已安装。runner26670已succeeded=true终态，当前没有AI任务；probe已卸载，设备审查ZIP和空目录已清。不占手机。
+- 当前代码122（284），源码提交1c27716已推送main，现已安装唯一AVD Chrona_Classroom_36／emulator-5580。同课configured+newRun=true执行会话23919正在运行，输出build/editorial126/run.txt；未传临时思考参数，不改全局配置。不占手机。前轮121 runner26670已成功终态但内容未批准；设备审查ZIP和空目录已清。
 - 固定课程：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。4/4更正稿复用，13请求全部stop/completed，含draft-1一次JSON repair。最终事务请求855条原字幕逐字一致、无派生标题，输入196792／实际缓存177792；40张附图标识与实际字节0失配。
 - 全文10知识／10事务／3行动／29图已读，四张压缩图集已检查。对数考点恢复、跨事务重复和图113错配消除，内容仍不批准：评分指令反转、同机制补题重复、缺题干生产说明、闲聊人数与其他教学班小测遗漏。0·∞已经由幂指例覆盖，不为机械验收另加重复题。
 - 真实成品和用量：build/editorial125/export/、audit.txt、image-review-1..4.jpg；逐项原句／预期／泛化方向见docs/audits/classroom-notebook-regression-20261103.md新增121节。独立内容check：regression125_content已完成，同样不批准；新增确认复核触发条件被改写、极限定义加分遗漏、错误示范操作桥梁省略。主代理已回原字幕复核并记录取舍，不把一般解题步骤要求自动新增为日程任务。
 - 模拟器保存服务为OpenCode Go／deepseek-v4.1-flash／Responses／low，可选x-opencode-session；密钥不读不输出。原模型、协议及全局设置未变。
 - 已非阻塞询问是否临时high同课对照，尚无答复，先不调用高思考。trial instrumentation已准备显式reasoningEffort参数，只构造本次AiSettings、不保存配置，并回报全局model/effort不变布尔；已构建未调用，辅助包build/editorial125/high-trial.apk。
-- 下一步分两条但设备串行：当前121固定供临时high对照，用户偏好待答，不调用。代码122已完成三条提示：原题确认后替代同机制补题、删除生产说明与事务触发方向；未改阶段/Schema/游标。跳过plan.affairs优化被独立check证明会吞错分类知识，已完整撤回。双向分类739、独立复审及release/lint/trial通过；包build/editorial126/Chrona-v0.15.122.apk未安装/未实生成验收。AVD仍固定121，high偏好待答后再对照，避免混入代码变化。
+- high是可选对照，未答不调用，也不阻塞已授权回归。122已完成三条提示：原题确认后替代同机制补题、删除生产说明与事务触发方向；未改阶段/Schema/游标。危险的skip事务优化已撤回，双向分类739、复审及构建通过。122已安装并按保存配置同课新轮23919，唯一下一步等待该句柄终态，核对实际配置/用量/全文及图；不主动改low，以后high对照也固定122。121历史和包保留，不在同一对照中混代码。
 
 ## 验收与原范围
 

@@ -1281,3 +1281,7 @@
 - 尝试按plan.affairs跳过重复整稿的优化被独立check反例否定：原affairs/plan.affairs也可能实际含知识，原整稿允许纠正到notes，跳过会丢唯一教学成稿机会。已完整撤回新flag和skip代码，未安装或调用此方案，不以调用减少换内容丢失。
 - 测试owner恢复HEAD的完整121检查，Java检查文件diff为空；只复验双向editorial-classification739项0失败，原23902项证据继续适用未改机制。独立check确认撤回及三条提示无新关键缺陷；release/lint/trial构建通过。证据build/editorial126/check-owner/和build.log。
 - 122包build/editorial126/Chrona-v0.15.122.apk，仅代码/构建候选，未做真实成品验收、未安装AVD或手机、未发Release。AVD保留固定121，以免临时high对照混入代码变化。
+
+## 122按保存配置实测启动 — 2026-11-04
+
+high偏好未答，不调用高思考；可选对照不作为已授权回归的阻塞。安装122并configured+newRun启动，未传reasoningEffort，不改全局设置，实际配置与usage待终态审计。以后若进行high对照，同样固定122，避免代码混淆；121历史/包保留。会话23919，build/editorial126/run.txt。当前没有宣布内容通过或批量启动21节。
