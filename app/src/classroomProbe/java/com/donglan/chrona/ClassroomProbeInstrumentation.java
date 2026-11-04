@@ -386,6 +386,24 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                                 }
                             }
                             row.put("run_attached_images",imageCount).put("run_labelled_images",labelCount).put("run_label_file_mismatches",mismatches);
+                            if(providerFailure&&sent!=null){
+                                JSONObject original=ClassroomStore.read(new java.io.File(directory,"materials.json"));
+                                JSONArray originals=original==null?null:original.optJSONArray("segments");
+                                for(int m=0;m<sent.length();m++){
+                                    JSONObject message=sent.getJSONObject(m);if(!"user".equals(message.optString("role")))continue;
+                                    JSONArray content=message.optJSONArray("content");if(content==null)continue;
+                                    for(int c=0;c<content.length();c++){
+                                        String text=content.getJSONObject(c).optString("text"),marker="\n全课事务证据：\n";int at=text.lastIndexOf(marker);if(at<0)continue;
+                                        JSONObject supplied=new JSONObject(text.substring(at+marker.length()));JSONArray segments=supplied.getJSONObject("original_subtitles").getJSONArray("segments"),ids=new JSONArray();
+                                        boolean exact=originals!=null;for(int n=0;n<segments.length();n++){
+                                            JSONObject segment=segments.getJSONObject(n);int id=segment.getInt("id");ids.put(id);
+                                            exact&=originals!=null&&id>=0&&id<originals.length()&&segment.getString("text").equals(originals.getJSONObject(id).getString("text"));
+                                        }
+                                        row.put("run_affairs_input_sources",ids).put("run_affairs_input_has_titles",supplied.has("titles"))
+                                                .put("run_affairs_input_original_text_exact",exact);
+                                    }
+                                }
+                            }
                         }
                         String protocol=conversation.optString("protocol",com.donglan.chrona.ai.AiSettings.CHAT_COMPLETIONS);
                         if(java.util.Set.of(com.donglan.chrona.ai.AiSettings.RESPONSES,com.donglan.chrona.ai.AiSettings.CHAT_COMPLETIONS).contains(protocol))
