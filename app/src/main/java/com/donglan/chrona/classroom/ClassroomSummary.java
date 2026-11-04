@@ -118,7 +118,7 @@ public final class ClassroomSummary {
             +"\"assignments\":[{\"text\":\"老师明确提出的作业或考试安排，保留原日期措辞\",\"sources\":[0]"+(evidence?",\"evidence\":\"对应明确要求的最短连续原话，逐字取自原始字幕\"":"")+"}]";}
     private static final String SUMMARY_FIELDS=summaryFields(false);
     static final String DRAFT_IMAGE_RULE="当前阶段只处理字幕与PPT时间目录，尚未提供任何实际图片。所有images数组必须为[]；所有文本字段均禁止插入Markdown图片、图片占位链接或自行命名文件，不得新增schema之外的字段。需要查看的视觉信息只通过image_requests的时间范围请求，收到实际附图后的核图阶段才能引用给定file。";
-    private static final String SOURCE_REQUIREMENTS="每条笔记和安排必须在sources数组附真实字幕 id，正文和标题不写[id:编号]或来源编号范围。没有安排返回空数组。"
+    private static final String SOURCE_REQUIREMENTS="每条知识笔记和事务必须有可核来源：字幕事实在sources数组附真实字幕 id；仅来自实际附图的事实可以sources=[]，但必须引用对应的实际图片。安排仍须有真实字幕id及老师要求的原话依据。正文和标题不写[id:编号]或来源编号范围。没有安排返回空数组。"
             +"assignments仅限老师明确布置、要求学生执行的具体事项，不能把一般知识、解题注意事项、自拟复习建议或考试重点改写为待办。"
             +"未出现的评分/改卷/考试类别不写‘未提及’或‘没有’；无教学或明确安排意义的课后闲聊、模糊词片段不收入笔记。"
             +"notes.images仅填写本次images清单中实际file的原值；Markdown配图使用images/加同一个file。";
@@ -457,7 +457,13 @@ public final class ClassroomSummary {
             JSONArray entries=part.getJSONArray(collection);
             for(int i=0;i<entries.length();i++){
                 JSONObject note=entries.getJSONObject(i);if(note.getString("title").isBlank()||note.getString("text").isBlank())throw new IOException(affairsSchema==0?"课堂笔记不完整":"课堂笔记或事务不完整");
-                validateSources(note.getJSONArray("sources"),sources);JSONArray images=note.getJSONArray("images");
+                JSONArray refs=note.getJSONArray("sources"),images=note.getJSONArray("images");
+                boolean visualSource=images.length()>0||!ClassroomDocument.inlineImages(note.getString("text")).isEmpty()
+                        ||!ClassroomDocument.inlineImages(note.getString("title")).isEmpty();
+                // Image references already passed the complete per-request whitelist above.
+                // Keep checking every supplied subtitle id; only a genuinely visual item may
+                // omit transcript ids, never an unsupported item or a teacher action.
+                if(refs.length()>0||!visualSource)validateSources(refs,sources);
                 for(int n=0;n<images.length();n++)if(!allowedImages.contains(ClassroomDocument.imageName(images.getString(n))))throw new IOException("AI 引用了未分析的图片："+ClassroomDocument.imageName(images.getString(n)));
             }
         }
