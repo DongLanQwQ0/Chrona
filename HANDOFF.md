@@ -2,35 +2,36 @@
 
 ## 当前状态与唯一下一步
 
-- PTA Cookie 文件已由用户移动至 `F:\Programs\Server\Cookies\PTACookies.txt`，已确认文件存在，仅查元数据未读内容。项目未硬编码旧电脑路径；后续确有导入需要时使用新源，不复制Cookie、不重复登录或打断课堂任务。
+- 当前候选121（283），源码已推送main，提交7c6a6c7；唯一AVD Chrona_Classroom_36／emulator-5580已安装。runner26670已succeeded=true终态，当前没有AI任务；probe已卸载，设备审查ZIP和空目录已清。不占手机。
+- 固定课程：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。4/4更正稿复用，13请求全部stop/completed，含draft-1一次JSON repair。最终事务请求855条原字幕逐字一致、无派生标题，输入196792／实际缓存177792；40张附图标识与实际字节0失配。
+- 全文10知识／10事务／3行动／29图已读，四张压缩图集已检查。对数考点恢复、跨事务重复和图113错配消除，内容仍不批准：评分指令反转、同机制补题重复、缺题干生产说明、闲聊人数与其他教学班小测遗漏。0·∞已经由幂指例覆盖，不为机械验收另加重复题。
+- 真实成品和用量：build/editorial125/export/、audit.txt、image-review-1..4.jpg；逐项原句／预期／泛化方向见docs/audits/classroom-notebook-regression-20261103.md新增121节。独立内容check：regression125_content已完成，同样不批准；新增确认复核触发条件被改写、极限定义加分遗漏、错误示范操作桥梁省略。主代理已回原字幕复核并记录取舍，不把一般解题步骤要求自动新增为日程任务。
+- 模拟器保存服务为OpenCode Go／deepseek-v4.1-flash／Responses／low，可选x-opencode-session；密钥不读不输出。原模型、协议及全局设置未变。
+- 已非阻塞询问是否临时high同课对照，尚无答复，先不调用高思考。trial instrumentation已准备显式reasoningEffort参数，只构造本次AiSettings、不保存配置，并回报全局model/effort不变布尔；已构建未调用，辅助包build/editorial125/high-trial.apk。
+- 唯一下一步：独立内容审查已整合；用户确定临时思考强度后，用同一候选／课程新轮复用4更正稿对照，审读完整成品和实际usage。当前low在原文齐全下仍反向改写，不原样盲重试。
 
-- 120会话8278已succeeded=true，4更正稿复用，10请求全stop；末edit-affairs输入175587/缓存171776。全文6知识/10事务/3行动/21图已审：跨阶段重复和倒数用词修复，仍评分指令反转、考点缺失、事务错配板书图113；严格号理由可更清楚。0·∞在幂指例中已覆盖，不机械另加重复题。诊断build/editorial124/input-audit.txt确认评分590–598原字传入；对数108/109、小测148被候选来源过滤漏传。当前无活动AI。121（283）已改最终事务为全课原文、去派生标题；无候选也扫描、可[]，图按直接对象关联，不机械重复例题。全量23902项0失败、独立复审、release/lint/trial通过。121已安装AVD，同课newRun=true会话26670，输出build/editorial125/run.txt；仍用保存的low，临时high偏好问题未答前不改设置。唯一下一步等待该句柄终态，审全原文覆盖/实际用量/全文及图，不批量。
-
-- 用户要求可迁移修复，一次只整理一节，按“问题原文—预期写法—通用修正”逐轮完整审核，用户批准前不换课、不批量。固定微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487；唯一AVD Chrona_Classroom_36／emulator-5580，不占手机。
-- 已保存OpenCode Go deepseek-v4.1-flash／Responses／可选x-opencode-session；用户重新粘贴Key后401解除。密钥未读取／输出。用户已批准原生JSON模式：117新轮更正文稿文本、JSON阶段json_schema；旧json_object／文本轮格式及完整消息前缀不改。
-- 上轮115（277）已完整成功：4更正稿复用，11请求全部JSON模式、stop，无repair；第二轮49896输入／28288缓存，后续缓存也实际返回。全文9知识／4事务／2行动／23图已读，内容仍不批准：评分方向反转、存疑术语造事实、事务重复、图82/130错注及个别跳过计算。证据build/editorial119/export/、audit.txt、image-review-*.jpg；问题引文和预期见docs/audits/classroom-notebook-regression-20261103.md。
-- 当前116（278）：新增强轮快照affairs_source_first，事务输入直接给原字幕及邻句、派生标题仅定位，知识输入不变；事务同类按实际原文JSON文本预算集中，不跨知识边界，旧轮分批不改。普通和增强核图每张原JPEG前紧邻实际file文本，字节／顺序／缓存前缀不变，恢复不重传。无模型／课程分支，无新AI阶段或语义硬校验。
-- grounded275、事务301、普通课堂597、Responses509、恢复220通过。独立check发现预算失配并已闭环复核：实际原文长度而非短派生长度计量，超长单项独立，反例有效。build.log构建／lint及独立check通过，116已安装唯一AVD；configured+newRun=true同课runner71347已失败终态：draft-0成功，draft-1 Connection reset（用量未知）；同时AVD出现Watchdog图形同步阻塞、package/activity服务短暂消失，现已自行恢复，无重启／清数据。不能据时间接近证明连接重置因果。同轮runner41518已失败终态：draft-1-restart-1及repair都completed/stop但结构不完整；未重做draft-0/4更正稿，未提交失败块。nesting-audit.txt证明服务虽回显json_object，但image_requests被嵌进image_assessment，补外层括号后仍缺顶层必填字段，不能本地补写后接纳。已停止原样长请求。下一步改用各JSON阶段既有字段契约的原生JSON Schema结构输出（只约束结构、不加内容判错），旧轮冻结模式/历史不改；新轮复用4段更正稿。小请求接受schema/strict，已保存一次正确嵌套合成JSON；首次小请求布尔检查false且未留正文，不能宣称服务严格保证。证据build/editorial121/。先完成通用实现/检查/复审，再同课新轮，不批量。
-- 所有旧失败轮保留正常run归档；112曾完整但内容失败，113/114未闭合JSON提示修复失败，115原生JSON整轮通过。历史证据见验证记录，不把旧错误或等待条件当当前状态。
 ## 验收与原范围
 
-- 单篇知识主线完整，条件、必要推导、代表例题可直接自学；评分／考试及其他有用事务集中，真实指令和例外不反转，同义事实一次，具体行动保留。原题不明可使用标明的同类补充题，不冒充教师原题。图片必须实际可见、可用且匹配所在内容。
-- 每轮完整后审读概览、全部知识、事务、行动、原字幕及引用图；问题在聊天给出原文、预期、修正，规则应跨课程／模型迁移。无内容缺陷且用户批准后才能转原21节数学（18微积分＋3线代），不擅自加入11/2新课。原身份build/math-completion-audit-20261101/phone-before-batch92.json；旧完成数不代表当前内容合格。
-- 分段仅内部使用；已发送历史只能追加，失败未提交块完整回滚，不拼失败输出。已成功且源块匹配的更正字幕复用；配置改变及完整成品重生成使用新轮归档，不混服务历史，不另导旧成品副本。未知usage不记0；缓存命中仅据服务实际usage。
-- 原21节及手机端旧10/20试点仍未全部内容验收，不宣称完成。108/109/110旧成品不批准；历史详见上述审查和docs/validation-history.md。此前工作单可由Git a549653:HANDOFF.md检索，不把旧停止条件当当前指令。
+- 用户要求每轮先在聊天列具体问题、原文／预期及通用修正，实际修改一致；一次只整理一节。最终3档精简讲义，可直接自学，保留必要条件、过程、解释和结论；非学习事务集中，评分／考查细节、真实方向与适用条件不丢，不混入知识；明确行动独立。
+- 同一例题可覆盖多个机制，不按题数／标题数机械扩写。原题确实不明时可用标明的同类补题；原题确认后不再并列同机制替代题。无题干叙述和生产过程不作笔记内容。
+- 完整历史只追加；失败未提交块整体回滚，不拼失败输出。成功且原块匹配的更正稿复用，配置改变／成品重生开新轮正常归档，不另导旧成品副本。真实usage缺失为未知，不记0或伪称缓存。
+- 内容无关键缺陷且用户批准后，才继续原21节数学（18微积分＋3线代）。不擅加11/2新课。原身份build/math-completion-audit-20261101/phone-before-batch92.json；此前完成数不等于本轮内容合格。
+- 原21节与手机旧试点尚未全部内容验收，目标保持未完成。历史过程见docs/validation-history.md及回归审查，不把旧失败或旧等待当当前状态。
 
-## 其他已决定／交付
+## 已完成机制与边界
 
-- 用户取消外部日历订阅，交由系统接管；未实施，不纳入待办。
-- 112通用服务会话配置已推送：公共HTTP按可选sessionHeader，不按域名或模型猜测；默认Responses、不静默切协议。保存／备份／旋转草稿／密钥保留已审查；协议752、偏好121及课堂594检查通过。UI独立审核通过。未安装手机或发Release。
-- 111网页选择栏物理对齐Android、原生来源选择栏全宽及AVD旧验证应用清理已验收；110 PTA同步、来源搜索及校园设置分组已验收。证据build/ui-parity-20261103/、build/lan-dock-repair/、build/pta-research-20261103/，不重新设计。
-- 99作业定位／通用思考、96连堂字幕与PPT分页、100监视自动总结、108实际补课保留原验收。C课10/10下午、10/17上午已恢复，未凭空写11/7，不改学校原始数据。
+- 117原生阶段JSON Schema只约束既有结构，首次保存后恢复／repair复用；旧text/json_object轮不追改，更正仍文本。
+- 119取消整稿数量上限误拒绝，知识/事务分类拆分完整保留；来源、图片及行动分离检查不减。真实原edit-note-0完整回复本地重验，不重付。
+- 120新增强轮unified_affairs快照，唯一edit-affairs结果editor_affairs替换各分支派生事务；过滤图片后提交前检查原结构，失败不留坏检查点。121改最终事务直接扫描全课原文，无候选也扫描、可返回[]，去派生标题。
+- 121全量ClassroomEnhancedCheck23902断言0失败；release/lint/trial及独立代码check通过。证据build/editorial125/check-owner/full-fixed.log和build.log。合成usage不当真实缓存证据。没有新增内容语义硬拒绝。
+- PTA Cookie新路径F:\Programs\Server\Cookies\PTACookies.txt，仅查元数据确认存在，未读内容；项目未硬编码旧电脑路径，不复制Cookie或重复登录。
+- 外部日历订阅已取消，由系统接管。110 PTA/来源搜索/校园设置、111选择栏物理对齐与来源全宽、112会话配置等已验收，不重新设计。其他既有交付见功能文档及验证记录。
 
-## 运行与边界
+## 工作约束
 
-- 未收到新手机测试授权不占手机；模拟器串行复用、不新建／克隆／清空／改变显示参数。当前121课堂实测执行会话26670；安装或诊断前确认任务终态。等待超时不当失败或重启依据。
-- 测试输出集中项目build/editorial117和editorial118；设备仅/data/local/tmp/chrona/editorial118或应用缓存。已清设备UI XML目录；112审查导出ZIP已清理；113诊断生成的external cache/chrona-notebook-review108/review.zip及空目录已清理，诊断包已卸载。不得删真实素材／应用数据。
-- 图片先压缩再查看，禁止直接查看PNG原图。112图审用已压缩image-review.jpg。
-- 代理：editorial_batch_check只读代码复审；pta_ui_check专门UI复审。实际工具无agent_type字段，不虚称角色／模型选择，不跨聊天例行通信。
-- ADB F:\Android\Sdk\platform-tools\adb.exe；JDK D:\Minecraft\java21；gh F:\Programs\GitHubCLI\bin\gh.exe。FastCtx未暴露时用pwsh7，保留账号、不输出token。
-- 保护其他改动：AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1。只提交本轮owned文件；不为小版本自动发Release。
+- 不自动发小版本Release；源码普通提交并push origin HEAD:main，不force。主APK build/editorial125/Chrona-v0.15.121.apk。未更新手机。
+- 复用单一AVD，串行使用，不新建/复制/清空/改显示参数。120安装前模拟器已退出且无进程，已正常重开原AVD，账号及数据保留。观察超时不当失败或重启依据。
+- 测试输出仅项目build/内；设备仅专用临时目录或应用缓存，不向共享存储根目录散放。图片先压缩再查看，禁止读取PNG原图。清理只删本次创建的确切路径。
+- ADB F:\Android\Sdk\platform-tools\adb.exe；JDK D:\Minecraft\java21；gh F:\Programs\GitHubCLI\bin\gh.exe，保留登录，不读token。FastCtx当前未暴露时用pwsh7。
+- 本聊天editorial_batch_check只读代码审查，pta_ui_check独立UI审查；affairs_stage_checks受限execute只改测试已完成，regression125_content只读内容审查。实际工具无agent_type字段，不虚称角色／模型，不向无冲突的其他聊天例行发消息。
+- 保护其他所有者改动：AGENTS.md、docs/Communication/messages/2026-10-31.jsonl、.backups/、.local-backups/、角色toml、tools/Clean-Project.ps1、tools/Seed-PreviewData.ps1；仅提交当前owned文件。

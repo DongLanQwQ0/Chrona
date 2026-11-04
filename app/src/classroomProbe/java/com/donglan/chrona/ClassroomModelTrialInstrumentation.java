@@ -24,7 +24,10 @@ public final class ClassroomModelTrialInstrumentation extends Instrumentation {
             AiSettings original=new AiSettingsStore(getTargetContext()).load();
             if(original==null)throw new IllegalStateException("AI service unavailable");
             boolean configured="configured".equals(arguments.getString("model"));
-            AiSettings trial=configured?original:new AiSettings(original.baseUrl,arguments.getString("model"),original.apiKey,original.reasoningEffort,original.protocol,original.sessionHeader);
+            String effort=arguments.getString("reasoningEffort","");
+            if(!effort.isEmpty()&&!java.util.Set.of("low","medium","high").contains(effort))throw new IllegalArgumentException("Explicit trial reasoning effort required");
+            AiSettings trial=configured&&effort.isEmpty()?original:new AiSettings(original.baseUrl,configured?original.model:arguments.getString("model"),original.apiKey,
+                    effort.isEmpty()?original.reasoningEffort:effort,original.protocol,original.sessionHeader);
             ClassroomStore store=new ClassroomStore(getTargetContext(),school.account());
             ClassroomLesson identity=new ClassroomLesson("86985","1988487","","","","6",0);
             File dir=store.lesson(identity);
@@ -48,8 +51,11 @@ public final class ClassroomModelTrialInstrumentation extends Instrumentation {
                 Bundle progress=new Bundle();progress.putString("trial_state","running");sendStatus(1,progress);
             }
             result.putBoolean("succeeded",job.succeeded);result.putString("model",trial.model);
-            result.putBoolean("used_saved_configuration",configured);
-            result.putBoolean("global_model_unchanged",original.model.equals(new AiSettingsStore(getTargetContext()).load().model));
+            result.putBoolean("used_saved_configuration",configured&&effort.isEmpty());
+            if(!effort.isEmpty())result.putString("temporary_reasoning_effort",effort);
+            AiSettings current=new AiSettingsStore(getTargetContext()).load();
+            result.putBoolean("global_model_unchanged",original.model.equals(current.model));
+            result.putBoolean("global_reasoning_unchanged",original.reasoningEffort.equals(current.reasoningEffort));
             finish(job.succeeded?-1:0,result);
         }catch(Throwable failure){result.putString("error_type",failure.getClass().getSimpleName());finish(0,result);}
     }
