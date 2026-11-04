@@ -9,6 +9,7 @@ import java.util.*;
 /** Bounded outputs over one growing, immutable-prefix conversation. Never compacts earlier inputs. */
 final class ClassroomEnhancedSummary {
     private static final int BLOCK_CHARS=6000;
+    static final int WHOLE_LESSON_CHARS=60000;
     private static final int LEGACY_EDITOR_BATCH_CHARS=12000;
     private final File dir;private final JSONObject state,materials,candidates,full;
     private final ClassroomLesson lesson;private final ClassroomConversation conversation;
@@ -21,7 +22,8 @@ final class ClassroomEnhancedSummary {
         this.affairsSchema=state.optInt("affairs_schema",0);
     }
     JSONObject generate(int imageLimit)throws Exception{
-        if(!state.has("blocks"))state.put("blocks",blocks(full.getJSONArray("segments")));
+        if(!state.has("blocks"))state.put("blocks",state.optBoolean("compact_pipeline")
+                ?ClassroomCorrectionCache.compactBlocks(dir,full.getJSONArray("segments")):blocks(full.getJSONArray("segments")));
         JSONArray blocks=state.getJSONArray("blocks");
         ClassroomCorrectionCache.restore(dir,state,blocks);
         JSONArray corrected=state.optJSONArray("corrected");
@@ -37,7 +39,8 @@ final class ClassroomEnhancedSummary {
             ClassroomStore.write(new File(dir,"corrected.json"),new JSONObject().put("run",state.getString("run")).put("parts",new JSONArray(corrected.toString()))
                     .put("blocks",new JSONArray(blocks.toString())).put("complete",corrected.length()==blocks.length()));
         }
-        if(!state.has("parts")){ClassroomStore.write(new File(dir,"summary.json"),assemble(new JSONArray(),new JSONArray(),false));status("更正文稿已保存",corrected.length(),blocks.length());}
+        if(!state.has("parts")&&!state.has("compact_note")){ClassroomStore.write(new File(dir,"summary.json"),assemble(new JSONArray(),new JSONArray(),false));status("更正文稿已保存",corrected.length(),blocks.length());}
+        if(state.optBoolean("compact_pipeline"))return compact(imageLimit,corrected);
         int contentBatchSize=Math.max(1,state.optInt("content_batch_size",1));
         JSONArray groups=contentGroups(blocks,contentBatchSize);
         JSONArray drafts=state.optJSONArray("drafts");if(drafts==null){drafts=new JSONArray();state.put("drafts",drafts);}
@@ -104,6 +107,73 @@ final class ClassroomEnhancedSummary {
         editAssignments(parts);
         consolidateAffairs(parts,analysed);
         JSONObject result=assemble(parts,analysed,true);state.put("final",result);save();ClassroomStore.write(new File(dir,"summary.json"),result);return result;
+    }
+    /** One evidence request and one complete publication; no intermediate notebook to rewrite. */
+    private JSONObject compact(int imageLimit,JSONArray corrected)throws Exception{
+        JSONObject catalogue=full.getJSONObject("image_catalogue");
+        String originals=ClassroomSummary.uploadChunk(blockInput(full.getJSONArray("segments"),new JSONArray())).toString();
+        if(!state.has("image_plan")&&(imageLimit==0||catalogue.getInt("count")==0)){
+            state.put("image_plan",new JSONObject().put("image_assessment",new JSONObject()
+                    .put("decision",imageLimit==0?"disabled":"unavailable")
+                    .put("reason",imageLimit==0?"用户未授权上传图片":"本课堂没有可用截图"))
+                    .put("image_requests",new JSONArray())).put("image_plan_origin","local_availability");save();
+        }
+        if(!state.has("image_plan")){
+            status("AI 判断全课图片需求",0,1);
+            String decision=imageLimit==0?"disabled":catalogue.getInt("count")==0?"unavailable":"request";
+            String prompt="课程："+lesson.course+"；课堂："+lesson.title+"。更正文稿已完成。现在只判断图片需求，不生成初稿、主题编排或任何知识／事务正文。"
+                    +"已完成更正文稿在同一历史中；缓存复用文稿在下方按原顺序原字追加。结合全课原始字幕与PPT时间目录，指出公式、图形、题设或书面要求有哪些视觉信息缺口，再决定是否取图。"
+                    +"返回JSON {\"image_assessment\":{\"decision\":\""+decision+"\",\"reason\":\"具体依据\"},\"image_requests\":[]}。"
+                    +"需要图时decision=request，每项image_requests为{\"start\":0,\"end\":60,\"reason\":\"视觉信息缺口\"}；无需图时not_needed且[]。禁止在关闭上传或无可用图片时请求。"
+                    +ClassroomSummary.imageInstructions(catalogue,imageLimit)
+                    +"\n复用更正文稿：\n"+(state.has("correction_reused_from")?corrected.toString():"更正文稿已在本轮原始历史中，不重复附录。")
+                    +"\n全课原始字幕：\n"+originals+"\nPPT时间目录："+catalogue;
+            JSONObject plan=json("image-plan",prompt,Collections.emptyList(),value->ClassroomSummary.validateImageAssessment(value,catalogue));
+            state.put("image_plan",plan).put("image_plan_origin","model");save();
+        }
+        if(!state.has("selected")){
+            JSONObject plan=state.getJSONObject("image_plan");
+            JSONArray picked=ClassroomSummary.selectRequested(candidates.getJSONArray("images"),plan.getJSONArray("image_requests"),imageLimit),selected=new JSONArray();
+            for(int i=0;i<picked.length();i++){
+                JSONObject p=picked.getJSONObject(i),row=new JSONObject().put("file","image-"+p.getInt("index")+".jpg").put("second",p.getDouble("second")).put("raw",p.getString("raw"));
+                if(p.optJSONObject("quality")!=null)row.put("quality",p.getJSONObject("quality"));selected.put(row);
+            }
+            state.put("selected",selected).put("image_audit",new JSONObject().put("catalogue",catalogue).put("assessment",plan.getJSONObject("image_assessment"))
+                    .put("assessment_source",state.getString("image_plan_origin"))
+                    .put("requests",plan.getJSONArray("image_requests")).put("selected_count",selected.length()).put("analysed_count",0));save();
+        }
+        JSONArray inventory=new JSONArray(),selected=state.getJSONArray("selected");
+        List<byte[]> bytes=new ArrayList<>();List<String> names=new ArrayList<>();
+        for(int i=0;i<selected.length();i++){
+            control.check();JSONObject row=selected.getJSONObject(i);File file=new File(dir,row.getString("file"));
+            if(!file.exists())ClassroomStore.writeBytes(file,ClassroomImages.jpeg(new File(dir,row.getString("raw"))));
+            inventory.put(ClassroomFigureReview.inventory(row));bytes.add(ClassroomStore.bytes(file));names.add(row.getString("file"));
+        }
+        if(!state.has("compact_note")){
+            status("AI 生成全课笔记",0,1);
+            String prompt="现在根据同一历史中的更正文稿、全课原始字幕及本次实际附图，一次生成最终完整笔记。没有独立提取稿、编排稿或后续整稿，不预留待后补的题干或计算。"
+                    +(state.has("correction_reused_from")&&!"model".equals(state.optString("image_plan_origin"))?"\n复用更正文稿（按原顺序原字追加）：\n"+corrected:"历史中的更正文稿保持原位，不重复附录。")
+                    +"知识只进入notes，课程事务只进入affairs，具体执行任务只进入assignments，各自独立、不混写、不跨区重复。概览只简述知识主线，不放图。"
+                    +"按当前笔记整理强度组织；3档是精简完整讲义，按知识依赖积极重排，保留自学需要的条件、关键过程、解释和结论，不扩写教材或流水账。原题不明可用明确标注的同类型补充例题，同机制不并列重复原题和补题。"
+                    +"数学先还原表达式与操作链，区分合法运算与真正失效的前提；不能为解释错误结论而否定合法约分、变形或求导。"
+                    +"每次代入不等式或换元均对照定义逐项替换，保持分子、系数、幂次、符号与趋近方向一致，不能只因最后答案相同就省略或改变中间等式。"
+                    +"教师事务以原话为依据，集中保留考试、评分、范围、出勤和资源等有效信息。允许／禁止、保留／划掉、给分条件须核对动作、对象、触发行为和变化方向；不以常识覆盖原话，也不把派生文稿中反复出现的解释当作证据。"
+                    +"保留细微考核线索和不同适用对象，音近术语无法确认时保留可靠事实，不猜额外得分入口。删无关闲聊、生产说明、重复小结；一般答卷规范不额外变成待办。"
+                    +assignmentRules()+ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
+                    +"\n本次图片按顺序绑定实际file（编号不连续，不重编号）："+inventory
+                    +"。只可引用实际附图，图注描述实际可见内容；不把字幕里的证明当作图片已显示。空白、标题页、遮挡及低置信度图不放成品；不强行配图。"
+                    +"\n全课原始字幕：\n"+originals;
+            JSONObject value=json("whole-note",prompt,bytes,names,result->{
+                ClassroomSummary.validateBlock(result,blockInput(full.getJSONArray("segments"),inventory),affairsSchema);
+                ClassroomSummary.validateAssignmentEvidence(result,full.getJSONArray("segments"));
+                if(state.optInt("figure_policy")>0)ClassroomFigureReview.apply(result,inventory,inventory,state.optJSONArray("figure_reviews"));
+                ClassroomSummary.validateBlock(result,blockInput(full.getJSONArray("segments"),inventory),affairsSchema);
+            });
+            if(value.has("image_reviews")){ClassroomFigureReview.merge(state,value.getJSONArray("image_reviews"));ClassroomFigureReview.filter(value,state.getJSONArray("figure_reviews"));}
+            state.put("compact_note",value).put("analysed",inventory);
+            state.getJSONObject("image_audit").put("analysed_count",inventory.length());save();
+        }
+        JSONObject result=assemble(new JSONArray(),inventory,true);state.put("final",result);save();ClassroomStore.write(new File(dir,"summary.json"),result);return result;
     }
     private static String scope(JSONArray block)throws Exception{
         return "本段主体字幕来源id为："+ids(block)+"；可引用已提供的同课真实来源，编号不得凭空编造。";
@@ -421,6 +491,7 @@ final class ClassroomEnhancedSummary {
         if(affairsSchema>0)document.put("affairs",new JSONArray());
         if(edited!=null)for(int i=0;i<edited.length();i++){JSONObject note=new JSONObject(edited.getJSONObject(i).toString());String collection=affairsSchema==0?"notes":note.getString("collection");note.remove("collection");document.getJSONArray(collection).put(note);}
         if(affairsSchema>0&&state.has("editor_affairs"))document.put("affairs",new JSONArray(state.getJSONArray("editor_affairs").toString()));
+        if(state.has("compact_note"))document=new JSONObject(state.getJSONObject("compact_note").toString());
         if(document.getJSONArray("notes").length()==0)document.put("overview","");
         ClassroomSummary.validateBlock(document,blockInput(full.getJSONArray("segments"),analysed),affairsSchema);
         if(state.optInt("figure_policy")>0)ClassroomFigureReview.filter(document,state.optJSONArray("figure_reviews"));
@@ -475,14 +546,21 @@ final class ClassroomEnhancedSummary {
         return new JSONArray(titles);
     }
     static JSONArray blocks(JSONArray segments)throws Exception{
+        return blocks(segments,BLOCK_CHARS);
+    }
+    static boolean compactEligible(JSONArray segments)throws Exception{
+        long chars=0;for(int i=0;i<segments.length();i++)chars+=segments.getJSONObject(i).getString("text").length();
+        return chars<=WHOLE_LESSON_CHARS;
+    }
+    static JSONArray blocks(JSONArray segments,int maxChars)throws Exception{
         JSONArray result=new JSONArray(),block=new JSONArray();int chars=0;
         for(int i=0;i<segments.length();i++){
             JSONObject row=segments.getJSONObject(i);String text=row.getString("text");
             int offset=0;
             do{
-                if(offset==0&&chars>0&&text.length()<=BLOCK_CHARS&&text.length()>BLOCK_CHARS-chars){result.put(block);block=new JSONArray();chars=0;}
-                if(chars==BLOCK_CHARS){result.put(block);block=new JSONArray();chars=0;}
-                int end=Math.min(text.length(),offset+BLOCK_CHARS-chars);
+                if(offset==0&&chars>0&&text.length()<=maxChars&&text.length()>maxChars-chars){result.put(block);block=new JSONArray();chars=0;}
+                if(chars==maxChars){result.put(block);block=new JSONArray();chars=0;}
+                int end=Math.min(text.length(),offset+maxChars-chars);
                 if(end<text.length()&&end>offset&&Character.isHighSurrogate(text.charAt(end-1)))end--;
                 if(end==offset&&offset<text.length()){result.put(block);block=new JSONArray();chars=0;continue;}
                 JSONObject slice=new JSONObject(row.toString()).put("text",text.substring(offset,end));

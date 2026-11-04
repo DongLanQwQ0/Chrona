@@ -12,21 +12,31 @@ public final class ClassroomCorrectionCache {
     public static void capture(File dir)throws Exception {
         JSONObject materials=ClassroomStore.read(new File(dir,"materials.json"));
         if(materials==null)return;
-        JSONArray blocks=ClassroomEnhancedSummary.blocks(ClassroomSummary.lessonInput(materials.getJSONArray("segments"),new JSONArray()).getJSONArray("segments"));
+        JSONArray segments=ClassroomSummary.lessonInput(materials.getJSONArray("segments"),new JSONArray()).getJSONArray("segments");
+        JSONArray legacy=ClassroomEnhancedSummary.blocks(segments),blocks=legacy;
         JSONObject prior=ClassroomStore.read(new File(dir,"run.json"));
+        JSONArray whole=ClassroomEnhancedSummary.blocks(segments,ClassroomEnhancedSummary.WHOLE_LESSON_CHARS);
         JSONArray parts=null;String origin="";
-        if(prior!=null&&sameBlocks(prior.optJSONArray("blocks"),blocks)&&validParts(prior.optJSONArray("corrected"),blocks.length())){
-            parts=prior.getJSONArray("corrected");origin=prior.optString("run");
+        if(prior!=null&&prior.optJSONArray("blocks")!=null){
+            JSONArray layout=prior.getJSONArray("blocks");
+            if((sameBlocks(layout,legacy)||sameBlocks(layout,whole))&&validParts(prior.optJSONArray("corrected"),layout.length())){
+                blocks=layout;parts=prior.getJSONArray("corrected");origin=prior.optString("run");
+            }
         }else if(prior==null||prior.optJSONArray("blocks")==null){
             JSONObject saved=ClassroomStore.read(new File(dir,"corrected.json")),summary=ClassroomStore.read(new File(dir,"summary.json"));
             if(saved!=null&&summary!=null&&saved.optBoolean("complete")&&!saved.optString("run").isBlank()
-                    &&saved.optString("run").equals(summary.optString("run"))&&summary.optInt("source_blocks")==blocks.length()
-                    &&sameBlocks(saved.optJSONArray("blocks"),blocks)
-                    &&validParts(saved.optJSONArray("parts"),blocks.length())&&saved.getJSONArray("parts").length()==blocks.length()){
+                    &&saved.optString("run").equals(summary.optString("run"))
+                    &&(sameBlocks(saved.optJSONArray("blocks"),legacy)||sameBlocks(saved.optJSONArray("blocks"),whole))
+                    &&summary.optInt("source_blocks")==saved.getJSONArray("blocks").length()
+                    &&validParts(saved.optJSONArray("parts"),saved.getJSONArray("blocks").length())
+                    &&saved.getJSONArray("parts").length()==saved.getJSONArray("blocks").length()){
+                blocks=saved.getJSONArray("blocks");
                 parts=saved.getJSONArray("parts");origin=saved.getString("run");
             }else{
                 JSONObject cache=ClassroomStore.read(new File(dir,"correction-cache.json"));
-                if(cache!=null&&sameBlocks(cache.optJSONArray("blocks"),blocks)&&validParts(cache.optJSONArray("parts"),blocks.length())){
+                if(cache!=null&&(sameBlocks(cache.optJSONArray("blocks"),legacy)||sameBlocks(cache.optJSONArray("blocks"),whole))
+                        &&validParts(cache.optJSONArray("parts"),cache.getJSONArray("blocks").length())){
+                    blocks=cache.getJSONArray("blocks");
                     parts=cache.getJSONArray("parts");origin=cache.optString("source_run");
                 }
             }
@@ -34,6 +44,15 @@ public final class ClassroomCorrectionCache {
         // Empty explicitly invalidates an older cache; it is never permission to reuse stale text.
         ClassroomStore.write(new File(dir,"correction-cache.json"),new JSONObject().put("blocks",blocks)
                 .put("parts",parts==null?new JSONArray():new JSONArray(parts.toString())).put("source_run",origin));
+    }
+
+    /** Keep matching committed legacy corrections; fresh ordinary lessons need one correction. */
+    static JSONArray compactBlocks(File dir,JSONArray segments)throws Exception{
+        JSONArray legacy=ClassroomEnhancedSummary.blocks(segments);
+        JSONObject cache=ClassroomStore.read(new File(dir,"correction-cache.json"));
+        if(cache!=null&&sameBlocks(cache.optJSONArray("blocks"),legacy)
+                &&validParts(cache.optJSONArray("parts"),legacy.length())&&cache.getJSONArray("parts").length()>0)return legacy;
+        return ClassroomEnhancedSummary.blocks(segments,ClassroomEnhancedSummary.WHOLE_LESSON_CHARS);
     }
 
     static void restore(File dir,JSONObject state,JSONArray blocks)throws Exception {

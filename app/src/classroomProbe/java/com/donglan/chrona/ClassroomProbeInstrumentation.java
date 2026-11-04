@@ -332,6 +332,8 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     row.put("run_native_json_schema",run.optBoolean("native_json_schema"));
                     row.put("run_affairs_source_first",run.optBoolean("affairs_source_first"));
                     row.put("run_editorial_source_first",run.optBoolean("editorial_source_first"));
+                    row.put("run_compact_pipeline",run.optBoolean("compact_pipeline"));
+                    row.put("run_image_plan_origin",run.optString("image_plan_origin"));
                     if(providerFailure&&key.equals(reviewKey)&&run.optBoolean("editorial_source_first"))
                         row.put("run_editorial_input_audit",editorialInputAudit(run,materials));
                     JSONArray actualModes=new JSONArray();JSONObject savedConversation=run.optJSONObject("conversation");

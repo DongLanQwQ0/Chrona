@@ -9,7 +9,11 @@ final class ClassroomResponseShape {
     private ClassroomResponseShape() { }
     static JSONObject contract(String stage,int affairs,int figures)throws Exception{
         JSONObject properties;String name;
-        if(stage.equals("edit-affairs")){
+        if(stage.equals("image-plan")){
+            properties=new JSONObject().put("image_assessment",object(new JSONObject().put("decision",type("string")).put("reason",type("string"))))
+                    .put("image_requests",array(object(new JSONObject().put("start",type("number")).put("end",type("number")).put("reason",type("string")))));
+            name="image_plan";
+        }else if(stage.equals("edit-affairs")){
             JSONObject note=new JSONObject().put("title",type("string")).put("text",type("string"))
                     .put("sources",array(type("integer"))).put("images",array(type("string")));
             properties=new JSONObject().put("affairs",array(object(note)));name="affairs";
@@ -21,9 +25,9 @@ final class ClassroomResponseShape {
             properties=new JSONObject().put("groups",array(array(type("string"))));name="assignments";
         }else{
             boolean draft=stage.equals("first")||stage.matches("draft-[0-9]+"),
-                    fin=stage.equals("final")||stage.matches("final-[0-9]+"),edit=stage.matches("edit-note-[0-9]+");
+                    fin=stage.equals("whole-note")||stage.equals("final")||stage.matches("final-[0-9]+"),edit=stage.matches("edit-note-[0-9]+");
             if(!draft&&!fin&&!edit)throw new IOException("未知课堂JSON阶段");
-            boolean evidence=stage.matches("(?:draft|final)-[0-9]+");
+            boolean evidence=stage.equals("whole-note")||stage.matches("(?:draft|final)-[0-9]+");
             properties=summary(affairs,evidence);
             if(draft){
                 properties.put("image_assessment",object(new JSONObject().put("decision",type("string")).put("reason",type("string"))))

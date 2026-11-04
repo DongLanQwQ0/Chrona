@@ -108,7 +108,7 @@ final class ClassroomJsonStage {
         return "";
     }
     private String assignmentEvidenceDiagnostic(String stage)throws Exception{
-        if(!stage.matches("(?:draft|final)-[0-9]+"))return "";
+        if(!stage.equals("whole-note")&&!stage.matches("(?:draft|final)-[0-9]+"))return "";
         JSONArray blocks=state.optJSONArray("blocks");if(blocks==null)return "";
         JSONObject history=state.getJSONObject("conversation"),outputs=history.getJSONObject("outputs"),reply=null;
         if(!history.optString("pending").isEmpty())return "";
