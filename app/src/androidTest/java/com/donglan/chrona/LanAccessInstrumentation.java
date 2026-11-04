@@ -62,6 +62,12 @@ public final class LanAccessInstrumentation extends Instrumentation {
         return activity;
     }
     @Override public void onStart() {
+        if ("header_actions".equals(arguments.getString("check"))) {
+            Bundle report = new Bundle();
+            try { report.putString("header_actions_report", HeaderActionGroupDeviceCheck.run(this, arguments)); finish(-1, report); }
+            catch (Throwable error) { report.putString("error", android.util.Log.getStackTraceString(error)); finish(0, report); }
+            return;
+        }
         if("pta_homework".equals(arguments.getString("check"))){
             Bundle report=new Bundle();
             try{report.putString("pta_report",PtaDeviceCheck.run(this,arguments));finish(-1,report);}

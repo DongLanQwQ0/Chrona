@@ -1299,3 +1299,11 @@ high偏好未答，不调用高思考；可选对照不作为已授权回归的�
 - 123会话70863失败在edit-plan：前两段提取/核图成功，四段更正文稿复用；服务response.completed/stop，实际output760/上限32768，仅思考1735字符、正文0。不是输出截断，不补造正文。40附图标签0失配，失败阶段未提交。沿原历史和检查点续跑19926，保存配置low/Responses不变，未新开轮。证据build/editorial127/audit.txt、run.txt、resume.txt；尚不能评价123最终内容。
 - 124只修selectRequested丢失请求窗口覆盖的缺陷：旧全局质量采样在两窗/两张预算及40张预算均有可执行反例，会挤掉有候选的窄窗。原选择已全覆盖时原样返回；否则按结束时间贪心选最右候选形成最少锚点，预算可行则用原质量采样补齐，预算不可行保留原基线。40上限、原编号/对象/质量信息不变，已冻结selected不追改，不新增AI请求。实际本课15窗已有覆盖，因此不宣称修复本课内容遗漏。
 - 独立只读代码审查通过；检查owner只新增测试及专项入口，无删除既有完整用例。600组小集合、2511个预算组合与独立穷举最优覆盖数对照；专用23994、完整ClassroomSummary24566、受影响Responses535/grounded317项均0失败。release/lint/probe构建成功，产物build/editorial128/Chrona-v0.15.124.apk。未安装124到正在续跑的AVD、未更新手机、未发布Release。
+
+## 125操作组分隔及日历遗留 — 2026-11-04
+
+- 用户截图的单个更多按钮左侧残留分隔由HeaderActionGroup只随后一动作更新导致。改为按当前动作和前方可见动作的进度统一计算分隔；首项先隐藏再添加、中项隐藏、反向和脱离均共用规则。无新样式、页面偏移或动效参数变化。
+- 完整生产类轻量Android桩2257项通过。既有唯一AVD、原411dpi/正常1080×2376下，隔离v33中的真实TaskDetailActivity深浅竖横屏完成单按钮48dp、双动作恢复、隐藏中项、全隐藏、原菜单真实DOWN/UP、原1.10按压及ValueAnimator反向中间帧。草稿finally逐项删除，截图直接压缩JPEG；独立ui_review及主代理亲看后签收。build/ui-calendar-header-20261104/portrait-{light,dark}.txt、landscape-{light,dark}-final.txt、device-evidence/。
+- 旧横屏回执不采用：首次注入落到旋转重建前的旧窗口，后续一轮实际上仍竖屏；诊断证明新实例有焦点与布局，但在Launcher冻结后开页又回竖屏。测试改用项目已有路径，先启动真实页再冻结一次方向，标准ActivityMonitor接重建，最终实读orientation2/rotation1。未模拟窗口、改密度或放宽断言；旋转配置恢复原值。
+- USB只读确认用户两条C课是同选课课号、同起止的学校缓存和旧系统副本，地点不同。按用户明确批准，仅原地更新未结束9条旧副本位置及课表说明；已结束不改。另以原账号、精确事件ID/标题/时间及计数作批量事务前提，清理6条“重复验收”记录和空测试日历。正式日历仍361条，其它日历及非目标C课字段前后相同；没有在生产加入包名过滤或静默持续课表同步。phone-calendar-details.txt、phone-repair.txt、repair-verification.json。专用手机辅助包及本轮v33包已卸载，没有散放共享文件。
+- 125（287）release/lint通过，正式包名、版本及APK签名验证成功；USB覆盖安装Success，系统实读0.15.125/287，phone-version.txt。未进入正在使用的聊天应用操作，未宣称真机视觉验收，未发小版本Release。

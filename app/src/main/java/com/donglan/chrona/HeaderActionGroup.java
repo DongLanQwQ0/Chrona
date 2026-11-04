@@ -34,6 +34,7 @@ final class HeaderActionGroup extends LinearLayout {
         action.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         addView(action, new LinearLayout.LayoutParams(dp(widthDp), height));
         actions.put(action,new Action(action,separator,dp(widthDp)));
+        updateSeparators();
     }
 
     void finish() { PressFeedback.group(this, 1.10f); }
@@ -63,7 +64,22 @@ final class HeaderActionGroup extends LinearLayout {
         action.progress=progress;action.view.setVisibility(progress==0f?GONE:VISIBLE);action.view.setAlpha(progress);
         action.view.setScaleX(.85f+.15f*progress);action.view.setScaleY(.85f+.15f*progress);
         LinearLayout.LayoutParams slot=(LinearLayout.LayoutParams)action.view.getLayoutParams();slot.width=Math.round(action.width*progress);action.view.setLayoutParams(slot);
-        if(action.separator!=null){action.separator.setVisibility(progress==0f?GONE:VISIBLE);action.separator.setAlpha(progress);LinearLayout.LayoutParams divider=(LinearLayout.LayoutParams)action.separator.getLayoutParams();divider.width=Math.round(dp(1)*progress);action.separator.setLayoutParams(divider);}
+        updateSeparators();
+    }
+
+    private void updateSeparators() {
+        float preceding=0f;
+        for(int i=0;i<getChildCount();i++){
+            Action action=actions.get(getChildAt(i));if(action==null)continue;
+            if(action.separator!=null){
+                float progress=Math.min(preceding,action.progress);
+                action.separator.setVisibility(progress==0f?GONE:VISIBLE);action.separator.setAlpha(progress);
+                LinearLayout.LayoutParams slot=(LinearLayout.LayoutParams)action.separator.getLayoutParams();
+                int width=Math.round(dp(1)*progress);
+                if(slot.width!=width){slot.width=width;action.separator.setLayoutParams(slot);}
+            }
+            preceding=Math.max(preceding,action.progress);
+        }
     }
 
     @Override protected void onDetachedFromWindow() {
