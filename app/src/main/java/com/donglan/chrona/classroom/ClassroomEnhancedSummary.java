@@ -138,10 +138,10 @@ final class ClassroomEnhancedSummary {
                     +"需要图时decision=request，每项image_requests为{\"start\":0,\"end\":60,\"reason\":\"视觉信息缺口\"}；无需图时not_needed且[]。禁止在关闭上传或无可用图片时请求。"
                     +ClassroomSummary.imageInstructions(catalogue,imageLimit)
                     +(countedImages?"每段image_requests还必须给count整数，明确请求该范围内几张代表图（1至40）。代码只取请求数量，不会自动填满授权；按实际视觉缺口估计必要张数，合并重复需求，总数不超过已授权上限。":"")
-                    +(affairsFirst?"先完成课程事务与当前行动，最后规划取图。下列索引只定位可能相关的原始段，不替代完整全课语境，也不能据索引缺失排除信息："+affairsScopeIndex(full.getJSONArray("segments"))
-                    +"。输出前在本轮中核对每项行动是否被全课后文撤回或澄清为历史对象；评分按‘具体场景、动作方向、全部明确数字、触发与例外’合成事项，不把例子中的优惠概括为通用加分规则。":"")
                     +(affairsFirst?"":"\n复用更正文稿：\n"+(state.has("correction_reused_from")?corrected.toString():"更正文稿已在本轮原始历史中，不重复附录。"))
-                    +"\n全课原始字幕：\n"+originals+"\nPPT时间目录："+catalogue;
+                    +"\n全课原始字幕：\n"+originals+"\nPPT时间目录："+catalogue
+                    +(affairsFirst?"\n本轮执行要求：先完成课程事务与当前行动，最后规划取图。下列索引只定位可能相关的原始段，不替代完整全课语境，也不能据索引缺失排除信息："+affairsScopeIndex(full.getJSONArray("segments"))
+                    +"。输出前在本轮中核对每项行动是否被全课后文撤回或澄清为历史对象；评分按‘具体场景、动作方向、全部明确数字、触发与例外’合成事项，不把例子中的优惠概括为通用加分规则。":"");
             JSONObject plan=json(affairsFirst?"affairs-plan":"image-plan",prompt,Collections.emptyList(),value->{
                 ClassroomSummary.validateImageAssessment(value,catalogue);
                 if(countedImages){JSONArray requests=value.getJSONArray("image_requests");for(int i=0;i<requests.length();i++)ClassroomSummary.requestedCount(requests.getJSONObject(i));}
@@ -193,8 +193,7 @@ final class ClassroomEnhancedSummary {
                     +"\n全课原始字幕：\n"+originals;
             JSONObject value=json("whole-note",prompt,bytes,names,result->{
                 if(affairsFirst)for(String field:new String[]{"affairs","assignments"}){
-                    JSONArray combined=new JSONArray(state.getJSONObject("image_plan").getJSONArray(field).toString()),extra=result.getJSONArray(field);
-                    for(int i=0;i<extra.length();i++)combined.put(extra.getJSONObject(i));result.put(field,combined);
+                    result.put(field,appendUncovered(state.getJSONObject("image_plan").getJSONArray(field),result.getJSONArray(field)));
                 }
                 ClassroomSummary.validateBlock(result,blockInput(full.getJSONArray("segments"),inventory),affairsSchema);
                 ClassroomSummary.validateAssignmentEvidence(result,full.getJSONArray("segments"));
@@ -206,6 +205,30 @@ final class ClassroomEnhancedSummary {
             state.getJSONObject("image_audit").put("analysed_count",inventory.length());save();
         }
         JSONObject result=assemble(new JSONArray(),inventory,true);state.put("final",result);save();ClassroomStore.write(new File(dir,"summary.json"),result);return result;
+    }
+    static JSONArray appendUncovered(JSONArray first,JSONArray extras)throws Exception{
+        JSONArray combined=new JSONArray(first.toString());
+        for(int i=0;i<extras.length();i++){
+            JSONObject extra=extras.getJSONObject(i);boolean covered=false;
+            for(int n=0;n<combined.length()&&!covered;n++){
+                JSONObject saved=combined.getJSONObject(n);boolean referencesCovered=saved.length()==extra.length();
+                for(Iterator<String> keys=saved.keys();keys.hasNext()&&referencesCovered;){
+                    String field=keys.next();
+                    if(!extra.has(field)){referencesCovered=false;break;}
+                    JSONArray incoming=extra.optJSONArray(field),prior=saved.optJSONArray(field);
+                    if(!(field.equals("sources")||field.equals("images"))||incoming==null||prior==null){
+                        referencesCovered=Objects.equals(saved.get(field),extra.get(field));continue;
+                    }
+                    for(int r=0;r<incoming.length();r++){
+                        boolean found=false;for(int p=0;p<prior.length();p++)if(Objects.equals(incoming.get(r),prior.get(p))){found=true;break;}
+                        if(!found){referencesCovered=false;break;}
+                    }
+                }
+                covered=referencesCovered;
+            }
+            if(!covered)combined.put(new JSONObject(extra.toString()));
+        }
+        return combined;
     }
     static JSONArray affairsScopeIndex(JSONArray segments)throws Exception{
         java.util.regex.Pattern signals=java.util.regex.Pattern.compile("考|评分|给分|扣分|分值|作业|提交|截止|出勤|签到|请假|要求|规定|不准|不要|务必|往届|以前|过去|没让|补交|重做|通知|exam|grade|point|homework|assign|deadline|attendance|submit|must|should",java.util.regex.Pattern.CASE_INSENSITIVE);

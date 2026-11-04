@@ -1,12 +1,22 @@
 # 当前交付：课程事务完整与按需取图（131）
 
+## 132当前交付
+
+- 131同代码medium2981成功终态，Terra已读完整审计／全文／来源／4张压缩图；2请求、23请求/附图、13引用可读、4段更正复用。历史行动／各5分／幂指题型改善，但新增事务与行动回显重复、任务题设收窄、可用方法误判存疑，仍漏评分条件；未批准。build/editorial134/medium/，设备临时ZIP及空目录已清，readonly helper已装，无活跃AI。
+- Terra定点深比较证实6对事务JSON完全相同；行动第一对相同，第二对仅sources为原集合子集。root不读完整输出，采用其摘要及必要原句决策。
+- 已向用户说明132：本地只去除内容严格相同且引用已覆盖的回显副本，保留所有不同事实或新增证据，不改已发历史／第一轮检查点；事务执行指令移到完整资料末尾（只改变新请求构造），不叠加提示或新增阶段。然后回到low单课验证，不设medium为默认。
+- 去回显及末尾指令已实现，生产管线双协议专项1631/0，含源引用子集、所有新来源／图／事实／字段保留、深拷贝、原始回显回复保留、不增API及完整原文→目录→执行提醒顺序。Terra定点源码／测试确认对应真实问题。132 release/lint/trial通过，build/editorial135/build.log与check-final.log，APK/model-trial.apk已固定。
+- 132（294）已成功覆盖原AVD并实读版本。同课low79799运行中，build/editorial135/run.txt，不重复启动或更换helper。唯一下一步：等此句柄终态，采集后交Terra完整日志／成品审查，不批量21节、不占手机。
+
 ## 131候选与唯一下一步
 
 - 130单课low54768已成功，两请求、4修正段复用；7知识／5事务／4行动，17引用图均可读。root读全文及5张压缩拼图，compact127_content_check独立全文核图：数学未见明确算式错误，但历史作业误列行动，评分场景／数字／条件与先证明要求仍漏，image27图注超出实际画面。build/editorial133/{run,complete-audit}.txt、export/、image-review-{1..5}.jpg。设备审查ZIP与空目录已清，当前无活跃AI，readonly helper保持。
 - 查明40图原因：旧selectRequested命中后主动填满预算。131新轮冻结counted_image_requests，首轮每范围count整数，按请求量取代表帧、重叠去重，超全局上限保留可行窗口覆盖；旧轮无该快照仍保持旧Schema、消息和选择契约，不追改已选图。
 - 事务只补来源ID导航（全课原文仍完整一份，不依索引筛内容），在同一轮优先完成事务与当前行动，核对后文对象澄清以及数字/场景/触发条件；无额外请求、无语义拒绝门槛。知识自主讲义方向保留，未对本课写任何题号/原话/答案特判。
 - 独立counted_request_check发现超预算时预选漏共享帧P2，已修为完整候选恢复覆盖并补0/5/10交点原反例；终版image-windows24009/0。compact-affairs-first1620/0含双协议旧快照无count字段的端到端失败／恢复和逐条历史、旧Schema、旧selected保持；全量29090/0覆盖其余未变管线。独立复审确认P2及旧专项缺口闭环，无新增明确缺陷。工具不支持agent_type/角色文件模型，不虚称已选。
-- 131 release/lint/trial已通过，build/editorial134/build.log，APK和model-trial.apk固定。两包已更新原AVD并实读0.15.131／293；单课low会话76695运行中，build/editorial134/run.txt，不能覆盖helper／重复启动。唯一下一步：等句柄终态，再只读计数审计／全文审查，不批量21节、不占手机。
+- 131 release/lint/trial已通过，build/editorial134/build.log，APK和model-trial.apk固定。原AVD实读0.15.131／293，单课low76695已成功终态；只读审计、完整ZIP与4张压缩拼图已准备，build/editorial134/{complete-audit,run}.txt、export/、image-review-{1..4}.jpg。设备临时ZIP与空目录已清，readonly helper已装，无活跃AI。
+- 用户明确要求完整输出交Terra，避免主上下文反复读全文。专门terra_output_review（用户指定gpt-6.1-terra／fork none）已读全部131日志／成品／来源／4张压缩图，root只收摘要。真实2请求，17窗口请求26图／实际附26图，引用16／16可读，4更正段复用；证明按需选图有效。知识主线连贯，但事务仍误列往届行动、漏评分数字与触发条件／幂指题型及先证明要求，定义给分场景泛化；不批准成品。完整审查由此owner持续负责，root仅定点核对，不反复读全文。
+- 已向用户说明下一步先做判别性对照、不再叠加提示词：保持131代码及同课材料，用临时medium新轮（全局配置不改）会话2981，build/editorial134/medium/run.txt。原model-trial已装，不能换helper／重复启动。唯一下一步：等该句柄终态后采集medium目录，交Terra比对；不批量21节、不占手机。
 
 ## 新增交付：刷新／启动恢复卡顿审计
 
