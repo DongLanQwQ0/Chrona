@@ -3,7 +3,7 @@
 ## 当前状态与唯一下一步
 
 - 当前安装候选123（285），唯一AVD Chrona_Classroom_36／emulator-5580，不占手机。low新轮70863曾在edit-plan空正文失败，output760/上限32768，非截断；沿原检查点19926已完整成功。4/4更正稿复用、40附图标签0失配，855原字幕最终逐字一致，最后input204003/cache184960，含一次failed和一次restart。证据build/editorial127/complete-audit.txt、export/、两张压缩image-review已读，设备review.zip及空目录已清。
-- 固定课程：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。当前同候选high对照会话66850，build/editorial127/high/run.txt，configured+newRun=true+reasoningEffort=high，不保存全局。唯一下一步观察终态，审全文/全部图及与low逐项比较，再决定通用修正；不得覆盖安装正在运行的123。
+- 固定课程：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。同候选high会话66850终态失败：两段草稿完整，final-0完整stop后行动原话核验拒绝；第三项引文“学完定积分定义后自己完成”来自PPT35而非所引字幕154–158，前两项222/269原话相符。并非标点差异，不放宽来源核验。已有probe能摘取行动引文，尝试新增的重复诊断已撤回，生产/辅助源码均无变更。high显式续跑仍同123、同检查点，未newRun；既有恢复仅追加错误引文和原字幕诊断、不改历史。输出build/editorial127/high/resume.txt，观察当前句柄终态后审核成品及对照。
 - 123 low全文9知识／10事务／2行动／18图已读，内容不批准：仍否定合法约分、反转保留答案指令、辛苦分触发条件改写、模糊词扩成具体加分条件、无用人数说明。原更正文稿确有反向指令，但最终事务已供全部原字幕，不能归咎漏传。image113可见2+2/3板书，与分步评分举例相关，不把它误报为无关图片。最近122证据保留build/editorial126/。
 - 模拟器保存服务为OpenCode Go／deepseek-v4.1-flash／Responses／low，可选x-opencode-session；密钥不读不输出。原模型、协议及全局设置未变。
 - 用户已批准临时high同课对照，已按上述66850启动。仅本次AiSettings、不保存全局配置；终态记录全局model/effort不变、实际effort、usage和内容差异。使用已保存匹配辅助包build/editorial127/model-trial.apk；不得先安装124再声称同候选对照。
