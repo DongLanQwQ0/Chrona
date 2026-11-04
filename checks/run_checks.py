@@ -20,6 +20,7 @@ GROUPS = {
         "startup_metrics_check.py", "zju_homework_persistence_check.py",
     ),
     "java": (
+        "refresh_audit_check.py",
         "fixture_isolation_check.py",
         "ui_library_check.py",
         "classroom_header_check.py",

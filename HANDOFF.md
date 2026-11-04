@@ -1,13 +1,23 @@
 # 当前交付：保持两次请求，分开整理课程事务与知识
 
+## 新增交付：刷新／启动恢复卡顿审计
+
+- 用户认可128笔记方向，保留结构，仅修具体错误。129提示词改动尚未验证，不启动21节批量。
+- 第三档新决定：老师定知识脉络，AI自主组织讲法、推导、解释及例题，不局限于补齐老师过程；补题标明、同机制不重复，事务仍原文取证。保持两请求与已发送历史不可变。
+- 当前先加入低开销性能日志：前台主线程心跳延迟、主页刷新间隔／执行耗时、启动／恢复耗时；后台停留不计异常，不记录账号／正文，文件写入异步复用DiagLog。
+- 审计已实现：refresh_audit_check真实生产类桩21项通过，笔记强度84项／两阶段1548项通过；129 release/lint/trial构建通过，build/editorial132/build-verified.log。无新UI，未改既有界面。
+- 用户报告AVD退出，adb及进程确实消失；旧日志为保存default_boot后退出，无明确crash堆栈。只重开既有Chrona_Classroom_36／5580，boot_completed=1且128应用PID6090正常，未清userdata／改密度／重建AVD。日志build/editorial132/emulator-{stdout,stderr}.log。
+- 129（291）正式包与trial包已成功覆盖到原AVD，系统实读版本一致。单课low会话50284运行中，build/editorial132/run.txt；不重新启动、不替换正在运行的helper。唯一下一步：等该句柄终态，再只读审计／导出全文审查。偶发卡顿根因仍需异常日志复现，不以审计代码代替根因证明。
+
 ## 当前候选与唯一下一步
 
-- 用户已接电并明确继续。UI已在原AVD实看并独立复审签收受检范围；单课low128会话25934运行中，build/editorial131/run.txt。不占手机、不批量21节，未改userdata、分辨率或DPI。
+- 用户已接电并明确继续。UI已在原AVD实看并独立复审签收受检范围；单课low128会话25934已成功，内容问题及新要求进入129。不占手机、不批量21节，未改userdata、分辨率或DPI。
 - UI代码已改：账号字段左右16dp／首项上12dp，其它上4dp／下8dp；总页唯一账号入口和全局刷新，学校/PTA子页去重复刷新，学校结果集中总页；PTA短平台按钮在删除左侧同行；PTA与Tongge共用UiSurfaces.clipRounded，网页左右20dp、容器上8dp／底8dp。四张参考先压缩在build/campus-ui-20261104/input-*.jpg。zju_ui_style_check与ui_library_check1530项通过，ui_review只读源码未见确定缺陷。离线release/lint67630成功，build/campus-ui-20261104/build.log；本地候选Chrona-v0.15.128-ui-candidate.apk包含本地待验128管线，未安装、未发布。
 - UI设备证据：build/campus-ui-20261104/device/summary.json，34配置、96张预压缩JPEG，覆盖8页深浅正常竖横屏及账号／详情1.3字号。root亲看输入／键盘、横屏标题滚出、PTA短动作／按住与实站网页；ui_review独立实看签收，范围限AVD、不含真实账号登录成功／手机实测。详情横屏JSON坐标在滚动前测量，实际动作／按住／删除确认图证明可达。任务已删，私有JPEG已清，v33隔离app和test已卸载，连匿名孤立元数据一并清除，不碰正式数据。
-- 当前唯一下一步：等待25934同一试跑终态，再换只读probe读actual事务阶段／low／缓存及导出成品。正式AVD已安装本地128 UI候选（290），不是旧131不含UI包；运行中不覆盖helper、不重启、不并发另一节。
+- 128会话25934已完整成功，两请求、low、4修正段复用，第一阶段20事务／3行动原字保留均true。教师保留作答方向及n项和误区恢复，但仍漏换元平方、把求导误判非法变形、缩小题设、漏几种完整方法例题、误建往届行动；root全文／两图亲看及compact127_content_check独立审查均未批准。build/editorial131/complete-audit.txt、export/、image-review-1.jpg；设备审查ZIP与空目录已清。没有活跃AI任务，正式AVD128与readonly probe保持。
+- 当前129仅修通用生成约束，不改两请求机制或语义校验：取图独立覆盖全课知识；任务结合后文对象澄清；事务按同规则合并、不留ASR乱码／无用说明；知识保留每种主要方法的完整主解法，禁止缩小题设，避免同构另解，区分求导与代数变形。下一步受影响专项、独立代码审查／构建，再同课low回归；不碰已验UI，不批量21节。
 
-- 唯一AVD：Chrona_Classroom_36／emulator-5580，已安装127（289）。固定课堂：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。
+- 唯一AVD：Chrona_Classroom_36／emulator-5580，最新实读128（290），129已构建。固定课堂：微积分（甲）Ⅰ，2026-10-29第1–2节，86985-1988487。
 - 127 low会话15212已完整成功，4段缓存复用，2次请求image-plan／whole-note均stop/completed，35张实际附图、10张引用均可读。源文件及两张压缩拼图已完整阅读，独立compact127_content_check不批准：保留尝试的教师指令仍反转，两处1分条件及n项和不能逐项取极限解释漏失。build/editorial130/complete-audit.txt、export/、image-review-{1,2}.jpg；设备测试ZIP及空目录已清。
 - 同127 medium对照89804已完整成功，4段更正缓存复用，仍仅2请求，但同样反转保留作答指令并漏具体评分条件，未批准。build/editorial130/medium/complete-audit.txt、export/；设备测试ZIP及空目录已清。全局设置未改，AVD现在无活跃总结。
 - 当前128实现中：保持常规2个后更正请求，第一轮affairs-plan仅据全课原字幕做事务／任务及取图，不附旧更正缓存；第二轮whole-note处理知识及新增图片独有事务／任务，本地原字保留第一轮事务，不再交模型重写。无图也有事务整理请求，完整缓存统一2次；旧127检查点无compact_affairs_first快照仍保留原短流程。已向用户说明这一分工变化；不用high、不加语义拒绝或额外审校轮。

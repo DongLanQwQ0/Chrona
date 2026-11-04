@@ -35,6 +35,8 @@ public final class ChronaApp extends Application {
 
     @Override public void onCreate() {
         super.onCreate();
+        com.donglan.chrona.debug.RefreshAudit.install(this);
+        long startupBegan = com.donglan.chrona.debug.RefreshAudit.begin();
         HomeworkNotice.observeScreen(this);
         SyncJobService.schedule(this);
         ClassroomCleanupService.schedule(this);
@@ -85,5 +87,6 @@ public final class ChronaApp extends Application {
 
             @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) { }
         });
+        com.donglan.chrona.debug.RefreshAudit.end("application_create", startupBegan);
     }
 }

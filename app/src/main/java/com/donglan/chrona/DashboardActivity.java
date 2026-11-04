@@ -217,6 +217,8 @@ public final class DashboardActivity extends Activity {
     private String calendarResultWindow = "";
     private android.os.CancellationSignal calendarCancellation;
     private final Runnable poll = this::pollChanges;
+    private long auditLastPoll = -1;
+    private long auditPollExpected = 5000L;
     private final Runnable elapsedTicker = new Runnable() {
         @Override public void run() {
             long now = System.currentTimeMillis();
@@ -766,6 +768,8 @@ public final class DashboardActivity extends Activity {
         resumed.post(() -> resumed.scrollTo(0, oldScroll));
         refresh.removeCallbacks(poll);
         refresh.removeCallbacks(elapsedTicker);
+        auditLastPoll = android.os.SystemClock.uptimeMillis();
+        auditPollExpected = 5000L;
         refresh.postDelayed(poll, 5000L);
         refresh.postDelayed(elapsedTicker, 1000L);
         refresh.post(this::refreshSystemCalendar);
@@ -870,20 +874,30 @@ public final class DashboardActivity extends Activity {
     }
 
     private void pollChanges() {
-        if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending
-                || scheduleResultLoading || sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
-                || (navigation != null && navigation.isAnimating())) {
-            refresh.postDelayed(poll, 500L); return;
-        }
-        if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
-        String current = dataSnapshot();
-        if (dirtySections.contains(section) || !current.equals(snapshot)) {
-            if (!pageTransitionRunning && !dragTargetLoaded) {
-                refreshActivePageIfNeeded();
-                snapshot = current;
+        long auditBegan = com.donglan.chrona.debug.RefreshAudit.begin();
+        com.donglan.chrona.debug.RefreshAudit.interval("dashboard_poll", auditLastPoll,
+                auditPollExpected, auditBegan);
+        auditLastPoll = auditBegan;
+        try {
+            if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending
+                    || scheduleResultLoading || sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
+                    || (navigation != null && navigation.isAnimating())) {
+                auditPollExpected = 500L;
+                refresh.postDelayed(poll, 500L); return;
             }
+            if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
+            String current = dataSnapshot();
+            if (dirtySections.contains(section) || !current.equals(snapshot)) {
+                if (!pageTransitionRunning && !dragTargetLoaded) {
+                    refreshActivePageIfNeeded();
+                    snapshot = current;
+                }
+            }
+            auditPollExpected = 5000L;
+            refresh.postDelayed(poll, 5000L);
+        } finally {
+            com.donglan.chrona.debug.RefreshAudit.end("dashboard_poll", auditBegan);
         }
-        refresh.postDelayed(poll, 5000L);
     }
 
     private void refreshSystemCalendar() {

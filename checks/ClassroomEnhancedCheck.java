@@ -990,7 +990,9 @@ public final class ClassroomEnhancedCheck {
         check(system.contains("保持整理深度，压紧表达"),"enhanced requests use concise handout system");
         check(system.contains("自行复算数学与代码")&&system.contains("题设和结论是否一致"),"actual request asks for mathematical and logical self-checks");
         check(system.contains("完整题干")&&system.contains("补齐必要推导")&&system.contains("不根据答案反造原题"),"actual request preserves questions while distinguishing valid derivation from invented facts");
-        check(system.contains("同类型补充例题")&&system.contains("标题标为‘补充例题’")&&system.contains("不编造考核承诺"),"actual strength-three system allows labelled replacement examples without invented teacher commitments");
+        check(system.contains("同类型")&&system.contains("题目标为‘补充例题’")&&system.contains("不授权编造教师事实或考核承诺"),"actual strength-three system allows labelled replacement examples without invented teacher commitments");
+        check(system.contains("AI自主组织具体教学细节")&&system.contains("不要求跟随课堂的措辞、讲解顺序、具体推导或解法"),"third level follows knowledge direction rather than reproducing teacher process");
+        check(system.contains("不限于原题无法确定的情况")&&system.contains("不与同机制原题重复展开"),"third level may choose better teaching examples without duplicating the original");
         check(system.contains("不写‘有一道题但无法复原’的空话"),"actual handout system replaces or omits unusable incomplete-example narration");
         check(system.contains("修正文稿和初稿的改写不能作为独立证据")&&system.contains("不扩大成整场考试的绝对限定"),"actual affairs instructions preserve uncertainty and local exam scope");
         check(system.contains("不按常识改成相反指令")&&system.contains("不另造数学命题或加分条件"),"actual request preserves teacher rule direction without creating grading conditions from phonetic guesses");
