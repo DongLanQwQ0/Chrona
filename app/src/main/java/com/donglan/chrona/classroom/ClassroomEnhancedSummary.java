@@ -112,6 +112,7 @@ final class ClassroomEnhancedSummary {
     private JSONObject compact(int imageLimit,JSONArray corrected)throws Exception{
         JSONObject catalogue=full.getJSONObject("image_catalogue");
         boolean affairsFirst=state.optBoolean("compact_affairs_first");
+        boolean assignmentsFinal=affairsFirst&&state.optBoolean("compact_assignments_final");
         boolean countedImages=state.optBoolean("counted_image_requests");
         String originals=ClassroomSummary.uploadChunk(blockInput(full.getJSONArray("segments"),new JSONArray())).toString();
         if(!affairsFirst&&!state.has("image_plan")&&(imageLimit==0||catalogue.getInt("count")==0)){
@@ -141,7 +142,9 @@ final class ClassroomEnhancedSummary {
                     +(affairsFirst?"":"\n复用更正文稿：\n"+(state.has("correction_reused_from")?corrected.toString():"更正文稿已在本轮原始历史中，不重复附录。"))
                     +"\n全课原始字幕：\n"+originals+"\nPPT时间目录："+catalogue
                     +(affairsFirst?"\n本轮执行要求：先完成课程事务与当前行动，最后规划取图。下列索引只定位可能相关的原始段，不替代完整全课语境，也不能据索引缺失排除信息："+affairsScopeIndex(full.getJSONArray("segments"))
-                    +"。输出前在本轮中核对每项行动是否被全课后文撤回或澄清为历史对象；评分按‘具体场景、动作方向、决定含义的数字、触发与例外’合成事项，不把例子中的优惠概括为通用加分规则。":"");
+                    +"。以下原话索引优先用于排查行动对象、时态或有效性变化；回到全文核对它们实际限制的任务，不将一条澄清套到不相干的任务："+assignmentScopeClues(full.getJSONArray("segments"))
+                    +"。考核范围的指代要能落实到可辨认的章节或主题；未能辨认的范围不写成确定事项，只记其他能确认的规则。评分按‘具体场景、动作方向、决定含义的数字、触发与例外’合成事项，不把例子中的优惠概括为通用加分规则。"
+                    +"输出待办先找正面依据：老师直接请当前听课学生做某事、明确本班仍要做，或提醒尚有效的执行期限等。可以从相邻语境确定对象，无需逐字说‘本班’。老师叙述自己曾怎样布置、怎样出题或改卷，即使出现布置或要求等措辞，也不能单独当作当前指令；找不到正面依据的事项不生成待办。":"");
             JSONObject plan=json(affairsFirst?"affairs-plan":"image-plan",prompt,Collections.emptyList(),value->{
                 ClassroomSummary.validateImageAssessment(value,catalogue);
                 if(countedImages){JSONArray requests=value.getJSONArray("image_requests");for(int i=0;i<requests.length();i++)ClassroomSummary.requestedCount(requests.getJSONObject(i));}
@@ -155,7 +158,7 @@ final class ClassroomEnhancedSummary {
                     }
                     JSONObject publication=new JSONObject().put("overview","").put("notes",new JSONArray()).put("affairs",value.getJSONArray("affairs")).put("assignments",value.getJSONArray("assignments"));
                     ClassroomSummary.validateBlock(publication,blockInput(full.getJSONArray("segments"),new JSONArray()),affairsSchema);
-                    ClassroomSummary.validateAssignmentEvidence(publication,full.getJSONArray("segments"));
+                    if(!assignmentsFinal)ClassroomSummary.validateAssignmentEvidence(publication,full.getJSONArray("segments"));
                 }
             });
             state.put("image_plan",plan).put("image_plan_origin","model");save();
@@ -184,20 +187,27 @@ final class ClassroomEnhancedSummary {
             String writing="知识只进入notes，课程事务只进入affairs，具体执行任务只进入assignments，各自独立、不混写、不跨区重复。概览只简述知识主线，不放图。"
                     +"按当前笔记整理强度组织；3档是精简完整讲义。按知识依赖积极重排，覆盖全课核心概念、主要方法及关键误区，以足以讲清它们的代表例题说明完整条件、必要过程、解释和结论；不要求逐道复现课堂例题，不以类型名称和一般口号替代讲解，也不扩写通用教材。"
                     +"同题优先保留一条完整可靠主解法；其他方法只有带来不同教学要点时才简述，不额外添同构换元或另解。保留所采用题目的完整条件，不为证明方便缩小定义域或增设条件。3档沿老师知识脉络自主选择讲法、推导、解法和必要细节，可用明确标注的同类型补充例题替换课堂例题，不必复现老师具体过程，不同时重复同机制原题和补题；教师事务仍只依据原始证据。"
-                    +"按本课实际内容选择必要的解释与示例，定理、概念、程序、原理或观点各用适合的讲法。定理完整陈述条件、符号与结论后，在证明或例题之前直接接一小段不堆公式的自然语言，讲清结论在说什么及用途；条件补充或例外提醒不能代替这段理解，段落不另设写作标签。适用范围与限制需说明何时能用、何时需转化及前提不满足的逻辑后果，区分不能套用与结论不成立；同一定理不同形式共用解释，只补新增限制。数学代入保持符号及计算一致，程序覆盖实际边界；其他课程用准确的机制、论据或案例解释，不强加公式与解题模板。必要计算或推理完整展开一条主线，让读者能跟着完成；操作描述与实际步骤对应，所用新工具或结论补足简短依据。"
-                    +(affairsFirst?"不要重新扫描字幕生成另一份事务；已保存事务与行动原字保留，本轮只补此前没有的图中事务事实，任务仍遵守原始字幕引文契约。"
+                    +"按本课实际内容选择必要的解释与示例，定理、概念、程序、原理或观点各用适合的讲法。数学代入保持符号及计算一致，程序覆盖实际边界；其他课程用准确的机制、论据或案例解释，不强加公式与解题模板。必要计算或推理完整展开一条主线，让读者能跟着完成；操作描述与实际步骤对应。所用工具或结果此前未介绍时，先写当前需要的规则或公式、适用条件，再展示应用步骤；已有解释不重复展开。"
+                    +"有实质变形时，写出使下一式成立的全部关键操作及其条件；同一工具若反复使用，逐次说明实际得到的式子，不把多次操作后的结果归给第一次。"
+                    +(affairsFirst?(assignmentsFinal?"事务原字保留，仅补图中此前未记录的事务事实。assignments 是最终完整待办清单：逐项回看候选与全课原话，保留本班当前确实要做的事，排除后文澄清为往届、别班、已取消或无有效依据的事项。待办写执行动作、对象与执行要求，学习题设、公式和解法留在知识笔记。只有实际附图补清任务对象或执行条件且原始字幕明确当前要求时才另加候选之外的事项。"
+                    :"已保存事务与行动原字保留，本轮只补此前没有的图中事务事实。新增行动必须同时满足两点：实际附图补足原先无法辨认的任务对象或执行条件，且全课原始字幕明确要求本班当前执行。局部布置语句与后文澄清冲突时以后文为准；没有满足两点的任务则assignments=[]。只写执行动作、对象和老师规定的要求，学习题设与解法留在知识笔记。")
                     :"教师事务以原话为依据，集中保留考试、评分、范围、出勤和资源等有效信息。允许／禁止、保留／划掉、给分条件须核对动作、对象、触发行为和变化方向；不以常识覆盖原话，也不把派生文稿中反复出现的解释当作证据。保留细微考核线索和不同适用对象，音近术语无法确认时保留可靠事实，不猜额外得分入口。")
-                    +"删无关闲聊、无信息量的免责声明、生产说明、重复小结；一般答卷规范不额外变成待办。"+assignmentRules();
+                    +"删无关闲聊、无信息量的免责声明、生产说明、重复小结；一般答卷规范不额外变成待办。"+assignmentRules()
+                    +"\n定理讲解顺序：定理完整陈述条件、符号与结论后，在证明或例题之前直接接一小段不堆公式的自然语言。具体说清用它能做什么、为何有用，例如从哪种已知得到什么，或把哪个难求量转成哪个易求量。条件补充或例外提醒不能代替这段理解。适用范围与限制需说明何时能用、何时需转化及前提不满足的逻辑后果，区分不能套用与结论不成立；同一定理不同形式共用解释，只补新增限制。不另设写作标签。";
             String prompt="现在根据同一历史中的更正文稿、全课原始字幕及本次实际附图，一次生成最终完整笔记。没有独立提取稿、编排稿或后续整稿，不预留待后补的题干或计算。"
-                    +(affairsFirst?"课程事务和具体任务已经在affairs-plan完成，会在本地原字保留；本轮集中生成全课知识。affairs只补本次新图片明确支持、且此前没有的事务事实。assignments增补仍须有原始字幕可逐字摘录的真实行动原话，图片仅补清对象或条件，不能把纯图片文字伪引为字幕。两集合不重写、重复或总结已有事项，没有新增则各为[]。知识中不混入评分、考试范围或事务规则。":"")
+                    +(affairsFirst?(assignmentsFinal?"affairs只补本次新图片明确支持、且此前没有的事务事实，已保存的事务会原字保留。知识中不混入评分、考试范围或事务规则。"
+                    :"课程事务和具体任务已经在affairs-plan完成，会在本地原字保留；本轮集中生成全课知识。affairs只补本次新图片明确支持、且此前没有的事务事实。assignments增补仍须有原始字幕可逐字摘录的真实行动原话，图片仅补清对象或条件，不能把纯图片文字伪引为字幕。两集合不重写、重复或总结已有事项，没有新增则各为[]。知识中不混入评分、考试范围或事务规则。"):"")
                     +(state.has("correction_reused_from")&&(affairsFirst||!"model".equals(state.optString("image_plan_origin")))?"\n复用更正文稿（按原顺序原字追加）：\n"+corrected:"历史中的更正文稿保持原位，不重复附录。")
                     +ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
                     +"\n本次图片按顺序绑定实际file（编号不连续，不重编号）："+inventory
                     +"。只可引用实际附图，图注描述实际可见内容；不把字幕里的证明当作图片已显示。空白、标题页、遮挡及低置信度图不放成品；不强行配图。"
                     +"\n更正文稿知识范围索引（只提醒覆盖，不预设事实与结论，不作为成品目录）："+coverageOutline(corrected,0,corrected.length())
+                    +(assignmentsFinal?"\n首轮待办候选（待确认）："+state.getJSONObject("image_plan").getJSONArray("assignments")
+                    +"\n可能改变行动对象或有效性的原话："+assignmentScopeClues(full.getJSONArray("segments")):"")
                     +"\n全课原始字幕：\n"+originals+"\n本轮成稿要求："+writing;
             JSONObject value=json("whole-note",prompt,bytes,names,result->{
                 if(affairsFirst)for(String field:new String[]{"affairs","assignments"}){
+                    if(assignmentsFinal&&field.equals("assignments"))continue;
                     result.put(field,appendUncovered(state.getJSONObject("image_plan").getJSONArray(field),result.getJSONArray(field)));
                 }
                 ClassroomSummary.validateBlock(result,blockInput(full.getJSONArray("segments"),inventory),affairsSchema);
@@ -245,6 +255,24 @@ final class ClassroomEnhancedSummary {
             for(int n=Math.max(0,i-1);n<=Math.min(segments.length()-1,i+1);n++)indices.add(n);
         JSONArray result=new JSONArray();for(int index:indices)result.put(segments.getJSONObject(index).getInt("id"));return result;
     }
+    private static final java.util.regex.Pattern ACTION_SCOPE_CLUE=java.util.regex.Pattern.compile(
+            "往届|上[一两]?届|去年的?同学|另[一个]*班|别班|其他班|没(?:有)?让|没有布置|不用(?:做|交)|不再(?:做|交|要求)|(?:取消|改为|改成|撤回).{0,8}(?:作业|提交|要求|任务)|previous class|other section|last year|no longer (?:due|required)|not assigned",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+    static JSONArray assignmentScopeClues(JSONArray segments)throws Exception{
+        JSONArray result=new JSONArray();
+        int remaining=2400;
+        for(int i=segments.length()-1;i>=0&&remaining>0;i--){
+            JSONObject row=segments.getJSONObject(i);
+            String text=row.getString("text");
+            java.util.regex.Matcher match=ACTION_SCOPE_CLUE.matcher(text);
+            if(!match.find())continue;
+            int from=Math.max(0,match.start()-48),to=Math.min(text.length(),match.end()+72);
+            if(to-from>remaining)break;
+            remaining-=to-from;
+            result.put(new JSONObject().put("id",row.getInt("id")).put("原文片段",text.substring(from,to)));
+        }
+        return result;
+    }
     private static String scope(JSONArray block)throws Exception{
         return "本段主体字幕来源id为："+ids(block)+"；可引用已提供的同课真实来源，编号不得凭空编造。";
     }
@@ -255,6 +283,7 @@ final class ClassroomEnhancedSummary {
     private static String assignmentRules(){
         return "课堂安排必须是老师明确布置的具体任务，不能把知识点、一般编程建议、自拟复习事项转成安排。"
                 +"安排只写需完成的行动、实际题名或编号及老师规定的执行条件、期限与方式；学习题干、公式和推导留在知识笔记，不在待办中另行改写一遍，不能因概括任务而增加、删减或猜测题设。"
+                +"行动text脱离相邻笔记也应能辨认对象：写明已有题名、编号或上下文明确的知识主题，不以泛指的‘这道题’‘整理任务’代替对象，不补猜不存在的编号。"
                 +"每项assignments除text、sources外还必须带evidence，在先确定最终有效要求之后，逐字摘录足以确定任务并保留对象和时态的最短连续原话，不用更正文稿的改写，不拼接非连续片段；不能只抽离对象或时态的动作短句作为当前行动依据。"
                 +"sources须列全引文覆盖的每条来源，不可跳过中间字幕；涉及对象或有效性的后文澄清也列入相关来源并参与判断，而非只根据所摘局部原话判定。无关分数或背景段落不混入evidence，没有真实要求就返回[]。"
                 +"明确行动须按动作及对象分别提取，不因措辞相同或相邻教学内容而合并不同对象，也不因未规定提交时间或方式而漏掉；只保留原文明确要求，不自行升级成提交作业。"

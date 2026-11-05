@@ -30,7 +30,7 @@ public final class ClassroomSummary {
             +"以提供资料确定知识主线，用中文整理可直接学习的笔记。按课程内容选择适合的讲法：概念讲清含义，原理讲清关系与机制，技术流程交代必要步骤，人文观点交代论据与语境；按需使用证明、代码、案例或例题，不把所有课程套成数学题讲解。"
             +"介绍定理时，先完整准确地陈述适用条件、符号含义和结论，再自然接一段简短通俗的理解阐释，放在定理陈述与证明或例题之间，讲清结论在说什么及用途；条件补充或例外提醒不能代替这段理解。讲清适用对象与主要限制、何时可用或需先转化，以及前提不满足时还能或不能推出什么；区分不能直接套用与结论本身不成立。同一定理不同形式共用理解，只补充新增条件和范围差异。正文不使用‘标准表述’‘直观理解’这类写作标签。需要证明时给出可跟随的关键推理，不以‘证明思路’代替必要过程。"
             +"自行核对所讲知识及示例：数学检查条件、符号与计算，程序检查执行逻辑与边界，其他课程检查概念关系、事实及论据。"
-            +"例题须给出可确认的完整题干、适用条件、关键计算或证明链及结论；可以从已知条件补齐必要推导，不把可直接算出的结果留成‘代入即可’或无依据的待核对。文字描述的操作与实际展示的步骤一致，所用新工具或结论补足支撑当前步骤的简短依据，或改用已经讲清的方法展开。"
+            +"学习讲解、推导和补充例题的自由只适用于学习内容；课程事务中的举例事实按资料记录。学习例题须给出可确认的完整题干、适用条件、关键计算或证明链及结论；可以从已知条件补齐必要推导，不把可直接算出的结果留成‘代入即可’或无依据的待核对。文字描述的操作与实际展示的步骤一致，采用讲义尚未介绍的工具或结论时，先写当前所需的规则或公式及适用条件，再展示应用步骤；已有解释不重复展开。"
             +"推导结果与教师明确说过的事实分清，不伪造课堂原话；题干不明时先核对现有资料与相关画面，仍不能确定时可使用知识主线、类型和难度相近的完整题目，标题标为‘补充例题’，给出必要过程与结论。不根据答案反造原题，不把补充题设当作老师原题，不并列冲突公式。"
             +"正文直接呈现有用的信息，省去识别纠正、选图核对和逐字口述的处理经过。删除免责声明、保留说明、自我辩护及生成过程说明；事实的适用对象和时间直接写进对应句子，标题与正文使用相同的对象、时间及范围，只有影响理解或行动的具体疑点才在该处简要指出。"
             +"同时关注与学生切身相关的信息：①评分规则（成绩构成、占比、加扣分、及格条件）；"
@@ -190,6 +190,7 @@ public final class ClassroomSummary {
                     .put("editorial_source_first",enhanced)
                     .put("compact_pipeline",enhanced&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
                     .put("compact_affairs_first",enhanced&&affairsSchema>0&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
+                    .put("compact_assignments_final",enhanced&&affairsSchema>0&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
                     .put("counted_image_requests",enhanced&&ClassroomEnhancedSummary.compactEligible(materials.getJSONArray("segments")))
                     .put("unified_affairs",enhanced&&affairsSchema>0)
                     .put("content_batch_size",enhanced?2:1).put("editor_batch_size",enhanced?3:1)

@@ -28,12 +28,19 @@ public final class ClassroomModelTrialInstrumentation extends Instrumentation {
             if(!effort.isEmpty()&&!java.util.Set.of("low","medium","high").contains(effort))throw new IllegalArgumentException("Explicit trial reasoning effort required");
             AiSettings trial=configured&&effort.isEmpty()?original:new AiSettings(original.baseUrl,configured?original.model:arguments.getString("model"),original.apiKey,
                     effort.isEmpty()?original.reasoningEffort:effort,original.protocol,original.sessionHeader);
+            String lessonCase=arguments.getString("lesson","calculus");
+            boolean programming="programming".equals(lessonCase);
+            ClassroomLesson identity=switch(lessonCase){
+                case "calculus" -> new ClassroomLesson("86985","1988487","","","","6",0);
+                case "programming" -> new ClassroomLesson("87476","1972361","C程序设计基础","","","6",0);
+                default -> throw new IllegalArgumentException("Explicit reviewed lesson case required");
+            };
             ClassroomStore store=new ClassroomStore(getTargetContext(),school.account());
-            ClassroomLesson identity=new ClassroomLesson("86985","1988487","","","","6",0);
-            File dir=store.lesson(identity);
+            File dir=programming?store.localLesson(identity):store.lesson(identity);
             JSONObject saved=ClassroomStore.read(new File(dir,"summary.json"));
-            if(saved==null||!new File(dir,"materials.json").isFile()||!new File(dir,"candidates.json").isFile())throw new IllegalStateException("Existing complete materials required");
-            ClassroomLesson lesson=ClassroomLesson.fromJson(saved.getJSONObject("lesson"));
+            boolean needsMaterials=saved==null||!new File(dir,"materials.json").isFile()||!new File(dir,"candidates.json").isFile();
+            if(needsMaterials&&!programming)throw new IllegalStateException("Existing complete materials required");
+            ClassroomLesson lesson=saved==null?identity:ClassroomLesson.fromJson(saved.getJSONObject("lesson"));
             if(!lesson.courseId.equals(identity.courseId)||!lesson.id.equals(identity.id))throw new IllegalStateException("Lesson identity mismatch");
             SchedulePreferences prefs=SchedulePreferences.load(getTargetContext());
             CountDownLatch done=new CountDownLatch(1);
@@ -44,6 +51,13 @@ public final class ClassroomModelTrialInstrumentation extends Instrumentation {
             startActivitySync(new Intent(getTargetContext(),DashboardActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             boolean newRun="true".equals(arguments.getString("newRun"));
             runOnMainSync(()->job.run("单课模型回归",true,()->{
+                if(needsMaterials){
+                    ClassroomClient client=job.connect();
+                    job.selected=client.courseLessons(identity).stream()
+                            .filter(row->identity.id.equals(row.id)&&row.selectable(System.currentTimeMillis()))
+                            .findFirst().orElseThrow(()->new IllegalStateException("Reviewed lesson unavailable in school catalogue"));
+                    job.prepared=ClassroomSummary.prepare(job.dir,job.selected,client,job.control,job::checkpoint);
+                }
                 if(newRun){ClassroomCorrectionCache.capture(job.dir);ClassroomStore.beginSummaryRun(job.dir);}
                 ClassroomAutoSummary.summarize(job,trial,prefs.classroomPrompt,true);
             }));

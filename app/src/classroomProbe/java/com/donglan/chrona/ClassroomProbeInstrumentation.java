@@ -35,6 +35,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     private int healthImageCount=1;
     private String healthModel;
     private boolean mathAudit;
+    private boolean notebookAudit;
     private boolean monitorAudit;
     private boolean providerFailure;
     private boolean timetableAudit;
@@ -58,6 +59,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
         if(args!=null&&args.containsKey("healthImageCount"))healthImageCount=Integer.parseInt(args.getString("healthImageCount"));
         healthModel = args == null ? null : args.getString("healthModel");
         mathAudit = args != null && "true".equals(args.getString("mathAudit"));
+        notebookAudit = args != null && "true".equals(args.getString("notebookAudit"));
         monitorAudit = args != null && "true".equals(args.getString("monitorAudit"));
         providerFailure = args != null && "true".equals(args.getString("providerFailure"));
         timetableAudit = args != null && "true".equals(args.getString("timetableAudit"));
@@ -67,7 +69,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
     }
     @Override public void callApplicationOnCreate(android.app.Application app){
         try{
-            if(mathAudit||monitorAudit||aiPing||timetableAudit)applicationInitializationSkipped=true;
+            if(mathAudit||notebookAudit||monitorAudit||aiPing||timetableAudit)applicationInitializationSkipped=true;
             else super.callApplicationOnCreate(app);
         }finally{applicationReady.countDown();}
     }
@@ -80,12 +82,17 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                     throw new IllegalStateException("Isolated timetable read required");
                 result.putString("timetable_audit",timetableResponseAudit().toString());finish(-1,result);return;
             }
-            if(mathAudit||monitorAudit){
+            if(mathAudit||notebookAudit||monitorAudit){
                 if(!applicationReady.await(10,java.util.concurrent.TimeUnit.SECONDS)||!applicationInitializationSkipped)
                     throw new IllegalStateException("Read-only application initialization unavailable");
                 ZjuSettingsStore current=new ZjuSettingsStore(getTargetContext());
                 if(!current.enabled()||!current.configured())throw new IllegalStateException("School account unavailable");
-                if(mathAudit)result.putString("math_audit",mathHistory(current).toString());
+                if(notebookAudit){
+                    if(mathAudit||monitorAudit||reviewKey==null||!reviewKey.matches("[0-9]+-[0-9]+"))
+                        throw new IllegalArgumentException("Notebook review requires exactly one course-lesson key");
+                    result.putString("notebook_audit",classroomHistory(current,true).toString());
+                }
+                if(mathAudit)result.putString("math_audit",classroomHistory(current,false).toString());
                 if(monitorAudit)result.putString("monitor_audit",auditMonitor(current).toString());
                 finish(-1,result);return;
             }
@@ -205,7 +212,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 .put("end",Instant.ofEpochMilli(row.end).atZone(ZONE).toString()).put("location",row.location).put("term",row.term);
     }
     /** Final-document metadata only; no messages, raw replies, account identity or model options leave. */
-    private JSONObject mathHistory(ZjuSettingsStore settings)throws Exception{
+    private JSONObject classroomHistory(ZjuSettingsStore settings,boolean exactReview)throws Exception{
         // ClassroomStore's normal reader may recover AtomicFile backups. Refuse pending recovery
         // and missing roots before entering it, rather than mutating the cache during an audit.
         java.io.File root=new java.io.File(getTargetContext().getNoBackupFilesDir(),"classroom");
@@ -238,8 +245,8 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
             for(JSONObject summary:history){
                 JSONObject identity=summary.optJSONObject("lesson");if(identity==null)continue;
                 ClassroomLesson lesson=ClassroomLesson.fromJson(identity);
-                if(!(lesson.course.contains("微积分")||lesson.course.contains("线性代数")))continue;
                 String key=com.donglan.chrona.classroom.ClassroomDocument.key(identity);
+                if(exactReview?!key.equals(reviewKey):!(lesson.course.contains("微积分")||lesson.course.contains("线性代数")))continue;
                 if(!unique.add(key))duplicates.put(key);
                 courses.put(lesson.course,courses.optInt(lesson.course)+1);
                 boolean finished=summary.optBoolean("complete");if(finished)complete++;
@@ -642,7 +649,7 @@ public final class ClassroomProbeInstrumentation extends Instrumentation {
                 }
             }
         }
-        return report.put("courses",courses).put("math_rows",rows.length()).put("math_unique",unique.size())
+        return report.put("courses",courses).put(exactReview?"review_rows":"math_rows",rows.length()).put(exactReview?"review_unique":"math_unique",unique.size())
                 .put("duplicate_keys",duplicates).put("complete_rows",complete).put("rows",rows);
     }
     /** Numeric source identities only: no model prose, raw transcript or private conversation. */
