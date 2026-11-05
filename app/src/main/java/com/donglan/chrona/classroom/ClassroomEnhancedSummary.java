@@ -186,6 +186,12 @@ final class ClassroomEnhancedSummary {
             status("AI 生成全课笔记",0,1);
             String writing="知识只进入notes，课程事务只进入affairs，具体执行任务只进入assignments，各自独立、不混写、不跨区重复。概览只简述知识主线，不放图。"
                     +"按当前笔记整理强度组织；3档是精简完整讲义。按知识依赖积极重排，覆盖全课核心概念、主要方法及关键误区，以足以讲清它们的代表例题说明完整条件、必要过程、解释和结论；不要求逐道复现课堂例题，不以类型名称和一般口号替代讲解，也不扩写通用教材。"
+                    +"第三档的简单知识点直接列短要点：先给可用规则，再按需用一个最小例子说明，指出会改变结果的易错点。一个短例已经说明规则时，不接长题、图或同类例子；同一事实只说一次，不强制凑栏。复杂推导仍保留自学需要的步骤。"
+                    +"遇到程序表达式，按所用语言区分原变量类型、运算时实际类型和结果转换，不能把存储或赋值转换的结果当成表达式的结果。常量类型按该语言的字面量规则说明；平台示例只代表适用的编译环境。简单规则用一个能区分实际行为的例子即可。"
+                    +"程序示例区分语言保证与单次运行现象。涉及 C 整数时，有符号运算溢出不能承诺回绕；无符号加、减、乘按实际结果类型取模，除法求整数商，除数为零没有定义。若靠扩大类型避免运算溢出，须在运算之前提升操作数。窄整数算例分别写表达式结果与存回窄类型的结果，例如在8位char、32位int环境，unsigned char的255加1得int的256，转回unsigned char才为0。控制流示例给出准确括号及分支归属；可变参数格式示例用声明类型正确的变量，考虑默认参数提升，不根据变量提升后的类型直接断定格式错误。"
+                    +"本课确实涉及时，C 无后缀十进制整数字面量按 int、long、long long 顺序选择第一个能表示其值的类型，不能说无后缀一律是 int；其他进制不能套用这条顺序。简单知识点的密度示例：\n"
+                    +"\n短路求值：`b != 0 && a / b == 3`\n- `&&`先算左边；`b == 0`时跳过右边，避免除零。\n- 整数`7 / 2`得`3`。\n- 检查写在除法前；`&`不短路。\n"
+                    +"只在本课有对应知识时写它，其他简单知识点参考这种密度，不套格式。"
                     +"同题优先保留一条完整可靠主解法；其他方法只有带来不同教学要点时才简述，不额外添同构换元或另解。保留所采用题目的完整条件，不为证明方便缩小定义域或增设条件。3档沿老师知识脉络自主选择讲法、推导、解法和必要细节，可用明确标注的同类型补充例题替换课堂例题，不必复现老师具体过程，不同时重复同机制原题和补题；教师事务仍只依据原始证据。"
                     +"按本课实际内容选择必要的解释与示例，定理、概念、程序、原理或观点各用适合的讲法。数学代入保持符号及计算一致，程序覆盖实际边界；其他课程用准确的机制、论据或案例解释，不强加公式与解题模板。必要计算或推理完整展开一条主线，让读者能跟着完成；操作描述与实际步骤对应。所用工具或结果此前未介绍时，先写当前需要的规则或公式、适用条件，再展示应用步骤；已有解释不重复展开。"
                     +"有实质变形时，写出使下一式成立的全部关键操作及其条件；同一工具若反复使用，逐次说明实际得到的式子，不把多次操作后的结果归给第一次。"
@@ -195,7 +201,7 @@ final class ClassroomEnhancedSummary {
                     +"删无关闲聊、无信息量的免责声明、生产说明、重复小结；一般答卷规范不额外变成待办。"+assignmentRules()
                     +"\n定理讲解顺序：定理完整陈述条件、符号与结论后，在证明或例题之前直接接一小段不堆公式的自然语言。具体说清用它能做什么、为何有用，例如从哪种已知得到什么，或把哪个难求量转成哪个易求量。条件补充或例外提醒不能代替这段理解。适用范围与限制需说明何时能用、何时需转化及前提不满足的逻辑后果，区分不能套用与结论不成立；同一定理不同形式共用解释，只补新增限制。不另设写作标签。";
             String prompt="现在根据同一历史中的更正文稿、全课原始字幕及本次实际附图，一次生成最终完整笔记。没有独立提取稿、编排稿或后续整稿，不预留待后补的题干或计算。"
-                    +(affairsFirst?(assignmentsFinal?"affairs只补本次新图片明确支持、且此前没有的事务事实，已保存的事务会原字保留。知识中不混入评分、考试范围或事务规则。"
+                    +(affairsFirst?(assignmentsFinal?"affairs只补本次新图片明确支持、且此前没有的事务事实，已保存的事务会原字保留。每项增补列出实际支撑它的附图；附图仅印证已有事实时不换写或再列一次。没有新增事实时affairs=[]。知识中不混入评分、考试范围或事务规则。"
                     :"课程事务和具体任务已经在affairs-plan完成，会在本地原字保留；本轮集中生成全课知识。affairs只补本次新图片明确支持、且此前没有的事务事实。assignments增补仍须有原始字幕可逐字摘录的真实行动原话，图片仅补清对象或条件，不能把纯图片文字伪引为字幕。两集合不重写、重复或总结已有事项，没有新增则各为[]。知识中不混入评分、考试范围或事务规则。"):"")
                     +(state.has("correction_reused_from")&&(affairsFirst||!"model".equals(state.optString("image_plan_origin")))?"\n复用更正文稿（按原顺序原字追加）：\n"+corrected:"历史中的更正文稿保持原位，不重复附录。")
                     +ClassroomSummary.schema(true,affairsSchema)+ClassroomFigureReview.schema(state.optInt("figure_policy"))
@@ -208,7 +214,8 @@ final class ClassroomEnhancedSummary {
             JSONObject value=json("whole-note",prompt,bytes,names,result->{
                 if(affairsFirst)for(String field:new String[]{"affairs","assignments"}){
                     if(assignmentsFinal&&field.equals("assignments"))continue;
-                    result.put(field,appendUncovered(state.getJSONObject("image_plan").getJSONArray(field),result.getJSONArray(field)));
+                    JSONArray first=state.getJSONObject("image_plan").getJSONArray(field),extra=result.getJSONArray(field);
+                    result.put(field,assignmentsFinal?mergeCompactAffairs(first,extra):appendUncovered(first,extra));
                 }
                 ClassroomSummary.validateBlock(result,blockInput(full.getJSONArray("segments"),inventory),affairsSchema);
                 ClassroomSummary.validateAssignmentEvidence(result,full.getJSONArray("segments"));
@@ -220,6 +227,31 @@ final class ClassroomEnhancedSummary {
             state.getJSONObject("image_audit").put("analysed_count",inventory.length());save();
         }
         JSONObject result=assemble(new JSONArray(),inventory,true);state.put("final",result);save();ClassroomStore.write(new File(dir,"summary.json"),result);return result;
+    }
+    static JSONArray mergeCompactAffairs(JSONArray first,JSONArray extras)throws Exception{
+        JSONArray merged=new JSONArray();
+        for(JSONArray batch:new JSONArray[]{first,extras})for(int i=0;i<batch.length();i++){
+            JSONObject item=batch.getJSONObject(i),match=null;
+            for(int n=0;n<merged.length()&&match==null;n++){
+                JSONObject prior=merged.getJSONObject(n);
+                if(sameAffairText(prior.getString("title"),item.getString("title"))
+                        &&sameAffairText(prior.getString("text"),item.getString("text")))match=prior;
+            }
+            if(match==null){merged.put(new JSONObject(item.toString()));continue;}
+            for(String field:new String[]{"sources","images"}){
+                JSONArray refs=match.getJSONArray(field),extra=item.getJSONArray(field);
+                Set<Object> seen=new HashSet<>();
+                for(int n=0;n<refs.length();n++)seen.add(refs.get(n));
+                for(int n=0;n<extra.length();n++)if(seen.add(extra.get(n)))refs.put(extra.get(n));
+            }
+        }
+        return merged;
+    }
+    private static boolean sameAffairText(String a,String b){
+        if(a.equals(b))return true;
+        if(a.indexOf('`')>=0||b.indexOf('`')>=0)return false;
+        String hanSpacing="(?<=\\p{IsHan})[ \\t]+|[ \\t]+(?=\\p{IsHan})";
+        return a.replaceAll(hanSpacing,"").equals(b.replaceAll(hanSpacing,""));
     }
     static JSONArray appendUncovered(JSONArray first,JSONArray extras)throws Exception{
         JSONArray combined=new JSONArray(first.toString());

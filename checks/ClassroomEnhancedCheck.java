@@ -1844,6 +1844,11 @@ public final class ClassroomEnhancedCheck {
             check(wholeRequest.lastIndexOf("\n本轮成稿要求：")>wholeRequest.lastIndexOf("\n全课原始字幕：\n")&&occurrences(wholeRequest,"定理完整陈述条件、符号与结论后")==1&&wholeRequest.contains("在证明或例题之前直接接一小段不堆公式的自然语言")&&wholeRequest.contains("条件补充或例外提醒不能代替这段理解")&&wholeRequest.contains("操作描述与实际步骤对应"),"whole-note places one concrete teaching instruction after all material, before proof/examples in the expected output, without editing history: "+protocol);
             check(wholeRequest.contains("适用范围与限制需说明何时能用")&&wholeRequest.contains("区分不能套用与结论不成立")&&wholeRequest.contains("同一定理不同形式共用解释"),"actual final request includes applicability limits and a shared explanation for theorem variants: "+protocol);
             check(wholeRequest.lastIndexOf("\n定理讲解顺序：")>wholeRequest.lastIndexOf("\n本轮成稿要求：")&&wholeRequest.endsWith("不另设写作标签。")&&wholeRequest.contains("具体说清用它能做什么、为何有用"),"the final prompt gives theorem use its own short instruction after the other editorial rules: "+protocol);
+            check(wholeRequest.contains("简单知识点直接列短要点")&&wholeRequest.contains("按需用一个最小例子说明")&&wholeRequest.contains("复杂推导仍保留自学需要的步骤"),"simple rules stay concise without stripping necessary derivations: "+protocol);
+            check(wholeRequest.contains("区分原变量类型、运算时实际类型和结果转换")&&wholeRequest.contains("常量类型按该语言的字面量规则说明")&&wholeRequest.contains("没有新增事实时affairs=[]"),"programming rules distinguish evaluation and conversion, and confirmed facts are not rewritten as additions: "+protocol);
+            check(wholeRequest.contains("有符号运算溢出不能承诺回绕")&&wholeRequest.contains("无符号加、减、乘按实际结果类型取模，除法求整数商")&&wholeRequest.contains("在运算之前提升操作数")&&wholeRequest.contains("每项增补列出实际支撑它的附图"),"technical examples separate language guarantees from machine behavior; additions name actual image evidence: "+protocol);
+            check(wholeRequest.contains("一个短例已经说明规则时，不接长题、图或同类例子")&&wholeRequest.contains("转回unsigned char才为0")&&wholeRequest.contains("考虑默认参数提升"),"simple programming examples remain short and separate promotion from conversion: "+protocol);
+            check(wholeRequest.contains("无后缀十进制整数字面量按 int、long、long long 顺序")&&wholeRequest.contains("`b != 0 && a / b == 3`")&&wholeRequest.contains("只在本课有对应知识时写它"),"compact prompt teaches literal types correctly and uses the approved terse example without injecting an unrelated topic: "+protocol);
             check(wholeRequest.contains("先写当前需要的规则或公式、适用条件，再展示应用步骤"),"actual final request introduces the specific rule needed for a new method rather than merely naming it: "+protocol);
             check(wholeRequest.contains("逐次说明实际得到的式子")&&wholeRequest.contains("首轮待办候选（待确认）")&&wholeRequest.contains("排除后文澄清为往届、别班、已取消或无有效依据的事项")&&wholeRequest.contains("学习题设、公式和解法留在知识笔记"),"final request explains repeated operations and makes the current actions authoritative without rephrasing the exercise: "+protocol);
             reset("affairs-first-retract",false);File retractedDir=compactMaterials("retracted-action-"+protocol);
@@ -1912,6 +1917,17 @@ public final class ClassroomEnhancedCheck {
         check(first.toString().equals(savedFirst)&&extras.toString().equals(savedExtras),"echo removal never mutates either stage checkpoint or raw response arrays");
         combined.getJSONObject(0).getJSONArray("sources").put(99);
         check(first.toString().equals(savedFirst),"publication owns a deep copy rather than altering the immutable first-stage data");
+        JSONObject prior=content("课程PTA规则",7).put("text","PTA平台满分为50分。");
+        JSONObject layout=content("课程 PTA 规则",8).put("text","PTA 平台满分为 50 分。").put("images",new JSONArray().put("image-2.jpg"));
+        JSONObject changed=new JSONObject(layout.toString()).put("text","PTA 平台满分为 60 分。");
+        JSONArray base=new JSONArray().put(prior),added=new JSONArray().put(layout).put(changed);
+        String baseBefore=base.toString(),addedBefore=added.toString();
+        JSONArray compact=ClassroomEnhancedSummary.mergeCompactAffairs(base,added);
+        check(compact.length()==2&&compact.getJSONObject(0).getString("text").equals(prior.getString("text"))
+                &&compact.getJSONObject(0).getJSONArray("sources").similar(new JSONArray().put(7).put(8))
+                &&compact.getJSONObject(0).getJSONArray("images").similar(new JSONArray().put("image-2.jpg"))
+                &&compact.getJSONObject(1).similar(changed),"layout-only duplicate affairs share evidence, retaining original text and differing facts");
+        check(base.toString().equals(baseBefore)&&added.toString().equals(addedBefore),"merging affair references changes only the publication copy");
     }
     private static JSONObject plannedCatalogue(String prompt)throws Exception{
         String marker="\nPPT时间目录：";int begin=prompt.lastIndexOf(marker)+marker.length(),end=prompt.indexOf("\n本轮执行要求：",begin);
