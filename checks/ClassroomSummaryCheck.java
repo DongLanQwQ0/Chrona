@@ -921,6 +921,8 @@ public final class ClassroomSummaryCheck {
         }
         check(keys.size()==3,"each strength has a distinct new-run identity");
         check(ClassroomSummary.systemPrompt("",3).contains("保持整理深度，压紧表达")&&ClassroomSummary.systemPrompt("",3).contains("更正文稿仍逐条保留内容"),"concise handout never compresses correction transcript");
+        String shared=ClassroomSummary.systemPrompt("",3);
+        check(shared.contains("用自然的因果句连接原因和后果")&&shared.contains("优先用列少、单元格短的 Markdown 表格")&&shared.contains("不另用正文重复"),"shared classroom prompt uses short tables for comparisons and explains consequential limits in natural prose");
         rejects(()->ClassroomNoteStrength.validate(0),"invalid low strength rejected");rejects(()->ClassroomNoteStrength.validate(4),"invalid high strength rejected");
         for(int original:new int[]{1,3}){
             reset();failCall=2;File dir=materialDir("strength-resume-"+original+"-"+System.nanoTime());
