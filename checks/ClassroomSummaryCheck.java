@@ -911,6 +911,9 @@ public final class ClassroomSummaryCheck {
             String actual=requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
             check(actual.contains("标题标为‘补充例题’")&&actual.contains("不把补充题设当作老师原题"),"actual request permits clearly labelled complete replacement examples without invented original questions "+level);
             check(actual.contains("先完整准确地陈述适用条件、符号含义和结论")&&actual.contains("再自然接一段简短通俗的理解阐释")&&actual.contains("正文不使用‘标准表述’‘直观理解’这类写作标签"),"actual requests explain theorems completely with natural unlabeled interpretation "+level);
+            check(actual.contains("放在定理陈述与证明或例题之间")&&actual.contains("条件补充或例外提醒不能代替这段理解")&&actual.contains("文字描述的操作与实际展示的步骤一致"),"actual requests distinguish a useful theorem explanation from caveats and align narration with worked steps "+level);
+            check(actual.contains("讲清适用对象与主要限制")&&actual.contains("区分不能直接套用与结论本身不成立")&&actual.contains("同一定理不同形式共用理解"),"actual requests explain applicability and logical limitations without repeating an explanation for every variant "+level);
+            check(actual.contains("教师对课程要求的布置、更改和取消都作为事实理解"),"teacher changes remain lecture facts rather than being confused with AI operation instructions "+level);
             check(actual.contains("概念讲清含义")&&actual.contains("技术流程交代必要步骤")&&actual.contains("人文观点交代论据与语境"),"actual requests support different course forms without mandatory math templates "+level);
             check(actual.contains("删除免责声明、保留说明、自我辩护及生成过程说明")&&!actual.contains("不扩展成确定考题")&&!actual.contains("考核承诺"),"actual requests keep useful content and remove old defensive prompt clauses "+level);
             if(level==3)check(actual.contains("同主线、同类型及相近难度")&&actual.contains("课程事务以教师实际说过的内容为准"),"actual strength-three request preserves teaching freedom and concrete teacher facts");
