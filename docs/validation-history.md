@@ -19,6 +19,7 @@
 - 最终 APK Debug／Release 构建、双 lint、签名和包信息核对通过；原 vivo 通过 USB 成功覆盖并打开学在浙大作业，随后让出手机给 GlobalSend 的真机测试。最终隔离设备真实点击确认详情待办成功／恢复、活动确认／撤销，未来待办及最后一项也复测通过（`detail-final-animation-on.txt`、`future-final-animation-on.txt`）。未发布。
 - 用户在 vivo 最终候选上确认横屏与待办补位无问题，并明确确认系统分屏中可展开作业、滚到正文末尾、关闭回原作业；此前已确认震感。进入正式版打包。
 - 0.15.148（310）Debug／Release 构建、双 lint、原签名与正式包元数据均通过。全量离线第一遍 114/125；其余 11 项的测试替身、缓存依赖或过期源码断言已修复，逐项复跑通过，正式 APK 不受测试修订影响。记录在 `build/distributions/0.15.148/`。
+- [v0.15.148 正式发布](https://github.com/DongLanQwQ0/Chrona/releases/tag/v0.15.148)，源标签指向 `5d84428`；GitHub Latest 返回非草稿、非预览版及已上传的 `Chrona-0.15.148.apk`，其大小 3,481,961 字节和 GitHub 资产 SHA-256 与本地已验签包一致。本机直链下载已收到文件内容，完整接收前超时。原 vivo 无线覆盖安装成功，读回 310，首次安装时间保持；隔离 Android 的 309 从实际「检查更新」页读取 GitHub，看到 v0.15.148 和「下载更新」按钮。证据 `public-release.json`、`public-integrity.txt`、`vivo-release-version.txt`、`manual-update-isolated.txt`。
 
 ## 完成反馈增强与横屏续验 — 2026-11-05
 
