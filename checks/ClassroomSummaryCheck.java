@@ -397,7 +397,7 @@ public final class ClassroomSummaryCheck {
                 "截止与补救机会","出勤与课堂表现","规则变更与纠错","复习与学习资源","其他重要提醒"))
             check(context.getString("first_system").contains(topic),"both real requests retain student concern: "+topic);
         check(context.getString("first_system").contains("优先突出前八类")&&context.getString("first_system").contains("区分明确要求、参考建议与含糊暗示")
-                &&context.getString("first_system").contains("不补猜时间、比例、范围或承诺"),"priority and uncertainty are explicit");
+                &&context.getString("first_system").contains("具体时间、比例及适用范围按资料填写"),"important facts use concrete source scope rather than defensive disclaimers");
         check(requests.get(2).getJSONArray("messages").getJSONObject(0).getString("content").equals(context.getString("first_system")),"final image round retains the same Chinese math style instructions");
         check(!ClassroomSummary.configKey(AI,20,"other").equals(ClassroomSummary.configKey(AI,20,"保留英文术语")),"custom prompt changes invalidate the previous run");
         check(secondMessages.getJSONObject(2).getString("content").equals(checkpoint.getString("first_output")),"second round contains exact raw first response");
@@ -900,9 +900,9 @@ public final class ClassroomSummaryCheck {
             keys.add(ClassroomSummary.configKey(AI,0,"自定义末尾",false,level));
             String system=ClassroomSummary.systemPrompt("自定义末尾",level);
             check(system.endsWith("自定义末尾"),"custom style remains last and authoritative at level "+level);
-            check(system.contains("扣分点")&&system.contains("不确定性"),"grading and uncertainty guard retained at level "+level);
-            check(system.contains("自行复算数学与代码")&&system.contains("不根据答案反造原题"),"all strengths check mathematics without reconstructing missing question facts "+level);
-            check(system.contains("标题的确定性不得高于正文证据")&&system.contains("可选做法合为一项"),"all strengths preserve evidence and whole conditional actions "+level);
+            check(system.contains("加扣分")&&system.contains("影响理解或行动的具体疑点"),"useful grading details and concrete uncertainty retained at level "+level);
+            check(system.contains("自行核对所讲知识及示例")&&system.contains("不根据答案反造原题"),"all strengths check subject examples without reconstructing missing question facts "+level);
+            check(system.contains("标题与正文使用相同的对象、时间及范围")&&system.contains("可选做法合为一项"),"all strengths preserve consistent fact scope and whole conditional actions "+level);
             reset();File dir=materialDir("strength-"+level+"-"+System.nanoTime());JSONObject result;
             try(RequestControl c=new RequestControl(20000)){result=ClassroomSummary.generate(dir,LESSON,AI,0,c,s->{},"自定义末尾",false,level);}
             JSONObject run=ClassroomStore.read(new File(dir,"run.json"));
@@ -910,7 +910,10 @@ public final class ClassroomSummaryCheck {
             check(requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content").equals(system),"real loopback request uses selected system prompt "+level);
             String actual=requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
             check(actual.contains("标题标为‘补充例题’")&&actual.contains("不把补充题设当作老师原题"),"actual request permits clearly labelled complete replacement examples without invented original questions "+level);
-            if(level==3)check(actual.contains("同主线、同类型及相近难度")&&actual.contains("不授权编造教师事实或考核承诺"),"actual strength-three request preserves the teaching direction without fabricating assessment facts");
+            check(actual.contains("先完整准确地陈述适用条件、符号含义和结论")&&actual.contains("再自然接一段简短通俗的理解阐释")&&actual.contains("正文不使用‘标准表述’‘直观理解’这类写作标签"),"actual requests explain theorems completely with natural unlabeled interpretation "+level);
+            check(actual.contains("概念讲清含义")&&actual.contains("技术流程交代必要步骤")&&actual.contains("人文观点交代论据与语境"),"actual requests support different course forms without mandatory math templates "+level);
+            check(actual.contains("删除免责声明、保留说明、自我辩护及生成过程说明")&&!actual.contains("不扩展成确定考题")&&!actual.contains("考核承诺"),"actual requests keep useful content and remove old defensive prompt clauses "+level);
+            if(level==3)check(actual.contains("同主线、同类型及相近难度")&&actual.contains("课程事务以教师实际说过的内容为准"),"actual strength-three request preserves teaching freedom and concrete teacher facts");
         }
         check(keys.size()==3,"each strength has a distinct new-run identity");
         check(ClassroomSummary.systemPrompt("",3).contains("保持整理深度，压紧表达")&&ClassroomSummary.systemPrompt("",3).contains("更正文稿仍逐条保留内容"),"concise handout never compresses correction transcript");

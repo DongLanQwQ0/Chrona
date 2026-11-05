@@ -1005,16 +1005,16 @@ public final class ClassroomEnhancedCheck {
         String system=requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
         fidelitySystemRules(system);
         check(system.contains("保持整理深度，压紧表达"),"enhanced requests use concise handout system");
-        check(system.contains("自行复算数学与代码")&&system.contains("题设和结论是否一致"),"actual request asks for mathematical and logical self-checks");
+        check(system.contains("自行核对所讲知识及示例")&&system.contains("程序检查执行逻辑与边界"),"actual request checks examples in a subject-appropriate way");
         check(system.contains("完整题干")&&system.contains("补齐必要推导")&&system.contains("不根据答案反造原题"),"actual request preserves questions while distinguishing valid derivation from invented facts");
-        check(system.contains("同类型")&&system.contains("题目标为‘补充例题’")&&system.contains("不授权编造教师事实或考核承诺"),"actual strength-three system allows labelled replacement examples without invented teacher commitments");
+        check(system.contains("同类型")&&system.contains("题目标为‘补充例题’")&&system.contains("课程事务以教师实际说过的内容为准"),"actual strength-three system allows labelled replacement examples with source-based course affairs");
         check(system.contains("AI自主组织具体教学细节")&&system.contains("不要求跟随课堂的措辞、讲解顺序、具体推导或解法"),"third level follows knowledge direction rather than reproducing teacher process");
         check(system.contains("不限于原题无法确定的情况")&&system.contains("不与同机制原题重复展开"),"third level may choose better teaching examples without duplicating the original");
         check(system.contains("不写‘有一道题但无法复原’的空话"),"actual handout system replaces or omits unusable incomplete-example narration");
-        check(system.contains("修正文稿和初稿的改写不能作为独立证据")&&system.contains("不扩大成整场考试的绝对限定"),"actual affairs instructions preserve uncertainty and local exam scope");
-        check(system.contains("不按常识改成相反指令")&&system.contains("不另造数学命题或加分条件"),"actual request preserves teacher rule direction without creating grading conditions from phonetic guesses");
-        check(system.contains("点名的考查对象、要求动作、方向、条件和例外逐项保留"),"actual request keeps distinct assessment clues instead of replacing them with a generic claim");
-        check(system.contains("标题的确定性不得高于正文证据")&&system.contains("省去识别纠正"),"actual request keeps evidence strength and removes resolved transcription workflow");
+        check(system.contains("适用对象、时间和范围直接写进对应句子")&&system.contains("后文修正或澄清更新前面的理解"),"actual affairs instructions express concrete scope and later clarification directly");
+        check(system.contains("教师指令的动作与方向按原文语境表达")&&system.contains("其余含混闲话省略"),"actual request preserves teacher direction and omits unhelpful uncertain chatter");
+        check(system.contains("保留决定含义的对象、数字、条件和变化方向"),"actual request retains material assessment facts without requiring every minor example");
+        check(system.contains("只有影响理解或行动的具体疑点")&&system.contains("省去识别纠正"),"actual request only mentions useful concrete uncertainty and removes processing narration");
         check(system.contains("不再叠加课堂口述版")&&system.contains("同一道题将题干"),"handout combines each example and proof rather than repeating presentation layers");
         check(system.contains("可选做法合为一项")&&system.contains("概览不混入考试"),"actions retain alternative paths and overview stays educational");
         String plan="",edit="";for(int i=0;i<stages.size();i++){
@@ -1215,8 +1215,8 @@ public final class ClassroomEnhancedCheck {
         return new JSONObject(text.substring(start,text.indexOf("\n按实际内容填写各集合",start)));
     }
     private static void fidelitySystemRules(String system){
-        for(String rule:List.of("数学解释须核对完整表达式及适用条件","不能从局部因子的性质推出整体性质","不能把某个例子的结论推广为一般规则","逐步核对等式与操作文字是否一致","关键计算不以未经解释的高阶等价或‘化简即得’代替","课堂具体证明转写不清，不等于数学结论不能成立","有可靠条件且可推出时给出简洁有效的推导","教师评分、考核和具体行动仍只按原始证据保留"))
-            check(system.contains(rule),"actual system prompt carries the generic mathematical-fidelity rule: "+rule);
+        for(String rule:List.of("先完整准确地陈述适用条件、符号含义和结论","再自然接一段简短通俗的理解阐释","正文不使用‘标准表述’‘直观理解’这类写作标签","数学检查条件、符号与计算","程序检查执行逻辑与边界","人文观点交代论据与语境","解释、推导和示例与采用的完整条件一致","课程事务以教师实际说过的内容为准"))
+            check(system.contains(rule),"actual system prompt carries a useful subject-appropriate teaching rule: "+rule);
         check(!system.contains("PRIVATE_RAW_WORDS_")&&!system.contains("PRIVATE_DERIVED_CLAIM_"),"generic system rules do not embed fixture lecture text or an answer");
     }
     private static void editorialRawFidelity()throws Exception{
@@ -1820,7 +1820,9 @@ public final class ClassroomEnhancedCheck {
             String firstRequest=prompt(requests.get(stages.indexOf("affairs-plan")));
             check(firstRequest.lastIndexOf("\n本轮执行要求：")>firstRequest.lastIndexOf("\nPPT时间目录：")&&firstRequest.lastIndexOf("\nPPT时间目录：")>firstRequest.lastIndexOf("\n全课原始字幕：\n"),"affairs execution reminder follows all raw material and the PPT catalogue: "+protocol);
             check(firstRequest.contains("事务正文按具体情景忠实摘记教师原话")&&firstRequest.contains("原话只有结果时就记结果，不补因果解释")&&firstRequest.contains("范围词必须与它限制的具体知识对象写在同一句"),"actual affairs request preserves separate teacher scenarios without invented causal explanations or detached scope: "+protocol);
-            check(prompt(requests.get(stages.indexOf("whole-note"))).contains("构造差商或除法前先交代分母为零的边界情形"),"actual knowledge request covers degenerate division cases without a lesson-specific formula: "+protocol);
+            check(prompt(requests.get(stages.indexOf("whole-note"))).contains("程序覆盖实际边界")&&prompt(requests.get(stages.indexOf("whole-note"))).contains("不强加公式与解题模板"),"actual knowledge request adapts to subject needs instead of a fixed calculus template: "+protocol);
+            String wholeRequest=prompt(requests.get(stages.indexOf("whole-note")));
+            check(wholeRequest.lastIndexOf("\n本轮成稿要求：")>wholeRequest.lastIndexOf("\n全课原始字幕：\n")&&occurrences(wholeRequest,"定理完整陈述条件、符号与结论后")==1&&wholeRequest.contains("直接接自然段讲清它的意思和用途，不另设写作标签"),"whole-note places one subject-appropriate teaching instruction after all source material without editing history: "+protocol);
             for(boolean withImages:new boolean[]{false,true})for(boolean cached:new boolean[]{false,true}){
                 reset("affairs-first-normal",withImages);File dir=compactMaterials("affairs-first-"+withImages+"-"+cached+"-"+protocol);JSONArray cachedText=new JSONArray().put("PRIVATE_CACHED_DERIVED_INTERPRETATION\n完整更正文稿，原字不得改动。");if(cached){JSONArray all=ClassroomSummary.lessonInput(ClassroomStore.read(new File(dir,"materials.json")).getJSONArray("segments"),new JSONArray()).getJSONArray("segments");ClassroomStore.write(new File(dir,"correction-cache.json"),new JSONObject().put("blocks",ClassroomEnhancedSummary.blocks(all,60000)).put("parts",cachedText).put("source_run","prior-correction-only"));}
                 check(!new File(dir,"run.json").exists(),"128 enters the current factory without a synthetic run checkpoint");JSONObject result=affairsFirstGenerate(dir,protocol),run=state(dir),doc=result.getJSONArray("parts").getJSONObject(0);List<String> expected=cached?List.of("affairs-plan","whole-note"):List.of("correct-0","affairs-plan","whole-note");check(result.getBoolean("complete")&&run.getBoolean("compact_pipeline")&&run.getBoolean("compact_affairs_first")&&stages.equals(expected),"fresh lessons add one correction; cached lessons always pay exactly two substantive stages, with or without pictures: "+protocol+" "+withImages+" "+cached);
@@ -1931,7 +1933,7 @@ public final class ClassroomEnhancedCheck {
         String policy=ClassroomAffairsPolicy.instructions(1);
         check(!policy.isEmpty()&&ClassroomAffairsPolicy.instructions(0).isEmpty(),"affairs policy remains versioned and absent from legacy schema zero");
         for(int strength:new int[]{1,2,3})check(occurrences(ClassroomSummary.systemPrompt("",strength),policy)==1,"factory system contains the full shared policy once at every unchanged strength: "+strength);
-        check(ClassroomNoteStrength.DEFAULT==3&&ClassroomNoteStrength.instructions(3).contains("分清合法运算和失效前提")&&ClassroomNoteStrength.instructions(3).contains("不为批评结论而否定合法的约分、变形或求导"),"current preferred strength retains self-study depth and distinguishes valid algebra from invalid premises");
+        check(ClassroomNoteStrength.DEFAULT==3&&ClassroomNoteStrength.instructions(3).contains("说明关键步骤为什么成立")&&ClassroomNoteStrength.instructions(3).contains("指出错误时说明真正失效的前提"),"current preferred strength explains valid steps and locates invalid premises across subjects");
         for(String schema:List.of(ClassroomSummary.schema(false,1),ClassroomSummary.schema(true,1),ClassroomSummary.topicSchema(1,"notes"),ClassroomSummary.topicSchema(1,"affairs"),ClassroomSummary.topicBatchSchema(1),ClassroomSummary.draftSchema(new JSONObject().put("count",1),1,true,1))){
             check(!schema.contains(policy),"stage format retains its local contract without repeating the full shared affairs policy");for(String field:List.of("overview","notes","affairs","assignments","sources","images"))check(schema.contains("\""+field+"\""),"stage examples retain existing field "+field);
         }
