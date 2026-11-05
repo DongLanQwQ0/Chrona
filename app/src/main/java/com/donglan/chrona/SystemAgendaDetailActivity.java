@@ -17,7 +17,7 @@ import java.time.format.DateTimeFormatter;
 
 /** Read-only system occurrence; editing stays with its owning calendar application. */
 public final class SystemAgendaDetailActivity extends Activity {
-    private Button acknowledgement;
+    private CompletionButton.ActivityLabel acknowledgement;
     private String occurrenceKey;
     private long acknowledgementUntil;
     private boolean occurrenceAvailable = true;
@@ -67,7 +67,7 @@ public final class SystemAgendaDetailActivity extends Activity {
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() : end;
         occurrenceKey = AgendaAcknowledgement.key(id, occurrenceStart);
         acknowledgementUntil = occurrenceEnd > occurrenceStart ? occurrenceEnd : occurrenceStart + 60_000L;
-        acknowledgement = new Button(this); UiStyle.button(acknowledgement, false);
+        acknowledgement = new CompletionButton.ActivityLabel(this);
         LinearLayout.LayoutParams acknowledgementParams = new LinearLayout.LayoutParams(-1, -2);
         acknowledgementParams.topMargin = padding;
         root.addView(acknowledgement, acknowledgementParams);
@@ -75,9 +75,10 @@ public final class SystemAgendaDetailActivity extends Activity {
             if (!occurrenceAvailable || acknowledgementUntil <= System.currentTimeMillis()) {
                 refreshAcknowledgement(); return;
             }
-            AgendaAcknowledgement.set(this, occurrenceKey, acknowledgementUntil,
-                    !AgendaAcknowledgement.isAcknowledged(this, occurrenceKey));
+            boolean checked = !AgendaAcknowledgement.isAcknowledged(this, occurrenceKey);
+            AgendaAcknowledgement.set(this, occurrenceKey, acknowledgementUntil, checked);
             refreshAcknowledgement();
+            if (checked) acknowledgement.reward();
         });
         refreshAcknowledgement();
         if (input.getBooleanExtra("source_series", false)) acknowledgement.setVisibility(android.view.View.GONE);
@@ -138,7 +139,7 @@ public final class SystemAgendaDetailActivity extends Activity {
                     && remaining > 0;
             acknowledgement.setVisibility(available ? android.view.View.VISIBLE : android.view.View.GONE);
             acknowledgement.setEnabled(available);
-            acknowledgement.setText(AgendaAcknowledgement.isAcknowledged(this, occurrenceKey) ? "取消确认" : "确认活动");
+            acknowledgement.bind(AgendaAcknowledgement.isAcknowledged(this, occurrenceKey));
             if (resumed && available) expiryHandler.postDelayed(expiryRefresh, remaining);
         }
     }

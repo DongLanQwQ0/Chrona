@@ -301,7 +301,8 @@ public final class TaskDetailActivity extends Activity {
         saveInFlight = saveSession.busy;
         taskId = state == null ? getIntent().getLongExtra("task_id", -1)
                 : state.getLong("task_id", getIntent().getLongExtra("task_id", -1));
-        initialCandidateId = state == null ? getIntent().getLongExtra(EXTRA_CANDIDATE_ID, 0) : 0;
+        initialCandidateId = state == null ? getIntent().getLongExtra(EXTRA_CANDIDATE_ID, 0)
+                : state.getLong(EXTRA_CANDIDATE_ID);
         if(getIntent().hasExtra("occurrence_at"))occurrenceOriginal=getIntent().getLongExtra("occurrence_at",0);
         if (state != null) exportFileName = state.getString("export_file_uri");
         page = new ScrollView(this);
@@ -416,7 +417,8 @@ public final class TaskDetailActivity extends Activity {
                 for (int i = 0; i < Math.min(candidateTaskIds.length, candidateIndexes.length); i++)
                     taskCandidatePagePositions.put(candidateTaskIds[i], Math.max(0, candidateIndexes[i]));
             }
-            page.post(() -> page.scrollTo(0, scrollY));
+            taskScrollPositions.put(taskId, scrollY);
+            resetScrollForNextRender = true;
             Bundle drafts = state.getBundle("candidate_drafts");
             if (drafts != null) for (String id : drafts.keySet()) {
                 Bundle draft = drafts.getBundle(id);
@@ -458,6 +460,7 @@ public final class TaskDetailActivity extends Activity {
         state.putLongArray("candidate_task_ids", candidateTaskIds);
         state.putIntArray("candidate_task_indexes", candidateIndexes);
         state.putInt("candidate_page_index", candidatePageIndex);
+        state.putLong(EXTRA_CANDIDATE_ID, initialCandidateId);
         state.putLong("task_id", taskId);
         state.putBoolean("details_expanded", detailsExpanded);
         state.putBoolean("usage_expanded", usageExpanded);
@@ -728,8 +731,7 @@ public final class TaskDetailActivity extends Activity {
         LinearLayout pages = new LinearLayout(this);
         pages.setOrientation(LinearLayout.HORIZONTAL);
         carousel.addView(pages, new HorizontalScrollView.LayoutParams(-2, -2));
-        int pageWidth = candidatePageWidth();
-        carousel.setPages(pageWidth, candidates.size());
+        carousel.setPageCount(candidates.size());
         Button[] saves = new Button[candidates.size()];
         LinearLayout[] slots = new LinearLayout[candidates.size()];
         for (int i = 0; i < candidates.size(); i++) {
@@ -737,14 +739,14 @@ public final class TaskDetailActivity extends Activity {
             slots[i].setOrientation(LinearLayout.VERTICAL);
             slots[i].setClipChildren(false);
             slots[i].setClipToPadding(false);
-            pages.addView(slots[i], new LinearLayout.LayoutParams(pageWidth, -2));
+            pages.addView(slots[i], new LinearLayout.LayoutParams(0, -2));
         }
         // A managed homework capture can contain hundreds of items. Only the selected
         // editor belongs on the opening frame; visited editors retain their unsaved fields.
         java.util.function.IntConsumer ensurePage = index -> {
             if (index < 0 || index >= candidates.size() || saves[index] != null) return;
             int firstBar = editorSelectionBars.size();
-            saves[index] = addCandidateEditor(candidates.get(index), candidateNumber(candidates, index), true, slots[index], pageWidth);
+            saves[index] = addCandidateEditor(candidates.get(index), candidateNumber(candidates, index), true, slots[index]);
             for (int i = firstBar; i < editorSelectionBars.size(); i++)
                 carousel.addGesturePriorityChild(editorSelectionBars.get(i));
         };
@@ -752,7 +754,8 @@ public final class TaskDetailActivity extends Activity {
         carousel.setOnScrollChangeListener((view, scrollX, scrollY, oldX, oldY) -> {
             // Adjacent task pages are laid out while another task owns the Activity fields.
             if (!positionRestored[0] || content != ownerContent || taskId != ownerTaskId
-                    || carousel.getParent() != ownerContent) return;
+                    || carousel.getParent() != ownerContent || carousel.isResizing()) return;
+            int pageWidth = carousel.pageWidth();
             int firstVisible = Math.max(0, scrollX / pageWidth);
             ensurePage.accept(firstVisible);
             ensurePage.accept(firstVisible + 1);
@@ -773,6 +776,7 @@ public final class TaskDetailActivity extends Activity {
                 candidates.get(candidatePageIndex).id, saves[candidatePageIndex]),
                 candidates.get(candidatePageIndex), candidates);
         Runnable restorePosition = () -> {
+            int pageWidth = carousel.pageWidth();
             if (positionRestored[0] || isDestroyed() || carousel.getParent() != ownerContent
                     || pages.getWidth() < (initialPageIndex + 1) * pageWidth) return;
             positionRestored[0] = true;
@@ -790,12 +794,6 @@ public final class TaskDetailActivity extends Activity {
                 ensurePage.accept(candidatePageIndex + 1);
             });
         });
-    }
-
-    private int candidatePageWidth() {
-        int width = content.getWidth() - content.getPaddingLeft() - content.getPaddingRight();
-        if (width <= 0) width = getResources().getDisplayMetrics().widthPixels - dp(40);
-        return Math.max(dp(280), width);
     }
 
     private static int candidateNumber(List<EventCandidate> candidates, int index) {
@@ -1347,10 +1345,10 @@ public final class TaskDetailActivity extends Activity {
         UiStyle.page(this, targetContent);
         targetContent.setBackgroundColor(Color.TRANSPARENT);
         targetScroll.addView(targetContent);
-        UiStyle.applyScrollableInsets(detailPager, targetContent);
         LinearLayout targetShell = new LinearLayout(this);
         targetShell.setOrientation(LinearLayout.VERTICAL);
         targetShell.addView(targetScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        UiStyle.applyScrollableInsets(detailPager, targetContent);
         targetShell.setPadding(shell.getPaddingLeft(), shell.getPaddingTop(),
                 shell.getPaddingRight(), shell.getPaddingBottom());
 
@@ -2128,7 +2126,7 @@ public final class TaskDetailActivity extends Activity {
 
     private Button addCandidateEditor(EventCandidate candidate, int number,
             boolean dockSaveAction) {
-        return addCandidateEditor(candidate, number, dockSaveAction, content, -1);
+        return addCandidateEditor(candidate, number, dockSaveAction, content);
     }
     private void addMergedSources(TaskStore store,List<EventCandidate> candidates)throws Exception{
         if (store.mergeLedger().records().isEmpty()) return;
@@ -2149,7 +2147,7 @@ public final class TaskDetailActivity extends Activity {
     }
 
     private Button addCandidateEditor(EventCandidate candidate, int number,
-            boolean dockSaveAction, LinearLayout destination, int pageWidth) {
+            boolean dockSaveAction, LinearLayout destination) {
         final boolean managedHomework;
         boolean plannedHomeworkTime=false;
         org.json.JSONObject proposed;
@@ -2184,7 +2182,7 @@ public final class TaskDetailActivity extends Activity {
         } else {
             int pageGutter = dp(8);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    Math.max(dp(240), pageWidth - pageGutter * 2), -2);
+                    -1, -2);
             params.setMargins(pageGutter, dp(6), pageGutter, dp(6));
             destination.addView(card, params);
         }
@@ -2204,7 +2202,7 @@ public final class TaskDetailActivity extends Activity {
         cardHeader.addView(createCandidate, createParams);
         ImageButton acknowledgement = null;
         if (candidate.isTask()) {
-            ImageButton complete = new ImageButton(this);
+            CompletionButton complete = new CompletionButton(this);
             complete.setPadding(dp(12), dp(12), dp(12), dp(12));
             complete.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
             complete.setImageResource(candidate.completed() ? R.drawable.ic_todo_check : R.drawable.ic_check);
@@ -2216,12 +2214,13 @@ public final class TaskDetailActivity extends Activity {
             complete.setTooltipText(completeLabel);
             UiStyle.glass(complete);
             UiStyle.pressable(complete);
-            complete.setOnClickListener(view -> changeTaskCompletion(candidate));
+            complete.setOnClickListener(view -> changeTaskCompletion(candidate, complete));
             LinearLayout.LayoutParams completeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             completeParams.setMarginEnd(dp(8));
             if(!updatingOccurrence)cardHeader.addView(complete, completeParams);
         } else {
-            acknowledgement = new ImageButton(this);
+            CompletionButton confirm = new CompletionButton(this);
+            acknowledgement = confirm;
             acknowledgement.setTag(new AcknowledgementAction(candidate));
             acknowledgement.setPadding(dp(12), dp(12), dp(12), dp(12));
             acknowledgement.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
@@ -2232,9 +2231,15 @@ public final class TaskDetailActivity extends Activity {
                 if (dirtyCandidateIds.contains(candidate.id)) { Feedback.show(this, "请先保存当前修改"); return; }
                 String key = AgendaAcknowledgement.key(candidate);
                 long until = acknowledgementUntil(candidate);
-                if (!key.isEmpty() && until > System.currentTimeMillis())
-                    AgendaAcknowledgement.set(this, key, until, !AgendaAcknowledgement.isAcknowledged(this, key));
+                if (key.isEmpty() || until <= System.currentTimeMillis()) {
+                    refreshAcknowledgementActions(content);
+                    return;
+                }
+                boolean checked = !AgendaAcknowledgement.isAcknowledged(this, key);
+                AgendaAcknowledgement.set(this, key, until, checked);
                 refreshAcknowledgementActions(content);
+                if (checked) confirm.reward(false, () -> {});
+                else confirm.stopReward();
             });
             LinearLayout.LayoutParams acknowledgementParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             acknowledgementParams.setMarginEnd(dp(6));
@@ -2751,8 +2756,8 @@ public final class TaskDetailActivity extends Activity {
         }
     }
 
-    private void changeTaskCompletion(EventCandidate candidate) {
-        if(occurrenceOriginal!=null){changeEditedOccurrence(candidate.completed()?"reopen":"complete");return;}
+    private void changeTaskCompletion(EventCandidate candidate, CompletionButton button) {
+        if(occurrenceOriginal!=null){changeEditedOccurrence(candidate.completed()?"reopen":"complete", button);return;}
         if (candidate.repeatRule != null) {
             startActivity(new Intent(this, RepeatScheduleActivity.class).putExtra("task_id", candidate.taskId)
                     .putExtra("candidate_id", candidate.id));
@@ -2764,27 +2769,39 @@ public final class TaskDetailActivity extends Activity {
         setSaving(true);
         new Thread(() -> {
             try {
-                String warning = TaskCompletion.set(this, candidate.id, candidate.taskId, !candidate.completed());
-                deliverSave(owner -> {
+                boolean completed = !candidate.completed();
+                TaskCompletion.Result result = TaskCompletion.apply(getApplicationContext(), candidate, completed);
+                Consumer<TaskDetailActivity> settled = owner -> {
                     owner.candidateDrafts.remove(candidate.id);
                     owner.setSaving(false);
                     if (owner.taskId == candidate.taskId) owner.render();
-                    if (warning != null) Feedback.showLong(owner, warning);
-                });
+                    if (result.warning() != null) Feedback.showLong(owner, result.warning());
+                };
+                settleTaskCompletion(button, completed && result.changed(), settled);
             } catch (Exception exception) {
                 deliverSave(owner -> { owner.setSaving(false); owner.showError(exception); });
             }
         }, "chrona-task-complete").start();
     }
-    private void skipEditedOccurrence(){changeEditedOccurrence("skip");}
-    private void changeEditedOccurrence(String action){
+    private void settleTaskCompletion(CompletionButton button, boolean reward,
+            Consumer<TaskDetailActivity> settled) {
+        deliverSave(owner -> {
+            if (reward && owner == this && CompletionButton.canReward(button))
+                button.reward(true, () -> deliverSave(settled));
+            else settled.accept(owner);
+        });
+    }
+
+    private void skipEditedOccurrence(){changeEditedOccurrence("skip", null);}
+    private void changeEditedOccurrence(String action, CompletionButton button){
         if(saveInFlight||occurrenceOriginal==null)return;
         if(hasUnsavedEdits){Feedback.show(this,"请先保存当前修改");return;}
         if(occurrenceSeries.calendarEventId!=null&&!requestCalendarPermission())return;
         String baseline=CandidateEditBaseline.of(occurrenceSeries);setSaving(true);
         new Thread(()->{try{
             RepeatActions.change(this,taskId,occurrenceSeries.id,baseline,action,occurrenceOriginal,null,null);
-            deliverSave(owner->{owner.setSaving(false);if("skip".equals(action))owner.finish();else owner.render();});
+            settleTaskCompletion(button, "complete".equals(action),
+                    owner->{owner.setSaving(false);if("skip".equals(action))owner.finish();else owner.render();});
         }catch(Exception failure){deliverSave(owner->{owner.setSaving(false);owner.showError(failure);});}},"chrona-occurrence-state").start();
     }
     private void chooseIndependentCandidate(EventCandidate candidate){

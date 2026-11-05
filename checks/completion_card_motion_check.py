@@ -31,6 +31,11 @@ public class ViewGroup extends View {
 import android.view.*;
 public class CompletionCardMotionCheck {
  static int count;static void check(boolean value,String label){count++;if(!value)throw new AssertionError(label);}
+ static final class Bound extends ViewGroup implements DashboardCardReconciler.BoundBranch {
+  int count;
+  Bound(int count){this.count=count;addView(new View());}
+  public int bindFrom(View incoming){count=((Bound)incoming).count;return 1;}
+ }
  static ViewGroup row(DashboardCardReconciler r,String id,String state){ViewGroup v=new ViewGroup();v.addView(new View());r.row(v,id,state);return v;}
  static ViewGroup branch(DashboardCardReconciler r,String id){ViewGroup v=new ViewGroup();r.branch(v,id);return v;}
  public static void main(String[]args){
@@ -48,6 +53,14 @@ public class CompletionCardMotionCheck {
   ViewGroup second=new ViewGroup();second.addView(row(r,"c","done"));second.addView(row(r,"b","open"));second.addView(row(r,"d","open"));
   r.apply(details,second,0);check(details.getChildAt(0)==c&&details.getChildAt(1)==b&&details.getChildCount()==3,"rapid successive snapshot reorders and inserts");
   ViewGroup empty=new ViewGroup();r.apply(details,empty,0);check(details.getChildCount()==0,"last row removal");
+  ViewGroup dashboard=new ViewGroup(), refresh=new ViewGroup();Bound live=new Bound(2), updated=new Bound(1);
+  View fixed=live.getChildAt(0), retained=row(r,"focus:b","open");
+  live.addView(row(r,"focus:a","open"));live.addView(retained);updated.addView(row(r,"focus:b","open"));
+  r.branch(live,"todos");r.branch(updated,"todos");dashboard.addView(live);refresh.addView(updated);
+  var targeted=new java.util.ArrayList<String>();r.forRows(dashboard,(view,key)->targeted.add(key));
+  check(targeted.equals(java.util.List.of("focus:a","focus:b")),"exit targets contain only keyed rows");
+  r.apply(dashboard,refresh,0);
+  check(live.count==1&&live.getChildAt(0)==fixed&&live.getChildAt(1)==retained,"bound controls update without being replaced");
   System.out.println("Completion card motion checks passed: "+count+"; real reconciler, platform View stand-ins");
  }
 }'''
@@ -67,16 +80,27 @@ activity = (src / 'DashboardActivity.java').read_text(encoding='utf-8')
 assert 'disclosure.setRotation(' not in activity
 assert 'disclosureIcon.setLevel(' in activity
 assert 'completingCandidates.add(candidate.id)' in activity
-assert 'completionRefreshRunning || !completingCandidates.isEmpty()' in activity
+assert 'completionRefreshRunning || completionActionRunning()' in activity
+assert 'return !completingCandidates.isEmpty() || !confirmingActivities.isEmpty();' in activity
+assert activity.index('confirmingActivities.add(key)') < activity.index('confirmed.reward(false,')
+assert activity.index('confirmingActivities.remove(key)') < activity.index('confirmed.setEnabled(true)')
 assert 'TransitionManager.beginDelayedTransition(target, motion)' in activity
-assert 'UiMotion.isEnabled() && target.isLaidOut()' in activity
+assert 'new android.transition.Fade(android.transition.Fade.OUT)' in activity
+assert 'homeTodoExpanding()' in activity
+assert 'awaitingCompletionRows.put(candidate.id, completionKey(candidate, null))' in activity
+assert 'departing.add("upcoming:" + occurrence)' in activity and 'departing.add("timeline:" + occurrence)' in activity
+assert 'onTransitionEnd(android.transition.Transition transition)' in activity
+assert 'UiMotion.isEnabled() && target.isAttachedToWindow() && target.isLaidOut()' in activity
 assert 'completionRows.apply(target, incoming, destination == HOME ? headerChildCount : 0)' in activity
 assert 'viewport.scrollTo(0, y)' in activity
+apply_rows = activity.split('private void applyCompletionRows(', 1)[1].split('private void collectHomeStrips', 1)[0]
+assert apply_rows.index('UiMotion.remember(') < apply_rows.index('completionRows.apply(')
+assert 'UiMotion.settleScroll' not in apply_rows and 'UiMotion.enterList' not in apply_rows
 assert 'new LinearLayout.LayoutParams(dp(48), dp(48))' in activity
 # 收件类型路由随实现同步：源码为 EventCategory.VALUES[categoryIndex-1]，按正则容忍空格。
 assert re.search(r'EventCategory\.VALUES\[\s*categoryIndex\s*-\s*1\s*\]', activity)
 home_refresh = activity.split('private void refreshHomeContent()', 1)[1].split('private String calendarWindowKey', 1)[0]
 assert 'refreshCompletionRows();' in home_refresh and 'render();' not in home_refresh
-active_refresh = activity.split('private void refreshActivePageIfNeeded()', 1)[1].split('private ', 1)[0]
-assert 'if (section == HOME) {\n                refreshCompletionRows();\n                return;' in active_refresh
+active_refresh = activity.split('private void refreshActivePageIfNeeded(String version)', 1)[1].split('private ', 1)[0]
+assert re.search(r'if \(section == HOME[^\n]*\) \{\s+refreshCompletionRows\(\);\s+return;', active_refresh)
 print('Dashboard source contracts passed: icon-only rotation, write lock, refresh gate, reduced motion, scroll retention, homework route, home poll/calendar reconciliation')

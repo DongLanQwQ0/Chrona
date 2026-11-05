@@ -23,6 +23,9 @@ def production(name):
     if name == 'UiMotion.java':
         source = source[:source.index('    /** Length of the in-place cross-fade')] + '}\n'
         source = source.replace('public final class UiMotion', 'final class UiMotion')
+        # The height animation is executed separately by section_motion_check.py.
+        source = source[:source.index('    public static void section(')] + source[source.index('    /** Idempotent; observes'):]
+        source = re.sub(r'    private static final WeakHashMap<View, java.lang.ref.WeakReference<SectionMotion>>\s+SECTION_MOTIONS[^;]*;\n', '', source)
     source = re.sub(r'^(package |import ).*;\s*', '', source, flags=re.M)
     return source.replace('android.graphics.Rect', 'Rect')
 
@@ -39,8 +42,10 @@ swap = '\n'.join(method(style, marker) for marker in (
     'static void finishSwap(View container)',
     'static void enterPage(View view)',
     'static void enterPage(View view, Runnable onPresented)',
+    'private static boolean canPresent(View view)',
+    'private static boolean visibleMultiWindow(View view)',
     'private static boolean hostsSeveralChildren(ViewGroup host)',
-    'private static void dropSwapGhosts(ViewGroup host)')).replace('android.widget.HorizontalScrollView', 'HorizontalScrollView').replace('android.view.ViewTreeObserver', 'ViewTreeObserver')
+    'private static void dropSwapGhosts(ViewGroup host)')).replace('android.widget.HorizontalScrollView', 'HorizontalScrollView').replace('android.view.ViewTreeObserver', 'ViewTreeObserver').replace('android.content.', '').replace('android.app.Activity', 'Activity')
 
 harness = r'''
 import java.util.*;
@@ -57,12 +62,17 @@ class Rect {
 }
 class Resources { Display getDisplayMetrics(){return new Display();} }
 class Display { float density=1; }
+class Context {}
+class ContextWrapper extends Context { Context getBaseContext(){return null;} }
+class Activity extends ContextWrapper { boolean isInMultiWindowMode(){return true;} }
 class ViewTreeObserver {
  interface OnPreDrawListener{boolean onPreDraw();}
  interface OnScrollChangedListener{void onScrollChanged();}
  interface OnGlobalLayoutListener{void onGlobalLayout();}
+ interface OnWindowFocusChangeListener{void onWindowFocusChanged(boolean focus);}
  List<OnScrollChangedListener> scroll=new ArrayList<>(); List<OnGlobalLayoutListener> layout=new ArrayList<>();
  List<OnPreDrawListener> preDraw=new ArrayList<>();
+ List<OnWindowFocusChangeListener> focus=new ArrayList<>();
  boolean isAlive(){return true;}
  void addOnScrollChangedListener(OnScrollChangedListener x){scroll.add(x);}
  void removeOnScrollChangedListener(OnScrollChangedListener x){scroll.remove(x);}
@@ -70,6 +80,8 @@ class ViewTreeObserver {
  void removeOnGlobalLayoutListener(OnGlobalLayoutListener x){layout.remove(x);}
  void addOnPreDrawListener(OnPreDrawListener x){preDraw.add(x);}
  void removeOnPreDrawListener(OnPreDrawListener x){preDraw.remove(x);}
+ void addOnWindowFocusChangeListener(OnWindowFocusChangeListener x){focus.add(x);}
+ void removeOnWindowFocusChangeListener(OnWindowFocusChangeListener x){focus.remove(x);}
  void draw(){for(var x:new ArrayList<>(preDraw))x.onPreDraw();}
 }
 class Animator {
@@ -85,13 +97,16 @@ class Animator {
  void finish(){view.alpha=alpha;view.y=y;Runnable done=end;end=null;if(done!=null)done.run();}
 }
 class View {
+ static final int VISIBLE=0;
  interface OnAttachStateChangeListener{void onViewAttachedToWindow(View v);void onViewDetachedFromWindow(View v);}
- boolean attached=true,shown=true,visible=true,focused=false,accessibility=false;
+ boolean attached=true,shown=true,visible=true,focused=false,accessibility=false,windowFocus=true;
  float alpha=1,y,x; int width=100,height=100,scrollX,scrollY,left,top; Object tag;
  Rect clip; ViewGroup parent; Animator animator=new Animator(this); Resources resources=new Resources();
  List<OnAttachStateChangeListener> listeners=new ArrayList<>(); List<Runnable> frames=new ArrayList<>();
  ViewTreeObserver tree=new ViewTreeObserver();
  boolean isAttachedToWindow(){return attached;} boolean isShown(){return shown;}
+ int getWindowVisibility(){return VISIBLE;} boolean hasWindowFocus(){return windowFocus;}
+ void postInvalidateOnAnimation(){postOnAnimation(tree::draw);}
  boolean getGlobalVisibleRect(Rect r){r.set(0,0,width,height);return visible;}
  boolean getLocalVisibleRect(Rect r){if(!visible)return false;if(clip!=null)r.set(clip.left,clip.top,clip.right,clip.bottom);else r.set(scrollX,scrollY,scrollX+width,scrollY+height);return true;}
  boolean isFocused(){return focused;} boolean isAccessibilityFocused(){return accessibility;}
@@ -107,7 +122,7 @@ class View {
  int getWidth(){return width;} int getHeight(){return height;} int getScrollX(){return scrollX;} int getScrollY(){return scrollY;}
  int getLeft(){return left;} int getTop(){return top;} Object getParent(){return parent;}
  void invalidate(){} void draw(Canvas c){}
- Object getContext(){return null;} void setTag(Object x){tag=x;} Object getTag(){return tag;}
+ Context context; Context getContext(){return context;} void setTag(Object x){tag=x;} Object getTag(){return tag;}
 }
 class ViewGroup extends View {
  List<View> children=new ArrayList<>(); int getChildCount(){return children.size();}

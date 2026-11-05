@@ -39,6 +39,7 @@ public final class RepeatScheduleActivity extends Activity {
     private static final String[] DAY_LABELS = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
     private long taskId, candidateId;
     private Long selectedOriginal;
+    private Long rewardOriginal;
     private YearMonth month;
     private EventCandidate series;
     private boolean busy;
@@ -257,7 +258,25 @@ public final class RepeatScheduleActivity extends Activity {
             text(row, format(item.anchor()), 17, true);
             String state = item.completed() ? "已完成" : "";
             if (original != item.anchor()) state += (state.isEmpty() ? "" : " · ") + "已改期";
-            if (!state.isEmpty()) text(row, state, 14, false);
+            if (!state.isEmpty()) {
+                TextView status = text(row, state, 14, false);
+                if (item.completed()) {
+                    status.setTextColor(UiStyle.colors(this).primary);
+                    if (Long.valueOf(original).equals(rewardOriginal)) {
+                        rewardOriginal = null;
+                        status.post(() -> {
+                            if (!CompletionButton.canReward(status)) return;
+                            CompletionButton.confirmHaptic(status, true);
+                            if (UiMotion.isEnabled()) {
+                                status.setAlpha(.35f);
+                                status.setTranslationX(-dp(6));
+                                status.animate().alpha(1f).translationX(0f)
+                                        .setDuration(UiMotion.ENTER).setInterpolator(UiMotion.SETTLE).start();
+                            }
+                        });
+                    }
+                }
+            }
             row.setOnClickListener(view -> {
                 if (busy) return;
                 selectedOriginal = original;
@@ -352,6 +371,7 @@ public final class RepeatScheduleActivity extends Activity {
                     if (alive()) {
                         if ("move".equals(action) && moved != null)
                             month = YearMonth.from(Instant.ofEpochMilli(moved).atZone(zone()));
+                        if ("complete".equals(action)) rewardOriginal = original;
                         busy = false; setResult(RESULT_OK); load();
                     }
                 });
@@ -362,6 +382,7 @@ public final class RepeatScheduleActivity extends Activity {
     private void failed(Exception error) {
         runOnUiThread(() -> {
             if (!alive()) return;
+            rewardOriginal = null;
             busy = false; render();
             Feedback.show(this, error.getMessage() == null ? "操作失败，请重试" : error.getMessage());
         });

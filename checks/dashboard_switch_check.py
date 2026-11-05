@@ -19,7 +19,7 @@ def method(marker):
     return activity[first:end]
 controller = '\n'.join(method(x) for x in ('private void switchTo(int destination)',
     'private void switchTo(int destination, boolean fromHistory)', 'private void prepareSectionSwitch(',
-    'private void switchToPendingSection(', 'private void refreshSettledSection(', 'private String inboxCategory(',
+    'private void switchToPendingSection(', 'private void refreshSettledSection(', 'private void requestActivePageRefresh(', 'private String inboxCategory(',
     'private ScheduleQuery buildScheduleQuery(', 'private void openHomeTodos(', 'private void openHomeHomework('))
 files = {
 'android/content/Context.java': '''package android.content;public class Context {
@@ -96,14 +96,17 @@ public class DashboardActivity extends android.content.Context {
  final Map<Integer,String>sectionVersions=new HashMap<>();final Set<Integer>dirtySections=new HashSet<>();final Set<Long>selectedScheduleIds=new HashSet<>();
  final Queue refresh=new Queue();final Dock navigation=new Dock();final Pager pager=new Pager();final Listener sectionPagerListener=new Listener();
  final ExecutorService startupReader=Executors.newSingleThreadExecutor();final Runnable deferredSectionRefresh=this::refreshSettledSection;
- int builds,commits,refreshes,snapshotReads;DashboardSectionData used;
+ int builds,commits,refreshes,snapshotReads,resumeGeneration;boolean revisionReadRunning;DashboardSectionData used;
  DashboardActivity(){sectionPages.put(HOME,new Page(HOME));}
  boolean isDestroyed(){return destroyed;}boolean isFinishing(){return false;}int sectionPosition(int destination){return destination;}
  LocalDate[]scheduleWindow(boolean system){return scheduleRange==0?new LocalDate[]{null,null}:new LocalDate[]{LocalDate.now(),LocalDate.now().plusDays(7)};}
  float sectionPageWidth(){return 300;}void collectSectionSurfaces(){}
  Page buildAdjacentSection(int destination){builds++;used=preparedSection;return new Page(destination);}
  void finishSectionDrag(boolean commit,float width){section=adjacentPage.section;sectionPages.put(section,adjacentPage);dragTargetLoaded=false;commits++;}
- void refreshHomeContent(){refreshes++;homeRefreshPending=false;}void updateResults(){refreshes++;}void refreshActivePageIfNeeded(){refreshes++;}String dataSnapshot(){snapshotReads++;return "snapshot";}
+ void refreshHomeContent(){refreshes++;homeRefreshPending=false;}void updateResults(){refreshes++;}
+ void clearHomeworkHighlight(){}
+ boolean completionActionRunning(){return !completingCandidates.isEmpty();}
+ void refreshActivePageIfNeeded(String version){refreshes++;}String snapshotForRevision(long revision){snapshotReads++;return Long.toString(revision);}
  void await()throws Exception{startupReader.submit(()->{}).get(3,TimeUnit.SECONDS);refresh.drain();}
  @@CONTROLLER@@
  static int checks;static void check(boolean ok,String label){checks++;if(!ok)throw new AssertionError(label);}
@@ -118,7 +121,10 @@ public class DashboardActivity extends android.content.Context {
    d.switchTo(SCHEDULE,true);d.switchTo(SCHEDULE);d.await();check(!d.sectionSwitchFromHistory&&!d.pendingSectionFromHistory,"normal request replaces history reason for same loading destination");
    d.switchTo(HOME);d.sectionPages.remove(INBOX);d.switchTo(INBOX,true);d.switchTo(HOME);d.await();check(d.section==HOME&&!d.pendingSectionFromHistory&&!d.sectionSwitchFromHistory,"new normal destination discards loading history request reason");
    d.navigation.animating=true;d.refreshSettledSection();check(d.refreshes==0&&d.snapshotReads==0&&!d.refresh.tasks.isEmpty(),"revision checks wait for dock animation");
-   d.refresh.clear();d.navigation.animating=false;d.refreshSettledSection();check(d.refreshes==1&&d.snapshotReads==1,"idle refresh eventually runs");
+   d.refresh.clear();d.navigation.animating=false;d.refreshSettledSection();check(d.refreshes==0,"idle refresh never reads on caller");
+   d.await();check(d.refreshes==1&&d.snapshotReads==1,"idle refresh eventually runs");
+   d.requestActivePageRefresh();d.resumeGeneration++;d.await();
+   check(d.refreshes==1&&d.snapshotReads==1&&!d.revisionReadRunning,"old resume snapshot cannot update the current screen");
   }finally{d.startupReader.shutdownNow();}
   DashboardActivity returning=new DashboardActivity();try{
    returning.switchTo(INBOX,true);returning.await();check(returning.section==INBOX&&returning.sectionSwitchFromHistory,"history reason follows asynchronous loaded destination");

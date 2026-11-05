@@ -87,7 +87,7 @@ public class View {
  public void postOnAnimation(Runnable action){postDelayed(action,16);}
  public boolean postDelayed(Runnable action,long delay){jobs.add(new Job(this,action,now+delay,sequence++));return true;}
  public boolean removeCallbacks(Runnable action){return jobs.removeIf(j->j.owner==this&&j.action==action);}
- public void invalidate(){invalidations++;} public boolean performHapticFeedback(int x){return true;}
+ public void invalidate(){invalidations++;} public void forceLayout(){} public boolean performHapticFeedback(int x){return true;}
  public float scaleX=1,scaleY=1;public void setScaleX(float value){scaleX=value;}public void setScaleY(float value){scaleY=value;}public float getScaleX(){return scaleX;}public float getScaleY(){return scaleY;}
  public float alpha=1;public float getAlpha(){return alpha;}public void setAlpha(float value){alpha=value;}
  public ViewPropertyAnimator animate(){return new ViewPropertyAnimator(this);}
@@ -203,8 +203,10 @@ public class DockNavigationCheck extends Context {
     init();outer=new SwipePagerLayout(c,new SwipePagerLayout.Listener(){
      public void onStart(){starts[0]++;}public void onDrag(float x){}public void onRelease(float x,float v){}public void onCancel(){}
     });
-    outer.layout(0,0,420,600);candidates=new CandidatePagerScrollView(c);candidates.layout(30,100,390,360);candidates.setPages(360,3);
-    FrameLayout pages=new FrameLayout(c);pages.layout(0,0,1080,260);candidates.addView(pages);outer.addView(candidates);
+    outer.layout(0,0,420,600);candidates=new CandidatePagerScrollView(c);candidates.setPageCount(3);
+    LinearLayout pages=new LinearLayout(c);candidates.addView(pages,new FrameLayout.LayoutParams(1080,260));outer.addView(candidates);
+    candidates.measure(View.MeasureSpec.makeMeasureSpec(360,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(260,View.MeasureSpec.EXACTLY));
+    candidates.layout(30,100,390,360);
     dock.layout(50,20,350,80);pages.addView(dock);outer.setGesturePriorityChildren(List.of(candidates,dock));
     if(register)candidates.addGesturePriorityChild(dock);
    }

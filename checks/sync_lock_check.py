@@ -38,6 +38,9 @@ write("android/database/sqlite/SQLiteDatabase.java", '''
 package android.database.sqlite; public class SQLiteDatabase {public void beginTransaction(){} public void endTransaction(){}
 public void setTransactionSuccessful(){}public void execSQL(String s){}public void execSQL(String s,Object[] a){}}
 ''')
+write("android/database/sqlite/SQLiteBlobTooBigException.java", '''
+package android.database.sqlite; public class SQLiteBlobTooBigException extends RuntimeException {}
+''')
 write("com/donglan/chrona/data/TaskRecord.java", 'package com.donglan.chrona.data; public class TaskRecord {}')
 write("com/donglan/chrona/data/EventCandidate.java", 'package com.donglan.chrona.data; public class EventCandidate {public long id,taskId;public Long calendarEventId;}')
 write("com/donglan/chrona/data/TaskStore.java", '''
@@ -123,7 +126,19 @@ if(restore){check(AndroidSyncData.applies==0,"old HTTP state applied after resto
 check(result[0].startsWith("备份恢复后自动同步已关闭"),"restore status overwritten");check(AndroidSyncData.text.equals("restored"),"restored edit overwritten");}
 else {check(AndroidSyncData.text.equals("during HTTP"),"local edit lost");check(AndroidSync.read(app).records().get(AndroidSyncData.ID).get(0).payload.optString("rawText").equals("during HTTP"),"local edit not persisted");}
 }
-public static void main(String[] a)throws Exception {try{scenario(false,false);scenario(true,false);scenario(true,true);System.out.println("Sync lock: 3 latch scenarios passed (production coordinator, real SyncState; network/DB adapters)");}finally{java.lang.reflect.Field f=AndroidSync.class.getDeclaredField("WORKER");f.setAccessible(true);((ExecutorService)f.get(null)).shutdownNow();}}}
+static void admission()throws Exception {
+ android.content.Context app=new android.content.Context(java.nio.file.Files.createTempDirectory("sync-admission-").toFile());
+ ExecutorService caller=Executors.newSingleThreadExecutor(); CountDownLatch done=new CountDownLatch(1); SyncExchange.reset();
+ try {
+  synchronized(AndroidSync.LOCK){
+   check(caller.submit(()->AndroidSync.request(app,s->done.countDown())).get(1,TimeUnit.SECONDS),"foreground must not wait for an import or sync applying data");
+   check(SyncExchange.entered.getCount()==1,"worker still waits before capture");
+  }
+  check(SyncExchange.entered.await(3,TimeUnit.SECONDS),"deferred capture ran");
+  SyncExchange.release.countDown(); check(done.await(3,TimeUnit.SECONDS),"deferred request completed");
+ }finally{SyncExchange.release.countDown();caller.shutdownNow();}
+}
+public static void main(String[] a)throws Exception {try{scenario(false,false);scenario(true,false);scenario(true,true);admission();System.out.println("Sync lock: 4 latch scenarios passed (production coordinator, real SyncState; network/DB adapters)");}finally{java.lang.reflect.Field f=AndroidSync.class.getDeclaredField("WORKER");f.setAccessible(true);((ExecutorService)f.get(null)).shutdownNow();}}}
 ''')
 sources = [str(p) for p in SRC.rglob("*.java")]
 subprocess.run([str(JAVA / "javac.exe"), f"-J-Djava.io.tmpdir={TEMPORARY}", "--release", "17", "-encoding", "UTF-8", "-cp", str(JSON), "-d", str(OUT), *sources], check=True)

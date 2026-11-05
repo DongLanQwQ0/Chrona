@@ -21,7 +21,10 @@ files = {
 'com/donglan/chrona/ZjuHomeworkStore.java': """package com.donglan.chrona;class ZjuHomeworkStore {
 static boolean enabled=true;static int applies;int source=1;static class State {boolean enabled;long generation=1;}
 ZjuHomeworkStore(android.content.Context c){}ZjuHomeworkStore(android.content.Context c,int source){this.source=source;}
-State state(){State s=new State();s.enabled=source==2?PtaSettingsStore.on:enabled;return s;}
+static volatile java.util.concurrent.CountDownLatch readEntered,readRelease;
+State state(){
+ if(source==2&&readEntered!=null){readEntered.countDown();try{if(!readRelease.await(4,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("read not released");}catch(InterruptedException e){throw new AssertionError(e);}}
+ State s=new State();s.enabled=source==2?PtaSettingsStore.on:enabled;return s;}
 java.util.Set<String> trackedCourses(String a,long g){return java.util.Set.of("tracked");}
 static class Result {int added=1,updated,completed;java.util.List<com.donglan.chrona.zju.ZjuSnapshot.Homework> newHomework=java.util.List.of(new com.donglan.chrona.zju.ZjuSnapshot.Homework());java.util.List<Long> newHomeworkIds=java.util.List.of(123L);}
 Result apply(String a,long g,java.util.List<com.donglan.chrona.zju.ZjuSnapshot.Homework> h){applies++;return new Result();}}""",
@@ -38,6 +41,7 @@ Result apply(String a,long g,java.util.List<com.donglan.chrona.zju.ZjuSnapshot.H
 import android.content.Context;import android.os.Handler;import com.donglan.chrona.zju.ZjuClient;import java.util.*;import java.util.concurrent.*;
 public class ZjuSyncCadenceCheck {
  static int checks;static void check(boolean ok,String label){checks++;if(!ok)throw new AssertionError(label);}
+ static void scheduled()throws Exception{ZjuSync.SCHEDULER.submit(()->{}).get(2,TimeUnit.SECONDS);Handler.flush();}
  static void idle()throws Exception{long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);java.lang.reflect.Field field=ZjuSync.class.getDeclaredField("runningScopes");field.setAccessible(true);for(;;){synchronized(ZjuSync.class){if(field.getInt(null)==0)break;}if(System.nanoTime()>until)throw new AssertionError("worker timeout");Thread.sleep(10);}Handler.flush();}
  static void due(long homeworkAgo,long courseAgo){long now=System.currentTimeMillis();ZjuSettingsStore.PREFS.data.put("homework_attempt",now-homeworkAgo);ZjuSettingsStore.PREFS.data.put("timetable_attempt",now-courseAgo);}
  public static void main(String[] args)throws Exception{Context c=new Context();try{
@@ -46,8 +50,8 @@ public class ZjuSyncCadenceCheck {
  due(120000,120000);long delay=ZjuSync.nextDelay(c,System.currentTimeMillis());check(delay>179000&&delay<=180000,"independent next homework due");
  ZjuHomeworkStore.enabled=false;delay=ZjuSync.nextDelay(c,System.currentTimeMillis());check(delay>1679000&&delay<=1680000,"disabled homework leaves course cadence");
  ZjuSettingsStore.table=false;check(ZjuSync.nextDelay(c,now)==-1,"both sources off cancels scheduling");ZjuHomeworkStore.enabled=true;ZjuSettingsStore.table=true;
- ZjuSettingsStore.on=false;ZjuSyncJobService.schedule(c);check(android.app.job.JobScheduler.INSTANCE.latest==null,"service off cancels job");ZjuSettingsStore.on=true;
- due(120000,120000);ZjuSyncJobService.schedule(c);var job=android.app.job.JobScheduler.INSTANCE.latest;check(job.delay>179000&&job.delay<=180000&&job.persisted&&job.network==1,"one-shot persisted connected job, not a clamped periodic job");
+ ZjuSettingsStore.on=false;ZjuSyncJobService.schedule(c);scheduled();check(android.app.job.JobScheduler.INSTANCE.latest==null,"service off cancels job");ZjuSettingsStore.on=true;
+ due(120000,120000);ZjuSyncJobService.schedule(c);scheduled();var job=android.app.job.JobScheduler.INSTANCE.latest;check(job.delay>179000&&job.delay<=180000&&job.persisted&&job.network==1,"one-shot persisted connected job, not a clamped periodic job");
  due(301000,120000);List<String> delivered=new ArrayList<>();check(ZjuSync.requestDue(c,delivered::add),"due homework accepted");idle();check(ZjuClient.calls.equals(List.of(1))&&ZjuHomeworkStore.applies==1&&ZjuTimetableStore.saves==0,"homework-only poll never fetches/saves timetable");check(delivered.size()==1&&HomeworkNotice.shows==1,"callback and new homework delivered");
  due(120000,1801000);ZjuClient.calls.clear();ZjuSync.requestDue(c,null);idle();check(ZjuClient.calls.equals(List.of(2))&&ZjuHomeworkStore.applies==1&&ZjuTimetableStore.saves==1,"course-only poll never applies empty homework");
  due(301000,1801000);ZjuClient.calls.clear();ZjuClient.failHomework=true;ZjuSync.requestDue(c,null);idle();check(ZjuClient.calls.equals(List.of(1,2))&&ZjuHomeworkStore.applies==1&&ZjuTimetableStore.saves==2,"homework failure preserves its data while course succeeds");ZjuClient.failHomework=false;
@@ -56,7 +60,7 @@ public class ZjuSyncCadenceCheck {
  due(301000,120000);ZjuClient.calls.clear();ZjuClient.entered=new CountDownLatch(1);ZjuClient.release=new CountDownLatch(1);ZjuSync.requestDue(c,null);check(ZjuClient.entered.await(2,TimeUnit.SECONDS),"homework worker entered");ZjuSync.request(c,delivered::add);check(delivered.size()==1,"full-refresh callback waits for queued course scope");ZjuClient.release.countDown();idle();check(ZjuClient.calls.equals(List.of(1,1,2))&&delivered.size()==2,"full manual request during homework poll retains missing course scope");ZjuClient.entered=null;
  due(301000,120000);ZjuClient.calls.clear();ZjuClient.entered=new CountDownLatch(1);ZjuClient.release=new CountDownLatch(1);ZjuSync.requestDue(c,null);check(ZjuClient.entered.await(2,TimeUnit.SECONDS),"second worker entered");ZjuSync.cancel();ZjuSync.request(c,null);ZjuClient.release.countDown();idle();check(ZjuClient.calls.equals(List.of(1,1,2)),"post-cancellation request is queued under a fresh epoch");ZjuClient.entered=null;
  int beforeWork=ZjuHomeworkStore.applies,beforeCourse=ZjuTimetableStore.saves;ZjuClient.calls.clear();List<String> manual=new ArrayList<>();due(120000,120000);check(ZjuSync.requestHomework(c,manual::add),"manual homework refresh bypasses cadence");idle();check(ZjuClient.calls.equals(List.of(1))&&ZjuHomeworkStore.applies==beforeWork+1&&ZjuTimetableStore.saves==beforeCourse&&manual.size()==1,"home refresh fetches only homework and returns callback");
- due(120000,120000);ZjuSync.foreground(c);check(Handler.delayed==1,"foreground continues checking while screen remains open");ZjuSync.background();check(Handler.delayed==0,"background removes foreground timer");
+ due(120000,120000);ZjuSync.foreground(c);scheduled();check(Handler.delayed==1,"foreground continues checking while screen remains open");ZjuSync.background();check(Handler.delayed==0,"background removes foreground timer");
  check(new ZjuSyncJobService().onStopJob(new android.app.job.JobParameters()),"system interruption requests reschedule");
  ZjuSettingsStore.on=false;ZjuSettingsStore.table=false;PtaSettingsStore.on=true;
  PtaSettingsStore.PREFS.data.clear();int schoolCalls=com.donglan.chrona.zju.ZjuClient.calls.size();
@@ -68,9 +72,27 @@ public class ZjuSyncCadenceCheck {
  check(com.donglan.chrona.zju.ZjuClient.calls.size()==schoolCalls,"PTA does not fetch disabled school");
  long ptaDelay=ZjuSync.nextDelay(c,System.currentTimeMillis());check(ptaDelay>290000&&ptaDelay<=300000,"PTA has independent five-minute clock");
  PtaSettingsStore.PREFS.expired=true;check(ZjuSync.nextDelay(c,System.currentTimeMillis())==-1,"expired PTA pauses automatic requests");
+ PtaSettingsStore.PREFS.expired=false;
+ // Hold a database read exactly where online PTA admission queries its binding.
+ // The simulated main thread must process lifecycle and JobService callbacks before release.
+ ZjuHomeworkStore.readEntered=new CountDownLatch(1);ZjuHomeworkStore.readRelease=new CountDownLatch(1);
+ ZjuSyncJobService.schedule(c);
+ check(ZjuHomeworkStore.readEntered.await(2,TimeUnit.SECONDS),"job scheduling reached blocked PTA state read");
+ ExecutorService main=Executors.newSingleThreadExecutor();
+ try {
+   main.submit(()->{
+     ZjuSync.foreground(c);
+     var service=new ZjuSyncJobService();var params=new android.app.job.JobParameters();
+     if(!service.onStartJob(params)||!service.onStopJob(params))throw new AssertionError("job callback contract");
+     ZjuSync.background();
+   }).get(1,TimeUnit.SECONDS);
+   check(true,"startup/resume and job stop return while PTA state read is blocked");
+ }finally{ZjuHomeworkStore.readRelease.countDown();main.shutdownNow();}
+ scheduled();
+ check(Handler.delayed==0,"old foreground check cannot rearm after background");
  PtaSettingsStore.on=false;
  System.out.println("PASS: "+checks+" production cadence/scope/queue/cancel/failure/lifecycle checks");
- }finally{ZjuSync.WORKER.shutdownNow();}}
+ }finally{ZjuSync.SCHEDULER.shutdownNow();ZjuSync.WORKER.shutdownNow();}}
 }'''
 }
 

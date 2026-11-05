@@ -81,7 +81,12 @@ class ZjuSettingsStore {
     void options(boolean enabled,boolean timetable){}String account(){return "fixture";}
     static final class Prefs {boolean getBoolean(String name,boolean fallback){return fallback;}}
 }
-class ZjuHomeworkStore {ZjuHomeworkStore(Context c){}void configure(String account,boolean enabled){}}
+class PtaSettingsStore {
+    final Prefs prefs=new Prefs();
+    PtaSettingsStore(Context c){}String account(){return "pta-fixture";}
+    static final class Prefs {Prefs edit(){return this;}Prefs putBoolean(String key,boolean value){return this;}void apply(){}}
+}
+class ZjuHomeworkStore {ZjuHomeworkStore(Context c){}ZjuHomeworkStore(Context c,int source){}void configure(String account,boolean enabled){}}
 
 class ChronaDataBackup {
     static final class Prepared {}

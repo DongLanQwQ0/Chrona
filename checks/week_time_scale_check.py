@@ -43,4 +43,4 @@ assert 'geometry.timeScale.minuteAt' in activity and 'geometry.y(minuteAtFocus)'
 home = (src / 'DashboardActivity.java').read_text(encoding='utf-8')
 assert 'PressFeedback.group(summary, PressFeedback.CARD_PRESSED_SCALE)' in home
 assert 'details.setAddStatesFromChildren(true)' in home
-assert 'PressFeedback.edgeSpace(b - t)' in home
+assert 'PressFeedback.edgeSpace(getMeasuredHeight())' in home

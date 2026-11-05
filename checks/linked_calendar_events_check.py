@@ -40,6 +40,7 @@ def member(source, signature):
 adapters = {
     'android/content/Context.java', 'android/content/ContentValues.java',
     'android/database/Cursor.java', 'android/database/sqlite/SQLiteDatabase.java',
+    'android/database/sqlite/SQLiteStatement.java', 'android/database/sqlite/SQLiteDoneException.java',
 }
 tree = ast.parse((ROOT / 'checks/candidate_merge_check.py').read_text(encoding='utf-8'))
 found = set()

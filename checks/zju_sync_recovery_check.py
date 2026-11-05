@@ -16,7 +16,7 @@ def write(path, content):
     target.write_text(content, encoding='utf-8')
 
 write('com/donglan/chrona/AndroidSync.java', 'package com.donglan.chrona;class AndroidSync {static final Object LOCK=new Object();}')
-write('com/donglan/chrona/ZjuHomeworkPlanner.java', 'package com.donglan.chrona;class ZjuHomeworkPlanner {static void cancel(){}static void cancelPending(android.content.Context c){}}')
+write('com/donglan/chrona/ZjuHomeworkPlanner.java', 'package com.donglan.chrona;class ZjuHomeworkPlanner {static void cancel(int source){}static void cancelPending(android.content.Context c){}}')
 write('com/donglan/chrona/ZjuExamStore.java', 'package com.donglan.chrona;class ZjuExamStore {static int cleared;ZjuExamStore(android.content.Context c){}void clear(){cleared++;}}')
 
 write('android/text/Html.java', '''package android.text;public class Html {public static final int FROM_HTML_MODE_LEGACY=0;public static String fromHtml(String s,int flags){return s.replaceAll("<[^>]*>","");}}''')

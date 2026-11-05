@@ -48,13 +48,17 @@ final class HeaderActionGroup extends LinearLayout {
     }
 
     void setActionVisible(View view,boolean visible) {
+        setActionVisible(view,visible,true);
+    }
+
+    void setActionVisible(View view,boolean visible,boolean animate) {
         Action action=actions.get(view);if(action==null)throw new IllegalArgumentException("Unknown header action");
         view.setClickable(visible);view.setFocusable(visible);
         view.setImportantForAccessibility(visible?IMPORTANT_FOR_ACCESSIBILITY_AUTO:IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         if(action.visible==visible&&isLaidOut())return;
         action.visible=visible;if(action.motion!=null){action.motion.cancel();action.motion=null;}
         float target=visible?1f:0f;
-        if(!isAttachedToWindow()||!isLaidOut()||!UiMotion.isEnabled()){apply(action,target);return;}
+        if(!animate||!isAttachedToWindow()||!isLaidOut()||!UiMotion.isEnabled()){apply(action,target);return;}
         action.motion=android.animation.ValueAnimator.ofFloat(action.progress,target);
         action.motion.setDuration(visible?UiMotion.ENTER:UiMotion.EXIT);action.motion.setInterpolator(UiMotion.SETTLE);
         action.motion.addUpdateListener(animation->apply(action,(float)animation.getAnimatedValue()));action.motion.start();

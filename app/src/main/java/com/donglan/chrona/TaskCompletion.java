@@ -14,6 +14,7 @@ import java.util.Set;
 
 /** Completion is local-first; linked calendar alerts are reconciled without deleting event history. */
 final class TaskCompletion {
+    record Result(boolean changed, String warning) { }
     private static final String PENDING = "pending";
     private static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences("task_completion_alerts", Context.MODE_PRIVATE);
@@ -22,7 +23,10 @@ final class TaskCompletion {
         return set(context,id,taskId,completed,-1);
     }
     static String set(Context context, EventCandidate candidate, boolean completed) throws Exception {
-        if (candidate.repeatRule == null) return set(context, candidate.id, candidate.taskId, completed);
+        return apply(context, candidate, completed).warning();
+    }
+    static Result apply(Context context, EventCandidate candidate, boolean completed) throws Exception {
+        if (candidate.repeatRule == null) return apply(context, candidate.id, candidate.taskId, completed, -1);
         if (candidate.occurrenceAtMillis == null) throw new IllegalArgumentException("请选择具体一次待办");
         try (TaskStore store = new TaskStore(context)) {
             List<EventCandidate> rows = store.getCandidatesByIds(List.of(candidate.id));
@@ -34,14 +38,20 @@ final class TaskCompletion {
             RepeatActions.change(context, series.taskId, series.id, CandidateEditBaseline.of(series),
                     completed ? "complete" : "reopen", candidate.occurrenceAtMillis, null, null);
         }
-        return null;
+        return new Result(candidate.completed() != completed, null);
     }
     static String set(Context context, long id, long taskId, boolean completed, long expectedRevision) {
+        return apply(context, id, taskId, completed, expectedRevision).warning();
+    }
+    private static Result apply(Context context, long id, long taskId, boolean completed, long expectedRevision) {
         synchronized (AndroidSync.LOCK) {
             try (TaskStore store = new TaskStore(context)) {
                 if (expectedRevision >= 0 && store.dataRevision() != expectedRevision) throw new java.util.ConcurrentModificationException();
-                for (EventCandidate candidate : store.getCandidatesByIds(List.of(id)))
+                boolean changed = false;
+                for (EventCandidate candidate : store.getCandidatesByIds(List.of(id))) {
                     if (candidate.repeatRule != null) throw new IllegalArgumentException("请选择具体一次待办");
+                    changed = candidate.completed() != completed;
+                }
                 if (!store.setCandidateCompleted(id, taskId, completed)) throw new IllegalStateException("待办已不存在或正在处理");
                 if (!completed) {
                     for (EventCandidate candidate : store.getCandidatesByIds(List.of(id)))
@@ -50,7 +60,7 @@ final class TaskCompletion {
                 enqueue(context, id);
                 String warning = reconcile(context, store, id);
                 AgendaReminder.requestRefresh(context);
-                return warning;
+                return new Result(changed, warning);
             }
         }
     }

@@ -7,13 +7,15 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
 
 /** A pager whose content tracks the finger, then visibly settles on the selected page. */
 final class CandidatePagerScrollView extends HorizontalScrollView {
     private final int touchSlop;
     private final int systemEdgeInset;
-    private int pageWidth;
+    private int pageWidth = 1;
     private int pageCount;
+    private int resizingPage = -1;
     private float downX;
     private float downY;
     /** Where the drag itself starts: the touch slop is consumed instead of being applied. */
@@ -38,9 +40,36 @@ final class CandidatePagerScrollView extends HorizontalScrollView {
         setOverScrollMode(OVER_SCROLL_NEVER);
     }
 
-    void setPages(int pageWidth, int pageCount) {
-        this.pageWidth = Math.max(1, pageWidth);
+    void setPageCount(int pageCount) {
         this.pageCount = Math.max(1, pageCount);
+    }
+
+    int pageWidth() { return pageWidth; }
+    boolean isResizing() { return resizingPage >= 0; }
+
+    @Override protected void onMeasure(int widthSpec, int heightSpec) {
+        int available = MeasureSpec.getSize(widthSpec) - getPaddingLeft() - getPaddingRight();
+        if (available > 0 && available != pageWidth && getChildAt(0) instanceof LinearLayout pages) {
+            if (resizingPage < 0) resizingPage = clamp(Math.round(getScrollX() / (float) pageWidth));
+            if (settleAnimator != null) settleAnimator.cancel();
+            finishTracking();
+            pageWidth = available;
+            for (int i = 0; i < pages.getChildCount(); i++) {
+                View slot = pages.getChildAt(i);
+                slot.getLayoutParams().width = pageWidth;
+                slot.forceLayout();
+            }
+            pages.forceLayout();
+        }
+        super.onMeasure(widthSpec, heightSpec);
+    }
+
+    @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
+        super.onLayout(changed, l, t, r, b);
+        if (resizingPage < 0) return;
+        int page = resizingPage;
+        resizingPage = -1;
+        scrollTo(page * pageWidth, 0);
     }
 
     void addGesturePriorityChild(View child) {

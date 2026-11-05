@@ -63,6 +63,7 @@ public final class SQLiteDatabase implements AutoCloseable {
  public void execSQL(String sql){execute(sql,null);}
  public void execSQL(String sql,Object[] args){execute(sql,args);}
  public Cursor rawQuery(String sql,String[] args){return new Cursor(execute(sql,args));}
+ public SQLiteStatement compileStatement(String sql){return new SQLiteStatement(this,sql);}
  public Cursor query(String table,String[] columns,String where,String[] args,String group,String having,String order){return query(table,columns,where,args,group,having,order,null);}
  public Cursor query(String table,String[] columns,String where,String[] args,String group,String having,String order,String limit){String sql="SELECT "+(columns==null?"*":String.join(",",columns))+" FROM "+table;if(where!=null)sql+=" WHERE "+where;if(group!=null)sql+=" GROUP BY "+group;if(having!=null)sql+=" HAVING "+having;if(order!=null)sql+=" ORDER BY "+order;if(limit!=null)sql+=" LIMIT "+limit;return rawQuery(sql,args);}
  public long insertOrThrow(String table,String ignored,ContentValues values){String sql="INSERT INTO "+table+" ("+String.join(",",values.keySet())+") VALUES ("+String.join(",",Collections.nCopies(values.size(),"?"))+")";return execute(sql,values.values().toArray()).getLong("id");}
@@ -76,6 +77,22 @@ public final class SQLiteDatabase implements AutoCloseable {
  public void setVersion(int version){execSQL("PRAGMA user_version="+version);}
  public boolean isOpen(){return worker.isAlive();}
  public void close(){try{output.close();worker.waitFor();}catch(Exception error){throw new IllegalStateException(error);}}
+}
+''')
+write('android/database/sqlite/SQLiteDoneException.java', '''
+package android.database.sqlite;
+public final class SQLiteDoneException extends RuntimeException {}
+''')
+write('android/database/sqlite/SQLiteStatement.java', '''
+package android.database.sqlite;
+import android.database.Cursor;
+public final class SQLiteStatement implements AutoCloseable {
+ private final SQLiteDatabase db;private final String sql;
+ private final java.util.ArrayList<String> args=new java.util.ArrayList<>();
+ SQLiteStatement(SQLiteDatabase db,String sql){this.db=db;this.sql=sql;}
+ public void bindString(int index,String value){while(args.size()<index)args.add(null);args.set(index-1,value);}
+ public String simpleQueryForString(){try(Cursor cursor=db.rawQuery(sql,args.toArray(new String[0]))){if(!cursor.moveToFirst())throw new SQLiteDoneException();return cursor.getString(0);}}
+ public void close(){}
 }
 ''')
 write('android/database/sqlite/SQLiteOpenHelper.java', '''

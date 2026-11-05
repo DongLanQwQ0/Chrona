@@ -125,6 +125,7 @@ public class DashboardRefreshCheck {
  void candidateRow(LinearLayout target,EventCandidate item,int i){if(i==throwAt)throw new RuntimeException("view creation failed");target.rows++;}
  void scheduleDayHeading(String day){results.headings++;}
  void schedulePageControls(int total){results.footer++;}
+ void prepareHomeworkFocus(ScrollView viewport, LinearLayout rows, Map<Long,Object> locations){}
  void updateResults(){updates++;resultMotionGeneration++;results.rows=2;}
  void updatePendingCounts(int review,int failed){check(!sectionVersions.containsKey(SCHEDULE),"counts applied before revision bookkeeping");pendingReview=review;pendingFailed=failed;countUpdates++;}
  __METHODS__

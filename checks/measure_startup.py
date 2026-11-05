@@ -4,11 +4,13 @@ Uses the already-installed APK. Force-stop interrupts any current app work, so r
 on a test device after processing has finished. No installation or data clearing.
 """
 import argparse
+from contextlib import contextmanager
 import json
 import math
 import re
 import statistics
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -81,33 +83,52 @@ def main():
                                 capture_output=True, timeout=40, check=True)
         return result.stdout
 
-    def logs():
-        return adb("logcat", "-d", "-v", "threadtime", "-t", "500",
-                   "-s", "ActivityTaskManager:I", "ChronaStartup:I").splitlines()
+    @contextmanager
+    def logs(since):
+        # Stream, rather than repeatedly reading an OEM ring buffer that may
+        # overwrite Displayed while the first usable content is still pending.
+        proc = subprocess.Popen([args.adb, "-s", args.serial, "logcat", "-v", "threadtime",
+                                 "-T", since, "-s", "ActivityTaskManager:I", "ChronaStartup:I"],
+                                text=True, encoding="utf-8", errors="replace",
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        lines = []
+        def collect():
+            for line in proc.stdout:
+                if "content_ready" in line or re.search(r"(?:Displayed|Fully drawn) " + COMPONENT, line):
+                    lines.append(line)
+        reader = threading.Thread(target=collect, daemon=True)
+        reader.start()
+        try:
+            yield lines
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+            reader.join(timeout=5)
+            proc.stdout.close()
 
     samples = []
     for index in range(args.samples):
         # Remove the old Activity/process before taking the log boundary, not inside start -S.
         adb("shell", "am", "force-stop", PACKAGE)
-        before = set(logs())
+        since = adb("shell", "date", "+%Y-%m-%d_%H:%M:%S.%3N").strip().replace("_", " ")
         token = time.time_ns()
-        output = adb("shell", "am", "start", "-W", "-n",
-                     PACKAGE + "/.DashboardActivity", "-a", "android.intent.action.MAIN",
-                     "-c", "android.intent.category.LAUNCHER", "--el",
-                     "startup_measurement", str(token))
-        if "Status: ok" not in output:
-            raise RuntimeError("Activity launch failed: " + output.strip())
-        sample = {"run": index + 1, "fully_drawn_ms": None}
-        total = re.search(r"TotalTime:\s*(\d+)", output)
-        sample["initial_display_ms"] = int(total[1]) if total else None
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            fresh = [line for line in logs() if line not in before]
-            measured = measurement_from_logs(fresh, token)
-            if measured:
-                sample.update(measured)
-                break
-            time.sleep(.1)
+        with logs(since) as fresh:
+            output = adb("shell", "am", "start", "-W", "-n",
+                         PACKAGE + "/.DashboardActivity", "-a", "android.intent.action.MAIN",
+                         "-c", "android.intent.category.LAUNCHER", "--el",
+                         "startup_measurement", str(token))
+            if "Status: ok" not in output:
+                raise RuntimeError("Activity launch failed: " + output.strip())
+            sample = {"run": index + 1, "fully_drawn_ms": None}
+            total = re.search(r"TotalTime:\s*(\d+)", output)
+            sample["initial_display_ms"] = int(total[1]) if total else None
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                measured = measurement_from_logs(fresh[:], token)
+                if measured:
+                    sample.update(measured)
+                    break
+                time.sleep(.1)
         if sample["fully_drawn_ms"] is None:
             sample["error"] = "No matching ready-content and system Fully drawn pair; unverified"
         samples.append(sample)

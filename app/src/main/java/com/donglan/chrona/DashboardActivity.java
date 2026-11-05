@@ -175,9 +175,9 @@ public final class DashboardActivity extends Activity {
     private final Runnable deferredSectionRefresh = this::refreshSettledSection;
     private final DashboardCardReconciler completionRows = new DashboardCardReconciler();
     private final Set<Long> completingCandidates = new HashSet<>();
-    private final Set<Long> awaitingCompletionRows = new HashSet<>();
+    private final Set<String> confirmingActivities = new HashSet<>();
+    private final Map<Long, String> awaitingCompletionRows = new LinkedHashMap<>();
     private boolean completionRefreshRunning, completionRefreshPending;
-    private int completionMotionGeneration;
     private final Runnable homeCalendarToggleRefresh = this::refreshSystemCalendar;
     /** Entries waiting for review or already failed; shown on the dock and on the inbox filters. */
     private int pendingReview;
@@ -196,6 +196,7 @@ public final class DashboardActivity extends Activity {
     private Runnable scheduleBuildDone;
     private final Runnable scheduleBuildFrame = this::buildScheduleResultFrame;
     private String snapshot = "";
+    private boolean revisionReadRunning;
     private int restoredScrollY;
     private List<ElapsedLabel> elapsedLabels = new ArrayList<>();
     private final Handler refresh = new Handler(Looper.getMainLooper());
@@ -436,10 +437,9 @@ public final class DashboardActivity extends Activity {
         if (!previewRender && !sectionAcrylicSurfaces.isEmpty()) collectSectionSurfaces();
     }
 
-    private void refreshActivePageIfNeeded() {
-        if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending) return;
+    private void refreshActivePageIfNeeded(String version) {
+        if (completionRefreshRunning || completionActionRunning() || completionRefreshPending) return;
         if (section == SCHEDULE && scheduleResultLoading) return;
-        String version = dataSnapshot();
         if (dirtySections.contains(section) || !version.equals(sectionVersions.get(section))) {
             if (section == HOME || section == SCHEDULE && scheduleSource != 1 && results != null) {
                 refreshCompletionRows();
@@ -755,10 +755,33 @@ public final class DashboardActivity extends Activity {
     }
 
     private void resumeDashboard() {
-        refreshActivePageIfNeeded();
-        snapshot = dataSnapshot();
+        requestActivePageRefresh();
         finishResume();
         switchToPendingSection();
+    }
+
+    private void requestActivePageRefresh() {
+        if (revisionReadRunning) return;
+        revisionReadRunning = true;
+        int generation = resumeGeneration;
+        int destination = section;
+        String observed = snapshot;
+        startupReader.execute(() -> {
+            long revision = -1;
+            try (TaskStore store = new TaskStore(getApplicationContext())) {
+                revision = store.dataRevision();
+            } catch (RuntimeException unavailable) { /* The next refresh retries. */ }
+            long result = revision;
+            refresh.post(() -> {
+                revisionReadRunning = false;
+                if (result < 0 || !foreground || isDestroyed() || generation != resumeGeneration
+                        || destination != section || !observed.equals(snapshot)
+                        || pageTransitionRunning || dragTargetLoaded || sectionLoadRunning) return;
+                String current = snapshotForRevision(result);
+                refreshActivePageIfNeeded(current);
+                snapshot = current;
+            });
+        });
     }
 
     private void finishResume() {
@@ -823,7 +846,7 @@ public final class DashboardActivity extends Activity {
             if (recovered > 0) refresh.post(() -> {
                 if (!foreground || isDestroyed()) return;
                 Feedback.showLong(this, recovered + " 条解析已中断，请在收件箱重试");
-                if (!pageTransitionRunning && !dragTargetLoaded) refreshActivePageIfNeeded();
+                if (!pageTransitionRunning && !dragTargetLoaded) requestActivePageRefresh();
             });
         });
     }
@@ -879,20 +902,14 @@ public final class DashboardActivity extends Activity {
                 auditPollExpected, auditBegan);
         auditLastPoll = auditBegan;
         try {
-            if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending
+            if (completionRefreshRunning || completionActionRunning() || completionRefreshPending
                     || scheduleResultLoading || sectionLoadRunning || pageTransitionRunning || dragTargetLoaded
                     || (navigation != null && navigation.isAnimating())) {
                 auditPollExpected = 500L;
                 refresh.postDelayed(poll, 500L); return;
             }
             if (section == HOME || (section == SCHEDULE && scheduleSource == 1)) refreshSystemCalendar();
-            String current = dataSnapshot();
-            if (dirtySections.contains(section) || !current.equals(snapshot)) {
-                if (!pageTransitionRunning && !dragTargetLoaded) {
-                    refreshActivePageIfNeeded();
-                    snapshot = current;
-                }
-            }
+            requestActivePageRefresh();
             auditPollExpected = 5000L;
             refresh.postDelayed(poll, 5000L);
         } finally {
@@ -966,7 +983,7 @@ public final class DashboardActivity extends Activity {
                     dirtySections.add(HOME);
                     dirtySections.add(SCHEDULE);
                     if (section == SCHEDULE && scheduleSource == 1) {
-                        if (completionRefreshRunning || !completingCandidates.isEmpty()
+                        if (completionRefreshRunning || completionActionRunning()
                                 || pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
                                 || (navigation != null && navigation.isAnimating())) {
                             scheduleRefreshPending = true;
@@ -983,7 +1000,7 @@ public final class DashboardActivity extends Activity {
 
     private void refreshHomeContent() {
         if (section != HOME || previewRender) return;
-        if (completionRefreshRunning || !completingCandidates.isEmpty() || completionRefreshPending) {
+        if (completionRefreshRunning || completionActionRunning() || completionRefreshPending) {
             // A calendar result may arrive after the local rows have been built but
             // before their transition finishes. That completion drains this queue,
             // not homeRefreshPending; otherwise the new courses wait for re-entry.
@@ -1499,11 +1516,47 @@ public final class DashboardActivity extends Activity {
         }
     }
 
+    private final class HomeTodoCard extends LinearLayout implements DashboardCardReconciler.BoundBranch {
+        HomeTodoSummary data;
+        java.util.function.Consumer<HomeTodoSummary> bind;
+        boolean expanding;
+        boolean reflowing;
+        View pendingToggle;
+
+        HomeTodoCard(HomeTodoSummary data) {
+            super(DashboardActivity.this);
+            this.data = data;
+            setOrientation(VERTICAL);
+            UiStyle.card(this);
+            setTag("home-todos");
+        }
+
+        @Override public int bindFrom(View incoming) {
+            bind.accept(((HomeTodoCard) incoming).data);
+            return 2; // The heading and counters stay mounted; reconcile only the focus list.
+        }
+
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            super.onMeasure(widthSpec, heightSpec);
+            // Resolve the press envelope in the same measure pass as the changing list height.
+            // A layout listener would request another layout after ChangeBounds captured its end.
+            int clearance = PressFeedback.edgeSpace(getMeasuredHeight());
+            LinearLayout.LayoutParams margins = (LinearLayout.LayoutParams) getLayoutParams();
+            margins.topMargin = dp(4) + clearance;
+            margins.bottomMargin = dp(14) + clearance;
+        }
+    }
+
+    private boolean homeTodoExpanding() {
+        HomeTodoCard card = content.findViewWithTag("home-todos");
+        return card != null && card.expanding;
+    }
+
     private void showHomeTodos(HomeTodoSummary todos, long now, ZoneId zone) {
         android.content.SharedPreferences preferences = getSharedPreferences("home_timeline", MODE_PRIVATE);
         boolean[] expanded = {preferences.getBoolean("todos_expanded", false)};
         android.animation.ValueAnimator[] expansion = {null};
-        LinearLayout summary = card();
+        HomeTodoCard summary = new HomeTodoCard(todos);
         completionRows.branch(summary, "home-todos");
         UiStyle.cardInset(summary);
         summary.setClipChildren(false);
@@ -1520,12 +1573,12 @@ public final class DashboardActivity extends Activity {
         all.setContentDescription("查看全部未完成待办，共 " + todos.total + " 项");
         all.setOnClickListener(view -> openHomeTodos(ScheduleQuery.TODO_OPEN, false));
         UiStyle.pressable(all);
-        int actionWidth=dp(todos.focus.isEmpty()?56:105);
         LinearLayout heading = new LinearLayout(this) {
             @Override protected void onMeasure(int widthSpec,int heightSpec) {
                 int available=View.MeasureSpec.getSize(widthSpec)-getPaddingLeft()-getPaddingRight();
                 float required=title.getPaint().measureText(title.getText().toString())
-                        +all.getPaint().measureText(all.getText().toString())+all.getPaddingLeft()+all.getPaddingRight()+actionWidth;
+                        +all.getPaint().measureText(all.getText().toString())+all.getPaddingLeft()+all.getPaddingRight()
+                        +dp(summary.data.focus.isEmpty()?56:105);
                 LinearLayout.LayoutParams params=(LinearLayout.LayoutParams)all.getLayoutParams();
                 params.width=available>0&&required>available
                         ?(int)Math.ceil(all.getPaint().measureText("全部"))+all.getPaddingLeft()+all.getPaddingRight():-2;
@@ -1553,7 +1606,7 @@ public final class DashboardActivity extends Activity {
         disclosure.setPadding(dp(12), dp(12), dp(12), dp(12));
         disclosure.setBackgroundColor(Color.TRANSPARENT);
         UiStyle.pressable(disclosure);
-        if(!todos.focus.isEmpty())todoActions.addAction(disclosure,48);
+        todoActions.addAction(disclosure,48);
         todoActions.finish();
         LinearLayout.LayoutParams todoActionParams=new LinearLayout.LayoutParams(-2,dp(48));
         todoActionParams.leftMargin=dp(8);
@@ -1562,11 +1615,11 @@ public final class DashboardActivity extends Activity {
 
         LinearLayout counts = new LinearLayout(this);
         counts.setGravity(Gravity.CENTER_VERTICAL);
-        addHomeTodoCount(counts, "今日截止", todos.todayDue,
+        java.util.function.IntConsumer todayCount = addHomeTodoCount(counts, "今日截止",
                 () -> openHomeTodos(ScheduleQuery.TODO_TODAY_DUE, false));
-        addHomeTodoCount(counts, "已逾期", todos.overdue,
+        java.util.function.IntConsumer overdueCount = addHomeTodoCount(counts, "已逾期",
                 () -> openHomeTodos(ScheduleQuery.TODO_OVERDUE, false));
-        addHomeTodoCount(counts, "待安排", todos.unscheduled,
+        java.util.function.IntConsumer unscheduledCount = addHomeTodoCount(counts, "待安排",
                 () -> openHomeTodos(ScheduleQuery.TODO_ANY, true));
         UiStyle.addSpaced(summary, counts, 0, 0);
         LinearLayout details = new LinearLayout(this);
@@ -1618,19 +1671,24 @@ public final class DashboardActivity extends Activity {
         disclosureIcon.setLevel(expanded[0] ? 10000 : 0);
         Runnable describeExpansion = () -> {
             String action = expanded[0] ? "收起重点待办" : "展开重点待办";
-            title.setContentDescription("待办，共 " + todos.total + " 项，" + action);
+            title.setContentDescription("待办，共 " + summary.data.total + " 项"
+                    + (summary.data.focus.isEmpty() ? "" : "，" + action));
             disclosure.setContentDescription(action);
         };
         describeExpansion.run();
         View.OnClickListener toggle = view -> {
-            View owner=view;
-            while(owner.findViewWithTag("home-todo-details")==null)owner=(View)owner.getParent();
-            LinearLayout liveDetails = owner.findViewWithTag("home-todo-details");
+            if (summary.data.focus.isEmpty()) return;
+            if (summary.reflowing) {
+                summary.pendingToggle = summary.pendingToggle == null ? view : null;
+                return;
+            }
+            LinearLayout liveDetails = details;
             expanded[0] = !expanded[0];
             preferences.edit().putBoolean("todos_expanded", expanded[0]).apply();
             describeExpansion.run();
             android.animation.ValueAnimator previous = expansion[0];
             expansion[0] = null;
+            summary.expanding = false;
             if (previous != null) previous.cancel();
             View actualSummary = (View) liveDetails.getParent();
             int detailsWidth = actualSummary.getWidth() - actualSummary.getPaddingLeft() - actualSummary.getPaddingRight();
@@ -1655,6 +1713,7 @@ public final class DashboardActivity extends Activity {
             liveDetails.setClipChildren(true);
             android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
             expansion[0] = animator;
+            summary.expanding = true;
             animator.setDuration(expanded[0] ? UiMotion.ENTER : UiMotion.EXIT);
             animator.setInterpolator(UiMotion.SETTLE);
             animator.addUpdateListener(value -> {
@@ -1668,6 +1727,7 @@ public final class DashboardActivity extends Activity {
                 @Override public void onAnimationEnd(android.animation.Animator animation) {
                     if (expansion[0] != animator) return;
                     expansion[0] = null;
+                    summary.expanding = false;
                     liveDetails.setVisibility(expanded[0] ? View.VISIBLE : View.GONE);
                     liveDetails.getLayoutParams().height = -2;
                     liveDetails.setAlpha(1f);
@@ -1678,14 +1738,23 @@ public final class DashboardActivity extends Activity {
             });
             animator.start();
         };
-        if (todos.focus.isEmpty()) {
-            disclosure.setVisibility(View.GONE);
-            title.setContentDescription("待办，共 " + todos.total + " 项");
-        } else {
-            title.setOnClickListener(toggle);
-            disclosure.setOnClickListener(toggle);
-            UiStyle.pressable(title);
-        }
+        title.setOnClickListener(toggle);
+        disclosure.setOnClickListener(toggle);
+        UiStyle.pressable(title);
+        summary.bind = value -> {
+            summary.data = value;
+            String total = "待办 · " + value.total;
+            if (!total.contentEquals(title.getText())) title.setText(total);
+            all.setContentDescription("查看全部未完成待办，共 " + value.total + " 项");
+            todayCount.accept(value.todayDue);
+            overdueCount.accept(value.overdue);
+            unscheduledCount.accept(value.unscheduled);
+            title.setClickable(!value.focus.isEmpty());
+            title.setFocusable(!value.focus.isEmpty());
+            todoActions.setActionVisible(disclosure, !value.focus.isEmpty(), false);
+            describeExpansion.run();
+        };
+        summary.bind.accept(todos);
         PressFeedback.group(heading, 1f);
         heading.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View view) { }
@@ -1697,32 +1766,29 @@ public final class DashboardActivity extends Activity {
         details.setAddStatesFromChildren(true);
         PressFeedback.group(summary, PressFeedback.CARD_PRESSED_SCALE);
         UiStyle.addSpaced(content, summary, 4, 14);
-        summary.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> {
-            int clearance = PressFeedback.edgeSpace(b - t);
-            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) summary.getLayoutParams();
-            int top = dp(4) + clearance, bottom = dp(14) + clearance;
-            if (params.topMargin != top || params.bottomMargin != bottom) {
-                params.topMargin = top; params.bottomMargin = bottom; summary.setLayoutParams(params);
-            }
-        });
     }
 
-    private void addHomeTodoCount(LinearLayout parent, String label, int count, Runnable action) {
+    private java.util.function.IntConsumer addHomeTodoCount(LinearLayout parent, String label, Runnable action) {
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setGravity(Gravity.CENTER);
         cell.setPadding(dp(3), dp(7), dp(3), dp(7));
-        TextView number = text(Integer.toString(count), 17, true);
+        TextView number = text("", 17, true);
         number.setIncludeFontPadding(false);
-        number.setTextColor(count > 0 ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
         cell.addView(number);
         TextView caption = text(label, 12, false);
         caption.setIncludeFontPadding(false);
         UiStyle.addSpaced(cell, caption, 5, 0);
-        cell.setContentDescription(label + "，" + count + " 项，点击查看");
         cell.setOnClickListener(view -> action.run());
         UiStyle.pressable(cell);
         parent.addView(cell, new LinearLayout.LayoutParams(0, -2, 1));
+        return count -> {
+            String value = Integer.toString(count);
+            if (value.contentEquals(number.getText())) return;
+            number.setText(value);
+            number.setTextColor(count > 0 ? UiStyle.colors(this).primary : UiStyle.colors(this).muted);
+            cell.setContentDescription(label + "，" + count + " 项，点击查看");
+        };
     }
 
     private String homeTodoWhen(EventCandidate candidate, long now, ZoneId zone) {
@@ -1931,6 +1997,7 @@ public final class DashboardActivity extends Activity {
 
     private void showUpcomingCarousel(List<HomeTimelineEntry> upcoming) {
         TextView heading = text("下一件事", 15, true);
+        completionRows.row(heading, "upcoming-heading", "");
         UiStyle.addSpaced(content, heading, 0, 6);
         upcoming.sort(java.util.Comparator.comparingLong(item -> item.timestampMillis));
         if (upcoming.size() > 5) upcoming = new ArrayList<>(upcoming.subList(0, 5));
@@ -1950,6 +2017,7 @@ public final class DashboardActivity extends Activity {
         cards.setPadding(dp(8), dp(6), dp(8), dp(6));
         if (upcoming.isEmpty()) {
             LinearLayout empty = card();
+            completionRows.row(empty, "upcoming-empty", "");
             empty.setPadding(dp(14), dp(12), dp(14), dp(12));
             empty.addView(text("暂无即将开始或进行中的安排", 14, false));
             cards.addView(empty, new LinearLayout.LayoutParams(dp(240), -2));
@@ -2520,6 +2588,7 @@ public final class DashboardActivity extends Activity {
                     + day.format(java.time.format.DateTimeFormatter.ofPattern("M月d日", Locale.CHINA));
         }
         TextView heading = text(label, 15, true);
+        completionRows.row(heading, "schedule-day:" + date, label);
         heading.setTextColor(UiStyle.colors(this).primary);
         UiStyle.addSpaced(results, heading, results.getChildCount() == 1 ? 4 : 12, 5);
     }
@@ -2954,7 +3023,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private ImageButton taskCompletionButton(EventCandidate candidate) {
-        ImageButton done = new ImageButton(this);
+        CompletionButton done = new CompletionButton(this);
         long now = System.currentTimeMillis();
         boolean overdue = candidate.overdue(now);
         done.setImageResource(candidate.completed() ? R.drawable.ic_todo_check
@@ -2968,18 +3037,24 @@ public final class DashboardActivity extends Activity {
         UiStyle.acrylicChoice(done, candidate.completed(), UiStyle.RADIUS_PILL, false);
         UiStyle.pressable(done);
         done.setOnClickListener(view -> {
-            if (awaitingCompletionRows.contains(candidate.id)) return;
+            if (awaitingCompletionRows.containsKey(candidate.id)) return;
             if (!completingCandidates.add(candidate.id)) return;
             done.setEnabled(false);
             new Thread(() -> {
                 try {
-                    String warning = TaskCompletion.set(getApplicationContext(), candidate, !candidate.completed());
+                    boolean completed = !candidate.completed();
+                    TaskCompletion.Result result = TaskCompletion.apply(getApplicationContext(), candidate, completed);
                     runOnUiThread(() -> {
                         if (isDestroyed() || isFinishing()) return;
-                        awaitingCompletionRows.add(candidate.id);
-                        completingCandidates.remove(candidate.id);
-                        refreshCompletionRows();
-                        if (warning != null) Feedback.show(this, warning);
+                        Runnable settled = () -> {
+                            if (isDestroyed() || isFinishing()) return;
+                            awaitingCompletionRows.put(candidate.id, completionKey(candidate, null));
+                            completingCandidates.remove(candidate.id);
+                            refreshCompletionRows();
+                            if (result.warning() != null) Feedback.show(this, result.warning());
+                        };
+                        if (completed && result.changed()) done.reward(true, settled);
+                        else settled.run();
                     });
                 } catch (Exception error) {
                     runOnUiThread(() -> {
@@ -2996,7 +3071,7 @@ public final class DashboardActivity extends Activity {
     }
 
     private ImageButton activityAcknowledgementButton(String key, long until) {
-        ImageButton confirmed = new ImageButton(this);
+        CompletionButton confirmed = new CompletionButton(this);
         confirmed.setPadding(dp(12), dp(12), dp(12), dp(12));
         Runnable update = () -> {
             boolean checked = AgendaAcknowledgement.isAcknowledged(this, key);
@@ -3011,11 +3086,26 @@ public final class DashboardActivity extends Activity {
         update.run();
         UiStyle.pressable(confirmed);
         confirmed.setOnClickListener(view -> {
-            AgendaAcknowledgement.set(this, key, until, !AgendaAcknowledgement.isAcknowledged(this, key));
+            if (until <= System.currentTimeMillis()) { refreshCompletionRows(); return; }
+            if (confirmingActivities.contains(key)) return;
+            boolean checked = !AgendaAcknowledgement.isAcknowledged(this, key);
+            AgendaAcknowledgement.set(this, key, until, checked);
             update.run();
-            refreshCompletionRows();
+            if (checked) {
+                confirmingActivities.add(key);
+                confirmed.setEnabled(false);
+                confirmed.reward(false, () -> {
+                    confirmingActivities.remove(key);
+                    confirmed.setEnabled(true);
+                    if (!isDestroyed() && !isFinishing()) refreshCompletionRows();
+                });
+            } else refreshCompletionRows();
         });
         return confirmed;
+    }
+
+    private boolean completionActionRunning() {
+        return !completingCandidates.isEmpty() || !confirmingActivities.isEmpty();
     }
 
     private String completionKey(EventCandidate candidate, CalendarOccurrence event) {
@@ -3040,11 +3130,12 @@ public final class DashboardActivity extends Activity {
     private void refreshCompletionRows() {
         dirtySections.add(HOME); dirtySections.add(SCHEDULE);
         completionRefreshPending = true;
-        if (completionRefreshRunning || !completingCandidates.isEmpty()) return;
+        if (completionRefreshRunning || completionActionRunning()) return;
         if (section != HOME && section != SCHEDULE) {
             completionRefreshPending = false; return;
         }
         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning || scheduleResultLoading
+                || section == HOME && homeTodoExpanding()
                 || (navigation != null && (navigation.isAnimating() || navigation.isTrackingTouch()))) {
             refresh.removeCallbacks(deferredSectionRefresh);
             refresh.postDelayed(deferredSectionRefresh, 80L); return;
@@ -3072,8 +3163,10 @@ public final class DashboardActivity extends Activity {
                 if (isDestroyed() || isFinishing()) return;
                 boolean filtersChanged = destination == SCHEDULE && (!filterKey.equals(completionFilterKey())
                         || data.schedule!=null&&!data.schedule.scope.equals(ScheduleListing.scope(this)));
-                if (section != destination || viewport != scroll || !completingCandidates.isEmpty()
-                        || pageTransitionRunning || dragTargetLoaded || scheduleResultLoading || filtersChanged) {
+                if (section != destination || viewport != scroll || completionActionRunning()
+                        || target != (destination == HOME ? content : results)
+                        || pageTransitionRunning || dragTargetLoaded || scheduleResultLoading || filtersChanged
+                        || destination == HOME && homeTodoExpanding()) {
                     completionRefreshRunning = false;
                     refreshCompletionRows(); return;
                 }
@@ -3112,16 +3205,33 @@ public final class DashboardActivity extends Activity {
             inboxRows = oldRows;
             strips.clear(); strips.addAll(oldStrips);
         }
-        // Only retained rows move: a container-wide fade made every card blink whenever a poll or
-        // the calendar toggle changed one row. Bounds animation keeps insertions and the resulting
-        // displacement continuous without washing out the page.
-        if (UiMotion.isEnabled() && target.isLaidOut()) {
+        // A card becoming visible because the list shrank is a data update, not an entrance.
+        // Remember both sides without snapping an animation that's already running.
+        for (int i = 0; i < target.getChildCount(); i++) UiMotion.remember(target.getChildAt(i));
+        for (int i = 0; i < incoming.getChildCount(); i++) UiMotion.remember(incoming.getChildAt(i));
+        boolean animate = UiMotion.isEnabled() && target.isAttachedToWindow() && target.isLaidOut();
+        if (animate) {
             android.transition.TransitionSet motion = new android.transition.TransitionSet();
             motion.setOrdering(android.transition.TransitionSet.ORDERING_TOGETHER);
             motion.addTransition(new android.transition.ChangeBounds());
+            if (!awaitingCompletionRows.isEmpty()) {
+                android.transition.Fade exit = new android.transition.Fade(android.transition.Fade.OUT);
+                Set<String> departing = new HashSet<>();
+                awaitingCompletionRows.forEach((id, occurrence) -> {
+                    if (destination == HOME) {
+                        departing.add("focus:" + id);
+                        departing.add("upcoming:" + occurrence);
+                        departing.add("timeline:" + occurrence);
+                    } else departing.add("schedule:" + id);
+                });
+                completionRows.forRows(target, (row, key) -> {
+                    if (departing.contains(key)) exit.addTarget(row);
+                });
+                if (!exit.getTargets().isEmpty()) motion.addTransition(exit);
+            }
             motion.setDuration(UiMotion.ENTER);
             motion.setInterpolator(UiMotion.SETTLE);
-            android.transition.TransitionManager.beginDelayedTransition(target, motion);
+            startCompletionTransition(target, motion, destination == HOME ? target.findViewWithTag("home-todos") : null);
         }
         completionRows.apply(target, incoming, destination == HOME ? headerChildCount : 0);
         if (destination == HOME) {
@@ -3145,19 +3255,54 @@ public final class DashboardActivity extends Activity {
             updateSelectionUi(); scheduleRefreshPending = false;
         }
         updatePendingCounts(data.review, data.failed);
-        UiMotion.settleScroll(viewport, target);
+        UiMotion.observeScroll(viewport, target);
         sectionPages.put(destination, new SectionPage());
         snapshot = snapshotForRevision(data.revision);
         sectionVersions.put(destination, snapshot);
         dirtySections.remove(destination);
         awaitingCompletionRows.clear();
         viewport.scrollTo(0, y);
-        int motion = ++completionMotionGeneration;
-        refresh.postDelayed(() -> {
-            if (motion != completionMotionGeneration || isDestroyed()) return;
-            completionRefreshRunning = false;
-            if (completionRefreshPending) refreshCompletionRows();
-        }, UiMotion.isEnabled() ? UiMotion.ENTER + 32L : 0L);
+        if (!animate) finishCompletionTransition();
+    }
+
+    private void startCompletionTransition(LinearLayout target, android.transition.Transition motion, HomeTodoCard card) {
+        if (card != null) card.reflowing = true;
+        class Settle extends android.transition.TransitionListenerAdapter implements View.OnAttachStateChangeListener {
+            boolean finished;
+
+            private void finish() {
+                if (finished) return;
+                finished = true;
+                target.removeOnAttachStateChangeListener(this);
+                refresh.post(() -> {
+                    if (card != null) {
+                        card.reflowing = false;
+                        View queued = card.pendingToggle;
+                        card.pendingToggle = null;
+                        if (queued != null && queued.isAttachedToWindow() && section == HOME
+                                && content == target && !card.data.focus.isEmpty()) queued.performClick();
+                    }
+                    finishCompletionTransition();
+                });
+            }
+
+            @Override public void onTransitionEnd(android.transition.Transition transition) {
+                transition.removeListener(this);
+                finish();
+            }
+
+            @Override public void onViewDetachedFromWindow(View view) { finish(); }
+            @Override public void onViewAttachedToWindow(View view) { }
+        }
+        Settle listener = new Settle();
+        target.addOnAttachStateChangeListener(listener);
+        motion.addListener(listener);
+        android.transition.TransitionManager.beginDelayedTransition(target, motion);
+    }
+
+    private void finishCompletionTransition() {
+        completionRefreshRunning = false;
+        if (!isDestroyed() && !isFinishing() && completionRefreshPending) refreshCompletionRows();
     }
 
     private void collectHomeStrips(View view) {
@@ -3843,7 +3988,7 @@ public final class DashboardActivity extends Activity {
     private void refreshSettledSection() {
         if (!foreground || isDestroyed()) return;
         if (completionRefreshPending) { refreshCompletionRows(); return; }
-        if (completionRefreshRunning || !completingCandidates.isEmpty()) {
+        if (completionRefreshRunning || completionActionRunning()) {
             refresh.postDelayed(deferredSectionRefresh, 80L); return;
         }
         if (pageTransitionRunning || dragTargetLoaded || sectionLoadRunning
@@ -3852,7 +3997,7 @@ public final class DashboardActivity extends Activity {
         }
         if (homeRefreshPending && section == HOME) refreshHomeContent();
         if (scheduleRefreshPending && section == SCHEDULE) { scheduleRefreshPending = false; updateResults(); }
-        refreshActivePageIfNeeded(); snapshot = dataSnapshot();
+        requestActivePageRefresh();
     }
 
     private LinearLayout card() {
@@ -4052,6 +4197,7 @@ public final class DashboardActivity extends Activity {
         dayGroup.addView(dayContent, new FrameLayout.LayoutParams(-1, -2));
 
         LinearLayout heading = new LinearLayout(this);
+        completionRows.row(heading, "timeline-heading:" + date, title);
         heading.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout markerSlot = new FrameLayout(this);
         View marker = new View(this);

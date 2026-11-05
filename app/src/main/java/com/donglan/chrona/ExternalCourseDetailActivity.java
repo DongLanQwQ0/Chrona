@@ -65,10 +65,23 @@ public final class ExternalCourseDetailActivity extends Activity {
                 detail(card,item.calendarName);
                 if(!item.description.isBlank())detail(card,item.description);
                 String key=AgendaAcknowledgement.key(item.eventId,item.startMillis);
-                Button confirm=new Button(this);UiStyle.button(confirm,false);
+                var confirm = new CompletionButton.ActivityLabel(this);
                 acknowledgementUntil=item.endMillis;
-                bindAcknowledgement=()->{boolean done=AgendaAcknowledgement.isAcknowledged(this,key);confirm.setText(done?"取消确认":"确认活动");confirm.setVisibility(item.endMillis>System.currentTimeMillis()?android.view.View.VISIBLE:android.view.View.GONE);confirm.setEnabled(item.endMillis>System.currentTimeMillis());};
-                refreshAcknowledgement();confirm.setOnClickListener(v->{if(item.endMillis<=System.currentTimeMillis()){refreshAcknowledgement();return;}AgendaAcknowledgement.set(this,key,item.endMillis,!AgendaAcknowledgement.isAcknowledged(this,key));refreshAcknowledgement();});UiStyle.addSpaced(root,confirm,16,8);
+                bindAcknowledgement = () -> {
+                    confirm.bind(AgendaAcknowledgement.isAcknowledged(this, key));
+                    boolean available = item.endMillis > System.currentTimeMillis();
+                    confirm.setVisibility(available ? android.view.View.VISIBLE : android.view.View.GONE);
+                    confirm.setEnabled(available);
+                };
+                refreshAcknowledgement();
+                confirm.setOnClickListener(view -> {
+                    if (item.endMillis <= System.currentTimeMillis()) { refreshAcknowledgement(); return; }
+                    boolean checked = !AgendaAcknowledgement.isAcknowledged(this, key);
+                    AgendaAcknowledgement.set(this, key, item.endMillis, checked);
+                    refreshAcknowledgement();
+                    if (checked) confirm.reward();
+                });
+                UiStyle.addSpaced(root,confirm,16,8);
                 Button source=new Button(this);source.setText("日程来源");UiStyle.button(source,false);source.setOnClickListener(v->startActivity(new Intent(this,ScheduleSourceSettingsActivity.class)));UiStyle.addSpaced(root,source,20,8);
                 if("导入课表".equals(item.calendarName)){Button table=new Button(this);table.setText("查看课表");UiStyle.button(table,false);table.setOnClickListener(v->startActivity(new Intent(this,TimetableActivity.class)));root.addView(table);}
                 if(firstDataPresentation)UiMotion.enterPage(card,()->firstDataPresentation=false);

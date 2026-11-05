@@ -16,6 +16,9 @@ final class ZjuSync {
     static final long HOMEWORK_INTERVAL = 5 * 60_000L, TIMETABLE_INTERVAL = 30 * 60_000L;
     private static final int HOMEWORK = 1, TIMETABLE = 2, PTA = 4, ALL = HOMEWORK | TIMETABLE | PTA;
     static final ExecutorService WORKER = Executors.newSingleThreadExecutor();
+    // Keep lifecycle/JobService callbacks out of SQLite and the sync locks. This
+    // queue must remain independent of the worker that can be waiting on HTTP.
+    static final ExecutorService SCHEDULER = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final List<Consumer<String>> listeners = new ArrayList<>(), queuedListeners = new ArrayList<>();
     private static volatile ZjuClient client;
@@ -24,12 +27,21 @@ final class ZjuSync {
     private static long runningEpoch;
     private static int runningScopes, queuedScopes;
     private static Context foregroundContext;
+    private static volatile int foregroundGeneration;
     private static final Runnable FOREGROUND_CHECK = new Runnable() {
         @Override public void run() {
             if (foregroundContext == null) return;
-            requestDue(foregroundContext, null);
-            long delay = nextDelay(foregroundContext, System.currentTimeMillis());
-            MAIN.postDelayed(this, Math.max(1_000L, Math.min(60_000L, delay < 0 ? 60_000L : delay)));
+            Context app = foregroundContext;
+            int generation = foregroundGeneration;
+            SCHEDULER.execute(() -> {
+                if (generation != foregroundGeneration) return;
+                requestDue(app, null);
+                long delay = nextDelay(app, System.currentTimeMillis());
+                MAIN.post(() -> {
+                    if (generation == foregroundGeneration && foregroundContext != null)
+                        MAIN.postDelayed(this, Math.max(1_000L, Math.min(60_000L, delay < 0 ? 60_000L : delay)));
+                });
+            });
         }
     };
 
@@ -47,30 +59,40 @@ final class ZjuSync {
     static boolean requestDue(Context context, Consumer<String> callback) {
         return request(context, dueScopes(context, System.currentTimeMillis()), callback);
     }
-    private static synchronized boolean request(Context context, int scopes, Consumer<String> callback) {
+    private static boolean request(Context context, int scopes, Consumer<String> callback) {
         Context app = context.getApplicationContext();
         ZjuSettingsStore settings = new ZjuSettingsStore(app);
-        if (!settings.enabled() || !settings.configured()) scopes &= ~(HOMEWORK | TIMETABLE);
-        if (!new PtaSettingsStore(app).enabled()||!new ZjuHomeworkStore(app,2).state().enabled) scopes &= ~PTA;
+        scopes = enabledScopes(app, settings, scopes);
         if (scopes == 0) { if (callback != null) deliver(List.of(callback), settings.status()); return false; }
+        enqueue(app, scopes, callback, false);
+        return true;
+    }
+
+    private static int enabledScopes(Context app, ZjuSettingsStore settings, int scopes) {
+        if (!settings.enabled() || !settings.configured()) scopes &= ~(HOMEWORK | TIMETABLE);
+        if ((scopes & PTA) != 0 && (!new PtaSettingsStore(app).enabled() || !new ZjuHomeworkStore(app,2).state().enabled))
+            scopes &= ~PTA;
+        return scopes;
+    }
+
+    private static synchronized void enqueue(Context app, int scopes, Consumer<String> callback, boolean recheck) {
         if (runningScopes != 0) {
             if (runningEpoch == epoch && (scopes & ~runningScopes) == 0) { if (callback != null) listeners.add(callback); }
             else { queuedScopes |= scopes; if (callback != null) queuedListeners.add(callback); }
-            return true;
+            return;
         }
         runningScopes = scopes;
         if (callback != null) listeners.add(callback);
         long token = epoch;
         runningEpoch = token;
-        int requested=scopes;
-        WORKER.execute(() -> run(app, token, requested));
-        return true;
+        WORKER.execute(() -> run(app, token, scopes, recheck));
     }
 
-    private static void run(Context context, long token, int scopes) {
+    private static void run(Context context, long token, int scopes, boolean recheck) {
         ZjuSettingsStore settings = new ZjuSettingsStore(context);
+        if (recheck) scopes = enabledScopes(context, settings, scopes);
         ZjuHomeworkStore store = new ZjuHomeworkStore(context);
-        String account = settings.account(), result = "";
+        String account = settings.account(), result = scopes == 0 ? settings.status() : "";
         if ((scopes & (HOMEWORK | TIMETABLE)) != 0) {
         try {
             ZjuHomeworkStore.State before;
@@ -162,7 +184,7 @@ final class ZjuSync {
             }finally{ptaClient=null;}
         }
         // School results/notifications finish first; one optional AI item never holds AndroidSync.LOCK.
-        if (token == epoch) {
+        if (scopes != 0 && token == epoch) {
             String planning = ZjuHomeworkPlanner.processOne(context);
             if (!planning.isEmpty()) result += "\n" + planning;
         }
@@ -173,7 +195,7 @@ final class ZjuSync {
             int next = queuedScopes; queuedScopes = 0;
             List<Consumer<String>> queued = new ArrayList<>(queuedListeners); queuedListeners.clear();
             deliver(completed, result);
-            if (next != 0) request(context, next, value -> { for (Consumer<String> listener : queued) listener.accept(value); });
+            if (next != 0) enqueue(context, next, value -> { for (Consumer<String> listener : queued) listener.accept(value); }, true);
         }
         // Job callbacks must finish the current job before its ID is rearmed.
         MAIN.post(() -> rearmIfIdle(context));
@@ -228,13 +250,13 @@ final class ZjuSync {
         long last=pta.prefs.getLong("attempt",0);return last<=0||last>now?0:Math.max(0,HOMEWORK_INTERVAL-(now-last));
     }
     static void foreground(Context context) {
+        foregroundGeneration++;
         foregroundContext = context.getApplicationContext();
         MAIN.removeCallbacks(FOREGROUND_CHECK);
         FOREGROUND_CHECK.run();
     }
-    static void background() { foregroundContext = null; MAIN.removeCallbacks(FOREGROUND_CHECK); }
-    static synchronized void rearmIfIdle(Context context) {
-        if (runningScopes == 0) ZjuSyncJobService.schedule(context);
-    }
+    static void background() { foregroundGeneration++; foregroundContext = null; MAIN.removeCallbacks(FOREGROUND_CHECK); }
+    static synchronized boolean idle() { return runningScopes == 0; }
+    static void rearmIfIdle(Context context) { ZjuSyncJobService.rearmIfIdle(context); }
     private ZjuSync() { }
 }

@@ -69,16 +69,17 @@ import android.content.Context;import com.donglan.chrona.data.*;import com.dongl
 public class CompletionCheck {
 __ACKNOWLEDGEMENT_UNTIL__
 static int checks;static void check(boolean yes,String why){checks++;if(!yes)throw new AssertionError(why);}
-public static void main(String[] args){Context c=new Context();long future=System.currentTimeMillis()+3600000;
+public static void main(String[] args)throws Exception{Context c=new Context();long future=System.currentTimeMillis()+3600000;
 EventCandidate item=new EventCandidate(1,2,"待办",future,null,"Asia/Shanghai","","",10,false,7L,"task",false,false,0,future,null,false);TaskStore.rows.put(1L,item);
 CalendarStore.events.put(7L,new CalendarStore.EventRecord(future,List.of(10,30)));CalendarStore.events.put(8L,new CalendarStore.EventRecord(future,List.of(5)));
-check(TaskCompletion.set(c,1,2,true)==null,"complete success");check(TaskStore.rows.get(1L).completed(),"local completed");check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"linked pending alerts disabled");check(CalendarStore.events.get(8L).reminderMinutes.equals(List.of(5)),"unrelated event untouched");
+var completed=TaskCompletion.apply(c,item,true);check(completed.changed()&&completed.warning()==null,"new completion eligible for reward");check(TaskStore.rows.get(1L).completed(),"local completed");check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"linked pending alerts disabled");check(CalendarStore.events.get(8L).reminderMinutes.equals(List.of(5)),"unrelated event untouched");
+check(!TaskCompletion.apply(c,item,true).changed(),"stale caller cannot earn reward twice");
 String key=AgendaAcknowledgement.key(item);AgendaAcknowledgement.set(c,key,future,true);
 c.prefs.edit().putLong("snooze_until:"+key,future).putLong("snooze_end:"+key,future+1000).apply();
 check(AgendaAcknowledgement.isAcknowledged(c,key),"hidden occurrence acknowledged");
 check(TaskCompletion.set(c,1,2,false)==null,"restore success");
 check(!AgendaAcknowledgement.isAcknowledged(c,key)&&!c.prefs.contains("snooze_until:"+key)&&!c.prefs.contains("snooze_end:"+key),"restore clears current occurrence hidden and snooze");check(CalendarStore.events.get(7L).reminderMinutes.equals(List.of(10,30)),"original future alerts restored");
-CalendarStore.permission=false;check(TaskCompletion.set(c,1,2,true)!=null,"permission warning");check(TaskStore.rows.get(1L).completed(),"completion not blocked by calendar permission");CalendarStore.permission=true;TaskCompletion.retryPending(c);check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"pending permission repair retried");
+CalendarStore.permission=false;var saved=TaskCompletion.apply(c,item,true);check(saved.changed()&&saved.warning()!=null,"calendar warning does not hide local success");check(TaskStore.rows.get(1L).completed(),"completion not blocked by calendar permission");CalendarStore.permission=true;TaskCompletion.retryPending(c);check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"pending permission repair retried");
 CalendarStore.fail=true;check(TaskCompletion.set(c,1,2,false)!=null,"provider failure visible");check(!TaskStore.rows.get(1L).completed(),"restore local state kept");CalendarStore.fail=false;TaskCompletion.retryPending(c);check(CalendarStore.events.get(7L).reminderMinutes.equals(List.of(10,30)),"provider recovery retains original alerts");
 TaskCompletion.set(c,1,2,true);CalendarStore.events.get(7L).startMillis=System.currentTimeMillis()-60000;TaskCompletion.set(c,1,2,false);check(CalendarStore.events.get(7L).reminderMinutes.isEmpty(),"expired alerts not replayed");
 long revision=TaskStore.revision;try{TaskCompletion.set(c,1,2,true,revision-1);throw new AssertionError("stale edit accepted");}catch(ConcurrentModificationException expected){check(TaskStore.revision==revision,"stale revision cannot mutate");}
@@ -141,10 +142,10 @@ begin = detail.index('    private static long acknowledgementUntil(')
 end = detail.index('\n    }', begin) + len('\n    }')
 sources['com/donglan/chrona/CompletionCheck.java'] = sources['com/donglan/chrona/CompletionCheck.java'].replace('__ACKNOWLEDGEMENT_UNTIL__', detail[begin:end])
 assert '&& acknowledgementUntil(candidate) > System.currentTimeMillis()' in detail
-assert 'if (!key.isEmpty() && until > System.currentTimeMillis())' in detail
+assert 'if (key.isEmpty() || until <= System.currentTimeMillis())' in detail
 assert detail.index('cardHeader.addView(acknowledgement, acknowledgementParams)') < detail.index('candidateActions.addView(removeCandidate,')
 assert 'action.setContentDescription(confirmed ? "取消确认活动" : "确认活动")' in detail
-assert 'complete.setOnClickListener(view -> changeTaskCompletion(candidate))' in detail
+assert 'complete.setOnClickListener(view -> changeTaskCompletion(candidate, complete))' in detail
 assert detail.index('cardHeader.addView(createCandidate,') < detail.index('cardHeader.addView(complete,') < detail.index('candidateActions.addView(removeCandidate,')
 assert 'new LinearLayout.LayoutParams(dp(48), dp(48))' in detail
 assert 'candidate.isTask()) button(card,candidate.completed()' not in detail

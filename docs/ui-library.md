@@ -15,6 +15,7 @@
 | 选择、确认、文字编辑、日期／时间和自定义浮层 | `UiDialogs`；统一菜单、操作行、窗口开合、多层模糊与背景恢复 |
 | 内容呈现、列表切换、局部交叉淡化与取消恢复 | `UiMotion`；系统减少动画时落到正确终态，Activity 转场继续交给 Android |
 | 普通按压与组合操作反馈 | `PressFeedback`；Dock 继续独立管理按压、拖动与惯性 |
+| 原生待办完成和活动确认 | `CompletionButton`；原位圈勾、主题色脉冲和系统触感，只由成功提交的用户操作触发 |
 | 点击可操作、同时保留文字选中的只读标签 | `UiStyle.selectableActionText`；恢复可选文本的按压Drawable状态，再复用原按压与高光，不接管原生选字手势 |
 | 按压／焦点绘制优先级与固定导航 | `InteractionLayers`；提升祖先绘制分支，保留布局顺序并恢复原 Z 值；由公共反馈与 Dock 接入 |
 | 设置页结构／安全区 | `SettingsPageLayout`；底层安全区接口保留在 `UiStyle` |

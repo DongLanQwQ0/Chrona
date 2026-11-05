@@ -30,6 +30,13 @@ public final class LanAccessInstrumentation extends Instrumentation {
     @Override public android.app.Activity newActivity(ClassLoader loader, String name, Intent intent)
             throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         android.app.Activity activity = super.newActivity(loader, name, intent);
+        if (("homework_landscape".equals(arguments.getString("check"))
+                || "completion_feedback".equals(arguments.getString("check"))) && arguments.containsKey("font")) {
+            FixtureIsolation.require(getTargetContext());
+            var config = new android.content.res.Configuration();
+            config.fontScale = Float.parseFloat(arguments.getString("font"));
+            activity.applyOverrideConfiguration(config);
+        }
         if("campus_settings".equals(arguments.getString("check"))&&arguments.containsKey("font")) {
             FixtureIsolation.require(getTargetContext());
             var config=new android.content.res.Configuration();config.fontScale=Float.parseFloat(arguments.getString("font"));activity.applyOverrideConfiguration(config);
@@ -66,6 +73,18 @@ public final class LanAccessInstrumentation extends Instrumentation {
         return activity;
     }
     @Override public void onStart() {
+        if ("completion_feedback".equals(arguments.getString("check"))) {
+            Bundle report = new Bundle();
+            try { report.putString("completion_report", CompletionFeedbackDeviceCheck.run(this, arguments)); finish(-1, report); }
+            catch (Throwable error) { report.putString("error", android.util.Log.getStackTraceString(error)); finish(0, report); }
+            return;
+        }
+        if ("homework_landscape".equals(arguments.getString("check"))) {
+            Bundle report = new Bundle();
+            try { report.putString("landscape_report", HomeworkLandscapeCheck.run(this, arguments)); finish(-1, report); }
+            catch (Throwable error) { report.putString("error", android.util.Log.getStackTraceString(error)); finish(0, report); }
+            return;
+        }
         if ("campus_settings".equals(arguments.getString("check"))) {
             Bundle report = new Bundle();
             try { report.putString("campus_report", CampusSettingsDeviceCheck.run(this, arguments)); finish(-1, report); }
@@ -143,19 +162,53 @@ public final class LanAccessInstrumentation extends Instrumentation {
             return;
         }
         Bundle result = new Bundle();
-        try { check(); result.putString("stream", "web_calendar".equals(arguments.getString("check"))
+        try { check(); result.putString("stream", "webdav_large_baseline".equals(arguments.getString("check"))
+                ? "WebDAV large baseline: PASS (real Android SQLite, unchanged clock, no network)\n"
+                : "web_calendar".equals(arguments.getString("check"))
                 ? "LAN calendar integration: PASS (real Android SQLite/HTTP, five views, native PNG parity, cache cleanup, no external data)\n"
                 : "LAN integration: PASS (real Android SQLite and HTTP)\n"); finish(-1, result); }
         catch (Throwable error) { result.putString("stream", "LAN integration: FAIL " + error.getClass().getSimpleName() + ": " + error.getMessage()+"\n");
             if(java.util.List.of("web_core","web_calendar").contains(arguments.getString("check","")))result.putString("error",android.util.Log.getStackTraceString(error));finish(0, result); }
     }
     private String cookie, csrf, lastSetCookie;
+    private static void checkLargeSyncBaseline(Context isolated) throws Exception {
+        var lesson = new JSONObject().put("course_id", "901").put("id", "902").put("course", "同步夹具")
+                .put("title", "长字幕").put("status", "ended").put("starts_at", 0);
+        var summary = new JSONObject().put("lesson", lesson).put("complete", true).put("updated", 1)
+                .put("overview", "").put("parts", new org.json.JSONArray()).put("images", new org.json.JSONArray());
+        var segments = new org.json.JSONArray().put(new JSONObject().put("start", 0).put("end", 1)
+                .put("text", "字幕😀".repeat(420_000)));
+        var document = new JSONObject().put("summary", summary).put("segments", segments);
+        var payload = new JSONObject().put("kind", "classroom").put("document", document)
+                .put("attachments", new org.json.JSONArray());
+        String id = com.donglan.chrona.classroom.ClassroomDocument.syncId(lesson);
+        String select = "SELECT baseline FROM sync_classroom_map WHERE sync_id=?";
+        var state = new com.donglan.chrona.sync.SyncState(UUID.randomUUID().toString());
+        var snapshot = new AndroidSyncData.Snapshot();
+        snapshot.classroomPayloads.put(id, payload);
+        try (AndroidSyncData data = new AndroidSyncData(isolated)) {
+            require(data.value(select, id) == null, "missing baseline must remain null");
+            data.captureClassrooms(state, snapshot);
+            var clock = state.records().get(id).get(0).clock;
+            boolean overflow = false;
+            try (var cursor = data.db.rawQuery(select, new String[]{id})) {
+                if (cursor.moveToFirst()) cursor.getString(0);
+            } catch (android.database.sqlite.SQLiteBlobTooBigException expected) { overflow = true; }
+            require(overflow, "negative control must reproduce the old CursorWindow failure");
+            require(AndroidSyncData.canonical(payload).equals(data.value(select, id)),
+                    "large UTF-8 baseline must round-trip without truncation");
+            data.captureClassrooms(state, snapshot);
+            require(state.records().get(id).size() == 1 && state.records().get(id).get(0).clock.equals(clock),
+                    "second sync of the unchanged classroom must not create a revision");
+        }
+    }
     private int port;
     private boolean providerCompletion;
     private void check() throws Exception {
         Context target = getTargetContext();
         boolean calendarCheck="web_calendar".equals(arguments.getString("check"));
-        if ("linked_calendar".equals(arguments.getString("check")) || calendarCheck) FixtureIsolation.require(target);
+        boolean largeBaseline = "webdav_large_baseline".equals(arguments.getString("check"));
+        if ("linked_calendar".equals(arguments.getString("check")) || calendarCheck || largeBaseline) FixtureIsolation.require(target);
         File directory = new File(target.getCacheDir(), "lan-integration-" + UUID.randomUUID());
         if (!directory.mkdirs()) throw new IOException("Cannot create isolated test directory");
         java.util.Set<String> preferenceNames=java.util.Collections.synchronizedSet(new java.util.HashSet<>());
@@ -180,6 +233,11 @@ public final class LanAccessInstrumentation extends Instrumentation {
             @Override public SQLiteDatabase openOrCreateDatabase(String name,int mode,SQLiteDatabase.CursorFactory factory,DatabaseErrorHandler handler) { return SQLiteDatabase.openOrCreateDatabase(getDatabasePath(name).getAbsolutePath(),factory,handler); }
             @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode) { String key="lan-test-"+directory.getName()+"-"+name;preferenceNames.add(key);return super.getSharedPreferences(key,mode); }
         };
+        if (largeBaseline) {
+            try { checkLargeSyncBaseline(isolated); }
+            finally { delete(directory); }
+            return;
+        }
         try(ServerSocket reserve = new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"))) { port=reserve.getLocalPort(); }
         java.util.concurrent.atomic.AtomicInteger approvalChanges = new java.util.concurrent.atomic.AtomicInteger();
         LanWebServer server = new LanWebServer(isolated,"127.0.0.1",port,approvalChanges::incrementAndGet);

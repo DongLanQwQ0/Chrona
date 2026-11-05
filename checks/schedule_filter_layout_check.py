@@ -28,8 +28,12 @@ for setting in ('option.setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_
                 'option.setSingleLine(true)', 'option.setHorizontallyScrolling(false)'):
     require(setting in choice and choice.index(setting) > add_item,
             "Filter label policy must override shared addItem fitting: " + setting)
-require('UiStyle.addSpaced(body, dock.fullWidthMotionHost(), 0, 6)' in choice,
-        "Dense filter rows allow animated highlights to overlap neighboring groups")
+require('motionHost=dock.fullWidthMotionHost(true)' in choice and 'UiStyle.addSpaced(body,container,0,6)' in choice,
+        "Dense filter rows use the opt-in overlap host and preserve group spacing")
+require('boolean narrow=available<requiredWidth+dp(16)' in choice
+        and 'compact.setVisibility(narrow?View.VISIBLE:View.GONE)' in choice
+        and 'UiDialogs.choiceDialog(activity,name,choices' in choice,
+        "When full labels do not fit, the same options remain reachable in the compact selector")
 require('UiStyle.addSpaced(body, heading, 6, 2)' in choice,
         "Filter groups retain six-dp spacing without a full vertical motion envelope")
 require('body.setPadding(0, dp(8), 0, dp(18))' in source,
@@ -49,7 +53,8 @@ require('return motionHost(false);' in dock and 'int cross = overlapRows ? clear
         and 'plate * 1.53f' in dock,
         "Overlap is opt-in while ordinary motion hosts retain their complete cross-axis envelope")
 require('category.sync(draft.source == 1' in source
-        and 'draft.source == 0);' in source
+        and 'draft.source != 1);' in source
+        and 'compact.setEnabled(enabled)' in source
         and 'option.setEnabled(enabled)' in source,
         "System-source selection retains disabled filter semantics")
 rail = (root / "app/src/main/java/com/donglan/chrona/DateIntervalBar.java").read_text(encoding="utf-8")

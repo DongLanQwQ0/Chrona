@@ -4,6 +4,8 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteDoneException;
+import android.database.sqlite.SQLiteStatement;
 import android.net.Uri;
 import com.donglan.chrona.data.*;
 import com.donglan.chrona.image.ImageStore;
@@ -56,7 +58,12 @@ final class AndroidSyncData implements AutoCloseable {
     void appliedResourcesCommitted() { stagedImages.clear(); stagedFiles.clear(); }
     static String canonical(JSONObject json) throws Exception { return json == null ? "null" : SyncState.canonical(json); }
     String value(String sql, String argument) {
-        try (Cursor c = db.rawQuery(sql, new String[]{argument})) { return c.moveToFirst() ? c.getString(0) : null; }
+        // A full classroom baseline can be much larger than an Android CursorWindow.
+        // Fetch one scalar directly without splitting, truncating or changing the baseline.
+        try (SQLiteStatement query = db.compileStatement(sql)) {
+            query.bindString(1, argument);
+            return query.simpleQueryForString();
+        } catch (SQLiteDoneException missing) { return null; }
     }
     long localId(String id) {
         String local = value("SELECT local_id FROM sync_task_map WHERE sync_id=?", id);
@@ -197,10 +204,11 @@ final class AndroidSyncData implements AutoCloseable {
                     value("SELECT baseline_clock FROM sync_task_map WHERE sync_id=?", id));
             db.execSQL("UPDATE sync_task_map SET baseline=?,baseline_clock=? WHERE sync_id=?", new Object[]{canonical(payload), nextClock, id});
         }
-        try (Cursor c = db.rawQuery("SELECT sync_id,local_id,baseline,baseline_clock FROM sync_task_map", null)) {
+        try (Cursor c = db.rawQuery("SELECT sync_id,local_id,baseline_clock FROM sync_task_map", null)) {
             while (c.moveToNext()) if (!present.contains(c.getLong(1))) {
-                String nextClock = changed(state, c.getString(0), null, c.getString(2), c.getString(3));
-                db.execSQL("UPDATE sync_task_map SET baseline='null',baseline_clock=? WHERE sync_id=?", new Object[]{nextClock, c.getString(0)});
+                String id = c.getString(0);
+                String nextClock = changed(state, id, null, value("SELECT baseline FROM sync_task_map WHERE sync_id=?", id), c.getString(2));
+                db.execSQL("UPDATE sync_task_map SET baseline='null',baseline_clock=? WHERE sync_id=?", new Object[]{nextClock, id});
             }
         }
     }

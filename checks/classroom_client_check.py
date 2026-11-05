@@ -13,11 +13,12 @@ out = root / 'build/classroom-client-check'
 out.mkdir(parents=True, exist_ok=True)
 cache = Path(os.environ.get('GRADLE_USER_HOME', 'F:/Android/GradleCache')) / 'caches/modules-2/files-2.1'
 jars = [root / 'build/ai-checks/json.jar']
-for module, version in [('com.squareup.okhttp3/okhttp', '4.12.0'), ('com.squareup.okio/okio-jvm', '3.6.0'), ('org.jetbrains.kotlin/kotlin-stdlib', '1.9.10')]:
-    candidates = list((cache / module / version).glob('*/*.jar'))
-    if len(candidates) != 1:
+for module in ('com.squareup.okhttp3/okhttp', 'com.squareup.okio/okio-jvm', 'org.jetbrains.kotlin/kotlin-stdlib'):
+    candidates = sorted(p for p in (cache / module).glob('*/*/*.jar')
+                        if not p.name.endswith(('-sources.jar', '-javadoc.jar')))
+    if not candidates:
         raise RuntimeError('Required cached dependency unavailable: ' + module)
-    jars.extend(candidates)
+    jars.append(candidates[-1])
 cp = os.pathsep.join(map(str, jars))
 stub = out / 'android/text/Html.java'
 stub.parent.mkdir(parents=True, exist_ok=True)

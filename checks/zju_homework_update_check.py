@@ -25,6 +25,7 @@ def write(path, text):
 adapter_source = ast.parse((root / 'checks/candidate_merge_check.py').read_text(encoding='utf-8'))
 needed = {'android/content/Context.java', 'android/content/ContentValues.java', 'android/database/Cursor.java',
           'android/database/sqlite/SQLiteDatabase.java', 'android/database/sqlite/SQLiteOpenHelper.java',
+          'android/database/sqlite/SQLiteStatement.java', 'android/database/sqlite/SQLiteDoneException.java',
           'com/donglan/chrona/debug/DiagLog.java', 'com/donglan/chrona/image/ImageStore.java',
           'com/donglan/chrona/AgendaWidgetProvider.java', 'com/donglan/chrona/AgendaReminder.java',
           'com/donglan/chrona/AndroidSync.java'}

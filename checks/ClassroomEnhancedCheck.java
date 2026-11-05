@@ -1207,7 +1207,9 @@ public final class ClassroomEnhancedCheck {
                 JSONObject raw=new JSONObject(logical.substring(rawStart+rawMarker.length(),logical.indexOf("\n全课PPT可用目录",rawStart)));
                 JSONArray current=ClassroomEnhancedSummary.contentGroups(run.getJSONArray("blocks"),size).getJSONArray(group);JSONObject expectedRaw=ClassroomSummary.uploadChunk(new JSONObject().put("segments",current).put("images",new JSONArray()));
                 check(raw.similar(expectedRaw)&&logical.contains("更正文稿与其冲突时核对原话")&&!logical.contains("只作evidence逐字定位"),"raw subtitles are sent as independent teacher-fact and conflict evidence, not evidence-only placeholders");
-                check(logical.contains("evidence，逐字摘录原始字幕")&&logical.contains("不拼接非连续片段")&&logical.contains("sources须列全引文覆盖的每条来源"),"broader raw-fact use retains the original verbatim assignment evidence boundaries");
+                check(logical.contains("还必须带evidence")&&logical.contains("逐字摘录足以确定任务")
+                        &&logical.contains("最短连续原话，不用更正文稿的改写")&&logical.contains("不拼接非连续片段")
+                        &&logical.contains("sources须列全引文覆盖的每条来源"),"broader raw-fact use retains the original verbatim assignment evidence boundaries");
             }
             check(result.getBoolean("complete")&&requests.size()==(legacy?9:11)&&draftRequests==(legacy?3:2)&&run.getJSONArray("drafts").length()==2&&run.getJSONArray("parts").length()==2,"coverage keeps draft groups and uses real original-context editorial budgets only for new runs: "+scenario);
             check(run.getJSONArray("drafts").getJSONObject(0).keySet().equals(Set.of("overview","notes","affairs","assignments","image_assessment","image_requests")),"coverage reminders do not add wire fields or checks to the existing draft schema");

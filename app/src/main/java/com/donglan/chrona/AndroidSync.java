@@ -25,8 +25,8 @@ public final class AndroidSync {
     private static final AtomicBoolean RUNNING = new AtomicBoolean();
     private static volatile long lastForeground;
     private static volatile WebDavClient activeClient;
-    // Guarded by LOCK; restored databases must never receive an older HTTP result.
-    private static long restoreEpoch;
+    // Written under LOCK; admission snapshots it without waiting for storage work.
+    private static volatile long restoreEpoch;
     private static final long FOREGROUND_INTERVAL = 5 * 60_000L;
     interface Completion { void done(String message); }
     interface Work { String run(Context context) throws Exception; }
@@ -73,12 +73,12 @@ public final class AndroidSync {
     }
     static void cancelNetwork() { WebDavClient client = activeClient; if (client != null) client.close(); }
     static boolean work(Context context, Completion completion, Work work) {
+        synchronized (LOCK) { return submit(context, completion, restoreEpoch, work); }
+    }
+
+    private static boolean submit(Context context, Completion completion, long epoch, Work work) {
         Context app = context.getApplicationContext();
-        final long epoch;
-        synchronized (LOCK) {
-            if (!RUNNING.compareAndSet(false, true)) return false;
-            epoch = restoreEpoch;
-        }
+        if (!RUNNING.compareAndSet(false, true)) return false;
         WORKER.execute(() -> {
             String result;
             try {
@@ -87,6 +87,8 @@ public final class AndroidSync {
                     // Never include server bodies, URLs or credentials in persisted/UI diagnostics.
                     if (e instanceof WebDavClient.Failure) result = e.getMessage();
                     else if (e instanceof AndroidSyncData.AttachmentException) result = e.getMessage();
+                    else if (e instanceof android.database.sqlite.SQLiteBlobTooBigException)
+                        result = "本机同步记录超出数据库读取容量；原数据已保留";
                     else if (e instanceof SecurityException) result = "操作失败，请授予日历或附件访问权限后重试";
                     else if (Arrays.asList("记录已变化，请重新选择", "记录正在处理", "日历旧事件未能移除，请重试",
                             "需要确认移除本机日历旧事件", "课表正在修改，请重新同步", "请输入账号和应用密码",
@@ -108,9 +110,8 @@ public final class AndroidSync {
         return true;
     }
     static boolean request(Context context, Completion completion) {
-        synchronized (LOCK) {
-            final long epoch = restoreEpoch;
-            return work(context, completion, app -> {
+        long epoch = restoreEpoch;
+        return submit(context, completion, epoch, app -> {
                 WebDavSettingsStore settings = new WebDavSettingsStore(app);
                 if (!settings.configured()) return "请先保存 WebDAV 账号与应用密码";
                 SyncState local;
@@ -160,8 +161,7 @@ public final class AndroidSync {
                     return "上次同步：" + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(new Date())
                             + (pending == 0 ? " · 成功" : " · " + pending + " 项待确认");
                 }
-            });
-        }
+        });
     }
     private static void capture(Context app, AndroidSyncData data, SyncState state) throws Exception {
         AndroidSyncData.Snapshot snapshot = data.prepareCapture();
