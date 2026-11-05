@@ -11,7 +11,11 @@
 - 138修正资料与写作要求的相对位置：原写作块移到完整原文之后，不新增AI阶段、语义校验或历史改写；定理自然阐释及可跟随过程在该块说明。双协议顺序/单份块专项1647/0、完整回执恢复630/0及release/lint/trial通过，已安装原AVD实读300／0.15.138。
 - 138首轮及唯一沿检查点续跑均在affairs-plan返回HTTP400，未进入whole-note；4段更正复用，无图/新事务/知识提交。与137成功可见参数同为opencode.ai、Responses、deepseek-v4.1-flash、low、32768、json_schema；不能据同字节数证明逐字相同。已停止原样重试，无活跃AI，readonly helper保持，设备临时ZIP及空目录已清。
 - 现有aiHealth只发1次不含课堂资料的合成JSON Schema请求（642字节），同样400；安全错误为`invalid_request_error: this feature is not yet supported by atlas`，证据`build/editorial141/schema-health.txt`，不是课堂正文长度原因。未静默降级协议/删请求字段。
-- 官方Go文档`https://opencode.ai/v2/docs/console/go/`现列新入口`https://opencode.ai/inference/go/openai/v1`；原生DeepSeek列Chat，但官方同时说各文本模型可通过其它API转换，不能武断认定Responses完全不可用。已发唯一异步问题，请用户决定是否仅在模拟器更新官方新入口后测试（模型/协议/密钥不变）；新地址能否修复当前功能错误未知。唯一下一步等待该设置决定，不擅改全局配置、不继续AI重试。
+- 用户已同意仅在模拟器更新官方Go入口后验证。显式emulator-only helper经AiSettingsStore回读，发现当前地址已是`https://opencode.ai/inference/go/openai/v1`（changed=false），模型/Responses/密钥/effort/header均未变且AI调用0。不能声称本次改了地址，也不能由旧投影的host倒推此前400时的path。证据`build/editorial142/endpoint-update.txt`，只改测试helper，正式app仍138。
+- 核实的新入口纯文字1调用（283字节）成功，Terra已读；随后合成JSON Schema1调用也成功，主代理只读安全投影并确认stop、ok=true、details.ready=true，无课堂资料/设置更改。证据`build/editorial142/{plain,schema}-health.txt`；不能据此认定先前400原因已解释，也不能宣称课堂已通过。
+- 138同课low7478完整成功，2请求无repair、4更正段复用、23附图/14引用可读，原生cached input为0/2048；旧失败轮按既有入口归档，不改历史。证据`build/editorial142/{run,complete-audit}.txt`、export/、4张压缩图。设备临时ZIP与空目录已清，无活跃AI，已恢复原只读helper；一次性地址更新模式已从源码移除，正式app仍138。
+- Terra全文/来源/图片审查：本轮没有往届老教材题误列，两项行动有原话，未见假图；零型定理条件、结论和柯西证明完整，但陈述后仍未自然解释意思与用途。另有求和上界代入对象未交代、选用泰勒却描述为求导且缺依据，影响跟算。可供查看但核心定理阐释尚未达用户要求，不启动21节批量。
+- 唯一下一步：将自然阐释的具体位置明确为定理陈述与证明/例题之间，且具体过程描述与实际操作一致；仍是同一写作块、两次请求，不增加结构化提取/语义拒绝/审校调用，不用本课题号或答案特判。模型/Responses/密钥及其它设置保持，不将本轮成功归因为已经证明服务故障根因。
 - 用户另要求写入全局记忆，已新增`C:\Users\DongLan\.codex\memories\extensions\ad_hoc\notes\20261105-no-empty-disclaimers.md`，要求聊天、笔记、文档、页面文案均直接提供有用信息，禁止无信息量免责声明及自我辩护，不输出内部生产约束。
 - Terra已只读整理下一节C语言案例：`F:\ZJULife\_link\课堂资料-2026-10-31\C程序设计基础-2026-09-23-2026-09-23第7-8节 [87476-1972361]\sources.md`及课堂总结.md，未改原文件/调用AI。验收关注条件与穷举（s27–100）、类型范围/提升/无符号与补码（s109–404）、输入失败及算术边界（s484–552）、if/else及赋值/比较（s581–680）、逻辑短路与按位操作区别（s810–830）；应以可执行例子、输入输出和求值顺序讲清，不套定理证明模板。
 - 该C课真实事项在s17–26（既有作业截止、成绩核对、此前3分/新增47分及首次熟悉系统），语法考查线索在s593–610附近；不可把已过截止的上次任务变为新布置。旧总结曾前面泛化有符号int乘法按模2^32回绕、后面才说溢出未定义，需查清类型与条件，避免自相矛盾；杂乱待核对/课堂转述需去除。此为既有资料的下一单课准备，不是138新生成或跨课程已通过。服务地址仍待用户决定。
